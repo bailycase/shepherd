@@ -150,6 +150,30 @@ events come out on stdout, one record per LF.
     as a live row.
   - `tool_execution_*` upserts running and finished tool calls, with start times for live
     durations.
+  - **A call being written** is a tool row before it runs, so a thread whose reply has moved on
+    to a big `write` does not look idle. `message_update`'s `toolcall_start` (pi 0.87.1: `id`,
+    `toolName`, `contentIndex`) creates the row `provisional:tool:<call id>` with status
+    `streaming` and no output; the client draws it as a running call (`NativeActivityCall`
+    reads `streaming` as `running`, as it has since native threads shipped, so an older client
+    shows the same live line). Each `toolcall_delta` carries the next fragment of the arguments'
+    JSON text (not the text so far), which `StreamingToolArguments` reads without holding: the
+    row's `argumentsText` is only the fields an activity line names (`path`, `command`,
+    `pattern`, `query`, `url`; a string cut at 2 KiB, one still open kept as far as it got), so
+    a write's body streams past without being hashed, sized or sent, and a fragment that grows
+    none of them moves no revision. `toolcall_end` completes those fields.
+    `tool_execution_start` makes the same row `running` with the call's complete arguments; its
+    start time (`startedAt`) is when the model named the call, one clock through its run and
+    into history.
+    - **Leaving:** a reply pi ends `aborted` or `error` (a Stop, a failed request) runs none of
+      its calls, though its `message_end` still carries the one it was writing (pi 0.87.1 ends
+      the call with what it parsed): the rows still `streaming` go with it. Any other end hands
+      the calls to pi, whose executions continue the rows (`length` included: pi answers each
+      with an error result). `agent_end`, `agent_settled` and a session switch drop any that
+      remain, so a `streaming` tool row never outlives its run. History read from pi has no row
+      for a call that never ran (a call's row comes from its tool result).
+    - **Clients** treat words a call follows as finished: a streaming reply's last text is
+      "being written" only while nothing comes after it (`nativeTurnPresentation`).
+      `Tests/Extensions/tool-call-stream.test.mjs` pins the event shapes against pi itself.
   - A user `message_start` is pi reading a user message: it joins the run there, with the id
     history will give it (`user:<ms>`, `#<n>` for a second one stamped in the same millisecond),
     and with where it came from when Shepherd delivered it (`origin`, `operationID`; see The

@@ -41,12 +41,15 @@ struct FleetTests {
         (#"{"path":"Sources/Fleet.swift"}"#, "read", "read Fleet.swift"),
     ] as [(String, String, String)])
     func aRunningCallIsTheThreadsActivity(args: String, tool: String, activity: String) {
-        let digest = Self.digest(Self.snapshot([
-            Fixture.message("user", "go"),
-            Fixture.tool(tool, args: args, status: "running", startedAt: 1_000, timestamp: 1_500),
-        ], running: true))
-        #expect(digest.activity == activity)
-        #expect(digest.activitySince == 1_000)
+        // The model still writing a call counts as it running: the thread is not idle.
+        for status in ["running", "streaming"] {
+            let digest = Self.digest(Self.snapshot([
+                Fixture.message("user", "go"),
+                Fixture.tool(tool, args: args, status: status, startedAt: 1_000, timestamp: 1_500),
+            ], running: true))
+            #expect(digest.activity == activity, "\(status)")
+            #expect(digest.activitySince == 1_000, "\(status)")
+        }
     }
 
     @Test func aSettledThreadHasNoActivityButKnowsWhenItLastMoved() {

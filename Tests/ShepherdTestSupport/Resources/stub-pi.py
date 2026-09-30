@@ -10,6 +10,16 @@
   "slow"   a streaming turn that pauses twice (mid-deltas, mid-tool) until the
            files `continue-1` / `continue-2` appear in the cwd
   "stream" a reply of 40 text deltas 2 ms apart, as a model streams one
+  "toolcall" the model writing a tool call's arguments slowly (a big `write`): a line of text,
+           then toolcall_start, toolcall_delta fragments of the arguments' JSON text (each the
+           next few characters, not the text so far), toolcall_end, the reply's message_end,
+           tool_execution_start, the call's end and a closing reply. It pauses until the files
+           `continue-1` (the path half written), `continue-2` (the path known, the content
+           streaming) and `continue-3` (the call running) appear in the cwd. An abort at any
+           pause ends it as pi ends a stopped request: toolcall_end with the arguments parsed so
+           far, an `aborted` message_end that still carries the call, no tool_execution_start,
+           then agent_end and agent_settled. Its events are the shapes pi 0.87.1 sends
+           (Tests/Extensions/tool-call-stream.test.mjs pins them against the real thing).
   "widgets"      emits setStatus/setWidget/notify/setTitle (with ANSI colour)
   "widgets-clear" clears the status and widget from "widgets"
   "select" emits a select extension_ui_request (no timeout) and waits
@@ -521,6 +531,73 @@ def agent_run(first):
     emit({"type": "agent_settled"})
 
 
+def toolcall_turn(prompt):
+    """The model writing a `write` call's arguments slowly, pausing for the test to look at the
+    thread (see "toolcall" above). RUN["active"] makes an abort stop it, as it stops a run."""
+    words = "Writing the file."
+    user = user_message(prompt, [], now_ms())
+    call = {"type": "toolCall", "id": "call_write1", "name": "write"}
+    complete = {"path": "src/big.txt", "content": "line one\nline two\nline three"}
+    emit({"type": "agent_start"})
+    emit({"type": "turn_start"})
+    emit({"type": "message_start", "message": user})
+    emit({"type": "message_end", "message": user})
+    emit({"type": "message_start", "message": {"role": "assistant", "content": [], "timestamp": now_ms()}})
+    update({"type": "text_start", "contentIndex": 0})
+    update({"type": "text_delta", "contentIndex": 0, "delta": words})
+    update({"type": "text_end", "contentIndex": 0, "content": words})
+    update({"type": "toolcall_start", "contentIndex": 1, "id": call["id"], "toolName": "write"})
+    # An OpenAI-style provider opens the call with an empty fragment.
+    update({"type": "toolcall_delta", "contentIndex": 1, "delta": ""})
+    for fragment in ['{"pa', 'th":"src/']:
+        update({"type": "toolcall_delta", "contentIndex": 1, "delta": fragment})
+    parsed = {"path": "src/"}
+    gate("continue-1")
+    if not RUN["abort"].is_set():
+        for fragment in ['big.txt","con', 'tent":"line one\\nline ']:
+            update({"type": "toolcall_delta", "contentIndex": 1, "delta": fragment})
+        parsed = {"path": "src/big.txt", "content": "line one\nline "}
+        gate("continue-2")
+    reply = {"role": "assistant", "content": [{"type": "text", "text": words}], "timestamp": now_ms()}
+    new = [user]
+    if RUN["abort"].is_set():
+        # What pi parsed of the arguments so far rides toolcall_end, and the aborted message.
+        partial = dict(call, arguments=parsed)
+        update({"type": "toolcall_end", "contentIndex": 1, "toolCall": partial})
+        stopped = dict(reply, content=reply["content"] + [partial], stopReason="aborted", errorMessage="Request was aborted")
+        emit({"type": "message_end", "message": stopped})
+        emit({"type": "turn_end", "message": stopped, "toolResults": []})
+        new.append(stopped)
+    else:
+        update({"type": "toolcall_delta", "contentIndex": 1, "delta": 'two\\nline three"}'})
+        made = dict(call, arguments=complete)
+        update({"type": "toolcall_end", "contentIndex": 1, "toolCall": made})
+        ask = dict(reply, content=reply["content"] + [made], stopReason="toolUse")
+        emit({"type": "message_end", "message": ask})
+        emit({"type": "tool_execution_start", "toolCallId": call["id"], "toolName": "write", "args": complete})
+        gate("continue-3")
+        output = "Successfully wrote to src/big.txt"
+        emit({"type": "tool_execution_end", "toolCallId": call["id"], "toolName": "write",
+              "result": {"content": [{"type": "text", "text": output}]}, "isError": False})
+        result = {"role": "toolResult", "toolCallId": call["id"], "toolName": "write",
+                  "content": [{"type": "text", "text": output}], "isError": False, "timestamp": now_ms()}
+        emit({"type": "message_start", "message": result})
+        emit({"type": "message_end", "message": result})
+        emit({"type": "turn_end", "message": ask, "toolResults": [result]})
+        closing = {"role": "assistant", "content": [{"type": "text", "text": "Wrote it."}], "stopReason": "stop",
+                   "timestamp": now_ms()}
+        emit({"type": "turn_start"})
+        emit({"type": "message_start", "message": dict(closing, content=[])})
+        emit({"type": "message_end", "message": closing})
+        emit({"type": "turn_end", "message": closing, "toolResults": []})
+        new += [ask, result, closing]
+    MESSAGES.extend(new)
+    STATE["messageCount"] = len(MESSAGES)
+    emit({"type": "agent_end", "messages": new, "willRetry": False})
+    RUN["active"] = False
+    emit({"type": "agent_settled"})
+
+
 QUESTION = {"id": None, "answered": threading.Event(), "response": None, "count": 0}
 
 
@@ -832,6 +909,12 @@ for raw in sys.stdin.buffer:
             RUN["active"] = True
             respond(cmd, t)
             RUN["thread"] = threading.Thread(target=agent_run, args=((message, cmd.get("images") or [], now_ms()),), daemon=True)
+            RUN["thread"].start()
+            continue
+        if message == "toolcall":
+            RUN["active"] = True
+            respond(cmd, t)
+            RUN["thread"] = threading.Thread(target=toolcall_turn, args=(message,), daemon=True)
             RUN["thread"].start()
             continue
         respond(cmd, t)

@@ -320,6 +320,8 @@ public final class NativeThreadStore {
         var status: String?
         var isError: Bool?
         var outputSize: Int
+        /// A call the model is still writing grows its arguments while its status stays.
+        var argumentsSize: Int?
         /// A running call's output can change at the same length (the host clips a long tail,
         /// a progress line rewrites itself), so its key carries the end of the output too.
         var liveTail: String?
@@ -612,6 +614,7 @@ public final class NativeThreadStore {
         let running = message.status == "running" || message.status == "streaming"
         let key = CallKey(entryID: message.entryID, status: message.status, isError: message.isError,
                           outputSize: message.blocks.reduce(0) { $0 + $1.text.utf8.count },
+                          argumentsSize: message.argumentsText?.utf8.count,
                           liveTail: running ? message.blocks.last.map { String(decoding: $0.text.utf8.suffix(1024), as: UTF8.self) } : nil)
         if let cached = callCache[key] { return cached }
         let value = NativeActivityCall(message)

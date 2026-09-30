@@ -139,7 +139,7 @@ public struct FleetDigest: Equatable, Sendable {
         let entries = snapshot.messages + snapshot.provisional
         let last = snapshot.messages.last
         lastTurnFailed = !snapshot.running && last?.role == "assistant" && last?.status == "error"
-        if snapshot.running, let call = entries.last(where: { $0.toolName != nil && $0.status == "running" }) {
+        if snapshot.running, let call = entries.last(where: { $0.toolName != nil && ($0.status == "running" || $0.status == "streaming") }) {
             activity = Self.activity(NativeActivityCall(call))
             activitySince = call.startedAt ?? call.timestamp
         } else {

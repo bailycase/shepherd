@@ -133,7 +133,12 @@ public func nativeTurnPresentation(
     var raw: [Raw] = []
     // When each raw item's message landed (ms), for where the subagents' finished line goes.
     var times: [Double?] = []
-    for message in messages {
+    /// Whether a call follows the message at `position`. A reply still streaming has moved on
+    /// from its last words then: the model is writing the call, whose row is what moves.
+    func callFollows(_ position: Int) -> Bool {
+        messages[(position + 1)...].contains { $0.toolName != nil || $0.role == "toolResult" }
+    }
+    for (position, message) in messages.enumerated() {
         defer { while times.count < raw.count { times.append(message.timestamp) } }
         if let compaction = message.compaction {
             raw.append(.compaction(NativeCompactionRow(entryID: message.entryID, compaction: compaction)))
@@ -165,7 +170,8 @@ public func nativeTurnPresentation(
             case .unsupportedImage: raw.append(.note("Image attached"))
             case .text:
                 if message.role == "assistant" || message.role == "user" {
-                    raw.append(.prose(block.text, streaming: message.status == "streaming" && index == message.blocks.count - 1))
+                    raw.append(.prose(block.text, streaming: message.status == "streaming" && index == message.blocks.count - 1
+                                      && !callFollows(position)))
                 } else {
                     raw.append(.note(message.role == "custom" ? block.text : message.role.replacingOccurrences(of: "_", with: " ") + " · " + block.text))
                 }
@@ -182,8 +188,10 @@ public func nativeTurnPresentation(
         liveThinking = raw.removeLast()
         times.removeLast()
     }
-    // Only one thing moves at a time: a running call (even one the tray stands for), thinking,
-    // or the reply being written. With none of them, pi is between tools.
+    // Only one thing moves at a time: a running call (even one the tray stands for, and one the
+    // model is still writing: `streaming`), thinking, or the reply being written. With none of
+    // them, pi is between tools. Words a call follows are finished, so a turn's last words are
+    // being written only while nothing comes after them.
     let callRunning = messages.contains { message in
         (message.toolName != nil || message.role == "toolResult") && message.isError != true
             && (message.status == "running" || message.status == "streaming")
