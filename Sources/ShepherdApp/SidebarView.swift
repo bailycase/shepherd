@@ -7,10 +7,10 @@ import ShepherdRemote
 
 /// The sidebar (NWNavigation; Main, Running, NavNewThread, NavAutomations, NavHosts): the top bar
 /// with Search and Hide sidebar, the destinations (New thread, Automations, More ▸ Hosts and
-/// Extensions), Needs you, Recents, and the footer with the Mac's user and Settings. Subagents
-/// have no rows; one waiting on you puts its thread in Needs you.
+/// Extensions), Needs you, Pinned, Recents, and the footer with the Mac's user and Settings.
+/// Subagents have no rows; one waiting on you puts its thread in Needs you.
 ///
-/// Needs you and Recents are one lazy list: a fleet runs to hundreds of threads, and only the rows
+/// Needs you, Pinned and Recents are one lazy list: a fleet runs to hundreds of threads, and only the rows
 /// on screen are built. Each row is a plain value compared before it redraws, so a status report
 /// or a selection redraws the rows it changed and nothing else.
 struct SidebarView: View {
@@ -78,6 +78,7 @@ private enum SidebarItem: Identifiable, Equatable {
     var id: AnyHashable {
         switch self {
         case .header(.needsYou): AnyHashable("header.needsYou")
+        case .header(.pinned): AnyHashable("header.pinned")
         case .header(.recents): AnyHashable("header.recents")
         case .header(.host(let name, _)): AnyHashable("header.host.\(name)")
         case .row(let row): AnyHashable(row.id)
@@ -86,7 +87,7 @@ private enum SidebarItem: Identifiable, Equatable {
 }
 
 /// The list under the destinations, taking the rest of the column: Needs you (only while
-/// something waits) then Recents, or the project tree (Settings ▸ Appearance ▸ Organize by). One
+/// something waits), Pinned (only while something is pinned), then Recents, or the project tree (Settings ▸ Appearance ▸ Organize by). One
 /// scroll view either way, so switching keeps the row on screen selected and scrolls it into view.
 private struct SidebarListsView: View {
     var vm: ShepherdViewModel
@@ -118,7 +119,7 @@ private struct SidebarListsView: View {
     }
 }
 
-/// Needs you then Recents, in one lazy stack.
+/// Needs you, Pinned (only while something is pinned), then Recents, in one lazy stack.
 private struct SidebarActivityList: View {
     var vm: ShepherdViewModel
 
@@ -141,6 +142,10 @@ private struct SidebarActivityList: View {
         if !lists.needsYou.isEmpty {
             items.append(.header(.needsYou(count: lists.needsYou.count)))
             items += lists.needsYou.map(SidebarItem.row)
+        }
+        if !lists.pinned.isEmpty {
+            items.append(.header(.pinned))
+            items += lists.pinned.map(SidebarItem.row)
         }
         if !lists.recents.isEmpty {
             items.append(.header(.recents))
