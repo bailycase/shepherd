@@ -548,8 +548,9 @@ final class ThreadFinder {
 /// over this lazy stack, whose unmeasured rows are estimates, could leave the scroll view with a
 /// content size that disagreed with where the rows were placed, and the viewport drew nothing
 /// (the blank thread after a send or a finished turn; `ThreadBlankScreenTests`). Before 27 the
-/// anchors stay: without the initial one its lazy stack builds every row of a long thread to open
-/// it (`ListPerformanceTests`), and the blank was not seen there.
+/// anchors stay: `scrollTo`, the follower's only way to the tail without them, builds every row of
+/// a long thread there (`ListPerformanceTests`: 120 row builds against a budget of 40), so a short
+/// window can still draw blank on macOS 26 (a known issue in `ThreadBlankScreenTests`).
 struct ThreadTailAnchor: ViewModifier {
     let sticky: Bool
 
