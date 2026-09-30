@@ -21,6 +21,10 @@ enum BrowserDataStores: Sendable {
     case persistent
     case ephemeral
 
+    /// Whether a page with no pane parks its window on a screen's corner (the app) rather than far
+    /// off every screen (tests and previews, whose windows never touch the user's screen).
+    var parksOnAScreen: Bool { self == .persistent }
+
     /// The store's identifier for `agent`: its id when that is a UUID, else a UUID made from it.
     static func identifier(for agent: AgentID) -> UUID {
         if let uuid = UUID(uuidString: agent.rawValue) { return uuid }
@@ -169,6 +173,12 @@ final class BrowserSession {
     @ObservationIgnored var events = BrowserEvents()
     @ObservationIgnored var reportedErrors = 0
     @ObservationIgnored var operationTail: Task<Void, Never>?
+    /// Moves when the agent gives up its queued requests (`abandonQueued`).
+    @ObservationIgnored var operationEpoch = 0
+    /// How long a call into the page may take before the driver gives up on it (tests shorten it).
+    @ObservationIgnored var scriptDeadline = BrowserLimits.scriptSeconds
+    /// The same for a script the agent's `browser_eval` runs.
+    @ObservationIgnored var evalDeadline = BrowserLimits.evalSeconds
     @ObservationIgnored private var expiry: Task<Void, Never>?
     @ObservationIgnored private(set) var navigationSerial = 0
     @ObservationIgnored private(set) var loadState: BrowserLoadState = .idle
@@ -369,12 +379,7 @@ final class BrowserSession {
     private func syncOverlay() {
         let shown = presence.isShown(now: Date())
         let next = shown ? BrowserAgentOverlay(note: presence.note, pointer: presence.pointer) : nil
-        let wasShown = agentOverlay != nil
         if next != agentOverlay { agentOverlay = next }
-        if wasShown != shown {
-            webView?.callAsyncJavaScript("if (window.__shepherdAgent) window.__shepherdAgent.setActive(on)", arguments: ["on": shown],
-                                         in: nil, in: Self.world) { _ in }
-        }
         expiry?.cancel()
         if let until = presence.expiry {
             expiry = Task { [weak self] in
@@ -430,7 +435,10 @@ final class BrowserSession {
     }
 
     private func placeParked(_ window: NSWindow) {
-        let frame = BrowserParkPlacement.frame(size: parkedSize, screens: NSScreen.screens.map(\.frame))
+        // Tests and previews (in-memory stores) keep their windows far off every screen; the app's
+        // hang off a corner so the page stays visible to macOS.
+        let screens = dataStores.parksOnAScreen ? NSScreen.screens.map(\.frame) : []
+        let frame = BrowserParkPlacement.frame(size: parkedSize, screens: screens)
         window.setFrame(window.frameRect(forContentRect: frame), display: false)
     }
 
@@ -502,27 +510,31 @@ final class BrowserSession {
         guard let webView else { throw BrowserScriptFailure(message: "There is no page open.") }
         let body = "if (!window.__shepherdAgent) return JSON.stringify({error: 'no_page', message: 'The page is not ready yet.'});"
             + " return JSON.stringify(await window.__shepherdAgent.\(function)(args));"
-        do {
-            let value = try await webView.callAsyncJavaScript(body, arguments: ["args": argument], in: nil, contentWorld: Self.world)
+        // A page stuck in a script never answers: the call is given up on after `scriptDeadline`
+        // rather than holding every later tool call for good.
+        let arguments: [String: Any] = ["args": argument]
+        switch await withDeadline(scriptDeadline, { try await webView.callAsyncJavaScript(body, arguments: arguments, in: nil, contentWorld: Self.world) }) {
+        case .value(let value):
             guard let text = value as? String, let data = text.data(using: .utf8),
-                  let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 throw BrowserScriptFailure(message: "The page answered something unexpected.")
             }
             return object
-        } catch let failure as BrowserScriptFailure {
-            throw failure
-        } catch {
+        case .thrown(let error):
             throw BrowserScriptFailure(error)
+        case .timedOut:
+            throw BrowserScriptFailure.timedOut
         }
     }
 
-    /// Runs `body` (a function body; `return` an answer) in the page's own world.
-    func callPage(_ body: String) async throws -> Any? {
+    /// Runs `body` (a function body; `return` an answer) in the page's own world, for at most
+    /// `deadline` seconds (`scriptDeadline` by default).
+    func callPage(_ body: String, deadline: Double? = nil) async throws -> Any? {
         guard let webView else { throw BrowserScriptFailure(message: "There is no page open.") }
-        do {
-            return try await webView.callAsyncJavaScript(body, arguments: [:], in: nil, contentWorld: .page)
-        } catch {
-            throw BrowserScriptFailure(error)
+        switch await withDeadline(deadline ?? scriptDeadline, { try await webView.callAsyncJavaScript(body, arguments: [:], in: nil, contentWorld: .page) }) {
+        case .value(let value): return value
+        case .thrown(let error): throw BrowserScriptFailure(error)
+        case .timedOut: throw BrowserScriptFailure.timedOut
         }
     }
 
@@ -532,7 +544,7 @@ final class BrowserSession {
         let configuration = WKSnapshotConfiguration()
         if let rect { configuration.rect = rect }
         configuration.afterScreenUpdates = true
-        guard let image = try? await webView.takeSnapshot(configuration: configuration) else { return nil }
+        guard case .value(let image) = await withDeadline(scriptDeadline, { try await webView.takeSnapshot(configuration: configuration) }) else { return nil }
         return image.cgImage(forProposedRect: nil, context: nil, hints: nil)
     }
 
@@ -547,6 +559,8 @@ final class BrowserSession {
         content.addUserScript(WKUserScript(source: BrowserScripts.pageShim, injectionTime: .atDocumentStart, forMainFrameOnly: true,
                                            in: .page))
         content.addUserScript(WKUserScript(source: BrowserScripts.agent, injectionTime: .atDocumentStart, forMainFrameOnly: true,
+                                           in: Self.world))
+        content.addUserScript(WKUserScript(source: BrowserScripts.inputWatch, injectionTime: .atDocumentStart, forMainFrameOnly: false,
                                            in: Self.world))
         content.addUserScript(WKUserScript(source: BrowserScripts.picker, injectionTime: .atDocumentEnd, forMainFrameOnly: true,
                                            in: Self.world))
@@ -590,10 +604,6 @@ final class BrowserSession {
         events.navigations += 1
         presence.documentChanged()
         syncOverlay()
-        if agentOverlay != nil {
-            webView?.callAsyncJavaScript("if (window.__shepherdAgent) window.__shepherdAgent.setActive(true)", arguments: [:], in: nil,
-                                         in: Self.world) { _ in }
-        }
     }
 
     fileprivate func navigationStarted() {
@@ -631,7 +641,14 @@ final class BrowserSession {
 
         func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
             MainActor.assumeIsolated {
-                guard let session, message.frameInfo.isMainFrame else { return }
+                guard let session else { return }
+                // A frame's word counts only for the user's own input in it (a card form in an iframe).
+                guard message.frameInfo.isMainFrame else {
+                    if message.world == BrowserSession.world, (message.body as? [String: Any])?["kind"] as? String == "userInput" {
+                        session.handle(.userInput)
+                    }
+                    return
+                }
                 let parsed = message.name == BrowserScripts.consoleHandler
                     ? BrowserScriptMessage(console: message.body)
                     : message.world == BrowserSession.world
@@ -820,8 +837,16 @@ struct BrowserScriptFailure: Error {
     var message: String
     /// The script did not compile (the exception is a `SyntaxError`).
     var isSyntaxError = false
+    /// The page did not answer in time.
+    var isTimeout = false
 
     init(message: String) { self.message = message }
+
+    static var timedOut: BrowserScriptFailure {
+        var failure = BrowserScriptFailure(message: "The page did not answer in time.")
+        failure.isTimeout = true
+        return failure
+    }
 
     init(_ error: Error) {
         let nsError = error as NSError

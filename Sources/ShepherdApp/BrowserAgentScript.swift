@@ -12,11 +12,8 @@ extension BrowserScripts {
     static let agent = #"""
     (() => {
       if (window.__shepherdAgent) return;
-      const post = (message) => { try { window.webkit.messageHandlers.shepherdBrowser.postMessage(message); } catch (e) {} };
       let refs = new Map();
       let issued = 0;
-      let active = false;
-      let reported = false;
 
       // ---- text helpers -------------------------------------------------------------------
       const clip = (value, limit) => {
@@ -181,19 +178,27 @@ extension BrowserScripts {
       };
 
       // ---- read ---------------------------------------------------------------------------
+      // A field whose value is a secret is never read back: passwords, card numbers, one-time
+      // codes, and anything the page masks itself.
+      const secret = (el) => {
+        if (inputType(el) === 'password') return true;
+        const auto = (el.getAttribute('autocomplete') || '').toLowerCase();
+        if (/(^|\s)(cc-|one-time-code|current-password|new-password)/.test(auto)) return true;
+        try { return /disc|circle|square/.test(styleOf(el).webkitTextSecurity || ''); } catch (e) { return false; }
+      };
       const state = (el, role) => {
         const flags = [];
         const tag = el.localName;
         if (tag === 'input') {
           const type = inputType(el);
           if (type === 'checkbox' || type === 'radio') flags.push(el.checked ? 'checked' : 'unchecked');
-          else if (type === 'password') flags.push(el.value ? 'value=[hidden]' : 'empty');
           else if (!['button', 'submit', 'reset', 'image', 'file', 'color'].includes(type)) {
-            flags.push(el.value ? 'value=' + quote(clip(el.value, 200)) : 'empty');
+            if (secret(el)) flags.push(el.value ? 'value=[hidden]' : 'empty');
+            else flags.push(el.value ? 'value=' + quote(clip(el.value, 200)) : 'empty');
             if (el.placeholder) flags.push('placeholder=' + quote(clip(el.placeholder, 60)));
           }
         } else if (tag === 'textarea') {
-          flags.push(el.value ? 'value=' + quote(clip(el.value, 200)) : 'empty');
+          flags.push(el.value ? (secret(el) ? 'value=[hidden]' : 'value=' + quote(clip(el.value, 200))) : 'empty');
           if (el.placeholder) flags.push('placeholder=' + quote(clip(el.placeholder, 60)));
         } else if (tag === 'select') {
           const options = Array.from(el.options);
@@ -254,7 +259,8 @@ extension BrowserScripts {
             emit(depth, 'iframe' + (label ? ' ' + quote(label) : '') + ' (another origin: its content is not shown)');
           }
         };
-        scope = (container, depth, textless) => {
+        // `only` reads just that node of `container` (a scoped read of a button is the button).
+        scope = (container, depth, textless, only) => {
           let run = '';
           const flush = () => {
             const text = clip(run, 400);
@@ -315,7 +321,7 @@ extension BrowserScripts {
             for (const child of childrenOf(el)) visit(child);
             if (block) flush();
           };
-          for (const child of childrenOf(container)) visit(child);
+          for (const child of (only ? [only] : childrenOf(container))) visit(child);
           flush();
         };
 
@@ -329,7 +335,7 @@ extension BrowserScripts {
         const doc = document.documentElement;
         const maxY = Math.max(0, doc.scrollHeight - window.innerHeight);
         emit(0, 'viewport ' + window.innerWidth + '×' + window.innerHeight + ', scrolled ' + Math.round(window.scrollY) + ' of ' + Math.round(maxY) + ' px');
-        scope(root, 0, false);
+        if (options.selector) scope(root.parentNode || root, 0, false, root); else scope(root, 0, false);
         let text = lines.join('\n');
         if (truncated) text += '\n[Snapshot truncated. Read one part with selector, or scroll and read again.]';
         return { text, truncated, refs: issued, title: document.title, url: location.href };
@@ -521,7 +527,9 @@ extension BrowserScripts {
             if (tag === 'input' || tag === 'textarea') el.select(); else docOf(el).execCommand('selectAll', false);
           } else if (spec.key === 'Backspace' || spec.key === 'Delete') {
             if ((tag === 'input' && !TEXTLESS.has(inputType(el))) || tag === 'textarea') {
-              const start = el.selectionStart, end = el.selectionEnd;
+              // An email or number field has no caret to read: it edits at the end.
+              const caret = typeof el.selectionStart === 'number';
+              const start = caret ? el.selectionStart : el.value.length, end = caret ? el.selectionEnd : el.value.length;
               let from = start, to = end;
               if (start === end) { if (spec.key === 'Backspace') from = Math.max(0, start - 1); else to = Math.min(el.value.length, end + 1); }
               if (from !== to) replaceValue(el, el.value.slice(0, from) + el.value.slice(to), null, spec.key === 'Backspace' ? 'deleteContentBackward' : 'deleteContentForward');
@@ -633,8 +641,11 @@ extension BrowserScripts {
           const shown = isVisible(t.el);
           return { met: options.gone ? !shown : shown };
         }
-        const haystack = ((document.body && document.body.innerText) || '').toLowerCase();
-        const found = haystack.includes(String(options.text || '').toLowerCase());
+        // What the page shows: its rendered text, and what the snapshot reads inside open shadow
+        // roots, which innerText does not reach.
+        const wanted = String(options.text || '').toLowerCase();
+        const rendered = ((document.body && document.body.innerText) || '').toLowerCase();
+        const found = rendered.includes(wanted) || (document.body ? textOf(document.body, 200000).toLowerCase().includes(wanted) : false);
         return { met: options.gone ? !found : found };
       };
       const rectOf = ({ ref }) => {
@@ -650,18 +661,30 @@ extension BrowserScripts {
         maxY: Math.round(Math.max(0, document.documentElement.scrollHeight - window.innerHeight)),
       });
 
-      // The user's own click or key in the page, while the agent is using it, takes it over. The
-      // agent's events are dispatched by script, so they are not trusted.
-      for (const name of ['pointerdown', 'keydown']) {
-        window.addEventListener(name, (event) => {
-          if (event.isTrusted && active && !reported) { reported = true; post({ kind: 'userInput' }); }
-        }, true);
-      }
-
       Object.defineProperty(window, '__shepherdAgent', { value: Object.freeze({
         read, peek, click, type, pressKey, scroll, check, rectOf, info,
-        setActive(on) { active = !!on; reported = false; return active; },
       }) });
+    })();
+    """#
+
+    /// In Shepherd's world, at document start, in every frame. The user's own click or key in the
+    /// page (a trusted event: the agent's are dispatched by script and are not) is told to the app,
+    /// which takes the page over if the agent is using it. A frame (a card form in an iframe) counts
+    /// as much as the page.
+    static let inputWatch = #"""
+    (() => {
+      if (window.__shepherdInputWatch) return;
+      Object.defineProperty(window, '__shepherdInputWatch', { value: true });
+      let last = 0;
+      for (const name of ['pointerdown', 'keydown']) {
+        window.addEventListener(name, (event) => {
+          if (!event.isTrusted) return;
+          const now = Date.now();
+          if (now - last < 300) return;
+          last = now;
+          try { window.webkit.messageHandlers.shepherdBrowser.postMessage({ kind: 'userInput' }); } catch (e) {}
+        }, true);
+      }
     })();
     """#
 }

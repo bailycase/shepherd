@@ -20,6 +20,10 @@ extension ShepherdViewModel {
         server.onUserMessage = { [weak self] agentID in
             MainActor.assumeIsolated { self?.browsers.existing(agentID)?.handBack() }
         }
+        // Stop: what the agent had queued for its page never runs.
+        server.onBrowserAbandoned = { [weak self] agentID in
+            MainActor.assumeIsolated { self?.browsers.existing(agentID)?.abandonQueued() }
+        }
     }
 
     /// One browser tool call. A thread's page is made the first time it opens something.

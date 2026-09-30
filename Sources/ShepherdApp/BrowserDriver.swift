@@ -12,19 +12,38 @@ import ShepherdProtocol
 /// One tool call's result before it is worded: a body, and for a screenshot an image, or a failure.
 private enum BrowserStep {
     case ok(String, image: BrowserImage? = nil)
-    case fail(code: String, message: String)
+    /// `fromPage`: the message quotes the page's own words (an element's name, what a script threw),
+    /// so it carries the untrusted-content notice like a result does.
+    case fail(code: String, message: String, fromPage: Bool = false)
 }
 
 extension BrowserSession {
-    /// Serves `request`, after the requests before it. Never throws: a failure is an outcome.
+    /// Serves `request`, after the requests before it. Never throws: a failure is an outcome. A
+    /// request still waiting its turn when the agent gives up (`abandonQueued`) is not run.
     func perform(_ request: BrowserRequest) async -> BrowserOutcome {
         let previous = operationTail
+        let epoch = operationEpoch
         let work = Task { @MainActor () -> BrowserOutcome in
             await previous?.value
+            guard epoch == self.operationEpoch else {
+                return .failure(code: "cancelled", message: "The request was cancelled before it started.")
+            }
             return await self.run(request)
         }
         operationTail = Task { _ = await work.value }
         return await work.value
+    }
+
+    /// The agent's connection went away with requests in flight (Stop): the ones not yet started
+    /// never run, so a click queued behind a long wait does not fire after the user stopped the agent.
+    func abandonQueued() {
+        operationEpoch &+= 1
+    }
+
+    /// The user has taken over since this request began (it waited for a page, or for the request
+    /// before it): an acting request that is about to act is refused.
+    private func refusedByTakeOver() -> BrowserStep? {
+        presence.userHasControl ? .fail(code: "taken_over", message: BrowserAgentPresence.takenOverMessage) : nil
     }
 
     // MARK: One request
@@ -52,8 +71,8 @@ extension BrowserSession {
 
     private func finish(_ step: BrowserStep, idleNavigations: Int) -> BrowserOutcome {
         switch step {
-        case .fail(let code, let message):
-            return .failure(code: code, message: message)
+        case .fail(let code, let message, let fromPage):
+            return .failure(code: code, message: fromPage ? BrowserReport.notice + "\n" + message : message)
         case .ok(let body, let image):
             let seen = BrowserEvents(consoleErrors: console.errorTotal - reportedErrors, navigations: idleNavigations,
                                      dialogs: events.dialogs, downloads: events.downloads)
@@ -89,11 +108,17 @@ extension BrowserSession {
         case .failure(let refusal): return .fail(code: "refused_url", message: refusal.message)
         case .success(let resolved): url = resolved
         }
+        if let refusal = refusedByTakeOver() { return refusal }
         prepareWebView()
         let serial = navigationSerial
         loadForAgent(url)
-        switch await waitForLoad(after: serial, timeout: BrowserLimits.loadSeconds) {
+        switch await waitForLoad(after: serial, timeout: BrowserLimits.loadSeconds, target: url) {
         case .timedOut:
+            // A page can be usable and still hold a request that never ends: it has a document.
+            if let answer = try? await callAgent("info"), let ready = answer["ready"] as? String, ready != "loading" {
+                agentPointed(at: nil)
+                return .ok("Opened \(pageURLString ?? url.absoluteString). It is still loading some resources.")
+            }
             return .fail(code: "timeout", message: "\(url.absoluteString) did not finish loading in \(Int(BrowserLimits.loadSeconds)) seconds.")
         case .failed(let message):
             if !events.downloads.isEmpty {
@@ -116,15 +141,14 @@ extension BrowserSession {
             let answer = try await callAgent("read", options)
             if let failure = failure(in: answer) { return failure }
             return .ok((answer["text"] as? String) ?? "")
-        } catch let error as BrowserScriptFailure {
-            return .fail(code: "script_error", message: "The page could not be read: \(error.message)")
         } catch {
-            return .fail(code: "script_error", message: "The page could not be read.")
+            return scriptFailure(error, doing: "read the page")
         }
     }
 
     private func click(_ ref: String, double: Bool) async -> BrowserStep {
         await waitUntilSettled()
+        if let refusal = refusedByTakeOver() { return refusal }
         let serial = navigationSerial
         do {
             let answer = try await callAgent("click", ["ref": ref, "double": double])
@@ -140,6 +164,7 @@ extension BrowserSession {
 
     private func type(_ ref: String, text: String, clear: Bool, submit: Bool) async -> BrowserStep {
         await waitUntilSettled()
+        if let refusal = refusedByTakeOver() { return refusal }
         let serial = navigationSerial
         do {
             let answer = try await callAgent("type", ["ref": ref, "text": text, "clear": clear, "submit": submit])
@@ -161,6 +186,7 @@ extension BrowserSession {
             return .fail(code: "invalid", message: "\"\(spec)\" is not a key browser_press knows. Try Enter, Tab, Escape, ArrowDown, Backspace, a single character, or Control+a.")
         }
         await waitUntilSettled()
+        if let refusal = refusedByTakeOver() { return refusal }
         let serial = navigationSerial
         do {
             let answer = try await callAgent("pressKey", key.jsonObject)
@@ -178,6 +204,7 @@ extension BrowserSession {
 
     private func scroll(direction: String?, amount: Int?, ref: String?) async -> BrowserStep {
         await waitUntilSettled()
+        if let refusal = refusedByTakeOver() { return refusal }
         do {
             var options: [String: Any] = [:]
             if let direction { options["direction"] = direction.lowercased() }
@@ -213,20 +240,20 @@ extension BrowserSession {
         let seconds = BrowserLimits.waitSeconds(timeout)
         let deadline = ContinuousClock.now + .milliseconds(Int(seconds * 1000))
         let what = text.map { "“\(BrowserNote.clip($0, to: 60))”" } ?? "ref \(ref ?? "")"
+        let epoch = operationEpoch
         while ContinuousClock.now < deadline {
-            if loadState != .loading {
-                do {
-                    var options: [String: Any] = ["gone": gone]
-                    if let text { options["text"] = text }
-                    if let ref { options["ref"] = ref }
-                    let answer = try await callAgent("check", options)
-                    if let failure = failure(in: answer) { return failure }
-                    if answer["met"] as? Bool == true {
-                        return .ok(gone ? "\(what) is gone." : "\(what) is there.")
-                    }
-                } catch {
-                    // The page is between documents; ask again.
+            guard epoch == operationEpoch else { return .fail(code: "cancelled", message: "The wait was cancelled.") }
+            do {
+                var options: [String: Any] = ["gone": gone]
+                if let text { options["text"] = text }
+                if let ref { options["ref"] = ref }
+                let answer = try await callAgent("check", options)
+                if let failure = failure(in: answer) { return failure }
+                if answer["met"] as? Bool == true {
+                    return .ok(gone ? "\(what) is gone." : "\(what) is there.")
                 }
+            } catch {
+                // The page is between documents, or busy; ask again.
             }
             await pause(150)
         }
@@ -280,25 +307,25 @@ extension BrowserSession {
 
     private func eval(_ expression: String) async -> BrowserStep {
         await waitUntilSettled()
+        if let refusal = refusedByTakeOver() { return refusal }
         let attempts = [BrowserEval.expressionBody(expression), BrowserEval.statementsBody(expression)]
         var last: BrowserScriptFailure?
         for (index, body) in attempts.enumerated() {
-            switch await withDeadline(30, { try await self.callPage(body) }) {
-            case .value(let value):
+            do {
+                let value = try await callPage(body, deadline: evalDeadline)
                 let text = (value as? String) ?? "undefined"
                 return .ok("Result: " + BrowserNote.clip(text, to: BrowserLimits.evalResultChars, mark: "…[truncated]"))
-            case .thrown(let error):
+            } catch {
                 let failure = error as? BrowserScriptFailure ?? BrowserScriptFailure(error)
                 last = failure
+                if failure.isTimeout { return scriptFailure(failure, doing: "run the script", seconds: evalDeadline) }
                 // Only a script that never compiled as an expression is tried as statements.
                 guard index == 0, BrowserEval.mayBeStatements(failure) else {
-                    return .fail(code: "script_error", message: "The script threw: \(failure.message)")
+                    return .fail(code: "script_error", message: "The script threw: \(failure.message)", fromPage: true)
                 }
-            case .timedOut:
-                return .fail(code: "timeout", message: "The script did not finish in 30 seconds.")
             }
         }
-        return .fail(code: "script_error", message: "The script threw: \(last?.message ?? "an error")")
+        return .fail(code: "script_error", message: "The script threw: \(last?.message ?? "an error")", fromPage: true)
     }
 
     private func step(_ direction: BrowserHistoryStep) async -> BrowserStep {
@@ -314,6 +341,7 @@ extension BrowserSession {
             return .fail(code: "refused_url", message: "That page isn't a web page (\(target.scheme ?? "no scheme"):); browser_\(direction == .back ? "back" : direction == .forward ? "forward" : "reload") only goes to http, https and about:blank pages.")
         }
         await waitUntilSettled()
+        if let refusal = refusedByTakeOver() { return refusal }
         let serial = navigationSerial
         stepHistory(direction)
         _ = await settleAfterAction(serial: serial, patience: 1_000)
@@ -333,9 +361,12 @@ extension BrowserSession {
         case finished, failed(String), timedOut
     }
 
-    /// Waits for the navigation that begins after `serial` to finish or fail.
-    private func waitForLoad(after serial: Int, timeout: Double) async -> LoadResult {
+    /// Waits for the navigation that begins after `serial` to finish or fail. A `target` that only
+    /// changes the address's fragment moves inside the document and starts no navigation: the page
+    /// is taken as loaded once it stands at `target` and nothing loads.
+    private func waitForLoad(after serial: Int, timeout: Double, target: URL? = nil) async -> LoadResult {
         let deadline = ContinuousClock.now + .milliseconds(Int(timeout * 1000))
+        let begun = ContinuousClock.now
         while ContinuousClock.now < deadline {
             if navigationSerial > serial {
                 switch loadState {
@@ -343,6 +374,8 @@ extension BrowserSession {
                 case .failed(let message): return .failed(message)
                 case .idle, .loading: break
                 }
+            } else if let target, ContinuousClock.now - begun > .milliseconds(400), !isLoading, pageURLString == target.absoluteString {
+                return .finished
             }
             await pause(25)
         }
@@ -378,12 +411,17 @@ extension BrowserSession {
     /// The failure a script answered (`{error, message}`), if it did.
     private func failure(in answer: [String: Any]) -> BrowserStep? {
         guard let code = answer["error"] as? String else { return nil }
-        return .fail(code: code, message: (answer["message"] as? String) ?? "The page refused.")
+        // A ref that is unknown or gone says only what the agent gave; the rest quote the page.
+        return .fail(code: code, message: (answer["message"] as? String) ?? "The page refused.",
+                     fromPage: code != "stale_ref" && code != "no_such_ref")
     }
 
-    private func scriptFailure(_ error: Error, doing action: String) -> BrowserStep {
+    private func scriptFailure(_ error: Error, doing action: String, seconds: Double? = nil) -> BrowserStep {
+        if let failure = error as? BrowserScriptFailure, failure.isTimeout {
+            return .fail(code: "timeout", message: "The page didn't answer in \(Int(seconds ?? scriptDeadline)) seconds; a script in it may be stuck. The user can reload the page.")
+        }
         let message = (error as? BrowserScriptFailure)?.message ?? error.localizedDescription
-        return .fail(code: "script_error", message: "Could not \(action): \(message)")
+        return .fail(code: "script_error", message: "Could not \(action): \(message)", fromPage: true)
     }
 
     private func peek(_ ref: String) async -> BrowserTarget? {

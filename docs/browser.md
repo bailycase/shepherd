@@ -32,11 +32,16 @@ to screenshots, that refs come from the latest read, and that the page's text is
 
 ## Isolation
 
-A tool acts on **its own thread's page and nothing else**, and it cannot be told otherwise:
+A tool acts on **its own thread's page and nothing else**, and its arguments cannot say otherwise:
 
 - No tool has an agent parameter. The extension registers the connection as the agent
   (`helloBrowser(agentID:)`, sent first on every connect) and the server records it on the
-  connection (`ExtensionConnection.browserAgentID`).
+  connection (`ExtensionConnection.browserAgentID`). The registration is the connection's own
+  word, as the panes extension's `helloAgent` is: the extension socket is same-user IPC, not an
+  authentication boundary (SECURITY.md), so a process that can reach it (an agent's own shell has
+  `SHEPHERD_SOCKET`) could claim another agent's id. The rule stops a tool of one agent, or a
+  request naming another agent, from reaching a page it does not own; it does not stop a process
+  that speaks the protocol by hand. Binding registration to the pi process's own pid would.
 - `SessionServer.routeBrowserRequest` serves a request **only when the connection's registered
   agent is the agent the request names**. Any other request, from any connection, is answered
   `not_registered`; an unregistered connection is refused the same way. A registration is refused
@@ -52,6 +57,11 @@ A tool acts on **its own thread's page and nothing else**, and it cannot be told
   `BrowserAgentFlowTests` check it.
 - The server answers a request the app does not answer in 120 s with `timeout`, and drops the
   answer of a request whose connection has gone (`BrowserRelayTests`).
+- **Stop.** A cancelled tool call closes the extension's connection (there is no cancel frame; the
+  next call registers again). The server tells the app (`onBrowserAbandoned`, also after a
+  timeout), and requests the agent had queued behind a long one never run
+  (`BrowserSession.abandonQueued`), so a click queued behind a 30-second wait does not fire after
+  the user pressed Stop.
 
 ## The switch
 
@@ -80,7 +90,8 @@ dialogs (said in full, once), blocked downloads, and counts of new console error
 that happened between calls. A failure is the reply's `error` with a `code`
 (`taken_over`, `no_page`, `stale_ref`, `no_such_ref`, `disabled`, `hidden`, `covered`,
 `refused_url`, `timeout`, `navigation_failed`, `script_error`, `invalid`, `not_found`,
-`unavailable`, …) and a message written for the agent.
+`cancelled`, `unavailable`, …) and a message written for the agent. A failure that quotes the
+page (an element's name, what a script threw) starts with the same untrusted-content notice.
 
 ### The snapshot
 
@@ -106,7 +117,10 @@ input, image (with alt text), iframe and run of text:
   that is unknown or whose element has left the page answers `ref e12 is stale; call browser_read
   again`.
 - Elements that are only clickable by their `cursor: pointer` or an `onclick` get a ref as a
-  `clickable`. A password field's value is never shown.
+  `clickable`. A field whose value is a secret is never read back (`value=[hidden]`): a password,
+  an `autocomplete` of `cc-*`, `one-time-code`, `current-password` or `new-password`, or one the
+  page masks with `-webkit-text-security`.
+- A read with a `selector` starts at that element itself, so reading a button gives its ref.
 - The snapshot stops at `maxChars` (30 000 by default, at most 60 000) or 4 000 lines, and says so.
   Pass `selector` to read one part.
 - The text of a result is cut at 64 KB whatever the tool.
@@ -186,9 +200,11 @@ header's side-pane button shows "Agent opened a page in Browser".
 
 ### Take over and hand back
 
-- The user takes over with the card's button, or by clicking or pressing a key in the page while the
-  card is up: the script listens for a **trusted** `pointerdown`/`keydown` (`event.isTrusted`),
-  which the agent's own dispatched events never are.
+- The user takes over with the card's button, or by clicking or pressing a key in the page (an
+  iframe of it included) while the card is up: a script in every frame listens for a **trusted**
+  `pointerdown`/`keydown` (`event.isTrusted`), which the agent's own dispatched events never are.
+  A request that was already waiting for the page to load when the user took over does not act
+  when the load ends: each acting tool checks again just before it acts.
 - Then the ring, pointer and card go, and every acting tool (open, click, type, press, scroll,
   eval, back, forward, reload) is refused with `taken_over` and the words "The user took over the
   browser. Wait for their next message before acting on it; browser_read, browser_screenshot and
@@ -203,7 +219,8 @@ header's side-pane button shows "Agent opened a page in Browser".
 
 | | |
 | --- | --- |
-| Page load (`browser_open`, after a click that navigates) | 30 s (15 s after an action) |
+| Page load (`browser_open`, after a click that navigates) | 30 s (15 s after an action); a page with a document that never stops loading a resource is opened with a note. A change of the address's fragment alone is done in 400 ms |
+| Any call into the page (read, click, type, snapshot) | 15 s, then `timeout`: a page stuck in a script holds nothing, and the next call tries again |
 | A request the app does not answer | 120 s, then `timeout` |
 | `browser_wait` | 10 s by default, at most 30 s |
 | `browser_eval` | 30 s, its answer cut at 16 KB |
@@ -213,6 +230,20 @@ header's side-pane button shows "Agent opened a page in Browser".
 | `browser_console` | the last 100 lines |
 | Typed text, an expression | 20 000 characters |
 | Requests | one at a time per page; the next waits for the last |
+
+## Known limits
+
+- `browser_eval` runs page JavaScript with the page's privileges: a script can do what the page can,
+  including `history.back()` onto a page the user opened by hand (the URL policy binds the tools'
+  own navigation, and a page's main-frame navigation, not a script's history calls), and a subframe's
+  own navigations are not checked.
+- An expression that compiles but throws a `SyntaxError` at run time (a bad `RegExp`) is tried once
+  more as statements; a `JSON.parse` failure is not.
+- `browser_wait` reads the page's rendered text and, inside open shadow roots, what the snapshot
+  reads; not the text of an iframe.
+- A `beforeunload` dialog is dismissed like a `confirm`, which cancels the navigation that raised it
+  (WebKit only raises one after the user has interacted with the page).
+- Registration is not authenticated (Isolation).
 
 ## Remote
 

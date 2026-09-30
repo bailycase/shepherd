@@ -66,6 +66,14 @@ struct BrowserAgentTests {
         "/done": "<html><head><title>Done</title></head><body><h1>Thank you</h1><p id=\"q\">received</p><a href=\"/checkout\">Back</a></body></html>",
         "/terms": "<html><head><title>Terms</title></head><body><h1>Terms of sale</h1></body></html>",
         "/tall": "<html><head><title>Tall</title></head><body style=\"margin:0\"><div style=\"height:3000px;background:linear-gradient(#c33,#33c)\"><h1>Top</h1></div><p>bottom</p></body></html>",
+        "/secrets": """
+            <html><head><title>Secrets</title></head><body>
+            <input type="password" aria-label="Password" value="s3cret-pass">
+            <input aria-label="Card number" autocomplete="cc-number" value="4242424242424242">
+            <input aria-label="Name" value="Baily">
+            <button id="apply" onclick="document.title = 'applied'">Apply</button>
+            </body></html>
+            """,
     ]
 
     /// A session on its own scratch server.
@@ -226,6 +234,7 @@ struct BrowserAgentTests {
         let covered = try #require(failure(await session.perform(.click(ref: apply, double: false, note: nil))))
         #expect(covered.code == "covered")
         #expect(covered.message.contains("is covered by div#modal"), "\(covered.message)")
+        #expect(covered.message.hasPrefix(BrowserReport.notice), "words that quote the page carry the untrusted-content notice")
     }
 
     @Test func aStaleRefSaysSoAfterANavigation() async throws {
@@ -309,9 +318,12 @@ struct BrowserAgentTests {
         let server = try await richServer()
         defer { server.stop(); session.close() }
         try await opened(session, server, "/rich")
-        try await eventuallyOnMain("the frames to load") { !session.isLoading }
-        try await Task.sleep(for: .milliseconds(400))
-        let snapshot = try text(await session.perform(.read(selector: nil, maxChars: nil)))
+        // The frames load after the page does: read until the same-origin one has its button.
+        var snapshot = ""
+        try await eventuallyAsync("the frame's button in a read") {
+            snapshot = try self.text(await session.perform(.read(selector: nil, maxChars: nil)))
+            return snapshot.contains("Frame button")
+        }
         #expect(snapshot.contains("button \"Shadow button\"") && snapshot.contains("text \"shadow text\""), "\(snapshot)")
         #expect(snapshot.contains("iframe \"Same origin\"") && snapshot.contains("button \"Frame button\""), "\(snapshot)")
         #expect(snapshot.contains("iframe \"Other origin\" (another origin: its content is not shown)"), "\(snapshot)")
@@ -395,22 +407,125 @@ struct BrowserAgentTests {
         #expect(session.pageURLString == server.origin + "/terms")
     }
 
+    // MARK: When the page or the user gets in the way
+
+    @Test func aPageStuckInAScriptFailsTheToolCallsInsteadOfHoldingThemForGood() async throws {
+        let (session, server) = try await start()
+        defer { server.stop(); session.close() }
+        try await opened(session, server, "/checkout")
+        session.scriptDeadline = 1
+        session.evalDeadline = 1
+        let stuck = try #require(failure(await session.perform(.eval(
+            expression: "(() => { const end = Date.now() + 4000; while (Date.now() < end) {} return 1 })()", note: nil))))
+        #expect(stuck.code == "timeout" && stuck.message.contains("stuck"), "\(stuck.message)")
+        let busy = try #require(failure(await session.perform(.read(selector: nil, maxChars: nil))), "the page is still busy")
+        #expect(busy.code == "timeout")
+        // The page frees itself, and the same session works again: the queue was never held.
+        session.scriptDeadline = 15
+        try await eventuallyAsync("a read to work again", timeout: .seconds(30)) {
+            if case .result = await session.perform(.read(selector: nil, maxChars: nil)) { return true }
+            return false
+        }
+    }
+
+    @Test func openingTheSamePageAtAnotherFragmentIsQuickNotATimeout() async throws {
+        let (session, server) = try await start()
+        defer { server.stop(); session.close() }
+        try await opened(session, server, "/checkout")
+        let started = ContinuousClock.now
+        let moved = try text(await session.perform(.open(url: server.url("/checkout").absoluteString + "#step2", note: nil)))
+        #expect(moved.contains("Opened \(server.origin)/checkout#step2."), "\(moved)")
+        #expect(ContinuousClock.now - started < .seconds(10))
+        #expect(server.requested.current.filter { $0 == "/checkout" }.count == 1, "the document was not fetched again")
+    }
+
+    @Test func aSecretFieldIsNeverReadBackAndAScopedReadOfAButtonGivesItsRef() async throws {
+        let (session, server) = try await start()
+        defer { server.stop(); session.close() }
+        try await opened(session, server, "/secrets")
+        let snapshot = try text(await session.perform(.read(selector: nil, maxChars: nil)))
+        #expect(snapshot.contains("textbox \"Password\" [e1] value=[hidden]"), "\(snapshot)")
+        #expect(snapshot.contains("textbox \"Card number\" [e2] value=[hidden]"), "\(snapshot)")
+        #expect(snapshot.contains("value=\"Baily\""))
+        #expect(!snapshot.contains("s3cret-pass") && !snapshot.contains("4242424242424242"))
+        let scoped = try text(await session.perform(.read(selector: "#apply", maxChars: nil)))
+        #expect(scoped.contains("button \"Apply\" [e1]"), "\(scoped)")
+        _ = try text(await session.perform(.click(ref: "e1", double: false, note: nil)))
+        #expect(session.pageTitle == "applied")
+    }
+
+    @Test func backspaceEditsAnEmailFieldThatHasNoCaret() async throws {
+        let (session, server) = try await start()
+        defer { server.stop(); session.close() }
+        try await opened(session, server, "/checkout")
+        let snapshot = try text(await session.perform(.read(selector: nil, maxChars: nil)))
+        _ = try text(await session.perform(.click(ref: try ref(in: snapshot, "textbox \"Email\""), double: false, note: nil)))
+        for key in ["x", "y", "Backspace"] { _ = try text(await session.perform(.press(key: key, note: nil))) }
+        #expect(try text(await session.perform(.eval(expression: "document.getElementById('email').value", note: nil))).contains("Result: \"x\""))
+    }
+
+    /// A click that waits for the page to load must not act if the user takes over while it waits.
+    @Test func takingOverWhileARequestWaitsForTheLoadStopsItActing() async throws {
+        let checkoutPage = Self.checkout
+        let server = try TinyWebServer { request in
+            if request.path == "/slow" {
+                Thread.sleep(forTimeInterval: 1.5)
+                return .html("<html><head><title>Slow</title></head><body><button>Late</button></body></html>")
+            }
+            return .html(checkoutPage)
+        }
+        try await server.start()
+        let session = BrowserSession(agentID: AgentID(), dataStores: .ephemeral)
+        defer { server.stop(); session.close() }
+        try await opened(session, server, "/checkout")
+        let snapshot = try text(await session.perform(.read(selector: nil, maxChars: nil)))
+        let apply = try ref(in: snapshot, "Apply promo")
+        _ = try text(await session.perform(.eval(expression: "setTimeout(() => { location.href = '/slow' }, 0); 1", note: nil)))
+        try await eventuallyOnMain("the slow page to start loading") { session.loadState == .loading }
+        let acting = Task { await session.perform(.click(ref: apply, double: false, note: nil)) }
+        try await eventuallyOnMain("the click to wait on the load") { session.agentOverlay?.note.hasPrefix("clicking") == true }
+        session.takeOver()
+        let refused = try #require(failure(await acting.value))
+        #expect(refused.code == "taken_over")
+    }
+
+    /// Stop closes the agent's connection: what it had queued behind a long request never runs.
+    @Test func whenTheAgentIsStoppedWhatItQueuedNeverRuns() async throws {
+        let (session, server) = try await start()
+        defer { server.stop(); session.close() }
+        try await opened(session, server, "/checkout")
+        let snapshot = try text(await session.perform(.read(selector: nil, maxChars: nil)))
+        let apply = try ref(in: snapshot, "Apply promo")
+        let waiting = Task { await session.perform(.wait(text: "never appears", ref: nil, gone: false, ms: nil, timeout: 20)) }
+        try await eventuallyOnMain("the wait to run") { session.agentOverlay?.note == "waiting for “never appears”" }
+        let before = session.operationTail
+        let queued = Task { await session.perform(.click(ref: apply, double: false, note: nil)) }
+        try await eventuallyOnMain("the click to queue behind it") { session.operationTail != before }
+        session.abandonQueued()
+        let started = ContinuousClock.now
+        let (first, second) = (await waiting.value, await queued.value)
+        #expect(failure(first)?.code == "cancelled" && failure(second)?.code == "cancelled")
+        #expect(ContinuousClock.now - started < .seconds(3), "the wait gave up at once")
+        #expect(try text(await session.perform(.eval(expression: "document.getElementById('count').textContent", note: nil))).contains("Result: \"0\""),
+                "the queued click never ran")
+    }
+
     // MARK: A page nobody is looking at
 
-    /// With no pane the page sits in a borderless, nearly transparent window that touches a screen
-    /// by one pixel (a window that touches none is occluded, and WebKit then pauses its animation
-    /// frames), ordered back and never key; the pane takes the page and gives it back without a
-    /// reload. (A test process is no GUI app, so every window counts as occluded here: whether
-    /// frames run parked was measured in a real app, docs/browser.md.)
-    @Test func aPageWithNoPaneSitsInAWindowOnAScreensCornerAndMovesToThePaneAndBackWithoutReloading() async throws {
+    /// With no pane the page sits in a borderless, nearly transparent window, ordered back and never
+    /// key; the pane takes the page and gives it back without a reload. The app's window hangs off a
+    /// screen's corner by one pixel (`BrowserParkPlacement`, tested on its own): a test's stays far
+    /// off every screen, as every test window does, and a test process is no GUI app anyway (every
+    /// window counts as occluded in it), so whether frames run parked was measured in a real app
+    /// (docs/browser.md).
+    @Test func aPageWithNoPaneSitsInAnUnfocusedWindowAndMovesToThePaneAndBackWithoutReloading() async throws {
         let (session, server) = try await start()
         defer { server.stop(); session.close() }
         try await opened(session, server, "/checkout")
         let parked = try #require(session.webView?.window)
         #expect(parked.styleMask == .borderless && !parked.isKeyWindow && !parked.canBecomeKey)
         #expect(parked.isVisible && parked.alphaValue < 0.1 && parked.ignoresMouseEvents, "ordered back, deaf to the mouse")
-        let touching = NSScreen.screens.map(\.frame).map { $0.intersection(parked.frame) }.filter { !$0.isNull && $0.width > 0 && $0.height > 0 }
-        #expect(touching.allSatisfy { $0.width <= 1 && $0.height <= 1 } && touching.count <= 1, "at most one pixel on a screen: \(touching)")
+        #expect(parked.frame.origin == BrowserParkPlacement.farAway, "a test's window touches no screen")
 
         _ = try text(await session.perform(.eval(expression: "window.__marker = 'same document'; 1", note: nil)))
         let timers = try text(await session.perform(.eval(expression: "new Promise((resolve) => setTimeout(() => resolve(window.innerWidth > 0), 20))", note: nil)))
@@ -515,7 +630,7 @@ struct BrowserAgentTests {
         #expect(try text(await session.perform(.eval(expression: "const x = 4; return x * 3", note: nil))).contains("Result: 12"), "statements that return a value")
         let threw = try #require(failure(await session.perform(.eval(expression: "null.boom", note: nil))))
         #expect(threw.code == "script_error")
-        #expect(threw.message.hasPrefix("The script threw: "))
+        #expect(threw.message.hasPrefix(BrowserReport.notice + "\nThe script threw: "), "what the page threw is the page's words: \(threw.message)")
         let big = try text(await session.perform(.eval(expression: "'x'.repeat(50000)", note: nil)))
         #expect(big.contains("…[truncated]") && big.utf8.count < 20_000)
     }
