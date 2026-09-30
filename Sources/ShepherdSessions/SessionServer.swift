@@ -101,6 +101,14 @@ public final class SessionServer: @unchecked Sendable {
         /// True for a remote Shepherd client on the TCP listener; false for a
         /// pi extension on the Unix socket.
         let isRemote: Bool
+        /// The process that opened a Unix-socket connection, as the kernel recorded it when it
+        /// connected (`LOCAL_PEERPID`), read once when the connection is accepted: it can no longer
+        /// be read once a peer that wrote and closed has gone. nil for a remote client, and when it
+        /// could not be read (the connection then speaks for no agent).
+        let peerPID: pid_t?
+        /// A refusal was logged for this connection: the rest are not, so a process that keeps
+        /// sending cannot fill the log.
+        var loggedRefusal = false
         /// Remote connections must pass the token handshake before any other
         /// request is served. Extension connections never authenticate.
         var authenticated = false
@@ -132,9 +140,10 @@ public final class SessionServer: @unchecked Sendable {
         /// It reads pushed design changes and capability changes.
         var knowsDesigns: Bool { clientCapabilities.contains(RemoteProtocol.designsCapability) }
 
-        init(fd: Int32, isRemote: Bool = false) {
+        init(fd: Int32, isRemote: Bool = false, peerPID: pid_t? = nil) {
             self.fd = fd
             self.isRemote = isRemote
+            self.peerPID = peerPID
         }
     }
 
@@ -288,12 +297,14 @@ public final class SessionServer: @unchecked Sendable {
     /// the completion has not come after `SessionServer.defaultBrowserDeadline`, and drops an
     /// answer whose connection has gone. With no handler the answer is `unavailable`.
     public var onBrowserRequest: ((AgentID, BrowserRequest, @escaping (BrowserOutcome) -> Void) -> Void)?
-    /// Whether the process at the other end of an extension connection may register as an agent's
-    /// browser (`helloBrowser`): given the agent and the peer's process id. Left `nil`, only the
-    /// pi process this server spawned for that agent may, so a process the agent started (its bash
-    /// tool) cannot drive another thread's page by naming it. Tests that speak as the extension
-    /// from their own process set this to allow it. Read on the server queue.
-    public var browserPeerCheck: ((AgentID, pid_t) -> Bool)?
+    /// Whether the process at the other end of an extension connection speaks for an agent, asked
+    /// of every message that names one (`ExtensionMessage.speaksFor`): given the agent and the
+    /// process id the kernel recorded when the peer connected (nil when it could not be read).
+    /// Left `nil`, only the pi this server started for that agent speaks for it
+    /// (`isPiProcess(_:ofAgent:)`), so a process the agent started (its bash tool) cannot act as
+    /// another agent by naming it. Tests that speak as the extension from their own process set
+    /// this to allow it. Read on the server queue.
+    public var extensionPeerCheck: ((AgentID, pid_t?) -> Bool)?
     /// The user sent a thread a message (its composer, on this Mac or a remote client: not a
     /// peer's `agent_send`, an automation's prompt or a design comment). The agent gets the browser
     /// back if the user had taken it over. Delivered on the main actor.
@@ -2300,14 +2311,15 @@ public final class SessionServer: @unchecked Sendable {
             var one: Int32 = 1
             _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
 
-            let client = ExtensionConnection(fd: fd)
+            let peer = Self.peerProcessID(of: fd)
+            let client = ExtensionConnection(fd: fd, peerPID: peer)
             let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
             source.setEventHandler { [weak self] in self?.handleReadable(fd: fd) }
             source.setCancelHandler { close(fd) }
             client.readSource = source
             clients[fd] = client
             source.activate()
-            ShepherdLog.info("status extension connected (fd \(fd))")
+            ShepherdLog.info("status extension connected (fd \(fd), process \(peer.map(String.init) ?? "unknown"))")
         }
     }
 
@@ -2391,6 +2403,12 @@ public final class SessionServer: @unchecked Sendable {
             ShepherdLog.error("undecodable extension message: \(error)")
             return
         }
+        // A connection speaks only for the agent whose pi opened it, whatever the message says:
+        // asked before anything is read, so a refused hello can neither register nor displace.
+        if let agentID = message.speaksFor, !connection(client, speaksFor: agentID) {
+            refuse(message, on: client)
+            return
+        }
         switch message {
         case .setAgentStatus(let agentID, let status):
             applyAgentStatus(agentID: agentID, status: status)
@@ -2413,12 +2431,11 @@ public final class SessionServer: @unchecked Sendable {
             childCommandPending.removeValue(forKey: id)?.completion(error)
         case .helloBrowser(let agentID):
             // A thread's agent only: an unknown agent, a design's agent, or a connection that is
-            // already someone else's registers nothing, and its requests are refused.
+            // already someone else's registers nothing, and its requests are refused. (Only the
+            // agent's own pi got this far, and a refusal left the agent's real connection alone:
+            // the check came before the one it would replace.)
             guard let agent = store.state.agents.first(where: { $0.id == agentID }), agent.designID == nil,
                   client.agentID == nil, client.childrenAgentID == nil, client.browserAgentID == nil else { return }
-            // Only the agent's own pi process registers, and a refusal leaves the agent's real
-            // connection alone: the check comes before the one it would replace.
-            guard browserPeerMayRegister(as: agentID, client: client) else { return }
             for previous in Array(clients.values) where previous !== client && previous.browserAgentID == agentID {
                 disconnect(previous)
             }
@@ -5158,20 +5175,42 @@ public final class SessionServer: @unchecked Sendable {
         return pid
     }
 
-    /// The pi process of the agent's thread while it runs.
-    private func piProcessID(forAgent agentID: AgentID) -> pid_t? {
-        guard let session = rpcThread(forAgent: agentID)?.session, session.isAlive else { return nil }
-        return session.processIdentifier
+    /// Server queue: whether `client` speaks for `agentID`: its process is the pi this server
+    /// started for that agent (`extensionPeerCheck` replaces the question in tests). Asked per
+    /// message, so a pi that restarted (Retry) is followed and one that is gone speaks for no one.
+    private func connection(_ client: ExtensionConnection, speaksFor agentID: AgentID) -> Bool {
+        let allowed = extensionPeerCheck.map { $0(agentID, client.peerPID) } ?? isPiProcess(client.peerPID, ofAgent: agentID)
+        if !allowed, !client.loggedRefusal {
+            client.loggedRefusal = true
+            ShepherdLog.warning("extension message for agent \(agentID) refused: process \(client.peerPID.map(String.init) ?? "unknown") is not its pi (later ones on this connection are refused silently)")
+        }
+        return allowed
     }
 
-    private func browserPeerMayRegister(as agentID: AgentID, client: ExtensionConnection) -> Bool {
-        guard let peer = Self.peerProcessID(of: client.fd) else {
-            ShepherdLog.warning("browser registration for agent \(agentID) refused: the peer's process could not be read")
-            return false
+    /// Server queue: whether `pid` is a live pi this server started for `agentID`: the one bound
+    /// to the agent's thread pane. In the moment between starting a pi and binding it to the pane
+    /// (`updatePaneSession`), a pi that no pane holds yet is the agent's when it was launched for
+    /// it (`SHEPHERD_AGENT_ID`, which the app sets on every agent's pi): an extension connects
+    /// while the app is still binding, and its hello must not be lost to that order.
+    private func isPiProcess(_ pid: pid_t?, ofAgent agentID: AgentID) -> Bool {
+        guard let pid else { return false }
+        if let session = rpcThread(forAgent: agentID)?.session, session.isAlive, session.processIdentifier == pid { return true }
+        for case .rpc(let session, _) in sessions.values where session.isAlive && session.processIdentifier == pid {
+            return session.launchAgentID == agentID && self.agentID(forSession: session.id) == nil
         }
-        let allowed = browserPeerCheck.map { $0(agentID, peer) } ?? (piProcessID(forAgent: agentID) == peer)
-        if !allowed { ShepherdLog.warning("browser registration for agent \(agentID) refused: process \(peer) is not its pi") }
-        return allowed
+        return false
+    }
+
+    /// Server queue: answers a refused message when it can be answered (a request), and drops it
+    /// otherwise. A browser request keeps its own code.
+    private func refuse(_ message: ExtensionMessage, on client: ExtensionConnection) {
+        guard let id = message.replyID else { return }
+        if case .browser = message {
+            reply(.error(id: id, code: "not_registered", message: "This connection is not registered for that agent's browser."), to: client)
+        } else {
+            reply(.error(id: id, code: "wrong_process",
+                         message: "This connection is not from the pi process Shepherd started for that agent."), to: client)
+        }
     }
 
     private func rpcThread(forAgent agentID: AgentID) -> RPCThreadState? {
