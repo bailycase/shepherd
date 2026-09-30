@@ -1350,6 +1350,41 @@ struct NativeThreadStoreTests {
         #expect(!store.showsThinking, "an idle thread")
     }
 
+    /// A call the model is still writing keeps the thread from looking idle: the agent runs (Stop
+    /// stays), "Thinking…" stays away, and the call's line is the live row, following the
+    /// arguments as they stream and continuing into the running call.
+    @Test func aCallBeingWrittenIsTheLiveRowOfARunningThread() async throws {
+        let prompt = F.user(id: "u")
+        let reply = F.assistant("I'll write the file now.", status: "streaming", id: "p")
+        func call(_ args: String?, status: String) -> NativeThreadMessage {
+            F.tool("write", args: args, status: status, id: "provisional:tool:w", callID: "w", startedAt: 1_000)
+        }
+        let (store, host, task) = await started(F.snapshot(running: true, messages: [prompt], provisional: [reply, call(nil, status: "streaming")]))
+        defer { task.cancel() }
+        func liveLine() -> NativeActivityBurst? {
+            guard case .activity(_, let bursts)? = store.rows.last?.presentation?.items.last else { return nil }
+            return bursts.last
+        }
+        #expect(store.running && !store.showsThinking)
+        #expect(liveLine()?.state == .running && liveLine()?.label == "Writing" && liveLine()?.meta == "")
+
+        host.snapshot = F.snapshot(revision: 2, running: true, messages: [prompt],
+                                   provisional: [reply, call(#"{"path":"src/"}"#, status: "streaming")])
+        await store.refresh()
+        #expect(liveLine()?.meta == "src/", "a status that stays does not keep the line's old words")
+        host.snapshot = F.snapshot(revision: 3, running: true, messages: [prompt],
+                                   provisional: [reply, call(#"{"path":"src/big.txt"}"#, status: "streaming")])
+        await store.refresh()
+        #expect(liveLine()?.meta == "src/big.txt" && liveLine()?.startedAt == 1_000)
+        #expect(store.running && !store.showsThinking)
+
+        let running = call(#"{"content":"a","path":"src/big.txt"}"#, status: "running")
+        host.snapshot = F.snapshot(revision: 4, running: true, messages: [prompt], provisional: [reply, running])
+        await store.refresh()
+        #expect(liveLine()?.state == .running && liveLine()?.meta == "src/big.txt" && liveLine()?.startedAt == 1_000, "the same line goes on")
+        #expect(liveLine()?.id == "w" && !store.showsThinking)
+    }
+
     @Test func aRunningCallsTailFollowsOutputThatKeepsItsLength() async throws {
         let running = { (output: String) in
             F.tool("bash", args: #"{"command":"swift build"}"#, output: output, status: "running", id: "provisional:tool:b", callID: "b")

@@ -165,8 +165,11 @@ final class RPCThreadState {
     var live: [LiveItem] = []
     private var sequence = 0
     private var currentAssistant: Int?
-    /// When each tool execution was first seen (ms), for durations of live calls.
+    /// When each tool call was first seen (ms): named by the model, else running. Its clock, for
+    /// live calls and for the duration history keeps.
     private var toolStarts: [String: Double] = [:]
+    /// The calls the model is writing now, by call id: their arguments as far as they streamed.
+    private var streamingCalls: [String: StreamingToolArguments] = [:]
     /// Live thinking spans per provisional assistant message (ms), and the finished ones keyed
     /// by the message's pi timestamp so history projected later keeps "Thought for Ns".
     private var thinkingSpans: [Int: (start: Double, end: Double?)] = [:]
@@ -378,12 +381,14 @@ final class RPCThreadState {
             doneHeld = false
             if !items.isEmpty { onUserInputWhileRunning?() }
         case .agentEnd:
+            dropStreamingCalls()
             refreshMessages()
             refreshState()
             refreshStats()
         case .agentSettled:
             running = false
             retry = nil
+            dropStreamingCalls()
             askingCalls.removeAll()
             let token = UUID()
             settleCapture = token
@@ -421,11 +426,18 @@ final class RPCThreadState {
                 var raw = RPCMessage(role: "assistant", content: [])
                 Self.apply(delta, to: &raw)
                 upsertAssistant(raw, ended: false)
+                streamToolCall(delta, in: raw)
+                break
+            }
+            // A call's argument fragments change nothing the reply shows, only the call's row.
+            if delta.type == "toolcall_delta" {
+                streamToolCall(delta, in: current)
                 break
             }
             var raw = current
             Self.apply(delta, to: &raw)
             upsertAssistant(raw, ended: false)
+            streamToolCall(delta, in: raw)
         case .messageEnd(let message):
             guard message.role == "assistant" else { break }
             if currentAssistant == nil {
@@ -441,6 +453,14 @@ final class RPCThreadState {
             }
             upsertAssistant(ended, ended: true)
             currentAssistant = nil
+            // A reply pi stopped, or that failed, runs none of its calls: those still being
+            // written leave the thread. Any other hands them to pi, and each execution continues
+            // its row.
+            let runs = ended.stopReason != "error" && ended.stopReason != "aborted"
+            dropStreamingCalls(keeping: runs ? Set(ended.content.compactMap { block -> String? in
+                if case .toolCall(let id, _, _) = block { return id }
+                return nil
+            }) : [])
             // The ring moves once per reply, never per token.
             refreshStats()
         case .toolExecutionStart(let id, let name, let args):
@@ -448,6 +468,7 @@ final class RPCThreadState {
                 askingCalls.removeAll { $0.id == id }
                 askingCalls.append((id, Self.shortReason(in: args)))
             }
+            streamingCalls[id] = nil
             upsertTool(id: id, name: name, args: args, content: [], isError: nil, status: "running")
         case .toolExecutionUpdate(let id, let name, let args, let partial):
             upsertTool(id: id, name: name, args: args, content: partial?.content ?? [], isError: nil, status: "running")
@@ -1098,6 +1119,7 @@ final class RPCThreadState {
         operations.removeAll()
         live.removeAll()
         toolStarts.removeAll()
+        streamingCalls.removeAll()
         thinkingSpans.removeAll()
         thinkingByTimestamp.removeAll()
         stoppedCalls.removeAll()
@@ -1255,15 +1277,61 @@ final class RPCThreadState {
         )
         if value.argumentsText == nil { value.argumentsText = previous?.argumentsText }
         value.status = status
+        // One clock for the call: from when the host first saw it, which is when the model named
+        // it, through its run into history.
         if toolStarts[id] == nil { toolStarts[id] = Date().timeIntervalSince1970 * 1000 }
         value.startedAt = toolStarts[id]
         if status == "complete", value.timestamp == nil { value.timestamp = Date().timeIntervalSince1970 * 1000 }
         if let index {
-            live[index].value = value
+            // Unchanged rows stay as they are: a commit rehashes only what was assigned.
+            if live[index].value != value { live[index].value = value }
         } else {
             live.append(LiveItem(kind: .tool(id), value: value, raw: nil, ended: false))
             trimLive()
         }
+    }
+
+    // MARK: - Tool calls being written
+
+    /// A tool call is a row from the moment the model names it, so the thread shows it ("Writing
+    /// src/big.txt") while its arguments stream instead of a finished paragraph and nothing
+    /// moving. The row carries only the fields an activity line names; `tool_execution_start`
+    /// makes the same row the running call, with its complete arguments. pi 0.87.1's events:
+    /// `toolcall_start` names the call (`id`, `toolName`), each `toolcall_delta` carries the next
+    /// fragment of the arguments' JSON text (not the text so far), and `toolcall_end` the finished
+    /// call. A provider that sends its calls whole ends up here too, in one step.
+    private func streamToolCall(_ delta: RPCAssistantDelta, in message: RPCMessage) {
+        switch delta.type {
+        case "toolcall_start":
+            guard let id = delta.id, !id.isEmpty, let name = delta.toolName, !name.isEmpty else { return }
+            streamingCalls[id] = StreamingToolArguments()
+            upsertTool(id: id, name: name, args: nil, content: [], isError: nil, status: "streaming")
+        case "toolcall_delta":
+            guard let index = delta.contentIndex, message.content.indices.contains(index),
+                  case .toolCall(let id, let name, _) = message.content[index],
+                  streamingCalls[id]?.append(delta.delta ?? "") == true, let args = streamingCalls[id]?.arguments else { return }
+            upsertTool(id: id, name: name, args: args, content: [], isError: nil, status: "streaming")
+        case "toolcall_end":
+            guard case .toolCall(let id, let name, let arguments?)? = delta.toolCall, streamingCalls[id] != nil,
+                  let args = StreamingToolArguments.named(in: arguments) else { return }
+            upsertTool(id: id, name: name, args: args, content: [], isError: nil, status: "streaming")
+        default:
+            break
+        }
+    }
+
+    /// Takes the calls still being written out of the thread, except `keeping`: the ones a
+    /// finished reply hands to pi, which run next and continue their rows. Nothing else ever
+    /// runs a call that was still streaming (a stopped or failed request, the end of the run).
+    private func dropStreamingCalls(keeping: Set<String> = []) {
+        var dropped: [String] = []
+        live.removeAll { item in
+            guard case .tool(let id) = item.kind, item.value.status == "streaming", !keeping.contains(id) else { return false }
+            dropped.append(id)
+            return true
+        }
+        for id in dropped { toolStarts[id] = nil }
+        if !streamingCalls.isEmpty { streamingCalls = streamingCalls.filter { keeping.contains($0.key) } }
     }
 
     static func apply(_ delta: RPCAssistantDelta, to message: inout RPCMessage) {
