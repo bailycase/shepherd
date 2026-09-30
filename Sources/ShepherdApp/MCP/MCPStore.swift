@@ -23,13 +23,13 @@ final class MCPStore {
         var copy: @MainActor (String) -> Void
         var now: @MainActor () -> Date
 
-        /// The app's: the real file and Keychain, `engine`'s node for probes, the browser and
-        /// pasteboard.
-        static func app(engine: PiEngine, clientPath: @escaping @Sendable () -> URL?, openURL: @escaping @MainActor (URL) -> Void,
-                        copy: @escaping @MainActor (String) -> Void) -> Dependencies {
+        /// The app's: the real file and Keychain, `engine`'s node for probes (`home` for its
+        /// keychain CA fallback), the browser and pasteboard.
+        static func app(engine: PiEngine, home: PiHome, clientPath: @escaping @Sendable () -> URL?,
+                        openURL: @escaping @MainActor (URL) -> Void, copy: @escaping @MainActor (String) -> Void) -> Dependencies {
             Dependencies(file: MCPConfigFile(url: ShepherdPaths.mcpConfigURL()), cacheURL: ShepherdPaths.mcpToolsCacheURL(),
                          secrets: MCPSecrets.forApp(), http: URLSessionHTTP(),
-                         probe: MCPProbe(runner: NodeProbeRunner(engine: engine, clientPath: clientPath)),
+                         probe: MCPProbe(runner: NodeProbeRunner(engine: engine, home: home, clientPath: clientPath)),
                          openURL: openURL, copy: copy, now: { Date() })
         }
     }

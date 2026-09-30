@@ -41,6 +41,25 @@ struct PiHomeTests {
         #expect(!PiHome.stashPrefix.hasPrefix("PI_") && !PiHome.stashPrefix.hasPrefix("NODE_"))
     }
 
+    // MARK: Keychain certificates
+
+    /// PEM export from fixture DER, never from the real keychain: one entry per non-denied
+    /// certificate, denied ones left out.
+    @Test func keychainCertificatesPEMEncodesEachNonDeniedCertificateAndSkipsDenied() {
+        let trusted = Data([0x01, 0x02, 0x03, 0x04, 0x05])
+        let denied = Data([0xAA, 0xBB, 0xCC])
+        let pem = PiHome.keychainCertificatesPEM(from: [(der: trusted, denied: false), (der: denied, denied: true)])
+        let text = String(decoding: pem, as: UTF8.self)
+        #expect(text == "-----BEGIN CERTIFICATE-----\n\(trusted.base64EncodedString())\n-----END CERTIFICATE-----\n")
+        #expect(!text.contains(denied.base64EncodedString()))
+    }
+
+    /// No certificates, or only denied ones, make an empty PEM.
+    @Test func noTrustedCertificatesMakeAnEmptyPEM() {
+        #expect(PiHome.keychainCertificatesPEM(from: []).isEmpty)
+        #expect(PiHome.keychainCertificatesPEM(from: [(der: Data([1, 2, 3]), denied: true)]).isEmpty)
+    }
+
     // MARK: The startup guards
 
     @Test(arguments: [

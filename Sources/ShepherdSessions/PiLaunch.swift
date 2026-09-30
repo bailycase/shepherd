@@ -79,17 +79,25 @@ public enum PiLaunch {
 
     /// Settings ▸ MCP servers' probe: the agents' MCP client, run by the engine's node with
     /// `probe`, in a login shell, so the servers it starts find what an agent's would. Like the
-    /// launcher, it drops the startup files' pi, jiti and Node settings first (keeping
-    /// `NODE_EXTRA_CA_CERTS`): an agent's client never sees them, and a `NODE_OPTIONS` hook of the
-    /// user's must not load into Shepherd's node.
-    public static func mcpProbe(engine: PiEngine, client: String) -> Line {
-        Line(script: clearedEnvironment + "exec \(word(engine.node)) \"$0\" probe", positional: [client])
+    /// launcher, it drops the startup files' pi, jiti and Node settings first (keeping the user's
+    /// own `NODE_EXTRA_CA_CERTS`, else falling back to `home`'s keychain export): an agent's
+    /// client never sees them, and a `NODE_OPTIONS` hook of the user's must not load into
+    /// Shepherd's node.
+    public static func mcpProbe(engine: PiEngine, home: PiHome, client: String) -> Line {
+        Line(script: clearedEnvironment(home: home) + "exec \(word(engine.node)) \"$0\" probe", positional: [client])
     }
 
     /// Shell words that unset every `PI_*`, `JITI_*`, `NODE_*` and `OPENSSL_CONF` but
-    /// `NODE_EXTRA_CA_CERTS`, for a line that runs Shepherd's node after a login shell.
-    static let clearedEnvironment = "_shepherd_ca=${NODE_EXTRA_CA_CERTS-}; unset -m 'PI_*' 'JITI_*' 'NODE_*' 'OPENSSL_CONF'; "
-        + "[[ -n $_shepherd_ca ]] && export NODE_EXTRA_CA_CERTS=$_shepherd_ca; unset _shepherd_ca; "
+    /// `NODE_EXTRA_CA_CERTS`, for a line that runs Shepherd's own node after a login shell: keeps
+    /// the user's own value, else falls back to `home`'s keychain export
+    /// (`PiHome.keychainCertificatesFile`) when it isn't empty, exactly as the launcher does
+    /// (`PiHome.launcherScript`).
+    static func clearedEnvironment(home: PiHome) -> String {
+        "_shepherd_ca=${NODE_EXTRA_CA_CERTS-}; unset -m 'PI_*' 'JITI_*' 'NODE_*' 'OPENSSL_CONF'; "
+            + "if [[ -n $_shepherd_ca ]]; then export NODE_EXTRA_CA_CERTS=$_shepherd_ca; "
+            + "elif [[ -s \(quoted(home.keychainCertificatesFile.path)) ]]; then export NODE_EXTRA_CA_CERTS=\(quoted(home.keychainCertificatesFile.path)); fi; "
+            + "unset _shepherd_ca; "
+    }
 
     /// The engine's node as argv: its path, or `env` finding the tests' node on PATH.
     static func node(_ engine: PiEngine) -> [String] {

@@ -502,7 +502,7 @@ final class ShepherdViewModel {
         self.suggestions = SuggestionsModel(store: server.suggestions, instructionsStore: server.instructions, instructions: instructions)
         self.skills = ClientSkills(defaults: sidebarDefaults)
         self.localSkills = LocalSkillsClient(store: server.skills)
-        self.mcp = mcp ?? MCPStore(dependencies: .app(engine: server.pi.engine, clientPath: ShepherdViewModel.mcpClientPath,
+        self.mcp = mcp ?? MCPStore(dependencies: .app(engine: server.pi.engine, home: server.pi.files, clientPath: ShepherdViewModel.mcpClientPath,
                                                       openURL: { NSWorkspace.shared.open($0) },
                                                       copy: ShepherdViewModel.copyToPasteboard))
         self.installThemeMarker = themeInstaller
