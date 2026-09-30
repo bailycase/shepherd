@@ -282,9 +282,9 @@ struct BrowserTests {
     // MARK: Nothing open
 
     @Test func nothingOpenSaysWhatItWaitsFor() {
-        #expect(BrowserEmptyWords.message(waiting: URL(string: "http://localhost:5173"), hasServers: true)
+        #expect(BrowserEmptyWords.message(waiting: URL(string: "http://localhost:5173"))
                 == "Waiting for localhost:5173 to answer. Its page opens here when it does.")
-        #expect(BrowserEmptyWords.message(waiting: nil, hasServers: true).hasPrefix("Start a dev server"))
-        #expect(BrowserEmptyWords.message(waiting: nil, hasServers: false).hasPrefix("Open a URL"))
+        #expect(BrowserEmptyWords.message(waiting: nil)
+                == "The agent opens pages here when it starts a dev server. Ports on remote hosts are forwarded for you.")
     }
 }

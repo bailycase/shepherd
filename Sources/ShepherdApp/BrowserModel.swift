@@ -11,7 +11,7 @@ import ShepherdUI
 
 enum BrowserAddress {
     /// Where a search goes.
-    static let searchBase = "https://duckduckgo.com/?q="
+    static let searchBase = "https://www.google.com/search?q="
 
     /// What the address field takes: a URL with a scheme, a host (with a port or a path), a bare
     /// port (":5173" is this Mac), or else words to search for. Local hosts go over http, the
@@ -190,7 +190,9 @@ struct DevServer: Equatable, Identifiable, Sendable {
     /// The page it serves, once it is up.
     var url: URL? { port.flatMap { URL(string: "http://localhost:\($0)") } }
 
-    var item: NWDevServerItem { NWDevServerItem(id: id, command: command, detail: detail) }
+    /// "Start on This Mac" (PaneStates: "Start on build-01" for a remote host; local threads
+    /// only, the user's decision 2026-09-29).
+    var item: NWDevServerItem { NWDevServerItem(id: id, command: command, detail: detail, startTitle: "Start on This Mac") }
 }
 
 enum DevServerDiscovery {

@@ -67,7 +67,7 @@ struct BrowserPane: View {
 
     private var empty: some View {
         let servers = session.devServers ?? []
-        return NWBrowserEmpty(message: BrowserEmptyWords.message(waiting: session.waitingFor, hasServers: !servers.isEmpty),
+        return NWBrowserEmpty(message: BrowserEmptyWords.message(waiting: session.waitingFor),
                               servers: servers.map(\.item), openShortcut: vm.keybindings.display(.focusAddressBar),
                               start: { item in
                                   guard let server = servers.first(where: { $0.id == item.id }) else { return }
@@ -96,14 +96,14 @@ struct BrowserPane: View {
     }
 }
 
-/// What Nothing open says under "No page open".
+/// What Nothing open says under "No page open" (the board's words exactly, the user's decision
+/// 2026-09-29).
 enum BrowserEmptyWords {
-    static func message(waiting: URL?, hasServers: Bool) -> String {
+    static func message(waiting: URL?) -> String {
         if let waiting, let host = BrowserAddress.display(waiting)?.host {
             return "Waiting for \(host) to answer. Its page opens here when it does."
         }
-        return hasServers ? "Start a dev server from this repository, or open a URL. Pages you open stay with this thread."
-            : "Open a URL to see it here. Pages you open stay with this thread."
+        return "The agent opens pages here when it starts a dev server. Ports on remote hosts are forwarded for you."
     }
 }
 
