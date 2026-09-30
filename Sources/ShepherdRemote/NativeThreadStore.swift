@@ -385,6 +385,18 @@ public final class NativeThreadStore {
         ready && !busy && supportedActions.contains(action)
     }
 
+    /// The host stops pi for a message (`interrupt` in `supportedActions`, remotely
+    /// `native.interrupt.v1`). A host without it only steers.
+    public var hostInterrupts: Bool { supportedActions.contains("interrupt") }
+
+    /// The delivery a send actually gets. `interrupt` becomes a plain `steer` where the host can't
+    /// stop pi, and a steer never carries a message that begins with "/" (pi runs a command only
+    /// at the start of a message): it waits for the turn to end instead
+    /// (`NativeQueueRules.delivery(_:forText:)`).
+    public func resolvedDelivery(_ requested: NativeThreadDelivery, text: String) -> NativeThreadDelivery {
+        NativeQueueRules.delivery(requested == .interrupt && !hostInterrupts ? .steer : requested, forText: text)
+    }
+
     /// The thread is waiting for its pi: starting, shown from disk, or its first pull still on
     /// its way. Not an error, and not a thread kept from before that is refreshing.
     public var awaitingPi: Bool {
@@ -1031,6 +1043,7 @@ public final class NativeThreadStore {
             return false
         }
         let text = NativeAttachedFile.message(typed, files: files, references: references.count, elements: elements.count)
+        let delivery = resolvedDelivery(delivery, text: text)
         let operation = UUID()
         let attached: [NativeImage]? = images.isEmpty || !supports("sendImages") ? nil : images
         let context = supports("designContext") ? designContext?().map(NativeDesignContext.init) : nil
@@ -1211,6 +1224,17 @@ public final class NativeThreadStore {
         let running = snapshot?.running == true
         await queueAction(.steer(ids: ids)) { items in
             if running { NativeQueueRules.steer(ids, in: &items) }
+        }
+    }
+
+    /// Steer now on queued messages: the host stops pi and sends them at once as the next turn,
+    /// in order, and the rest of the queue follows. A host that can't (no `interrupt`) steers
+    /// them in instead (`steerQueued`). While pi is idle the host sends them as the next turn.
+    public func interruptQueued(_ ids: [UUID]) async {
+        guard hostInterrupts else { await steerQueued(ids); return }
+        let running = snapshot?.running == true
+        await queueAction(.interrupt(ids: ids)) { items in
+            if running { NativeQueueRules.interrupt(ids, in: &items) } else { items.removeAll { ids.contains($0.id) } }
         }
     }
 
@@ -1412,8 +1436,13 @@ public final class NativeThreadStore {
                                                        state: delivery == .steer ? .steering : .queued,
                                                        elements: elements.map(\.element.withoutHTML))
                         if !images.isEmpty { sentImages[operation] = images }
+                        let interrupts = delivery == .interrupt
                         overlays.append(QueueOverlay(id: operation, accepted: pulls, mode: nil) { items in
-                            if !items.contains(where: { $0.id == item.id }) { items.append(item); NativeQueueRules.normalize(&items) }
+                            guard !items.contains(where: { $0.id == item.id }) else { return }
+                            items.append(item)
+                            // An interrupt's message is first in the queue while the host stops pi.
+                            if interrupts { NativeQueueRules.interrupt([item.id], in: &items) }
+                            NativeQueueRules.normalize(&items)
                         })
                         deriveQueue()
                     } else {
