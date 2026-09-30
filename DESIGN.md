@@ -1433,20 +1433,27 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   draw 4pt, see Known gaps).
 - **Following:** the thread follows the tail only while the reader is within 80pt of the bottom
   (`NativeScrollFollower`). Only a live scroll gesture or a wheel tick detaches it; content
-  growth, the composer resizing, and history swaps never do. A following view whose offset
-  overshoots the content returns to its tail on an offset-only reading after native size
-  anchoring has run. Intermediate layout readings, the native top-margin allowance, and
-  fitting content's normal empty space do not trigger overscroll recovery. While a gesture is live, layout
-  changes never move the view either: a drag up measures the rows it reveals, and landing on
-  the tail then would pull the thread out from under the finger. "↓ Jump to latest"
+  growth, the composer resizing, and history swaps never do. On the Mac the thread follows by
+  scrolling alone: it sets no `defaultScrollAnchor` (neither the initial offset nor size
+  changes), because a bottom anchor over the lazy stack, whose unmeasured rows are estimates,
+  left the scroll view's content size at odds with where the rows were placed and the viewport
+  drew nothing (a blank thread after a send or a finished turn, seen on macOS 27 in a window
+  of modest height). Every reading is then the layout's own: a following view that growth,
+  the composer or a settling turn leaves above its tail, or that a shrinking history or the
+  composer collapsing leaves past it, returns to it at once. The native top-margin allowance
+  and fitting content's normal empty space do not trigger overscroll recovery. (The iOS thread
+  still anchors natively, so it lets the anchor settle a view past the end first.) While a
+  gesture is live, layout changes never move the view either: a drag up measures the rows it
+  reveals, and landing on the tail then would pull the thread out from under the finger. "↓ Jump to latest"
   (`NWJumpToLatest`, a `bgRaised` capsule above the composer) appears while detached if the
   agent runs or unseen output arrived: new rows or the last one growing, never the content
   height alone (a scroll or a turn jump measures the rows it reveals). The composer draws it
   over the fade it lays on the thread and under its card and menus, so the fade never washes it
   out and it never covers an open menu. A send that goes in now (pi idle, or a steer)
-  re-attaches to the tail. On Mac, a thread already following relies on native size anchoring
-  as the echo arrives and the completed-subagent tray collapses, without duplicate send jumps.
-  A late upward offset adjustment is corrected while following, even if layout arrived earlier.
+  re-attaches to the tail. On Mac, a thread already following lands the echo and the
+  completed-subagent tray collapsing together as their layout arrives, without duplicate send
+  jumps. A late upward offset adjustment is corrected while following, even if layout arrived
+  earlier.
   A reader scrolling away or jumping to another turn cancels following; layout recovery never
   moves the view during a live gesture. A follow-up
   that waits in Up next leaves the reader's place alone, then and when it goes: its delivery is
