@@ -36,17 +36,30 @@ A tool acts on **its own thread's page and nothing else**, and its arguments can
 
 - No tool has an agent parameter. The extension registers the connection as the agent
   (`helloBrowser(agentID:)`, sent first on every connect) and the server records it on the
-  connection (`ExtensionConnection.browserAgentID`). The registration is the connection's own
-  word, as the panes extension's `helloAgent` is: the extension socket is same-user IPC, not an
-  authentication boundary (SECURITY.md), so a process that can reach it (an agent's own shell has
-  `SHEPHERD_SOCKET`) could claim another agent's id. The rule stops a tool of one agent, or a
-  request naming another agent, from reaching a page it does not own; it does not stop a process
-  that speaks the protocol by hand. Binding registration to the pi process's own pid would.
+  connection (`ExtensionConnection.browserAgentID`).
+- **The registration is bound to the agent's own pi process.** The extension socket is reachable
+  by anything the agent runs (its bash tool inherits `SHEPHERD_SOCKET`, and `agent_list` names
+  the other agents), so a name alone proves nothing. On `helloBrowser` the server reads the peer's
+  pid off the accepted socket (`getsockopt(fd, SOL_LOCAL, LOCAL_PEERPID)`, what the kernel
+  recorded when the peer connected) and registers the connection only when that pid is the pid of
+  the pi process this server spawned for that agent (`RPCSession.processIdentifier`; the login
+  shell, the launcher and node each `exec`, so the extension, which runs inside pi, connects from
+  the pid the app started: `EngineSmokeTests.anExtensionInPiConnectsFromTheProcessTheAppStarted`
+  checks it against the real engine). A process the agent started, this app's own other
+  processes, an unreadable pid, or a dead session register nothing, and **a refused registration
+  neither replaces nor disconnects the agent's real connection**: the check comes before the
+  replacement. Its requests are answered `not_registered`. `SessionServer.browserPeerCheck`
+  replaces the check for tests that speak as the extension from their own process; left `nil`
+  it is the real one (`BrowserRelayTests.onlyTheAgentsOwnPiRegistersAndOthersCannotDisplaceIt`
+  runs a stub pi, a child process it starts and the test process against it).
+  `helloAgent` and `helloChildren` (the panes and children extensions) have **the same weakness**
+  and are **not changed here**: they still take the connection's word for its agent.
 - `SessionServer.routeBrowserRequest` serves a request **only when the connection's registered
   agent is the agent the request names**. Any other request, from any connection, is answered
   `not_registered`; an unregistered connection is refused the same way. A registration is refused
-  (and the connection stays unregistered) for an unknown agent and for a design's agent. A second
-  registration for an agent closes the first: one live browser connection per agent.
+  (and the connection stays unregistered) for an unknown agent, a design's agent and a foreign
+  process. A second registration for an agent, from its own pi, closes the first: one live browser
+  connection per agent.
 - Native subagents and design agents get no browser tools: a child pi is launched with
   `--no-extensions` and none of Shepherd's variables, the extension is inert in a child
   (`SHEPHERD_CHILD`) and in a design's agent (`SHEPHERD_DESIGN_ID`), and a design's agent is not
@@ -184,6 +197,36 @@ so the tests check the placement, the move to the pane and back, and timers, not
 covered corner (a full-screen app over it) occludes the page again, as it would any window; the tools
 still work, more slowly.
 
+### The window a page waits in
+
+The parked window (`BrowserParkWindow`) is never seen, focused or offered. Each of these was read
+or measured, in code and in a real accessory app (a probe hosting a `WKWebView` in a window
+configured exactly like this one, asking AppKit and the accessibility API what they see), and
+`BrowserAgentTests.theParkedWindowNeverTakesFocusAndIsNotOfferedToTheUserOrAccessibility` pins the
+properties:
+
+- **Never key or main.** `canBecomeKey` and `canBecomeMain` are `false` (a borderless window
+  already says so; the subclass makes it a rule). In the probe a page that called `window.focus()`
+  and `input.focus()`, raised an `alert` and opened a window left the key and main windows, the
+  frontmost app and `NSApp.isActive` exactly as they were. Nothing in the driver or the view
+  model calls `makeKey`, `orderFront` or `activate` for it; it is `orderBack` on the way in and
+  `orderOut` on close.
+- **Not in the Window menu**: `isExcludedFromWindowsMenu`.
+- **Not in Mission Control or the window cycle**: `collectionBehavior` is `.transient` (hidden by
+  exposé) and `.ignoresCycle` (not in ⌘`). It was `.stationary` too, which AppKit documents as
+  "unaffected by exposé", so it stayed in Mission Control, and which it allows only one of with
+  `.transient`; that is gone, and the page still reads `visible` and runs frames (re-measured).
+  ⌘-Tab lists apps, not windows, and the app is the one the user already has.
+- **Not an accessibility window, and the page inside it is not offered**. AppKit lists an ordered-in
+  window in the app's `AXWindows` however its own flags are set: a plain window, or one with
+  `setAccessibilityElement(false)` and `setAccessibilityHidden(true)`, is still listed (as an
+  `AXWindow`, or an empty `AXGroup`). What removes it (measured: `AXWindows` is empty) is the
+  window answering `isAccessibilityElement` false and `isAccessibilityHidden` true **and** its
+  content view (`BrowserParkContent`, which holds the web view while parked) doing the same with
+  no accessibility children. The web view itself is not marked, so the pane's copy of the page is
+  as readable to VoiceOver as any web view.
+- **Deaf**: `ignoresMouseEvents`, `alphaValue` 0.01, no shadow, no title, at the normal window level.
+
 ## The agent is using it
 
 While any browser tool is running, and for four seconds after the last (a sequence of tools keeps it
@@ -245,7 +288,14 @@ header's side-pane button shows "Agent opened a page in Browser".
   (WebKit only raises one after the user has interacted with the page).
 - `browser_screenshot` of a ref scrolls the element into view, which it still does while the user has
   taken over (a screenshot is an observation); the user's page moves.
-- Registration is not authenticated (Isolation).
+- The pid a registration is bound to is the one the kernel recorded when the peer connected. A
+  process that inherited pi's connection would be pi's, but none does: node opens its sockets
+  close-on-exec, and the bash tool's children get only their standard streams. Anything running
+  inside pi itself (another extension) is pi. `helloAgent` and `helloChildren` are still the
+  connection's own word (Isolation).
+- If the user is in a full-screen space or on another Space, the parked window is not on the
+  Space they are looking at: its page is hidden and throttled until they come back (the tools
+  still work, more slowly). Not measured further here.
 
 ## Remote
 
@@ -265,7 +315,11 @@ hands back with a message to the thread from any client.
 - `BrowserAgentFlowTests`: the extension socket, the server and the view model together, and the
   hand-back on the user's next message with the stub pi.
 - `BrowserRelayTests` (ShepherdSessionsIntegrationTests): the connection rule, a design's agent,
-  the deadline, a closed connection, the frame cap and `onUserMessage`.
+  the deadline, a closed connection, the frame cap and `onUserMessage`; the pid binding with the
+  real check (a stub pi the server spawned registers and is served; a child process it starts and
+  the test process are refused and cannot displace it) and with an injected one.
+- `EngineSmokeTests.anExtensionInPiConnectsFromTheProcessTheAppStarted` (opt-in, the real engine):
+  an extension inside pi, started the way the app starts it, connects from the pid the app spawned.
 - `BrowserAgentRulesTests`, `BrowserRequestTests`, `BrowserActivityTests`,
   `BrowserAgentComponentTests`, `ExtensionMessageTests`: the pure rules and the wire.
 - `Tests/Extensions/browser.test.mjs`: the extension's tools, framing and failures.
