@@ -70,7 +70,7 @@ private struct ThreadTerminalPanel: ViewModifier {
 }
 
 /// Closes the panel with its last terminal, as the Mac's does: its tab closed here or on
-/// another device, the agent closed its pane, or its shell exited. Only while the host is
+/// another device, the agent closed its terminal, or its shell exited. Only while the host is
 /// connected, so a dropped connection leaves the panel as it was. Its own view, so the thread
 /// modifier never observes the host's tabs.
 private struct TerminalPanelCloser: View {
@@ -119,7 +119,7 @@ private struct TerminalPanelHost: View {
 }
 
 /// The panel (iPadTerminal board): the divider's grabber, the tab strip with + and the panel's
-/// controls, the selected tab's panes, and the key row while a pane has the keyboard.
+/// controls, the selected tab's terminal, and the key row while it has the keyboard.
 struct TerminalPanelView: View {
     let model: TerminalModel
     let columnHeight: CGFloat
@@ -131,17 +131,11 @@ struct TerminalPanelView: View {
     var body: some View {
         let terminals = MobileTerminals.shared
         let selected = model.selected
-        let focusedPane = selected.map { TerminalPanel.focusedPane(in: $0, focused: model.panel.focusedPane) }
-        let focusedSession = selected?.panes.first { $0.id == focusedPane }?.sessionID
-            .map { terminals.session(host: model.ref.host, id: $0) }
+        let focusedSession = selected?.leaf.sessionID.map { terminals.session(host: model.ref.host, id: $0) }
         VStack(spacing: 0) {
             NWTerminalTabBar(model.items, selection: selected?.id.rawValue, select: select,
-                             close: model.canChangePanes && model.connected ? { id in closing = model.tab(for: id) } : nil,
-                             newTab: model.canChangePanes && model.connected ? newTab : nil) {
-                if let selected, model.canChangePanes, model.connected {
-                    Button { split(selected, focused: focusedPane) } label: { Image(systemName: "rectangle.split.2x1") }
-                        .accessibilityLabel("Split right")
-                }
+                             close: model.canChangeTerminals && model.connected ? { id in closing = model.tab(for: id) } : nil,
+                             newTab: model.canChangeTerminals && model.connected ? newTab : nil) {
                 Button {
                     terminals.update(model.ref) { $0.maximized.toggle() }
                 } label: {
@@ -162,11 +156,10 @@ struct TerminalPanelView: View {
             }
             ZStack {
                 if let selected {
-                    TerminalNodeView(ref: model.ref, node: selected.node,
-                                     focusedPane: selected.panes.count > 1 ? focusedPane : nil)
+                    TerminalPaneView(ref: model.ref, pane: selected.leaf)
                         .id(selected.id)
                 } else {
-                    empty
+                    unavailable
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -190,20 +183,21 @@ struct TerminalPanelView: View {
         }
     }
 
-    /// No tabs yet: the agent's layout has only its thread.
-    private var empty: some View {
+    /// No tab to draw: the host is away, too old to open terminals here, or the one this panel
+    /// asked for is on its way. The panel is never shown empty for want of a terminal: opening it
+    /// with none opens one (`TerminalHooks.toggle`).
+    private var unavailable: some View {
         VStack(spacing: NW.Space.m) {
-            Text(model.connected ? "No terminals in this thread yet." : "\(model.hostName) is offline.")
-                .font(.nw(.ui))
-                .foregroundStyle(Color.nw.textSecondary)
-            if model.canChangePanes, model.connected {
-                Button("New Terminal", action: newTab)
-                    .buttonStyle(.nw(.secondary))
-                    .nwTouchTarget(height: NW.Height.controlM)
-            } else if model.connected {
+            if !model.connected {
+                Text("\(model.hostName) is offline.")
+                    .font(.nw(.ui))
+                    .foregroundStyle(Color.nw.textSecondary)
+            } else if !model.canChangeTerminals {
                 Text("Update Shepherd on \(model.hostName) to open terminals here.")
-                    .font(.nw(.caption))
-                    .foregroundStyle(Color.nw.textTertiary)
+                    .font(.nw(.ui))
+                    .foregroundStyle(Color.nw.textSecondary)
+            } else {
+                NWTerminalNotice("starting session…")
             }
         }
         .multilineTextAlignment(.center)
@@ -263,15 +257,8 @@ struct TerminalPanelView: View {
         Task { await MobileTerminals.shared.newTab(model.ref, layout: layout, thread: model.thread, client: client) }
     }
 
-    private func split(_ tab: TerminalPanelTab, focused: PaneID?) {
-        guard let client = hosts.host(model.ref.host)?.connectedClient else { return }
-        let anchor = TerminalPanel.splitAnchor(in: tab, focused: focused)
-        Task { await MobileTerminals.shared.split(model.ref, pane: anchor, axis: .vertical, client: client) }
-    }
-
     private func close(_ tab: TerminalPanelTab) {
         guard let client = hosts.host(model.ref.host)?.connectedClient else { return }
-        let panes = TerminalPanel.panesToClose(tab, thread: model.thread)
-        Task { await MobileTerminals.shared.close(model.ref, panes: panes, client: client) }
+        Task { await MobileTerminals.shared.close(model.ref, terminal: tab.id, client: client) }
     }
 }
