@@ -1084,6 +1084,7 @@ final class TerminalSessionStore {
                                                          designTool: settings.designToolEnabled)
                 ? (try DesignReferencesExtension.installedPath(), !agent.designGrants.isEmpty) : nil,
             mcp: try MCPLaunch.forAgents(settings: settings),
+            browserExtensionPath: Self.wantsBrowser(for: agent, enabled: settings.piBrowserExtension) ? try BrowserExtension.installedPath() : nil,
             userHome: pi.userHome,
             // Use another model (an agent not signed in): its next start takes the model picked.
             model: modelOverride ?? (sessionIsFresh ? agent.model : nil),
@@ -1094,6 +1095,13 @@ final class TerminalSessionStore {
     /// The panes extension (pane_*, agent_*, automation_*, notify) is for threads. A design's
     /// agent never gets it: its screen shows no panes, and it must not reach threads.
     static func wantsPanes(for agent: Agent, enabled: Bool) -> Bool {
+        enabled && agent.designID == nil
+    }
+
+    /// The browser tools drive a thread's own Browser page: a design's agent never gets them (its
+    /// screen has no Browser), and a native subagent never does either (it is launched with
+    /// `--no-extensions` and none of Shepherd's variables).
+    static func wantsBrowser(for agent: Agent, enabled: Bool) -> Bool {
         enabled && agent.designID == nil
     }
 

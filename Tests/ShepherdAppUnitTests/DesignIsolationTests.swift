@@ -32,6 +32,14 @@ struct DesignIsolationTests {
         #expect(TerminalSessionStore.wantsPanes(for: agent, enabled: enabled) == wants)
     }
 
+    /// The browser tools drive a thread's own page: a design's agent never gets them, and the
+    /// setting decides for a thread.
+    @Test(arguments: [(false, true, true), (true, true, false), (false, false, false), (true, false, false)])
+    func onlyAThreadLaunchesWithTheBrowserExtension(drawsDesign: Bool, enabled: Bool, wants: Bool) {
+        let agent = Agent(name: "a", spaceID: SpaceID(), tabID: TabID(), designID: drawsDesign ? DesignID() : nil)
+        #expect(TerminalSessionStore.wantsBrowser(for: agent, enabled: enabled) == wants)
+    }
+
     /// design_get and design_note are a thread's, and only while the Design tool and the setting
     /// are both on; a design's agent never gets them.
     @Test(arguments: [
