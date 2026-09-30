@@ -56,8 +56,10 @@ At every child launch and resume, pi's resource resolver supplies the user's ena
 extensions. It respects package filters and skips missing packages without installing anything.
 Children load those paths explicitly under `--no-extensions`, so extension-registered providers
 keep pi's own configuration and authentication. This also inherits user extension hooks, so it
-is not a provider-only sandbox. Project and parent CLI-only extensions still need explicit
-profile `extensions` entries.
+is not a provider-only sandbox. Shepherd also explicitly loads its managed CLIProxyAPI provider
+from its pi home and retains `SHEPHERD_CLIPROXYAPI_CONFIG`, so direct starts, workflow children and
+resumes use the same managed catalog and authentication as the parent. Other project and parent
+CLI-only extensions still need explicit profile `extensions` entries.
 
 `shepherd_child_agents` lists effective profiles, where each came from, and any diagnostics.
 Agent Markdown files stay the source of truth, and Shepherd never edits them. Pi's agent
@@ -163,8 +165,10 @@ leaves out in-flight tool calls and never branches the parent's live session.
 with the package's `dist/bundle/cli.js`, never a `pi` from PATH; a parent not running on node, or
 with no bundle, can't start one and the run fails saying so. Children inherit the launcher's
 pins from the parent's pi, and run with `PI_OFFLINE=1` and with `SHEPHERD_*`, `PI_SUBAGENT*`, and
-session and model variables stripped. They get `--no-skills --no-prompt-templates --no-themes
---no-approve`, plus `--no-context-files` when the profile doesn't inherit project context.
+session and model variables stripped, except the managed provider's config path above. A startup
+exit returns its exit diagnostic to pending commands rather than only "Child exited". They get
+`--no-skills --no-prompt-templates --no-themes --no-approve`, plus `--no-context-files` when the
+profile doesn't inherit project context.
 
 **Artifacts.** Each child gets `<support dir>/children/native-<uuid>/`, holding the transcript,
 prompt, status, inspector controls, what the user sent it (`user-messages.jsonl`), and a writer
@@ -419,7 +423,8 @@ PI_PACKAGE_DIR="$(npm root -g)/@earendil-works/pi-coding-agent" \
 - **Coverage:** discovery, trust and precedence, profile fields and overrides, model and default
   propagation, resume, mission isolation and interruption, workflow sequencing, steering,
   errors and cancellation, evaluator limits, command-name collisions, the RPC fallbacks, and the
-  inspector's input handling.
+  inspector's input handling. Managed CLIProxyAPI runs exercise start, resume and workflows against
+  a local fake provider, with parent controls and ambient project extensions still excluded.
 - **Real-model smoke test:** opt-in and uses your existing authentication:
   `PI_SMOKE_MODEL=<provider/model> node Tests/Extensions/native-children.smoke.mjs`.
 

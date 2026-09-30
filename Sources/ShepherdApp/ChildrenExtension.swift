@@ -422,14 +422,14 @@ enum ChildrenExtension {
             if (run.exited) return;
             run.exited = true;
             clearTimeout(run.drainTimer);
-            for (const pending of run.pending.values()) { clearTimeout(pending.timer); pending.reject(new Error("Child exited")); }
-            run.pending.clear();
             run.exitCode = code ?? undefined;
             if (run.cancelled) run.state = "stopped";
             else if (!run.settled || run.error || (code !== 0 && code !== null) || signal) {
               run.state = "failed";
               run.error ||= `Child exited before clean settlement (${signal ?? code}): ${run.stderr}`;
             } else run.state = "complete";
+            for (const pending of run.pending.values()) { clearTimeout(pending.timer); pending.reject(new Error(run.error || "Child exited")); }
+            run.pending.clear();
             run.endedAt = Date.now(); run.currentTool = undefined; run.paused = false;
             if (run.lastActivity?.kind === "running") run.lastActivity = { ...run.lastActivity, kind: "tool" };
             releaseWriter(run);
@@ -530,8 +530,14 @@ enum ChildrenExtension {
               run.systemPromptMode === "replace" ? "--system-prompt" : "--append-system-prompt", path.join(run.dir, "prompt.md")];
             if (run.inheritProjectContext === false) args.push("--no-context-files");
             for (const skill of run.skills ?? []) args.push("--skill", skill);
+            // Direct node launches bypass PiHome's launcher, which explicitly loads the managed provider.
+            const proxyConfig = process.env.SHEPHERD_CLIPROXYAPI_CONFIG;
+            if (proxyConfig) {
+              env.SHEPHERD_CLIPROXYAPI_CONFIG = proxyConfig;
+              inherited.push(path.join(path.dirname(proxyConfig), "shepherd-cliproxyapi.ts"));
+            }
             // Resolve at each launch, including resume, so Pi resource enable/disable changes apply.
-            // No provider-specific lookup or credential export: Pi loads its own provider extensions.
+            // No provider catalog probes or credential export: Pi loads its own provider extensions.
             for (const extension of new Set([...inherited, ...(run.extensions ?? [])])) {
               if (fs.realpathSync(extension) !== fs.realpathSync(bridge)) args.push("-e", extension);
             }

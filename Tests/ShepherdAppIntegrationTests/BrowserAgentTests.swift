@@ -533,14 +533,19 @@ struct BrowserAgentTests {
 
         // The pane takes the page.
         let pane = OffscreenWindow(size: CGSize(width: 700, height: 500), BrowserPageView(session: session).frame(width: 700, height: 500))
+        defer { pane.close() }
         try await eventuallyOnMain("the pane to hold the page") { session.webView?.window === pane.window }
+        // Window attachment precedes the web process receiving its new viewport.
+        try await eventuallyAsync("the page viewport to match its pane") {
+            pane.layout()
+            return try text(await session.perform(.eval(expression: "innerWidth === 700", note: nil))).contains("Result: true")
+        }
         let inPane = try text(await session.perform(.eval(expression: "[window.__marker, innerWidth]", note: nil)))
         #expect(inPane.contains("\"same document\"") && inPane.contains("700"), "\(inPane)")
 
         // And gives it back when the pane goes.
         pane.show(EmptyView())
         try await eventuallyOnMain("the page to go back to its window") { session.webView?.window === parked }
-        pane.close()
         let back = try text(await session.perform(.eval(expression: "window.__marker", note: nil)))
         #expect(back.contains("Result: \"same document\""), "the page never reloaded")
         #expect(server.requested.current.filter { $0 == "/checkout" }.count == 1)
