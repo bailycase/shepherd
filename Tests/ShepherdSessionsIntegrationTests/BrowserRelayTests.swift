@@ -141,13 +141,17 @@ struct BrowserRelayTests {
         h.server.setBrowserDeadline(0.3)
         let (a, _, _) = try await workspace(h)
         let app = App()
+        let abandoned = Locked<[AgentID]>([])
+        h.server.onBrowserAbandoned = { agentID in abandoned.withValue { $0.append(agentID) } }
         answering(h, app)
         let client = try ExtensionClient(path: h.socketPath)
         try register(client, as: a.id)
         try client.send(.browser(id: 1, agentID: a.id, request: click))
         guard case .error(1, "timeout", _) = try await client.reply(timeout: .seconds(5)) else { Issue.record("expected a timeout"); return }
+        try await eventually("the app told the agent gave up") { abandoned.current == [a.id] }
 
         // The app answers after the deadline: nothing more is written for it.
+        h.server.setBrowserDeadline(SessionServer.defaultBrowserDeadline)
         try await eventually("the request to reach the app") { app.held.current.count == 1 }
         app.held.current[0](.text("too late"))
         try client.send(.browser(id: 2, agentID: a.id, request: click))
@@ -161,13 +165,16 @@ struct BrowserRelayTests {
         defer { h.stop() }
         let (a, _, _) = try await workspace(h)
         let app = App()
+        let abandoned = Locked<[AgentID]>([])
+        h.server.onBrowserAbandoned = { agentID in abandoned.withValue { $0.append(agentID) } }
         answering(h, app)
         let first = try ExtensionClient(path: h.socketPath)
         try register(first, as: a.id)
         try first.send(.browser(id: 1, agentID: a.id, request: click))
         try await eventually("the request to reach the app") { app.held.current.count == 1 }
         first.closeConnection()
-        try await Task.sleep(for: .milliseconds(100))
+        // The app is told the agent's requests in flight are abandoned (Stop): it drops the queued ones.
+        try await eventually("the app to be told") { abandoned.current == [a.id] }
 
         // A new connection (perhaps on the same descriptor) hears only its own answers.
         let second = try ExtensionClient(path: h.socketPath)
@@ -212,11 +219,15 @@ struct BrowserRelayTests {
         try panes.send(.listPanes(id: 1, agentID: pi.agent.id))
         _ = try await panes.reply()
         #expect(h.server.pushMessage(toAgent: pi.agent.id, text: "[from: worker] CI is green", delivery: .report))
-        try await Task.sleep(for: .milliseconds(150))
-        #expect(heard.current.isEmpty, "a peer's message is not the user's")
+
+        // A send the thread refuses (a stale generation) changes nothing either.
+        let refused = try await pi.request(.send(expectedSessionID: ready.piSessionID, generation: "an-older-run", operationID: UUID(),
+                                                 text: "tools:0 stale", delivery: .followUp))
+        if case .accepted = refused { Issue.record("a stale send was accepted") }
 
         _ = try await pi.send("tools:0 hello", from: ready)
         try await eventually("the user's message heard") { heard.current == [pi.agent.id] }
+        #expect(heard.current == [pi.agent.id], "only the accepted send of the user's counts: not the peer's, not the refused one")
     }
 
     @Test func aReplyStaysUnderTheFrameCap() async throws {

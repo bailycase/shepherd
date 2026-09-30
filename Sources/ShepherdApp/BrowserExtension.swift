@@ -177,12 +177,15 @@ enum BrowserExtension {
           }
 
           // Throws on failure: pi marks a tool errored only when execute throws. Cancelling the call stops
-          // the wait at once; Shepherd is not told (there is no cancel frame), and a late reply is dropped.
+          // the wait at once. There is no cancel frame: a request already sent is given up by closing the
+          // connection, which is how Shepherd learns the agent was stopped and drops what it has queued for
+          // the page (the next call registers again on a new one). A late reply is dropped.
           async function request(body: Record<string, unknown>, signal?: AbortSignal): Promise<Reply> {
             if (signal?.aborted) throw new Error("request cancelled");
             const id = nextID++;
             const reply = await new Promise<Reply>((resolve, reject) => {
               let done = false;
+              let sentOn: net.Socket | undefined;
               const finish = (settle: () => void) => {
                 if (done) return;
                 done = true;
@@ -191,7 +194,11 @@ enum BrowserExtension {
                 signal?.removeEventListener("abort", abort);
                 settle();
               };
-              const abort = () => finish(() => reject(new Error("request cancelled")));
+              const abort = () => {
+                const s = sentOn;
+                finish(() => reject(new Error("request cancelled")));
+                try { s?.destroy(); } catch { /* the connection is going anyway */ }
+              };
               const timer = setTimeout(() => finish(() => resolve({
                 type: "error", id, code: "timeout", message: "Shepherd did not reply in time",
               })), REQUEST_TIMEOUT_MS);
@@ -205,6 +212,7 @@ enum BrowserExtension {
                   return;
                 }
                 pending.set(id, { socket: s, resolve: (received) => finish(() => resolve(received)) });
+                sentOn = s;
                 s.write(JSON.stringify({ type: "browser", id, agentID, request: body }) + "\n");
               }).catch((error) => {
                 const reason = error instanceof Error ? error.message : String(error);

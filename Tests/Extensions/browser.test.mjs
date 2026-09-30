@@ -392,7 +392,7 @@ test("undecodable lines from Shepherd are ignored", async () => {
   });
 });
 
-test("cancelling a call stops the wait at once, and the reply that comes late is ignored", async () => {
+test("cancelling a sent call stops the wait at once and closes the connection, which is how Shepherd learns to drop what it queued", async () => {
   await withBrowser((frame) => (frame.id === 1 ? null : ok(`answer ${frame.id}`)), async ({ shepherd, run }) => {
     const controller = new AbortController();
     const call = run("browser_wait", { text: "never" }, controller.signal);
@@ -401,11 +401,15 @@ test("cancelling a call stops the wait at once, and the reply that comes late is
     controller.abort();
     await assert.rejects(call, /request cancelled/);
     assert.ok(Date.now() - started < 2000, "rejected promptly");
+    await eventually("Shepherd sees the close", () => shepherd.sockets[0].destroyed);
 
-    shepherd.sockets[0].write(JSON.stringify({ id: 1, type: "browserResult", text: "late" }) + "\n");
+    // The next call registers again on a new connection, and its ids go on.
     const next = await run("browser_wait", { text: "again" });
     assert.equal(next.content[0].text, "answer 2");
-    assert.equal(shepherd.sockets.length, 1);
+    assert.equal(shepherd.sockets.length, 2);
+    assert.deepEqual(shepherd.frames.map((entry) => [entry.conn, entry.frame.type]), [
+      [0, "helloBrowser"], [0, "browser"], [1, "helloBrowser"], [1, "browser"],
+    ]);
   });
 });
 

@@ -292,6 +292,10 @@ public final class SessionServer: @unchecked Sendable {
     /// peer's `agent_send`, an automation's prompt or a design comment). The agent gets the browser
     /// back if the user had taken it over. Delivered on the main actor.
     public var onUserMessage: ((AgentID) -> Void)?
+    /// An agent's browser connection closed while the app still had requests of it in flight (the
+    /// user pressed Stop, or pi exited). The app stops the ones that have not started. Delivered
+    /// on the main actor.
+    public var onBrowserAbandoned: ((AgentID) -> Void)?
     /// A server's state or tool list, from one agent's MCP extension (Settings ▸ MCP servers).
     /// Delivered on the main actor in the order the reports arrived.
     public var onMCPReport: ((AgentID, MCPServerReport) -> Void)?
@@ -1183,8 +1187,13 @@ public final class SessionServer: @unchecked Sendable {
         case .send, .retry: noteAgentSend(agentID)
         default: break
         }
-        if case .send = request { hopToMain { [weak self] in self?.onUserMessage?(agentID) } }
-        thread.handle(request, olderClient: olderClient) { completion(.result($0)) }
+        // The user's send hands a browser they took over back once the thread accepts it (a stale
+        // or refused send changes nothing).
+        let isSend: Bool = { if case .send = request { return true } else { return false } }()
+        thread.handle(request, olderClient: olderClient) { [weak self] result in
+            if isSend, case .accepted = result { self?.hopToMain { [weak self] in self?.onUserMessage?(agentID) } }
+            completion(.result(result))
+        }
     }
 
     /// What a kept start answers a snapshot with: the problem alone, with no history and no
@@ -2340,7 +2349,14 @@ public final class SessionServer: @unchecked Sendable {
         for (id, pending) in childCommandPending where pending.client === client {
             childCommandPending.removeValue(forKey: id)?.completion("Children extension disconnected. Refresh before acting.")
         }
-        for (token, asker) in browserPending where asker === client { browserPending.removeValue(forKey: token) }
+        // Requests the app is still working on for a connection that went (the agent was stopped,
+        // or its pi exited) are told to the app, which drops the ones not yet started.
+        var abandoned = false
+        for (token, asker) in browserPending where asker === client {
+            browserPending.removeValue(forKey: token)
+            abandoned = true
+        }
+        if abandoned, let agentID = client.browserAgentID { hopToMain { [weak self] in self?.onBrowserAbandoned?(agentID) } }
         if client.isRemote {
             for sessionID in remoteAttachments.keys {
                 remoteAttachments[sessionID]?.remove(client.fd)
@@ -3040,6 +3056,8 @@ public final class SessionServer: @unchecked Sendable {
         queue.asyncAfter(deadline: .now() + browserDeadline) { [weak self] in
             guard let self, let client = self.browserPending.removeValue(forKey: token) else { return }
             self.reply(.error(id: requestID, code: "timeout", message: "The browser did not answer in time."), to: client)
+            // The agent has given up on it: what is queued behind it should not run either.
+            self.hopToMain { [weak self] in self?.onBrowserAbandoned?(registered) }
         }
         hopToMain { [weak self] in
             handler(registered, request) { outcome in
