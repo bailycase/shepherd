@@ -38,6 +38,9 @@ final class RPCSession: @unchecked Sendable {
     let cwd: String
     let command: [String]
     private(set) var isAlive = true
+    /// The pi process this session spawned: the launcher and the shell in front of it `exec`, so
+    /// it is the one that runs the agent's extensions (`SessionServer.helloBrowser` binds to it).
+    var processIdentifier: pid_t { childPID }
     private(set) var exitCode: Int32?
 
     /// Every stdout record that is not a `response` (unknown types included).

@@ -13,6 +13,16 @@ import ShepherdTestSupport
 struct BrowserRelayTests {
     private let click = BrowserRequest.click(ref: "e1", double: false, note: nil)
 
+    /// A server that lets this test process speak as an agent's browser extension. The real check
+    /// binds a registration to the agent's own pi process (`onlyTheAgentsOwnPi…`, below), which
+    /// a raw client in the test process is not.
+    private func scratch() throws -> ScratchServer {
+        let h = try ScratchServer.fresh()
+        let own = getpid()
+        h.server.browserPeerCheck = { _, peer in peer == own }
+        return h
+    }
+
     /// Two threads and a design's agent.
     private func workspace(_ h: ScratchServer) async throws -> (a: Agent, b: Agent, drawer: Agent) {
         let space = Fixture.space()
@@ -46,7 +56,7 @@ struct BrowserRelayTests {
     }
 
     @Test func aRegisteredConnectionReachesItsOwnPageAndNotAnothers() async throws {
-        let h = try ScratchServer.fresh()
+        let h = try scratch()
         defer { h.stop() }
         let (a, b, _) = try await workspace(h)
         let app = App()
@@ -76,7 +86,7 @@ struct BrowserRelayTests {
     }
 
     @Test func anUnregisteredConnectionAndAnUnknownAgentAreRefused() async throws {
-        let h = try ScratchServer.fresh()
+        let h = try scratch()
         defer { h.stop() }
         let (a, _, _) = try await workspace(h)
         let app = App()
@@ -101,7 +111,7 @@ struct BrowserRelayTests {
     }
 
     @Test func aDesignsAgentGetsNoBrowser() async throws {
-        let h = try ScratchServer.fresh()
+        let h = try scratch()
         defer { h.stop() }
         let (_, _, drawer) = try await workspace(h)
         let app = App()
@@ -113,8 +123,91 @@ struct BrowserRelayTests {
         #expect(app.asked.current.isEmpty)
     }
 
-    @Test func aFailureCarriesItsCodeAndMessage() async throws {
+    /// With the real check, a client in the test process is nobody's pi: it registers nothing, so
+    /// naming an agent from a socket is not enough to drive that agent's page.
+    @Test func aProcessThatIsNotTheAgentsPiRegistersNothing() async throws {
         let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let (a, _, _) = try await workspace(h)
+        let app = App()
+        answering(h, app, with: .text("no"))
+        let client = try ExtensionClient(path: h.socketPath)
+        try register(client, as: a.id)
+        try client.send(.browser(id: 1, agentID: a.id, request: click))
+        guard case .error(1, "not_registered", _) = try await client.reply() else { Issue.record("a foreign process was served"); return }
+        #expect(app.asked.current.isEmpty)
+    }
+
+    /// The check is asked with the agent and the client's own pid, and a refusal leaves the
+    /// connection already registered where it is (a refused hello must not disconnect the holder).
+    @Test func aRefusedRegistrationLeavesTheCurrentConnectionInPlace() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let (a, _, _) = try await workspace(h)
+        let app = App()
+        answering(h, app, with: .text("ok"))
+        let asked = Locked<[(AgentID, pid_t)]>([])
+        let allowed = Locked(true)
+        h.server.browserPeerCheck = { agent, peer in
+            asked.withValue { $0.append((agent, peer)) }
+            return allowed.current
+        }
+        let holder = try ExtensionClient(path: h.socketPath)
+        try register(holder, as: a.id)
+        try holder.send(.browser(id: 1, agentID: a.id, request: click))
+        #expect(try await holder.reply() == .browserResult(id: 1, text: "ok", image: nil))
+        #expect(asked.current.count == 1 && asked.current[0].0 == a.id && asked.current[0].1 == getpid())
+
+        allowed.withValue { $0 = false }
+        let impostor = try ExtensionClient(path: h.socketPath)
+        try register(impostor, as: a.id)
+        try impostor.send(.browser(id: 1, agentID: a.id, request: click))
+        guard case .error(1, "not_registered", _) = try await impostor.reply() else { Issue.record("the impostor was served"); return }
+        #expect(asked.current.count == 2)
+
+        try holder.send(.browser(id: 2, agentID: a.id, request: click))
+        #expect(try await holder.reply() == .browserResult(id: 2, text: "ok", image: nil), "the holder was not displaced")
+        #expect(app.asked.current.count == 2)
+    }
+
+    /// The real check, against a stub pi the server spawned: its own process registers and is
+    /// served; a process it starts (its bash tool) and the test process are refused and cannot
+    /// displace its connection.
+    @Test func onlyTheAgentsOwnPiRegistersAndOthersCannotDisplaceIt() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        let app = App()
+        answering(h, app, with: .text("Reloaded."))
+        let ready = try await pi.ready()
+        _ = try await pi.send("browser-peer \(pi.agent.id) \(h.socketPath)", from: ready)
+
+        #expect(try await replyFile("browser-self-1.reply", in: h.dir) == .browserResult(id: 1, text: "Reloaded.", image: nil),
+                "the pi process the server spawned registered its own browser")
+        guard case .error(1, "not_registered", _) = try await replyFile("browser-child.reply", in: h.dir) else {
+            Issue.record("a process the agent started reached the page"); return
+        }
+        let foreign = try ExtensionClient(path: h.socketPath)
+        try register(foreign, as: pi.agent.id)
+        try foreign.send(.browser(id: 1, agentID: pi.agent.id, request: click))
+        guard case .error(1, "not_registered", _) = try await foreign.reply() else { Issue.record("the test process reached the page"); return }
+        #expect(app.asked.current.count == 1, "only pi's own request reached the app")
+
+        FileManager.default.createFile(atPath: h.dir.appendingPathComponent("browser-go").path, contents: nil)
+        #expect(try await replyFile("browser-self-2.reply", in: h.dir) == .browserResult(id: 2, text: "Reloaded.", image: nil),
+                "the refused registrations did not displace pi's connection")
+        #expect(app.asked.current.map(\.0) == [pi.agent.id, pi.agent.id])
+    }
+
+    /// One reply line a stub pi's process wrote to a file.
+    private func replyFile(_ name: String, in directory: URL) async throws -> ExtensionReply {
+        let url = directory.appendingPathComponent(name)
+        try await eventually("\(name) written") { FileManager.default.fileExists(atPath: url.path) }
+        return try JSONDecoder().decode(ExtensionReply.self, from: Data(contentsOf: url))
+    }
+
+    @Test func aFailureCarriesItsCodeAndMessage() async throws {
+        let h = try scratch()
         defer { h.stop() }
         let (a, _, _) = try await workspace(h)
         let app = App()
@@ -126,7 +219,7 @@ struct BrowserRelayTests {
     }
 
     @Test func withoutTheAppTheAnswerIsUnavailable() async throws {
-        let h = try ScratchServer.fresh()
+        let h = try scratch()
         defer { h.stop() }
         let (a, _, _) = try await workspace(h)
         let client = try ExtensionClient(path: h.socketPath)
@@ -136,7 +229,7 @@ struct BrowserRelayTests {
     }
 
     @Test func aRequestTheAppNeverAnswersTimesOutAndALateAnswerIsDropped() async throws {
-        let h = try ScratchServer.fresh()
+        let h = try scratch()
         defer { h.stop() }
         h.server.setBrowserDeadline(0.3)
         let (a, _, _) = try await workspace(h)
@@ -161,7 +254,7 @@ struct BrowserRelayTests {
     }
 
     @Test func aClosedConnectionGetsNoReplyAndItsSlotDoesNotLeak() async throws {
-        let h = try ScratchServer.fresh()
+        let h = try scratch()
         defer { h.stop() }
         let (a, _, _) = try await workspace(h)
         let app = App()
@@ -187,7 +280,7 @@ struct BrowserRelayTests {
     }
 
     @Test func aSecondConnectionForTheSameAgentReplacesTheFirst() async throws {
-        let h = try ScratchServer.fresh()
+        let h = try scratch()
         defer { h.stop() }
         let (a, _, _) = try await workspace(h)
         let app = App()
@@ -206,7 +299,7 @@ struct BrowserRelayTests {
     /// The user's next message to a thread gives the agent its browser back after a take over: it
     /// reaches the app from the composer, local or remote, and not from a peer's `agent_send`.
     @Test func aUsersMessageToAThreadIsHeardButAPeersIsNot() async throws {
-        let h = try ScratchServer.fresh()
+        let h = try scratch()
         defer { h.stop() }
         let pi = try await PiAgent.launch(on: h)
         let heard = Locked<[AgentID]>([])
@@ -231,7 +324,7 @@ struct BrowserRelayTests {
     }
 
     @Test func aReplyStaysUnderTheFrameCap() async throws {
-        let h = try ScratchServer.fresh()
+        let h = try scratch()
         defer { h.stop() }
         let (a, _, _) = try await workspace(h)
         let app = App()

@@ -20,6 +20,12 @@
            far, an `aborted` message_end that still carries the call, no tool_execution_start,
            then agent_end and agent_settled. Its events are the shapes pi 0.87.1 sends
            (Tests/Extensions/tool-call-stream.test.mjs pins them against the real thing).
+  "browser-peer <agentID> <socket>" the browser extension's registration, from this process and
+           from a process it starts (as an agent's bash tool would), in one turn: this process says
+           helloBrowser as <agentID> on <socket> and asks for a reload (the server's reply line goes
+           to the file `browser-self-1.reply` in the cwd), a child process does the same
+           (`browser-child.reply`), then it waits for the file `browser-go` and asks again on its
+           first connection (`browser-self-2.reply`).
   "widgets"      emits setStatus/setWidget/notify/setTitle (with ANSI colour)
   "widgets-clear" clears the status and widget from "widgets"
   "select" emits a select extension_ui_request (no timeout) and waits
@@ -658,6 +664,51 @@ def question_turn(prompt):
     emit({"type": "agent_settled"})
 
 
+BROWSER_CHILD = r"""
+import json, os, socket, sys
+agent, path, out = sys.argv[1:4]
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+s.settimeout(15)
+try:
+    s.connect(path)
+    s.sendall((json.dumps({"type": "helloBrowser", "agentID": agent}) + "\n").encode())
+    s.sendall((json.dumps({"type": "browser", "id": 1, "agentID": agent, "request": {"action": "reload"}}) + "\n").encode())
+    line = s.makefile("rb").readline()
+except OSError as e:
+    line = json.dumps({"type": "stub-error", "message": str(e)}).encode() + b"\n"
+with open(out + ".tmp", "wb") as f:
+    f.write(line)
+os.replace(out + ".tmp", out)
+"""
+
+
+def write_atomic(name, data):
+    with open(name + ".tmp", "wb") as f:
+        f.write(data)
+    os.replace(name + ".tmp", name)
+
+
+def browser_peer_turn(agent, path):
+    import socket
+    import subprocess
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.settimeout(15)
+    s.connect(path)
+    lines = s.makefile("rb")
+
+    def ask(request_id):
+        s.sendall((json.dumps({"type": "browser", "id": request_id, "agentID": agent, "request": {"action": "reload"}}) + "\n").encode())
+        return lines.readline()
+
+    s.sendall((json.dumps({"type": "helloBrowser", "agentID": agent}) + "\n").encode())
+    write_atomic("browser-self-1.reply", ask(1))
+    subprocess.run([sys.executable, "-c", BROWSER_CHILD, agent, path, os.path.join(os.getcwd(), "browser-child.reply")], timeout=60)
+    wait_for_file("browser-go")
+    write_atomic("browser-self-2.reply", ask(2))
+    s.close()
+    emit({"type": "agent_settled"})
+
+
 def ui(method, **fields):
     emit({"type": "extension_ui_request", "id": f"ui-{method}", "method": method, **fields})
 
@@ -988,6 +1039,9 @@ for raw in sys.stdin.buffer:
             ui("setStatus", statusKey="huge", statusText="x" * 5000)
             ui("setWidget", widgetKey="machine", widgetLines=['PI_SUBAGENT_ASYNC_JSON:{"kind":"snapshot"}'])
             emit({"type": "agent_settled"})
+        elif message.startswith("browser-peer "):
+            _, browser_agent, browser_socket = message.split(" ", 2)
+            threading.Thread(target=browser_peer_turn, args=(browser_agent, browser_socket), daemon=True).start()
         elif message == "widgets-clear":
             ui("setStatus", statusKey="build")
             ui("setWidget", widgetKey="w")
