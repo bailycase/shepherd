@@ -4,6 +4,7 @@ import SwiftUI
 import WebKit
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 import ShepherdUI
 
 // The Browser tab's web views, and the only app file that imports WebKit (as DesignHost is for
@@ -28,7 +29,18 @@ enum BrowserDataStores: Sendable {
     /// The store's identifier for `agent`: its id when that is a UUID, else a UUID made from it.
     static func identifier(for agent: AgentID) -> UUID {
         if let uuid = UUID(uuidString: agent.rawValue) { return uuid }
-        var bytes = Array(Insecure.SHA1.hash(data: Data(("shepherd-browser:" + agent.rawValue).utf8)).prefix(16))
+        return uuid(from: "shepherd-browser:" + agent.rawValue)
+    }
+
+    /// The store's identifier for a thread on another Mac: a UUID made from its host and agent, so
+    /// it is never a local thread's (whose agent id may be the same string) and two hosts' threads
+    /// never share one.
+    static func identifier(forRemote ref: RemoteAgentRef) -> UUID {
+        uuid(from: "shepherd-browser-remote:\(ref.hostID.uuidString):\(ref.agentID.rawValue)")
+    }
+
+    private static func uuid(from seed: String) -> UUID {
+        var bytes = Array(Insecure.SHA1.hash(data: Data(seed.utf8)).prefix(16))
         bytes[6] = (bytes[6] & 0x0F) | 0x50
         bytes[8] = (bytes[8] & 0x3F) | 0x80
         return UUID(uuid: (bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
@@ -45,10 +57,21 @@ enum BrowserDataStores: Sendable {
 
     @MainActor
     func store(for agent: AgentID) -> WKWebsiteDataStore {
+        store(identifier: Self.identifier(for: agent))
+    }
+
+    /// A remote thread's page has a store of its own too, apart from every local thread's.
+    @MainActor
+    func store(forRemote ref: RemoteAgentRef) -> WKWebsiteDataStore {
+        store(identifier: Self.identifier(forRemote: ref))
+    }
+
+    @MainActor
+    private func store(identifier: UUID) -> WKWebsiteDataStore {
         switch self {
         case .persistent:
             Self.usesIdentifiedStores(osVersion: ProcessInfo.processInfo.operatingSystemVersion)
-                ? WKWebsiteDataStore(forIdentifier: Self.identifier(for: agent))
+                ? WKWebsiteDataStore(forIdentifier: identifier)
                 : .nonPersistent()
         case .ephemeral: .nonPersistent()
         }
@@ -59,8 +82,18 @@ enum BrowserDataStores: Sendable {
     /// going away, so a refusal tries again a few times.
     @MainActor
     func remove(for agent: AgentID) {
+        remove(identifier: Self.identifier(for: agent))
+    }
+
+    @MainActor
+    func remove(forRemote ref: RemoteAgentRef) {
+        remove(identifier: Self.identifier(forRemote: ref))
+    }
+
+    @MainActor
+    private func remove(identifier: UUID) {
         guard self == .persistent, Self.usesIdentifiedStores(osVersion: ProcessInfo.processInfo.operatingSystemVersion) else { return }
-        Self.remove(Self.identifier(for: agent), tries: 10)
+        Self.remove(identifier, tries: 10)
     }
 
     @MainActor
@@ -75,15 +108,40 @@ enum BrowserDataStores: Sendable {
     }
 }
 
-/// Every local thread's page, made on demand.
+/// Every thread's page, made on demand: a local thread's, and a remote thread's, which renders here
+/// and reaches its host through the tunnel (`BrowserRemote`).
 @MainActor
 final class BrowserSessions {
     let dataStores: BrowserDataStores
     private var sessions: [AgentID: BrowserSession] = [:]
     private var known: Set<AgentID> = []
+    private var remoteSessions: [RemoteAgentRef: BrowserSession] = [:]
+    /// The ports of remote hosts forwarded on this Mac (`BrowserPortForwarder`).
+    let ports = BrowserPortForwarder()
 
     init(dataStores: BrowserDataStores) {
         self.dataStores = dataStores
+    }
+
+    /// A remote thread's page, made the first time it is asked for.
+    func session(for ref: RemoteAgentRef, hosts: RemoteHostStore?) -> BrowserSession {
+        if let session = remoteSessions[ref] { return session }
+        let session = BrowserSession(agentID: ref.agentID, dataStores: dataStores,
+                                     remote: BrowserRemote(ref: ref, hosts: hosts, ports: ports))
+        remoteSessions[ref] = session
+        return session
+    }
+
+    func existing(_ ref: RemoteAgentRef) -> BrowserSession? { remoteSessions[ref] }
+
+    /// Remote threads that are gone (deleted on their host, or their host removed here) take their
+    /// page, its forwarded ports and its website data with them. A host that is only away keeps its
+    /// last state, so its threads keep their pages.
+    func prune(liveRemote: Set<RemoteAgentRef>) {
+        for gone in remoteSessions.keys where !liveRemote.contains(gone) {
+            remoteSessions.removeValue(forKey: gone)?.close()
+            dataStores.remove(forRemote: gone)
+        }
     }
 
     func session(for agent: AgentID) -> BrowserSession {
@@ -151,6 +209,9 @@ final class BrowserSession {
 
     let agentID: AgentID
     @ObservationIgnored let dataStores: BrowserDataStores
+    /// A remote thread's page: which host it is on and how its ports are forwarded. Nil for a
+    /// local thread's.
+    @ObservationIgnored let remote: BrowserRemote?
 
     private(set) var url: URL?
     private(set) var canGoBack = false
@@ -180,6 +241,9 @@ final class BrowserSession {
     private(set) var waitingFor: URL?
     /// The dev servers the thread's repository offers, once read.
     var devServers: [DevServer]?
+    /// Why nothing loaded: a port of the host that can't be forwarded here (something else on this
+    /// Mac uses it). Cleared by the next load, or dismissed.
+    var notice: BrowserNotice?
 
     /// The agent is using the page: the pane's ring, pointer and card. Nil when it is not (or the
     /// user has taken over).
@@ -221,12 +285,33 @@ final class BrowserSession {
     @ObservationIgnored private var parkWindow: BrowserParkWindow?
     @ObservationIgnored private(set) var paneSize = CGSize(width: 1024, height: 768)
 
-    init(agentID: AgentID, dataStores: BrowserDataStores) {
+    init(agentID: AgentID, dataStores: BrowserDataStores, remote: BrowserRemote? = nil) {
         self.agentID = agentID
         self.dataStores = dataStores
+        self.remote = remote
     }
 
     var hasPage: Bool { url != nil }
+
+    /// The address field's host chip: "This Mac", or the name of the host a remote thread's page
+    /// reaches (only while the page is on that host's loopback).
+    var hostChip: String { remote?.chip(for: url) ?? "This Mac" }
+
+    /// "Start on This Mac", or "Start on build-01".
+    var startTitle: String { "Start on \(remote?.hostName ?? "This Mac")" }
+
+    func dismissNotice() {
+        if notice != nil { notice = nil }
+    }
+
+    /// Forwards the host port `url` names for a remote thread's page. False, with the reason in
+    /// `notice`, when it can't be: the page must not load then, or it would reach whatever else
+    /// answers on this Mac's port.
+    private func forwardPort(of url: URL) -> Bool {
+        guard let remote, let refusal = remote.forward(url) else { return true }
+        notice = BrowserNotice(message: refusal.message(hostName: remote.hostName))
+        return false
+    }
 
     // MARK: Navigation
 
@@ -235,6 +320,8 @@ final class BrowserSession {
         waitTask?.cancel()
         waitTask = nil
         if waitingFor != nil { waitingFor = nil }
+        guard forwardPort(of: url) else { return }
+        if notice != nil { notice = nil }
         let view = webView ?? makeWebView()
         if self.url != url { self.url = url }
         // The app's own load of a `file:` (the address field) is let through once; a page's is not.
@@ -264,11 +351,20 @@ final class BrowserSession {
     func wait(for server: DevServer) {
         guard let url = server.url else { return }
         waitTask?.cancel()
+        // A remote host's port is forwarded here first, so it answers by the way the page will go.
+        guard forwardPort(of: url) else { return }
         waitingFor = url
+        let remote = remote
         waitTask = Task { [weak self] in
             let deadline = ContinuousClock.now + .seconds(90)
             while !Task.isCancelled, ContinuousClock.now < deadline {
-                if await Self.answers(url) {
+                let up: Bool
+                if let remote, let port = BrowserTunnelTarget.port(of: url) {
+                    up = await remote.answers(port: port)
+                } else {
+                    up = await Self.answers(url)
+                }
+                if up {
                     guard !Task.isCancelled, let self, self.waitingFor == url else { return }
                     self.load(url)
                     return
@@ -293,9 +389,10 @@ final class BrowserSession {
         return (try? await session.data(for: request)) != nil
     }
 
-    /// The agent is gone: the page stops.
+    /// The agent is gone: the page stops, and a remote page lets go of its ports.
     func close() {
         stopWaiting()
+        remote?.release()
         expiry?.cancel()
         observations.removeAll()
         webView?.stopLoading()
@@ -581,7 +678,7 @@ final class BrowserSession {
 
     private func makeWebView() -> WKWebView {
         let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = dataStores.store(for: agentID)
+        configuration.websiteDataStore = remote.map { dataStores.store(forRemote: $0.ref) } ?? dataStores.store(for: agentID)
         let delegate = Delegate(session: self)
         self.delegate = delegate
         let content = configuration.userContentController
@@ -705,6 +802,13 @@ final class BrowserSession {
                 // History (Back, Forward, Reload) replays what an allowed load put there.
                 let replay = navigationAction.navigationType == .reload || navigationAction.navigationType == .backForward
                 if replay || BrowserURLPolicy.allowsPageNavigation(to: url) || session.consumeUserNavigation(url) {
+                    // A remote page going to another port of its host's loopback needs that forwarded
+                    // first; refused, it does not go, rather than reach this Mac's own port.
+                    guard session.forwardPort(of: url) else {
+                        session.console.append(.error, session.notice?.message ?? "That port can’t be forwarded.")
+                        decisionHandler(.cancel)
+                        return
+                    }
                     decisionHandler(.allow)
                 } else {
                     session.console.append(.error, "Blocked a navigation to \(url.scheme ?? "that")\(url.scheme == nil ? "" : ":") URL.")
