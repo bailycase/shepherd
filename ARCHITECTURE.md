@@ -299,7 +299,8 @@ authentication boundary ([SECURITY.md](SECURITY.md)).
 - **`shepherd-subagents.ts`:** publishes subagent runs with `setAgentChildren`.
 - **`shepherd-children.ts`:** opens a `helloChildren` control connection for subagent commands.
 - **`shepherd-browser.ts`:** the `browser_*` tools, on the thread's own Browser page. It sends
-  `helloBrowser` first on every connect, which binds the connection to its agent; the server
+  `helloBrowser` first on every connect, which binds the connection to its agent (accepted only
+  from the pid of the pi process the server spawned for that agent, `browserPeerCheck`); the server
   serves a `browser` request only on the connection registered as the agent it names
   (`routeBrowserRequest`, with a 120 s deadline), the app answers through `onBrowserRequest`, and
   `browserResult` carries text and, for a screenshot, an image. Loaded only for a thread

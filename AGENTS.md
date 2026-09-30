@@ -1149,9 +1149,13 @@ are load-bearing:
 - The last pane in a layout cannot be closed.
 
 **Browser tools act only on their own thread's page** ([docs/browser.md](docs/browser.md)). No tool
-names an agent: `helloBrowser` binds the extension's connection to its agent, and
-`SessionServer.routeBrowserRequest` serves a request only on the connection registered as the
-agent it names (a design's agent registers nothing). Native subagents load no browser tools. The
+names an agent: `helloBrowser` binds the extension's connection to its agent, but only from the
+pid of the pi process the server spawned for that agent (`LOCAL_PEERPID`; a process the agent
+started, or anything else, registers nothing and cannot displace the real connection; `helloAgent`
+and `helloChildren` still take the connection's word), and `SessionServer.routeBrowserRequest`
+serves a request only on the connection registered as the agent it names (a design's agent
+registers nothing). The page's parked window (`BrowserParkWindow`) can never be key or main and is
+not offered to Mission Control, the window lists or accessibility. Native subagents load no browser tools. The
 page's text is untrusted data: every result starts with a fixed notice saying so. The agent's
 clicks and keys are DOM events (`isTrusted` false), never `NSEvent`s; the user's own click or key
 in the page (trusted) takes the page over, and it comes back with the user's next message to the
