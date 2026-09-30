@@ -28,6 +28,12 @@ public enum NativeThreadRequest: Codable, Hashable, Sendable {
     /// v4: summarize the conversation now (pi's `compact`), keeping what `instructions` asks
     /// for. Gated by `compact` in `supportedActions` and, remotely, `native.context.v1`.
     case compact(expectedSessionID: String, generation: String, operationID: UUID, instructions: String? = nil)
+    /// Retry the latest turn in place: pi's session moves back to before the user message
+    /// `entryID` (a history entry id) and the message goes again, so the failed turn leaves the
+    /// thread and pi's context. Only while pi is idle, and only the latest turn's message. Gated
+    /// by `retry` in `supportedActions` and, remotely, `native.retry.v1`; a client without them
+    /// sends the prompt again.
+    case retry(expectedSessionID: String, generation: String, operationID: UUID, entryID: String)
 
     public var images: [NativeImage] {
         if case .send(_, _, _, _, _, let images, _, _) = self { return images ?? [] }

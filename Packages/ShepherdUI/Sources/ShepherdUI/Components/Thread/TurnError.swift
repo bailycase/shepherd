@@ -289,7 +289,7 @@ public struct NWTurnError: View {
                     #else
                     .buttonStyle(.nw(.secondary, size: .s))
                     #endif
-                    .nwHelp("Send this turn’s prompt again")
+                    .nwHelp("Retry this turn")
                     .nwTransition(.content)
             }
             Button {

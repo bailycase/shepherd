@@ -314,9 +314,8 @@ struct ThreadTranscript: View {
         let ref = ref
         let navigator = navigator
         var actions = AgentTurnActions()
-        if let text = row.promptText, !running, store.supports("send"),
-           !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            actions.retry = { [store] in Task { await store.send(text: text) } }
+        if store.canRetry(row, running: running) {
+            actions.retry = { [store] in Task { await store.retry(row) } }
         }
         actions.review = { path in ReviewHooks.open(thread: ref, file: path, navigator: navigator) }
         actions.reviewChanges = { ReviewHooks.open(thread: ref, file: nil, navigator: navigator) }

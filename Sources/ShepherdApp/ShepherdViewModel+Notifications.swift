@@ -207,10 +207,16 @@ extension ShepherdViewModel {
         }
     }
 
-    /// Retry: the prompt that opened the failed turn, sent again once the agent is idle.
+    /// Retry, once the agent is idle: the failed turn again in its place, or, from a host that
+    /// can't retry in place, its prompt sent again.
     private func retryTurn(_ target: BannerTarget) async {
-        guard let thread = await snapshot(target), !thread.running, thread.supportedActions.contains("send"),
-              let prompt = AgentBanners.lastPrompt(in: thread.messages) else { return }
+        guard let thread = await snapshot(target), !thread.running else { return }
+        if thread.supportedActions.contains("retry"), let entryID = AgentBanners.lastPromptEntry(in: thread.messages) {
+            _ = try? await request(target, .retry(expectedSessionID: thread.piSessionID, generation: thread.generation,
+                                                  operationID: UUID(), entryID: entryID))
+            return
+        }
+        guard thread.supportedActions.contains("send"), let prompt = AgentBanners.lastPrompt(in: thread.messages) else { return }
         _ = try? await request(target, .send(expectedSessionID: thread.piSessionID, generation: thread.generation,
                                              operationID: UUID(), text: prompt, delivery: .followUp))
     }

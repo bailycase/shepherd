@@ -211,6 +211,12 @@ enum AgentBanners {
         return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : text
     }
 
+    /// The user message that opened the last turn in `messages`, which Retry sends again in place:
+    /// the last one pi has read that wasn't steered into a turn.
+    static func lastPromptEntry(in messages: [NativeThreadMessage]) -> String? {
+        messages.last { $0.role == "user" && $0.status == nil && $0.origin != .steered }?.entryID
+    }
+
     /// A line of Markdown as a sentence: headings, emphasis, code ticks and bullets dropped.
     private static func plain(_ text: String) -> String {
         text.split(whereSeparator: \.isNewline)
