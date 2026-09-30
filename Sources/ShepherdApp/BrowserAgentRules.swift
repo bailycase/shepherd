@@ -358,6 +358,11 @@ enum BrowserLimits {
 
     /// `eval`'s answer is cut at this many characters.
     static let evalResultChars = 16 * 1024
+    /// A script `eval` runs gives up after this long.
+    static let evalSeconds = 30.0
+    /// Any other call into the page (a read, a click, a snapshot) gives up after this long: a page
+    /// stuck in a script would otherwise hold every later tool call.
+    static let scriptSeconds = 15.0
     /// Loading a page gives up after this long.
     static let loadSeconds = 30.0
     /// The most the page's console tells the agent at once.
