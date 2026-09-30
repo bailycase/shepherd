@@ -597,9 +597,11 @@ final class ShepherdViewModel {
         self.remoteHosts.onProjectionChanged = { [weak self] in
             guard let self else { return }
             self.notifyRemote()
-            self.remoteThreadStores.prune(live: Set(self.remoteHosts.connections.flatMap { connection in
+            let liveRemote = Set(self.remoteHosts.connections.flatMap { connection in
                 connection.state.agents.map { RemoteAgentRef(hostID: connection.id, agentID: $0.id) }
-            }))
+            })
+            self.remoteThreadStores.prune(live: liveRemote)
+            self.browsers.prune(liveRemote: liveRemote)
             self.pruneRemoteDesigns()
             for (target, review) in self.remoteReviews where review.hostReviewPane {
                 guard let connection = self.remoteHosts.connections.first(where: { $0.id == target.hostID }),

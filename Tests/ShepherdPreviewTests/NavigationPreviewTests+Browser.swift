@@ -51,6 +51,84 @@ extension PreviewTests {
         }
     }
 
+    /// A remote thread's page: a session whose host is "build-01", drawn without forwarding anything.
+    private func remoteBrowser() throws -> BrowserSession {
+        let hosts = RemoteHostStore(defaults: ScratchDefaults(), connects: false)
+        hosts.addHost(name: "build-01", host: "build-01.local", port: 7433, token: "token")
+        let ref = RemoteAgentRef(hostID: try #require(hosts.connections.first).id, agentID: AgentID())
+        let remote = BrowserRemote(ref: ref, hosts: hosts, ports: BrowserPortForwarder())
+        remote.forwardsPorts = false
+        let session = BrowserSession(agentID: ref.agentID, dataStores: .ephemeral, remote: remote)
+        // Kept alive with the session, which only holds the store weakly.
+        Self.remoteHostStores.append(hosts)
+        return session
+    }
+
+    nonisolated(unsafe) private static var remoteHostStores: [RemoteHostStore] = []
+
+    /// A remote thread's Nothing open (PaneStates › BrowserPane · nothing open): the host chip names
+    /// the host, and Start says "Start on build-01".
+    @Test func browserRemoteEmpty() async throws {
+        let workspace = try PreviewWorkspace()
+        let session = try remoteBrowser()
+        session.devServers = [
+            DevServer(script: "dev", command: "pnpm dev", packageName: "acme-web", directory: "/host/acme-web", manifest: "package.json", port: 5173),
+        ]
+        try await Preview.render("browser-remote-empty", size: Self.paneSize) {
+            browserPane(workspace, session, store: NativeThreadStore())
+        }
+    }
+
+    /// A remote thread's page open (PaneStates › BrowserPane): `localhost:5173/checkout` with the
+    /// host chip "build-01" and its console, as the board draws it (the page is a web view a capture
+    /// can't draw, so it renders blank).
+    @Test func browserRemotePage() async throws {
+        let workspace = try PreviewWorkspace()
+        let session = try remoteBrowser()
+        session.load(try #require(URL(string: "http://localhost:5173/checkout")))
+        // Nothing listens at 5173 here, so the load fails: what the console shows is the board's instead,
+        // once the failed load is over (a new document starts it over).
+        final class Seeded { var done = false }
+        let seeded = Seeded()
+        try await Preview.render("browser-remote-page", size: Self.paneSize, ready: {
+            guard !session.isLoading else { return false }
+            if !seeded.done {
+                seeded.done = true
+                session.console.clear()
+                for (level, text) in [(NWConsoleLevel.log, "[vite] hmr update /src/components/Checkout.tsx"),
+                                      (.log, "[vite] hmr update /src/components/PromoField.tsx"),
+                                      (.warning, "Each child in a list should have a unique \"key\" prop.  PromoList.tsx:12")] {
+                    session.console.append(level, text, at: Date(timeIntervalSince1970: 1_790_280_131))
+                }
+                session.console.setNetwork(24)
+            }
+            return true
+        }) {
+            browserPane(workspace, session, store: NativeThreadStore())
+        }
+    }
+
+    /// A remote thread's page waiting for the dev server Start ran, and one whose port is in use on
+    /// this Mac, with the reason floating under the toolbar.
+    @Test func browserRemoteWaitingAndRefused() async throws {
+        let workspace = try PreviewWorkspace()
+        let waiting = try remoteBrowser()
+        waiting.devServers = []
+        waiting.wait(for: DevServer(script: "dev", command: "pnpm dev", packageName: nil, directory: "/host/acme-web",
+                                    manifest: "package.json", port: 5173))
+        try await Preview.render("browser-remote-waiting", size: Self.paneSize) {
+            browserPane(workspace, waiting, store: NativeThreadStore())
+        }
+        waiting.stopWaiting()
+
+        let refused = try remoteBrowser()
+        refused.devServers = []
+        refused.notice = BrowserNotice(message: "Port 5173 is in use on this Mac, so build-01’s 5173 can’t be forwarded. Stop what is using it and try again.")
+        try await Preview.render("browser-remote-refused", size: Self.paneSize) {
+            browserPane(workspace, refused, store: NativeThreadStore())
+        }
+    }
+
     /// A page open at iPhone 16's width in its frame, an element picked (the outline and tag
     /// are the page's; the popover is Shepherd's), and the console with a warning and an error.
     @Test func browserPage() async throws {

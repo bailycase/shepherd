@@ -64,7 +64,12 @@ final class RemoteHostStore {
         @ObservationIgnored fileprivate(set) var endpointID = UUID()
         @ObservationIgnored fileprivate(set) var transportID = UUID()
         @ObservationIgnored fileprivate var stateGeneration = 0
-        @ObservationIgnored fileprivate var client: RemoteHostClient?
+        @ObservationIgnored fileprivate var client: RemoteHostClient? {
+            didSet { hubSlot.hub = client?.tunnels }
+        }
+        /// Where a forwarded port of this host finds its connection's tunnels (Browser): filled
+        /// while there is a client, empty while there is none.
+        let hubSlot = BrowserTunnelHubSlot()
         @ObservationIgnored fileprivate var reconnectTask: Task<Void, Never>?
         @ObservationIgnored fileprivate var reconnectDelay: Duration = .seconds(1)
         /// A reconnect waits out its backoff.
@@ -94,6 +99,11 @@ final class RemoteHostStore {
             supportsDesigns && client?.capabilities.contains(RemoteProtocol.designDeleteCapability) == true
         }
         var supportsReviewCommit: Bool { client?.capabilities.contains(RemoteProtocol.reviewCommitCapability) == true }
+        /// The host carries Browser tunnels, lists its threads' dev servers and starts them
+        /// (`browser.tunnel.v1`): its threads get a Browser tab here.
+        var supportsBrowser: Bool { client?.capabilities.contains(RemoteProtocol.browserTunnelCapability) == true }
+        /// This connection's client, for what a page asks of its host (Browser).
+        var browserClient: RemoteHostClient? { phase == .connected ? client : nil }
         /// The host answers `changes*` queries: its reviews use the Changes engine.
         var supportsChanges: Bool { client?.capabilities.contains(RemoteProtocol.changesCapability) == true }
         /// The host serves automations over the protocol; older hosts show them read-only.

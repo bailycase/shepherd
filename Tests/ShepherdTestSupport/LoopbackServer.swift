@@ -22,7 +22,7 @@ public final class LoopbackServer: @unchecked Sendable {
 
     /// `address` is an IPv4 address to listen on instead of the loopback, for a test that a tunnel
     /// reaches only the loopback.
-    public init(family: Family = .ipv4, address: String? = nil, handler: @escaping @Sendable (Int32) -> Void) throws {
+    public init(family: Family = .ipv4, address: String? = nil, port requested: UInt16 = 0, handler: @escaping @Sendable (Int32) -> Void) throws {
         let domain = family == .ipv4 ? AF_INET : AF_INET6
         let listenAddress = address
         let fd = socket(domain, SOCK_STREAM, 0)
@@ -34,6 +34,7 @@ public final class LoopbackServer: @unchecked Sendable {
             var address = sockaddr_in()
             address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
             address.sin_family = sa_family_t(AF_INET)
+            address.sin_port = requested.bigEndian
             address.sin_addr = in_addr(s_addr: UInt32(0x7f00_0001).bigEndian)
             if let listenAddress {
                 guard inet_pton(AF_INET, listenAddress, &address.sin_addr) == 1 else { throw LoopbackError.system("address") }
@@ -45,6 +46,7 @@ public final class LoopbackServer: @unchecked Sendable {
             var address = sockaddr_in6()
             address.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
             address.sin6_family = sa_family_t(AF_INET6)
+            address.sin6_port = requested.bigEndian
             address.sin6_addr = in6addr_loopback
             bound = withUnsafePointer(to: &address) {
                 $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in6>.size)) }
@@ -154,9 +156,10 @@ public final class DevServerFixture: @unchecked Sendable {
     /// Request lines seen, in order.
     public let requests = Locked<[String]>([])
 
-    public init(family: LoopbackServer.Family = .ipv4) throws {
+    /// `port` binds a port chosen beforehand (a dev server that comes up later); 0 takes a free one.
+    public init(family: LoopbackServer.Family = .ipv4, port: UInt16 = 0) throws {
         let requests = requests
-        server = try LoopbackServer(family: family) { fd in
+        server = try LoopbackServer(family: family, port: port) { fd in
             defer { close(fd) }
             guard let (head, rest) = LoopbackServer.readHead(fd) else { return }
             let lines = head.components(separatedBy: "\r\n")

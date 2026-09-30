@@ -33,8 +33,13 @@ struct SidePaneView: View {
                             .nwTransition(.content)
                     }
                 case .browser:
-                    if case .local(let agentID) = owner {
+                    switch owner {
+                    case .local(let agentID):
                         BrowserPane(vm: vm, session: vm.browsers.session(for: agentID), store: store, active: active)
+                            .nwTransition(.content)
+                    case .remote(let ref):
+                        // A remote thread's page renders here and reaches its host through the tunnel.
+                        BrowserPane(vm: vm, session: vm.browsers.session(for: ref, hosts: vm.remoteHosts), store: store, active: active)
                             .nwTransition(.content)
                     }
                 }
@@ -64,7 +69,7 @@ private struct SidePaneTabBar: View {
 
     var body: some View {
         NWSidePaneTabs(SidePaneTabs.items(news: news, changedFiles: review.flatMap { $0.isLoading ? nil : $0.files.count },
-                                          remote: owner.isRemote, browserTip: browserTip),
+                                          browser: vm.sidePaneTabs(for: owner).contains(.browser), browserTip: browserTip),
                        selection: tab.rawValue,
                        select: { id in SidePaneTab(rawValue: id).map { vm.showSidePane(owner, tab: $0) } },
                        closeShortcut: vm.keybindings.display(.toggleRightPane),
@@ -85,8 +90,8 @@ private struct SidePaneTabBar: View {
 /// The strip's tabs, from what each one holds.
 enum SidePaneTabs {
     /// `browserTip` is what pi last opened in the Browser: the brief line under its tab while it is news.
-    static func items(news: Set<SidePaneTab>, changedFiles: Int?, remote: Bool = false, browserTip: NWSidePaneTabTip? = nil) -> [NWSidePaneTab] {
-        SidePaneTab.tabs(remote: remote).map { tab in
+    static func items(news: Set<SidePaneTab>, changedFiles: Int?, browser: Bool = true, browserTip: NWSidePaneTabTip? = nil) -> [NWSidePaneTab] {
+        SidePaneTab.tabs(browser: browser).map { tab in
             let count: Int? = switch tab {
             case .changes: changedFiles
             case .browser: nil
