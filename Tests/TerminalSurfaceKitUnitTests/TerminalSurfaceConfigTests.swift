@@ -55,13 +55,27 @@ struct TerminalSurfaceConfigTests {
     /// so the table is spelled out here; a rebound chord arrives through `extraUnbinds`.)
     private static let defaultAppChords = [
         "cmd+n", "shift+cmd+t", "shift+cmd+n", "cmd+r", "shift+cmd+w", "cmd+k", "cmd+down", "cmd+up",
-        "cmd+d", "shift+cmd+d", "cmd+w", "alt+cmd+right", "alt+cmd+left", "shift+cmd+s", "shift+cmd+b",
+        "cmd+d", "cmd+w", "shift+cmd+s", "shift+cmd+b",
         "shift+cmd+m", "cmd+period", "alt+cmd+up", "alt+cmd+down", "cmd+i", "cmd+j", "shift+cmd+enter",
+        // New Terminal (⌘D), Close Terminal (⌘W) above; Next and Previous Terminal here.
+        "shift+cmd+right_bracket", "shift+cmd+left_bracket",
     ]
+
+    /// Terminals are tabs only, so the split chords have no app action any more. Ghostty's own
+    /// split and goto bindings on them are silent no-ops in embedded libghostty that would swallow
+    /// the keys, so they stay unbound too.
+    private static let formerSplitChords = ["shift+cmd+d", "alt+cmd+right", "alt+cmd+left"]
 
     @Test func everyDefaultAppShortcutIsUnbound() {
         let bound = unbinds(TerminalSurfaceModel())
         for chord in Self.defaultAppChords {
+            #expect(bound.contains(chord), "a focused terminal would swallow \(chord)")
+        }
+    }
+
+    @Test func theFormerSplitChordsStayUnboundSoATerminalNeverSwallowsThem() {
+        let bound = unbinds(TerminalSurfaceModel())
+        for chord in Self.formerSplitChords {
             #expect(bound.contains(chord), "a focused terminal would swallow \(chord)")
         }
     }

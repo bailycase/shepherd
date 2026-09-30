@@ -67,19 +67,19 @@ struct RemoteControlTests {
         #expect(seen.current == [.close(agentID: agentID, paneID: closing)], "only the close reached the handler, on the same connection")
     }
 
-    @Test func paneRequestsFailCleanlyWithoutAHandlerOrWithAWrongOutcome() async throws {
+    @Test func terminalRequestsFailCleanlyWithoutAHandlerOrWithAWrongOutcome() async throws {
         let r = try RemoteHost()
         defer { r.stop() }
         let client = try await r.raw()
         try client.send(.closePane(id: 3, agentID: AgentID(), paneID: PaneID()))
-        #expect(try await client.next() == .error(id: 3, code: "unsupported", message: "host cannot mutate panes"))
+        #expect(try await client.next() == .error(id: 3, code: "unsupported", message: "host cannot mutate terminals"))
 
         r.server.onRemotePaneRequest = { _, respond in respond(.panes([])) }
         try client.send(.closePane(id: 4, agentID: AgentID(), paneID: PaneID()))
-        #expect(try await client.next() == .error(id: 4, code: "protocol", message: "unexpected pane reply"))
-        r.server.onRemotePaneRequest = { _, respond in respond(.failed(code: "not_closable", message: "last pane")) }
+        #expect(try await client.next() == .error(id: 4, code: "protocol", message: "unexpected terminal reply"))
+        r.server.onRemotePaneRequest = { _, respond in respond(.failed(code: "not_closable", message: "the layout's only terminal cannot be closed")) }
         try client.send(.closePane(id: 5, agentID: AgentID(), paneID: PaneID()))
-        #expect(try await client.next() == .error(id: 5, code: "not_closable", message: "last pane"))
+        #expect(try await client.next() == .error(id: 5, code: "not_closable", message: "the layout's only terminal cannot be closed"))
     }
 
     // MARK: - Spaces and directories

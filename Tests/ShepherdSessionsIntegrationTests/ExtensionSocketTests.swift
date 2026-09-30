@@ -345,7 +345,7 @@ struct ExtensionSocketTests {
         let client = try ExtensionClient(path: h.socketPath)
         let agentID = AgentID()
         let requests: [(ExtensionMessage, String)] = [
-            (.listPanes(id: 1, agentID: agentID), "pane control unavailable"),
+            (.listPanes(id: 1, agentID: agentID), "terminal control unavailable"),
             (.requestReview(id: 2, agentID: agentID, cwd: nil, reference: nil), "no review handler"),
             (.listAutomations(id: 3), "automations unavailable"),
             (.listAgents(id: 4, agentID: agentID), "agent peers unavailable"),
