@@ -761,7 +761,7 @@ Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free)
   shepherd-instructions.ts  Settings ▸ Instructions' AGENTS.md and APPEND_SYSTEM.md, added to
                           every session Shepherd starts (never ~/.pi/agent); suggest_instruction
                           (Settings ▸ Experiments ▸ Suggested instructions)
-  shepherd-design.ts      the design agent's design_read, board_write, canvas_update,
+  shepherd-design.ts      the design agent's design_read, board_write, board_edit, canvas_update,
                           design_check, comment_list, comment_reply, system_read and
                           system_write; hands pi the design skill
                           (design-skill/: SKILL.md, format.md); see docs/designs.md

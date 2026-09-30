@@ -6,6 +6,8 @@
 //
 //   design_read(path?)          the canvas index, or one board's source
 //   board_write(path, source)   one board's whole source
+//   board_edit(path, edits)     find-and-replace edits to one board, applied on Shepherd's side to
+//                               the board's current text (a small change without its whole source)
 //   canvas_update(changes)      a JSON merge patch for canvas.json: place, title, remove boards
 //   design_check(path?)         colors and sizes the installed design system (else the project's
 //                               CSS custom properties) doesn't name, each with its board and line
@@ -33,6 +35,8 @@ const FACTS_TIMEOUT_MS = 3_000;
 // Shepherd's socket takes frames up to 1 MiB; a board is capped at 900,000 bytes below that.
 const MAX_FRAME_BYTES = 1_048_576;
 const MAX_BOARD_BYTES = 900_000;
+// board_edit takes up to this many edits a call (Shepherd's DesignBoardEdits.maxEdits).
+const MAX_EDITS = 64;
 
 interface Reply {
   type: string;
@@ -42,6 +46,7 @@ interface Reply {
   snapshot?: Snapshot;
   board?: { path: string; source: string; sha256: string; revision: number };
   result?: WriteResult & SystemWriteResult;
+  replaced?: number[];
   comments?: { revision: number; comments: Comment[] };
   comment?: Comment;
   listing?: SystemListing;
@@ -218,7 +223,7 @@ export default function shepherdDesign(pi: ExtensionAPI) {
     const id = nextID++;
     const frame = JSON.stringify({ ...payload, id, agentID, designID }) + "\n";
     if (Buffer.byteLength(frame) > MAX_FRAME_BYTES) {
-      throw new Error("the request is larger than Shepherd's 1 MiB frame; make the board smaller (frame_too_large)");
+      throw new Error("the request is larger than Shepherd's 1 MiB frame; send less in one call, or make the board smaller (frame_too_large)");
     }
     const s = await connect();
     if (stopped || s.destroyed) throw new Error("Shepherd closed the connection");
@@ -352,6 +357,52 @@ export default function shepherdDesign(pi: ExtensionAPI) {
       for (const warning of result.warnings ?? []) lines.push(`Warning: ${WARNINGS[warning] ?? warning}`);
       if (result.created) lines.push("Give it a frame on the canvas with canvas_update (x, y, w, h, title).");
       return text(lines.join("\n"), { revision: result.revision, created: result.created === true });
+    },
+  });
+
+  pi.registerTool({
+    name: "board_edit",
+    label: "Edit Board",
+    description:
+      "Change one board in place with find-and-replace edits, without writing its whole source again: for a small change. " +
+      "Shepherd applies the edits in order to the board's current text (so a change made since you read it is kept), " +
+      "then checks and writes the result exactly as board_write does. find is exact text, whitespace included, taken " +
+      "from design_read; it must match once (lengthen it with the text around it until it does), or every match is " +
+      "replaced when all is true. An edit that matches nothing, or more than once without all, fails the whole call " +
+      "and changes nothing: the error names the edit and where it looked. Write the whole board with board_write " +
+      "when you rewrite it. Pass baseRevision (from design_read) to refuse the edit if the design changed since you read it.",
+    promptSnippet: "Change one board with find-and-replace edits; board_write for a rewrite",
+    parameters: Type.Object({
+      path: Type.String({ description: "The board file, such as 'A.dc.html'" }),
+      edits: Type.Array(
+        Type.Object({
+          find: Type.String({ minLength: 1, description: "The exact text to find, whitespace and line breaks included" }),
+          replace: Type.String({ description: "What replaces it; empty removes it" }),
+          all: Type.Optional(Type.Boolean({ description: "Replace every match instead of requiring exactly one" })),
+        }),
+        { minItems: 1, maxItems: MAX_EDITS, description: "Applied in order, each to the text the one before it left" },
+      ),
+      baseRevision: Type.Optional(Type.Integer({ description: "The design revision this edit is based on" })),
+    }),
+    async execute(_toolCallId, params) {
+      const edits = Array.isArray(params.edits) ? params.edits : [];
+      if (edits.length === 0) throw new Error("board_edit takes at least one edit: {find, replace} (invalid_edit)");
+      const sent = edits.map((edit) => {
+        const one: Record<string, unknown> = { find: String(edit?.find ?? ""), replace: String(edit?.replace ?? "") };
+        if (edit?.all === true) one.all = true;
+        return one;
+      });
+      const reply = await request({ type: "designEditBoard", path: params.path, edits: sent, baseRevision: params.baseRevision });
+      const result = reply.result;
+      if (reply.type !== "designEdited" || !result) throw new Error("Shepherd's reply held no edit result");
+      const replaced = Array.isArray(reply.replaced) ? reply.replaced : [];
+      const lines = [
+        result.changed
+          ? `Edited ${params.path} · ${plural(edits.length, "edit")} (matches replaced: ${replaced.join(", ")}) · revision ${result.revision}`
+          : `${params.path} is unchanged · revision ${result.revision} (the edits left its text as it was)`,
+      ];
+      for (const warning of result.warnings ?? []) lines.push(`Warning: ${WARNINGS[warning] ?? warning}`);
+      return text(lines.join("\n"), { revision: result.revision, replaced });
     },
   });
 
@@ -649,7 +700,8 @@ function designFacts(current: Snapshot | undefined, designID: string, skillDirec
     lines.push(`- Read the shepherd-design skill (${path.join(skillDirectory, "SKILL.md")}) before you draw or revise, once per session.`);
   }
   lines.push(
-    "- Read the design with design_read and change it only with board_write and canvas_update. Never write its files " +
+    "- Read the design with design_read and change it only with board_edit, board_write and canvas_update: board_edit for a small " +
+      "change to a board (find-and-replace edits, a few lines each), board_write to write one whole. Never write its files " +
       "with any other tool, even though your working folder may hold them, and never change a repository: a design " +
       "belongs to no project, and a system build only reads its project's tokens, templates and pages.",
     "- Run design_check before you reply, and fix or name what it finds.",

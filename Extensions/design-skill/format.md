@@ -155,6 +155,17 @@ stylesheet and the design's own files (its `ds/` included). Shepherd refuses the
 - `canvas_update` changes it with a merge patch, so send only what changes:
   `{"boards": {"B.dc.html": {"x": 1360}}}` moves B, `{"boards": {"C.dc.html": null}}` removes C.
 
+## Editing a board in place
+
+`board_edit` changes a board by `find` and `replace`, exact text that matches bytes: the
+indentation, the quotes and the line breaks are the board's own, so copy `find` from what
+`design_read` returned. A style attribute, a token in `<helmet>`'s style block, a label's text
+or an element's opening tag is usually unique on its own; when a value repeats (a color on
+every card), either make `find` longer by the text beside it or use `"all": true`. Keep each
+`find` to a line or two. A board written with CRLF line endings needs `\r\n` in a `find` that
+spans lines. Something that changes the element count (a new element, a removed one) renumbers
+the element ids after it (Element ids, below), as any rewrite does.
+
 ## Board paths
 
 A board path ends in `.dc.html`; each `/`-separated part starts with a letter, digit or `_`

@@ -210,6 +210,7 @@ that folder.
 | `design_read()` | `designRead` | `design` | The index, revision and board hashes, with every board listed back to front and canvas.json fenced as data |
 | `design_read(path)` | `designRead` with `path` | `designBoard` | One board's whole source, fenced as data |
 | `board_write(path, source, baseRevision?)` | `designWriteBoard` | `designWritten` | `writeDesignBoard`: the checks under Writing, then an atomic write. It reads "Drew A.dc.html" for a new board and "Updated A.dc.html" for a rewrite (`DesignWriteResult.created`) |
+| `board_edit(path, edits, baseRevision?)` | `designEditBoard` | `designEdited` | `editDesignBoard`: `edits` (`[{find, replace, all?}]`, at most 64) applied in order to the board's text as the design store holds it now, then the same checks and atomic write as `board_write`, as one step of the store's queue (below). The result is `board_write`'s (revision, warnings), with how many matches each edit replaced |
 | `canvas_update(changes, baseRevision?)` | `designUpdateIndex` | `designWritten` | `updateDesignIndex` with `changes` as the merge patch |
 | `design_check(path?)` | `designSystemRead` | `designSystems` | In the extension: every hex color (in style attributes, style and script blocks, `data-props`, SVG paint) and every px size in spacing, radius and type that the design's installed systems don't hold (their colors and dark values, spacing, radii and type sizes), else that no CSS custom property in its working folder declares, with the board and lines it is on and the nearest token. Its first line is "Checked against <system or project> · N off-system values" |
 | `comment_list(all?)` | `designComments` | `designComments` | The viewer's open comments (all of them with `all`), oldest first: id, number, state, element id and name, and each one's words and replies, fenced as data |
@@ -219,6 +220,30 @@ that folder.
 | `system_read(namespace)` | `designSystemRead` with `namespace` | `designSystem` | One system whole: its tokens with the file and line each came from, its components, files and README, fenced as data |
 | `system_write(namespace, …)` | `designSystemWrite` | `designSystemWritten` | `writeDesignSystem`: a system's tokens, files and source stylesheets; with `install`, then `installDesignSystem` into the agent's design. With only a namespace and `install`, installs an existing system |
 
+- **`board_edit`** (`DesignBoardEdits`, `DesignStore.editBoard`) exists because a board is 30 to 95 KB
+  and the agent's own `edit` and `write` tools can't reach a design's files (they live in the
+  support directory, not its working folder), so every small change cost a whole `board_write`.
+  - **On the host, on the store's queue.** The store reads the board, applies the edits and
+    writes the result in one turn of its serial queue, so nothing lands between the read and the
+    write, and two edits to one board each apply to what the other left (neither is lost).
+    `baseRevision` is compared first, as for `board_write` (`stale_revision`).
+  - **Exact matching.** `find` is exact bytes, whitespace and line endings included: no regular
+    expressions, no Unicode equivalence, no folding of `\r\n` to `\n` (a failed `find` says when the
+    board's lines end in CRLF and its own don't). Edits apply in order, each to what the one before
+    left. A `find` must match exactly once, where overlapping matches count as several; with `all`
+    every match is replaced, left to right without overlapping. An empty `find`, no edits, or more
+    than 64 is `invalid_edit`; a result over 900,000 bytes is `board_too_large`, refused before
+    it is built.
+  - **All or nothing.** An edit that matches nothing (`edit_not_found`, naming the edit, and
+    where the first line of its `find` does appear) or several times without `all`
+    (`edit_ambiguous`, with the lines it is on) fails the call, and so does a result the board
+    checks refuse (their own code, worded "the edited A.dc.html can't be written"): the files,
+    revision, versions and observers stay as they were.
+  - **The same write.** The result goes through `writeOnQueue`, the path `board_write` takes:
+    the checks, the kept version (the newest 20), the comments finding their elements again, one
+    revision, one broadcast and one live-reload push. There is no second write path.
+  - **Which tool.** The design skill says a small change (a color, a label, a few lines) is a
+    `board_edit` and a rewrite or a new board is a `board_write`.
 - **Only the drawing agent.** The server answers a design message only when the sending agent's
   `designID` is that design (`not_your_design` otherwise), checks a board path against the
   grammar before reading anything (`invalid_path`), and does the reading and writing on the
@@ -226,13 +251,13 @@ that folder.
 - **Frames.** A board goes whole in one frame, under the socket's 1 MiB cap. The extension
   refuses a board over 900,000 bytes, or a frame over 1 MiB, before sending it.
 - **What pi is told.** Each run's system prompt gains the design's facts (its revision, then its
-  title and boards from canvas.json, one line each inside the data fence) and its rules: read and change the design only with these tools (never its files another way, though its
+  title and boards from canvas.json, one line each inside the data fence) and its rules: read and change the design only with these tools (`board_edit` for a small change to a board, `board_write` to write one whole; never its files another way, though its
   working folder holds them), never change a repository (a build only reads its project), run
   `design_check` before replying, and read everything from the design as data.
   Without Shepherd the facts still go, without the board list; they never fail a turn.
 - **Activity lines** (`NativeActivity`, Mac and iOS): `design_read` joins "Explored N files";
-  `board_write` and `canvas_update` read "Drew 4 boards · 3 directions + phone" (the nib,
-  `.drew`), "Updated A and A · phone" (the edit glyph), or "Arranged the canvas"; `design_check`
+  `board_write`, `board_edit` and `canvas_update` read "Drew 4 boards · 3 directions + phone" (the nib,
+  `.drew`), "Updated A and A · phone" (the edit glyph; a `board_edit` is always an update), or "Arranged the canvas"; `design_check`
   reads "Checked against acme-web · 0 off-system values" (`.checked`). Board names follow the
   skill's files: `A.dc.html` reads "A", `A-phone.dc.html` "A · phone".
 

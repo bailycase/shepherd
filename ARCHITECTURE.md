@@ -181,7 +181,7 @@ beside the thread never narrows what the dock rule measures.
 ## A design on screen
 
 ```text
-agent's board_write / canvas_update → SessionServer → DesignStore (its own queue: check, write, revision)
+agent's board_write / board_edit / canvas_update → SessionServer → DesignStore (its own queue: check, write, revision)
   → commitDesignWrite (server queue: boardCount, lastActiveAt) → onDesignRevision (paced, watched designs)
   → DesignScreenModel.refresh (the snapshot: index, revision, each board's sha)
   → DesignHost.update (only boards whose sha changed)
@@ -324,10 +324,12 @@ speaks for**, below; [SECURITY.md](SECURITY.md)).
   sends `suggestInstruction` and reads back what became of the line; the server keeps it in
   `SuggestionsStore` until the user adds or dismisses it.
 - **`shepherd-design.ts`:** the design agent's tools, loaded only for an agent with a
-  `designID` (`SHEPHERD_DESIGN_ID`). `design_read`, `board_write` and `canvas_update` send
-  `designRead`, `designWriteBoard` and `designUpdateIndex`; the server answers them itself, only
-  for the agent that draws the design, by reading and writing through `DesignStore` off its queue
-  (`design`, `designBoard`, `designWritten`). `design_check` runs in the extension against the
+  `designID` (`SHEPHERD_DESIGN_ID`). `design_read`, `board_write`, `board_edit` and `canvas_update` send
+  `designRead`, `designWriteBoard`, `designEditBoard` and `designUpdateIndex`; the server answers
+  them itself, only for the agent that draws the design, by reading and writing through
+  `DesignStore` off its queue (`design`, `designBoard`, `designWritten`, `designEdited`: a
+  `board_edit` applies its find-and-replace edits to the board's text on that queue and writes
+  the result as a `board_write` does). `design_check` runs in the extension against the
   design's installed systems, else the CSS custom properties in its working folder (the design's
   own folder: a design belongs to no project). It hands pi the design skill through `resources_discover` and
   adds the design's facts to each run's system prompt ([docs/designs.md](docs/designs.md)).
