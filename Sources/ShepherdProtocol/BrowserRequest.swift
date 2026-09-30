@@ -189,8 +189,9 @@ public struct BrowserImage: Codable, Hashable, Sendable {
 /// The page's answer to a `BrowserRequest`, before the server stamps it with the request id: text
 /// (and for a screenshot an image), or a failure whose `code` is one of `invalid`, `taken_over`,
 /// `no_page`, `no_such_ref`, `stale_ref`, `disabled`, `hidden`, `covered`, `refused_url`,
-/// `timeout`, `navigation_failed`, `script_error`, `unavailable`, `not_registered`, `no_such_agent`
-/// or `not_a_thread`, and whose `message` is written for the agent to read.
+/// `timeout`, `navigation_failed`, `script_error`, `unavailable`, `not_registered`, `no_such_agent`,
+/// `not_a_thread` or (an agent on another Mac, whose viewer left) `viewer_gone`, and whose `message`
+/// is written for the agent to read.
 public enum BrowserOutcome: Hashable, Sendable {
     case result(text: String, image: BrowserImage?)
     case failure(code: String, message: String)

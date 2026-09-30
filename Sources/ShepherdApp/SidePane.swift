@@ -63,8 +63,10 @@ private struct SidePaneTabBar: View {
 
     /// What pi last opened in this thread's Browser, for the tab's brief tip.
     private var browserTip: NWSidePaneTabTip? {
-        guard case .local(let agentID) = owner else { return nil }
-        return SidePaneTabs.tip(opened: vm.browsers.existing(agentID)?.openedByAgent)
+        switch owner {
+        case .local(let agentID): SidePaneTabs.tip(opened: vm.browsers.existing(agentID)?.openedByAgent)
+        case .remote(let ref): SidePaneTabs.tip(opened: vm.browsers.existing(ref)?.openedByAgent)
+        }
     }
 
     var body: some View {

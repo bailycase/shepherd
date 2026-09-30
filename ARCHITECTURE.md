@@ -39,7 +39,7 @@ Shepherd iOS (Xcode target) ── Core, Protocol, Remote, ShepherdUI, DesignSur
 | --- | --- | --- |
 | `ShepherdCore` | Codable workspace models (`Space`, `Tab`, `Agent`, `Automation`, `Design`, `ShepherdState`), typed IDs, the `PaneNode` layout tree (a thread with its terminals hung beside it), `AgentStatus` and its transition table, `ThinkingLevel`, and structural validation | nothing |
 | `ShepherdProtocol` | Wire contracts: `ExtensionMessage`/`ExtensionReply` (extension socket), `RemoteRequest`/`RemoteReply` and `RemoteProtocol` (version, capabilities), the native thread contract (`NativeThreadRequest`/`Result`/`Snapshot`), pi's RPC wire types (`RPCWire`, decoded leniently), NDJSON framing (1 MiB frame cap), `ShepherdPaths`, `ShepherdEdition` (Shepherd or Shepherd Nightly), Settings ▸ Instructions' files and requests (`Instructions.swift`), Settings ▸ Experiments ▸ Suggested instructions (`Suggestions.swift`), Settings ▸ Skills' skills, repositories and requests (`Skills.swift`), a host's settings as a client sees them (`HostSettings.swift`), and the Design tool's format (`DesignIndex`, `DesignPath`, `DesignTemplate`/`DesignElementID`, `DesignBoardCheck`, Tweak's `DesignStyleEdit`, `DesignTokens` and `DesignProps`, and `DesignCanvasLayout`'s pages, notes and a duplicate's place; docs/designs.md) | Core |
-| `ShepherdRemote` | `RemoteHostClient` (TCP client: handshake, reconnect, bounded writes), `TunnelEndpoint`, `BrowserTunnelHub` and `BrowserPortForwarder` (a Browser tunnel's sockets and flow control, a connection's tunnels, and which ports of a remote thread's host are forwarded here; docs/browser.md › Remote), `NativeThreadStore` (the `@Observable` thread client used by local, remote, and iOS views; it derives the rows a thread draws once per change), the pure derivations (`NativeThreadPresentation`, `NativeTurnPresentation` for a turn's items, `NativeActivity` for activity lines and the changes card, `InstructionsText` and `InstructionsPresentation` for Settings ▸ Instructions, `SuggestionsPresentation` for its experiment), the Settings models the Mac and the iOS client share (`ClientSettings`, and `ClientSkills` with `SkillsText`, `SkillsPresentation` and `SkillsDirectory`, skills.sh's client, for Settings ▸ Skills), a host's designs (`RemoteDesignLibrary`, `RemoteDesignSource` and the per-host, per-design `RemoteDesignCache`; docs/designs.md › Remote), the Tweak tab's model the Mac and the iPad share (`DesignTweakModel` and `DesignTweakControls`), the iPad's live-board plan and design Recents (`DesignTouchPlan.swift`), and `ShepherdLog` | Core, Protocol |
+| `ShepherdRemote` | `RemoteHostClient` (TCP client: handshake, reconnect, bounded writes), `TunnelEndpoint`, `BrowserTunnelHub` and `BrowserPortForwarder` (a Browser tunnel's sockets and flow control, a connection's tunnels, and which ports of a remote thread's host are forwarded here; docs/browser.md › Remote), `BrowserDriveClaimant` and `BrowserViewerPolicy` (when a viewer claims an agent's browser, and where a host's agent may take the viewer's page), `NativeThreadStore` (the `@Observable` thread client used by local, remote, and iOS views; it derives the rows a thread draws once per change), the pure derivations (`NativeThreadPresentation`, `NativeTurnPresentation` for a turn's items, `NativeActivity` for activity lines and the changes card, `InstructionsText` and `InstructionsPresentation` for Settings ▸ Instructions, `SuggestionsPresentation` for its experiment), the Settings models the Mac and the iOS client share (`ClientSettings`, and `ClientSkills` with `SkillsText`, `SkillsPresentation` and `SkillsDirectory`, skills.sh's client, for Settings ▸ Skills), a host's designs (`RemoteDesignLibrary`, `RemoteDesignSource` and the per-host, per-design `RemoteDesignCache`; docs/designs.md › Remote), the Tweak tab's model the Mac and the iPad share (`DesignTweakModel` and `DesignTweakControls`), the iPad's live-board plan and design Recents (`DesignTouchPlan.swift`), and `ShepherdLog` | Core, Protocol |
 | `ShepherdUI` | Night Watch, the design system, in its own local package (`Packages/ShepherdUI`, macOS 26 and iOS 27): `ThemeDefinition` and Night Watch, `ThemeStore` (with the resolved `NWPalette` and `NWTypeRamp`), `Color.nw`, `Font.nw` and the bundled Geist faces, the `NW` scales, motion, elevation, `AgentState`, and the shared SwiftUI components by domain (Controls, Status, Containers, Navigation, Thread, Composer, Agents, Review, Dialogs, DesignTool: the design canvas, board frames, cards and header, and a design system's page parts). SwiftUI only; no app state | nothing |
 | `ShepherdPTYSpawn` | `shepherd_forkpty_exec`: the PTY child side in C (reset signal dispositions and mask, close stray descriptors, exec), so no Swift runs between fork and exec | nothing |
 | `ShepherdSessions` | `SessionServer`, the authoritative state store and every session. Agents run as `RPCSession` + `RPCThreadState`, terminals as `PTYSession` + `SessionScreen`. Also `StateStore`, the extension socket, the remote listener, `PiSessionPreview` (a thread read from pi's session file while pi starts), `InstructionsStore` (Settings ▸ Instructions' files and history), `SuggestionsStore` (Suggested instructions), `SkillsStore` and `SkillsGit` (a host's skills in its pi home's `skills/`, installed from partial clones; docs/skills.md), `YourPiImport` and `YourPiResources` (the first copy from the user's own pi, Re-import, and their extensions' switches; docs/pi-home.md), `PiSignIn` (the sign-in bridge: pi's own login run on the engine's node against Shepherd's pi home, over JSON lines) and `PiSignInCatalog`, `DesignStore` (each design's files and each board's last 20 versions, on its own queue; docs/designs.md), `DesignSystemStore` (design systems in `design-systems/`, on its own queue; built-ins registered by the app), `PiEngine` (which pi runs) and `PiLaunch` (every line that starts pi or the node beside it), `PiSetup` (the engine, pi's home and its catalog, passed in), and `PiModelCatalog`/`PiConfig` | Core, Protocol, Remote, ShepherdPTYSpawn, SwiftTerm |
@@ -161,6 +161,18 @@ Shepherd's content world (`BrowserAgentScript.swift`), eval in the page's, scree
 it sits in a borderless off-screen window (`parkOffscreen`), so it still lays out and runs. The
 card, ring and pointer are `BrowserSession.agentOverlay`; Take over sets `userHasControl`, and the
 server's `onUserMessage` (a user's `send`) hands the page back.
+
+A remote thread's agent drives **the viewer's** page, not the host's own. A viewer with the Browser
+tab on screen claims the agent's browser (`BrowserRemote`, over `BrowserDriveClaimant`, which says
+when to claim and let go); the host's `SessionServer` keeps one owner per agent
+(`BrowserDriveOwners`) and, while one owns it, `routeBrowserRequest` pushes the `BrowserRequest` to
+that viewer connection (`BrowserDrivePush.request`) instead of `onBrowserRequest`, then completes the
+extension's request with the viewer's `browserAnswer`. The viewer's `ShepherdViewModel.remoteBrowserDrive`
+runs it with `BrowserSession.performFromHost`, the same `perform` with a `BrowserHostGuard`: what the
+host's agent may open, read and act on is decided by `BrowserViewerPolicy` (the host's loopback
+ports and public addresses only), asked again in `BrowserHost`'s navigation policy for every
+navigation the request causes. The server never sees the page; the viewer never sees the extension.
+docs/browser.md › Remote has the claim rules, the address policy and what they do not stop.
 
 **Sidebar.** `SidebarDerivation` (`SidebarModel.swift`) derives Needs you, Pinned and Recents from
 This Mac's state and each host's and the pins, once per change (`sidebarLists`). The pins
@@ -333,8 +345,10 @@ speaks for**, below; [SECURITY.md](SECURITY.md)).
   `helloBrowser` first on every connect, which binds the connection to its agent (like every
   message that names an agent, accepted only from the pi the server started for it, `extensionPeerCheck`);
   the server serves a `browser` request only on the connection registered as the agent it names
-  (`routeBrowserRequest`, with a 120 s deadline), the app answers through `onBrowserRequest`, and
-  `browserResult` carries text and, for a screenshot, an image. Loaded only for a thread
+  (`routeBrowserRequest`, with a 120 s deadline), the app answers through `onBrowserRequest` (or,
+  on a remote thread whose viewer owns the agent's browser, that viewer answers over the remote
+  connection: the extension cannot tell), and `browserResult` carries text and, for a screenshot, an
+  image. Loaded only for a thread
   (`TerminalSessionStore.wantsBrowser`, `SHEPHERD_EXT_BROWSER`), never a design's agent or a
   native subagent.
 - **`shepherd-instructions.ts`:** reads Settings ▸ Instructions' `AGENTS.md` and
@@ -502,6 +516,10 @@ The protocol is NDJSON (`RemoteMessage.swift`):
   loopback ports, credit-paced and multiplexed on the same connection; the same capability answers
   `RemoteAgentQuery.devServers` and runs `RemoteAgentAction.openTerminal` for Start (docs/browser.md ›
   Remote)
+- an agent driving the page a viewer shows (`browser.drive.v1`, with the tunnel): a viewer with a
+  thread's Browser tab on screen claims the agent's browser, the host hands the agent's browser
+  requests to that viewer and completes the extension's request with its answer, and tells its viewers
+  when the agent opens a page in its own browser (docs/browser.md › Remote)
 
 Capabilities gate newer features. A client falls back (raw bracketed paste) or refuses (terminal
 control) against an older host. Output frames are chunked at 256 KiB to stay under the frame cap.
