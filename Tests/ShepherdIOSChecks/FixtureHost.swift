@@ -255,6 +255,11 @@ final class FixtureHost: @unchecked Sendable {
             guard request.writes else { return nil }
             mutation("design." + Self.kind(request))
             return [.error(id: id, code: "fixture", message: refused)]
+        case .tunnel(let frame):
+            // The fixture host carries nothing: an open is refused, and the rest of a tunnel is dropped.
+            mutation("tunnel")
+            if case .open(let tunnel, _, _) = frame { return [.tunnel(.close(tunnel: tunnel, code: BrowserTunnelCode.unsupported))] }
+            return []
         case .hello, .stateFetch, .listModels, .listDir, .creationOptions, .agentQuery:
             return nil
         }

@@ -163,6 +163,17 @@ them except the navigator, which is each window's own ([Windows](#windows-ipad))
 - Talk to a host with `hosts.host(ref.host)?.connectedClient` (a `RemoteHostClient`). Key work
   tied to one connection on `host.session`: it changes with every new connection.
 - Check capabilities with `host.supports(RemoteProtocol.…Capability)` before offering a feature.
+- **Browser tunnels** (`browser.tunnel.v1`; the Mac's remote Browser tab, docs/browser.md › Remote).
+  The iPad's Browser tab reuses the whole protocol layer and none of the Mac's page:
+  `host.connectedClient?.tunnels` is the connection's `BrowserTunnelHub` (`bridge(fd:agentID:port:)`
+  for an accepted socket, `probe(agentID:port:)` for "does this port answer"), and
+  `RemoteHostClient.devServers(agentID:)` and `.openTerminal(agentID:cwd:command:)` are the host's dev
+  servers and Start. A page at `localhost:<port>` has WebKit's loopback exempt from every proxy, so it
+  needs a `BrowserPortForwarder` claim per port (`claim(port:owner:slot:agent:)`, refused with a
+  `Refusal` when another program or another page holds the port), with a `BrowserTunnelHubSlot` filled
+  from `host.connectedClient?.tunnels` while the host is connected and emptied when it drops.
+  `BrowserTunnelTarget.port(of:)` says which URLs a tunnel serves. The forwarder is a listener on the
+  device's loopback, which iOS suspends with the app (not measured here: nothing runs it on iOS yet).
 - Run a thread's store through `threads.viewers(for: ref).run(connection: host.session) { … }`,
   never `store.run` from a screen: the same thread can be on screen in two windows, and a
   second `store.run` ends the first. A view on the connection the loop already runs over joins

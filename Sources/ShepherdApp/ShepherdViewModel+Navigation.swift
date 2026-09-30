@@ -66,7 +66,7 @@ extension ShepherdViewModel {
 
     // MARK: Sidebar lists
 
-    /// What Needs you and Recents are derived from.
+    /// What Needs you, Pinned and Recents are derived from.
     var sidebarSource: SidebarSource {
         SidebarSource(
             local: state, localChildren: childRuns.rows, failedTurns: failedTurns, cannotStart: cannotStart,
@@ -78,12 +78,13 @@ extension ShepherdViewModel {
             }, designs: designToolEnabled)
     }
 
-    /// Needs you and Recents in order, derived again only when what they read changed.
+    /// Needs you, Pinned and Recents in order, derived again only when what they read changed.
     var sidebarLists: SidebarLists {
         let source = sidebarSource
-        if let cached = sidebarListsCache, cached.source == source { return cached.lists }
-        let lists = SidebarDerivation.lists(source)
-        sidebarListsCache = (source, lists)
+        let pins = sidebarPins
+        if let cached = sidebarListsCache, cached.source == source, cached.pins == pins { return cached.lists }
+        let lists = SidebarDerivation.lists(source, pins: pins)
+        sidebarListsCache = (source, pins, lists)
         return lists
     }
 
@@ -102,13 +103,22 @@ extension ShepherdViewModel {
         return selectedAgentID.map { .local($0) }
     }
 
-    /// This Mac's agents in Recents order (Needs you's first): which one shows at launch and
-    /// the order their pi starts in.
+    /// This Mac's agents in the order the sidebar draws them (Needs you, Pinned, Recents): the
+    /// order their pi starts in, and the palette's.
     var localRecentsOrder: [AgentID] {
         sidebarLists.all.compactMap { row in
             if case .local(let id) = row.id { return id }
             return nil
         }
+    }
+
+    /// The agent a launch shows: the first of This Mac's that needs you, else the most recently
+    /// active, pinned or not.
+    var launchAgentID: AgentID? {
+        sidebarLists.activity.lazy.compactMap { row -> AgentID? in
+            if case .local(let id) = row.id { return id }
+            return nil
+        }.first
     }
 
     /// Hosts neither connected nor connecting: More ▸ Hosts says how many, as the Hosts page does.

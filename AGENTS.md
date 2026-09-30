@@ -14,8 +14,9 @@ agents.
   with SwiftTerm. There are no global shells and no space shell workspaces.
 - **Spaces** are projects: the folders threads start in. The default Activity sidebar has no
   tree; the optional Projects style groups threads in a project tree. Activity lists
-  destinations (New thread, Automations, More ▸ Hosts and Extensions), then Needs you and Recents
-  (every agent, local and remote, most recently active first). The New thread page's workplace
+  destinations (New thread, Automations, More ▸ Hosts and Extensions), then Needs you, Pinned
+  (the threads the user pinned, per Mac) and Recents (every other agent, local and remote, most
+  recently active first). The New thread page's workplace
   chip lists each host's spaces, flat. With no agent on screen, the main column shows New thread.
 - **Lifetime:** there is no daemon. Sessions live and die with the app. On relaunch the workspace
   (spaces, agents, pane layouts) restores from `state.json`, every agent resumes its pi session
@@ -218,6 +219,10 @@ Tests come in tiers, and the switch is `--filter` on target names.
   because `sun_path` caps socket paths at 104 bytes.
 - `ExtensionClient`: a raw extension-socket client, which is the test process and so not any
   agent's pi.
+- `LoopbackServer` and `DevServerFixture`: a server on the loopback and an ephemeral port standing in
+  for a host's dev server in tunnel tests (HTTP GET and a POST of any size with its SHA-256, a
+  WebSocket echo, an echo, a firehose, one that never reads), IPv4 or IPv6, or on a chosen address
+  or port. Every tunnel and forwarder test uses it, never the network.
 - `eventually("what", …)` and `eventuallyOnMain`: named 10 ms polls that throw `WaitTimeout`
   saying what never happened. Never sleep a fixed amount; wait on a callback or `eventually`.
   Keep timeouts generous (they default to 30 s), but make the happy path fast.
@@ -324,7 +329,8 @@ a model: the home's one provider points at a closed port and no prompt is sent.
 
 - `NWRenderProbe` (ShepherdUI, debug builds only) counts row bodies while a test records:
   `let _ = NWRenderProbe.tick("sidebar.row")` at the top of a row's `body`. It also counts
-  derivation passes that must not scale with a change (`sidebar.spaceScan`, `sidebar.spaceForest`).
+  derivation passes that must not scale with a change (`sidebar.spaceScan`, `sidebar.spaceForest`),
+  and a sidebar section header's body (`sidebar.header`).
 - `ListPerformanceTests` pins each long list's budget as a count of rows built or redrawn
   (opening, scrolling, a highlight or a selection moving, one row changing, a reply streaming).
   Counts hold on a slow or busy runner; timing budgets do not, so don't add those. Two thread
@@ -445,7 +451,8 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
 - **Themes:** every theme variant complete, and the WCAG contrast rules met.
 - **App logic:** keybindings (defaults, validation, stored overrides for removed actions
   ignored), palette and settings search, workspace selection and parking, sidebar ordering and
-  reveal, review rows and diff parsing, `PiSessionFile` paths, and child runs.
+  reveal, pinned threads (their order, persistence and pruning, Needs you winning, the digits),
+  review rows and diff parsing, `PiSessionFile` paths, and child runs.
 - **Updates and editions:** each channel's feed and Sparkle tag, the channels each app offers,
   the launch migration of every stored channel (`UpdateChannelStore`: rc and nightly to Beta,
   the nightly notice armed once), the support directory and listener port per edition, and the
@@ -545,7 +552,9 @@ Sources/
                        DesignPrint (a board's print mode, a flow document's pages), DesignImport
                        (a Claude Design folder's path rules), DesignImportProject (a project's ZIP
                        read before it is unpacked, links out of it, the import's failures and
-                       progress) and DesignLifecycle (a deletion's undo window, the names of copies).
+                       progress) and DesignLifecycle (a deletion's undo window, the names of copies),
+                       BrowserTunnel (the tunnel's frames, credit and chunking arithmetic, and which
+                       URLs a tunnel serves) and DevServers (a folder's package.json dev servers).
   ShepherdRemote/      RemoteHostClient, NativeThreadStore (@Observable), NativeThreadPresentation,
                        NativeTurnPresentation (a turn's items), NativeMarkdown (the prose
                        parser: tables, lists, images, details, footnotes), NativeActivity
@@ -569,14 +578,19 @@ Sources/
                        SkillsPresentation (its words), SkillsDirectory (skills.sh),
                        DesignMentions (the composer's @ picker: its rows and search),
                        DesignReferencePresentation (a reference's footer, chip and toast words,
-                       and the design_get calls one "Looked at…" line joins), ShepherdLog.
+                       and the design_get calls one "Looked at…" line joins), TunnelEndpoint (one end of
+                       a Browser tunnel: a socket and both directions' flow control), BrowserTunnelHub
+                       (a connection's tunnels, `RemoteHostClient.tunnels`), BrowserPortForwarder (which
+                       ports of a remote thread's host are forwarded on this Mac, one owner each), ShepherdLog.
                        Shared with the iOS client.
   ShepherdPTYSpawn/    The PTY child side (fork → exec) in C: no Swift runs between the two.
   ShepherdSessions/    SessionServer (state, sessions, extension socket, remote listener),
                        RPCSession, RPCThreadState (+Queue: the queue of messages sent while pi
                        works; +Context: what fills the context, compactions), ThreadOriginStore (where delivered messages came from, kept per pi
                        session), StreamingToolArguments (the fields a tool call being written
-                       names, read from pi's argument fragments), AutomationRunLog (each automation's runs), PTYSession,
+                       names, read from pi's argument fragments), BrowserTunnelHost (the host's side
+                       of Browser tunnels: loopback connects, caps, idle, one session per remote
+                       client), AutomationRunLog (each automation's runs), PTYSession,
                        SessionScreen (SwiftTerm), StateStore,
                        PaneRequest (pane/review/automation requests + outcomes), RemoteFileUpload,
                        PiEngine (which pi runs; BundledPiEngine, the one the app ships),
@@ -621,7 +635,9 @@ Sources/
                        (shepherd-dc-bridge.js), and React 18.3.1 UMD (MIT, pinned).
   ShepherdApp/         The Mac app:
     ShepherdApp.swift (the Window scene, AppDelegate), RootView (+ WorkspaceHeaderView),
-      SidebarView (+ SidebarModel: destinations, Needs you, Recents, footer; SidebarProjectsView and
+      SidebarView (+ SidebarModel: destinations, Needs you, Pinned, Recents, footer; SidebarPins:
+      the pinned threads, ordered, kept and pruned, as plain values, and ShepherdViewModel+SidebarPins:
+      Pin, Unpin and where they are offered; SidebarProjectsView and
       SidebarProjectsModel: the tree organized by project), NewThreadPage (+
       NewThreadModel), ThreadHeader, WorkspaceView, WorkspaceSelection (+ MainDestination),
       RightPaneSplit and SidePane (the side pane and its tabs), CheckoutMonitor (each agent's
@@ -631,7 +647,9 @@ Sources/
       import: each thread's page, its data store, BrowserPageView), BrowserPane (the tab: toolbar,
       Nothing open, viewport menu, popover, console drawer, BrowserKeys), BrowserModel (pure: the
       address, viewports, dev servers, script messages, the console log), BrowserScripts (the
-      page's scripts), ShepherdViewModel+Browser (Start, Add to message, Copy selector).
+      page's scripts), ShepherdViewModel+Browser (Start, Add to message, Copy selector, a remote
+      viewer's Start on this host), BrowserRemote (a remote thread's page: its host, the ports it
+      forwards, the host's dev servers and Start; docs/browser.md › Remote).
       The agent's tools on it (docs/browser.md): BrowserAgentRules (pure: the URL policy, take over,
       the card's words, results, keys, the screenshot clamp), BrowserAgentScript (read, click, type
       in Shepherd's content world), BrowserDriver (each tool against the page; no WebKit),
@@ -722,7 +740,7 @@ Packages/
                                      (NWBrowserToolbar, NWBrowserAddressField, NWBrowserEmpty,
                                      NWViewportMenu, NWElementPopover, NWElementChip,
                                      NWConsoleBar, NWConsoleRow, NWAgentRing, NWAgentPointer,
-                                     NWAgentCard, NWBrowserAgentOverlay, NWPaneTabTip), DesignTool
+                                     NWAgentCard, NWBrowserAgentOverlay, NWPaneTabTip, NWBrowserNotice), DesignTool
                                      (NWDesignCanvas, NWBoardFrame, NWCanvasToolbar,
                                      NWDesignCard, NWDesignSystemChip, NWDesignHeader,
                                      NWCommentPin, NWCommentThread, NWCommentCard,
@@ -967,6 +985,17 @@ variables are blanked, as are pi's `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSI
     canvas's writes through the host's own mutations, Delete with its Undo (`design.delete.v1`), and a pushed `designChanged` for the
     designs a client watches (`capabilitiesChanged` when the experiment turns on or off).
     Answered by the server itself; boards render on the client (docs/designs.md › Remote)
+  - `tunnel` (`browser.tunnel.v1`, offered while the host can serve it, and only to a client that
+    lists it in `hello`): a thread's Browser page on a viewing Mac reaches the host's dev server.
+    `RemoteRequest.tunnel` and `RemoteReply.tunnel` carry `BrowserTunnelFrame`s (open, opened,
+    data of at most 48 KiB, credit, finish, close, keepalive), multiplexed by a number the client
+    picks, none answered by id. **Loopback only:** the host connects to `127.0.0.1`, then `::1`, on
+    the port named and never another address (it is not a proxy), for an agent it has and the client
+    is shown; 64 tunnels per client and 256 per host, closed when idle (5 minutes without bytes or
+    a keepalive), all closed with the connection. Each direction is credit-paced (256 KiB window),
+    and reads stop while a connection's write queue is backed up. The same capability covers
+    `RemoteAgentQuery.devServers` (the thread's folder on the host) and `RemoteAgentAction.openTerminal`
+    (Start on the host). docs/browser.md › Remote
 
   Capabilities gate newer features. The client falls back (raw bracketed paste) or refuses (pane
   control) against older hosts. A host answers an authenticated request it cannot decode (a kind
@@ -1092,8 +1121,8 @@ are `@MainActor @Observable` classes, owned with `@State` and bound with `@Binda
 **Keybindings resolve through the store.** Menus, palette keycaps, Settings ▸ Keyboard, and the
 Ghostty unbind list all read `KeybindingsStore`, and hardcoding a chord in a view is a bug.
 
-- A rebound chord must include ⌘. ⌘1–9 (the first nine Recents rows), ⌘,, and the plain ⌘
-  system and terminal chords are reserved.
+- A rebound chord must include ⌘. ⌘1–9 (the first nine rows of Pinned, then Recents), ⌘,, and the
+  plain ⌘ system and terminal chords are reserved.
 - A focused Ghostty surface eats any key equivalent it has a binding for, so every chord the app
   chrome uses must be unbound in `appOwnedChords` (`TerminalSurfaceModel.swift`). Rebindable
   chords flow in through the store; the fixed ones are listed there. Leave Ghostty's copy and

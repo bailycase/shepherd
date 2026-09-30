@@ -236,13 +236,15 @@ public struct NWSidebarDestination: View, Equatable {
 // MARK: Lists
 
 /// A list's header (NWNavigation, `NWSidebarSection`): "Needs you" in Geist 11.5 medium
-/// `lanternText` with its count in mono 10.5, or "Recents" in `textTertiary`; in the project tree
+/// `lanternText` with its count in mono 10.5, or "Pinned" or "Recents" in `textTertiary`; in the project tree
 /// grouped by host, a host's name in `textTertiary` with "unreachable" in mono 10 `failed` while
 /// it is not connected (SidebarTree, `NWSidebarSection(host)`). Padded 14pt (10) above, 4pt
 /// below, and 8pt (6) at the sides.
 public struct NWSidebarSection: View, Equatable {
     public enum Kind: Equatable, Sendable {
         case needsYou(count: Int)
+        /// The threads the user pinned, above Recents (SidebarPinned).
+        case pinned
         case recents
         case host(String, unreachable: Bool)
     }
@@ -255,6 +257,7 @@ public struct NWSidebarSection: View, Equatable {
     public nonisolated static func == (a: NWSidebarSection, b: NWSidebarSection) -> Bool { a.kind == b.kind }
 
     public var body: some View {
+        let _ = NWRenderProbe.tick("sidebar.header")
         let attention = if case .needsYou = kind { true } else { false }
         let tone = attention ? Color.nw.lanternText : Color.nw.textTertiary
         HStack(spacing: NW.Space.s) {
@@ -273,7 +276,7 @@ public struct NWSidebarSection: View, Equatable {
                     .nwAnimation(.content, value: count)
             case .host(_, unreachable: true):
                 Text("unreachable").font(.nwMono(10)).foregroundStyle(.nw.failed).lineLimit(1).fixedSize()
-            case .recents, .host:
+            case .pinned, .recents, .host:
                 EmptyView()
             }
         }
@@ -286,6 +289,7 @@ public struct NWSidebarSection: View, Equatable {
     private var title: String {
         switch kind {
         case .needsYou: "Needs you"
+        case .pinned: "Pinned"
         case .recents: "Recents"
         case .host(let name, _): name
         }
