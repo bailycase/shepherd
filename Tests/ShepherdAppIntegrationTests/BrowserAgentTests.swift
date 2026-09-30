@@ -387,8 +387,8 @@ struct BrowserAgentTests {
         let (session, server) = try await start()
         defer { server.stop(); session.close() }
         // The app's own load (the address field's) may open a page the agent's open never could.
-        session.load(try #require(URL(string: "data:text/html,<title>by%20hand</title>hi")))
-        try await eventuallyOnMain("the hand-opened page") { session.pageTitle == "by hand" && !session.isLoading }
+        session.load(try #require(URL(string: "data:text/html,<title>byhand</title>hi")))
+        try await eventuallyOnMain("the hand-opened page") { session.pageTitle == "byhand" && !session.isLoading }
         try await opened(session, server, "/terms")
         let back = try #require(failure(await session.perform(.back(note: nil))))
         #expect(back.code == "refused_url", "\(back.message)")
