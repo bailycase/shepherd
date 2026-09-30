@@ -41,6 +41,9 @@ protocol MCPProbeRunner: Sendable {
 struct NodeProbeRunner: MCPProbeRunner {
     /// Whose node runs the client.
     var engine: PiEngine
+    /// Shepherd's pi home, for the keychain CAs the probe falls back to
+    /// (`PiLaunch.clearedEnvironment`).
+    var home: PiHome
     /// The installed `shepherd-mcp-client.mjs`, or nil when it isn't there.
     var clientPath: @Sendable () -> URL?
 
@@ -50,7 +53,7 @@ struct NodeProbeRunner: MCPProbeRunner {
         }
         return await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                continuation.resume(returning: Self.runSync(line: PiLaunch.mcpProbe(engine: engine, client: client.path),
+                continuation.resume(returning: Self.runSync(line: PiLaunch.mcpProbe(engine: engine, home: home, client: client.path),
                                                             input: input, timeout: timeout))
             }
         }

@@ -112,7 +112,11 @@ python3 -m unittest discover -s Tests/Release   # the release workflow's rules (
     and `OPENSSL_CONF` it was started with under `_SHEPHERD_STASH_<name>` (listed in
     `_SHEPHERD_STASH_NAMES`, and put back for pi's shell commands by `restore-env.sh`):
     `PI_CODING_AGENT_DIR` (Shepherd's home), `PI_PACKAGE_DIR` (the engine's package),
-    `PI_OFFLINE=1`, `PI_SKIP_VERSION_CHECK=1`, `PI_TELEMETRY=0`, `PI_SUBAGENTS_TEMP_ROOT`.
+    `PI_OFFLINE=1`, `PI_SKIP_VERSION_CHECK=1`, `PI_TELEMETRY=0`, `PI_SUBAGENTS_TEMP_ROOT`, and,
+    when the user set no `NODE_EXTRA_CA_CERTS` of their own and the home's keychain export
+    (`PiHome.keychainCertificatesFile`, private CAs the Mac's keychain trusts — an internal proxy
+    or MCP server's root) isn't empty, `NODE_EXTRA_CA_CERTS` pointing at it (the MCP probe and the
+    sign-in bridge, which run the engine's node directly, fall back the same way).
   - With the matching extension on: `SHEPHERD_EXT_PANES`, `SHEPHERD_NATIVE_CHILDREN`,
     `SHEPHERD_EXT_CHILDREN`, and `SHEPHERD_CHILD_*`; for Settings ▸ Pi ▸ MCP servers,
     `SHEPHERD_EXT_MCP` (the installed `shepherd-mcp.ts`), `SHEPHERD_EXT_MCP_CLIENT` (the installed
