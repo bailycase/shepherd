@@ -6,12 +6,14 @@ agents.
 - **Agents:** every agent is `pi --mode rpc` on pipes, owned in-process (`RPCSession` and
   `RPCThreadState` in `ShepherdSessions`), and rendered only as a native thread
   (`Sources/ShepherdApp/Thread/`). There are no terminal agents and no Terminal/Native switch.
-- **Terminals:** the only terminals are panes of an agent's layout, opened by the user with ⌘D or
-  the terminal panel's + or by an agent's `pane_*` tools. The Mac shows them in the terminal panel
-  under the thread (tabs, split, maximize, ⌘J to show or hide; DESIGN.md › Terminal panel), as
-  does the iPad; the iPhone opens them full screen. On the Mac they are real PTYs rendered with
-  libghostty; the iOS client attaches to the host's over the remote protocol and renders them
-  with SwiftTerm. There are no global shells and no space shell workspaces.
+- **Terminals:** the only terminals are tabs of an agent's terminal panel, one terminal per tab,
+  opened by the user with ⌘D, ⌘J (when the thread has none) or the panel's + or by an agent's
+  `terminal_*` tools. The Mac shows them in the terminal panel under the thread (tabs, maximize,
+  ⌘J to show or hide; DESIGN.md › Terminal panel), as does the iPad; the iPhone opens them full
+  screen. There are no splits, and the panel is never empty: it closes with its last terminal. On
+  the Mac they are real PTYs rendered with libghostty; the iOS client attaches to the host's over
+  the remote protocol and renders them with SwiftTerm. There are no global shells and no space
+  shell workspaces.
 - **Spaces** are projects: the folders threads start in. The default Activity sidebar has no
   tree; the optional Projects style groups threads in a project tree. Activity lists
   destinations (New thread, Automations, More ▸ Hosts and Extensions), then Needs you, Pinned
@@ -19,8 +21,8 @@ agents.
   recently active first). The New thread page's workplace
   chip lists each host's spaces, flat. With no agent on screen, the main column shows New thread.
 - **Lifetime:** there is no daemon. Sessions live and die with the app. On relaunch the workspace
-  (spaces, agents, pane layouts) restores from `state.json`, every agent resumes its pi session
-  over RPC, and every terminal pane respawns a fresh shell.
+  (spaces, agents, terminal layouts) restores from `state.json`, every agent resumes its pi session
+  over RPC, and every terminal respawns a fresh shell.
 - **Remote:** Shepherd can serve its agents to other devices over an authenticated TCP listener
   (off by default). The main use is running projects on one Mac and driving them from another
   Mac running Shepherd. The iPhone and iPad client (`App/iOS`) drives them the same way.
@@ -164,9 +166,9 @@ python3 -m unittest discover -s Tests/Release   # the release workflow's rules (
   `~/.pi/agent`. Shepherd never takes its own home from it (a Shepherd started from an agent's
   shell inherits one): its home is always `<support>/pi`. It is how "your pi" is found: a login
   shell with the app's own value removed prints the one the user's startup files set
-  (`YourPiLocator`), else `~/.pi/agent`. Terminal panes blank it, with
+  (`YourPiLocator`), else `~/.pi/agent`. Terminals blank it, with
   `PI_CODING_AGENT_SESSION_DIR`, `PI_PACKAGE_DIR`, `PI_OFFLINE` and `PI_SUBAGENTS_TEMP_ROOT`, so a
-  pane's pi takes them from the user's startup files only.
+  terminal's pi takes them from the user's startup files only.
 
 ## Testing
 
@@ -436,8 +438,8 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
 - **Extension identity:** the real check against stub pis (`ExtensionIdentityTests`, and
   `ExtensionIdentityFlowTests` through the app's own launch): a pi's own process is served for
   its agent, a process it starts is refused and displaces no connection, this process claiming
-  another agent is refused for every kind of message, a replaced pi speaks no more, a pi no pane
-  holds yet speaks for the agent it was launched for; each message's `speaksFor` and `replyID`
+  another agent is refused for every kind of message, a replaced pi speaks no more, a pi not yet
+  bound to its thread speaks for the agent it was launched for; each message's `speaksFor` and `replyID`
   against its wire form (`ExtensionMessageTests`). Check the check has teeth by making it allow
   everything: these tests must fail.
 - **Changes:** every scope on a scratch repository, the proof that reading changes leaves the
@@ -445,7 +447,9 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
   turn the stub pi made.
 - **Core:** the status transition table, `PaneNode` operations, and state validation.
 - **Migration:** terminal-era `runtime` keys, global shells and space shells dropped at startup,
-  and review leaves.
+  review leaves, and split terminal layouts flattened into tabs (saved layouts with a split tab
+  become one tab per terminal, each keeping its session, folder and title; layouts already made of
+  single-terminal tabs are not rewritten; inspector tabs and layouts with no thread are untouched).
 - **Extensions:** embedded extensions byte-identical to `Extensions/*` (all twenty files, and
   the design skill's two files).
 - **Themes:** every theme variant complete, and the WCAG contrast rules met.
@@ -514,7 +518,8 @@ App/
   AppIcon.icon, AppIconNightly.icon   Shepherd's and Shepherd Nightly's icons
 Sources/
   ShepherdCore/        Models (Space, Tab, Agent, Automation, Design, ShepherdState), typed IDs, PaneNode
-                       (binary split tree; LeafPane carries sessionID/cwd/agentID), AgentStatus +
+                       (binary layout tree: the thread with its terminals beside it; LeafPane carries
+                       sessionID/cwd/agentID), AgentStatus +
                        canTransition, ThinkingLevel, SessionRuntime, StateValidation, Reorder.
                        No deps.
   ShepherdProtocol/    ExtensionMessage/ExtensionReply (+ ChildRun, PaneInfo, …; and
@@ -592,7 +597,7 @@ Sources/
                        of Browser tunnels: loopback connects, caps, idle, one session per remote
                        client), AutomationRunLog (each automation's runs), PTYSession,
                        SessionScreen (SwiftTerm), StateStore,
-                       PaneRequest (pane/review/automation requests + outcomes), RemoteFileUpload,
+                       PaneRequest (terminal/review/automation requests + outcomes), RemoteFileUpload,
                        PiEngine (which pi runs; BundledPiEngine, the one the app ships),
                        PiHome (Shepherd's pi home: the launcher, restore-env.sh, its settings),
                        YourPi (the user's own pi, read only; YourPiLocator, PiSessionFolder),
@@ -624,7 +629,7 @@ Sources/
                        DesignReferencePayloads (the copies, per agent, under design-refs/),
                        DesignSystemStore (design systems in the support directory's
                        design-systems/, their owners and sources, built-ins).
-  TerminalSurfaceKit/  Ghostty adapter for terminal panes; see its NOTES.md.
+  TerminalSurfaceKit/  Ghostty adapter for terminals; see its NOTES.md.
   DesignSurfaceKit/    The Design tool's board renderer (macOS and iOS; docs/designs.md): DesignSurface
                        (a design's sandbox: a non-persistent data store, the shepherd-design://
                        scheme), DesignBoardView (one board's WKWebView: load, replaceSource,
@@ -757,7 +762,8 @@ Packages/
 Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free):
   shepherd-status.ts      status + active pi session, Retry (/shepherd-retry; docs/native-thread.md › Retry)
   shepherd-namer.ts       agent titles
-  shepherd-panes.ts       pane_*, agent_* (list/send/spawn/read/steer/interrupt/wait/delete),
+  shepherd-panes.ts       terminal_* (open/list/run/read/focus/close), agent_*
+                          (list/send/spawn/read/steer/interrupt/wait/delete),
                           automation_*, notify; see docs/agent-coordination.md
   shepherd-review.ts      review_diff (readies the side pane's Changes tab)
   shepherd-subagents.ts   setAgentChildren (native + pi-subagents runs)
@@ -847,7 +853,7 @@ Vendor/libghostty-spm/ GhosttyTerminal (prebuilt libghostty)
   the first adoption of the workspace, not when its layout mounts, in `AgentStartQueue`'s
   order: the agent on screen first (and any agent selected while it waits), then the rest a
   few at a time. Every agent still starts. Test harnesses that seed agents only to draw them
-  opt out (`restoresAgentsAtLaunch: false`); their pi starts when a pane's session is asked for.
+  opt out (`restoresAgentsAtLaunch: false`); their pi starts when their thread's session is asked for.
 - At the first launch of a build with Shepherd's own pi, the queue (and automations) wait for
   the one-time copy from the user's pi (`welcomesYourPi`, on in the app only;
   `YourPiFirstLaunchTests` turns it on in a harness), bounded by a deadline; then the agents a
@@ -887,15 +893,15 @@ validated nor written to `state.json` on its own, since every turn reports twice
 resets statuses anyway. The next structural mutation writes it along with its own change. Keep
 anything that must survive a relaunch out of that path.
 
-**Terminal panes** run the shell from Settings ▸ Terminal as a login shell, without wrapping
+**Terminals** run the shell from Settings ▸ Terminal as a login shell, without wrapping
 `pi` or injecting a theme. The user's rc files and pi settings are never edited, and agent-only
 variables are blanked, as are pi's `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSION_DIR`,
-`PI_PACKAGE_DIR`, `PI_OFFLINE` and `PI_SUBAGENTS_TEMP_ROOT`: `pi` in a pane is the user's own.
+`PI_PACKAGE_DIR`, `PI_OFFLINE` and `PI_SUBAGENTS_TEMP_ROOT`: `pi` in a terminal is the user's own.
 
 **Automations** are saved prompts (`ShepherdState.automations`).
 
 - **A run** spawns an ordinary agent, in a reserved hidden space when the automation's cwd
-  matches no user space. It is launched with `SHEPHERD_AUTOMATION=1`, which keeps the pane and
+  matches no user space. It is launched with `SHEPHERD_AUTOMATION=1`, which keeps the terminal and
   notify tools but withholds the `automation_*` tools.
 - **Management:** agent requests arrive as `AutomationRequest` through
   `SessionServer.onAutomationRequest` and are served by `ShepherdViewModel+Automations.swift`.
@@ -945,21 +951,33 @@ variables are blanked, as are pi's `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSI
     `serviceTier` and `serviceTiers`; no Speed control from a host without it) behind
     `native.serviceTier.v1`
   - attach, detach, input, resize, and acknowledged paste
-  - pane open, close, and split resize
+  - terminal open and close (`openPane`, `closePane`)
   - `listDir`, `listModels`, `addSpace`, and `createAgent` with `creationOptions` (and the
     opening prompt's images behind `agent.create.images.v1`)
   - chunked uploads (32 MiB per file)
   - `agentQuery`/`agentAction`: rename, delete, reorder, review, subagents, search, worktree
-    info/setup/finalize/delete, `terminals` (what each terminal pane runs; answered by the
+    info/setup/finalize/delete, `terminals` (what each terminal runs; answered by the
     server itself, `terminal.activity.v1`), and commit from review (`commitInfo`,
     `commitMessage`, `commit` behind `review.commit.v1`; the commit is an operation polled with
     `worktreeStatus`), and the Changes pane (`changesOverview`, `changesList`, `changesFile`,
     `changesBranches`, `changesPatch`, `changesUndoTurn`, `changesRedoTurn` behind `changes.v1`,
     answered by the server itself; thread snapshots carry `turnChanges`). Older hosts review the
-    working tree only (`review`). The terminal panel's own actions on an agent's terminal panes
+    working tree only (`review`). The terminal panel's own actions on an agent's terminals
     ride `agentAction` behind `terminal.control.v1`: `renameTerminal` (Rename tab) and
-    `killTerminalProcess` (Kill process), each refused on the agent's thread pane. An older
+    `killTerminalProcess` (Kill process), each refused on the agent's thread. An older
     client's `typeInTerminal` (Run in terminal, since removed) is answered `unsupported`.
+  - **Terminal compatibility** (no wire or capability change; docs/agent-coordination.md ›
+    Terminals and compatibility): a current client's +, ⌘D and ⌘J send the same `openPane` they
+    always did, naming the thread as `relativeTo` (axis horizontal, `TerminalPanel.newTabAnchor`).
+    A current host ignores `axis` and `relativeTo` and opens a new tab in the thread's folder (or
+    the request's `cwd`), answering `paneOpened`; there is no split request anywhere. So an older
+    client's Split right or down opens a tab and it then sees the flattened layout; its
+    `resizePaneSplit` is answered `unsupported` ("Terminals are tabs and have no splits to
+    resize.") without reaching the GUI handler, and the connection stays; `closePane` of the
+    thread still answers `not_closable`. A current client never offers Split: against an older
+    host its `openPane` naming the thread splits the thread there, which is a new tab, and it
+    draws that host's split tabs as one tab per terminal (`TerminalPanel.tabs`); a host without
+    `pane.control.v1` fails the request `unsupported` and the client beeps
   - `automation` (`automations.v1`): switch on or off, run now, stop, the runs the host kept,
     create, edit, delete. There is no schedule or trigger: an automation that is on starts a run
     when Shepherd launches on the host. The Mac shows a host's automations under its sidebar
@@ -997,7 +1015,7 @@ variables are blanked, as are pi's `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSI
     `RemoteAgentQuery.devServers` (the thread's folder on the host) and `RemoteAgentAction.openTerminal`
     (Start on the host). docs/browser.md › Remote
 
-  Capabilities gate newer features. The client falls back (raw bracketed paste) or refuses (pane
+  Capabilities gate newer features. The client falls back (raw bracketed paste) or refuses (terminal
   control) against older hosts. A host answers an authenticated request it cannot decode (a kind
   or action from another version's client) with `unsupported` and keeps the connection; a frame
   with no `id` closes it. Output frames chunk at 256 KiB to stay under the 1 MiB frame cap.
@@ -1006,10 +1024,10 @@ variables are blanked, as are pi's `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSI
   from unattached clients are ignored.
 - **Attach is atomic** on the server queue: viewport registration, snapshot, attachment, and
   replay watermark happen in one turn.
-- **Host-side handlers:** remote pane and agent-creation requests go through
+- **Host-side handlers:** remote terminal and agent-creation requests go through
   `onRemotePaneRequest` and `onRemoteCreateAgent` with the same authorization as local requests,
   and host settings through `onRemoteHostSettings` (the GUI owns `AppSettings`). A server without
-  those handlers rejects them. Detaching a remote pane never kills the host session.
+  those handlers rejects them. Detaching a remote terminal never kills the host session.
 - **Client:** `RemoteHostStore` persists host configs, **including tokens**, in UserDefaults
   (`shepherd.remote.hosts`). It keeps one `RemoteHostClient` per host, with exponential backoff
   capped at 30 s. A refused token or another protocol version is not retried: the host shows
@@ -1098,7 +1116,7 @@ aliases for them.
 
 **State is Observation.** The view model, `NativeThreadStore`, `AppSettings`,
 `KeybindingsStore`, `ThemeManager`, `ThemeStore`, `RemoteHostStore` and its connections,
-`AppUpdater`, the worktree models, terminal pane sessions, and `MenuState`
+`AppUpdater`, the worktree models, terminal sessions, and `MenuState`
 are `@MainActor @Observable` classes, owned with `@State` and bound with `@Bindable`.
 
 - Don't add `ObservableObject`, `@Published`, `@StateObject`, or `@ObservedObject` to the Mac app
@@ -1108,7 +1126,7 @@ are `@MainActor @Observable` classes, owned with `@State` and bound with `@Binda
 - Observe only what views draw: bookkeeping is `@ObservationIgnored`, and a property is written
   only when its value changes, so a poll or a status report never re-renders a view it didn't
   change.
-- Views take plain `Equatable` values (sidebar rows, pane leaves, thread rows) and do no parsing,
+- Views take plain `Equatable` values (sidebar rows, layout leaves, thread rows) and do no parsing,
   filtering, or highlighting in `body`; stores derive rows once per change. Menus read narrow
   cached values from `MenuState`.
 - A list that can outgrow a screen is a lazy stack whose `ForEach` makes exactly one view per
@@ -1126,7 +1144,9 @@ Ghostty unbind list all read `KeybindingsStore`, and hardcoding a chord in a vie
 - A focused Ghostty surface eats any key equivalent it has a binding for, so every chord the app
   chrome uses must be unbound in `appOwnedChords` (`TerminalSurfaceModel.swift`). Rebindable
   chords flow in through the store; the fixed ones are listed there. Leave Ghostty's copy and
-  paste bindings alone.
+  paste bindings alone. ⇧⌘D and ⌥⌘←/→ have no app action now (terminals are tabs only) and stay
+  listed only because Ghostty's own split and goto bindings are silent no-ops in embedded
+  libghostty that would swallow them; Next and Previous Terminal (⇧⌘] and ⇧⌘[) are real chords.
 - Rebinding reconfigures live surfaces in place (a Ghostty config update, like theme changes),
   with no remount, replay, or blank frame.
 
@@ -1195,15 +1215,19 @@ stays JPEG, everything else becomes PNG.
   directory is referenced instead.
 - Drop copies prune after 24 h.
 
-**Agents drive their own panes.** A new agent is exactly one pane, its thread. Extra panes come
-from the agent (`shepherd-panes.ts`) or the user (⌘D). The server owns PTYs but not layouts, so
-pane requests are forwarded to the GUI via `onPaneRequest` (and `onRemotePaneRequest`) and
+**Agents drive their own terminals.** A new agent is exactly one leaf, its thread, and terminals
+are tabs under it, one terminal each: they come from the agent (`shepherd-panes.ts`'s
+`terminal_*` tools) or the user (⌘D, ⌘J when the thread has none, or the panel's +), never as
+splits. Internally the layout is still the `PaneNode` tree: a thread with terminals hung beside
+it; a flat terminal list replaces it in phase 2. The server owns PTYs but not layouts, so
+terminal requests are forwarded to the GUI via `onPaneRequest` (and `onRemotePaneRequest`) and
 answered with a `PaneOutcome`. `PaneControl.swift` is the only place that serves them. Its rules
 are load-bearing:
 
-- An agent may touch only panes in **its own** layout.
-- It can never close or type into the pane running its own pi process.
-- The last pane in a layout cannot be closed.
+- An agent may touch only terminals in **its own** layout (`no_such_terminal` for any other id).
+- Its own thread is not a terminal: it is never listed, it can never be closed or typed into
+  (`not_closable`, `not_writable`), and focusing or reading it is `no_such_terminal`.
+- Closing the last terminal closes the panel; the layout's thread is never closed.
 
 **An extension-socket connection speaks only for the agent whose pi process opened it**
 (ARCHITECTURE.md › Extensions and the extension socket › Who a connection speaks for). The socket
@@ -1212,7 +1236,7 @@ has no token and an agent's bash tool can read `SHEPHERD_SOCKET` and `agent_list
 (`LOCAL_PEERPID`, `ExtensionConnection.peerPID`; it cannot be read after a peer that closed has
 gone) and, for every message that names an agent as its actor (`ExtensionMessage.speaksFor`),
 serves it only when the agent's live pi has that pid (`SessionServer.isPiProcess`, looked up per
-message, so a restarted pi is followed; a pi that no pane holds yet counts for the agent it was
+message, so a restarted pi is followed; a pi not yet bound to its thread counts for the agent it was
 launched for). Anything else is answered `wrong_process` (a request) or dropped, changes
 nothing, and a refused `helloAgent`, `helloChildren` or `helloBrowser` neither registers nor
 displaces the real holder. One seam, `SessionServer.extensionPeerCheck`, replaces the question in
@@ -1249,7 +1273,7 @@ waiting on you marks its parent's row. Child runs are display state and never pe
 **Switching is a visibility flip, never a remount.** `WorkspaceSelection.mountedTabs` keeps every
 mounted agent layout in the view tree, and selection only changes which one is visible (a hosting
 view's `isHidden`, `nwMotionPaused`, and `isRendering`, where Ghostty occlusion stops hidden
-panes' render loops). A hidden thread suspends its store (`NativeThreadStore.suspend`) and keeps
+terminals' render loops). A hidden thread suspends its store (`NativeThreadStore.suspend`) and keeps
 what it shows, so showing it again rebuilds the thread and its composer once, and its first pull
 catches it up without motion (docs/native-thread.md). The workspace hands each layout an
 Equatable `AgentLayoutModel` and nothing observable, so a status report reruns none of them.
@@ -1286,20 +1310,20 @@ layout wider than the column never widens the shell.
 (`drainPendingMounts`). An agent selected before its turn mounts at once. With forty agents the
 first frame built forty layouts and eighty thread bodies (about 400 ms) until it did.
 
-The one deliberate unmount is **cold parking**, and only for a layout holding a terminal pane. A
+The one deliberate unmount is **cold parking**, and only for a layout holding a terminal. A
 layout hidden for 30 s and outside the four most recently shown
-(`WorkspaceSelection.coldParkCandidates`) drops its terminal panes' surfaces via
+(`WorkspaceSelection.coldParkCandidates`) drops its terminals' surfaces via
 `TerminalSessionStore.parkPane`. Its processes and host-side screens keep running, and
 reselecting it remounts from the server snapshot. A thread-only layout never parks: it has no
 surface, its hidden store polls nothing, and its `NativeThreadStore` keeps the draft and
 history, so returning to it is always a flip. Measurements are in
 [docs/benchmarks](docs/benchmarks/2026-09-03-terminal-baseline.md).
 
-**Sessions and views are separate.** Closing a pane detaches views only. A process that exits on
-its own closes its pane and retires its agent, with one exception: an agent's pi that exits before
+**Sessions and views are separate.** Closing a terminal detaches views only. A process that exits
+on its own closes its tab (an agent's pi exiting retires its agent), with one exception: an agent's pi that exits before
 its thread serves (or that Shepherd stops) keeps its agent, which waits with the reason and Retry
-(`SessionExit.keepsAgent`, DESIGN.md › Thread › Can't start). Its pane session stays `.stopped`, so
-the pane never respawns pi on its own. Delete Agent is the explicit way to terminate an
+(`SessionExit.keepsAgent`, DESIGN.md › Thread › Can't start). Its thread's session stays `.stopped`, so
+the thread never respawns pi on its own. Delete Agent is the explicit way to terminate an
 agent and its auxiliary processes while the app runs, and quitting the app terminates everything.
 
 **Only these paths mutate repositories** ([docs/worktrees.md](docs/worktrees.md)):
@@ -1351,7 +1375,7 @@ agent and its auxiliary processes while the app runs, and quitting the app termi
 Nothing else mutates repository state, and Shepherd never prunes worktrees.
 
 **Reviews dock; they don't split.** A review (`ReviewSession`, `ShepherdViewModel+Review.swift`)
-is the Changes tab of the agent's side pane beside its whole layout (thread and terminal panes);
+is the Changes tab of the agent's side pane beside its whole layout (thread and terminals);
 an inspected subagent takes the pane over and closing it goes back to Changes. It never touches
 the persisted layout. **Nothing opens the pane by itself:** an agent's `review_diff` readies the
 review and marks the Changes tab, and with the pane closed the header's side-pane button, with a

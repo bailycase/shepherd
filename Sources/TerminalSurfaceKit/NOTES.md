@@ -2,9 +2,9 @@
 
 TerminalSurfaceKit adapts `GhosttyTerminal` (the vendored `Vendor/libghostty-spm`, libghostty
 1.3.x) behind a small, stable API: `TerminalSurfaceModel` and `TerminalSurfaceView`. Shepherd uses
-it for one thing: the terminals under an agent's thread, one tab each, which the user opens with ⌘D
-or ⌘J or an agent opens with its `terminal_*` tools. Agents themselves render as native threads and never get a
-surface.
+it for one thing: the terminals under an agent's thread, one tab each, which the user opens with
+⌘D or ⌘J or an agent opens with its `terminal_*` tools. Agents themselves render as native
+threads and never get a surface.
 
 The kit spawns no process. `ShepherdSessions` owns every PTY, and the host-managed I/O backend
 carries those bytes to and from the surface. Only `Sources/ShepherdApp/TerminalHost.swift` imports

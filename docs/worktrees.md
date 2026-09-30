@@ -110,7 +110,7 @@ pipeline steps are checklist rows, each a state glyph, a label, and a one-line d
 | GitHub CLI | "GitHub CLI not installed" | `brew install gh`, with a Copy button |
 | GitHub CLI signed in | "not authenticated — run gh auth login" | "Open a terminal for gh login…" |
 
-"Open a terminal for gh login…" closes the sheet. It then opens a terminal pane beside the
+"Open a terminal for gh login…" closes the sheet. It then opens a terminal under the
 agent's thread, in the agent's directory, with `gh auth login` typed in. When everything
 passes, the sheet shows "All set — ready to finalize" and enables Continue. "Re-run checks"
 runs the probes again.

@@ -31,7 +31,7 @@ Never commit a `project.pbxproj` change for a new file.
 | G. Commit | `Commit/`, `Fixtures/CommitFixtures.swift`, and the Commit… entry points in `Review/` | commit from review: the iPhone sheet, the iPad popover |
 | H. Automations | `Automations/`, `Fixtures/AutomationsFixtures.swift` | the Automations list (Home's `.automations` destination), the iPad list and detail, one automation with its runs, the form |
 | I. Windows | `Windows/`, `Fixtures/WindowsFixtures.swift` | several iPad windows: the scene, each window's navigator and restoration, Open in new window, Send to…, text dropped on a composer |
-| J. Terminal | `Terminal/`, `Fixtures/TerminalFixtures.swift` | terminal panes: the iPad panel under a thread, the iPhone's full-screen panes, the key row |
+| J. Terminal | `Terminal/`, `Fixtures/TerminalFixtures.swift` | terminals: the iPad panel under a thread (tabs only), the iPhone's full-screen terminals, the key row |
 | K. Designs | `Designs/`, `Fixtures/DesignsFixtures.swift`, and its rows in Home, Recents, search and More | a host's designs (`designs.v1`): Designs, a design's boards, one board with its comments, New design, design systems |
 | L. Designs on iPad | `DesignPad/`, `Fixtures/DesignPadFixtures.swift`, `Fixtures/DesignPadBoards.swift` | a host's designs on iPad (`designs.v1`): the Designs list, the canvas beside its chat, Split View's reply card, the sidebar's Designs row and design rows |
 
@@ -91,7 +91,7 @@ Routes today:
 | `.settings(.experiments / .suggestion(UUID))` | Experiments; one suggested line to add or dismiss |
 | `.automations(.detail(host:automation:))` | one automation, its runs, Run now and Stop (iPhone, pushed; the iPad shows it beside the list) |
 | `.automations(.edit(host:automation:))` | the form: a new automation (both nil, or a host), or an existing one's fields (presented) |
-| `.terminal(.panes(AgentRef))` | a thread's terminal panes full screen (iPhone; iPad shows them in the panel) |
+| `.terminal(.panes(AgentRef))` | a thread's terminals full screen (iPhone; iPad shows them in the panel); the case keeps its stored name `.panes` so saved routes restore |
 | `.designs(.list / .design(HostDesignRef) / .board(HostDesignRef, path:))` | Designs, a design's boards, one board full screen |
 | `.designs(.boards(HostDesignRef, current:) / .newDesign(brief:host:))` | a design's boards to jump to, New design (presented) |
 | `.designs(.systems / .system(host:namespace:))` | the hosts' design systems, one system |

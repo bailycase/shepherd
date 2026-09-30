@@ -19,8 +19,8 @@ the server speaks pi's RPC protocol directly.
 
 ## Launch
 
-`TerminalSessionStore` (`TerminalSessions.swift`) spawns an agent's primary pane as an RPC
-session (`SessionRuntime.rpc`). Every other pane is a PTY running the shell configured in
+`TerminalSessionStore` (`TerminalSessions.swift`) spawns an agent's thread as an RPC
+session (`SessionRuntime.rpc`). Every terminal is a PTY running the shell configured in
 Settings ▸ Terminal. `StatusExtension.command` builds the agent command with `PiLaunch.agent`,
 which builds every pi launch line. It always goes through a zsh login shell, so the user's `PATH`
 reaches pi's tools, and it enters the agent's folder after the shell's startup files have run:
@@ -43,7 +43,7 @@ stand-in), never a `pi` looked up on PATH ([pi-home.md](pi-home.md)).
   `--model`/`--thinking` are passed only while that file has no conversation (a fresh session).
 - **Extensions** are installed into the support directory from embedded literals and loaded
   with `-e`. Nothing is installed into a pi home. The status extension is always loaded; the
-  rest follow Settings ▸ Pi ▸ Bundled extensions: "Panes and agent tools", "Diff review tool",
+  rest follow Settings ▸ Pi ▸ Bundled extensions: "Terminals and agent tools", "Diff review tool",
   "Subagent display", "Native subagents", "Name agents automatically" (the namer, and only
   for agents whose name is not final), "Browser tools" (the `browser_*` tools on the thread's own
   Browser page, for agents that draw no design; docs/browser.md), and "Design references"
@@ -51,7 +51,7 @@ stand-in), never a `pi` looked up on PATH ([pi-home.md](pi-home.md)).
   Design tool is on; `SHEPHERD_DESIGN_REFS`).
 - **Environment:**
   - Always: `SHEPHERD_AGENT_ID`, `SHEPHERD_SOCKET`, `SHEPHERD_EXT_STATUS`.
-  - With the panes extension: `SHEPHERD_EXT_PANES`.
+  - With the terminal tools' extension (id `panes`): `SHEPHERD_EXT_PANES`.
   - With the browser extension: `SHEPHERD_EXT_BROWSER`.
   - With native subagents: `SHEPHERD_NATIVE_CHILDREN=1`, `SHEPHERD_EXT_CHILDREN`, and the
     `SHEPHERD_CHILD_*` defaults.
@@ -587,11 +587,11 @@ transport differs.
   decode the others. pi reporting only Off (a model without reasoning) hides the thinking chip.
 - **Starting and unavailable agents** (`NativeThreadCode`):
   - `native_starting`: the agent exists but its pi is not serving yet. The app adds a new
-    agent before it spawns pi and binds the process to the pane, a restored agent's pane keeps
+    agent before it spawns pi and binds the process to its thread, a restored agent's thread keeps
     the previous run's session until its pi respawns (in the launch queue), and pi itself
     takes a moment to answer `get_state` and `get_messages`. Clients poll from the moment an
     agent appears, so this is never an error.
-  - **Servable signal:** the moment an agent's pi serves (and its pane is bound to that pi,
+  - **Servable signal:** the moment an agent's pi serves (and its thread is bound to that pi,
     whichever comes last), `SessionServer.onNativeThreadServable` tells the local app, once per
     pi, after the state broadcast of the binding. The app hands that agent's thread store a
     pushed revision (`revisionAvailable()`, below), so a thread on screen pulls at once instead
@@ -602,12 +602,12 @@ transport differs.
     that warns it will create a new one under that id), keeps its agent. The server keeps a
     start record per RPC session (`PiStartRecord`: stderr without colour codes, the exit code,
     the cause) and reports the exit as a `SessionExit` that keeps the agent. Until another pi
-    is bound to the pane, a snapshot of that agent answers with the problem alone
+    is bound to the thread, a snapshot of that agent answers with the problem alone
     (`NativeThreadSnapshot.startProblem`, generation `start-problem`, no history, no actions);
     every other request is `native_unavailable`. `retryStart` makes it `native_starting` until
     the new pi is bound, and that pi takes the opening prompt the stopped one never read. An
     older client ignores the field and draws an empty thread it cannot send to.
-  - `native_unavailable`, with the reason: the agent no longer exists, its pane runs no pi, or
+  - `native_unavailable`, with the reason: the agent no longer exists, its thread runs no pi, or
     its pi exited after it served (with the exit code, also after the app retired the session).
   - Hosts advertise `native.thread.starting.v1`. `RemoteHostClient` reads `native_unavailable`
     from an older host as starting: such a host said that while pi started, and it retires an
@@ -644,7 +644,7 @@ output grows.
   frame instead of at its next poll. The store says when its poll loop runs (`isLive`,
   `onLiveChange`), `NativeThreadStores.live` collects those agents, and the view model hands
   them to the server (`TerminalSessionStore.watchThreadRevisions`), which pushes only watched
-  agents: each revision `RPCThreadState` reaches (or a pane bound to a pi) queues its agent, and
+  agents: each revision `RPCThreadState` reaches (or a thread bound to a pi) queues its agent, and
   one main-queue delivery a display frame (`SessionServer.revisionPushSpacing`) carries every
   agent queued since, so an agent no one watches costs no main-queue work at all.
   `onThreadRevision` then calls the agent's `revisionAvailable()`

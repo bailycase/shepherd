@@ -378,7 +378,7 @@ func paneTreeGeometry(
 }
 
 /// Every leaf is always a direct child of this ZStack, keyed by pane ID.
-/// Changing the split tree moves and resizes leaves without remounting their
+/// Changing the layout moves and resizes leaves without remounting their
 /// terminal surfaces.
 struct PaneTreeView: View {
     var vm: ShepherdViewModel
@@ -807,14 +807,14 @@ private struct RemoteAgentLayoutView: View {
 }
 
 /// A remote layout drawn like a local one: every leaf a direct child of one ZStack keyed by pane
-/// ID, so a split moves and resizes panes instead of rebuilding them.
+/// ID, so a tab switch or a hide never rebuilds a terminal.
 private struct RemotePaneTreeView: View {
     var vm: ShepherdViewModel
     var connection: RemoteHostStore.Connection
     let ref: RemoteAgentRef
     let tab: Tab
     let node: PaneNode
-    /// The agent's thread pane; nil for the host's utility terminal, drawn as its own splits.
+    /// The agent's thread; nil for the host's utility terminal, which has no panel.
     var thread: PaneID? = nil
     @State private var liveHeight: CGFloat?
 
