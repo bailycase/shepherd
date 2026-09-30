@@ -683,6 +683,11 @@ final class BrowserSession {
         userApproved.remove(url) != nil
     }
 
+    /// A host's request begins: an address the user typed earlier is not one its navigations may use.
+    func forgetUserApprovals() {
+        userApproved.removeAll()
+    }
+
     func stepHistory(_ direction: BrowserHistoryStep) {
         switch direction {
         case .back: webView?.goBack()

@@ -65,6 +65,7 @@ extension BrowserSession {
             let target = BrowserHostGuard.historyStep(of: request).flatMap { historyTarget($0) }
             if let refusal = await guardian.refusal(for: request, page: currentURL, historyTarget: target) { return refusal }
             hostGuard = guardian
+            forgetUserApprovals()
             blockedNavigation = nil
             blockedFrames = []
             hostRequestsInFlight += 1
