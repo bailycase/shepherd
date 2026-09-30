@@ -58,6 +58,9 @@ extension RPCThreadState {
         /// The design references' copies it carries (`DesignReferencePayload.id`): deleting it
         /// before pi reads it withdraws them, and it can't be restored.
         var designPayloads: [UUID] = []
+        /// Sent straight to interrupt pi (`NativeThreadDelivery.interrupt`): it never sat in Up
+        /// next by choice, so it starts the next turn as an ordinary message, not "From the queue".
+        var direct = false
 
         /// What pi is handed for it: the fenced record, then the message.
         var promptText: String { RPCThreadState.prompt(entry.text, context: context) }
@@ -123,12 +126,18 @@ extension RPCThreadState {
                      completion: completion)
             return
         }
-        let item = QueueItem(
+        var item = QueueItem(
             entry: NativeQueuedMessage(id: id, text: text, images: images.map { NativeQueuedImage(mimeType: $0.mimeType, name: $0.name) },
                                        sentAt: Date().timeIntervalSince1970 * 1000, elements: elements),
             images: images, goesAlone: alone, context: context, designPayloads: designPayloads)
+        item.direct = delivery == .interrupt
         guard admitsQueue(items + [item]) else { completion(queueFull); return }
         items.append(item)
+        if delivery == .interrupt {
+            // It is first in the queue for as long as pi takes to stop; the plan says how.
+            interrupt([id], operationID: id, completion: completion)
+            return
+        }
         if settleCapture != nil, !running, dispatches.isEmpty, paused {
             // A fresh send after Stop still resumes the queue, even while its end is captured.
             sendAfterCapture = [id]
@@ -136,9 +145,11 @@ extension RPCThreadState {
             queueNotice = nil
         }
         // Only a running pi can take a steer: one of our prompts still on its way has not
-        // started a run, so the message goes first after it instead.
-        guard delivery == .steer, running else {
-            if delivery == .steer { NativeQueueRules.move(id, toQueuedIndex: 0, in: &items) }
+        // started a run, pi refuses a prompt while it compacts, and one being stopped for an
+        // interrupt would deliver it into the run it aborts. Such a message goes first after
+        // what is ahead of it instead.
+        guard delivery == .steer, canSteerNow else {
+            if delivery == .steer { NativeQueueRules.move(id, toQueuedIndex: waitingHeadIndex, in: &items) }
             commit()
             completion(.accepted(operationID: id))
             return
@@ -210,9 +221,10 @@ extension RPCThreadState {
             completion(accepted)
         case .steer(let ids):
             guard piBusy else { sendNow(ids, completion: completion, operationID: operationID); return }
-            guard running else {
-                // A prompt of ours is on its way and pi has not started it: these go right after it.
-                for (offset, id) in ids.enumerated() { NativeQueueRules.move(id, toQueuedIndex: offset, in: &items) }
+            guard canSteerNow else {
+                // A prompt of ours is on its way and pi has not started it, or pi compacts or is
+                // being stopped for an interrupt: these go right after what is ahead of them.
+                for (offset, id) in ids.enumerated() { NativeQueueRules.move(id, toQueuedIndex: waitingHeadIndex + offset, in: &items) }
                 completion(accepted)
                 return
             }
@@ -232,23 +244,41 @@ extension RPCThreadState {
             guard items.contains(where: { $0.entry.id == id && $0.entry.state == .steering }) else { completion(missing); return }
             unsteer(id) { completion($0 ?? accepted) }
         case .sendNow(let ids):
-            if settleCapture != nil, !running, dispatches.isEmpty {
-                let chosen = ids.filter { id in items.contains { $0.entry.id == id && $0.entry.state == .queued } }
-                guard !chosen.isEmpty else { completion(missing); return }
-                sendAfterCapture = chosen
-                paused = false
-                queueNotice = nil
-                commit()
-                completion(accepted)
-                return
-            }
-            guard !piBusy else {
-                perform(.steer(ids: ids), operationID: operationID, completion: completion)
-                return
-            }
-            sendNow(ids, completion: completion, operationID: operationID)
+            sendQueuedNow(ids, operationID: operationID, completion: completion)
+        case .interrupt(let ids):
+            interrupt(ids, operationID: operationID, completion: completion)
         }
     }
+
+    /// Send now: pi is idle, or settled with its turn's end still being recorded (these go the
+    /// moment it is), else a steer.
+    func sendQueuedNow(_ ids: [UUID], operationID: UUID, completion: @escaping (NativeThreadResult) -> Void) {
+        if settleCapture != nil, !running, dispatches.isEmpty {
+            let chosen = ids.filter { id in items.contains { $0.entry.id == id && $0.entry.state == .queued } }
+            guard !chosen.isEmpty else {
+                completion(.failure(code: "queue_item_unavailable", message: "That message is no longer queued."))
+                return
+            }
+            sendAfterCapture = chosen
+            paused = false
+            queueNotice = nil
+            commit()
+            completion(.accepted(operationID: operationID))
+            return
+        }
+        guard !piBusy else {
+            perform(.steer(ids: ids), operationID: operationID, completion: completion)
+            return
+        }
+        sendNow(ids, completion: completion, operationID: operationID)
+    }
+
+    /// pi can take a steer now: a run is going, and nothing keeps a prompt from queueing in it.
+    var canSteerNow: Bool { running && compactingRun == nil && interrupting == nil }
+
+    /// Where a message that waits instead of steering goes: after the messages an interrupt is
+    /// stopping pi for, else first.
+    var waitingHeadIndex: Int { interrupting?.count ?? 0 }
 
     /// Keeps deleted items for Undo, except one carrying design references: its grants and copies
     /// are withdrawn at once, so it can't come back.
@@ -272,7 +302,7 @@ extension RPCThreadState {
 
     /// pi is idle and the user asked for these now: they open the next turn (joined when there
     /// are several), and the rest of a paused queue resumes after it.
-    private func sendNow(_ ids: [UUID], completion: @escaping (NativeThreadResult) -> Void, operationID: UUID) {
+    func sendNow(_ ids: [UUID], completion: @escaping (NativeThreadResult) -> Void, operationID: UUID) {
         let chosen = ids.compactMap { id in items.first { $0.entry.id == id && $0.entry.state == .queued } }
         guard !chosen.isEmpty else {
             completion(.failure(code: "queue_item_unavailable", message: "That message is no longer queued."))
@@ -291,8 +321,18 @@ extension RPCThreadState {
     /// The queue goes when pi is idle, not paused, holds no question, and no editor holds it.
     func drainIfReady() {
         releaseLapsedHolds()
-        guard !piBusy, !paused, session.isAlive, isServable, dialogs.isEmpty,
-              !items.contains(where: { $0.entry.held }) else { return }
+        guard !piBusy, !paused, session.isAlive, isServable, dialogs.isEmpty else { return }
+        // An interrupt's messages are an explicit send: an editor open on another one doesn't hold them.
+        if let ids = interrupting {
+            guard !interruptAbortPending else { return }
+            interrupting = nil
+            let remaining = ids.filter { id in items.contains { $0.entry.id == id && $0.entry.state == .queued } }
+            if !remaining.isEmpty {
+                sendNow(remaining, completion: { _ in }, operationID: UUID())
+                return
+            }
+        }
+        guard !items.contains(where: { $0.entry.held }) else { return }
         if let ids = sendAfterCapture {
             sendAfterCapture = nil
             let remaining = ids.filter { id in items.contains { $0.entry.id == id && $0.entry.state == .queued } }
@@ -319,7 +359,8 @@ extension RPCThreadState {
         }
         guard !batch.isEmpty else { return }
         items.removeAll { item in batch.contains { $0.entry.id == item.entry.id } }
-        let parts = NativeQueueRules.parts(batch)
+        // A message sent straight to interrupt is an ordinary one; several joined show apart.
+        let parts = batch.count == 1 && batch[0].direct ? nil : NativeQueueRules.parts(batch)
         // The latest record among them is the viewer's screen as the batch leaves.
         let context = batch.last { $0.context != nil }?.context
         dispatch(id: batch[0].entry.id, text: NativeQueueRules.joined(batch), context: context, images: batch.flatMap(\.images),
@@ -525,7 +566,7 @@ extension RPCThreadState {
     /// Steering items pi still holds go back to the queue's head, in order; anything else pi
     /// had queued joins the queue after them, so nothing is lost. Items pi no longer holds have
     /// landed (or are landing).
-    private func reclaim(steering: [String], followUp: [String]) {
+    func reclaim(steering: [String], followUp: [String]) {
         var remaining = steering
         var back: [QueueItem] = []
         for item in items where item.entry.state == .steering {
@@ -563,6 +604,8 @@ extension RPCThreadState {
 
     func stop(_ done: @escaping (Result<RPCResponse, RPCError>) -> Void) {
         stopRequested = true
+        // Stop wins over an interrupt under way: its messages stay queued, and the queue waits.
+        interrupting = nil
         // A settle or a released editor can arrive before clear_queue answers.
         paused = true
         queueNotice = nil
@@ -666,6 +709,7 @@ extension RPCThreadState {
     /// A new pi session: its queue is new, so steering items wait in the queue again.
     func resetQueueForNewSession() {
         cancelPreparingPrompts()
+        interrupting = nil
         settleCapture = nil
         discardPreparedTurn?()
         for dispatch in dispatches { live.removeAll { $0.kind == .pending(dispatch.id) } }
