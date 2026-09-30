@@ -179,6 +179,49 @@ enum ChildrenExtension {
         const textSchema = Type.String({ minLength: 1, maxLength: MAX_TEXT });
         const idSchema = Type.String({ minLength: 1, maxLength: 80 });
 
+        // The managed CLIProxyAPI provider (docs/pi-home.md) is loaded by Shepherd's launcher, `<home>/bin/pi`,
+        // which passes `-e <home>/shepherd-cliproxyapi.ts` and pins `SHEPHERD_CLIPROXYAPI_CONFIG`. A helper
+        // isn't started through the launcher, so it gets both here: only while the parent's home holds the
+        // extension and a connection file (the launcher pins the home as PI_CODING_AGENT_DIR).
+        export function managedProvider(env = process.env) {
+          const home = env.PI_CODING_AGENT_DIR;
+          if (!home || !path.isAbsolute(home)) return undefined;
+          const extension = path.join(home, "shepherd-cliproxyapi.ts"), config = path.join(home, "shepherd-cliproxyapi.json");
+          try { return fs.statSync(extension).isFile() && fs.statSync(config).isFile() ? { extension, config } : undefined; }
+          catch { return undefined; }
+        }
+
+        // What a helper is started with: its arguments and its environment, built from the parent's.
+        // Pure (it reads files only to name them), so a test can pin exactly which `-e` and which
+        // SHEPHERD_* variables a helper gets. `inherited` are the user's enabled extensions.
+        export function childLaunch({ run, bridge, inherited = [], parentEnv = process.env }) {
+          const env = { ...parentEnv };
+          // A helper is cut off from the host: none of the parent's SHEPHERD_* reaches it (its agent id,
+          // socket and design are the parent's alone), nor the parent's session or model variables.
+          for (const key of Object.keys(env)) if (key.startsWith("SHEPHERD_") || key.startsWith("PI_SUBAGENT") || ["PI_SESSION_ID", "PI_SESSION_FILE", "PI_PROVIDER", "PI_MODEL", "PI_REASONING_LEVEL"].includes(key)) delete env[key];
+          env.SHEPHERD_CHILD = "1"; env.PI_OFFLINE = "1";
+          env.SHEPHERD_CHILD_TOOLS = JSON.stringify([...run.tools, "shepherd_parent_message"]);
+          const args = ["--mode", "rpc", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-approve",
+            "-e", bridge, "--session", run.sessionFile, "--model", run.model, "--thinking", run.thinking,
+            "--tools", [...run.tools, "shepherd_parent_message"].join(","),
+            run.systemPromptMode === "replace" ? "--system-prompt" : "--append-system-prompt", path.join(run.dir, "prompt.md")];
+          if (run.inheritProjectContext === false) args.push("--no-context-files");
+          for (const skill of run.skills ?? []) args.push("--skill", skill);
+          const loaded = new Set([fs.realpathSync(bridge)]);
+          const load = (extension) => {
+            const real = fs.realpathSync(extension);
+            if (loaded.has(real)) return;
+            loaded.add(real); args.push("-e", extension);
+          };
+          // Resolved at each launch, including resume, so Pi resource enable/disable changes apply.
+          // Other providers come from the user's extensions (Pi loads those under --no-extensions when
+          // named); the managed one is Shepherd's own and comes from its home.
+          const managed = managedProvider(parentEnv);
+          if (managed) { load(managed.extension); env.SHEPHERD_CLIPROXYAPI_CONFIG = managed.config; }
+          for (const extension of new Set([...inherited, ...(run.extensions ?? [])])) load(extension);
+          return { args, env };
+        }
+
         // `timers` lets tests observe the control tick; pi passes only `pi`.
         export default function shepherdChildren(pi, timers = { setInterval, clearInterval }) {
           if (process.env.SHEPHERD_CHILD === "1") {
@@ -520,21 +563,7 @@ enum ChildrenExtension {
             run.needsReply = false; run.questionOptions = undefined; run.questionText = undefined; run.questionShort = undefined; run.exitCode = undefined; run.endedAt = undefined; run.startedAt = Date.now(); run.state = "running";
             run.toolArgs = new Map(); run.files ??= new Map();
             run.closed = new Promise((resolve) => { run.resolveClosed = resolve; });
-            const env = { ...process.env };
-            for (const key of Object.keys(env)) if (key.startsWith("SHEPHERD_") || key.startsWith("PI_SUBAGENT") || ["PI_SESSION_ID", "PI_SESSION_FILE", "PI_PROVIDER", "PI_MODEL", "PI_REASONING_LEVEL"].includes(key)) delete env[key];
-            env.SHEPHERD_CHILD = "1"; env.PI_OFFLINE = "1";
-            env.SHEPHERD_CHILD_TOOLS = JSON.stringify([...run.tools, "shepherd_parent_message"]);
-            const args = ["--mode", "rpc", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-approve",
-              "-e", bridge, "--session", run.sessionFile, "--model", run.model, "--thinking", run.thinking,
-              "--tools", [...run.tools, "shepherd_parent_message"].join(","),
-              run.systemPromptMode === "replace" ? "--system-prompt" : "--append-system-prompt", path.join(run.dir, "prompt.md")];
-            if (run.inheritProjectContext === false) args.push("--no-context-files");
-            for (const skill of run.skills ?? []) args.push("--skill", skill);
-            // Resolve at each launch, including resume, so Pi resource enable/disable changes apply.
-            // No provider-specific lookup or credential export: Pi loads its own provider extensions.
-            for (const extension of new Set([...inherited, ...(run.extensions ?? [])])) {
-              if (fs.realpathSync(extension) !== fs.realpathSync(bridge)) args.push("-e", extension);
-            }
+            const { args, env } = childLaunch({ run, bridge, inherited });
             // The parent's own engine: the node it runs on and its pi's bundle, never a `pi` from PATH
             // (Shepherd's pi ships both; its launcher pins the rest, which the child inherits).
             const script = path.join(getPackageDir(), "dist", "bundle", "cli.js");

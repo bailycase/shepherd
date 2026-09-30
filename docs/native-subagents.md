@@ -165,6 +165,18 @@ with no bundle, can't start one and the run fails saying so. Children inherit th
 pins from the parent's pi, and run with `PI_OFFLINE=1` and with `SHEPHERD_*`, `PI_SUBAGENT*`, and
 session and model variables stripped. They get `--no-skills --no-prompt-templates --no-themes
 --no-approve`, plus `--no-context-files` when the profile doesn't inherit project context.
+[pi-home.md](pi-home.md#the-launcher) lists what a child inherits and what it doesn't.
+
+- **The managed provider.** A child isn't started through Shepherd's launcher, which is what
+  gives an agent the CLIProxyAPI provider, so the extension gives it too: while the parent's pi
+  home holds `shepherd-cliproxyapi.ts` and a connection file, a child gets `-e
+  <home>/shepherd-cliproxyapi.ts` and `SHEPHERD_CLIPROXYAPI_CONFIG` (set after the `SHEPHERD_*`
+  filter, the only one that survives), so a `cliproxyapi/<id>` model works in a child exactly as
+  in its parent. It is the only provider a child gets beyond pi's own, the user's enabled
+  extensions and a profile's `extensions`. With no connection a child is launched as it always was.
+- **No per-agent settings.** A child gets none of what Shepherd sets for its parent through
+  `SHEPHERD_*` variables or its own extensions, such as a model's service tier: it runs with pi's
+  defaults for its model.
 
 **Artifacts.** Each child gets `<support dir>/children/native-<uuid>/`, holding the transcript,
 prompt, status, inspector controls, what the user sent it (`user-messages.jsonl`), and a writer
