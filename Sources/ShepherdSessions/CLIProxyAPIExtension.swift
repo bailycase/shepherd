@@ -46,18 +46,45 @@ enum CLIProxyAPIExtension {
           }
         }
 
+        // "gpt-6.1-sol" and "gpt-6-sol" share the family "gpt-#-sol" and differ in version [6, 1] vs [6].
+        // A release date ("-20250514") is part of the family, never a version: it only matches its kind.
+        const family = (suffix: string) => suffix.replace(/(?<!\d)\d{8}(?!\d)/g, "D").replace(/\d+(?:\.\d+)*/g, "#");
+        const version = (suffix: string) => (suffix.match(/\d+/g) ?? []).filter((part) => part.length !== 8).map(Number);
+        function compareVersions(a: number[], b: number[]) {
+          for (let i = 0; i < Math.max(a.length, b.length); i++) {
+            const difference = (a[i] ?? 0) - (b[i] ?? 0);
+            if (difference) return difference;
+          }
+          return 0;
+        }
+
         function metadataIndex() {
           const exact = new Map<string, Model<Api>>(), suffixes = new Map<string, Model<Api>[]>();
+          const families = new Map<string, Model<Api>[]>(), providers = new Set<string>();
           for (const provider of getBuiltinProviders()) {
+            providers.add(provider);
             for (const model of getBuiltinModels(provider)) {
               exact.set(`${provider}/${model.id}`, model);
               const suffix = model.id.split("/").at(-1)!;
               const candidates = suffixes.get(suffix) ?? [];
               candidates.push(model);
               suffixes.set(suffix, candidates);
+              const key = `${provider}\u0000${family(suffix)}`;
+              families.set(key, [...(families.get(key) ?? []), model]);
             }
           }
-          return { exact, suffixes };
+          return { exact, suffixes, families, providers };
+        }
+
+        // A model newer than pi's catalog (a release after the pinned engine) borrows its capabilities,
+        // thinking levels among them, from the same owner's nearest earlier version of that family.
+        function familyMetadata(suffix: string, provider: string | undefined, catalog: ReturnType<typeof metadataIndex>) {
+          if (!provider) return;
+          const siblings = catalog.families.get(`${provider}\u0000${family(suffix)}`) ?? [];
+          const wanted = version(suffix);
+          const ranked = siblings.map((model) => ({ model, version: version(model.id.split("/").at(-1)!) }))
+            .sort((a, b) => compareVersions(b.version, a.version));
+          return (ranked.find((entry) => compareVersions(entry.version, wanted) <= 0) ?? ranked.at(-1))?.model;
         }
 
         function metadataFor(proxy: ProxyModel, catalog: ReturnType<typeof metadataIndex>): Model<Api> | undefined {
@@ -70,11 +97,13 @@ enum CLIProxyAPIExtension {
           const aliases: Record<string, string> = { codex: "openai-codex", claude: "anthropic", gemini: "google" };
           const owner = proxy.owned_by?.trim().toLowerCase();
           const routedOwner = route.includes("/") ? route.split("/").at(-2) : undefined;
-          const canonical = (candidates.some((model) => model.provider === routedOwner) ? routedOwner : undefined) ||
+          const known = candidates.length ? candidates.some((model) => model.provider === routedOwner) : catalog.providers.has(routedOwner ?? "");
+          const canonical = (known ? routedOwner : undefined) ||
             (owner && (aliases[owner] ?? owner)) ||
             (suffix.includes("codex") && candidates.some((model) => model.provider === "openai-codex") ? "openai-codex" :
               /^gpt-|^o\d/.test(suffix) ? "openai" : /^claude-/.test(suffix) ? "anthropic" :
               /^gemini-/.test(suffix) ? "google" : undefined);
+          if (!candidates.length) return familyMetadata(suffix, canonical, catalog);
           const owned = candidates.filter((model) => model.provider === canonical);
           return owned.length === 1 ? owned[0] : undefined;
         }
@@ -86,7 +115,9 @@ enum CLIProxyAPIExtension {
             const responses = native?.api.includes("responses") === true;
             const deepseek = proxy.owned_by?.toLowerCase().split(/[^a-z0-9]+/).includes("deepseek");
             return {
-              id: proxy.id, provider: ID, name: native?.name ?? proxy.id, baseUrl: config.baseURL,
+              id: proxy.id, provider: ID, baseUrl: config.baseURL,
+              // A borrowed sibling lends its capabilities, never its name.
+              name: native && native.id.split("/").at(-1) === proxy.id.split("/").at(-1) ? native.name : proxy.id,
               api: responses ? "openai-responses" : "openai-completions",
               reasoning: native?.reasoning ?? false,
               input: native ? [...native.input] : ["text"],
@@ -133,6 +164,11 @@ enum CLIProxyAPIExtension {
               if (!snapshot) throw new Error("CLIProxyAPI is disabled or its settings are unavailable.");
               if (!current) throw new Error("This CLIProxyAPI model is no longer available. Choose another model.");
               const key = snapshot.apiKey;
+              // fetch throws on a header byte above 0xFF before connecting, and pi would only say
+              // "Connection error." A pasted curly quote or ellipsis is the usual cause.
+              if (!/^[\x20-\x7e]+$/.test(key)) {
+                throw new Error("The CLIProxyAPI key in Shepherd's settings has a character a request can't carry, often a curly quote or ellipsis from pasting. Reconnect in Settings ▸ Pi ▸ Sign-in with the plain key.");
+              }
               const redact = (text: string) => {
                 for (const secret of new Set([key, encodeURIComponent(key), JSON.stringify(key).slice(1, -1)])) {
                   if (secret) text = text.split(secret).join("[redacted]");
