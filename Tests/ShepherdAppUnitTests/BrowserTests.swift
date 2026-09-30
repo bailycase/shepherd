@@ -33,10 +33,10 @@ struct BrowserTests {
     }
 
     @Test(arguments: [
-        ("swiftui lazy stack", "https://duckduckgo.com/?q=swiftui%20lazy%20stack"),
-        ("vite", "https://duckduckgo.com/?q=vite"),
-        ("a&b=c", "https://duckduckgo.com/?q=a%26b%3Dc"),
-        ("1.2", "https://duckduckgo.com/?q=1.2"),
+        ("swiftui lazy stack", "https://www.google.com/search?q=swiftui%20lazy%20stack"),
+        ("vite", "https://www.google.com/search?q=vite"),
+        ("a&b=c", "https://www.google.com/search?q=a%26b%3Dc"),
+        ("1.2", "https://www.google.com/search?q=1.2"),
     ])
     func anythingElseIsASearch(_ input: String, _ url: String) {
         #expect(BrowserAddress.resolve(input)?.absoluteString == url)

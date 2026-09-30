@@ -3118,7 +3118,7 @@ forwards the port (not built yet).
   reads "Search or enter a URL" in `textTertiary`. ⌘L or a click edits the whole URL; ↩ opens, Esc
   gives up. It takes a URL with a scheme; a host with a port or a path (loopback, a private IPv4
   address, `.local`, `.test` and `.localhost` names go over http, others over https); ":5173" for a
-  port on this Mac; anything else is a search (DuckDuckGo).
+  port on this Mac; anything else is a search (Google).
 - **Nothing open** (`NWBrowserEmpty`): centered, 14pt apart: a 44pt `bgSelected` circle with a
   20pt `textSecondary` globe, "No page open" (Geist 14 semibold), and a line (`ui` `textSecondary`,
   at most 330pt, centered), the board's words exactly: "The agent opens pages here when it starts
