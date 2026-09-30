@@ -13,6 +13,13 @@ public enum ServiceTier: String, Codable, Hashable, Sendable, CaseIterable {
         }
     }
 
+    /// What "Toggle fast mode" switches to: back to Standard from a raised tier, else the first
+    /// raised tier the model offers; nil when it offers none (there is nothing to toggle).
+    public static func toggled(from current: ServiceTier, offered: [ServiceTier]) -> ServiceTier? {
+        if current != .standard { return offered.contains(.standard) ? .standard : nil }
+        return offered.first { $0 != .standard }
+    }
+
     /// The menu's one line under the title.
     public var summary: String {
         switch self {
