@@ -61,6 +61,8 @@ struct NativeThreadWireTests {
         .compact(expectedSessionID: "s", generation: "g", operationID: op, instructions: "Keep the preview findings"),
         .retry(expectedSessionID: "s", generation: "g", operationID: op, entryID: "user:1733234570000"),
         .retry(expectedSessionID: "s", generation: "g", operationID: op, entryID: "user:1733234570000#1"),
+        .setServiceTier(expectedSessionID: "s", generation: "g", operationID: op, tier: "fast"),
+        .setServiceTier(expectedSessionID: "s", generation: "g", operationID: op, tier: "standard"),
         .send(expectedSessionID: "s", generation: "g", operationID: op, text: "taller", delivery: .followUp,
               designContext: NativeDesignContext(DesignViewRecord(
                 visibleBoards: ["A.dc.html"], selectedBoards: ["A.dc.html"], selected: [DesignElementID("A.dc.html#5:1/1/0")!],
@@ -116,6 +118,14 @@ struct NativeThreadWireTests {
                                            browserElements: [element.withoutHTML])],
             provisional: [], clipped: false, runtime: "rpc",
             queue: NativeQueue(items: [NativeQueuedMessage(id: op, text: "and this", sentAt: 5, elements: [element.withoutHTML])], mode: .all))),
+        .snapshot(value: NativeThreadSnapshot(
+            piSessionID: "s", generation: "g", revision: 12, running: false, model: "openai/gpt-6-luna",
+            supportedActions: ["send", "setServiceTier"], dialogsSupported: true, dialogs: [], messages: [], provisional: [], clipped: false,
+            runtime: "rpc", serviceTier: "fast", serviceTiers: ["standard", "fast"])),
+        .snapshot(value: NativeThreadSnapshot(
+            piSessionID: "s", generation: "g", revision: 13, running: false, model: "anthropic/claude",
+            supportedActions: ["send", "setServiceTier"], dialogsSupported: true, dialogs: [], messages: [], provisional: [], clipped: false,
+            runtime: "rpc", serviceTier: "standard", serviceTiers: [])),
         .accepted(operationID: op),
         .unchanged(piSessionID: "s", generation: "g", revision: 3),
         .failure(code: "stale_session", message: "refresh"),
@@ -191,6 +201,20 @@ struct NativeThreadWireTests {
         let empty = try Self.snapshot(adding: ["context": [String: Any]()])
         #expect(empty.context == NativeThreadContext())
         #expect((try Wire.object(empty)["context"] as? [String: Any])?.isEmpty == true)
+    }
+
+    /// An older host sends no tier: the client draws no Speed control. A host that does sends the
+    /// agent's tier and what its model offers; none offered is an empty list, not an absent one.
+    @Test func anOlderSnapshotHasNoServiceTierAndAnEmptyOfferStaysOnTheWire() throws {
+        let older = try Wire.decode(NativeThreadSnapshot.self, Self.v1Snapshot)
+        #expect(older.serviceTier == nil && older.serviceTiers == nil)
+        let object = try Wire.object(older)
+        #expect(object["serviceTier"] == nil && object["serviceTiers"] == nil)
+        let none = try Self.snapshot(adding: ["serviceTier": "standard", "serviceTiers": [String]()])
+        #expect(none.serviceTiers == [])
+        #expect((try Wire.object(none)["serviceTiers"] as? [String]) == [])
+        let offered = try Self.snapshot(adding: ["serviceTier": "fast", "serviceTiers": ["standard", "fast", "ultra"]])
+        #expect(offered.serviceTier == "fast" && offered.serviceTiers == ["standard", "fast", "ultra"], "an unknown tier is the client's to ignore")
     }
 
     /// Values a newer pi or host adds read as unknown rather than failing the snapshot.

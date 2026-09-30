@@ -25,6 +25,14 @@ struct PaletteContextTests {
         #expect(ShepherdViewModel.pullRequestContext(pullRequest) == expected)
     }
 
+    /// "Toggle fast mode" is offered only while the thread on screen's model offers a tier.
+    @Test func toggleFastModeIsListedOnlyWhereTheModelOffersATier() throws {
+        #expect(ShepherdViewModel.fastModePaletteItem(offered: false) == nil)
+        let item = try #require(ShepherdViewModel.fastModePaletteItem(offered: true))
+        #expect(item.title == "Toggle fast mode" && item.section == .thisThread && item.icon == "bolt")
+        #expect(item.kind == .action("fastMode"))
+    }
+
     @Test func newThreadNamesItsProject() {
         #expect(ShepherdViewModel.newThreadContext("Shepherd") == "in Shepherd/")
     }

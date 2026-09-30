@@ -101,6 +101,63 @@ private struct NWPreviewSizedControls: View {
     }
 }
 
+/// ComposerSpeed board: the chip beside Thinking, Standard and Fast, at the regular and the
+/// compact size, and the menu with each tier current.
+private struct NWPreviewSpeedControls: View {
+    let value: String
+    let boosted: Bool
+
+    var body: some View {
+        Button {} label: { Image(systemName: "paperclip") }.buttonStyle(.nwIcon(size: NWComposerMetrics.chipHeight))
+            .accessibilityLabel("Attach file")
+        Button {} label: { NWComposerCommandsLabel() }.buttonStyle(.nwComposerChip())
+        Button {} label: { HStack(spacing: NW.Space.s) { Text("gpt-5.5").font(.nw(.code)); NWChipChevron() } }.buttonStyle(.nwComposerChip())
+        Button {} label: { NWComposerThinkingLabel(level: "Medium") }.buttonStyle(.nwComposerChip())
+        Button {} label: { NWComposerSpeedLabel(value: value, boosted: boosted) }.buttonStyle(.nwComposerChip())
+            .accessibilityLabel("Speed: \(value)")
+        Spacer(minLength: NW.Space.m)
+        NWComposerActionButton(.send, enabled: false) {}
+    }
+}
+
+private let nwPreviewSpeedOptions = [
+    NWSpeedOption(id: "standard", title: "Standard", detail: "Default speed and price"),
+    NWSpeedOption(id: "fast", title: "Fast", detail: "Faster responses, billed at a higher rate", boosted: true),
+]
+
+#Preview("Speed") {
+    NWPreviewBoth {
+        VStack(alignment: .leading, spacing: NW.Space.xl) {
+            NWComposer(isFocused: false) {
+                Text("Follow up, or / for commands…").font(.nw(.body)).foregroundStyle(.nw.textTertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } controls: { NWPreviewSpeedControls(value: "Standard", boosted: false) }
+            .frame(width: 600)
+            NWComposer(isFocused: false) {
+                Text("Follow up, or / for commands…").font(.nw(.body)).foregroundStyle(.nw.textTertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } controls: { NWPreviewSpeedControls(value: "Fast", boosted: true) }
+            .frame(width: 600)
+            NWComposer(isFocused: false) {
+                Text("Follow up…").font(.nw(.body)).foregroundStyle(.nw.textTertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } controls: {
+                Button {} label: { NWComposerCommandsLabel() }.buttonStyle(.nwComposerChip())
+                Button {} label: { NWComposerThinkingLabel(level: "Medium") }.buttonStyle(.nwComposerChip())
+                Button {} label: { NWComposerSpeedLabel(value: "Fast", boosted: true) }.buttonStyle(.nwComposerChip())
+                Spacer(minLength: NW.Space.m)
+                NWComposerActionButton(.send, enabled: false) {}
+            }
+            .frame(width: 392)
+            .nwComposerSize(.compact)
+            HStack(alignment: .top, spacing: NW.Space.xl) {
+                NWSpeedMenu(options: nwPreviewSpeedOptions, current: "standard", onChoose: { _ in }, onClose: {})
+                NWSpeedMenu(options: nwPreviewSpeedOptions, current: "fast", onChoose: { _ in }, onClose: {})
+            }
+        }
+    }
+}
+
 #Preview("Up next") {
     NWPreviewBoth {
         VStack(alignment: .leading, spacing: NW.Space.xl) {

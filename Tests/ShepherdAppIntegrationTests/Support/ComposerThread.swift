@@ -23,11 +23,12 @@ final class ComposerThread {
     private var hosted: () -> AnyView = { AnyView(EmptyView()) }
 
     /// `focused` gives the thread the keyboard, so its field takes it as the app's does.
+    /// `speed` puts the thread on a model that offers a service tier, so its Speed chip shows.
     init(messages: Int = 40, size: CGSize = CGSize(width: 900, height: 600), models: [PiModelCatalog.Entry] = ModelCatalogFixture.entries,
          commands: [NativeCommand] = ModelCatalogFixture.commands, dialogs: [NativeThreadDialog] = [], dark: Bool = false,
-         focused: Bool = false, animated: Bool = true) {
+         focused: Bool = false, animated: Bool = true, speed: Bool = false, model: String = "anthropic/claude-opus-4-5") {
         self.size = size
-        snapshot = Self.snapshot(messages: messages, commands: commands, dialogs: dialogs)
+        snapshot = Self.snapshot(messages: messages, commands: commands, dialogs: dialogs, model: speed ? "openai/gpt-6-luna" : model, speed: speed)
         window = OffscreenWindow(size: size, dark: dark)
         let request: NativeThreadStore.Request = { [weak self] value in
             guard let self else { return .failure(code: "gone", message: "harness released") }
@@ -53,7 +54,7 @@ final class ComposerThread {
     }
 
     static func snapshot(messages count: Int, commands: [NativeCommand], dialogs: [NativeThreadDialog] = [],
-                         model: String = "anthropic/claude-opus-4-5", revision: UInt64 = 1) -> NativeThreadSnapshot {
+                         model: String = "anthropic/claude-opus-4-5", revision: UInt64 = 1, speed: Bool = false) -> NativeThreadSnapshot {
         let messages = (0..<count).map { index -> NativeThreadMessage in
             let user = index % 2 == 0
             let text = user ? "Question \(index): what changed in the composer, and why does the picker lag?"
@@ -62,9 +63,11 @@ final class ComposerThread {
             return NativeThreadMessage(entryID: "m\(index)", role: user ? "user" : "assistant",
                                        blocks: [NativeThreadBlock(kind: .text, text: text)], truncated: false)
         }
-        return NativeThreadSnapshot(piSessionID: "s", generation: "g", revision: revision, running: false, model: model, thinking: "medium",
-                                    supportedActions: ["send", "abort", "answer", "setModel", "setThinking"], dialogsSupported: true,
-                                    dialogs: dialogs, messages: messages, provisional: [], clipped: false, commands: commands)
+        return NativeThreadSnapshot(piSessionID: "s", generation: "g", revision: revision, running: false, model: model,
+                                    thinking: "medium",
+                                    supportedActions: ["send", "abort", "answer", "setModel", "setThinking"] + (speed ? ["setServiceTier"] : []),
+                                    dialogsSupported: true, dialogs: dialogs, messages: messages, provisional: [], clipped: false, commands: commands,
+                                    serviceTier: speed ? "standard" : nil, serviceTiers: speed ? ["standard", "fast"] : nil)
     }
 
     /// Loaded, laid out, and drawing the same picture twice in a row.
@@ -92,6 +95,8 @@ final class ComposerThread {
     func openModelPicker() { commands.send(.modelPicker, to: Self.key) }
 
     func openSlashMenu() { store.draft = "/" }
+
+    func openSpeedMenu() { commands.send(.speedMenu, to: Self.key) }
 
     // MARK: Reading the window
 

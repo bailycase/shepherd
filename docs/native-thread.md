@@ -274,7 +274,7 @@ events come out on stdout, one record per LF.
     `outcome_unknown`, never reported as a refusal: pi may still run it.
   - `supportedActions` lists what clients may offer: `send`, `abort`, `answer`, `setModel`,
     `setThinking`, `sendImages`, `subagents`, `queue`, `compact`, `designContext`,
-    `designReferences`, `browserElements`, `retry`, `interrupt`.
+    `designReferences`, `browserElements`, `retry`, `interrupt`, `setServiceTier`.
 - **Design context:** a design agent's chat sends what its design screen showed with each
   message (`send`'s `designContext`, a `DesignViewRecord`; docs/designs.md › The view record).
   - The host checks it against the grammar. A record that breaks it, or doesn't decode as one
@@ -478,6 +478,18 @@ session is a tree, but RPC has no command to move in it, and `fork` would start 
 - **Tests:** `RetryTests` and `RetryStoreTests` (the stub answers `/shepherd-retry` as pi does,
   and its `flaky` turn fails once), and `Tests/Extensions/retry.test.mjs` against pi's real
   runtime.
+
+## Service tier
+
+The Speed control (docs/service-tier.md). The snapshot carries `serviceTier` (the agent's tier,
+"standard" or "fast") and `serviceTiers` (what its current model offers, Standard first; empty
+when it offers none, absent from an older host), and `setServiceTier` (`tier`: a raw tier the
+list names) changes it. The thread answers `invalid` for a tier it doesn't know and
+`unsupported` for one the model lacks, then asks the server, which writes the agent's tier file
+and persists `Agent.serviceTier` before it answers. Gated by `setServiceTier` in
+`supportedActions` and, remotely, `native.serviceTier.v1` (`RemoteHostClient` strips the action
+from an older host's snapshot and refuses the request there). `NativeThreadStore.offersServiceTier`
+is the client's rule for drawing the control: the action and more than one tier.
 
 ## Context and compaction
 
@@ -744,7 +756,9 @@ The pure derivations live in ShepherdRemote:
 - **`NativeThreadPresentation`:** turns, the Markdown block parser, `DiffStat` from edit
   payloads, the iOS header pill's state (the Mac toolbar has none), subagent state, placement,
   and rollups, clock and duration text, and `NativeScrollFollower` (only a live scroll gesture detaches following; momentum,
-  content replacement, composer resizes, and growth are treated as layout, never as intent).
+  content replacement, composer resizes, and growth are treated as layout, never as intent;
+  the Mac thread from macOS 27, which sets no scroll anchor, repairs a view left past its
+  tail by any layout change at once, `nativeAnchor: false`).
   The iOS client still draws the older turn items and tool rows from here (`nativeTurnItems`,
   `NativeToolRow`).
 

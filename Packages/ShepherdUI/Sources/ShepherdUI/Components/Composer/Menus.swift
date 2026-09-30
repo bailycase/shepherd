@@ -675,3 +675,84 @@ public struct NWThinkingMenu: View {
         .accessibilityLabel("Thinking level")
     }
 }
+
+// MARK: Speed menu
+
+/// A speed the menu offers ("Fast", "Faster responses, billed at a higher rate").
+public struct NWSpeedOption: Identifiable, Equatable, Sendable {
+    public var id: String
+    public var title: String
+    public var detail: String
+    /// A raised tier: its title wears a filled bolt in `lantern`.
+    public var boosted: Bool
+
+    public init(id: String, title: String, detail: String, boosted: Bool = false) {
+        self.id = id
+        self.title = title
+        self.detail = detail
+        self.boosted = boosted
+    }
+}
+
+/// The speed menu (ComposerSpeed board): "Speed", then one two-line 40pt row per tier the model
+/// offers (its title, and what it does in `textTertiary`), a check on the current one, 280pt on
+/// the popover surface. It takes focus for ↑↓ ⏎ esc, as the thinking menu does.
+public struct NWSpeedMenu: View {
+    let options: [NWSpeedOption]
+    let current: String
+    let onChoose: (NWSpeedOption) -> Void
+    let onClose: () -> Void
+    @State private var selection: Int
+    @FocusState private var focused: Bool
+
+    public init(options: [NWSpeedOption], current: String, onChoose: @escaping (NWSpeedOption) -> Void,
+                onClose: @escaping () -> Void) {
+        self.options = options
+        self.current = current
+        self.onChoose = onChoose
+        self.onClose = onClose
+        _selection = State(initialValue: options.firstIndex { $0.id == current } ?? 0)
+    }
+
+    public var body: some View {
+        let nw = Color.nw
+        VStack(alignment: .leading, spacing: 0) {
+            NWMenuHeader("Speed")
+            ForEach(Array(options.enumerated()), id: \.element.id) { index, option in
+                NWMenuRow(highlighted: index == selection, padding: EdgeInsets(top: 0, leading: NW.Space.m, bottom: 0, trailing: NW.Space.m),
+                          height: NWComposerMetrics.speedMenuRowHeight, action: { onChoose(option) }, onHover: { selection = index }) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        HStack(spacing: NW.Space.s) {
+                            if option.boosted {
+                                Image(systemName: "bolt.fill").font(.system(size: NWComposerMetrics.chipSymbol, weight: .medium))
+                                    .foregroundStyle(nw.lantern)
+                            }
+                            Text(option.title).font(.nw(.ui, weight: .regular)).foregroundStyle(nw.textPrimary)
+                        }
+                        Text(option.detail).font(.nw(.caption)).foregroundStyle(nw.textTertiary)
+                            .lineLimit(1).truncationMode(.tail)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    if option.id == current {
+                        Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(nw.running)
+                    }
+                }
+                .accessibilityLabel("\(option.title)\(option.id == current ? ", current" : ""), \(option.detail)")
+            }
+        }
+        .modifier(NWMenuSurface(width: NWComposerMetrics.speedMenuWidth))
+        .focusable()
+        .focusEffectDisabled()
+        .focused($focused)
+        .onKeyPress(.downArrow) { selection = min(options.count - 1, selection + 1); return .handled }
+        .onKeyPress(.upArrow) { selection = max(0, selection - 1); return .handled }
+        .onKeyPress(.return) {
+            if options.indices.contains(selection) { onChoose(options[selection]) }
+            return .handled
+        }
+        .onKeyPress(.escape) { onClose(); return .handled }
+        .onAppear { focused = true }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Speed")
+    }
+}
