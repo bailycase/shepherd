@@ -676,14 +676,23 @@ public struct NativeScrollFollower: Equatable, Sendable {
     /// gesture: a drag up measures the rows it reveals, and moving the view then would pull it
     /// out from under the finger (on iOS it also ends the drag, so the reader could never leave
     /// the tail). The gesture's next reading detaches it, or its end re-sticks it.
-    public mutating func observe(from old: NativeScrollProbe, to new: NativeScrollProbe, gesture: Bool) -> Bool {
+    ///
+    /// `nativeAnchor` says whether the scroll view also keeps the tail itself
+    /// (`defaultScrollAnchor(.bottom, for: .sizeChanges)`, as the iOS thread does). Its
+    /// adjustments follow the layout in another reading, so a view past the end while the layout
+    /// is still changing is left to it. Without one (the Mac thread, which follows by scrolling
+    /// alone) nothing else moves the offset: a reading past the end is final, whatever changed
+    /// with it (history shrinking, the composer collapsing, a turn settling), and the view lands
+    /// on its tail at once rather than drawing blank space past the last row.
+    public mutating func observe(from old: NativeScrollProbe, to new: NativeScrollProbe, gesture: Bool,
+                                 nativeAnchor: Bool = true) -> Bool {
         let layoutChanged = new.layoutDiffers(from: old)
         let intent = gesture && new.distance > old.distance && !layoutChanged
         observe(distanceFromBottom: new.distance, userIntent: intent)
-        // Let native size anchoring finish before repairing an offset-only overshoot. Negative
-        // distances during layout are intermediate readings, not a settled scroll position.
-        // SwiftUI can also leave the top content margin below the tail on older systems.
-        let pastTail = !layoutChanged && new.distance < min(0, new.content - new.container)
+        // With a native anchor, negative distances during layout are intermediate readings, not a
+        // settled scroll position. SwiftUI can also leave the top content margin below the tail
+        // on older systems.
+        let pastTail = (!layoutChanged || !nativeAnchor) && new.distance < min(0, new.content - new.container)
             - max(0, new.insetTop) - Self.repinSlack
         return sticky && !gesture && (pastTail || ((layoutChanged || followingSentTurn) && new.distance > Self.repinSlack))
     }

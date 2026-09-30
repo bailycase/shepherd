@@ -744,7 +744,9 @@ The pure derivations live in ShepherdRemote:
 - **`NativeThreadPresentation`:** turns, the Markdown block parser, `DiffStat` from edit
   payloads, the iOS header pill's state (the Mac toolbar has none), subagent state, placement,
   and rollups, clock and duration text, and `NativeScrollFollower` (only a live scroll gesture detaches following; momentum,
-  content replacement, composer resizes, and growth are treated as layout, never as intent).
+  content replacement, composer resizes, and growth are treated as layout, never as intent;
+  the Mac thread, which sets no scroll anchor, repairs a view left past its tail by any
+  layout change at once, `nativeAnchor: false`).
   The iOS client still draws the older turn items and tool rows from here (`nativeTurnItems`,
   `NativeToolRow`).
 
