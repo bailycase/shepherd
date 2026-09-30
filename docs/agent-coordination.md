@@ -58,8 +58,11 @@ fire-and-forget: a report's dispatch is not an acknowledgment that pi stored or 
 panes extension, from its live pi context. The status Shepherd saved is never used as an answer.
 
 1. The caller sends `coordinateAgent` with its own request `id`.
-2. The server checks that the caller registered as that agent (`helloAgent`), that the target
-   exists, and that the caller is not the target (only a read may address itself).
+2. The server checks that the caller's connection is the one pi process the app started for that
+   agent (every message names its sender, and only that agent's own pi may say it), that the
+   caller registered as that agent (`helloAgent`), that the target exists, and that the caller is
+   not the target (only a read may address itself). Anything else, a process the agent started
+   included, is answered `wrong_process`.
 3. It relays `agentRequest` to the target's registered connection under a token of its own, and
    accepts `agentResponse` for that token only from that connection, under the target's
    identity.
@@ -78,8 +81,10 @@ Limits:
 - `cancelAgentRequest` (a cancelled tool call) answers `cancelled`. It cannot undo a steer or an
   interrupt already dispatched.
 
-The extension socket is same-user IPC, not a security boundary ([SECURITY.md](../SECURITY.md)).
-None of this is part of the remote protocol, and there is no task scheduling.
+The extension socket is same-user IPC with no token: what stops one agent from acting as another
+is that a connection speaks only for the agent whose pi opened it (ARCHITECTURE.md › Who a
+connection speaks for; [SECURITY.md](../SECURITY.md)). None of this is part of the remote
+protocol, and there is no task scheduling.
 
 ## Deleting another agent
 

@@ -39,21 +39,24 @@ A tool acts on **its own thread's page and nothing else**, and its arguments can
   connection (`ExtensionConnection.browserAgentID`).
 - **The registration is bound to the agent's own pi process.** The extension socket is reachable
   by anything the agent runs (its bash tool inherits `SHEPHERD_SOCKET`, and `agent_list` names
-  the other agents), so a name alone proves nothing. On `helloBrowser` the server reads the peer's
-  pid off the accepted socket (`getsockopt(fd, SOL_LOCAL, LOCAL_PEERPID)`, what the kernel
-  recorded when the peer connected) and registers the connection only when that pid is the pid of
-  the pi process this server spawned for that agent (`RPCSession.processIdentifier`; the login
-  shell, the launcher and node each `exec`, so the extension, which runs inside pi, connects from
-  the pid the app started: `EngineSmokeTests.anExtensionInPiConnectsFromTheProcessTheAppStarted`
-  checks it against the real engine). A process the agent started, this app's own other
-  processes, an unreadable pid, or a dead session register nothing, and **a refused registration
-  neither replaces nor disconnects the agent's real connection**: the check comes before the
-  replacement. Its requests are answered `not_registered`. `SessionServer.browserPeerCheck`
-  replaces the check for tests that speak as the extension from their own process; left `nil`
-  it is the real one (`BrowserRelayTests.onlyTheAgentsOwnPiRegistersAndOthersCannotDisplaceIt`
-  runs a stub pi, a child process it starts and the test process against it).
-  `helloAgent` and `helloChildren` (the panes and children extensions) have **the same weakness**
-  and are **not changed here**: they still take the connection's word for its agent.
+  the other agents), so a name alone proves nothing. This is the rule for **every** extension
+  message that names an agent as its actor, not the browser's alone: a connection speaks only
+  for the agent whose pi process opened it (ARCHITECTURE.md › Extensions and the extension
+  socket › Who a connection speaks for). The server reads the peer's pid off each accepted
+  socket once (`getsockopt(fd, SOL_LOCAL, LOCAL_PEERPID)`, what the kernel recorded when the peer
+  connected) and serves a message only when that pid is the pid of the pi process this server
+  spawned for the agent it names (`RPCSession.processIdentifier`; the login shell, the launcher
+  and node each `exec`, so the extension, which runs inside pi, connects from the pid the app
+  started: `EngineSmokeTests.anExtensionInPiConnectsFromTheProcessTheAppStarted` checks it
+  against the real engine). A process the agent started, this app's own other processes, an
+  unreadable pid, or a dead session register nothing (`helloBrowser` is refused like any other
+  message), and **a refused registration neither replaces nor disconnects the agent's real
+  connection**: the check comes before the replacement. Its `browser` requests are answered
+  `not_registered`. `SessionServer.extensionPeerCheck` replaces the check for tests that speak as
+  the extension from their own process; left `nil` it is the real one
+  (`BrowserRelayTests.onlyTheAgentsOwnPiRegistersAndOthersCannotDisplaceIt` and
+  `ExtensionIdentityTests` run stub pis, a child process they start and the test process
+  against it).
 - `SessionServer.routeBrowserRequest` serves a request **only when the connection's registered
   agent is the agent the request names**. Any other request, from any connection, is answered
   `not_registered`; an unregistered connection is refused the same way. A registration is refused
@@ -291,8 +294,8 @@ header's side-pane button shows "Agent opened a page in Browser".
 - The pid a registration is bound to is the one the kernel recorded when the peer connected. A
   process that inherited pi's connection would be pi's, but none does: node opens its sockets
   close-on-exec, and the bash tool's children get only their standard streams. Anything running
-  inside pi itself (another extension) is pi. `helloAgent` and `helloChildren` are still the
-  connection's own word (Isolation).
+  inside pi itself (another extension) is pi. `helloAgent` and `helloChildren` are bound the same
+  way (Isolation).
 - If the user is in a full-screen space or on another Space, the parked window is not on the
   Space they are looking at: its page is hidden and throttled until they come back (the tools
   still work, more slowly). Not measured further here.
