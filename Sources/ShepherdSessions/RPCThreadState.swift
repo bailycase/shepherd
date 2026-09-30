@@ -1823,14 +1823,12 @@ final class RPCThreadState {
         guard case .queue(var parts) = origin else { return origin }
         var remaining = textLimit
         for index in parts.indices {
-            let raw = Array(parts[index].text.utf8)
-            if raw.count <= remaining {
-                remaining -= raw.count
+            let bytes = parts[index].text.utf8.count
+            if bytes <= remaining {
+                remaining -= bytes
                 continue
             }
-            var end = remaining
-            while end > 0, raw[end] & 0xC0 == 0x80 { end -= 1 }
-            parts[index].text = String(decoding: raw[0..<end], as: UTF8.self)
+            parts[index].text = clippedText(parts[index].text, limit: remaining)
             remaining = 0
         }
         return .queue(parts: parts)
@@ -1844,16 +1842,15 @@ final class RPCThreadState {
         var remaining = textLimit
         var truncated = false
         func clip(_ value: String) -> String {
-            let raw = Array(value.utf8)
-            if raw.count <= remaining {
-                remaining -= raw.count
+            let bytes = value.utf8.count
+            if bytes <= remaining {
+                remaining -= bytes
                 return value
             }
             truncated = true
-            var end = remaining
-            while end > 0, raw[end] & 0xC0 == 0x80 { end -= 1 }
+            let text = clippedText(value, limit: remaining)
             remaining = 0
-            return String(decoding: raw[0..<end], as: UTF8.self)
+            return text
         }
         var result = NativeThreadMessage(entryID: entryID, role: message.role.isEmpty ? "custom" : message.role, blocks: [])
         if let toolName = message.toolName { result.toolName = clip(toolName) }
