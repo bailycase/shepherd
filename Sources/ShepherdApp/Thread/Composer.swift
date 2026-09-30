@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
+import ShepherdCore
 import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
@@ -139,11 +140,11 @@ struct Composer: View {
         blank ? min(delay, AppLayout.blankStartingIndicatorDelay) : delay
     }
 
-    private enum Menu: Equatable { case models, thinking, send, context }
+    private enum Menu: Equatable { case models, thinking, speed, send, context }
 
     /// The menu over the card, whichever path opened it (typing "/", a chip, ⇧⌘M, Esc, holding
     /// Send).
-    private enum OpenMenu: Equatable { case none, slash, mention, models, thinking, send, context }
+    private enum OpenMenu: Equatable { case none, slash, mention, models, thinking, speed, send, context }
 
     // One effective state: a lost connection wins over a cached running snapshot (error maps
     // to Send + an inline error, never Stop).
@@ -197,6 +198,7 @@ struct Composer: View {
         return switch menu {
         case .models: .models
         case .thinking: .thinking
+        case .speed: .speed
         case .send: .send
         case .context: .context
         case nil: .none
@@ -465,6 +467,7 @@ struct Composer: View {
         switch command {
         case .modelPicker: openModels()
         case .thinkingMenu: toggleThinking()
+        case .speedMenu: toggleSpeed()
         case .previousTurn, .nextTurn, .inspectSubagent: break
         }
     }
@@ -472,6 +475,11 @@ struct Composer: View {
     /// The levels pi offers the thread's model, with the board's notes.
     private var thinkingOptions: [NWThinkingOption] {
         store.thinkingLevels.map { NWThinkingOption(id: $0.id, title: $0.title, note: $0.note) }
+    }
+
+    /// The tiers the model offers, with the board's words.
+    private var speedOptions: [NWSpeedOption] {
+        store.serviceTiers.map { NWSpeedOption(id: $0.rawValue, title: $0.title, detail: $0.summary, boosted: $0 != .standard) }
     }
 
     // MARK: Menus
@@ -528,6 +536,15 @@ struct Composer: View {
                     menu = nil
                     composing = true
                     Task { await store.setThinking(level.id) }
+                } close: { menu = nil; composing = true }
+                .equatable()
+                .nwTransition(.overlay, anchor: .bottomLeading)
+            }
+            if menu == .speed, store.offersServiceTier {
+                SpeedMenu(options: speedOptions, current: store.serviceTier.rawValue) { option in
+                    menu = nil
+                    composing = true
+                    if let tier = ServiceTier(rawValue: option.id) { Task { await store.setServiceTier(tier) } }
                 } close: { menu = nil; composing = true }
                 .equatable()
                 .nwTransition(.overlay, anchor: .bottomLeading)
@@ -759,6 +776,8 @@ struct Composer: View {
             modelEnabled: store.supports("setModel"), modelsOpen: menu == .models,
             thinking: store.thinking, thinkingShown: thinkingAvailable, thinkingEnabled: store.supports("setThinking"),
             thinkingOpen: menu == .thinking,
+            speed: store.serviceTier, speedShown: store.offersServiceTier, speedEnabled: store.supports("setServiceTier"),
+            speedOpen: menu == .speed,
             startingShown: startingShown, busy: store.busy, stops: stops, beside: working && !draftEmpty && !store.busy,
             sendRinged: menu == .send, contextOpen: menu == .context,
             stopEnabled: active && store.supports("abort"),
@@ -779,6 +798,7 @@ struct Composer: View {
             },
             models: { openModels() },
             thinking: { toggleThinking() },
+            speed: { toggleSpeed() },
             stop: { stop() },
             send: { if sendHeld { sendHeld = false } else { sendDraft(.primary) } },
             sendMenu: { openSendMenu() },
@@ -845,6 +865,13 @@ struct Composer: View {
         guard menu != .thinking else { menu = nil; return }
         dismissCommands()
         menu = .thinking
+    }
+
+    private func toggleSpeed() {
+        guard store.offersServiceTier, store.supports("setServiceTier") else { NSSound.beep(); return }
+        guard menu != .speed else { menu = nil; return }
+        dismissCommands()
+        menu = .speed
     }
 
     /// A chip's menu takes over from the slash menu, which stays closed for the draft as typed
@@ -1072,6 +1099,11 @@ struct ComposerControlsModel: Equatable {
     var thinkingShown: Bool
     var thinkingEnabled: Bool
     var thinkingOpen: Bool
+    /// The Speed chip: the agent's tier, shown while the model offers one besides Standard.
+    var speed: ServiceTier
+    var speedShown: Bool
+    var speedEnabled: Bool
+    var speedOpen: Bool
     var startingShown: Bool
     var busy: Bool
     /// Stop takes the corner: pi works and the field is empty.
@@ -1093,6 +1125,7 @@ struct ComposerControlsActions {
     var commands: () -> Void
     var models: () -> Void
     var thinking: () -> Void
+    var speed: () -> Void
     var stop: () -> Void
     var send: () -> Void
     var sendMenu: () -> Void
@@ -1130,7 +1163,7 @@ struct ComposerControls: View, Equatable {
                     if size == .regular { chips(compact: true, startingLabel: false) }
                 }
                 // A new model or level cross-fades. Only these: typing and width changes stay instant.
-                .nwAnimation(.content, value: [model.model, model.thinking])
+                .nwAnimation(.content, value: [model.model, model.thinking, model.speedShown ? model.speed.rawValue : nil])
                 // The ring and the action, 6pt apart, keep their place whatever the chips drop; out
                 // of the fitting candidates, each is built once (a streamed chunk redraws neither).
                 HStack(spacing: NW.Space.s) {
@@ -1164,6 +1197,7 @@ struct ComposerControls: View, Equatable {
             }
             modelChip(compact: compact)
             thinkingChip(compact: compact)
+            speedChip(compact: compact)
             Spacer(minLength: NW.Space.m)
             if model.startingShown { startingIndicator(label: startingLabel).nwTransition(.content) }
         }
@@ -1196,6 +1230,20 @@ struct ComposerControls: View, Equatable {
             .buttonStyle(.nwComposerChip(active: model.thinkingOpen))
             .disabled(!model.thinkingEnabled)
             .accessibilityLabel("Thinking level: \(NativeThinkingLevel.title(thinking))")
+        }
+    }
+
+    /// How fast the agent asks its provider to answer, opening the tiers its model offers; hidden
+    /// when the model offers none (an Anthropic or Gemini model, an older host).
+    @ViewBuilder private func speedChip(compact: Bool) -> some View {
+        if model.speedShown {
+            Button(action: actions.speed) {
+                NWComposerSpeedLabel(value: model.speed.title, boosted: model.speed != .standard, short: compact)
+            }
+            .buttonStyle(.nwComposerChip(active: model.speedOpen))
+            .disabled(!model.speedEnabled)
+            .help("Speed: \(model.speed.title)")
+            .accessibilityLabel("Speed: \(model.speed.title)")
         }
     }
 
@@ -1349,6 +1397,21 @@ private struct ThinkingMenu: View, Equatable {
 
     var body: some View {
         NWThinkingMenu(options: options, current: current, onChoose: choose, onClose: close)
+    }
+}
+
+/// The speed menu over `NWSpeedMenu`, compared on the tiers it offers and the current one, so a
+/// composer redraw for something else leaves its rows alone.
+private struct SpeedMenu: View, Equatable {
+    let options: [NWSpeedOption]
+    let current: String
+    let choose: (NWSpeedOption) -> Void
+    let close: () -> Void
+
+    static func == (a: Self, b: Self) -> Bool { a.options == b.options && a.current == b.current }
+
+    var body: some View {
+        NWSpeedMenu(options: options, current: current, onChoose: choose, onClose: close)
     }
 }
 

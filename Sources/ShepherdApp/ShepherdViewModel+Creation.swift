@@ -260,7 +260,8 @@ extension ShepherdViewModel {
             worktreePath: config.worktreePath,
             // A new agent leads Recents.
             lastActiveAt: SessionServer.nowMilliseconds(),
-            designID: config.designID
+            designID: config.designID,
+            serviceTier: config.serviceTier ?? settings.defaultServiceTier
         )
 
         // Reserve before addAgent broadcasts: the broadcast mounts the new

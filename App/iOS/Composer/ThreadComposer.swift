@@ -247,10 +247,13 @@ struct ThreadComposer: View {
                                        listing: state.models, levels: store.thinkingLevels) {
             ThinkingChip(level: store.thinking, levels: store.thinkingLevels, enabled: live) { level in Task { await store.setThinking(level) } }
         }
+        if store.offersServiceTier {
+            SpeedChip(tier: store.serviceTier, tiers: store.serviceTiers, enabled: live) { tier in Task { await store.setServiceTier(tier) } }
+        }
     }
 
     private func hasChips(_ store: NativeThreadStore, state: ComposerState) -> Bool {
-        !store.commands.isEmpty || store.model != nil || store.supportedActions.contains("setModel")
+        !store.commands.isEmpty || store.model != nil || store.supportedActions.contains("setModel") || store.offersServiceTier
             || NativeThinkingLevel.offered(thinking: store.thinking, supportedActions: store.supportedActions, model: store.model,
                                            listing: state.models, levels: store.thinkingLevels)
     }

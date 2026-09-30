@@ -23,6 +23,9 @@ public enum NWComposerMetrics {
     public static let modelSearchHeight: CGFloat = 30
     public static let modelPickerMaxHeight: CGFloat = 360
     public static let thinkingMenuWidth: CGFloat = 220
+    /// The speed menu (ComposerSpeed board): 280pt, a section header and two-line 40pt rows.
+    public static let speedMenuWidth: CGFloat = 280
+    public static let speedMenuRowHeight: CGFloat = 40
     /// The `bgSelected` ring around a focused composer card (the thread's and the Steer card).
     public static let focusRing: CGFloat = 3
     /// The thinking chip's lightbulb.
@@ -91,6 +94,35 @@ public struct NWComposerThinkingLabel: View {
                 .foregroundStyle(.nw.textSecondary)
             if size.showsChipWords(short: short) { Text("Thinking") }
             Text(level).foregroundStyle(.nw.textPrimary).fontWeight(.medium)
+                .nwContentTransition(.crossFade)
+            NWChipChevron()
+        }
+    }
+}
+
+/// The speed chip's label (ComposerSpeed board): a bolt, "Speed", the value in `textPrimary`
+/// medium and the chevron. Standard draws an outline bolt in `textSecondary`; a raised tier
+/// (`boosted`: Fast) fills it in `lantern`. At the compact size, or when the row is short of
+/// room, the word "Speed" goes and the bolt and the value stay, so Fast stays readable.
+public struct NWComposerSpeedLabel: View {
+    let value: String
+    let boosted: Bool
+    let short: Bool
+    @Environment(\.nwComposerSize) private var size
+
+    /// `value` is the tier's title ("Fast").
+    public init(value: String, boosted: Bool, short: Bool = false) {
+        self.value = value
+        self.boosted = boosted
+        self.short = short
+    }
+
+    public var body: some View {
+        HStack(spacing: NW.Space.s) {
+            Image(systemName: boosted ? "bolt.fill" : "bolt").font(.system(size: NWComposerMetrics.chipSymbol, weight: .medium))
+                .foregroundStyle(boosted ? Color.nw.lantern : Color.nw.textSecondary)
+            if size.showsChipWords(short: short) { Text("Speed") }
+            Text(value).foregroundStyle(.nw.textPrimary).fontWeight(.medium)
                 .nwContentTransition(.crossFade)
             NWChipChevron()
         }

@@ -945,5 +945,48 @@
         }
       }
     }
+  },
+  {
+    "type": "nativeThread",
+    "id": 29,
+    "agentID": "agent",
+    "request": {
+      "setServiceTier": {
+        "expectedSessionID": "session",
+        "generation": "generation",
+        "operationID": "00000000-0000-0000-0000-000000000033",
+        "tier": "fast"
+      }
+    }
+  },
+  {
+    "type": "nativeThread",
+    "id": 30,
+    "result": {
+      "snapshot": {
+        "value": {
+          "piSessionID": "session",
+          "generation": "generation",
+          "revision": 13,
+          "running": false,
+          "model": "openai/gpt-6-luna",
+          "supportedActions": [
+            "send",
+            "setServiceTier"
+          ],
+          "dialogsSupported": true,
+          "dialogs": [],
+          "messages": [],
+          "provisional": [],
+          "clipped": false,
+          "runtime": "rpc",
+          "serviceTier": "fast",
+          "serviceTiers": [
+            "standard",
+            "fast"
+          ]
+        }
+      }
+    }
   }
 ]

@@ -213,8 +213,9 @@ extension SidePaneTab {
 @MainActor @Observable
 final class ThreadCommandCenter {
     /// `thinkingMenu` has no chord of its own; it opens the composer's thinking menu the way ⇧⌘M
-    /// opens the model picker.
-    enum Command: Equatable { case modelPicker, thinkingMenu, previousTurn, nextTurn, inspectSubagent }
+    /// opens the model picker. `speedMenu` is the same for the Speed menu (⌘K's Toggle fast mode
+    /// switches the tier without opening it).
+    enum Command: Equatable { case modelPicker, thinkingMenu, speedMenu, previousTurn, nextTurn, inspectSubagent }
 
     struct Request: Equatable {
         let command: Command
