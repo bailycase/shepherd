@@ -193,6 +193,9 @@ public struct NWPaneNewsTip: View {
 
 // MARK: Tab strip
 
+/// The strip's own coordinate space, so a tab knows where it sits when its tip hangs from it.
+private let nwSidePaneTabsSpace = "nw-side-pane-tabs"
+
 /// One tab of the side pane's strip.
 public struct NWSidePaneTab: Identifiable, Equatable, Sendable {
     public let id: String
@@ -204,14 +207,19 @@ public struct NWSidePaneTab: Identifiable, Equatable, Sendable {
     public let news: Bool
     /// The chord that selects it ("⌃1").
     public let shortcut: String?
+    /// What pi opened there, said briefly under the tab while it is news ("Agent opened
+    /// localhost:5173/checkout"); nil says nothing.
+    public let tip: NWSidePaneTabTip?
 
-    public init(id: String, title: String, systemImage: String, count: Int? = nil, news: Bool = false, shortcut: String? = nil) {
+    public init(id: String, title: String, systemImage: String, count: Int? = nil, news: Bool = false, shortcut: String? = nil,
+                tip: NWSidePaneTabTip? = nil) {
         self.id = id
         self.title = title
         self.systemImage = systemImage
         self.count = count
         self.news = news
         self.shortcut = shortcut
+        self.tip = tip
     }
 }
 
@@ -230,6 +238,7 @@ public struct NWSidePaneTabs<Options: View>: View {
     let restore: (() -> Void)?
     @ViewBuilder let options: () -> Options
     @State private var showsLabels = true
+    @State private var stripWidth: CGFloat = 0
 
     public init(_ tabs: [NWSidePaneTab], selection: String, select: @escaping (String) -> Void,
                 closeShortcut: String? = nil, close: @escaping () -> Void, restore: (() -> Void)? = nil,
@@ -246,7 +255,7 @@ public struct NWSidePaneTabs<Options: View>: View {
     public var body: some View {
         HStack(spacing: NW.Space.xxs) {
             ForEach(tabs) { tab in
-                TabButton(tab: tab, isSelected: tab.id == selection, showsLabel: showsLabels) { select(tab.id) }
+                TabButton(tab: tab, isSelected: tab.id == selection, showsLabel: showsLabels, stripWidth: stripWidth) { select(tab.id) }
             }
             Spacer(minLength: NW.Space.m)
             HStack(spacing: NW.Space.xs) {
@@ -269,6 +278,8 @@ public struct NWSidePaneTabs<Options: View>: View {
         .background(Color.nw.bgWindow)
         .overlay(alignment: .bottom) { NWHairline() }
         .onGeometryChange(for: Bool.self) { NWSidePaneMetrics.showsLabels(width: $0.size.width) } action: { showsLabels = $0 }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { stripWidth = $0 }
+        .coordinateSpace(.named(nwSidePaneTabsSpace))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Side pane tabs")
     }
@@ -277,8 +288,16 @@ public struct NWSidePaneTabs<Options: View>: View {
         let tab: NWSidePaneTab
         let isSelected: Bool
         let showsLabel: Bool
+        let stripWidth: CGFloat
         let action: () -> Void
         @State private var hovering = false
+        @State private var tipShown = false
+        @State private var minX: CGFloat = 0
+
+        /// The tip hangs from the tab, moved left when the strip is too narrow for it to fit.
+        private var tipShift: CGFloat {
+            -min(minX, max(0, minX + NWBrowserAgentMetrics.tabTipWidth + NW.Space.m - stripWidth))
+        }
 
         var body: some View {
             let nw = Color.nw
@@ -317,6 +336,24 @@ public struct NWSidePaneTabs<Options: View>: View {
             .accessibilityLabel(tab.title)
             .accessibilityValue([tab.count.map { "\($0)" }, tab.news ? "the agent opened something" : nil].compactMap { $0 }.joined(separator: ", "))
             .accessibilityAddTraits(isSelected ? .isSelected : [])
+            .overlay(alignment: .topLeading) {
+                if tab.news, let tip = tab.tip, tipShown || hovering {
+                    NWPaneTabTip(tip)
+                        .fixedSize()
+                        .offset(x: tipShift, y: NWToolbarMetrics.height - (NWToolbarMetrics.height - NW.Height.controlM) / 2 + NW.Space.s)
+                        .allowsHitTesting(false)
+                        .nwTransition(.overlay, edge: .top)
+                }
+            }
+            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(nwSidePaneTabsSpace)).minX } action: { minX = $0 }
+            .nwAnimation(.overlay, value: tab.news && (tipShown || hovering))
+            // Each new thing pi opens shows the tip for a moment.
+            .task(id: tab.news ? tab.tip : nil) {
+                guard tab.news, tab.tip != nil else { tipShown = false; return }
+                tipShown = true
+                try? await Task.sleep(for: .seconds(NWBrowserAgentMetrics.tabTipSeconds))
+                if !Task.isCancelled { tipShown = false }
+            }
         }
     }
 }

@@ -97,6 +97,82 @@ extension PreviewTests {
         }
     }
 
+    /// The agent using the page (PaneStates › BrowserPane · the agent is using it): the 2pt ring
+    /// inset the page, the pointer where the last click landed, and the card under the toolbar
+    /// with Take over. The page is a web view a capture can't draw, so it renders blank.
+    @Test func browserAgentIsUsingIt() async throws {
+        let workspace = try PreviewWorkspace()
+        let session = BrowserSession(agentID: AgentID(), dataStores: .ephemeral)
+        session.load(try #require(URL(string: "about:blank#checkout")))
+        session.consoleOpen = false
+        let store = NativeThreadStore()
+        // A new document takes the pointer away, so the agent points once the page is in.
+        final class Pointed { var done = false }
+        let pointed = Pointed()
+        try await Preview.render("browser-agent-using-it", size: Self.paneSize, ready: {
+            guard !session.isLoading, session.console.network > 0 else { return false }
+            if !pointed.done {
+                pointed.done = true
+                session.agentBegan(note: "clicking through checkout")
+                session.agentPointed(at: CGPoint(x: 316, y: 380))
+                return false
+            }
+            return session.agentOverlay?.pointer != nil
+        }) {
+            browserPane(workspace, session, store: store)
+        }
+    }
+
+    /// The same at a phone's width in its frame, where the pointer follows the page's zoom, and a
+    /// long note truncating in the card.
+    @Test func browserAgentIsUsingItAtAPhonesWidth() async throws {
+        let workspace = try PreviewWorkspace()
+        let session = BrowserSession(agentID: AgentID(), dataStores: .ephemeral)
+        session.load(try #require(URL(string: "about:blank#cart")))
+        session.viewport = .phone
+        session.consoleOpen = false
+        let store = NativeThreadStore()
+        final class Pointed { var done = false }
+        let pointed = Pointed()
+        try await Preview.render("browser-agent-using-it-phone", size: Self.paneSize, ready: {
+            guard !session.isLoading, session.console.network > 0 else { return false }
+            if !pointed.done {
+                pointed.done = true
+                session.agentBegan(note: "typing in “Card number” and checking that every field on the page took its value")
+                session.agentPointed(at: CGPoint(x: 120, y: 300))
+                return false
+            }
+            return session.agentOverlay?.pointer != nil
+        }) {
+            browserPane(workspace, session, store: store)
+        }
+    }
+
+    /// pi opened a page while the pane was on another tab (PaneStates › SidePaneTabs · the agent
+    /// opened a tab): the Browser tab takes its dot and a brief tip hangs under it; and the header's
+    /// button, with the pane closed, says the same.
+    @Test func browserAgentOpenedATab() async throws {
+        let tip = NWSidePaneTabTip(text: "localhost:5173/checkout", openedAt: Date().addingTimeInterval(-10))
+        try await Preview.render("browser-agent-opened-tab", size: CGSize(width: 600, height: 150)) {
+            VStack(spacing: 0) {
+                NWSidePaneTabs(SidePaneTabs.items(news: [.browser], changedFiles: 2, browserTip: tip), selection: SidePaneTab.changes.rawValue,
+                               select: { _ in }, closeShortcut: "⇧⌘B", close: {}) {
+                    Button("Reset Width") {}
+                }
+                Spacer(minLength: 0)
+            }
+            .background(Color.nw.bgWindow)
+        }
+        try await Preview.render("browser-agent-opened-button", size: CGSize(width: 420, height: 110)) {
+            HStack {
+                Spacer()
+                NWPaneNewsTip(SidePaneTab.browser.newsText, shortcut: "⇧⌘B")
+            }
+            .padding(NW.Space.xl)
+            .background(Color.nw.bgWindow)
+        }
+    }
+
     /// Picked elements: no board draws one as a chip on a sent bubble (the user's decision,
     /// 2026-09-29), so a sent message's element goes with it unseen and only its words show; one
     /// still waits in the queue as a chip, and one sits in the composer beside a draft.

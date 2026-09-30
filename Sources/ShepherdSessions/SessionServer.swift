@@ -112,6 +112,9 @@ public final class SessionServer: @unchecked Sendable {
         var agentID: AgentID?
         /// Set by helloChildren: the children extension's control channel for that agent.
         var childrenAgentID: AgentID?
+        /// Set by helloBrowser: the browser extension's channel for that agent. A browser request
+        /// is served only on the connection registered as the agent it names.
+        var browserAgentID: AgentID?
         /// What a remote client said it understands in its `hello`.
         var clientCapabilities: Set<String> = []
         /// A client from before minimal, xhigh and max: it decodes only `ThinkingLevel.legacy`.
@@ -278,6 +281,27 @@ public final class SessionServer: @unchecked Sendable {
     /// the completion may be called from any thread. With no handler the answer is
     /// `mcp_unavailable`.
     public var onMCPRequest: ((MCPRequest, @escaping (MCPOutcome) -> Void) -> Void)?
+    /// An agent's browser extension asked for its thread's Browser page (docs/browser.md). The
+    /// request is served only on the connection registered as that agent (`helloBrowser`) and only
+    /// for a thread, never a design's agent. The app owns the page; delivered on the main actor,
+    /// and the completion may be called from any thread. The server answers `timeout` itself if
+    /// the completion has not come after `SessionServer.defaultBrowserDeadline`, and drops an
+    /// answer whose connection has gone. With no handler the answer is `unavailable`.
+    public var onBrowserRequest: ((AgentID, BrowserRequest, @escaping (BrowserOutcome) -> Void) -> Void)?
+    /// Whether the process at the other end of an extension connection may register as an agent's
+    /// browser (`helloBrowser`): given the agent and the peer's process id. Left `nil`, only the
+    /// pi process this server spawned for that agent may, so a process the agent started (its bash
+    /// tool) cannot drive another thread's page by naming it. Tests that speak as the extension
+    /// from their own process set this to allow it. Read on the server queue.
+    public var browserPeerCheck: ((AgentID, pid_t) -> Bool)?
+    /// The user sent a thread a message (its composer, on this Mac or a remote client: not a
+    /// peer's `agent_send`, an automation's prompt or a design comment). The agent gets the browser
+    /// back if the user had taken it over. Delivered on the main actor.
+    public var onUserMessage: ((AgentID) -> Void)?
+    /// An agent's browser connection closed while the app still had requests of it in flight (the
+    /// user pressed Stop, or pi exited). The app stops the ones that have not started. Delivered
+    /// on the main actor.
+    public var onBrowserAbandoned: ((AgentID) -> Void)?
     /// A server's state or tool list, from one agent's MCP extension (Settings ▸ MCP servers).
     /// Delivered on the main actor in the order the reports arrived.
     public var onMCPReport: ((AgentID, MCPServerReport) -> Void)?
@@ -444,6 +468,15 @@ public final class SessionServer: @unchecked Sendable {
 
     /// childCommand frames awaiting their childCommandResult, by correlation id.
     private var childCommandPending: [Int: (client: ExtensionConnection, completion: (String?) -> Void)] = [:]
+
+    /// Browser requests handed to the app and not answered yet, by token: the connection that
+    /// asked. The answer, the deadline and a closing connection each take the entry, so a request
+    /// is answered at most once and never on a connection that is gone.
+    private var browserPending: [Int: ExtensionConnection] = [:]
+    private var nextBrowserToken = 0
+    /// How long the app has to answer a browser request (server queue).
+    private var browserDeadline: TimeInterval = SessionServer.defaultBrowserDeadline
+    public static let defaultBrowserDeadline: TimeInterval = 120
 
     /// One child process per session, on a PTY (terminal panes) or on
     /// pipes (`pi --mode rpc`). Terminal-only paths take `pty` and treat nil as
@@ -1160,7 +1193,13 @@ public final class SessionServer: @unchecked Sendable {
         case .send, .retry: noteAgentSend(agentID)
         default: break
         }
-        thread.handle(request, olderClient: olderClient) { completion(.result($0)) }
+        // The user's send hands a browser they took over back once the thread accepts it (a stale
+        // or refused send changes nothing).
+        let isSend: Bool = { if case .send = request { return true } else { return false } }()
+        thread.handle(request, olderClient: olderClient) { [weak self] result in
+            if isSend, case .accepted = result { self?.hopToMain { [weak self] in self?.onUserMessage?(agentID) } }
+            completion(.result(result))
+        }
     }
 
     /// What a kept start answers a snapshot with: the problem alone, with no history and no
@@ -2317,6 +2356,14 @@ public final class SessionServer: @unchecked Sendable {
         for (id, pending) in childCommandPending where pending.client === client {
             childCommandPending.removeValue(forKey: id)?.completion("Children extension disconnected. Refresh before acting.")
         }
+        // Requests the app is still working on for a connection that went (the agent was stopped,
+        // or its pi exited) are told to the app, which drops the ones not yet started.
+        var abandoned = false
+        for (token, asker) in browserPending where asker === client {
+            browserPending.removeValue(forKey: token)
+            abandoned = true
+        }
+        if abandoned, let agentID = client.browserAgentID { hopToMain { [weak self] in self?.onBrowserAbandoned?(agentID) } }
         if client.isRemote {
             for sessionID in remoteAttachments.keys {
                 remoteAttachments[sessionID]?.remove(client.fd)
@@ -2364,6 +2411,20 @@ public final class SessionServer: @unchecked Sendable {
         case .childCommandResult(let id, let error):
             guard let pending = childCommandPending[id], pending.client === client else { return }
             childCommandPending.removeValue(forKey: id)?.completion(error)
+        case .helloBrowser(let agentID):
+            // A thread's agent only: an unknown agent, a design's agent, or a connection that is
+            // already someone else's registers nothing, and its requests are refused.
+            guard let agent = store.state.agents.first(where: { $0.id == agentID }), agent.designID == nil,
+                  client.agentID == nil, client.childrenAgentID == nil, client.browserAgentID == nil else { return }
+            // Only the agent's own pi process registers, and a refusal leaves the agent's real
+            // connection alone: the check comes before the one it would replace.
+            guard browserPeerMayRegister(as: agentID, client: client) else { return }
+            for previous in Array(clients.values) where previous !== client && previous.browserAgentID == agentID {
+                disconnect(previous)
+            }
+            client.browserAgentID = agentID
+        case .browser(let id, let agentID, let request):
+            routeBrowserRequest(request, agentID: agentID, requestID: id, client: client)
         case .notify(let agentID, let title, let body):
             hopToMain { [weak self] in self?.onNotify?(agentID, title, body) }
         case .mcpCredentials(let id, let agentID, let server, let reason, let challenge):
@@ -2978,6 +3039,52 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// Hand a browser request to the app and write its reply back to the client. The agent is the
+    /// connection's, never the request's: a request naming anyone else is refused whoever sends
+    /// it, so a tool acts only on its own thread's page.
+    private func routeBrowserRequest(_ request: BrowserRequest, agentID: AgentID, requestID: Int, client: ExtensionConnection) {
+        guard let registered = client.browserAgentID, registered == agentID else {
+            reply(.error(id: requestID, code: "not_registered",
+                         message: "This connection is not registered for that agent's browser."), to: client)
+            return
+        }
+        guard let agent = store.state.agents.first(where: { $0.id == registered }) else {
+            reply(.error(id: requestID, code: "no_such_agent", message: "no such agent"), to: client)
+            return
+        }
+        guard agent.designID == nil else {
+            reply(.error(id: requestID, code: "not_a_thread", message: "A design's agent has no browser."), to: client)
+            return
+        }
+        guard let handler = onBrowserRequest else {
+            reply(.error(id: requestID, code: "unavailable", message: "The browser is unavailable here."), to: client)
+            return
+        }
+        nextBrowserToken += 1
+        let token = nextBrowserToken
+        browserPending[token] = client
+        queue.asyncAfter(deadline: .now() + browserDeadline) { [weak self] in
+            guard let self, let client = self.browserPending.removeValue(forKey: token) else { return }
+            self.reply(.error(id: requestID, code: "timeout", message: "The browser did not answer in time."), to: client)
+            // The agent has given up on it: what is queued behind it should not run either.
+            self.hopToMain { [weak self] in self?.onBrowserAbandoned?(registered) }
+        }
+        hopToMain { [weak self] in
+            handler(registered, request) { outcome in
+                guard let self else { return }
+                self.queue.async {
+                    guard let client = self.browserPending.removeValue(forKey: token) else { return }
+                    self.reply(outcome.reply(id: requestID), to: client)
+                }
+            }
+        }
+    }
+
+    /// Test seam: how long the app has to answer a browser request.
+    public func setBrowserDeadline(_ seconds: TimeInterval) {
+        queue.sync { browserDeadline = seconds }
+    }
+
     /// Hand a review request to the GUI and write its reply back to the client.
     private func routeReviewRequest(_ request: ReviewRequest, requestID: Int, client: ExtensionConnection) {
         guard let handler = onReviewRequest else {
@@ -3065,7 +3172,8 @@ public final class SessionServer: @unchecked Sendable {
              .designProposals(let id, _),
              .designReference(let id, _),
              .designNote(let id, _),
-             .mcpCredentials(let id, _):
+             .mcpCredentials(let id, _),
+             .browserResult(let id, _, _):
             return id
         }
     }
@@ -5041,6 +5149,31 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     /// Server queue: the RPC thread state behind an agent's pane, if it is an RPC agent.
+    /// The process on the other end of a connected Unix socket, as the kernel recorded it when
+    /// the peer connected (`LOCAL_PEERPID`); nil when it cannot be read.
+    static func peerProcessID(of fd: Int32) -> pid_t? {
+        var pid: pid_t = 0
+        var size = socklen_t(MemoryLayout<pid_t>.size)
+        guard getsockopt(fd, SOL_LOCAL, LOCAL_PEERPID, &pid, &size) == 0, pid > 0 else { return nil }
+        return pid
+    }
+
+    /// The pi process of the agent's thread while it runs.
+    private func piProcessID(forAgent agentID: AgentID) -> pid_t? {
+        guard let session = rpcThread(forAgent: agentID)?.session, session.isAlive else { return nil }
+        return session.processIdentifier
+    }
+
+    private func browserPeerMayRegister(as agentID: AgentID, client: ExtensionConnection) -> Bool {
+        guard let peer = Self.peerProcessID(of: client.fd) else {
+            ShepherdLog.warning("browser registration for agent \(agentID) refused: the peer's process could not be read")
+            return false
+        }
+        let allowed = browserPeerCheck.map { $0(agentID, peer) } ?? (piProcessID(forAgent: agentID) == peer)
+        if !allowed { ShepherdLog.warning("browser registration for agent \(agentID) refused: process \(peer) is not its pi") }
+        return allowed
+    }
+
     private func rpcThread(forAgent agentID: AgentID) -> RPCThreadState? {
         guard let agent = store.state.agents.first(where: { $0.id == agentID }),
               let tab = store.state.tabs.first(where: { $0.id == agent.tabID }),

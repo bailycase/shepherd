@@ -289,6 +289,8 @@ enum BrowserScriptMessage: Equatable {
     case moved(rect: CGRect)
     /// Esc in the page stopped selecting.
     case cancel
+    /// The user's own click or key reached the page while the agent was using it.
+    case userInput
 
     /// Nil for anything malformed; `page` is the page's URL for a pick.
     init?(console body: Any) {
@@ -309,6 +311,8 @@ enum BrowserScriptMessage: Equatable {
             self = .network(count: count)
         case "cancel":
             self = .cancel
+        case "userInput":
+            self = .userInput
         case "rect":
             guard let rect = Self.rect(body["rect"]) else { return nil }
             self = .moved(rect: rect)
@@ -347,6 +351,16 @@ final class BrowserConsoleLog {
     private(set) var network = 0
     @ObservationIgnored private var nextID = 0
 
+    /// What the agent reads (`browser_console`): the same lines with their true level, the drawer's
+    /// errors and warnings not merged, and every error ever counted, across new documents.
+    struct Entry: Equatable {
+        var time: String
+        var level: NWConsoleLevel
+        var text: String
+    }
+    @ObservationIgnored private(set) var entries: [Entry] = []
+    @ObservationIgnored private(set) var errorTotal = 0
+
     /// The page's own errors show as warning rows too: no board draws a separate error count or
     /// red rows (the user's decision, 2026-09-29).
     func append(_ level: NWConsoleLevel, _ text: String, at date: Date = Date()) {
@@ -355,6 +369,9 @@ final class BrowserConsoleLog {
         lines.append(NWConsoleLine(id: nextID, time: Self.time(date), text: text, level: shown))
         if lines.count > Self.maxLines { lines.removeFirst(lines.count - Self.maxLines) }
         if shown == .warning { warnings += 1 }
+        entries.append(Entry(time: Self.time(date), level: level, text: text))
+        if entries.count > Self.maxLines { entries.removeFirst(entries.count - Self.maxLines) }
+        if level == .error { errorTotal += 1 }
     }
 
     func setNetwork(_ count: Int) {
@@ -366,6 +383,7 @@ final class BrowserConsoleLog {
         if !lines.isEmpty { lines = [] }
         if warnings != 0 { warnings = 0 }
         if network != 0 { network = 0 }
+        entries.removeAll()
     }
 
     /// "14:02:11", on a 24-hour clock whatever the locale.

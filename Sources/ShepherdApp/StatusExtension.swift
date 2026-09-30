@@ -76,15 +76,18 @@ enum StatusExtension {
         design: (extensionPath: String, designID: DesignID, skillDirectory: String)? = nil,
         designReferences: (extensionPath: String, granted: Bool)? = nil,
         mcp: MCPLaunch? = nil,
+        browserExtensionPath: String? = nil,
         userHome: String = NSHomeDirectory(),
         model: String?,
         thinking: ThinkingLevel?
     ) throws -> SessionCommand {
         // A design's agent reads its design with its own tools: never references.
         let designReferences = design == nil ? designReferences : nil
+        // Nor does it get the browser: that is a thread's own page.
+        let browserExtensionPath = design == nil ? browserExtensionPath : nil
         let extensions = [extensionPath, instructions?.extensionPath, panesExtensionPath, reviewExtensionPath, subagentsExtensionPath,
                           childrenExtensionPath, namerExtensionPath, design?.extensionPath, designReferences?.extensionPath,
-                          mcp?.extensionPath].compactMap { $0 }
+                          mcp?.extensionPath, browserExtensionPath].compactMap { $0 }
         let line = try PiLaunch.agent(home: home, cwd: cwd, sessionID: piSessionID, model: model, thinking: thinking?.rawValue,
                                       extensions: extensions, untrustedProject: PiLaunch.isHomeFolder(cwd, userHome: userHome))
         var env = [
@@ -97,6 +100,8 @@ enum StatusExtension {
         // suggest_instruction may draft a line for.
         if instructions != nil, !suggestFiles.isEmpty { env["SHEPHERD_SUGGEST_FILES"] = suggestFiles.joined(separator: ",") }
         if let panesExtensionPath { env["SHEPHERD_EXT_PANES"] = panesExtensionPath }
+        // Settings ▸ Pi ▸ Browser tools: the tools on the thread's own page (docs/browser.md).
+        if let browserExtensionPath { env["SHEPHERD_EXT_BROWSER"] = browserExtensionPath }
         if let childrenExtensionPath {
             env["SHEPHERD_NATIVE_CHILDREN"] = "1"
             env["SHEPHERD_EXT_CHILDREN"] = childrenExtensionPath

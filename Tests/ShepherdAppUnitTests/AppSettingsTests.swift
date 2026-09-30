@@ -18,6 +18,7 @@ struct AppSettingsTests {
         #expect(settings.autoNameAgents)
         #expect(settings.piPanesExtension && settings.piReviewExtension && settings.piDesignReferences)
         #expect(settings.piSubagentsExtension && settings.piNativeSubagents)
+        #expect(settings.piBrowserExtension, "Browser tools are on by default")
         #expect(settings.uiDensity == 1 && settings.uiTextScale == 1)
         #expect(settings.sidebarWidth == AppSettings.defaultSidebarWidth)
         #expect(!settings.remoteListenerEnabled && settings.remoteListenerPort == 7433)
@@ -100,6 +101,7 @@ struct AppSettingsTests {
         settings.piPanesExtension = false
         settings.piReviewExtension = false
         settings.piDesignReferences = false
+        settings.piBrowserExtension = false
         settings.piSubagentsExtension = false
         settings.piNativeSubagents = false
         settings.shellPath = "/bin/bash"
@@ -122,6 +124,7 @@ struct AppSettingsTests {
         #expect(!reloaded.autoNameAgents)
         #expect(!reloaded.piPanesExtension && !reloaded.piReviewExtension && !reloaded.piDesignReferences)
         #expect(!reloaded.piSubagentsExtension && !reloaded.piNativeSubagents)
+        #expect(!reloaded.piBrowserExtension)
         #expect(reloaded.shellPath == "/bin/bash")
         #expect(reloaded.uiDensity == 1.2 && reloaded.uiTextScale == 1.1 && reloaded.sidebarWidth == 275)
         #expect(reloaded.remoteListenerEnabled && reloaded.remoteListenerPort == 9000)

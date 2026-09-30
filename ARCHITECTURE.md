@@ -143,6 +143,16 @@ and `RPCThreadState` fences it for pi (`BrowserElementFence`), keeps it on a que
 goes alone), and projects it back onto the user message as chips. Start runs a dev server through
 `PaneControl`'s pane-open path and waits for its port before opening the page.
 
+The agent's browser tools ([docs/browser.md](docs/browser.md)) drive the same session. The server
+hands a `BrowserRequest` to `ShepherdViewModel.serveBrowser` (`onBrowserRequest`), only for the
+agent whose connection registered (`helloBrowser`), and `BrowserSession.perform` (`BrowserDriver.swift`,
+which has no WebKit in it) runs it one request at a time: the read, click and type scripts in
+Shepherd's content world (`BrowserAgentScript.swift`), eval in the page's, screenshots from
+`takeSnapshot`, all through a few primitives `BrowserHost.swift` owns. With no pane showing the view
+it sits in a borderless off-screen window (`parkOffscreen`), so it still lays out and runs. The
+card, ring and pointer are `BrowserSession.agentOverlay`; Take over sets `userHasControl`, and the
+server's `onUserMessage` (a user's `send`) hands the page back.
+
 **Sidebar.** `SidebarDerivation` (`SidebarModel.swift`) derives Needs you and Recents from This
 Mac's state and each host's, once per change (`sidebarLists`). Recents are ordered by
 `Agent.lastActiveAt`, which the host sets when a turn starts or ends or a message is sent; Needs you
@@ -288,6 +298,14 @@ authentication boundary ([SECURITY.md](SECURITY.md)).
   opens it; the tab and the header's button take a dot).
 - **`shepherd-subagents.ts`:** publishes subagent runs with `setAgentChildren`.
 - **`shepherd-children.ts`:** opens a `helloChildren` control connection for subagent commands.
+- **`shepherd-browser.ts`:** the `browser_*` tools, on the thread's own Browser page. It sends
+  `helloBrowser` first on every connect, which binds the connection to its agent (accepted only
+  from the pid of the pi process the server spawned for that agent, `browserPeerCheck`); the server
+  serves a `browser` request only on the connection registered as the agent it names
+  (`routeBrowserRequest`, with a 120 s deadline), the app answers through `onBrowserRequest`, and
+  `browserResult` carries text and, for a screenshot, an image. Loaded only for a thread
+  (`TerminalSessionStore.wantsBrowser`, `SHEPHERD_EXT_BROWSER`), never a design's agent or a
+  native subagent.
 - **`shepherd-instructions.ts`:** reads Settings ▸ Instructions' `AGENTS.md` and
   `APPEND_SYSTEM.md` from `SHEPHERD_INSTRUCTIONS_DIR` when a session starts and adds them to pi's
   context files (right after pi's own root `AGENTS.md`) and system prompt (after pi's own

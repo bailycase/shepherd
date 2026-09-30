@@ -68,6 +68,7 @@ struct SettingsSearchTests {
         ("CLAUDE.md", .piFromYourPi, ["Instructions"]),
         ("full access", .piFromYourPi, ["Extensions"]),
         ("engine", .pi, ["Shepherd's pi"]),
+        ("browser", .pi, ["Browser tools"]),
         ("claude desktop", .mcp, ["Import…"]),
         (".mcp.json", .mcp, ["Also use a repo’s .mcp.json"]),
     ] as [(String, SettingsSection, [String])])

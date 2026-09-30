@@ -21,11 +21,12 @@ struct ExtensionMessageTests {
              .coordinateAgent, .agentResponse, .cancelAgentRequest, .createAutomation, .listAutomations,
              .updateAutomation, .deleteAutomation, .startAutomation, .stopAutomation, .suggestInstruction,
              .designRead, .designWriteBoard, .designUpdateIndex, .designComments, .designCommentReply,
-             .designSystemRead, .designSystemWrite, .designProposeComments, .designGet, .designNote, .mcpCredentials, .mcpReport:
+             .designSystemRead, .designSystemWrite, .designProposeComments, .designGet, .designNote, .mcpCredentials, .mcpReport,
+             .helloBrowser, .browser:
             return Wire.caseName(message)
         }
     }
-    static let caseCount = 40
+    static let caseCount = 42
     static let design = DesignID(rawValue: "d1")
 
     static let samples: [ExtensionMessage] = [
@@ -97,10 +98,41 @@ struct ExtensionMessageTests {
             tools: [MCPToolInfo(name: "query", title: "Query", description: "Run a read-only SQL query.",
                                 inputSchema: .object(["type": .string("object"),
                                                       "properties": .object(["sql": .object(["type": .string("string")])])]))])),
+        .helloBrowser(agentID: agent),
+        .browser(id: 40, agentID: agent, request: .open(url: "http://localhost:5173/checkout", note: "opening the checkout")),
+    ] + browserRequests.map { .browser(id: 41, agentID: agent, request: $0) }
+
+    /// Every browser tool's request, with and without its optional parameters.
+    static let browserRequests: [BrowserRequest] = [
+        .open(url: "https://example.com/", note: nil),
+        .read(selector: nil, maxChars: nil), .read(selector: "main > form", maxChars: 12_000),
+        .click(ref: "e12", double: false, note: nil), .click(ref: "e12", double: true, note: "clicking through checkout"),
+        .type(ref: "e3", text: "baily@acme.dev", clear: false, submit: false, note: nil),
+        .type(ref: "e3", text: "line\nbreak “quoted” ünicode", clear: true, submit: true, note: "filling in the form"),
+        .press(key: "Enter", note: nil), .press(key: "Control+a", note: "selecting all"),
+        .scroll(direction: "down", amount: nil, ref: nil, note: nil), .scroll(direction: "up", amount: 400, ref: "e9", note: "scrolling"),
+        .scroll(direction: nil, amount: nil, ref: "e9", note: nil),
+        .wait(text: nil, ref: nil, gone: false, ms: 500, timeout: nil),
+        .wait(text: "Order placed", ref: nil, gone: false, ms: nil, timeout: 15.5),
+        .wait(text: nil, ref: "e7", gone: true, ms: nil, timeout: 2),
+        .screenshot(ref: nil), .screenshot(ref: "e4"),
+        .console(clear: false), .console(clear: true),
+        .eval(expression: "document.title", note: nil), .eval(expression: "const a = 1;\nreturn a", note: "running a script"),
+        .back(note: nil), .forward(note: "going forward"), .reload(note: nil),
     ]
 
     @Test func samplesCoverEveryCase() {
         #expect(Set(Self.samples.map(Self.caseName)).count == Self.caseCount)
+    }
+
+    @Test func everyBrowserActionHasARequestSample() {
+        #expect(Set(Self.browserRequests.map(\.action)) == Set(BrowserRequest.Action.allCases))
+    }
+
+    @Test(arguments: browserRequests)
+    func aBrowserRequestRoundTripsOnItsOwn(_ request: BrowserRequest) throws {
+        #expect(try Wire.roundTrip(request) == request)
+        #expect(try Wire.object(request)["action"] as? String == request.action.rawValue)
     }
 
     @Test(arguments: samples)
@@ -214,6 +246,20 @@ struct ExtensionMessageTests {
          .mcpReport(agentID: agent, report: MCPServerReport(
             server: "fake", status: MCPServerStatus(state: .connected), transport: .stdio, serverName: "Fake MCP",
             tools: [MCPToolInfo(name: "echo", title: "Echo", description: "Echo.", inputSchema: .object([:])), MCPToolInfo(name: "bare")]))),
+        // The browser extension registers, then asks; unset parameters are simply absent.
+        (#"{"type":"helloBrowser","agentID":"a1"}"#, .helloBrowser(agentID: agent)),
+        (#"{"type":"browser","id":1,"agentID":"a1","request":{"action":"open","url":"http://localhost:5173/"}}"#,
+         .browser(id: 1, agentID: agent, request: .open(url: "http://localhost:5173/", note: nil))),
+        (#"{"type":"browser","id":2,"agentID":"a1","request":{"action":"click","ref":"e12","double":true,"note":"clicking through checkout"}}"#,
+         .browser(id: 2, agentID: agent, request: .click(ref: "e12", double: true, note: "clicking through checkout"))),
+        (#"{"type":"browser","id":3,"agentID":"a1","request":{"action":"type","ref":"e3","text":"hi"}}"#,
+         .browser(id: 3, agentID: agent, request: .type(ref: "e3", text: "hi", clear: false, submit: false, note: nil))),
+        (#"{"type":"browser","id":4,"agentID":"a1","request":{"action":"wait","text":"Done","timeout":12}}"#,
+         .browser(id: 4, agentID: agent, request: .wait(text: "Done", ref: nil, gone: false, ms: nil, timeout: 12))),
+        (#"{"type":"browser","id":5,"agentID":"a1","request":{"action":"scroll","direction":"down","amount":300}}"#,
+         .browser(id: 5, agentID: agent, request: .scroll(direction: "down", amount: 300, ref: nil, note: nil))),
+        (#"{"type":"browser","id":6,"agentID":"a1","request":{"action":"console"}}"#,
+         .browser(id: 6, agentID: agent, request: .console(clear: false))),
     ]
 
     @Test(arguments: handWritten)
@@ -256,11 +302,11 @@ struct ExtensionReplyTests {
         case .parentInput, .childCommand, .ok, .error, .panes, .paneOpened, .paneContent, .reviewResult, .automations,
              .agents, .message, .agentRequest, .agentResult, .suggestion, .design, .designBoard, .designWritten,
              .designComments, .designComment, .designSystems, .designSystem, .designSystemWritten, .designProposals,
-             .designReference, .designNote, .mcpCredentials:
+             .designReference, .designNote, .mcpCredentials, .browserResult:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 26
+    static let caseCount = 27
     static let system = DesignSystemSummary(
         info: DesignSystemInfo(namespace: "acme-web", title: "acme-web", revision: 3, createdAt: 1_000, updatedAt: 2_000,
                                syncedAt: 2_000, ownerDesignID: DesignID(rawValue: "d1"), spaceID: SpaceID(rawValue: "s1"),
@@ -345,6 +391,9 @@ struct ExtensionReplyTests {
             text: "Implemented in #142.", createdAt: 1_000)),
         .mcpCredentials(id: 29, credentials: MCPCredentials(bearer: "at-1", headers: ["X-Org": "acme"],
                                                             env: ["DATABASE_URI": "postgres://u:p@db/app"], expiresAtMs: 1_790_000_000_000)),
+        .browserResult(id: 34, text: "Page: Checkout — http://localhost:5173/checkout\n- heading \"Checkout\"", image: nil),
+        .browserResult(id: 35, text: "Screenshot of the visible page, 1280×720.",
+                       image: BrowserImage(data: "/9j/4AAQSkZJRgABAQ==", mimeType: "image/jpeg")),
     ]
 
     static let proposal = DesignCommentDraft(board: DesignPath("A-phone.dc.html")!, tid: 31, path: [1, 1, 2], label: "Steps Cart viewed",

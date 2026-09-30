@@ -30,6 +30,14 @@ struct EngineSmokeTests {
         try await EngineSmoke.runThroughLauncher(engine: engine)
     }
 
+    /// The server binds an agent's browser connection to the pid of the pi it spawned
+    /// (`SessionServer.helloBrowser`), which holds only while nothing between the shell and node
+    /// forks: the extension's connection, made inside pi, is seen from the pid the app started.
+    @Test func anExtensionInPiConnectsFromTheProcessTheAppStarted() async throws {
+        let engine = try #require(EngineSmoke.engine)
+        try await EngineSmoke.runPeerProcess(engine: engine)
+    }
+
     /// An agent in the user's home folder, whose pi (`~/.pi/agent`) names packages and an
     /// extension and whose `~/.pi` is then the project's own config: Shepherd's pi loads none of
     /// their code, runs no npm, and leaves their pi byte-identical.
@@ -277,6 +285,54 @@ enum EngineSmoke {
         #expect(try files.contentsOfDirectory(atPath: userHome.path).isEmpty, "pi wrote nothing into HOME")
     }
 
+    /// An extension that connects to the socket named in its environment and says hello, as the
+    /// browser extension does.
+    static let peerExtension = """
+        import * as net from "node:net";
+
+        export default function (): void {
+          const socket = net.createConnection(process.env.SMOKE_PEER_SOCKET ?? "");
+          socket.on("error", () => {});
+          socket.write("hello\\n");
+          socket.unref();
+        }
+
+        """
+
+    /// Started the way the app starts an agent's pi (a login shell that `exec`s the launcher, which
+    /// `exec`s node), an extension's connection comes from the pid the app spawned.
+    static func runPeerProcess(engine: BundledPiEngine) async throws {
+        let scratch = try makeScratchDirectory("engine-peer")
+        let files = FileManager.default
+        let userHome = scratch.appendingPathComponent("home", isDirectory: true)
+        let temporary = scratch.appendingPathComponent("tmp", isDirectory: true)
+        let project = scratch.appendingPathComponent("project", isDirectory: true)
+        for folder in [userHome, temporary, project] { try files.createDirectory(at: folder, withIntermediateDirectories: true) }
+        let home = PiHome(directory: scratch.appendingPathComponent("support/pi", isDirectory: true), engine: .bundled(engine))
+        try home.install()
+        try models.write(to: home.directory.appendingPathComponent("models.json"), atomically: true, encoding: .utf8)
+        let fixture = scratch.appendingPathComponent("peer.ts")
+        try peerExtension.write(to: fixture, atomically: true, encoding: .utf8)
+
+        let socketPath = scratch.appendingPathComponent("peer.sock").path
+        let listener = try PeerListener(path: socketPath)
+        defer { listener.close() }
+
+        let command = "cd -- \(PiLaunch.quoted(project.path)) && exec \(PiLaunch.quoted(home.launcher.path)) --mode rpc --no-session -e \(PiLaunch.quoted(fixture.path))"
+        let pi = try RPCProcess(executable: "/bin/zsh", arguments: ["-l", "-c", command], directory: project, environment: [
+            "HOME": userHome.path,
+            "TMPDIR": temporary.path + "/",
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "SMOKE_PEER_SOCKET": socketPath,
+        ])
+        defer { pi.stop() }
+
+        let peer = await listener.peerProcess()
+        #expect(peer != nil, "the extension connected and its pid could be read: \(pi.errors)")
+        #expect(peer == pi.processIdentifier, "the extension connects from the process the app spawned: \(String(describing: peer)) vs \(pi.processIdentifier)")
+        #expect(pi.isRunning, "pi kept running: \(pi.errors)")
+    }
+
     static func runInYourHome(engine: BundledPiEngine) async throws {
         let scratch = try makeScratchDirectory("engine-your-home")
         let files = FileManager.default
@@ -515,6 +571,7 @@ final class RPCProcess: @unchecked Sendable {
 
     var errors: String { String(decoding: stderr.current, as: UTF8.self) }
     var isRunning: Bool { process.isRunning }
+    var processIdentifier: Int32 { process.processIdentifier }
 
     func request(_ command: [String: Any]) async throws -> [String: Any] {
         nextID += 1
@@ -543,4 +600,38 @@ final class RPCProcess: @unchecked Sendable {
     func stop() {
         if process.isRunning { process.terminate() }
     }
+}
+
+
+/// A Unix socket that takes one connection and reports which process made it.
+final class PeerListener: @unchecked Sendable {
+    private let fd: Int32
+
+    init(path: String) throws {
+        fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else { throw CommandFailure("socket", String(cString: strerror(errno))) }
+        var address = try SessionServer.socketAddress(for: path)
+        let bound = withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+        }
+        guard bound == 0, listen(fd, 4) == 0 else {
+            let reason = String(cString: strerror(errno))
+            Darwin.close(fd)
+            throw CommandFailure("bind \(path)", reason)
+        }
+    }
+
+    /// The pid of the next connection's process, or nil after `timeout` seconds.
+    func peerProcess(timeout: Int32 = 60) async -> pid_t? {
+        await Task.detached { [fd] in
+            var poller = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+            guard poll(&poller, 1, timeout * 1000) > 0 else { return nil }
+            let connection = accept(fd, nil, nil)
+            guard connection >= 0 else { return nil }
+            defer { Darwin.close(connection) }
+            return SessionServer.peerProcessID(of: connection)
+        }.value
+    }
+
+    func close() { Darwin.close(fd) }
 }

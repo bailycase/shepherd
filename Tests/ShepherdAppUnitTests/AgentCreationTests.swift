@@ -363,6 +363,33 @@ struct AgentLaunchCommandTests {
         #expect(!plain.env.keys.contains { $0.hasPrefix("SHEPHERD_EXT_MCP") })
     }
 
+    /// Settings ▸ Pi ▸ Browser tools: the extension loads with `SHEPHERD_EXT_BROWSER` naming it,
+    /// and off (or in a design's agent) none of it does.
+    @Test func theBrowserExtensionLoadsWithItsVariableAndNeverInADesignsAgent() {
+        func launch(browser: String?, design: DesignID? = nil) -> SessionCommand {
+            try! StatusExtension.command(
+                home: Self.home, cwd: "/tmp/project",
+                agentID: AgentID(rawValue: "agent-id"), piSessionID: "current-session",
+                socketPath: "/tmp/shepherd.sock", extensionPath: "/tmp/status.ts",
+                panesExtensionPath: "/tmp/panes.ts", reviewExtensionPath: nil, subagentsExtensionPath: nil,
+                design: design.map { (extensionPath: "/tmp/design.ts", designID: $0, skillDirectory: "/tmp/skill") },
+                browserExtensionPath: browser, model: nil, thinking: nil)
+        }
+        let on = launch(browser: "/tmp/shepherd-browser.ts")
+        #expect(on.env["SHEPHERD_EXT_BROWSER"] == "/tmp/shepherd-browser.ts")
+        #expect(on.argv[3].hasSuffix(" -e '/tmp/panes.ts' -e '/tmp/shepherd-browser.ts'"))
+        let off = launch(browser: nil)
+        #expect(off.env["SHEPHERD_EXT_BROWSER"] == nil && !off.argv[3].contains("browser"))
+        let drawing = launch(browser: "/tmp/shepherd-browser.ts", design: DesignID())
+        #expect(drawing.env["SHEPHERD_EXT_BROWSER"] == nil && !drawing.argv[3].contains("shepherd-browser"),
+                "a design's agent has no Browser")
+    }
+
+    /// A terminal pane's shell blanks the variable, so a pi run by hand there loads no browser tools.
+    @Test func aTerminalPaneBlanksTheBrowserVariable() {
+        #expect(ShellIntegration.command(shell: ["/bin/zsh"]).env["SHEPHERD_EXT_BROWSER"] == "")
+    }
+
     /// One setting decides a repo's .mcp.json (Settings ▸ MCP servers), and Settings ▸ Pi ▸ MCP
     /// servers decides whether the extension loads at all.
     @Test @MainActor func mcpLaunchFollowsTheSettings() {

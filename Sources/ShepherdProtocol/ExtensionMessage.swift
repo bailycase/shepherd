@@ -156,6 +156,18 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     /// A server's state changed in this agent's pi, or it listed its tools. Fire-and-forget.
     case mcpReport(agentID: AgentID, report: MCPServerReport)
 
+    // MARK: Browser (request/reply)
+
+    /// The browser extension registered this connection as the agent's browser channel: from now
+    /// on `browser` requests naming this agent are served on it, and only on it. Refused (the
+    /// connection stays unregistered) for an unknown agent and for a design's agent; a second
+    /// registration for the agent replaces the first. Fire-and-forget.
+    case helloBrowser(agentID: AgentID)
+    /// One of the agent's browser tools, served on its thread's own Browser page and answered with
+    /// `ExtensionReply.browserResult`, or `.error` with the `BrowserOutcome` codes. A request
+    /// naming any agent but the one this connection registered is refused `not_registered`.
+    case browser(id: Int, agentID: AgentID, request: BrowserRequest)
+
     private enum CodingKeys: String, CodingKey {
         case type, id, agentID, status, name, piSessionID, sessionID, children
         case paneID, axis, cwd, relativeTo, command, text, submit, reference
@@ -182,6 +194,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case designSystemRead, designSystemWrite, designProposeComments
         case designGet, designNote
         case mcpCredentials, mcpReport
+        case helloBrowser, browser
     }
 
     public init(from decoder: Decoder) throws {
@@ -435,6 +448,14 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
                 agentID: try c.decode(AgentID.self, forKey: .agentID),
                 report: try c.decode(MCPServerReport.self, forKey: .report)
             )
+        case .helloBrowser:
+            self = .helloBrowser(agentID: try c.decode(AgentID.self, forKey: .agentID))
+        case .browser:
+            self = .browser(
+                id: try c.decode(Int.self, forKey: .id),
+                agentID: try c.decode(AgentID.self, forKey: .agentID),
+                request: try c.decode(BrowserRequest.self, forKey: .request)
+            )
         }
     }
 
@@ -658,6 +679,14 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(Kind.mcpReport, forKey: .type)
             try c.encode(agentID, forKey: .agentID)
             try c.encode(report, forKey: .report)
+        case .helloBrowser(let agentID):
+            try c.encode(Kind.helloBrowser, forKey: .type)
+            try c.encode(agentID, forKey: .agentID)
+        case .browser(let id, let agentID, let request):
+            try c.encode(Kind.browser, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(request, forKey: .request)
         }
     }
 }
@@ -1020,6 +1049,8 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     case designNote(id: Int, note: DesignThreadNote)
     /// A server's credentials for the MCP extension (`ExtensionMessage.mcpCredentials`).
     case mcpCredentials(id: Int, credentials: MCPCredentials)
+    /// A `browser` request's answer: text, and for a screenshot an image (`BrowserOutcome`).
+    case browserResult(id: Int, text: String, image: BrowserImage?)
 
     private enum CodingKeys: String, CodingKey {
         case requestID, targetAgentID, request, result
@@ -1032,6 +1063,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case proposals
         case answer, note
         case credentials
+        case image
     }
 
     private enum Kind: String, Codable {
@@ -1042,6 +1074,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case designSystems, designSystem, designSystemWritten, designProposals
         case designReference, designNote
         case mcpCredentials
+        case browserResult
     }
 
     public init(from decoder: Decoder) throws {
@@ -1179,6 +1212,12 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
                 id: try c.decode(Int.self, forKey: .id),
                 credentials: try c.decode(MCPCredentials.self, forKey: .credentials)
             )
+        case .browserResult:
+            self = .browserResult(
+                id: try c.decode(Int.self, forKey: .id),
+                text: try c.decode(String.self, forKey: .text),
+                image: try c.decodeIfPresent(BrowserImage.self, forKey: .image)
+            )
         }
     }
 
@@ -1294,6 +1333,11 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
             try c.encode(Kind.mcpCredentials, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(credentials, forKey: .credentials)
+        case .browserResult(let id, let text, let image):
+            try c.encode(Kind.browserResult, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(text, forKey: .text)
+            try c.encodeIfPresent(image, forKey: .image)
         }
     }
 }
