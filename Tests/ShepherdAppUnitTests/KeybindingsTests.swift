@@ -13,8 +13,9 @@ struct KeybindingsTests {
         (ShortcutAction.newAgent, "⌘N"), (.newAgentOptions, "⇧⌘T"), (.newSpace, "⇧⌘N"),
         (.renameAgent, "⌘R"), (.deleteAgent, "⇧⌘W"), (.commandPalette, "⌘K"),
         (.nextAgent, "⌘↓"), (.previousAgent, "⌘↑"),
-        (.splitVertical, "⌘D"), (.splitHorizontal, "⇧⌘D"), (.closePane, "⌘W"),
-        (.focusNextPane, "⌥⌘→"), (.focusPreviousPane, "⌥⌘←"),
+        (.newTerminal, "⌘D"), (.closeTerminal, "⌘W"),
+        (.nextTerminal, "⇧⌘]"), (.previousTerminal, "⇧⌘["),
+        (.toggleTerminal, "⌘J"), (.maximizeTerminal, "⇧⌘↩"),
         (.toggleSidebar, "⇧⌘S"), (.toggleRightPane, "⇧⌘B"), (.modelPicker, "⇧⌘M"),
         (.stopAgent, "⌘."), (.previousTurn, "⌥⌘↑"), (.nextTurn, "⌥⌘↓"), (.inspectSubagent, "⌘I"),
         (.alternateSend, "⌘↩"), (.importDesign, "⇧⌘I"), (.implementInThread, "⌘↩"), (.copyDesignReference, "⇧⌘C"),
@@ -64,6 +65,40 @@ struct KeybindingsTests {
         #expect(keys.validate(ShortcutAction.toggleRightPane.defaultChord, for: .selectElement) == .conflict(.toggleRightPane))
         #expect(keys.assign(KeyChord(key: "e", command: true, shift: true), to: .selectElement) == nil)
         #expect(keys.customGhosttyUnbinds == ["shift+cmd+e"])
+    }
+
+    /// Terminals are tabs only: there is no split to bind, every terminal chord is an app-wide
+    /// action, and none of them says pane or split to the user.
+    @Test func theTerminalChordsAreTabChordsAndNoneSaysPaneOrSplit() {
+        let terminal: [ShortcutAction] = [.newTerminal, .closeTerminal, .nextTerminal, .previousTerminal, .toggleTerminal, .maximizeTerminal]
+        #expect(ShortcutAction.allCases.map(\.title).allSatisfy { !$0.lowercased().contains("split") && !$0.lowercased().contains("pane") || $0.contains("Side Pane") })
+        #expect(terminal.map(\.title) == ["New Terminal", "Close Terminal", "Next Terminal", "Previous Terminal",
+                                          "Show or Hide Terminal", "Maximize or Restore Terminal"])
+        for action in terminal {
+            #expect(action.scope == .app && action.reachesPastTerminals, "\(action) reaches the app from a focused terminal")
+        }
+        #expect(ShortcutAction.nextTerminal.defaultChord.ghosttyChord == "shift+cmd+right_bracket")
+        #expect(ShortcutAction.previousTerminal.defaultChord.ghosttyChord == "shift+cmd+left_bracket")
+    }
+
+    /// A chord saved under an earlier name keeps its meaning (New Terminal was Split Vertically), and
+    /// the actions the splits had are simply gone from what is stored.
+    @Test func chordsSavedUnderTheEarlierNamesStillApply() throws {
+        let defaults = Fixture.defaults()
+        let saved: [String: KeyChord] = [
+            "splitVertical": KeyChord(key: "e", command: true, option: true),
+            "closePane": KeyChord(key: "k", command: true, option: true),
+            "focusNextPane": KeyChord(key: "x", command: true, option: true),
+            "splitHorizontal": KeyChord(key: "h", command: true, option: true),
+        ]
+        defaults.set(try JSONEncoder().encode(saved), forKey: KeybindingsStore.defaultsKey)
+        let keys = KeybindingsStore(store: defaults)
+        #expect(keys.display(.newTerminal) == "⌥⌘E")
+        #expect(keys.display(.closeTerminal) == "⌥⌘K")
+        #expect(keys.display(.nextTerminal) == "⌥⌘X")
+        #expect(keys.overrides.count == 3, "the stored chord of the removed Split Horizontally is ignored")
+        #expect(keys.isDefault(.previousTerminal))
+        #expect(ShortcutAction(rawValue: "splitHorizontal") == nil)
     }
 
     @Test func defaultsNeedNoCustomGhosttyUnbinds() {
@@ -131,10 +166,10 @@ struct KeybindingsTests {
         #expect(AgentSettings.returnDescription(keys).hasSuffix("\(keys.display(.alternateSend)) always steers now: it stops the agent and sends at once."))
 
         #expect(keys.assign(KeyChord(key: "j", command: true, option: true), to: .newAgent) == nil)
-        #expect(keys.assign(KeyChord(key: "e", command: true, option: true), to: .splitVertical) == nil)
+        #expect(keys.assign(KeyChord(key: "e", command: true, option: true), to: .newTerminal) == nil)
         let agents = AgentSettings.explanation(keys), shell = TerminalSettings.shellSubtitle(keys)
         #expect(agents.contains(keys.display(.newAgent)) && !agents.contains("⌘N"))
-        #expect(shell.contains(keys.display(.splitVertical)) && !shell.contains("⌘D"))
+        #expect(shell.contains(keys.display(.newTerminal)) && !shell.contains("⌘D"))
 
         let before = keys.display(.alternateSend)
         #expect(keys.assign(KeyChord(key: "s", command: true, option: true), to: .alternateSend) == nil)
@@ -146,8 +181,8 @@ struct KeybindingsTests {
 
     @Test func chordsWithoutCommandAreRejected() {
         let keys = KeybindingsStore(store: Fixture.defaults())
-        #expect(keys.assign(KeyChord(key: "k", shift: true, option: true), to: .closePane) == .missingCommand)
-        #expect(keys.isDefault(.closePane))
+        #expect(keys.assign(KeyChord(key: "k", shift: true, option: true), to: .closeTerminal) == .missingCommand)
+        #expect(keys.isDefault(.closeTerminal))
     }
 
     /// ⌘1–9 select agents, ⌘, opens Settings, and plain-⌘ system and terminal chords belong
@@ -163,34 +198,34 @@ struct KeybindingsTests {
     ])
     func reservedChordsAreRejected(chord: KeyChord) {
         let keys = KeybindingsStore(store: Fixture.defaults())
-        #expect(keys.assign(chord, to: .closePane) == .reservedChord)
-        #expect(keys.isDefault(.closePane))
+        #expect(keys.assign(chord, to: .closeTerminal) == .reservedChord)
+        #expect(keys.isDefault(.closeTerminal))
     }
 
     /// Another modifier opens the reserved letters back up (digits stay reserved).
     @Test func reservedLettersAreFreeWithAnExtraModifier() {
         let keys = KeybindingsStore(store: Fixture.defaults())
-        #expect(keys.assign(KeyChord(key: "c", command: true, option: true), to: .closePane) == nil)
-        #expect(keys.display(.closePane) == "⌥⌘C")
+        #expect(keys.assign(KeyChord(key: "c", command: true, option: true), to: .closeTerminal) == nil)
+        #expect(keys.display(.closeTerminal) == "⌥⌘C")
     }
 
     @Test func aChordInUseNamesTheActionThatOwnsIt() {
         let keys = KeybindingsStore(store: Fixture.defaults())
-        #expect(keys.assign(KeyChord(key: "d", command: true), to: .closePane) == .conflict(.splitVertical))
+        #expect(keys.assign(KeyChord(key: "d", command: true), to: .closeTerminal) == .conflict(.newTerminal))
     }
 
     @Test func conflictsAreCheckedAgainstOverridesNotJustDefaults() {
         let keys = KeybindingsStore(store: Fixture.defaults())
         let custom = KeyChord(key: "j", command: true, option: true)
         #expect(keys.assign(custom, to: .renameAgent) == nil)
-        #expect(keys.assign(custom, to: .closePane) == .conflict(.renameAgent))
+        #expect(keys.assign(custom, to: .closeTerminal) == .conflict(.renameAgent))
         // The default it vacated is free again.
-        #expect(keys.assign(ShortcutAction.renameAgent.defaultChord, to: .closePane) == nil)
+        #expect(keys.assign(ShortcutAction.renameAgent.defaultChord, to: .closeTerminal) == nil)
     }
 
     @Test func reassigningAnActionItsOwnChordIsNotAConflict() {
         let keys = KeybindingsStore(store: Fixture.defaults())
-        #expect(keys.validate(ShortcutAction.closePane.defaultChord, for: .closePane) == nil)
+        #expect(keys.validate(ShortcutAction.closeTerminal.defaultChord, for: .closeTerminal) == nil)
     }
 
     // MARK: Persistence
@@ -228,9 +263,9 @@ struct KeybindingsTests {
     @Test func assigningTheDefaultClearsTheOverrideAndTheStoredKey() {
         let store = Fixture.defaults()
         let keys = KeybindingsStore(store: store)
-        keys.assign(KeyChord(key: "k", command: true, option: true), to: .closePane)
-        keys.assign(ShortcutAction.closePane.defaultChord, to: .closePane)
-        #expect(keys.isDefault(.closePane))
+        keys.assign(KeyChord(key: "k", command: true, option: true), to: .closeTerminal)
+        keys.assign(ShortcutAction.closeTerminal.defaultChord, to: .closeTerminal)
+        #expect(keys.isDefault(.closeTerminal))
         #expect(store.data(forKey: KeybindingsStore.defaultsKey) == nil)
     }
 
@@ -239,27 +274,27 @@ struct KeybindingsTests {
         let keys = KeybindingsStore(store: store)
         let custom = KeyChord(key: "k", command: true, shift: true)
         #expect(keys.assign(custom, to: .renameAgent) == nil)
-        #expect(keys.assign(ShortcutAction.renameAgent.defaultChord, to: .closePane) == nil)
-        #expect(keys.reset(.renameAgent) == .conflict(.closePane))
+        #expect(keys.assign(ShortcutAction.renameAgent.defaultChord, to: .closeTerminal) == nil)
+        #expect(keys.reset(.renameAgent) == .conflict(.closeTerminal))
         #expect(keys.chord(for: .renameAgent) == custom)
         let reloaded = KeybindingsStore(store: store)
         #expect(reloaded.chord(for: .renameAgent) == custom)
-        #expect(reloaded.chord(for: .closePane) == ShortcutAction.renameAgent.defaultChord)
+        #expect(reloaded.chord(for: .closeTerminal) == ShortcutAction.renameAgent.defaultChord)
     }
 
     @Test func resettingOneActionKeepsTheOthers() {
         let keys = KeybindingsStore(store: Fixture.defaults())
-        keys.assign(KeyChord(key: "k", command: true, option: true), to: .closePane)
+        keys.assign(KeyChord(key: "k", command: true, option: true), to: .closeTerminal)
         keys.assign(KeyChord(key: "u", command: true), to: .newAgent)
-        keys.reset(.closePane)
-        #expect(keys.isDefault(.closePane))
+        keys.reset(.closeTerminal)
+        #expect(keys.isDefault(.closeTerminal))
         #expect(!keys.isDefault(.newAgent))
     }
 
     @Test func resetAllRestoresEveryDefault() {
         let store = Fixture.defaults()
         let keys = KeybindingsStore(store: store)
-        keys.assign(KeyChord(key: "k", command: true, option: true), to: .closePane)
+        keys.assign(KeyChord(key: "k", command: true, option: true), to: .closeTerminal)
         keys.assign(KeyChord(key: "u", command: true), to: .newAgent)
         keys.resetAll()
         #expect(ShortcutAction.allCases.allSatisfy { keys.isDefault($0) })
@@ -272,7 +307,7 @@ struct KeybindingsTests {
     @Test func customChordsBecomeSortedGhosttyUnbinds() {
         let keys = KeybindingsStore(store: Fixture.defaults())
         keys.assign(KeyChord(key: "]", command: true), to: .renameAgent)
-        keys.assign(KeyChord(key: "up", command: true, option: true, control: true), to: .focusNextPane)
+        keys.assign(KeyChord(key: "up", command: true, option: true, control: true), to: .nextTerminal)
         #expect(keys.customGhosttyUnbinds == ["cmd+right_bracket", "ctrl+alt+cmd+up"])
     }
 }

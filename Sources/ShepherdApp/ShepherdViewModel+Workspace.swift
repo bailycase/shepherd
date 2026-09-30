@@ -161,64 +161,27 @@ extension ShepherdViewModel {
         adopt(canonical)
     }
 
-    // MARK: Panes
+    // MARK: Terminals
 
-    func splitFocusedPane(axis: SplitAxis) {
-        if let remote = selectedRemoteAgent {
-            if remoteInspectingAgent == remote, let tab = remoteVisibleTab(remote) {
-                controlRemoteInspector(remote, action: .split(paneID: remoteFocusedPaneID ?? tab.layout.firstLeaf.id, axis: axis))
-                return
-            }
-            if remoteReviews[remote]?.paneID == remoteFocusedPaneID { NSSound.beep(); return }
-        }
-        if let remote = selectedRemoteAgent,
-           let connection = remoteHosts.connections.first(where: { $0.id == remote.hostID }),
-           let agent = connection.state.agents.first(where: { $0.id == remote.agentID }),
-           let tab = connection.state.tabs.first(where: { $0.id == agent.tabID }) {
-            let anchor = remoteFocusedPaneID.flatMap { tab.layout.contains($0) ? $0 : nil }
-                ?? agent.paneID ?? tab.layout.firstLeaf.id
-            Task {
-                do {
-                    remoteFocusedPaneID = try await remoteHosts.openPane(
-                        hostID: remote.hostID,
-                        agentID: remote.agentID,
-                        relativeTo: anchor,
-                        axis: axis
-                    )
-                } catch {
-                    NSSound.beep()
-                }
-            }
-            return
-        }
-        guard let tab = activeTab else { NSSound.beep(); return }
-        let focus = focusedPaneID.flatMap { tab.layout.contains($0) ? $0 : nil } ?? tab.layout.firstLeaf.id
-        guard let leaf = tab.layout.leaf(withID: focus) else { return }
-        do { try verifyCheckoutAvailable(leaf.cwd) }
-        catch { remoteActionError = String(describing: error); return }
-        let newPane = LeafPane(cwd: leaf.cwd)
-        guard let newLayout = tab.layout.splitting(pane: focus, axis: axis, newPane: newPane) else { return }
-        setLayout(newLayout, forTab: tab.id)
-        focusedPaneID = newPane.id
-    }
-
-    /// Split a terminal pane off the agent's thread and type `command` into its fresh shell
-    /// (visible and cancelable, not a hidden exec).
+    /// Open a terminal beside the agent's thread, as a new tab, and type `command` into its fresh
+    /// shell (visible and cancelable, not a hidden exec).
     func openTerminalPane(besideAgent agent: Agent, running command: String) {
         guard let tab = state.tabs.first(where: { $0.id == agent.tabID }) else { return }
         let anchor = agent.paneID.flatMap { tab.layout.contains($0) ? $0 : nil } ?? tab.layout.firstLeaf.id
         guard let leaf = tab.layout.leaf(withID: anchor) else { return }
-        let pane = LeafPane(cwd: leaf.cwd)
-        guard let layout = tab.layout.splitting(pane: anchor, axis: .vertical, newPane: pane) else { return }
+        let terminal = LeafPane(cwd: leaf.cwd)
+        guard let layout = tab.layout.splitting(pane: anchor, axis: .horizontal, newPane: terminal) else { return }
         setLayout(layout, forTab: tab.id)
-        focusedPaneID = pane.id
+        focusedPaneID = terminal.id
         Task {
-            guard let session = await sessions.awaitSession(forPane: pane.id, timeout: .seconds(10)) else { return }
+            guard let session = await sessions.awaitSession(forPane: terminal.id, timeout: .seconds(10)) else { return }
             server.typeCommand(command, sessionID: session)
         }
     }
 
-    func closeFocusedPane() {
+    /// ⌘W: closes the terminal that has the keyboard. The thread is never closed (⌘⇧W deletes
+    /// the agent): closing it would strand a running pi with nothing to come back to.
+    func closeFocusedTerminal() {
         if let remote = selectedRemoteAgent {
             if remoteInspectingAgent == remote, let tab = remoteVisibleTab(remote) {
                 controlRemoteInspector(remote, action: .close(paneID: remoteFocusedPaneID ?? tab.layout.firstLeaf.id))
@@ -253,22 +216,16 @@ extension ShepherdViewModel {
         }
         guard let tab = activeTab else { NSSound.beep(); return }
         let focus = focusedPaneID.flatMap { tab.layout.contains($0) ? $0 : nil } ?? tab.layout.firstLeaf.id
-        // The pane running an agent's own pi process is the thread; ⌘W
-        // never closes it (⌘⇧W deletes the agent). Closing it would strand
-        // a running pi with no pane to come back to.
         if tab.layout.leaf(withID: focus)?.agentID != nil {
             NSSound.beep()
             return
         }
-        if !closeLocalPane(focus) {
-            // A layout always keeps its last pane.
-            NSSound.beep()
-        }
+        if !closeLocalPane(focus) { NSSound.beep() }
     }
 
-    /// Close a local leaf using the same layout mutation as ⌘W. Review panes
-    /// have no terminal session, but using this path keeps their persisted
-    /// split and focus behavior identical to ordinary panes.
+    /// Close a local leaf using the same layout mutation as ⌘W. Review leaves have no terminal
+    /// session, but using this path keeps their persisted layout and focus behavior identical to
+    /// an ordinary terminal's.
     @discardableResult
     func closeLocalPane(_ paneID: PaneID) -> Bool {
         guard let tabIndex = state.tabs.firstIndex(where: { $0.layout.contains(paneID) }),
@@ -285,26 +242,6 @@ extension ShepherdViewModel {
             focusedPaneID = newLayout.firstLeaf.id
         }
         return true
-    }
-
-    func commitSplitRatio(tabID: TabID, split: PaneNode, ratio: Double) {
-        guard let tab = state.tabs.first(where: { $0.id == tabID }) else { return }
-        setLayout(tab.layout.replacingSplit(split, withRatio: ratio), forTab: tabID)
-    }
-
-    func commitRemoteSplitRatio(ref: RemoteAgentRef, split: PaneNode, ratio: Double) {
-        if remoteInspectingAgent == ref {
-            controlRemoteInspector(ref, action: .resize(split: split, ratio: ratio))
-            return
-        }
-        Task {
-            try? await remoteHosts.resizePaneSplit(
-                hostID: ref.hostID,
-                agentID: ref.agentID,
-                split: split,
-                ratio: ratio
-            )
-        }
     }
 
     func setLayout(_ layout: PaneNode, forTab id: TabID) {
@@ -484,27 +421,6 @@ extension ShepherdViewModel {
         sessions.stateDidChange(state)
     }
 
-}
-
-extension PaneNode {
-    /// Replace the ratio of the split structurally equal to `target`. Leaf IDs
-    /// are unique, so at most one node matches.
-    func replacingSplit(_ target: PaneNode, withRatio ratio: Double) -> PaneNode {
-        if self == target, case .split(let axis, _, let first, let second) = self {
-            return .split(axis: axis, ratio: ratio, first: first, second: second)
-        }
-        switch self {
-        case .leaf:
-            return self
-        case .split(let axis, let r, let first, let second):
-            return .split(
-                axis: axis,
-                ratio: r,
-                first: first.replacingSplit(target, withRatio: ratio),
-                second: second.replacingSplit(target, withRatio: ratio)
-            )
-        }
-    }
 }
 
 // MARK: Sign-in

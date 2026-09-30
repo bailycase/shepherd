@@ -88,27 +88,17 @@ extension ShepherdViewModel {
         guard let inspector = server.state.tabs.first(where: { $0.id == tabID && $0.inspectorFor == agentID }),
               hostRemoteInspectors.values.contains(tabID) else { throw RemoteCreateAgentError("Inspector does not belong to this remote agent") }
         switch action {
-        case .split(let paneID, let axis):
-            guard let leaf = inspector.layout.leaf(withID: paneID) else { throw RemoteCreateAgentError("Inspector pane no longer exists") }
-            try verifyCheckoutAvailable(leaf.cwd)
-            let pane = LeafPane(cwd: leaf.cwd)
-            guard let layout = inspector.layout.splitting(pane: paneID, axis: axis, newPane: pane) else { throw RemoteCreateAgentError("Cannot split inspector") }
-            try await server.updateLayoutStructure(tabID: tabID, layout: layout)
-            adopt(server.state)
-            sessions.stateDidChange(state)
-            _ = sessions.session(for: pane, in: inspector)
-            return .inspectorFocus(pane.id)
+        case .split, .resize:
+            // The host's utility terminal is one terminal; an older client's request to split or
+            // resize it is refused.
+            throw RemoteCreateAgentError("Terminals have no splits")
         case .close(let paneID):
-            guard inspector.layout.leaf(withID: paneID) != nil else { throw RemoteCreateAgentError("Inspector pane no longer exists") }
-            guard let layout = inspector.layout.closing(pane: paneID) else { throw RemoteCreateAgentError("The last inspector pane stays open; exit its shell to close it") }
+            guard inspector.layout.leaf(withID: paneID) != nil else { throw RemoteCreateAgentError("Inspector terminal no longer exists") }
+            guard let layout = inspector.layout.closing(pane: paneID) else { throw RemoteCreateAgentError("The last inspector terminal stays open; exit its shell to close it") }
             try await server.updateLayoutStructure(tabID: tabID, layout: layout)
             sessions.detachPane(paneID)
             adopt(server.state)
             return .inspectorFocus(layout.firstLeaf.id)
-        case .resize(let split, let ratio):
-            guard inspector.layout.containsSplit(split) else { throw RemoteCreateAgentError("Split is not in this inspector") }
-            try await server.updateLayoutStructure(tabID: tabID, layout: inspector.layout.replacingSplit(split, withRatio: min(0.85, max(0.15, ratio))))
-            return .ok
         }
     }
 

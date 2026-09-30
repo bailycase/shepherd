@@ -95,18 +95,18 @@ struct PaletteSearchTests {
     }
 }
 
-/// The Pane menu's terminal commands in the palette, under This thread.
+/// The Terminal menu's commands in the palette, under This thread.
 @MainActor
 @Suite("Palette terminal commands")
 struct PaletteTerminalCommandTests {
     private let keys = KeybindingsStore(store: ScratchDefaults())
 
     @Test func searchingTerminalFindsShowNewAndMaximize() {
-        let items = ShepherdViewModel.terminalPaletteItems(shown: false, maximized: false, threadFocused: true, keys: keys)
+        let items = ShepherdViewModel.terminalPaletteItems(shown: false, maximized: false, hasTerminals: true, keys: keys)
         let found = PaletteSearch.filter(items, query: "term", scope: .commands)
         #expect(found.map(\.title) == ["Show terminal", "New terminal", "Maximize terminal"])
         #expect(found.allSatisfy { $0.section == .thisThread })
-        #expect(found.map(\.shortcut) == [keys.display(.toggleTerminal), keys.display(.splitVertical), keys.display(.maximizeTerminal)])
+        #expect(found.map(\.shortcut) == [keys.display(.toggleTerminal), keys.display(.newTerminal), keys.display(.maximizeTerminal)])
     }
 
     @Test(arguments: [
@@ -115,14 +115,30 @@ struct PaletteTerminalCommandTests {
         (true, true, "Hide terminal", "Restore terminal"),
     ])
     func theCommandsSayWhatTheyWillDo(shown: Bool, maximized: Bool, toggle: String, maximize: String) {
-        let titles = ShepherdViewModel.terminalPaletteItems(shown: shown, maximized: maximized, threadFocused: true, keys: keys).map(\.title)
+        let titles = ShepherdViewModel.terminalPaletteItems(shown: shown, maximized: maximized, hasTerminals: true, keys: keys).map(\.title)
         #expect(titles == [toggle, "New terminal", maximize])
     }
 
-    /// ⌘D splits a focused terminal; it opens a new one only from the thread.
-    @Test func newTerminalShowsItsChordOnlyFromTheThread() {
-        let items = ShepherdViewModel.terminalPaletteItems(shown: true, maximized: false, threadFocused: false, keys: keys)
-        #expect(items.first { $0.id == "action.newTerminal" }?.shortcut == nil)
+    /// With no terminal there is nothing to maximize; Show still opens one, and New is always there.
+    @Test func withNoTerminalThereIsNothingToMaximize() {
+        let items = ShepherdViewModel.terminalPaletteItems(shown: false, maximized: false, hasTerminals: false, keys: keys)
+        #expect(items.map(\.title) == ["Show terminal", "New terminal"])
+    }
+
+    /// ⌘D opens a new terminal wherever the keyboard is, so the row always shows its chord.
+    @Test func newTerminalShowsItsChordFromAnywhere() {
+        for hasTerminals in [true, false] {
+            let items = ShepherdViewModel.terminalPaletteItems(shown: true, maximized: false, hasTerminals: hasTerminals, keys: keys)
+            #expect(items.first { $0.id == "action.newTerminal" }?.shortcut == "⌘D")
+        }
+    }
+
+    @Test func noTitleOrShortcutNamesPanesOrSplits() {
+        let items = ShepherdViewModel.terminalPaletteItems(shown: true, maximized: true, hasTerminals: true, keys: keys)
+        for item in items {
+            let text = (item.title + " " + (item.subtitle ?? "")).lowercased()
+            #expect(!text.contains("pane") && !text.contains("split"), "\(item.title)")
+        }
     }
 }
 

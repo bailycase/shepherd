@@ -75,8 +75,7 @@ extension ShepherdViewModel {
         if let target = unreconciledTerminalTarget {
             let panel = terminalPanels.panel(target.key)
             items += Self.terminalPaletteItems(shown: panel.shown, maximized: panel.shown && panel.maximized,
-                                               threadFocused: target.focused == nil || target.focused == target.thread,
-                                               keys: keys)
+                                               hasTerminals: !target.tabs.isEmpty, keys: keys)
         }
 
         // Subagents, live and recent: a thread's, never a design's agent's.
@@ -151,21 +150,24 @@ extension ShepherdViewModel {
         Task { await store.toggleServiceTier() }
     }
 
-    /// The Pane menu's terminal commands, for the thread on screen: Show or Hide, New, and
-    /// Maximize or Restore, named for what they do now. ⌘D opens a terminal only from the thread
-    /// (in a terminal it splits that one), so New shows it only then.
-    static func terminalPaletteItems(shown: Bool, maximized: Bool, threadFocused: Bool, keys: KeybindingsStore) -> [PaletteItem] {
-        [
+    /// The Terminal menu's commands, for the thread on screen: Show or Hide (which opens a
+    /// terminal when there is none), New, and Maximize or Restore, named for what they do now.
+    /// Maximize is offered only while the thread has a terminal to maximize.
+    static func terminalPaletteItems(shown: Bool, maximized: Bool, hasTerminals: Bool, keys: KeybindingsStore) -> [PaletteItem] {
+        var items = [
             PaletteItem(id: "action.toggleTerminal", kind: .action("toggleTerminal"), section: .thisThread,
                         title: shown ? "Hide terminal" : "Show terminal", shortcut: keys.display(.toggleTerminal),
                         icon: "terminal"),
             PaletteItem(id: "action.newTerminal", kind: .action("newTerminal"), section: .thisThread,
-                        title: "New terminal", shortcut: threadFocused ? keys.display(.splitVertical) : nil,
-                        icon: "plus.rectangle"),
-            PaletteItem(id: "action.maximizeTerminal", kind: .action("maximizeTerminal"), section: .thisThread,
-                        title: maximized ? "Restore terminal" : "Maximize terminal", shortcut: keys.display(.maximizeTerminal),
-                        icon: maximized ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right"),
+                        title: "New terminal", shortcut: keys.display(.newTerminal), icon: "plus.rectangle"),
         ]
+        if hasTerminals {
+            items.append(PaletteItem(id: "action.maximizeTerminal", kind: .action("maximizeTerminal"), section: .thisThread,
+                                     title: maximized ? "Restore terminal" : "Maximize terminal",
+                                     shortcut: keys.display(.maximizeTerminal),
+                                     icon: maximized ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right"))
+        }
+        return items
     }
 
     /// The project the New thread page last chose, which the palette's New thread starts in.

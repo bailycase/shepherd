@@ -34,11 +34,8 @@ public enum NWTerminalMetrics {
     public static let foldedThreadLeading: CGFloat = 14
     public static let foldedThreadTrailing: CGFloat = 10
     public static let foldedThreadGap: CGFloat = 10
-    /// A pane's header in a tab of several panes (TerminalPane): 26pt, 10pt in at both sides.
-    public static let paneHeaderHeight: CGFloat = 26
-    public static let paneHeaderPadding: CGFloat = 10
     /// The bar that sends a selection to the agent (TerminalPane): 4pt in, 4pt apart, and this
-    /// far from the selection and the pane's edge.
+    /// far from the selection and the terminal's edge.
     public static let selectionBarPadding: CGFloat = 4
     public static let selectionBarRadius: CGFloat = 9
     public static let selectionBarInset: CGFloat = 8
@@ -67,20 +64,17 @@ public struct NWTerminalTab: Equatable, Identifiable, Sendable {
     /// The host a remote tab runs on; nil on this Mac.
     public let host: String?
     public let activity: Activity
-    /// How many panes the tab splits into, when more than one.
-    public let panes: Int
 
-    public init(id: String, title: String, host: String? = nil, activity: Activity = .idle, panes: Int = 1) {
+    public init(id: String, title: String, host: String? = nil, activity: Activity = .idle) {
         self.id = id
         self.title = title
         self.host = host
         self.activity = activity
-        self.panes = panes
     }
 }
 
-/// The panel's tab strip: the tabs, + for a new one, then the panel's own controls (split,
-/// maximize, hide) at the trailing end. The selected tab carries its close button.
+/// The panel's tab strip: the tabs, + for a new one, then the panel's own controls (maximize,
+/// hide) at the trailing end. The selected tab carries its close button.
 public struct NWTerminalTabBar<Trailing: View>: View {
     let tabs: [NWTerminalTab]
     let selection: String?
@@ -207,11 +201,6 @@ public struct NWTerminalTabView: View {
                         .font(.nw(.mono))
                         .foregroundStyle(isSelected ? nw.textPrimary : nw.textSecondary)
                         .lineLimit(1)
-                    if tab.panes > 1 {
-                        Text("\(tab.panes)")
-                            .font(.nw(.micro, weight: .regular))
-                            .foregroundStyle(nw.textTertiary)
-                    }
                     // The selected tab names its host (TerminalTab · states); the rest share it.
                     if isSelected, let host = tab.host {
                         Label(host, systemImage: "desktopcomputer")
@@ -276,7 +265,6 @@ public struct NWTerminalTabView: View {
     private var accessibilityLabel: String {
         var parts = [tab.title]
         if let host = tab.host { parts.append("on \(host)") }
-        if tab.panes > 1 { parts.append("\(tab.panes) panes") }
         switch tab.activity {
         case .idle: break
         case .running: parts.append("running")
@@ -438,55 +426,6 @@ public struct NWTerminalFoldedThread: View {
         .background(Color.nw.bgWindow)
         .overlay(alignment: .bottom) { NWHairline() }
         .accessibilityElement(children: .contain)
-    }
-}
-
-/// A pane's header in a tab split into several panes (TerminalPane): the terminal glyph, what
-/// the pane runs in mono, and its host at the trailing end. The focused pane's reads in
-/// `textPrimary`; the others' are quiet. A tab of one pane has none: the tab names it.
-public struct NWTerminalPaneHeader: View {
-    let title: String
-    let host: String?
-    let isFocused: Bool
-
-    public init(title: String, host: String? = nil, isFocused: Bool) {
-        self.title = title
-        self.host = host
-        self.isFocused = isFocused
-    }
-
-    public var body: some View {
-        let nw = Color.nw
-        let color = isFocused ? nw.textPrimary : nw.textTertiary
-        HStack(spacing: NW.Space.s) {
-            Image(systemName: "terminal")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(color)
-            Text(title)
-                .font(.nwMono(11))
-                .foregroundStyle(color)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Spacer(minLength: NW.Space.s)
-            if let host {
-                HStack(spacing: 3) {
-                    Image(systemName: "desktopcomputer")
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(nw.textTertiary)
-                    Text(host)
-                        .font(.nw(.micro, weight: .regular))
-                        .foregroundStyle(color)
-                        .lineLimit(1)
-                }
-            }
-        }
-        .padding(.horizontal, NWTerminalMetrics.paneHeaderPadding)
-        .frame(height: NWTerminalMetrics.paneHeaderHeight)
-        .frame(maxWidth: .infinity)
-        .background(Color.nw.bgWindow)
-        .overlay(alignment: .bottom) { NWHairline() }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(host.map { "\(title), on \($0)" } ?? title)
     }
 }
 

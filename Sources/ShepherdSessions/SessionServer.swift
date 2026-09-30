@@ -1713,12 +1713,11 @@ public final class SessionServer: @unchecked Sendable {
             )
         case .closePane(let id, let agentID, let paneID):
             remotePaneRequest(id: id, request: .close(agentID: agentID, paneID: paneID), client: client)
-        case .resizePaneSplit(let id, let agentID, let split, let ratio):
-            remotePaneRequest(
-                id: id,
-                request: .resizeSplit(agentID: agentID, split: split, ratio: ratio),
-                client: client
-            )
+        case .resizePaneSplit(let id, _, _, _):
+            // Only a client from before terminals were tabs only sends this, for a divider its own
+            // view drew. Terminals have no splits; the request is answered like any this host does
+            // not serve, and the connection stays.
+            send(.error(id: id, code: "unsupported", message: "Terminals are tabs and have no splits to resize."), to: client)
         case .listDir(let id, let path):
             remoteListDir(id: id, path: path, client: client)
         case .listModels(let id):
@@ -1822,7 +1821,7 @@ public final class SessionServer: @unchecked Sendable {
 
     private func remotePaneRequest(id: Int, request: PaneRequest, client: ExtensionConnection) {
         guard let handler = onRemotePaneRequest else {
-            send(.error(id: id, code: "unsupported", message: "host cannot mutate panes"), to: client)
+            send(.error(id: id, code: "unsupported", message: "host cannot mutate terminals"), to: client)
             return
         }
         hopToMain { [weak self] in
@@ -1838,7 +1837,7 @@ public final class SessionServer: @unchecked Sendable {
                     case .failed(let code, let message):
                         self.send(.error(id: id, code: code, message: message), to: client)
                     case .panes, .content:
-                        self.send(.error(id: id, code: "protocol", message: "unexpected pane reply"), to: client)
+                        self.send(.error(id: id, code: "protocol", message: "unexpected terminal reply"), to: client)
                     }
                 }
             }
@@ -3037,7 +3036,7 @@ public final class SessionServer: @unchecked Sendable {
         }
         let target = clients.values.first { !$0.isRemote && $0.agentID == targetAgentID }
         guard request.operation == .delete || target != nil else {
-            reply(.error(id: id, code: "not_running", message: "target has no live panes extension"), to: client)
+            reply(.error(id: id, code: "not_running", message: "target has no live Shepherd extension connection"), to: client)
             return
         }
         let token = UUID().uuidString
@@ -3157,7 +3156,7 @@ public final class SessionServer: @unchecked Sendable {
     /// The GUI owns layouts, so the server only correlates the request id.
     private func routePaneRequest(_ request: PaneRequest, requestID: Int, client: ExtensionConnection) {
         guard let handler = onPaneRequest else {
-            reply(.error(id: requestID, code: "unsupported", message: "pane control unavailable"), to: client)
+            reply(.error(id: requestID, code: "unsupported", message: "terminal control unavailable"), to: client)
             return
         }
         hopToMain { [weak self, weak client] in
