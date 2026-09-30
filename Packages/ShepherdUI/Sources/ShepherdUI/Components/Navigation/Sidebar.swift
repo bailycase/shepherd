@@ -257,6 +257,7 @@ public struct NWSidebarSection: View, Equatable {
     public nonisolated static func == (a: NWSidebarSection, b: NWSidebarSection) -> Bool { a.kind == b.kind }
 
     public var body: some View {
+        let _ = NWRenderProbe.tick("sidebar.header")
         let attention = if case .needsYou = kind { true } else { false }
         let tone = attention ? Color.nw.lanternText : Color.nw.textTertiary
         HStack(spacing: NW.Space.s) {
