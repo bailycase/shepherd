@@ -756,7 +756,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     const explicitExtension = path.join(dir, "explicit-extension.ts");
     fs.writeFileSync(explicitExtension, "export default function() {}\n");
     fs.writeFileSync(profilePath, `---\nname: minimal\ndescription: minimal profile\nmodel: inherit\nextensions: ${explicitExtension}\n---\nPROFILE_MARKER\n`);
-    h.activeTools.push("pane_open");
+    h.activeTools.push("terminal_open");
     const minimal = await h.call("start", { task: "minimal profile test", agent: "minimal", mission: false });
     await h.call("wait", { ids: [minimal.id], timeoutSeconds: 30 });
     assert.equal(minimal.missionId, undefined);
@@ -769,7 +769,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     const retried = (await h.call("wait", { ids: [minimal.id], timeoutSeconds: 30 }))[0];
     assert.equal(retried.state, "complete");
     assert.match(retried.output, /reply:retry restored extension/);
-    h.activeTools.splice(h.activeTools.indexOf("pane_open"), 1);
+    h.activeTools.splice(h.activeTools.indexOf("terminal_open"), 1);
     fs.writeFileSync(profilePath, '---\nname: minimal\ndescription: minimal profile\nmodel: fixture:high\nthinking: low\ntools: read\ndefaultContext: fresh\n---\nPROFILE_MARKER\n');
     const custom = await h.call("start", { task: "profile precedence", agent: "minimal", thinking: "off", mission: false });
     assert.equal(custom.thinking, "off"); assert.equal(custom.model, "fixture/fixture");
