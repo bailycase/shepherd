@@ -166,12 +166,12 @@ struct DeleteDesignWords: Hashable {
 }
 
 /// The boards the design agent is drawing in the turn it is working on: the distinct paths of
-/// its board writes since the viewer's last message.
+/// its board writes and edits since the viewer's last message.
 func designBoardsDrawing(_ messages: [NativeThreadMessage]) -> Int {
     var paths = Set<String>()
     for message in messages.reversed() {
         if message.role == "user" { break }
-        guard message.toolName == "board_write", let data = message.argumentsText?.data(using: .utf8),
+        guard message.toolName == "board_write" || message.toolName == "board_edit", let data = message.argumentsText?.data(using: .utf8),
               let args = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let path = args["path"] as? String else { continue }
         paths.insert(path)
     }

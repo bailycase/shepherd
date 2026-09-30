@@ -273,8 +273,8 @@ public struct NativeActivityCall: Equatable, Sendable, Identifiable {
         case run
         /// Spawning subagents that have no card in the thread.
         case subagents
-        /// The design agent's board_write and canvas_update: "Drew 4 boards", "Updated A and
-        /// A · phone".
+        /// The design agent's board_write, board_edit and canvas_update: "Drew 4 boards",
+        /// "Updated A and A · phone".
         case drew
         /// The design agent's design_check: "Checked against acme-web".
         case checked
@@ -319,8 +319,8 @@ public struct NativeActivityCall: Equatable, Sendable, Identifiable {
     public var exitCode: Int?
     /// For a spawn: the subagent's name ("reviewer").
     public var subagent: String?
-    /// For a board_write: the board's path, and whether the write made it (nil when the result
-    /// doesn't say, as while it runs).
+    /// For a board_write or board_edit: the board's path, and whether the write made it (nil when
+    /// the result doesn't say, as while it runs, or when it changed nothing).
     public var board: String?
     public var boardCreated: Bool?
     /// For a design_check: the system it checked against and how many values were off it; both
@@ -526,6 +526,17 @@ extension NativeActivityCall {
                 boardCreated = firstLine.hasPrefix("Drew ") ? true : firstLine.hasPrefix("Updated ") ? false : nil
                 stat = boardCreated == true ? "new" : boardCreated == false ? "updated" : "unchanged"
             }
+        case "board_edit":
+            // An edit never makes a board: "Edited A.dc.html · …" reads as an update of it.
+            kind = .drew
+            label = "board"
+            board = string("path")
+            detail = board ?? firstLine
+            isPath = board != nil
+            if !failed, !running {
+                boardCreated = firstLine.hasPrefix("Edited ") ? false : nil
+                stat = boardCreated == false ? "edited" : "unchanged"
+            }
         case "canvas_update":
             kind = .drew
             label = "canvas"
@@ -730,7 +741,12 @@ private func failedLabel(_ call: NativeActivityCall) -> String {
         case .other: return "Ran a command"
         }
     case .subagents: return "Subagent failed to start"
-    case .drew: return call.name == "canvas_update" ? "Canvas update failed" : "Board write failed"
+    case .drew:
+        switch call.name {
+        case "canvas_update": return "Canvas update failed"
+        case "board_edit": return "Board edit failed"
+        default: return "Board write failed"
+        }
     case .checked: return "Check failed"
     case .lookedAt: return "Couldn’t read the design"
     case .browser: return NativeBrowserActivity.failed(tool: call.name)
