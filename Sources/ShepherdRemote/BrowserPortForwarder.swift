@@ -106,6 +106,8 @@ public final class BrowserPortForwarder: @unchecked Sendable {
         var slot: BrowserTunnelHubSlot
         var agent: AgentID
         var sources: [DispatchSourceRead] = []
+        /// Signalled when a source's listening socket is closed (its cancel handler has run).
+        var closed: [DispatchSemaphore] = []
 
         init(port: Int, hostPort: Int, owner: Owner, slot: BrowserTunnelHubSlot, agent: AgentID) {
             self.port = port
@@ -145,8 +147,13 @@ public final class BrowserPortForwarder: @unchecked Sendable {
                     guard let self, let listener else { return }
                     self.accept(on: fd, for: listener)
                 }
-                source.setCancelHandler { Darwin.close(fd) }
+                let closed = DispatchSemaphore(value: 0)
+                source.setCancelHandler {
+                    Darwin.close(fd)
+                    closed.signal()
+                }
                 listener.sources.append(source)
+                listener.closed.append(closed)
                 source.activate()
             }
             listeners[port] = listener
@@ -154,13 +161,18 @@ public final class BrowserPortForwarder: @unchecked Sendable {
         }
     }
 
-    /// Lets go of every port `owner` holds.
+    /// Lets go of every port `owner` holds. The listening sockets are closed when it returns, so the
+    /// port can be claimed again at once (a claim that found a socket still open would read it as
+    /// another program's).
     public func release(_ owner: Owner) {
         lock.lock()
         let held = listeners.filter { $0.value.owner == owner }
         for port in held.keys { listeners.removeValue(forKey: port) }
         lock.unlock()
         for listener in held.values { listener.sources.forEach { $0.cancel() } }
+        for listener in held.values {
+            for closed in listener.closed { _ = closed.wait(timeout: .now() + 2) }
+        }
     }
 
     /// The ports `owner` holds.
@@ -256,9 +268,12 @@ public final class BrowserPortForwarder: @unchecked Sendable {
         _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK)
         var one: Int32 = 1
         _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
-        let status = withLoopback(port: port, family: family) { Darwin.connect(fd, $0, $1) }
-        if status == 0 { return true }
-        guard errno == EINPROGRESS else { return false }
+        let result = withLoopback(port: port, family: family) { address, length -> (status: Int32, error: Int32) in
+            let status = Darwin.connect(fd, address, length)
+            return (status, errno)
+        }
+        if result.status == 0 { return true }
+        guard result.error == EINPROGRESS || result.error == EINTR else { return false }
         var pfd = pollfd(fd: fd, events: Int16(POLLOUT), revents: 0)
         guard poll(&pfd, 1, 250) > 0 else { return false }
         var error: Int32 = 0
@@ -282,11 +297,13 @@ public final class BrowserPortForwarder: @unchecked Sendable {
         _ = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, socklen_t(MemoryLayout<Int32>.size))
         _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
         if family == AF_INET6 { _ = setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &one, socklen_t(MemoryLayout<Int32>.size)) }
-        let bound = withLoopback(port: port, family: family) { Darwin.bind(fd, $0, $1) }
-        guard bound == 0 else {
-            let code = errno
+        let bound = withLoopback(port: port, family: family) { address, length -> (status: Int32, error: Int32) in
+            let status = Darwin.bind(fd, address, length)
+            return (status, errno)
+        }
+        guard bound.status == 0 else {
             Darwin.close(fd)
-            return .failure(SocketFailure(code: code))
+            return .failure(SocketFailure(code: bound.error))
         }
         guard Darwin.listen(fd, 64) == 0 else {
             let code = errno
