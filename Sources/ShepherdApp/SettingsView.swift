@@ -274,7 +274,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .appearance: ["Theme", "Mode", "Organize by", "Group by host", "Keep idle threads", "Sidebar rows", "Density", "Text size",
                            "Sidebar width"]
         case .terminal: ["Font family", "Font size", "Shell"]
-        case .agents: ["Default model", "Default thinking level", "Speed for new threads", "Return while the agent is working",
+        case .agents: ["Default model", "Default thinking level", "Speed for new threads",
                        "When a turn ends, send the queue"]
         case .worktrees: ["Base branch", "Fetch before creating", "Commit remaining work", "Generate PR descriptions", "Delete local branch", "Merge PR automatically"]
         case .pi: ["Shepherd's pi", "Name agents automatically", "Terminals and agent tools", "Diff review tool", "Native subagents",
@@ -305,7 +305,6 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .terminal: ["Font family": ["ghostty", "monospace"], "Shell": ["zsh", "bash", "fish"]]
         case .agents: ["Default model": ["claude", "gpt", "provider"], "Default thinking level": ["reasoning", "effort"],
                        "Speed for new threads": ["fast", "fast mode", "priority", "service tier", "codex", "openai", "standard"],
-                       "Return while the agent is working": ["steer", "queue", "enter", "follow-up", "next step", "wait", "interrupt"],
                        "When a turn ends, send the queue": ["queue", "follow-up", "one per turn", "all at once"]]
         case .worktrees: ["Base branch": ["git", "origin"], "Merge PR automatically": ["github", "pull request"]]
         case .pi: ["Native subagents": ["children", "workflows"], "Shepherd's pi": ["version", "engine", "home", "folder"]]
@@ -336,7 +335,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                     "Open sign-in pages by itself": ["oauth", "sign in", "login", "browser"],
                     "Also use a repo’s .mcp.json": ["project", "repository", ".mcp.json"]]
         case .remote: ["Hosts": ["vpn", "tailscale", "ssh"], "Listener": ["port", "serve"]]
-        case .keyboard: ["Shortcuts": ["hotkey", "keybinding", "chord"]]
+        case .keyboard: ["Shortcuts": ["hotkey", "keybinding", "chord", "steer", "queue"]]
         case .advanced: ["Update channel": ["beta", "nightly", "sparkle"], "Workspace state": ["state.json"]]
         case .experiments: ["Suggested instructions": ["lessons", "learned"], "Learn from": ["threads", "automations"],
                             "Design tool": ["designs", "boards", "mockups"]]
