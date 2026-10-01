@@ -415,7 +415,7 @@ def report(args, outcome: Outcome, kind: str, files_index: dict[str, list[str]])
         if info["new"]:
             lines.append(f"{len(info['new'])} suites are not in `Tests/ci-suite-times.json` and went to the lightest shard: "
                          + ", ".join(f"`{s}`" for s in info["new"][:10]) + (" …" if len(info["new"]) > 10 else "")
-                         + ". Regenerate it (docs/testing.md).")
+                         + ". Regenerate it (the Testing docs).")
     for error in outcome.errors:
         lines.append(f"**{error}**")
     if outcome.failures:

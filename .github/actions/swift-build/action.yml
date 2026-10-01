@@ -117,8 +117,11 @@ runs:
       shell: bash
       env:
         RESTORED: ${{ steps.build.outputs.cache-matched-key }}
+        EXACT: ${{ steps.build.outputs.cache-hit }}
       run: |
-        if [ -n "$RESTORED" ]; then
+        # An entry for this very commit (the shards restoring what the build job saved) has no
+        # stale target to find, so its build is the no-op it looks like.
+        if [ -n "$RESTORED" ] && [ "$EXACT" != true ]; then
           shopt -s nullglob
           versions=(.build/*/debug/swift-version-*.txt)
           shopt -u nullglob
