@@ -236,6 +236,11 @@ events come out on stdout, one record per LF.
 - **Widgets:** `setWidget` text (ANSI stripped) becomes a `NativeThreadWidget`: at most 16, 4 KiB
   of text each, 32 KiB in total. Machine payloads, `notify`, `setStatus`, and `setTitle` are
   dropped, because they belong to pi's TUI chrome.
+- **A message an extension displays** (`pi.sendMessage` with `display: true`, which the bundled
+  slash commands answer with) is in pi's history already when its `message_end` arrives, and an
+  idle pi has no turn whose end would refresh it, so the host refreshes history then (never while
+  a run goes on: `agent_end` does, and Shepherd's own `shepherd-child` reports stay with the
+  subagent cards).
 - **Snapshots** are bounded:
   - 240 KiB in total, of which live content (live rows, then dialogs) may use 120 KiB. A page
     each of live assistant messages and tool calls stays; user rows always stay, because they

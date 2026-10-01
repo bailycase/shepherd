@@ -459,6 +459,10 @@ final class RPCThreadState {
             Self.apply(delta, to: &raw)
             upsertAssistant(raw, ended: false)
             streamToolCall(delta, in: raw)
+        case .messageEnd(let message) where message.role == "custom" && message.display == true && message.customType != "shepherd-child":
+            // A message an extension displays (a command's report) is in pi's history already, and
+            // an idle pi has no turn whose end would refresh it.
+            if !running { refreshMessages() }
         case .messageEnd(let message):
             guard message.role == "assistant" else { break }
             if currentAssistant == nil {
