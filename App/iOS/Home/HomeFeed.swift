@@ -176,18 +176,9 @@ final class HomeFeed {
 
     // MARK: Answering
 
-    /// Picks one of the offered options: pi's select takes it as its answer, a subagent as its
-    /// reply (steered into its run, as the thread's tray sends it).
+    /// Picks one of the offered options: pi's select takes it as its answer.
     func choose(_ item: FleetAttention, _ option: String) async {
-        if item.runID != nil {
-            await send(item) { session in
-                guard let runID = item.runID, let command = NativeRunCommand.answer(option) else { return nil }
-                return .subagentCommand(expectedSessionID: session.piSessionID, generation: session.generation, operationID: UUID(),
-                                        runID: runID, action: command.action, text: command.text, mode: command.mode)
-            }
-        } else {
-            await answer(item, .select(value: option))
-        }
+        await answer(item, .select(value: option))
     }
 
     /// Answers pi's question from Home.

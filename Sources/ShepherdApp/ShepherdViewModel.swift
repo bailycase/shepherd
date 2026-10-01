@@ -1105,13 +1105,11 @@ final class ShepherdViewModel {
         // publisher's timestamp, which no view reads, so it goes to the unobserved storage.
         if updated.rows == childRuns.rows { _childRuns = updated } else { childRuns = updated }
         syncChildSweepTimer()
-        if let agent = state.agents.first(where: { $0.id == agentID }) {
-            notifySubagents(agent, children: children)
-        }
     }
 
-    /// One agent's published child runs: its sidebar row asks while one waits on you, and a
-    /// host answers a remote client's children query with them.
+    /// One agent's published child runs: the tray, the inspector and the palette show them, and a
+    /// host answers a remote client's children query with them. A child that asked its parent a
+    /// question is among them, but it asks nothing of the user: no row, banner or badge says so.
     func children(of agentID: AgentID) -> [ChildRun] {
         childRuns.children(of: agentID)
     }
