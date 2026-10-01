@@ -150,15 +150,22 @@ public struct NWSubagentTraySummary: Equatable, Sendable {
     public var accessibilityLabel: String { ([title] + tally.map(\.text)).joined(separator: ", ") }
 }
 
-/// What a row's controls do. nil hides a control.
+/// What a row's controls do. nil hides a control. `steerLabel` names the Steer control for
+/// VoiceOver ("Steer worker"; "Reply to worker" on a run that asked its parent) and `steerHelp`
+/// is its tooltip, which a Reply spells out; nil keeps "Steer <name>" and a tooltip that is the label.
 public struct NWSubagentTrayActions {
     public var open: () -> Void
     public var steer: (() -> Void)?
+    public var steerLabel: String?
+    public var steerHelp: String?
     public var stop: (() -> Void)?
 
-    public init(open: @escaping () -> Void, steer: (() -> Void)? = nil, stop: (() -> Void)? = nil) {
+    public init(open: @escaping () -> Void, steer: (() -> Void)? = nil, steerLabel: String? = nil, steerHelp: String? = nil,
+                stop: (() -> Void)? = nil) {
         self.open = open
         self.steer = steer
+        self.steerLabel = steerLabel
+        self.steerHelp = steerHelp
         self.stop = stop
     }
 }
@@ -377,7 +384,7 @@ public struct NWSubagentTrayRow: View {
         if size == .pointer, hovering, run.isLive {
             HStack(spacing: NW.Space.xxs) {
                 if let steer = actions.steer {
-                    icon("arrow.turn.down.right", "Steer \(run.name)", m, action: steer)
+                    icon("arrow.turn.down.right", actions.steerLabel ?? "Steer \(run.name)", m, help: actions.steerHelp, action: steer)
                 }
                 if let stop = actions.stop {
                     icon("stop.fill", "Stop \(run.name)", m, action: stop, small: true)
@@ -395,13 +402,13 @@ public struct NWSubagentTrayRow: View {
         }
     }
 
-    private func icon(_ symbol: String, _ label: String, _ m: NWSubagentTrayMetrics, action: @escaping () -> Void,
-                      small: Bool = false) -> some View {
+    private func icon(_ symbol: String, _ label: String, _ m: NWSubagentTrayMetrics, help: String? = nil,
+                      action: @escaping () -> Void, small: Bool = false) -> some View {
         Button(action: action) {
             Image(systemName: symbol).imageScale(small ? .small : .medium)
         }
         .buttonStyle(.nwIcon(size: m.trailingSlot))
-        .help(label)
+        .help(help ?? label)
         .accessibilityLabel(label)
     }
 
