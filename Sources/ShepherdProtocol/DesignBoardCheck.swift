@@ -45,7 +45,7 @@ public enum DesignBoardCheck {
         }
     }
 
-    public struct Size: Hashable, Sendable, CustomStringConvertible {
+    public struct Size: Hashable, Sendable, Codable, CustomStringConvertible {
         public var width: Double
         public var height: Double
 

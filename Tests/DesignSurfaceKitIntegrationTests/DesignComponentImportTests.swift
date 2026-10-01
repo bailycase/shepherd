@@ -116,6 +116,7 @@ struct DesignComponentImportTests {
             """) as? [Double])
         let hit = try #require(await view.hitTest(at: CGPoint(x: box[0], y: box[1])))
         #expect(hit.tid == buttonTid && hit.noun == "component" && hit.name == "Acme.Button")
+        #expect(hit.piece == nil, "a design system's component is no shared piece: it has no board to go to")
 
         // A styled slot is the import's own box.
         let field = try #require(template.elements.filter { $0.name == "x-import" }.dropFirst().first?.tid)

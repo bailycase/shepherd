@@ -285,6 +285,12 @@ public final class SessionServer: @unchecked Sendable {
     /// (`render_unavailable`).
     public var onDesignReferenceCapture: ((DesignReferenceCaptureRequest,
                                            @escaping (Result<DesignReferenceCaptured, DesignReferenceError>) -> Void) -> Void)?
+    /// A design agent's `board_render` (docs/designs.md › Rendering for the agent): the app draws
+    /// the board off screen, one at a time, from the files in the job (`DesignRenderJob`), and
+    /// answers its picture, or why it couldn't. Delivered on the main actor; the completion may
+    /// be called from any thread. With no handler the answer is `render_unavailable`; one that
+    /// doesn't answer within `defaultDesignRenderDeadline` is answered `timeout`.
+    public var onDesignRender: ((DesignRenderJob, @escaping (Result<DesignRendered, DesignRenderFailure>) -> Void) -> Void)?
     /// A thread left or the user removed a note on a design (`DesignThreadNote`): the canvas reads
     /// the design's notes again. Delivered on the main actor; a hint, not state.
     public var onDesignThreadNotesChanged: ((DesignID) -> Void)?
@@ -2709,17 +2715,38 @@ public final class SessionServer: @unchecked Sendable {
                 if let path { return .designBoard(id: id, board: try await server.designBoard(designID, path: path)) }
                 return .design(id: id, snapshot: try await server.designSnapshot(designID))
             }
-        case .designWriteBoard(let id, let agentID, let designID, let path, let source, let baseRevision):
+        case .designWriteBoard(let id, let agentID, let designID, let path, let source, let baseRevision, let tokens):
             designRequest(id: id, agentID: agentID, designID: designID, path: path, client: client) { server, path in
                 guard let path else { throw DesignStoreError.invalidPath("", .empty) }
-                let result = try await server.writeDesignBoard(designID, path: path, source: source, baseRevision: baseRevision)
+                let result = try await server.writeDesignBoard(designID, path: path, source: source, baseRevision: baseRevision, tokens: tokens)
                 return .designWritten(id: id, result: result)
             }
-        case .designEditBoard(let id, let agentID, let designID, let path, let edits, let baseRevision):
+        case .designEditBoard(let id, let agentID, let designID, let path, let edits, let baseRevision, let tokens):
             designRequest(id: id, agentID: agentID, designID: designID, path: path, client: client) { server, path in
                 guard let path else { throw DesignStoreError.invalidPath("", .empty) }
-                let edited = try await server.editDesignBoard(designID, path: path, edits: edits, baseRevision: baseRevision)
+                let edited = try await server.editDesignBoard(designID, path: path, edits: edits, baseRevision: baseRevision, tokens: tokens)
                 return .designEdited(id: id, result: edited.result, replaced: edited.replaced)
+            }
+        case .designEditBoards(let id, let agentID, let designID, let request):
+            designRequest(id: id, agentID: agentID, designID: designID, path: nil, client: client) { server, _ in
+                .designBatchEdited(id: id, result: try await server.editDesignBoards(designID, request: request))
+            }
+        case .designSearch(let id, let agentID, let designID, let query):
+            designRequest(id: id, agentID: agentID, designID: designID, path: nil, client: client) { server, _ in
+                .designSearchResult(id: id, result: try await server.searchDesign(designID, query: query))
+            }
+        case .designCheckpoint(let id, let agentID, let designID, let request):
+            designRequest(id: id, agentID: agentID, designID: designID, path: nil, client: client) { server, _ in
+                .designCheckpoints(id: id, result: try await server.designCheckpoint(designID, request: request))
+            }
+        case .designRender(let id, let agentID, let designID, let request):
+            designRequest(id: id, agentID: agentID, designID: designID, path: request.path, client: client) { server, _ in
+                let rendered = try await server.renderDesignBoard(designID, request: request)
+                return .designRendered(id: id, text: rendered.text, image: rendered.image)
+            }
+        case .designExtract(let id, let agentID, let designID, let request):
+            designRequest(id: id, agentID: agentID, designID: designID, path: request.path, client: client) { server, _ in
+                .designExtracted(id: id, result: try await server.extractDesignPiece(designID, request: request))
             }
         case .designUpdateIndex(let id, let agentID, let designID, let changes, let baseRevision):
             designRequest(id: id, agentID: agentID, designID: designID, path: nil, client: client) { server, _ in
@@ -3035,6 +3062,8 @@ public final class SessionServer: @unchecked Sendable {
                 answer = .error(id: id, code: error.code, message: error.description)
             } catch let error as SessionServerError {
                 answer = .error(id: id, code: "design_refused", message: error.description)
+            } catch let error as DesignRenderFailure {
+                answer = .error(id: id, code: error.code, message: error.message)
             } catch {
                 answer = .error(id: id, code: "design_failed", message: String(describing: error))
             }
@@ -3518,6 +3547,11 @@ public final class SessionServer: @unchecked Sendable {
              .designBoard(let id, _),
              .designWritten(let id, _),
              .designEdited(let id, _, _),
+             .designBatchEdited(let id, _),
+             .designSearchResult(let id, _),
+             .designCheckpoints(let id, _),
+             .designRendered(let id, _, _),
+             .designExtracted(let id, _),
              .designComments(let id, _),
              .designComment(let id, _),
              .designSystems(let id, _),
@@ -4453,9 +4487,9 @@ public final class SessionServer: @unchecked Sendable {
     /// `baseRevision` (nil: whatever it is at). A write that changes the files moves the design
     /// up Recents and broadcasts.
     public func writeDesignBoard(_ designID: DesignID, path: DesignPath, source: String,
-                                 baseRevision: UInt64? = nil) async throws -> DesignWriteResult {
+                                 baseRevision: UInt64? = nil, tokens: DesignTokenMode? = nil) async throws -> DesignWriteResult {
         guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
-        let result = try await designs.writeBoard(designID, path: path, source: source, baseRevision: baseRevision)
+        let result = try await designs.writeBoard(designID, path: path, source: source, baseRevision: baseRevision, tokens: tokens)
         try await enqueue { try self.commitDesignWrite(designID, result) }
         return result
     }
@@ -4464,11 +4498,115 @@ public final class SessionServer: @unchecked Sendable {
     /// and writes the result as `writeDesignBoard` does (`DesignStore.editBoard`): the same
     /// checks, kept version, revision and one broadcast.
     public func editDesignBoard(_ designID: DesignID, path: DesignPath, edits: [DesignBoardEdit],
-                                baseRevision: UInt64? = nil) async throws -> DesignBoardEdited {
+                                baseRevision: UInt64? = nil, tokens: DesignTokenMode? = nil) async throws -> DesignBoardEdited {
         guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
-        let edited = try await designs.editBoard(designID, path: path, edits: edits, baseRevision: baseRevision)
+        let edited = try await designs.editBoard(designID, path: path, edits: edits, baseRevision: baseRevision, tokens: tokens)
         try await enqueue { try self.commitDesignWrite(designID, edited.result) }
         return edited
+    }
+
+    /// `boards_edit`: the request's edits applied to each board it names, and every board that
+    /// changed written as one change (`DesignStore.editBoards`): one revision, one broadcast.
+    public func editDesignBoards(_ designID: DesignID, request: DesignBatchEditRequest) async throws -> DesignBatchResult {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        let batch = try await designs.editBoards(designID, request: request)
+        try await enqueue { try self.commitDesignWrite(designID, batch.result) }
+        return batch
+    }
+
+    /// `board_search`: text, structure or usages over the design's boards.
+    public func searchDesign(_ designID: DesignID, query: DesignSearchQuery) async throws -> DesignSearchResult {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        return try await designs.search(designID, query: query)
+    }
+
+    /// `board_extract`: an element becomes a piece and an import takes its place, with exact copies
+    /// elsewhere, as one change (`DesignStore.extract`).
+    public func extractDesignPiece(_ designID: DesignID, request: DesignExtractRequest) async throws -> DesignExtractResult {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        let extracted = try await designs.extract(designID, request: request)
+        try await enqueue { try self.commitDesignWrite(designID, extracted.result) }
+        return extracted
+    }
+
+    /// Which boards of the design import which: built once per revision (`DesignStore.usage`).
+    public func designUsage(_ designID: DesignID) async throws -> DesignUsageIndex {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        return try await designs.usage(designID)
+    }
+
+    /// `checkpoint_create`, `checkpoint_list` and `checkpoint_restore`. A restore is one write,
+    /// broadcast like any.
+    public func designCheckpoint(_ designID: DesignID, request: DesignCheckpointRequest) async throws -> DesignCheckpointResult {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        switch request.action {
+        case .list:
+            return try await designs.checkpoints(designID)
+        case .create:
+            guard let name = request.name else { throw DesignStoreError.invalidCheckpoint("checkpoint_create needs a name") }
+            return try await designs.createCheckpoint(designID, name: name)
+        case .restore:
+            guard let name = request.name else { throw DesignStoreError.invalidCheckpoint("checkpoint_restore needs a name") }
+            let restored = try await designs.restoreCheckpoint(designID, name: name)
+            if let write = restored.write { try await enqueue { try self.commitDesignWrite(designID, write) } }
+            return restored
+        }
+    }
+
+    /// How long `board_render` waits for the app to draw a board before it answers `timeout`.
+    public static let defaultDesignRenderDeadline: TimeInterval = 60
+    var designRenderDeadline: TimeInterval = SessionServer.defaultDesignRenderDeadline
+
+    /// `board_render`: the app draws the board off screen from the files the design store reads
+    /// for it, and the picture comes back for the agent (`onDesignRender`). Never a live canvas
+    /// view; the app draws one request at a time.
+    public func renderDesignBoard(_ designID: DesignID, request: DesignRenderRequest) async throws -> DesignRendered {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        let path: DesignPath
+        do { path = try DesignPath.validate(request.path) } catch { throw DesignStoreError.invalidPath(request.path, error) }
+        if let width = request.width, !DesignRenderRequest.widthRange.contains(width) {
+            throw DesignRenderFailure(code: "invalid_render", message: "width is \(DesignRenderRequest.widthRange.lowerBound) to \(DesignRenderRequest.widthRange.upperBound) px")
+        }
+        if let height = request.height, !DesignRenderRequest.widthRange.contains(height) {
+            throw DesignRenderFailure(code: "invalid_render", message: "height is \(DesignRenderRequest.widthRange.lowerBound) to \(DesignRenderRequest.widthRange.upperBound) px")
+        }
+        let files = try await designs.exportFiles(designID, boards: [path])
+        let job = DesignRenderJob(designID: designID, path: path, request: request, files: files)
+        let gate = RenderGate()
+        let deadline = designRenderDeadline
+        return try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global().asyncAfter(deadline: .now() + deadline) {
+                gate.finish {
+                    continuation.resume(throwing: DesignRenderFailure(
+                        code: "timeout", message: "The board was not drawn within \(Int(deadline.rounded(.up))) seconds. Try again, or look at its markup."))
+                }
+            }
+            hopToMain { [weak self] in
+                guard let handler = self?.onDesignRender else {
+                    gate.finish {
+                        continuation.resume(throwing: DesignRenderFailure(code: "render_unavailable", message: "Shepherd can't draw boards right now."))
+                    }
+                    return
+                }
+                handler(job) { result in
+                    gate.finish { continuation.resume(with: result.mapError { $0 as Error }) }
+                }
+            }
+        }
+    }
+
+    /// One answer to a render, whichever of the app and the deadline comes first.
+    private final class RenderGate: @unchecked Sendable {
+        private let lock = NSLock()
+        private var done = false
+
+        func finish(_ body: () -> Void) {
+            lock.lock()
+            let first = !done
+            done = true
+            lock.unlock()
+            if first { body() }
+        }
     }
 
     /// Writes several boards' whole sources as one change: one revision, one broadcast (a tweak
