@@ -1,6 +1,6 @@
 # Rules that are easy to break
 
-> Read when your change touches a contract, an extension, the server's queue, terminals, the browser, layouts or repository mutation.
+> Read when your change touches a contract, an extension, the server's queue, terminals, the browser, layouts or repository mutation, or builds a feature that acts on its own.
 
 **Contracts.** `ShepherdCore` and `ShepherdProtocol` couple the server, GUI, extensions, and
 remote clients. Change them deliberately, and update every consumer and the round-trip tests in
@@ -71,9 +71,24 @@ app lifecycles onto `AgentState` in `AgentStateMapping.swift`.
 A new color is a role on `ThemeColors`, filled in both variants of every theme (the compiler
 enforces completeness), with an `NWPalette` property and a contrast rule if it carries text.
 Borders and hovers are theme roles, never ad-hoc alphas. Status colors come from `AgentState`,
-never picked per view. Night Watch is the only shipped theme. The pre–Night Watch names
-(`ShepherdDesign`, `Tokens`, `Fonts`, `Metrics`, `Radius`, Basalt) are gone; never reintroduce
+never picked per view: `textColor` for the word, `color` for dots and glyphs, `tint` for the fill,
+never `Color.nw.lantern.opacity(0.12)`. Night Watch is the only shipped theme. The pre–Night Watch
+names (`ShepherdDesign`, `Tokens`, `Fonts`, `Metrics`, `Radius`, Basalt) are gone; never reintroduce
 aliases for them.
+
+A glyph that more than one view draws is a case of `NWGlyph` (`Tokens/Glyphs.swift`): the SF Symbol
+and fill variant the board names (`bolt` is not `bolt.fill`), drawn through the registry or a
+component that wraps it (`NWFastBolt`), never named again as a string.
+
+**`DesignRulesTests` enforces four of these.** It scans `Sources/ShepherdApp`,
+`Packages/ShepherdUI/Sources` (not `Tokens/` or `Previews/`) and `App/iOS` and fails, naming the rule
+and the fix, for a literal font size (`.nwMono(11)`, `.system(size: 13)`), a status color tinted
+with `.opacity(…)` (or an opacity named for a tint, fill or line), a raw color (`Color(red:…)`, a hex
+string, `Color.white`, `.foregroundStyle(.gray)`) and a registered glyph named as a raw symbol
+string. The offenders that predate it are in `DesignRuleAllowlist`, one entry per file and rule with
+a ceiling and a reason: the list only shrinks, so never add an entry for code you wrote. An entry is
+for something that is not chrome (a color that is a user's own data), and says why. A size the
+boards give outside the ramp is a named constant in the component's metrics enum, not a literal.
 
 **State is Observation.** The view model, `NativeThreadStore`, `AppSettings`,
 `KeybindingsStore`, `ThemeManager`, `ThemeStore`, `RemoteHostStore` and its connections,
@@ -363,3 +378,47 @@ applies it once, setting `nameIsFinal`. A manual rename also sets it.
 - Agents from a pre-autoname `state.json` decode as final.
 - A `setAgentSession` that moves an agent to a *different* pi session (`/new`, `/resume`) clears
   `nameIsFinal`, because the old name described the old conversation.
+
+**Features that act on their own** are loops, background work, scheduled or unattended model
+calls, evaluators and notifications: anything that keeps going without a person watching. They
+spend money and time and act on what they read, so each needs these before it is a PR:
+
+- **A default bound.** A cap on iterations, time and spend that applies unless the user raises it,
+  and a test that reaches it with the worst case (a judge that never says done, a worker that
+  always "progresses", a provider that is down). An unbounded default is a bug.
+- **Data stays where the user put it.** Anything sent to a provider other than the thread's own is
+  opt-in and shown in the UI; secrets are redacted before anything is sent, and never reach logs,
+  session files or notifications.
+- **Tool output, file contents, web pages and model prose are data, never instructions.** That
+  includes text that reaches an evaluator: it can echo "success", so success needs evidence the
+  agent cannot write itself, and a planted string must not pass it.
+- **A restart never resumes unattended work.** What was running comes back paused, and the user
+  resumes it. Persisted state is bounded in size.
+- **Every control carries a fence.** Start, edit, stop and clear name the revision they act on and
+  are refused when it is stale; limits are enforced on the host, not by the client.
+- **Define and test the interactions:** Stop, Steer now, the queue, subagents (and their
+  questions), retries, errors, compaction, quitting and a second client. List every combination
+  that strands the feature or breaks ordinary use afterwards.
+- **List every product decision nobody asked for** (a default cap, a model choice, a notification)
+  under Decisions in the PR body. The user decides, as with a departure from a design.
+
+The first such feature, Goal (PR #189), hit these traps, so the next one need not:
+
+- **A limit stop must not abort ordinary turns.** Hitting the cap ends the feature, not the thread:
+  the next ordinary turn runs as it always did. A limit that keeps aborting normal turns is a bug
+  in the limit.
+- **A yield or queue state needs an exit.** A state where the feature waits (for an answer, for the
+  queue, for a child) names what ends it (the answer, Stop, a timeout) and a test reaches it.
+  Otherwise the thread is stranded with no way out.
+- **Transient provider errors are not terminal.** A rate limit, an overload or a dropped connection
+  retries inside the bound and then says so; it never marks the work failed or unmet on the first.
+- **A check names the model that made it.** The record of an evaluation carries the checking
+  model's id and what evidence it saw; evidence that is incomplete is reported as incomplete, and
+  blames the evidence, not the work.
+- **A banner is restricted to active states.** A banner or pill shows while the feature is acting
+  or needs the user, and does not linger over a state the thread has moved past.
+- **Nothing is sent to a cheaper or other provider silently.** A feature that moves a transcript to
+  another model to save cost asks first, in the UI.
+
+Before opening the PR, run the `risk-reviewer` helper (skill `risk-review`) when installed;
+otherwise review the change against this list yourself. Fix what it finds or report it.

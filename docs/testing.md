@@ -122,6 +122,11 @@ see its work.
   `DesignPreviewTests`), and `PreviewTests` holds the rest. A capture can't draw a web view, so
   the design previews draw every board from its snapshot (`designLiveCap = 0`). Add a new surface's render to its domain's suite.
 - `--filter ThreadPreviewTests` (or any one suite) renders just that domain.
+- `Preview.render` draws light and dark; `Preview.renderMatrix` also draws each text scale (1 and
+  1.5 by default, `ThemeStore.shared.textScale`, put back afterwards) as
+  `<surface>-x1.5-<light|dark>.png`; `modelSettingsPopoverStates` is the example. A preview of a
+  feature's copy is driven from the real producer (the store, the extension's output, the
+  formatter, as `ThreadView` over a `ThreadFixture` is), never from strings copied from the board.
 - ShepherdUI's components also have `#Preview`s (`Packages/ShepherdUI/Sources/ShepherdUI/Previews/`)
   for Xcode's canvas; the Debug build's Component Gallery shows the base components live.
 
