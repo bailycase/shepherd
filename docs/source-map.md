@@ -251,7 +251,8 @@ Packages/
                                      Color.nw), Typography (NWTextStyle, Font.nw, NWFonts,
                                      NWProseSize), Metrics (NW.Space/Radius/Height), Motion,
                                      Elevation (.nwCard/.nwPopover/.nwFocusRing, NWHairline),
-                                     AgentState, HexColor
+                                     AgentState, HexColor, Glyphs (NWGlyph: the SF Symbol and
+                                     fill each shared glyph is drawn with)
                        Resources/Fonts  Geist and Geist Mono (SIL OFL)
                        Components/   Controls, Status, Containers, Navigation, Thread, Composer,
                                      Agents, Review, Dialogs, Automations, Skills, Browser
@@ -310,7 +311,8 @@ Tests/
   ShepherdTestKit/        ScratchDefaults, makeScratchDirectory, Locked, CommandFailure, TestProcess
   ShepherdTestSupport/    ScratchServer, StubPi (+ Resources/stub-pi.py), ExtensionClient,
                           QueueFixture (a host's queue without pi), eventually, recordingErrors,
-                          the time-limit and timing-sensitive traits
+                          ControlPress (press a control by accessibility label, measure hit
+                          areas), the time-limit and timing-sensitive traits
   Extensions/             node tests for the bundled extensions (+ native-thread-wire.json)
   Designs/                design fixtures: real and synthetic boards, the Shepherd canvas.json,
                           and element-ids.json (WebKit's numbering of each board's elements)
@@ -325,6 +327,7 @@ scripts/               release.py (the release workflow's rules), sign-app.sh (r
                        watchdog, failed tests retried once), ci_testlog.py (test output reader),
                        ci_report.py (the one tracking issue),
                        pi_engine.py + pi-engine-pin.json (stage and verify the pi engine),
-                       sign-engine.sh (node, with the engine's entitlements)
+                       sign-engine.sh (node, with the engine's entitlements), check_pr_body.py
+                       (the pr-body workflow: what a UI or autonomous-feature PR body must say)
 Vendor/libghostty-spm/ GhosttyTerminal (prebuilt libghostty)
 ```
