@@ -73,6 +73,7 @@ class WorkflowShapeTests(unittest.TestCase):
         for name in ("lane", "base", "clean", "shared_build", "report"):
             self.assertRegex(WORKFLOW, rf"(?m)^      {name}:\n")
         self.assertIn("options: [auto, fast, full, flake-hunt]", WORKFLOW)
+        self.assertIn('options: [auto, "true", "false"]', WORKFLOW)
 
     def test_every_job_but_the_plan_waits_for_the_plan(self):
         for name, job in JOBS.items():
@@ -118,8 +119,19 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertIn("needs.plan.outputs.shared_build == 'true'", build)
         self.assertIn('save: "true"', build)
 
-    def test_the_shards_save_nothing(self):
-        self.assertNotIn('save: "true"', JOBS["tests"])
+    def test_a_clean_build_writes_the_days_marker_that_the_plan_looks_up(self):
+        self.assertIn("ci-clean-build-$(date -u +%Y%m%d)", JOBS["plan"])
+        self.assertIn("lookup-only: true", JOBS["plan"])
+        self.assertIn("github.event_name != 'pull_request'", JOBS["plan"])
+        build = JOBS["build"]
+        self.assertIn("ci-clean-build-$(date -u +%Y%m%d)", build)
+        self.assertIn("actions/cache/save@v4", build)
+        self.assertIn("--clean-due", JOBS["plan"])
+
+    def test_only_the_shard_the_plan_names_saves_the_build(self):
+        tests = JOBS["tests"]
+        self.assertIn("save: ${{ matrix.shard.save }}", tests)
+        self.assertNotIn('save: "true"', tests)
 
     def test_the_plan_outputs_every_value_the_other_jobs_read(self):
         declared = set(re.findall(r"^      (\w+): \$\{\{ steps\.plan\.outputs\.\w+ \}\}", JOBS["plan"], re.M))

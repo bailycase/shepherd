@@ -322,9 +322,11 @@ depend on the machine's speed skip on CI (`CI=true`).
   holds each suite's seconds; `scripts/ci_shards.py` assigns suites longest first, each to the
   lightest shard, and a suite the file doesn't know goes to the lightest shard (the summary says
   so). Every shard computes the same cut from `swift test list` and checks it is a partition, and
-  fails if it ran another number of tests than it was given, or none. After a change that moves
-  the times, regenerate the file from a full run: `gh run download <run> -p 'ci-results-swift-*'
-  -D /tmp/t && python3 scripts/ci_shards.py record /tmp/t/*/suite-times.json`, and commit it.
+  fails if it ran another number of tests than it was given, or none. Each shard builds on its own
+  (see Caches). The file lags the tests a little by design; regenerate it from a full run now and
+  then: `gh run download <run> -p 'ci-results-swift-*' -D /tmp/t && python3 scripts/ci_shards.py
+  record /tmp/t/*/suite-times.json`, and commit it (the new numbers are blended halfway into the
+  old).
 - **Flaky tests:** when a shard fails, `scripts/ci_run_tests.py` reruns only the failed tests once
   (`--filter` of their ids, still serially). A test that passes the second time is flaky: a
   `::warning::`, a row in the step summary and `flaky.json` in the shard's `ci-results-*`
@@ -361,20 +363,25 @@ depend on the machine's speed skip on CI (`CI=true`).
   changed (a few seconds when nothing did). A link that still fails with undefined symbols and no
   other error (`scripts/ci_stale_link.py`, tested in `Tests/Release`) gets a `::warning::` and
   one rebuild from scratch that keeps the dependency checkouts; a compile error fails at once.
-  A push to `nightly` or `master` (and the daily and manual runs) builds once, in the `build` job,
-  incrementally on the last build except the first of each UTC day, which is clean, and saves both
-  caches under that commit; the shards restore it exactly. Pull requests have no build job and
-  save nothing: each shard restores the base branch's newest entry and compiles the pull
-  request's changes on top, so a pull request into `master` reads only `master`'s. Run the
-  workflow by hand with `clean` to ignore the build cache, or `shared_build: false` to have every
-  shard build. A corrupt cache: bump `CACHE_EPOCH` in the action to orphan every entry, build and
-  dependencies, or clear one ref's with `gh cache delete --all --ref refs/pull/N/merge` (or
-  `refs/heads/<branch>`).
+  Every shard builds for itself: it restores the newest entry of its branch (the base branch's, for
+  a pull request) and compiles what changed, a minute or two for a typical change and seven for a
+  change to ShepherdCore. That measured quicker than a build job the shards wait for, by over a
+  minute. A push to `nightly` or `master` also saves: its last shard saves both caches under the
+  commit right after building and before its tests, so every pull request into that branch finds a
+  warm entry. Pull requests save nothing. The first full run of each UTC day, a manual `clean` run
+  and the daily run start from scratch instead: the `build` job builds once, saves and writes the
+  day's marker, and every shard restores that build whole (`shared_build: true` or `false` forces
+  either way). A shard that restores its own commit's build skips `swift build`. Run the workflow
+  by hand with `clean` to ignore the build cache. A corrupt cache: bump `CACHE_EPOCH` in the action
+  to orphan every entry, build and dependencies, or clear one ref's with `gh cache delete --all
+  --ref refs/pull/N/merge` (or `refs/heads/<branch>`).
 - **Checking a CI change:** a pull request's run exercises the pull request's copy of the workflow
   and is cold ("Cache not found") until `nightly` holds an entry for the same toolchain and
   epoch, and it saves nothing, so it cannot show an incremental build. Before merging, run the
-  workflow by hand on the branch, let it finish (a second run on the same ref cancels the first),
-  push a small source change, and run it again: the `build` job restores the first run's entry by
-  prefix, "Restore source mtimes" reports about as many new or changed files as the push touched,
-  and the build compiles only their modules. A rerun of an unchanged commit is an exact hit.
-  `-f lane=fast -f base=<the branch before the change>` shows the impact map's choice for it.
+  workflow by hand on the branch (`-f lane=full`), let it finish (a second run on the same ref
+  cancels the first), push a small source change, and run it again: its shards restore the first
+  run's entry by prefix, "Restore source mtimes" reports about as many new or changed files as the
+  push touched, and the build compiles only their modules. A rerun of an unchanged commit is an
+  exact hit. `-f lane=fast -f base=<the commit before the change>` shows the impact map's choice
+  for it, with the build restored from the branch's own entry. A branch's caches are visible to
+  that branch alone (and to pull requests into it), so a probe branch needs a run of its own first.
