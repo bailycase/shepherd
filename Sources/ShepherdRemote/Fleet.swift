@@ -47,8 +47,8 @@ public struct FleetHost: Equatable, Sendable {
 
 // MARK: Digest
 
-/// What one thread snapshot tells Home: the question waiting on the user, a subagent asking,
-/// what runs now, and when the thread last moved.
+/// What one thread snapshot tells Home: the question waiting on the user, what runs now, and
+/// when the thread last moved. A subagent's question is not the user's: it goes to its parent.
 public struct FleetDigest: Equatable, Sendable {
     public struct Question: Equatable, Sendable {
         public var dialogID: String
@@ -70,38 +70,16 @@ public struct FleetDigest: Equatable, Sendable {
         }
     }
 
-    public struct SubagentQuestion: Equatable, Sendable {
-        public var runID: String
-        public var label: String
-        public var text: String
-        /// The subagent's own word or two for its question ("retention?"), when it gave one.
-        public var short: String?
-        /// The answers it offered to pick from.
-        public var options: [String]
-        /// The host takes subagent commands for the thread, so an option can be sent from here.
-        public var answerable: Bool
-
-        public init(runID: String, label: String, text: String, short: String? = nil, options: [String] = [],
-                    answerable: Bool = true) {
-            self.runID = runID
-            self.label = label
-            self.text = text
-            self.short = short
-            self.options = options
-            self.answerable = answerable
-        }
-    }
-
     public var session: NativeThreadSession
     public var revision: UInt64
     public var running: Bool
     public var question: Question?
-    public var subagentQuestion: SubagentQuestion?
-    /// A subagent is still running: background children outlive their parent's turn, so one may
-    /// ask later while the thread itself is settled.
+    /// A subagent is still running: background children outlive their parent's turn, and the
+    /// thread's own question may follow from the parent that answers them.
     public var liveSubagents: Bool
-    /// Subagents still going (running, or paused on a question), and how many of them wait on the user (the overview's "3
-    /// subagents · 1 needs you").
+    /// Subagents still going (running, or finished their turn to wait on their parent's answer),
+    /// and how many of them wait on their parent (the overview's "3 subagents · 1 waiting on
+    /// parent").
     public var subagentsLive: Int
     public var subagentsAsking: Int
     /// Its last turn ended in an error and nothing has run since (a remote client hears no turn
@@ -125,15 +103,8 @@ public struct FleetDigest: Equatable, Sendable {
             Question(dialogID: dialog.id, kind: dialog.kind, title: dialog.title, message: dialog.message,
                      options: dialog.options ?? [], answerable: answers && dialog.unavailable == nil)
         }
-        let commands = snapshot.supportedActions.contains("subagents")
-        subagentQuestion = (snapshot.subagents ?? []).first(where: \.needsAttention).map { run in
-            SubagentQuestion(runID: run.runID, label: run.role ?? run.label,
-                             text: run.question?.text ?? run.attentionText ?? "Waiting on you",
-                             short: FleetModel.shortReason(run.question?.short),
-                             options: run.question?.options ?? [], answerable: commands)
-        }
         liveSubagents = (snapshot.subagents ?? []).contains { !$0.isTerminal }
-        // One that asks counts as live though it is paused waiting on the answer.
+        // One that asked its parent counts as live though its process finished its turn to wait.
         subagentsLive = (snapshot.subagents ?? []).filter { !$0.isTerminal || $0.needsAttention }.count
         subagentsAsking = (snapshot.subagents ?? []).filter(\.needsAttention).count
         let entries = snapshot.messages + snapshot.provisional
@@ -160,11 +131,11 @@ public struct FleetDigest: Equatable, Sendable {
     }
 
     /// Whether Home reads this thread on every poll rather than once per connection: it runs,
-    /// waits on the user, or has a subagent that may still ask.
+    /// waits on the user, or has a subagent that may still hand its parent a reason to ask.
     public static func watches(status: AgentStatus, digest: FleetDigest?) -> Bool {
         if status == .working || status == .blocked { return true }
         guard let digest else { return false }
-        return digest.running || digest.question != nil || digest.subagentQuestion != nil || digest.liveSubagents
+        return digest.running || digest.question != nil || digest.liveSubagents
     }
 
     /// Whether the snapshot's `unchanged` answer still describes this digest.
@@ -201,7 +172,7 @@ public struct FleetThreadRow: Identifiable, Equatable, Sendable {
     public var offline: Bool
     /// Its last turn failed (iPadThreadError: a `failed` dot and "failed" in the sidebar).
     public var failed = false
-    /// Its subagents still running, and those waiting on the user.
+    /// Its subagents still going, and those waiting on their parent's answer.
     public var subagents = 0
     public var subagentsAsking = 0
     /// The design this agent draws, where its host serves designs: the row is the design's
@@ -211,7 +182,7 @@ public struct FleetThreadRow: Identifiable, Equatable, Sendable {
     public var id: FleetRef { ref }
 
     /// What a running thread does now, under its title in the overview (iPadOverview): the call
-    /// running now, else its live subagents ("3 subagents · 1 needs you"), with the host when
+    /// running now, else its live subagents ("3 subagents · 1 waiting on parent"), with the host when
     /// rows from several hosts mix ("swift build · This Mac"); "running" when nothing says more.
     public var now: String {
         var parts: [String] = []
@@ -219,7 +190,7 @@ public struct FleetThreadRow: Identifiable, Equatable, Sendable {
             parts.append(activity)
         } else if subagents > 0 {
             parts.append(nativeCount(subagents, "subagent"))
-            if subagentsAsking > 0 { parts.append("\(subagentsAsking) need\(subagentsAsking == 1 ? "s" : "") you") }
+            if subagentsAsking > 0 { parts.append("\(subagentsAsking) waiting on parent") }
         }
         if let hostTag { parts.append(hostTag) }
         return parts.isEmpty ? FleetModel.statusWord(status) : parts.joined(separator: " · ")
@@ -297,15 +268,13 @@ public struct FleetFinishedDay: Identifiable, Equatable, Sendable {
     }
 }
 
-/// Something waiting on the user: an agent's question, a subagent asking, or an agent
-/// blocked before its snapshot says why.
+/// Something waiting on the user: an agent's question, or an agent blocked before its snapshot
+/// says why. Never a subagent's: it asks its parent, which asks the user in its own thread.
 public struct FleetAttention: Identifiable, Equatable, Sendable {
     public enum Origin: Equatable, Sendable {
         case thread
         /// An automation's run, by the automation's name.
         case automation(String)
-        /// A subagent of the thread, by the subagent's name.
-        case subagent(String)
     }
 
     /// How it can be answered without opening the thread.
@@ -314,7 +283,7 @@ public struct FleetAttention: Identifiable, Equatable, Sendable {
         case choose([String])
         /// Yes or no.
         case confirm
-        /// Only in the thread (typed answers, long lists, a subagent, no question yet).
+        /// Only in the thread (typed answers, long lists, no question yet).
         case open
     }
 
@@ -331,29 +300,23 @@ public struct FleetAttention: Identifiable, Equatable, Sendable {
     public var reply: Reply
     public var dialogID: String?
     public var session: NativeThreadSession?
-    /// The subagent run asking.
-    public var runID: String?
     public var hostName: String
     public var hostTag: String?
     /// When the thread last moved (ms since epoch).
     public var since: Double?
 
-    public var id: String { "\(ref.host.uuidString)/\(ref.agent.rawValue)/\(runID ?? dialogID ?? "blocked")" }
+    public var id: String { "\(ref.host.uuidString)/\(ref.agent.rawValue)/\(dialogID ?? "blocked")" }
 
-    /// The card's kind line: "Thread", "Automation · Nightly", "Subagent · Fix the login".
+    /// The card's kind line: "Thread", "Automation · Nightly".
     public var originLabel: String {
         switch origin {
         case .thread: "Thread"
         case .automation(let name): "Automation · \(name)"
-        case .subagent: "Subagent · \(thread)"
         }
     }
 
-    /// The card's title: the thread, or "reviewer asks" for a subagent.
-    public var title: String {
-        if case .subagent(let name) = origin { return "\(name) asks" }
-        return thread
-    }
+    /// The card's title: the thread.
+    public var title: String { thread }
 }
 
 /// A host's card (More, Settings ▸ Hosts, the sidebar's footer).
@@ -538,15 +501,6 @@ public struct FleetModel: Equatable, Sendable {
             items.append(FleetAttention(ref: ref, origin: origin, thread: agent.name, question: "Waiting on you",
                                         reason: "needs you", reply: .open, session: digest?.session,
                                         hostName: hostName, hostTag: hostTag, since: since))
-        }
-        if let asking = digest?.subagentQuestion {
-            // Its options answer in place as a select's do; a reply in its own words is written in
-            // the thread (MobileInbox).
-            let reply: FleetAttention.Reply = asking.answerable && Self.choosable(asking.options) ? .choose(asking.options) : .open
-            items.append(FleetAttention(ref: ref, origin: .subagent(asking.label), thread: agent.name,
-                                        question: asking.text, reason: asking.short ?? asking.label, reply: reply,
-                                        session: digest?.session, runID: asking.runID, hostName: hostName,
-                                        hostTag: hostTag, since: since))
         }
         return items
     }

@@ -24,7 +24,7 @@ struct FleetOverviewTests {
                        worktree: false, offline: false, subagents: subagents, subagentsAsking: asking)
     }
 
-    @Test func aDigestCountsTheSubagentsStillRunningAndThoseAsking() {
+    @Test func aDigestCountsTheSubagentsStillGoingAndThoseWaitingOnTheirParent() {
         let digest = FleetTests.digest(FleetTests.snapshot(running: true, subagents: [
             Fixture.run("worker"),
             Fixture.run("reviewer", state: "paused", needsAttention: true),
@@ -36,7 +36,7 @@ struct FleetOverviewTests {
 
     @Test(arguments: [
         (row("a", activity: "swift test --filter toolPreview"), "swift test --filter toolPreview"),
-        (row("b", subagents: 3, asking: 1), "3 subagents · 1 needs you"),
+        (row("b", subagents: 3, asking: 1), "3 subagents · 1 waiting on parent"),
         (row("c", subagents: 1), "1 subagent"),
         (row("d", activity: "swift build", subagents: 2, host: "This Mac"), "swift build · This Mac"),
         (row("e"), "running"),

@@ -101,7 +101,7 @@ Screens reach each other only through `MobileNavigator` (in the environment):
 
 - `navigator.open(route)`: iPhone pushes it on the current tab's stack (Settings routes switch to
   the Settings tab); iPad makes a thread the detail and pushes anything else over it. A
-  thread's runs or review (`MobileRoute.thread`) opened from elsewhere, such as Needs you or the
+  thread's runs or review (`MobileRoute.thread`) opened from elsewhere, such as the
   palette, first makes its thread the detail, so the sidebar marks it and closing returns to it.
 - `navigator.present(route)`: modal, with its own stack (New thread, forms).
 - `navigator.selectedThread`: the thread on screen (including its pushed review, subagents or

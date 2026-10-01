@@ -140,7 +140,7 @@ And the rules that follow from them:
 | Queue & steer: the queue's keys are "shown in menus and tooltips only" | Also listed under Settings ▸ Keyboard ▸ While the agent is working, in the Keyboard card's order | Settings ▸ Keyboard lists every chord the app answers, and ⌘↩ is rebound there; nothing is written in or under the composer |
 | Earlier ComposerSpeed and full-window boards show separate Model, Thinking and Speed chips | The Composer & menus board (NWComposer, NWModelSettings; the user's 2026-10-01 design) has one model-settings button and one popover, with a filled bolt only for Fast; ⌘K's Toggle fast mode and Settings ▸ Agents ▸ Speed for new threads remain | The board replaces the older separate-chip anatomy on the Mac. The canvas's NWComposer and ComposerSpeed boards still draw the old chips until the user's board is added |
 | Composer & menus: the model picker's rows are one line with a trailing check | Two-line 40pt rows with a leading check, the thinking levels under each name, and the context size; a model with a Fast tier also wears a "fast" tag | The ModelPicker board's rows (above) carry real information the new board's rows leave out: the user's call whether the picker follows the new board |
-| Background events as in-app toasts (`.nwToast`) | A system notification when a thread finishes a turn, fails one, or asks a question, or one of its subagents asks, or a connected host goes away, while you aren't watching it (`AgentNotifications`; see Notifications and Live Activities) | Reaches you outside the app |
+| Background events as in-app toasts (`.nwToast`) | A system notification when a thread finishes a turn, fails one, or asks a question, or a connected host goes away, while you aren't watching it (`AgentNotifications`; see Notifications and Live Activities) | Reaches you outside the app |
 | Missions: the Missions page, the mission map, evidence review | Not built; specified in full under Missions, each part marked Not built yet | Out of scope for this pass |
 | Sidebar — Projects (SidebarTree, SidebarProjects, SidebarProjectsHosts): designs ("Settings redesign · 6 boards", "Checkout funnel dashboard · 4 boards") in their project's folder, and "Every kind … all live in the project they work on" | Designs are not in the project tree: they stay under the Designs destination and in ⌘K | The user's decision (2026-09-26): designs stand alone outside spaces since #118, so they have no project to sit in |
 | Sidebar — Projects: mission rows ("Ship native UI v2") and New mission in <project> in the project menu | No mission rows and no New Mission | Missions are deferred and hidden (the user's decision, 2026-09-26) |
@@ -197,7 +197,7 @@ And the rules that follow from them:
 | NWThread: inline code on `bgSunken` with a 1px `lineSubtle` line, radius 4, 1×5 padding | Prose draws it in mono 12 on a `lineSubtle` fill, with no line or padding. `NWInlineCode` draws the board's form where a view holds the code (only the Component Gallery today) | A run inside `Text` cannot carry a border or padding |
 | NWThread: a follow-up typed while pi works is a dashed bubble in the thread ("queued · sends when the turn ends", Edit, Send now) | It never enters the thread early: it waits in Up next above the composer and joins the thread where pi reads it | The Queue & steer boards replaced it; the host holds one queue that every viewer sees and edits |
 | Settings boards: hexes outside the palette (`#22262a`, `#1b1e21`, `#c1c5cb`, `#767c85`, `#23272c`, `#f58a86`, `#6fd49a`) | The nearest roles (`lineSubtle`, `textSecondary`, `textTertiary`, `bgSelected`, `failed`, `done`) | The roles are the contract; a new color is a theme role |
-| SettingsPi: Subagent display "Show subagent runs in the sidebar and open their inspector" | "Show subagent runs in their agent's thread, the inspector and the palette" | Subagents have no sidebar rows (Subagents); one waiting on you marks its parent's row |
+| SettingsPi: Subagent display "Show subagent runs in the sidebar and open their inspector" | "Show subagent runs in their agent's thread, the inspector and the palette" | Subagents have no sidebar rows (Subagents); a subagent's question goes to its parent and marks nothing |
 | SettingsPi: Sync pi theme "Use Shepherd's palette in pi and follow theme changes." | No row | Shepherd no longer themes pi: agents run pi over RPC and draw no pi TUI, and pi run by hand keeps its own theme |
 | SettingsRemote: Token "Delete the file to revoke every client." | "To revoke every client, delete the file and turn the listener off and on." | The listener reads the token when it starts; deleting the file alone revokes no one |
 | SettingsAdvanced: Reset settings "Restores appearance, font, agent and keyboard preferences. Spaces, agents and layouts are untouched." | "Restores appearance, terminal, agent, worktree, extension and keyboard preferences. Spaces, agents, layouts and Remote are untouched." | The reset covers every page but Remote, and the copy names what it touches |
@@ -961,16 +961,15 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
      opens Settings ▸ Pi, where the bundled extensions are. Opening Hosts opens More; the
      disclosure is not kept across launches.
 - **Needs you** (`NWSidebarSection(.needsYou(count:))`): it appears only while something waits on
-  you: every agent on this Mac or a connected host that is blocked or has a subagent asking,
-  automation runs included. The header is "Needs you" in Geist 11.5 medium `lanternText` with the
-  count trailing in mono 10.5 `lanternText`, padded 14pt (10) above, 4pt below, and 8pt (6) at the
-  sides. Each row (`NWSidebarRow`) is 28pt (22), radius 8, padded 8pt (6), with a 14pt leading slot
+  you: every agent on this Mac or a connected host that is blocked, automation runs included
+  (a subagent never waits on you: its question goes to its parent). The header is "Needs you" in
+  Geist 11.5 medium `lanternText` with the count trailing in mono 10.5 `lanternText`, padded 14pt
+  (10) above, 4pt below, and 8pt (6) at the sides. Each row (`NWSidebarRow`) is 28pt (22), radius 8, padded 8pt (6), with a 14pt leading slot
   and a 9pt (7) gap. The slot holds a thread's glowing 6pt `lantern` dot, or an automation run's
   13pt (11) `bolt` in `lanternText`. The title is in the row font, truncating at the tail. The
   reason trails in mono 10 `lanternText` ("retention?", "approve plan"): the agent's own word or
   two for its question (`Agent.waitingReason`) when its asking tool gave one, else the question
-  its thread asks (`Agent.waitingOn`); for an asking subagent, its own reason
-  (`ChildQuestion.short`), else its role or name; else "ASK". Cut to 14 characters at a word
+  its thread asks (`Agent.waitingOn`); else "ASK". Cut to 14 characters at a word
   (`NeedsYouReason`, shared with the iPad). Most recently active first. The agent is asked for the reason
   (the user's decision, 2026-09-25: "Ask the agent for a short reason"): Shepherd's status
   extension gives every asking tool (named like `ask` or `question`, the same rule that sets
@@ -2267,15 +2266,16 @@ line in Geist Mono 10.5 `textTertiary` ("Checkout.tsx:88", only when the page pr
 9pt remove × in `textTertiary`; its tooltip is the full selector. At most five wait at once, and
 they go with the next message, on a host that takes them (`browserElements`).
 
-**Questions** from pi or an extension (select, confirm, input, editor), and a subagent's opened
-from its row, take the composer's place, never a row in the scrolling thread, so a blocked agent
-is always answerable (QuestionAsk, QuestionPick, QuestionAnswered, QuestionStates). pi stops and
-asks once; the thread above keeps what pi found, and the question holds only the question, its
+**Questions** from pi or an extension (select, confirm, input, editor) take the composer's place,
+never a row in the scrolling thread, so a blocked agent is always answerable (QuestionAsk,
+QuestionPick, QuestionAnswered, QuestionStates). A subagent's question never does: a subagent
+asks its parent, which asks here, as pi's own question, only when it cannot answer it
+(Subagents). pi stops and asks once; the thread above keeps what pi found, and the question holds only the question, its
 answers, and yours.
 
 **The question dock** (`Thread/QuestionDock.swift` on ShepherdUI's `NWQuestionDock`; the shared
 presentation is `NativeQuestionPrompt` in ShepherdRemote, for the touch clients too). It replaces
-the whole composer card, not just its field, for pi's own question and a subagent's alike. Its
+the whole composer card, not just its field, for pi's own question. Its
 rules (QuestionStates › Rules):
 
 1. **It takes the composer's place.** While pi waits, the bottom of the thread is the question:
@@ -2339,13 +2339,14 @@ rules (QuestionStates › Rules):
     side by side, 6pt apart, each 44pt (its number, the title in semibold, Recommended; its parts
     10pt apart), answering on click. Answer shows only with Something else; without it the dock
     has no footer (a confirm's is only its timeout line).
-  - **Open question:** no options (pi's input and editor, a subagent's question without
-    answers): a field at least 64pt tall (`bgWindow`, radius 8, a `lineStrong` line, 10pt above
+  - **Open question:** no options (pi's input and editor): a field at least 64pt tall (`bgWindow`, radius 8, a `lineStrong` line, 10pt above
     and below and 12pt at the sides, 13.5 at 1.5; up to 6 lines, 12 for an editor, then it
     scrolls) holding the asker's prefill, and Answer. It takes the keyboard when it arrives in
     the focused thread.
-  - **From a subagent:** "<name> is asking" with the branch glyph, the question at 14.5, option
-    titles at 13 over 12 (SubagentTray › Answer → question dock; see Subagents).
+  - **From a subagent (no longer shown):** "<name> is asking" with the branch glyph, the question
+    at 14.5, option titles at 13 over 12. No surface draws it now: a subagent asks its parent,
+    never the user (see Subagents). The variant stays in the components, with its note and
+    Something else…, until the board goes.
 - **Hidden** (QuestionStates): Esc or Hide the question shrinks the dock to one 46pt line
   (`NWQuestionDockHidden`), so you can read the thread; it still holds the composer's place,
   because pi is still waiting. The line is the same lantern card (radius 12, 14pt leading and 8pt
@@ -2382,8 +2383,8 @@ rules (QuestionStates › Rules):
   included, placed after the call that asked and before pi's next reply, and kept per pi
   session beside the queue's origins, so it survives a relaunch. A question still open when pi
   moves to another session (`/new`, `/resume`) is not recorded. When a tool asked, its own
-  activity line stays too. A subagent's question is not recorded here: its answer joins the
-  child's transcript as the user's message.
+  activity line stays too. A subagent's question is not recorded here: it is not the user's, and
+  a Steer the user sends the child joins its transcript as the user's message.
 - **Not built with it:** your note under the option's title, 4pt apart (QuestionAnswered), since
   none of pi's dialogs takes a note (What each asker takes).
 
@@ -2396,7 +2397,7 @@ rules (QuestionStates › Rules):
 | pi's confirm (`ctx.ui.confirm`) | yes or no | true or false | no | no |
 | pi's input (`ctx.ui.input`) | open | a string | — | — |
 | pi's editor (`ctx.ui.editor`) | open, 12 lines | a string, as typed | — | — |
-| A subagent (`shepherd_parent_message`, `needsReply`, up to six `options`) | choice, yes or no, or open | any text, sent to the run as a message (the option as offered, then the note after a blank line) | yes | yes |
+| A subagent | none | it is no asker of the user: it asks its parent (`shepherd_parent_message`, `needsReply`), which asks here, as an ordinary question, when it must | — | — |
 
 An asking tool (any tool named `ask` or `question`, such as `ask_user`) asks through the dialogs
 above, so its question is the row of the dialog it opens. Its `short` reason is for the sidebar's
@@ -2405,8 +2406,7 @@ Needs you (Sidebar); the dock never shows it.
 **Not built yet: Pick several** (QuestionStates › Kinds: rows at least 40pt with a 14pt
 `.nwCheckbox`, the label in mono 13 semibold for a host or a path and a note in 12
 `textTertiary`, a ticked row in the picked style, and "Answer with 2 hosts"). No asker takes
-several answers: pi's select returns one option, and a subagent's options are offered to pick
-one. It waits for an asker that says it takes several. Any of pi's dialogs can also be cancelled (pi returns undefined or
+several answers: pi's select returns one option. It waits for an asker that says it takes several. Any of pi's dialogs can also be cancelled (pi returns undefined or
 false to its asker), which only Stop does. pi's `custom` UI is not supported in RPC mode, so a
 tool built on it never reaches Shepherd.
 
@@ -2792,19 +2792,23 @@ cannot stop pi, a compaction, or an older client's send.
 ### Subagents
 
 Subagents live in a **tray above the composer** while they run (SubagentTray, NWAgents;
-Subagents, SubagentsDone, SubagentsQueue): one row each, answered, steered, stopped or opened
-from there, in the same card as Up next. The thread keeps two quiet lines for them, where they
+Subagents, SubagentsDone, SubagentsQueue): one row each, steered, stopped or opened from there,
+in the same card as Up next. The thread keeps two quiet lines for them, where they
 started and where they finished, and both open the inspector, so finished runs stay browsable.
-Raw wait or status dumps never appear. Subagents have no sidebar rows; one waiting on you marks
-its agent's row instead (see Sidebar). Behavior is specified in
+Raw wait or status dumps never appear. Subagents have no sidebar rows, and **a subagent never asks
+you anything**: one that has a question asks its parent agent, which answers it or asks you
+itself, in its own thread, as an ordinary question (Composer, questions), and passes your answer
+down. So a subagent's question marks no row in Needs you, posts no notification, and takes
+nothing over the composer: it shows quietly on the subagent's own row. Behavior is specified in
 [native-subagents.md](docs/native-subagents.md).
 
-The components are ShepherdUI's Agents set (`Components/Agents/SubagentTray.swift`,
-and the question dock, `Components/Composer/QuestionDock.swift`). `NativeSubagentTray` (ShepherdRemote, shared with iOS) derives the
+The components are ShepherdUI's Agents set (`Components/Agents/SubagentTray.swift`).
+`NativeSubagentTray` (ShepherdRemote, shared with iOS) derives the
 tray's header and rows once per change on the thread store (`NativeThreadStore.tray`), and the
 turn's record (`NativeSubagentRecord`) with its presentation; `SubagentPresentation` maps them onto
 the components' values, and `Thread/Subagents.swift` lays out the tray. State always comes from
-`AgentState` (a queued run and a run paused before its next model request both draw as `queued`).
+`AgentState` (a queued run, a run paused before its next model request and a run waiting on its
+parent's answer all draw as `queued`; a subagent never draws `attention`, which is yours).
 
 - **When the tray shows** (`nativeTrayRuns`): only runs started during the current turn, plus
   genuinely live or waiting work continuing from an earlier turn. Finished runs stay as that
@@ -2825,13 +2829,14 @@ the components' values, and `Thread/Subagents.swift` lays out the tray. State al
   edges. Alone, either one is its own card.
 - **Header** (32pt, 12pt leading, 6pt trailing, items 8pt apart): `NWBranchGlyph` at 12pt in
   `textTertiary`, "3 subagents" in `.nwSans(12, .semibold)` `textSecondary`, one 6pt cell per run
-  (radius 2, 2pt apart, in the state's color; queued and paused cells are `lineStrong`; at most
-  twelve, in row order), then the tally in `.nwMono(11)`: "1 needs you" in `lanternText`, "1
-  running" in `running`, "1 done" in `textTertiary`, "1 failed" in `failed`, in that order (with
-  "queued" and "paused" after running), joined by " · "; "all done" once every run finished well.
-  A spacer, then Collapse (`chevron.down`, a 24pt circular icon button; it turns to point right
-  while collapsed). Collapsed, the tray is its header alone: the cells and counts still say who
-  needs you (SubagentTray · collapsed). The header's hairline is the first row's.
+  (radius 2, 2pt apart, in the state's color; queued, paused and waiting-on-parent cells are
+  `lineStrong`; at most twelve, in row order), then the tally in `.nwMono(11)`: "1 running" in
+  `running`, "1 done" in `textTertiary`, "1 failed" in `failed`, in that order (with "queued" and
+  "paused" after running, then "1 waiting on parent", all `textTertiary`), joined by " · "; "all
+  done" once every run finished well. A spacer, then Collapse (`chevron.down`, a 24pt circular
+  icon button; it turns to point right while collapsed). Collapsed, the tray is its header alone:
+  the cells and counts still say what runs and what waits (SubagentTray · collapsed). The
+  header's hairline is the first row's.
 - **A row** (`NWSubagentTrayRow`; 36pt minimum, 12pt leading, 6pt trailing, items 9pt apart, a
   hairline above): the state in a 13pt slot (a 7pt `NWStatusDot`, glowing while it needs you; a
   `done` checkmark or a `failed` cross once finished), the name in `.nwMono(12, .semibold)` in a
@@ -2845,9 +2850,11 @@ the components' values, and `Thread/Subagents.swift` lays out the tray. State al
     Between calls the last call reads in the past ("Edited B.swift"), still; before any call,
     "Starting". Its diff so far and its time since it started ("37m").
   - **Queued / paused:** "Waiting to start", or "Paused before its next model request".
-  - **Needs you:** the row on `lanternTint`; "asks: " and the question's asking sentence in
-    `lanternText`; its wait since the child asked (`shepherd_parent_message`; no figure without
-    one); then **Answer** (lantern `s` button) in the trailing slot.
+  - **Asked the parent:** a quiet waiting row: the hollow `queued` dot, "asked the parent: " and
+    the question's asking sentence in `textSecondary` ("asked the parent" alone when it gave
+    none), and its wait since the child asked (`shepherd_parent_message`; no figure without one).
+    The question is its parent's to answer, or to ask you in its own thread, so the row has no
+    tint, glow or Answer: nothing on it is yours to do. Hover keeps Steer, Stop and Open.
   - **Done:** the first sentence of what it did, without its final period, in `textSecondary`;
     its diff and its duration ("41m").
   - **Failed:** why, in `failed`, without the exit code it leads with ("context limit reached
@@ -2856,31 +2863,24 @@ the components' values, and `Thread/Subagents.swift` lays out the tray. State al
     (`stop.fill`) and Open (`chevron.right`), 24pt circular icon buttons, take the trailing slot.
     At rest, and on a finished run, the slot holds a 10pt `chevron.right` in `textTertiary`.
   - **Selected** (its run open in the inspector): `bgSelected` with a 2pt rule on its leading
-    edge, `running` (`lantern` on a row that needs you, which keeps its tint and shows the
-    chevron in place of Answer, since the inspector shows the question).
+    edge, `running`.
 - **Order and length** (SubagentTray · 8 subagents): up to four runs keep spawn order (the
-  boards' worker · reviewer · tests); a longer tray sorts the runs that need you first, then live
-  ones, then failed, then done, and shows four rows and "Show 4 more" (a 30pt row, Geist 12
+  boards' worker · reviewer · tests); a longer tray sorts the live runs first (one waiting on its
+  parent among them), then failed, then done, and shows four rows and "Show 4 more" (a 30pt row, Geist 12
   `textSecondary`, 34pt leading inset; "Show fewer" once open). Open, a tray of more than eight
   rows scrolls inside a lazy stack eight rows tall (`AppLayout.trayExpandedMaxRows`).
 - **What a row does:** a click opens its run in the inspector (again closes it); Steer opens it
-  with its Steer field focused; Stop stops the run; Answer opens its question. Its context menu
-  and accessibility actions carry Open (or Close the Inspector), Answer…, and the run's controls
-  (Pause or Continue and Stop while live, Re-run once finished). Controls are disabled while the
+  with its Steer field focused; Stop stops the run, or closes the question of one waiting on its
+  parent. Its context menu and accessibility actions carry Open (or Close the Inspector) and the
+  run's controls (Pause or Continue and Stop while live, Stop alone while it waits on its parent,
+  Re-run once finished). Controls are disabled while the
   thread can't take commands (its agent is off screen, or its host has no subagent control).
-- **Answer → the question dock** (SubagentTray › Answer → question dock; QuestionStates › from a
-  subagent): the run's question takes over the composer area, the tray and Up next with it, until
-  it is answered or hidden, in the same dock as pi's own questions (`NWQuestionDock`, see
-  Composer, questions, and menus › The question dock): the shared head with a 13pt `lanternText`
-  branch glyph and "reviewer is asking" (Hide the question, or Esc, closes the dock; its row's
-  Answer opens it again), the question in Geist 14.5 semibold (inline Markdown), then its answers
-  as numbered cards (titles in Geist 13 semibold over 12 `textSecondary`), the first the run
-  marked "Recommended". Its answer is a message to the run, so a picked card opens its note field
-  and Something else… is the last row; a question with no answers is an open question ("Reply to
-  reviewer…"). Answer (↩) sends the option as the run offered it (with the note after a blank
-  line) or the words typed to that run only, before its next turn. SubagentTray draws the dock
-  smaller (10×12 padding, the question at 13.5, 8×10 cards with 12.5 titles over 11.5, and no
-  Something else); the dock follows QuestionStates, which draws every asker's dock.
+- **No Answer, and no question dock for a subagent.** A subagent that has a question puts it to its
+  parent: the parent's extension is told (docs/native-subagents.md › Questions and results), and
+  answers it from what it knows, or asks you in its own thread, as pi's own question in the
+  composer's place, then passes your answer down. What a subagent's row offers is Steer (you
+  speaking to the child yourself, over its parent: it resumes the child with your words and ends
+  its question) and Stop (which closes the question and marks the run stopped).
 - **In the thread** (`NWSubagentRecordLine`, SubagentTray › SubagentRecord): an activity line in
   look (26pt, 12.5 `textSecondary`, the meta in `.nwMono(11)` `textTertiary`, a 13pt branch glyph
   and a 10pt chevron; a real button with the row hover; with no run to open, no chevron, its
@@ -2902,7 +2902,9 @@ the components' values, and `Thread/Subagents.swift` lays out the tray. State al
   labels stay intact. Results, questions and controls use run identity, never the label.
 - **Background coordination stays out of chat.** Routine child progress updates its record,
   not a new parent turn. Questions and unread completion can wake an idle parent; results that
-  arrive while it works are batched into one continuation at its settlement boundary. Reading
+  arrive while it works are batched into one continuation at its settlement boundary. A question
+  is the child's to its parent: its notice tells the parent to answer it, or to ask you in its own
+  thread and pass your answer down, and says so once however many children asked. Reading
   a result or receiving it through Wait consumes its pending notification. A question does not
   also generate a completion wake. Stop prevents late results from restarting the parent.
   The native tray remains the progress display; no receipt-only assistant response is requested.
@@ -3006,7 +3008,8 @@ inspector; the tray's Steer opens it with its Steer field focused.
   `textTertiary` line: "model · thinking high · 78 turns · 922k tok" while live, "model · 11
   turns · done 11:02" once finished, the last part in the state's color; the full line is its
   tooltip. A run that has left the list reads "no longer listed". Trailing, 4pt apart:
-  Pause/Continue (secondary `s`, with the card's tooltip) and Stop (danger `s`) for a live run,
+  Pause/Continue (secondary `s`, with the card's tooltip) and Stop (danger `s`) for a live run (a
+  run waiting on its parent has Stop alone: nothing runs to pause, and Stop closes its question),
   ‹ › (28pt `nwIcon`, "Previous subagent", "Next subagent", disabled at the ends) to step through
   siblings, a ⋯ menu (`NWOptionsMenu` "Inspector options": Refresh Transcript while live; Copy
   Transcript and Show Session File in Finder once finished), and close ("Close the inspector").
@@ -3017,7 +3020,9 @@ inspector; the tray's Steer opens it with its Steer field focused.
   0.5pt tracking, `textTertiary`), with "step n / m · 62%" trailing in Geist Mono 10.5
   `textTertiary` while live; the goal in `ui` `textSecondary`, up to six lines, selectable. Once
   finished, RESULT with its label in the state's color and the result in `ui` `textPrimary` as
-  inline Markdown (up to eight lines; a failed run's exit reason). Under it, up to five touched
+  inline Markdown (up to eight lines; a failed run's exit reason). A run that asked its parent shows
+  its question there instead, under "Asked the parent" (the question as inline Markdown, then "It
+  offered: …" with the answers it gave): to read, never to answer. Under it, up to five touched
   files as `running` links in Geist Mono 11, truncated in the middle, each with its diff stat
   (Geist Mono 11): a link opens the review pane at the file ("Review this file"), or reveals it
   in Finder where there is no review. Then "n more files" in Geist Mono 11 `textTertiary`.
@@ -3040,7 +3045,8 @@ inspector; the tray's Steer opens it with its Steer field focused.
     in mono (the run's turns, one per reply of the model as the header counts them, up to the
     first reply at or after the topmost turn on screen; `SubagentPresentation.position`), with
     "Scroll for the rest" trailing while there is more below.
-- **A Steer composer** while the run is live (Subagents): the composer card's anatomy on
+- **A Steer composer** while the run is live (Subagents; a run waiting on its parent is live, and
+  its Steer is you speaking over the parent): the composer card's anatomy on
   `bgRaised`, radius 8, a `lineStrong` line (`textTertiary` with a 3pt `bgSelected` ring while
   focused), set in 10pt from the top and 12pt from the sides, under a hairline. The field ("Steer
   <name> — delivered before its next turn", the placeholder in `textTertiary`) is `body`, one to
@@ -3794,7 +3800,7 @@ surface: every destination and command in it is also in the sidebar or the menus
     thread with a layout is on screen: Show or Hide terminal (⌘J; with none it opens one), New
     terminal (⌘D), and Maximize or Restore terminal (⇧⌘↩, offered only while the thread has a
     terminal), named for what they will do.
-  - **Subagents:** each live or recent run: its label, "<parent> · running 37m" ("needs you",
+  - **Subagents:** each live or recent run: its label, "<parent> · running 37m" ("waiting on parent",
     "done", "failed"; a remote run's parent adds " · <host>"), and `arrow.turn.down.right` in its
     run's state color.
   - **Agents** (with a query, or in the Agents scope): each agent in sidebar order with "<space> ·
@@ -5037,7 +5043,7 @@ Components › Status and feedback.
 | --- | --- | --- | --- |
 | Agent working | `running` | blue dot; elapsed trailing | Stop (outlined beside Send with a draft); ↩ waits in Up next; ⌘↩ steers now |
 | Agent blocked on a question | `attention` | lantern dot, glowing; "ASK" | the question panel in place of the field |
-| A subagent needs you | `attention` | its agent's row: lantern dot, glowing; "ASK" | the card's answers and Reply… |
+| A subagent asked its parent | `queued` (waiting, hollow) | none: its agent's row stays as it was | none: its tray row says "asked the parent" |
 | Agent done | `done` | green dot | Send |
 | Agent done, its turn failed | `failed` | red dot | Send |
 | Agent idle | `idle` | hollow ring | Send |
@@ -5047,8 +5053,9 @@ Components › Status and feedback.
 | Restored, waiting for your pi to come over | `idle` | `clock` glyph; "waiting" in mono 10 `textTertiary` | Send, which waits; the thread ends in "Waiting to continue" |
 | pi not signed in (this Mac) | `attention` | in Needs you: lantern dot, glowing; "sign in" | Send; the thread ends in the Not signed in card |
 
-Subagent runs use the same states on their dots, glyphs, pills, and steps: running, needs you,
-done, failed, and queued (queued or paused, hollow). Tool calls use running, done, and failed.
+Subagent runs use the same states on their dots, glyphs, pills, and steps: running, done,
+failed, and queued (queued, paused, or waiting on its parent, hollow). A subagent never draws
+`attention`: that state is the user's. Tool calls use running, done, and failed.
 
 **Not built yet: stuck.** `AgentState.stuck` marks an agent or run that has been running too
 long without progress. Its dot and pill take `failed`'s color and tint and say for how long
@@ -5281,8 +5288,8 @@ trail, top-aligned, 6pt apart, as small (24pt) buttons. Default icons:
   alias?"), the asker's context as the message ("Migrating touches 31 call sites; an alias is
   4 lines but leaves two token systems."), then the answers the asker offered (the first
   primary, the rest secondary) and a ghost **Reply…**. In the app a thread's own question is
-  the composer's question panel and a subagent's is on its card, each with the offered answers
-  and Reply… (Composer, Subagents); no surface draws the banner form yet.
+  the composer's question panel (Composer); a subagent's goes to its parent, so no surface asks
+  you for it, and no surface draws the banner form yet.
 - **A repeated failure** (failed): "<what> failed <n> times" ("tests failed 3 times"), a
   diagnosis that says whether retrying helps ("3 snapshot tests fail at Dynamic Type XL.
   Retrying won't help."), and **Open replay** (secondary). **Not built yet:** nothing counts
@@ -5410,14 +5417,13 @@ The Changes pane's keys are listed with the pane (Side pane › Changes).
   and a turn's footer, a comment's Edit and Delete, a diff line's `+`) are always reachable as
   buttons or named actions for VoiceOver.
 - **Rows read as one element:**
-  - agent rows: "title, [worktree,] running / needs you / idle / done" (needs you also while one
-    of its subagents asks); automation rows: "name, automation, state"
+  - agent rows: "title, [worktree,] running / needs you / idle / done" ; automation rows: "name, automation, state"
   - activity lines: "Explored 7 files, read 5, search 2, 0.9s, done", with Expanded / Collapsed
     and the hint "Shows the calls"; the live line: "Pushing, git push origin main, running"; live
     thinking: "Thinking"; call rows: "edit, Sources/A.swift, +58 −41"
-  - the subagent tray's header: "3 subagents, 1 needs you, 1 running, 1 done"; its rows: "name,
+  - the subagent tray's header: "3 subagents, 1 running, 1 waiting on parent, 1 done"; its rows: "name,
     state, what it is doing" ("worker, Running, Editing NativeThreadPresentation.swift"), with
-    Open, Answer and the run's controls as actions; the thread's record lines: "Started 3
+    Open and the run's controls as actions; the thread's record lines: "Started 3
     subagents, worker · reviewer · tests"
   - diff lines: "Removed line 16: …", with Comment as a named action; file chips: "FleetView.swift,
     modified, 10 added, 54 removed, viewed"
@@ -5658,8 +5664,8 @@ screen from these parts; the sections after this one give each board's specifics
   (`MobileLayout.searchGutter`) only on Search and Changes, and 16 elsewhere.
 - **Cards** (`NWListCard`, `.nwCard(radius: MobileLayout.cardRadius)`): `bgRaised`, a 1px
   `lineSubtle` line, 12pt corners (`NWListMetrics.cardRadius`), rows separated by 1px `lineSubtle`
-  rules. Home's cards alone are `bgWindow` on its `bgBase` screen. A card that needs you (a
-  subagent's question) takes a `lanternText` line; a running one (Automations' Running now) a
+  rules. Home's cards alone are `bgWindow` on its `bgBase` screen. A card that needs you (a thread's
+  question) takes a `lanternText` line; a running one (Automations' Running now) a
   `running` line with a 3pt `runningTint` ring.
 - **List rows** (`NWListRow`): 14pt sides, 8pt vertical padding, 12pt between parts. A leading
   column 18–20pt wide (`NWListMetrics.leadingWidth`) holds an 8pt status dot or a 15–17pt glyph in
@@ -5691,7 +5697,7 @@ screen from these parts; the sections after this one give each board's specifics
   600 `textOnLantern`, secondary `bgRaised` with a 1px `lineStrong` line and 500 `textPrimary`; two
   share the width with 10pt between them.
 - **Buttons inside cards** use `.buttonStyle(.nw(_:size:))`: Needs you's answers are 28pt (`.m`:
-  12.5, 10pt sides); a subagent's answers and a host's Retry are 32pt (`.l`: 13, 14pt sides; the
+  12.5, 10pt sides); a host's Retry is 32pt (`.l`: 13, 14pt sides; the
   app's Retry on More and Home is `.s`, 24pt). The first answer is primary, the rest secondary, and
   Open or Reply… ghost. Each keeps its drawn size and hits at 44pt.
 - **Switches:** `.toggleStyle(.nwSwitch)`, 30×18, `lantern` on, `lineStrong` off, hit at 44pt.
@@ -5742,12 +5748,10 @@ merges into one Home.
   reached."), and Retry (`.nw(.secondary, size: .s)`, `arrow.clockwise`). A refused token or another
   protocol says so and waits for Edit or Retry.
 - **Needs you** (head in `lanternText` with its count): 52pt rows, each a glowing 8pt `lantern` dot
-  for a thread, or the origin's 15pt glyph in `lanternText` (a bolt for an automation run, a branch
-  for a subagent); the thread's name, the question in `lanternText` mono 11 under it, and (the
+  for a thread, or the origin's 15pt glyph in `lanternText` (a bolt for an automation run); the thread's name, the question in `lanternText` mono 11 under it, and (the
   app's, with several hosts) its host badge. At
   most two rows (`HomeLimits.needsYou`), then a 44pt link row: "See all N" when more wait, else
-  "Answer in Needs you". A row opens where the question is answered (the thread, or the asking
-  subagent's run). The board shortens a plan's question to "approve plan" ("Dock review pane");
+  "Answer in Needs you". A row opens where the question is answered (the thread). The board shortens a plan's question to "approve plan" ("Dock review pane");
   to Shepherd a plan is an ordinary question (Principles: No permission model), so the row shows
   the question the asker wrote.
 - **Not built yet:** a mission's stuck lane as a Needs you row (a folded-map glyph in
@@ -5947,14 +5951,14 @@ next step. Steer now on a row and Steer all now are the same interrupt.
   and menus › Questions; `QuestionPanel` on `NativeQuestionPrompt`, as the Mac's dock): Answer is
   the only button, and picking another option moves the pick. A yes or a no (pi's confirm, or two
   short options) is two cards side by side that answer on a tap; an open question (pi's input or
-  editor, a reply to a subagent) is a field over Answer. The grabber is Hide the question: a tap,
+  editor) is a field over Answer. The grabber is Hide the question: a tap,
   or a drag down from it, folds the panel to one line (`NWQuestionCardHiddenLine`, the iPad's),
   which never answers it; Answer or Show the question on that line opens it again, and the next
   question arrives open.
 - **What each asker takes** is the dock's table: pi's select takes only one of its options, so it
-  gets no note and no Something else…; a subagent's question gets both (the note field inside the
-  picked card, "Add a note…"; Something else… as the last card, 46pt, its number and a field in
-  place, which typing picks). pi's question has no Dismiss: **Stop** refuses it.
+  gets no note and no Something else… (the note field and the Something else… card, which only a
+  subagent's question took, are not drawn: a subagent asks its parent). pi's question has no
+  Dismiss: **Stop** refuses it.
 - **While pi asks** the header shows "Needs you" with a glowing dot and no Stop or •••. The app
   keeps both: Stop is how a question is refused (the host cancels the questions pi waits on, then
   stops the turn), as on the Mac.
@@ -5975,32 +5979,26 @@ record lines, a list, and a screen per run.
   "3 subagents" at 13/600, the cells and tally, Collapse as a 34pt circle); 44pt rows (14pt
   leading, 10pt apart): the state in a 14pt slot, the name in mono 13.5/600 in a 68pt column,
   what it is doing at 14 (the subject in mono 13), its time in mono 11, and a chevron in a 34pt
-  slot; the diff stat drops. A run that needs you shows Answer (lantern `m`) in the slot. Tapping
-  a row pushes its run's screen; touch and hold for Open, Answer, and the run's controls. Past
+  slot; the diff stat drops. A run that asked its parent says "asked the parent: …" quietly, with no
+  Answer. Tapping a row pushes its run's screen; touch and hold for Open and the run's controls. Past
   four runs, "Show N more"; open, the rows scroll inside, never more than a share of the
   composer's room. The tray's rules (when it shows, the order, what each state says) are the
   Mac's.
-- **Answer** opens the run's question in the composer's place, docked to the bottom edge as pi's
-  own questions are (`QuestionPanel`, "reviewer is asking" with the branch glyph): its answers as
-  numbered cards with a note on the picked one and Something else…, or a reply field; Answer
-  sends it to that run only (the option, then the note after a blank line, as on the Mac), and
-  hiding it (the grabber, or iPad's Hide the question) returns to the tray.
 - **In the thread** (MobileSteer): "Started 3 subagents · worker · reviewer · tests" where the
   turn spawned them (32pt, 14), and "3 subagents finished · 45m · 7 files · +318 −64" once they
   have; both, and the footer's "3 subagents", open the runs list.
-- **The runs list** (MobileSubagents; `SubagentListScreen`): "Subagents" over "1 running · 1 needs
-  you" in the state's color, on `bgBase` with 14pt padding. "This turn" with its count heads the
+- **The runs list** (MobileSubagents; `SubagentListScreen`): "Subagents" over "1 running · 1 waiting
+  on parent" in the state's color, on `bgBase` with 14pt padding. "This turn" with its count heads the
   live runs as cards (`NWRunCard`; 12×14 padding, 8pt inside):
   - Head: the branch glyph in the state's color, the name (mono 15/600), its tags ("background ·
     fable-5-1", 12 `textTertiary`), and a 20pt pill trailing (the state's tint and a 6pt dot: "37m"
-    running, "Needs you · 2m" glowing, "4m 02s" done).
+    running, "Waiting on parent · 2m", "4m 02s" done).
   - Running: "step 1 of 3" (mono 12), a 4pt progress bar (`lineSubtle` track, `running` fill, 2pt
     corners), the tokens ("922k", mono), then the current call in mono 12 `textSecondary` on one
     line.
-  - Needs you (a `lanternText` line): the question at 14/1.45 with inline code (mono 12 on
-    `bgSunken`, a `lineSubtle` line, 4pt corners), then its answers as 32pt buttons (the first
-    primary, the rest secondary) and Reply… (ghost), which opens a field for a free answer.
-    Answering sends it at once.
+  - Asked the parent (a quiet card, a `lineSubtle` line): the question at 14/1.45 with inline code
+    (mono 12 on `bgSunken`, a `lineSubtle` line, 4pt corners), then "It offered: …" in caption
+    `textTertiary`. It is to read: nothing on the card answers it.
   - Done: its result at 14 and its diff stat.
   - "Earlier in this thread" with "kept after they finish" heads the finished runs as one card of
     56pt rows: a `done` check, the name (mono 15/500) over "summary · 1h ago" (12.5 `textTertiary`),
@@ -6014,7 +6012,7 @@ record lines, a list, and a screen per run.
     shows between calls (LiveText's "Thinking…" is the thread's alone). The app draws the live
     call without the board's output tail: the child's session holds no streamed output (Where
     Shepherd departs from the boards).
-  - Its question, while it waits on you, on `lanternTint` with its answers.
+  - Its question, while it waits on its parent, on `bgSunken`, with the answers it offered, to read.
   - The steer field (`NWSteerField`) at the bottom: a 44pt capsule, "Steer worker…", Send inside it,
     and under it "to: worker · not the parent · lands before its next turn" (mono 11 `textTertiary`,
     8pt sides). Only while the run takes a steer; a finished run shows Re-run and Copy transcript
@@ -6104,12 +6102,12 @@ connected hosts, newest first.
   on you"). On `bgWindow`, 14pt sides, cards 10pt apart. Pull to refresh.
 - **A card** (`NWAttentionCard`): `bgRaised`, 1px `lineSubtle`, 12pt corners, 10×14 padding, 6pt
   apart inside:
-  - The origin line: a 14pt `lanternText` glyph (a branch for a subagent, a bolt for an
-    automation run, a folded map for a mission; a glowing 8pt `lantern` dot for a thread) and
-    "Subagent · Restyle native UI", "Thread", "Automation · Triage new Sentry issues" (12
+  - The origin line: a 14pt `lanternText` glyph (a bolt for an automation run, a folded map for a
+    mission; a glowing 8pt `lantern` dot for a thread) and
+    "Thread", "Automation · Triage new Sentry issues" (12
     `textTertiary`), with the time since trailing ("now", "2m", "14m", "1h"). The app adds the
     host's badge when there are several hosts (`NWAttentionCard`).
-  - The title (15/600): the thread's name, or who asks ("reviewer asks"). An automation's card is
+  - The title (15/600): the thread's name. An automation's card is
     titled by its question ("Is this a regression from #231?") over the asker's context ("NilPointer
     in PlaceOrder started 40 minutes after #231 merged.").
   - The question (13.5/1.4 `textSecondary`), and the asker's message under it.
@@ -6117,12 +6115,6 @@ connected hosts, newest first.
     short options shows them (the first primary); a confirm shows Yes (primary) and No (a pi confirm
     carries no labels of its own). Then Open (ghost; secondary when it is the only action), which
     goes where the question can be answered. Input and editor questions show Open alone.
-- **A subagent's question** answers in place with its options ("Replace everywhere", "Rename new
-  ones"), as its card in the thread does: at most three short ones, the first primary, and a tap
-  sends that option to the run as its reply (`FleetDigest.SubagentQuestion.options`,
-  `HomeFeed.choose`). A reply in its own words, more options, or a host that takes no subagent
-  commands shows Open alone, which opens the run. Home's row and the iPad's detail answer the same
-  way.
 - **Not built yet:** a mission's item ("Mission", "Checkout funnel events", "orders is stuck after 3
   tries. The planner suggests a retry with a hint.", Retry with hint and Open), and a thread's plan
   approval ("Plan ready: …", Approve plan and Read plan). They wait for Missions and plan approval
@@ -6480,8 +6472,9 @@ selected thread, or the Overview when none is. Other screens push over the detai
   rows keep their state word.
 - **Needs you rows** end in the reason in mono 10 `lanternText`. The boards summarize the
   question ("retention?", "approve plan", "orders stuck") or name the subagent that asks
-  ("reviewer"); the app writes the agent's own short reason when it gave one, cut as on the Mac
-  (`NeedsYouReason`), else "asked you" or "needs you", and a subagent's own reason, else its name.
+  ("reviewer"), which the app does not draw: a subagent never asks you. The app writes the
+  agent's own short reason when it gave one, cut as on the Mac (`NeedsYouReason`), else "asked
+  you" or "needs you".
 - **Recents rows** end in the host tag (mono 10 `textTertiary` in a 1px `lineSubtle` box at
   radius 4) only when threads from several hosts mix. Running rows draw no sparkline (see
   Where Shepherd departs). **Not built yet:** a design's row (the diamond glyph, and "4 boards"
@@ -6640,7 +6633,8 @@ header's pill turns "Needs you" (attention, glowing).
   the chosen card (`NWQuestionNoteField`: `bgWindow`, a 1px `lineStrong` line, radius 6, "Add a
   note…", a `lantern` caret) sent with the answer, and **"Something else…"**, a last full-width
   row (`NWQuestionOtherCard`: at least 46pt, its number outlined, a field in place): only for an
-  asker that takes them, a subagent (the dock's What each asker takes). pi's dialogs take neither.
+  asker that takes them (the dock's What each asker takes). None does now: pi's dialogs take
+  neither, and a subagent asks its parent.
 - **Foot:** Answer, primary, 36pt, trailing, enabled once there is an answer; there is no
   Dismiss (Stop refuses pi's question, as on the Mac and the phone). A yes or a no is two cards
   side by side that answer on a tap; an open question is a field over Answer.
@@ -6853,13 +6847,13 @@ With no thread selected the detail is the Overview (`PadOverview`).
   hosts the detail is the no-hosts state.
 - **Needs you cards** (`NWAttentionCard`): `bgRaised`, a 1px `lineSubtle` line, radius 12, 10×12
   inset, 8pt apart. The origin line: a 14pt `lanternText` glyph (a glowing 8pt `lantern` dot for
-  a blocked thread), its kind at 12 `textTertiary` ("Thread", "Subagent", "Automation"), its age
-  trailing; the title at 14.5/600 ("reviewer · Restyle native UI" for a subagent); the question
+  a blocked thread), its kind at 12 `textTertiary` ("Thread", "Automation"), its age
+  trailing; the title at 14.5/600 (the thread's name); the question
   at 13/1.4 `textSecondary`; then the answers as 28pt buttons at radius 6, 12.5: the first
   primary, the rest secondary. The asker's short options (up to three, each up to 32
   characters), or Yes and No, answer in place; anything else shows Open.
-  - The board answers a subagent in place ("Replace all", "Rename new"); the app offers Open
-    there.
+  - The board answers a subagent here ("Replace all", "Rename new"); the app draws no subagent
+    card: a subagent asks its parent, never you.
   - **Not built yet:** a mission's card ("Mission · now", "Retry with hint", Open).
   - The board's "Approve plan" and "Read" are the answers a plan-approval question would offer.
     Shepherd shows them only when the asker offers them (Principles: no permission model); a
@@ -6869,7 +6863,7 @@ With no thread selected the detail is the Overview (`PadOverview`).
   "THREADS · 3", "AUTOMATIONS · 1". Rows (10×12 inset, hairlines between): the state glyph in a
   16pt column, the title at 14/500, its clock in mono 11 `textTertiary` ("4:12", "37m"), and
   under it, in mono 11.5 `textTertiary`, what it does now: the running command ("swift test
-  --filter toolPreview"), its subagents ("3 subagents · 1 needs you"), or its command and host
+  --filter toolPreview"), its subagents ("3 subagents · 1 waiting on parent"), or its command and host
   ("swift build · This Mac"): `NWCaptionBand`, `NWOverviewRow` and `FleetThreadRow.now`; the
   subagents are the ones still going, an asking one included. The glyph is the running spinner
   (`NWListRow.Leading.glyph`), the branch in `running` while its subagents work, or the state's
@@ -6895,29 +6889,27 @@ its full context.
   "Needs you" (17/600) with "5 waiting" at 12.5 `textTertiary` (the app puts "3 things are
   waiting on you" at the list's top). Items (10pt inset, 2pt apart; `NWAttentionCard(style:
   .item)`: no line, the app's radius 8): 12pt inset at radius 10, the chosen one on `bgSelected`: the origin line (a 14pt `lanternText` glyph or a glowing 8pt dot,
-  "Subagent · Restyle native UI" at 12 `textTertiary`, the age trailing), the title at 15/600
-  ("reviewer asks"), the question at 13/1.4 `textSecondary`.
+  "Thread" at 12 `textTertiary`, the age trailing), the title at 15/600
+  (the thread's name), the question at 13/1.4 `textSecondary`.
 - **Detail header:** the title (17/600) and the pill with its age ("Needs you · 2m"); **not built
   yet:** a ••• menu (40pt) trailing (the board does not show its items).
 - **Detail** (16×20 inset, 14pt apart): the question at 17/1.5, selectable, inline code in mono
   12 on `bgSunken`. The asker's longer message in mono on `bgSunken` (a 1px `lineSubtle` line,
-  radius 8, 12×14 inset, 12/1.65). "Answer this one in the thread." under a subagent's question;
+  radius 8, 12×14 inset, 12/1.65). "Answer this one in the thread." under a question that needs typing;
   "Open the thread to see what it is waiting for." under a blocked thread.
 - **Not built yet: structured context and trade-offs.** The board's code block names each file
   with its use count in `textTertiary` ("Sources/ShepherdApp/Tokens.swift · 41 uses",
   "…DesignTokens.swift · new, from the spec"). Its answers are cards (`bgRaised`, radius 12,
   12×14 inset): the title at 15/600, the asker's pick outlined in `lanternText` with a
   "reviewer's pick" tag (mono 9.5 `lanternText` in a 16pt box with a 1px `lanternText` line,
-  radius 4), and trade-offs as "· " lines at 13.5/1.45 `textSecondary`. A subagent answers here
-  like any other asker.
+  radius 4), and trade-offs as "· " lines at 13.5/1.45 `textSecondary`.
 - **Where it came from** ("WHERE IT CAME FROM"): 34pt lines with a 14pt `textTertiary` glyph, the
   source at 14.5 `textSecondary` and its meta in mono 11.5 `textTertiary`: "reviewer · Restyle
   native UI · async · opus · 2m ago"; "Parent thread is waiting · worker keeps going". The app
-  shows one row (the thread, "A thread", "Its subagent reviewer" or "A run of the automation
-  <name>", its age ("· 2m ago") and the host tag); the mode, model and the parent's state are
-  **not built yet** (a subagent's question reaches the client without them).
+  shows one row (the thread, "A thread" or "A run of the automation <name>", its age ("· 2m ago")
+  and the host tag); the mode, model and the parent's state are **not built yet**.
 - **Foot** (a hairline above, 12×20 inset, 26 under, 36pt buttons, trailing): Open thread
-  (ghost; Open subagent for a run, primary when Open is all there is), then the answers as
+  (ghost; primary when Open is all there is), then the answers as
   secondary buttons with the asker's pick last, primary ("Rename new ones", then "Replace
   everywhere").
 - **Not built yet:** mission items ("Mission · planner").
@@ -7236,7 +7228,7 @@ draws emphasis (a Live Activity, the iPad boards' buttons); Finished work's acti
 | Group | Kind | Title | Body (the board's words) | Actions, in order | Level | Grouped by |
 | --- | --- | --- | --- | --- | --- | --- |
 | Needs you | Planner question | the mission ("Refund events") | the question: "Which key joins a refund to the funnel?" | each option, the planner's pick first ("order_id", "payment_id"), then Reply… | Active | mission |
-| Needs you | Subagent question | "thread · subagent" ("Restyle native UI · reviewer") | the question: "Rename the new tokens, or replace the old ones everywhere?" | each option the subagent offered ("Replace everywhere", "Rename new ones"), then Reply… | Active | thread |
+| Needs you | Subagent question (**not sent**: a subagent asks its parent, never you) | "thread · subagent" ("Restyle native UI · reviewer") | the question: "Rename the new tokens, or replace the old ones everywhere?" | each option the subagent offered ("Replace everywhere", "Rename new ones"), then Reply… | Active | thread |
 | Needs you | Plan to approve | the thread ("Dock review pane") | "Plan ready: dock the review pane on the right." | Approve plan, Open | Active | thread |
 | Needs you | Stuck lane | the mission ("Checkout funnel events") | "orders is stuck after 3 tries." (the banner adds the planner's pick: "The planner suggests a retry with a hint.") | Retry with hint, Replan the lane, Open | Time Sensitive | mission |
 | Needs you | Out of budget | the mission | "Paused at 6M tokens. About 0.9M to finish." | Add 1M and resume, Open | Time Sensitive | mission |
@@ -7254,10 +7246,10 @@ draws emphasis (a Live Activity, the iPad boards' buttons); Finished work's acti
 - **The subtitle is the kind** as this table names it ("Planner question", "Turn finished"), plus "·
   *where*" when the moment has a place ("Stuck lane · orders-svc"). Host offline's is "Host"
   (NotifiPadCenter).
-- **Which setting covers a kind** (NotifSettings › Send me): Questions and approvals (planner,
-  subagent and automation questions, plans, reviews), Blocked work (stuck lanes, empty budgets),
+- **Which setting covers a kind** (NotifSettings › Send me): Questions and approvals (planner and
+  automation questions, plans, reviews; a subagent's question is not sent), Blocked work (stuck lanes, empty budgets),
   Failures (failed turns, failed automations, hosts going offline), Finished work.
-- **Built:** on the Mac, Subagent question, Automation question, Turn failed, Turn finished and Host
+- **Built:** on the Mac, Automation question, Turn failed, Turn finished and Host
   offline, plus a thread's own question (any pi dialog: "Question"), each as this table words it
   (see On the Mac today). An automation's run is an ordinary agent wearing the automation's name,
   so its question asks as Automation question, and its failure and finish post as that agent's
@@ -7301,8 +7293,7 @@ A notification, top to bottom (NotifCatalog › Anatomy; NotifPhoneBanner):
 
 1. **Interruption level:** "TIME SENSITIVE" over the title, on stuck lanes and empty budgets only.
    The system draws it.
-2. **Title:** the mission, thread or automation (the host, for Host offline), never "Shepherd". A
-   subagent's question is "*thread* · *subagent*".
+2. **Title:** the mission, thread or automation (the host, for Host offline), never "Shepherd".
 3. **Subtitle:** the kind and where: "Stuck lane · orders-svc".
 4. **Body:** one sentence, with the planner's pick when there is one: "orders is stuck after 3
    tries. The planner suggests a retry with a hint."
@@ -7338,8 +7329,9 @@ The board's categories (NotifCatalog's `NotificationCategories.swift`):
   NotifPhoneRich, Open review). Other options carry none. MobileAnswer draws `map` on its Open
   mission instead; the boards disagree, so settle it before building.
 - **Answers go where the question came from.** A typed answer or a chosen option goes to the
-  subagent that asked, not its parent thread (NotifPhoneReply: "Goes to the reviewer, not the parent
-  thread."), and to the planner for a planner question. Tapping a choice needs no typing.
+  planner for a planner question, and to pi's dialog for a thread's. The boards also draw a reply
+  that goes to the subagent that asked (NotifPhoneReply: "Goes to the reviewer, not the parent
+  thread."), which Shepherd does not build: a subagent never asks you. Tapping a choice needs no typing.
 - **Answering never opens Shepherd** (NWMissions: the choices are actions "so answering never opens
   the app"). Open, Review and Review patch open Shepherd at the thing.
 
@@ -7386,7 +7378,7 @@ icon (radius 6) beside the title (14pt semibold) and its meta (a mono 10pt "TIME
   what choosing it means in `textSecondary` ("payments-svc already has it on every refund"), the
   pick marked "· planner's pick" in `lanternText`. Actions: the pick (`checkmark`), the other
   option, Reply…, Open mission.
-- **Subagent question, replying** (NotifPhoneReply): the question notification on top; under it,
+- **Subagent question, replying** (NotifPhoneReply; **not built**: a subagent never asks you): the question notification on top; under it,
   over the keyboard, the choices as 34pt buttons (radius 8, `bgRaised`, 13.5pt) on a `bgSunken`
   strip, then the reply field: a capsule at least 38pt tall (radius 19, `bgRaised`, a `lineStrong`
   border, 16pt text, a lantern caret) with **Send** beside it (16pt semibold, `running`). Tapping a
@@ -7417,7 +7409,8 @@ icon (radius 6) beside the title (14pt semibold) and its meta (a mono 10pt "TIME
   NotifiPadCenter), no button is primary. **Platform limit:** iPadOS, like iOS, shows a
   notification's actions only once it is expanded, so building this as drawn needs a decision first.
 - **Banner** (NotifiPadBanner): 480pt wide, centred 30pt under the top edge, over whatever is on
-  screen: the subagent's question with Replace everywhere (primary), Rename new ones, Reply…. The
+  screen: the board's subagent question with Replace everywhere (primary), Rename new ones, Reply…
+  (not built: a subagent never asks you). The
   board's backdrop (the Missions list and a stuck lane's detail) belongs to Missions.
 - **Notification Center** (NotifiPadCenter): a 520pt column, 36pt from the right edge, headed
   "Notification Center" and the app's group ("Shepherd · 9"). Rich previews show at full width:
@@ -7442,11 +7435,10 @@ every connected host's (`ShepherdViewModel+Notifications.swift` decides when;
 | A turn failed | the thread | Turn failed | the error's first line, or "The model request failed." | Retry, Open | Active |
 | The thread asks (any pi dialog: confirm, select, input, editor) | the thread | Question, or Automation question for an automation's run | the question | the dock's choices: each option (Yes and No for a confirm), and Reply… for an input or editor | Active |
 | An asking tool waits and no question follows within 2s | the thread | Question | "Waiting on your answer." | none: a click opens it | Active |
-| A subagent asks | "*thread* · *subagent*" | Subagent question | the question | each option it offered, then Reply… ("Reply to *subagent*…") | Active |
 | A connected host goes away (Shepherd retries it) | "*host* is offline" | Host offline | "Remote agents resume when it’s back." | Retry | Active |
 | The agent's `notify` tool | the tool's title | none | the agent's name, then the tool's body | none | Active |
 
-- **Every host's threads:** a remote thread's questions and its subagents' post as this Mac's do,
+- **Every host's threads:** a remote thread's questions post as this Mac's do,
   and a host that drops while connected posts Host offline once (NotifMac). A remote turn's end
   posts nothing yet (see below).
 - **When:** a turn's banner posts only when a turn ends (working to done); idle churn from a launch
@@ -7456,8 +7448,7 @@ every connected host's (`ShepherdViewModel+Notifications.swift` decides when;
 - **Actions** (the catalog's categories, one per set of actions; macOS shows the first as the
   banner's button and the rest under **Options**): Retry retries the failed turn in place, once
   the agent is idle (Thread › Retry; a host from before that gets the prompt again); Review selects the thread and opens its Changes; Retry on a
-  host reconnects at once; an option answers pi's dialog or steers the subagent that asked with the
-  option, and Reply… opens a field whose **Send** does the same with the words typed. Answering and
+  host reconnects at once; an option answers pi's dialog, and Reply… opens a field whose **Send** does the same with the words typed. Answering and
   retrying never bring Shepherd forward; Open and Review do. A question answered meanwhile takes
   nothing. Glyphs follow the boards: `arrow.clockwise` on Retry, `text.bubble` on Reply…,
   `chevron.right` on Open.
@@ -7465,9 +7456,8 @@ every connected host's (`ShepherdViewModel+Notifications.swift` decides when;
   names its host too; a host's is its own), so macOS stacks a thread's banners together.
 - **Quotes:** an error, question or result is cut to its first line, at most 200 characters, ending
   in "…" when cut.
-- **Replacing and removing:** a thread's turn banners replace each other, and so do its questions;
-  each subagent's question has its own, posted once per question however often its extension
-  republishes, and again only when the question changes. A question's banner comes down once it is
+- **Replacing and removing:** a thread's turn banners replace each other, and so do its questions. A
+  subagent's question posts none: it goes to its parent. A question's banner comes down once it is
   answered (anywhere: here, in the thread, or on another device), a host's once it is back, and a
   deleted thread's with it. Every `notify` is its own.
 - **Clicking** brings Shepherd forward and selects the thread (see Anatomy). Banners from the
@@ -7515,7 +7505,7 @@ height (48pt, or 56pt with a second line: the title at 15pt, the line under it a
 `textTertiary`), 14pt side padding, and `.nwSwitch` switches (30 × 18, lantern when on).
 
 - **Send me** (a switch each; all four are on in the board):
-  - Questions and approvals: "Planner, subagent and automation questions, plans, reviews"
+  - Questions and approvals: "Planner and automation questions, plans, reviews"
   - Blocked work: "Stuck lanes and empty budgets. Can break through Focus."
   - Failures: "Failed turns, failed automations, hosts going offline"
   - Finished work: "Quietly, and in your Scheduled Summary"
@@ -7598,8 +7588,8 @@ secondary, buttons are 14% white, and the state colors are Night Watch's dark va
 - **Compact** (a 36pt pill beside the camera, 12pt inside):
   - Thread: a spinner and the current command (mono 11.5pt, 55% white: "swift test"), elapsed on the
     right (mono 12.5pt semibold, `running`: "4:12").
-  - Subagents: the crook and how many are running ("3", white), then a lantern dot (8pt) and how
-    many need you ("1", `lantern`).
+  - Subagents: the crook and how many are running ("3", white), the board adds a lantern dot (8pt)
+    and how many need you ("1", `lantern`), which Shepherd would not draw: a subagent never needs you.
   - Automation: a bolt and "CI", and on the right an 18pt ring that fills as checks pass (`running`
     over 18% white).
   - Design agent: a pen-nib glyph and the design ("Onboarding", 55% white), boards drawn so far on
@@ -7614,11 +7604,11 @@ secondary, buttons are 14% white, and the state colors are Night Watch's dark va
     (12.5pt, 55%, the counts in `done` and `failed`); then **Steer** and **Stop** (38pt capsules,
     radius 19, 14% white, 14pt semibold; Stop's text `failed`). Steer opens a text field without
     launching the app; Stop asks nothing.
-  - Subagents: the crook, "reviewer needs you" (15pt semibold) and the thread ("Restyle native UI",
+  - Subagents (as the board draws it; not for Shepherd, whose subagents never ask you): the crook, "reviewer needs you" (15pt semibold) and the thread ("Restyle native UI",
     12pt, 55%); the question (13.5pt, code in mono 12pt: "Two token names collide with
     `Tokens.textSecondary`. Rename the new ones, or replace the old ones everywhere?"); its options
     as buttons, the first primary (`lantern`, `textOnLantern`: "Replace all"), then "Rename new
-    ones". A subagent's question is answered in place.
+    ones". The board answers a subagent's question in place.
   - Design agent: the pen nib, "Onboarding flow" and "2 of 4"; the boards as 62pt tiles (radius 8,
     8pt apart), filling in as they're drawn: a drawn board's thumbnail, the one being drawn
     shimmering on 12% white with a small spinner, the rest empty at 6% white; then **Open boards**.
@@ -9517,7 +9507,7 @@ What the board draws:
     a draft (Stop outlined beside Send), a Steering row under a steered message, the editor with
     a Deleted row and the Send menu, every row and stack state, and "From the queue" and
     "Steered" in the thread
-  - the subagent tray (every state, one card with Up next, the question dock, the record
+  - the subagent tray (every state, a hovered waiting row, one card with Up next, the record
     lines, and its iPad and iPhone sizes), a thread with it live, finished, and with a queue,
     and the inspector
   - the review pane, and its Commit… sheet in every state
