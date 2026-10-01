@@ -141,8 +141,8 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
 }
 
 /// Settings ▸ Keyboard's "While the agent is working" rows, in the order of the Queue & steer boards'
-/// Keyboard card: the send keys, then the queue's own. ↩'s title follows the Return setting, so
-/// the row says what the key does now; the alternate send always steers now.
+/// Keyboard card: the send keys, then the queue's own. ↩ queues the message for the turn's end;
+/// the alternate send steers now.
 enum WhileWorkingKey: Hashable, Identifiable {
     /// ↩ (fixed).
     case send
@@ -157,9 +157,9 @@ enum WhileWorkingKey: Hashable, Identifiable {
 
     var id: Self { self }
 
-    func title(_ setting: ReturnWhileWorking) -> String {
+    var title: String {
         switch self {
-        case .send: setting == .steer ? "Send, steering at the next step" : "Send, waiting for the turn to end"
+        case .send: "Queue it, the agent takes it when the turn ends"
         case .alternateSend: "Send and steer now"
         case .fixed(let chord): chord.title
         case .steerFocused: "Steer the focused message now"
