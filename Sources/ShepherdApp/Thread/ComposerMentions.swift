@@ -253,9 +253,16 @@ struct MentionPickerState: Equatable {
 
     var isOpen: Bool { mention != nil }
 
+    /// Whether `draft` opens the picker, closed now: it ends in a mention Esc hasn't closed.
+    func opens(for draft: String) -> Bool {
+        !isOpen && draft != dismissed && ComposerMention.token(in: draft) != nil
+    }
+
     /// Follows the draft: open while it ends in a mention (and Esc hasn't closed it), in the scope
-    /// the mention still spells, listing `catalog`'s rows for it.
-    mutating func update(draft: String, catalog: DesignMentionCatalog?, now: Date = Date(),
+    /// the mention still spells, listing `catalog`'s rows for it. With no catalog read yet it opens
+    /// all the same, saying what `stage` is (reading, or why it couldn't) and listing nothing to
+    /// choose; the words typed meanwhile filter the rows once they arrive.
+    mutating func update(draft: String, catalog: DesignMentionCatalog?, stage: DesignMentionLoad.Stage = .loading, now: Date = Date(),
                          thumbnail: (DesignMentionItem) -> NWReferenceImage? = { _ in nil }) {
         guard draft != dismissed, let mention = ComposerMention.token(in: draft) else {
             close()
@@ -278,6 +285,8 @@ struct MentionPickerState: Equatable {
         self.mention = mention
         guard let catalog else {
             content = MentionPickerContent()
+            if case .failed(let reason) = stage { content.empty = .failed(reason: reason) } else { content.empty = .loading }
+            highlighted = nil
             return
         }
         content = MentionPickerContent.make(catalog: catalog, scope: scope, filter: filter ?? "", now: now, thumbnail: thumbnail)

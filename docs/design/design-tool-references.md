@@ -95,7 +95,18 @@ and a pinned version no longer kept is refused, with Send vN offered for the cur
   the mention leaves the words and the chip joins the composer. Typing searches designs, boards
   and elements by their own names, each with its path, the words underlined ("6 matches").
   "Nothing matches “pricng”" and "No designs yet. Start a design and its boards show up here." are
-  its empty stages. 48pt rows, runningTint highlight, at most eight rows (a lazy list). An
+  its empty stages, said only once this Mac's designs have been read. Until then, and when the read
+  fails, the picker still opens at once and says so (no board draws these, the user's decision,
+  2026-10-01; `DesignMentionLoad`): **Loading designs…** is one quiet line under the "Designs"
+  label, an `nwSpinner` (still under Reduce Motion) and the words in 12.5 `textSecondary`, that
+  lists nothing to choose, so ↩ over it changes nothing and sends nothing; words typed meanwhile
+  filter the rows when they arrive, for the draft as it stands then. A read that takes longer than
+  15 seconds is **Couldn't load designs.**, with a failed-colored `exclamationmark.triangle`, the
+  reason as its tooltip and VoiceOver hint, and a ghost **Retry** that reads again (the line says
+  loading again while it does). A picker that has read the designs once keeps their rows through a
+  later read and through its failure; an answer to a read a newer opening replaced is dropped. On
+  New thread, a chosen project on another host gets one note instead ("Design references go to
+  projects on this Mac."). 48pt rows, runningTint highlight, at most eight rows (a lazy list). An
   element's row draws the element itself, cut from its board (made only once the row is on screen),
   and says what it is and holds: "funnel bars · 5 steps", "list · 5 rows", "KPI tile · 1 of 4",
   "chips · All platforms, Web, iOS, Android". Whole board's "14 elements" and the Elements count
