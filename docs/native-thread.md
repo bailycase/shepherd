@@ -351,11 +351,12 @@ one prompt at a time.
 - **Send** (`send`): while pi is idle (`running` false and no prompt of ours on its way) the
   message goes to pi at once as a prompt, with `streamingBehavior: followUp` so a pi that has
   just started a run of its own queues it rather than refusing it (idle, pi treats it as a
-  plain prompt). While pi works there are three deliveries (`NativeThreadDelivery`, and
-  `NativeSendChoice` names them for the clients): a `followUp` is appended to the queue and
-  answered at once; a `steer` is handed to pi (below); an `interrupt` stops pi first (Steer now,
-  below). Which one ↩ uses is the client's setting (Settings ▸ Agents ▸ Return while the agent is
-  working; steering unless the user chose waiting), and a client never steers a message that
+  plain prompt). While pi works there are three deliveries (`NativeThreadDelivery`), and a
+  client offers two of them (`NativeSendChoice`): a `followUp` is appended to the queue and
+  answered at once (what ↩ sends: there is no setting, and a stored Return choice from an earlier
+  version is ignored); an `interrupt` stops pi first (Steer now, below; ⌘↩). A `steer` is handed to
+  pi (below) but no client offers it as a choice: an older client still sends one, and a client
+  sends it for Steer now to a host that can't stop pi. A client never steers a message that
   begins with "/" (`NativeQueueRules.delivery(_:forText:)`): pi runs a command only at the start of
   a message it starts, so it waits for the turn to end. The queued item's id is the send's
   operation id. A send also resumes a paused queue. At most 32 items and 64 KiB of text wait
@@ -380,8 +381,9 @@ one prompt at a time.
     one queued message with its own text, send time, and image count, so the thread can show
     them apart even though pi has one message. A refusal puts the items back at the head,
     pauses the queue, and says why (`notice`).
-- **Steer:** the item is marked steering (steering items sit above the queue, in the order
-  they were steered) and sent as `prompt` with `streamingBehavior: steer`. pi's `queue_update`
+- **Steer** (an older client's send, or Steer now where the host can't stop pi; no current
+  surface offers it as a choice): the item is marked steering (steering items sit above the queue,
+  in the order they were steered) and sent as `prompt` with `streamingBehavior: steer`. pi's `queue_update`
   names the text it queued for it (pi expands templates first), and the user message pi later
   starts with that text is the item landing: it leaves the queue and joins the run with
   `origin: .steered`, after the tool calls pi was running. pi runs every call of a batch and
@@ -748,8 +750,8 @@ output grows.
 - **Running state:** `settledRunning` keeps `running` true for 400 ms after it drops, so tool
   boundaries don't flicker the live "Thinking…" or the Stop button.
 - **Drafts and gating:** `draft` belongs to the store; `send(images:delivery:)` sends with a
-  delivery chosen at send time (the Mac composer's ↩, ⌘↩, or its Send menu). `delivery` is kept
-  for the iOS client, which still picks one ahead of time.
+  delivery chosen at send time (the Mac composer's ↩ queues and ⌘↩ steers now, or its Send menu's
+  two rows). `delivery` is the default for a send that names none (`.followUp`).
   `supports(_:)` gates every control on `supportedActions` and on the store being ready and not
   busy.
 - **Errors:** transport failures and a pi that is gone surface as `loadError` (the composer's
@@ -809,7 +811,7 @@ components ([DESIGN.md](../DESIGN.md) specifies their look):
   - chips: model with its picker on ⇧⌘M, and thinking
   - Up next (`QueueStack`): the host's queue above the card, with the stack's own view state
     (`QueueStackState`: the editor, Undo rows, expansion, a drag) around `NativeQueueRules`
-  - the Send menu, and the keys that send while pi works (↩ per Settings, ⌘↩ the other)
+  - the Send menu (two rows), and the keys that send while pi works (↩ queues, ⌘↩ steers now)
   - the slash menu, fed from pi's command registry
   - the question dock (`QuestionDock`, pi's question or a subagent's in the card's place, from
     `NativeQuestionPrompt`; Hide the question keeps only that question folded:
