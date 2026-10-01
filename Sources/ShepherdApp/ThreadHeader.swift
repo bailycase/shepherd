@@ -49,6 +49,7 @@ struct ThreadHeader: View, Equatable {
                 QuestionBranchMenu(store: store, branch: branch, directory: directory, showChanges: showChanges)
             }
         } trailing: {
+            ThreadGoalHeader(store: store)
             if let togglePane {
                 NWSidePaneButton(isOn: paneOpen, news: paneNews, shortcut: paneShortcut, action: togglePane)
             }

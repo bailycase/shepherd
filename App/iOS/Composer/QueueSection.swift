@@ -16,6 +16,7 @@ struct QueueSection: View {
     let enabled: Bool
     /// Its own card; false under the subagents in the dock's card.
     var framed = true
+    @State private var collapsed = false
     @ScaledMetric(relativeTo: .body) private var rowsMaxHeight = MobileLayout.queueRowsMaxHeight
     @Environment(\.composerMaxHeight) private var composerMaxHeight
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -30,7 +31,8 @@ struct QueueSection: View {
             NWTouchQueueCard(count: store.queue.count,
                              paused: NativeQueueStack.pausedReason(paused: store.queuePaused, notice: store.queueNotice),
                              resume: !running && enabled && !queued.isEmpty ? { Task { await store.sendQueuedNow(queued) } } : nil,
-                             framed: framed) {
+                             framed: framed, afterGoalCheck: store.goal != nil, collapsed: collapsed,
+                             onToggle: store.goal != nil ? { withNWAnimation(.disclosure) { collapsed.toggle() } } : nil) {
                 VStack(spacing: 0) {
                     ForEach(rows) { row in
                         QueueRowView(row: row, first: row.id == rows.first?.id, steerLabel: NativeQueueStack.steerLabel(running: running),
@@ -42,6 +44,7 @@ struct QueueSection: View {
                 options(running: running)
             }
             .nwTransition(.list)
+            .onChange(of: store.goal?.id, initial: true) { _, id in collapsed = id != nil }
             .onDisappear { closeEditor(save: false) }
             .sheet(item: Binding(get: { presentation.editing }, set: { if $0 == nil { closeEditor(save: false) } })) { message in
                 QueueEditorSheet(number: (state.queuedIndex(message.id) ?? 0) + 1, text: Binding(get: { presentation.editText }, set: { presentation.editText = $0 }),

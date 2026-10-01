@@ -120,6 +120,15 @@ extension RPCThreadState {
               completion: @escaping (NativeThreadResult) -> Void) {
         // From here the copies are pi's (a prompt) or wait in the queue, which withholds them.
         sendingDesignPayloads.subtract(designPayloads)
+        if images.isEmpty, context == nil, text == "/goal" || text.hasPrefix("/goal "),
+           commands?.contains(where: { $0.name == "goal" }) == true {
+            let commandDone = beginCommandWindow(for: text)
+            session.request(.prompt(message: text, streamingBehavior: .steer), timeout: Self.promptTimeout) { result in
+                commandDone?()
+                completion(Self.dispatchFailure(result) ?? .accepted(operationID: id))
+            }
+            return
+        }
         guard piBusy else {
             // A new message resumes a paused queue: it drains after this turn.
             paused = false
@@ -135,6 +144,17 @@ extension RPCThreadState {
         item.direct = delivery == .interrupt
         guard admitsQueue(items + [item]) else { completion(queueFull); return }
         items.append(item)
+        if goal?.isActive == true {
+            // Yield only after the evaluator has checked this turn. User input then goes before
+            // the next automatic goal turn, through the host's existing queue.
+            session.request(.prompt(message: "/shepherd-goal {\"action\":\"yield\"}", streamingBehavior: .steer),
+                            timeout: Self.promptTimeout) { [weak self] result in
+                if let failure = Self.dispatchFailure(result), case .failure(_, let message) = failure {
+                    self?.queueNotice = message
+                    self?.commit()
+                }
+            }
+        }
         if delivery == .interrupt {
             // It is first in the queue for as long as pi takes to stop; the plan says how.
             interrupt([id], operationID: id, completion: completion)
@@ -609,6 +629,11 @@ extension RPCThreadState {
     }
 
     func stop(_ done: @escaping (Result<RPCResponse, RPCError>) -> Void) {
+        // pi's abort signal does not reach a nested pre-settlement model call. Cancel the
+        // controller first; stdin preserves this command before clear_queue and abort.
+        if goal?.isActive == true {
+            session.send(.prompt(message: "/shepherd-goal {\"action\":\"pause\"}", streamingBehavior: .steer))
+        }
         stopRequested = true
         // Stop wins over an interrupt under way: its messages stay queued, and the queue waits.
         interrupting = nil

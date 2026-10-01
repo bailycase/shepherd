@@ -297,9 +297,11 @@ enum SidebarDerivation {
             word = AgentRow.statusWord(agent.status, turnFailed: failed)
         }
         return SidebarListRow(
-            id: .local(agent.id), title: agent.name, leading: leading, accessory: accessory,
+            id: .local(agent.id), title: agent.name, leading: leading,
+            accessory: agent.goalState != nil ? .goal : accessory,
             help: agent.worktreeBranch.map { "\(agent.name) · worktree \($0)" } ?? agent.name,
-            accessibilityLabel: label(agent, word: word, automation: automation != nil, host: nil),
+            accessibilityLabel: label(agent, word: word, automation: automation != nil, host: nil)
+                + (agent.goalState != nil ? ", goal" : ""),
             worktree: agent.worktreeBranch != nil, automation: automation?.id, automationLive: live)
     }
 
@@ -329,9 +331,10 @@ enum SidebarDerivation {
         let help = agent.worktreeBranch.map { "\(agent.name) · worktree \($0)" } ?? agent.name
         return SidebarListRow(
             id: .remote(RemoteAgentRef(hostID: host.id, agentID: agent.id)), title: agent.name, leading: leading,
-            accessory: accessory, offline: host.offline, help: host.offline ? "\(help) · \(host.name) is offline" : help,
+            accessory: agent.goalState != nil ? .goal : accessory, offline: host.offline,
+            help: host.offline ? "\(help) · \(host.name) is offline" : help,
             accessibilityLabel: label(agent, word: word, automation: automation, host: host.name)
-                + (host.offline ? ", host offline" : ""),
+                + (host.offline ? ", host offline" : "") + (agent.goalState != nil ? ", goal" : ""),
             worktree: agent.worktreeBranch != nil, automation: nil, automationLive: false)
     }
 

@@ -159,6 +159,7 @@ public struct NWQueueNumber: View {
 /// Unframed, it draws no card of its own: it is Up next's section of the dock (`NWDockStack`),
 /// under the subagents.
 public struct NWQueueStack<Rows: View, Options: View>: View {
+    let afterGoalCheck: Bool
     let count: Int
     let framed: Bool
     let paused: String?
@@ -174,10 +175,11 @@ public struct NWQueueStack<Rows: View, Options: View>: View {
     /// scrolls them, keeping the last row ("Show fewer") below.
     /// `drop` draws a drag's lantern drop line at the top of that row's slot, under the lifted
     /// row.
-    public init(count: Int, paused: String? = nil, collapsed: Bool, scrolls: Bool = false, drop: Int? = nil, framed: Bool = true,
+    public init(count: Int, paused: String? = nil, collapsed: Bool, scrolls: Bool = false, drop: Int? = nil, framed: Bool = true, afterGoalCheck: Bool = false,
                 onToggle: @escaping () -> Void, @ViewBuilder rows: @escaping () -> Rows, @ViewBuilder options: @escaping () -> Options) {
         self.count = count
         self.framed = framed
+        self.afterGoalCheck = afterGoalCheck
         self.paused = paused
         self.collapsed = collapsed
         self.scrolls = scrolls
@@ -191,7 +193,7 @@ public struct NWQueueStack<Rows: View, Options: View>: View {
         let nw = Color.nw
         let shape = RoundedRectangle(cornerRadius: NW.Radius.m)
         VStack(spacing: 0) {
-            NWQueueHeader(count: count, paused: paused, collapsed: collapsed, onToggle: onToggle, options: options)
+            NWQueueHeader(count: count, paused: paused, afterGoalCheck: afterGoalCheck, collapsed: collapsed, onToggle: onToggle, options: options)
             if !collapsed {
                 Group(subviews: rows()) { subviews in
                     // Scrolling, the last row ("Show fewer") stays under the rows that scroll.
@@ -256,6 +258,7 @@ private struct NWOutsideBottomCorners: Shape {
 private struct NWQueueHeader<Options: View>: View {
     let count: Int
     let paused: String?
+    let afterGoalCheck: Bool
     let collapsed: Bool
     let onToggle: () -> Void
     @ViewBuilder let options: () -> Options
@@ -279,6 +282,9 @@ private struct NWQueueHeader<Options: View>: View {
                     .nwTransition(.content)
             }
             Spacer(minLength: NW.Space.m)
+            if afterGoalCheck {
+                Text("after the goal check").font(.nwMono(11)).foregroundStyle(nw.textTertiary)
+            }
             NWOptionsMenu("Queue options", size: NWQueueMetrics.headerButton, content: options)
             Button(action: onToggle) {
                 Image(systemName: "chevron.down")

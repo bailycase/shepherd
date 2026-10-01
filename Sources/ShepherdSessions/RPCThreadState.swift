@@ -247,6 +247,11 @@ final class RPCThreadState {
     }
     private var dialogBytes: [Int]?
     private var widgets: [(id: String, value: NativeThreadWidget)] = [] { didSet { widgetsHash = widgets.map(\.value).hashValue } }
+    private(set) var goal: NativeGoal?
+    private var goalsAvailable = false
+    private var goalCommand: UUID?
+    private var goalCommandFailure: String?
+    var onGoalChanged: ((NativeGoal?) -> Void)?
     private var operations: [(id: String, operation: Operation)] = []
     var projectionClipped = false
     /// The last assistant message of the current run ended in a provider error.
@@ -519,6 +524,7 @@ final class RPCThreadState {
         case .extensionError(let path, let event, let error):
             ShepherdLog.warning("rpc session \(session.id) extension error in \(path ?? "?") (\(event ?? "?")): \(error)")
             recordCommandFailure(path: path, event: event, error: error)
+            if goalCommand != nil, event == "command", path == "command:shepherd-goal" { goalCommandFailure = error }
         case .compactionStart(let reason):
             compactionStarted(reason: NativeCompactionReason(pi: reason))
         case .compactionEnd(let reason, let result, let aborted, let willRetry, let error):
@@ -594,7 +600,8 @@ final class RPCThreadState {
              .queue(let expectedSessionID, let generation, let operationID, _),
              .compact(let expectedSessionID, let generation, let operationID, _),
              .retry(let expectedSessionID, let generation, let operationID, _),
-             .setServiceTier(let expectedSessionID, let generation, let operationID, _):
+             .setServiceTier(let expectedSessionID, let generation, let operationID, _),
+             .goal(let expectedSessionID, let generation, let operationID, _, _, _):
             guard expectedSessionID == piSessionID, generation == self.generation else {
                 completion(.failure(code: "stale_session", message: "Refresh the thread before acting."))
                 return
@@ -723,6 +730,36 @@ final class RPCThreadState {
             session.request(.setThinkingLevel(level: level)) { [weak self] result in
                 settle(result)
                 self?.refreshState()
+            }
+        case .goal(_, _, _, let action, let expectedID, let expectedRevision):
+            guard goalsAvailable else { completion(.failure(code: "unsupported", message: "This agent has no goal controller.")); return }
+            guard action.isValid else { completion(.failure(code: "invalid", message: "A goal needs text up to 32768 characters and positive limits.")); return }
+            guard expectedID == nil || expectedID == goal?.id,
+                  expectedRevision == nil || expectedRevision == goal?.revision else {
+                completion(.failure(code: "stale_goal", message: "The goal changed. Refresh it before acting.")); return
+            }
+            var command = action.command
+            if expectedID != nil || expectedRevision != nil,
+               var object = try? JSONSerialization.jsonObject(with: Data(command.dropFirst("/shepherd-goal ".count).utf8)) as? [String: Any] {
+                if let expectedID { object["expectedGoalID"] = expectedID }
+                if let expectedRevision { object["expectedGoalRevision"] = expectedRevision }
+                if let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]) {
+                    command = "/shepherd-goal " + String(decoding: data, as: UTF8.self)
+                }
+            }
+            guard goalCommand == nil else { completion(.failure(code: "busy", message: "Another goal command is pending.")); return }
+            goalCommand = operationID
+            goalCommandFailure = nil
+            let generation = generation
+            session.request(.prompt(message: command, streamingBehavior: .steer), timeout: Self.promptTimeout) { [weak self] result in
+                guard let self, self.generation == generation else {
+                    completion(.failure(code: "stale_session", message: "The session changed while the goal command was pending.")); return
+                }
+                let error = self.goalCommandFailure
+                self.goalCommand = nil
+                self.goalCommandFailure = nil
+                if let error { completion(.failure(code: "goal_rejected", message: error)) }
+                else { settle(result) }
             }
         case .setServiceTier(_, _, _, let raw):
             guard let tier = ServiceTier(rawValue: raw) else {
@@ -909,10 +946,17 @@ final class RPCThreadState {
             guard let self, case .success(let response) = result, response.success, let data = response.data else { return }
             if let id = data["sessionId"]?.stringValue, id != self.piSessionID {
                 let switched = self.piSessionID != nil
+                let goalController = self.goalsAvailable
                 if switched { self.resetForNewSession() }
                 self.piSessionID = id
                 self.loadOrigins(sessionID: id)
-                if switched { self.refreshMessages(timeout: timeout) }
+                if switched {
+                    self.refreshMessages(timeout: timeout)
+                    // session_start's restored widget can precede this get_state response.
+                    if goalController {
+                        self.session.request(.prompt(message: "/shepherd-goal {\"action\":\"status\"}", streamingBehavior: .steer)) { _ in }
+                    }
+                }
             }
             if let m = data["model"], let provider = m["provider"]?.stringValue, let id = m["id"]?.stringValue {
                 self.model = "\(provider)/\(id)"
@@ -1093,7 +1137,7 @@ final class RPCThreadState {
         var result: [NativeCommand] = []
         for item in items {
             guard let name = item["name"]?.stringValue, !name.isEmpty, name.utf8.count <= NativeCommand.maxNameBytes,
-                  name != retryCommand else { continue }
+                  name != retryCommand, name != "shepherd-goal" else { continue }
             if terminalOnlyBuiltIns.contains(name), item["sourceInfo"]?["path"]?.stringValue?.hasPrefix("<inline:") == true { continue }
             var description = item["description"]?.stringValue
             if let text = description, text.utf8.count > NativeCommand.maxDescriptionBytes {
@@ -1190,6 +1234,11 @@ final class RPCThreadState {
         stoppedCalls.removeAll()
         stoppedReplies.removeAll()
         widgets.removeAll()
+        goal = nil
+        goalsAvailable = false
+        goalCommand = nil
+        goalCommandFailure = nil
+        onGoalChanged?(nil)
         history.removeAll()
         historyVersion += 1
         currentAssistant = nil
@@ -1482,6 +1531,21 @@ final class RPCThreadState {
         case "setWidget":
             guard let key = request.widgetKey else { return }
             let text = request.widgetLines.map { $0.map(Self.stripANSI).joined(separator: "\n") }
+            if key == "shepherd.goal" {
+                guard let text, text.hasPrefix("SHEPHERD_GOAL:") else { return }
+                let next = NativeGoal.readWidget(text)
+                guard next != nil || text == "SHEPHERD_GOAL:null" else { return }
+                goalsAvailable = true
+                if next != goal {
+                    let prior = goal
+                    goal = next
+                    // Fleet/sidebar state does not carry a live clock or token counter.
+                    if prior?.id != next?.id || prior?.state != next?.state || prior?.reason != next?.reason {
+                        onGoalChanged?(next)
+                    }
+                }
+                return
+            }
             // Some extensions publish machine payloads for their own TUI component
             // (pi-subagents: "PI_SUBAGENT_ASYNC_JSON:{…}"). Those are not for people.
             if let text, Self.isMachineWidget(text) { setWidget(nil, key: key); return }
@@ -1558,6 +1622,8 @@ final class RPCThreadState {
         for item in live { hasher.combine(item.hash) }
         hasher.combine(dialogsHash)
         hasher.combine(widgetsHash)
+        hasher.combine(goal)
+        hasher.combine(goalsAvailable)
         hasher.combine(running)
         hasher.combine(model)
         hasher.combine(thinking)
@@ -1630,12 +1696,12 @@ final class RPCThreadState {
         let dialogs = Array(self.dialogs.prefix(Self.dialogLimit))
         var base = NativeThreadSnapshot(
             piSessionID: piSessionID ?? "", generation: generation, revision: revision, running: running,
-            model: model, thinking: thinking, thinkingLevels: thinkingLevels, supportedActions: Self.supportedActions, dialogsSupported: true,
+            model: model, thinking: thinking, thinkingLevels: thinkingLevels, supportedActions: Self.supportedActions + (goalsAvailable ? ["goal"] : []), dialogsSupported: true,
             dialogs: [], widgets: widgets.map(\.value), messages: [], provisional: [],
             clipped: projectionClipped || dialogs.contains { $0.unavailable == "payload-limit" },
             runtime: "rpc", stats: stats, commands: commands, subagents: subagents, context: context,
             turnChanges: turnChanges, retry: retry,
-            serviceTier: serviceTier.rawValue, serviceTiers: serviceTiers.map(\.rawValue)
+            serviceTier: serviceTier.rawValue, serviceTiers: serviceTiers.map(\.rawValue), goal: goal
         )
         // The rest encodes without the queue, which adds `,"queue":` and its cached size.
         let queue = queueValue
@@ -1918,7 +1984,7 @@ final class RPCThreadState {
             remaining = 0
             return String(decoding: raw[0..<end], as: UTF8.self)
         }
-        var result = NativeThreadMessage(entryID: entryID, role: message.role.isEmpty ? "custom" : message.role, blocks: [])
+        var result = NativeThreadMessage(entryID: entryID, role: message.role.isEmpty ? "custom" : message.role, blocks: [], customType: message.customType)
         if let toolName = message.toolName { result.toolName = clip(toolName) }
         if let toolCallID = message.toolCallId { result.toolCallID = clip(toolCallID) }
         if let args { result.argumentsText = clip(json(args)) }

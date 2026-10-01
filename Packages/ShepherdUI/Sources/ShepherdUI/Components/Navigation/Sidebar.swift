@@ -313,6 +313,8 @@ public struct NWSidebarRow: View, Equatable {
 
     public enum Accessory: Equatable, Sendable {
         case none
+        /// A conversation with a goal. The card carries the detailed state and accounting.
+        case goal
         /// Why it needs you, in mono 10 `lanternText` ("retention?", "ASK").
         case reason(String)
         /// Live elapsed time since a moment ("4m"), in `textTertiary`.
@@ -437,6 +439,9 @@ private struct NWSidebarAccessoryView: View {
         switch accessory {
         case .none:
             EmptyView()
+        case .goal:
+            Image(systemName: "smallcircle.filled.circle").font(.nwSans(12)).foregroundStyle(.nw.textTertiary)
+                .accessibilityLabel("Goal set")
         case .reason(let text):
             Text(text).font(.nwMono(10)).foregroundStyle(.nw.lanternText).lineLimit(1).fixedSize()
         case .elapsed(let since):

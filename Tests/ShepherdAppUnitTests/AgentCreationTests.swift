@@ -215,10 +215,11 @@ struct AgentLaunchCommandTests {
     @Test func aBareAgentIsJustPiOverRPCWithTheStatusExtension() throws {
         let bare = command()
         #expect(bare.argv == (try PiLaunch.agent(home: Self.home, cwd: "/tmp/project", sessionID: "current-session", model: nil, thinking: nil,
-                                                 extensions: ["/tmp/status.ts", "/tmp/support/pi/shepherd-service-tier.ts"])).argv)
+                                                 extensions: ["/tmp/status.ts", "/tmp/support/pi/shepherd-service-tier.ts", "/tmp/support/pi/shepherd-goal.ts"])).argv)
         #expect(bare.env == [
             "SHEPHERD_AGENT_ID": "agent-id", "SHEPHERD_SOCKET": "/tmp/shepherd.sock", "SHEPHERD_EXT_STATUS": "/tmp/status.ts",
             "SHEPHERD_EXT_SERVICE_TIER": "/tmp/support/pi/service-tier/agent-id.json",
+            "SHEPHERD_EXT_GOAL": "1",
         ])
     }
 
@@ -279,7 +280,7 @@ struct AgentLaunchCommandTests {
             instructions: ("/tmp/instructions.ts", "/tmp/support/instructions"),
             model: nil, thinking: nil
         )
-        #expect(launch.argv[3].hasSuffix(" -e '/tmp/status.ts' -e '/tmp/support/pi/shepherd-service-tier.ts' -e '/tmp/instructions.ts' -e '/tmp/panes.ts'"))
+        #expect(launch.argv[3].hasSuffix(" -e '/tmp/status.ts' -e '/tmp/support/pi/shepherd-service-tier.ts' -e '/tmp/instructions.ts' -e '/tmp/panes.ts' -e '/tmp/support/pi/shepherd-goal.ts'"))
         #expect(launch.env["SHEPHERD_INSTRUCTIONS_DIR"] == "/tmp/support/instructions")
         #expect(launch.env["SHEPHERD_SUGGEST_FILES"] == nil)
         #expect(command().env["SHEPHERD_INSTRUCTIONS_DIR"] == nil)
@@ -312,7 +313,7 @@ struct AgentLaunchCommandTests {
             design: ("/tmp/design.ts", DesignID(rawValue: "d1"), "/tmp/support/design-skill"),
             model: nil, thinking: nil
         )
-        #expect(launch.argv[3].hasSuffix(" -e '/tmp/panes.ts' -e '/tmp/namer.ts' -e '/tmp/design.ts'"))
+        #expect(launch.argv[3].hasSuffix(" -e '/tmp/panes.ts' -e '/tmp/support/pi/shepherd-goal.ts' -e '/tmp/namer.ts' -e '/tmp/design.ts'"))
         #expect(launch.env["SHEPHERD_DESIGN_ID"] == "d1")
         #expect(launch.env["SHEPHERD_DESIGN_SKILL_DIR"] == "/tmp/support/design-skill")
         let plain = command(enabled: [0, 1, 2, 3, 4])
@@ -371,7 +372,7 @@ struct AgentLaunchCommandTests {
                            useRepoConfig: useRepoConfig),
             model: nil, thinking: nil
         )
-        #expect(launch.argv[3].hasSuffix(" -e '/tmp/panes.ts' -e '/tmp/shepherd-mcp.ts'"))
+        #expect(launch.argv[3].hasSuffix(" -e '/tmp/panes.ts' -e '/tmp/support/pi/shepherd-goal.ts' -e '/tmp/shepherd-mcp.ts'"))
         #expect(launch.env["SHEPHERD_EXT_MCP"] == "/tmp/shepherd-mcp.ts")
         #expect(launch.env["SHEPHERD_EXT_MCP_CLIENT"] == "/tmp/shepherd-mcp-client.mjs")
         #expect(launch.env["SHEPHERD_EXT_MCP_CONFIG"] == "/Users/me/.config/mcp/mcp.json")
@@ -396,7 +397,7 @@ struct AgentLaunchCommandTests {
         }
         let on = launch(browser: "/tmp/shepherd-browser.ts")
         #expect(on.env["SHEPHERD_EXT_BROWSER"] == "/tmp/shepherd-browser.ts")
-        #expect(on.argv[3].hasSuffix(" -e '/tmp/panes.ts' -e '/tmp/shepherd-browser.ts'"))
+        #expect(on.argv[3].hasSuffix(" -e '/tmp/panes.ts' -e '/tmp/support/pi/shepherd-goal.ts' -e '/tmp/shepherd-browser.ts'"))
         let off = launch(browser: nil)
         #expect(off.env["SHEPHERD_EXT_BROWSER"] == nil && !off.argv[3].contains("browser"))
         let drawing = launch(browser: "/tmp/shepherd-browser.ts", design: DesignID())
@@ -461,7 +462,7 @@ struct AgentLaunchCommandTests {
         )
         let sessions = Self.home.sessionDirectory(forCwd: "/tmp/project").path
         #expect(launch.argv[3] == #"cd -- '/tmp/project' && exec '/tmp/support/pi/bin/pi' --mode rpc --session-dir '"# + sessions
-            + #"' --session-id 'it'"'"'s' -e '/tmp/a b.ts' -e '/tmp/support/pi/shepherd-service-tier.ts'"#)
+            + #"' --session-id 'it'"'"'s' -e '/tmp/a b.ts' -e '/tmp/support/pi/shepherd-service-tier.ts' -e '/tmp/support/pi/shepherd-goal.ts'"#)
     }
 
     /// `/new` and `/resume` move pi to another session; relaunch follows the agent there.

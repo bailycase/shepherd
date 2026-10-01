@@ -2031,6 +2031,26 @@ text.
 - **Performance:** the table and its cells compare equal between chunks, so a reply streaming
   under a table redraws none of it (`ListPerformanceTests`: a 200-row table).
 
+### Conversation goal card
+
+The supplied GoalStates board is the authority for this card. `NWGoalCard` has five states:
+Working, Checking, Met, Paused, and Needs you. All headers use the reference's two-ring goal
+glyph. Working has a pulsing blue dot, Checking a blue spinner, Met a green checkmark,
+Paused a gray pause mark, and Needs you an amber dot. Reduced motion disables animation.
+Colors come from the matching work, success, muted, and attention semantic roles.
+
+The card stays above the composer, including when a question replaces the field. Goal,
+Subagents, and Up next share one frame and hairline separators in that order. A single card
+still has its own frame. Desktop height is 70pt, header 32pt, radius 10pt. Touch height is 92pt,
+header 40pt, radius 12pt, with 44pt action hit targets. The condition stays visible and can be
+edited without hiding its goal state. Active thread headers show elapsed time; sidebar rows
+carry the live goal indicator. Queue copy says "after the goal check" while a goal is active.
+
+Pause stops automatic continuation without killing the current tool. Resume and edit remain
+available in Paused and Needs you. Clear removes the goal, not its recorded checks. Met stays
+visible until cleared. Checking reflects a real separate model call, never a decorative delay.
+See `docs/goals.md` for runtime semantics and the limits of transcript-based evaluation.
+
 ### Composer, questions, and menus
 
 `Composer` (`Thread/Composer.swift`) on `NWComposer`, `NWSlashMenu`, `NWModelPicker`,
