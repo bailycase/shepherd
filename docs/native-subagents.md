@@ -178,8 +178,9 @@ either delivery mode. `shepherd_child_wait` and `shepherd_child_result` return a
 with `needsReply`, its `questionID` and a `parentAction` naming the exact call that answers it;
 `shepherd_child_result` without an id lists who still waits, and a wait for all hands over a
 child that asked once it has finished its turn, without holding it for the others. The answer is
-`shepherd_child_resume` (or `shepherd_child_message`) with the `questionID`: it messages a child
-still working and resumes one that finished its turn to wait. An answer to a question that
+`shepherd_child_resume` (or `shepherd_child_message`) with the `questionID`: it waits for the child
+to finish the turn it asked in (its process ends when that turn settles, and an answer sent into the
+turn would be lost with it, which a prompt parent would otherwise do) and then resumes it. An answer to a question that
 changed, was answered, or was closed is refused ("Child question changed"). Stop on a child that
 waits for its parent, from the tray, the inspector or `shepherd_child_cancel`, closes the
 question and marks the child stopped; the user's own Steer ends it too, since it resumes the
