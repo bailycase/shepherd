@@ -23,6 +23,13 @@ struct NewThreadPage: View {
 
     private enum Menu: Equatable { case place, models, settings }
 
+    /// `settingsOpen` starts with the model-settings popover open, for the preview renders.
+    init(vm: ShepherdViewModel, chrome: PageHeaderChrome, settingsOpen: Bool = false) {
+        self.vm = vm
+        self.chrome = chrome
+        _menu = State(initialValue: settingsOpen ? .settings : nil)
+    }
+
     private var draft: NewThreadState { vm.newThread }
 
     var body: some View {

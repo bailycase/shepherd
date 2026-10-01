@@ -8,6 +8,37 @@ import Testing
 @testable import ShepherdApp
 
 extension ThreadPreviewTests {
+    /// NWModelSettings as the board draws it (gpt-6.1-sol with a Fast tier, claude-opus without):
+    /// Low to Extra high and the chosen speed.
+    @MainActor static func modelSettings(speed: String, levels: [String] = ["low", "medium", "high", "xhigh"], current: String = "xhigh",
+                                         tiers: Bool = true) -> some View {
+        NWModelSettings(models: [NWModelOption(id: "openai/gpt-6.1-sol", title: "gpt-6.1-sol", isCurrent: true, fast: tiers),
+                                 NWModelOption(id: "anthropic/claude-opus", title: "claude-opus")],
+                        thinking: thinkingOptions(levels), currentThinking: current,
+                        speeds: tiers ? [NWSpeedOption(id: "standard", title: "Standard", detail: "Default speed and price"),
+                                         NWSpeedOption(id: "fast", title: "Fast", detail: "Faster responses, billed at a higher rate", boosted: true)] : [],
+                        currentSpeed: speed, chooseModel: { _ in }, chooseThinking: { _ in }, chooseSpeed: { _ in }, allModels: {}, close: {})
+    }
+
+    /// The popover in each state the composer reaches: Standard, Fast, a model with no raised
+    /// tier (no Speed row), and a model with every thinking level (the segments wrap).
+    @Test func modelSettingsPopoverStates() async throws {
+        let size = CGSize(width: 1180, height: 620)
+        try await Preview.render("composer-model-settings", size: size) {
+            HStack(alignment: .top, spacing: 24) {
+                Self.modelSettings(speed: "standard")
+                Self.modelSettings(speed: "fast")
+                VStack(alignment: .leading, spacing: 24) {
+                    Self.modelSettings(speed: "standard", tiers: false)
+                    Self.modelSettings(speed: "fast", levels: ["off", "minimal", "low", "medium", "high", "xhigh", "max"], current: "max")
+                }
+            }
+            .padding(32)
+            .frame(width: size.width, height: size.height, alignment: .topLeading)
+            .background(Color.nw.bgWindow)
+        }
+    }
+
   @Test(arguments: [
     ["off", "minimal", "low", "medium", "high"],
     ["off", "minimal", "low", "medium", "high", "xhigh", "max"],

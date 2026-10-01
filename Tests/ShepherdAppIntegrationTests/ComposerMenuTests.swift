@@ -21,19 +21,26 @@ struct ComposerMenuTests {
         var testDescription: String { rawValue }
 
         /// Its popover's height at rest over a full catalog and command list, and its board width
-        /// (the slash menu spans the card).
-        var height: CGFloat {
+        /// (the slash menu spans the card). The model-settings popover is a model section, then a
+        /// segmented Thinking control (one row of segments for pi's standard four levels) and,
+        /// for a model with a Fast tier, a segmented Speed control.
+        var height: CGFloat { height(thinkingRows: 1) }
+
+        /// `thinkingRows` is how many rows of segments the thinking levels wrap onto.
+        func height(thinkingRows: Int) -> CGFloat {
             let padding = 2 * NW.Space.s
             switch self {
             case .slash: return NWComposerMetrics.menuHeaderHeight + CGFloat(NWComposerMetrics.menuMaxRows) * NWComposerMetrics.slashRowHeight + padding
             case .models: return NWComposerMetrics.modelSearchHeight + 2 * NW.Space.xs + NWComposerMetrics.modelPickerMaxHeight
             case .thinking, .speed:
-                // Current model + All models, and one row per supported thinking level.
-                let thinking = NW.Space.xs * 2 + 1 + NWComposerMetrics.menuHeaderHeight
-                    + 5 * NWComposerMetrics.menuRowHeight
+                // A hairline between sections, a header, a track of 24pt segments in 2pt padding, and 6pt under it.
+                func section(rows: Int) -> CGFloat {
+                    NW.Space.xs * 2 + 1 + NWComposerMetrics.menuHeaderHeight
+                        + CGFloat(rows) * NW.Height.controlS + CGFloat(rows - 1) * NW.Space.xxs + NW.Space.xxs * 2 + NW.Space.s
+                }
+                // Current model + All models.
                 let models = NWComposerMetrics.menuHeaderHeight + 2 * NWComposerMetrics.menuRowHeight + padding
-                let speed = NW.Space.xs * 2 + 1 + NWComposerMetrics.menuHeaderHeight + NW.Height.controlS + NW.Space.xxs * 2 + NW.Space.s
-                return models + thinking + (self == .speed ? speed : 0)
+                return models + section(rows: thinkingRows) + (self == .speed ? section(rows: 1) : 0)
             }
         }
 
@@ -92,11 +99,14 @@ struct ComposerMenuTests {
         #expect(abs(solid.maxY - (thread.cardTop - AppLayout.menuGap)) <= 2, "ends 8pt above the card: \(solid)")
     }
 
+    /// Up to four levels share one row of segments, more wrap onto balanced rows of the same track
+    /// (5 = 3 + 2, 7 = 4 + 3), so no title is cut and the popover stays 328pt wide.
     @Test(arguments: [
-        ["off", "minimal", "low", "medium", "high"],
-        ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
-    ])
-    func everySupportedThinkingLevelHasItsOwnRow(_ levels: [String]) async throws {
+        (["low", "medium", "high", "xhigh"], 1),
+        (["off", "minimal", "low", "medium", "high"], 2),
+        (["off", "minimal", "low", "medium", "high", "xhigh", "max"], 2),
+    ] as [([String], Int)])
+    func everySupportedThinkingLevelHasItsOwnSegment(_ levels: [String], rows: Int) async throws {
         let thread = ComposerThread(thinkingLevels: levels)
         defer { thread.close() }
         try await thread.waitUntilReady()
@@ -107,9 +117,8 @@ struct ComposerMenuTests {
         let after = FrameTimer.capture(thread.window, whole)
         let band = Int(thread.cardTop - NWComposerMetrics.focusRing - 1)
         let solid = try #require(Pixels.bounds(differing: before, after, rows: 0..<band, by: Self.edge))
-        let height = Menu.thinking.height + CGFloat(levels.count - 5) * NWComposerMetrics.menuRowHeight
-        #expect(abs(solid.height - height) <= 2, "one full-height row per level: \(solid)")
-        #expect(abs(solid.width - NWComposerMetrics.modelSettingsWidth) <= 2, "all rows stay inside the popover")
+        #expect(abs(solid.height - Menu.thinking.height(thinkingRows: rows)) <= 2, "\(rows) row(s) of segments: \(solid)")
+        #expect(abs(solid.width - NWComposerMetrics.modelSettingsWidth) <= 2, "all segments stay inside the popover")
     }
 
     /// Standard adds nothing to the unified button; Fast adds a bolt without changing height.
