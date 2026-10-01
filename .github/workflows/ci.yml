@@ -55,7 +55,7 @@ permissions:
 concurrency:
   group: >-
     ci-${{ github.event_name == 'schedule' && 'daily' || github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.ref }}${{ github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name != 'full-ci' && '-label' || '' }}
-  cancel-in-progress: ${{ github.event_name != 'schedule' }}
+  cancel-in-progress: true
 
 defaults:
   run:
