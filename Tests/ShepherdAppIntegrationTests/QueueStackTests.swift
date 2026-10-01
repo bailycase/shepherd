@@ -77,6 +77,31 @@ struct QueueStackIntegrationTests {
         #expect(FrameTimer.capture(thread.window, whole) == before, "leaving it puts everything back")
     }
 
+    /// While pi works the first queued row wears a labelled Steer now at rest, at the end of its row, and no
+    /// other row does; with pi idle nobody does (a row's Send now is the hover action then). Rows are
+    /// compared by the end of their own row, clear of the hairlines.
+    @Test(arguments: [true, false])
+    func onlyTheFirstQueuedRowWearsSteerNowAtRestWhilePiWorks(running: Bool) async throws {
+        let thread = QueueThread(queue: QueueFixture.messages(Self.texts), interrupts: true, running: running)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        let stackTop = thread.size.height - thread.composerInset + NWQueueMetrics.headerHeight
+        func end(_ index: Int) -> FrameTimer.Capture {
+            FrameTimer.capture(thread.window, CGRect(x: thread.columnTrailing - 140, y: stackTop + CGFloat(index) * NWQueueMetrics.rowHeight,
+                                                     width: 128, height: NWQueueMetrics.rowHeight))
+        }
+        let rows = 6..<Int(NWQueueMetrics.rowHeight) - 6
+        let (first, second, third) = (end(0), end(1), end(2))
+        #expect(Pixels.bounds(differing: second, third, rows: rows) == nil, "rows past the first draw nothing at rest")
+        let button = Pixels.bounds(differing: first, second, rows: rows)
+        if running {
+            let drawn = try #require(button, "the first row draws Steer now at rest")
+            #expect(drawn.maxX >= 110 && drawn.width >= 60, "at the end of its row, wide enough to hold its words: \(drawn)")
+        } else {
+            #expect(button == nil, "an idle queue draws nothing at rest")
+        }
+    }
+
     /// Right-clicking Send while pi works opens the Send menu over the thread above the card's
     /// trailing corner: the composer's height and the thread's scroll stay where they were.
     @Test func theSendMenuFloatsOverTheThread() async throws {

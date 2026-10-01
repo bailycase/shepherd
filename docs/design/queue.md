@@ -44,6 +44,19 @@ cannot stop pi, a compaction, or an older client's send.
   26pt circular icon buttons (`.nwIcon`: 14pt glyphs in `textSecondary`; under the pointer
   `textPrimary` on `bgHover`, and `bgSelected` while pressed) 2pt apart, with system tooltips
   saying what they do and naming their keys ("Stop the agent and send this now  ⌘↩", "Delete  ⌫").
+  **The first queued row while pi works is the exception** (decided by the user, 2026-10-01; no
+  board draws it): its Steer now is a labelled button that is there at rest, not an icon on
+  hover. It is `NWQueueRowActions.steerLabelled`, the row numbered 1 (a Steering row above it
+  does not take it) and only while the agent runs: an idle queue is as it was, with Send now on
+  hover. The button is `.nw(.secondary, size: .s)` (24pt, `bgRaised` with a `lineStrong` line,
+  Geist 12 medium `textPrimary`): `arrow.turn.down.right` and "Steer now", 6pt apart, 8pt of
+  padding at the sides, its tooltip the icon's ("Stop the agent and send this now  ⌘↩"). It sits
+  flush at the slot's trailing edge and never moves: the slot of this row is the button's own width
+  (it grows with the Text size) and, before it, 54pt that Edit and Delete take on hover, always
+  reserved, so hovering never re-truncates the text and the pointer that aimed at the button never
+  finds another control under it. The cost is that this row's text ends about 60pt sooner than the
+  others' (the slot is 82pt for them). Other rows keep the 82pt slot and the hover icons. Dragging
+  the row hides the button with the rest of its actions, keeping its room.
   Steer now stops pi: until the host has sent the message it stays a queued row, first in the
   stack (#1), and then it leaves for the thread as an ordinary message that starts the next turn
   (its "From the queue · 1" only when it was queued to begin with; a message sent with ⌘↩ from
@@ -156,7 +169,8 @@ cannot stop pi, a compaction, or an older client's send.
   `textTertiary`). A delivery pi refuses puts the messages back at the head and pauses the queue,
   with the reason in the header's tooltip.
 - **Accessibility:** the header reads "Up next, 3 messages". A queued row reads "Queued 2 of 3:
-  <text>" with the actions Steer now (or Send now), Edit, Delete, Move up, and Move down; a Steering
+  <text>" with the actions Steer now (or Send now), Edit, Delete, Move up, and Move down (the first
+  queued row's labelled button is drawn for the pointer; VoiceOver reaches it as that action); a Steering
   row reads "Steering: <text>, waiting for the agent's current tool calls" with Back to the queue; Steer now
   carries the hint "Stop the agent and send this now"; the
   editor's field is "Edit queued message 2"; an Undo row reads "Deleted: <text>" (or "Cleared 3
