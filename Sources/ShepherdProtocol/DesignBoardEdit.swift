@@ -68,6 +68,28 @@ public enum DesignBoardEdits {
             }
         }
 
+        /// One line for a batch report: the edit that failed (from 1), how many times it matched
+        /// (0: nothing; nil when it never got to match), and what happened.
+        public var brief: (edit: Int?, matches: Int?, message: String) {
+            switch self {
+            case .noEdits:
+                return (nil, nil, "no edits")
+            case .tooMany(let count):
+                return (nil, nil, "\(count) edits; at most \(DesignBoardEdits.maxEdits) a board")
+            case .emptyFind(let index):
+                return (index, nil, "edit \(index) has an empty find")
+            case .notFound(let index, _, let find, let hint):
+                return (index, 0, "edit \(index) matched nothing: \(DesignBoardEdits.quoted(find, limit: 60))"
+                    + (hint.map { " " + $0 } ?? ""))
+            case .ambiguous(let index, _, let find, let lines, _):
+                return (index, lines.count, "edit \(index) matched \(lines.count) times without all (lines "
+                    + lines.prefix(4).map(String.init).joined(separator: ", ") + (lines.count > 4 ? ", …" : "") + "): "
+                    + DesignBoardEdits.quoted(find, limit: 60))
+            case .tooLarge(let index, _, let bytes):
+                return (index, nil, "edit \(index) would make the board \(bytes) bytes; at most \(DesignBoardCheck.maxBytes)")
+            }
+        }
+
         public var description: String {
             switch self {
             case .noEdits:
