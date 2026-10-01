@@ -143,7 +143,12 @@ events come out on stdout, one record per LF.
   commands' additive `arguments` once read; a command no thread can run is left out: the
   host's own `/shepherd-retry`, and pi's terminal-only built-in `/llama`, which answers
   "available in interactive mode" in RPC. Shepherd's bundled extensions register nothing a
-  thread can't show: docs/native-subagents.md › Slash commands). Until `get_state` and
+  thread can't show: docs/native-subagents.md › Slash commands. The list a snapshot serves,
+  `commands`, is also what the user left on: the names Settings ▸ Pi ▸ Slash commands turned off
+  (`SessionServer.setHiddenSlashCommands`, applied live to every thread) are left out, in every
+  client. The thread keeps everything pi listed (`allCommands`): typing a hidden command still
+  runs it, and the server's `slashCommandCatalog` lists every command any thread's pi reported, so
+  the page can switch a hidden one back on). Until `get_state` and
   `get_messages` have answered, requests fail with `native_starting` ("The agent is starting."): pi
   answers `get_state` first, and a thread served before a long history arrives would show a
   resumed agent as a new, empty one. pi reads stdin only once it has started, so a pi slower
@@ -829,7 +834,7 @@ components ([docs/design/thread.md](design/thread.md) specifies their look):
   - the Send menu (two rows), and the keys that send while pi works (↩ queues, ⌘↩ steers now)
   - the slash menu, fed from pi's command registry
   - the question dock (`QuestionDock`, pi's question in the card's place, from
-    `NativeQuestionPrompt`; a subagent's question never takes it, since a subagent asks its parent; Hide the question keeps only that question folded:
+    `NativeQuestionPrompt`, which has no subagent asker, note or Something else…: a subagent's question never takes it, since a subagent asks its parent; Hide the question keeps only that question folded:
     `NativeQuestionHiding`, shared with the iPad's card) and extension widgets
 - **`Subagents`** and **`SubagentPresentation`:** the tray above the composer, with the store's
   tray (`NativeSubagentTray`) mapped onto the components' values.

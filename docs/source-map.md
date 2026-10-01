@@ -237,6 +237,8 @@ Sources/
       copy and who waits for it), YourPiText, PiImportSheet (the first launch's Bringing over your
       pi), PiAuthStore (sign-ins: the sign-in sheet's session on the bridge, sign-out, what
       expired), PiSignInSheet, PiAuthRows (Sign-in's rows), SettingsPiSignIn, SettingsPiFromYourPi,
+      SettingsPiSlashCommands and SlashCommandsModel (Settings ▸ Pi ▸ Slash commands: the commands pi
+      lists, their rows and switches),
       Thread/SlashLogin (/login and /logout), Thread/ThreadAuthNotice (waiting, not signed in)
     Themes (ThemeManager, ShepherdTheme), ShepherdThemeMarker, ShellIntegration, ComponentGallery
     RemoteHostStore, AgentPeers, AgentNotifications, ChildRuns, PiSessionFile (+ adoption from
@@ -255,7 +257,8 @@ Packages/
                                      Color.nw), Typography (NWTextStyle, Font.nw, NWFonts,
                                      NWProseSize), Metrics (NW.Space/Radius/Height), Motion,
                                      Elevation (.nwCard/.nwPopover/.nwFocusRing, NWHairline),
-                                     AgentState, HexColor
+                                     AgentState, HexColor, Glyphs (NWGlyph: the SF Symbol and
+                                     fill each shared glyph is drawn with)
                        Resources/Fonts  Geist and Geist Mono (SIL OFL)
                        Components/   Controls, Status, Containers, Navigation, Thread, Composer,
                                      Agents, Review, Dialogs, Automations, Skills, Browser
@@ -316,16 +319,23 @@ Tests/
   ShepherdTestKit/        ScratchDefaults, makeScratchDirectory, Locked, CommandFailure, TestProcess
   ShepherdTestSupport/    ScratchServer, StubPi (+ Resources/stub-pi.py), ExtensionClient,
                           QueueFixture (a host's queue without pi), eventually, recordingErrors,
-                          the time-limit and timing-sensitive traits
+                          ControlPress (press a control by accessibility label, measure hit
+                          areas), the time-limit and timing-sensitive traits
   Extensions/             node tests for the bundled extensions (+ native-thread-wire.json)
   Designs/                design fixtures: real and synthetic boards, the Shepherd canvas.json,
                           and element-ids.json (WebKit's numbering of each board's elements)
   DesignSurfaceKitIntegrationTests/Fixtures/  a small design (loops, conditionals, an import)
-  Release/                Python tests for scripts/release.py
+  Release/                Python tests for scripts/release.py and the CI helpers
+  ci-suite-times.json     each suite's seconds on a CI runner, which the shards are cut from
   ShepherdIOSChecks/      the iOS client's scripts
 scripts/               release.py (the release workflow's rules), sign-app.sh (release
                        signing), sync-embedded-extension.py, ci_mtimes.py (CI's incremental builds),
+                       ci_impact.py (the lane and the fast lane's suites), ci_shards.py (equal
+                       shards from Tests/ci-suite-times.json), ci_run_tests.py (a shard under a
+                       watchdog, failed tests retried once), ci_testlog.py (test output reader),
+                       ci_report.py (the one tracking issue),
                        pi_engine.py + pi-engine-pin.json (stage and verify the pi engine),
-                       sign-engine.sh (node, with the engine's entitlements)
+                       sign-engine.sh (node, with the engine's entitlements), check_pr_body.py
+                       (the pr-body workflow: what a UI or autonomous-feature PR body must say)
 Vendor/libghostty-spm/ GhosttyTerminal (prebuilt libghostty)
 ```

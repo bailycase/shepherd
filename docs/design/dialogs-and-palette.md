@@ -31,7 +31,8 @@ surface: every destination and command in it is also in the sidebar or the menus
   - **This thread** (the agent on screen): Rename ("<title>", ⌘R), Pin thread or Unpin thread
     (`pin`, `pin.slash`; named for what it does now, no chord; only for a thread the sidebar can pin:
     not an automation's run, and not in the project tree), Choose model… ("<model>", ⇧⌘M),
-    Toggle fast mode ("Switch this thread between Standard and Fast", a `bolt`; ComposerSpeed;
+    Toggle fast mode ("Switch this thread between Standard and Fast", the filled Fast bolt,
+    `bolt.fill` through `NWGlyph.fastBolt`, not the automations' outline `bolt`; ComposerSpeed;
     listed only while the thread's model offers a service tier, and it switches the tier as the
     model-settings popover's Speed control would, with no popover), Review diff ("working tree · 4 files", the checkout's changed files as the branch chip counts
     them; ⇧⌘B, the side pane's chord), Review PR changes ("PR #24" once the agent's review has

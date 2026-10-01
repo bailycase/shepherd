@@ -245,10 +245,10 @@ struct ThreadProjectionTests {
         #expect(RPCThreadState.project(entryID: "m:0", message: message).role == "custom")
     }
 
-    @Test func textIsClippedToTheBudgetOnACharacterBoundary() {
-        // 16 KiB - 1 ASCII bytes, then a two-byte character straddling the limit.
-        let head = String(repeating: "a", count: RPCThreadState.textLimit - 1)
-        let message = RPCMessage(role: "assistant", content: [.text(head + "é tail"), .text("second block")])
+    @Test(arguments: [("é", 1), ("中", 1), ("中", 2), ("🐑", 1), ("🐑", 2), ("🐑", 3)])
+    func textIsClippedToTheBudgetOnACharacterBoundary(scalar: String, remaining: Int) {
+        let head = String(repeating: "a", count: RPCThreadState.textLimit - remaining)
+        let message = RPCMessage(role: "assistant", content: [.text(head + scalar + " tail"), .text("second block")])
         let row = RPCThreadState.project(entryID: "m:0", message: message)
         #expect(row.truncated)
         #expect(row.blocks.count == 1)

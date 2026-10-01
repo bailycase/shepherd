@@ -67,6 +67,33 @@ struct AppSettingsTests {
         #expect(store.object(forKey: AppSettings.Key.queueDelivery) == nil)
     }
 
+    /// Settings ▸ Pi ▸ Slash commands: every command is on until it is switched off, the switches
+    /// persist as a sorted list, only a change reaches the server, and Reset settings turns them all on.
+    @Test func theSlashCommandSwitchesPersistResetAndReachTheServer() {
+        let store = Fixture.defaults()
+        let settings = AppSettings(store: store)
+        #expect(settings.hiddenSlashCommands.isEmpty, "every command starts on")
+        var handed: [Set<String>] = []
+        settings.onHiddenSlashCommandsChange = { handed.append($0) }
+
+        settings.setSlashCommand("session-name", on: false)
+        settings.setSlashCommand("fix-tests", on: false)
+        settings.setSlashCommand("fix-tests", on: false)
+        settings.setSlashCommand("never-listed", on: true)
+
+        #expect(handed == [["session-name"], ["fix-tests", "session-name"]], "only a change is handed on")
+        #expect(store.stringArray(forKey: AppSettings.Key.hiddenSlashCommands) == ["fix-tests", "session-name"], "stored sorted")
+        #expect(AppSettings(store: store).hiddenSlashCommands == ["fix-tests", "session-name"], "and read back on the next launch")
+
+        settings.setSlashCommand("session-name", on: true)
+        #expect(settings.hiddenSlashCommands == ["fix-tests"])
+
+        settings.resetToDefaults()
+        #expect(settings.hiddenSlashCommands.isEmpty)
+        #expect(handed.last == [], "the server hears every command is on again")
+        #expect(store.object(forKey: AppSettings.Key.hiddenSlashCommands) == nil)
+    }
+
     /// ↩ always queues while pi works, so there is no Return setting. What an earlier version
     /// stored for it is discarded on launch, and means nothing.
     @Test(arguments: ["queue", "steer", "interrupt", ""])

@@ -417,7 +417,10 @@ is what they do.
   - Asked the parent: "asked the parent:" and its question, quietly, drawn as waiting (the child
     asked its parent, which answers or asks the user in its own thread; the user is never asked
     by a child, so there is no Answer and nothing takes the composer's place). Steer and Stop
-    stay: Steer speaks to the child over its parent, and Stop closes the question. The tally
+    stay: Steer speaks to the child over its parent, and Stop closes the question. On this row
+    Steer is labelled **Reply** (tooltip "Answer this subagent yourself. It was waiting on its
+    parent."), in the tray, its context menu, the inspector's field and the touch screens: the
+    same `message` command with `steer` delivery, so only the words change. The tally
     reads "waiting on parent", and the tray stays until the question is answered.
   - Done: the first sentence of its summary, its diff and duration. Failed: why.
 - **The record:** the thread keeps "Started 3 subagents" where the first `shepherd_child_start`
@@ -449,8 +452,8 @@ it.
   Copy Transcript loads every page first. A live run's transcript ends in its call in flight,
   drawn as the thread's live line from what the run reports (`nativeRunLive`); nothing shows
   between calls.
-- **Live runs** end in a Steer composer addressed to the child ("to: worker · not the parent").
-  A failed send keeps the draft.
+- **Live runs** end in a Steer composer addressed to the child ("to: worker · not the parent");
+  for a run that asked its parent it is a Reply composer. A failed send keeps the draft.
 - **Finished runs** are read-only: messages from the parent are captioned "from parent", and the
   bottom bar has Re-run, Fork, and Copy transcript. Your own steers and answers (from the tray, the
   inspector, `shepherd-inspect`, or the fleet view) are not: the extension appends each to

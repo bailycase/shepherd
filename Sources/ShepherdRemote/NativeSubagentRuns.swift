@@ -385,6 +385,35 @@ public func nativeRunAcceptsSteer(_ run: ChildRun) -> Bool {
     nativeRunPhase(run).isLive
 }
 
+/// What a run's Steer action is called. It is one command whatever it is called: a steer reaches
+/// only that child and, for a run waiting on its parent, also ends its question. Where the run
+/// asked its parent a question the words say what the user is doing, answering it themselves,
+/// so the action reads "Reply"; every other live run keeps "Steer".
+public struct NativeRunSteerWords: Equatable, Sendable {
+    /// "Steer" or "Reply": the button, the menu item and the field's label.
+    public var verb: String
+    /// The tooltip a Reply carries; Steer needs none.
+    public var help: String?
+    private let toward: String
+    private let reach: String
+
+    public static let steer = NativeRunSteerWords(verb: "Steer", help: nil, toward: "Steer", reach: "lands before its next turn")
+    public static let reply = NativeRunSteerWords(
+        verb: "Reply", help: "Answer this subagent yourself. It was waiting on its parent.", toward: "Reply to",
+        reach: "it was waiting on its parent")
+
+    /// "Steer worker", or "Reply to worker".
+    public func label(_ name: String) -> String { "\(toward) \(name)" }
+
+    /// The touch field's mono caption, where there is no tooltip: "to: worker · not the parent · lands
+    /// before its next turn", or "… · it was waiting on its parent".
+    public func caption(_ name: String) -> String { "to: \(name) · not the parent · \(reach)" }
+}
+
+public func nativeRunSteerWords(_ run: ChildRun) -> NativeRunSteerWords {
+    nativeRunPhase(run) == .asked ? .reply : .steer
+}
+
 /// One `subagentCommand`'s arguments: a steer reaches only that child, delivered before its next
 /// turn (to a child waiting on its parent it is the user speaking over the parent, and ends its
 /// question); a control carries no text.

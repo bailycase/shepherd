@@ -56,6 +56,7 @@ final class AppSettings {
         static let goalCrossProviderEvaluation = "shepherd.agent.goalCrossProviderEvaluation"
         static let autoNameAgents = "shepherd.agent.autoName"
         static let skillsInSlashMenu = "shepherd.skills.slashMenu"
+        static let hiddenSlashCommands = "shepherd.pi.slashCommands.hidden"
         static let mcpOpenSignInPages = "shepherd.mcp.openSignInPages"
         static let mcpProjectConfig = "shepherd.mcp.projectConfig"
         static let mcpSameEverywhere = "shepherd.mcp.sameEverywhere"
@@ -104,7 +105,7 @@ final class AppSettings {
             worktreeBaseMode, worktreeFetchBeforeCreate,
             worktreeAutoCommit, worktreeGeneratePRDescription,
             worktreeDeleteLocalBranch, worktreeAutoMergePR,
-            worktreeMergeMethod, skillsInSlashMenu,
+            worktreeMergeMethod, skillsInSlashMenu, hiddenSlashCommands,
             mcpOpenSignInPages, mcpProjectConfig, mcpSameEverywhere,
             designToolEnabled, implementOpensThread,
         ]
@@ -205,6 +206,25 @@ final class AppSettings {
 
     /// Hands a new queue delivery default to the server (set by the view model).
     @ObservationIgnored var onQueueDeliveryChange: ((NativeQueueMode) -> Void)?
+
+    /// The slash commands switched off in Settings ▸ Pi ▸ Slash commands, by name without the slash:
+    /// left out of the `/` menu of every thread on this Mac, in every client that views them (the
+    /// server filters its snapshots; `onHiddenSlashCommandsChange`). Typing one still runs it. Stored
+    /// as a sorted list; every command is on until it is here.
+    var hiddenSlashCommands: Set<String> {
+        didSet {
+            store.set(hiddenSlashCommands.sorted(), forKey: Key.hiddenSlashCommands)
+            if hiddenSlashCommands != oldValue { onHiddenSlashCommandsChange?(hiddenSlashCommands) }
+        }
+    }
+
+    /// Hands the switched-off commands to the server (set by the view model).
+    @ObservationIgnored var onHiddenSlashCommandsChange: ((Set<String>) -> Void)?
+
+    /// Switches one command on or off.
+    func setSlashCommand(_ name: String, on: Bool) {
+        if on { hiddenSlashCommands.remove(name) } else { hiddenSlashCommands.insert(name) }
+    }
 
     var piPanesExtension: Bool {
         didSet { store.set(piPanesExtension, forKey: Key.piPanesExtension) }
@@ -418,6 +438,7 @@ final class AppSettings {
         goalCrossProviderEvaluation = store.object(forKey: Key.goalCrossProviderEvaluation) as? Bool ?? false
         autoNameAgents = store.object(forKey: Key.autoNameAgents) as? Bool ?? Defaults.autoNameAgents
         skillsInSlashMenu = store.object(forKey: Key.skillsInSlashMenu) as? Bool ?? Defaults.skillsInSlashMenu
+        hiddenSlashCommands = Set(store.stringArray(forKey: Key.hiddenSlashCommands) ?? [])
         // The directory now uses Shepherd's public API; discard the retired credential.
         store.removeObject(forKey: "shepherd.skills.directoryKey")
         // ↩ always queues while pi works now; the setting that chose between that and steering is gone.
@@ -515,6 +536,7 @@ final class AppSettings {
         goalCrossProviderEvaluation = false
         autoNameAgents = Defaults.autoNameAgents
         skillsInSlashMenu = Defaults.skillsInSlashMenu
+        hiddenSlashCommands = []
         mcpOpenSignInPages = false
         mcpProjectConfig = false
         mcpSameEverywhere = true

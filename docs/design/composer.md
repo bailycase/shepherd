@@ -256,12 +256,11 @@ rules (QuestionStates › Rules):
    Needs you (the sidebar's Needs you row, its glowing dot and the question as its reason).
 4. **Options** are numbered, and the number is the key. Each says what happens and what it
    costs. The asker's recommendation is marked **Recommended**, never preselected.
-5. **A note:** picking an option opens a note field inside it; the note goes with the answer
-   (only for an asker that takes one; see What each asker takes).
-6. **Something else…** is the last row; typing there answers in your own words (the same).
-7. **Answer** is the only button. It lights up once an option is picked or Something else has
-   text. There is no Dismiss: pi is waiting on an answer.
-8. **After:** the composer comes back (the field takes the keyboard again), and the thread
+5. **Answer** is the only button. It lights up once an option is picked or an open question has
+   text. There is no Dismiss: pi is waiting on an answer. The dock has no note field and no
+   Something else…: pi's dialogs take neither (What each asker takes), and the subagent variant
+   that did is gone.
+6. **After:** the composer comes back (the field takes the keyboard again), and the thread
    keeps the record where pi asked (below).
 
 - **The dock** (`NWQuestionDock`, `NWQuestionDockMetrics`): `bgRaised`, radius 12, a 1px
@@ -287,9 +286,6 @@ rules (QuestionStates › Rules):
     padding). `NativeQuestionOption` splits an option into number, title, description (the
     lines after the first), and a trailing "(Recommended)". A click picks it (tooltip: its title
     and number). More than six options scroll inside a 360pt lazy stack.
-  - **Something else…** (when the asker takes words of its own): a row at least 38pt tall with
-    its number and "Something else…" in 13.5 `textTertiary`; it is a field in place, and typing
-    there picks it.
   - a footer over a `lineSubtle` hairline, 12pt below the options: trailing, **Answer**
     (`.nw(.primary, size: .m)`, 28pt; tooltip "Answer (↩)"), disabled (40%) until there is an
     answer. Leading, in micro tertiary, "The agent may stop waiting for this answer" when the
@@ -297,25 +293,21 @@ rules (QuestionStates › Rules):
     finish it before answering here", "This question is too large to show here"), which also
     disables its options.
 - **Picked** (QuestionPick): the option takes a `lantern` line on `lanternTint` and its number
-  fills (`lantern`, `textOnLantern` semibold). The Recommended tag stays where it was. For an
-  asker that takes a note, a note field opens 8pt under its description (`bgWindow`, radius 6, a
-  `lineStrong` line, 7pt above and below and 10pt at the sides, Geist 13 at 1.45, the caret in
-  `lantern`, "Add a note…"). Picking another option moves the pick; nothing is answered until
-  Answer or ↩.
+  fills (`lantern`, `textOnLantern` semibold). The Recommended tag stays where it was. Picking
+  another option moves the pick; nothing is answered until Answer or ↩.
 - **Kinds** (QuestionStates › Kinds of question), one dock shaped by the answer the asker needs
   (`NativeQuestionKind`):
   - **Yes or no:** a confirm, or two options of at most 24 characters with nothing under them:
     side by side, 6pt apart, each 44pt (its number, the title in semibold, Recommended; its parts
-    10pt apart), answering on click. Answer shows only with Something else; without it the dock
-    has no footer (a confirm's is only its timeout line).
+    10pt apart), answering on click. It has no Answer button, so the dock has no footer (a
+    confirm's is only its timeout line).
   - **Open question:** no options (pi's input and editor): a field at least 64pt tall (`bgWindow`, radius 8, a `lineStrong` line, 10pt above
     and below and 12pt at the sides, 13.5 at 1.5; up to 6 lines, 12 for an editor, then it
     scrolls) holding the asker's prefill, and Answer. It takes the keyboard when it arrives in
     the focused thread.
-  - **From a subagent (no longer shown):** "<name> is asking" with the branch glyph, the question
-    at 14.5, option titles at 13 over 12. No surface draws it now: a subagent asks its parent,
-    never the user (see Subagents). The variant stays in the components, with its note and
-    Something else…, until the board goes.
+  - **No subagent variant.** A subagent asks its parent, never the user (see Subagents), so the
+    dock never draws "<name> is asking", the branch glyph, 14.5 question or a note and
+    Something else… for one: that variant was pruned from the components, on the Mac and iOS.
 - **Hidden** (QuestionStates): Esc or Hide the question shrinks the dock to one 46pt line
   (`NWQuestionDockHidden`), so you can read the thread; it still holds the composer's place,
   because pi is still waiting. The line is the same lantern card (radius 12, 14pt leading and 8pt
@@ -325,8 +317,7 @@ rules (QuestionStates › Rules):
   dock back, with what was picked and typed. Only that question stays hidden: the next one pi
   asks arrives open (`NativeQuestionHiding`, the iPad's rule too).
 - **Keys** (QuestionStates › Keyboard; shown in tooltips): 1–9 pick an option (a yes or a no
-  answers at once; Something else's number puts the keyboard in it), ↩ answers, Esc hides or
-  shows the question. They are the dock's while its thread has the keyboard
+  answers at once), ↩ answers, Esc hides or shows the question. They are the dock's while its thread has the keyboard
   (`QuestionKeyMonitor`), from its own fields too (where numbers type and ⇧↩ breaks a line),
   never with ⌘, ⌃ or ⌥ held (⌘1–9 still select agents), and never from another text field (the
   palette's search, a terminal). Settings, the component gallery, and the command palette
@@ -357,16 +348,16 @@ rules (QuestionStates › Rules):
 - **Not built with it:** your note under the option's title, 4pt apart (QuestionAnswered), since
   none of pi's dialogs takes a note (What each asker takes).
 
-**What each asker takes** (Honest affordances: the dock offers only what the asker can take;
-`NativeQuestionPrompt.takesNote`, `takesOther`):
+**What each asker takes** (Honest affordances: the dock offers only what the asker can take, so
+it has no note and no Something else…):
 
-| Asker | Kind | Takes back | Note | Something else |
-| --- | --- | --- | --- | --- |
-| pi's select (`ctx.ui.select`) | choice, or yes or no | one of its options, exactly as offered | no | no |
-| pi's confirm (`ctx.ui.confirm`) | yes or no | true or false | no | no |
-| pi's input (`ctx.ui.input`) | open | a string | — | — |
-| pi's editor (`ctx.ui.editor`) | open, 12 lines | a string, as typed | — | — |
-| A subagent | none | it is no asker of the user: it asks its parent (`shepherd_parent_message`, `needsReply`), which asks here, as an ordinary question, when it must | — | — |
+| Asker | Kind | Takes back |
+| --- | --- | --- |
+| pi's select (`ctx.ui.select`) | choice, or yes or no | one of its options, exactly as offered |
+| pi's confirm (`ctx.ui.confirm`) | yes or no | true or false |
+| pi's input (`ctx.ui.input`) | open | a string |
+| pi's editor (`ctx.ui.editor`) | open, 12 lines | a string, as typed |
+| A subagent | none | it is no asker of the user: it asks its parent (`shepherd_parent_message`, `needsReply`), which asks here, as an ordinary question, when it must |
 
 An asking tool (any tool named `ask` or `question`, such as `ask_user`) asks through the dialogs
 above, so its question is the row of the dialog it opens. Its `short` reason is for the sidebar's
@@ -427,7 +418,8 @@ a docked pane it narrows to the card. They share one anatomy (NWComposer › Men
   back is a note in the thread where they are looking, in the Thread's note style: a plain note,
   or "warning · …" and "error · …" when the command said so, never a toast; a toast nobody asked
   for is still not drawn. Settings ▸ Skills ▸ Skills in the / menu, off, leaves the
-  skills out (on the Mac). Its rows are lazy, a highlight moving redraws only the two
+  skills out (on the Mac), and Settings ▸ Pi ▸ Slash commands leaves out any command the user
+  switched off, in every client, since the host filters the list it serves. Its rows are lazy, a highlight moving redraws only the two
   rows it moves between, and only ↑↓ scroll the highlight into view (the pointer's is already under
   the pointer).
 - **/login and /logout** (SlashLogin, SlashLoginArgs; this Mac's agents only): two commands of

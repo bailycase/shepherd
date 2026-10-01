@@ -122,6 +122,11 @@ see its work.
   `DesignPreviewTests`), and `PreviewTests` holds the rest. A capture can't draw a web view, so
   the design previews draw every board from its snapshot (`designLiveCap = 0`). Add a new surface's render to its domain's suite.
 - `--filter ThreadPreviewTests` (or any one suite) renders just that domain.
+- `Preview.render` draws light and dark; `Preview.renderMatrix` also draws each text scale (1 and
+  1.3 by default, the Mac's largest Text size; `ThemeStore.shared.textScale`, put back afterwards) as
+  `<surface>-x1.3-<light|dark>.png`; `modelSettingsPopoverStates` is the example. A preview of a
+  feature's copy is driven from the real producer (the store, the extension's output, the
+  formatter, as `ThreadView` over a `ThreadFixture` is), never from strings copied from the board.
 - ShepherdUI's components also have `#Preview`s (`Packages/ShepherdUI/Sources/ShepherdUI/Previews/`)
   for Xcode's canvas; the Debug build's Component Gallery shows the base components live.
 
@@ -219,6 +224,9 @@ feed name or signing setting that drifts from the script fails before a release 
 (what staging keeps and refuses, and `verify-app`'s engine checks), the pin, the engine's
 entitlements, `sign-app.sh`'s and `sign-engine.sh`'s signing of node (on macOS), the "Embed pi
 engine" phase, and the Release workflow's staging and signing steps.
+`Tests/Release/test_check_pr_body.py` tests `scripts/check_pr_body.py`, the `pr-body` workflow's
+check that a UI or autonomous-feature PR body says its Departures, Rendered, Controls used,
+Bounds, Data, Restart and stop and Decisions, against the PR template and the workflow file.
 
 **Tests never take the user's focus or drive their mouse or keyboard.**
 
@@ -227,6 +235,48 @@ engine" phase, and the Release workflow's staging and signing steps.
 - Never call `makeKey` or `orderFront`, and never post synthetic mouse or keyboard events.
 - Nothing touches the user's support directory, preferences, pi configuration or sessions,
   `~/.agents`, `$TMPDIR/shepherd-drops`, or a running Shepherd.
+
+**Pressing a control** (`ControlPress`, `Tests/ShepherdTestSupport/ControlPress.swift`) is how a
+test proves that a control the design draws is a control, is enabled in the state the design
+says, does what it should, and has a hit area a person can hit. It finds the control in the
+window's accessibility tree and runs its press action, as VoiceOver does: nothing is posted to
+the window, so it never takes the user's pointer or keyboard. A test that says a control cannot
+be tested has not tried this. `ModelSettingsPopoverTests` is the worked example,
+`ControlPressTests` pins the helper.
+
+- **Opt in with a process of its own.** SwiftUI draws the accessibility tree only while an
+  assistive client is attached to the process, and attaching (`AccessibilityNode.enable()`) is
+  process-wide, so each scenario is an exit test that calls `enable()` first:
+
+  ```swift
+  @Test func pauseSendsPause() async {
+      await #expect(processExitsWith: .success) { await recordingErrors { try await Self.pausing() } }
+  }
+  @MainActor static func pausing() async throws {
+      AccessibilityNode.enable()
+      let window = OffscreenWindow(size: size, dark: true, MyView(model: model))
+      defer { window.close() }
+      try window.press("Pause")        // by accessibility label; role defaults to AXButton
+      try await eventuallyOnMain("the host to be asked to pause") { model.requests == [.pause] }
+  }
+  ```
+
+- **Press by label:** `window.press("Fast", in: "Speed")` (a group's label scopes the search),
+  `press("Edit", nth: 1)` among equals, `press("Open", role: ControlRole.popUpButton)`. It returns
+  the `Control` (role, label, value, frame, enabled). A missing label, a disabled or hidden
+  control, a view that only says it is a button and takes no press, and two controls with one label
+  each throw a `ControlPressError` that lists every control the window offers. Assert what the press
+  did (the request sent, the state left), not only that it pressed.
+- **Hit areas:** `window.controls()` lists every actionable control with its frame, and
+  `ControlPress.undersized(_, minimum: .desktop)` (24pt) or `.touch` (44pt) names those too small.
+  A plain-style button with a clear background and no `.contentShape` answers a click only over its
+  label, and its frame says so. Check every state the design draws, since the controls differ.
+- **A row's actions:** a row that combines its children is one element, and its hover buttons are
+  its accessibility actions (what VoiceOver's action menu offers). `ControlPress.actions(onLabelContaining:under:)`
+  lists their names and `ControlPress.perform("Reply", onLabelContaining: "reviewer", under: host)` runs one;
+  `SubagentReplyTests` presses a tray row that way. A pointer's hover button is not in the tree,
+  so what it reaches is the same closure the action runs.
+- A control that is not drawn in a state is not in the tree: assert its absence with `controls()`.
 
 **Which tier a change needs:**
 
@@ -296,6 +346,10 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
 - **Extensions:** embedded extensions byte-identical to `Extensions/*` (all twenty-one files, and
   the design skill's two files).
 - **Themes:** every theme variant complete, and the WCAG contrast rules met.
+- **Design rules:** `DesignRulesTests` scans the Mac app, ShepherdUI and the iOS client for a
+  literal font size, a status color tinted by an opacity, a raw color and a registered glyph named
+  as a string (`NWGlyph`), with a table pinning each pattern and `DesignRuleAllowlist` for what
+  predates them. The allowlist only shrinks; never add an entry for new code.
 - **App logic:** keybindings (defaults, validation, stored overrides for removed actions
   ignored), palette and settings search, workspace selection and parking, sidebar ordering and
   reveal, pinned threads (their order, persistence and pruning, Needs you winning, the digits),
@@ -305,23 +359,70 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
   the nightly notice armed once), the support directory and listener port per edition, and the
   release rules (every trigger, feed routing, the legacy aliases, every feed item arm64 only).
 
-CI (`.github/workflows/ci.yml`) runs on pull requests and pushes to `master`, skipping the
-timing-sensitive tests. Docs-only changes (`docs/**`, `*.md`) don't trigger it.
+CI (`.github/workflows/ci.yml`) has two lanes, and its `plan` job (`scripts/ci_impact.py`) picks
+one and writes into the run's summary which suites run and why. `CI` is the one check to require:
+it passes when every job the plan asked for did (a job the plan skipped counts as passing). There
+are no workflow path filters, because a filtered-out workflow never reports `CI`. Tests that
+depend on the machine's speed skip on CI (`CI=true`).
 
-- **Shards:** four `macos-26` jobs each build (`.github/actions/swift-build`) and run
-  `swift test --skip-build --no-parallel` over their share of the suites. W, R and A take the
-  App integration suites their regexes name (`W_RE`, `R_RE`, `A_RE` in the workflow); C `--skip`s
-  all three and runs everything else, so a new or renamed suite always lands in C. Each shard
-  lists its suites' times in the run's summary: when the slowest shard beats the fastest by more
-  than 20 s over two runs, move a suite. A shard that runs no tests fails, and so does a C whose
-  count differs from what `swift test list` leaves after the three regexes (a dead `--skip`).
+- **Fast lane**, every pull request into `nightly`: the unit tier (seconds), a smoke set (`SMOKE`),
+  and the integration suites the changed paths can affect, in one to four `macos-26` shards
+  (about 200 s of tests each). The impact map (`RULES` and `AREAS` in `scripts/ci_impact.py`) is
+  explicit and conservative; the first rule a path matches decides it:
+  - Docs, `*.md`, `Extensions/` (node tests, and `Tests/Release`'s check that each embedded copy
+    equals its canonical file), `Tests/Extensions/`, `Tests/Release/`, `scripts/`, `App/iOS/` and
+    the release workflow run no Swift at all; the extension tests and release rules always run.
+  - A path with an owner (the thread and composer, Browser, Design tool, review and worktrees,
+    terminals, sidebar and workspace, Settings and pi, automations and hosts) runs that area's
+    suites. A changed test file runs the suites it declares, a test helper or fixture its whole
+    target. A ShepherdApp file no area owns runs the app's whole integration tier: the server's and
+    the design renderer's integration tests cannot depend on it.
+  - Anything shared, or any path the map doesn't know, runs everything: ShepherdCore,
+    ShepherdProtocol, ShepherdRemote, ShepherdSessions' core files (SessionServer, RPC, PTY, pi
+    launch), `Package.swift` and `Package.resolved`, the Xcode project, test support, CI itself.
+  - Add the `full-ci` label to a pull request, or run the workflow by hand (`gh workflow run ci.yml
+    --ref <branch> -f lane=full`), to run everything. `-f lane=fast -f base=nightly` runs the fast
+    lane's choice for a branch. Adding any other label also starts a run (a workflow cannot filter
+    on a label's name), but every job in it is skipped and it cancels nothing; GitHub shows its
+    skipped checks beside the real ones, and a skipped check passes. `Tests/Release/test_ci_impact.py`
+    fails when a pattern matches no suite or no file, so a rename cannot silently narrow a rule.
+- **Full lane**, pushes to `nightly` and `master`, pull requests into `master` or labelled
+  `full-ci`, the daily run and manual runs: every suite, in four shards. `Tests/ci-suite-times.json`
+  holds each suite's seconds; `scripts/ci_shards.py` assigns suites longest first, each to the
+  lightest shard, and a suite the file doesn't know goes to the lightest shard (the summary says
+  so). Every shard computes the same cut from `swift test list` and checks it is a partition, and
+  fails if it ran another number of tests than it was given, or none. Each shard builds on its own
+  (see Caches). The file lags the tests a little by design; regenerate it from a full run now and
+  then: `gh run download <run> -p 'ci-results-swift-*' -D /tmp/t && python3 scripts/ci_shards.py
+  record /tmp/t/*/suite-times.json`, and commit it (the new numbers are blended halfway into the
+  old).
+- **Flaky tests:** when a shard fails, `scripts/ci_run_tests.py` reruns only the failed tests once
+  (`--filter` of their ids, still serially). A test that passes the second time is flaky: a
+  `::warning::`, a row in the step summary and `flaky.json` in the shard's `ci-results-*`
+  artifact. One that fails again fails the shard. Nothing is retried after a build failure, a
+  crash, the watchdog, an issue the list cannot attribute to a test, or more than eight failing
+  tests. The extension tests are retried by name the same way. Every failure also gets an
+  `::error file=,line=` annotation and a row in the summary, and the shard's full log is the
+  `ci-logs-*` artifact. A flaky test is a bug to fix, not a pass to ignore: the tracking issue
+  (below) counts the runs each one was flaky in, and a test flaky in nearly every run fails its
+  first attempt almost every time and passes alone, which points at the test (its order, state it
+  shares, a wait that assumes an idle machine) before the machine.
+- **The daily run and the tracking issue:** the full lane runs daily on `nightly` with each shard's
+  tests three times (a test that fails some passes is flaky; `schedule` fires only from the
+  default branch's copy of the workflow, so it starts once `master` has this file, and until then
+  `gh workflow run ci.yml --ref nightly -f lane=flake-hunt` does the same). After a full lane on
+  `nightly` or `master`, `scripts/ci_report.py` keeps one issue labelled `ci-health`: a comment
+  per red run with its failing tests, a table of flaky tests in the body (counts kept across runs
+  in a hidden JSON block), a comment when green returns. It reopens a closed issue, never closes
+  one and never opens a second.
 - **Serial within a shard:** on the shared 3-core runner, a parallel run queued tests behind one
-  another's main-thread work until their waits ran out. A watchdog samples a test host still
-  running after 10 minutes, then ends the run.
-- **Release rules** run on `ubuntu-latest` (stdlib Python). **Extension tests** run there too,
-  with Node 24 and the modular pi package version from `scripts/pi-engine-pin.json`, installed
-  with lifecycle scripts disabled. The `CI` job passes only when every Swift shard, extension
-  tests and release rules did; it is the one check to require.
+  another's main-thread work until their waits ran out. A watchdog ends a test host that stops
+  making progress after 2.5 times its shard's recorded seconds (at least 8 minutes), after
+  sampling its stacks.
+- **Release rules** run on `ubuntu-latest` (stdlib Python): the release workflow's, the CI
+  helpers', the docs' and the embedded extensions'. **Extension tests** run there too, with Node
+  24 and the modular pi package version from `scripts/pi-engine-pin.json`, installed with
+  lifecycle scripts disabled.
 - **Caches:** dependency checkouts (keyed on `Package.resolved`) and build products (one entry per
   commit, restored from the nearest earlier one) are cached apart. `scripts/ci_mtimes.py` puts
   each unchanged source's saved mtime back after checkout, so a restored build compiles only
@@ -334,19 +435,25 @@ timing-sensitive tests. Docs-only changes (`docs/**`, `*.md`) don't trigger it.
   changed (a few seconds when nothing did). A link that still fails with undefined symbols and no
   other error (`scripts/ci_stale_link.py`, tested in `Tests/Release`) gets a `::warning::` and
   one rebuild from scratch that keeps the dependency checkouts; a compile error fails at once.
-  A push to `nightly` runs no tests: its `warm` job builds from scratch and saves
-  both caches where every PR based on `nightly` can read them. Pull requests save nothing, so
-  every push to one restores that entry and compiles the PR's changes on top; a PR into
-  `master` reads only `master`'s. Master pushes and manual runs save from shard C, before its
-  tests (never on `nightly`, where the warm job saves). Run the workflow by hand with `clean` to
-  ignore the build cache. A corrupt cache: bump `CACHE_EPOCH` in the action to orphan every
-  entry, build and dependencies, or clear one
-  ref's with `gh cache delete --all --ref refs/pull/N/merge` (or `refs/heads/<branch>`).
-- **Checking a CI change:** a pull request's run is cold ("Cache not found") until `nightly`
-  holds an entry for the same toolchain and epoch, and it saves nothing, so it cannot show an
-  incremental build. Before merging, run the workflow by hand on the branch, let it finish (a
-  second run on the same ref cancels the first), push a small source change, and run it again:
-  its shards restore the first run's entry by prefix, "Restore source mtimes" reports about as
-  many new or changed files as the push touched, and the build compiles only their modules. A
-  rerun of an unchanged commit is an exact hit and tests nothing. After the merge, the `warm`
-  job's entry should be what the next push to any PR into `nightly` restores.
+  Every shard builds for itself: it restores the newest entry of its branch (the base branch's, for
+  a pull request) and compiles what changed, a minute or two for a typical change and seven for a
+  change to ShepherdCore. That measured quicker than a build job the shards wait for, by over a
+  minute. A push to `nightly` or `master` also saves: its last shard saves both caches under the
+  commit right after building and before its tests, so every pull request into that branch finds a
+  warm entry. Pull requests save nothing. The first full run of each UTC day, a manual `clean` run
+  and the daily run start from scratch instead: the `build` job builds once, saves and writes the
+  day's marker, and every shard restores that build whole (`shared_build: true` or `false` forces
+  either way). A shard that restores its own commit's build skips `swift build`. Run the workflow
+  by hand with `clean` to ignore the build cache. A corrupt cache: bump `CACHE_EPOCH` in the action
+  to orphan every entry, build and dependencies, or clear one ref's with `gh cache delete --all
+  --ref refs/pull/N/merge` (or `refs/heads/<branch>`).
+- **Checking a CI change:** a pull request's run exercises the pull request's copy of the workflow
+  and is cold ("Cache not found") until `nightly` holds an entry for the same toolchain and
+  epoch, and it saves nothing, so it cannot show an incremental build. Before merging, run the
+  workflow by hand on the branch (`-f lane=full`), let it finish (a second run on the same ref
+  cancels the first), push a small source change, and run it again: its shards restore the first
+  run's entry by prefix, "Restore source mtimes" reports about as many new or changed files as the
+  push touched, and the build compiles only their modules. A rerun of an unchanged commit is an
+  exact hit. `-f lane=fast -f base=<the commit before the change>` shows the impact map's choice
+  for it, with the build restored from the branch's own entry. A branch's caches are visible to
+  that branch alone (and to pull requests into it), so a probe branch needs a run of its own first.

@@ -123,6 +123,11 @@ extension AppLayout {
     static let instructionsHistoryPopoverWidth: CGFloat = 380
     static let instructionsHistoryPopoverMaxHeight: CGFloat = 340
 
+    // Settings ▸ Pi ▸ Slash commands (SettingsPiSlashCommands): a 280pt search, and rows in the Skills
+    // list's measures: at least 54pt, the command in mono 13, its description in 12.5.
+    static let slashSearchWidth: CGFloat = 280
+    static let slashRowMinHeight: CGFloat = skillsRowMinHeight
+
     // Settings ▸ Skills (SettingsSkills): the installed skills beside a 280pt rail, 28pt apart,
     // 18pt under the header.
     static let skillsBlockSpacing: CGFloat = 18

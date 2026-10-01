@@ -259,19 +259,69 @@ struct AgentsPreviewTests {
     }
 
     /// A run that asked its parent: its question under "Asked the parent" where a finished run shows its result,
-    /// Stop without Pause, and the Steer field still there. Nothing on it answers the question.
+    /// Stop without Pause, and its Steer field called Reply (decided by the user, 2026-10-01). Nothing on it
+    /// answers the question for the parent. Light and dark, and at the largest Text size.
     @Test func threadSubagentInspectorAsked() async throws {
         let fixture = ThreadFixture(Threads.subagents(Array(Threads.liveRuns.prefix(3)), running: true))
         fixture.transcripts["native-reviewer"] = Threads.workerTranscript
         defer { fixture.store.stop() }
         let panes = RightPaneState()
         panes.runByAgent[AgentID(rawValue: "a")] = "native-reviewer"
-        try await Preview.render("thread-subagent-inspector-asked", size: CGSize(width: 1370, height: 900), ready: { fixture.store.ready }) {
+        try await Preview.renderMatrix("thread-subagent-inspector-asked", size: CGSize(width: 1370, height: 900), scales: [1, 1.3],
+                                       ready: { fixture.store.ready }) {
             RightPaneSplit(state: panes, showPane: true) {
                 fixture.thread(inspected: "native-reviewer")
             } pane: {
                 SubagentInspector(store: fixture.store, runID: "native-reviewer", active: true, close: {}, select: { _ in }, fork: { _ in nil })
             }
+        }
+    }
+
+    /// Reply on a run that asked its parent (decided by the user, 2026-10-01), drawn from the real producers: the
+    /// tray's rows hovered, from the store's tray and `SubagentTrayRow` (its Steer is Reply on the run that asked, with
+    /// a long question truncating beside it), and the touch screens' Steer field from `nativeRunSteerWords`. The hover
+    /// buttons are icons, so the tooltip and VoiceOver words are in `SubagentReplyTests`; the field is the visible change.
+    @Test func subagentReply() async throws {
+        let live = Array(Threads.liveRuns.prefix(2))
+        var long = live[1]
+        long.runID = "native-long"
+        long.label = "planner: rename"
+        long.role = "planner"
+        long.task = "Plan the rename of every token across the Mac app, the iPhone and iPad client and the design tool."
+        long.question = ChildQuestion(text: "Two token names collide with existing `Tokens.textSecondary`, `Tokens.textTertiary` and the new `nw` ones in three modules. Rename the new ones, or replace the old ones everywhere, including the iPad client and the design tool?")
+        let runs = live + [long]
+        let tray = NativeSubagentTray(runs)
+        let rows = SubagentPresentation.tray(tray).rows
+        let actions = SubagentActions(inspect: { _ in }, command: { _, _, _, _ in }, steer: { _ in })
+        let size = CGSize(width: 980, height: 520)
+        try await Preview.renderMatrix("subagent-reply", size: size) {
+            VStack(alignment: .leading, spacing: NW.Space.xl) {
+                Text("Tray, hovered: Steer on the running run, Reply on the two that asked").nwSectionLabel()
+                NWDockStack(showsTray: true, showsQueue: false) {
+                    NWSubagentTray(SubagentPresentation.tray(tray).summary, collapsed: false, onToggle: {}) {
+                        VStack(spacing: 0) {
+                            ForEach(rows) { row in
+                                SubagentTrayRow(value: row, run: runs.first { $0.id == row.id }!, selected: false, actions: actions,
+                                                hovering: true).equatable()
+                            }
+                        }
+                    }
+                } queue: { EmptyView() }
+                Text("Touch: the run's Steer field").nwSectionLabel()
+                HStack(alignment: .top, spacing: NW.Space.xl) {
+                    ForEach(Array(live.enumerated()), id: \.offset) { _, run in
+                        let words = nativeRunSteerWords(run)
+                        let name = SubagentPresentation.names(run).name
+                        NWSteerField(text: .constant(""), prompt: "\(words.label(name))…", caption: words.caption(name),
+                                     accessibilityLabel: words.label(name), sendLabel: words.verb) {}
+                            .frame(width: 420)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(NW.Space.xxl)
+            .frame(width: size.width, height: size.height, alignment: .topLeading)
+            .background(Color.nw.bgWindow)
         }
     }
 
