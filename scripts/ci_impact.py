@@ -469,7 +469,6 @@ def plan_for(
         return Plan("fast", False, "none", selection, 0, 0.0, reasons or ["no files changed"])
     if run_everything:
         plan = full_plan(f"{run_everything}: everything runs")
-        plan.lane = "fast"
         plan.reasons += reasons
         plan.estimated_seconds = sum(times.values())
         return plan
