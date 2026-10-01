@@ -169,7 +169,9 @@
       kind: KINDS[found.kind] ? found.kind : 'other',
       label: typeof found.label === 'string' ? clip(found.label, 200) : null,
       name: typeof name === 'string' && name ? clip(name, 200) : null,
-      noun: nounOf(node, found)
+      noun: nounOf(node, found),
+      // A `<dc-import>`'s board name, as written: the element is one use of that shared piece.
+      piece: found.tag === 'dc-import' && typeof found.el === 'string' && found.el ? clip(found.el, 200) : null
     };
   }
 

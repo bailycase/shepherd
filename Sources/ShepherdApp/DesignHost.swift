@@ -70,7 +70,8 @@ extension DesignElementPick {
     /// grammar can't name it on this board.
     init?(_ hit: DesignHit, on board: DesignPath) {
         guard let id = hit.id(on: board) else { return nil }
-        self.init(board: board, id: id, rect: hit.rect, kind: hit.kind, label: hit.label, tag: hit.tag, words: hit.name ?? hit.label)
+        self.init(board: board, id: id, rect: hit.rect, kind: hit.kind, label: hit.label, tag: hit.tag, words: hit.name ?? hit.label,
+                  piece: hit.piece)
     }
 }
 
@@ -188,15 +189,25 @@ final class DesignHost {
         var sha: String
         /// Its tweaked props as JSON (canvas.json's `tweaks` for it); nil when it has none.
         var props: String?
+        /// What the boards it imports (through theirs) were when it was read, by path and file hash;
+        /// nil when it imports none. A piece that changes redraws the boards that import it, though
+        /// their own files didn't.
+        var deps: String?
 
-        init(size: CGSize, sha: String, props: String? = nil) {
+        init(size: CGSize, sha: String, props: String? = nil, deps: String? = nil) {
             self.size = size
             self.sha = sha
             self.props = props
+            self.deps = deps
         }
 
-        /// What the board draws: its file and its props. Snapshots and live views are kept by it.
-        var drawing: String { props.map { sha + "+" + $0 } ?? sha }
+        /// What the board draws: its file, its props and the pieces it imports. Snapshots and live
+        /// views are kept by it.
+        var drawing: String {
+            var out = props.map { sha + "+" + $0 } ?? sha
+            if let deps { out += "@" + deps }
+            return out
+        }
     }
 
     let designID: DesignID
@@ -320,8 +331,9 @@ final class DesignHost {
         for (path, board) in next {
             guard let old = previous[path], old != board else { continue }
             if let slot = slots[path] {
-                if old.size != board.size {
-                    // A new size lays the page out again: load it afresh.
+                if old.size != board.size || (old.deps != board.deps && slot.sha != board.drawing) {
+                    // A new size lays the page out again, and a piece it imports that changed is
+                    // fetched again only by a fresh load (a live reload keeps what it imported): load it afresh.
                     releaseSlot(path)
                 } else if slot.ready, slot.sha != board.drawing {
                     reload(path, slot: slot)

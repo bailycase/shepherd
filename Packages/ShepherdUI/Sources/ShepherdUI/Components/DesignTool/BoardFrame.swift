@@ -29,7 +29,7 @@ public struct NWBoardFrame<Slot: View>: View, Equatable {
         // the frame, and isn't drawn where it would lie over that row (`NWLabelRoom`).
         let label = board.labelRoom.layout(width: size.width, zoom: zoom)
         VStack(alignment: .leading, spacing: 0) {
-            NWBoardLabel(title: board.title, size: board.size, selected: board.isSelected)
+            NWBoardLabel(title: board.title, size: board.size, usage: board.usage, selected: board.isSelected)
                 .frame(width: label.width, height: NWDesignMetrics.labelHeight, alignment: .leading)
                 .padding(.bottom, label.gap)
                 .frame(height: NWDesignMetrics.labelHeight + NWDesignMetrics.labelGap, alignment: .bottom)
@@ -37,20 +37,23 @@ public struct NWBoardFrame<Slot: View>: View, Equatable {
             NWBoardSurface(size: size, selected: board.isSelected) { slot }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(board.title), \(board.size)")
+        .accessibilityLabel("\(board.title), \(board.size)\(board.usage.map { ", \($0)" } ?? "")")
         .accessibilityAddTraits(board.isSelected ? [.isSelected, .isImage] : .isImage)
     }
 }
 
-/// A board's label: its name and, 8pt after it, its size.
+/// A board's label: its name and, 8pt after it, its size, then (for a shared piece other boards
+/// import) how many use it, "used in 3 boards", in the size's 10.5 `textTertiary`.
 public struct NWBoardLabel: View {
     let title: String
     let size: String
+    let usage: String?
     let selected: Bool
 
-    public init(title: String, size: String, selected: Bool) {
+    public init(title: String, size: String, usage: String? = nil, selected: Bool) {
         self.title = title
         self.size = size
+        self.usage = usage
         self.selected = selected
     }
 
@@ -67,6 +70,13 @@ public struct NWBoardLabel: View {
                 .foregroundStyle(Color.nw.textTertiary)
                 .lineLimit(1)
                 .fixedSize()
+            if let usage {
+                Text(usage)
+                    .font(.nwSans(NWDesignMetrics.labelSizeTextSize))
+                    .foregroundStyle(Color.nw.textTertiary)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
         }
     }
 }
