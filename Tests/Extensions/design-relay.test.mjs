@@ -11,7 +11,10 @@ import { children, jiti, root, sleep, tempDir, until, withEnv } from "./fixtures
 const design = await jiti.import(path.join(root, "Extensions/shepherd-design.ts"));
 const KEY = Symbol.for("shepherd.design.relay.v1");
 const TITLE = "shepherd-relay:v1:";
-const RELAYED = ["board_edit", "board_write", "canvas_update", "comment_list", "design_check", "design_read", "system_read", "system_write"];
+const RELAYED = [
+  "board_edit", "board_extract", "board_render", "board_search", "board_write", "boards_edit", "canvas_update", "checkpoint_create",
+  "checkpoint_list", "comment_list", "design_check", "design_read", "system_read", "system_write",
+];
 
 function fakePi() {
   const handlers = {}, tools = new Map();
@@ -84,8 +87,9 @@ test("only a design agent's pi publishes a relay, with exactly the tools a helpe
   await withRelay(() => null, async ({ pi, relay }) => {
     assert.deepEqual([...relay.tools.keys()].sort(), RELAYED);
     assert.deepEqual([...design.RELAYED_TOOLS].sort(), RELAYED);
-    assert(pi.tools.has("comment_reply") && pi.tools.has("markup_propose"), "the agent has them");
+    assert(pi.tools.has("comment_reply") && pi.tools.has("markup_propose") && pi.tools.has("checkpoint_restore"), "the agent has them");
     assert(!relay.tools.has("comment_reply") && !relay.tools.has("markup_propose"), "a helper never does: they are the agent's voice toward the viewer");
+    assert(!relay.tools.has("checkpoint_restore"), "nor a restore: it rewinds every board, a sibling's work included");
     assert.equal(relay.designID, "d1");
     assert.equal(children.designRelay(), relay);
     // The registry names one design; another agent's environment is not it.
@@ -155,6 +159,47 @@ test("a call that is malformed, invalid for its tool, repeated or too big is ans
     run.relays.set("dup", new AbortController());
     assert.match((await serve(run, request("design_read", { path: "A.dc.html" }, "dup"), relay))[0].error, /repeated/);
     run.relays.clear();
+  });
+});
+
+test("a helper gets the batch tools through its parent too, a rendered board's picture with them, and never a restore", async () => {
+  const png = { data: "iVBORw0KGgo=", mimeType: "image/png" };
+  const answer = (frame) => {
+    if (frame.type === "designRender") return { type: "designRendered", text: "A.dc.html · 390×844", image: png };
+    if (frame.type === "designSearch") return { type: "designSearchResult", result: { boards: [], totalMatches: 0, totalBoards: 0, searched: 2, omittedBoards: 0 } };
+    if (frame.type === "designEditBoards") return { type: "designBatchEdited", result: { result: { revision: 6, changed: false }, boards: [], dryRun: true, atomic: false, blocked: false } };
+    if (frame.type === "designCheckpoint") return { type: "designCheckpoints", result: { action: frame.request.action, checkpoints: [] } };
+    return { type: "error", code: "unexpected", message: frame.type };
+  };
+  await withRelay(answer, async ({ host, relay }) => {
+    const run = newRun(["board_render", "board_search", "boards_edit", "checkpoint_create", "checkpoint_list"]);
+    const picture = await serve(run, request("board_render", { path: "A.dc.html" }, "r1"), relay);
+    assert.equal(picture[0].ok, true);
+    assert.deepEqual(picture[0].content, [{ type: "text", text: "A.dc.html · 390×844" }, { type: "image", ...png }], "the helper's model gets the picture");
+    const found = await serve(run, request("board_search", { text: "Pay" }, "r2"), relay);
+    assert.match(found[0].content[0].text, /^No matches in 2 boards\.$/);
+    const edited = await serve(run, request("boards_edit", { paths: ["A.dc.html"], edits: [{ find: "a", replace: "b" }], dry_run: true }, "r3"), relay);
+    assert.match(edited[0].content[0].text, /^Dry run: 0 of 0 boards would be edited/);
+    const saved = await serve(run, request("checkpoint_list", {}, "r4"), relay);
+    assert.equal(saved[0].content[0].text, "The design has no checkpoints.");
+    assert(host.frames.every((frame) => frame.agentID === "designer-1" && frame.designID === "d1" && frame.connection === 1), "all on the parent's connection");
+
+    // A restore rewinds every board, siblings' work included: a profile can't list it, and a forged list is refused.
+    for (const list of [["checkpoint_restore"], ["checkpoint_create"]]) {
+      const forged = newRun(list);
+      const refused = await serve(forged, request("checkpoint_restore", { name: "x" }, `f-${list[0]}`), relay);
+      assert.equal(refused[0].ok, false);
+      assert.match(refused[0].error, /is not relayed to this helper|not relayed/);
+    }
+    assert.match(children.designToolsProblem(["checkpoint_restore"], relay), /^checkpoint_restore can't be relayed to a helper/);
+    // Only a picture crosses besides text, and only a small PNG or JPEG one.
+    const tool = relay.tools.get("board_render");
+    const original = tool.execute;
+    tool.execute = async () => ({ content: [{ type: "text", text: "x" }, { type: "image", data: "AAAA", mimeType: "image/svg+xml" }, { type: "resource", uri: "file:///etc/passwd" }] });
+    try {
+      const odd = await serve(newRun(["board_render"]), request("board_render", { path: "A.dc.html" }, "r5"), relay);
+      assert.deepEqual(odd[0].content, [{ type: "text", text: "x" }]);
+    } finally { tool.execute = original; }
   });
 });
 
@@ -242,8 +287,8 @@ test("without a live design agent a relayed call is refused, and the parent's pr
   assert.match(children.designToolsProblem(["design_read"], undefined), /only to the helpers of a design agent/);
   await withRelay(() => null, async ({ relay }) => {
     assert.equal(children.designToolsProblem(["design_read", "board_edit", "system_write"], relay), undefined);
-    assert.match(children.designToolsProblem(["design_read", "comment_reply", "markup_propose"], relay),
-      /^comment_reply, markup_propose can't be relayed to a helper: the design agent answers .* Relayed: design_read, design_check, system_read, comment_list, board_write, board_edit, canvas_update, system_write\.$/);
+    assert.match(children.designToolsProblem(["design_read", "comment_reply", "markup_propose", "checkpoint_restore"], relay),
+      /^comment_reply, markup_propose, checkpoint_restore can't be relayed to a helper: the design agent answers .* restores checkpoints itself.* Relayed: design_read, design_check, system_read, comment_list, board_write, board_edit, boards_edit, board_search, board_render, board_extract, checkpoint_create, checkpoint_list, canvas_update, system_write\.$/);
     const partial = { tools: new Map([["design_read", {}]]) };
     assert.match(children.designToolsProblem(["design_read", "board_edit"], partial), /^board_edit isn't available/);
   });
