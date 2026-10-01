@@ -46,6 +46,24 @@ struct EngineSmokeTests {
         try await EngineSmoke.runInYourHome(engine: engine)
     }
 
+    /// What the bundle resolves from the engine's `node_modules`, with the engine's own node: the
+    /// modules the keep-list ships, and codemode's QuickJS binary, which pi finds by name when a
+    /// script runs (staged without it, a script fails with "Cannot find module").
+    @Test func theBundleResolvesTheModulesTheEngineShips() throws {
+        let engine = try #require(EngineSmoke.engine)
+        let script = """
+            const { createRequire } = require("node:module");
+            const resolve = createRequire(process.argv[1]).resolve;
+            for (const name of ["jiti", "@silvia-odwyer/photon-node", "quickjs-wasi/quickjs.wasm"]) console.log(resolve(name));
+            """
+        let result = try EngineSmoke.runTool(engine.node.path, ["-e", script, engine.entry.path], environment: [:])
+        #expect(result.status == 0, "\(result.output)")
+        let resolved = result.output.split(separator: "\n").map(String.init)
+        let modules = engine.packageDirectory.appendingPathComponent("node_modules").standardizedFileURL.resolvingSymlinksInPath().path + "/"
+        #expect(resolved.count == 3 && resolved.allSatisfy { $0.hasPrefix(modules) }, "each resolves inside the engine's node_modules: \(resolved)")
+        #expect(resolved.last?.hasSuffix("/quickjs-wasi/quickjs.wasm") == true)
+    }
+
     /// Skills come only from Shepherd's home: pi's own discovery of `$HOME/.agents/skills` is off
     /// (Shepherd's settings filter it out), so a skill there never reaches an agent, while one in
     /// the home's `skills/` does, and so do the ones copied from the user's pi and that folder.
