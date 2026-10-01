@@ -81,6 +81,17 @@ struct ModelCatalog: Sendable {
         return NWModelList(sections: sections)
     }
 
+    /// Two quick choices for the settings popover. The current model stays even if unavailable;
+    /// recent choices must still exist in the host's catalog.
+    static func settingsModels(catalog: ModelCatalog?, current: String?, recent: [String]) -> [NWModelOption] {
+        var ids = current.flatMap { $0.isEmpty ? nil : [$0] } ?? []
+        for id in recent where !ids.contains(id) && catalog?.model(id) != nil {
+            guard ids.count < 2 else { break }
+            ids.append(id)
+        }
+        return ids.map { NWModelOption(id: $0, title: nativeModelShortName($0), isCurrent: $0 == current) }
+    }
+
     // MARK: This Mac's catalog
 
     /// Coalesce simultaneous loads; PiModelCatalog owns persistence and invalidation. Keeping
