@@ -14,11 +14,12 @@ import Testing
 /// tail (distance 0) while the lazy stack had placed its rows elsewhere and the viewport drew
 /// nothing but the composer. It needed `defaultScrollAnchor(.bottom)` over a stack of estimated
 /// row heights and a window of modest height, and showed on macOS 27 (with a build for the
-/// macOS 26 SDK too) in the 900×600 window and not in a tall one. From 27 the thread sets no
-/// anchor (`ThreadTailAnchor`). macOS 26 still anchors, and CI's runner shows the same blank
-/// there, even at the opening, in the short windows: a known issue on 26 until the thread can
-/// reach its tail there without `scrollTo` (which builds every row of a long thread). The tall
-/// window is the control everywhere.
+/// macOS 26 SDK too) in the 900×600 window and not in a tall one. The thread anchors on every
+/// system (`ThreadTailAnchor`), and the short windows still draw the same blank, even at the
+/// opening: a known issue until the thread can reach its tail without the anchor and without
+/// `scrollTo` (which builds every row of a long thread). Dropping the anchor on macOS 27 passed
+/// here and left a running thread blank, and not scrollable, on a real Mac (2026-09-30), so the
+/// harness does not yet see everything the window does. The tall window is the control.
 ///
 /// Every test runs a real `ThreadView` over a `QueueFixture` host in an off-screen window, the
 /// host changing the way pi's does, and looks at the window after each change.
@@ -210,11 +211,11 @@ struct ThreadBlankScreenTests {
     // MARK: Sequences
 
     /// A thread of a long history in a window of `size`, open and drawing its tail, for `body`.
-    /// Short windows still open blank where the thread anchors natively (macOS 26).
+    /// Short windows still open blank where the thread anchors natively (every system).
     static func withRig(size: CGSize, _ body: (Rig) async throws -> Void) async throws {
         let rig = Rig(turns: 40, size: size)
         defer { rig.close() }
-        try await withKnownIssue("macOS 26 anchors the thread natively, and a short window still draws it blank there", isIntermittent: true) {
+        try await withKnownIssue("the thread anchors natively, and a short window still draws it blank there", isIntermittent: true) {
             try await rig.open()
             try await body(rig)
         } when: { ThreadTailAnchor.isNative && size.height < 900 }

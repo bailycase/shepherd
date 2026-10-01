@@ -542,22 +542,20 @@ final class ThreadFinder {
     func find(_ entryID: String) { request = Request(entryID: entryID) }
 }
 
-/// What keeps a following thread on its tail besides the follower's own scrolling.
+/// What keeps a following thread on its tail besides the follower's own scrolling: a bottom
+/// `defaultScrollAnchor` (the initial offset, and size changes while following).
 ///
-/// From macOS 27 nothing does: a bottom `defaultScrollAnchor` (initial offset and size changes)
-/// over this lazy stack, whose unmeasured rows are estimates, could leave the scroll view with a
-/// content size that disagreed with where the rows were placed, and the viewport drew nothing
-/// (the blank thread after a send or a finished turn; `ThreadBlankScreenTests`). Before 27 the
-/// anchors stay: `scrollTo`, the follower's only way to the tail without them, builds every row of
-/// a long thread there (`ListPerformanceTests`: 120 row builds against a budget of 40), so a short
-/// window can still draw blank on macOS 26 (a known issue in `ThreadBlankScreenTests`).
+/// It is on for every system. Over this lazy stack, whose unmeasured rows are estimates, it can
+/// leave a short window drawing blank after a send or a finished turn (`ThreadBlankScreenTests`,
+/// a known issue there). Dropping it on macOS 27 and following by `scrollTo` alone fixed that in
+/// the harness and, on a real Mac (2026-09-30), left a running thread blank in a tall window with
+/// nothing to scroll back to; `isNative` is the switch to try that again from, once a harness
+/// reproduces what the window drew.
 struct ThreadTailAnchor: ViewModifier {
     let sticky: Bool
 
     /// The scroll view keeps the tail itself, as the follower's `nativeAnchor` says.
-    static var isNative: Bool {
-        if #available(macOS 27, *) { false } else { true }
-    }
+    static let isNative = true
 
     @ViewBuilder func body(content: Content) -> some View {
         if Self.isNative {
