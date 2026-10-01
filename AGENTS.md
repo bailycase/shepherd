@@ -3,7 +3,8 @@
 Shepherd is a native macOS app (SwiftUI, macOS 26+) for running and supervising many `pi` coding
 agents, with an iPhone and iPad client (`App/iOS`). Every agent is `pi --mode rpc` on pipes, owned
 in-process by `SessionServer` and drawn only as a native thread. There is no daemon: sessions live
-and die with the app. Terminals are tabs under a thread, never splits. Detail: [docs/overview.md](docs/overview.md).
+and die with the app. Terminals are tabs under a thread, never splits.
+Detail: [docs/overview.md](docs/overview.md).
 
 ## Implementing a design (any UI task)
 
@@ -25,8 +26,8 @@ and die with the app. Terminals are tabs under a thread, never splits. Detail: [
    difference, fix them, render again.
 6. **Press every control** the design draws: in a test, find it in the real view (by accessibility
    label, or `hit(_:)` at its drawn point), trigger it the way the app does (its action or command,
-   never posted mouse or key events) and assert the state changes. A glyph that is not a `Button`,
-   or a button wired to nothing, is a bug.
+   never posted mouse or key events) and assert the state changes (see `ComposerMenuTests`). A glyph
+   that is not a `Button`, or a button wired to nothing, is a bug.
 7. **You are not done until 5 and 6 pass.** Say what you verified and what you could not.
 
 ## Boundaries
@@ -47,8 +48,8 @@ and die with the app. Terminals are tabs under a thread, never splits. Detail: [
 
 **Ask first**
 - Adding a dependency; changing a contract (`ShepherdCore`, `ShepherdProtocol`, an extension
-  message, a remote request); changing release signing, bundle ids or feeds; adding a
-  per-directory AGENTS.md; mutating a repository outside the paths in `docs/rules.md`.
+  message, a remote request); changing release signing, bundle ids or feeds; mutating a repository
+  outside the paths in `docs/rules.md`.
 - Departing from a design the user gave (see step 1 above).
 
 **Always**
@@ -76,7 +77,8 @@ python3 scripts/design_section.py "<board or heading>"   # one spec from docs/de
 ```
 
 Run the Mac app from `Shepherd.xcodeproj` (scheme `Shepherd (Dev)`, My Mac); there is no
-`swift run` path. Schemes, support folders, the pi engine and Nightly: [docs/build-and-run.md](docs/build-and-run.md).
+`swift run` path. Schemes, support folders, the pi engine and Nightly:
+[docs/build-and-run.md](docs/build-and-run.md).
 Docs-only changes (`docs/**`, `*.md`) do not trigger CI.
 
 ## Map
@@ -169,7 +171,10 @@ Each is one line here; the full rule is in [docs/rules.md](docs/rules.md) under 
   Wait with `eventually`, never a fixed sleep.
 - Process-wide state is set once by the test isolation, never by a test: no `setenv`, `unsetenv`,
   `signal`, `chdir` or `umask`. A store that takes `UserDefaults` gets `ScratchDefaults()`.
+- Integration suites carry `.integrationTimeLimit`; `@MainActor` suites carry `.mainActorExclusive`
+  and never a `.timeLimit` beside it. Never mark a test `.timingSensitive` to hide a short wait.
 - Name a test as a sentence of behavior. A bug a test finds keeps its test, in `withKnownIssue`.
+  The coverage that must not be dropped is listed in `docs/testing.md`.
 - Tier: model, parser or presentation, unit; server, socket, process or git, integration; a visible
   change, a preview render in both appearances and a run of the Dev build.
 
