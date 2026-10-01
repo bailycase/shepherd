@@ -88,65 +88,12 @@ private struct NWPreviewSizedControls: View {
             ], total: 23, query: "re", selection: .constant(0)) { _ in }
             HStack(alignment: .top, spacing: NW.Space.xl) {
                 NWModelPicker(query: .constant(""), sections: [
-                    NWModelSection(title: "Recent", options: [NWModelOption(id: "a/claude-opus", title: "claude-opus", isCurrent: true)]),
+                    NWModelSection(title: "Recent", options: [
+                        NWModelOption(id: "a/claude-opus", title: "claude-opus", isCurrent: true),
+                        NWModelOption(id: "a/claude-sonnet", title: "claude-sonnet", fast: true),
+                    ]),
                     NWModelSection(title: "Anthropic", options: [NWModelOption(id: "a/claude-haiku", title: "claude-haiku", note: "200K")]),
                 ], selection: .constant(0), onChoose: { _ in }, onClose: {})
-                NWThinkingMenu(options: [
-                    NWThinkingOption(id: "off", title: "Off"), NWThinkingOption(id: "low", title: "Low", note: "quick"),
-                    NWThinkingOption(id: "medium", title: "Medium", note: "default"), NWThinkingOption(id: "high", title: "High", note: "slower, deeper"),
-                ], current: "medium", onChoose: { _ in }, onClose: {})
-            }
-        }
-    }
-}
-
-/// ComposerSpeed board: the chip beside Thinking, Standard and Fast, at the regular and the
-/// compact size, and the menu with each tier current.
-private struct NWPreviewSpeedControls: View {
-    let value: String
-    let boosted: Bool
-
-    var body: some View {
-        Button {} label: { Image(systemName: "paperclip") }.buttonStyle(.nwIcon(size: NWComposerMetrics.chipHeight))
-            .accessibilityLabel("Attach file")
-        Button {} label: { NWModelSettingsLabel(model: "gpt-5.5", thinking: "Medium", fast: boosted) }.buttonStyle(.nwComposerChip())
-            .accessibilityLabel("Speed: \(value)")
-        Spacer(minLength: NW.Space.m)
-        NWComposerActionButton(.send, enabled: false) {}
-    }
-}
-
-private let nwPreviewSpeedOptions = [
-    NWSpeedOption(id: "standard", title: "Standard", detail: "Default speed and price"),
-    NWSpeedOption(id: "fast", title: "Fast", detail: "Faster responses, billed at a higher rate", boosted: true),
-]
-
-#Preview("Speed") {
-    NWPreviewBoth {
-        VStack(alignment: .leading, spacing: NW.Space.xl) {
-            NWComposer(isFocused: false) {
-                Text("Follow up, or / for commands…").font(.nw(.body)).foregroundStyle(.nw.textTertiary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } controls: { NWPreviewSpeedControls(value: "Standard", boosted: false) }
-            .frame(width: 600)
-            NWComposer(isFocused: false) {
-                Text("Follow up, or / for commands…").font(.nw(.body)).foregroundStyle(.nw.textTertiary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } controls: { NWPreviewSpeedControls(value: "Fast", boosted: true) }
-            .frame(width: 600)
-            NWComposer(isFocused: false) {
-                Text("Follow up…").font(.nw(.body)).foregroundStyle(.nw.textTertiary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } controls: {
-                Button {} label: { NWModelSettingsLabel(model: "gpt-5.5", fast: true) }.buttonStyle(.nwComposerChip())
-                Spacer(minLength: NW.Space.m)
-                NWComposerActionButton(.send, enabled: false) {}
-            }
-            .frame(width: 392)
-            .nwComposerSize(.compact)
-            HStack(alignment: .top, spacing: NW.Space.xl) {
-                NWSpeedMenu(options: nwPreviewSpeedOptions, current: "standard", onChoose: { _ in }, onClose: {})
-                NWSpeedMenu(options: nwPreviewSpeedOptions, current: "fast", onChoose: { _ in }, onClose: {})
             }
         }
     }
