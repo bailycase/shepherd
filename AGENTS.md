@@ -30,7 +30,7 @@ Detail: [docs/overview.md](docs/overview.md).
    `DesignRulesTests` fails on a literal size, a tinted status color, a raw color or a raw glyph name.
 5. **Look at it, from the real producer** (the store, the extension's output, the formatter), never
    strings copied from the board. Run `SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter
-   <suite>`, rendering each state plus empty and long text, light and dark, and text scale 1.5
+   <suite>`, rendering each state plus empty and long text, light and dark, and text scale 1.3
    (`Preview.renderMatrix`). Open the PNGs, compare element by element with the design, list every
    difference, fix them, render again.
 6. **Press every control** the design draws, in each state it appears in, with `ControlPress`

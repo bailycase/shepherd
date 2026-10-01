@@ -29,7 +29,7 @@ A card.
 
 - **Design:** docs/design/boards/GoalCard.png
 - **Departures:** none
-- **Rendered:** idle, running, empty, long text, light and dark, scale 1.5, from the store: /tmp/previews
+- **Rendered:** idle, running, empty, long text, light and dark, scale 1.3, from the store: /tmp/previews
 - **Controls used:** Pause, Resume, Edit and Clear, pressed with ControlPress in each state
 """
 AUTONOMOUS_BODY = """## Features that act on their own

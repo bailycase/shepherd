@@ -214,7 +214,10 @@ Up next follows iOS (and Composer › Up next); on iPad it is a card above the c
     with its 12pt glyph; `NWTouchQueueRow(wide: true)`, where the phone puts "↳ Steering" under
     the text), and Back to the queue (a 34pt circle).
   - A queued row on `bgRaised`: its number in a 22pt circle (a 1px `lineStrong` line, mono 11.5
-    `textSecondary`), then the text at 15; an image count when it carries images.
+    `textSecondary`), then the text at 15; an image count when it carries images. The first
+    queued row while the agent runs also has a labelled **Steer now** button after them (decided
+    by the user, 2026-10-01; iPhone and iPad alike, see iPhone: Up next), a hardware ⌘↩ staying
+    as it is.
 - **Swipe** a queued row left: Edit (80pt, `bgSelected`, a 17pt `pencil` over "Edit" at 12/500)
   and Delete (80pt, `failed`, white). Long-press: Steer now, Edit, Move to top, Delete. A delete
   leaves an Undo row.
@@ -249,12 +252,10 @@ header's pill turns "Needs you" (attention, glowing).
   - At rest: `bgWindow`, a 1px `lineSubtle` line, the number outlined in `lineStrong` with
     `textSecondary`. Chosen: `lanternTint` with a `lantern` line, the number on `lantern` in
     `textOnLantern` semibold.
-- **A note in the chosen answer** ("Keep the encrypted secret out of the PR."): a field inside
-  the chosen card (`NWQuestionNoteField`: `bgWindow`, a 1px `lineStrong` line, radius 6, "Add a
-  note…", a `lantern` caret) sent with the answer, and **"Something else…"**, a last full-width
-  row (`NWQuestionOtherCard`: at least 46pt, its number outlined, a field in place): only for an
-  asker that takes them (the dock's What each asker takes). None does now: pi's dialogs take
-  neither, and a subagent asks its parent.
+- **No note and no "Something else…".** The board draws a note field in the chosen answer and a
+  last full-width "Something else…" row, but no asker takes either: pi's dialogs take neither,
+  and a subagent asks its parent (the dock's What each asker takes). The components that drew
+  them (`NWQuestionNoteField`, `NWQuestionOtherCard`) were pruned, with the subagent variant.
 - **Foot:** Answer, primary, 36pt, trailing, enabled once there is an answer; there is no
   Dismiss (Stop refuses pi's question, as on the Mac and the phone). A yes or a no is two cards
   side by side that answer on a tap; an open question is a field over Answer.

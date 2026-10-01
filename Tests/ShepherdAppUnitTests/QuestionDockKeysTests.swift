@@ -5,8 +5,7 @@ import ShepherdUI
 import Testing
 @testable import ShepherdApp
 
-/// The question dock's keys as the Mac reads them, and what the dock draws from each asker's
-/// presentation.
+/// The question dock's keys as the Mac reads them, and what the dock draws from pi's question.
 @Suite("Question dock keys")
 @MainActor
 struct QuestionDockKeysTests {
@@ -62,15 +61,13 @@ struct QuestionDockKeysTests {
         #expect(keys == NWQuestionDockKeys(answer: KeybindingsStore.shared.sendDisplay, hide: "Esc"))
     }
 
-    @Test func pisSelectDrawsItsOptionsWithoutANoteOrSomethingElse() {
+    @Test func pisSelectDrawsItsOptionsAndAnAnswerButton() {
         let prompt = NativeQuestionPrompt(dialog: NativeThreadDialog(id: "d", kind: .select, title: "Pick", options: ["A (Recommended)\nwhy", "B\nwhy"]))
         let content = QuestionDock.content(prompt, count: 2)
-        #expect(content.asker == .agent)
         #expect(content.count == 2)
         #expect(content.kind == .choice)
         #expect(content.options == [NWQuestionDockOption(number: 1, title: "A", detail: "why", recommended: true),
                                     NWQuestionDockOption(number: 2, title: "B", detail: "why")])
-        #expect(!content.takesNote && !content.takesOther && content.otherNumber == nil)
         #expect(content.showsAnswer)
         #expect(content.notice == nil)
     }
@@ -84,12 +81,5 @@ struct QuestionDockKeysTests {
     ])
     func theFooterSaysWhyAQuestionMayNotWait(dialog: NativeThreadDialog, notice: String?) {
         #expect(QuestionDock.content(NativeQuestionPrompt(dialog: dialog)).notice == notice)
-    }
-
-    @Test func aSubagentsQuestionIsNamedAndTakesANoteAndSomethingElse() {
-        let content = QuestionDock.content(NativeQuestionPrompt(runID: "r", name: "reviewer", question: "Q", options: ["A\nwhy", "B\nwhy"]))
-        #expect(content.asker == .subagent("reviewer"))
-        #expect(content.takesNote && content.takesOther)
-        #expect(content.otherNumber == 3)
     }
 }

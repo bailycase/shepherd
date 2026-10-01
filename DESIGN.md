@@ -188,7 +188,7 @@ A list is as fast with three hundred rows as with thirty. Count budgets in
    `SettingsPreviewTests`, `DesignPreviewTests`, `PreviewTests`). It writes
    `<surface>-<light|dark>.png`. Add a new surface's render to its domain's suite. Drive it from
    the real producer (store, extension output, formatter), never strings copied from the board,
-   and cover each state, empty, long text and text scale 1.5 (`Preview.renderMatrix`).
+   and cover each state, empty, long text and text scale 1.3, the largest Text size (`Preview.renderMatrix`).
 2. Open the PNGs and look: both appearances, element by element against the design. List every
    difference and fix it.
 3. Press each control the design draws, in every state it appears in, with `ControlPress`

@@ -311,7 +311,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | [queue](queue.md) | Read when you change the queue above the composer, steering, or Send now. |
 | [settings-instructions](settings-instructions.md) | Read when you change Settings ▸ Instructions or its per-host view. |
 | [settings-mcp-experiments](settings-mcp-experiments.md) | Read when you change Settings ▸ MCP servers or Experiments. |
-| [settings-pi](settings-pi.md) | Read when you change Settings ▸ Pi: Sign-in, the CLIProxyAPI connection, or From your pi. |
+| [settings-pi](settings-pi.md) | Read when you change Settings ▸ Pi: Slash commands, Sign-in, the CLIProxyAPI connection, or From your pi. |
 | [settings-skills](settings-skills.md) | Read when you change Settings ▸ Skills, Browse skills.sh or Add from repo. |
 | [settings](settings.md) | Read when you change a Settings page other than Pi, Instructions, Skills, MCP servers and Experiments. |
 | [side-pane-artifacts](side-pane-artifacts.md) | Read only when asked to build the Artifacts or Files tabs. |
