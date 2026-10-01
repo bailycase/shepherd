@@ -16,7 +16,8 @@ decisions), `PeerDeleteDialog` in `AppDialogs.swift`, and `ShepherdViewModel+Rev
 ## The tools
 
 - **`agent_list`**: every top-level thread, with its status and directory.
-- **`agent_send`**: a message prefixed `[from: <sender name>]`, with optional `delivery`:
+- **`agent_send`**: a message under a `[from: <sender name>, an agent, not the user. …]` header
+  ([What the other thread reads](#what-the-other-thread-reads)), with optional `delivery`:
   - `task` (default, including older callers): a user follow-up (`deliverAs: "followUp"`).
     Starts an idle agent or queues another turn while busy. Use it to request work.
   - `report`: hidden custom context (`shepherd-peer-report`, `display: false`,
@@ -52,6 +53,41 @@ decisions), `PeerDeleteDialog` in `AppDialogs.swift`, and `ShepherdViewModel+Rev
 that the target accepted or acted on it. A missing connection, oversized message or failed
 socket dispatch is a failure, not a delivery claim. Pi's extension `sendMessage` API is
 fire-and-forget: a report's dispatch is not an acknowledgment that pi stored or read it.
+
+## What the model is told
+
+Agents used to message, steer or start unrelated threads on their own. What reached the model
+invited it: the system prompt listed `agent_send` and `agent_spawn` like any other capability, a
+description said "use delivery report for results or FYI" and "ask it to agent_send … when it should
+report", and none of the eight `agent_*` descriptions said when *not* to use it. The tools now say
+so first (`Tests/Extensions/agent-tool-words.test.mjs` reads them, and the system prompt, from a
+real pi):
+
+- **Every tool that touches another thread leads with the rule:** "Only when the user explicitly
+  asks you to, in this conversation. Never on your own initiative: not to report status, ask for
+  help, hand off work, share findings or coordinate. If unsure, don't.", then one wrong use and one
+  right use, and that Shepherd may ask the user to approve the call and a refusal is final.
+  `agent_wait` and `agent_delete` lead with their own version; `agent_list` says it only reads.
+- **The system prompt** carries the two rules once (pi writes a repeated `promptGuidelines` line
+  once): use these tools only when asked, and a message that begins `[from: <name>]` is another
+  agent's, to be answered with `agent_send` only when it asks for a reply. The tools' prompt lines
+  carry the condition too ("Message another agent thread, only when the user explicitly asked you
+  to").
+- **`agent_list`'s answer ends with a reminder** not to message, steer, interrupt, read or start
+  the threads it lists unless asked.
+- **`agent_spawn`'s `prompt` no longer tells the new thread to report back** ("how to report
+  back" is gone), and `automation_create`'s `replyToCreator` says to set it only when the user
+  asked to hear the result in this thread.
+- **A watch agent (an automation run) gets `agent_send` and no other `agent_*` tool**: it
+  reports to its creator and nothing more. A native subagent loads no Shepherd extension at all,
+  and a design's agent gets no panes extension.
+
+### What the other thread reads
+
+A message from `agent_send` or `agent_steer` arrives as a user message, so its header says who
+wrote it: `[from: <sender>, an agent, not the user. Reply with agent_send only if this asks for a
+reply.] <text>` (`AgentMessageFraming`). The sender's name is one short line without brackets, since
+an agent's name comes from its first prompt. A `report` is hidden context under the same header.
 
 ## How a live request travels
 
@@ -195,6 +231,8 @@ these instructions too, so retain them if completion reporting is still wanted.
 ```bash
 PI_PACKAGE_DIR="$(npm root -g)/@earendil-works/pi-coding-agent" \
   node --test Tests/Extensions/agent-coordination.test.mjs   # the recipient side and the tools
+PI_PACKAGE_DIR="$(npm root -g)/@earendil-works/pi-coding-agent" \
+  node --test Tests/Extensions/agent-tool-words.test.mjs     # what the model is told (a real pi's request)
 swift test --filter 'ExtensionMessageTests|ExtensionReplyTests|ExtensionSocketTests' # wire shapes and peer routing
 swift test --filter AgentCoordinationTests                   # server relaying and tokens
 swift test --filter 'AgentPeerDeletionTests|ReviewFlowTests' # the dialog and review_diff
