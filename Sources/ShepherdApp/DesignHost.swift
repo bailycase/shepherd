@@ -111,6 +111,8 @@ final class DesignRendering {
     let boardPictures: DesignBoardPictures
     /// The @ picker's element pictures, cut from their boards.
     let elementCrops: DesignElementCrops
+    /// A design agent's `board_render` pictures, one drawing at a time.
+    let agentRenders = DesignRenderQueue()
 
     /// Live views a design on screen may hold (previews take none: their captures can't draw a
     /// web view, so every board draws its snapshot).
@@ -1285,6 +1287,65 @@ extension DesignRendering {
     static func ownStyles(_ json: Data) -> [String: String]? {
         guard let entries = try? JSONSerialization.jsonObject(with: json) as? [[String: Any]] else { return nil }
         return entries.first?["style"] as? [String: String]
+    }
+}
+
+/// A design agent's `board_render` (docs/designs.md › Rendering for the agent): the board drawn off
+/// screen from the files the host read for it, at its frame's size (or the size asked), by a view of
+/// its own that is let go after, one at a time. Never a live canvas view, and nothing of the design
+/// on screen is needed: the design need not be open.
+extension DesignRendering {
+    func picture(for job: DesignRenderJob) async throws -> DesignRendered {
+        try await agentRenders.run { try await self.draw(job) }
+    }
+
+    private func draw(_ job: DesignRenderJob) async throws -> DesignRendered {
+        let path = job.path, request = job.request, files = job.files
+        guard let source = files.sources[path] else { throw DesignRenderFailure(code: "no_such_board", message: "\(path) isn't in this design") }
+        var size: CGSize?
+        if let frame = files.index.boards[path] {
+            size = CGSize(width: frame.w, height: frame.h)
+        } else if let preview = DesignBoardCheck.previewSize(of: source) {
+            size = CGSize(width: preview.width, height: preview.height)
+        }
+        let width = request.width.map(CGFloat.init) ?? size?.width
+        let height = request.height.map(CGFloat.init) ?? size?.height
+        guard let width, let height else {
+            throw DesignRenderFailure(code: "no_frame", message: "\(path) has no frame on the canvas and no $preview, so its size is unknown: give it a frame with canvas_update, or pass width and height")
+        }
+        let scale = CGFloat(min(max(request.scale ?? 1, DesignRenderRequest.scaleRange.lowerBound), DesignRenderRequest.scaleRange.upperBound))
+        // Past what one picture may hold (64 million pixels, a bitmap's 256 MB) there is nothing to draw.
+        guard width * height * scale * scale <= 64_000_000 else {
+            throw DesignRenderFailure(code: "render_too_large", message: "\(Int(width))×\(Int(height)) at \(scale)x is more than a picture holds: pass a smaller width, height or scale")
+        }
+        // The board's Tweak values, then the call's props over them.
+        var props = files.index.tweaks(for: path)
+        if case .object(let given)? = request.props { for (key, value) in given { props[key] = value } }
+        let surface = DesignSurface(designID: job.designID, source: files, network: network)
+        let view = DesignBoardView(surface: surface, board: path, size: CGSize(width: width, height: height))
+        let image: CGImage
+        do {
+            try await view.load()
+            if request.props != nil, let json = DesignTweakModel.json(.object(props)) { try await view.replaceSource(source, props: json) }
+            image = try await view.image(scale: scale)
+        } catch {
+            throw DesignRenderFailure(code: "render_failed", message: "\(path) couldn't be drawn: \(Self.describe(error))")
+        }
+        guard let encoded = DesignRenderImage.encode(image) else {
+            throw DesignRenderFailure(code: "render_failed", message: "\(path) was drawn but its picture couldn't be encoded")
+        }
+        var words = "\(path) at \(Int(width))×\(Int(height))"
+        if scale != 1 { words += ", \(scale.formatted())x" }
+        if let given = request.props, case .object(let object) = given, !object.isEmpty { words += ", props \(object.keys.sorted().joined(separator: ", "))" }
+        words += " · image \(encoded.width)×\(encoded.height) \(encoded.isPNG ? "PNG" : "JPEG"), \(DesignRenderImage.size(encoded.data.count))"
+        if encoded.width != image.width || encoded.height != image.height { words += " (reduced from \(image.width)×\(image.height) to fit)" }
+        return DesignRendered(image: BrowserImage(data: encoded.data.base64EncodedString(), mimeType: encoded.mimeType), text: words)
+    }
+
+    private static func describe(_ error: any Error) -> String {
+        if let problem = error as? DesignBoardProblem { return problem.description }
+        if let board = error as? DesignBoardError { return String(describing: board) }
+        return (error as? LocalizedError)?.errorDescription ?? "\(error)"
     }
 }
 
