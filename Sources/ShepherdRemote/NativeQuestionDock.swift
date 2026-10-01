@@ -2,16 +2,10 @@ import Foundation
 import ShepherdProtocol
 
 // The question dock's presentation (QuestionAsk, QuestionPick, QuestionStates), shared by the
-// Mac and the touch clients: one question shaped by the answer its asker needs, what the asker
-// can take (Honest affordances), the answer a person's picks make, and what the dock's keys do.
-// Pure, so every rule is a unit test.
-
-/// Who asks: the agent's own pi (an extension's select, confirm, input or editor), or one of its
-/// subagents (`shepherd_parent_message` with `needsReply`).
-public enum NativeQuestionAsker: Equatable, Sendable {
-    case agent
-    case subagent(String)
-}
+// Mac and the touch clients: pi's own question (an extension's select, confirm, input or editor)
+// shaped by the answer it needs, what it can take (Honest affordances), the answer a person's
+// picks make, and what the dock's keys do. A subagent never asks the user, so no question here is
+// its: it asks its parent. Pure, so every rule is a unit test.
 
 /// The dock's shape, from the answer the asker needs (QuestionStates › Kinds of question).
 public enum NativeQuestionKind: Equatable, Sendable {
@@ -34,23 +28,16 @@ public struct NativeQuestionPrompt: Equatable, Sendable {
         /// pi's input (one line) or editor (several): the text.
         case input
         case editor
-        /// A subagent's question: any text, sent to the run as a message.
-        case message
     }
 
     /// Identity: a new id is a new question, which arrives with nothing picked.
     public var id: String
-    public var asker: NativeQuestionAsker
     public var reply: Reply
     public var question: String
     /// The asker's longer message (a confirm's), drawn under the question.
     public var message: String?
     public var kind: NativeQuestionKind
     public var options: [NativeQuestionOption]
-    /// The asker takes a note with the option picked (Picked: the note field).
-    public var takesNote: Bool
-    /// The asker takes an answer in the person's own words (the last row, Something else…).
-    public var takesOther: Bool
     /// An open question's field: its placeholder, its first text, and whether it takes lines.
     public var placeholder: String
     public var prefill: String
@@ -66,7 +53,6 @@ public struct NativeQuestionPrompt: Equatable, Sendable {
     /// pi's question: select, confirm, input or editor.
     public init(dialog: NativeThreadDialog) {
         id = dialog.id
-        asker = .agent
         question = dialog.title
         message = dialog.message.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
         placeholder = dialog.placeholder ?? "Type your answer…"
@@ -75,8 +61,6 @@ public struct NativeQuestionPrompt: Equatable, Sendable {
         blocked = dialog.unavailable.map(Self.blockedText)
         // pi's select returns one of its options and nothing else, confirm a yes or a no, and
         // input and editor a string: none takes a note, and only the fields take words.
-        takesNote = false
-        takesOther = false
         switch dialog.kind {
         case .select:
             reply = .select
@@ -98,26 +82,6 @@ public struct NativeQuestionPrompt: Equatable, Sendable {
         multiline = reply == .editor
     }
 
-    /// A subagent's question. Its answer is a message to the run, so it takes a note with an
-    /// option and an answer in the person's own words.
-    public init(runID: String, name: String, question: String, options: [String]?) {
-        id = runID
-        asker = .subagent(name)
-        reply = .message
-        self.question = question
-        message = nil
-        self.options = NativeQuestionOption.options(options ?? [])
-        kind = Self.kind(self.options)
-        takesNote = true
-        takesOther = true
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        placeholder = "Reply to \(trimmed.isEmpty ? "the subagent" : trimmed)…"
-        prefill = ""
-        multiline = false
-        mayTimeOut = false
-        blocked = nil
-    }
-
     /// Two short options with nothing under them are a yes or a no; none is an open question.
     static func kind(_ options: [NativeQuestionOption]) -> NativeQuestionKind {
         if options.isEmpty { return .open }
@@ -129,33 +93,21 @@ public struct NativeQuestionPrompt: Equatable, Sendable {
         reason == "external-editor" ? "An external editor is open · finish it before answering here" : "This question is too large to show here"
     }
 
-    /// Something else's number: the last row, after the options (an open question is its field).
-    public var otherNumber: Int? {
-        takesOther && !options.isEmpty ? options.count + 1 : nil
-    }
-
-    /// Answer is drawn: for a choice, an open question, or Something else. A yes or a no
-    /// answers on click.
+    /// Answer is drawn: for a choice or an open question. A yes or a no answers on click.
     public var showsAnswer: Bool {
-        kind != .yesNo || otherNumber != nil
+        kind != .yesNo
     }
 }
 
 /// What the person has chosen or typed so far.
 public struct NativeQuestionPicks: Equatable, Sendable {
-    /// An option's number, or Something else's.
+    /// An option's number.
     public var picked: Int?
-    /// The picked option's note.
-    public var note: String
-    /// Something else's words.
-    public var other: String
     /// An open question's text.
     public var text: String
 
-    public init(picked: Int? = nil, note: String = "", other: String = "", text: String = "") {
+    public init(picked: Int? = nil, text: String = "") {
         self.picked = picked
-        self.note = note
-        self.other = other
         self.text = text
     }
 
@@ -167,51 +119,34 @@ public struct NativeQuestionPicks: Equatable, Sendable {
 
 /// An answer the picks make.
 public enum NativeQuestionAnswer: Equatable, Sendable {
-    /// An option, with the note the person added (nil without one).
-    case option(NativeQuestionOption, note: String?)
-    /// The person's own words: Something else, or an open question's field.
+    /// An option, exactly as offered.
+    case option(NativeQuestionOption)
+    /// The person's own words, in an open question's field.
     case words(String)
 }
 
 extension NativeQuestionPrompt {
-    /// The answer `picks` make, nil while there is none: nothing picked, Something else or an
-    /// open question still empty, or a question that cannot be answered here.
+    /// The answer `picks` make, nil while there is none: nothing picked, an open question still
+    /// empty, or a question that cannot be answered here.
     public func answer(_ picks: NativeQuestionPicks) -> NativeQuestionAnswer? {
         guard blocked == nil else { return nil }
         if kind == .open {
-            // An editor's answer is the text as typed; an input's and a reply's, trimmed.
+            // An editor's answer is the text as typed; an input's, trimmed.
             let text = picks.text.trimmingCharacters(in: .whitespacesAndNewlines)
             return text.isEmpty ? nil : .words(reply == .editor ? picks.text : text)
         }
-        guard let picked = picks.picked else { return nil }
-        if picked == otherNumber {
-            let words = picks.other.trimmingCharacters(in: .whitespacesAndNewlines)
-            return words.isEmpty ? nil : .words(words)
-        }
-        guard let option = options.first(where: { $0.number == picked }) else { return nil }
-        let note = picks.note.trimmingCharacters(in: .whitespacesAndNewlines)
-        return .option(option, note: takesNote && !note.isEmpty ? note : nil)
+        guard let picked = picks.picked, let option = options.first(where: { $0.number == picked }) else { return nil }
+        return .option(option)
     }
 
-    /// What pi's dialog gets for `answer`; nil for a subagent's question, or an answer the
-    /// dialog cannot take.
+    /// What pi's dialog gets for `answer`; nil for an answer the dialog cannot take.
     public func dialogAnswer(_ answer: NativeQuestionAnswer) -> NativeDialogAnswer? {
         switch (reply, answer) {
-        case (.select, .option(let option, _)): return .select(value: option.value)
-        case (.confirm, .option(let option, _)): return .confirm(value: option.number == 1)
+        case (.select, .option(let option)): return .select(value: option.value)
+        case (.confirm, .option(let option)): return .confirm(value: option.number == 1)
         case (.input, .words(let text)): return .input(value: text)
         case (.editor, .words(let text)): return .editor(value: text)
         default: return nil
-        }
-    }
-
-    /// The message a subagent's run gets for `answer`: the option as offered, with the note
-    /// after a blank line, or the person's words. nil for pi's own question.
-    public func messageReply(_ answer: NativeQuestionAnswer) -> String? {
-        guard reply == .message else { return nil }
-        switch answer {
-        case .option(let option, let note): return note.map { option.value + "\n\n" + $0 } ?? option.value
-        case .words(let words): return words
         }
     }
 }
@@ -231,8 +166,6 @@ public enum NativeQuestionKeyAction: Equatable, Sendable {
     case pick(Int)
     /// Pick and answer at once: a yes or a no.
     case pickAndAnswer(Int)
-    /// Put the keyboard in Something else.
-    case writeOther
     case answer
     case hide
     case show
@@ -255,7 +188,6 @@ extension NativeQuestionPrompt {
         case .number(let number):
             guard !editing, enabled, blocked == nil else { return .pass }
             if options.contains(where: { $0.number == number }) { return kind == .yesNo ? .pickAndAnswer(number) : .pick(number) }
-            if number == otherNumber { return .writeOther }
             return .pass
         }
     }

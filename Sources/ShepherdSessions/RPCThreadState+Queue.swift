@@ -463,7 +463,8 @@ extension RPCThreadState {
     func isExtensionCommand(_ text: String) -> Bool {
         guard text.hasPrefix("/") else { return false }
         let name = text.dropFirst().prefix { !$0.isWhitespace }
-        return commands?.contains { $0.name == name && $0.source == "extension" } == true
+        // A command the user hid from the / menu still runs when typed, so it is looked up in everything pi listed.
+        return allCommands?.contains { $0.name == name && $0.source == "extension" } == true
     }
 
     // MARK: - Steering

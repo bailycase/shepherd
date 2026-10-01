@@ -1,16 +1,11 @@
 import Testing
 @testable import ShepherdUI
 
-/// The question head names who asks: the agent itself, or a subagent by name.
+/// The question head says who asks. Only the agent does: a subagent asks its parent, never the
+/// user, so no head names one.
 @Suite("Question head")
 struct QuestionHeadTests {
-    @Test(arguments: [
-        (NWQuestionAsker.agent, "Agent is asking"),
-        (.subagent("reviewer"), "reviewer is asking"),
-        (.subagent("  planner \n"), "planner is asking"),
-        (.subagent(""), "Subagent is asking"),
-    ])
-    func theHeadNamesTheAsker(asker: NWQuestionAsker, title: String) {
-        #expect(asker.title == title)
+    @Test func everyQuestionHeadSaysTheAgentIsAsking() {
+        #expect(NWQuestionHead.title == "Agent is asking")
     }
 }

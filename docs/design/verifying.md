@@ -31,8 +31,8 @@
   SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter PreviewTests
   ```
 
-- **Text size:** `Preview.renderMatrix` renders light and dark at each text scale (1 and 1.5 by
-  default; the Mac's largest Text size is 1.3), writing `<surface>-x1.5-<light|dark>.png` beside
+- **Text size:** `Preview.renderMatrix` renders light and dark at each text scale (1 and 1.3 by
+  default; 1.3 is the Mac's largest Text size), writing `<surface>-x1.3-<light|dark>.png` beside
   the others. Use it where clipping or wrapping could hide, and render empty and long text too.
 - **Real data:** a preview is driven from the real producer (the store, the extension's output, the
   formatter), never strings copied from the board; copy that differs from the board is a departure

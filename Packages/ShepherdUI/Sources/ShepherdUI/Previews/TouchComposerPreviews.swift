@@ -7,7 +7,7 @@ import SwiftUI
                 NWTouchQueueRow("Don't touch the migrations in this PR.", kind: .steering, back: {})
                 NWTouchQueueRow("Don't touch the migrations in this PR.", kind: .steering, wide: true, back: {})
                     .overlay(alignment: .top) { NWHairline() }
-                NWTouchQueueRow("Also cover partial refunds in the tests.", kind: .queued(number: 1)).overlay(alignment: .top) { NWHairline() }
+                NWTouchQueueRow("Also cover partial refunds in the tests.", kind: .queued(number: 1), steer: {}).overlay(alignment: .top) { NWHairline() }
                 NWTouchQueueRow("Then open a draft PR.", images: 2, kind: .queued(number: 2), held: true).overlay(alignment: .top) { NWHairline() }
                 NWTouchQueueRow("Keep the PR title short", kind: .deleted, undo: {}).overlay(alignment: .top) { NWHairline() }
             }
@@ -76,13 +76,10 @@ import SwiftUI
                 NWQuestionOptionCard(number: 2, title: "Leave Horizon alone and deploy from a clean checkout") {}
                 Button("Answer") {}.buttonStyle(.nw(.primary, size: .l))
             }
-            NWQuestionCard(docked: true, asker: .subagent("reviewer"), hide: {}) {
+            NWQuestionCard(docked: true, hide: {}) {
                 Text("Rename the new tokens, or replace the old ones everywhere?").font(.nw(.headline))
-                NWQuestionOptionCard(number: 1, title: "Replace everywhere", selected: true) {} footer: {
-                    NWQuestionNoteField(text: .constant("Keep the old names as aliases for one release."))
-                }
+                NWQuestionOptionCard(number: 1, title: "Replace everywhere", selected: true) {}
                 NWQuestionOptionCard(number: 2, title: "Rename new ones") {}
-                NWQuestionOtherCard(number: 3, selected: false) { TextField("Something else…", text: .constant("")) }
                 Button("Answer") {}.buttonStyle(.nwReviewBar(.primary))
             }
             NWQuestionCardHiddenLine(question: "How should I handle Horizon's uncommitted edits?") {}

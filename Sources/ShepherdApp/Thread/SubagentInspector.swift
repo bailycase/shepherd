@@ -26,6 +26,8 @@ struct SubagentInspector: View {
     /// Focus the Steer field (the tray's Steer asked for it); `steerFocused` says it took it.
     var focusSteer = false
     var steerFocused: () -> Void = {}
+    /// What the Steer field holds when the run opens (tests; the field starts empty in the app).
+    var draft = ""
     @State private var shown = ShownRun()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -39,7 +41,8 @@ struct SubagentInspector: View {
         let edge = arrival?.edge
         ZStack {
             SubagentRunInspector(store: store, runID: runID, siblings: arrival?.siblings ?? [], active: active, close: close,
-                                 select: select, fork: fork, review: review, focusSteer: focusSteer, steerFocused: steerFocused)
+                                 select: select, fork: fork, review: review, focusSteer: focusSteer, steerFocused: steerFocused,
+                                 draft: draft)
                 .id(runID)
                 .transition(.asymmetric(insertion: (edge.map { NW.Motion.list.transition(reduceMotion: reduceMotion, edge: $0) }) ?? .opacity,
                                         removal: .opacity))
@@ -75,7 +78,7 @@ private struct SubagentRunInspector: View {
     let steerFocused: () -> Void
     @State private var transcript = SubagentTranscriptModel()
     @State private var siblings: [ChildRun]
-    @State private var draft = ""
+    @State private var draft: String
     @State private var forkError: String?
     @State private var forking = false
     @State private var copying = false
@@ -87,7 +90,8 @@ private struct SubagentRunInspector: View {
 
     init(store: NativeThreadStore, runID: String, siblings: [ChildRun], active: Bool, close: @escaping () -> Void,
          select: ((ChildRun) -> Void)?, fork: ((ChildRun) async -> String?)?, review: ((String) -> Void)?,
-         focusSteer: Bool, steerFocused: @escaping () -> Void) {
+         focusSteer: Bool, steerFocused: @escaping () -> Void, draft: String = "") {
+        _draft = State(initialValue: draft)
         self.focusSteer = focusSteer
         self.steerFocused = steerFocused
         self.store = store
@@ -414,10 +418,13 @@ private struct SubagentRunInspector: View {
     private func composer(_ run: ChildRun?) -> some View {
         let role = Self.role(run)
         let nw = Color.nw
+        // The same Steer command, called Reply while the run waits on its parent's answer.
+        let words = run.map(nativeRunSteerWords) ?? .steer
         return VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 0) {
-                TextField("Steer \(role)", text: $draft,
-                          prompt: Text("Steer \(role) — delivered before its next turn").foregroundStyle(nw.textTertiary),
+                TextField(words.label(role), text: $draft,
+                          prompt: Text("\(words.label(role)) — \(words == .reply ? "it was waiting on its parent" : "delivered before its next turn")")
+                              .foregroundStyle(nw.textTertiary),
                           axis: .vertical)
                     .lineLimit(1...AppLayout.steerMaxLines).textFieldStyle(.plain).font(.nw(.body)).autocorrectionDisabled()
                     .foregroundStyle(nw.textPrimary).tint(nw.lantern)
@@ -428,14 +435,15 @@ private struct SubagentRunInspector: View {
                         send()
                         return .handled
                     }
-                    .accessibilityLabel("Steer \(role)")
+                    .accessibilityLabel(words.label(role))
                 HStack(spacing: NW.Space.s) {
                     Text("to: \(role) · not the parent").font(.nwMono(11)).foregroundStyle(nw.textTertiary)
                         .lineLimit(1).padding(.horizontal, NW.Space.s)
                     Spacer(minLength: NW.Space.s)
-                    Button("Steer") { send() }
+                    Button(words.verb) { send() }
                         .buttonStyle(.nw(.primary, size: .m))
                         .disabled(!canAct || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .help(words.help ?? "")
                 }
                 .padding(EdgeInsets(top: NW.Space.xs, leading: NW.Space.s, bottom: NW.Space.s, trailing: NW.Space.s))
             }

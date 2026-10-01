@@ -141,19 +141,19 @@ enum AgentBanners {
                            actions: [.reconnect], group: "host:\(target.key)")
     }
 
-    /// A question's actions: each option the asker offered, then Reply… where it takes words.
+    /// A question's actions: each option the asker offered, then Reply… for an open question.
     /// A question that can't be answered from here has only Open.
     static func answers(_ prompt: NativeQuestionPrompt) -> [BannerAction] {
         guard prompt.blocked == nil else { return [.open] }
         var actions = prompt.options.map { BannerAction.option($0.number, title: $0.title) }
-        if prompt.kind == .open || prompt.takesOther { actions.append(.reply(placeholder: prompt.placeholder)) }
+        if prompt.kind == .open { actions.append(.reply(placeholder: prompt.placeholder)) }
         return actions.isEmpty ? [.open] : actions
     }
 
     /// What a banner's action answers: an option by its number, or the words typed into Reply….
     static func answer(_ prompt: NativeQuestionPrompt, option: Int?, words: String?) -> NativeQuestionAnswer? {
         if let option {
-            return prompt.options.first { $0.number == option }.map { .option($0, note: nil) }
+            return prompt.options.first { $0.number == option }.map { .option($0) }
         }
         let text = words?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return text.isEmpty ? nil : .words(prompt.reply == .editor ? words ?? text : text)

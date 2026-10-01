@@ -7,10 +7,10 @@ import Testing
 struct SettingsSearchTests {
     @Test func theNavListsEveryPageInDesignOrder() {
         #expect(SettingsSection.allCases.map(\.title) == [
-            "Appearance", "Terminal", "Agents", "Worktrees", "Pi", "Sign-in", "From your pi", "Instructions", "Skills", "MCP servers",
-            "Remote", "Keyboard", "Advanced", "Experiments",
+            "Appearance", "Terminal", "Agents", "Worktrees", "Pi", "Sign-in", "From your pi", "Slash commands", "Instructions", "Skills",
+            "MCP servers", "Remote", "Keyboard", "Advanced", "Experiments",
         ])
-        #expect(SettingsSection.allCases.filter(\.isSubpage) == [.piSignIn, .piFromYourPi], "Pi's two pages sit under it")
+        #expect(SettingsSection.allCases.filter(\.isSubpage) == [.piSignIn, .piFromYourPi, .piSlashCommands], "Pi's three pages sit under it")
     }
 
     /// Instructions, Skills, MCP servers and Experiments fill the detail area; every other page
@@ -70,6 +70,11 @@ struct SettingsSearchTests {
                                       "Skills", "Prompts", "Themes"]),
         ("CLAUDE.md", .piFromYourPi, ["Instructions"]),
         ("full access", .piFromYourPi, ["Extensions"]),
+        // Settings ▸ Pi ▸ Slash commands.
+        ("hide", .piSlashCommands, ["Search commands"]),
+        ("registerCommand", .piSlashCommands, ["Extensions"]),
+        ("argument-hint", .piSlashCommands, ["Prompt templates"]),
+        ("turned off", .piSlashCommands, ["Hidden commands"]),
         ("engine", .pi, ["Shepherd's pi"]),
         ("browser", .pi, ["Browser tools"]),
         ("claude desktop", .mcp, ["Import…"]),

@@ -20,7 +20,7 @@ Save or Apply (the one exception is Instructions, which edits files and saves wi
     filters at once
   - the pages, one `NWSettingsNavRow` each, `NW.Space.xxs` apart, in this order: Appearance
     (`circle.lefthalf.filled`) · Terminal (`terminal`) · Agents (`person.2`) · Worktrees
-    (`arrow.branch`) · Pi (`pi`), with its two pages under it, Sign-in and From your pi (SettingsPi:
+    (`arrow.branch`) · Pi (`pi`), with its three pages under it, Sign-in, From your pi and Slash commands (SettingsPi:
     rows 28pt × density, 35pt in, Geist 12.5 `textSecondary`, the selected one `textPrimary` at 500
     on `bgSelected`; Sign-in carries a 6pt `lantern` dot trailing while a provider an agent of
     this Mac needs isn't signed in or a sign-in expired) · Instructions (`doc.text`) · Skills (`graduationcap`) · MCP servers

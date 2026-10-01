@@ -1,22 +1,20 @@
 import SwiftUI
 
-// The question dock (QuestionAsk, QuestionPick, QuestionStates; SubagentTray › Answer →
-// question dock): a question takes the composer's place in a lantern card, for the agent's own
-// question and a subagent's alike. The head says who asks and hides it; then the question, its
-// numbered options (Recommended marked, never preselected), a note inside the picked one and
-// Something else… when the asker takes them, and one Answer. A yes or a no answers on click; an
-// open question is a field. Hidden, the dock folds to one line that still holds the place.
+// The question dock (QuestionAsk, QuestionPick, QuestionStates): pi's own question takes the
+// composer's place in a lantern card. The head says it is the agent asking and hides it; then the
+// question, its numbered options (Recommended marked, never preselected), and one Answer. A yes or
+// a no answers on click; an open question is a field. Hidden, the dock folds to one line that
+// still holds the place. A subagent never asks the user, so the dock has no variant for one.
 
 public enum NWQuestionDockMetrics {
     /// 12pt above and below, 14pt at the sides; 12pt between the parts.
     public static let padding = EdgeInsets(top: NW.Space.l, leading: 14, bottom: NW.Space.l, trailing: 14)
     /// The lantern ring outside the card.
     public static let ring: CGFloat = 3
-    /// The question: 16 for the agent's own choice, 15 for a yes or a no and an open question
-    /// (QuestionStates › Kinds), 14.5 for a subagent's; 1.35 and tracked -0.5%.
+    /// The question: 16 for a choice, 15 for a yes or a no and an open question
+    /// (QuestionStates › Kinds); 1.35 and tracked -0.5%.
     public static let questionSize: CGFloat = 16
     public static let kindQuestionSize: CGFloat = 15
-    public static let subagentQuestionSize: CGFloat = 14.5
     public static let questionLineSpacing: CGFloat = 3
     public static let questionTracking: CGFloat = -0.005
     /// The asker's longer message scrolls past this.
@@ -28,20 +26,10 @@ public enum NWQuestionDockMetrics {
     public static let optionLineSpacing: CGFloat = 3
     /// A description's extra leading, to 1.45.
     public static let detailLineSpacing: CGFloat = 3
-    /// A subagent's option titles and descriptions.
-    public static let subagentTitleSize: CGFloat = 13
-    public static let subagentDetailSize: CGFloat = 12
     public static let numberSize: CGFloat = 20
     public static let recommendedHeight: CGFloat = 20
     public static let recommendedPadding: CGFloat = 7
     public static let recommendedSize: CGFloat = 11
-    /// The note inside a picked option: 8pt under its description, 7×10 inset, Geist 13 at 1.45.
-    public static let noteGap: CGFloat = NW.Space.m
-    public static let notePadding = EdgeInsets(top: 7, leading: 10, bottom: 7, trailing: 10)
-    public static let noteSize: CGFloat = 13
-    public static let noteLineSpacing: CGFloat = 3
-    /// Something else…: at least 38pt.
-    public static let otherHeight: CGFloat = 38
     /// A yes or a no: 44pt cards, their parts 10pt apart.
     public static let yesNoHeight: CGFloat = 44
     public static let yesNoSpacing: CGFloat = 10
@@ -84,68 +72,49 @@ public struct NWQuestionDockOption: Equatable, Identifiable, Sendable {
 
 /// Everything the dock draws but the person's picks.
 public struct NWQuestionDockContent: Equatable, Sendable {
-    public var asker: NWQuestionAsker
     /// Questions waiting; the head shows "1 / N" past one.
     public var count: Int
     public var question: String
     public var message: String?
     public var kind: NWQuestionDockKind
     public var options: [NWQuestionDockOption]
-    /// Only for an asker that takes them (Honest affordances).
-    public var takesNote: Bool
-    public var takesOther: Bool
     /// An open question's field.
     public var placeholder: String
     public var multiline: Bool
     /// A line in the footer: the question may time out, or why it cannot be answered here.
     public var notice: String?
-    /// Answer is drawn (not for a yes or a no without Something else).
+    /// Answer is drawn (not for a yes or a no).
     public var showsAnswer: Bool
 
-    public init(asker: NWQuestionAsker, count: Int = 1, question: String, message: String? = nil, kind: NWQuestionDockKind,
-                options: [NWQuestionDockOption] = [], takesNote: Bool = false, takesOther: Bool = false,
-                placeholder: String = "Type your answer…", multiline: Bool = false, notice: String? = nil, showsAnswer: Bool = true) {
-        self.asker = asker
+    public init(count: Int = 1, question: String, message: String? = nil, kind: NWQuestionDockKind,
+                options: [NWQuestionDockOption] = [], placeholder: String = "Type your answer…", multiline: Bool = false,
+                notice: String? = nil, showsAnswer: Bool = true) {
         self.count = count
         self.question = question
         self.message = message
         self.kind = kind
         self.options = options
-        self.takesNote = takesNote
-        self.takesOther = takesOther
         self.placeholder = placeholder
         self.multiline = multiline
         self.notice = notice
         self.showsAnswer = showsAnswer
-    }
-
-    /// Something else's number: after the options.
-    public var otherNumber: Int? { takesOther && !options.isEmpty ? options.count + 1 : nil }
-
-    var isSubagent: Bool {
-        if case .subagent = asker { return true }
-        return false
     }
 }
 
 /// What the person has picked and typed.
 public struct NWQuestionDockSelection: Equatable, Sendable {
     public var picked: Int?
-    public var note: String
-    public var other: String
     public var text: String
 
-    public init(picked: Int? = nil, note: String = "", other: String = "", text: String = "") {
+    public init(picked: Int? = nil, text: String = "") {
         self.picked = picked
-        self.note = note
-        self.other = other
         self.text = text
     }
 }
 
 /// The dock's fields.
 public enum NWQuestionDockField: Hashable, Sendable {
-    case note, other, text
+    case text
 }
 
 /// The keys as tooltips spell them (the app reads them from its key list).
@@ -209,7 +178,7 @@ public struct NWQuestionDock: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: NW.Space.l) {
-            NWQuestionHead(content.asker, count: content.count, hideHelp: "Hide the question (\(keys.hide))", hide: hide)
+            NWQuestionHead(count: content.count, hideHelp: "Hide the question (\(keys.hide))", hide: hide)
             question
             if let message = content.message { messageBlock(message) }
             Group {
@@ -225,16 +194,12 @@ public struct NWQuestionDock: View {
         .padding(NWQuestionDockMetrics.padding)
         .nwQuestionCard()
         .nwAnimation(.hover, value: selection.picked)
-        .nwAnimation(.disclosure, value: pickedWithNote)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(content.asker.title): \(content.question)")
+        .accessibilityLabel("\(NWQuestionHead.title): \(content.question)")
     }
 
-    private var pickedWithNote: Int? { content.takesNote ? selection.picked : nil }
-
     private var question: some View {
-        let size = content.isSubagent ? NWQuestionDockMetrics.subagentQuestionSize
-            : content.kind == .choice ? NWQuestionDockMetrics.questionSize : NWQuestionDockMetrics.kindQuestionSize
+        let size = content.kind == .choice ? NWQuestionDockMetrics.questionSize : NWQuestionDockMetrics.kindQuestionSize
         return Text(NWProseInline.attributed(content.question))
             .font(.nwSans(size, .semibold))
             .tracking(size * NWQuestionDockMetrics.questionTracking)
@@ -272,76 +237,45 @@ public struct NWQuestionDock: View {
 
     @ViewBuilder private var optionRows: some View {
         ForEach(content.options) { option in
-            NWQuestionDockOptionCard(option: option, picked: selection.picked == option.number, subagent: content.isSubagent,
-                                 takesNote: content.takesNote, note: $selection.note, focus: focus) {
+            NWQuestionDockOptionCard(option: option, picked: selection.picked == option.number) {
                 pick(option.number)
             }
         }
-        if let other = content.otherNumber { otherRow(other) }
     }
 
     private func pick(_ number: Int) {
         guard enabled else { return }
         selection.picked = number
-        if focus.wrappedValue == .other { focus.wrappedValue = nil }
-    }
-
-    private func otherRow(_ number: Int) -> some View {
-        let nw = Color.nw
-        let picked = selection.picked == number
-        let size = content.isSubagent ? NWQuestionDockMetrics.subagentTitleSize : NWTextStyle.headline.size
-        return HStack(alignment: .center, spacing: NWQuestionDockMetrics.optionSpacing) {
-            NWQuestionDockNumber(number: number, picked: picked)
-            TextField(text: $selection.other, prompt: Text("Something else…").foregroundStyle(nw.textTertiary), axis: .vertical) {
-                Text("Something else")
-            }
-            .lineLimit(1...5)
-            .textFieldStyle(.plain)
-            .font(.nwSans(size))
-            .foregroundStyle(nw.textPrimary)
-            .tint(nw.lantern)
-            .focused(focus, equals: .other)
-            .onChange(of: selection.other) { _, words in if !words.isEmpty { selection.picked = number } }
-        }
-        .padding(.horizontal, NW.Space.l).padding(.vertical, NW.Space.m)
-        .frame(minHeight: NWQuestionDockMetrics.otherHeight)
-        .nwQuestionOptionChrome(picked: picked)
-        .onTapGesture { selection.picked = number; focus.wrappedValue = .other }
-        .onChange(of: focus.wrappedValue == .other) { _, writing in if writing { selection.picked = number } }
-        .help("Something else (\(number))")
     }
 
     // MARK: Yes or no
 
     private var yesNo: some View {
-        VStack(spacing: NW.Space.s) {
-            HStack(spacing: NW.Space.s) {
-                ForEach(content.options) { option in
-                    let picked = selection.picked == option.number
-                    Button {
-                        guard enabled else { return }
-                        var next = selection
-                        next.picked = option.number
-                        selection = next
-                        answer(next)
-                    } label: {
-                        HStack(spacing: NWQuestionDockMetrics.yesNoSpacing) {
-                            NWQuestionDockNumber(number: option.number, picked: picked)
-                            Text(option.title).font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary).lineLimit(1)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            if option.recommended { NWQuestionRecommendedTag() }
-                        }
-                        .padding(.horizontal, NW.Space.l)
-                        .frame(height: NWQuestionDockMetrics.yesNoHeight)
-                        .nwQuestionOptionChrome(picked: picked)
+        HStack(spacing: NW.Space.s) {
+            ForEach(content.options) { option in
+                let picked = selection.picked == option.number
+                Button {
+                    guard enabled else { return }
+                    var next = selection
+                    next.picked = option.number
+                    selection = next
+                    answer(next)
+                } label: {
+                    HStack(spacing: NWQuestionDockMetrics.yesNoSpacing) {
+                        NWQuestionDockNumber(number: option.number, picked: picked)
+                        Text(option.title).font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary).lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        if option.recommended { NWQuestionRecommendedTag() }
                     }
-                    .buttonStyle(.plain)
-                    .help("\(option.title) (\(option.number))")
-                    .accessibilityLabel(option.title)
-                    .accessibilityHint(option.recommended ? "Recommended" : "")
+                    .padding(.horizontal, NW.Space.l)
+                    .frame(height: NWQuestionDockMetrics.yesNoHeight)
+                    .nwQuestionOptionChrome(picked: picked)
                 }
+                .buttonStyle(.plain)
+                .help("\(option.title) (\(option.number))")
+                .accessibilityLabel(option.title)
+                .accessibilityHint(option.recommended ? "Recommended" : "")
             }
-            if let other = content.otherNumber { otherRow(other) }
         }
     }
 
@@ -431,15 +365,10 @@ extension View {
     }
 }
 
-/// A numbered option: its number, the title over its description, Recommended at the top
-/// trailing; picked, the note field opens under its description when the asker takes one.
+/// A numbered option: its number, the title over its description, Recommended at the top trailing.
 struct NWQuestionDockOptionCard: View {
     let option: NWQuestionDockOption
     let picked: Bool
-    let subagent: Bool
-    let takesNote: Bool
-    @Binding var note: String
-    let focus: FocusState<NWQuestionDockField?>.Binding
     let pick: () -> Void
 
     var body: some View {
@@ -448,17 +377,16 @@ struct NWQuestionDockOptionCard: View {
             NWQuestionDockNumber(number: option.number, picked: picked)
             VStack(alignment: .leading, spacing: NWQuestionDockMetrics.optionLineSpacing) {
                 Text(option.title)
-                    .font(subagent ? .nwSans(NWQuestionDockMetrics.subagentTitleSize, .semibold) : .nw(.headline))
+                    .font(.nw(.headline))
                     .foregroundStyle(nw.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
                 if let detail = option.detail {
                     Text(detail)
-                        .font(subagent ? .nwSans(NWQuestionDockMetrics.subagentDetailSize) : .nw(.ui, weight: .regular))
+                        .font(.nw(.ui, weight: .regular))
                         .lineSpacing(NWQuestionDockMetrics.detailLineSpacing)
                         .foregroundStyle(nw.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                if picked && takesNote { noteField.padding(.top, NWQuestionDockMetrics.noteGap - NWQuestionDockMetrics.optionLineSpacing) }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if option.recommended { NWQuestionRecommendedTag() }
@@ -474,45 +402,23 @@ struct NWQuestionDockOptionCard: View {
         .accessibilityAddTraits(picked ? [.isButton, .isSelected] : .isButton)
         .accessibilityAction { pick() }
     }
-
-    private var noteField: some View {
-        let nw = Color.nw
-        return TextField(text: $note, prompt: Text("Add a note…").foregroundStyle(nw.textTertiary), axis: .vertical) {
-            Text("Note")
-        }
-        .lineLimit(1...5)
-        .textFieldStyle(.plain)
-        .font(.nwSans(NWQuestionDockMetrics.noteSize))
-        .lineSpacing(NWQuestionDockMetrics.noteLineSpacing)
-        .foregroundStyle(nw.textPrimary)
-        .tint(nw.lantern)
-        .focused(focus, equals: .note)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(NWQuestionDockMetrics.notePadding)
-        .background(nw.bgWindow, in: RoundedRectangle(cornerRadius: NW.Radius.s))
-        .nwBorder(nw.lineStrong, radius: NW.Radius.s)
-        .nwTransition(.disclosure, edge: .top)
-        .accessibilityLabel("Note with \(option.title)")
-    }
 }
 
 /// A hidden question (QuestionStates › hidden): the same lantern card, one 46pt line.
 public struct NWQuestionDockHidden: View {
-    let asker: NWQuestionAsker
     let question: String
     let keys: NWQuestionDockKeys
     let show: () -> Void
 
-    public init(_ asker: NWQuestionAsker, question: String, keys: NWQuestionDockKeys = NWQuestionDockKeys(answer: "↩", hide: "Esc"),
+    public init(question: String, keys: NWQuestionDockKeys = NWQuestionDockKeys(answer: "↩", hide: "Esc"),
                 show: @escaping () -> Void) {
-        self.asker = asker
         self.question = question
         self.keys = keys
         self.show = show
     }
 
     public var body: some View {
-        NWQuestionHiddenLine(asker, question: question, showHelp: "Show the question (\(keys.hide))", show: show)
+        NWQuestionHiddenLine(question: question, showHelp: "Show the question (\(keys.hide))", show: show)
             .padding(.leading, NWQuestionDockMetrics.hiddenLeading)
             .padding(.trailing, NWQuestionDockMetrics.hiddenTrailing)
             .frame(height: NWQuestionDockMetrics.hiddenHeight)

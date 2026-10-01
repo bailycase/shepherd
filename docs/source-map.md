@@ -233,6 +233,8 @@ Sources/
       copy and who waits for it), YourPiText, PiImportSheet (the first launch's Bringing over your
       pi), PiAuthStore (sign-ins: the sign-in sheet's session on the bridge, sign-out, what
       expired), PiSignInSheet, PiAuthRows (Sign-in's rows), SettingsPiSignIn, SettingsPiFromYourPi,
+      SettingsPiSlashCommands and SlashCommandsModel (Settings ▸ Pi ▸ Slash commands: the commands pi
+      lists, their rows and switches),
       Thread/SlashLogin (/login and /logout), Thread/ThreadAuthNotice (waiting, not signed in)
     Themes (ThemeManager, ShepherdTheme), ShepherdThemeMarker, ShellIntegration, ComponentGallery
     RemoteHostStore, AgentPeers, AgentNotifications, ChildRuns, PiSessionFile (+ adoption from
