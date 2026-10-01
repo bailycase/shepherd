@@ -87,7 +87,7 @@ class LaneTests(unittest.TestCase):
 
     def test_release_scripts_tests_and_workflow_changes_run_no_swift(self):
         plan = pr(["scripts/release.py", "Tests/Release/test_release.py", ".github/workflows/release.yml",
-                   "App/iOS/ShepherdIOSApp.swift", ".github/pull_request_template.md"])
+                   ".github/workflows/pr-body.yml", "App/iOS/ShepherdIOSApp.swift", ".github/pull_request_template.md"])
         self.assertFalse(plan.swift)
 
     def test_a_thread_change_runs_the_unit_tier_the_smoke_set_and_the_thread_suites_only(self):
