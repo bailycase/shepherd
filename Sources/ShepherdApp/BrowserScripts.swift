@@ -1,6 +1,6 @@
 import Foundation
 
-/// The scripts the Browser puts in every page (DESIGN.md › Side pane › Browser). The picker and
+/// The scripts the Browser puts in every page (docs/design/side-pane-changes.md › Side pane › Browser). The picker and
 /// the network count run in Shepherd's own content world (`BrowserHost.world`), which the page
 /// can't see or call, and post to a handler only that world has. Two things only the page's own
 /// world can read: what its `console` says, and a React dev build's fibers (JS properties on the

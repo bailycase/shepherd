@@ -319,7 +319,7 @@ The view model (`welcomesYourPi`, on in the app) holds `AgentStartQueue` and aut
 runs the copy off the main thread, bounded by 30 s (past it, agents start anyway, so the gate never
 blocks for good). The copy reports each step as it goes (`YourPiImportProgress`: logins and keys,
 custom providers, the default model, trust, files, extensions), and the sheet, Bringing over your
-pi (`PiImportSheet`, DESIGN.md › Dialogs and sheets), shows them once it's known there's a pi of
+pi (`PiImportSheet`, docs/design/dialogs-and-palette.md › Dialogs and sheets), shows them once it's known there's a pi of
 the user's to copy. Every held agent says "waiting" in the sidebar and ends its thread in Waiting
 to continue. When the copy is over the sheet ends one of five ways, and says who keeps waiting
 (`YourPiModel.Hold`):

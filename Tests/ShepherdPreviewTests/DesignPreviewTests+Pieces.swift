@@ -9,7 +9,7 @@ import SwiftUI
 import Testing
 @testable import ShepherdApp
 
-/// Shared pieces on the canvas (DESIGN.md › Shared pieces): a piece's "used in 2 boards" label, and
+/// Shared pieces on the canvas (docs/design/design-tool.md › Shared pieces): a piece's "used in 2 boards" label, and
 /// the Tweak tab on one use of it (the Shared piece note and Go to source). A real server and the
 /// real renderer; the boards are drawn from their snapshots.
 extension DesignPreviewTests {

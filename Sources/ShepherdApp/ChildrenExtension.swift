@@ -534,7 +534,7 @@ enum ChildrenExtension {
             relaying: run.relays?.size || undefined });
           // A result as the parent model reads it: a child that asked also says what to do about it.
           const forParent = (run, extra = {}) => ({ ...summary(run), ...extra, ...(run.needsReply && run.questionID ? { parentAction: parentAction(run) } : {}) });
-          // Card projection for the native thread (DESIGN.md › Subagents). Every field
+          // Card projection for the native thread (docs/design/subagents.md › Subagents). Every field
           // past asyncDir is optional on the Swift side; undefined keys vanish in JSON.stringify.
           function card(run) {
             const workflow = run.workflowId ? workflows.get(run.workflowId) : undefined;

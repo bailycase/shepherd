@@ -4,7 +4,7 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
 
-/// Settings ▸ Experiments ▸ Suggested instructions on the Mac (DESIGN.md › Experiments): the
+/// Settings ▸ Experiments ▸ Suggested instructions on the Mac (docs/design/settings-mcp-experiments.md › Experiments): the
 /// experiment's settings and the lines this Mac's agents suggested, kept by the server's
 /// `SuggestionsStore`. Adding a line, or taking one back, changes This Mac's instructions, which
 /// `InstructionsModel` then sends to every host while Same on every host is on.

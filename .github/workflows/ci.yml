@@ -1,6 +1,6 @@
 name: CI
 
-# Two lanes (the Testing docs). A pull request into nightly gets the fast lane: the unit
+# Two lanes (docs/testing.md). A pull request into nightly gets the fast lane: the unit
 # tier, a smoke set, and the integration suites its changed paths can affect, chosen by
 # scripts/ci_impact.py. Everything runs on pushes to nightly and master, on pull requests into
 # master or labelled `full-ci`, daily (three passes, to find flaky tests), and on demand. The

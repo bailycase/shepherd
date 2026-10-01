@@ -3,9 +3,9 @@ import SwiftUI
 // The composer's popovers (NWComposer board, "Menus"): radius 12, raised, the popover shadow,
 // 28pt rows, running-tint selection. ↑↓ move, ⏎ chooses, esc closes.
 
-/// A section label in a composer menu (SlashMenu, ModelPicker): Geist 10.5 semibold, uppercase,
-/// tracked 6%, `textSecondary`, with an optional trailing count in mono 11 `textTertiary`
-/// ("4 of 23").
+/// A section label in a composer menu (NWComposer › Menus: COMMANDS, RECENT, MODEL, THINKING,
+/// SPEED): mono 10 medium, uppercase, tracked 6%, `textTertiary`, with an optional trailing count
+/// in mono 11 `textTertiary` ("4 of 23").
 public struct NWMenuHeader: View {
     let title: String
     let trailing: String?
@@ -20,10 +20,10 @@ public struct NWMenuHeader: View {
     public var body: some View {
         HStack(spacing: NW.Space.m) {
             Text(title)
-                .font(.nwSans(10.5, .semibold))
+                .font(.nwMono(10, .medium))
                 .textCase(.uppercase)
-                .tracking(0.63)
-                .foregroundStyle(.nw.textSecondary)
+                .tracking(0.6)
+                .foregroundStyle(.nw.textTertiary)
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 0)
             if let trailing {
@@ -345,13 +345,17 @@ public struct NWModelOption: Identifiable, Equatable, Sendable {
     /// A trailing note in mono 11 (the context size, "200K").
     public var note: String?
     public var isCurrent: Bool
+    /// The model offers a raised service tier (Fast): the picker tags its row "fast", and the
+    /// model-settings popover marks it with a bolt.
+    public var fast: Bool
 
-    public init(id: String, title: String, subtitle: String? = nil, note: String? = nil, isCurrent: Bool = false) {
+    public init(id: String, title: String, subtitle: String? = nil, note: String? = nil, isCurrent: Bool = false, fast: Bool = false) {
         self.id = id
         self.title = title
         self.subtitle = subtitle
         self.note = note
         self.isCurrent = isCurrent
+        self.fast = fast
     }
 }
 
@@ -595,23 +599,29 @@ struct NWModelListRow: View, Equatable {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    // The model has a Fast tier (NWComposer › Menus: "fast" beside claude-sonnet).
+                    if option.fast {
+                        Text("fast").font(.nwMono(11)).foregroundStyle(nw.textTertiary).fixedSize()
+                    }
                     if let note = option.note {
                         Text(note).font(.nwMono(11)).foregroundStyle(nw.textTertiary).fixedSize()
                     }
                 }
                 .help(option.id)
-                .accessibilityLabel(option.id + (option.isCurrent ? ", current" : "") + (option.subtitle.map { ", \($0)" } ?? ""))
+                .accessibilityLabel(option.id + (option.isCurrent ? ", current" : "") + (option.fast ? ", offers Fast" : "")
+                    + (option.subtitle.map { ", \($0)" } ?? ""))
             }
         }
     }
 }
 
-// MARK: Thinking menu
+// MARK: Model settings choices
 
-/// A thinking level the menu offers ("Low", note "quick").
+/// A thinking level the model-settings popover offers ("Low", note "quick").
 public struct NWThinkingOption: Identifiable, Equatable, Sendable {
     public var id: String
     public var title: String
+    /// What the level means ("quick"), a tooltip on its segment.
     public var note: String?
 
     public init(id: String, title: String, note: String? = nil) {
@@ -621,69 +631,13 @@ public struct NWThinkingOption: Identifiable, Equatable, Sendable {
     }
 }
 
-/// The thinking menu (NWComposer board): 220pt, "Thinking", then one 28pt row per level pi
-/// offers the model, with its note in `textTertiary` and a check on the current level. It takes
-/// focus for ↑↓ ⏎ esc.
-public struct NWThinkingMenu: View {
-    let options: [NWThinkingOption]
-    let current: String
-    let onChoose: (NWThinkingOption) -> Void
-    let onClose: () -> Void
-    @State private var selection: Int
-    @FocusState private var focused: Bool
-
-    public init(options: [NWThinkingOption], current: String, onChoose: @escaping (NWThinkingOption) -> Void,
-                onClose: @escaping () -> Void) {
-        self.options = options
-        self.current = current
-        self.onChoose = onChoose
-        self.onClose = onClose
-        _selection = State(initialValue: options.firstIndex { $0.id == current } ?? 0)
-    }
-
-    public var body: some View {
-        let nw = Color.nw
-        VStack(alignment: .leading, spacing: 0) {
-            NWMenuHeader("Thinking")
-            ForEach(Array(options.enumerated()), id: \.element.id) { index, option in
-                NWMenuRow(highlighted: index == selection, action: { onChoose(option) }, onHover: { selection = index }) {
-                    Text(option.title).font(.nw(.ui, weight: .regular)).foregroundStyle(nw.textPrimary)
-                    if let note = option.note {
-                        Text(note).font(.nwSans(12)).foregroundStyle(nw.textTertiary).lineLimit(1).truncationMode(.tail)
-                    }
-                    Spacer(minLength: 0)
-                    if option.id == current {
-                        Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(nw.running)
-                    }
-                }
-                .accessibilityLabel(option.title + (option.id == current ? ", current" : ""))
-            }
-        }
-        .modifier(NWMenuSurface(width: NWComposerMetrics.thinkingMenuWidth))
-        .focusable()
-        .focusEffectDisabled()
-        .focused($focused)
-        .onKeyPress(.downArrow) { selection = min(options.count - 1, selection + 1); return .handled }
-        .onKeyPress(.upArrow) { selection = max(0, selection - 1); return .handled }
-        .onKeyPress(.return) {
-            if options.indices.contains(selection) { onChoose(options[selection]) }
-            return .handled
-        }
-        .onKeyPress(.escape) { onClose(); return .handled }
-        .onAppear { focused = true }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Thinking level")
-    }
-}
-
-// MARK: Speed menu
-
-/// A speed the menu offers ("Fast", "Faster responses, billed at a higher rate").
+/// A speed the model-settings popover offers ("Fast", "Faster responses, billed at a higher rate").
 public struct NWSpeedOption: Identifiable, Equatable, Sendable {
     public var id: String
     public var title: String
+    /// What the tier does, a tooltip on its segment.
     public var detail: String
-    /// A raised tier: its title wears a filled bolt in `lantern`.
+    /// A raised tier: its segment wears the Fast bolt (`NWFastBolt`).
     public var boosted: Bool
 
     public init(id: String, title: String, detail: String, boosted: Bool = false) {
@@ -691,68 +645,5 @@ public struct NWSpeedOption: Identifiable, Equatable, Sendable {
         self.title = title
         self.detail = detail
         self.boosted = boosted
-    }
-}
-
-/// The speed menu (ComposerSpeed board): "Speed", then one two-line 40pt row per tier the model
-/// offers (its title, and what it does in `textTertiary`), a check on the current one, 280pt on
-/// the popover surface. It takes focus for ↑↓ ⏎ esc, as the thinking menu does.
-public struct NWSpeedMenu: View {
-    let options: [NWSpeedOption]
-    let current: String
-    let onChoose: (NWSpeedOption) -> Void
-    let onClose: () -> Void
-    @State private var selection: Int
-    @FocusState private var focused: Bool
-
-    public init(options: [NWSpeedOption], current: String, onChoose: @escaping (NWSpeedOption) -> Void,
-                onClose: @escaping () -> Void) {
-        self.options = options
-        self.current = current
-        self.onChoose = onChoose
-        self.onClose = onClose
-        _selection = State(initialValue: options.firstIndex { $0.id == current } ?? 0)
-    }
-
-    public var body: some View {
-        let nw = Color.nw
-        VStack(alignment: .leading, spacing: 0) {
-            NWMenuHeader("Speed")
-            ForEach(Array(options.enumerated()), id: \.element.id) { index, option in
-                NWMenuRow(highlighted: index == selection, padding: EdgeInsets(top: 0, leading: NW.Space.m, bottom: 0, trailing: NW.Space.m),
-                          height: NWComposerMetrics.speedMenuRowHeight, action: { onChoose(option) }, onHover: { selection = index }) {
-                    VStack(alignment: .leading, spacing: 1) {
-                        HStack(spacing: NW.Space.s) {
-                            if option.boosted {
-                                Image(systemName: "bolt.fill").font(.system(size: NWComposerMetrics.chipSymbol, weight: .medium))
-                                    .foregroundStyle(nw.lantern)
-                            }
-                            Text(option.title).font(.nw(.ui, weight: .regular)).foregroundStyle(nw.textPrimary)
-                        }
-                        Text(option.detail).font(.nw(.caption)).foregroundStyle(nw.textTertiary)
-                            .lineLimit(1).truncationMode(.tail)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    if option.id == current {
-                        Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(nw.running)
-                    }
-                }
-                .accessibilityLabel("\(option.title)\(option.id == current ? ", current" : ""), \(option.detail)")
-            }
-        }
-        .modifier(NWMenuSurface(width: NWComposerMetrics.speedMenuWidth))
-        .focusable()
-        .focusEffectDisabled()
-        .focused($focused)
-        .onKeyPress(.downArrow) { selection = min(options.count - 1, selection + 1); return .handled }
-        .onKeyPress(.upArrow) { selection = max(0, selection - 1); return .handled }
-        .onKeyPress(.return) {
-            if options.indices.contains(selection) { onChoose(options[selection]) }
-            return .handled
-        }
-        .onKeyPress(.escape) { onClose(); return .handled }
-        .onAppear { focused = true }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Speed")
     }
 }

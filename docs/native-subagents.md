@@ -401,7 +401,7 @@ actual names.
   provider-request boundary, after the current tools finish. It sends no OS signals and never
   replays the task. Stop can still abort a paused child.
 
-**The tray and the record.** [DESIGN.md](../DESIGN.md#subagents) specifies how they look; this
+**The tray and the record.** [docs/design/subagents.md](design/subagents.md) specifies how they look; this
 is what they do.
 
 - **The tray:** while a turn's children run, they dock above the composer, one row each, in

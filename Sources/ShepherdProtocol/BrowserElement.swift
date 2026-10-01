@@ -1,6 +1,6 @@
 import Foundation
 
-/// An element the user picked in a thread's Browser (DESIGN.md › Side pane › Browser) and handed
+/// An element the user picked in a thread's Browser (docs/design/side-pane-changes.md › Side pane › Browser) and handed
 /// the agent with a message: where it is (the page and a selector that finds it), where it came
 /// from when the page says (a React dev build's debug source, or a `data-source` attribute), its
 /// size, and the start of its markup. The host fences it ahead of the message
