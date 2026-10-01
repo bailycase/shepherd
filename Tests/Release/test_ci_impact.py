@@ -110,6 +110,7 @@ class LaneTests(unittest.TestCase):
                      ".github/actions/swift-build/action.yml", "scripts/ci_impact.py", "Tests/ci-suite-times.json"):
             plan = pr([path])
             self.assertEqual((plan.swift, plan.scope, plan.shards), (True, "all", ci_impact.FULL_SHARDS), path)
+            self.assertEqual(plan.lane, "full", "a run that runs everything is the full lane")
 
     def test_a_path_the_map_does_not_know_runs_everything(self):
         plan = pr(["something/new/thing.txt"])
