@@ -91,7 +91,7 @@ def render_body(state: dict, repo: str) -> str:
     lines = [
         "One issue tracks the health of the full test lane on `nightly` and `master`. It is updated by "
         "`scripts/ci_report.py` after every full-lane run there (a push, the daily run, a manual run); "
-        "see docs/testing.md. Close it when the lane is healthy; the next red run reopens it.",
+        "see the Testing docs. Close it when the lane is healthy; the next red run reopens it.",
         "",
     ]
     red = state.get("last_red")
