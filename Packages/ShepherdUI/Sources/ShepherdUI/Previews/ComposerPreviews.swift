@@ -143,10 +143,9 @@ private struct NWPreviewSizedControls: View {
 #Preview("Question head") {
     NWPreviewBoth {
         VStack(alignment: .leading, spacing: NW.Space.xl) {
-            NWQuestionHead(.agent) {}
-            NWQuestionHead(.agent, count: 2) {}
-            NWQuestionHead(.subagent("reviewer")) {}
-            NWQuestionHiddenLine(.agent, question: "How should I handle Horizon’s uncommitted edits?") {}
+            NWQuestionHead {}
+            NWQuestionHead(count: 2) {}
+            NWQuestionHiddenLine(question: "How should I handle Horizon’s uncommitted edits?") {}
         }
         .frame(width: 600)
     }
@@ -173,7 +172,7 @@ struct NWQuestionDockSample: View {
     NWPreviewBoth {
         VStack(alignment: .leading, spacing: NW.Space.xl) {
             NWQuestionDockSample(NWQuestionDockContent(
-                asker: .agent, question: "How should I handle Horizon’s uncommitted edits?", kind: .choice,
+                question: "How should I handle Horizon’s uncommitted edits?", kind: .choice,
                 options: [
                     NWQuestionDockOption(number: 1, title: "Compare, keep what’s unique, then go through GitHub",
                                          detail: "Diff the 11 files against current master. Nothing on Horizon is overwritten.", recommended: true),
@@ -181,12 +180,12 @@ struct NWQuestionDockSample: View {
                                          detail: "Horizon keeps its edits as they are."),
                 ]), selection: NWQuestionDockSelection(picked: 1))
             NWQuestionDockSample(NWQuestionDockContent(
-                asker: .agent, question: "Is this a regression from #231?", kind: .yesNo,
+                question: "Is this a regression from #231?", kind: .yesNo,
                 options: [NWQuestionDockOption(number: 1, title: "Yes", recommended: true), NWQuestionDockOption(number: 2, title: "No")],
                 showsAnswer: false))
             NWQuestionDockSample(NWQuestionDockContent(
-                asker: .agent, question: "How long should refund events stay in the outbox?", kind: .open))
-            NWQuestionDockHidden(.agent, question: "How should I handle Horizon’s uncommitted edits?") {}
+                question: "How long should refund events stay in the outbox?", kind: .open))
+            NWQuestionDockHidden(question: "How should I handle Horizon’s uncommitted edits?") {}
         }
         .frame(width: 600)
     }

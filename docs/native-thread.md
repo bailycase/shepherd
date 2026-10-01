@@ -814,7 +814,7 @@ components ([docs/design/thread.md](design/thread.md) specifies their look):
   - the Send menu (two rows), and the keys that send while pi works (↩ queues, ⌘↩ steers now)
   - the slash menu, fed from pi's command registry
   - the question dock (`QuestionDock`, pi's question in the card's place, from
-    `NativeQuestionPrompt`; a subagent's question never takes it, since a subagent asks its parent; Hide the question keeps only that question folded:
+    `NativeQuestionPrompt`, which has no subagent asker, note or Something else…: a subagent's question never takes it, since a subagent asks its parent; Hide the question keeps only that question folded:
     `NativeQuestionHiding`, shared with the iPad's card) and extension widgets
 - **`Subagents`** and **`SubagentPresentation`:** the tray above the composer, with the store's
   tray (`NativeSubagentTray`) mapped onto the components' values.

@@ -448,8 +448,8 @@ next step. Steer now on a row and Steer all now are the same interrupt.
   which never answers it; Answer or Show the question on that line opens it again, and the next
   question arrives open.
 - **What each asker takes** is the dock's table: pi's select takes only one of its options, so it
-  gets no note and no Something else… (the note field and the Something else… card, which only a
-  subagent's question took, are not drawn: a subagent asks its parent). pi's question has no
+  gets no note and no Something else… (the components that drew them, which only a subagent's
+  question used, were pruned: a subagent asks its parent). pi's question has no
   Dismiss: **Stop** refuses it.
 - **While pi asks** the header shows "Needs you" with a glowing dot and no Stop or •••. The app
   keeps both: Stop is how a question is refused (the host cancels the questions pi waits on, then
