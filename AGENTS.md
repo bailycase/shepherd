@@ -710,6 +710,7 @@ Sources/
                        ContextMeter (the ring beside Send, its details, compaction lines),
                        ComposerMentions (the @ picker's rules, a pasted reference),
                        DesignReferenceChips (a thread's chips, their preview, "Looked at…"),
+                       ThreadTailGuard (a following thread the lazy stack stranded, put back),
                        Subagents, SubagentPresentation, SubagentInspector
     TerminalSessions (TerminalSessionStore), AgentStartQueue (launch order of restored pi),
       TerminalHost (the only TerminalSurfaceKit import),
