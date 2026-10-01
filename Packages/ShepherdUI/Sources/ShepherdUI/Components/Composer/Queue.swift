@@ -703,8 +703,8 @@ public struct NWSendOption: Identifiable, Equatable, Sendable {
 }
 
 /// The choice at send time (Queue & steer boards · SendMenu), opened by right-clicking or holding
-/// Send while pi works: wait for the turn to end, steer at the next step, or steer now, each with
-/// what it does and its keys (a row no key sends wears none). 268pt on the
+/// Send while pi works: wait for the turn to end, or steer now, each with what it does and its
+/// keys (a row no key sends wears none). 268pt on the
 /// popover surface; ↑↓ move, ↩ chooses, Esc closes. Nothing about the choice is written under
 /// the composer.
 public struct NWSendMenu: View {
@@ -714,7 +714,7 @@ public struct NWSendMenu: View {
     @State private var selection: Int
     @FocusState private var focused: Bool
 
-    /// `highlighted` is the row ↩ would choose (the Return setting's).
+    /// `highlighted` is the row ↩ would choose (the first: Wait for the turn to end).
     public init(options: [NWSendOption], highlighted: Int = 0, onChoose: @escaping (NWSendOption) -> Void,
                 onClose: @escaping () -> Void) {
         self.options = options

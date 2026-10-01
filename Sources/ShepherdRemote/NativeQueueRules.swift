@@ -159,9 +159,9 @@ public enum NativeQueueRules {
     }
 
     /// The delivery a message actually gets. pi runs a command (`/…`) only at the start of a
-    /// message it starts, never one it reads mid-run, so a message that begins with "/" waits
-    /// for the turn to end whatever the Return setting says: an explicit `interrupt` is fine,
-    /// since the message then starts the next turn.
+    /// message it starts, never one it reads mid-run, so a `steer` (an older client's, or Steer
+    /// now against a host that can't stop pi) of a message that begins with "/" waits for the
+    /// turn to end: an `interrupt` is fine, since the message then starts the next turn.
     public static func delivery(_ preferred: NativeThreadDelivery, forText text: String) -> NativeThreadDelivery {
         preferred == .steer && text.hasPrefix("/") ? .followUp : preferred
     }

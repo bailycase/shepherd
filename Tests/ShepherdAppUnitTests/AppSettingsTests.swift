@@ -29,55 +29,43 @@ struct AppSettingsTests {
         #expect(settings.worktreeMergeMethod == .squash)
         #expect(settings.childConcurrency == 4 && settings.childContext == "fresh" && settings.childScope == "both")
         #expect(settings.childModel.isEmpty && settings.childThinking.isEmpty)
-        #expect(settings.returnWhileWorking == .steer, "↩ steers at pi's next step while it works")
         #expect(settings.queueDelivery == .all, "the queue arrives as one turn")
     }
 
-    /// While pi works: what ↩ does and how the queue goes persist, reset, and a new delivery
-    /// default reaches the server.
-    @Test func theQueueSettingsPersistResetAndReachTheServer() {
+    /// While pi works: how the queue goes persists, resets, and a new delivery default reaches
+    /// the server.
+    @Test func theQueueSettingPersistsResetsAndReachesTheServer() {
         let store = Fixture.defaults()
         let settings = AppSettings(store: store)
         var delivered: [NativeQueueMode] = []
         settings.onQueueDeliveryChange = { delivered.append($0) }
-        settings.returnWhileWorking = .queue
         settings.queueDelivery = .oneAtATime
         settings.queueDelivery = .oneAtATime
 
         let reloaded = AppSettings(store: store)
-        #expect(reloaded.returnWhileWorking == .queue && reloaded.queueDelivery == .oneAtATime)
+        #expect(reloaded.queueDelivery == .oneAtATime)
         #expect(delivered == [.oneAtATime], "only a change is handed on")
 
         settings.resetToDefaults()
-        #expect(settings.returnWhileWorking == .steer && settings.queueDelivery == .all)
+        #expect(settings.queueDelivery == .all)
         #expect(delivered == [.oneAtATime, .all])
-        #expect(store.object(forKey: AppSettings.Key.returnWhileWorking) == nil)
         #expect(store.object(forKey: AppSettings.Key.queueDelivery) == nil)
     }
 
-    /// The default moved from waiting to steering, and the stored words did not: a choice the
-    /// user made keeps its meaning (`queue` waits, `steer` steers), and only an unset (or
-    /// unreadable) one takes the default.
-    @Test(arguments: [
-        (nil as String?, ReturnWhileWorking.steer),
-        ("queue", .queue),
-        ("steer", .steer),
-        ("interrupt", .steer),
-        ("", .steer),
-    ])
-    func aStoredReturnChoiceWinsAndAnUnsetOneTakesTheDefault(stored: String?, expected: ReturnWhileWorking) {
+    /// ↩ always queues while pi works, so there is no Return setting. What an earlier version
+    /// stored for it is discarded on launch, and means nothing.
+    @Test(arguments: ["queue", "steer", "interrupt", ""])
+    func aStoredReturnChoiceIsDiscardedAndIgnored(stored: String) {
+        let legacy = "shepherd.agent.returnWhileWorking"
         let store = Fixture.defaults()
-        if let stored { store.set(stored, forKey: AppSettings.Key.returnWhileWorking) }
-        #expect(AppSettings(store: store).returnWhileWorking == expected)
-    }
+        store.set(stored, forKey: legacy)
 
-    /// Nothing writes the default back: a user who never chose keeps following it, and the choice
-    /// that was stored before the default moved is what they made.
-    @Test func openingSettingsDoesNotStoreTheDefault() {
-        let store = Fixture.defaults()
-        _ = AppSettings(store: store)
-        #expect(store.object(forKey: AppSettings.Key.returnWhileWorking) == nil)
-        #expect(ReturnWhileWorking.queue.rawValue == "queue" && ReturnWhileWorking.steer.rawValue == "steer")
+        let settings = AppSettings(store: store)
+
+        #expect(store.object(forKey: legacy) == nil)
+        #expect(!AppSettings.Key.all.contains(legacy), "Reset settings has nothing of it to clear")
+        #expect(ComposerSendKey.primary.delivery == .followUp, "Return waits for the turn to end whatever was stored")
+        #expect(settings.queueDelivery == .all, "the queue's own setting is untouched")
     }
 
     /// Shepherd Nightly listens one port up, so both apps can serve this Mac at once; a port the
