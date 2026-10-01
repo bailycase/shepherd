@@ -641,27 +641,31 @@ struct Composer: View {
             .tint(Color.nw.lantern)
             .focused($composing)
             .onKeyPress(.return, phases: .down) { press in
-                if press.modifiers.contains(.shift) { return .ignored }
-                if let login = loginQuery {
-                    let matches = loginMatches
-                    openLogin(SlashLogin.Command(verb: login.verb,
-                                                 provider: matches.indices.contains(commandIndex) ? matches[commandIndex].id : nil))
+                // ⌘↩ reaches here when a key press brings it; the key monitor usually takes it first.
+                switch ComposerReturnKey.action(modifiers: press.modifiers, alternate: KeybindingsStore.shared.chord(for: .alternateSend),
+                                                menuOpen: loginQuery != nil || commandQuery != nil || mentionShown,
+                                                composing: NWReturnKey.isComposing) {
+                case .system:
+                    return .ignored
+                case .lineBreak:
+                    return NWReturnKey.insertLineBreak() ? .handled : .ignored
+                case .choose:
+                    if let login = loginQuery {
+                        let matches = loginMatches
+                        openLogin(SlashLogin.Command(verb: login.verb,
+                                                     provider: matches.indices.contains(commandIndex) ? matches[commandIndex].id : nil))
+                    } else if commandQuery != nil {
+                        let matches = commandMatches
+                        if matches.indices.contains(commandIndex) { choose(matches[commandIndex]) }
+                    } else if let row = mentions.highlightedRow {
+                        chooseMention(row)
+                    }
+                    return .handled
+                case .send(let key):
+                    guard canSend, !store.busy else { return .handled }
+                    sendDraft(key)
                     return .handled
                 }
-                if commandQuery != nil {
-                    let matches = commandMatches
-                    if matches.indices.contains(commandIndex) { choose(matches[commandIndex]) }
-                    return .handled
-                }
-                if mentionShown {
-                    if let row = mentions.highlightedRow { chooseMention(row) }
-                    return .handled
-                }
-                guard canSend, !store.busy else { return .handled }
-                // ⌘↩ when a key press brings it here; the key monitor usually takes it first.
-                let alternate = KeybindingsStore.shared.chord(for: .alternateSend).matches(press)
-                sendDraft(alternate ? .alternate : .primary)
-                return .handled
             }
             .onKeyPress(.tab) {
                 if let login = loginQuery {

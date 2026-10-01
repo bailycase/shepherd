@@ -55,7 +55,7 @@ Fixed chords:
   the app (`appOwnedChords`).
 - ⌘, opens Settings, and ⌘F searches it.
 - ⏎ confirms and ⎋ cancels in sheets.
-- In the composer, ↩ sends (while pi works, it queues or steers per Settings) and ⇧↩ inserts a
+- In the composer, ↩ sends (while pi works, it queues or steers per Settings) and ⇧↩ or ⌥↩ inserts a
   newline. `/` at the start opens the command list, and Esc closes a menu, then the command list,
   then stops pi while it works.
 - The queue's keys (`FixedChord`, listed with the send keys under Settings ▸ Keyboard ▸ While pi

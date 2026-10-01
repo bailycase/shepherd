@@ -182,11 +182,17 @@ pi (an older Shepherd without `native.interrupt.v1`, a compaction in progress, a
 still on its way, or pi refusing the abort) Steer now is a plain steer, which is the only place a
 Steering row appears (Up next), and a steer pi would refuse (during a compaction) waits first in
 Up next instead; a message that begins with "/" never steers that way (pi runs a command only at
-the start of a message it starts), so it waits for the turn to end. ⇧↩ inserts a newline at the
-caret, replacing selected text and leaving the caret after it; this native editing behavior also
-applies to New thread, New design, subagent replies, queued-message editing and inline review
-comments. It never sends or saves. While pi is idle ↩ and ⌘↩ both send. Attachments ride along
-with a queued message.
+the start of a message it starts), so it waits for the turn to end. ⇧↩ and ⌥↩ insert a newline at
+the caret, replacing selected text and leaving the caret after it, and never send or save; the
+same holds in New thread, New design, subagent replies, queued-message editing, inline review
+comments and a design comment's reply. The key handler inserts the line itself
+(`NWReturnKey`, through the field editor's own `insertNewlineIgnoringFieldEditor:`, so the draft,
+the caret and undo follow): a SwiftUI multi-line field on the Mac answers ↩ and ⇧↩ with no line at
+all, only ⌥↩, so returning `.ignored` for ⇧↩ left the system nothing to insert. An input
+method that is composing (marked text) keeps ↩, and a ⇧ or ⌥ chord that also holds ⌘ or ⌃ is the
+system's. With a menu open ⇧↩ still adds the line, which closes the menu; ↩ chooses its row.
+`ComposerReturnKey` decides it, apart from the field. While pi is idle ↩ and ⌘↩ both send.
+Attachments ride along with a queued message.
 
 **Send menu** (`NWSendMenu`): right-clicking Send, or holding it for
 `AppLayout.sendHoldDelay` (500ms), while pi works with a draft, opens the choice at send time
