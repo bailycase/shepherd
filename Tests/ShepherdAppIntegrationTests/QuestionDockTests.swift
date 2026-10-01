@@ -114,6 +114,36 @@ struct QuestionDockIntegrationTests {
         #expect(keys.handle(thread.key("1", keyCode: 18)) == false, "the other field keeps it")
     }
 
+    /// A subagent never asks the user: one that asked its parent says so on its tray row and leaves the
+    /// composer alone (no dock, no Answer), while pi's own question still takes the composer's place.
+    @Test func aSubagentsQuestionNeverTakesTheComposerAndPisOwnStillDoes() async throws {
+        let thread = try await QuestionThread()
+        defer { thread.close() }
+        let question = ChildQuestion(text: "Rename the new ones, or replace the old ones everywhere?", options: ["Replace everywhere", "Rename new ones"])
+        try thread.publish([ChildRun(runID: "native-1", label: "reviewer: check", state: "complete", needsAttention: true, role: "reviewer",
+                                     question: question, task: "check")])
+        let store = thread.store
+        try await eventuallyAsync("the asked subagent to reach the thread") {
+            await store.refresh()
+            return store.subagents.contains { $0.runID == "native-1" }
+        }
+        try await eventuallyOnMain("the tray to say the subagent asked its parent") {
+            store.tray?.rows.first?.line == .asked("Rename the new ones, or replace the old ones everywhere?")
+        }
+        thread.window.layout()
+        #expect(thread.keyMonitor == nil, "no question dock takes the composer's place")
+        #expect(store.dialogs.isEmpty)
+        #expect(nativeRunPhase(try #require(store.subagents.first)) == .asked)
+
+        // pi's own question still takes the composer's place, and is answered as always.
+        let keys = try await thread.ask("ask")
+        #expect(store.dialogs.count == 1)
+        #expect(keys.handle(thread.key("1", keyCode: 18)))
+        #expect(try await thread.response()["confirmed"] as? Bool == true)
+        try await thread.waitForTheComposer()
+        #expect(store.tray?.rows.first?.line == .asked("Rename the new ones, or replace the old ones everywhere?"), "and the subagent still waits on its parent")
+    }
+
     /// Stopping is how a question is refused: pi gets the cancelled answer, then the abort.
     @Test func stoppingRefusesTheQuestion() async throws {
         let thread = try await QuestionThread()
@@ -134,6 +164,9 @@ final class QuestionThread {
     let store: NativeThreadStore
     let window: OffscreenWindow
     let log: URL
+    let agentID: AgentID
+    /// The children extension's connection, once a test has published runs as it.
+    private var children: ExtensionClient?
     static let size = CGSize(width: 900, height: 700)
 
     init() async throws {
@@ -142,6 +175,7 @@ final class QuestionThread {
         let space = Fixture.space(path: app.dir.path)
         let agent = try await app.liveAgent(in: space, log: log)
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
+        agentID = agent.agent.id
         store = vm.threadStores.store(for: agent.agent.id)
         let server = app.server, id = agent.agent.id
         window = OffscreenWindow(size: Self.size, dark: true,
@@ -149,6 +183,14 @@ final class QuestionThread {
                                             request: { try await server.nativeThread(agentID: id, request: $0) }, commandKey: "question"))
         let store = store
         try await eventuallyOnMain("the thread to connect") { store.ready }
+    }
+
+    /// Speaks as the agent's children extension: publishes `runs` as its subagents.
+    func publish(_ runs: [ChildRun]) throws {
+        let client = try ExtensionClient(path: app.scratch.socketPath)
+        try client.send(.helloChildren(agentID: agentID))
+        try client.send(.setAgentChildren(agentID: agentID, children: runs))
+        children = client
     }
 
     /// Sends `prompt` and waits for pi's question to take the composer's place: the dock's key
@@ -231,6 +273,7 @@ final class QuestionThread {
     }
 
     func close() {
+        children?.closeConnection()
         store.stop()
         window.close()
         app.stop()

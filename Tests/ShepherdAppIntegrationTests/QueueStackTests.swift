@@ -130,9 +130,10 @@ struct QueueStackIntegrationTests {
 
     // MARK: Keys
 
-    /// ⌘↩ in the composer steers the draft in, ahead of any key equivalent in the window (the
-    /// review pane's ⌘⏎); another window's ⌘↩ is not the composer's.
-    @Test func theAlternateSendSteersTheDraft() async throws {
+    /// ⌘↩ in the composer is Steer now, ahead of any key equivalent in the window (the review
+    /// pane's ⌘⏎); another window's ⌘↩ is not the composer's. This host cannot stop pi, so Steer
+    /// now falls back to steering the draft in, and its row reads Steering until pi reads it.
+    @Test func theAlternateSendStillSteersWhereTheHostCannotStopPi() async throws {
         let thread = QueueThread(queue: QueueFixture.messages([Self.texts[0]]), draft: "Don’t touch the migrations in this PR.")
         defer { thread.close() }
         try await thread.waitUntilReady()
@@ -156,6 +157,73 @@ struct QueueStackIntegrationTests {
         #expect(thread.host.sends.first?.text == "Don’t touch the migrations in this PR.")
         try await eventuallyOnMain("the steering row to show") { thread.state.rows.first?.kind == .steering }
         #expect(thread.store.draft.isEmpty)
+    }
+
+    /// Return while pi works queues the draft: the host is sent a follow-up, and the stack shows
+    /// it as a queued row behind what waits, never as Steering. This sends as the composer's
+    /// ↩ does (`ComposerSendKey.primary`), on a host that can also stop pi.
+    @Test func returnQueuesTheDraftAndNeverDrawsASteeringRow() async throws {
+        let draft = "Don’t touch the migrations in this PR."
+        let thread = QueueThread(queue: QueueFixture.messages([Self.texts[0]]), draft: draft, interrupts: true)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        #expect(thread.store.hostInterrupts)
+
+        let sent = await thread.store.send(delivery: ComposerSendKey.primary.delivery)
+
+        #expect(sent)
+        try await eventuallyOnMain("the draft to wait in Up next") { thread.state.rows.count == 2 }
+        #expect(thread.host.sends.map(\.delivery) == [.followUp])
+        #expect(thread.host.sends.first?.text == draft)
+        #expect(thread.state.rows.map(\.kind) == [.queued(number: 1), .queued(number: 2)], "it waits its turn behind the first")
+        #expect(thread.host.queue.map(\.text) == [Self.texts[0], draft])
+        #expect(thread.host.queue.allSatisfy { $0.state == .queued })
+        #expect(thread.host.aborts == 0, "nothing was stopped")
+        #expect(thread.store.draft.isEmpty)
+    }
+
+    /// ⌘↩ on a host that stops pi is Steer now: the host is sent an interrupt, and the draft is
+    /// first in Up next, still queued, until the host has sent it. No row ever reads Steering.
+    @Test func theAlternateSendInterruptsAndNeverDrawsASteeringRow() async throws {
+        let draft = "Stop, and use the ledger fixtures instead."
+        let thread = QueueThread(queue: QueueFixture.messages([Self.texts[0]]), draft: draft, interrupts: true)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        let monitor = try #require(thread.keyMonitor)
+
+        #expect(monitor.handle(thread.key("\r", keyCode: 36, modifiers: .command)))
+        try await eventuallyOnMain("the draft to be sent") { thread.host.sends.count == 1 }
+
+        #expect(thread.host.sends.first?.delivery == .interrupt)
+        #expect(thread.host.sends.first?.text == draft)
+        try await eventuallyOnMain("the draft to lead Up next") { thread.host.queue.first?.text == draft }
+        try await eventuallyOnMain("both messages to draw as queued rows") {
+            thread.state.rows.map(\.kind) == [.queued(number: 1), .queued(number: 2)]
+        }
+        #expect(thread.host.queue.allSatisfy { $0.state == .queued })
+        #expect(thread.store.draft.isEmpty)
+    }
+
+    /// Steer now on a queued row, and Steer all now, ask the host to interrupt: the messages go
+    /// first in Up next as queued rows, in order, and nothing is marked Steering.
+    @Test func steerNowOnQueuedRowsInterruptsAndNeverDrawsASteeringRow() async throws {
+        let thread = QueueThread(queue: QueueFixture.messages(Self.texts), interrupts: true)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        let ids = thread.host.queue.map(\.id)
+
+        thread.state.steer([ids[2]], running: true, store: thread.store)
+        try await eventuallyOnMain("the interrupt to reach the host") { thread.host.actions.contains(.interrupt(ids: [ids[2]])) }
+        try await eventuallyOnMain("the message to lead Up next") { thread.host.queue.first?.id == ids[2] }
+        #expect(thread.state.rows.map(\.kind) == [.queued(number: 1), .queued(number: 2), .queued(number: 3)])
+        #expect(thread.host.queue.allSatisfy { $0.state == .queued })
+
+        thread.state.steerAll(running: true, store: thread.store)
+        try await eventuallyOnMain("every message to be interrupted for") { thread.host.actions.contains(.interrupt(ids: [ids[2], ids[0], ids[1]])) }
+        #expect(thread.host.queue.map(\.id) == [ids[2], ids[0], ids[1]], "in the order they were")
+        #expect(thread.host.queue.allSatisfy { $0.state == .queued })
+        #expect(!thread.host.actions.contains { if case .steer = $0 { true } else { false } }, "nothing asked the host to steer")
+        #expect(thread.state.rows.allSatisfy { $0.kind != .steering })
     }
 
     /// ↑ in an empty composer opens the editor on the last queued message and holds the queue;

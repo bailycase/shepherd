@@ -45,7 +45,7 @@ import SwiftUI
             .table(NWProseTable(
                 alignments: [.leading, .trailing],
                 header: ["Area", "Tools"],
-                rows: [["Terminal panes", NWProseInline.attributed("`pane_list`, `pane_open`, `pane_run`")],
+                rows: [["Terminals", NWProseInline.attributed("`terminal_list`, `terminal_open`, `terminal_run`")],
                        ["Notifications and review", NWProseInline.attributed("`notify`, `review_diff`")]],
                 markdown: "| Area | Tools |")),
             .list(ordered: false, start: 1, items: [

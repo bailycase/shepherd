@@ -110,7 +110,9 @@ private struct SubagentRunInspector: View {
             brief(run)
             transcriptView(run)
             footerLine(run)
-            if let run, run.isTerminal { finishedBar(run).nwTransition(.content) } else { composer(run).nwTransition(.content) }
+            // A run waiting on its parent's answer has no process left, but it is not finished: it keeps the
+            // Steer field (the user speaking over its parent) rather than the finished run's read-only bar.
+            if let run, SubagentPresentation.isFinished(run) { finishedBar(run).nwTransition(.content) } else { composer(run).nwTransition(.content) }
         }
         .background(Color.nw.bgWindow)
         // The run's own milestones (paused, needing you, finishing with its result and actions)
@@ -184,13 +186,15 @@ private struct SubagentRunInspector: View {
         return NWInspectorHeader(role, position: position.flatMap { siblings.count > 1 ? "\($0 + 1) of \(siblings.count)" : nil },
                                  state: run.map(SubagentPresentation.state) ?? .idle, meta: meta, accent: accent,
                                  minHeight: AppLayout.headerHeight) {
-            if let run, !run.isTerminal {
-                Button(run.paused == true ? "Continue" : "Pause") {
-                    Task { await store.subagentCommand(runID: runID, action: run.paused == true ? .continue : .pause) }
+            if let run, !SubagentPresentation.isFinished(run) {
+                if nativeRunPhase(run) != .asked {
+                    Button(run.paused == true ? "Continue" : "Pause") {
+                        Task { await store.subagentCommand(runID: runID, action: run.paused == true ? .continue : .pause) }
+                    }
+                    .buttonStyle(.nw(.secondary, size: .s))
+                    .disabled(!canAct)
+                    .help("Pause before the next model request; current tools finish normally")
                 }
-                .buttonStyle(.nw(.secondary, size: .s))
-                .disabled(!canAct)
-                .help("Pause before the next model request; current tools finish normally")
                 Button("Stop") { Task { await store.subagentCommand(runID: runID, action: .cancel) } }
                     .buttonStyle(.nw(.danger, size: .s))
                     .disabled(!canAct)
@@ -227,13 +231,16 @@ private struct SubagentRunInspector: View {
 
     private func brief(_ run: ChildRun?) -> some View {
         let state = run.map(SubagentPresentation.state) ?? .idle
+        let asked = run.map { nativeRunPhase($0) == .asked } == true
         let result: String? = run.flatMap { run in
+            // A run that asked its parent shows its question where a finished run shows its result.
+            if asked { return SubagentPresentation.askedText(run) }
             guard run.isTerminal else { return nil }
             let text = state == .failed ? (run.exitReason ?? run.summary) : (run.summary ?? run.output)
             return text?.isEmpty == false ? text : nil
         }
         return NWRunBrief(goal: run?.task ?? run?.label ?? "", note: run.flatMap(SubagentPresentation.goalNote),
-                          result: result, resultState: state) {
+                          result: result, resultLabel: asked ? "Asked the parent" : "Result", resultState: state) {
             if let run, let files = run.files, !files.isEmpty { touchedFiles(files, run: run) }
         }
     }

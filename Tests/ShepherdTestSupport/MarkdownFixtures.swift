@@ -1,6 +1,6 @@
 import Foundation
 
-/// Agent replies that exercise the thread's rich content (DESIGN.md › Thread › Rich content in
+/// Agent replies that exercise the thread's rich content (docs/design/thread.md › Thread › Rich content in
 /// prose), shared by the preview renders and the performance budgets.
 public enum MarkdownFixtures {
     /// The reply that showed its table as raw pipes (a user's report), verbatim.
@@ -11,7 +11,7 @@ public enum MarkdownFixtures {
 
     | Area | Tools |
     |---|---|
-    | Terminal panes | `pane_list`, `pane_open`, `pane_run`, `pane_read`, `pane_focus`, `pane_close` |
+    | Terminals | `terminal_list`, `terminal_open`, `terminal_run`, `terminal_read`, `terminal_focus`, `terminal_close` |
     | Peer agents | `agent_list`, `agent_send`, `agent_read`, `agent_steer`, `agent_interrupt`, `agent_wait`, `agent_delete`, `agent_spawn` |
     | Automations | `automation_create`, `automation_list`, `automation_update`, `automation_delete`, `automation_start`, `automation_stop` |
     | Notifications and review | `notify`, `review_diff` |

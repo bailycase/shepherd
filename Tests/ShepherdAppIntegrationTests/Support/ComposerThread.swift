@@ -18,22 +18,42 @@ final class ComposerThread {
     let window: OffscreenWindow
     let size: CGSize
     private(set) var snapshot: NativeThreadSnapshot
+    /// Every request the thread sent its host, in order (its pulls included).
+    private(set) var requests: [NativeThreadRequest] = []
     /// The thread's own scroll view, found before any menu (which may bring its own) opens.
     private(set) var threadScroll: NSScrollView?
     private var hosted: () -> AnyView = { AnyView(EmptyView()) }
 
     /// `focused` gives the thread the keyboard, so its field takes it as the app's does.
-    /// `speed` puts the thread on a model that offers a service tier, so its Speed chip shows.
+    /// `speed` puts the thread on a model that offers a service tier, so its popover has a Speed
+    /// control. The host applies a speed, a level and a model as the real one does (`requests`).
     init(messages: Int = 40, size: CGSize = CGSize(width: 900, height: 600), models: [PiModelCatalog.Entry] = ModelCatalogFixture.entries,
          commands: [NativeCommand] = ModelCatalogFixture.commands, dialogs: [NativeThreadDialog] = [], dark: Bool = false,
-         focused: Bool = false, animated: Bool = true, speed: Bool = false, model: String = "anthropic/claude-opus-4-5") {
+         focused: Bool = false, animated: Bool = true, speed: Bool = false, fast: Bool = false, model: String = "anthropic/claude-opus-4-5",
+         thinkingLevels: [String]? = nil) {
         self.size = size
         snapshot = Self.snapshot(messages: messages, commands: commands, dialogs: dialogs, model: speed ? "openai/gpt-6-luna" : model, speed: speed)
+        if fast { snapshot.serviceTier = "fast" }
+        if let thinkingLevels { snapshot.thinkingLevels = thinkingLevels }
         window = OffscreenWindow(size: size, dark: dark)
         let request: NativeThreadStore.Request = { [weak self] value in
             guard let self else { return .failure(code: "gone", message: "harness released") }
+            self.requests.append(value)
             switch value {
             case .send(_, _, let operation, _, _, _, _, _, _): return .accepted(operationID: operation)
+            // The host applies a speed, a level and a model as the real one does, so the next pull shows them.
+            case .setServiceTier(_, _, let operation, let tier):
+                self.snapshot.serviceTier = tier
+                self.snapshot.revision += 1
+                return .accepted(operationID: operation)
+            case .setThinking(_, _, let operation, let level):
+                self.snapshot.thinking = level
+                self.snapshot.revision += 1
+                return .accepted(operationID: operation)
+            case .setModel(_, _, let operation, let model):
+                self.snapshot.model = model
+                self.snapshot.revision += 1
+                return .accepted(operationID: operation)
             default: return .snapshot(value: self.snapshot)
             }
         }

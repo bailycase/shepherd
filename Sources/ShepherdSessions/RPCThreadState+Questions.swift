@@ -50,8 +50,14 @@ extension RPCThreadState {
     /// live thread showed it. A question from before a compaction's kept messages went with
     /// what was summarized.
     static func interleave(_ questions: [ThreadOriginStore.Question], into history: [NativeThreadMessage]) -> [NativeThreadMessage] {
-        guard !questions.isEmpty else { return history }
-        let ordered = questions.sorted { $0.endedAt < $1.endedAt }
+        interleave(questions.map { (at: $0.endedAt, row: message($0)) }, into: history)
+    }
+
+    /// The same placement for any rows the host keeps beside pi's history: each `row` goes
+    /// where the thread showed it at `at` (ms).
+    static func interleave(_ rows: [(at: Double, row: NativeThreadMessage)], into history: [NativeThreadMessage]) -> [NativeThreadMessage] {
+        guard !rows.isEmpty else { return history }
+        let ordered = rows.sorted { $0.at < $1.at }
         let compacted = history.contains { $0.role == "compactionSummary" }
         var result: [NativeThreadMessage] = []
         result.reserveCapacity(history.count + ordered.count)
@@ -60,8 +66,8 @@ extension RPCThreadState {
         for row in history {
             let start = row.role == "toolResult" ? row.startedAt ?? row.timestamp : row.timestamp
             if let start {
-                while next < ordered.count, ordered[next].endedAt <= start {
-                    if placedAny || !compacted { result.append(message(ordered[next])) }
+                while next < ordered.count, ordered[next].at <= start {
+                    if placedAny || !compacted { result.append(ordered[next].row) }
                     next += 1
                 }
             }
@@ -69,13 +75,14 @@ extension RPCThreadState {
             placedAny = true
         }
         while next < ordered.count {
-            result.append(message(ordered[next]))
+            result.append(ordered[next].row)
             next += 1
         }
         return result
     }
 
-    /// Text a record keeps, without copying the discarded tail or splitting a UTF-8 scalar.
+    /// Text a record keeps: up to the thread's per-message limit (or `limit` bytes), without
+    /// copying the discarded tail or splitting a UTF-8 scalar.
     static func clippedText(_ text: String, limit: Int = textLimit) -> String {
         let raw = text.utf8
         guard raw.count > limit else { return text }

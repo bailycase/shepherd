@@ -5,9 +5,9 @@ import ShepherdProtocol
 import ShepherdRemote
 
 /// The terminal panel under the thread (TerminalSplit, TerminalStates boards): show or hide it
-/// (⌘J), maximize it (⇧⌘↩), and its tabs. Every change to the panes goes through the layout as
-/// before: + splits the thread (a new tab), Split right splits a pane in the tab, closing a tab
-/// closes its panes; for a remote agent, through its host's pane requests.
+/// (⌘J), maximize it (⇧⌘↩), and its tabs, one terminal each. Every change goes through the layout:
+/// a new terminal is a leaf beside the thread, closing a tab closes its terminal; for a remote
+/// agent, through its host's requests. ⌘J with no terminal opens one, so the panel is never empty.
 extension ShepherdViewModel {
     /// The layout on screen, as the panel sees it.
     struct TerminalTarget {
@@ -16,6 +16,9 @@ extension ShepherdViewModel {
         let thread: PaneID?
         let remote: RemoteAgentRef?
         let focused: PaneID?
+
+        /// The terminals in the layout, one tab each.
+        var tabs: [TerminalPanelTab] { TerminalPanel.tabs(in: layout, thread: thread) }
     }
 
     /// The layout on screen, its panel brought up to date with it first (the views do the same as
@@ -45,25 +48,31 @@ extension ShepherdViewModel {
         unreconciledTerminalTarget.map { terminalPanels.panel($0.key).shown } ?? false
     }
 
-    /// ⌘J, the Pane menu and the palette (the terminal has no header button). Showing it puts
-    /// the keyboard in its terminal; hiding it gives the keyboard back to the thread.
+    /// ⌘J, the Terminal menu and the palette (the terminal has no header button). Showing it puts
+    /// the keyboard in its terminal, and with no terminal yet opens one; hiding it gives the
+    /// keyboard back to the thread.
     func toggleTerminalPanel() {
         guard let target = terminalTarget else { NSSound.beep(); return }
-        let shown = !terminalPanels.panel(target.key).shown
-        terminalPanels.update(target.key) {
-            $0.shown = shown
-            if !shown { $0.maximized = false }
+        if terminalPanels.panel(target.key).shown {
+            terminalPanels.update(target.key) {
+                $0.shown = false
+                $0.maximized = false
+            }
+            if let thread = target.thread { focusTerminal(thread, target: target) }
+            return
         }
-        if shown, let tab = selectedTerminalTab(target) {
-            focusTerminalPane(TerminalPanel.focusedPane(in: tab, focused: target.focused), target: target)
-        } else if !shown, let thread = target.thread {
-            focusTerminalPane(thread, target: target)
+        guard let tab = selectedTerminalTab(target) else {
+            newTerminalTab(target)
+            return
         }
+        terminalPanels.update(target.key) { $0.shown = true }
+        focusTerminal(tab.id, target: target)
     }
 
-    /// ⇧⌘↩: the panel takes the layout and the thread folds away, or comes back.
+    /// ⇧⌘↩: the panel takes the layout and the thread folds away, or comes back. With no
+    /// terminal there is nothing to maximize.
     func toggleTerminalMaximized() {
-        guard let target = terminalTarget else { NSSound.beep(); return }
+        guard let target = terminalTarget, !target.tabs.isEmpty else { NSSound.beep(); return }
         terminalPanels.update(target.key) {
             $0.maximized = !$0.maximized || !$0.shown
             $0.shown = true
@@ -76,43 +85,44 @@ extension ShepherdViewModel {
 
     func selectTerminalTab(_ tab: TerminalPanelTab, target: TerminalTarget) {
         terminalPanels.choose(tab, in: target.key)
-        focusTerminalPane(TerminalPanel.focusedPane(in: tab, focused: target.focused), target: target)
+        focusTerminal(tab.id, target: target)
     }
 
-    /// + : a new pane beside the thread, which the panel shows as a new tab.
+    /// ⇧⌘] and ⇧⌘[: the next or previous tab, wrapping, while the panel shows more than one.
+    func selectAdjacentTerminal(_ delta: Int) {
+        guard let target = terminalTarget, terminalPanels.panel(target.key).shown,
+              let tab = TerminalPanel.adjacent(to: selectedTerminalTab(target), in: target.tabs, delta: delta) else { return }
+        selectTerminalTab(tab, target: target)
+    }
+
+    /// ⌘D, + and the New Terminal menu rows: a new terminal in the thread's folder (its
+    /// worktree), which the panel shows as a new tab and which takes the keyboard. A remote
+    /// agent's is made by its host; a failure beeps and shows nothing.
     func newTerminalTab(_ target: TerminalTarget? = nil) {
         guard let target = target ?? terminalTarget else { NSSound.beep(); return }
         let anchor = TerminalPanel.newTabAnchor(in: target.layout, thread: target.thread)
-        openTerminalPane(target, beside: anchor.pane, axis: anchor.axis)
+        openTerminal(target, beside: anchor.pane, axis: anchor.axis)
     }
 
-    /// Split right: a new pane beside the tab's focused pane.
-    func splitTerminal(_ target: TerminalTarget? = nil) {
-        guard let target = target ?? terminalTarget, let tab = selectedTerminalTab(target) else {
-            newTerminalTab(target)
-            return
-        }
-        openTerminalPane(target, beside: TerminalPanel.splitAnchor(in: tab, focused: target.focused), axis: .vertical)
-    }
-
-    /// Closes every pane of a tab, as ⌘W closes one (never the thread's, never the last).
+    /// Closes a tab's terminal, as ⌘W does (never the thread's).
     func closeTerminalTab(_ tab: TerminalPanelTab, target: TerminalTarget) {
-        let panes = TerminalPanel.panesToClose(tab, thread: target.thread)
+        guard tab.id != target.thread else { NSSound.beep(); return }
         if let remote = target.remote {
             Task {
-                for pane in panes {
-                    do { try await remoteHosts.closePane(hostID: remote.hostID, agentID: remote.agentID, paneID: pane) }
-                    catch { NSSound.beep(); return }
-                }
-                if let thread = target.thread { remoteFocusedPaneID = thread }
+                do {
+                    try await remoteHosts.closePane(hostID: remote.hostID, agentID: remote.agentID, paneID: tab.id)
+                    if let thread = target.thread { remoteFocusedPaneID = thread }
+                } catch { NSSound.beep() }
             }
             return
         }
-        for pane in panes where !closeLocalPane(pane) { NSSound.beep() }
-        if let thread = target.thread, let focused = focusedPaneID, panes.contains(focused) { focusedPaneID = thread }
+        // The keyboard goes back to the thread, the layout's first leaf (`closeLocalPane`).
+        if !closeLocalPane(tab.id) { NSSound.beep() }
     }
 
-    private func openTerminalPane(_ target: TerminalTarget, beside anchor: PaneID, axis: SplitAxis) {
+    /// The host is asked to open the terminal beside `anchor`: a current host opens a tab and
+    /// ignores where, an older one splits the anchor (the thread) to make one.
+    private func openTerminal(_ target: TerminalTarget, beside anchor: PaneID, axis: SplitAxis) {
         if let remote = target.remote {
             Task {
                 do {
@@ -122,29 +132,20 @@ extension ShepherdViewModel {
             }
             return
         }
-        guard let tab = state.tabs.first(where: { $0.id == target.key.tab }), let leaf = tab.layout.leaf(withID: anchor) else { return }
+        guard let tab = state.tabs.first(where: { $0.id == target.key.tab }), let leaf = tab.layout.leaf(withID: anchor) else {
+            NSSound.beep()
+            return
+        }
         do { try verifyCheckoutAvailable(leaf.cwd) }
         catch { remoteActionError = String(describing: error); return }
-        let pane = LeafPane(cwd: leaf.cwd)
-        guard let layout = tab.layout.splitting(pane: anchor, axis: axis, newPane: pane) else { return }
+        let terminal = LeafPane(cwd: leaf.cwd)
+        guard let layout = tab.layout.splitting(pane: anchor, axis: axis, newPane: terminal) else { NSSound.beep(); return }
         setLayout(layout, forTab: tab.id)
-        focusedPaneID = pane.id
+        focusedPaneID = terminal.id
+        terminalPanels.reconcile(target.key, layout: layout, thread: target.thread)
     }
 
-    private func focusTerminalPane(_ pane: PaneID, target: TerminalTarget) {
+    private func focusTerminal(_ pane: PaneID, target: TerminalTarget) {
         if target.remote != nil { remoteFocusedPaneID = pane } else { focusedPaneID = pane }
-    }
-
-    /// The panes on screen in a layout, in order: its thread (unless the panel is maximized) and,
-    /// while the panel shows, the selected tab's. ⌥⌘←/→ move among these.
-    func visiblePanes(layout: PaneNode, key: TerminalPanelKey, thread: PaneID?, focused: PaneID?) -> [PaneID] {
-        guard let thread, layout.contains(thread) else { return layout.leaves.map(\.id) }
-        terminalPanels.reconcile(key, layout: layout, thread: thread)
-        let panel = terminalPanels.panel(key)
-        var panes = panel.shown && panel.maximized ? [] : [thread]
-        if panel.shown, let tab = terminalPanels.selectedTab(key, layout: layout, thread: thread, focused: focused) {
-            panes += tab.panes.map(\.id)
-        }
-        return panes
     }
 }

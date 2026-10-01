@@ -1,13 +1,14 @@
 import Foundation
 import Observation
+import UIKit
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-/// Terminal panes on the phone and iPad: one `MobileTerminalSession` per host session, attached
+/// Terminals on the phone and iPad: one `MobileTerminalSession` per host session, attached
 /// while its view is on screen, and each thread's panel state (shown, the chosen tab, maximized,
-/// its height). The panes and their shells are the host's; this never spawns or resizes anything
-/// but through the host's own requests (attach, detach, input, resize, open and close pane).
+/// its height). The terminals and their shells are the host's; this never spawns or resizes
+/// anything but through the host's own requests (attach, detach, input, resize, open and close).
 ///
 /// It owns the `onOutput` and `onSessionExited` callbacks of every host's `RemoteHostClient`
 /// (nothing else on iOS attaches terminals), wiring each new connection's client on its first
@@ -23,10 +24,6 @@ final class MobileTerminals {
         var shown = false
         /// The tab picked last; `TerminalPanel.selected` falls back when it closes.
         var chosenTab: PaneID?
-        /// The picked tab's panes, so it stays picked when its first pane closes.
-        var chosenPanes: [PaneID] = []
-        /// The pane the keyboard goes to.
-        var focusedPane: PaneID?
         /// The panel fills the thread; the thread folds away until it is restored.
         var maximized = false
     }
@@ -41,7 +38,7 @@ final class MobileTerminals {
     var panelHeight: CGFloat {
         didSet { if panelHeight != oldValue { defaults.set(Double(panelHeight), forKey: Self.heightKey) } }
     }
-    /// Each thread's last pane request that failed, for its panel to say so.
+    /// Each thread's last terminal request that failed, for its panel to say so.
     var problems: [AgentRef: String] = [:]
     /// What each thread's terminals run, from its host (`RemoteAgentQuery.terminals`).
     private(set) var activity: [AgentRef: [PaneID: RemoteTerminalActivity]] = [:]
@@ -75,12 +72,7 @@ final class MobileTerminals {
     }
 
     func choose(_ tab: TerminalPanelTab, in ref: AgentRef) {
-        update(ref) {
-            $0.chosenTab = tab.id
-            $0.chosenPanes = tab.panes.map(\.id)
-            if let focused = $0.focusedPane, tab.contains(focused) { return }
-            $0.focusedPane = tab.id
-        }
+        update(ref) { $0.chosenTab = tab.id }
     }
 
     // MARK: Activity
@@ -174,44 +166,33 @@ final class MobileTerminals {
         for key in seen.keys where key.host == host { seen[key] = nil }
     }
 
-    // MARK: Pane requests
+    // MARK: Terminal requests
 
-    /// + in the tab bar: a new pane beside the thread, which the host lays out as a new tab.
+    /// + in the tab bar, and the thread's options with no terminal yet: a new terminal under the
+    /// thread, which the host makes a tab of its own. The request names the thread, as it always
+    /// has: a current host opens a tab whatever it is told, an older one splits it to make one.
+    /// The panel shows on the new terminal once the host has made it; a failure shows the panel's
+    /// banner while it is up, and otherwise only a haptic, so an empty panel is never drawn.
     func newTab(_ ref: AgentRef, layout: PaneNode, thread: PaneID?, client: RemoteHostClient) async {
         let anchor = TerminalPanel.newTabAnchor(in: layout, thread: thread)
-        await open(ref, relativeTo: anchor.pane, axis: anchor.axis, newTab: true, client: client)
-    }
-
-    /// Split right (or down): a new pane beside one in the tab.
-    func split(_ ref: AgentRef, pane: PaneID, axis: SplitAxis, client: RemoteHostClient) async {
-        await open(ref, relativeTo: pane, axis: axis, newTab: false, client: client)
-    }
-
-    private func open(_ ref: AgentRef, relativeTo pane: PaneID, axis: SplitAxis, newTab: Bool, client: RemoteHostClient) async {
         do {
-            let opened = try await client.openPane(agentID: ref.agent, relativeTo: pane, axis: axis)
+            let opened = try await client.openPane(agentID: ref.agent, relativeTo: anchor.pane, axis: anchor.axis)
             update(ref) {
                 $0.shown = true
-                $0.focusedPane = opened
-                // A new tab is its own first pane; a split stays in the tab on screen.
-                if newTab || $0.chosenTab == nil { $0.chosenTab = opened; $0.chosenPanes = [opened] }
-                else { $0.chosenPanes.append(opened) }
+                $0.chosenTab = opened
             }
         } catch {
             problems[ref] = Self.message(error, doing: "open a terminal")
+            if !panel(ref).shown { UINotificationFeedbackGenerator().notificationOccurred(.error) }
         }
     }
 
-    /// Closes panes on the host, one at a time; the host kills their shells. It refuses the
-    /// thread's own pane and the layout's last pane.
-    func close(_ ref: AgentRef, panes: [PaneID], client: RemoteHostClient) async {
-        for pane in panes {
-            do {
-                try await client.closePane(agentID: ref.agent, paneID: pane)
-            } catch {
-                problems[ref] = Self.message(error, doing: "close the terminal")
-                return
-            }
+    /// Closes a terminal on the host, which kills its shell. It refuses the thread's own.
+    func close(_ ref: AgentRef, terminal: PaneID, client: RemoteHostClient) async {
+        do {
+            try await client.closePane(agentID: ref.agent, paneID: terminal)
+        } catch {
+            problems[ref] = Self.message(error, doing: "close the terminal")
         }
     }
 
@@ -219,8 +200,7 @@ final class MobileTerminals {
         if case RemoteHostClientError.rejected(let code, let message) = error {
             switch code {
             case "unsupported": return "Update Shepherd on the host to \(action) here."
-            case "not_closable": return "An agent's own pane can't be closed."
-            case "last_pane": return "A layout always keeps its last pane."
+            case "not_closable": return "An agent's own thread can't be closed."
             default: return message
             }
         }
@@ -288,7 +268,7 @@ final class MobileTerminalSession {
         holds -= 1
         guard holds == 0 else { return }
         retry?.cancel()
-        // A view remade in place (a split around it, a rotation) holds again at once: detach only
+        // A view remade in place (a rotation) holds again at once: detach only
         // once nothing has for a moment, so it keeps its attachment instead of a fresh replay.
         letGo = Task { [weak self] in
             try? await Task.sleep(for: Self.detachGrace)

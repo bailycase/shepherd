@@ -11,7 +11,8 @@ struct TerminalPanelKey: Hashable {
     var tab: TabID
 }
 
-/// The new terminal menu, open on a panel: from + (the selected tab) or a right-click on a tab.
+/// The menu on a panel's tab (NewTerminalMenu), open from + (the selected tab) or a right-click
+/// on a tab.
 struct TerminalMenuRequest: Equatable {
     let key: TerminalPanelKey
     let tab: PaneID?
@@ -20,17 +21,17 @@ struct TerminalMenuRequest: Equatable {
 }
 
 /// Each agent layout's terminal panel (TerminalSplit, TerminalStates boards): shown or hidden,
-/// the tab on screen, maximized, and what its terminals run. The panes themselves stay the
-/// layout's (`PaneNode`): the panel is how the Mac shows them, under the thread. Device-local
-/// view state; the height persists app-wide (`shepherd.terminalPanelHeight`).
+/// the tab on screen, maximized, and what its terminals run. The terminals themselves stay the
+/// layout's leaves (`PaneNode`): the panel is how the Mac shows them, under the thread. A panel
+/// never shows with no terminal in it. Device-local view state; the height persists app-wide
+/// (`shepherd.terminalPanelHeight`).
 @MainActor
 @Observable
 final class TerminalPanels {
     struct Panel: Equatable {
         var shown = false
-        /// The tab picked last, and its panes, so it stays picked when its first pane closes.
+        /// The tab picked last.
         var chosenTab: PaneID?
-        var chosenPanes: [PaneID] = []
         var maximized = false
     }
 
@@ -42,15 +43,15 @@ final class TerminalPanels {
         didSet { if height != oldValue { defaults.set(Double(height), forKey: Self.heightKey) } }
     }
     /// What each layout's terminals run (`SessionServer.terminalActivity`, or a host's
-    /// `RemoteAgentQuery.terminals`), by pane.
+    /// `RemoteAgentQuery.terminals`), by terminal.
     private(set) var activity: [TerminalPanelKey: [PaneID: RemoteTerminalActivity]] = [:]
     /// Each session's news (`RemoteTerminalActivity.news`) when it was last on screen.
     private(set) var seen: [SessionID: UInt64] = [:]
-    /// The new terminal menu, while it is open (NewTerminalMenu): which panel, the tab it acts
-    /// on, and where along the strip it hangs.
+    /// The menu on a tab, while it is open (NewTerminalMenu): which panel, the tab it acts on,
+    /// and where along the strip it hangs.
     var menu: TerminalMenuRequest?
 
-    /// The panes each layout had when last reconciled: a pane that appears opens the panel on it.
+    /// The terminals each layout had when last reconciled: one that appears opens the panel.
     @ObservationIgnored private var known: [TerminalPanelKey: Set<PaneID>] = [:]
     @ObservationIgnored private let defaults: UserDefaults
 
@@ -69,45 +70,45 @@ final class TerminalPanels {
     }
 
     func choose(_ tab: TerminalPanelTab, in key: TerminalPanelKey) {
-        update(key) {
-            $0.chosenTab = tab.id
-            $0.chosenPanes = tab.panes.map(\.id)
-        }
+        update(key) { $0.chosenTab = tab.id }
     }
 
     /// The tab on screen in `layout`.
     func selectedTab(_ key: TerminalPanelKey, layout: PaneNode, thread: PaneID?, focused: PaneID?) -> TerminalPanelTab? {
-        let panel = panel(key)
-        return TerminalPanel.selected(TerminalPanel.tabs(in: layout, thread: thread), chosen: panel.chosenTab,
-                                      remembering: panel.chosenPanes, focused: focused)
+        TerminalPanel.selected(TerminalPanel.tabs(in: layout, thread: thread), chosen: panel(key).chosenTab, focused: focused)
     }
 
     /// Follows the layout: the first time a layout is seen, its panel shows if it has terminals
-    /// (as the panes always showed before the panel); after that, a terminal that appears (⌘D,
-    /// an agent's `pane_open`, another device's +) opens the panel on its tab, and the panel
-    /// closes with its last terminal. Returns the new pane to focus, if one appeared.
+    /// (as they always showed before the panel); after that, a terminal that appears (⌘D, ⌘J
+    /// with none, an agent's `terminal_open`, another device's +) opens the panel on its tab, and
+    /// the panel closes with its last terminal. Returns the new terminal to focus, if one appeared.
     @discardableResult
     func reconcile(_ key: TerminalPanelKey, layout: PaneNode, thread: PaneID?) -> PaneID? {
         let tabs = TerminalPanel.tabs(in: layout, thread: thread)
-        let panes = Set(tabs.flatMap { $0.panes.map(\.id) })
-        defer { known[key] = panes }
+        let terminals = Set(tabs.map(\.id))
+        defer { known[key] = terminals }
+        // A panel never shows with no terminal in it, whichever way it came to.
+        if tabs.isEmpty, panel(key).shown || panel(key).maximized {
+            update(key) {
+                $0.shown = false
+                $0.maximized = false
+            }
+        }
         guard let before = known[key] else {
             if !tabs.isEmpty, panels[key] == nil { update(key) { $0.shown = true } }
             return nil
         }
-        if TerminalPanel.closesWithLastTerminal(before: before.count, after: panes.count) {
+        if TerminalPanel.closesWithLastTerminal(before: before.count, after: terminals.count) {
             update(key) {
                 $0.shown = false
                 $0.maximized = false
             }
             return nil
         }
-        guard let added = tabs.flatMap(\.panes).map(\.id).last(where: { !before.contains($0) }),
-              let tab = tabs.first(where: { $0.contains(added) }) else { return nil }
+        guard let added = tabs.map(\.id).last(where: { !before.contains($0) }) else { return nil }
         update(key) {
             $0.shown = true
-            $0.chosenTab = tab.id
-            $0.chosenPanes = tab.panes.map(\.id)
+            $0.chosenTab = added
         }
         return added
     }
@@ -121,8 +122,8 @@ final class TerminalPanels {
     // MARK: Activity
 
     func setActivity(_ rows: [RemoteTerminalActivity], for key: TerminalPanelKey) {
-        let byPane = Dictionary(rows.map { ($0.paneID, $0) }, uniquingKeysWith: { first, _ in first })
-        if activity[key] != byPane { activity[key] = byPane }
+        let byTerminal = Dictionary(rows.map { ($0.paneID, $0) }, uniquingKeysWith: { first, _ in first })
+        if activity[key] != byTerminal { activity[key] = byTerminal }
         // Output from before the first look is not news.
         for row in rows where seen[row.sessionID] == nil { seen[row.sessionID] = row.news }
     }
@@ -147,24 +148,21 @@ final class TerminalPanels {
                host: String?) -> [NWTerminalTab] {
         let rows = activity[key] ?? [:]
         return tabs.map { tab in
-            let first = tab.panes.first
-            let row = first.flatMap { rows[$0.id] }
             let state: NWTerminalTab.Activity
-            if tab.panes.contains(where: { rows[$0.id]?.isRunning == true }) {
+            if rows[tab.id]?.isRunning == true {
                 state = .running
-            } else if tab.id != selected?.id || !onScreen,
-                      tab.panes.contains(where: { pane in pane.sessionID.map { hasUnseen(key, session: $0) } ?? false }) {
+            } else if tab.id != selected?.id || !onScreen, let session = tab.leaf.sessionID, hasUnseen(key, session: session) {
                 state = .unseen
             } else {
                 state = .idle
             }
-            return NWTerminalTab(id: tab.id.rawValue, title: Self.title(row: row, pane: first), host: host,
-                                     activity: state, panes: tab.panes.count)
+            return NWTerminalTab(id: tab.id.rawValue, title: Self.title(row: rows[tab.id], pane: tab.leaf), host: host,
+                                 activity: state)
         }
     }
 
     /// The name Rename tab gave it, else the running command ("make dev"), else the program at
-    /// the prompt ("zsh"), else the folder the pane started in.
+    /// the prompt ("zsh"), else the folder the terminal started in.
     static func title(row: RemoteTerminalActivity?, pane: LeafPane?) -> String {
         if let title = pane?.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty { return title }
         if let command = row?.command, !command.isEmpty { return String(command.prefix(40)) }

@@ -5,7 +5,7 @@ private enum TerminalSamples {
         NWTerminalTab(id: "zsh", title: "zsh", host: "build-01"),
         NWTerminalTab(id: "psql", title: "psql payments", host: "build-01"),
         NWTerminalTab(id: "make", title: "make dev", activity: .running),
-        NWTerminalTab(id: "logs", title: "tail -f logs", activity: .unseen, panes: 2),
+        NWTerminalTab(id: "logs", title: "tail -f logs", activity: .unseen),
         NWTerminalTab(id: "test", title: "go test", activity: .exited(failed: true)),
     ]
 
@@ -29,7 +29,6 @@ private enum TerminalSamples {
     NWPreviewBoth {
         VStack(alignment: .leading, spacing: NW.Space.l) {
             NWTerminalTabBar(TerminalSamples.tabs, selection: "zsh", select: { _ in }, close: { _ in }, newTab: {}) {
-                Button {} label: { Image(systemName: "rectangle.split.2x1") }.accessibilityLabel("Split right")
                 Button {} label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }.accessibilityLabel("Maximize")
                 Button {} label: { Image(systemName: "xmark") }.accessibilityLabel("Hide terminal")
             }
@@ -58,16 +57,10 @@ private enum TerminalSamples {
     NWPreviewBoth {
         VStack(alignment: .leading, spacing: NW.Space.l) {
             NWTerminalFoldedThread(title: "Add refund events", state: .idle, restoreShortcut: "⇧⌘↩") {}
-            HStack(spacing: 0) {
-                NWTerminalPaneHeader(title: "go test", host: "build-01", isFocused: true)
-                NWHairline(.vertical, color: .nw.lineStrong)
-                NWTerminalPaneHeader(title: "docker compose logs -f ledger", host: "build-01", isFocused: false)
-            }
             NWTerminalSelectionBar(add: {}, copy: {})
             NWTerminalMenu {
                 NWChangesMenuRow("New terminal in the worktree", subtitle: "payments on build-01", systemImage: "terminal",
                                  trailing: .chord("⌘D"), tallHeight: NWTerminalMetrics.menuTallRowHeight) {}
-                NWChangesMenuRow("Split right", systemImage: "rectangle.split.2x1", trailing: .chord("⌘D")) {}
                 NWChangesMenuRow("Rename tab", systemImage: "pencil") {}
                 NWChangesMenuRow("Kill process", systemImage: "xmark", enabled: false) {}
             }

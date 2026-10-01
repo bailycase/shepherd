@@ -14,6 +14,14 @@ struct ModelPickerTests {
         PiModelCatalog.Entry(id: "openrouter/openai/gpt-5-mini", context: "128K"),
     ])
 
+    @Test func settingsKeepsTheCurrentModelAndOnlyOneAvailableRecentChoice() {
+        let choices = ModelCatalog.settingsModels(catalog: Self.catalog, current: "retired/model",
+                                                  recent: ["gone/model", "retired/model", "openai/gpt-5", "openai/gpt-5", "anthropic/claude-haiku-4-5"])
+        #expect(choices.map(\.id) == ["retired/model", "openai/gpt-5"])
+        #expect(choices.filter(\.isCurrent).map(\.id) == ["retired/model"])
+        #expect(ModelCatalog.settingsModels(catalog: nil, current: "", recent: ["gone/model"]).isEmpty)
+    }
+
     private func sections(_ list: NWModelList) -> [String] {
         list.rows.compactMap { if case .header(let title) = $0.kind { title } else { nil } }
     }

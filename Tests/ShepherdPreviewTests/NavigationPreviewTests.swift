@@ -366,8 +366,8 @@ extension PreviewTests {
         }
     }
 
-    /// The terminal panel (TerminalSplit, TerminalStates boards): two tabs under the thread, the
-    /// first split right, then the same panel maximized over the folded thread.
+    /// The terminal panel (TerminalSplit, TerminalStates boards): two tabs under the thread, then
+    /// the same panel maximized over the folded thread.
     @Test(arguments: [false, true])
     func appWindowTerminalPanel(maximized: Bool) async throws {
         let workspace = try PreviewWorkspace()
@@ -376,32 +376,61 @@ extension PreviewTests {
         let space = Space(name: "Shepherd", path: workspace.dir.path)
         let (agent, tab) = try await workspace.agent("Add refund events", in: space, order: 0, live: true)
         let thread = try #require(agent.paneID)
-        let shell = LeafPane(cwd: space.path), beside = LeafPane(cwd: space.path), second = LeafPane(cwd: space.path)
+        let shell = LeafPane(cwd: space.path), second = LeafPane(cwd: space.path)
         var panel = tab
-        // + twice from the thread, then Split right in the first tab.
+        // + twice from the thread: each new terminal is a tab, the newer nearer the thread.
         panel.layout = tab.layout.splitting(pane: thread, axis: .horizontal, newPane: shell)!
             .splitting(pane: thread, axis: .horizontal, newPane: second)!
-            .splitting(pane: shell.id, axis: .vertical, newPane: beside)!
         try await workspace.seed(ShepherdState(spaces: [space], tabs: [panel], agents: [agent]))
         vm.selectAgent(agent.id)
         let key = TerminalPanelKey(host: nil, tab: panel.id)
         vm.terminalPanels.update(key) {
             $0.shown = true
             $0.chosenTab = shell.id
-            $0.chosenPanes = [shell.id, beside.id]
             $0.maximized = maximized
         }
         let store = vm.threadStores.store(for: agent.id)
-        let shells = [shell, beside].map { vm.sessions.session(for: $0, in: panel) }
+        let shells = [shell, second].map { vm.sessions.session(for: $0, in: panel) }
         try await Preview.render(maximized ? "app-window-terminal-maximized" : "app-window-terminal-panel",
                                  size: CGSize(width: 1440, height: 900), ready: {
-            (maximized || store.ready) && shells.allSatisfy { $0.phase == .live } && vm.terminalPanels.activity[key]?.count == 3
+            (maximized || store.ready) && shells.allSatisfy { $0.phase == .live } && vm.terminalPanels.activity[key]?.count == 2
         }) {
             RootView(vm: vm)
         }
     }
 
-    /// The new terminal menu (TerminalStates › NewTerminalMenu), opened from + over the panel.
+    /// A tab that runs a command (Tab states): its spinner and the command's name in the strip,
+    /// beside the tab on screen.
+    @Test func appWindowTerminalRunningTab() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        let space = Space(name: "Shepherd", path: workspace.dir.path)
+        let (agent, tab) = try await workspace.agent("Add refund events", in: space, order: 0, live: true)
+        let thread = try #require(agent.paneID)
+        let shell = LeafPane(cwd: space.path), dev = LeafPane(cwd: space.path)
+        var panel = tab
+        panel.layout = tab.layout.splitting(pane: thread, axis: .horizontal, newPane: shell)!
+            .splitting(pane: thread, axis: .horizontal, newPane: dev)!
+        try await workspace.seed(ShepherdState(spaces: [space], tabs: [panel], agents: [agent]))
+        vm.selectAgent(agent.id)
+        let key = TerminalPanelKey(host: nil, tab: panel.id)
+        vm.terminalPanels.update(key) {
+            $0.shown = true
+            $0.chosenTab = shell.id
+        }
+        let store = vm.threadStores.store(for: agent.id)
+        let shells = [shell, dev].map { vm.sessions.session(for: $0, in: panel) }
+        let session = try #require(await vm.sessions.awaitSession(forPane: dev.id, timeout: .seconds(10)))
+        vm.server.typeCommand("sleep 600", sessionID: session)
+        try await Preview.render("app-window-terminal-running", size: CGSize(width: 1440, height: 900), ready: {
+            store.ready && shells.allSatisfy { $0.phase == .live } && vm.terminalPanels.activity[key]?[dev.id]?.isRunning == true
+        }) {
+            RootView(vm: vm)
+        }
+    }
+
+    /// The menu on a tab (TerminalStates › NewTerminalMenu), opened from + over the panel.
     @Test func appWindowTerminalMenu() async throws {
         let workspace = try PreviewWorkspace()
         defer { workspace.stop() }
@@ -419,7 +448,6 @@ extension PreviewTests {
         vm.terminalPanels.update(key) {
             $0.shown = true
             $0.chosenTab = shell.id
-            $0.chosenPanes = [shell.id]
         }
         vm.terminalPanels.menu = TerminalMenuRequest(key: key, tab: shell.id, anchor: 150)
         let store = vm.threadStores.store(for: agent.id)
@@ -432,24 +460,17 @@ extension PreviewTests {
     }
 
     /// The terminal boards' parts (TerminalPane, TerminalStates): the thread folded over a
-    /// maximized panel, a split tab's pane headers (the focused one lit), the bar beside a
-    /// selection, the new terminal menu, and the panel's edge while it is dragged.
+    /// maximized panel, the bar beside a selection, the menu on a tab, and the panel's edge while
+    /// it is dragged.
     @Test func terminalParts() async throws {
-        let size = CGSize(width: 760, height: 470)
+        let size = CGSize(width: 760, height: 360)
         try await Preview.render("terminal-parts", size: size) {
             VStack(alignment: .leading, spacing: NW.Space.l) {
                 NWTerminalFoldedThread(title: "Add refund events", state: .idle, restoreShortcut: "⇧⌘↩") {}
-                HStack(spacing: 0) {
-                    NWTerminalPaneHeader(title: "go test", host: "build-01", isFocused: true)
-                    NWHairline(.vertical, color: .nw.lineStrong)
-                    NWTerminalPaneHeader(title: "docker compose logs -f ledger", host: "build-01", isFocused: false)
-                }
-                .frame(height: NWTerminalMetrics.paneHeaderHeight)
                 NWTerminalSelectionBar(add: {}, copy: {})
                 NWTerminalMenu {
                     NWChangesMenuRow("New terminal in the worktree", subtitle: "payments on build-01", systemImage: "terminal",
                                      trailing: .chord("⌘D"), tallHeight: NWTerminalMetrics.menuTallRowHeight) {}
-                    NWChangesMenuRow("Split right", systemImage: "rectangle.split.2x1", trailing: .chord("⌘D")) {}
                     NWChangesMenuRow("Rename tab", systemImage: "pencil") {}
                     NWChangesMenuRow("Kill process", systemImage: "xmark", enabled: false) {}
                 }
@@ -500,6 +521,33 @@ extension PreviewTests {
         vm.openNewThread()
         try await Preview.render(surface, size: CGSize(width: width, height: 760)) {
             RootView(vm: vm)
+        }
+    }
+
+    @Test(arguments: [720.0, 1280.0])
+    func newThreadWithFullModelControls(width: CGFloat) async throws {
+        let listing = ModelListing(models: ["openai/gpt-5.4"], defaultModel: "openai/gpt-5.4",
+                                   thinkingLevels: ["openai/gpt-5.4": ["off", "low", "medium", "high", "xhigh"]],
+                                   serviceTiers: ["openai/gpt-5.4": ["standard", "fast"]])
+        let workspace = try PreviewWorkspace(modelCatalog: { listing })
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        try await workspace.seed(ShepherdState(spaces: [Space(name: "shepherd", path: workspace.dir.path)]))
+        vm.openNewThread()
+        try await eventuallyOnMain("creation model controls to load") { !vm.newThread.loadingDefaults }
+        vm.newThread.setModel("openai/gpt-5.4")
+        vm.newThread.setThinking(.xhigh)
+        vm.newThread.setServiceTier(.fast)
+        vm.newThread.prompt = "Fix the new thread controls"
+        try await Preview.render("new-thread-model-controls-\(Int(width))", size: CGSize(width: width, height: 760)) {
+            RootView(vm: vm)
+        }
+        // The popover under the card, with Fast chosen and then Standard.
+        for tier in [ServiceTier.fast, .standard] {
+            vm.newThread.setServiceTier(tier)
+            try await Preview.render("new-thread-model-settings-\(tier.rawValue)-\(Int(width))", size: CGSize(width: width, height: 760)) {
+                NewThreadPage(vm: vm, chrome: PageHeaderChrome(), settingsOpen: true)
+            }
         }
     }
 

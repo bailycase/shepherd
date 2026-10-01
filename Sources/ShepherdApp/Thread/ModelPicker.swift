@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import ShepherdCore
 import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
@@ -21,6 +22,8 @@ struct ModelCatalog: Sendable {
         let thinking: String
         /// The id, lowercased: what a query matches.
         let key: String
+        /// The model offers a raised service tier (Fast) on the host that listed it.
+        let fast: Bool
     }
 
     static let empty = ModelCatalog([])
@@ -31,13 +34,16 @@ struct ModelCatalog: Sendable {
 
     /// `levels` are the levels models.json configures, per model (`ModelListing.thinkingLevels`);
     /// a host without `thinking.levels.v1` (`hostTakesAllLevels` false) takes only Off to High.
-    init(_ entries: [PiModelCatalog.Entry], levels: [String: [String]]? = nil, hostTakesAllLevels: Bool = true) {
+    /// `serviceTiers` are the tiers the host offers each model (`ModelListing.serviceTiers`).
+    init(_ entries: [PiModelCatalog.Entry], levels: [String: [String]]? = nil, serviceTiers: [String: [String]]? = nil,
+         hostTakesAllLevels: Bool = true) {
         var listing = ModelListing(entries: entries, defaultModel: nil)
         listing.thinkingLevels = levels
         let lines = NativeModelChoices.thinkingLines(listing, hostTakesAllLevels: hostTakesAllLevels)
         models = entries.map {
             Model(id: $0.id, provider: $0.provider, title: nativeModelShortName($0.id), context: $0.context, reasoning: $0.reasoning,
-                  thinking: lines[$0.id] ?? NativeThinkingLevel.line([]), key: $0.id.lowercased())
+                  thinking: lines[$0.id] ?? NativeThinkingLevel.line([]), key: $0.id.lowercased(),
+                  fast: (serviceTiers?[$0.id] ?? []).contains { $0 != ServiceTier.standard.rawValue })
         }
         index = Dictionary(models.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
@@ -59,7 +65,7 @@ struct ModelCatalog: Sendable {
         }
         func option(_ model: Model) -> NWModelOption {
             NWModelOption(id: model.id, title: model.title, subtitle: subtitle(model.id, catalog: model.thinking), note: model.context,
-                          isCurrent: model.id == current)
+                          isCurrent: model.id == current, fast: model.fast)
         }
         var sections: [NWModelSection] = []
         let recentOptions = recent.compactMap { id -> NWModelOption? in
@@ -81,6 +87,23 @@ struct ModelCatalog: Sendable {
         return NWModelList(sections: sections)
     }
 
+    /// Two quick choices for the settings popover. The current model stays even if unavailable;
+    /// recent choices must still exist in the host's catalog. A model that offers a Fast tier
+    /// carries the bolt: the current one by what the thread or draft says (`currentOffersFast`),
+    /// the others by the catalog.
+    static func settingsModels(catalog: ModelCatalog?, current: String?, recent: [String], currentOffersFast: Bool = false) -> [NWModelOption] {
+        var ids = current.flatMap { $0.isEmpty ? nil : [$0] } ?? []
+        for id in recent where !ids.contains(id) && catalog?.model(id) != nil {
+            guard ids.count < 2 else { break }
+            ids.append(id)
+        }
+        return ids.map {
+            let isCurrent = $0 == current
+            return NWModelOption(id: $0, title: nativeModelShortName($0), isCurrent: isCurrent,
+                                 fast: isCurrent ? currentOffersFast : catalog?.model($0)?.fast ?? false)
+        }
+    }
+
     // MARK: This Mac's catalog
 
     /// Coalesce simultaneous loads; PiModelCatalog owns persistence and invalidation. Keeping
@@ -92,9 +115,9 @@ struct ModelCatalog: Sendable {
     static func loadLocal(from source: PiModelCatalog) async -> ModelCatalog {
         let key = ObjectIdentifier(source)
         let task = loadingLocal[key] ?? Task.detached(priority: .utility) {
-            let entries = source.entries()
-            return ModelCatalog(entries, levels: ModelListing(entries: entries, defaultModel: nil,
-                                                              levelMaps: PiConfig.thinkingLevelMaps(in: source.home)).thinkingLevels)
+            let entries = source.entriesOrConfigured()
+            let listing = source.listing()
+            return ModelCatalog(entries, levels: listing.thinkingLevels, serviceTiers: listing.serviceTiers)
         }
         loadingLocal[key] = task
         let catalog = await task.value
@@ -105,7 +128,7 @@ struct ModelCatalog: Sendable {
     /// A catalog another host served, derived off the main actor.
     static func derive(_ listing: ModelListing, hostTakesAllLevels: Bool) async -> ModelCatalog {
         await Task.detached(priority: .userInitiated) {
-            ModelCatalog(listing.entries, levels: listing.thinkingLevels, hostTakesAllLevels: hostTakesAllLevels)
+            ModelCatalog(listing.entries, levels: listing.thinkingLevels, serviceTiers: listing.serviceTiers, hostTakesAllLevels: hostTakesAllLevels)
         }.value
     }
 }

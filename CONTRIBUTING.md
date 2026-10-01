@@ -1,17 +1,17 @@
 # Contributing to Shepherd
 
 Shepherd is an opinionated macOS app for supervising coding agents: native agent threads, with
-real terminals only as panes beside a thread. Changes should keep it focused on that. For a large
+real terminals only as tabs under a thread. Changes should keep it focused on that. For a large
 feature or behavior change, open an issue before writing the implementation.
 
 ## Read first
 
-- [AGENTS.md](AGENTS.md): build and test commands, the source map, and the rules that are easy to
-  break (protocol contracts, embedded extensions, concurrency, tokens, keybindings, repository
-  mutations).
+- [AGENTS.md](AGENTS.md): the short rule sheet and exact commands, with links to the build, testing,
+  source map and [rules](docs/rules.md) (protocol contracts, embedded extensions, concurrency,
+  tokens, keybindings, repository mutations).
 - [ARCHITECTURE.md](ARCHITECTURE.md): module boundaries, ownership, and data flow.
-- [DESIGN.md](DESIGN.md): the authority on UI and interaction, and the reference for Night
-  Watch, the design system in `Packages/ShepherdUI`.
+- [DESIGN.md](DESIGN.md): the rules for UI changes, with the spec of each surface in
+  [docs/design/](docs/design/README.md). Night Watch, the design system, is in `Packages/ShepherdUI`.
 
 ## Branches
 
@@ -48,14 +48,14 @@ then everything.
 | Unit | `swift test --filter UnitTests` | Pure logic: no processes, sockets, windows, git, or sleeps. Seconds for the whole tier. |
 | Integration | `swift test --filter IntegrationTests` | A real `SessionServer` (`ScratchServer`), the scripted stub pi (`StubPi.command`), git scratch repos, off-screen windows. Waits are named `eventually(...)` polls, never fixed sleeps. |
 | Previews | `SHEPHERD_PREVIEW_DIR=/tmp/previews swift test --filter PreviewTests` | Offscreen renders of every surface, in light and dark, written as PNGs. Skipped without the variable. |
-| Everything | `swift test` | All of the above, in parallel. CI runs the same tests serially, split across four runners (AGENTS.md, Testing). |
+| Everything | `swift test` | All of the above, in parallel. CI runs the same tests serially, split across four runners ([docs/testing.md](docs/testing.md)). |
 | Extensions | `PI_PACKAGE_DIR=<installed pi package> node --test Tests/Extensions/*.test.mjs` | The bundled pi extensions, against a local fake provider. |
 | Release rules | `python3 -m unittest discover -s Tests/Release` | `scripts/release.py`: what each tag or push builds, which feeds each release lands in, and its agreement with the Xcode project and the apps. CI runs it too. |
 
 An opt-in run against a real model is gated on `SHEPHERD_LIVE_MODEL` (for example
 `cpa/~anthropic/claude-haiku-latest`). Shared helpers live in `Tests/ShepherdTestKit` (any tier) and
 `Tests/ShepherdTestSupport` (integration and previews).
-[AGENTS.md](AGENTS.md#testing) says which tier a change needs and which coverage must never be
+[docs/testing.md](docs/testing.md) says which tier a change needs and which coverage must never be
 dropped.
 
 **Tests must never take your focus or drive your mouse or keyboard.** Test windows are
@@ -84,7 +84,7 @@ Use Conventional Commit subjects, one logical change per commit:
 
 ```text
 feat: add remote host filtering
-fix: preserve pane focus after switching
+fix: preserve terminal focus after switching
 docs: explain the release channels
 refactor: simplify session adoption
 test: cover stale-session answers

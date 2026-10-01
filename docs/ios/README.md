@@ -23,7 +23,7 @@ listener must never be exposed to the internet.
    and the token. Add as many hosts as you like. The simulator can use `127.0.0.1` for a host on
    the same Mac. A phone needs the Mac's LAN or VPN address.
 4. Open an agent from the list. The phone and the Mac control the same pi process. The phone
-   never starts pi itself; it attaches only to the terminal panes of the agent's layout, and
+   never starts pi itself; it attaches only to the terminals of the agent's layout, and
    only while one is on screen.
 
 Compile-only check, with no signing:
@@ -134,7 +134,7 @@ keep the version for real breaks.
   `ShepherdCore`, `ShepherdProtocol`, `ShepherdRemote`, `ShepherdUI` and `DesignSurfaceKit` (the
   board renderer, imported only by `Designs/DesignHost.swift` on iPhone and
   `DesignPad/PadDesignRenderer.swift` on iPad), never `ShepherdApp`, and SwiftTerm (the package the
-  Mac's host screens already use) for terminal panes.
+  Mac's host screens already use) for terminals.
 - **Folders:** `App/` (entry point, `MobileApp`, `MobileRoot`, the phone and iPad shells, routes
   and the navigator), `Hosts/`, `Home/`, `Thread/`, `Composer/`, `NewThread/`, `Subagents/`,
   `Review/`, `Commit/`, `Search/`, `Settings/`, `Automations/`, `Windows/` (the scene and its
@@ -164,7 +164,8 @@ keep the version for real breaks.
   says when it was last seen.
 - **iPhone:** two tabs, Home and Settings, each a navigation stack. Home merges every host:
   Automations and More (host cards), offline hosts with Retry, Needs you (questions
-  and blocked threads, answered in place when short), and Recents with host tags. `HomeFeed`
+  and blocked threads, answered in place when short; a subagent's question is its parent's, so
+  it is never here), and Recents with host tags. `HomeFeed`
   derives it once per change from each host's state and, while Home is on screen, the threads'
   snapshots.
 - **iPad:** a split view. Landscape shows the sidebar (New thread, Designs while a host serves
@@ -192,9 +193,10 @@ keep the version for real breaks.
 - **Composer (`ThreadComposer`, `Composer/`):** on iPhone a paperclip beside a capsule field,
   with the commands, model and thinking chips above it while it is in use; on iPad the Mac's
   card with that row under the field. The thinking chip, like the Mac's, hides for a model the
-  host's `listModels` says takes no thinking level. Send steers at the next step while pi works (a message that begins with "/" waits; hold Send for the
-  three ways, `NativeSendChoice`, Steer now among them: it stops pi where the host can). Up
-  next draws the host's queue: steering messages first with Back to the queue, queued ones
+  host's `listModels` says takes no thinking level. Send queues the message while pi works (it goes when the turn ends; hold Send for the
+  two ways, `NativeSendChoice`: Wait for the turn to end, and Steer now, which stops pi where the host
+  can and steers where it can't). ⌘↩ on a hardware keyboard presses Send, so it queues. Up
+  next draws the host's queue: the rare steering message first (Steer now's fallback) with Back to the queue, queued ones
   with swipe (Edit, Delete) and long-press (Steer now, Edit, Move to top, Delete) actions, an
   Undo row for a delete, and a ••• menu (Steer or Send all now, the delivery mode, Clear). A
   paused queue (after Stop, or a failed turn) shows Send now in its header, with its reason as
@@ -234,7 +236,9 @@ keep the version for real breaks.
 - **Subagents (`Subagents/`):** the tray above the composer (one row per run, in one card with
   Up next) and two record lines in the thread where they started and finished, the runs list (this turn and
   earlier), and one run: its goal, its live transcript, and a steer field that reaches only that
-  child. A child's question is answered from the tray's Answer (in the composer's place), the list or the run. Pause,
+  child. A child never asks the user: a run that asked its parent a question says so quietly (its
+  row "asked the parent", its card the question to read, "Waiting on parent"), with no Answer, nothing
+  in the composer's place and nothing in Needs you; the steer field and Stop stay. Pause,
   Continue, Stop and Re-run appear where the host takes them. On iPad the run opens in an
   inspector column beside the thread.
 - **Review (`Review/`), the Changes pane:** on a host with `changes.v1` the host's Changes engine
@@ -282,26 +286,30 @@ keep the version for real breaks.
   the Mac's Delete Worktree Agent (the host's warning, acknowledged, then progress). On iPad
   ⌘K opens a palette over search and actions, with a live preview of the selected thread.
 
-- **Terminal (`Terminal/`):** the terminal panes of an agent's layout on its host. On iPad a
-  panel under the thread (Show Terminal in the thread's options menu; no header button) with the layout's
-  tabs, + (a new pane beside the thread), Split right, Maximize, Hide, and a divider that snaps
-  at a third, half and two-thirds; on iPhone the thread's options open them full screen. Each
-  pane is SwiftTerm's view on Night Watch's terminal palette, attached (`attach`) while it is on
+- **Terminal (`Terminal/`):** the terminals of an agent's layout on its host, one tab each. On
+  iPad a panel under the thread (Show Terminal in the thread's options menu, which opens a
+  terminal when the thread has none; no header button) with the layout's tabs, + (a new
+  terminal), Maximize, Hide, and a divider that snaps at a third, half and two-thirds; on iPhone
+  the thread's options (Terminal) open them full screen, and the screen opens a terminal as it
+  appears when there is none and goes back with its last terminal. There is no empty panel and
+  no Split: a terminal that fails to open with no panel up gives a haptic. Each terminal is
+  SwiftTerm's view on Night Watch's terminal palette, attached (`attach`) while it is on
   screen, the app is active and the host connected, and detached a second after it leaves; the
   host replays its screen on every attach and sizes the PTY to its smallest viewer. A refused
-  attach is retried with backoff (1 s doubling to 30 s) while the pane stays on screen, and a
-  pane the host gives a new session (every pane respawns its shell when the host relaunches)
-  gets a new view that attaches to it. Keys go to the host as `input`; a key row (esc, tab,
+  attach is retried with backoff (1 s doubling to 30 s) while the terminal stays on screen, and a
+  terminal the host gives a new session (every terminal respawns its shell when the host
+  relaunches) gets a new view that attaches to it. Keys go to the host as `input`; a key row (esc, tab,
   ctrl, ⌥, `|`, `~`, `/`, `-`, arrows; two rows on a phone in portrait) sits under the terminal
   while it has the keyboard, and a hardware keyboard types directly. Tabs name what
   runs in them and show a spinner or a dot for new output where the host answers
   `RemoteAgentQuery.terminals` (`terminal.activity.v1`); the dot follows the row's `news`, which
   leaves out a redraw after a resize on hosts that send `newsSequence`. The iPad panel closes
   with its last terminal. Closing a tab asks (naming how many shells stop, and the tab's place
-  when another tab has its title), then asks the host to close its panes; the host keeps the
-  Mac's rules (never the agent's own pane, never the last pane). A host without pane control
-  (`pane.control.v1`) shows its terminals but offers no +,
-  split or close. A terminal's screen is in one iPad window at a time: another window showing the
+  when another tab has its title), then asks the host to close its terminal; the host keeps the
+  Mac's rules (never the agent's own thread; closing the last terminal closes the panel). A host
+  without terminal control (`pane.control.v1`) shows its terminals but offers no + or close, and
+  a host from before terminals were tabs only may still hold a split tab, which the panel draws
+  as one tab per terminal (docs/agent-coordination.md › Terminals and compatibility). A terminal's screen is in one iPad window at a time: another window showing the
   same thread says "open in another window" until the first lets it go.
 
 - **Designs (`Designs/`):** a host's designs while it serves them (`designs.v1`, its Design tool

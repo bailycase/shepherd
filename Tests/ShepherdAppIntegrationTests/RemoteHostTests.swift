@@ -150,8 +150,8 @@ struct RemoteHostTests {
         #expect(vm.paletteItems.contains { $0.title == "hidden child" }, "a host's children are searchable")
 
         hostVM.applyAgentChildren(agent.agent.id, [ChildRun(runID: "run", label: "hidden child", state: "blocked", needsAttention: true)])
-        try await eventuallyOnMain("the child's attention to reach the client") { vm.remoteChildren[target]?.first?.needsAttention == true }
-        #expect(vm.blockedCount == 1)
+        try await eventuallyOnMain("the child's question to reach the client") { vm.remoteChildren[target]?.first?.needsAttention == true }
+        #expect(vm.blockedCount == 0, "a child's question is its parent's, not a thread waiting on the user")
 
         try await remote.host.server.deleteAgent(agent.agent.id)
         try await eventuallyOnMain("the retired agent's children to clear") { connection.children[agent.agent.id] == nil }
@@ -160,10 +160,10 @@ struct RemoteHostTests {
         #expect(vm.blockedCount == 0)
     }
 
-    /// Subagents have no sidebar rows: one waiting on you puts its agent in Needs you, with the
-    /// subagent's name as the reason, on the host's own sidebar and on a client's, until it is
-    /// answered.
-    @Test func aWaitingSubagentAsksThroughItsAgentsRowOnTheHostAndItsClients() async throws {
+    /// A subagent asks its parent, never the user: one that asked leaves its agent's row where it
+    /// was, on the host's own sidebar and on a client's, though the question itself reaches both
+    /// as data (the tray reads it and says the child waits on its parent).
+    @Test func aSubagentThatAskedItsParentNeverPutsItsAgentInNeedsYouOnTheHostOrItsClients() async throws {
         let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
         let space = Fixture.space(path: remote.host.dir.path)
@@ -177,21 +177,16 @@ struct RemoteHostTests {
         let asking = ChildRun(runID: "run", label: "reviewer", state: "running", needsAttention: true)
 
         hostVM.applyAgentChildren(agent.id, [asking])
-        let hostRow = try #require(hostVM.sidebarLists.needsYou.first)
-        #expect(hostRow.id == .local(agent.id) && hostRow.leading == .dot(.attention) && hostRow.accessory == .reason("reviewer"))
-        try await eventuallyOnMain("the question to reach the client") { vm.remoteChildren[target]?.first?.needsAttention == true }
-        let clientRow = try #require(vm.sidebarLists.needsYou.first)
-        #expect(clientRow.id == .remote(target) && clientRow.leading == .dot(.attention) && clientRow.accessory == .reason("reviewer"))
-        #expect(vm.blockedCount == 1)
-
-        var answered = asking
-        answered.needsAttention = false
-        hostVM.applyAgentChildren(agent.id, [answered])
+        #expect(hostVM.childRuns.children(of: agent.id).first?.needsAttention == true, "the question is there to read")
         #expect(hostVM.sidebarLists.needsYou.isEmpty)
+        #expect(hostVM.sidebarLists.recents.first?.id == .local(agent.id))
         #expect(hostVM.sidebarLists.recents.first?.leading == .dot(.idle))
-        try await eventuallyOnMain("the answer to reach the client") { vm.remoteChildren[target]?.first?.needsAttention == false }
+        #expect(hostVM.blockedCount == 0)
+        try await eventuallyOnMain("the question to reach the client") { vm.remoteChildren[target]?.first?.needsAttention == true }
         #expect(vm.sidebarLists.needsYou.isEmpty)
+        #expect(vm.sidebarLists.recents.first?.id == .remote(target))
         #expect(vm.sidebarLists.recents.first?.accessory == .tag(connection.config.name))
+        #expect(vm.blockedCount == 0)
     }
 
     /// ⌘N over a remote thread opens New thread in that thread's project on its host, and

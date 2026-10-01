@@ -130,7 +130,9 @@ function intervalSpy() {
   } };
 }
 
-async function harness(dir, entries = [], timers) {
+// `commandEnv`: which commands register. Shepherd's own env leaves out the two its thread covers.
+const outsideShepherd = { SHEPHERD_AGENT_ID: "" };
+async function harness(dir, entries = [], timers, commandEnv) {
   const tools = new Map(), commands = new Map(), events = new Map(), messages = [], projections = [];
   const bus = new Map();
   const activeTools = ["read", "grep", "find", "ls", "bash", "edit", "write"];
@@ -146,7 +148,7 @@ async function harness(dir, entries = [], timers) {
     modelRegistry: { getAll: () => [{ provider: "fixture", id: "fixture" }] },
     sessionManager: { getSessionId: () => "parent-fixture", getEntries: () => entries, getBranch: () => [], getSessionFile: () => undefined } };
   ctx.isProjectTrusted = () => true;
-  mod.default(pi, timers); await events.get("session_start")({}, ctx);
+  mod.default(pi, timers, commandEnv); await events.get("session_start")({}, ctx);
   return { tools, commands, events, messages, projections, entries, ctx, activeTools,
     call: async (name, p, signal) => (await tools.get(`shepherd_child_${name}`).execute("call", p, signal, undefined, ctx)).details,
     tool: async (name, p, signal) => (await tools.get(name).execute("call", p, signal, undefined, ctx)).details,
@@ -376,9 +378,12 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     h.ctx.mode = "rpc"; h.ctx.hasUI = true; h.ctx.ui = { notify() {}, confirm: async () => false };
     assert(h.commands.has("run"));
     await h.commands.get("run").handler("scout slash foreground --fork", h.ctx);
-    const slashReport = h.entries.filter((e) => e.customType === "shepherd-native-report").at(-1).data.text;
-    assert.match(slashReport, /complete/);
-    assert.equal(h.messages.length, 0, "slash launch must not trigger a parent turn");
+    // RPC has no toast: the report is a displayed message that starts no turn, and no entry beside it.
+    const isReport = ({ message, options }) => message.customType === "shepherd-native-report" && message.display === true && options.triggerTurn === false;
+    assert.equal(h.messages.length, 1);
+    assert(isReport(h.messages[0]));
+    assert.match(h.messages[0].message.content, /complete/);
+    assert(!h.entries.some((e) => e.customType === "shepherd-native-report"));
     const slashChild = (await h.call("result", {})).at(-1);
     const slashResult = await h.call("result", {id: slashChild.id});
     assert.equal(slashResult.context, "fork"); assert.equal(slashResult.state, "complete");
@@ -386,8 +391,9 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     const persisted = JSON.parse(fs.readFileSync(path.join(path.dirname(slashResult.sessionFile), "status.json")));
     assert.equal(persisted.endedAt, slashResult.endedAt);
     await h.commands.get("run").handler("scout slash background --bg", h.ctx);
-    await until(() => h.entries.some((e) => e.customType === "shepherd-native-report" && e.data.text.includes("complete") && !e.data.text.includes(slashChild.id) && e.data.text.includes("background")));
-    assert.equal(h.messages.length, 0);
+    await until(() => h.messages.some(({ message }) => message.content.includes("complete") && !message.content.includes(slashChild.id) && message.content.includes("background")));
+    assert(h.messages.every(isReport), "a slash launch never triggers a parent turn");
+    h.messages.length = 0;
     const pair = await Promise.all([h.call("start", { task: "SLOW one", role: "scout" }), h.call("start", { task: "SLOW two", role: "reviewer" })]);
     assert.notEqual(pair[0].id, pair[1].id);
     const done = await h.call("wait", { ids: pair.map((r) => r.id), all: true, timeoutSeconds: 30 });
@@ -519,7 +525,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     await h.shutdown();
     assert.equal(ticks.active.size, 0);
     ticks = intervalSpy();
-    h = await harness(dir, h.entries, ticks.timers);
+    h = await harness(dir, h.entries, ticks.timers, outsideShepherd);
     assert.equal(ticks.active.size, 0, "restored runs are settled");
     const restoredQuestion = await h.call("result", { id: ask.id });
     assert.equal(restoredQuestion.needsReply, true); assert.equal(restoredQuestion.stopReason, "stop");
@@ -580,7 +586,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     assert.deepEqual(editorCard.result, { files: 1, added: 2, removed: 0, tools: 2, tokens: 4 });
     assert.deepEqual(JSON.parse(fs.readFileSync(path.join(path.dirname(editor.sessionFile), "status.json"))).files, editorCard.files);
     const shell = await h.call("start", { task: `SHELL:printf '%s' "$SHEPHERD_AGENT_ID:$SHEPHERD_SOCKET:$SHEPHERD_CHILD" > '${dir}/env'; sleep 20`, role: "worker" });
-    await until(() => fs.existsSync(path.join(dir, "env"))); assert.equal(fs.readFileSync(path.join(dir, "env"), "utf8"), "::1");
+    await until(() => fs.existsSync(path.join(dir, "env")) && fs.readFileSync(path.join(dir, "env"), "utf8") !== ""); assert.equal(fs.readFileSync(path.join(dir, "env"), "utf8"), "::1");
     await until(() => h.projections.at(-1).children.some((c) => c.runID === shell.id && c.currentTool === "bash"));
     const shellCard = h.projections.at(-1).children.find((c) => c.runID === shell.id);
     assert.equal(shellCard.currentTool, "bash"); assert.equal(shellCard.state, "running");
@@ -756,7 +762,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     const explicitExtension = path.join(dir, "explicit-extension.ts");
     fs.writeFileSync(explicitExtension, "export default function() {}\n");
     fs.writeFileSync(profilePath, `---\nname: minimal\ndescription: minimal profile\nmodel: inherit\nextensions: ${explicitExtension}\n---\nPROFILE_MARKER\n`);
-    h.activeTools.push("pane_open");
+    h.activeTools.push("terminal_open");
     const minimal = await h.call("start", { task: "minimal profile test", agent: "minimal", mission: false });
     await h.call("wait", { ids: [minimal.id], timeoutSeconds: 30 });
     assert.equal(minimal.missionId, undefined);
@@ -769,7 +775,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     const retried = (await h.call("wait", { ids: [minimal.id], timeoutSeconds: 30 }))[0];
     assert.equal(retried.state, "complete");
     assert.match(retried.output, /reply:retry restored extension/);
-    h.activeTools.splice(h.activeTools.indexOf("pane_open"), 1);
+    h.activeTools.splice(h.activeTools.indexOf("terminal_open"), 1);
     fs.writeFileSync(profilePath, '---\nname: minimal\ndescription: minimal profile\nmodel: fixture:high\nthinking: low\ntools: read\ndefaultContext: fresh\n---\nPROFILE_MARKER\n');
     const custom = await h.call("start", { task: "profile precedence", agent: "minimal", thinking: "off", mission: false });
     assert.equal(custom.thinking, "off"); assert.equal(custom.model, "fixture/fixture");
@@ -782,7 +788,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     await h.shutdown();
     process.env.SHEPHERD_CHILD_CONCURRENCY = "2"; process.env.SHEPHERD_CHILD_THINKING = "high";
     process.env.SHEPHERD_CHILD_MODEL = "fixture/fixture"; process.env.SHEPHERD_CHILD_CONTEXT = "fork";
-    h = await harness(dir, h.entries);
+    h = await harness(dir, h.entries, undefined, outsideShepherd);
     const defaultsRun = await h.call("start", { task: "configured defaults", role: "scout", mission: false });
     assert.equal(defaultsRun.thinking, "high"); assert.equal(defaultsRun.context, "fork"); assert.equal(defaultsRun.model, "fixture/fixture");
     await h.call("wait", { ids: [defaultsRun.id], timeoutSeconds: 30 });

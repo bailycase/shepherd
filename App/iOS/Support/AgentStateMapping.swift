@@ -15,11 +15,12 @@ extension AgentState {
         }
     }
 
-    /// A subagent run.
+    /// A subagent run. One waiting on its parent's answer waits, outlined: a subagent never draws
+    /// `attention`, which is the user's.
     init(_ state: NativeSubagentState) {
         switch state {
         case .running: self = .running
-        case .needsYou: self = .attention
+        case .asked: self = .queued
         case .done: self = .done
         case .failed: self = .failed
         }

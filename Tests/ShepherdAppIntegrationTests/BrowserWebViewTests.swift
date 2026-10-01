@@ -9,7 +9,7 @@ import Testing
 import WebKit
 @testable import ShepherdApp
 
-/// The Browser's page in a real, off-screen web view (DESIGN.md › Side pane › Browser): the
+/// The Browser's page in a real, off-screen web view (docs/design/side-pane-changes.md › Side pane › Browser): the
 /// console the page writes reaches the drawer, Select an element picks an element with its
 /// selector and, when the page provides one, its source, and each thread's website data is its
 /// own.

@@ -285,6 +285,12 @@ public final class SessionServer: @unchecked Sendable {
     /// (`render_unavailable`).
     public var onDesignReferenceCapture: ((DesignReferenceCaptureRequest,
                                            @escaping (Result<DesignReferenceCaptured, DesignReferenceError>) -> Void) -> Void)?
+    /// A design agent's `board_render` (docs/designs.md › Rendering for the agent): the app draws
+    /// the board off screen, one at a time, from the files in the job (`DesignRenderJob`), and
+    /// answers its picture, or why it couldn't. Delivered on the main actor; the completion may
+    /// be called from any thread. With no handler the answer is `render_unavailable`; one that
+    /// doesn't answer within `defaultDesignRenderDeadline` is answered `timeout`.
+    public var onDesignRender: ((DesignRenderJob, @escaping (Result<DesignRendered, DesignRenderFailure>) -> Void) -> Void)?
     /// A thread left or the user removed a note on a design (`DesignThreadNote`): the canvas reads
     /// the design's notes again. Delivered on the main actor; a hint, not state.
     public var onDesignThreadNotesChanged: ((DesignID) -> Void)?
@@ -466,7 +472,7 @@ public final class SessionServer: @unchecked Sendable {
     private var retiredRPCSessions: [SessionID: Int32?] = [:]
     /// Each RPC session's start (`PiStartRecord`), from its spawn until it exits.
     private var startRecords: [SessionID: PiStartRecord] = [:]
-    /// RPC sessions whose exit kept their agent (DESIGN.md › Thread › Can't start), until another
+    /// RPC sessions whose exit kept their agent (docs/design/thread.md › Thread › Can't start), until another
     /// session is bound to their pane: their thread answers with why, instead of pi.
     private var keptStarts: [SessionID: KeptStart] = [:]
     private struct KeptStart {
@@ -672,13 +678,10 @@ public final class SessionServer: @unchecked Sendable {
     /// (asking pi shells out), so the server calls it off its queue.
     public typealias ModelCatalog = @Sendable () -> ModelListing
 
-    /// pi's own catalog (`pi --list-models`, else models.json) and settings.json's default, all
+    /// pi's composed model catalog over RPC, else models.json, and settings.json's default, all
     /// as "provider/id".
     public static func piModelCatalog(_ pi: PiSetup) -> ModelCatalog {
-        {
-            ModelListing(entries: pi.catalog.entriesOrConfigured(), defaultModel: PiConfig.defaultModel(in: pi.home),
-                         levelMaps: PiConfig.thinkingLevelMaps(in: pi.home))
-        }
+        { pi.catalog.listing() }
     }
 
     /// This Mac's models as a remote client's `listModels` gets them, for the local New Agent
@@ -829,6 +832,33 @@ public final class SessionServer: @unchecked Sendable {
         return Set(state.tabs.filter { $0.inspectorFor == nil && ($0.spaceID == nil || !agentTabs.contains($0.id)) }.map(\.id))
     }
 
+    /// The pane an agent's own pi runs in, for a layout that holds its thread: the agent's
+    /// recorded pane, else the layout's leaf that names the agent.
+    private static func threadPane(of tab: Tab, in state: ShepherdState) -> PaneID? {
+        let agent = state.agents.first { $0.tabID == tab.id }
+        if let paneID = agent?.paneID, tab.layout.contains(paneID) { return paneID }
+        return tab.layout.leaves.first { $0.agentID != nil }?.id
+    }
+
+    /// Whether a saved layout still has a tab of several terminals, split beside its thread, as
+    /// builds from before terminals were tabs only made with Split right and Split down.
+    static func hasSplitTerminals(in state: ShepherdState) -> Bool {
+        state.tabs.contains { tab in
+            tab.inspectorFor == nil && threadPane(of: tab, in: state)
+                .map { tab.layout.hasSplitTerminals(besideThread: $0) } == true
+        }
+    }
+
+    /// Flattens every such layout into one tab per terminal, oldest first, each keeping its
+    /// session, folder and title, and the thread first (`PaneNode.flatteningTerminals`).
+    static func flattenSplitTerminals(_ state: inout ShepherdState) {
+        for index in state.tabs.indices {
+            let tab = state.tabs[index]
+            guard tab.inspectorFor == nil, let thread = threadPane(of: tab, in: state) else { continue }
+            state.tabs[index].layout = tab.layout.flatteningTerminals(besideThread: thread)
+        }
+    }
+
     /// Automation run agents from the previous app run: every agent in the reserved hidden
     /// space (runs only ever live there) plus any agent an automation still points at. Runs are
     /// ephemeral; enabled automations start fresh ones after adoption. Keeping the old agents
@@ -935,12 +965,13 @@ public final class SessionServer: @unchecked Sendable {
             tab.layout.leaves.contains { $0.isReview == true }
         }
         let staleRuns = store.state.automations.contains { $0.agentID != nil }
+        let splitTerminals = Self.hasSplitTerminals(in: store.state)
         let shellTabs = Self.shellTabIDs(in: store.state)
         let runAgents = Self.automationRunAgentIDs(in: store.state)
         let staleDesigns = Self.designsNeedReconciling(in: store.state, missing: missingDesigns, removedAgents: runAgents)
             || Self.designAgentsNeedSettling(in: store.state, missing: missingDesigns)
-        if !stale.isEmpty || deadInspectors || deadReviews || staleRuns || !shellTabs.isEmpty || !runAgents.isEmpty
-            || staleDesigns {
+        if !stale.isEmpty || deadInspectors || deadReviews || splitTerminals || staleRuns || !shellTabs.isEmpty
+            || !runAgents.isEmpty || staleDesigns {
             do {
                 try store.update { state in
                     for id in stale {
@@ -970,6 +1001,9 @@ public final class SessionServer: @unchecked Sendable {
                         }
                         state.tabs[i].layout = layout
                     }
+                    // Terminals are tabs only: a layout that split them beside the thread
+                    // becomes one tab each, keeping every terminal's folder and title.
+                    Self.flattenSplitTerminals(&state)
                     // Automation runs died with the previous app run; enabled
                     // ones restart through the GUI after adoption. Their agents and layouts go.
                     let runTabs = Set(state.agents.filter { runAgents.contains($0.id) }.map(\.tabID))
@@ -1216,7 +1250,7 @@ public final class SessionServer: @unchecked Sendable {
         }
         guard let tab = store.state.tabs.first(where: { $0.id == agent.tabID }),
               let paneID = agent.paneID, let leaf = tab.layout.leaf(withID: paneID) else {
-            unavailable("The agent has no thread pane.")
+            unavailable("The agent has no thread.")
             return
         }
         // A pi that stopped before it served: its agent waits, and says why (or that Retry is
@@ -1242,7 +1276,7 @@ public final class SessionServer: @unchecked Sendable {
             return
         }
         guard let thread = session.thread else {
-            unavailable("The agent is not running in its pane.")
+            unavailable("The agent is not running a thread.")
             return
         }
         if !thread.turnChangesSet { thread.setTurnChanges(changes.turns(agentID: agentID)) }
@@ -1714,12 +1748,11 @@ public final class SessionServer: @unchecked Sendable {
             )
         case .closePane(let id, let agentID, let paneID):
             remotePaneRequest(id: id, request: .close(agentID: agentID, paneID: paneID), client: client)
-        case .resizePaneSplit(let id, let agentID, let split, let ratio):
-            remotePaneRequest(
-                id: id,
-                request: .resizeSplit(agentID: agentID, split: split, ratio: ratio),
-                client: client
-            )
+        case .resizePaneSplit(let id, _, _, _):
+            // Only a client from before terminals were tabs only sends this, for a divider its own
+            // view drew. Terminals have no splits; the request is answered like any this host does
+            // not serve, and the connection stays.
+            send(.error(id: id, code: "unsupported", message: "Terminals are tabs and have no splits to resize."), to: client)
         case .listDir(let id, let path):
             remoteListDir(id: id, path: path, client: client)
         case .listModels(let id):
@@ -1731,12 +1764,13 @@ public final class SessionServer: @unchecked Sendable {
                 self?.queue.async {
                     guard let self, self.clients[client.fd] === client else { return }
                     self.send(.models(id: id, models: listing.models, defaultModel: listing.defaultModel,
-                                     withoutThinking: listing.withoutThinking, thinkingLevels: listing.thinkingLevels), to: client)
+                                     withoutThinking: listing.withoutThinking, thinkingLevels: listing.thinkingLevels,
+                                     serviceTiers: listing.serviceTiers, contexts: listing.contexts), to: client)
                 }
             }
         case .addSpace(let id, let path):
             remoteAddSpace(id: id, path: path, client: client)
-        case .createAgent(let id, let spaceID, let cwd, let model, let thinking, let initialPrompt, let worktreeBranch, let worktreeBase, let worktreeFetchFirst, let initialImages):
+        case .createAgent(let id, let spaceID, let cwd, let model, let thinking, let initialPrompt, let worktreeBranch, let worktreeBase, let worktreeFetchFirst, let initialImages, let serviceTier):
             let images = initialImages ?? []
             // Refused before anything is made: pi would refuse them once the agent exists.
             guard images.isEmpty || initialPrompt?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false,
@@ -1755,7 +1789,8 @@ public final class SessionServer: @unchecked Sendable {
                     worktreeBranch: worktreeBranch,
                     worktreeBase: worktreeBase,
                     worktreeFetchFirst: worktreeFetchFirst,
-                    initialImages: images
+                    initialImages: images,
+                    serviceTier: serviceTier
                 ),
                 client: client
             )
@@ -1823,7 +1858,7 @@ public final class SessionServer: @unchecked Sendable {
 
     private func remotePaneRequest(id: Int, request: PaneRequest, client: ExtensionConnection) {
         guard let handler = onRemotePaneRequest else {
-            send(.error(id: id, code: "unsupported", message: "host cannot mutate panes"), to: client)
+            send(.error(id: id, code: "unsupported", message: "host cannot mutate terminals"), to: client)
             return
         }
         hopToMain { [weak self] in
@@ -1839,7 +1874,7 @@ public final class SessionServer: @unchecked Sendable {
                     case .failed(let code, let message):
                         self.send(.error(id: id, code: code, message: message), to: client)
                     case .panes, .content:
-                        self.send(.error(id: id, code: "protocol", message: "unexpected pane reply"), to: client)
+                        self.send(.error(id: id, code: "protocol", message: "unexpected terminal reply"), to: client)
                     }
                 }
             }
@@ -2680,17 +2715,38 @@ public final class SessionServer: @unchecked Sendable {
                 if let path { return .designBoard(id: id, board: try await server.designBoard(designID, path: path)) }
                 return .design(id: id, snapshot: try await server.designSnapshot(designID))
             }
-        case .designWriteBoard(let id, let agentID, let designID, let path, let source, let baseRevision):
+        case .designWriteBoard(let id, let agentID, let designID, let path, let source, let baseRevision, let tokens):
             designRequest(id: id, agentID: agentID, designID: designID, path: path, client: client) { server, path in
                 guard let path else { throw DesignStoreError.invalidPath("", .empty) }
-                let result = try await server.writeDesignBoard(designID, path: path, source: source, baseRevision: baseRevision)
+                let result = try await server.writeDesignBoard(designID, path: path, source: source, baseRevision: baseRevision, tokens: tokens)
                 return .designWritten(id: id, result: result)
             }
-        case .designEditBoard(let id, let agentID, let designID, let path, let edits, let baseRevision):
+        case .designEditBoard(let id, let agentID, let designID, let path, let edits, let baseRevision, let tokens):
             designRequest(id: id, agentID: agentID, designID: designID, path: path, client: client) { server, path in
                 guard let path else { throw DesignStoreError.invalidPath("", .empty) }
-                let edited = try await server.editDesignBoard(designID, path: path, edits: edits, baseRevision: baseRevision)
+                let edited = try await server.editDesignBoard(designID, path: path, edits: edits, baseRevision: baseRevision, tokens: tokens)
                 return .designEdited(id: id, result: edited.result, replaced: edited.replaced)
+            }
+        case .designEditBoards(let id, let agentID, let designID, let request):
+            designRequest(id: id, agentID: agentID, designID: designID, path: nil, client: client) { server, _ in
+                .designBatchEdited(id: id, result: try await server.editDesignBoards(designID, request: request))
+            }
+        case .designSearch(let id, let agentID, let designID, let query):
+            designRequest(id: id, agentID: agentID, designID: designID, path: nil, client: client) { server, _ in
+                .designSearchResult(id: id, result: try await server.searchDesign(designID, query: query))
+            }
+        case .designCheckpoint(let id, let agentID, let designID, let request):
+            designRequest(id: id, agentID: agentID, designID: designID, path: nil, client: client) { server, _ in
+                .designCheckpoints(id: id, result: try await server.designCheckpoint(designID, request: request))
+            }
+        case .designRender(let id, let agentID, let designID, let request):
+            designRequest(id: id, agentID: agentID, designID: designID, path: request.path, client: client) { server, _ in
+                let rendered = try await server.renderDesignBoard(designID, request: request)
+                return .designRendered(id: id, text: rendered.text, image: rendered.image)
+            }
+        case .designExtract(let id, let agentID, let designID, let request):
+            designRequest(id: id, agentID: agentID, designID: designID, path: request.path, client: client) { server, _ in
+                .designExtracted(id: id, result: try await server.extractDesignPiece(designID, request: request))
             }
         case .designUpdateIndex(let id, let agentID, let designID, let changes, let baseRevision):
             designRequest(id: id, agentID: agentID, designID: designID, path: nil, client: client) { server, _ in
@@ -3006,6 +3062,8 @@ public final class SessionServer: @unchecked Sendable {
                 answer = .error(id: id, code: error.code, message: error.description)
             } catch let error as SessionServerError {
                 answer = .error(id: id, code: "design_refused", message: error.description)
+            } catch let error as DesignRenderFailure {
+                answer = .error(id: id, code: error.code, message: error.message)
             } catch {
                 answer = .error(id: id, code: "design_failed", message: String(describing: error))
             }
@@ -3045,7 +3103,7 @@ public final class SessionServer: @unchecked Sendable {
         }
         let target = clients.values.first { !$0.isRemote && $0.agentID == targetAgentID }
         guard request.operation == .delete || target != nil else {
-            reply(.error(id: id, code: "not_running", message: "target has no live panes extension"), to: client)
+            reply(.error(id: id, code: "not_running", message: "target has no live Shepherd extension connection"), to: client)
             return
         }
         let token = UUID().uuidString
@@ -3165,7 +3223,7 @@ public final class SessionServer: @unchecked Sendable {
     /// The GUI owns layouts, so the server only correlates the request id.
     private func routePaneRequest(_ request: PaneRequest, requestID: Int, client: ExtensionConnection) {
         guard let handler = onPaneRequest else {
-            reply(.error(id: requestID, code: "unsupported", message: "pane control unavailable"), to: client)
+            reply(.error(id: requestID, code: "unsupported", message: "terminal control unavailable"), to: client)
             return
         }
         hopToMain { [weak self, weak client] in
@@ -3489,6 +3547,11 @@ public final class SessionServer: @unchecked Sendable {
              .designBoard(let id, _),
              .designWritten(let id, _),
              .designEdited(let id, _, _),
+             .designBatchEdited(let id, _),
+             .designSearchResult(let id, _),
+             .designCheckpoints(let id, _),
+             .designRendered(let id, _, _),
+             .designExtracted(let id, _),
              .designComments(let id, _),
              .designComment(let id, _),
              .designSystems(let id, _),
@@ -4424,9 +4487,9 @@ public final class SessionServer: @unchecked Sendable {
     /// `baseRevision` (nil: whatever it is at). A write that changes the files moves the design
     /// up Recents and broadcasts.
     public func writeDesignBoard(_ designID: DesignID, path: DesignPath, source: String,
-                                 baseRevision: UInt64? = nil) async throws -> DesignWriteResult {
+                                 baseRevision: UInt64? = nil, tokens: DesignTokenMode? = nil) async throws -> DesignWriteResult {
         guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
-        let result = try await designs.writeBoard(designID, path: path, source: source, baseRevision: baseRevision)
+        let result = try await designs.writeBoard(designID, path: path, source: source, baseRevision: baseRevision, tokens: tokens)
         try await enqueue { try self.commitDesignWrite(designID, result) }
         return result
     }
@@ -4435,11 +4498,115 @@ public final class SessionServer: @unchecked Sendable {
     /// and writes the result as `writeDesignBoard` does (`DesignStore.editBoard`): the same
     /// checks, kept version, revision and one broadcast.
     public func editDesignBoard(_ designID: DesignID, path: DesignPath, edits: [DesignBoardEdit],
-                                baseRevision: UInt64? = nil) async throws -> DesignBoardEdited {
+                                baseRevision: UInt64? = nil, tokens: DesignTokenMode? = nil) async throws -> DesignBoardEdited {
         guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
-        let edited = try await designs.editBoard(designID, path: path, edits: edits, baseRevision: baseRevision)
+        let edited = try await designs.editBoard(designID, path: path, edits: edits, baseRevision: baseRevision, tokens: tokens)
         try await enqueue { try self.commitDesignWrite(designID, edited.result) }
         return edited
+    }
+
+    /// `boards_edit`: the request's edits applied to each board it names, and every board that
+    /// changed written as one change (`DesignStore.editBoards`): one revision, one broadcast.
+    public func editDesignBoards(_ designID: DesignID, request: DesignBatchEditRequest) async throws -> DesignBatchResult {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        let batch = try await designs.editBoards(designID, request: request)
+        try await enqueue { try self.commitDesignWrite(designID, batch.result) }
+        return batch
+    }
+
+    /// `board_search`: text, structure or usages over the design's boards.
+    public func searchDesign(_ designID: DesignID, query: DesignSearchQuery) async throws -> DesignSearchResult {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        return try await designs.search(designID, query: query)
+    }
+
+    /// `board_extract`: an element becomes a piece and an import takes its place, with exact copies
+    /// elsewhere, as one change (`DesignStore.extract`).
+    public func extractDesignPiece(_ designID: DesignID, request: DesignExtractRequest) async throws -> DesignExtractResult {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        let extracted = try await designs.extract(designID, request: request)
+        try await enqueue { try self.commitDesignWrite(designID, extracted.result) }
+        return extracted
+    }
+
+    /// Which boards of the design import which: built once per revision (`DesignStore.usage`).
+    public func designUsage(_ designID: DesignID) async throws -> DesignUsageIndex {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        return try await designs.usage(designID)
+    }
+
+    /// `checkpoint_create`, `checkpoint_list` and `checkpoint_restore`. A restore is one write,
+    /// broadcast like any.
+    public func designCheckpoint(_ designID: DesignID, request: DesignCheckpointRequest) async throws -> DesignCheckpointResult {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        switch request.action {
+        case .list:
+            return try await designs.checkpoints(designID)
+        case .create:
+            guard let name = request.name else { throw DesignStoreError.invalidCheckpoint("checkpoint_create needs a name") }
+            return try await designs.createCheckpoint(designID, name: name)
+        case .restore:
+            guard let name = request.name else { throw DesignStoreError.invalidCheckpoint("checkpoint_restore needs a name") }
+            let restored = try await designs.restoreCheckpoint(designID, name: name)
+            if let write = restored.write { try await enqueue { try self.commitDesignWrite(designID, write) } }
+            return restored
+        }
+    }
+
+    /// How long `board_render` waits for the app to draw a board before it answers `timeout`.
+    public static let defaultDesignRenderDeadline: TimeInterval = 60
+    var designRenderDeadline: TimeInterval = SessionServer.defaultDesignRenderDeadline
+
+    /// `board_render`: the app draws the board off screen from the files the design store reads
+    /// for it, and the picture comes back for the agent (`onDesignRender`). Never a live canvas
+    /// view; the app draws one request at a time.
+    public func renderDesignBoard(_ designID: DesignID, request: DesignRenderRequest) async throws -> DesignRendered {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        let path: DesignPath
+        do { path = try DesignPath.validate(request.path) } catch { throw DesignStoreError.invalidPath(request.path, error) }
+        if let width = request.width, !DesignRenderRequest.widthRange.contains(width) {
+            throw DesignRenderFailure(code: "invalid_render", message: "width is \(DesignRenderRequest.widthRange.lowerBound) to \(DesignRenderRequest.widthRange.upperBound) px")
+        }
+        if let height = request.height, !DesignRenderRequest.widthRange.contains(height) {
+            throw DesignRenderFailure(code: "invalid_render", message: "height is \(DesignRenderRequest.widthRange.lowerBound) to \(DesignRenderRequest.widthRange.upperBound) px")
+        }
+        let files = try await designs.exportFiles(designID, boards: [path])
+        let job = DesignRenderJob(designID: designID, path: path, request: request, files: files)
+        let gate = RenderGate()
+        let deadline = designRenderDeadline
+        return try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global().asyncAfter(deadline: .now() + deadline) {
+                gate.finish {
+                    continuation.resume(throwing: DesignRenderFailure(
+                        code: "timeout", message: "The board was not drawn within \(Int(deadline.rounded(.up))) seconds. Try again, or look at its markup."))
+                }
+            }
+            hopToMain { [weak self] in
+                guard let handler = self?.onDesignRender else {
+                    gate.finish {
+                        continuation.resume(throwing: DesignRenderFailure(code: "render_unavailable", message: "Shepherd can't draw boards right now."))
+                    }
+                    return
+                }
+                handler(job) { result in
+                    gate.finish { continuation.resume(with: result.mapError { $0 as Error }) }
+                }
+            }
+        }
+    }
+
+    /// One answer to a render, whichever of the app and the deadline comes first.
+    private final class RenderGate: @unchecked Sendable {
+        private let lock = NSLock()
+        private var done = false
+
+        func finish(_ body: () -> Void) {
+            lock.lock()
+            let first = !done
+            done = true
+            lock.unlock()
+            if first { body() }
+        }
     }
 
     /// Writes several boards' whole sources as one change: one revision, one broadcast (a tweak

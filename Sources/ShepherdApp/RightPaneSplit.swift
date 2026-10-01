@@ -2,7 +2,7 @@ import SwiftUI
 import ShepherdCore
 import ShepherdUI
 
-/// Each thread's side pane (DESIGN.md › Side pane): whether it is open, its tab, what pi opened
+/// Each thread's side pane (docs/design/side-pane-changes.md › Side pane): whether it is open, its tab, what pi opened
 /// in it that you have not looked at, which subagent it inspects, and the pane's width.
 /// Device-local view state: the width persists, the rest does not.
 @MainActor @Observable

@@ -607,9 +607,14 @@
   function settleImport() {
     importsInFlight--;
     if (importsInFlight === 0) {
-      var waiting = importsIdle;
-      importsIdle = [];
-      waiting.forEach(function (resolve) { resolve(); });
+      // A piece that has just arrived draws the pieces it imports in the render its arrival schedules:
+      // look again after that render before saying nothing is left, or a piece inside a piece is missed.
+      setTimeout(function () {
+        if (importsInFlight !== 0) return;
+        var waiting = importsIdle;
+        importsIdle = [];
+        waiting.forEach(function (resolve) { resolve(); });
+      }, 0);
     }
   }
 

@@ -18,12 +18,11 @@ extension ShepherdViewModel {
     }
 
     var blockedCount: Int {
-        // Child runs needing attention count toward the waiting rollup: a
-        // stuck subagent is exactly as attention-worthy as a blocked agent.
-        return state.agents.count { $0.status == .blocked } + childRuns.attentionCount
+        // The threads waiting on the user. A subagent's question is not among them: it goes to its
+        // parent, which asks the user in its own thread when it must.
+        state.agents.count { $0.status == .blocked }
             + remoteHosts.connections.filter { $0.phase == .connected }.reduce(0) { total, connection in
                 total + connection.state.agents.count { $0.status == .blocked }
-                    + connection.children.values.reduce(0) { $0 + $1.count(where: \.needsAttention) }
             }
     }
 
@@ -69,12 +68,11 @@ extension ShepherdViewModel {
     /// What Needs you, Pinned and Recents are derived from.
     var sidebarSource: SidebarSource {
         SidebarSource(
-            local: state, localChildren: childRuns.rows, failedTurns: failedTurns, cannotStart: cannotStart,
+            local: state, failedTurns: failedTurns, cannotStart: cannotStart,
             notSignedIn: Set(notSignedIn.keys), waiting: waitingForImport, statusSince: statusSince,
             openRuns: openAutomationRuns,
             hosts: remoteHosts.connections.map {
-                SidebarSource.Host(id: $0.id, name: $0.config.name, state: $0.state, children: $0.children,
-                                   offline: $0.phase != .connected)
+                SidebarSource.Host(id: $0.id, name: $0.config.name, state: $0.state, offline: $0.phase != .connected)
             }, designs: designToolEnabled)
     }
 
@@ -274,7 +272,8 @@ extension ShepherdViewModel {
         worktreeBranch: String? = nil,
         worktreeBase: String? = nil,
         worktreeFetchFirst: Bool? = nil,
-        initialImages: [NativeImage] = []
+        initialImages: [NativeImage] = [],
+        serviceTier: ServiceTier? = nil
     ) async throws {
         let agentID = try await remoteHosts.createAgent(
             hostID: hostID,
@@ -286,7 +285,8 @@ extension ShepherdViewModel {
             worktreeBranch: worktreeBranch,
             worktreeBase: worktreeBase,
             worktreeFetchFirst: worktreeFetchFirst,
-            initialImages: initialImages
+            initialImages: initialImages,
+            serviceTier: serviceTier
         )
         // The prompt shows while the host's pi starts, as the row the host's first snapshot carries.
         if let opening = OpeningPrompt(initialPrompt, images: initialImages, agentID: agentID) {
@@ -318,30 +318,8 @@ extension ShepherdViewModel {
         state.tabs.first { $0.id == id }?.layout
     }
 
-    /// ⌥⌘←/→: move pane focus through the panes on screen in order: the thread, then the
-    /// terminal panel's selected tab (`visiblePanes`).
-    func focusAdjacentPane(_ delta: Int) {
-        if let remote = selectedRemoteAgent, let tab = remoteVisibleTab(remote) {
-            let thread = remoteInspectingAgent == remote ? nil
-                : remoteHosts.connections.first { $0.id == remote.hostID }?.state.agents.first { $0.id == remote.agentID }?.paneID
-            let leaves = visiblePanes(layout: tab.layout, key: TerminalPanelKey(host: remote.hostID, tab: tab.id),
-                                      thread: thread, focused: remoteFocusedPaneID)
-            guard leaves.count > 1 else { return }
-            let currentIndex = leaves.firstIndex { $0 == remoteFocusedPaneID } ?? 0
-            remoteFocusedPaneID = leaves[(currentIndex + delta + leaves.count) % leaves.count]
-            return
-        }
-        guard let tab = activeTab else { return }
-        let thread = selectedAgent.flatMap { $0.tabID == tab.id ? $0.paneID : nil }
-        let leaves = visiblePanes(layout: tab.layout, key: TerminalPanelKey(host: nil, tab: tab.id), thread: thread, focused: focusedPaneID)
-        guard leaves.count > 1 else { return }
-        let currentIndex = leaves.firstIndex { $0 == focusedPaneID } ?? 0
-        let next = (currentIndex + delta + leaves.count) % leaves.count
-        focusedPaneID = leaves[next]
-    }
-
-    /// Focus follows the last pane focused in the active layout, falling back
-    /// to the selected agent's own pane and then the layout's first leaf.
+    /// Focus follows the last terminal (or the thread) focused in the active layout, falling back
+    /// to the selected agent's own thread and then the layout's first leaf.
     func syncFocus() {
         guard let tab = activeTab else {
             focusedPaneID = nil

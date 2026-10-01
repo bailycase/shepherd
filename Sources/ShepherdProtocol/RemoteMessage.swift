@@ -107,7 +107,9 @@ public enum RemoteProtocol {
     /// offers (`NativeThreadSnapshot.serviceTier`, `serviceTiers`). An older host has neither, and
     /// a client draws no Speed control there.
     public static let nativeServiceTierCapability = "native.serviceTier.v1"
-    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, skillsCapability, piSkillsCapability, createAgentImagesCapability, terminalControlCapability, designContextCapability, designsCapability, designMarkupCapability, designDeleteCapability, nativeRetryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability]
+    /// The creation page may choose a tier before the opening prompt reaches pi.
+    public static let createAgentServiceTierCapability = "agent.create.serviceTier.v1"
+    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, skillsCapability, piSkillsCapability, createAgentImagesCapability, terminalControlCapability, designContextCapability, designsCapability, designMarkupCapability, designDeleteCapability, nativeRetryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, createAgentServiceTierCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -150,9 +152,11 @@ public struct RemoteCreationOptions: Codable, Hashable, Sendable {
     public var fetchFirst: Bool
     public var model: String?
     public var thinking: ThinkingLevel
-    public init(base: String, note: String, fetchFirst: Bool, model: String?, thinking: ThinkingLevel) {
+    /// Nil from a host before creation could choose speed.
+    public var serviceTier: ServiceTier?
+    public init(base: String, note: String, fetchFirst: Bool, model: String?, thinking: ThinkingLevel, serviceTier: ServiceTier? = nil) {
         self.base = base; self.note = note; self.fetchFirst = fetchFirst
-        self.model = model; self.thinking = thinking
+        self.model = model; self.thinking = thinking; self.serviceTier = serviceTier
     }
 }
 
@@ -168,12 +172,25 @@ public struct ModelListing: Hashable, Sendable {
     /// `thinkingLevelMap`), as pi spells them. A reasoning model not listed takes the standard
     /// set (`ThinkingLevel.supported`); nil from a host that does not say.
     public var thinkingLevels: [String: [String]]?
+    /// The host's offered tiers per model, using the running composer's support rules.
+    public var serviceTiers: [String: [String]]?
+    /// Context-window labels for picker rows, absent from older hosts.
+    public var contexts: [String: String]?
 
-    public init(models: [String], defaultModel: String?, withoutThinking: [String]? = nil, thinkingLevels: [String: [String]]? = nil) {
+    public init(models: [String], defaultModel: String?, withoutThinking: [String]? = nil, thinkingLevels: [String: [String]]? = nil,
+                serviceTiers: [String: [String]]? = nil, contexts: [String: String]? = nil) {
         self.models = models
         self.defaultModel = defaultModel
         self.withoutThinking = withoutThinking
         self.thinkingLevels = thinkingLevels
+        self.serviceTiers = serviceTiers
+        self.contexts = contexts
+    }
+
+    public func offeredServiceTiers(_ model: String?) -> [ServiceTier] {
+        let trimmed = model?.trimmingCharacters(in: .whitespaces) ?? ""
+        guard let id = trimmed.isEmpty ? defaultModel : trimmed else { return [] }
+        return (serviceTiers?[id] ?? []).compactMap(ServiceTier.init(rawValue:))
     }
 
     /// The levels to offer `model` (blank: the default) before its session starts: none without
@@ -466,7 +483,8 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         worktreeBase: String? = nil,
         worktreeFetchFirst: Bool? = nil,
         /// The opening prompt's images (`createAgentImagesCapability`); absent on the wire when nil.
-        initialImages: [NativeImage]? = nil
+        initialImages: [NativeImage]? = nil,
+        serviceTier: ServiceTier? = nil
     )
 
     case upload(id: Int, action: RemoteUploadAction)
@@ -507,7 +525,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case sessionID, cols, rows, data, viewportGeneration
         case path, spaceID, cwd, model, thinking, initialPrompt, worktreeBranch
         case text, submit, agentID, paneID, axis, relativeTo, split, ratio, action, query, fetchFirst, worktreeBase, worktreeFetchFirst
-        case automationID, initialImages
+        case automationID, initialImages, serviceTier
         case requestToken, outcome
     }
 
@@ -651,7 +669,8 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
                 worktreeBranch: try c.decodeIfPresent(String.self, forKey: .worktreeBranch),
                 worktreeBase: try c.decodeIfPresent(String.self, forKey: .worktreeBase),
                 worktreeFetchFirst: try c.decodeIfPresent(Bool.self, forKey: .worktreeFetchFirst),
-                initialImages: try c.decodeIfPresent([NativeImage].self, forKey: .initialImages)
+                initialImages: try c.decodeIfPresent([NativeImage].self, forKey: .initialImages),
+                serviceTier: try c.decodeIfPresent(ServiceTier.self, forKey: .serviceTier)
             )
         }
     }
@@ -787,7 +806,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encode(Kind.addSpace, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(path, forKey: .path)
-        case .createAgent(let id, let spaceID, let cwd, let model, let thinking, let initialPrompt, let worktreeBranch, let worktreeBase, let worktreeFetchFirst, let initialImages):
+        case .createAgent(let id, let spaceID, let cwd, let model, let thinking, let initialPrompt, let worktreeBranch, let worktreeBase, let worktreeFetchFirst, let initialImages, let serviceTier):
             try c.encode(Kind.createAgent, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(spaceID, forKey: .spaceID)
@@ -799,6 +818,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encodeIfPresent(worktreeBase, forKey: .worktreeBase)
             try c.encodeIfPresent(worktreeFetchFirst, forKey: .worktreeFetchFirst)
             try c.encodeIfPresent(initialImages, forKey: .initialImages)
+            try c.encodeIfPresent(serviceTier, forKey: .serviceTier)
         }
     }
 }
@@ -831,7 +851,8 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     /// The host's pi models as "provider/id" (may be empty), its configured default, and the ones
     /// that take no thinking level (absent from a host that does not say; see `ModelListing`).
     /// `thinkingLevels`: the configured levels of the models that have them (`ModelListing`).
-    case models(id: Int, models: [String], defaultModel: String?, withoutThinking: [String]? = nil, thinkingLevels: [String: [String]]? = nil)
+    case models(id: Int, models: [String], defaultModel: String?, withoutThinking: [String]? = nil, thinkingLevels: [String: [String]]? = nil,
+                serviceTiers: [String: [String]]? = nil, contexts: [String: String]? = nil)
     /// Space created on the host (the state push carries the full snapshot).
     case spaceAdded(id: Int, spaceID: SpaceID)
     /// Agent created and its pi process spawned on the host.
@@ -869,7 +890,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case result, frame
         case type, id, protocolVersion, capabilities, code, message, state
         case sessionID, data, exitCode, spaceID, agentID, paneID
-        case path, parent, dirs, models, defaultModel, withoutThinking, thinkingLevels, attachment, options
+        case path, parent, dirs, models, defaultModel, withoutThinking, thinkingLevels, serviceTiers, contexts, attachment, options
         case snapshot, settings
         case designID, revision, commentsRevision
         case url, push
@@ -990,7 +1011,9 @@ public enum RemoteReply: Codable, Hashable, Sendable {
                 models: try c.decode([String].self, forKey: .models),
                 defaultModel: try c.decodeIfPresent(String.self, forKey: .defaultModel),
                 withoutThinking: try c.decodeIfPresent([String].self, forKey: .withoutThinking),
-                thinkingLevels: try c.decodeIfPresent([String: [String]].self, forKey: .thinkingLevels)
+                thinkingLevels: try c.decodeIfPresent([String: [String]].self, forKey: .thinkingLevels),
+                serviceTiers: try c.decodeIfPresent([String: [String]].self, forKey: .serviceTiers),
+                contexts: try c.decodeIfPresent([String: String].self, forKey: .contexts)
             )
         case .spaceAdded:
             self = .spaceAdded(
@@ -1109,13 +1132,15 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             try c.encode(path, forKey: .path)
             try c.encodeIfPresent(parent, forKey: .parent)
             try c.encode(dirs, forKey: .dirs)
-        case .models(let id, let models, let defaultModel, let withoutThinking, let thinkingLevels):
+        case .models(let id, let models, let defaultModel, let withoutThinking, let thinkingLevels, let serviceTiers, let contexts):
             try c.encode(Kind.models, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(models, forKey: .models)
             try c.encodeIfPresent(defaultModel, forKey: .defaultModel)
             try c.encodeIfPresent(withoutThinking, forKey: .withoutThinking)
             try c.encodeIfPresent(thinkingLevels, forKey: .thinkingLevels)
+            try c.encodeIfPresent(serviceTiers, forKey: .serviceTiers)
+            try c.encodeIfPresent(contexts, forKey: .contexts)
         case .spaceAdded(let id, let spaceID):
             try c.encode(Kind.spaceAdded, forKey: .type)
             try c.encode(id, forKey: .id)

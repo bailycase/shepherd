@@ -167,7 +167,7 @@ final class ShepherdViewModel {
     /// Ephemeral, like the status it qualifies.
     var failedTurns: Set<AgentID> = []
     /// Agents whose pi stopped before it served, waiting for Retry: their sidebar row reads "can't
-    /// start" (DESIGN.md › Thread › Can't start). Ephemeral: a relaunch starts every pi again.
+    /// start" (docs/design/thread.md › Thread › Can't start). Ephemeral: a relaunch starts every pi again.
     var cannotStart: Set<AgentID> = []
     /// This Mac's agents whose pi can't start because nothing signs in for their model: the
     /// provider it needs (nil when pi names none), and when it stopped.
@@ -372,7 +372,7 @@ final class ShepherdViewModel {
         finalizeRequest = FinalizeRequest(agent: agent, space: space)
     }
 
-    /// The setup wizard's gh-authentication step: a terminal pane beside the agent's thread
+    /// The setup wizard's gh-authentication step: a terminal tab under the agent's thread
     /// running `gh auth login`, because the login flow is interactive by design.
     func openGhLogin(besideAgent agentID: AgentID) {
         guard let agent = state.agents.first(where: { $0.id == agentID }) else { return }
@@ -380,8 +380,8 @@ final class ShepherdViewModel {
         openTerminalPane(besideAgent: agent, running: "gh auth login")
     }
     @ObservationIgnored private var childSweepTimer: Timer?
-    /// Focus is recorded per layout on every change (clicks, ⌥⌘←/→, splits),
-    /// so returning to an agent restores the pane you were last working in.
+    /// Focus is recorded per layout on every change (clicks, tab switches, new terminals),
+    /// so returning to an agent restores the terminal (or thread) you were last working in.
     var focusedPaneID: PaneID? {
         didSet {
             guard let paneID = focusedPaneID, paneID != oldValue else { return }
@@ -660,6 +660,7 @@ final class ShepherdViewModel {
         installPaneControl()
         installReviewHandler()
         installDesignReferenceHandler()
+        installDesignRenderHandler()
         // Any pi session can create automations through the same socket.
         installAutomationControl()
         // Agents can see, message, and spawn peer threads.
@@ -715,7 +716,8 @@ final class ShepherdViewModel {
                         : GitWorktree.resolveBase(repo: repo, mode: mode, fetchFirst: fetch)
                 }.value
                 completion(.success(.init(base: resolution.display, note: resolution.note, fetchFirst: fetch,
-                                          model: self.settings.agentDefaults.model ?? PiConfig.defaultModel(in: self.server.pi.home), thinking: self.settings.defaultThinking)))
+                                          model: self.settings.agentDefaults.model ?? PiConfig.defaultModel(in: self.server.pi.home),
+                                          thinking: self.settings.defaultThinking, serviceTier: self.settings.defaultServiceTier)))
             }
         }
         // Remote clients create agents through this host's normal spawn flow.
@@ -733,6 +735,7 @@ final class ShepherdViewModel {
                 initialPrompt: request.initialPrompt
             )
             config.initialImages = request.initialImages
+            config.serviceTier = request.serviceTier
             Task { @MainActor in
                 do {
                     if let branch = request.worktreeBranch {
@@ -812,7 +815,7 @@ final class ShepherdViewModel {
         }
         // The first launch of a build with Shepherd's own pi: restored agents (and automations)
         // wait until the copy from the user's pi is over, and, when no provider can start them,
-        // until the welcome step closes (DESIGN.md › Welcome).
+        // until the welcome step closes (docs/design/dialogs-and-palette.md › Dialogs and sheets › Bringing over your pi).
         if welcomesYourPi {
             holdsForWelcome = true
             sessions.holdStarts()
@@ -1102,13 +1105,11 @@ final class ShepherdViewModel {
         // publisher's timestamp, which no view reads, so it goes to the unobserved storage.
         if updated.rows == childRuns.rows { _childRuns = updated } else { childRuns = updated }
         syncChildSweepTimer()
-        if let agent = state.agents.first(where: { $0.id == agentID }) {
-            notifySubagents(agent, children: children)
-        }
     }
 
-    /// One agent's published child runs: its sidebar row asks while one waits on you, and a
-    /// host answers a remote client's children query with them.
+    /// One agent's published child runs: the tray, the inspector and the palette show them, and a
+    /// host answers a remote client's children query with them. A child that asked its parent a
+    /// question is among them, but it asks nothing of the user: no row, banner or badge says so.
     func children(of agentID: AgentID) -> [ChildRun] {
         childRuns.children(of: agentID)
     }

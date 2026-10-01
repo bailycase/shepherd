@@ -10,7 +10,7 @@ import Testing
 @testable import ShepherdApp
 @testable import ShepherdUI
 
-/// Budgets for the long lists (DESIGN.md › Performance), over realistic large fixtures in
+/// Budgets for the long lists (docs/design/performance.md › Performance), over realistic large fixtures in
 /// off-screen windows. The budgets count row bodies (`NWRenderProbe`), which a slower machine
 /// doesn't change: a list that builds rows off screen, or redraws every row for a highlight, a
 /// selection, or one row's change, fails whatever the hardware. `ListPerformanceReport` prints the
@@ -1183,7 +1183,7 @@ struct ListPerformanceTests {
 
         var body: some View {
             SubagentTrayView(tray: NativeSubagentTray(runs), state: state, runs: runs,
-                             actions: SubagentActions(inspect: { _ in }, command: { _, _, _, _ in }), answer: { _ in })
+                             actions: SubagentActions(inspect: { _ in }, command: { _, _, _, _ in }))
                 .frame(width: 800)
         }
     }

@@ -15,10 +15,10 @@ import ShepherdRemote
 /// - **A design's chat on iPad** (iPadDesign): the same card at the compact size, with no "/"
 ///   (typing / still opens the commands), the model's short name and the thinking level alone.
 ///
-/// Send steers the message in while pi works (pi reads it once its current tool calls finish,
-/// before its next step); hold it for the other two ways (`NativeSendChoice`): wait for the turn
-/// to end, or steer now, which stops pi and sends at once. Stop lives in the thread's header. The context
-/// ring sits just before Send on both (ContextIdeas › A); a tap opens its details as a sheet.
+/// Send queues the message while pi works (it goes when the turn ends); hold it for the other way
+/// (`NativeSendChoice`): steer now, which stops pi and sends at once. Stop lives in the thread's
+/// header. The context ring sits just before Send on both (ContextIdeas › A); a tap opens its
+/// details as a sheet.
 struct ThreadComposer: View {
     let ref: AgentRef
     @Environment(ThreadStores.self) private var threads
@@ -73,18 +73,6 @@ struct ThreadComposer: View {
                     .padding(.bottom, wide ? 0 : -MobileLayout.composerBottom)
                     .nwTransition(.content)
                 }
-            } else if let run = answering(store, state: state), let prompt = nativeSubagentQuestionPrompt(run) {
-                // A subagent's question, from its row's Answer: hiding it returns to the tray.
-                QuestionPanel(prompt: prompt, enabled: live && store.takesSubagentCommands, docked: !wide,
-                              hide: { withNWAnimation(.content) { state.answeringRun = nil } }) { answer in
-                    guard let reply = prompt.messageReply(answer) else { return }
-                    SubagentCommands(store: store, enabled: live && store.takesSubagentCommands).send(run.runID, .answer(reply))
-                    withNWAnimation(.content) { state.answeringRun = nil }
-                }
-                .id("subagent:" + run.id)
-                .padding(.horizontal, wide ? 0 : -MobileLayout.gutter)
-                .padding(.bottom, wide ? 0 : -MobileLayout.composerBottom)
-                .nwTransition(.content)
             } else {
                 if let tray = store.tray {
                     NWDockStack(size: wide ? .pad : .phone, showsTray: true, showsQueue: !state.rows.isEmpty) {
@@ -141,12 +129,6 @@ struct ThreadComposer: View {
                 Task { await store.setModel(model) }
             }
         }
-    }
-
-    /// The run whose question is open from its row's Answer, while it still asks.
-    private func answering(_ store: NativeThreadStore, state: ComposerState) -> NativeSubagent? {
-        guard let id = state.answeringRun else { return nil }
-        return store.subagents.first { $0.runID == id && nativeRunPhase($0) == .needsYou }
     }
 
     /// Asks the catalog again for a new connection, or once the thread reports a thinking level.
@@ -269,14 +251,14 @@ struct ThreadComposer: View {
         store.supportedActions.contains("sendImages")
     }
 
-    /// Send: steers at the next step while pi works (a message that begins with "/" waits for the
-    /// turn to end instead), sends at once while it is idle. Held while pi works, it offers all
-    /// three ways to send.
+    /// Send: queues the message while pi works, sends at once while it is idle. Held while pi
+    /// works, it offers both ways to send (Steer now stops pi, where the host can). ⌘↩ on a
+    /// hardware keyboard presses Send, so it queues.
     private func sendButton(store: NativeThreadStore, state: ComposerState, live: Bool) -> some View {
         let hasDraft = !store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let enabled = live && store.acceptsSend && hasDraft && !store.busy
         let running = store.running
-        return NWComposerActionButton(.send, enabled: enabled) { Self.send(NativeSendChoice.nextStep.delivery, store: store, state: state) }
+        return NWComposerActionButton(.send, enabled: enabled) { Self.send(NativeSendChoice.wait.delivery, store: store, state: state) }
             .keyboardShortcut(.return, modifiers: .command)
             .contextMenu {
                 if running, enabled {
@@ -285,11 +267,11 @@ struct ThreadComposer: View {
                     }
                 }
             }
-            .accessibilityLabel(running ? NativeSendChoice.nextStep.title : "Send")
-            .accessibilityHint(running ? NativeSendChoice.nextStep.detail : "")
+            .accessibilityLabel(running ? NativeSendChoice.wait.title : "Send")
+            .accessibilityHint(running ? NativeSendChoice.wait.detail : "")
             .accessibilityActions {
                 if running, enabled {
-                    ForEach(NativeSendChoice.allCases.filter { $0 != .nextStep }) { choice in
+                    ForEach(NativeSendChoice.allCases.filter { $0 != .wait }) { choice in
                         Button(choice.title) { Self.send(choice.delivery, store: store, state: state) }
                     }
                 }
@@ -299,7 +281,6 @@ struct ThreadComposer: View {
     private static func symbol(_ choice: NativeSendChoice) -> String {
         switch choice {
         case .wait: "text.line.first.and.arrowtriangle.forward"
-        case .nextStep: "arrow.right.to.line"
         case .now: "arrow.turn.down.right"
         }
     }

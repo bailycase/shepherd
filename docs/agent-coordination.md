@@ -1,8 +1,9 @@
 # Agent coordination
 
 The bundled panes extension (`Extensions/shepherd-panes.ts`, on under Settings ▸ Pi ▸ Bundled
-extensions) gives every Shepherd agent tools for the other top-level agents in the app, and the
-review extension (`Extensions/shepherd-review.ts`) gives it `review_diff`. Subagents are a
+extensions as "Terminals and agent tools") gives every Shepherd agent the `terminal_*` tools for
+its own terminals ([below](#terminals)) and tools for the other top-level agents in the app, and
+the review extension (`Extensions/shepherd-review.ts`) gives it `review_diff`. Subagents are a
 separate runtime ([native-subagents.md](native-subagents.md)); these tools address agents in the
 sidebar. A design's agent is none of them: it gets no panes extension, and the server refuses
 every request from or to it with `not_a_thread` ([designs.md](designs.md) › Design agents and
@@ -107,7 +108,7 @@ warns that the agent's pi session and every process it started will stop.
 ## Reviews an agent opens
 
 `review_diff` readies the agent's review in the Changes tab of its side pane, docked beside the
-agent's layout ([DESIGN.md](../DESIGN.md), Side pane). The pane never opens by itself: the tab
+agent's layout ([side-pane-changes](design/side-pane-changes.md)). The pane never opens by itself: the tab
 takes a dot, and with the pane closed so does the header's side-pane button; the user opens it
 (⇧⌘B, ⌃1). A request while a subagent is inspected leaves the inspector in front. It returns at
 once; the user's review arrives later as a message.
@@ -122,6 +123,57 @@ once; the user's review arrives later as a message.
   from an inspected subagent, or changing what the user has selected.
 - Pointing it at a different directory starts the review over: comments, the summary, viewed
   marks, and the pane's folds belonged to the old diff. The same directory keeps them.
+
+## Terminals
+
+The same extension gives an agent the `terminal_*` tools for the terminals under its own thread.
+A terminal is a tab of the terminal panel; there are no splits, and the agent's own thread is
+never a terminal.
+
+- **`terminal_open`**: a new terminal as a new tab, in the thread's folder (its worktree) unless
+  `cwd` is given, optionally running `command`. The panel opens on it and the keyboard stays
+  where it was. It returns the terminal's id. There is no axis or anchor to name.
+- **`terminal_list`**: the agent's terminals, oldest first. Its own thread is never listed.
+- **`terminal_run`**, **`terminal_read`**, **`terminal_focus`** (shows the panel on that tab and
+  moves the keyboard there) and **`terminal_close`** name a terminal by `terminalID`, the id
+  `terminal_open` and `terminal_list` return (`paneID` on the wire).
+- **Scope.** An agent touches only terminals in its own layout: any other id, and a focus or read
+  of its own thread, is `no_such_terminal`. It cannot type into or close its own thread
+  (`not_writable`, `not_closable`). Closing the last terminal closes the panel.
+- The host that runs the agent serves them (`PaneControl.swift`, `onPaneRequest`). The tools were
+  `pane_*` before, with no aliases: the extension and the host are always the same build, so the
+  rename has no compatibility question. Only the wire between a client and a host does, below.
+
+## Terminals and compatibility
+
+Terminals are tabs only, and a host never makes a split. The wire did not change (no new
+capability, the same `RemoteProtocol` version and requests), so builds from before and after
+terminals became tabs meet like this:
+
+- **Current client, current host.** +, ⌘D and ⌘J (with no terminal) send the same `openPane`
+  request they always did for a new tab, naming the thread as `relativeTo` with axis horizontal
+  (`TerminalPanel.newTabAnchor`). The host ignores both `axis` and `relativeTo` and opens a new
+  tab in the thread's folder (or the request's `cwd`), answering `paneOpened`. There is no split
+  request anywhere.
+- **Older client, current host.** An older client's Split right or Split down is an `openPane`
+  naming a terminal and an axis. The host opens a new tab instead (never a split) and answers
+  normally; the older client then sees the flattened layout, every tab one terminal. An older
+  client's `resizePaneSplit` (a divider drag) is answered with an `unsupported` error
+  ("Terminals are tabs and have no splits to resize.") without reaching the GUI handler, and the
+  connection stays (the older client ignores the failure). An older client asking to split or
+  resize a host's utility (inspector) terminal gets an error too ("Terminals have no splits").
+  `closePane` of the thread still answers `not_closable`.
+- **Current client, older host.** The client never offers Split. +, ⌘D and ⌘J send the same
+  `openPane` naming the thread, which the older host handles as it always did: it splits the
+  thread, which is a new tab. The client draws any split tab of that host (made by its own older
+  UI or another client) as one tab per terminal (`TerminalPanel.tabs`). A host without the
+  `pane.control.v1` capability fails the request `unsupported`, and the client beeps (iOS shows
+  "Update Shepherd on the host...").
+- **Older client, older host.** Unchanged.
+
+A host flattens its own saved layouts when it starts (`SessionServer.flattenSplitTerminals`,
+ARCHITECTURE.md › Terminal layouts), so a current host never holds a split tab for long; the
+older-host row is the only place a client meets one.
 
 ## Automation completion reports
 

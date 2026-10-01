@@ -8,9 +8,9 @@ private struct NWPreviewComposerControls: View {
     var body: some View {
         Button {} label: { Image(systemName: "paperclip") }.buttonStyle(.nwIcon(size: NWComposerMetrics.chipHeight))
             .accessibilityLabel("Attach file")
-        Button {} label: { HStack(spacing: NW.Space.s) { Text("/").font(.nwMono(12)); Text("commands") } }.buttonStyle(.nwComposerChip())
-        Button {} label: { HStack(spacing: NW.Space.s) { Text("claude-opus").font(.nwMono(12)); NWChipChevron() } }.buttonStyle(.nwComposerChip())
+        Button {} label: { NWModelSettingsLabel(model: "claude-opus", thinking: "Medium") }.buttonStyle(.nwComposerChip())
         Spacer(minLength: NW.Space.m)
+        Button {} label: { NWComposerBranchLabel(branch: "agent/swiftui-previews", changes: 3) }.buttonStyle(.nwComposerChip())
         if draft {
             HStack(spacing: NW.Space.s) {
                 NWComposerActionButton(.stop, outlined: true) {}
@@ -46,14 +46,13 @@ private struct NWPreviewComposerControls: View {
 /// and the compact size of a 420pt chat pane, whose chips drop their words.
 private struct NWPreviewSizedControls: View {
     var ring = false
+    @Environment(\.nwComposerSize) private var size
 
     var body: some View {
         Button {} label: { Image(systemName: "paperclip") }.buttonStyle(.nwIcon(size: NWComposerMetrics.chipHeight))
             .accessibilityLabel("Attach file")
-        Button {} label: { NWComposerCommandsLabel() }.buttonStyle(.nwComposerChip())
-        Button {} label: { HStack(spacing: NW.Space.s) { Text("claude-opus").font(.nw(.code)); NWChipChevron() } }
+        Button {} label: { NWModelSettingsLabel(model: "claude-opus", thinking: size == .compact ? nil : "Medium") }
             .buttonStyle(.nwComposerChip())
-        Button {} label: { NWComposerThinkingLabel(level: "Medium") }.buttonStyle(.nwComposerChip())
         Spacer(minLength: NW.Space.m)
         if ring { NWContextRing(.fill(0.34, .calm)) }
         NWComposerActionButton(.send, enabled: false) {}
@@ -89,70 +88,12 @@ private struct NWPreviewSizedControls: View {
             ], total: 23, query: "re", selection: .constant(0)) { _ in }
             HStack(alignment: .top, spacing: NW.Space.xl) {
                 NWModelPicker(query: .constant(""), sections: [
-                    NWModelSection(title: "Recent", options: [NWModelOption(id: "a/claude-opus", title: "claude-opus", isCurrent: true)]),
+                    NWModelSection(title: "Recent", options: [
+                        NWModelOption(id: "a/claude-opus", title: "claude-opus", isCurrent: true),
+                        NWModelOption(id: "a/claude-sonnet", title: "claude-sonnet", fast: true),
+                    ]),
                     NWModelSection(title: "Anthropic", options: [NWModelOption(id: "a/claude-haiku", title: "claude-haiku", note: "200K")]),
                 ], selection: .constant(0), onChoose: { _ in }, onClose: {})
-                NWThinkingMenu(options: [
-                    NWThinkingOption(id: "off", title: "Off"), NWThinkingOption(id: "low", title: "Low", note: "quick"),
-                    NWThinkingOption(id: "medium", title: "Medium", note: "default"), NWThinkingOption(id: "high", title: "High", note: "slower, deeper"),
-                ], current: "medium", onChoose: { _ in }, onClose: {})
-            }
-        }
-    }
-}
-
-/// ComposerSpeed board: the chip beside Thinking, Standard and Fast, at the regular and the
-/// compact size, and the menu with each tier current.
-private struct NWPreviewSpeedControls: View {
-    let value: String
-    let boosted: Bool
-
-    var body: some View {
-        Button {} label: { Image(systemName: "paperclip") }.buttonStyle(.nwIcon(size: NWComposerMetrics.chipHeight))
-            .accessibilityLabel("Attach file")
-        Button {} label: { NWComposerCommandsLabel() }.buttonStyle(.nwComposerChip())
-        Button {} label: { HStack(spacing: NW.Space.s) { Text("gpt-5.5").font(.nw(.code)); NWChipChevron() } }.buttonStyle(.nwComposerChip())
-        Button {} label: { NWComposerThinkingLabel(level: "Medium") }.buttonStyle(.nwComposerChip())
-        Button {} label: { NWComposerSpeedLabel(value: value, boosted: boosted) }.buttonStyle(.nwComposerChip())
-            .accessibilityLabel("Speed: \(value)")
-        Spacer(minLength: NW.Space.m)
-        NWComposerActionButton(.send, enabled: false) {}
-    }
-}
-
-private let nwPreviewSpeedOptions = [
-    NWSpeedOption(id: "standard", title: "Standard", detail: "Default speed and price"),
-    NWSpeedOption(id: "fast", title: "Fast", detail: "Faster responses, billed at a higher rate", boosted: true),
-]
-
-#Preview("Speed") {
-    NWPreviewBoth {
-        VStack(alignment: .leading, spacing: NW.Space.xl) {
-            NWComposer(isFocused: false) {
-                Text("Follow up, or / for commands…").font(.nw(.body)).foregroundStyle(.nw.textTertiary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } controls: { NWPreviewSpeedControls(value: "Standard", boosted: false) }
-            .frame(width: 600)
-            NWComposer(isFocused: false) {
-                Text("Follow up, or / for commands…").font(.nw(.body)).foregroundStyle(.nw.textTertiary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } controls: { NWPreviewSpeedControls(value: "Fast", boosted: true) }
-            .frame(width: 600)
-            NWComposer(isFocused: false) {
-                Text("Follow up…").font(.nw(.body)).foregroundStyle(.nw.textTertiary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } controls: {
-                Button {} label: { NWComposerCommandsLabel() }.buttonStyle(.nwComposerChip())
-                Button {} label: { NWComposerThinkingLabel(level: "Medium") }.buttonStyle(.nwComposerChip())
-                Button {} label: { NWComposerSpeedLabel(value: "Fast", boosted: true) }.buttonStyle(.nwComposerChip())
-                Spacer(minLength: NW.Space.m)
-                NWComposerActionButton(.send, enabled: false) {}
-            }
-            .frame(width: 392)
-            .nwComposerSize(.compact)
-            HStack(alignment: .top, spacing: NW.Space.xl) {
-                NWSpeedMenu(options: nwPreviewSpeedOptions, current: "standard", onChoose: { _ in }, onClose: {})
-                NWSpeedMenu(options: nwPreviewSpeedOptions, current: "fast", onChoose: { _ in }, onClose: {})
             }
         }
     }
@@ -191,13 +132,11 @@ private let nwPreviewSpeedOptions = [
 #Preview("Send menu") {
     NWPreviewBoth {
         NWSendMenu(options: [
-            NWSendOption(id: "wait", title: "Wait for the turn to end", detail: "Goes when the agent finishes this turn.", glyph: .queue),
-            NWSendOption(id: "nextStep", title: "Steer at the next step",
-                         detail: "Lands once the agent’s current tool calls finish, before its next step.",
-                         glyph: .symbol("arrow.right.to.line"), shortcut: "↩"),
+            NWSendOption(id: "wait", title: "Wait for the turn to end", detail: "Goes when the agent finishes this turn.",
+                         glyph: .queue, shortcut: "↩"),
             NWSendOption(id: "now", title: "Steer now", detail: "Stops what the agent is doing and sends this at once.",
                          glyph: .symbol("arrow.turn.down.right"), shortcut: "⌘↩"),
-        ], highlighted: 1, onChoose: { _ in }, onClose: {})
+        ], onChoose: { _ in }, onClose: {})
     }
 }
 

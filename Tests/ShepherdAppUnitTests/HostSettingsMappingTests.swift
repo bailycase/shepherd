@@ -27,6 +27,8 @@ struct HostSettingsMappingTests {
         #expect(settings.bundledExtensions.map(\.id) == ["namer", "panes", "review", "nativeSubagents", "subagents", "mcp", "browser"])
         #expect(settings.bundledExtensions.first { $0.id == "review" }?.on == false)
         #expect(settings.bundledExtensions.first { $0.id == "review" }?.name == "Diff review tool")
+        // The extension keeps its stored id; it reads as terminals to the user.
+        #expect(settings.bundledExtensions.first { $0.id == "panes" }?.name == "Terminals and agent tools")
         // pi's own default reads as none.
         app.defaultModel = ""
         #expect(HostSettingsMapping.settings(from: app, shepherdVersion: nil, piVersion: nil).defaultModel == nil)
@@ -37,6 +39,19 @@ struct HostSettingsMappingTests {
             #expect(HostSettingsPresentation.note(forBundled: bundled.id) != nil, "no note for \(bundled.id)")
         }
         #expect(HostSettingsPresentation.note(forBundled: "someday") == nil)
+    }
+
+    /// There is no pane to control: the row and its note, on the Mac and in every client, speak of
+    /// terminals.
+    @Test func noBundledExtensionsNameOrNoteSaysPane() {
+        for bundled in HostSettingsMapping.bundled where bundled.id == "panes" {
+            let note = HostSettingsPresentation.note(forBundled: bundled.id) ?? ""
+            #expect(bundled.name == "Terminals and agent tools")
+            #expect(note.contains("terminals"))
+            for text in [bundled.name, note] {
+                #expect(!text.lowercased().contains("pane"), "\(text)")
+            }
+        }
     }
 
     @Test func aClientsChangeLandsInTheMacsSettings() {

@@ -48,6 +48,8 @@ final class RPCThreadState {
             case compaction(String)
             /// A question pi asked, once it ended (`NativeQuestionRecord`), by its dialog id.
             case question(String)
+            /// What an extension command the user ran said back (`CommandNotice`).
+            case notice(UUID)
         }
         var kind: Kind
         /// Assigning it forgets its hash and size, so a commit rehashes only the rows that changed.
@@ -341,6 +343,13 @@ final class RPCThreadState {
     /// The questions pi asked in this session and how they ended, oldest first (persisted with
     /// the origins, `RPCThreadState+Questions.swift`).
     var questions: [ThreadOriginStore.Question] = []
+    /// What extension commands the user ran said back, newest last, and the commands in flight
+    /// (`RPCThreadState+CommandNotices.swift`). Not persisted: they answer a command, and a
+    /// command leaves nothing in pi's session.
+    var commandNotices: [CommandNotice] = []
+    var commandWindows: Set<UUID> = []
+    /// How long a command's toasts count as its own after pi answers it.
+    var commandNoticeGrace: TimeInterval = 1.5
 
     private static let encoder = JSONEncoder()
     private static let queueFieldBytes = #","queue":"#.utf8.count
@@ -459,6 +468,10 @@ final class RPCThreadState {
             Self.apply(delta, to: &raw)
             upsertAssistant(raw, ended: false)
             streamToolCall(delta, in: raw)
+        case .messageEnd(let message) where message.role == "custom" && message.display == true && message.customType != "shepherd-child":
+            // A message an extension displays (a command's report) is in pi's history already, and
+            // an idle pi has no turn whose end would refresh it.
+            if !running { refreshMessages() }
         case .messageEnd(let message):
             guard message.role == "assistant" else { break }
             if currentAssistant == nil {
@@ -505,6 +518,7 @@ final class RPCThreadState {
             handleUIRequest(request)
         case .extensionError(let path, let event, let error):
             ShepherdLog.warning("rpc session \(session.id) extension error in \(path ?? "?") (\(event ?? "?")): \(error)")
+            recordCommandFailure(path: path, event: event, error: error)
         case .compactionStart(let reason):
             compactionStarted(reason: NativeCompactionReason(pi: reason))
         case .compactionEnd(let reason, let result, let aborted, let willRetry, let error):
@@ -1006,7 +1020,7 @@ final class RPCThreadState {
                     value.operationID = self.operationsByEntry[value.entryID]
                 }
             }
-            let kept = Self.keepingSummarized(previous: self.history, next: Self.interleave(self.questions, into: history))
+            let kept = Self.keepingSummarized(previous: self.history, next: Self.interleave(self.placedRecords, into: history))
             if kept != self.history {
                 self.history = kept
                 self.historyVersion += 1
@@ -1021,7 +1035,7 @@ final class RPCThreadState {
                 case .pending: false
                 case .compaction: item.ended
                 // History places it now.
-                case .question: true
+                case .question, .notice: true
                 }
             }
             self.updateContext()
@@ -1064,15 +1078,23 @@ final class RPCThreadState {
         )
     }
 
+    /// Commands of pi's own built-in extensions that only work in its terminal UI: in RPC mode
+    /// pi's handler answers "available in interactive mode" and does nothing else (llama.cpp's
+    /// `/llama`, pi 0.87.1). pi lists a built-in extension's file as `<inline:…>`, so a user's
+    /// own command of the same name is kept.
+    static let terminalOnlyBuiltIns: Set<String> = ["llama"]
+
     /// get_commands → capped, byte-limited list. Over-long names are dropped, descriptions clipped.
-    /// An `argumentHint` pi sends is kept (pi 0.87.1 sends none; `readArgumentHints` reads a
-    /// prompt template's from its file).
+    /// A command no thread can run is left out: the host's own `/shepherd-retry`, and pi's
+    /// terminal-only built-ins. An `argumentHint` pi sends is kept (pi 0.87.1 sends none;
+    /// `readArgumentHints` reads a prompt template's from its file).
     static func projectCommands(_ value: JSONValue?) -> [NativeCommand] {
         guard let items = value?.arrayValue else { return [] }
         var result: [NativeCommand] = []
         for item in items {
             guard let name = item["name"]?.stringValue, !name.isEmpty, name.utf8.count <= NativeCommand.maxNameBytes,
                   name != retryCommand else { continue }
+            if terminalOnlyBuiltIns.contains(name), item["sourceInfo"]?["path"]?.stringValue?.hasPrefix("<inline:") == true { continue }
             var description = item["description"]?.stringValue
             if let text = description, text.utf8.count > NativeCommand.maxDescriptionBytes {
                 description = String(decoding: Array(text.utf8.prefix(NativeCommand.maxDescriptionBytes)), as: UTF8.self)
@@ -1174,6 +1196,7 @@ final class RPCThreadState {
         projectionClipped = false
         operationsByEntry.removeAll()
         questions.removeAll()
+        commandNotices.removeAll()
         // A question still open from the last session is not this one's to record.
         askedAt.removeAll()
         estimate = nil
@@ -1466,8 +1489,9 @@ final class RPCThreadState {
         case "notify":
             // A TUI toast ("Ponytail loaded: full", "Task queued"). The native thread has no
             // toast surface and the message rarely matters after the moment; dropping it beats
-            // parking it above the composer.
-            break
+            // parking it above the composer. One the user's own command is answering is what that
+            // command said back, and the thread keeps it.
+            recordNotify(request)
         default:
             // setStatus is the TUI footer slot (ponytail, goal, codex-fast park persistent
             // chrome there), not conversation content; setTitle / set_editor_text likewise.

@@ -2,9 +2,9 @@
 
 TerminalSurfaceKit adapts `GhosttyTerminal` (the vendored `Vendor/libghostty-spm`, libghostty
 1.3.x) behind a small, stable API: `TerminalSurfaceModel` and `TerminalSurfaceView`. Shepherd uses
-it for one thing: the terminal panes beside an agent's thread, which the user opens with ⌘D or an
-agent opens with its `pane_*` tools. Agents themselves render as native threads and never get a
-surface.
+it for one thing: the terminals under an agent's thread, one tab each, which the user opens with
+⌘D or ⌘J or an agent opens with its `terminal_*` tools. Agents themselves render as native
+threads and never get a surface.
 
 The kit spawns no process. `ShepherdSessions` owns every PTY, and the host-managed I/O backend
 carries those bytes to and from the surface. Only `Sources/ShepherdApp/TerminalHost.swift` imports
@@ -49,7 +49,7 @@ The in-memory session still keeps the new surface, because its detach checks ide
   keybind unbinds (below).
 - **The theme** (`TerminalAppearance`): background, foreground, cursor, selection, and the
   16-color ANSI palette. `TerminalHost.swift` fills it from the resolved theme variant's
-  `TerminalColors` (ShepherdUI). The background equals the theme's `bgWindow`, so panes sit on
+  `TerminalColors` (ShepherdUI). The background equals the theme's `bgWindow`, so terminals sit on
   the thread surface. Shepherd has already resolved light or dark, so both of Ghostty's nested
   schemes get the same values.
 
@@ -65,9 +65,12 @@ A focused Ghostty surface consumes any key equivalent that matches one of its bi
 `appOwnedChords` lists every chord the app chrome uses, and each is written as `keybind = <chord>=unbind`:
 
 - new agent, options, and new space
-- close pane, delete agent, and rename
-- splits and pane focus
-- ⇧⌘[ and ⇧⌘], which the app does not bind but Ghostty would swallow as no-op tab switches
+- close terminal, delete agent, and rename
+- new terminal (⌘D)
+- ⇧⌘[ and ⇧⌘], the app's Previous and Next Terminal, which Ghostty would swallow as no-op tab
+  switches
+- ⇧⌘D and ⌥⌘←/→, which the app no longer binds (terminals are tabs only) but Ghostty's own
+  split and goto bindings would swallow as no-ops
 - agent navigation and turn jumps
 - sidebar, right pane, model picker, stop, and inspect
 - ⌘1–9, in both logical and physical spellings
@@ -106,12 +109,12 @@ patch when the vendored copy is refreshed.
 - **Focus.** Focus is applied through AppKit, not SwiftUI focus state. Every layout stays mounted,
   and SwiftUI discards programmatic focus for views in inactive parts of the hierarchy, so both
   `FocusState` approaches still needed a click. Instead, a zero-size `TerminalFocusBridge`
-  (`NSViewRepresentable`) behind each pane calls `takeKeyboardFocus()` or
+  (`NSViewRepresentable`) behind each terminal calls `takeKeyboardFocus()` or
   `releaseKeyboardFocus()`. It acts only when the value changes, on the next run-loop turn, once
   the view has a window.
 - **Model identity.** `TerminalSurfaceView` keys its subtree on the model's identity. libghostty
   assigns the NSView delegate only in `makeNSView`, so a reused NSView would otherwise stay wired
-  to the previous pane.
+  to the previous terminal.
 - **Drops.** `TerminalSurfaceDrop` registers on the actual `AppTerminalView`, through its
   host-drop callbacks (a small vendored patch). AppKit owns drag lifetime and foreground
   hit-testing; the adapter rejects hidden/non-rendering surfaces and resolves only the sender's
@@ -120,7 +123,7 @@ patch when the vendored copy is refreshed.
   - `TerminalImageDrop` resizes images to a 2000 px longest edge before they are referenced. JPEG
     stays JPEG and everything else becomes PNG. The copies live in a drop directory and are
     pruned after 24 h.
-  - Remote panes upload dropped files to the host, up to 32 MiB each.
+  - Remote terminals upload dropped files to the host, up to 32 MiB each.
 - **Links.** A local event monitor makes a plain ⌘-click on a surface take Ghostty's link path.
   URLs open through the view state's `terminalDidRequestOpenURL`.
 
@@ -131,10 +134,10 @@ surface class). Inside this module the unqualified names mean ours, and Ghostty'
 `GhosttyTerminal.TerminalSurfaceView`. Code that imports both modules would need to qualify them,
 which is one reason the app imports only TerminalSurfaceKit, and only in `TerminalHost.swift`.
 
-## Hidden-pane rendering (`setRenderingActive`)
+## Hidden-terminal rendering (`setRenderingActive`)
 
 Every mounted layout stays in the view tree: a hidden agent's layout is a hidden hosting view
-(`AgentLayoutDeck`), and a hidden pane inside a layout is `opacity(0)`. Their surfaces stay alive
+(`AgentLayoutDeck`), and a hidden terminal inside a layout is `opacity(0)`. Their surfaces stay alive
 until cold parking drops them. `setRenderingActive` drives Ghostty's display
 visibility, which handles occlusion and stops or restarts the display link.
 

@@ -5,7 +5,7 @@ name: CI
 # rebuilds the caches clean, so every PR based on nightly starts warm. Tests
 # whose verdict depends on the machine's speed (frame sampling, wall-clock
 # budgets) skip here, where GitHub sets CI=true; `swift test` runs them locally
-# (AGENTS.md, Testing).
+# (docs/testing.md).
 on:
   push:
     branches: [master, nightly]
@@ -75,9 +75,10 @@ jobs:
     name: tests ${{ matrix.shard }} (${{ matrix.label }})
     if: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/nightly') }}
     runs-on: macos-26
-    # A cold build takes about 8 minutes and a shard about 2; the watchdog
-    # below ends a stalled test run after 10.
-    timeout-minutes: 25
+    # A cold build takes about 8 minutes and a shard 4 to 14 (C, which runs
+    # everything the others skip, the longest); the watchdog below ends a
+    # stalled test run after 20.
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -134,12 +135,12 @@ jobs:
           TEST_PID=$!
           # Every integration suite has a per-test time limit, so a hang that
           # honors cancellation fails by name. The watchdog is for one that
-          # does not (a blocked thread): a shard takes about 2 minutes, so if
-          # it is still going after 10, dump the hung test host's stacks, then
-          # end the run.
+          # does not (a blocked thread): a shard takes 4 to 14 minutes (C, the
+          # longest, 10 to 14 on a busy runner), so if it is still going after
+          # 20, dump the hung test host's stacks, then end the run.
           descendants() { local c; for c in $(pgrep -P "$1"); do echo "$c"; descendants "$c"; done; }
           (
-            sleep 600
+            sleep 1200
             if kill -0 "$TEST_PID" 2>/dev/null; then
               echo '::group::watchdog: test run stalled, sampling processes'
               pids=$(descendants "$TEST_PID")

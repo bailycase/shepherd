@@ -7,7 +7,7 @@ import ShepherdUI
 
 /// The New design page (DZStart; Designs' New design, New thread's "Start a design"): "What do
 /// you want to design?", the brief in a 720pt composer at the regular size (attach, the model and
-/// thinking chips, and Send; no context ring before there is a conversation), and the design
+/// thinking settings, and Send; no context ring before there is a conversation), and the design
 /// system the boards are drawn in. Sending makes the design, starts its agent with the brief on
 /// the model and level chosen, and opens its canvas.
 ///
@@ -24,7 +24,7 @@ struct NewDesignPage: View {
     @State private var menu: ChipMenu?
     @State private var picker: ModelPickerState?
 
-    private enum ChipMenu: Equatable { case models, thinking }
+    private enum ChipMenu: Equatable { case models, settings }
 
     private var draft: NewDesignState { vm.newDesign }
 
@@ -101,6 +101,7 @@ struct NewDesignPage: View {
             .textFieldStyle(.plain)
             .font(Font.nw(.body))
             .foregroundStyle(Color.nw.textPrimary)
+            .tint(Color.nw.lantern)
             .focused($composing)
             .frame(minHeight: AppLayout.newDesignFieldMinHeight, alignment: .topLeading)
             .onKeyPress(.return, phases: .down) { press in
@@ -121,8 +122,12 @@ struct NewDesignPage: View {
                 .disabled(draft.attachments.isFull)
                 .help("Attach a screenshot or file")
                 .accessibilityLabel("Attach a screenshot or file")
-            modelChip
-            thinkingChip
+            Button { menu = menu == .settings ? nil : .settings } label: {
+                NWModelSettingsLabel(model: NewThreadRules.shortModel(draft.model),
+                                     thinking: draft.thinkingLevels().isEmpty ? nil : draft.thinking.clamped(to: draft.thinkingLevels()).title)
+            }
+            .buttonStyle(.nwComposerChip(active: menu == .settings || menu == .models))
+            .help(draft.model.isEmpty ? "Model settings: the default" : "Model settings: \(draft.model)")
             Spacer(minLength: NW.Space.m)
             if draft.starting {
                 ProgressView().progressViewStyle(.nwSpinner(color: Color.nw.textTertiary))
@@ -142,29 +147,6 @@ struct NewDesignPage: View {
         .overlay(alignment: .bottomLeading) { menus }
     }
 
-    private var modelChip: some View {
-        Button { openModels() } label: {
-            HStack(spacing: NW.Space.s) {
-                Text(NewThreadRules.shortModel(draft.model)).font(Font.nw(.code)).lineLimit(1).truncationMode(.middle)
-                NWChipChevron()
-            }
-        }
-        .buttonStyle(.nwComposerChip(active: menu == .models))
-        .help(draft.model.isEmpty ? "Model: the default" : "Model: \(draft.model)")
-        .accessibilityLabel("Model \(NewThreadRules.shortModel(draft.model))")
-    }
-
-    /// Hidden while the chosen model takes no thinking level.
-    @ViewBuilder private var thinkingChip: some View {
-        let levels = draft.thinkingLevels()
-        if !levels.isEmpty {
-            let level = draft.thinking.clamped(to: levels).title
-            Button { menu = menu == .thinking ? nil : .thinking } label: { NWComposerThinkingLabel(level: level) }
-                .buttonStyle(.nwComposerChip(active: menu == .thinking))
-                .accessibilityLabel("Thinking level: \(level)")
-        }
-    }
-
     // MARK: Menus
 
     /// The open menu, under the card as on New thread: its top-leading corner 8pt below the
@@ -182,16 +164,21 @@ struct NewDesignPage: View {
                     } close: { menu = nil; composing = true }
                     .nwTransition(.overlay, anchor: .topLeading)
                 }
-            case .thinking:
+            case .settings:
                 let levels = draft.thinkingLevels()
-                NWThinkingMenu(options: NativeThinkingLevel.levels(levels.map(\.rawValue)).map {
-                    NWThinkingOption(id: $0.id, title: $0.title, note: $0.note)
-                }, current: draft.thinking.clamped(to: levels).rawValue) { option in
-                    menu = nil
-                    composing = true
-                    if let level = ThinkingLevel(rawValue: option.id) { draft.setThinking(level) }
-                } onClose: { menu = nil; composing = true }
-                .nwTransition(.overlay, anchor: .topLeading)
+                NWModelSettings(models: ModelCatalog.settingsModels(catalog: draft.catalog, current: draft.model, recent: RecentModels.load().map(\.id)),
+                                thinking: NativeThinkingLevel.levels(levels.map(\.rawValue)).map {
+                                    NWThinkingOption(id: $0.id, title: $0.title, note: $0.note)
+                                }, currentThinking: draft.thinking.clamped(to: levels).rawValue, speeds: [], currentSpeed: "standard",
+                                chooseModel: { model in
+                                    RecentModels.record(model.id, thread: nil)
+                                    draft.setModel(model.id)
+                                    menu = nil
+                                    composing = true
+                                }, chooseThinking: { id in
+                                    if let level = ThinkingLevel(rawValue: id) { draft.setThinking(level) }
+                                }, chooseSpeed: { _ in }, allModels: openModels, close: { menu = nil; composing = true })
+                    .nwTransition(.overlay, anchor: .topLeading)
             case nil:
                 EmptyView()
             }

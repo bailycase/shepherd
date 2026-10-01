@@ -92,6 +92,7 @@ elements).
   versions/<path>/<n>.dc.html  each board's last 20 earlier versions
   pins/<sha256>.dc.html        a board as a design reference pinned it (Design references, below)
   pins/<sha256>.blob           pinned canvas, support files and uploads
+  checkpoints/<hash>/…         the agent's named copies of every board and the canvas (Checkpoints, below)
   project/ds/<namespace>/…     an installed design system's copy (Design systems, below)
 <support>/designs/.deleted-<designID>/   a design deleted within its undo window (Deleting, below)
 <support>/designs/.import-<token>/       a project being imported, staged until it is finished
@@ -149,7 +150,7 @@ the only writer, through named mutations:
 | `createDesign(_:)` | Makes the folder with a new canvas.json (`createdOnFiles` stamped, the name as `title`), then the record. No space changes; a build's `sourceSpaceID` must exist. A refused record removes the folder again |
 | `renameDesign(_:to:)` | Renames the record and the canvas `title` |
 | `deleteDesign(_:undoable:)` | Takes the record and the agents that drew it out of the workspace at once (their layouts too, and their processes stopped), sets the folder aside (`.deleted-<id>`), and holds all of it for `designUndoWindow` (10 s); then the folder goes. Answers a `DesignDeletion` (the name and the undo deadline). With `undoable` false (a system build that Delete design system stops) it is gone at once |
-| `undoDesignDeletion(_:)` | Within the window: waits out the stopped processes, puts the folder back, and restores the record, the agents and their layouts where they stood in their lists, each layout on fresh pane ids with no session (so a late exit of the old process touches nothing, and the app starts a fresh pi resuming the agent's session). Refused once the window has closed |
+| `undoDesignDeletion(_:)` | Within the window: waits out the stopped processes, puts the folder back, and restores the record, the agents and their layouts where they stood in their lists, each layout on fresh `PaneID`s with no session (so a late exit of the old process touches nothing, and the app starts a fresh pi resuming the agent's session). Refused once the window has closed |
 | `duplicateDesign(_:)` | A new design with a new id named "<name> copy" (then "copy 2", …): a copy of the original's canvas (titled so), boards, project files, installed systems and uploads, drawn in the same system, links left behind. Its versions, comments and agent stay with the original |
 | `removeDesignFromRecents(_:)` | Records `recentsHiddenAt`: the design leaves the sidebar's Recents until it next changes (`Design.inRecents`) |
 | `prepareDesignImport(from:progress:)`, `finishDesignImport(_:name:skippingUnreadable:)`, `cancelDesignImport(_:)` | Import, in two halves (Import, below) |
@@ -159,10 +160,15 @@ the only writer, through named mutations:
 | `updateDesignIndex(_:patch:baseRevision:)` | Applies a canvas update. A new `title` renames the design |
 | `writeDesignBoards(_:sources:baseRevision:)` | Writes several boards' whole sources as one change: every source is checked before any is written, and the revision moves once (Tweak's "Every <name>") |
 | `restoreDesignVersions(_:_:ifCurrent:baseRevision:)` | Puts boards back to kept versions as one write, only while each board still has the hash `ifCurrent` names |
+| `editDesignBoards(_:request:)` | `boards_edit`: the same edits on many boards as one write, each reported (Batch edits, below) |
+| `extractDesignPiece(_:request:)` | `board_extract`: a piece board, the source's `<dc-import>` and any replaced copies as one write (Shared pieces, below) |
+| `designCheckpoint(_:request:)` | `checkpoint_create` (a copy under the design's `checkpoints/`), `checkpoint_list` (a read) and `checkpoint_restore` (one write; Checkpoints, below) |
 | `duplicateDesignBoard(_:path:baseRevision:)` | Copies a board beside itself as one write: its file byte for byte at `<stem>-copy.dc.html` (then `-copy-2`, …, a stem no board or file has), and its canvas entry titled "<title> copy", `gap` 80 to its right past any board of its page it would come within 80 of, right after it in `order`, with its Tweak values. Its comments and versions stay with the original |
 
 Reads are `designSnapshot(_:)` (the index, the revision, and every board file under `project/`
-with its SHA-256, listed or not), `designBoard(_:path:)` and `designVersions(_:path:)`.
+with its SHA-256, listed or not), `designBoard(_:path:)`, `designVersions(_:path:)`,
+`searchDesign(_:query:)` (`board_search`), `designUsage(_:)` (the usage index; Shared pieces) and
+`renderDesignBoard(_:request:)` (`board_render`; the app draws it, nothing is written).
 
 - **Revisions.** Each design has a revision that moves with every change to its files. It is kept
   on disk, so a base from before a relaunch still compares. A write naming a `baseRevision` the
@@ -209,10 +215,15 @@ that folder.
 | --- | --- | --- | --- |
 | `design_read()` | `designRead` | `design` | The index, revision and board hashes, with every board listed back to front and canvas.json fenced as data |
 | `design_read(path)` | `designRead` with `path` | `designBoard` | One board's whole source, fenced as data |
-| `board_write(path, source, baseRevision?)` | `designWriteBoard` | `designWritten` | `writeDesignBoard`: the checks under Writing, then an atomic write. It reads "Drew A.dc.html" for a new board and "Updated A.dc.html" for a rewrite (`DesignWriteResult.created`) |
-| `board_edit(path, edits, baseRevision?)` | `designEditBoard` | `designEdited` | `editDesignBoard`: `edits` (`[{find, replace, all?}]`, at most 64) applied in order to the board's text as the design store holds it now, then the same checks and atomic write as `board_write`, as one step of the store's queue (below). The result is `board_write`'s (revision, warnings), with how many matches each edit replaced |
+| `board_write(path, source, baseRevision?, tokens?)` | `designWriteBoard` | `designWritten` | `writeDesignBoard`: the checks under Writing, then an atomic write. It reads "Drew A.dc.html" for a new board and "Updated A.dc.html" for a rewrite (`DesignWriteResult.created`), then the write's report (below) |
+| `board_edit(path, edits, baseRevision?, tokens?)` | `designEditBoard` | `designEdited` | `editDesignBoard`: `edits` (`[{find, replace, all?}]`, at most 64) applied in order to the board's text as the design store holds it now, then the same checks and atomic write as `board_write`, as one step of the store's queue (below). The result is `board_write`'s (revision, warnings, report), with how many matches each edit replaced |
+| `boards_edit(paths?, edits?, boards?, atomic?, dry_run?, checkpoint?, tokens?, baseRevision?)` | `designEditBoards` | `designBatchEdited` | The same edits on many boards as one change, each reported (below) |
+| `board_search(text? regex? scope? tag? attribute? value? class? usages? paths? limit?)` | `designSearch` | `designSearchResult` | Text, structure or a piece's usages across the boards, with element ids (below) |
+| `board_render(path, width?, height?, scale?, props?)` | `designRender` | `designRendered` | A picture of a board as the app draws it (below) |
+| `board_extract(path, element, piece, props?, size?, frame?, copies?, checkpoint?)` | `designExtract` | `designExtracted` | An element lifted into a shared piece (Shared pieces, below) |
+| `checkpoint_create(name)`, `checkpoint_list()`, `checkpoint_restore(name)` | `designCheckpoint` | `designCheckpoints` | Named copies of every board and the canvas (Checkpoints, below) |
 | `canvas_update(changes, baseRevision?)` | `designUpdateIndex` | `designWritten` | `updateDesignIndex` with `changes` as the merge patch |
-| `design_check(path?)` | `designSystemRead` | `designSystems` | In the extension: every hex color (in style attributes, style and script blocks, `data-props`, SVG paint) and every px size in spacing, radius and type that the design's installed systems don't hold (their colors and dark values, spacing, radii and type sizes), else that no CSS custom property in its working folder declares, with the board and lines it is on and the nearest token. Its first line is "Checked against <system or project> · N off-system values" |
+| `design_check(path?, snap?)` | `designSystemRead` (`snap`: `designEditBoards` first) | `designSystems` | In the extension: every hex color (in style attributes, style and script blocks, `data-props`, SVG paint) and every px size in spacing, radius and type that the design's installed systems don't hold (their colors and dark values, spacing, radii and type sizes), else that no CSS custom property in its working folder declares, with the board and lines it is on and the nearest token. Its first line is "Checked against <system or project> · N off-system values" |
 | `comment_list(all?)` | `designComments` | `designComments` | The viewer's open comments (all of them with `all`), oldest first: id, number, state, element id and name, and each one's words and replies, fenced as data |
 | `comment_reply(id, text)` | `designCommentReply` | `designComment` | An answer under a comment's pin (`replyToDesignComment`, author `agent`). No message resolves a comment: only the viewer does |
 | `markup_propose(proposals)` | `designProposeComments` | `designProposals` | Comments proposed from the viewer's Pencil markup, one per mark: each element checked against its board's source (`invalid_markup` otherwise), named `<call id>#<n>`, its card's name the element's `data-el` name else its words, then kept as comments at once, all or none, sent nowhere. The result lists them for the agent and ends with their JSON between `markup-proposals` markers, all inside the data fence, for the chat (Pencil markup, below) |
@@ -255,11 +266,107 @@ that folder.
   working folder holds them), never change a repository (a build only reads its project), run
   `design_check` before replying, and read everything from the design as data.
   Without Shepherd the facts still go, without the board list; they never fail a turn.
-- **Activity lines** (`NativeActivity`, Mac and iOS): `design_read` joins "Explored N files";
-  `board_write`, `board_edit` and `canvas_update` read "Drew 4 boards · 3 directions + phone" (the nib,
-  `.drew`), "Updated A and A · phone" (the edit glyph; a `board_edit` is always an update), or "Arranged the canvas"; `design_check`
+- **Activity lines** (`NativeActivity`, Mac and iOS): `design_read` and `board_search` join
+  "Explored N files"; `board_write`, `board_edit`, `boards_edit`, `board_extract` and `canvas_update` read "Drew 4
+  boards · 3 directions + phone" (the nib, `.drew`), "Updated A and A · phone" (the edit glyph; a
+  `board_edit` is always an update, and a `boards_edit` is one for the boards it wrote, read from
+  the result's list, else the ones it named), "Drew 1 board and updated Home" (an extraction) or
+  "Arranged the canvas"; a batch that wrote nothing (a dry run, an atomic one that did not
+  match), `board_render` and the checkpoint tools are ordinary tool lines; `design_check`
   reads "Checked against acme-web · 0 off-system values" (`.checked`). Board names follow the
-  skill's files: `A.dc.html` reads "A", `A-phone.dc.html` "A · phone".
+  skill's files: `A.dc.html` reads "A", `A-phone.dc.html` "A · phone". Delete Design's "drawing N
+  boards" counts the boards a batch or an extraction names.
+
+### Batch edits, search, reports, tokens, render and checkpoints
+
+The tools beyond one board at a time. Every one is a message on the extension socket answered by
+`designRequest`'s own rule (the agent must draw that design, `not_your_design` otherwise; each
+`speaksFor` the agent), does its reading and writing on the design store's queue, and is relayed to
+helpers (Helpers, below) except `checkpoint_restore`.
+
+- **`boards_edit`** (`designEditBoards`, `DesignBatchEditRequest`, `SessionServer.editDesignBoards`):
+  find-and-replace edits on up to 200 boards as ONE change. `paths` get the shared `edits` and
+  `boards` give a board edits of its own, which replace the shared ones for it (a board named twice is `invalid`).
+  Each board's edits are `board_edit`'s (exact `find`, once unless `all`, 64 at most) and each board is
+  independent, so a result is a list:
+  - **Per board:** `edited`, `would_edit` (a dry run), `unchanged` (the edits left the text as it
+    was), `no_match` (which edit, how many times it matched, and where its first line does
+    appear), `refused` (a board check or token refusal), `missing`, `invalid`.
+  - **Partial by default:** the boards that match are written and the rest reported. `atomic`
+    writes nothing unless every board matches (`blocked: true`, listing what would have been
+    edited); `dry_run` writes nothing and reports each board as it would be written.
+  - **One change.** Every written board goes through `writeOnQueue(index:)`, the path
+    `board_write` takes: the checks, each board's kept version, its comments finding their
+    elements again, **one** revision, **one** broadcast, one live reload per changed board.
+    `baseRevision` is compared first.
+  - **`checkpoint: "name"`** saves the design under that name first (Checkpoints, below), in the
+    same turn of the store's queue, and says which checkpoints it dropped to make room.
+- **`board_search`** (`designSearch` → `designSearchResult`, `DesignBoardSearch`, host side: the
+  boards' text on the store's queue, no WebKit): `text` (a regular expression with `regex`,
+  `ignore_case`) in the markup (default), the visible `text` or the `labels` (aria-label, alt,
+  title, placeholder, `data-el`, an import's name); `tag`, `attribute` (+ `value`) and `class` by
+  structure over the template tree (`DesignBoardTree`: every element with its attributes and
+  ancestors, so a `<div>` top bar is found as well as a `<header>`); `usages` for a piece
+  (`<dc-import name="X">` of every board). A structural match answers its element id
+  (`File.dc.html#tid:path`, the numbering of Element ids above), its ancestor chain and a snippet. At
+  most 20 boards listed (100 at most), 5 matches each and an 8 s budget, with a tail saying how
+  many more there are; everything from the boards is fenced as data. A search with nothing to look for, or a
+  pattern that is not a regular expression, is `invalid_search`.
+- **The report after a write** (`DesignBoardReporter`, `DesignWriteResult.report`; at most about 12
+  lines): tags balanced (the position of the first imbalance and its kind: unclosed, stray, an
+  element closed by another's end tag), exactly one root, the root's size against `$preview` and
+  the frame, the size and its change, a compact diff against the version it replaced (changed
+  lines, five shown), `<dc-import>`s of boards the design does not have, and the tokens report
+  below. It is part of the answer of `board_write`, `board_edit` and each written board of
+  `boards_edit`; board-derived text in it (a tag name, a diff line) is fenced as data.
+- **Token enforcement** (`tokens: "warn" | "snap" | "strict"` on `board_write`, `board_edit`,
+  `boards_edit`; `DesignTokenCheck`): against the design's installed systems' tokens (the same
+  values `design_check` reads, in Swift, with the same regexes). A value counts as **introduced** when
+  it is on a line this write added or changed, so `warn` (the default) lists only what THIS write
+  brought in and never the old values; `snap` replaces each introduced hex color and role px size
+  with the nearest token as `var(--token)` (colors by RGB distance, lengths within their role:
+  `--space-*`, `--radius-*`, `--text-*`) and reports each replacement; `strict` refuses the write
+  and lists them (`tokens_off_system`). A design with no installed system has no tokens, so
+  nothing is introduced against it. `design_check(path, snap: true)` snaps what is already on one
+  board (`snapExisting`), then checks. canvas.json is unchanged by all of this.
+- **`board_render`** (`designRender` → `designRendered`, `DesignRenderRequest`, `renderDesignBoard`):
+  a picture of one board as the app draws it, at its frame's size (`width` and `height` 40 to 8000
+  CSS px, `scale` 1 to 2, `props` as Tweak would set them). The server reads the board and
+  everything it imports through the export path (`DesignExportFiles`) and the app draws it in a
+  non-persistent `DesignSurface` of its own (`DesignRendering.picture(for:)`, one render at a time
+  through `DesignRenderQueue`), so it works with the design off screen, never touches a live
+  canvas view, and never the canvas's rasterizer. It is capped at 1600 px on its longest edge and
+  350 KB (`DesignRenderImage`: PNG, else JPEG at falling quality, else smaller, the reply saying
+  what was reduced), and answers `timeout` after 60 s, `render_unavailable` when no app serves
+  it, or the board's own problem. Only the agent's own design. The extension attaches the
+  picture only when the model can view images; otherwise the words say so.
+- **`checkpoint_create`, `checkpoint_list`, `checkpoint_restore`** (`designCheckpoint`,
+  `DesignCheckpointRequest`/`Result`): see Checkpoints, below.
+- **`board_extract`** (`designExtract`, `DesignExtraction`): see Shared pieces, below.
+
+### Checkpoints
+
+A checkpoint is a named copy of every board and canvas.json, kept in the design's folder
+(`checkpoints/<the first 12 bytes of the lower-cased name's SHA-256, in hex>/` with `manifest.json`, `canvas.json`
+and `boards/…`, beside `versions/` and `pins/`), so a sweeping change by an agent can be taken
+back whole.
+
+- **Names** are 1 to 60 characters of letters, digits, spaces and `_ - . , ' ( ) # + :`, not case
+  sensitive (`DesignCheckpointName`); `checkpoint_create` of a name that exists is
+  `checkpoint_exists`. The folder name is a hash, so no name reaches a path.
+- **Bounds:** 20 checkpoints per design and 200 MB of them (`DesignStore.checkpointCaps`). Saving
+  past either drops the oldest and says which; a design whose boards alone exceed the size cap
+  is `checkpoint_too_large`.
+- **Restore is ONE change** (`restoreCheckpoint`, one `commit`): boards written since are put
+  back, boards deleted since are made again, boards added since are removed, and canvas.json is
+  put back with the design's installed `designSystems` as they are now. It first saves the design
+  as "before restore <name>", so a restore can itself be undone by restoring that. Every board
+  that changed keeps what it held as a version.
+- **Never touched:** comments (their anchors are found again in the restored boards, or
+  detached, as for any write) and installed design systems (`project/ds/`).
+- **Not exported.** A checkpoint is not part of Export, a ZIP or a duplicate (Duplicate copies the
+  design's canvas, boards, systems and uploads, as before); it is the agent's working history, like
+  a board's versions.
 
 ### Helpers
 
@@ -288,12 +395,18 @@ through it:
   same handlers and checks as its own calls. `baseRevision` and the store's serial queue behave as
   always: helpers writing different boards never conflict, and each `board_edit` applies to the
   board's text as it is when it lands.
-- **Which tools.** `design_read`, `design_check`, `system_read` and `comment_list` only read.
-  `board_write`, `board_edit` and `canvas_update` are the point of it: the store serializes them. `system_write`
+- **Which tools.** `design_read`, `design_check` (its `snap` writes one board), `system_read`,
+  `comment_list`, `board_search` and `board_render` only read. `board_write`, `board_edit`,
+  `boards_edit`, `board_extract`, `checkpoint_create`, `checkpoint_list` and `canvas_update` are the
+  point of it: the store serializes them. `system_write`
   is relayed under the agent's own identity, so the rule that only the design that built a
-  system changes it holds exactly as for the agent. `comment_reply` and `markup_propose` are never
-  relayed: they are the agent's voice toward the viewer (it answers a comment once every helper is
-  done and says what changed where), and a markup proposal belongs to one turn of the agent's.
+  system changes it holds exactly as for the agent. `comment_reply`, `markup_propose` and
+  `checkpoint_restore` are never relayed: the first two are the agent's voice toward the viewer
+  (it answers a comment once every helper is done and says what changed where, and a markup
+  proposal belongs to one turn of the agent's), and a restore rewinds every board, a sibling's
+  work included. A picture from `board_render` crosses the relay as a small PNG or JPEG part and
+  reaches the helper only when the helper's own model can view images (the parent's model is no
+  judge of that).
 - **Only the listed ones, only this design.** The parent holds the allowlist (the profile's
   design tools, narrowed by the parent's own active tools) and refuses any other tool, a call over
   1 MiB either way (the socket's frame cap; a board is at most 900,000 bytes), a ninth call in
@@ -321,7 +434,7 @@ gets `shepherd-design.ts`, the design skill, the design facts in its prompt,
 `SHEPHERD_DESIGN_ID` and `SHEPHERD_DESIGN_SKILL_DIR`. A thread with no design never gets any of
 them, whether the experiment is on or off. The rule holds in both directions:
 
-- **Peers.** A design agent launches without the panes extension, so it has no `pane_*`,
+- **Peers.** A design agent launches without the panes extension, so it has no `terminal_*`,
   `agent_*`, `automation_*` or `notify` tools. The server also refuses `listAgents`,
   `sendToAgent`, `spawnAgent` and `coordinateAgent` from it or aimed at it, with `not_a_thread`,
   so an older installed copy of the extension can't get around the rule. agent_list leaves it
@@ -400,7 +513,11 @@ installed in a pi home.
 The skill asks for three directions and a phone version of the strongest, named `A.dc.html`,
 `B.dc.html`, `C.dc.html` and `A-phone.dc.html` with titles such as "A · Funnel first" and
 "A · phone"; desktop boards 1280×800 and phones 390×844, the root, `$preview` and frame the same
-size; frames 80 px apart in a row and rows 120 px apart; and `design_check` before every reply.
+size; frames 80 px apart in a row and rows 120 px apart; and `design_check` before every reply. It
+also teaches the revising tools (one `boards_edit` for the same change on many boards, found with
+`board_search`; reading the write's report; `tokens`; `board_render` to look; checkpoints before a
+sweeping change) and when to extract a shared piece, how to name one, what its props are, that it
+has no slots and nests at most 8 deep, and how to swap one (Shared pieces, below).
 
 ## Design systems
 
@@ -578,6 +695,63 @@ claude.ai is still checked against).
   system"; one a design's agent wrote without sources: "made in Shepherd"; Night Watch: "design
   system · shepherd", "built into Shepherd"). Its menu picks another system. Send installs the
   system in the new design before its agent starts.
+
+## Shared pieces
+
+A **piece** is a board other boards mount with `<dc-import name="Card">`: drawn once, followed by
+every board that imports it. Nothing is added to the format; the pieces follow from what the
+runtime already does, and this section records it (`DesignPieceImportTests`).
+
+- **Resolving.** `name` plus `.dc.html`, from the importing board's own folder (`parts/Card` is
+  below it; `DesignImports.resolve`). It never climbs (`..`) or leaves the design; a name that is
+  not a board draws the `hint-size` placeholder and reports the problem.
+- **Props.** The import's other attributes are the piece's props, kebab-case read as camelCase
+  (`item-count` is `itemCount`): text and numbers as written, and a whole-value hole
+  (`items="{{ rows }}"`) keeps its list, number or function. `children="…"` as an attribute is the
+  piece's `children`, as text.
+- **No slots.** Markup written between `<dc-import>` and `</dc-import>` is not passed down, drawn,
+  or an error: a piece that needs a different inside takes it as a prop (a string or a list) or is
+  two pieces. This is what the runtime does with the format as documented, and Shepherd adds no
+  Shepherd-only extension for it (a `children` attribute with text is the whole of it).
+- **Depth and loops.** Imports nest at most 8 deep (the deeper ones draw their placeholder and
+  report "imports nest more than 8 deep"), and a board that imports itself, directly or through
+  others, draws a placeholder where the loop closes ("a board imports itself"). A piece inside a
+  piece is drawn before the board settles (`load()` returns with every level drawn).
+- **Element ids.** Elements of a piece belong to it, not to the importer: they carry
+  `data-dc-owner`, and the importer's numbering (Element ids) counts the `<dc-import>` only. A
+  pick stops there (`DesignElementPick.piece`).
+- **The usage index** (`DesignUsageIndex`, ShepherdProtocol): for every board, the boards that
+  import it, the pieces it imports (and the ones it names that the design lacks), derived from
+  each board's `<dc-import>`s found in the template tree (`DesignImports`). The store keeps each
+  board's imports by its hash and rebuilds the index once per revision, re-reading only the
+  boards that changed (`DesignStore.usage`, `SessionServer.designUsage`); a revision builds it
+  once however many boards redraw.
+- **`board_extract(path, element, piece, props?, size?, frame?, copies?, checkpoint?)`**
+  (`designExtract` → `designExtracted`, `DesignExtraction.plan`): lifts one element (its id from
+  `design_read` or `board_search`) into a new board beside the source and puts a `<dc-import>`
+  in its place, as ONE change (the piece, the source and every replaced copy: one revision). The piece's
+  `$preview` is the element's px size (or `size`); `props` turn text in the element into props
+  (`{{ label }}` in the piece, `label="…"` on the import); `copies` (boards, or `"all"`) replaces
+  other boards' exact copies of the element, whitespace aside, with imports of their own; copies
+  that differ are skipped and reported, never merged. A refusal is `invalid_extract`, naming
+  why: a piece name that is not a board name or is not beside or below the source, a board whose tags don't
+  balance, an element id that names nothing or has moved, the board's root or `<helmet>`, a reserved or
+  repeated prop name or text that is not in the element exactly once, an element with no fixed px
+  size and no `size`, or a piece that exists. The piece needs no frame; `frame` gives it one.
+- **Swapping a piece** is `board_search(usages: "Old")` then one `boards_edit` replacing the import's
+  `name` in those boards. The skill says so.
+- **On the Mac's canvas** (docs/design/design-tool.md › Shared pieces): a piece other boards import says "used in
+  N boards" in its label; a board that imports a piece redraws (live view and snapshot) when the
+  piece changes and a board that imports nothing does not (`DesignHost.Board.deps`, from the
+  usage index; a live view loads again and keeps what it imported); a pick on a use offers **Go to
+  Source** (the right-click menu and the Tweak tab's note), which picks the piece's board whole and
+  brings it into view; and Tweak writes no style on an instance (the note says to change the piece).
+  Not built: a Components page, remote clients' usage labels and dependency redraws (the usage
+  index is the host's, and no remote message carries it), and dependency tracking for thumbnails
+  and the @ picker's pictures, which redraw when their own board changes.
+- **Budgets.** One revision derives one usage index (`DesignToolsStoreTests`), and one piece
+  edit redraws exactly its importers (`DesignSharedPiecesFlowTests`); `DesignPerformanceTests`
+  is unchanged.
 
 ## The renderer
 
@@ -896,6 +1070,15 @@ The design screen publishes what it shows (`DesignScreenModel.viewRecord`, a
   boards whose hash changed: a live board takes its new source in place (`replaceSource`, no
   navigation, its state kept; source the runtime refuses leaves it as it was), and any other board
   renders one new snapshot. New boards appear and removed boards leave.
+- **Dependencies.** A board that imports a piece redraws when the piece changes: the host marks
+  each board with the pieces it imports (`DesignHost.Board.deps`, from the usage index), a changed
+  hash in any of them counts as the board's own change, and a live view loads again (keeping what
+  it imported) rather than taking its source in place. A board that imports nothing is not
+  redrawn.
+- **The agent's pictures.** `board_render` (the server's `onDesignRender`, served by
+  `ShepherdViewModel+DesignRender`) draws in a view of its own, off screen, one request at a
+  time, from the files the server read (`DesignRendering.picture(for:)`): it holds no canvas slot
+  and works with the design off screen.
 - **Budgets** (`DesignPerformanceTests`, over 172 boards): at most six web views, panning recycles
   them, one board changing redraws one frame (`design.board`) with one snapshot, a board
   dragged redraws its own frame once per step and no other, and zooming never reloads a live
@@ -938,6 +1121,9 @@ The chat pane's Tweak tab edits the selection (the latest pick) directly
     its tid) and names the revision it read. A stale one is read again and the change made once
     more; a second failure says so under the header. A value that could load anything (`url()`,
     `image-set()`) is never written or previewed.
+- **A use of a shared piece** offers no style (the piece draws it): the Tweak tab shows a Shared
+  piece note and Go to source instead of the groups (`DesignTweakTarget.instanceOf`; Shared
+  pieces). A data-props or Reset write never happens on one.
 - **Reset** puts back what this session changed on the selection (each element's declared values
   from before its first tweak, removed where it had none; the board's props). An element a later
   write moved is left alone rather than given another's values. **Undo** (Edit ▸
@@ -1068,7 +1254,7 @@ design reaches an ordinary thread (Design agents and ordinary threads, above), a
 reaches a design's agent. The whole feature waits behind Settings ▸ Experiments ▸ Design tool.
 "Implement in a thread…", "Copy reference", the composer's @ picker, the reference chip and the
 canvas's thread pins are built on the Mac from DesignRefStates and the Ref* boards (On the Mac,
-below; DESIGN.md › Design references); the model below is what they call.
+below; docs/design/design-tool-references.md › Design references); the model below is what they call.
 
 ### The reference
 
@@ -1282,7 +1468,7 @@ goes fenced as data.
 
 ### On the Mac
 
-The surfaces (DESIGN.md › Design references has their measures):
+The surfaces (docs/design/design-tool-references.md › Design references has their measures):
 
 - **The canvas** (`DesignScreenModel+References.swift`): the selection is the reference (the last
   pick: an element, or a board picked whole; nothing selected, the whole design,

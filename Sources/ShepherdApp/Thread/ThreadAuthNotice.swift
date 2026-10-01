@@ -3,7 +3,7 @@ import ShepherdUI
 import ShepherdSessions
 
 /// What the end of a local agent's thread says about signing in (PiAuthStates, PiImportProgress,
-/// AgentNotSignedIn; DESIGN.md › Thread): waiting for the first launch's copy, or not signed in.
+/// AgentNotSignedIn; docs/design/thread.md › Thread): waiting for the first launch's copy, or not signed in.
 enum ThreadAuthNotice: Equatable {
     /// Held while the first launch's copy runs (or its sheet asks for a sign-in).
     case waiting(restoredAt: Date)
