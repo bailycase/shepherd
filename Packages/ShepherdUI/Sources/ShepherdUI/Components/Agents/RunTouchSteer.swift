@@ -66,17 +66,22 @@ public struct NWSteerField: View {
     let isEnabled: Bool
     let focus: FocusState<Bool>.Binding?
     let accessibilityText: String
+    let sendLabel: String
     let send: () -> Void
     @FocusState private var ownFocus: Bool
 
+    /// `sendLabel` is what VoiceOver calls the field's button: "Send", or "Reply" for a run
+    /// that was waiting on its parent.
     public init(text: Binding<String>, prompt: String, caption: String? = nil, isEnabled: Bool = true,
-                focus: FocusState<Bool>.Binding? = nil, accessibilityLabel: String? = nil, send: @escaping () -> Void) {
+                focus: FocusState<Bool>.Binding? = nil, accessibilityLabel: String? = nil, sendLabel: String = "Send",
+                send: @escaping () -> Void) {
         _text = text
         self.prompt = prompt
         self.caption = caption
         self.isEnabled = isEnabled
         self.focus = focus
         accessibilityText = accessibilityLabel ?? prompt
+        self.sendLabel = sendLabel
         self.send = send
     }
 
@@ -97,7 +102,7 @@ public struct NWSteerField: View {
                     .accessibilityLabel(accessibilityText)
                 NWComposerActionButton(.send, enabled: sendable, action: send)
                     .padding(.bottom, NW.Space.s + NW.Space.xxs)
-                    .accessibilityLabel("Send")
+                    .accessibilityLabel(sendLabel)
             }
             .padding(.leading, NW.Space.xl)
             .padding(.trailing, NW.Space.s + NW.Space.xxs)

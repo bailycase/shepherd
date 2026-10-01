@@ -170,6 +170,7 @@ struct SettingsView: View {
         case .pi: PiSettings(pi: vm.server.pi, settings: vm.settings)
         case .piSignIn: PiSignInSettings(yourPi: vm.yourPi, auth: vm.piAuth)
         case .piFromYourPi: FromYourPiSettings(model: vm.yourPi, openSkills: { vm.settingsSection = .skills })
+        case .piSlashCommands: SlashCommandsSettings(model: vm.slashCommands, settings: vm.settings)
         case .worktrees: WorktreeSettings()
         case .instructions: InstructionsSettings(model: vm.instructions)
         case .skills: SkillsSettings(vm: vm, model: vm.skills)
@@ -239,10 +240,10 @@ private struct SettingsSearchHit: View {
 }
 
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case appearance, terminal, agents, worktrees, pi, piSignIn, piFromYourPi, instructions, skills, mcp, remote, keyboard, advanced, experiments
+    case appearance, terminal, agents, worktrees, pi, piSignIn, piFromYourPi, piSlashCommands, instructions, skills, mcp, remote, keyboard, advanced, experiments
 
-    /// A page listed under another in the nav: Pi's Sign-in and From your pi.
-    var isSubpage: Bool { self == .piSignIn || self == .piFromYourPi }
+    /// A page listed under another in the nav: Pi's Sign-in, From your pi and Slash commands.
+    var isSubpage: Bool { self == .piSignIn || self == .piFromYourPi || self == .piSlashCommands }
 
     /// One of the Pi pages, whose footer names the program.
     var isPi: Bool { self == .pi || isSubpage }
@@ -258,6 +259,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .pi: return "Pi"
         case .piSignIn: return "Sign-in"
         case .piFromYourPi: return "From your pi"
+        case .piSlashCommands: return "Slash commands"
         case .instructions: return "Instructions"
         case .skills: return "Skills"
         case .mcp: return "MCP servers"
@@ -283,6 +285,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                          "API keys", "Add an API key", "CLIProxyAPI", "Custom providers"]
         case .piFromYourPi: ["Source", "Last brought over", "Re-import all", "Logins", "Custom providers", "Default model", "Trusted folders",
                              "Instructions", "Skills", "Prompts", "Themes", "Extensions"]
+        case .piSlashCommands: ["Search commands", "Extensions", "Prompt templates", "Skills", "Hidden commands"]
         case .instructions: ["Same on every host", "AGENTS.md", "APPEND_SYSTEM.md", "History"]
         case .skills: ["Installed skills", "Browse skills.sh", "Add from repo",
                        "Skills in the / menu", "Same skills on every host", "Update automatically"]
@@ -322,6 +325,11 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                              "Instructions": ["AGENTS.md", "CLAUDE.md", "SYSTEM.md", "APPEND_SYSTEM.md", "context", "re-import"],
                              "Skills": ["SKILL.md", "re-import"], "Prompts": ["prompt templates", "re-import"], "Themes": ["re-import"],
                              "Extensions": ["packages", "npm", "full access", "switch on", "didn't load"]]
+        case .piSlashCommands: ["Search commands": ["slash", "/ menu", "command", "composer", "hide", "turn off", "switch"],
+                                "Extensions": ["registerCommand", "pi extensions"],
+                                "Prompt templates": ["prompts", "templates", "argument-hint"],
+                                "Skills": ["skill:", "SKILL.md"],
+                                "Hidden commands": ["off", "hidden", "turned off", "switched off"]]
         case .instructions: ["Same on every host": ["sync", "hosts"], "AGENTS.md": ["system prompt", "how you work", "context"],
                              "APPEND_SYSTEM.md": ["system prompt", "override"], "History": ["restore", "undo"]]
         case .skills: ["Installed skills": ["SKILL.md", ".agents", "agent skills", "from your pi", "copied", ".pi"],
@@ -363,6 +371,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .pi: return "pi"
         case .piSignIn: return "key"
         case .piFromYourPi: return "square.and.arrow.down"
+        case .piSlashCommands: return "slash.circle"
         case .instructions: return "doc.text"
         case .skills: return "graduationcap"
         case .mcp: return "server.rack"

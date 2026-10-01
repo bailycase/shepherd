@@ -208,8 +208,8 @@ public struct NWCodeBlock: View {
             .padding(.trailing, NW.Space.s)
             .frame(height: NWThreadMetrics.codeHeaderHeight)
             .overlay(alignment: .bottom) { NWHairline() }
-            // The code draws directly when its longest line fits the column, and scrolls
-            // sideways only when it does not: the scroll view was a fifth of the block's cost.
+            // The code draws directly when its longest line fits the column, so the thread's
+            // wheel never meets a nested scroll view there, and scrolls sideways only when it does not.
             ViewThatFits(in: .horizontal) {
                 codeText
                 ScrollView(.horizontal) { codeText }
@@ -228,7 +228,12 @@ public struct NWCodeBlock: View {
     /// The code at its natural width, unwrapped.
     private var codeText: some View {
         Group {
+            #if os(macOS)
+            NWNativeCodeText(code: code, highlighted: highlighted, scale: ThemeStore.shared.textScale,
+                             lineSpacing: NWTextStyle.code.lineSpacing + 0.6)
+            #else
             if let highlighted { Text(highlighted) } else { Text(code) }
+            #endif
         }
         .font(.nw(.code))
         .lineSpacing(NWTextStyle.code.lineSpacing + 0.6)

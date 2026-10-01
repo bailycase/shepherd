@@ -26,6 +26,10 @@ public enum NWQueueMetrics {
     /// re-truncates the text.
     public static let actionSize: CGFloat = NWComposerMetrics.chipHeight
     public static let actionsWidth: CGFloat = 3 * actionSize + 2 * NW.Space.xxs
+    /// The first queued row while pi works draws Steer now as a labelled button that is always there,
+    /// so the slot it reserves holds that button (whatever the text size makes it) and, beside it,
+    /// the room Edit and Delete take on hover: never less, so hovering still re-truncates nothing.
+    public static let editDeleteWidth: CGFloat = 2 * actionSize + NW.Space.xxs
     /// A row's attachment chips (`NWAttachmentChip` `.compact`).
     public static let chipHeight: CGFloat = 22
     public static let chipThumbnail: CGFloat = 16
@@ -333,6 +337,9 @@ public struct NWQueueRowActions {
     public var steerShortcut: String?
     /// What the action does, for its tooltip and VoiceOver ("Stop the agent and send this now").
     public var steerHelp: String?
+    /// Steer now is a labelled button (the glyph and its words) that stays at rest, not an icon on
+    /// hover: the first queued row while pi works.
+    public var steerLabelled: Bool
     /// Opens the editor (the pencil, or a click on the text).
     public var edit: (() -> Void)?
     public var delete: (() -> Void)?
@@ -341,11 +348,13 @@ public struct NWQueueRowActions {
     public var back: (() -> Void)?
 
     public init(steer: (() -> Void)? = nil, steerLabel: String = "Steer now", steerShortcut: String? = nil, steerHelp: String? = nil,
-                edit: (() -> Void)? = nil, delete: (() -> Void)? = nil, deleteShortcut: String? = nil, back: (() -> Void)? = nil) {
+                steerLabelled: Bool = false, edit: (() -> Void)? = nil, delete: (() -> Void)? = nil, deleteShortcut: String? = nil,
+                back: (() -> Void)? = nil) {
         self.steer = steer
         self.steerLabel = steerLabel
         self.steerShortcut = steerShortcut
         self.steerHelp = steerHelp
+        self.steerLabelled = steerLabelled
         self.edit = edit
         self.delete = delete
         self.deleteShortcut = deleteShortcut
@@ -368,7 +377,9 @@ public struct NWQueueDrag {
 ///
 /// - **Queued:** the grip (while hovered or focused; the only drag handle), its number, the
 ///   text on one line (a click edits it), its attachments, then a slot that always keeps room
-///   for Steer now, Edit and Delete, built only while the row is hovered or focused.
+///   for Steer now, Edit and Delete, built only while the row is hovered or focused. The first
+///   queued row while pi works is the exception (`steerLabelled`): its Steer now is a labelled
+///   button that is there at rest, with Edit and Delete still on hover in the room beside it.
 /// - **Steering:** on `runningTint`, the still steer glyph in the number's place, the "Steering" pill and
 ///   Back to the queue.
 ///
@@ -446,6 +457,25 @@ public struct NWQueueRow: View {
                             iconButton("arrow.uturn.backward", "Back to the queue", action: back)
                         }
                     }
+                    .nwTransition(.content)
+                } else if actions.steerLabelled, let steer = actions.steer {
+                    // Steer now stays put at the slot's trailing edge and Edit and Delete come in before it, in
+                    // room that is always reserved: the pointer that aimed at the button never finds another
+                    // control under it, and the text never re-truncates.
+                    HStack(spacing: NW.Space.xxs) {
+                        HStack(spacing: NW.Space.xxs) {
+                            if active && !lifted {
+                                if let edit = actions.edit { iconButton("pencil", "Edit", action: edit) }
+                                if let delete = actions.delete { iconButton("trash", "Delete", shortcut: actions.deleteShortcut, action: delete) }
+                            }
+                        }
+                        .frame(width: NWQueueMetrics.editDeleteWidth, alignment: .trailing)
+                        labelledSteer(steer)
+                            .opacity(lifted ? 0 : 1)
+                            .allowsHitTesting(!lifted)
+                            .accessibilityHidden(lifted)
+                    }
+                    .fixedSize(horizontal: true, vertical: false)
                     .nwTransition(.content)
                 } else {
                     HStack(spacing: NW.Space.xxs) {
@@ -526,6 +556,15 @@ public struct NWQueueRow: View {
         } else {
             text
         }
+    }
+
+    /// Steer now with its words (`secondary`, small): the glyph, then "Steer now" ("Send now" while pi is idle),
+    /// its tooltip what it does with its chord.
+    private func labelledSteer(_ action: @escaping () -> Void) -> some View {
+        Button(action: action) { Label(actions.steerLabel, systemImage: "arrow.turn.down.right") }
+            .buttonStyle(.nw(.secondary, size: .s))
+            .nwHelp(actions.steerHelp ?? actions.steerLabel, shortcut: actions.steerShortcut)
+            .accessibilityHint(actions.steerHelp ?? "")
     }
 
     /// `help` is what the tooltip says when the name alone would not tell ("Steer now" stops the agent).

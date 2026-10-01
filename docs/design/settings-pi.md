@@ -1,6 +1,6 @@
 # Settings: Pi
 
-> Read when you change Settings ▸ Pi: Sign-in, the CLIProxyAPI connection, or From your pi.
+> Read when you change Settings ▸ Pi: Slash commands, Sign-in, the CLIProxyAPI connection, or From your pi.
 
 ## Pi (SettingsPi)
 
@@ -54,6 +54,50 @@
   daily and a version row with Check now and Update now): Shepherd runs its own pi, which ships
   inside the app and updates only with it, so nothing on the page runs `pi update` or checks npm
   (the "Bundled pi, isolated home" plan). Remote clients' two update switches are ignored.
+
+## Pi ▸ Slash commands (SettingsPiSlashCommands)
+
+No board draws this page: it is the user's decision, 2026-10-01 (the PR lists it under Departures).
+A page under Pi in the nav, after From your pi: "The commands pi lists in the `/` menu of your
+agents, from its extensions, prompt templates and skills. Turn one off to hide it from the menu."
+(`SettingsSection.piSlashCommands`; a 720pt column; `SlashCommandsSettings`, its groups derived
+once per change by `SlashCommandsModel`).
+
+- **Search commands:** a 280pt `NWSearchField` and, trailing in caption `textTertiary`, the count:
+  "56 commands", "56 commands · 6 hidden", "No commands yet". The search matches a command's name or
+  description ignoring a leading slash, and the count stays the whole list's.
+- **Groups**, each a `SettingsGroup` card, in this order and each by name: **Extensions**,
+  **Prompt templates**, **Skills** (the `skill:` commands), **Other** (a source pi did not say, and
+  hidden names no pi lists now). A group with no row left by the search is not drawn.
+- **A row** (`SlashCommandListRow`, at least 54pt, the Skills list's measures, a hairline above each
+  but the group's first, lazy in a `LazyVStack` so 128 commands build only what is on screen):
+  `/name` in Geist Mono 13 semibold `textPrimary` (`textSecondary` while off), its argument hint after
+  it in mono 11.5 `textTertiary` ("[tag]"), the description under it in Geist 12.5 `textSecondary`
+  on one line, and the lantern switch trailing (`SettingsSwitch`, labelled "/name" for VoiceOver).
+  Off, the description line says "Hidden from the / menu. Typing it still runs it." in `textTertiary`.
+  A name hidden before this launch that no pi lists says "Hidden. No agent's pi lists it right
+  now." and can still be switched on. The row's tooltip: "Listed in the / menu. Turn off to hide
+  /name from it; typing it still works." and, off, "Hidden from the / menu. Typing /name still runs it."
+- **Empty:** with nothing listed, one card: "No commands yet. pi reports its commands when an agent
+  starts, so they list here once one is running."; with a search that leaves none, "No command
+  matches “<query>”."
+- **Footnote** under the last group: "Applies to the agents on this Mac, in every client that views
+  them, the iPhone and iPad included. An off command is only hidden from the menu: typing its name
+  still runs it. A command lists here once an agent's pi has reported it."
+- **What a switch does:** every command is on until it is switched off (`AppSettings.hiddenSlashCommands`,
+  `shepherd.pi.slashCommands.hidden`, a sorted list; Reset settings turns them all on). The server
+  hears each change (`SessionServer.setHiddenSlashCommands`) and the host's projection of pi's
+  `get_commands` leaves the names out of every thread's snapshot at once, so the `/` menu on this
+  Mac, on another Mac viewing it and on the iPhone and iPad all lose it on their next pull. It hides
+  from that menu and from nothing else: typing the name runs it, and the host still lists it for
+  this page (`SessionServer.slashCommandCatalog`: every command a pi here has listed since the
+  app started, so a hidden one can be switched back on).
+- **This Mac's setting.** It is not in `HostSettings`: another client cannot switch a host's
+  commands from its own Settings, because the iPhone and iPad have no page for it. The filter
+  is on the host, so a remote client's menu follows the host's switches; changing them from a client
+  would add a `HostSettingChange` and the page. Not built.
+- **Settings ▸ Skills ▸ Skills in the / menu** is still a client-side filter for skill commands on
+  this Mac's composer; a skill switched off here is gone from every client's menu either way.
 
 ## Pi ▸ Sign-in (SettingsPiSignIn, SettingsPiSignInKeys, PiAuthStates)
 

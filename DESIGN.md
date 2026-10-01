@@ -101,8 +101,9 @@ component before hand-rolling chrome; a reusable part goes in `Packages/Shepherd
 - Views never branch on `colorScheme` for a color. A new color is a role on `ThemeColors`, filled
   in both variants of every theme, with a `NWPalette` property and a contrast rule if it has text.
 - Borders and hovers are theme roles, never ad-hoc alphas. Status colors come from `AgentState`
-  (`running`, `attention`, `done`, `failed`, `stuck`, `queued`, `idle`), never picked per view.
-  Draw state with `NWStatusDot`, `NWStateGlyph` or `NWStatusPill`.
+  (`running`, `attention`, `done`, `failed`, `stuck`, `queued`, `idle`), never picked per view:
+  `textColor` for the word, `color` for dots and glyphs, `tint` for the fill, never a role with
+  `.opacity(…)`. Draw state with `NWStatusDot`, `NWStateGlyph` or `NWStatusPill`.
 
 **Type**: Geist for prose and chrome, Geist Mono for anything the agent touched. `Font.nw(_:)` or
 `.nwText(_:)` only (they follow Settings ▸ Appearance ▸ Text size on the Mac, Dynamic Type on iOS);
@@ -126,8 +127,10 @@ keyboard focus only; every custom control draws it after `.focusEffectDisabled()
 
 **Icons**: SF Symbols only, monochrome, weight `.medium`, 13–16pt (14 in icon buttons), never
 emoji. Use the exact symbol and fill variant the design shows (`bolt` is not `bolt.fill`,
-`xmark` is not `xmark.circle`). The board's symbols are in
-[foundations](docs/design/foundations.md#space-radius-height-elevation).
+`xmark` is not `xmark.circle`). A glyph more than one view draws is an `NWGlyph` case. The board's
+symbols are in [foundations](docs/design/foundations.md#space-radius-height-elevation).
+`DesignRulesTests` fails on a literal font size, a tinted status color, a raw color and a raw glyph
+name.
 
 **Motion** is `NW.Motion` anchors, never a literal duration or curve in a view:
 
@@ -183,13 +186,16 @@ A list is as fast with three hundred rows as with thirty. Count budgets in
 1. Render the surface: `SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter <suite>`
    (`ThreadPreviewTests`, `NavigationPreviewTests`, `AgentsPreviewTests`, `ReviewPreviewTests`,
    `SettingsPreviewTests`, `DesignPreviewTests`, `PreviewTests`). It writes
-   `<surface>-<light|dark>.png`. Add a new surface's render to its domain's suite.
+   `<surface>-<light|dark>.png`. Add a new surface's render to its domain's suite. Drive it from
+   the real producer (store, extension output, formatter), never strings copied from the board,
+   and cover each state, empty, long text and text scale 1.3, the largest Text size (`Preview.renderMatrix`).
 2. Open the PNGs and look: both appearances, element by element against the design. List every
    difference and fix it.
-3. Press each control the design draws, in a test, the way the app triggers it (its action or
-   command), and check the state changes. A control that is not a real `Button` is a bug. Windows
-   stay off-screen; never post mouse or keyboard events. Example: `ComposerMenuTests`, where
-   `ComposerThread` opens each menu as the app does and reads the window's pixels.
+3. Press each control the design draws, in every state it appears in, with `ControlPress`
+   (docs/testing.md › Pressing a control): it finds the control by label and runs its press action
+   as VoiceOver does. Assert the request it sent, the state it left and its hit area. A control that
+   is not a real `Button` (no press action) fails there. Windows stay off-screen; never post mouse
+   or keyboard events. Example: `ModelSettingsPopoverTests`.
 4. Motion: record frames with `MotionProbe` and compare against the start and end states.
 5. Run the `Shepherd (Dev)` scheme and check the change in both appearances.
 

@@ -1,8 +1,7 @@
 import SwiftUI
 
-// The head every Mac question starts with (QuestionAsk, QuestionPick, QuestionStates): who is
-// asking in lantern, then Hide the question. The agent's own question and a subagent's share it;
-// only the glyph and the name differ. Hidden, a question shrinks to one line
+// The head every Mac question starts with (QuestionAsk, QuestionPick, QuestionStates): "Agent is
+// asking" in lantern, then Hide the question. Hidden, a question shrinks to one line
 // (QuestionStates › hidden, in `NWQuestionDockHidden`) that still holds the composer's place.
 
 public enum NWQuestionHeadMetrics {
@@ -15,53 +14,31 @@ public enum NWQuestionHeadMetrics {
     public static let hiddenSpacing: CGFloat = 10
 }
 
-/// Who asks: the agent itself, or one of its subagents by name.
-public enum NWQuestionAsker: Equatable, Sendable {
-    case agent
-    case subagent(String)
-
-    /// "Agent is asking", or "reviewer is asking" for a subagent.
-    public var title: String {
-        switch self {
-        case .agent: return "Agent is asking"
-        case .subagent(let name):
-            let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-            return "\(name.isEmpty ? "Subagent" : name) is asking"
-        }
-    }
-}
-
-/// The asker's glyph in lantern: a question mark for the agent, the branch for a subagent.
+/// The agent's glyph in lantern: a question mark.
 struct NWQuestionAskerGlyph: View {
-    let asker: NWQuestionAsker
     let size: CGFloat
 
     var body: some View {
-        let color = Color.nw.lanternText
-        switch asker {
-        case .agent:
-            Image(systemName: "questionmark.circle")
-                .font(.system(size: size, weight: .medium))
-                .foregroundStyle(color)
-                .frame(width: size, height: size)
-                .accessibilityHidden(true)
-        case .subagent:
-            NWBranchGlyph(.attention, size: size, color: color)
-        }
+        Image(systemName: "questionmark.circle")
+            .font(.system(size: size, weight: .medium))
+            .foregroundStyle(Color.nw.lanternText)
+            .frame(width: size, height: size)
+            .accessibilityHidden(true)
     }
 }
 
-/// The head: the asker's glyph and "Agent is asking" in `lanternText`, then "1 / N" when several
+/// The head: a question mark and "Agent is asking" in `lanternText`, then "1 / N" when several
 /// questions wait, and Hide the question.
 public struct NWQuestionHead: View {
-    let asker: NWQuestionAsker
+    /// What every question says it is: the agent's own, since a subagent asks its parent.
+    public static let title = "Agent is asking"
+
     let count: Int
     let hideHelp: String
     let hide: () -> Void
 
     /// `hideHelp`: Hide the question's tooltip, with its key when it has one.
-    public init(_ asker: NWQuestionAsker, count: Int = 1, hideHelp: String = "Hide the question", hide: @escaping () -> Void) {
-        self.asker = asker
+    public init(count: Int = 1, hideHelp: String = "Hide the question", hide: @escaping () -> Void) {
         self.count = count
         self.hideHelp = hideHelp
         self.hide = hide
@@ -71,11 +48,11 @@ public struct NWQuestionHead: View {
         let nw = Color.nw
         HStack(spacing: NWQuestionHeadMetrics.spacing) {
             HStack(spacing: NWQuestionHeadMetrics.spacing) {
-                NWQuestionAskerGlyph(asker: asker, size: NWQuestionHeadMetrics.glyph)
-                Text(asker.title).font(.nwSans(12, .semibold)).foregroundStyle(nw.lanternText).lineLimit(1)
+                NWQuestionAskerGlyph(size: NWQuestionHeadMetrics.glyph)
+                Text(Self.title).font(.nwSans(12, .semibold)).foregroundStyle(nw.lanternText).lineLimit(1)
             }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(asker.title)
+            .accessibilityLabel(Self.title)
             .accessibilityAddTraits(.isHeader)
             Spacer(minLength: NW.Space.m)
             if count > 1 {
@@ -97,13 +74,11 @@ public struct NWQuestionHead: View {
 /// A hidden question: one line with its glyph, the question (truncating), a small Answer and
 /// Show the question, either of which brings the whole question back.
 public struct NWQuestionHiddenLine: View {
-    let asker: NWQuestionAsker
     let question: String
     let showHelp: String
     let show: () -> Void
 
-    public init(_ asker: NWQuestionAsker, question: String, showHelp: String = "Show the question", show: @escaping () -> Void) {
-        self.asker = asker
+    public init(question: String, showHelp: String = "Show the question", show: @escaping () -> Void) {
         self.question = question
         self.showHelp = showHelp
         self.show = show
@@ -111,11 +86,11 @@ public struct NWQuestionHiddenLine: View {
 
     public var body: some View {
         HStack(spacing: NWQuestionHeadMetrics.hiddenSpacing) {
-            NWQuestionAskerGlyph(asker: asker, size: NWQuestionHeadMetrics.hiddenGlyph)
+            NWQuestionAskerGlyph(size: NWQuestionHeadMetrics.hiddenGlyph)
             Text(NWProseInline.attributed(question)).font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary)
                 .lineLimit(1).truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityLabel("\(asker.title): \(question)")
+                .accessibilityLabel("\(NWQuestionHead.title): \(question)")
             Button("Answer", action: show)
                 .buttonStyle(.nw(.secondary, size: .s))
                 .accessibilityLabel("Answer the question")

@@ -141,7 +141,23 @@ final class RPCThreadState {
     var context: NativeThreadContext?
     // A commit combines hashes taken when each part was assigned (the lists here, each
     // provisional and tool entry), so a streamed delta rehashes only the message it grew.
+    /// What the snapshot lists for the `/` menu: `allCommands` less the names the user turned off in
+    /// Settings ▸ Pi ▸ Slash commands (`hiddenCommands`). Every client reads this one list.
     private(set) var commands: [NativeCommand]? { didSet { commandsHash = commands.hashValue } }
+    /// Everything pi's `get_commands` listed, after the projection (`projectCommands`) and before
+    /// the user's switches. Typing a hidden command still runs it, so what is typed is checked
+    /// against this list, and the Settings page lists from it so a hidden command can come back.
+    private(set) var allCommands: [NativeCommand]? { didSet { rebuildCommands() } }
+    /// Names left out of `commands`: this host's own switches, set by the server and applied live.
+    var hiddenCommands: Set<String> = [] {
+        didSet {
+            guard hiddenCommands != oldValue else { return }
+            rebuildCommands()
+            commit()
+        }
+    }
+    /// Told each time pi lists its commands, so the server can keep the host's catalog.
+    var onCommandsListed: (([NativeCommand]) -> Void)?
     /// Native child runs as last published by the children extension over the socket.
     private(set) var subagents: [NativeSubagent] = [] { didSet { subagentsHash = subagents.hashValue } }
     private var commandsHash = Optional<[NativeCommand]>.none.hashValue
@@ -393,8 +409,9 @@ final class RPCThreadState {
         session.request(.getCommands, timeout: timeout) { [weak self] result in
             guard let self, case .success(let response) = result, response.success else { return }
             let listed = response.data?["commands"]
-            self.commands = Self.projectCommands(listed)
+            self.allCommands = Self.projectCommands(listed)
             self.commit()
+            self.onCommandsListed?(self.allCommands ?? [])
             self.readArgumentHints(Self.promptTemplateFiles(listed))
         }
     }
@@ -1139,6 +1156,12 @@ final class RPCThreadState {
     /// own command of the same name is kept.
     static let terminalOnlyBuiltIns: Set<String> = ["llama"]
 
+    /// `commands` from `allCommands`: nothing hidden lists everything, else the rest in pi's order.
+    private func rebuildCommands() {
+        let visible = hiddenCommands.isEmpty ? allCommands : allCommands?.filter { !hiddenCommands.contains($0.name) }
+        if visible != commands { commands = visible }
+    }
+
     /// get_commands → capped, byte-limited list. Over-long names are dropped, descriptions clipped.
     /// A command no thread can run is left out: the host's own `/shepherd-retry`, and pi's
     /// terminal-only built-ins. An `argumentHint` pi sends is kept (pi 0.87.1 sends none;
@@ -1215,7 +1238,7 @@ final class RPCThreadState {
             }
             guard !hints.isEmpty, let self else { return }
             self.queue.async { [weak self] in
-                guard let self, var commands = self.commands else { return }
+                guard let self, var commands = self.allCommands else { return }
                 var changed = false
                 for index in commands.indices where commands[index].arguments == nil {
                     if let hint = hints[commands[index].name] {
@@ -1224,8 +1247,9 @@ final class RPCThreadState {
                     }
                 }
                 if changed {
-                    self.commands = commands
+                    self.allCommands = commands
                     self.commit()
+                    self.onCommandsListed?(commands)
                 }
             }
         }
@@ -1963,14 +1987,12 @@ final class RPCThreadState {
         guard case .queue(var parts) = origin else { return origin }
         var remaining = textLimit
         for index in parts.indices {
-            let raw = Array(parts[index].text.utf8)
-            if raw.count <= remaining {
-                remaining -= raw.count
+            let bytes = parts[index].text.utf8.count
+            if bytes <= remaining {
+                remaining -= bytes
                 continue
             }
-            var end = remaining
-            while end > 0, raw[end] & 0xC0 == 0x80 { end -= 1 }
-            parts[index].text = String(decoding: raw[0..<end], as: UTF8.self)
+            parts[index].text = clippedText(parts[index].text, limit: remaining)
             remaining = 0
         }
         return .queue(parts: parts)
@@ -1984,16 +2006,15 @@ final class RPCThreadState {
         var remaining = textLimit
         var truncated = false
         func clip(_ value: String) -> String {
-            let raw = Array(value.utf8)
-            if raw.count <= remaining {
-                remaining -= raw.count
+            let bytes = value.utf8.count
+            if bytes <= remaining {
+                remaining -= bytes
                 return value
             }
             truncated = true
-            var end = remaining
-            while end > 0, raw[end] & 0xC0 == 0x80 { end -= 1 }
+            let text = clippedText(value, limit: remaining)
             remaining = 0
-            return String(decoding: raw[0..<end], as: UTF8.self)
+            return text
         }
         var result = NativeThreadMessage(entryID: entryID, role: message.role.isEmpty ? "custom" : message.role, blocks: [], customType: message.customType)
         if let toolName = message.toolName { result.toolName = clip(toolName) }
