@@ -109,13 +109,27 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     case designRead(id: Int, agentID: AgentID, designID: DesignID, path: String?)
     /// `board_write`: one board's whole source, when the design is still at `baseRevision` (nil:
     /// whatever it is at). Answered with `designWritten`.
-    case designWriteBoard(id: Int, agentID: AgentID, designID: DesignID, path: String, source: String, baseRevision: UInt64?)
+    /// `tokens` holds the write to the design's tokens (`DesignTokenMode`; nil: warn).
+    case designWriteBoard(id: Int, agentID: AgentID, designID: DesignID, path: String, source: String, baseRevision: UInt64?,
+                          tokens: DesignTokenMode? = nil)
     /// `board_edit`: find-and-replace edits applied in order to the board's current text on the
     /// host (`DesignBoardEdits`), then written as `designWriteBoard` writes, when the design is
     /// still at `baseRevision` (nil: whatever it is at). An edit that matches nothing, or
     /// several times without `all`, fails the call and changes nothing. Answered with
     /// `designEdited`.
-    case designEditBoard(id: Int, agentID: AgentID, designID: DesignID, path: String, edits: [DesignBoardEdit], baseRevision: UInt64?)
+    case designEditBoard(id: Int, agentID: AgentID, designID: DesignID, path: String, edits: [DesignBoardEdit], baseRevision: UInt64?,
+                         tokens: DesignTokenMode? = nil)
+    /// `boards_edit` (and `design_check`'s snap): edits applied to many boards as one change
+    /// (`DesignBatchEditRequest`), each board's outcome reported. Answered with `designBatchEdited`.
+    case designEditBoards(id: Int, agentID: AgentID, designID: DesignID, request: DesignBatchEditRequest)
+    /// `board_search`: text, structure or usages over the design's boards (`DesignSearchQuery`).
+    /// Answered with `designSearchResult`.
+    case designSearch(id: Int, agentID: AgentID, designID: DesignID, query: DesignSearchQuery)
+    /// `checkpoint_create`, `checkpoint_list` and `checkpoint_restore` (`DesignCheckpointRequest`).
+    /// Answered with `designCheckpoints`.
+    case designCheckpoint(id: Int, agentID: AgentID, designID: DesignID, request: DesignCheckpointRequest)
+    /// `board_render`: the board drawn by the app and answered as an image (`designRendered`).
+    case designRender(id: Int, agentID: AgentID, designID: DesignID, request: DesignRenderRequest)
     /// `canvas_update`: a JSON merge patch for the design's canvas.json (`DesignIndex.merging`).
     /// Answered with `designWritten`.
     case designUpdateIndex(id: Int, agentID: AgentID, designID: DesignID, changes: JSONValue, baseRevision: UInt64?)
@@ -181,7 +195,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case prompt, enabled, start, automationID, targetAgentID, request, requestID, result, delivery
         case error
         case line, reason, file
-        case designID, path, source, baseRevision, changes, commentID, edits
+        case designID, path, source, baseRevision, changes, commentID, edits, tokens, query
         case namespace, system
         case call, proposals
         case what
@@ -197,6 +211,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case listAgents, sendToAgent, spawnAgent, coordinateAgent, agentResponse, cancelAgentRequest
         case suggestInstruction
         case designRead, designWriteBoard, designEditBoard, designUpdateIndex, designComments, designCommentReply
+        case designEditBoards, designSearch, designCheckpoint, designRender
         case designSystemRead, designSystemWrite, designProposeComments
         case designGet, designNote
         case mcpCredentials, mcpReport
@@ -381,7 +396,8 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
                 designID: try c.decode(DesignID.self, forKey: .designID),
                 path: try c.decode(String.self, forKey: .path),
                 source: try c.decode(String.self, forKey: .source),
-                baseRevision: try c.decodeIfPresent(UInt64.self, forKey: .baseRevision)
+                baseRevision: try c.decodeIfPresent(UInt64.self, forKey: .baseRevision),
+                tokens: try c.decodeIfPresent(DesignTokenMode.self, forKey: .tokens)
             )
         case .designEditBoard:
             self = .designEditBoard(
@@ -390,7 +406,36 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
                 designID: try c.decode(DesignID.self, forKey: .designID),
                 path: try c.decode(String.self, forKey: .path),
                 edits: try c.decode([DesignBoardEdit].self, forKey: .edits),
-                baseRevision: try c.decodeIfPresent(UInt64.self, forKey: .baseRevision)
+                baseRevision: try c.decodeIfPresent(UInt64.self, forKey: .baseRevision),
+                tokens: try c.decodeIfPresent(DesignTokenMode.self, forKey: .tokens)
+            )
+        case .designEditBoards:
+            self = .designEditBoards(
+                id: try c.decode(Int.self, forKey: .id),
+                agentID: try c.decode(AgentID.self, forKey: .agentID),
+                designID: try c.decode(DesignID.self, forKey: .designID),
+                request: try c.decode(DesignBatchEditRequest.self, forKey: .request)
+            )
+        case .designSearch:
+            self = .designSearch(
+                id: try c.decode(Int.self, forKey: .id),
+                agentID: try c.decode(AgentID.self, forKey: .agentID),
+                designID: try c.decode(DesignID.self, forKey: .designID),
+                query: try c.decode(DesignSearchQuery.self, forKey: .query)
+            )
+        case .designCheckpoint:
+            self = .designCheckpoint(
+                id: try c.decode(Int.self, forKey: .id),
+                agentID: try c.decode(AgentID.self, forKey: .agentID),
+                designID: try c.decode(DesignID.self, forKey: .designID),
+                request: try c.decode(DesignCheckpointRequest.self, forKey: .request)
+            )
+        case .designRender:
+            self = .designRender(
+                id: try c.decode(Int.self, forKey: .id),
+                agentID: try c.decode(AgentID.self, forKey: .agentID),
+                designID: try c.decode(DesignID.self, forKey: .designID),
+                request: try c.decode(DesignRenderRequest.self, forKey: .request)
             )
         case .designUpdateIndex:
             self = .designUpdateIndex(
@@ -625,7 +670,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(agentID, forKey: .agentID)
             try c.encode(designID, forKey: .designID)
             try c.encodeIfPresent(path, forKey: .path)
-        case .designWriteBoard(let id, let agentID, let designID, let path, let source, let baseRevision):
+        case .designWriteBoard(let id, let agentID, let designID, let path, let source, let baseRevision, let tokens):
             try c.encode(Kind.designWriteBoard, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(agentID, forKey: .agentID)
@@ -633,7 +678,8 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(path, forKey: .path)
             try c.encode(source, forKey: .source)
             try c.encodeIfPresent(baseRevision, forKey: .baseRevision)
-        case .designEditBoard(let id, let agentID, let designID, let path, let edits, let baseRevision):
+            try c.encodeIfPresent(tokens, forKey: .tokens)
+        case .designEditBoard(let id, let agentID, let designID, let path, let edits, let baseRevision, let tokens):
             try c.encode(Kind.designEditBoard, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(agentID, forKey: .agentID)
@@ -641,6 +687,31 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(path, forKey: .path)
             try c.encode(edits, forKey: .edits)
             try c.encodeIfPresent(baseRevision, forKey: .baseRevision)
+            try c.encodeIfPresent(tokens, forKey: .tokens)
+        case .designEditBoards(let id, let agentID, let designID, let request):
+            try c.encode(Kind.designEditBoards, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(designID, forKey: .designID)
+            try c.encode(request, forKey: .request)
+        case .designSearch(let id, let agentID, let designID, let query):
+            try c.encode(Kind.designSearch, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(designID, forKey: .designID)
+            try c.encode(query, forKey: .query)
+        case .designCheckpoint(let id, let agentID, let designID, let request):
+            try c.encode(Kind.designCheckpoint, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(designID, forKey: .designID)
+            try c.encode(request, forKey: .request)
+        case .designRender(let id, let agentID, let designID, let request):
+            try c.encode(Kind.designRender, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(designID, forKey: .designID)
+            try c.encode(request, forKey: .request)
         case .designUpdateIndex(let id, let agentID, let designID, let changes, let baseRevision):
             try c.encode(Kind.designUpdateIndex, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -1056,6 +1127,14 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     /// What a `designEditBoard` left behind: the write as `designWritten` reports it, and how
     /// many matches each edit replaced, in order.
     case designEdited(id: Int, result: DesignWriteResult, replaced: [Int])
+    /// What a `designEditBoards` did to each board, and the one write behind it.
+    case designBatchEdited(id: Int, result: DesignBatchResult)
+    /// A `designSearch`'s matches.
+    case designSearchResult(id: Int, result: DesignSearchResult)
+    /// A `designCheckpoint`'s checkpoints, and what a restore did.
+    case designCheckpoints(id: Int, result: DesignCheckpointResult)
+    /// A `designRender`'s picture of the board, and the words that go with it.
+    case designRendered(id: Int, text: String, image: BrowserImage)
     /// A `designComments`: every comment of the design, open and resolved, with their revision.
     case designComments(id: Int, comments: DesignComments)
     /// A `designCommentReply`: the comment with the reply under it.
@@ -1097,6 +1176,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case ok, error, panes, paneOpened, paneContent, reviewResult, automations, agents, message
         case suggestion
         case design, designBoard, designWritten, designEdited, designComments, designComment
+        case designBatchEdited, designSearchResult, designCheckpoints, designRendered
         case designSystems, designSystem, designSystemWritten, designProposals
         case designReference, designNote
         case mcpCredentials
@@ -1198,6 +1278,27 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
                 id: try c.decode(Int.self, forKey: .id),
                 result: try c.decode(DesignWriteResult.self, forKey: .result),
                 replaced: try c.decode([Int].self, forKey: .replaced)
+            )
+        case .designBatchEdited:
+            self = .designBatchEdited(
+                id: try c.decode(Int.self, forKey: .id),
+                result: try c.decode(DesignBatchResult.self, forKey: .result)
+            )
+        case .designSearchResult:
+            self = .designSearchResult(
+                id: try c.decode(Int.self, forKey: .id),
+                result: try c.decode(DesignSearchResult.self, forKey: .result)
+            )
+        case .designCheckpoints:
+            self = .designCheckpoints(
+                id: try c.decode(Int.self, forKey: .id),
+                result: try c.decode(DesignCheckpointResult.self, forKey: .result)
+            )
+        case .designRendered:
+            self = .designRendered(
+                id: try c.decode(Int.self, forKey: .id),
+                text: try c.decode(String.self, forKey: .text),
+                image: try c.decode(BrowserImage.self, forKey: .image)
             )
         case .designComments:
             self = .designComments(
@@ -1334,6 +1435,23 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
             try c.encode(id, forKey: .id)
             try c.encode(result, forKey: .result)
             try c.encode(replaced, forKey: .replaced)
+        case .designBatchEdited(let id, let result):
+            try c.encode(Kind.designBatchEdited, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(result, forKey: .result)
+        case .designSearchResult(let id, let result):
+            try c.encode(Kind.designSearchResult, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(result, forKey: .result)
+        case .designCheckpoints(let id, let result):
+            try c.encode(Kind.designCheckpoints, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(result, forKey: .result)
+        case .designRendered(let id, let text, let image):
+            try c.encode(Kind.designRendered, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(text, forKey: .text)
+            try c.encode(image, forKey: .image)
         case .designComments(let id, let comments):
             try c.encode(Kind.designComments, forKey: .type)
             try c.encode(id, forKey: .id)
