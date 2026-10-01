@@ -5,7 +5,7 @@ import ShepherdProtocol
 import ShepherdRemote
 
 /// The thread toolbar (`NWThreadToolbar`; Main, Review, QuestionAsk boards) for the agent on
-/// screen: "space / title", the branch chip (where the agent works and the files changed there),
+/// screen: "space / title", the branch chip only while a question replaces the composer,
 /// then the one side-pane button and the options menu (Refresh Thread, Rename…, Pin). Everything comes in as values, compared by
 /// value (closures by presence), so the workspace header rerunning for a status report or a
 /// selection elsewhere leaves it alone (`.equatable()`). The terminal panel has no button here:
@@ -44,8 +44,9 @@ struct ThreadHeader: View, Equatable {
     var body: some View {
         let _ = NWRenderProbe.tick("thread.header")
         NWThreadToolbar(title, project: project, titleHelp: "\(project) / \(title)", leadingInset: leadingInset, sidebar: showSidebar) {
+            // A question takes the composer's place, so its checkout menu moves back here.
             if let branch {
-                BranchChipMenu(branch: branch, directory: directory, showChanges: showChanges)
+                QuestionBranchMenu(store: store, branch: branch, directory: directory, showChanges: showChanges)
             }
         } trailing: {
             if let togglePane {
@@ -65,10 +66,24 @@ struct ThreadHeader: View, Equatable {
     }
 }
 
+/// Observe question changes here, not in the toolbar that hosts the fallback.
+private struct QuestionBranchMenu: View {
+    let store: NativeThreadStore
+    let branch: AgentBranchLabel
+    let directory: String?
+    let showChanges: (() -> Void)?
+
+    var body: some View {
+        if !store.dialogs.isEmpty {
+            BranchChipMenu(branch: branch, directory: directory, showChanges: showChanges)
+        }
+    }
+}
+
 /// The branch chip, and its menu (the chevron): Show Changes, Copy Branch Name, and for a
 /// checkout on this Mac Copy Path and Show in Finder. Its tooltip has the branch, the count, and
 /// the directory in full.
-private struct BranchChipMenu: View {
+struct BranchChipMenu: View {
     let branch: AgentBranchLabel
     let directory: String?
     let showChanges: (() -> Void)?
@@ -87,12 +102,12 @@ private struct BranchChipMenu: View {
                 }
             }
         } label: {
-            NWBranchChip(kind: branch.kind == .worktree ? .worktree : .checkout, branch: branch.branch,
-                         changedFiles: branch.changedFiles, host: branch.host)
+            NWComposerBranchLabel(branch: branch.branch, changes: branch.changedFiles,
+                                  checkout: branch.kind == .checkout, host: branch.host)
         }
         .menuStyle(.button)
         .menuIndicator(.hidden)
-        .buttonStyle(.plain)
+        .buttonStyle(.nwComposerChip())
         .fixedSize(horizontal: false, vertical: true)
         .help(branch.help(directory: directory.map { ($0 as NSString).abbreviatingWithTildeInPath }))
         .accessibilityLabel(NWBranchChip.accessibilityLabel(kind: branch.kind == .worktree ? .worktree : .checkout, branch: branch.branch,

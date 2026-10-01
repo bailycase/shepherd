@@ -138,7 +138,7 @@ And the rules that follow from them:
 | Queue & steer: a row's actions take room only while it is hovered | An 82pt slot is always laid out, empty at rest | Details on hover: hovering never re-truncates the text |
 | Queue & steer: message times at rest | On hover (Details on hover) | The thread's rule |
 | Queue & steer: the queue's keys are "shown in menus and tooltips only" | Also listed under Settings ▸ Keyboard ▸ While the agent is working, in the Keyboard card's order | Settings ▸ Keyboard lists every chord the app answers, and ⌘↩ is rebound there; nothing is written in or under the composer |
-| NWComposer draws no service tier: its row ends at Thinking and its palette lists no speed command | A Speed chip and menu after Thinking, ⌘K's Toggle fast mode, and Settings ▸ Agents ▸ Speed for new threads | Shepherd added service tiers (Fast mode for OpenAI and Codex models) after the boards; the new control is built from the composer's own parts (the thinking chip, the Send menu's two-line rows, the thinking default's settings row) and the ComposerSpeed board records it |
+| Earlier ComposerSpeed and full-window boards show separate Model, Thinking and Speed chips | NWComposer v168 has one model-settings button and popover, with a bolt only for Fast; ⌘K's Toggle fast mode and Settings ▸ Agents ▸ Speed for new threads remain | The attached NWComposer v168 replaces the older separate-chip anatomy on the Mac |
 | Background events as in-app toasts (`.nwToast`) | A system notification when a thread finishes a turn, fails one, or asks a question, or one of its subagents asks, or a connected host goes away, while you aren't watching it (`AgentNotifications`; see Notifications and Live Activities) | Reaches you outside the app |
 | Missions: the Missions page, the mission map, evidence review | Not built; specified in full under Missions, each part marked Not built yet | Out of scope for this pass |
 | Sidebar — Projects (SidebarTree, SidebarProjects, SidebarProjectsHosts): designs ("Settings redesign · 6 boards", "Checkout funnel dashboard · 4 boards") in their project's folder, and "Every kind … all live in the project they work on" | Designs are not in the project tree: they stay under the Designs destination and in ⌘K | The user's decision (2026-09-26): designs stand alone outside spaces since #118, so they have no project to sit in |
@@ -1292,9 +1292,9 @@ one. The New agent sheet (⇧⌘T) stays for its directory and base fields.
   the ramp; set it with `Font.nwSans`.
 - **Composer:** the thread's `NWComposer`, 720pt wide, drawn focused (a `textTertiary` border and a
   3pt `bgSelected` ring). The placeholder is "Describe the task…". Its control row is attach, the
-  workplace chip, then the normal composer's shared Model, Thinking and Speed controls. Thinking
-  appears only while the model takes a level, Speed only while the target supports choosing a tier
-  at creation and the model offers one. The chips use the thread's compact labels when needed to
+  normal composer's shared model-settings button, a spacer, then the workplace chip. Thinking
+  appears only while the model takes a level; the settings popover's Speed row only while the target
+  supports choosing a tier at creation and the model offers one. The button uses compact labels when needed to
   fit, with Send outside the fitting candidates. Send is a 28pt `lantern` circle at 35% until there is a prompt and a project. ↩ sends and ⇧↩ adds a
   line. Why Send cannot go is its tooltip ("Describe the task first.", "Add a project to start a
   thread.", "Loading build-01's defaults…"), and a failure shows under the card in `failed`.
@@ -1325,7 +1325,7 @@ one. The New agent sheet (⇧⌘T) stays for its directory and base fields.
 - The page opens in the project of the thread last on screen (a remote thread's, on its host), else
   the one chosen before, else This Mac's first, else a connected host's first.
 - **Model, Thinking and Speed:** the target's defaults (Settings ▸ Agents on this Mac, the host's
-  `creationOptions` on a host), changed through the same chips and menus as the thread composer,
+  `creationOptions` on a host), changed through the same settings button and popover as the thread composer,
   opening under the card over what is beneath. The model listing comes from pi's composed models
   over RPC, including built-in and provider-extension thinking maps, not a reasoning yes/no guess.
   Send waits for those capabilities to load so an Extra high or Max default is not silently
@@ -2048,8 +2048,8 @@ it (the palette's New agent with options…, New space on <host>…, and "PR #24
   with text".)
 - Top to bottom: attachments (a row 10pt from the top and 12pt from the sides, chips 6pt apart),
   the field, and one row of controls. The field is `body` text in `textPrimary` with a `lantern`
-  caret, its placeholder `textTertiary`, padded 12pt above, 14pt at the sides and 4pt below, at
-  least 40pt tall (`fieldMinHeight`); it grows to 8 lines (`fieldMaxLines`), then scrolls.
+  caret, its placeholder `textTertiary`, padded 12pt above, 14pt at the sides and 4pt below. Its
+  content is at least 40pt tall, or 56pt including padding (`fieldMinHeight`); it grows to 8 lines (`fieldMaxLines`), then scrolls.
   VoiceOver names it "Message the agent". The controls sit under it with 4pt above, 6pt at the
   sides and below, 2pt apart. Nothing else lives under the field: no hints, no status text.
 
@@ -2058,24 +2058,24 @@ it (the palette's New agent with options…, New space on <host>…, and "PR #24
 - attach: a 14pt `paperclip` in `textSecondary`, in a 26pt circular icon button (`.nwIcon`),
   only when the agent accepts images, and disabled at four attachments. Tooltip "Attach images
   (drop or paste also works), up to 4"; VoiceOver "Attach file".
-- "/ commands" (only when pi reports commands): the "/" in mono (`Font.nw(.code)`), then
-  "commands". It puts "/" in the field, which opens the slash menu.
-- the model chip: the model's short name (after "provider/") in mono, truncating in the middle
-  when the row is short of room (the provider prefix and the model's tail both show), with
-  `NWChipChevron` (10pt, `textTertiary`) when it can change; tooltip "Model: <provider/id>", and
-  VoiceOver reads the whole id
-- the thinking chip: a 13pt `lightbulb` in `textSecondary`, "Thinking", then the level
-  ("Medium") in `textPrimary` medium, and the chevron. It is hidden when the model has no
-  reasoning control, as pi's levels for it (only Off), this Mac's catalog, or the host's
-  `listModels` says; an unknown model keeps it.
-- the speed chip (ComposerSpeed; `NWComposerSpeedLabel`): a 13pt bolt, "Speed", the tier ("Standard"
-  or "Fast") in `textPrimary` medium, and the chevron. Standard draws an outline `bolt` in
-  `textSecondary`; Fast fills it (`bolt.fill`) in `lantern`. It shows only while the host
-  offers a service tier for the thread's model (the snapshot's `serviceTiers` lists one besides
-  Standard: OpenAI and Codex models, directly or through CLIProxyAPI; never Anthropic, Gemini or
-  any other provider) and from a host that keeps the tier (`setServiceTier` in
-  `supportedActions`, remotely `native.serviceTier.v1`): otherwise there is no chip, not a
-  disabled one. Tooltip "Speed: <tier>"; VoiceOver "Speed: Fast".
+- One model-settings button (`NWModelSettingsLabel`): the model's short name in mono 12,
+  a tertiary dot separator, the thinking level in sans 12, then the chevron. A Fast tier adds
+  an outline bolt in `lanternText`; Standard draws nothing. Unsupported thinking and speed
+  are absent. The full model id remains in the tooltip and VoiceOver label.
+- Typing `/` opens commands. There is no commands button.
+- After the spacer, the checkout menu sits in the composer instead of the Mac thread header.
+  `NWComposerBranchLabel` is a 26pt ghost chip with a 13pt worktree or house glyph, the branch
+  in mono 11.5, and a nonzero changed-file count in mono 10.5 `lanternText`, then the chevron.
+  Its existing Show Changes, Copy Branch Name, Copy Path and Show in Finder actions remain.
+  While the agent's question replaces the card, the checkout menu remains accessible in the header.
+- `NWModelSettings` floats above the card, leading-aligned, 328pt wide, radius 12, with 6pt
+  padding and 28pt model rows. It shows the current model, one available recent model, and
+  All models… opening the full picker. Thinking and Speed sit below hairline separators.
+  Thinking has one 28pt row per supported level, with its note and a check on the current
+  level, so Off through Max remains readable without wrapping. Speed uses a segmented control
+  with 24pt buttons on `bgSunken`. Only real supported levels and tiers appear. Model selection closes the popover;
+  thinking and speed can change while it stays open. Arrow keys move through its choices,
+  Return chooses and Escape closes. Tall content scrolls inside the room above the composer.
 - a spacer, then "Starting…" only while a slow pi keeps the thread waiting (see States),
   then the context ring (Context meter, below) 6pt before the action, a 28pt circle: **Send** (a
   14pt `arrow.up` in `textOnLantern` on `lantern`, at 35% until there is something to send) or
@@ -2090,16 +2090,14 @@ it (the palette's New agent with options…, New space on <host>…, and "PR #24
 Chips (`.nwComposerChip(active:)`) are 26pt ghost buttons with 8pt side padding and radius 6, in
 Geist 12 `textSecondary`, their parts 6pt apart, filled with `bgHover` on hover, on press, or
 while their menu is open. A new model or level cross-fades in its chip (`content`); typing and
-width changes stay instant. In a narrow thread (a docked side pane) the chips drop their words
-("/" alone, the level without "Thinking") rather than truncate, once "Starting…" has dropped
-its own.
+width changes stay instant. In a narrow thread, Starting… drops its words first, then the
+model-settings button drops the thinking level and shortens dated model ids. The branch name
+truncates in the middle. There is never a second row of controls.
 
 **Sizes** (NWDesignTool › Chat composer): the composer is the same component everywhere, at one
 of two sizes, `.nwComposerSize(_:)` (`NWComposerSize`). `.regular` is the thread's and New
 design's. `.compact` is for a pane under 520pt, a design's 420pt chat (the canvas's, a system
-build's, a remote design's): the chips never show their words, so "/ commands" is "/" and the
-thinking chip is its level alone (`NWComposerCommandsLabel`, `NWComposerThinkingLabel`), and the
-speed chip keeps its bolt and drops "Speed" (`NWComposerSpeedLabel`), so Fast stays readable. Attach,
+build's, a remote design's): the model-settings button drops the thinking level but keeps the Fast bolt. Attach,
 the model, the context ring and Send are the same at both sizes, and so are the chips' 26pt
 metrics (the boards draw the Design tool's composers at their own scale).
 
@@ -8751,7 +8749,7 @@ opens this page in the main column, with the sidebar showing and Designs selecte
     least 72pt tall, `body`), placeholder "A checkout funnel dashboard for the product team…";
     under it the standard composer's row at the regular size (NWDesignTool › Chat composer):
     attach (`paperclip`, "Attach a screenshot or file"), the model chip, the thinking chip
-    ("Thinking Medium") and Send (the composer's 28pt lantern circle, 35% until there is text).
+    in the combined model-settings button, and Send (the composer's 28pt lantern circle, 35% until there is text).
     The model and level are This Mac's defaults (Settings ▸ Agents) until picked; the model
     picker and the thinking menu open under the card, as on New thread, and the design agent
     starts on what they say. After that they stay with the design's pi session. There is no

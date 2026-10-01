@@ -6,7 +6,11 @@ public enum NWComposerMetrics {
     public static let chipHeight: CGFloat = 26
     /// Send and Stop.
     public static let actionSize: CGFloat = 28
-    public static let fieldMinHeight: CGFloat = 40
+    public static let fieldMinHeight: CGFloat = 56
+    public static let modelSettingsWidth: CGFloat = 328
+    public static let branchSymbol: CGFloat = 13
+    public static let branchText: CGFloat = 11.5
+    public static let branchCount: CGFloat = 10.5
     public static let fieldMaxLines = 8
     /// Menus: 28pt rows under a 24pt section header, in a 6pt-padded popover.
     public static let menuRowHeight: CGFloat = 28

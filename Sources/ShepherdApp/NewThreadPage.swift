@@ -21,7 +21,7 @@ struct NewThreadPage: View {
     @State private var picking = false
     @State private var dismissal = ComposerMenuDismissal()
 
-    private enum Menu: Equatable { case place, models, thinking, speed }
+    private enum Menu: Equatable { case place, models, settings }
 
     private var draft: NewThreadState { vm.newThread }
 
@@ -91,6 +91,7 @@ struct NewThreadPage: View {
             .font(Font.nw(.body))
             .foregroundStyle(Color.nw.textPrimary)
             .autocorrectionDisabled()
+            .tint(Color.nw.lantern)
             .focused($composing)
             .onKeyPress(.return, phases: .down) { press in
                 if press.modifiers.contains(.shift) { return .ignored }
@@ -147,18 +148,17 @@ struct NewThreadPage: View {
                 .disabled(draft.attachments.isFull)
                 .help("Attach images (drop or paste also works), up to \(NativeImage.maxPerSend)")
                 .accessibilityLabel("Attach file")
+            Button { toggle(.settings) } label: {
+                NWModelSettingsLabel(model: short ? nativeModelCompactName(draft.model) : nativeModelShortName(draft.model),
+                                     thinking: levels.isEmpty ? nil : NativeThinkingLevel.title(draft.thinkingLevel(vm).rawValue),
+                                     fast: tiers.count > 1 && draft.serviceTier != .standard)
+            }
+            .buttonStyle(.nwComposerChip(active: menu == .settings || menu == .models))
+            .help("Model settings: \(draft.model)")
+            Spacer(minLength: NW.Space.m)
             Button { toggle(.place) } label: { NWPlaceChipLabel(project: chip.project, host: chip.host) }
                 .buttonStyle(.nwComposerChip(active: menu == .place))
                 .help(draft.worktree ? "In a new worktree of \(chip.project) on \(chip.host)" : "\(chip.project) on \(chip.host)")
-            ComposerModelChip(model: draft.model, short: short, active: menu == .models, action: openModels)
-            if !levels.isEmpty {
-                ComposerThinkingChip(level: draft.thinkingLevel(vm).rawValue, short: short,
-                                     active: menu == .thinking) { toggle(.thinking) }
-            }
-            if tiers.count > 1 {
-                ComposerSpeedChip(tier: draft.serviceTier, short: short, active: menu == .speed) { toggle(.speed) }
-            }
-            Spacer(minLength: NW.Space.m)
         }
     }
 
@@ -181,27 +181,27 @@ struct NewThreadPage: View {
                     } close: { menu = nil; composing = true }
                     .nwTransition(.overlay, anchor: .topLeading)
                 }
-            case .thinking:
+            case .settings:
                 let levels = draft.thinkingLevels(vm)
-                ThinkingMenu(options: NativeThinkingLevel.levels(levels.map(\.rawValue)).map {
-                    NWThinkingOption(id: $0.id, title: $0.title, note: $0.note)
-                }, current: draft.thinkingLevel(vm).rawValue) { option in
-                    menu = nil
-                    composing = true
-                    if let level = ThinkingLevel(rawValue: option.id) { draft.setThinking(level) }
-                } close: { menu = nil; composing = true }
-                .equatable()
-                .nwTransition(.overlay, anchor: .topLeading)
-            case .speed:
-                SpeedMenu(options: draft.serviceTiers(vm).map {
-                    NWSpeedOption(id: $0.rawValue, title: $0.title, detail: $0.summary, boosted: $0 != .standard)
-                }, current: draft.serviceTier.rawValue) { option in
-                    menu = nil
-                    composing = true
-                    if let tier = ServiceTier(rawValue: option.id) { draft.setServiceTier(tier) }
-                } close: { menu = nil; composing = true }
-                .equatable()
-                .nwTransition(.overlay, anchor: .topLeading)
+                let tiers = draft.serviceTiers(vm)
+                NWModelSettings(models: ModelCatalog.settingsModels(catalog: draft.catalog, current: draft.model, recent: RecentModels.load().map(\.id)),
+                                thinking: NativeThinkingLevel.levels(levels.map(\.rawValue)).map {
+                                    NWThinkingOption(id: $0.id, title: $0.title, note: $0.note)
+                                }, currentThinking: draft.thinkingLevel(vm).rawValue,
+                                speeds: tiers.count > 1 ? tiers.map {
+                                    NWSpeedOption(id: $0.rawValue, title: $0.title, detail: $0.summary, boosted: $0 != .standard)
+                                } : [], currentSpeed: draft.serviceTier.rawValue,
+                                chooseModel: { model in
+                                    RecentModels.record(model.id, thread: nil)
+                                    draft.setModel(model.id)
+                                    menu = nil
+                                    composing = true
+                                }, chooseThinking: { id in
+                                    if let level = ThinkingLevel(rawValue: id) { draft.setThinking(level) }
+                                }, chooseSpeed: { id in
+                                    if let tier = ServiceTier(rawValue: id) { draft.setServiceTier(tier) }
+                                }, allModels: openModels, close: { menu = nil; composing = true })
+                    .nwTransition(.overlay, anchor: .topLeading)
             case nil:
                 EmptyView()
             }

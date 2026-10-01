@@ -26,9 +26,12 @@ final class ComposerThread {
     /// `speed` puts the thread on a model that offers a service tier, so its Speed chip shows.
     init(messages: Int = 40, size: CGSize = CGSize(width: 900, height: 600), models: [PiModelCatalog.Entry] = ModelCatalogFixture.entries,
          commands: [NativeCommand] = ModelCatalogFixture.commands, dialogs: [NativeThreadDialog] = [], dark: Bool = false,
-         focused: Bool = false, animated: Bool = true, speed: Bool = false, model: String = "anthropic/claude-opus-4-5") {
+         focused: Bool = false, animated: Bool = true, speed: Bool = false, fast: Bool = false, model: String = "anthropic/claude-opus-4-5",
+         thinkingLevels: [String]? = nil) {
         self.size = size
         snapshot = Self.snapshot(messages: messages, commands: commands, dialogs: dialogs, model: speed ? "openai/gpt-6-luna" : model, speed: speed)
+        if fast { snapshot.serviceTier = "fast" }
+        if let thinkingLevels { snapshot.thinkingLevels = thinkingLevels }
         window = OffscreenWindow(size: size, dark: dark)
         let request: NativeThreadStore.Request = { [weak self] value in
             guard let self else { return .failure(code: "gone", message: "harness released") }

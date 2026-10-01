@@ -664,18 +664,11 @@ struct ThreadPreviewTests {
         func controls(stop: Bool = false, enabled: Bool = false) -> some View {
             Group {
                 Button {} label: { Image(systemName: "paperclip") }.buttonStyle(.nwIcon(size: NWComposerMetrics.chipHeight))
-                Button {} label: { HStack(spacing: 6) { Text("/").font(.nwMono(12)); Text("commands") } }.buttonStyle(.nwComposerChip())
-                Button {} label: { HStack(spacing: 6) { Text("claude-opus").font(.nwMono(12)); NWChipChevron() } }.buttonStyle(.nwComposerChip())
-                Button {} label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "lightbulb").font(.system(size: 11, weight: .medium))
-                        Text("Thinking")
-                        Text("Medium").foregroundStyle(Color.nw.textPrimary).fontWeight(.medium)
-                        NWChipChevron()
-                    }
-                }
-                .buttonStyle(.nwComposerChip())
+                Button {} label: { NWModelSettingsLabel(model: "claude-opus", thinking: "Medium") }
+                    .buttonStyle(.nwComposerChip())
                 Spacer(minLength: 8)
+                BranchChipMenu(branch: AgentBranchLabel(kind: .worktree, branch: "agent/swiftui-previews", changedFiles: 3),
+                               directory: nil, showChanges: nil)
                 NWComposerActionButton(stop ? .stop : .send, enabled: stop || enabled) {}
             }
         }
@@ -683,7 +676,7 @@ struct ThreadPreviewTests {
             Text(text).font(.nw(.body)).foregroundStyle(placeholder ? Color.nw.textTertiary : Color.nw.textPrimary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        let size = CGSize(width: 1320, height: 760)
+        let size = CGSize(width: 1450, height: 760)
         try await Preview.render("composer-states", size: size) {
             HStack(alignment: .top, spacing: 32) {
                 VStack(alignment: .leading, spacing: 24) {
@@ -700,11 +693,15 @@ struct ThreadPreviewTests {
                     HStack(alignment: .top, spacing: 24) {
                         NWModelPicker(query: .constant(""), sections: Self.boardModels, selection: .constant(0), shortcut: "⇧⌘M",
                                       onChoose: { _ in }, onClose: {})
-                        NWThinkingMenu(options: Self.thinkingOptions(["off", "low", "medium", "high"]), current: "medium",
-                                       onChoose: { _ in }, onClose: {})
+                        NWModelSettings(models: [NWModelOption(id: "openai/gpt-6.1-sol", title: "gpt-6.1-sol", isCurrent: true),
+                                            NWModelOption(id: "anthropic/claude-opus", title: "claude-opus")],
+                                        thinking: Self.thinkingOptions(["low", "medium", "high", "xhigh"]), currentThinking: "xhigh",
+                                        speeds: [NWSpeedOption(id: "standard", title: "Standard", detail: "", boosted: false),
+                                                 NWSpeedOption(id: "fast", title: "Fast", detail: "", boosted: true)], currentSpeed: "fast",
+                                        chooseModel: { _ in }, chooseThinking: { _ in }, chooseSpeed: { _ in }, allModels: {}, close: {})
                     }
                 }
-                .frame(width: NWComposerMetrics.modelPickerWidth + 24 + NWComposerMetrics.thinkingMenuWidth)
+                .frame(width: NWComposerMetrics.modelPickerWidth + 24 + NWComposerMetrics.modelSettingsWidth)
                 Spacer(minLength: 0)
             }
             .padding(32)
