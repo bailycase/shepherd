@@ -512,7 +512,7 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
     /// pi is retrying a failed request on its own (TurnErrors › While it retries). nil when it
     /// isn't, and from older hosts.
     public var retry: NativeThreadRetry?
-    /// The agent's pi stopped before it served this thread, and why (DESIGN.md › Thread › Can't
+    /// The agent's pi stopped before it served this thread, and why (docs/design/thread.md › Thread › Can't
     /// start). The host keeps the agent and answers with only this until pi starts again: no
     /// history, no actions. nil otherwise, and from older hosts.
     public var startProblem: NativeStartProblem?

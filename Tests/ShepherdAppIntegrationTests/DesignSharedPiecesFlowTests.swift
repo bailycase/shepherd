@@ -9,7 +9,7 @@ import Testing
 @testable import ShepherdApp
 @testable import ShepherdUI
 
-/// Shared pieces on the Mac's canvas (docs/designs.md › Shared pieces; DESIGN.md › Shared pieces),
+/// Shared pieces on the Mac's canvas (docs/designs.md › Shared pieces; docs/design/design-tool.md › Shared pieces),
 /// with a real server, the real renderer and an off-screen window: a piece edited once redraws every
 /// board that imports it (live view and snapshot) and no other, a piece says how many boards use it,
 /// a pick on one of its uses offers Go to source and no Tweak on the instance.

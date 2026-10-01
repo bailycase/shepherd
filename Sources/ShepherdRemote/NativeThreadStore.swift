@@ -87,7 +87,7 @@ public final class NativeThreadStore {
     /// replaces it in place (its entries carry the ids pi's will).
     public private(set) var previewing = false { didSet { bothVersions() } }
     /// The agent's pi stopped before it served (`NativeThreadSnapshot.startProblem`), and why: the
-    /// host keeps the agent, and the composer says so with Retry (DESIGN.md › Thread › Can't
+    /// host keeps the agent, and the composer says so with Retry (docs/design/thread.md › Thread › Can't
     /// start). Not ready, not starting, and not an error; the thread keeps what it drew.
     public private(set) var startProblem: NativeStartProblem? { didSet { bothVersions() } }
     public private(set) var busy = false { didSet { bothVersions() } }
