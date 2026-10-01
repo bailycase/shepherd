@@ -14,9 +14,10 @@ Detail: [docs/overview.md](docs/overview.md).
    design reference, or their words) is the spec. If it disagrees with DESIGN.md or `docs/design/`,
    build the design and update those docs in the same change. In your final message, list every
    place you could not match it and why. A departure from a design is the user's call, never yours.
-2. **Read only your section.** Find the board in [docs/design/README.md](docs/design/README.md), then
-   run `python3 scripts/design_section.py "<board or heading>"`. A new design has no board yet: read
-   the heading of the surface it changes. Never open the whole spec. Read [DESIGN.md](DESIGN.md) once.
+2. **Read only your section.** Find the board with `python3 scripts/design_section.py --boards |
+   grep -i <word>`, then print it: `python3 scripts/design_section.py "<board or heading>"` (index:
+   [docs/design/README.md](docs/design/README.md)). A new design has no board yet: read the heading
+   of the surface it changes. Never open a whole spec file. Read [DESIGN.md](DESIGN.md) once.
 3. **Write the checklist before you code:** every element in order; each glyph by SF Symbol name and
    fill variant (`bolt` is not `bolt.fill`; if the image cannot settle it, say which you chose); each
    size, spacing, radius and color as a token; each state drawn; and what pressing each control does.
@@ -24,10 +25,11 @@ Detail: [docs/overview.md](docs/overview.md).
 5. **Look at it.** Run `SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter <suite>`,
    open the PNGs in both appearances, compare element by element with the design, list every
    difference, fix them, render again.
-6. **Press every control** the design draws: in a test, find it in the real view (by accessibility
-   label, or `hit(_:)` at its drawn point), trigger it the way the app does (its action or command,
-   never posted mouse or key events) and assert the state changes (see `ComposerMenuTests`). A glyph
-   that is not a `Button`, or a button wired to nothing, is a bug.
+6. **Press every control** the design draws. In a test, trigger it the way the app does (its action
+   or command, see `ComposerMenuTests`; never posted mouse or key events) and assert the state
+   changes. No helper presses a button by label, so also read the view: it must be a `Button` (or
+   `Toggle`) whose action calls what you tested, and you say how you checked. A glyph that is not a
+   `Button`, or a button wired to nothing, is a bug.
 7. **You are not done until 5 and 6 pass.** Say what you verified and what you could not.
 
 ## Boundaries

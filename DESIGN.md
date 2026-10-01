@@ -2,8 +2,9 @@
 
 The rules every UI change obeys, on the Mac and in the iPhone and iPad client. The spec of each
 surface (and every board, with how much of it is built) is in [docs/design/](docs/design/README.md):
-read only the part you need with `python3 scripts/design_section.py "<board or heading>"`.
-[AGENTS.md](AGENTS.md) has the step-by-step procedure for implementing a design.
+read only the part you need with `python3 scripts/design_section.py "<board or heading>"` (find a
+board with `--boards | grep -i <word>`). [AGENTS.md](AGENTS.md) has the step-by-step procedure for
+implementing a design.
 
 ## Precedence
 
@@ -109,13 +110,13 @@ component before hand-rolling chrome; a reusable part goes in `Packages/Shepherd
 
 | Style | Mac | Use |
 | --- | --- | --- |
-| `display` · `title` · `headline` | 28/600 · 15/600 · 13.5/600 | empty states · dialog titles · card titles, headings |
+| `display` · `title` · `headline` | 28/600 · 15/600 · 13.5/600 | onboarding (unused on the Mac) · dialog titles · card titles, headings |
 | `body` · `ui` · `caption` | 13.5/400 · 12.5/500 · 11.5/400 | prose, bubbles, composer · rows, buttons · secondary info |
 | `code` · `mono` · `micro` | Mono 12 · 11.5 · 10.5/500 | code, output · paths, commands · section labels, counts |
 
 **Space** (`NW.Space`, 4pt grid): 2, 4, 6, 8, 12, 16, 24, 32; padding and gaps use only these.
-**Radius** (`NW.Radius`): 4 pills, keycaps, chips · 6 buttons, fields, rows · 8 cards, composer,
-code · 12 popovers, palette, drawn sheets. **Height** (`NW.Height`): rows 22 · 28 · 36 (scaled by
+**Radius** (`NW.Radius`): 4 pills, keycaps · 6 buttons, fields, rows, composer chips · 8 cards,
+composer, code · 12 popovers, palette, drawn sheets. **Height** (`NW.Height`): rows 22 · 28 · 36 (scaled by
 Density), controls 24 · 28 · 32 (never scaled), touch 44. Hairlines are 1px (`NWHairline`,
 `.nwBorder`).
 
