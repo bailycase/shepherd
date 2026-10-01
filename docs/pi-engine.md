@@ -14,13 +14,13 @@ bridge (pi's own login, imported from the bundle's `index.js`) run on its node. 
 | `Resources/pi-engine/dist/bundle/` | pi's bundle; `cli.js` is the entry (`node cli.js …`) |
 | `Resources/pi-engine/dist/modes/interactive/{theme,assets}/`, `dist/core/export-html/` | the themes, interactive assets and export templates pi finds beside the bundle |
 | `Resources/pi-engine/README.md`, `docs/`, `examples/`, `CHANGELOG.md` | what pi's system prompt points the model at |
-| `Resources/pi-engine/node_modules/` | only `@earendil-works/chord` (its `context` entry), `jiti` and `@silvia-odwyer/photon-node`: the modules the bundle loads |
+| `Resources/pi-engine/node_modules/` | only `jiti`, `@silvia-odwyer/photon-node` and `quickjs-wasi` (its `package.json` and `quickjs.wasm`): the modules the bundle loads |
 | `Resources/pi-engine/LICENSE`, `NODE-LICENSE`, `THIRD-PARTY-NOTICES` | pi's MIT notice, Node's licence verbatim, and the packages the bundle compiles in |
 
 Nothing lives in `Contents/MacOS` (the release strips everything there), and no path matches pi's
 install-method detection (`/node_modules/`, `/npm/`, …, above the entry), so pi never offers to
-update itself. esbuild and its 26 platform packages never ship: chord declares esbuild, but its
-`context` entry imports nothing.
+update itself. esbuild and its 26 platform packages never ship: chord declares esbuild, but pi 1.0's
+bundle no longer loads chord at all (0.87.1 imported its `context` entry), so it is not a module here.
 
 `BundledPiEngine` (ShepherdSessions) finds this layout in an app and gives the command prefix,
 the package directory and pi's version.
@@ -83,4 +83,5 @@ native or esbuild sits in the engine, and the licences are there.
 
 ## Size
 
-About 116 MB for Node and 18 MB for pi (with docs and examples).
+About 116 MB for Node and 19 MB for pi (with docs and examples): 135 MB staged with pi 1.0.0
+(134 MB with 0.87.1; the growth is the bundle's MCP, codemode and image-model code and their docs).
