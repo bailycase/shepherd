@@ -48,7 +48,7 @@ then everything.
 | Unit | `swift test --filter UnitTests` | Pure logic: no processes, sockets, windows, git, or sleeps. Seconds for the whole tier. |
 | Integration | `swift test --filter IntegrationTests` | A real `SessionServer` (`ScratchServer`), the scripted stub pi (`StubPi.command`), git scratch repos, off-screen windows. Waits are named `eventually(...)` polls, never fixed sleeps. |
 | Previews | `SHEPHERD_PREVIEW_DIR=/tmp/previews swift test --filter PreviewTests` | Offscreen renders of every surface, in light and dark, written as PNGs. Skipped without the variable. |
-| Everything | `swift test` | All of the above, in parallel. CI runs the same tests serially, split across four runners ([docs/testing.md](docs/testing.md)). |
+| Everything | `swift test` | All of the above, in parallel. CI runs them serially, in shards: the suites a change can affect on a pull request into `nightly`, every suite after a merge ([docs/testing.md](docs/testing.md)). |
 | Extensions | `PI_PACKAGE_DIR=<installed pi package> node --test Tests/Extensions/*.test.mjs` | The bundled pi extensions, against a local fake provider. |
 | Release rules | `python3 -m unittest discover -s Tests/Release` | `scripts/release.py`: what each tag or push builds, which feeds each release lands in, and its agreement with the Xcode project and the apps. CI runs it too. |
 
@@ -105,6 +105,11 @@ Fill in the [pull request template](.github/pull_request_template.md). It asks f
   a UI change that leaves those empty
 - for a feature that acts on its own, its bounds, where its data goes, what a restart and Stop do
   to it, and the decisions you made unasked ([docs/rules.md](docs/rules.md))
+
+CI runs a fast lane on a pull request into `nightly`: every unit test, a smoke set, and the
+integration suites your changed paths can affect (the run's summary says which and why). Add the
+`full-ci` label to run everything. A test that fails and then passes on its retry is reported as
+flaky, not hidden: fix it or say why you can't.
 
 Don't claim checks passed unless you ran them and saw the result.
 
