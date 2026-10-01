@@ -26,20 +26,16 @@ public enum NWComposerMetrics {
     public static let modelSectionGap: CGFloat = 4
     public static let modelSearchHeight: CGFloat = 30
     public static let modelPickerMaxHeight: CGFloat = 360
-    public static let thinkingMenuWidth: CGFloat = 220
-    /// The speed menu (ComposerSpeed board): 280pt, a section header and two-line 40pt rows.
-    public static let speedMenuWidth: CGFloat = 280
-    public static let speedMenuRowHeight: CGFloat = 40
     /// The `bgSelected` ring around a focused composer card (the thread's and the Steer card).
     public static let focusRing: CGFloat = 3
-    /// The thinking chip's lightbulb.
+    /// A chip's glyph (the Fast bolt, `NWFastBolt`).
     public static let chipSymbol: CGFloat = 11
 }
 
 /// The composer's size (NWDesignTool › Chat composer). `.regular` is the thread's and New
-/// design's; `.compact` is for a pane under 520pt (a design's 420pt chat), where the chips drop
-/// their words: "/ commands" shows as "/" and the thinking chip shows just its level. The
-/// controls, the ring and Send are the same at both sizes.
+/// design's; `.compact` is for a pane under 520pt (a design's 420pt chat), where the
+/// model-settings button drops the thinking level and keeps the Fast bolt. The controls, the
+/// ring and Send are the same at both sizes.
 public enum NWComposerSize: Sendable, Hashable {
     case regular
     case compact
@@ -74,61 +70,6 @@ public struct NWComposerCommandsLabel: View {
         HStack(spacing: NW.Space.s) {
             Text("/").font(.nw(.code))
             if size.showsChipWords(short: short) { Text("commands") }
-        }
-    }
-}
-
-/// The thinking chip's label: the lightbulb, "Thinking", the level in `textPrimary` medium and
-/// the chevron; the level alone (no "Thinking") at the compact size or when the row is short of
-/// room.
-public struct NWComposerThinkingLabel: View {
-    let level: String
-    let short: Bool
-    @Environment(\.nwComposerSize) private var size
-
-    /// `level` is the level's title ("Medium").
-    public init(level: String, short: Bool = false) {
-        self.level = level
-        self.short = short
-    }
-
-    public var body: some View {
-        HStack(spacing: NW.Space.s) {
-            Image(systemName: "lightbulb").font(.system(size: NWComposerMetrics.chipSymbol, weight: .medium))
-                .foregroundStyle(.nw.textSecondary)
-            if size.showsChipWords(short: short) { Text("Thinking") }
-            Text(level).foregroundStyle(.nw.textPrimary).fontWeight(.medium)
-                .nwContentTransition(.crossFade)
-            NWChipChevron()
-        }
-    }
-}
-
-/// The speed chip's label (ComposerSpeed board): a bolt, "Speed", the value in `textPrimary`
-/// medium and the chevron. Standard draws an outline bolt in `textSecondary`; a raised tier
-/// (`boosted`: Fast) fills it in `lantern`. At the compact size, or when the row is short of
-/// room, the word "Speed" goes and the bolt and the value stay, so Fast stays readable.
-public struct NWComposerSpeedLabel: View {
-    let value: String
-    let boosted: Bool
-    let short: Bool
-    @Environment(\.nwComposerSize) private var size
-
-    /// `value` is the tier's title ("Fast").
-    public init(value: String, boosted: Bool, short: Bool = false) {
-        self.value = value
-        self.boosted = boosted
-        self.short = short
-    }
-
-    public var body: some View {
-        HStack(spacing: NW.Space.s) {
-            Image(systemName: boosted ? "bolt.fill" : "bolt").font(.system(size: NWComposerMetrics.chipSymbol, weight: .medium))
-                .foregroundStyle(boosted ? Color.nw.lantern : Color.nw.textSecondary)
-            if size.showsChipWords(short: short) { Text("Speed") }
-            Text(value).foregroundStyle(.nw.textPrimary).fontWeight(.medium)
-                .nwContentTransition(.crossFade)
-            NWChipChevron()
         }
     }
 }
