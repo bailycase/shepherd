@@ -106,6 +106,14 @@ struct DesignRulesTests {
         #expect(rules.isEmpty || DesignRules.prefilterAccepts(code), "the scan's quick test must let a violating line through: \(code)")
     }
 
+    /// A glyph added to `NWGlyph` is policed at once: the scan's quick test and its rule both know it.
+    @Test(arguments: NWGlyph.allCases)
+    func everyRegisteredGlyphIsPolicedAsARawString(glyph: NWGlyph) {
+        let line = "Image(systemName: \"\(glyph.symbolName)\")"
+        #expect(DesignRules.prefilterAccepts(line), "\(line)")
+        #expect(DesignRules.rules(violatedBy: line) == [.rawGlyphName], "\(line)")
+    }
+
     @Test(arguments: [
         ("let size = 12 // .nwMono(11) in a comment", "let size = 12 "),
         ("Text(\"https://example.com\") // note", "Text(\"https://example.com\") "),

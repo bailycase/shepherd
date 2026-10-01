@@ -100,6 +100,7 @@ enum DesignRules {
 
     /// The symbol names `NWGlyph` registers, as the string literals that must not appear elsewhere.
     private static let registeredSymbols: [String] = NWGlyph.allCases.map { "\"\($0.symbolName)\"" }
+    private static let registeredNeedles: [[UInt8]] = registeredSymbols.map { Array($0.utf8) }
 
     /// The rules a line of code breaks. `code` has its comments removed (`strippingComment`).
     static func rules(violatedBy code: String) -> [DesignRule] {
@@ -152,7 +153,14 @@ enum DesignRules {
             || has("Color(") || has("Color.", notFollowedBy: "nw") || has("#colorLiteral") || has("\"#") || has("NSColor") || has("UIColor")
             || has("foregroundStyle(.", notFollowedBy: "nw") || has("foregroundColor(.", notFollowedBy: "nw")
             || has(".background(.", notFollowedBy: "nw") || has(".fill(.", notFollowedBy: "nw") || has(".stroke(.", notFollowedBy: "nw")
-            || has(".tint(.", notFollowedBy: "nw") || has("\"bolt")
+            || has(".tint(.", notFollowedBy: "nw") || mentionsARegisteredSymbol(line)
+    }
+
+    private static func mentionsARegisteredSymbol(_ line: UnsafeBufferPointer<UInt8>) -> Bool {
+        guard let base = line.baseAddress else { return false }
+        return registeredNeedles.contains { needle in
+            line.count >= needle.count && needle.withUnsafeBufferPointer { memmem(base, line.count, $0.baseAddress, $0.count) != nil }
+        }
     }
 
     /// `mightBreakARule` for a line of text.
