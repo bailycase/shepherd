@@ -3,7 +3,7 @@ import CoreGraphics
 import ShepherdProtocol
 import ShepherdUI
 
-// The Browser tab's rules (DESIGN.md › Side pane › Browser), pure so they are tested without
+// The Browser tab's rules (docs/design/side-pane-changes.md › Side pane › Browser), pure so they are tested without
 // WebKit: what the address field takes and shows, the viewport widths, the dev servers a
 // repository offers, and what the page's scripts report. `BrowserHost.swift` holds the web view.
 

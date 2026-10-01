@@ -3,7 +3,7 @@ import ShepherdUI
 import ShepherdSessions
 import ShepherdRemote
 
-/// Settings ▸ Pi ▸ From your pi (SettingsPiFromPi, SettingsPiExtensions; DESIGN.md › Pi ▸ From
+/// Settings ▸ Pi ▸ From your pi (SettingsPiFromPi, SettingsPiExtensions; docs/design/settings-pi.md › Pi ▸ From
 /// your pi): where Shepherd's copy came from, each item with how it stands and Re-import, the
 /// files copied, and the user's extensions with their switches.
 struct FromYourPiSettings: View {

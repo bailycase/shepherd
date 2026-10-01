@@ -13,8 +13,9 @@ It can also serve its agents to other devices over an authenticated TCP listener
 daemon: quitting Shepherd ends every child process, and relaunching restores the workspace and
 respawns each agent in its pi session.
 
-[DESIGN.md](DESIGN.md) governs visuals and interaction. This document covers module boundaries,
-ownership, and data flow. [AGENTS.md](AGENTS.md) lists the rules that are easy to break.
+[DESIGN.md](DESIGN.md) holds the UI rules, and [docs/design/](docs/design/README.md) each surface's
+spec. This document covers module boundaries, ownership, and data flow. [AGENTS.md](AGENTS.md) is
+the short rule sheet; [docs/rules.md](docs/rules.md) has the rules that are easy to break.
 
 ## Modules
 

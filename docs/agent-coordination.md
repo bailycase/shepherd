@@ -108,7 +108,7 @@ warns that the agent's pi session and every process it started will stop.
 ## Reviews an agent opens
 
 `review_diff` readies the agent's review in the Changes tab of its side pane, docked beside the
-agent's layout ([DESIGN.md](../DESIGN.md), Side pane). The pane never opens by itself: the tab
+agent's layout ([side-pane-changes](design/side-pane-changes.md)). The pane never opens by itself: the tab
 takes a dot, and with the pane closed so does the header's side-pane button; the user opens it
 (⇧⌘B, ⌃1). A request while a subagent is inspected leaves the inspector in front. It returns at
 once; the user's review arrives later as a message.

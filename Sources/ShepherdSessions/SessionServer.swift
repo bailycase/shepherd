@@ -472,7 +472,7 @@ public final class SessionServer: @unchecked Sendable {
     private var retiredRPCSessions: [SessionID: Int32?] = [:]
     /// Each RPC session's start (`PiStartRecord`), from its spawn until it exits.
     private var startRecords: [SessionID: PiStartRecord] = [:]
-    /// RPC sessions whose exit kept their agent (DESIGN.md › Thread › Can't start), until another
+    /// RPC sessions whose exit kept their agent (docs/design/thread.md › Thread › Can't start), until another
     /// session is bound to their pane: their thread answers with why, instead of pi.
     private var keptStarts: [SessionID: KeptStart] = [:]
     private struct KeptStart {

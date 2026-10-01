@@ -8,7 +8,7 @@ import SwiftUI
 import Testing
 @testable import ShepherdApp
 
-/// The Automations page's table is a long list too (DESIGN.md › Performance): it builds the
+/// The Automations page's table is a long list too (docs/design/performance.md › Performance): it builds the
 /// rows on screen, and one automation changing or the selection moving redraws only the rows
 /// they touch. Counted in row bodies (`NWRenderProbe`), like `ListPerformanceTests`.
 @Suite("Automations page performance", .mainActorExclusive)

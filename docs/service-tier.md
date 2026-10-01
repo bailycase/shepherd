@@ -6,7 +6,7 @@ Agents ▸ **Speed for new threads** is what a new thread starts on. New thread 
 model-settings popover (its Speed control, with a bolt on the button while Fast) and can override
 that default before its first prompt, locally and on a host with `agent.create.serviceTier.v1`.
 Older hosts keep their default and show no creation-speed control.
-The UI is in DESIGN.md ›
+The UI is in docs/design/composer.md ›
 Composer (ComposerSpeed); this page is how it works and what was verified.
 
 - **Standard** sends nothing: the provider's default tier.

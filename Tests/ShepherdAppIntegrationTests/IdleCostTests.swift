@@ -11,7 +11,7 @@ import Testing
 @testable import ShepherdApp
 @testable import ShepherdUI
 
-/// What the app costs while nothing changes (DESIGN.md › Performance): motion no one sees costs
+/// What the app costs while nothing changes (docs/design/performance.md › Performance): motion no one sees costs
 /// nothing, and motion on screen costs the app no frames. The spinner and the glow turn on the
 /// render server (a Core Animation animation on their layer); a spinner in a layout the
 /// workspace keeps mounted but hidden, or in a row a lazy stack has let go of, rests. Counted in

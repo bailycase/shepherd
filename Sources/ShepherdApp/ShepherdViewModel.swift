@@ -167,7 +167,7 @@ final class ShepherdViewModel {
     /// Ephemeral, like the status it qualifies.
     var failedTurns: Set<AgentID> = []
     /// Agents whose pi stopped before it served, waiting for Retry: their sidebar row reads "can't
-    /// start" (DESIGN.md › Thread › Can't start). Ephemeral: a relaunch starts every pi again.
+    /// start" (docs/design/thread.md › Thread › Can't start). Ephemeral: a relaunch starts every pi again.
     var cannotStart: Set<AgentID> = []
     /// This Mac's agents whose pi can't start because nothing signs in for their model: the
     /// provider it needs (nil when pi names none), and when it stopped.
@@ -815,7 +815,7 @@ final class ShepherdViewModel {
         }
         // The first launch of a build with Shepherd's own pi: restored agents (and automations)
         // wait until the copy from the user's pi is over, and, when no provider can start them,
-        // until the welcome step closes (DESIGN.md › Welcome).
+        // until the welcome step closes (docs/design/dialogs-and-palette.md › Dialogs and sheets › Bringing over your pi).
         if welcomesYourPi {
             holdsForWelcome = true
             sessions.holdStarts()
