@@ -49,6 +49,7 @@ struct NewThreadAttachTests {
         draft.prompt = "tools:0 Match this layout"
         Self.attach(draft)
         #expect(draft.attachments.items.map(\.name) == ["screen.png", "photo.jpg"])
+        try await eventuallyOnMain("the model capabilities to load") { !draft.loadingDefaults }
         #expect(draft.blocker(vm) == nil && draft.notice(vm) == nil)
         draft.send(vm)
 
@@ -72,6 +73,7 @@ struct NewThreadAttachTests {
         let draft = vm.newThread
         draft.prompt = "tools:0 First task"
         Self.attach(draft)
+        try await eventuallyOnMain("the model capabilities to load") { !draft.loadingDefaults }
         draft.send(vm)
         // send() captured its inputs; mutate the next draft before its Task can complete.
         draft.prompt = "Next task"

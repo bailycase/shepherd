@@ -187,7 +187,7 @@ struct TestIsolationTests {
 
         let catalog = try run(PiLaunch.listModels(home: home), cwd: cwd)
         #expect(catalog.status == 0)
-        #expect(catalog.lines.prefix(4) == [PiHome.canonical(home.directory.path), "-e",
-                                          home.directory.appendingPathComponent("shepherd-cliproxyapi.ts").path, "--list-models"])
+        #expect(catalog.lines.prefix(6) == [PiHome.canonical(home.directory.path), "-e",
+                                          home.directory.appendingPathComponent("shepherd-cliproxyapi.ts").path, "--mode", "rpc", "--no-session"])
     }
 }

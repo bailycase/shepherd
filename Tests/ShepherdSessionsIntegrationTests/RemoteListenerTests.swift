@@ -342,14 +342,15 @@ struct RemoteListenerTests {
     @Test func aModelListingSaysWhichModelsTakeNoThinkingLevel() async throws {
         let r = try RemoteHost(modelCatalog: {
             ModelListing(entries: [PiModelCatalog.Entry(id: "qa/plain", reasoning: false),
-                                   PiModelCatalog.Entry(id: "qa/deep", reasoning: true)],
+                                   PiModelCatalog.Entry(id: "qa/deep", context: "400K", reasoning: true)],
                          defaultModel: "qa/plain")
         })
         defer { r.stop() }
         let client = try await r.typed()
         defer { client.disconnect() }
         let listing = try await client.listModels()
-        #expect(listing == ModelListing(models: ["qa/plain", "qa/deep"], defaultModel: "qa/plain", withoutThinking: ["qa/plain"]))
+        #expect(listing == ModelListing(models: ["qa/plain", "qa/deep"], defaultModel: "qa/plain", withoutThinking: ["qa/plain"],
+                                       contexts: ["qa/deep": "400K"]))
         #expect(!listing.takesThinking(nil) && listing.takesThinking("qa/deep"))
     }
 }

@@ -1206,19 +1206,8 @@ struct ComposerControls: View, Equatable {
 
     @ViewBuilder private func modelChip(compact: Bool) -> some View {
         if let name = model.model {
-            Button(action: actions.models) {
-                HStack(spacing: NW.Space.s) {
-                    // A long id keeps both ends: the provider prefix and the model's tail.
-                    Text(compact ? nativeModelCompactName(name) : nativeModelShortName(name))
-                        .font(Font.nw(.code)).lineLimit(1).truncationMode(.middle)
-                        .nwContentTransition(.crossFade)
-                    if model.modelChangeable { NWChipChevron() }
-                }
-            }
-            .buttonStyle(.nwComposerChip(active: model.modelsOpen))
-            .disabled(!model.modelEnabled)
-            .help("Model: \(name)")
-            .accessibilityLabel("Model \(name)")
+            ComposerModelChip(model: name, short: compact, changeable: model.modelChangeable,
+                              enabled: model.modelEnabled, active: model.modelsOpen, action: actions.models)
         }
     }
 
@@ -1226,10 +1215,8 @@ struct ComposerControls: View, Equatable {
     /// no thinking level.
     @ViewBuilder private func thinkingChip(compact: Bool) -> some View {
         if model.thinkingShown, let thinking = model.thinking {
-            Button(action: actions.thinking) { NWComposerThinkingLabel(level: NativeThinkingLevel.title(thinking), short: compact) }
-            .buttonStyle(.nwComposerChip(active: model.thinkingOpen))
-            .disabled(!model.thinkingEnabled)
-            .accessibilityLabel("Thinking level: \(NativeThinkingLevel.title(thinking))")
+            ComposerThinkingChip(level: thinking, short: compact, enabled: model.thinkingEnabled,
+                                 active: model.thinkingOpen, action: actions.thinking)
         }
     }
 
@@ -1237,13 +1224,8 @@ struct ComposerControls: View, Equatable {
     /// when the model offers none (an Anthropic or Gemini model, an older host).
     @ViewBuilder private func speedChip(compact: Bool) -> some View {
         if model.speedShown {
-            Button(action: actions.speed) {
-                NWComposerSpeedLabel(value: model.speed.title, boosted: model.speed != .standard, short: compact)
-            }
-            .buttonStyle(.nwComposerChip(active: model.speedOpen))
-            .disabled(!model.speedEnabled)
-            .help("Speed: \(model.speed.title)")
-            .accessibilityLabel("Speed: \(model.speed.title)")
+            ComposerSpeedChip(tier: model.speed, short: compact, enabled: model.speedEnabled,
+                              active: model.speedOpen, action: actions.speed)
         }
     }
 
@@ -1387,7 +1369,7 @@ final class SlashMatchCache {
 
 /// The thinking menu over `NWThinkingMenu`, compared on the levels it offers and the current
 /// one, so a composer redraw for something else leaves its rows alone.
-private struct ThinkingMenu: View, Equatable {
+struct ThinkingMenu: View, Equatable {
     let options: [NWThinkingOption]
     let current: String
     let choose: (NWThinkingOption) -> Void
@@ -1402,7 +1384,7 @@ private struct ThinkingMenu: View, Equatable {
 
 /// The speed menu over `NWSpeedMenu`, compared on the tiers it offers and the current one, so a
 /// composer redraw for something else leaves its rows alone.
-private struct SpeedMenu: View, Equatable {
+struct SpeedMenu: View, Equatable {
     let options: [NWSpeedOption]
     let current: String
     let choose: (NWSpeedOption) -> Void
