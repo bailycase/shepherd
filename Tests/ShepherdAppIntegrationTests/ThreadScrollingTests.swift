@@ -540,8 +540,22 @@ struct ThreadScrollingTests {
         try await thread.settle()
         #expect(!thread.showsJumpPill, "the pill showed with pi idle and nothing new")
 
+        let before = thread.distanceFromBottom
+        #expect(before > NativeScrollFollower.threshold, "the second jump stays detached")
         await thread.publish(ThreadHarness.snapshot(count: 32, running: false, revision: 2, paragraphs: 20))
-        try await eventuallyOnMain("the jump pill to show for the new turn", poll: .milliseconds(150)) { thread.showsJumpPill }
+        do {
+            try await eventuallyOnMain("the jump pill to show for the new turn", poll: .milliseconds(150)) { thread.showsJumpPill }
+        } catch {
+            print("Idle jump failure: before=\(before), after=\(thread.distanceFromBottom), pinned=\(thread.isPinned)")
+            let host = thread.window.host
+            if let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+                host.cacheDisplay(in: host.bounds, to: bitmap)
+                if let png = bitmap.representation(using: .png, properties: [:]) {
+                    print("Idle jump PNG: \(png.base64EncodedString())")
+                }
+            }
+            throw error
+        }
     }
 
     @Test func steeringFromEarlierHistoryReturnsToTheTailBeforeDelivery() async throws {
