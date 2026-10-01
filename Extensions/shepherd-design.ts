@@ -624,7 +624,7 @@ export default function shepherdDesign(pi: ExtensionAPI) {
       const frame = extractRequest(params);
       const reply = await request({ type: "designExtract", request: frame }, BATCH_TIMEOUT_MS, signal);
       if (reply.type !== "designExtracted" || !reply.result) throw new Error("Shepherd's reply held no extraction");
-      return text(describeExtract(reply.result), { revision: reply.result.result?.revision, piece: reply.result.piece });
+      return text(describeExtract(reply.result, String(params.path)), { revision: reply.result.result?.revision, piece: reply.result.piece });
     },
   });
 
@@ -1255,7 +1255,7 @@ export function describeCheckpoints(result: any): string {
 }
 
 /** board_extract's answer. */
-export function describeExtract(result: any): string {
+export function describeExtract(result: any, source?: string): string {
   const lines = [`Extracted ${result.piece} · one change · revision ${result.result?.revision}`];
   const data: string[] = [];
   if (result.importTag) data.push(`Imported in place: ${oneLine(String(result.importTag), 300)}`);
@@ -1263,6 +1263,9 @@ export function describeExtract(result: any): string {
   const replaced = result.boards ?? [];
   if (replaced.length > 0) lines.push(`Replaced exact copies: ${replaced.slice(0, BATCH_LIST).map((board: any) => `${board.path} (${board.count})`).join(", ")}${replaced.length > BATCH_LIST ? ", …" : ""}`);
   for (const skipped of (result.skipped ?? []).slice(0, BATCH_LIST)) data.push(`Skipped ${skipped.path}: ${oneLine(String(skipped.why), 200)}`);
+  const written = [{ path: source ?? "the source board", report: result.sourceReport }, ...replaced];
+  const problems = written.flatMap((board: any) => (board.report ? [...problemLines(board.report), ...tokenLines(board.report)].map((line) => `${board.path}: ${line}`) : []));
+  for (const line of problems.slice(0, BATCH_PROBLEMS)) data.push(line);
   if (result.checkpoint?.name) lines.push(`Saved checkpoint "${result.checkpoint.name}" first.`);
   if (data.length > 0) lines.push(fenced(data.join("\n")));
   const piece = reportText(result.pieceReport);

@@ -210,8 +210,9 @@ struct ExtensionIdentityTests {
             .designSearch(id: 28, agentID: victim, designID: design, query: DesignSearchQuery(text: "a")),
             .designCheckpoint(id: 29, agentID: victim, designID: design, request: DesignCheckpointRequest(action: .restore, name: "before")),
             .designRender(id: 30, agentID: victim, designID: design, request: DesignRenderRequest(path: "A.dc.html")),
+            .designExtract(id: 31, agentID: victim, designID: design, request: DesignExtractRequest(path: "A.dc.html", element: "4", piece: "Card")),
         ]
-        // Every kind of message that names an agent as its actor (40 of the protocol's 47; the other
+        // Every kind of message that names an agent as its actor (41 of the protocol's 48; the other
         // seven name none) is in one of the two lists.
         func kind(_ message: ExtensionMessage) throws -> String {
             let object = try JSONSerialization.jsonObject(with: NDJSON.encode(message)) as? [String: Any]
@@ -219,7 +220,7 @@ struct ExtensionIdentityTests {
         }
         #expect((quiet + requests).allSatisfy { $0.speaksFor == victim })
         #expect(requests.allSatisfy { $0.replyID != nil } && quiet.allSatisfy { $0.replyID == nil })
-        #expect(Set(try (quiet + requests).map(kind)).count == 40)
+        #expect(Set(try (quiet + requests).map(kind)).count == 41)
 
         let client = try ExtensionClient(path: h.socketPath)
         for message in quiet + requests { try client.send(message) }

@@ -21,13 +21,13 @@ struct ExtensionMessageTests {
              .coordinateAgent, .agentResponse, .cancelAgentRequest, .createAutomation, .listAutomations,
              .updateAutomation, .deleteAutomation, .startAutomation, .stopAutomation, .suggestInstruction,
              .designRead, .designWriteBoard, .designEditBoard, .designUpdateIndex, .designComments, .designCommentReply,
-             .designEditBoards, .designSearch, .designCheckpoint, .designRender,
+             .designEditBoards, .designSearch, .designCheckpoint, .designRender, .designExtract,
              .designSystemRead, .designSystemWrite, .designProposeComments, .designGet, .designNote, .mcpCredentials, .mcpReport,
              .helloBrowser, .browser:
             return Wire.caseName(message)
         }
     }
-    static let caseCount = 47
+    static let caseCount = 48
     static let design = DesignID(rawValue: "d1")
 
     static let samples: [ExtensionMessage] = [
@@ -85,6 +85,10 @@ struct ExtensionMessageTests {
         .designCheckpoint(id: 47, agentID: agent, designID: design, request: DesignCheckpointRequest(action: .restore, name: "before chip move")),
         .designRender(id: 48, agentID: agent, designID: design, request: DesignRenderRequest(
             path: "A.dc.html", width: 390, height: 844, scale: 2, props: .object(["density": .string("compact")]))),
+        .designExtract(id: 49, agentID: agent, designID: design, request: DesignExtractRequest(
+            path: "A.dc.html", element: "A.dc.html#4:0/1", piece: "Card", props: [.init(name: "label", text: "Pay “now”")],
+            size: DesignBoardCheck.Size(width: 320, height: 120), frame: .init(x: 0, y: 1_000, w: 320, h: 120, title: "Card", page: "p1"),
+            copies: ["B.dc.html"], allCopies: true, checkpoint: "before extract", baseRevision: 7)),
         .designUpdateIndex(id: 23, agentID: agent, designID: design, changes: .object([
             "title": .string("Checkout funnel"),
             "boards": .object(["A.dc.html": .object(["x": .number(0), "y": .number(0), "w": .number(1280), "h": .number(800)]),
@@ -290,6 +294,13 @@ struct ExtensionMessageTests {
          .designCheckpoint(id: 22, agentID: agent, designID: design, request: DesignCheckpointRequest(action: .create, name: "before chip move"))),
         (#"{"type":"designRender","request":{"path":"A.dc.html"},"id":23,"agentID":"a1","designID":"d1"}"#,
          .designRender(id: 23, agentID: agent, designID: design, request: DesignRenderRequest(path: "A.dc.html"))),
+        // board_extract leaves out what it wasn't given.
+        (#"{"type":"designExtract","request":{"path":"A.dc.html","element":"4:0/1","piece":"Card"},"id":24,"agentID":"a1","designID":"d1"}"#,
+         .designExtract(id: 24, agentID: agent, designID: design, request: DesignExtractRequest(path: "A.dc.html", element: "4:0/1", piece: "Card"))),
+        (#"{"type":"designExtract","request":{"path":"A.dc.html","element":"4","piece":"Card","props":[{"name":"label","text":"Pay now"}],"size":{"width":320,"height":120},"frame":{"y":900,"title":"Card"},"allCopies":true,"checkpoint":"x","baseRevision":3},"id":25,"agentID":"a1","designID":"d1"}"#,
+         .designExtract(id: 25, agentID: agent, designID: design, request: DesignExtractRequest(
+            path: "A.dc.html", element: "4", piece: "Card", props: [.init(name: "label", text: "Pay now")],
+            size: DesignBoardCheck.Size(width: 320, height: 120), frame: .init(y: 900, title: "Card"), allCopies: true, checkpoint: "x", baseRevision: 3))),
         (#"{"type":"designUpdateIndex","changes":{"boards":{"C.dc.html":null}},"baseRevision":6,"id":5,"agentID":"a1","designID":"d1"}"#,
          .designUpdateIndex(id: 5, agentID: agent, designID: design, changes: .object(["boards": .object(["C.dc.html": .null])]),
                             baseRevision: 6)),
@@ -390,12 +401,12 @@ struct ExtensionReplyTests {
         case .parentInput, .childCommand, .ok, .error, .panes, .paneOpened, .paneContent, .reviewResult, .automations,
              .agents, .message, .agentRequest, .agentResult, .suggestion, .design, .designBoard, .designWritten, .designEdited,
              .designComments, .designComment, .designSystems, .designSystem, .designSystemWritten, .designProposals,
-             .designBatchEdited, .designSearchResult, .designCheckpoints, .designRendered,
+             .designBatchEdited, .designSearchResult, .designCheckpoints, .designRendered, .designExtracted,
              .designReference, .designNote, .mcpCredentials, .browserResult:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 32
+    static let caseCount = 33
     static let system = DesignSystemSummary(
         info: DesignSystemInfo(namespace: "acme-web", title: "acme-web", revision: 3, createdAt: 1_000, updatedAt: 2_000,
                                syncedAt: 2_000, ownerDesignID: DesignID(rawValue: "d1"), spaceID: SpaceID(rawValue: "s1"),
@@ -488,6 +499,14 @@ struct ExtensionReplyTests {
             pruned: ["oldest"], write: DesignWriteResult(revision: 6, changed: true, title: nil, boardCount: 3),
             restored: ["A.dc.html"], recreated: ["B.dc.html"], removed: ["C.dc.html"])),
         .designRendered(id: 41, text: "A.dc.html at 1280×800, 2x", image: BrowserImage(data: "iVBORw0KGgo=", mimeType: "image/png")),
+        .designExtracted(id: 42, result: DesignExtractResult(
+            result: DesignWriteResult(revision: 10, changed: true, title: "Checkout funnel", boardCount: 5), piece: "Card.dc.html",
+            importTag: #"<dc-import name="Card" hint-size="320px,120px" label="Pay now"></dc-import>"#,
+            boards: [DesignExtractResult.Replaced(path: "B.dc.html", count: 2, report: DesignBoardReport(created: false, bytes: 10))],
+            skipped: [DesignExtractResult.Skipped(path: "flows/C.dc.html", why: "it is in another folder")],
+            warnings: ["the piece still reads {{ step.name }}"], pieceReport: DesignBoardReport(created: true, bytes: 800),
+            sourceReport: DesignBoardReport(created: false, bytes: 900, delta: -100),
+            checkpoint: DesignCheckpointInfo(name: "before extract", createdAt: 1, boards: 4, bytes: 5, revision: 9), pruned: ["old"])),
         .designComments(id: 24, comments: DesignComments(revision: 3, comments: [
             comment, DesignComment(number: 2, board: DesignPath("flows/Cart.dc.html")!, tid: 2, path: [0, 1], text: "Bigger total",
                                    createdAt: 3, resolvedAt: 4, detached: true),

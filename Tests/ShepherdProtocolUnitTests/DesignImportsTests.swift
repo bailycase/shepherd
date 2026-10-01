@@ -58,7 +58,17 @@ struct DesignImportsTests {
         #expect(index.importers[chip] == [a, card])
         #expect(index.usedIn(card) == 2 && index.usedIn(a) == 0)
         #expect(index.missing == [b: ["Gone"]], "a name with a hole can't be said to be missing")
+        #expect(index.imports[a] == [card, chip] && index.imports[card] == [chip] && index.imports[b] == [card])
         #expect(index.label(for: card) == "used in 2 boards" && index.label(for: a) == nil)
         #expect(DesignUsageIndex(importers: [a: [b]]).label(for: a) == "used in 1 board")
+    }
+
+    @Test func aBoardDependsOnEverythingItsImportsDrawFromAndACycleEndsWhereItCloses() {
+        let a = Self.path("A.dc.html"), b = Self.path("B.dc.html"), c = Self.path("C.dc.html"), d = Self.path("D.dc.html")
+        let index = DesignUsageIndex(imports: [a: [b], b: [c, a], c: [d]])
+        #expect(index.dependencies(of: a) == [b, c, d], "through B to C, and C to D; the cycle back to A is not A's own dependency")
+        #expect(index.dependencies(of: b) == [a, c, d])
+        #expect(index.dependencies(of: d).isEmpty)
+        #expect(DesignUsageIndex().dependencies(of: a).isEmpty)
     }
 }
