@@ -91,7 +91,7 @@ struct DesignIsolationTests {
         let host = UUID()
         let lists = SidebarDerivation.lists(SidebarSource(
             local: ShepherdState(spaces: [Self.space]),
-            hosts: [SidebarSource.Host(id: host, name: "horizon", state: hostState, children: [:])],
+            hosts: [SidebarSource.Host(id: host, name: "horizon", state: hostState)],
             designs: designToolOn))
         #expect(lists.all.map(\.id) == [.remote(RemoteAgentRef(hostID: host, agentID: thread.id))])
         #expect(lists.needsYou.isEmpty)

@@ -82,7 +82,7 @@ struct ChildRunsTests {
     }
 
     /// A question waiting on the user is never swept by the terminal TTL.
-    @Test func rowsNeedingAttentionOutliveTheTTLUntilAnswered() {
+    @Test func rowsWaitingOnTheirParentOutliveTheTTLUntilAnswered() {
         var runs = runs(ttl: 60, staleAfter: 1_000)
         let agent = AgentID()
         let question = Fixture.child("question", state: "complete", attention: true)
@@ -90,7 +90,6 @@ struct ChildRunsTests {
 
         _ = runs.sweep(now: at(61))
         #expect(runs.children(of: agent).map(\.runID) == ["question"])
-        #expect(runs.attentionCount == 1)
 
         // Answered: the TTL starts now, not from when it first finished.
         runs.apply(agentID: agent, children: [Fixture.child("question", state: "complete")], now: at(100))
@@ -110,7 +109,6 @@ struct ChildRunsTests {
 
         #expect(changed)
         #expect(runs.children(of: agent).isEmpty)
-        #expect(runs.attentionCount == 0)
     }
 
     /// Finished native runs keep an inspectable transcript until the publisher removes them or
@@ -162,13 +160,6 @@ struct ChildRunsTests {
 
         #expect(runs.children(of: quiet).isEmpty)
         #expect(runs.children(of: active).map(\.runID) == ["b"])
-    }
-
-    @Test func attentionRollsUpAcrossTheFleet() {
-        var runs = runs()
-        runs.apply(agentID: AgentID(), children: [Fixture.child("a", attention: true), Fixture.child("b")], now: t0)
-        runs.apply(agentID: AgentID(), children: [Fixture.child("c", attention: true)], now: t0)
-        #expect(runs.attentionCount == 2)
     }
 
     /// A pi-subagents vocabulary addition must never let a possibly-running row be swept.
