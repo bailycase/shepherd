@@ -405,7 +405,8 @@ one prompt at a time.
   and the message lands where pi read it. Identical texts are matched one item at a time, so
   restoring two steers keeps each one's images rather than resending the first item's twice.
 - **Stop** (`abort`): the host pauses its queue immediately, before any asynchronous reply can
-  let a settling turn drain it. Then `clear_queue`, followed by `abort` (pi's recipe; `abort` alone delivers a
+  let a settling turn drain it. An active goal is paused first, cancelling its separate check
+  before pi is interrupted. Then `clear_queue`, followed by `abort` (pi's recipe; `abort` alone delivers a
   queued steer into the aborted turn and keeps follow-ups for a later run). Steering items pi
   still held return to the head, anything else pi had queued joins the queue, and the queue
   pauses. A turn that ends in a provider error pauses it too, and says so (`notice`); a
@@ -418,7 +419,8 @@ one prompt at a time.
   stops what it is doing, as Stop does, and the message goes at once as the next turn in the same
   session; the rest of the queue follows that turn. While pi is idle it is a plain send. While it
   works:
-  1. The message moves to the head of the queue (`interrupting` remembers it) and the answer to the
+  1. An active goal receives its controller `interrupt` first, which pauses continuation and
+     cancels Checking. The replacement ordinary turn does not resume it. The message moves to the head of the queue (`interrupting` remembers it) and the answer to the
      client is `accepted` at once, so a fresh message shows first in Up next. Questions pi waits on
      are refused, as Stop does, and `stopRequested` makes the run's ending read as stopped (the
      call it killed, the error reply pi ends a killed run with) and never as a failure that
@@ -524,7 +526,12 @@ is the client's rule for drawing the control: the action and more than one tier.
 
 The snapshot's optional `goal` is the live projection of a session-persisted conversation goal.
 The `goal` action changes it during work or checking, fenced by the session and displayed goal
-revision. Remotely it requires `native.goal.v1`. It is absent on older hosts. The dedicated
+revision and state. Pause/Resume/Confirm require the displayed ID/revision/state; controller
+transitions increment revision but accounting snapshots do not. Edit's absent limits preserve
+them; typed clear flags become explicit null in controller JSON to lift them. Optional model/confirmation/check-count/interval fields decode
+on older sessions. Full redacted checker feedback stays in display-only custom-message details;
+`RPCMessage` decodes those for goal checks only and projection adds the transcript disclosure.
+Remotely it requires `native.goal.v1`. It is absent on older hosts. The dedicated
 machine widget never renders as ordinary widget text. See [Conversation goals](goals.md) for
 completion checking, limits, controls, restore behavior, and the queue's yield boundary.
 

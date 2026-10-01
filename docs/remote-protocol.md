@@ -21,6 +21,16 @@
     agent's service tier (`setServiceTier`, the snapshot's
     `serviceTier` and `serviceTiers`; no Speed control from a host without it) behind
     `native.serviceTier.v1`
+  - conversation goals behind `native.goal.v1`: optional snapshot `goal`, live-only fleet
+    `goalState`, and `NativeThreadRequest.goal` for set, edit, pause, resume, clear and confirm.
+    Pause/Resume/Confirm require the displayed goal ID, revision and state in addition to the
+    session generation. Controller transitions increment that revision; accounting updates do
+    not. Optional `checkedBy`, `confirmationRequired`, `confirmedByUser`, `checkCount` and
+    `runningSince` decode absent on older hosts. The interval start is epoch milliseconds;
+    clients update only the pill clock locally. Typed Edit omits preserved limits and uses
+    `clearTimeLimit`/`clearTokenLimit` to lift them; the host emits explicit null in controller JSON. Confirm is user attestation, not independent verification. A host without
+    the capability hides these controls but keeps ordinary chat. Stop and Steer now pause the
+    goal and cancel Checking before aborting pi, never resuming the goal for the replacement turn
   - attach, detach, input, resize, and acknowledged paste
   - terminal open and close (`openPane`, `closePane`)
   - `listDir`, `listModels`, `addSpace`, and `createAgent` with `creationOptions` (and the
@@ -61,7 +71,9 @@
     experiment's settings and its lines
   - `hostSettings` (`hostSettings.v1`): what the host's Settings ▸ Agents, Worktrees and Pi set,
     the pi packages its pi loads, and its Shepherd and pi versions; one change per request
-    (`HostSettingChange`), applied as the Mac's own Settings would
+    (`HostSettingChange`), applied as the Mac's own Settings would. The additive
+    `goalCrossProviderEvaluation` consent is false when missing/null; its change applies to
+    newly started or restarted agents, not a live process. Both clients disclose that scope
   - `skills` (`skills.v1`): Settings ▸ Skills on the host (fetch, look up a repository, install
     from one or from files, on or off, how it's used, remove and restore, check for updates,
     Update automatically), answered with the host's skills or the repository's, and beside them

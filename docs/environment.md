@@ -31,7 +31,14 @@
   - With the matching extension on: `SHEPHERD_EXT_PANES`, `SHEPHERD_EXT_BROWSER` (the installed
     `shepherd-browser.ts`, for Settings ▸ Pi ▸ Browser tools; never in a design's agent),
     `SHEPHERD_NATIVE_CHILDREN`,
-    `SHEPHERD_EXT_CHILDREN`, and `SHEPHERD_CHILD_*`; for Settings ▸ Pi ▸ MCP servers,
+    `SHEPHERD_EXT_CHILDREN`, and `SHEPHERD_CHILD_*`; `SHEPHERD_EXT_GOAL=1` enables the
+    conversation-goal controller, installed as `shepherd-goal.ts` after the child controller.
+    `SHEPHERD_GOAL_MODELS` is explicitly empty by default, so checks use the thread's exact
+    provider/model. Settings > Agents > Allow cross-provider goal checks supplies the
+    Haiku/Codex Mini/Gemini Flash preference list only after opt-in. Shepherd overrides an
+    inherited value even when consent is off. Policy is captured when an agent starts or
+    restarts; changing Settings does not revoke a running process's policy. See [goals](goals.md)
+    for evaluator disclosure and redaction. For Settings ▸ Pi ▸ MCP servers,
     `SHEPHERD_EXT_MCP` (the installed `shepherd-mcp.ts`), `SHEPHERD_EXT_MCP_CLIENT` (the installed
     `shepherd-mcp-client.mjs`), `SHEPHERD_EXT_MCP_CONFIG` (the config path the app resolved),
     `SHEPHERD_EXT_MCP_CACHE` (`<support>/mcp/tools.json`), and `SHEPHERD_EXT_MCP_PROJECT=1` while

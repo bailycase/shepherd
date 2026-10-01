@@ -41,13 +41,19 @@ struct GoalProjectionTests {
         try await t.feed(#"{"type":"agent_start"}"#)
         let s = try await t.snapshot()
         let stale = await t.request(.goal(expectedSessionID: s.piSessionID, generation: s.generation, operationID: UUID(), action: .pause,
-                                          expectedGoalID: Self.id, expectedGoalRevision: 3))
+                                          expectedGoalID: Self.id, expectedGoalRevision: 3, expectedGoalState: .working))
         #expect(stale.failureCode == "stale_goal")
+        let wrongState = await t.request(.goal(expectedSessionID: s.piSessionID, generation: s.generation, operationID: UUID(), action: .pause,
+                                               expectedGoalID: Self.id, expectedGoalRevision: 4, expectedGoalState: .checking))
+        #expect(wrongState.failureCode == "stale_goal")
+        let missingState = await t.request(.goal(expectedSessionID: s.piSessionID, generation: s.generation, operationID: UUID(), action: .pause,
+                                                 expectedGoalID: Self.id, expectedGoalRevision: 4))
+        #expect(missingState.failureCode == "stale_goal")
         let invalid = await t.request(.goal(expectedSessionID: s.piSessionID, generation: s.generation, operationID: UUID(), action: .edit(text: " ")))
         #expect(invalid.failureCode == "invalid")
         let operation = UUID()
         let request = NativeThreadRequest.goal(expectedSessionID: s.piSessionID, generation: s.generation, operationID: operation,
-                                               action: .pause, expectedGoalID: Self.id, expectedGoalRevision: 4)
+                                               action: .pause, expectedGoalID: Self.id, expectedGoalRevision: 4, expectedGoalState: .working)
         let result = await t.request(request)
         #expect(result == .accepted(operationID: operation))
         #expect(await t.request(request) == result, "an operation replay never sends a second command")
@@ -61,7 +67,7 @@ struct GoalProjectionTests {
         let result = await withCheckedContinuation { continuation in
             t.queue.async {
                 t.state.handle(.goal(expectedSessionID: s.piSessionID, generation: s.generation, operationID: UUID(),
-                                     action: .pause, expectedGoalID: Self.id, expectedGoalRevision: 4)) {
+                                     action: .pause, expectedGoalID: Self.id, expectedGoalRevision: 4, expectedGoalState: .working)) {
                     continuation.resume(returning: $0)
                 }
                 t.state.handle(.extensionError(extensionPath: "command:shepherd-goal", event: "command", error: "Goal changed; refresh it."))
@@ -77,7 +83,8 @@ struct GoalProjectionTests {
         let s = try await t.feedThenSnapshot(Self.widget(NativeGoal(id: Self.id, revision: 4, text: "Tests pass", state: .working)))
         let result = await withCheckedContinuation { continuation in
             t.queue.async {
-                t.state.handle(.goal(expectedSessionID: s.piSessionID, generation: s.generation, operationID: UUID(), action: .pause)) { _ in }
+                t.state.handle(.goal(expectedSessionID: s.piSessionID, generation: s.generation, operationID: UUID(), action: .pause,
+                                     expectedGoalID: Self.id, expectedGoalRevision: 4, expectedGoalState: .working)) { _ in }
                 t.state.handle(.goal(expectedSessionID: s.piSessionID, generation: s.generation, operationID: UUID(), action: .clear)) {
                     continuation.resume(returning: $0)
                 }

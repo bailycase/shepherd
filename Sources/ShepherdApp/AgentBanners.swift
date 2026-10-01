@@ -104,8 +104,8 @@ enum AgentBanners {
     static func status(of agent: Agent, from old: AgentStatus, failure: TurnFailure?, result: String? = nil,
                        watching: Bool) -> AgentBanner? {
         guard old == .working, agent.status == .done, !watching else { return nil }
-        // Goals notify at Met or Needs you, not at intermediate settlement/yield boundaries.
-        guard agent.goalState == nil else { return nil }
+        // Only unattended goal work suppresses an ordinary turn's completion.
+        guard agent.goalState != "working", agent.goalState != "checking" else { return nil }
         let target = BannerTarget.agent(agent.id)
         if let failure {
             return AgentBanner(identifier: identifier("status", target), target: target, title: agent.name,

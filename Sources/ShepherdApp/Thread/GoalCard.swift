@@ -10,6 +10,8 @@ struct ThreadGoalCard: View {
     var framed = true
     @State private var editing = false
     @State private var text = ""
+    @State private var limits = NWGoalLimits(seconds: nil, tokens: nil)
+    @State private var editedGoal: NativeGoal?
     @FocusState private var focused: Bool
 
     private var enabled: Bool {
@@ -21,11 +23,17 @@ struct ThreadGoalCard: View {
             VStack(spacing: 0) {
                 NWGoalCard(state: goal.cardState, time: goal.timeLabel, meta: goal.metaLabel, text: goal.text, framed: framed,
                            resumeEnabled: store.dialogs.isEmpty,
-                           pause: { act(.pause) }, resume: { act(.resume) }, edit: {
+                           confirmationRequired: goal.confirmationRequired == true, checkedBy: goal.checkedBy,
+                           confirmedByUser: goal.confirmedByUser == true, clockStart: goal.clockStart,
+                           pause: { act(.pause, goal: goal) }, resume: {
+                               act(goal.state == .needsYou && goal.confirmationRequired == true ? .confirm : .resume, goal: goal)
+                           }, edit: {
                                text = goal.text
+                               limits = NWGoalLimits(seconds: goal.timeLimitSeconds, tokens: goal.tokenLimit)
+                               editedGoal = goal
                                editing = true
                                focused = true
-                           }, clear: { act(.clear) })
+                           }, clear: { act(.clear, goal: goal) })
                     .disabled(!enabled)
                 if editing {
                     VStack(alignment: .leading, spacing: NW.Space.s) {
@@ -36,16 +44,18 @@ struct ThreadGoalCard: View {
                             .lineLimit(1...NWComposerMetrics.fieldMaxLines)
                             .focused($focused)
                             .accessibilityLabel("Goal condition")
+                        NWGoalLimitFields(limits: $limits)
                         HStack(spacing: NW.Space.s) {
                             Spacer()
                             Button("Cancel") { editing = false }
                                 .buttonStyle(.nw(.ghost, size: .s))
                             Button("Save") {
-                                let value = text
-                                Task { if await store.goalAction(.edit(text: value)) { editing = false } }
+                                guard let displayed = editedGoal else { return }
+                                let action = editAction(displayed)
+                                Task { if await store.goalAction(action, displayedGoal: displayed) { editing = false } }
                             }
                             .buttonStyle(.nw(.secondary, size: .s))
-                            .disabled(!enabled || goal.state == .met || text == goal.text || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            .disabled(!canSave(goal))
                         }
                     }
                     .padding(NW.Space.l)
@@ -58,9 +68,24 @@ struct ThreadGoalCard: View {
         }
     }
 
-    private func act(_ action: NativeGoalAction) {
+    private func canSave(_ goal: NativeGoal) -> Bool {
+        guard enabled, goal.state != .met, let displayed = editedGoal,
+              displayed.id == goal.id, displayed.revision == goal.revision, displayed.state == goal.state,
+              limits.isValid, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        return text != displayed.text || limits.seconds != displayed.timeLimitSeconds || limits.tokenLimit != displayed.tokenLimit
+    }
+
+    private func editAction(_ goal: NativeGoal) -> NativeGoalAction {
+        .edit(text: text,
+              timeLimitSeconds: limits.seconds != goal.timeLimitSeconds ? limits.seconds : nil,
+              tokenLimit: limits.tokenLimit != goal.tokenLimit ? limits.tokenLimit : nil,
+              clearTimeLimit: limits.clearsTime && goal.timeLimitSeconds != nil ? true : nil,
+              clearTokenLimit: limits.clearsTokens && goal.tokenLimit != nil ? true : nil)
+    }
+
+    private func act(_ action: NativeGoalAction, goal: NativeGoal) {
         guard enabled else { return }
-        Task { await store.goalAction(action) }
+        Task { await store.goalAction(action, displayedGoal: goal) }
     }
 }
 
@@ -116,6 +141,6 @@ struct ThreadGoalHeader: View {
     let store: NativeThreadStore
 
     var body: some View {
-        if let goal = store.goal, goal.isActive { NWGoalHeaderPill(time: goal.timeLabel) }
+        if let goal = store.goal, goal.isActive { NWGoalHeaderPill(time: goal.timeLabel, clockStart: goal.clockStart) }
     }
 }

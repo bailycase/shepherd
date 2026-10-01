@@ -48,7 +48,9 @@ struct AgentBannersTests {
     func goalsDoNotAlsoPostIntermediateTurnFinishedBanners(_ state: String) {
         var agent = agent(.done)
         agent.goalState = state
-        #expect(AgentBanners.status(of: agent, from: .working, failure: nil, watching: false) == nil)
+        let banner = AgentBanners.status(of: agent, from: .working, failure: nil, watching: false)
+        #expect((banner == nil) == (state == "working" || state == "checking"))
+        if state != "working", state != "checking" { #expect(banner?.subtitle == "Turn finished") }
     }
 
     /// Launch resets, session restarts and a question are not a turn ending, and nothing posts

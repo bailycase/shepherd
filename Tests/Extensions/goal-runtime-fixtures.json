@@ -6,27 +6,46 @@
       "text": "Ledger tests pass and go vet is clean, without changing the consumer package.",
       "state": "working",
       "elapsedSeconds": 400,
-      "tokensUsed": 71000
+      "tokensUsed": 71000,
+      "timeLimitSeconds": 1800,
+      "tokenLimit": 200000,
+      "checkCount": 0,
+      "confirmationRequired": false,
+      "confirmedByUser": false,
+      "runningSince": 1700000000000
     },
     {
       "id": "00000000-0000-0000-0000-000000000001",
-      "revision": 2,
+      "revision": 3,
       "text": "Ledger tests pass and go vet is clean, without changing the consumer package.",
       "state": "checking",
       "elapsedSeconds": 400,
       "tokensUsed": 71000,
-      "reason": "checking go test, go vet"
+      "timeLimitSeconds": 1800,
+      "tokenLimit": 200000,
+      "checkCount": 1,
+      "reason": "checking go test, go vet",
+      "confirmationRequired": false,
+      "confirmedByUser": false,
+      "runningSince": 1700000000000,
+      "checkedBy": "fixture/worker"
     },
     {
       "id": "00000000-0000-0000-0000-000000000001",
-      "revision": 2,
+      "revision": 4,
       "text": "Ledger tests pass and go vet is clean, without changing the consumer package.",
       "state": "met",
       "elapsedSeconds": 400,
       "tokensUsed": 104000,
+      "timeLimitSeconds": 1800,
+      "tokenLimit": 200000,
+      "checkCount": 1,
       "reason": "ledger tests and vet passed",
+      "confirmationRequired": false,
+      "confirmedByUser": false,
       "summary": "41 tests passed",
-      "evidence": "proof: 41 tests passed\tgo vet is clean\nFull ledger proof."
+      "evidence": "proof: 41 ledger acceptance tests passed with no failures.\nproof: go vet completed with zero diagnostics.\nproof: Consumer immutability regression passed.",
+      "checkedBy": "fixture/worker"
     },
     {
       "id": "00000000-0000-0000-0000-000000000001",
@@ -35,43 +54,116 @@
       "state": "paused",
       "elapsedSeconds": 400,
       "tokensUsed": 71000,
-      "reason": "paused by you · the clock stops"
+      "timeLimitSeconds": 1800,
+      "tokenLimit": 200000,
+      "checkCount": 0,
+      "reason": "paused by you · the clock stops",
+      "confirmationRequired": false,
+      "confirmedByUser": false
     },
     {
       "id": "00000000-0000-0000-0000-000000000002",
-      "revision": 2,
+      "revision": 8,
       "text": "Ledger tests pass and go vet is clean, without changing the consumer package.",
       "state": "needsYou",
       "elapsedSeconds": 400,
       "tokensUsed": 71021,
+      "timeLimitSeconds": 1800,
+      "tokenLimit": 200000,
+      "checkCount": 3,
       "reason": "the same test failed 3 times in a row",
+      "confirmationRequired": false,
+      "confirmedByUser": false,
       "summary": "ledger test failed",
-      "evidence": "proof: ledger test failed\tmissing consumer guard\nFull failure output."
+      "evidence": "proof: ledger test failed\tmissing consumer guard\nFull failure output.",
+      "checkedBy": "fixture/worker"
     }
   ],
+  "confirmationGoal": {
+    "id": "00000000-0000-0000-0000-000000000003",
+    "revision": 4,
+    "text": "Ledger tests pass and go vet is clean, without changing the consumer package.",
+    "state": "needsYou",
+    "elapsedSeconds": 400,
+    "tokensUsed": 71007,
+    "timeLimitSeconds": 1800,
+    "tokenLimit": 200000,
+    "checkCount": 1,
+    "reason": "looks met, evidence incomplete, confirm",
+    "confirmationRequired": true,
+    "confirmedByUser": false,
+    "summary": "12 acceptance tests passed",
+    "evidence": "proof: All 12 acceptance tests passed.",
+    "checkedBy": "fixture/worker"
+  },
+  "confirmedGoal": {
+    "id": "00000000-0000-0000-0000-000000000003",
+    "revision": 5,
+    "text": "Ledger tests pass and go vet is clean, without changing the consumer package.",
+    "state": "met",
+    "elapsedSeconds": 400,
+    "tokensUsed": 71007,
+    "timeLimitSeconds": 1800,
+    "tokenLimit": 200000,
+    "checkCount": 1,
+    "reason": "confirmed by you",
+    "confirmationRequired": false,
+    "confirmedByUser": true,
+    "summary": "confirmed by you",
+    "evidence": "proof: All 12 acceptance tests passed.",
+    "checkedBy": "fixture/worker"
+  },
+  "editorGoal": {
+    "id": "00000000-0000-0000-0000-000000000004",
+    "revision": 2,
+    "text": "Ledger tests pass and go vet is clean, without changing the consumer package.",
+    "state": "paused",
+    "elapsedSeconds": 0,
+    "tokensUsed": 0,
+    "checkCount": 0,
+    "timeLimitSeconds": 1800,
+    "tokenLimit": 200000,
+    "reason": "paused by you · the clock stops",
+    "confirmationRequired": false,
+    "confirmedByUser": false
+  },
   "records": [
     {
       "type": "custom_message",
       "customType": "shepherd.goal.check",
       "display": true,
-      "content": "Goal met · 41 tests passed\n\nDetails:\nEvaluator feedback:\nLedger tests and vet passed\n\nTool evidence:\nproof: 41 tests passed\tgo vet is clean\nFull ledger proof.",
+      "content": "Goal met · 41 tests passed\n\nDetails:\nChecker assessment stored in Details.",
       "details": {
         "goalID": "00000000-0000-0000-0000-000000000001",
+        "checkedBy": "fixture/worker",
         "verdict": {
           "verdict": "met",
           "reason": "Ledger tests and vet passed",
           "summary": "41 tests passed",
           "evidence": [
             {
+              "requirementId": "r1",
               "entryId": "proof",
-              "quote": "41 tests passed\tgo vet is clean\nFull ledger proof."
+              "quote": "41 ledger acceptance tests passed with no failures."
+            },
+            {
+              "requirementId": "r2",
+              "entryId": "proof",
+              "quote": "go vet completed with zero diagnostics."
+            },
+            {
+              "requirementId": "r3",
+              "entryId": "proof",
+              "quote": "Consumer immutability regression passed."
             }
           ],
-          "blocker": ""
+          "blocker": "",
+          "missing": []
         },
         "usage": {
           "totalTokens": 33000
-        }
+        },
+        "missingEvidence": []
       }
     },
     {
@@ -83,9 +175,44 @@
       "type": "custom_message",
       "customType": "shepherd.goal.check",
       "display": true,
-      "content": "Goal check · Not yet: the ledger test failed\n\nDetails:\nEvaluator feedback:\nThe ledger test failed\n\nTool evidence:\nproof: ledger test failed\tmissing consumer guard\nFull failure output.",
+      "content": "Goal needs you · looks met, evidence incomplete, confirm\n\nDetails:\nMissing requirement evidence stored in Details.",
+      "details": {
+        "goalID": "00000000-0000-0000-0000-000000000003",
+        "checkedBy": "fixture/worker",
+        "verdict": {
+          "verdict": "met",
+          "reason": "Ledger tests passed",
+          "summary": "12 acceptance tests passed",
+          "evidence": [
+            {
+              "requirementId": "r1",
+              "entryId": "proof",
+              "quote": "All 12 acceptance tests passed."
+            }
+          ],
+          "blocker": "",
+          "missing": [
+            "r2: no distinct sufficiently long tool quote",
+            "r3: no distinct sufficiently long tool quote"
+          ]
+        },
+        "usage": {
+          "totalTokens": 7
+        },
+        "missingEvidence": [
+          "r2: no distinct sufficiently long tool quote",
+          "r3: no distinct sufficiently long tool quote"
+        ]
+      }
+    },
+    {
+      "type": "custom_message",
+      "customType": "shepherd.goal.check",
+      "display": true,
+      "content": "Goal check · Not yet: more work needed\n\nDetails:\nChecker assessment stored in Details.",
       "details": {
         "goalID": "00000000-0000-0000-0000-000000000002",
+        "checkedBy": "fixture/worker",
         "verdict": {
           "verdict": "not_met",
           "reason": "The ledger test failed",
@@ -96,20 +223,23 @@
               "quote": "ledger test failed\tmissing consumer guard\nFull failure output."
             }
           ],
-          "blocker": "ledger-test"
+          "blocker": "ledger-test",
+          "missing": []
         },
         "usage": {
           "totalTokens": 7
-        }
+        },
+        "missingEvidence": []
       }
     },
     {
       "type": "custom_message",
       "customType": "shepherd.goal.check",
       "display": true,
-      "content": "Goal needs you · the same test failed 3 times in a row\n\nDetails:\nEvaluator feedback:\nThe ledger test failed\n\nTool evidence:\nproof: ledger test failed\tmissing consumer guard\nFull failure output.",
+      "content": "Goal needs you · the same test failed 3 times in a row\n\nDetails:\nChecker assessment stored in Details.",
       "details": {
         "goalID": "00000000-0000-0000-0000-000000000002",
+        "checkedBy": "fixture/worker",
         "verdict": {
           "verdict": "not_met",
           "reason": "The ledger test failed",
@@ -120,39 +250,45 @@
               "quote": "ledger test failed\tmissing consumer guard\nFull failure output."
             }
           ],
-          "blocker": "ledger-test"
+          "blocker": "ledger-test",
+          "missing": []
         },
         "usage": {
           "totalTokens": 7
-        }
+        },
+        "missingEvidence": []
       }
     },
     {
       "type": "custom_message",
       "customType": "shepherd.goal.check",
       "display": true,
-      "content": "Goal needs you · choose a deployment target\n\nDetails:\nEvaluator feedback:\nchoose a deployment target\nChoose staging or production; do not deploy until the user decides.",
+      "content": "Goal needs you · choose a deployment target\n\nDetails:\nChecker assessment stored in Details.",
       "details": {
         "goalID": "00000000-0000-0000-0000-000000000002",
+        "checkedBy": "fixture/worker",
         "verdict": {
           "verdict": "needs_you",
           "reason": "choose a deployment target\nChoose staging or production; do not deploy until the user decides.",
           "summary": "deployment needs a decision",
           "evidence": [],
-          "blocker": ""
+          "blocker": "",
+          "missing": []
         },
         "usage": {
           "totalTokens": 7
-        }
+        },
+        "missingEvidence": []
       }
     },
     {
       "type": "custom_message",
       "customType": "shepherd.goal.check",
       "display": true,
-      "content": "Goal needs you · goal check failed · try again\n\nDetails:\nNo authenticated goal evaluator model is available.",
+      "content": "Goal needs you · goal check failed · try again\n\nDetails:\nChecker diagnostic stored in Details.",
       "details": {
         "goalID": "00000000-0000-0000-0000-000000000002",
+        "checkedBy": "fixture/worker",
         "error": "No authenticated goal evaluator model is available."
       }
     }

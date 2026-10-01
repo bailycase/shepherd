@@ -489,7 +489,9 @@ The ring's Show summary opens the same card.
 
 ## Goal card
 
-The supplied **Goal card** board, with **MobileGoal** and **iPadGoal**, is the authority for this card. `NWGoalCard` has five states:
+The supplied **Goal card** board, with **MobileGoal** and **iPadGoal**, is the authority for this card.
+The [second safety review](goal-safety-review.md) amends its controls and model disclosure; its
+[revision-301 image](references/goal-states-r301.png) is saved here. `NWGoalCard` has five states:
 Working, Checking, Met, Paused, and Needs you. All headers use the reference's two-ring goal
 glyph. Working has a pulsing blue dot, Checking a blue spinner, Met a green checkmark,
 Paused a gray pause mark, and Needs you an amber dot. Reduced motion disables animation.
@@ -519,20 +521,27 @@ and Clear; Edit stays in that menu. iPad's wide layout draws the full desktop ca
 are 44pt, including the wide iPad's desktop-style controls. Phone chrome is 34pt; wide iPad chrome
 keeps desktop sizing and leaves body clearance for its larger targets. A target stays inside the shared dock, using body padding below
 the 40pt header when needed. Text scale grows vertical space along with the text; the default
-70/92pt anatomy stays unchanged. Working and Checking reserve the same pill width. When larger
+70/92pt anatomy stays unchanged when no attribution is present. `Checked by <model>` appears
+below the condition after an actual check, with `Confirmed by you` after explicit attestation;
+these lines grow the card. Touch confirmation candidates also show the incomplete-evidence
+reason before the action is used. Working and Checking reserve the same pill width. When larger
 text and actions cannot fit side by side, the header grows a second row instead of clipping targets.
 
 Pause stops automatic continuation without killing the current tool. Resume is disabled while
 the question that stopped the goal remains open. Edit preserves the current state and reason;
-Save is disabled for unchanged text. Clear removes the goal, not its recorded checks. Met stays
+Save is disabled for unchanged text and limits, or a stale displayed revision/state. The
+existing inline/sheet editor adds Time limit (minutes) and Token budget fields; blank removes
+the cap. Incomplete-evidence Met candidates offer Confirm instead of Resume, with an explicit
+attestation explanation; no open question permits either action. Clear removes the goal, not its recorded checks. Met stays
 visible until cleared. Checking reflects a real separate model call, never a decorative delay.
 
 The slash menu has a `/goal <condition>` row. A recorded "Goal set" line names the condition,
 a centered not-yet divider separates checks from the next stretch of work, and a one- or two-line
 "Goal met" closing line gives the short summary. Raw entry IDs, quotes and tabs appear only inside
 a transcript disclosure, never in the card's meta or closing line. Current checks use Details,
-with full evaluator feedback and tool evidence; failed checks retain their diagnostic there even
-without tool evidence. Older Evidence disclosures remain readable.
+with full redacted evaluator feedback and tool evidence projected from display-only message
+details; failed checks retain their diagnostic there even without tool evidence. `Checked by
+<model>` stays visible before the disclosure. Raw feedback never becomes another worker prompt. Older Evidence disclosures remain readable.
 
 Long conditions still truncate to one desktop line or two touch lines. The desktop inline editor
 and the iOS edit sheet are additional surfaces absent from the board. These remain pending user

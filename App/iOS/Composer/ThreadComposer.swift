@@ -49,11 +49,11 @@ struct ThreadComposer: View {
             ForEach(store.widgets) { widget in
                 ComposerWidget(title: widget.title, text: widget.text)
             }
-            if store.goal != nil || store.dialogs.isEmpty {
-                if store.goal != nil || store.tray != nil {
-                    NWDockStack(size: store.goal != nil && goalSize == .desktop ? .pointer : wide ? .pad : .phone, showsTray: true, showsQueue: !state.rows.isEmpty) {
+            if store.hasGoal || store.dialogs.isEmpty {
+                if store.hasGoal || store.tray != nil {
+                    NWDockStack(size: store.hasGoal && goalSize == .desktop ? .pointer : wide ? .pad : .phone, showsTray: true, showsQueue: !state.rows.isEmpty) {
                         VStack(spacing: 0) {
-                            if store.goal != nil {
+                            if store.hasGoal {
                                 ThreadGoalCard(store: store, active: live,
                                                size: goalSize, framed: false)
                             }
@@ -61,7 +61,7 @@ struct ThreadComposer: View {
                                 SubagentTraySection(ref: ref, tray: tray, store: store, state: state,
                                                     size: wide ? .pad : .phone, enabled: live)
                                     .overlay(alignment: .top) {
-                                        if store.goal != nil { NWHairline(color: Color.nw.lineStrong) }
+                                        if store.hasGoal { NWHairline(color: Color.nw.lineStrong) }
                                     }
                             }
                         }
@@ -120,7 +120,7 @@ struct ThreadComposer: View {
         .background(Color.nw.bgWindow)
         .nwAnimation(.content, value: store.dialogs.isEmpty)
         .nwAnimation(.list, value: store.tray == nil)
-        .nwAnimation(.list, value: store.goal?.id)
+        .nwAnimation(.list, value: store.goalID)
         .onChange(of: store.sentCount) { _, _ in focused = false }
         .onChange(of: focused) { _, focused in
             if focused { navigator.focusedComposer = ref } else if navigator.focusedComposer == ref { navigator.focusedComposer = nil }

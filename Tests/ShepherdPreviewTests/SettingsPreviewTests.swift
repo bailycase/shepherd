@@ -35,6 +35,19 @@ struct SettingsPreviewTests {
         }
     }
 
+    @Test(arguments: [false, true])
+    func settingsAgentsGoalChecks(enabled: Bool) async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        workspace.settings.goalCrossProviderEvaluation = enabled
+        try await Preview.render("settings-agents-goal-checks-\(enabled ? "on" : "off")", size: CGSize(width: 1020, height: 950)) {
+            AgentSettings(pi: workspace.server.pi, settings: workspace.settings)
+                .padding(AppLayout.settingsGutter)
+                .frame(width: 1020, height: 950, alignment: .topLeading)
+                .background(Color.nw.bgWindow)
+        }
+    }
+
     /// Pi with the Design tool on: Bundled extensions add the Design references row.
     @Test func settingsPiWithTheDesignTool() async throws {
         let workspace = try PreviewWorkspace()

@@ -10,6 +10,8 @@ struct ThreadGoalCard: View {
     var framed = true
     @State private var editing = false
     @State private var text = ""
+    @State private var limits = NWGoalLimits(seconds: nil, tokens: nil)
+    @State private var editedGoal: NativeGoal?
     @FocusState private var focused: Bool
 
     private var enabled: Bool {
@@ -19,12 +21,19 @@ struct ThreadGoalCard: View {
     var body: some View {
         if let goal = store.goal {
             NWGoalCard(state: goal.cardState, time: goal.timeLabel, meta: goal.metaLabel, text: goal.text,
-                       size: size, framed: framed, resumeEnabled: store.dialogs.isEmpty, pause: { act(.pause) }, resume: { act(.resume) }, edit: {
+                       size: size, framed: framed, resumeEnabled: store.dialogs.isEmpty,
+                       confirmationRequired: goal.confirmationRequired == true, checkedBy: goal.checkedBy,
+                       confirmedByUser: goal.confirmedByUser == true, clockStart: goal.clockStart,
+                       pause: { act(.pause, goal: goal) }, resume: {
+                           act(goal.state == .needsYou && goal.confirmationRequired == true ? .confirm : .resume, goal: goal)
+                       }, edit: {
                            text = goal.text
+                           limits = NWGoalLimits(seconds: goal.timeLimitSeconds, tokens: goal.tokenLimit)
+                           editedGoal = goal
                            editing = true
-                       }, clear: { act(.clear) })
+                       }, clear: { act(.clear, goal: goal) })
                 .disabled(!enabled)
-                .onChange(of: store.goal?.id) { _, _ in editing = false }
+                .onChange(of: store.goalID) { _, _ in editing = false }
                 .sheet(isPresented: $editing) {
                     NavigationStack {
                         VStack(alignment: .leading, spacing: NW.Space.m) {
@@ -33,6 +42,7 @@ struct ThreadGoalCard: View {
                                 .foregroundStyle(Color.nw.textPrimary)
                                 .focused($focused)
                                 .accessibilityLabel("Goal condition")
+                            NWGoalLimitFields(limits: $limits)
                             if let notice = store.notice {
                                 Text(notice).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
                             }
@@ -46,10 +56,11 @@ struct ThreadGoalCard: View {
                             ToolbarItem(placement: .cancellationAction) { Button("Cancel") { editing = false } }
                             ToolbarItem(placement: .confirmationAction) {
                                 Button("Save") {
-                                    let value = text
-                                    Task { if await store.goalAction(.edit(text: value)) { editing = false } }
+                                    guard let displayed = editedGoal else { return }
+                                    let action = editAction(displayed)
+                                    Task { if await store.goalAction(action, displayedGoal: displayed) { editing = false } }
                                 }
-                                .disabled(!enabled || goal.state == .met || text == goal.text || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                .disabled(!canSave(store.goal))
                             }
                         }
                         .onAppear { focused = true }
@@ -59,9 +70,24 @@ struct ThreadGoalCard: View {
         }
     }
 
-    private func act(_ action: NativeGoalAction) {
+    private func canSave(_ goal: NativeGoal?) -> Bool {
+        guard enabled, let goal, goal.state != .met, let displayed = editedGoal,
+              displayed.id == goal.id, displayed.revision == goal.revision, displayed.state == goal.state,
+              limits.isValid, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        return text != displayed.text || limits.seconds != displayed.timeLimitSeconds || limits.tokenLimit != displayed.tokenLimit
+    }
+
+    private func editAction(_ goal: NativeGoal) -> NativeGoalAction {
+        .edit(text: text,
+              timeLimitSeconds: limits.seconds != goal.timeLimitSeconds ? limits.seconds : nil,
+              tokenLimit: limits.tokenLimit != goal.tokenLimit ? limits.tokenLimit : nil,
+              clearTimeLimit: limits.clearsTime && goal.timeLimitSeconds != nil ? true : nil,
+              clearTokenLimit: limits.clearsTokens && goal.tokenLimit != nil ? true : nil)
+    }
+
+    private func act(_ action: NativeGoalAction, goal: NativeGoal) {
         guard enabled else { return }
-        Task { await store.goalAction(action) }
+        Task { await store.goalAction(action, displayedGoal: goal) }
     }
 }
 

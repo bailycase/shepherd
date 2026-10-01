@@ -735,6 +735,68 @@ struct ListPerformanceTests {
         }
     }
 
+    @Test func fiveGoalAccountingSnapshotsRedrawNoComposerQueueOrThreadRows() async throws {
+        var snapshot = ThreadFixture.snapshot(ThreadFixture.history(120), running: false)
+        snapshot.goal = NativeGoal(id: "00000000-0000-0000-0000-0000000000AA", text: "Tests pass", state: .working,
+                                   elapsedSeconds: 400, tokensUsed: 71_000, runningSince: Date().timeIntervalSince1970 * 1000)
+        snapshot.queue = NativeQueue(items: QueueFixture.messages(["Then run lint", "Open the PR"]), mode: .all)
+        snapshot.supportedActions += ["goal", "queue"]
+        let thread = FakeThread(snapshot, header: true)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        try await eventuallyOnMain("goal and queue chrome to settle") {
+            ListPerf.settle(thread.window)
+            return thread.store.hasGoal && thread.store.queue.count == 2
+        }
+        // Two unchanged serve passes drain the initial catch-up before recording a mutation.
+        await thread.serve(snapshot)
+        ListPerf.settle(thread.window)
+        let rows = try await counting(thread.window) {
+            for index in 1...5 {
+                var next = snapshot
+                next.revision += UInt64(index)
+                next.goal?.elapsedSeconds += Double(index)
+                next.goal?.runningSince? += Double(index)
+                next.goal?.tokensUsed += index * 1000
+                await thread.serve(next)
+                ListPerf.settle(thread.window)
+            }
+        }
+        #expect(rows["goal.card", default: 0] >= 5, "the five accounting updates were drawn: \(rows)")
+        for key in ["composer.body", "composer.chips", "queue.body", "queue.row", "thread.view", "thread.rowBuilder", "thread.agentTurn", "thread.userTurn"] {
+            #expect(rows[key, default: 0] == 0, "\(key): \(rows)")
+        }
+    }
+
+    @Test func clientGoalClockTicksRedrawOnlyPills() async throws {
+        var snapshot = ThreadFixture.snapshot(ThreadFixture.history(120), running: false)
+        snapshot.goal = NativeGoal(id: "00000000-0000-0000-0000-0000000000AA", text: "Tests pass", state: .working,
+                                   elapsedSeconds: 400, tokensUsed: 71_000, runningSince: Date().timeIntervalSince1970 * 1000)
+        snapshot.queue = NativeQueue(items: QueueFixture.messages(["Then run lint"]), mode: .all)
+        snapshot.supportedActions += ["goal", "queue"]
+        let thread = FakeThread(snapshot, header: true)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        ListPerf.settle(thread.window)
+        NWRenderProbe.start()
+        let rows: [String: Int]
+        do {
+            try await eventuallyOnMain("two local card and header clock ticks", timeout: .seconds(10)) {
+                ListPerf.settle(thread.window)
+                let counts = NWRenderProbe.counts
+                return counts["goal.clock", default: 0] >= 2 && counts["goal.headerClock", default: 0] >= 2
+            }
+            rows = NWRenderProbe.stop()
+        } catch {
+            _ = NWRenderProbe.stop()
+            throw error
+        }
+        for key in ["goal.card", "composer.body", "composer.chips", "queue.body", "queue.row", "thread.view", "thread.rowBuilder", "thread.agentTurn", "thread.userTurn"] {
+            #expect(rows[key, default: 0] == 0, "\(key): \(rows)")
+        }
+        #expect(thread.snapshot.revision == snapshot.revision, "client ticks need no server snapshot")
+    }
+
     /// A question arriving takes the composer's place, and answering it gives the place back:
     /// both redraw the composer, never the thread's body or its toolbar. The rows on screen are
     /// laid out again for the new inset (a screenful at most), none off screen.

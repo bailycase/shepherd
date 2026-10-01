@@ -249,6 +249,7 @@ final class RPCThreadState {
     private var widgets: [(id: String, value: NativeThreadWidget)] = [] { didSet { widgetsHash = widgets.map(\.value).hashValue } }
     private(set) var goal: NativeGoal?
     private var goalsAvailable = false
+    var goalYieldGeneration: String?
     private var goalCommand: UUID?
     private var goalCommandFailure: String?
     var onGoalChanged: ((NativeGoal?) -> Void)?
@@ -414,7 +415,10 @@ final class RPCThreadState {
             stopRequested = false
             settleAwaitingSteers = false
             doneHeld = false
-            if !items.isEmpty { onUserInputWhileRunning?() }
+            if !items.isEmpty {
+                yieldGoalToQueue()
+                onUserInputWhileRunning?()
+            }
         case .agentEnd:
             dropStreamingCalls()
             refreshMessages()
@@ -601,7 +605,7 @@ final class RPCThreadState {
              .compact(let expectedSessionID, let generation, let operationID, _),
              .retry(let expectedSessionID, let generation, let operationID, _),
              .setServiceTier(let expectedSessionID, let generation, let operationID, _),
-             .goal(let expectedSessionID, let generation, let operationID, _, _, _):
+             .goal(let expectedSessionID, let generation, let operationID, _, _, _, _):
             guard expectedSessionID == piSessionID, generation == self.generation else {
                 completion(.failure(code: "stale_session", message: "Refresh the thread before acting."))
                 return
@@ -731,18 +735,25 @@ final class RPCThreadState {
                 settle(result)
                 self?.refreshState()
             }
-        case .goal(_, _, _, let action, let expectedID, let expectedRevision):
+        case .goal(_, _, _, let action, let expectedID, let expectedRevision, let expectedState):
             guard goalsAvailable else { completion(.failure(code: "unsupported", message: "This agent has no goal controller.")); return }
             guard action.isValid else { completion(.failure(code: "invalid", message: "A goal needs text up to 32768 characters and positive limits.")); return }
+            if action == .pause || action == .resume || action == .confirm {
+                guard let goal, expectedID == goal.id, expectedRevision == goal.revision, expectedState == goal.state else {
+                    completion(.failure(code: "stale_goal", message: "Use the displayed goal state and revision.")); return
+                }
+            }
             guard expectedID == nil || expectedID == goal?.id,
-                  expectedRevision == nil || expectedRevision == goal?.revision else {
+                  expectedRevision == nil || expectedRevision == goal?.revision,
+                  expectedState == nil || expectedState == goal?.state else {
                 completion(.failure(code: "stale_goal", message: "The goal changed. Refresh it before acting.")); return
             }
             var command = action.command
-            if expectedID != nil || expectedRevision != nil,
+            if expectedID != nil || expectedRevision != nil || expectedState != nil,
                var object = try? JSONSerialization.jsonObject(with: Data(command.dropFirst("/shepherd-goal ".count).utf8)) as? [String: Any] {
                 if let expectedID { object["expectedGoalID"] = expectedID }
                 if let expectedRevision { object["expectedGoalRevision"] = expectedRevision }
+                if let expectedState { object["expectedGoalState"] = expectedState.rawValue }
                 if let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]) {
                     command = "/shepherd-goal " + String(decoding: data, as: UTF8.self)
                 }
@@ -1990,6 +2001,7 @@ final class RPCThreadState {
         if let args { result.argumentsText = clip(json(args)) }
         // A design view record the viewer's message carried is pi's to read, not the thread's.
         var fenced = message.role == "user"
+        var goalDetailsAdded = false
         for block in message.content {
             if result.blocks.count >= 128 || remaining == 0 {
                 truncated = true
@@ -2006,6 +2018,27 @@ final class RPCThreadState {
                     result.origin = .designMarkup(strokes: markup.markup.strokes.count, notes: markup.markup.noteCount)
                 }
                 var shown = fenced ? DesignViewRecord.strippingFence(from: text, references: false, elements: false) : text
+                if !goalDetailsAdded, message.role == "custom", message.customType == "shepherd.goal.check", let details = message.details {
+                    goalDetailsAdded = true
+                    if let model = details["checkedBy"]?.stringValue {
+                        let label = "Checked by " + String(model.prefix(256)).replacingOccurrences(of: #"[\p{Cc}\p{Zl}\p{Zp}]"#, with: " ", options: .regularExpression)
+                        if let marker = shown.range(of: "\n\nDetails:\n") { shown.insert(contentsOf: "\n" + label, at: marker.lowerBound) }
+                        else { shown += "\n" + label }
+                    }
+                    var diagnostic: [String] = []
+                    if let feedback = details["verdict"]?["reason"]?.stringValue { diagnostic.append("Evaluator feedback:\n" + feedback) }
+                    if let error = details["error"]?.stringValue { diagnostic.append(error) }
+                    let missing = details["missingEvidence"]?.arrayValue?.compactMap(\.stringValue) ?? []
+                    if !missing.isEmpty { diagnostic.append("Missing evidence:\n" + missing.joined(separator: "\n")) }
+                    let proof = details["verdict"]?["evidence"]?.arrayValue?.compactMap { row -> String? in
+                        guard let quote = row["quote"]?.stringValue else { return nil }
+                        return (row["entryId"]?.stringValue.map { $0 + ": " } ?? "") + quote
+                    } ?? []
+                    if !proof.isEmpty { diagnostic.append("Tool evidence:\n" + proof.joined(separator: "\n")) }
+                    if !diagnostic.isEmpty {
+                        shown += (shown.contains("\n\nDetails:\n") ? "\n\n" : "\n\nDetails:\n") + diagnostic.joined(separator: "\n\n")
+                    }
+                }
                 if fenced, let sentReferences, let parsed = DesignReferenceFence.parse(text),
                    let ids = DesignReferenceFence.payloadIDs(parsed.records), Set(ids).isSubset(of: sentReferences) {
                     shown = String(parsed.text)
