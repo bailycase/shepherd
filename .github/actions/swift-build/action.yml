@@ -119,8 +119,9 @@ runs:
         RESTORED: ${{ steps.build.outputs.cache-matched-key }}
         EXACT: ${{ steps.build.outputs.cache-hit }}
       run: |
-        # An entry for this very commit (the shards restoring what the build job saved) has no
-        # stale target to find, so its build is the no-op it looks like.
+        # An entry for this very commit (the shards restoring what the build job saved) holds
+        # a finished build: it has no stale target to find, and SwiftPM would spend a minute
+        # loading the package graph to find nothing to do.
         if [ -n "$RESTORED" ] && [ "$EXACT" != true ]; then
           shopt -s nullglob
           versions=(.build/*/debug/swift-version-*.txt)
@@ -134,13 +135,17 @@ runs:
         log="$RUNNER_TEMP/swift-build.log"
         build() { swift build --build-tests $SWIFTPM_FLAGS 2>&1 | tee "$log"; }
         status=0
-        build || status=$?
-        if [ "$status" -ne 0 ] && [ -n "$RESTORED" ] && stale=$(python3 scripts/ci_stale_link.py "$log"); then
-          echo "::warning::stale objects in the restored build ($stale) failed to link; rebuilding from scratch"
-          find .build -mindepth 1 -maxdepth 1 ! -name repositories ! -name checkouts \
-            ! -name artifacts ! -name workspace-state.json -exec rm -rf {} +
-          status=0
+        if [ "$EXACT" = true ]; then
+          echo "this commit's build was restored whole: nothing to build"
+        else
           build || status=$?
+          if [ "$status" -ne 0 ] && [ -n "$RESTORED" ] && stale=$(python3 scripts/ci_stale_link.py "$log"); then
+            echo "::warning::stale objects in the restored build ($stale) failed to link; rebuilding from scratch"
+            find .build -mindepth 1 -maxdepth 1 ! -name repositories ! -name checkouts \
+              ! -name artifacts ! -name workspace-state.json -exec rm -rf {} +
+            status=0
+            build || status=$?
+          fi
         fi
         [ "$status" -eq 0 ] || exit "$status"
         # SwiftPM copies binary frameworks (Sparkle) to Products/<config>,

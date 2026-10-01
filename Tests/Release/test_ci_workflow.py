@@ -174,6 +174,11 @@ class SwiftBuildActionTests(unittest.TestCase):
         self.assertEqual(ACTION.count("steps.swift.outputs.sha"), 2)
         self.assertIn("git rev-parse HEAD", ACTION)
 
+    def test_a_shard_that_restores_its_own_commits_build_does_not_build_again(self):
+        self.assertIn("EXACT: ${{ steps.build.outputs.cache-hit }}", ACTION)
+        self.assertIn('if [ "$EXACT" = true ]; then', ACTION)
+        self.assertIn('if [ -n "$RESTORED" ] && [ "$EXACT" != true ]; then', ACTION, "the stale-target workaround is for other commits' builds")
+
     def test_the_stale_link_recovery_is_still_there(self):
         self.assertIn("scripts/ci_stale_link.py", ACTION)
         self.assertIn("rebuilding from scratch", ACTION)
