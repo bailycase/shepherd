@@ -205,7 +205,7 @@ More: [docs/design/verifying.md](docs/design/verifying.md).
 | Animation, a transition, Reduce Motion | [motion.md](docs/design/motion.md) |
 | A list, scroll or hot path | [performance.md](docs/design/performance.md) |
 | Window, toolbar, sidebar, pages | [window-and-toolbar.md](docs/design/window-and-toolbar.md), [sidebar.md](docs/design/sidebar.md), [pages.md](docs/design/pages.md) |
-| Conversation goals | [thread.md](docs/design/thread.md#conversation-goal-card), [goals.md](docs/goals.md) |
+| Conversation goals | [thread.md](docs/design/thread.md#goal-card), [goals.md](docs/goals.md) |
 | Thread, composer, queue, subagents | [thread.md](docs/design/thread.md), [composer.md](docs/design/composer.md), [queue.md](docs/design/queue.md), [subagents.md](docs/design/subagents.md) |
 | Side pane, terminal, palette, dialogs | [side-pane-changes.md](docs/design/side-pane-changes.md), [side-pane-browser.md](docs/design/side-pane-browser.md), [terminal.md](docs/design/terminal.md), [dialogs-and-palette.md](docs/design/dialogs-and-palette.md) |
 | Settings | [settings.md](docs/design/settings.md) and its `settings-*` files |

@@ -32,15 +32,22 @@ struct GoalComponentTests {
     @MainActor @Test func theStatesUseTheExistingThemeRoles() {
         let nw = Color.nw
         for state in [NWGoalState.working, .checking] {
-            #expect(state.color == nw.running)
-            #expect(state.tint == nw.running.opacity(0.12))
+            #expect(state.color == AgentState.running.textColor)
+            #expect(state.tint == AgentState.running.tint)
         }
-        #expect(NWGoalState.met.color == nw.done)
-        #expect(NWGoalState.met.tint == nw.done.opacity(0.12))
-        #expect(NWGoalState.paused.color == nw.textSecondary)
-        #expect(NWGoalState.paused.tint == nw.textSecondary.opacity(0.12))
-        #expect(NWGoalState.needsYou.color == nw.lantern)
-        #expect(NWGoalState.needsYou.tint == nw.lantern.opacity(0.12))
+        #expect(NWGoalState.met.color == AgentState.done.textColor)
+        #expect(NWGoalState.met.tint == AgentState.done.tint)
+        #expect(NWGoalState.paused.color == AgentState.idle.textColor)
+        #expect(NWGoalState.paused.tint == nw.bgSelected)
+        #expect(NWGoalState.needsYou.color == nw.lanternText)
+        #expect(NWGoalState.needsYou.markColor == AgentState.attention.color)
+        #expect(NWGoalState.needsYou.tint == nw.lanternTint)
+    }
+
+    @Test func needsYouTextMeetsContrastInBothAppearances() {
+        for variant in Variant.all {
+            #expect(variant.contrast(\.lanternText, on: \.lanternTint, over: \.bgRaised) >= 4.5)
+        }
     }
 
     @Test func touchKeepsTwoLinesAndFullHitTargetsWithoutEnlargingItsChrome() {

@@ -23,6 +23,24 @@ struct ThreadProjectionTests {
         #expect(!row.truncated)
     }
 
+    @Test func runtimeGoalFeedbackAndErrorsSurviveNativeProjectionAsDisclosedContent() throws {
+        struct Fixture: Decodable {
+            struct Record: Decodable { let customType: String; let content: String }
+            let records: [Record]
+        }
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let fixture = try JSONDecoder().decode(Fixture.self, from: Data(contentsOf: root.appendingPathComponent("Tests/Extensions/goal-runtime-fixtures.json")))
+        let stops = fixture.records.filter { $0.content.contains("Choose staging or production") || $0.content.contains("No authenticated goal evaluator") }
+        #expect(stops.count == 2)
+        for stop in stops {
+            let message = RPCMessage(role: "custom", content: [.text(stop.content)], customType: stop.customType, display: true)
+            let row = RPCThreadState.project(entryID: "goal-stop", message: message)
+            #expect(row.customType == "shepherd.goal.check")
+            #expect(row.blocks.map(\.text) == [stop.content])
+            #expect(!row.truncated)
+        }
+    }
+
     @Test func toolCallBlocksAreNotRenderedAsProse() throws {
         let message: RPCMessage = try decode(#"""
         {"role":"assistant","content":[{"type":"text","text":"Listing."},

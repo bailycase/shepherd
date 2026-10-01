@@ -71,7 +71,7 @@ struct ThreadScreen: View {
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     ThreadTitle(name: agent?.name ?? "Thread", status: status, branch: branch, wide: sizeClass == .regular,
-                                goalTime: store.goal?.timeLabel)
+                                goalTime: store.goal.flatMap { $0.isActive ? $0.timeLabel : nil })
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     if agent != nil {
@@ -389,12 +389,9 @@ struct ThreadTitle: View {
             Text(name).font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary).lineLimit(1)
             // The branch truncates in the middle; the status word stays whole.
             HStack(spacing: NW.Space.s) {
-                if let goalTime {
-                    NWGoalHeaderPill(time: goalTime)
-                } else {
-                    NWStatusDot(status.state)
-                    Text(status.label).fontWeight(.medium).foregroundStyle(status.state.textColor).fixedSize()
-                }
+                NWStatusDot(status.state)
+                Text(status.label).fontWeight(.medium).foregroundStyle(status.state.textColor).fixedSize()
+                if let goalTime { NWGoalHeaderPill(time: goalTime) }
                 // A worktree names its branch; your own checkout says so in lantern (MobileQuestion).
                 if let branch {
                     let checkout = branch.kind == .checkout
@@ -426,11 +423,9 @@ struct ThreadTitle: View {
                              changedFiles: branch.changedFiles, host: branch.host, showsChevron: false)
                     .layoutPriority(-1)
             }
+            NWStatusPill(status.state, label: meta.elapsed.map { "\(status.label) · \($0)" } ?? status.label)
+                .fixedSize()
             if let goalTime { NWGoalHeaderPill(time: goalTime) }
-            else {
-                NWStatusPill(status.state, label: meta.elapsed.map { "\(status.label) · \($0)" } ?? status.label)
-                    .fixedSize()
-            }
         }
     }
 }

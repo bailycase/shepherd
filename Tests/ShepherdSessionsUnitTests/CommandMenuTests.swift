@@ -16,6 +16,15 @@ struct CommandMenuTests {
         #expect(RPCThreadState.projectCommands(value).map(\.description) == ["Mine", nil])
     }
 
+    @Test func theGoalRowShowsItsConditionButNotTheInternalController() throws {
+        let value: JSONValue = try JSONDecoder().decode(JSONValue.self, from: Data(#"""
+        [{"name":"goal","description":"Work toward a condition","source":"extension"},
+         {"name":"shepherd-goal","description":"Internal goal control","source":"extension"}]
+        """#.utf8))
+        #expect(RPCThreadState.projectCommands(value) == [NativeCommand(name: "goal", description: "Work toward a condition",
+                                                                      source: "extension", arguments: "<condition>")])
+    }
+
     @Test func theHostsOwnRetryIsLeftOut() throws {
         let value: JSONValue = try JSONDecoder().decode(JSONValue.self, from: Data(#"""
         [{"name":"shepherd-retry","source":"extension"},{"name":"session-name","source":"extension"}]

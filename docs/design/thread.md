@@ -487,24 +487,56 @@ with a `lineSubtle` line, radius 8, 14pt above and below and 16pt at the sides; 
 changed as "Files changed" with their names in mono 11, 12pt apart. The files pi read are left out.
 The ring's Show summary opens the same card.
 
-## Conversation goal card
+## Goal card
 
-The supplied GoalStates board is the authority for this card. `NWGoalCard` has five states:
+The supplied **Goal card** board, with **MobileGoal** and **iPadGoal**, is the authority for this card. `NWGoalCard` has five states:
 Working, Checking, Met, Paused, and Needs you. All headers use the reference's two-ring goal
 glyph. Working has a pulsing blue dot, Checking a blue spinner, Met a green checkmark,
 Paused a gray pause mark, and Needs you an amber dot. Reduced motion disables animation.
-Colors come from the matching work, success, muted, and attention semantic roles.
+Text, glyphs and fills use AgentState's matching roles. Paused uses idle text and the neutral
+`bgSelected` fill because idle has no tint.
 
 The card stays above the composer, including when a question replaces the field. Goal,
 Subagents, and Up next share one frame and hairline separators in that order. A single card
 still has its own frame. Desktop height is 70pt, header 32pt, radius 10pt. Touch height is 92pt,
 header 40pt, radius 12pt, with 44pt action hit targets. The condition stays visible and can be
-edited without hiding its goal state. Active thread headers show elapsed time; sidebar rows
-carry the live goal indicator. Queue copy says "after the goal check" while a goal is active.
+edited without changing its goal state or reason. The thread-header goal pill appears only in
+Working and Checking. On iPhone it sits beside the ordinary status dot and word, never replacing
+them. Sidebar rows keep their question/reason chip or elapsed time and add the card's two-ring
+glyph. Queue copy says "after the goal check" while a goal is active.
 
-Pause stops automatic continuation without killing the current tool. Resume and edit remain
-available in Paused and Needs you. Clear removes the goal, not its recorded checks. Met stays
+The per-state meta is one line of mono text from the runtime, not preview-only copy:
+
+- Working shows the token count, such as "71k tokens".
+- Checking names the commands of the tool results being read, such as "checking go test, go vet".
+- Met shows tokens and the evaluator's short human summary, such as "104k tokens · 41 tests passed".
+- Paused always says "paused by you · the clock stops", including after an edit.
+- Needs you gives a short lowercase reason, such as "the same test failed 3 times in a row", "waiting
+  for your answer", "hit the 30m time limit", or "hit the token limit". It never cuts a word in half.
+
+Phone cards omit header meta and put it in the long-press menu. The header shows Pause or Resume
+and Clear; Edit stays in that menu. iPad's wide layout draws the full desktop card. All iOS targets
+are 44pt, including the wide iPad's desktop-style controls. Phone chrome is 34pt; wide iPad chrome
+keeps desktop sizing and leaves body clearance for its larger targets. A target stays inside the shared dock, using body padding below
+the 40pt header when needed. Text scale grows vertical space along with the text; the default
+70/92pt anatomy stays unchanged. Working and Checking reserve the same pill width. When larger
+text and actions cannot fit side by side, the header grows a second row instead of clipping targets.
+
+Pause stops automatic continuation without killing the current tool. Resume is disabled while
+the question that stopped the goal remains open. Edit preserves the current state and reason;
+Save is disabled for unchanged text. Clear removes the goal, not its recorded checks. Met stays
 visible until cleared. Checking reflects a real separate model call, never a decorative delay.
+
+The slash menu has a `/goal <condition>` row. A recorded "Goal set" line names the condition,
+a centered not-yet divider separates checks from the next stretch of work, and a one- or two-line
+"Goal met" closing line gives the short summary. Raw entry IDs, quotes and tabs appear only inside
+a transcript disclosure, never in the card's meta or closing line. Current checks use Details,
+with full evaluator feedback and tool evidence; failed checks retain their diagnostic there even
+without tool evidence. Older Evidence disclosures remain readable.
+
+Long conditions still truncate to one desktop line or two touch lines. The desktop inline editor
+and the iOS edit sheet are additional surfaces absent from the board. These remain pending user
+decisions under **Departures** in PR #189, not approved design changes.
 See [goals](../goals.md) for runtime semantics and the limits of transcript-based evaluation.
 
 ## Rich content in prose

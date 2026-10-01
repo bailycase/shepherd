@@ -10,26 +10,29 @@ import Testing
        .enabled(if: Preview.enabled && !Preview.liveModel, "set SHEPHERD_PREVIEW_DIR to render previews"))
 @MainActor
 struct GoalPreviewTests {
-    private static let condition = "Ledger tests pass and go vet is clean, without changing the consumer package."
-    private static let states: [(NWGoalState, String)] = [
-        (.working, "71k tokens"),
-        (.checking, "running go test and go vet"),
-        (.met, "104k tokens · 41 tests passed"),
-        (.paused, "paused by you · the clock stops"),
-        (.needsYou, "the same test failed 3 times in a row"),
-    ]
+    /// Generated and checked by goal.test.mjs from the extension's published widgets/messages.
+    private struct Runtime: Decodable {
+        struct Record: Decodable { let content: String }
+        let goals: [NativeGoal]
+        let records: [Record]
+    }
+
+    private static func runtime() throws -> Runtime {
+        let path = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Extensions/goal-runtime-fixtures.json")
+        return try JSONDecoder().decode(Runtime.self, from: Data(contentsOf: path))
+    }
 
     @Test(arguments: [NWGoalSize.desktop, .touch])
-    func everyGoalStateRendersInBothAppearances(_ size: NWGoalSize) async throws {
+    func everyPublishedGoalStateRendersInBothAppearances(_ size: NWGoalSize) async throws {
+        let goals = try Self.runtime().goals
         let touch = size == .touch
         try await Preview.render(touch ? "goal-states-touch" : "goal-states-desktop",
                                  size: CGSize(width: touch ? 398 : 720, height: touch ? 660 : 560)) {
             VStack(alignment: .leading, spacing: NW.Space.l) {
-                NWGoalHeaderPill(time: "6m 40s")
-                ForEach(Self.states.indices, id: \.self) { index in
-                    let (state, meta) = Self.states[index]
-                    NWGoalCard(state: state, time: state == .met ? "9m 12s" : "6m 40s", meta: meta,
-                               text: Self.condition, size: size, pause: {}, resume: {}, edit: {}, clear: {})
+                ForEach(goals, id: \.state) { goal in
+                    NWGoalCard(state: goal.cardState, time: goal.timeLabel, meta: goal.metaLabel, text: goal.text,
+                               size: size, pause: {}, resume: {}, edit: {}, clear: {})
                 }
                 Spacer(minLength: 0)
             }
@@ -38,29 +41,74 @@ struct GoalPreviewTests {
         }
     }
 
-    @Test func goalRecordsReadAsQuietBreaksInTheConversation() async throws {
-        let presentation = NativeTurnPresentation(items: [
-            .goalRecord(id: "set", text: "Goal set · " + Self.condition),
-            .prose(id: "work", text: "I fixed the ledger rounding and reran the checks.",
-                   blocks: [.paragraph("I fixed the ledger rounding and reran the checks.")], openFence: false),
-            .goalRecord(id: "check", text: "Goal check · Not yet: one ledger test still fails."),
-            .prose(id: "retry", text: "The final case now passes.",
-                   blocks: [.paragraph("The final case now passes.")], openFence: false),
-            .goalRecord(id: "met", text: "Goal met · 41 tests passed and go vet is clean."),
-        ], changes: nil, toolCalls: 0, copyText: "", endedAt: nil)
-        try await Preview.render("goal-thread-records", size: CGSize(width: 720, height: 360)) {
+    @Test func publishedRecordsKeepTheirEvidenceBehindDisclosure() async throws {
+        let records = try Self.runtime().records
+        let presentation = NativeTurnPresentation(items: records.enumerated().map { index, record in
+            .goalRecord(id: "record-\(index)", text: record.content)
+        }, changes: nil, toolCalls: 0, copyText: "", endedAt: nil)
+        try await Preview.render("goal-thread-records", size: CGSize(width: 720, height: 440)) {
             AgentTurn(presentation: presentation, live: false, footer: false)
                 .padding(NW.Space.xl)
+                .frame(width: 720, height: 440, alignment: .top)
+                .background(Color.nw.bgWindow)
+        }
+    }
+
+    @Test(arguments: [NWGoalSize.desktop, .touch])
+    func aLongConditionHasPaddingAndGrowsAtTextScaleOnePointFive(_ size: NWGoalSize) async throws {
+        let goal = try #require(Self.runtime().goals.first)
+        let saved = ThemeStore.shared.textScale
+        defer { ThemeStore.shared.textScale = saved }
+        ThemeStore.shared.textScale = 1.5
+        let touch = size == .touch
+        try await Preview.render(touch ? "goal-long-scale15-touch" : "goal-long-scale15-desktop",
+                                 size: CGSize(width: touch ? 398 : 1000, height: touch ? 320 : 200)) {
+            NWDockStack(size: touch ? .phone : .pointer, showsTray: true, showsQueue: false) {
+                NWGoalCard(state: goal.cardState, time: goal.timeLabel, meta: goal.metaLabel,
+                           text: goal.text + " Preserve the public API, keep the fixtures intact, and check every consumer before changing the contract.",
+                           size: size, framed: false, pause: {}, resume: {}, edit: {}, clear: {})
+            } queue: { EmptyView() }
+                .padding(NW.Space.l)
                 .frame(maxHeight: .infinity, alignment: .top)
                 .background(Color.nw.bgWindow)
         }
     }
 
+    @Test func sidebarGoalsKeepTheirNormalAccessories() async throws {
+        let goals = try Self.runtime().goals
+        try await Preview.render("goal-sidebar", size: CGSize(width: 320, height: 240)) {
+            VStack(spacing: 0) {
+                ForEach(goals, id: \.state) { goal in
+                    NWSidebarRow(goal.state == .needsYou ? "Fix the ledger" : "Ledger checks", state: goal.isActive ? .running : goal.state == .needsYou ? .attention : .done,
+                                 accessory: goal.state == .needsYou ? .reason("retention?") : goal.isActive ? .elapsed(since: Date().addingTimeInterval(-goal.elapsedSeconds)) : .none,
+                                 hasGoal: true)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(NW.Space.s)
+            .background(Color.nw.bgBase)
+        }
+    }
+
+    @Test(arguments: [NativeGoalState.paused, .needsYou, .met])
+    func inactiveGoalsHaveNoThreadHeaderPill(_ state: NativeGoalState) async throws {
+        var snapshot = Threads.question
+        snapshot.dialogs = []
+        snapshot.goal = try #require(Self.runtime().goals.first { $0.state == state })
+        snapshot.running = false
+        snapshot.supportedActions.append("goal")
+        let fixture = ThreadFixture(snapshot)
+        defer { fixture.store.stop() }
+        try await Preview.render("goal-header-\(state.rawValue)", size: CGSize(width: 1000, height: 620), ready: {
+            fixture.store.ready && fixture.store.goal?.state == state
+        }) {
+            fixture.thread(title: "Fix the ledger")
+        }
+    }
+
     @Test func theGoalStaysVisibleWhileAQuestionReplacesTheComposer() async throws {
         var snapshot = Threads.question
-        snapshot.goal = NativeGoal(id: "00000000-0000-0000-0000-000000000001", revision: 1, text: Self.condition, state: .needsYou,
-                                   elapsedSeconds: 400, tokensUsed: 71000, timeLimitSeconds: nil, tokenLimit: nil,
-                                   reason: "Choose how to handle the failing test.", evidence: nil)
+        snapshot.goal = try #require(Self.runtime().goals.first { $0.state == .needsYou })
         snapshot.supportedActions.append("goal")
         let fixture = ThreadFixture(snapshot)
         defer { fixture.store.stop() }
@@ -71,12 +119,9 @@ struct GoalPreviewTests {
         }
     }
 
-    /// The actual app dock: goal first, the waiting subagent still visible, and the queue folded.
     @Test func aGoalSharesTheComposerDockWithSubagentsAndQueuedMessages() async throws {
         var snapshot = Threads.subagents(Threads.liveRuns, running: true)
-        snapshot.goal = NativeGoal(id: "00000000-0000-0000-0000-000000000002", revision: 1, text: Self.condition, state: .working,
-                                   elapsedSeconds: 400, tokensUsed: 71000, timeLimitSeconds: nil, tokenLimit: nil,
-                                   reason: nil, evidence: nil)
+        snapshot.goal = try #require(Self.runtime().goals.first { $0.state == .working })
         snapshot.supportedActions.append("goal")
         let fixture = QueueThreadFixture(snapshot, queue: QueueFixture.messages(["Then open a draft PR."]))
         defer { fixture.store.stop() }
@@ -85,6 +130,18 @@ struct GoalPreviewTests {
                 && fixture.state.isVisible && fixture.state.collapsed
         }) {
             fixture.thread(title: "Fix the ledger", inspect: true)
+        }
+    }
+
+    @Test func slashMenuIncludesTheGoalConditionRow() async throws {
+        var cache = SlashMatchCache()
+        cache.update(query: "goal", commands: [NativeCommand(name: "goal", description: "Work toward a condition", source: "extension", arguments: "<condition>")])
+        #expect(cache.rows.map(\.name) == ["goal"])
+        try await Preview.render("goal-slash-menu", size: CGSize(width: 500, height: 140)) {
+            NWSlashMenu(commands: cache.rows, total: 1, query: "goal", selection: .constant(0), maxHeight: nil) { _ in }
+                .padding(NW.Space.l)
+                .frame(maxHeight: .infinity, alignment: .top)
+                .background(Color.nw.bgWindow)
         }
     }
 }

@@ -1,0 +1,166 @@
+{
+  "goals": [
+    {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "revision": 2,
+      "text": "Ledger tests pass and go vet is clean, without changing the consumer package.",
+      "state": "working",
+      "elapsedSeconds": 400,
+      "tokensUsed": 71000
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "revision": 2,
+      "text": "Ledger tests pass and go vet is clean, without changing the consumer package.",
+      "state": "checking",
+      "elapsedSeconds": 400,
+      "tokensUsed": 71000,
+      "reason": "checking go test, go vet"
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "revision": 2,
+      "text": "Ledger tests pass and go vet is clean, without changing the consumer package.",
+      "state": "met",
+      "elapsedSeconds": 400,
+      "tokensUsed": 104000,
+      "reason": "ledger tests and vet passed",
+      "summary": "41 tests passed",
+      "evidence": "proof: 41 tests passed\tgo vet is clean\nFull ledger proof."
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "revision": 1,
+      "text": "Ledger tests pass and go vet is clean, without changing the consumer package.",
+      "state": "paused",
+      "elapsedSeconds": 400,
+      "tokensUsed": 71000,
+      "reason": "paused by you · the clock stops"
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000002",
+      "revision": 2,
+      "text": "Ledger tests pass and go vet is clean, without changing the consumer package.",
+      "state": "needsYou",
+      "elapsedSeconds": 400,
+      "tokensUsed": 71021,
+      "reason": "the same test failed 3 times in a row",
+      "summary": "ledger test failed",
+      "evidence": "proof: ledger test failed\tmissing consumer guard\nFull failure output."
+    }
+  ],
+  "records": [
+    {
+      "type": "custom_message",
+      "customType": "shepherd.goal.check",
+      "display": true,
+      "content": "Goal met · 41 tests passed\n\nDetails:\nEvaluator feedback:\nLedger tests and vet passed\n\nTool evidence:\nproof: 41 tests passed\tgo vet is clean\nFull ledger proof.",
+      "details": {
+        "goalID": "00000000-0000-0000-0000-000000000001",
+        "verdict": {
+          "verdict": "met",
+          "reason": "Ledger tests and vet passed",
+          "summary": "41 tests passed",
+          "evidence": [
+            {
+              "entryId": "proof",
+              "quote": "41 tests passed\tgo vet is clean\nFull ledger proof."
+            }
+          ],
+          "blocker": ""
+        },
+        "usage": {
+          "totalTokens": 33000
+        }
+      }
+    },
+    {
+      "customType": "shepherd.goal.set",
+      "display": true,
+      "content": "Goal set\nLedger tests pass and go vet is clean, without changing the consumer package."
+    },
+    {
+      "type": "custom_message",
+      "customType": "shepherd.goal.check",
+      "display": true,
+      "content": "Goal check · Not yet: the ledger test failed\n\nDetails:\nEvaluator feedback:\nThe ledger test failed\n\nTool evidence:\nproof: ledger test failed\tmissing consumer guard\nFull failure output.",
+      "details": {
+        "goalID": "00000000-0000-0000-0000-000000000002",
+        "verdict": {
+          "verdict": "not_met",
+          "reason": "The ledger test failed",
+          "summary": "ledger test failed",
+          "evidence": [
+            {
+              "entryId": "proof",
+              "quote": "ledger test failed\tmissing consumer guard\nFull failure output."
+            }
+          ],
+          "blocker": "ledger-test"
+        },
+        "usage": {
+          "totalTokens": 7
+        }
+      }
+    },
+    {
+      "type": "custom_message",
+      "customType": "shepherd.goal.check",
+      "display": true,
+      "content": "Goal needs you · the same test failed 3 times in a row\n\nDetails:\nEvaluator feedback:\nThe ledger test failed\n\nTool evidence:\nproof: ledger test failed\tmissing consumer guard\nFull failure output.",
+      "details": {
+        "goalID": "00000000-0000-0000-0000-000000000002",
+        "verdict": {
+          "verdict": "not_met",
+          "reason": "The ledger test failed",
+          "summary": "ledger test failed",
+          "evidence": [
+            {
+              "entryId": "proof",
+              "quote": "ledger test failed\tmissing consumer guard\nFull failure output."
+            }
+          ],
+          "blocker": "ledger-test"
+        },
+        "usage": {
+          "totalTokens": 7
+        }
+      }
+    },
+    {
+      "type": "custom_message",
+      "customType": "shepherd.goal.check",
+      "display": true,
+      "content": "Goal needs you · choose a deployment target\n\nDetails:\nEvaluator feedback:\nchoose a deployment target\nChoose staging or production; do not deploy until the user decides.",
+      "details": {
+        "goalID": "00000000-0000-0000-0000-000000000002",
+        "verdict": {
+          "verdict": "needs_you",
+          "reason": "choose a deployment target\nChoose staging or production; do not deploy until the user decides.",
+          "summary": "deployment needs a decision",
+          "evidence": [],
+          "blocker": ""
+        },
+        "usage": {
+          "totalTokens": 7
+        }
+      }
+    },
+    {
+      "type": "custom_message",
+      "customType": "shepherd.goal.check",
+      "display": true,
+      "content": "Goal needs you · goal check failed · try again\n\nDetails:\nNo authenticated goal evaluator model is available.",
+      "details": {
+        "goalID": "00000000-0000-0000-0000-000000000002",
+        "error": "No authenticated goal evaluator model is available."
+      }
+    }
+  ],
+  "commands": [
+    {
+      "name": "goal",
+      "description": "Start a goal: /goal [--for 30m] [--tokens 100000] <condition>; status, pause, resume, clear"
+    }
+  ]
+}

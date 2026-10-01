@@ -170,7 +170,7 @@ private struct SidebarItemView: View, Equatable {
                 NWSidebarSection(kind)
             case .row(let row):
                 NWSidebarRow(row.title, leading: row.leading, selected: row.selected, dimmed: row.offline,
-                             accessory: row.accessory)
+                             accessory: row.accessory, hasGoal: row.hasGoal)
                     .help(row.help)
                     .sidebarTapRow { vm.selectSidebarRow(row.id) }
                     .accessibilityLabel(row.accessibilityLabel)

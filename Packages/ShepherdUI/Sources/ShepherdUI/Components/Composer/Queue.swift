@@ -283,7 +283,7 @@ private struct NWQueueHeader<Options: View>: View {
             }
             Spacer(minLength: NW.Space.m)
             if afterGoalCheck {
-                Text("after the goal check").font(.nwMono(11)).foregroundStyle(nw.textTertiary)
+                Text("after the goal check").font(.nwMono(NWGoalMetrics.metaFont)).foregroundStyle(nw.textTertiary)
             }
             NWOptionsMenu("Queue options", size: NWQueueMetrics.headerButton, content: options)
             Button(action: onToggle) {

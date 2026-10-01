@@ -313,8 +313,6 @@ public struct NWSidebarRow: View, Equatable {
 
     public enum Accessory: Equatable, Sendable {
         case none
-        /// A conversation with a goal. The card carries the detailed state and accounting.
-        case goal
         /// Why it needs you, in mono 10 `lanternText` ("retention?", "ASK").
         case reason(String)
         /// Live elapsed time since a moment ("4m"), in `textTertiary`.
@@ -332,6 +330,7 @@ public struct NWSidebarRow: View, Equatable {
     let selected: Bool
     let dimmed: Bool
     let accessory: Accessory
+    let hasGoal: Bool
     let nested: Bool
     @Environment(\.nwDensity) private var density
     @State private var hovering = false
@@ -339,24 +338,25 @@ public struct NWSidebarRow: View, Equatable {
     /// `nested` is a thread inside a project of the project tree: its leading slot sits under
     /// the project's folder (`NWDensity.treeChildLeading`).
     public init(_ title: String, leading: Leading, selected: Bool = false, dimmed: Bool = false, accessory: Accessory = .none,
-                nested: Bool = false) {
+                hasGoal: Bool = false, nested: Bool = false) {
         self.title = title
         self.leading = leading
         self.selected = selected
         self.dimmed = dimmed
         self.accessory = accessory
+        self.hasGoal = hasGoal
         self.nested = nested
     }
 
     /// A thread's row: its state dot.
     public init(_ title: String, state: AgentState, selected: Bool = false, dimmed: Bool = false, accessory: Accessory = .none,
-                nested: Bool = false) {
-        self.init(title, leading: .dot(state), selected: selected, dimmed: dimmed, accessory: accessory, nested: nested)
+                hasGoal: Bool = false, nested: Bool = false) {
+        self.init(title, leading: .dot(state), selected: selected, dimmed: dimmed, accessory: accessory, hasGoal: hasGoal, nested: nested)
     }
 
     public nonisolated static func == (a: NWSidebarRow, b: NWSidebarRow) -> Bool {
         a.title == b.title && a.leading == b.leading && a.selected == b.selected && a.dimmed == b.dimmed
-            && a.accessory == b.accessory && a.nested == b.nested
+            && a.accessory == b.accessory && a.hasGoal == b.hasGoal && a.nested == b.nested
     }
 
     public var body: some View {
@@ -375,6 +375,7 @@ public struct NWSidebarRow: View, Equatable {
                 .nwContentTransition(.crossFade)
                 .nwAnimation(.content, value: title)
             Spacer(minLength: NW.Space.xs)
+            if hasGoal { NWGoalGlyph().foregroundStyle(Color.nw.textTertiary) }
             NWSidebarAccessoryView(accessory: accessory)
                 .nwAnimation(.content, value: accessory)
         }
@@ -439,9 +440,6 @@ private struct NWSidebarAccessoryView: View {
         switch accessory {
         case .none:
             EmptyView()
-        case .goal:
-            Image(systemName: "smallcircle.filled.circle").font(.nwSans(12)).foregroundStyle(.nw.textTertiary)
-                .accessibilityLabel("Goal set")
         case .reason(let text):
             Text(text).font(.nwMono(10)).foregroundStyle(.nw.lanternText).lineLimit(1).fixedSize()
         case .elapsed(let since):

@@ -17,18 +17,33 @@ const source = path.join(root, "Extensions/shepherd-goal.ts");
 const { default: install } = await jiti.import(source);
 const turn = () => new Promise((resolve) => setImmediate(resolve));
 const response = (verdict = "not_met", extra = {}) => ({ stopReason: "toolUse", usage: { totalTokens: 7 }, content: [{ type: "toolCall", name: "goal_verdict", arguments: {
-  verdict, reason: "Run the remaining checks", evidence: [], blocker: "", ...extra,
+  verdict, reason: "Run the remaining checks", summary: "remaining checks needed", evidence: [], blocker: "", ...extra,
 } }] });
-const proof = { role: "toolResult", toolName: "bash", toolCallId: "check", isError: false, content: [{ type: "text", text: "All 12 acceptance tests passed." }] };
+const proof = { role: "toolResult", toolName: "bash", toolCallId: "call-check-1", isError: false, content: [{ type: "text", text: "All 12 acceptance tests passed." }] };
+
+function assertShortPublishedGoal(goal, entries = []) {
+  if (!goal) return;
+  const ids = [goal.id, ...entries.flatMap((e) => [e.id, e.message?.toolCallId,
+    ...(Array.isArray(e.message?.content) ? e.message.content.filter((c) => c.type === "toolCall").map((c) => c.id) : [])])].filter(Boolean);
+  for (const value of [goal.reason, goal.summary].filter((v) => v !== undefined)) {
+    assert(value.length <= 40, `long card text: ${value}`);
+    assert(!/[\t\r\n\u2028\u2029"`]/.test(value), `non-human card text: ${value}`);
+    for (const id of ids) assert(!new RegExp(`(?<![\\w-])${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`).test(value), `card leaked ID ${id}`);
+  }
+  if (goal.state === "needsYou" && goal.reason) assert.equal(goal.reason, goal.reason.toLowerCase());
+  if (goal.state === "paused") assert.equal(goal.reason, "paused by you · the clock stops");
+}
 
 function fixture({ entries = [], enabled = "1", models, auth = true, env = {} } = {}) {
-  const handlers = new Map(), commands = new Map(), widgets = [], prompts = [], calls = [], stored = structuredClone(entries), bus = new Map(), customMessages = [];
+  const handlers = new Map(), commands = new Map(), commandMetadata = [], widgets = [], prompts = [], calls = [], stored = structuredClone(entries), bus = new Map(), customMessages = [];
   const options = { SHEPHERD_EXT_GOAL: enabled, SHEPHERD_GOAL_MODELS: "", ...env };
   const saved = Object.fromEntries(Object.keys(options).map((k) => [k, process.env[k]]));
   Object.assign(process.env, options);
   let index = 0, aborted = 0;
   try {
-    install({ on: (name, fn) => handlers.set(name, fn), events: { on: (name, fn) => bus.set(name, fn) }, registerCommand: (name, value) => commands.set(name, value.handler),
+    install({ on: (name, fn) => handlers.set(name, fn), events: { on: (name, fn) => bus.set(name, fn) }, registerCommand: (name, value) => {
+        commands.set(name, value.handler); commandMetadata.push({ name, description: value.description });
+      },
       appendEntry: (customType, data) => stored.push({ id: `entry${++index}`, type: "custom", customType, data: structuredClone(data) }),
       sendUserMessage: () => { throw Error("Goal kickoff must be a hidden custom message"); }, sendMessage: (message, options) => {
         customMessages.push({ message, options });
@@ -37,19 +52,25 @@ function fixture({ entries = [], enabled = "1", models, auth = true, env = {} } 
   } finally { for (const [k, v] of Object.entries(saved)) v === undefined ? delete process.env[k] : process.env[k] = v; }
   const model = { provider: "fixture", id: "worker", contextWindow: 64000 };
   const ctx = { model, mode: "rpc", isIdle: () => false, hasPendingMessages: () => false,
-    abort: () => { aborted++; }, ui: { setWidget: (key, lines) => { assert.equal(key, "shepherd.goal"); assert.equal(lines.length, 1); widgets.push(JSON.parse(lines[0].slice("SHEPHERD_GOAL:".length))); } },
+    abort: () => { aborted++; }, ui: { setWidget: (key, lines) => {
+      assert.equal(key, "shepherd.goal"); assert.equal(lines.length, 1);
+      const goal = JSON.parse(lines[0].slice("SHEPHERD_GOAL:".length));
+      assertShortPublishedGoal(goal, stored);
+      widgets.push(goal);
+    } },
     sessionManager: { getBranch: () => stored, getEntries: () => { throw Error("Must read active branch only"); }, getLeafId: () => stored.at(-1)?.id ?? null, getSessionId: () => "fixture-session" },
     modelRegistry: { getAvailable: () => models ?? [model], hasConfiguredAuth: () => auth,
       find: (provider, id) => (models ?? [model]).find((m) => m.provider === provider && m.id === id),
       complete: (model, context, options) => new Promise((resolve, reject) => calls.push({ model, context, options, resolve, reject })) } };
-  const f = { handlers, commands, widgets, prompts, calls, ctx, stored, bus, customMessages,
+  const f = { handlers, commands, commandMetadata, widgets, prompts, calls, ctx, stored, bus, customMessages,
     get goal() { return widgets.at(-1); }, get aborted() { return aborted; },
     emit: (event, value = {}) => handlers.get(event)?.(value, ctx),
     action: (value) => commands.get("shepherd-goal")(JSON.stringify(value), ctx),
     start: (text = "All acceptance tests pass", extra = {}) => f.action({ action: "set", text, ...extra }),
     check: (extra = {}) => f.emit("agent_before_settle", { entries: [], outcome: "completed", context: { contextEntries: stored.map((sourceEntry) => ({ sourceEntry, messages: sourceEntry.message ? [sourceEntry.message] : [] })) }, ...extra }),
     async work(tokens = 3) {
-      const message = { role: "assistant", timestamp: 1, content: [{ type: "text", text: "Checked the implementation." }], usage: { totalTokens: tokens }, stopReason: "stop" };
+      const message = { role: "assistant", timestamp: 1, content: [{ type: "text", text: "Checked the implementation." },
+        { type: "toolCall", id: "call-check-1", name: "bash", arguments: { command: "go test ./... && go vet ./..." } }], usage: { totalTokens: tokens }, stopReason: "stop" };
       await f.emit("message_start", { message });
       stored.push({ type: "message", id: `work${++index}`, message });
       await f.emit("message_end", { message });
@@ -153,7 +174,9 @@ test("active edit restarts work after cancelling a check or while idle, but paus
     await f.start(); await f.work(); const check = f.check();
     await f.action({ action: "edit", text: "Replacement condition" }); await check;
     assert.equal(f.prompts.length, 2); assert(f.prompts[1].text.includes("Replacement condition"));
-    assert.equal(f.goal.state, "working");
+    assert.equal(f.goal.state, "checking");
+    await f.emit("before_agent_start"); assert.equal(f.goal.state, "checking");
+    await f.emit("agent_start"); assert.equal(f.goal.state, "working");
     f.ctx.isIdle = () => true;
     await f.action({ action: "edit", text: "New idle condition" }); assert.equal(f.prompts.length, 3);
     await f.action({ action: "pause" });
@@ -169,10 +192,149 @@ test("three checks without new successful tool evidence stop even with empty/cha
       const check = f.check(); f.calls[i].resolve(response("not_met", { blocker: i % 2 ? "" : `changing-${i}` }));
       const result = await check; assert.equal(result.continue, i !== 3);
     }
-    assert.equal(f.goal.state, "needsYou"); assert.match(f.goal.reason, /without new successful tool evidence/);
+    assert.equal(f.goal.state, "needsYou"); assert.equal(f.goal.reason, "no new tool evidence after 3 checks");
     assert.equal(f.stored.at(-1).data.consecutiveNoProgress, 3); assert.equal(f.stored.at(-1).data.lastEvidenceID, "proof");
     const restored = fixture({ entries: f.stored });
     assert.equal(restored.stored.at(-1).data.consecutiveNoProgress, 3); await restored.close();
+  } finally { await f.close(); }
+});
+
+test("editing preserves offered states and reasons; identical text is a no-op, and met conditions cannot change without a new goal", async () => {
+  for (const state of ["working", "checking", "met", "paused", "needsYou"]) {
+    const f = fixture();
+    try {
+      await f.start(); await f.work();
+      let check;
+      if (["checking", "met", "needsYou"].includes(state)) {
+        check = f.check();
+        if (state !== "checking") {
+          f.calls[0].resolve(response(state === "met" ? "met" : "needs_you", { reason: "Waiting for permission",
+            summary: "12 tests passed", evidence: [{ entryId: "proof", quote: "All 12 acceptance tests passed." }] }));
+          await check;
+        }
+      } else if (state === "paused") await f.action({ action: "pause" });
+      const before = structuredClone(f.goal), counts = [f.stored.length, f.widgets.length, f.prompts.length];
+      await f.action({ action: "edit", text: before.text });
+      assert.deepEqual(f.goal, before); assert.deepEqual([f.stored.length, f.widgets.length, f.prompts.length], counts);
+      if (state === "checking") assert(!f.calls[0].options.signal.aborted);
+      if (state === "met") {
+        await assert.rejects(f.action({ action: "edit", text: before.text + " and lint is clean" }), /Set a new goal/);
+        assert.deepEqual(f.goal, before); assert.deepEqual([f.stored.length, f.widgets.length, f.prompts.length], counts);
+        continue;
+      }
+      await f.action({ action: "edit", text: before.text + " and lint is clean" });
+      assert.equal(f.goal.state, before.state); assert.equal(f.goal.reason, before.reason);
+      assert.equal(f.goal.revision, before.revision + 1);
+      assert.equal(f.goal.tokensUsed, before.tokensUsed);
+      if (state === "checking") {
+        await check; assert(f.calls[0].options.signal.aborted);
+        await f.emit("before_agent_start"); assert.equal(f.goal.state, "checking");
+        await f.emit("agent_start"); assert.equal(f.goal.state, "working"); await f.work();
+        const fresh = f.check();
+        assert.equal(JSON.parse(f.calls[1].context.messages[0].content[0].text).objective, before.text + " and lint is clean");
+        f.calls[1].resolve(response("met", { summary: "12 tests passed", evidence: [{ entryId: "proof", quote: "All 12 acceptance tests passed." }] }));
+        await fresh; assert.equal(f.goal.state, "met");
+      }
+    } finally { await f.close(); }
+  }
+});
+
+test("checking names only commands whose tool results the evaluator actually reads, with explicit unresolved fallbacks", async () => {
+  for (const kind of ["complete", "omitted", "missing-call", "quoted", "control-syntax", "read", "unsafe-read", "non-shell", "none"]) {
+    const f = fixture();
+    try {
+      await f.start(); if (kind !== "none") await f.work();
+      if (kind !== "none") {
+        const worker = f.stored.find((e) => e.type === "message" && e.message.role === "assistant");
+        worker.message.content.push({ type: "toolCall", id: "unread-call", name: "bash", arguments: { command: "go fmt ./..." } });
+        if (kind === "missing-call") worker.message.content = [];
+        if (kind === "quoted") worker.message.content[1].arguments.command = "echo 'go test && go vet'";
+        if (kind === "control-syntax") worker.message.content[1].arguments.command = "if go test ./...; then go vet ./...; fi";
+        if (["read", "unsafe-read", "non-shell"].includes(kind)) worker.message.content[1].name = f.stored.at(-1).message.toolName = "read";
+        if (kind === "read") worker.message.content[1].arguments = { path: "/private/full/path/LedgerTests.swift" };
+        if (kind === "unsafe-read") worker.message.content[1].arguments = { path: "/private/full/path/call-check-1" };
+      }
+      const extra = kind === "omitted" ? { context: { contextEntries: f.stored.filter((e) => e.id !== "proof").map((sourceEntry) => ({ sourceEntry, messages: sourceEntry.message ? [sourceEntry.message] : [] })) } } : {};
+      const check = f.check(extra);
+      assert.equal(f.goal.reason, kind === "complete" ? "checking go test, go vet"
+        : kind === "read" ? "checking read LedgerTests.swift"
+        : ["none", "omitted"].includes(kind) ? "checking · no tool results to read" : "checking · commands unavailable");
+      assert(f.goal.reason.length <= 40); assert(!f.goal.reason.includes("/private/"));
+      assert(!f.goal.reason.includes("go fmt"));
+      f.calls[0].resolve(response()); await check;
+    } finally { await f.close(); }
+  }
+});
+
+test("short human headers never expose model IDs, quotes or layout; details keep full feedback and errors", async () => {
+  const f = fixture();
+  try {
+    await f.start(); await f.work(); const check = f.check();
+    const reason = "Waiting\tfor permission entryId proof\nDetailed feedback\twith call-check-1 and raw proof.";
+    const summary = "41\ttests passed proof\nraw";
+    f.calls[0].resolve(response("needs_you", { reason, summary, evidence: [{ entryId: "proof", quote: "All 12 acceptance tests passed." }] }));
+    const result = await check;
+    assert.equal(f.goal.reason, "waiting for permission"); assert.equal(f.goal.summary, "41 tests passed");
+    assert.equal(result.entries[0].details.verdict.reason, reason); assert.equal(result.entries[0].details.verdict.summary, summary);
+    assert.equal(result.entries[0].content, "Goal needs you · waiting for permission\n\nDetails:\nEvaluator feedback:\n" + reason + "\n\nTool evidence:\nproof: All 12 acceptance tests passed.");
+    await f.action({ action: "resume" }); await f.work(); const failed = f.check();
+    const error = "Provider failed\tentryId proof\nFull diagnostic call-check-1";
+    f.calls[1].reject(Error(error)); const stopped = await failed;
+    assert.equal(f.goal.reason, "goal check failed · try again");
+    assert.equal(stopped.entries[0].details.error, error);
+    assert(!stopped.entries[0].content.split("\n\nDetails:\n")[0].includes("proof"));
+    assert.equal(stopped.entries[0].content.split("\n\nDetails:\n")[1], error);
+  } finally { await f.close(); }
+});
+
+test("interrupted settlement and missing user answers publish exact short reasons, and 30m limits stay human", async (t) => {
+  let now = 0; t.mock.method(performance, "now", () => now);
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const f = fixture();
+  try {
+    await f.start(); await f.emit("agent_settled");
+    assert.equal(f.goal.reason, "work stopped before the goal check");
+    await f.action({ action: "resume" });
+    const stopped = await f.check({ outcome: "aborted" });
+    assert.equal(f.goal.reason, "work stopped or failed"); assert.equal(stopped.entries[0].details.outcome, "aborted");
+    await f.action({ action: "resume" }); await f.work(); const check = f.check();
+    await f.emit("agent_settled"); await check;
+    assert.equal(f.goal.reason, "goal check interrupted");
+    assert(f.calls[0].options.signal.aborted);
+    await f.emit("tool_execution_start", { toolName: "ask_user", toolCallId: "ask-1" });
+    await f.start(); assert.equal(f.goal.reason, "waiting for your answer");
+    await f.emit("tool_execution_end", { toolName: "ask_user", toolCallId: "ask-1" });
+    await f.start("Finish", { timeLimitSeconds: 1800 }); now = 1800000; t.mock.timers.tick(1800000);
+    assert.equal(f.goal.reason, "hit the 30m time limit");
+  } finally { await f.close(); }
+});
+
+test("long feedback is word-bounded for cards but remains complete in the check and worker continuation", async () => {
+  const f = fixture();
+  try {
+    await f.start(); await f.work(); const check = f.check();
+    const reason = "remaining permission checks ".repeat(20).trim();
+    f.calls[0].resolve(response("not_met", { reason })); const result = await check;
+    assert(reason.startsWith(f.goal.reason)); assert(f.goal.reason.length <= 40);
+    assert(reason[f.goal.reason.length] === " ", "short text ends on a word boundary");
+    assert.equal(result.entries[0].details.verdict.reason, reason);
+    assert.equal(JSON.parse(result.entries[1].content.split("SHEPHERD_GOAL_DATA:")[1]).feedback, reason);
+  } finally { await f.close(); }
+});
+
+test("met puts a structured summary first and preserves full feedback and every proof quote in Details beyond the widget bound", async () => {
+  const f = fixture();
+  try {
+    await f.start(); await f.work();
+    const quote = "41 tests passed\t" + "proof detail\n".repeat(140);
+    const evidence = Array.from({ length: 8 }, (_, i) => ({ entryId: `full-proof-${i}`, quote }));
+    for (const e of evidence) f.stored.push({ type: "message", id: e.entryId, message: { ...proof, content: e.quote } });
+    const check = f.check(); f.calls[0].resolve(response("met", { reason: "All checks passed", summary: "41 tests passed", evidence }));
+    const result = await check, full = evidence.map((e) => `${e.entryId}: ${e.quote}`).join("\n");
+    assert.equal(f.goal.summary, "41 tests passed"); assert.equal(f.goal.evidence.length, 8192);
+    assert.equal(result.entries[0].content, "Goal met · 41 tests passed\n\nDetails:\nEvaluator feedback:\n" + result.entries[0].details.verdict.reason + "\n\nTool evidence:\n" + full);
+    assert.deepEqual(result.entries[0].details.verdict.evidence, evidence);
+    assert(full.length > 8192);
   } finally { await f.close(); }
 });
 
@@ -217,7 +379,7 @@ test("a parent's actual user question stops goal automation without aborting the
     assert.equal(await f.check(), undefined);
     await assert.rejects(f.action({ action: "resume" }), /Answer the question/);
     await f.emit("tool_execution_end", { toolName: "ask_user", toolCallId: "question" });
-    assert.match(f.goal.reason, /Answer received/);
+    assert.equal(f.goal.reason, "answer received · resume to continue");
     await f.action({ action: "resume" });
     assert.equal(f.goal.state, "working");
   } finally { await f.close(); }
@@ -328,7 +490,7 @@ test("exactly three consecutive identical blockers need the user; changing or em
       const result = await check;
       assert.equal(f.goal.state, i === 6 ? "needsYou" : "working"); assert.equal(result.continue, i !== 6);
     }
-    assert.match(f.goal.reason, /Repeated blocker/); assert.equal(f.stored.at(-1).data.blockerCount, 3);
+    assert.equal(f.goal.reason, "the same blocker repeated 3 times"); assert.equal(f.stored.at(-1).data.blockerCount, 3);
   } finally { await f.close(); }
 });
 
@@ -337,6 +499,8 @@ for (const [name, answer] of [
   ["unknown verdict", response("success")],
   ["missing reason", response("met", { reason: "" })],
   ["missing blocker", response("not_met", { blocker: undefined })],
+  ["missing summary", response("met", { summary: undefined })],
+  ["oversized summary", response("met", { summary: "x".repeat(41) })],
   ["missing evidence", response("met")],
   ["fabricated quote", response("met", { evidence: [{ entryId: "proof", quote: "Everything passed." }] })],
   ["assistant citation", response("met", { evidence: [{ entryId: "work2", quote: "Checked the implementation." }] })],
@@ -425,8 +589,67 @@ test("model selection respects configured authenticated small models and require
     f.calls[0].resolve(response("needs_you", { reason: "Need permission", blocker: "permission" })); await check; assert.equal(f.goal.state, "needsYou");
   } finally { await f.close(); }
   const unauth = fixture({ auth: false });
-  try { await unauth.start(); await unauth.work(); await unauth.check(); assert.equal(unauth.calls.length, 0); assert.equal(unauth.goal.state, "needsYou"); }
+  try {
+    await unauth.start(); await unauth.work(); const result = await unauth.check();
+    assert.equal(unauth.calls.length, 0); assert.equal(unauth.goal.state, "needsYou");
+    assert.equal(result.entries[0].content.split("\n\nDetails:\n")[1], "No authenticated goal evaluator model is available.");
+  }
   finally { await unauth.close(); }
+});
+
+test("runtime snapshots generate the five board states from actual publications", async (t) => {
+  t.mock.method(performance, "now", () => 0);
+  const condition = "Ledger tests pass and go vet is clean, without changing the consumer package.";
+  const seed = (id) => [{ id: "fixture-seed", type: "custom", customType: "shepherd.goal", data: { goal: {
+    id, revision: 1, text: condition, state: "paused", elapsedSeconds: 400, tokensUsed: 71000,
+  } } }];
+  const f = fixture({ entries: seed("00000000-0000-0000-0000-000000000001") });
+  const blocked = fixture({ entries: seed("00000000-0000-0000-0000-000000000002") });
+  const fresh = fixture();
+  try {
+    const goals = { paused: structuredClone(f.goal) }, records = [];
+    await f.action({ action: "resume" }); goals.working = structuredClone(f.goal);
+    await f.work(0); f.stored.at(-1).message.content = "41 tests passed\tgo vet is clean\nFull ledger proof.";
+    const check = f.check(); goals.checking = structuredClone(f.goal);
+    f.calls[0].resolve({ ...response("met", { reason: "Ledger tests and vet passed", summary: "41 tests passed",
+      evidence: [{ entryId: "proof", quote: "41 tests passed\tgo vet is clean\nFull ledger proof." }] }), usage: { totalTokens: 33000 } });
+    records.push((await check).entries[0]); goals.met = structuredClone(f.goal);
+    await fresh.start(condition);
+    const { customType, display, content } = fresh.customMessages[0].message;
+    records.push({ customType, display, content }); // Omit only its randomized bookkeeping ID.
+    await blocked.action({ action: "resume" });
+    for (let i = 0; i < 3; i++) {
+      await blocked.work(0);
+      const quote = "ledger test failed\tmissing consumer guard\nFull failure output.";
+      blocked.stored.at(-1).message.content = quote; blocked.stored.at(-1).message.isError = true;
+      const check = blocked.check(); blocked.calls[i].resolve(response("not_met", { reason: "The ledger test failed", summary: "ledger test failed", blocker: "ledger-test",
+        evidence: [{ entryId: "proof", quote }] }));
+      const result = await check; if (i === 0 || i === 2) records.push(result.entries[0]);
+    }
+    goals.needsYou = structuredClone(blocked.goal);
+    await blocked.action({ action: "resume" }); await blocked.work(0);
+    const decision = blocked.check();
+    blocked.calls.at(-1).resolve(response("needs_you", { reason: "choose a deployment target\nChoose staging or production; do not deploy until the user decides.", summary: "deployment needs a decision" }));
+    records.push((await decision).entries[0]);
+    await blocked.action({ action: "resume" }); await blocked.work(0);
+    blocked.ctx.modelRegistry.hasConfiguredAuth = () => false;
+    records.push((await blocked.check()).entries[0]);
+    assert.equal(goals.working.tokensUsed, 71000); assert.equal(goals.checking.reason, "checking go test, go vet");
+    assert.equal(goals.met.tokensUsed, 104000); assert.equal(goals.met.summary, "41 tests passed");
+    assert.equal(goals.paused.reason, "paused by you · the clock stops");
+    assert.equal(goals.needsYou.reason, "the same test failed 3 times in a row");
+    assert.deepEqual(new Set(Object.values(goals).map((g) => g.state)), new Set(["working", "checking", "met", "paused", "needsYou"]));
+    const file = path.join(root, "Tests/Extensions/goal-runtime-fixtures.json");
+    const commands = fresh.commandMetadata.filter((c) => c.name === "goal");
+    assert.equal(commands.length, 1); assert(commands[0].description.includes("<condition>"));
+    for (const record of records) {
+      const line = record.content.split("\n")[0];
+      assert(!/[\t\r]/.test(line)); assert(!line.includes("proof") && !line.includes("00000000-0000"));
+    }
+    const json = JSON.stringify({ goals: ["working", "checking", "met", "paused", "needsYou"].map((state) => goals[state]), records, commands }, null, 2) + "\n";
+    if (process.argv.includes("--update-fixtures")) fs.writeFileSync(file, json);
+    assert.equal(fs.readFileSync(file, "utf8"), json, "Runtime fixtures changed; run node Tests/Extensions/goal.test.mjs --update-fixtures and review the diff");
+  } finally { await f.close(); await blocked.close(); await fresh.close(); }
 });
 
 async function until(what, fn, timeout = 15000) {
@@ -441,7 +664,7 @@ async function until(what, fn, timeout = 15000) {
 // RPC widgets, and durable session entries together. The worker calls read; the evaluator only returns a tool verdict.
 async function realPi(dir) {
   const requests = [];
-  let releaseEvaluation, evaluationNumber = 0;
+  let releaseEvaluation, evaluationNumber = 0, workerNumber = 0;
   const server = http.createServer(async (req, res) => {
     let raw = ""; for await (const chunk of req) raw += chunk;
     const body = JSON.parse(raw); requests.push(body);
@@ -453,9 +676,9 @@ async function realPi(dir) {
       const content = body.messages.filter((m) => m.role === "user").at(-1).content;
       const payload = JSON.parse(typeof content === "string" ? content : content.filter((c) => c.type === "text").map((c) => c.text).join("\n"));
       const citation = payload.transcript.find((e) => e.role === "toolResult");
-      call = { name: "goal_verdict", arguments: JSON.stringify({ verdict: evaluationNumber < 3 ? "not_met" : "met", reason: "Acceptance result observed",
+      call = { name: "goal_verdict", arguments: JSON.stringify({ verdict: evaluationNumber < 3 ? "not_met" : "met", reason: "Acceptance result observed", summary: "12 acceptance tests passed",
         evidence: citation ? [{ entryId: citation.entryId, quote: "All 12 acceptance tests passed." }] : [], blocker: "" }) };
-    } else if (!body.messages.some((m) => m.role === "tool")) {
+    } else if (++workerNumber % 2 === 1) {
       call = { name: "read", arguments: JSON.stringify({ path: "acceptance.txt" }) };
     }
     const chunk = (delta, finish = null) => ({ id: "fixture", object: "chat.completion.chunk", created: 1, model: body.model,
@@ -506,6 +729,31 @@ async function realPi(dir) {
   return pi;
 }
 
+test("real pinned pi: editing checking retains its header, cancels stale evaluation and completes fresh work without getting stuck", { timeout: 60000 }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sh-goal-edit-"));
+  const pi = await realPi(dir);
+  try {
+    await until("goal capability", () => pi.goal() === null);
+    await pi.request({ type: "prompt", message: "/goal Verify acceptance.txt contains the full acceptance result" });
+    await until("checking", () => pi.goal()?.state === "checking");
+    const before = pi.goal();
+    await pi.request({ type: "prompt", message: `/shepherd-goal ${JSON.stringify({ action: "edit", text: before.text })}` });
+    assert.equal(pi.goal().revision, before.revision); assert.equal(pi.goal().reason, before.reason);
+    const text = before.text + " with complete tool proof";
+    await pi.request({ type: "prompt", message: `/shepherd-goal ${JSON.stringify({ action: "edit", text })}` });
+    pi.release();
+    await until("edited goal met", () => pi.goal()?.state === "met" && pi.settled() >= 1);
+    const widgets = pi.events.filter((e) => e.type === "extension_ui_request" && e.method === "setWidget" && e.widgetKey === "shepherd.goal")
+      .map((e) => JSON.parse(e.widgetLines[0].slice("SHEPHERD_GOAL:".length))).filter(Boolean);
+    const edited = widgets.find((g) => g.text === text);
+    assert.equal(edited.state, "checking"); assert.equal(edited.reason, before.reason); assert.equal(edited.revision, before.revision + 1);
+    assert(!widgets.some((g) => g.state === "needsYou"));
+    assert.equal(pi.goal().text, text); assert.equal(pi.goal().summary, "12 acceptance tests passed");
+    assert.equal(pi.events.filter((e) => e.type === "extension_error").length, 0);
+  } catch (error) { error.message += `\npi stderr:\n${pi.stderr}`; throw error; }
+  finally { await pi.stop(); fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("real pinned pi: immediate controls, structured nested checks, boundary continuation and durable state", { timeout: 60000 }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sh-goal-"));
   const pi = await realPi(dir);
@@ -523,6 +771,9 @@ test("real pinned pi: immediate controls, structured nested checks, boundary con
     assert.equal((await pi.request({ type: "prompt", message: `/shepherd-goal ${JSON.stringify({ action: "pause", expectedGoalID: first.id, expectedGoalRevision: first.revision })}` })).success, true);
     await until("paused run settled", () => pi.settled() === 1);
     assert.equal(pi.goal().state, "paused"); pi.release();
+    const paused = pi.goal();
+    assert.equal((await pi.request({ type: "prompt", message: `/shepherd-goal ${JSON.stringify({ action: "edit", text: paused.text + ", with complete proof" })}` })).success, true);
+    assert.equal(pi.goal().state, "paused"); assert.equal(pi.goal().reason, "paused by you · the clock stops");
     assert.equal((await pi.request({ type: "prompt", message: "/goal resume" })).success, true);
     await until("goal met after boundary continuation", () => pi.goal()?.state === "met" && pi.settled() === 2);
     assert(pi.goal().tokensUsed >= 20); assert.match(pi.goal().evidence, /All 12 acceptance tests passed/);
