@@ -93,6 +93,18 @@ class Component extends DCLogic {
 - `<dc-import name="Card" item="{{ it }}" hint-size="320px,120px"></dc-import>` mounts the
   sibling board `Card.dc.html` in place; its other attributes become the child's props
   (`data-id` reads as `dataId`). Never self-close it, and don't name a prop `name`.
+  - **The name is a path from the importing board's folder,** without `.dc.html`: `Card` is
+    beside it, `parts/Card` is below it. It never climbs (`..`) out of the folder, and a name
+    that is not a board draws the `hint-size` placeholder.
+  - **Attributes are props:** text and numbers as written, a list or a handler by a whole-value
+    hole (`items="{{ rows }}"`, `item-count="{{ total }}"` reads as `itemCount`). An attribute
+    named `children` is the piece's `children`, as text.
+  - **Markup written between the tags is not passed down.** A piece has no slots: give it a
+    prop for what differs.
+  - **Imports nest at most 8 deep;** a board that imports itself (or two that import each
+    other) draws a placeholder where the loop closes. The piece is drawn the same wherever it
+    is imported, and its elements are the piece's own, not the importer's: a pick stops at the
+    `<dc-import>`.
 - `<x-import component-from-global-scope="Acme.Button" variant="primary">Save</x-import>`
   mounts a design system's component, from the bundle its README names (loaded in the head), at
   any depth (`Acme.Field.TextInput`). Its attributes are props, kebab-case for camelCase
