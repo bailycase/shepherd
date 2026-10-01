@@ -18,7 +18,7 @@ private final class ThreadHarness {
     let commands = ThreadCommandCenter()
     var snapshot: NativeThreadSnapshot
     let window: OffscreenWindow
-    private let pillWidth = ceil(NSHostingView(rootView: NWJumpToLatest(action: {})).fittingSize.width)
+    private let pillSize = NSHostingView(rootView: NWJumpToLatest(action: {})).fittingSize
     var olderRequests = 0
     var olderReply: CheckedContinuation<NativeThreadResult, Never>?
 
@@ -104,11 +104,13 @@ private final class ThreadHarness {
     var showsJumpPill: Bool {
         window.layout()
         let host = window.host
-        // Keep surrounding transcript words out of the pill's OCR line. Measure the native
-        // control so the crop follows its font and text scale rather than a guessed width.
-        let region = NSRect(x: host.bounds.midX - pillWidth / 2,
-                            y: host.isFlipped ? host.bounds.height / 2 : 0,
-                            width: pillWidth, height: host.bounds.height / 2)
+        // The composer height is the scroll's bottom inset, less its transcript gap. The
+        // native pill sits one control height and one spacing above that measured edge.
+        let top = host.bounds.height - scrollView.contentInsets.bottom + AppLayout.composerTranscriptGap
+            - pillSize.height - NW.Space.m
+        let region = NSRect(x: host.bounds.midX - ceil(pillSize.width) / 2,
+                            y: host.isFlipped ? top : host.bounds.height - top - pillSize.height,
+                            width: ceil(pillSize.width), height: ceil(pillSize.height))
         guard let bitmap = host.bitmapImageRepForCachingDisplay(in: region) else {
             Issue.record("Could not capture the thread while checking the jump pill")
             return false
@@ -543,19 +545,7 @@ struct ThreadScrollingTests {
         let before = thread.distanceFromBottom
         #expect(before > NativeScrollFollower.threshold, "the second jump stays detached")
         await thread.publish(ThreadHarness.snapshot(count: 32, running: false, revision: 2, paragraphs: 20))
-        do {
-            try await eventuallyOnMain("the jump pill to show for the new turn", poll: .milliseconds(150)) { thread.showsJumpPill }
-        } catch {
-            print("Idle jump failure: before=\(before), after=\(thread.distanceFromBottom), pinned=\(thread.isPinned)")
-            let host = thread.window.host
-            if let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
-                host.cacheDisplay(in: host.bounds, to: bitmap)
-                if let png = bitmap.representation(using: .png, properties: [:]) {
-                    print("Idle jump PNG: \(png.base64EncodedString())")
-                }
-            }
-            throw error
-        }
+        try await eventuallyOnMain("the jump pill to show for the new turn", poll: .milliseconds(150)) { thread.showsJumpPill }
     }
 
     @Test func steeringFromEarlierHistoryReturnsToTheTailBeforeDelivery() async throws {
