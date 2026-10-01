@@ -10,12 +10,16 @@ public struct DesignTweakTarget: Hashable, Sendable {
     public let kind: DesignElementKind
     /// "card · Checkout funnel".
     public let tag: String?
+    /// For a `<dc-import>`: the shared piece it mounts ("Card"), as the import names it. The piece
+    /// draws the element, so Tweak offers no style on it (the piece's own elements are where a change goes).
+    public let instanceOf: String?
 
-    public init(board: DesignPath, element: DesignElementID?, kind: DesignElementKind, tag: String?) {
+    public init(board: DesignPath, element: DesignElementID?, kind: DesignElementKind, tag: String?, instanceOf: String? = nil) {
         self.board = board
         self.element = element
         self.kind = kind
         self.tag = tag
+        self.instanceOf = instanceOf
     }
 }
 
@@ -86,9 +90,12 @@ public final class DesignTweakModel {
         public var problem: String?
         /// Nothing is selected.
         public var isEmpty = true
+        /// The selection is one use of this shared piece: the tab says so, with no style controls.
+        public var instanceOf: String?
 
         public init(board: String = "", element: String? = nil, groups: [DesignTweakGroup] = [], scopeName: String? = nil,
-                    scopeNote: String? = nil, canReset: Bool = false, problem: String? = nil, isEmpty: Bool = true) {
+                    scopeNote: String? = nil, canReset: Bool = false, problem: String? = nil, isEmpty: Bool = true,
+                    instanceOf: String? = nil) {
             self.board = board
             self.element = element
             self.groups = groups
@@ -97,6 +104,7 @@ public final class DesignTweakModel {
             self.canReset = canReset
             self.problem = problem
             self.isEmpty = isEmpty
+            self.instanceOf = instanceOf
         }
     }
 
@@ -224,7 +232,10 @@ public final class DesignTweakModel {
         var out = Presentation(board: boardTitle(target.board), element: target.tag, isEmpty: false)
         let (tokens, _) = self.tokens(for: source)
         var groups: [DesignTweakGroup] = []
-        if let id = target.element {
+        if target.element != nil, let piece = target.instanceOf {
+            // One use of a shared piece: its look is the piece's, and a style on the import would do nothing.
+            out.instanceOf = piece
+        } else if let id = target.element {
             if let style = DesignStyleEdit.style(of: id.tid, in: source) {
                 groups += DesignTweakControls.styleGroups(style, kind: target.kind, tokens: tokens)
             } else {
