@@ -175,6 +175,12 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertIn("github.event_name == 'schedule' && 'nightly'", JOBS["plan"])
         self.assertIn("ref: ${{ needs.plan.outputs.checkout_ref }}", JOBS["tests"])
 
+    def test_a_newer_run_cancels_the_running_one_with_a_literal_true(self):
+        # An expression here (github.event_name != 'schedule') left the running run alone while the
+        # new one waited for it: only a literal cancelled it.
+        block = WORKFLOW.split("\nconcurrency:", 1)[1].split("\ndefaults:", 1)[0]
+        self.assertRegex(block, r"(?m)^  cancel-in-progress: true$")
+
     def test_the_old_shards_and_their_regexes_are_gone(self):
         for old in ("W_RE", "R_RE", "A_RE", "matrix.shard == 'C'", "warm:"):
             self.assertNotIn(old, WORKFLOW)
