@@ -40,13 +40,14 @@ public struct NWRunCardValue: Identifiable, Equatable, Sendable {
     public var progressLabel: String?
     /// "922k", after the bar.
     public var tokens: String?
-    /// The question (inline Markdown) while the run needs you, and the answers it offered.
+    /// The question (inline Markdown) a run put to its parent, which it waits on, and the answers
+    /// it offered. The user is never asked: this is only to read.
     public var question: String?
     public var options: [String]
     /// When it started, and when it finished: the pill counts from one to the other, or to now.
     public var since: Date?
     public var until: Date?
-    /// When it began waiting on you.
+    /// When it began waiting on its parent's answer.
     public var waitingSince: Date?
     public var added: Int?
     public var removed: Int?
@@ -80,15 +81,16 @@ public struct NWRunCardValue: Identifiable, Equatable, Sendable {
     }
 }
 
-/// A run's state pill with its time: "37m" counting while it runs, "Needs you · 2m" while it
-/// waits on you, "4m 02s" once finished; a queued or paused run shows its word, outlined.
+/// A run's state pill with its time: "37m" counting while it runs, "Waiting on parent · 2m" while
+/// it waits on its parent's answer, "4m 02s" once finished; a queued or paused run shows its
+/// word, outlined.
 public struct NWRunPill: View {
     let state: AgentState
     let label: String?
     let since: Date?
     let until: Date?
 
-    /// `label` leads ("Needs you"); the time counts from `since` to `until`, or to now.
+    /// `label` leads ("Waiting on parent"); the time counts from `since` to `until`, or to now.
     public init(_ state: AgentState, label: String? = nil, since: Date? = nil, until: Date? = nil) {
         self.state = state
         self.label = label
@@ -119,31 +121,27 @@ public struct NWRunPill: View {
 }
 
 /// One run as a card (MobileSubagents board): the branch glyph, name, tags and the timed pill;
-/// then per state its step, context bar, tokens and last call; its question with the answers it
-/// offered and Reply…; what it did and its diff; or why it failed, with Re-run. Tapping the card
-/// opens the run.
+/// then per state its step, context bar, tokens and last call; the question it put to its parent;
+/// what it did and its diff; or why it failed, with Re-run. Tapping the card opens the run.
 public struct NWRunCard: View, Equatable {
     let run: NWRunCardValue
     let isSelected: Bool
     let isEnabled: Bool
     let open: (() -> Void)?
-    let answer: ((String) -> Void)?
     let rerun: (() -> Void)?
     private let actionShape: [Bool]
     @Environment(\.dynamicTypeSize) private var dynamicType
 
-    /// `isEnabled` gates answers and Re-run (opening always works). A nil `open` draws the card
-    /// as a header that opens nothing (the run already on screen); a nil `answer` hides the
-    /// question's buttons; a nil `rerun` hides Re-run.
+    /// `isEnabled` gates Re-run (opening always works). A nil `open` draws the card as a header
+    /// that opens nothing (the run already on screen); a nil `rerun` hides Re-run.
     public init(_ run: NWRunCardValue, isSelected: Bool = false, isEnabled: Bool = true, open: (() -> Void)?,
-                answer: ((String) -> Void)? = nil, rerun: (() -> Void)? = nil) {
+                rerun: (() -> Void)? = nil) {
         self.run = run
         self.isSelected = isSelected
         self.isEnabled = isEnabled
         self.open = open
-        self.answer = answer
         self.rerun = rerun
-        actionShape = [open != nil, answer != nil, rerun != nil]
+        actionShape = [open != nil, rerun != nil]
     }
 
     public nonisolated static func == (a: NWRunCard, b: NWRunCard) -> Bool {
@@ -167,7 +165,7 @@ public struct NWRunCard: View, Equatable {
                     .accessibilityLabel(run.accessibilityLabel)
                     .accessibilityValue(progressValue)
             }
-            if run.state == .attention, let question = run.question { questionBlock(question) }
+            if let question = run.question { NWRunQuestion(question, options: run.options) }
             if run.state == .failed, let rerun {
                 Button("Re-run", action: rerun).buttonStyle(.nw(.secondary, size: .l)).disabled(!isEnabled)
                     .accessibilityLabel("Re-run \(run.name)")
@@ -176,7 +174,7 @@ public struct NWRunCard: View, Equatable {
         .padding(NW.Space.l)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(nw.bgRaised, in: shape)
-        .nwBorder(isSelected ? nw.running : run.state == .attention ? nw.lantern : nw.lineSubtle, radius: NW.Radius.l)
+        .nwBorder(isSelected ? nw.running : nw.lineSubtle, radius: NW.Radius.l)
         .background {
             if isSelected {
                 RoundedRectangle(cornerRadius: NW.Radius.l + NWRunTouchMetrics.ring).fill(nw.runningTint)
@@ -192,10 +190,12 @@ public struct NWRunCard: View, Equatable {
         run.progress.map { "\(run.progressLabel ?? "Progress") \(Int(($0 * 100).rounded()))%" } ?? ""
     }
 
-    /// The pill: a live run's time, the wait on you, a finished run's duration, else its word.
+    /// The pill: a live run's time, the wait on its parent, a finished run's duration, else its word.
     private var pill: (label: String?, since: Date?, until: Date?) {
         switch run.state {
         case .attention:
+            return (run.stateLabel ?? run.state.label, run.waitingSince, nil)
+        case .queued where run.waitingSince != nil:
             return (run.stateLabel ?? run.state.label, run.waitingSince, nil)
         case .running:
             return run.since == nil ? (run.stateLabel ?? run.state.label, nil, nil) : (run.stateLabel, run.since, nil)
@@ -270,8 +270,6 @@ public struct NWRunCard: View, Equatable {
                 }
             case .failed:
                 Text(run.detail).font(.nw(.ui, weight: .regular)).foregroundStyle(nw.failed).lineLimit(3)
-            case .attention:
-                if run.question == nil { detailLine }
             default:
                 detailLine
             }
@@ -297,73 +295,35 @@ public struct NWRunCard: View, Equatable {
         Text(run.detail).font(.nw(.mono)).foregroundStyle(Color.nw.textSecondary)
             .lineLimit(dynamicType.isAccessibilitySize ? 3 : 1).truncationMode(.middle)
     }
-
-    private func questionBlock(_ question: String) -> some View {
-        NWRunQuestion(question, options: run.options, name: run.name, isEnabled: isEnabled, answer: answer)
-    }
 }
 
-/// A run's question with the answers it offered (the first primary) and Reply…, which opens a
-/// field that answers in its own words. Without `answer` only the question shows.
+/// The question a run put to its parent, to read: the question and the answers it offered. No
+/// control answers it: its parent does, or asks the user in its own thread.
 public struct NWRunQuestion: View {
     let question: String
     let options: [String]
-    let name: String
-    let isEnabled: Bool
-    let answer: ((String) -> Void)?
-    @State private var replying = false
-    @State private var reply = ""
-    @FocusState private var replyFocused: Bool
 
-    public init(_ question: String, options: [String], name: String, isEnabled: Bool = true, answer: ((String) -> Void)?) {
+    public init(_ question: String, options: [String] = []) {
         self.question = question
         self.options = options
-        self.name = name
-        self.isEnabled = isEnabled
-        self.answer = answer
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: NW.Space.l) {
+        VStack(alignment: .leading, spacing: NW.Space.s) {
             NWInlineText(text: question, codeSize: NWTextStyle.caption.size).equatable()
                 .nwText(.body)
                 .foregroundStyle(Color.nw.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            if let answer {
-                // Answers wrap onto the next line rather than squeeze.
-                NWFlowLayout(spacing: NW.Space.m) { answers(answer) }
-                if replying { replyField(answer) }
+            if !options.isEmpty {
+                Text("It offered: " + options.joined(separator: " · "))
+                    .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-    }
-
-    @ViewBuilder private func answers(_ answer: @escaping (String) -> Void) -> some View {
-        ForEach(Array(options.enumerated()), id: \.offset) { index, option in
-            Button(option) { answer(option) }
-                .buttonStyle(.nw(index == 0 ? .primary : .secondary, size: .l))
-                .disabled(!isEnabled)
-                .accessibilityLabel("Answer \(option)")
-        }
-        Button("Reply…") {
-            replying.toggle()
-            replyFocused = replying
-        }
-        .buttonStyle(.nw(options.isEmpty ? .secondary : .ghost, size: .l))
-        .disabled(!isEnabled)
-        .accessibilityLabel("Reply to \(name)")
-    }
-
-    private func replyField(_ answer: @escaping (String) -> Void) -> some View {
-        NWSteerField(text: $reply, prompt: "Reply to \(name)…", isEnabled: isEnabled, focus: $replyFocused,
-                     accessibilityLabel: "Reply to \(name)") {
-            let text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard isEnabled, !text.isEmpty else { return }
-            answer(text)
-            reply = ""
-            replying = false
-        }
+        .accessibilityElement(children: .combine)
     }
 }
 

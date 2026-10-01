@@ -37,7 +37,7 @@ const server = http.createServer(async (req, res) => {
     if (last.role === "tool") return say({ content: "Splitting into three: a **worker** for the restyle, a **reviewer** checking tokens against the spec, and a quick **scout**. I'll integrate when they report back." });
     if (last.role === "user" && textOf(last).includes("E2E_FOLLOWUP")) return say({ content: "All three reported. The restyle is integrated and the reviewer's decision is applied." });
     const note = textOf(last);
-    if (note.includes("Needs reply")) return say({ content: "The reviewer needs a decision on token names; answer on its card." });
+    if (note.includes("Needs reply")) return say({ content: "The reviewer asked its parent about token names; answering it from the spec, or asking you if I can't." });
     if (note.includes("Child ")) return say({ content: "A child reported back; integrating its result." });
     return say({ content: "Noted." });
   }

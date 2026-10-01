@@ -164,7 +164,8 @@ keep the version for real breaks.
   says when it was last seen.
 - **iPhone:** two tabs, Home and Settings, each a navigation stack. Home merges every host:
   Automations and More (host cards), offline hosts with Retry, Needs you (questions
-  and blocked threads, answered in place when short), and Recents with host tags. `HomeFeed`
+  and blocked threads, answered in place when short; a subagent's question is its parent's, so
+  it is never here), and Recents with host tags. `HomeFeed`
   derives it once per change from each host's state and, while Home is on screen, the threads'
   snapshots.
 - **iPad:** a split view. Landscape shows the sidebar (New thread, Designs while a host serves
@@ -235,7 +236,9 @@ keep the version for real breaks.
 - **Subagents (`Subagents/`):** the tray above the composer (one row per run, in one card with
   Up next) and two record lines in the thread where they started and finished, the runs list (this turn and
   earlier), and one run: its goal, its live transcript, and a steer field that reaches only that
-  child. A child's question is answered from the tray's Answer (in the composer's place), the list or the run. Pause,
+  child. A child never asks the user: a run that asked its parent a question says so quietly (its
+  row "asked the parent", its card the question to read, "Waiting on parent"), with no Answer, nothing
+  in the composer's place and nothing in Needs you; the steer field and Stop stay. Pause,
   Continue, Stop and Re-run appear where the host takes them. On iPad the run opens in an
   inspector column beside the thread.
 - **Review (`Review/`), the Changes pane:** on a host with `changes.v1` the host's Changes engine

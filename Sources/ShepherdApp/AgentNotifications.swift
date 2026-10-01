@@ -34,8 +34,6 @@ final class AgentNotifications: NSObject, UNUserNotificationCenterDelegate {
     // What has been posted about, so each question posts once and goes when answered.
     var localAsks = ThreadAsks<AgentID>()
     var remoteAsks = ThreadAsks<RemoteAgentRef>()
-    var localSubagents = SubagentAsks<AgentID>()
-    var remoteSubagents = SubagentAsks<RemoteAgentRef>()
     /// Hosts whose offline banner is up.
     var offlineHosts: Set<UUID> = []
 
