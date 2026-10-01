@@ -216,8 +216,10 @@ jobs:
   tests:
     name: tests ${{ matrix.shard.id }}
     needs: [plan, build]
-    # `always()` so a skipped build (a pull request has none) does not skip the shards.
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.swift == 'true' && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
+    # A status function so a skipped build (a pull request has none) does not skip the shards, and
+    # `!cancelled()` rather than `always()`: a job with `always()` runs on after its run is cancelled,
+    # which here would keep four macOS runners busy for a run nobody wants.
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.swift == 'true' && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
     runs-on: macos-26
     # A build takes about 5 minutes (10 clean) and a shard's tests about 5; a flake-hunt shard runs them three times.
     timeout-minutes: 60
@@ -275,7 +277,7 @@ jobs:
   ci:
     name: CI
     needs: [plan, release-rules, extensions, build, tests]
-    if: ${{ always() && needs.plan.result != 'skipped' }}
+    if: ${{ !cancelled() && needs.plan.result != 'skipped' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
@@ -293,7 +295,7 @@ jobs:
   report:
     name: report
     needs: [plan, release-rules, extensions, build, tests]
-    if: ${{ always() && needs.plan.outputs.report == 'true' }}
+    if: ${{ !cancelled() && needs.plan.outputs.report == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
