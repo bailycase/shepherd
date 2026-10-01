@@ -274,7 +274,8 @@ extension ShepherdViewModel {
         worktreeBranch: String? = nil,
         worktreeBase: String? = nil,
         worktreeFetchFirst: Bool? = nil,
-        initialImages: [NativeImage] = []
+        initialImages: [NativeImage] = [],
+        serviceTier: ServiceTier? = nil
     ) async throws {
         let agentID = try await remoteHosts.createAgent(
             hostID: hostID,
@@ -286,7 +287,8 @@ extension ShepherdViewModel {
             worktreeBranch: worktreeBranch,
             worktreeBase: worktreeBase,
             worktreeFetchFirst: worktreeFetchFirst,
-            initialImages: initialImages
+            initialImages: initialImages,
+            serviceTier: serviceTier
         )
         // The prompt shows while the host's pi starts, as the row the host's first snapshot carries.
         if let opening = OpeningPrompt(initialPrompt, images: initialImages, agentID: agentID) {

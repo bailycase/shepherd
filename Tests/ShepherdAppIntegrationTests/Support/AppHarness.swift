@@ -25,8 +25,8 @@ final class AppHarness {
     var dir: URL { scratch.dir }
 
     /// `pi` brings a test's own Shepherd pi home and "your pi"; otherwise the process's.
-    init(pi: PiSetup = .app) throws {
-        scratch = try ScratchServer(pi: pi)
+    init(pi: PiSetup = .app, modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels }) throws {
+        scratch = try ScratchServer(modelCatalog: modelCatalog, pi: pi)
         settings = AppSettings(store: defaults)
         keybindings = KeybindingsStore(store: defaults)
         themeManager = ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .dark)
@@ -187,8 +187,8 @@ final class RemoteHostHarness {
     let port: UInt16
     let token: String
 
-    init() throws {
-        host = try AppHarness()
+    init(modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels }) throws {
+        host = try AppHarness(modelCatalog: modelCatalog)
         let tokenURL = host.dir.appendingPathComponent("remote-token")
         port = try host.server.startRemoteListener(port: 0, tokenURL: tokenURL)
         token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)

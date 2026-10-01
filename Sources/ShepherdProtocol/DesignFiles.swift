@@ -80,9 +80,12 @@ public struct DesignWriteResult: Hashable, Sendable, Codable {
     /// The canvas's title and listed board count after the write.
     public var title: String?
     public var boardCount: Int
+    /// What the write left in the board (`DesignBoardReport`); nil for an index update, and for
+    /// a write the store didn't report on (a Tweak, an undo).
+    public var report: DesignBoardReport?
 
     public init(revision: UInt64, changed: Bool, sha256: String? = nil, created: Bool? = nil,
-                warnings: [DesignBoardCheck.Warning] = [], title: String?, boardCount: Int) {
+                warnings: [DesignBoardCheck.Warning] = [], title: String?, boardCount: Int, report: DesignBoardReport? = nil) {
         self.revision = revision
         self.changed = changed
         self.sha256 = sha256
@@ -90,6 +93,7 @@ public struct DesignWriteResult: Hashable, Sendable, Codable {
         self.warnings = warnings
         self.title = title
         self.boardCount = boardCount
+        self.report = report
     }
 }
 

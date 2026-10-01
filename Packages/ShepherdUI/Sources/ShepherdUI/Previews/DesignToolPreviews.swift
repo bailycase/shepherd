@@ -73,6 +73,23 @@ private let previewBoards = [
     }
 }
 
+#Preview("Shared piece") {
+    NWPreviewBoth {
+        VStack(alignment: .leading, spacing: NW.Space.l) {
+            HStack(alignment: .top, spacing: NW.Space.xxl) {
+                NWBoardFrame(board: NWCanvasBoard(id: "Card.dc.html", frame: CGRect(x: 0, y: 0, width: 1200, height: 480), title: "Card",
+                                                  size: "1200 × 480", usage: "used in 3 boards"), zoom: 0.2) { PreviewBoardPage(phone: false) }
+                NWBoardFrame(board: NWCanvasBoard(id: "Chip.dc.html", frame: CGRect(x: 0, y: 0, width: 240, height: 96), title: "Chip",
+                                                  size: "240 × 96", usage: "used in 1 board"), zoom: 0.2) { PreviewBoardPage(phone: true) }
+            }
+            NWTweakPieceNote(piece: "Card", boards: "3 boards", goToSource: {})
+            NWTweakPieceNote(piece: "Card", goToSource: nil)
+        }
+        .frame(width: 420)
+        .padding(.top, NW.Space.xl)
+    }
+}
+
 #Preview("Canvas toolbar") {
     @Previewable @State var tool = NWCanvasTool.select
     NWPreviewBoth {

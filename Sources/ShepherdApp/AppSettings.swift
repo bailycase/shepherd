@@ -20,22 +20,6 @@ enum WorktreeMergeMethod: String, CaseIterable {
     case merge, squash, rebase
 }
 
-/// What ↩ does with a message while pi works (Settings ▸ Agents); the alternate send
-/// (`ShortcutAction.alternateSend`, ⌘↩) always steers now, whatever this says. The raw values
-/// are what an earlier version stored, so a saved choice keeps its meaning: `queue` waits for the
-/// turn to end, `steer` (the default now) hands the message to pi at its next step.
-enum ReturnWhileWorking: String, CaseIterable {
-    /// Into the queue, to go when pi settles.
-    case queue
-    /// Steered in, for pi to read once its current tool calls finish.
-    case steer
-
-    /// The Send menu's way of sending it.
-    var choice: NativeSendChoice { self == .steer ? .nextStep : .wait }
-
-    var title: String { choice.title }
-}
-
 /// User preferences that are not part of the workspace.
 ///
 /// `state.json` (owned by the session server) is the workspace: spaces,
@@ -74,7 +58,6 @@ final class AppSettings {
         static let mcpOpenSignInPages = "shepherd.mcp.openSignInPages"
         static let mcpProjectConfig = "shepherd.mcp.projectConfig"
         static let mcpSameEverywhere = "shepherd.mcp.sameEverywhere"
-        static let returnWhileWorking = "shepherd.agent.returnWhileWorking"
         static let queueDelivery = "shepherd.agent.queueDelivery"
         static let piPanesExtension = "shepherd.pi.extension.panes"
         static let piReviewExtension = "shepherd.pi.extension.review"
@@ -110,7 +93,7 @@ final class AppSettings {
 
         static let all = [
             terminalFontFamily, terminalFontSize, defaultModel,
-            defaultThinking, defaultServiceTier, autoNameAgents, returnWhileWorking, queueDelivery, shellPath,
+            defaultThinking, defaultServiceTier, autoNameAgents, queueDelivery, shellPath,
             piPanesExtension, piReviewExtension, piSubagentsExtension, piNativeSubagents,
             piMCPExtension, piBrowserExtension, piDesignReferences,
             childConcurrency, childModel, childThinking, childContext, childScope,
@@ -137,8 +120,6 @@ final class AppSettings {
         static let serviceTier: ServiceTier = .standard
         static let autoNameAgents = true
         static let skillsInSlashMenu = true
-        /// Steers at pi's next step. Only a choice the user made is stored, so an unset one takes this.
-        static let returnWhileWorking: ReturnWhileWorking = .steer
         static let queueDelivery: NativeQueueMode = .all
         static let sidebarStyle: NWSidebarStyle = .activity
         /// Keep idle threads in the project tree for a week.
@@ -203,12 +184,6 @@ final class AppSettings {
     /// only This Mac.
     var mcpSameEverywhere: Bool {
         didSet { store.set(mcpSameEverywhere, forKey: Key.mcpSameEverywhere) }
-    }
-
-    /// What ↩ does in the composer while pi works: steer the message in at pi's next step (the
-    /// default) or hold it in Up next until the turn ends.
-    var returnWhileWorking: ReturnWhileWorking {
-        didSet { store.set(returnWhileWorking.rawValue, forKey: Key.returnWhileWorking) }
     }
 
     /// How a queue goes when pi settles, as this Mac's default for its agents (an agent's own
@@ -437,11 +412,11 @@ final class AppSettings {
         skillsInSlashMenu = store.object(forKey: Key.skillsInSlashMenu) as? Bool ?? Defaults.skillsInSlashMenu
         // The directory now uses Shepherd's public API; discard the retired credential.
         store.removeObject(forKey: "shepherd.skills.directoryKey")
+        // ↩ always queues while pi works now; the setting that chose between that and steering is gone.
+        store.removeObject(forKey: "shepherd.agent.returnWhileWorking")
         mcpOpenSignInPages = store.object(forKey: Key.mcpOpenSignInPages) as? Bool ?? false
         mcpProjectConfig = store.object(forKey: Key.mcpProjectConfig) as? Bool ?? false
         mcpSameEverywhere = store.object(forKey: Key.mcpSameEverywhere) as? Bool ?? true
-        returnWhileWorking = store.string(forKey: Key.returnWhileWorking)
-            .flatMap(ReturnWhileWorking.init(rawValue:)) ?? Defaults.returnWhileWorking
         queueDelivery = store.string(forKey: Key.queueDelivery)
             .flatMap(NativeQueueMode.init(rawValue:)) ?? Defaults.queueDelivery
         piPanesExtension = store.object(forKey: Key.piPanesExtension) as? Bool ?? true
@@ -534,7 +509,6 @@ final class AppSettings {
         mcpOpenSignInPages = false
         mcpProjectConfig = false
         mcpSameEverywhere = true
-        returnWhileWorking = Defaults.returnWhileWorking
         queueDelivery = Defaults.queueDelivery
         uiDensity = 1
         uiTextScale = 1

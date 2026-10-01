@@ -30,9 +30,9 @@ coherent over covering every use case.
   - pi's slash commands
   - model and thinking pickers
   - image attachments
-  - messages sent while a turn runs steer in at the agent's next step, or wait in a queue above
-    the composer, where each can be steered in, edited, reordered, or deleted; Steer now stops the
-    agent and sends at once
+  - messages sent while a turn runs wait in a queue above the composer, where each can be
+    edited, reordered, or deleted, and the agent takes the next one when the turn ends; Steer now
+    (⌘↩) stops the agent and sends at once
 - **Terminals under a thread.** Open a real terminal under an agent with ⌘D or ⌘J, as tabs, or
   let the agent open, run, read, and close its own. Terminals render with
   [libghostty](https://ghostty.org).

@@ -546,7 +546,14 @@ Sources/
                        DesignReferencePayload (the copy a send keeps, its outline, freshness,
                        "Looked at…", the capture the app draws), DesignThreadNote (notes back),
                        and DesignReferenceReading (design_get's words: tokens with sources, changes),
-                       DesignBoardCheck (what a board may hold), DesignStyle/DesignTokens/DesignProps
+                       DesignBoardCheck (what a board may hold), DesignBoardTree (a board's elements,
+                       attributes and tag balance: DesignMarkupScan), DesignBoardSearch (board_search:
+                       text, structure and usages over boards), DesignBoardReport (the report after a
+                       write, its diff), DesignTokenCheck (the write's tokens modes: warn, snap,
+                       strict), DesignImports (what each board's `<dc-import>`s name; DesignUsageIndex:
+                       who imports whom, a piece's usage), DesignExtract (board_extract's plan),
+                       DesignAgentTools (batch edits, checkpoints, render: requests and results),
+                       DesignStyle/DesignTokens/DesignProps
                        (Tweak: inline-style splices at parser offsets, token snapping, data-props
                        and canvas.json's tweaks), DesignCanvasLayout (pages, notes, where a
                        duplicate goes), DesignFiles (snapshots, reads, write results),
@@ -627,7 +634,7 @@ Sources/
                        diffs, the base picker, each agent's turns and their Undo; docs/changes.md),
                        DesignStore (each design's files in the support directory's designs/, on
                        its own queue, with a revision per design, each board's last 20
-                       versions, its comments.json, and installed systems under ds/; what an
+                       versions, its comments.json, its checkpoints, and installed systems under ds/; what an
                        export reads; a Claude Design folder imported; a reference's pinned
                        board copies under pins/ and thread-notes.json; docs/designs.md),
                        DesignReferences (references pinned and resolved, their copies kept,
@@ -701,7 +708,10 @@ Sources/
       +DesignReferencesUI (the thread's chips and picker, Implement in a thread's send, Copy
       reference, "Open in design"), ImplementSheet (the sheet's model and view, the canvas's
       toasts), DesignScreenModel+References (the selection as a reference, the right-click menu,
-      notes back), DesignCanvasKeys (the canvas's ⌘↩ and ⇧⌘C)
+      notes back), DesignCanvasKeys (the canvas's ⌘↩ and ⇧⌘C), DesignScreenModel+Pieces
+      (a shared piece's usage, Go to Source, the Tweak note on a use), DesignRenderImage and
+      ShepherdViewModel+DesignRender (board_render: the picture's size caps, the off-screen
+      draw served to the agent)
     TerminalPanels (each layout's terminal panel: shown, tab, maximized, activity),
       TerminalPanelLayout (TerminalPanelGeometry, pure), TerminalPanelViews (strip, divider)
     Thread/            ThreadView, ThreadTurns, ThreadTools (activity lines), ThreadMarkdown,
@@ -783,9 +793,10 @@ Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free)
   shepherd-instructions.ts  Settings ▸ Instructions' AGENTS.md and APPEND_SYSTEM.md, added to
                           every session Shepherd starts (never ~/.pi/agent); suggest_instruction
                           (Settings ▸ Experiments ▸ Suggested instructions)
-  shepherd-design.ts      the design agent's design_read, board_write, board_edit, canvas_update,
-                          design_check, comment_list, comment_reply, system_read and
-                          system_write; hands pi the design skill
+  shepherd-design.ts      the design agent's design_read, board_write, board_edit, boards_edit,
+                          board_search, board_render, board_extract, checkpoint_create, checkpoint_list,
+                          checkpoint_restore, canvas_update, design_check, comment_list, comment_reply,
+                          system_read and system_write; hands pi the design skill
                           (design-skill/: SKILL.md, format.md); relays its tools to the agent's
                           native helpers through the children extension; see docs/designs.md
   shepherd-design-refs.ts an ordinary thread's design_get and design_note, registered only once the
@@ -883,7 +894,7 @@ Vendor/libghostty-spm/ GhosttyTerminal (prebuilt libghostty)
 `SessionServer.nativeThread` serves locally and, over TCP, remotely
 ([docs/native-thread.md](docs/native-thread.md)). Messages sent while pi works wait in a queue
 the host holds (never pi's own, whose modes write the user's pi settings) and go when pi
-settles, or are steered in; a user message joins the thread only when pi starts it
+settles, or go at once after pi is stopped (Steer now); a user message joins the thread only when pi starts it
 (docs/native-thread.md › The queue).
 
 **Status reporting.** The status extension reports `setAgentStatus` fire-and-forget (the server
@@ -959,7 +970,9 @@ variables are blanked, as are pi's `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSI
   - native thread requests, with the context and Compact now behind `native.context.v1`, Retry
     in place behind `native.retry.v1`, and Steer now (a message that stops pi and goes at once,
     `interrupt` in `supportedActions`, sent as a steer to a host without it) behind
-    `native.interrupt.v1`, and an agent's service tier (`setServiceTier`, the snapshot's
+    `native.interrupt.v1` (Return queues, `followUp`, and no client offers a steer as a choice;
+    `NativeThreadDelivery.steer` stays on the wire for older clients and that fallback), and an
+    agent's service tier (`setServiceTier`, the snapshot's
     `serviceTier` and `serviceTiers`; no Speed control from a host without it) behind
     `native.serviceTier.v1`
   - attach, detach, input, resize, and acknowledged paste
@@ -1628,7 +1641,7 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   Shepherd's support directory and hands them to the sessions Shepherd starts through
   `shepherd-instructions.ts`; pi run by hand doesn't read them.
 - **pi's formats:** `PiConfig` (models.json, settings.json) and `PiModelCatalog`
-  (`pi --list-models`) parse defensively, because pi's formats are not our contract.
+  (`get_available_models` over one-shot RPC) parse defensively, because pi's formats are not our contract.
 - **Binding:** `SessionServer.start()` refuses to bind over a live socket (it probes with a
   connect) and replaces stale socket files. The remote listener reports bind failures rather than
   silently serving nothing.

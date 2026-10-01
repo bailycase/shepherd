@@ -167,11 +167,12 @@ struct RemoteControlTests {
         let image = NativeImage(mimeType: "image/png", data: Data([0x89, 0x50, 0x4E, 0x47]), name: "shot.png")
         let id = try await client.createAgent(spaceID: space.id, cwd: "/tmp/checkout", model: "some/model", thinking: .high, initialPrompt: "hello",
                                               worktreeBranch: "worktree/x", worktreeBase: "origin/main", worktreeFetchFirst: false,
-                                              initialImages: [image])
+                                              initialImages: [image], serviceTier: .fast)
         #expect(id == minted)
         let request = try #require(seen.current)
         #expect(request.spaceID == space.id && request.cwd == "/tmp/checkout" && request.model == "some/model")
         #expect(request.thinking == .high && request.initialPrompt == "hello" && request.initialImages == [image])
+        #expect(request.serviceTier == .fast)
         #expect(request.worktreeBranch == "worktree/x" && request.worktreeBase == "origin/main" && request.worktreeFetchFirst == false)
     }
 
@@ -218,7 +219,7 @@ struct RemoteControlTests {
         defer { r.stop() }
         let space = Fixture.space()
         try await r.host.seed(ShepherdState(spaces: [space]))
-        let options = RemoteCreationOptions(base: "origin/release", note: "cached", fetchFirst: false, model: "host/model", thinking: .high)
+        let options = RemoteCreationOptions(base: "origin/release", note: "cached", fetchFirst: false, model: "host/model", thinking: .high, serviceTier: .fast)
         let seen = Locked<[String]>([])
         r.server.onRemoteCreationOptions = { spaceID, cwd, fetch, done in
             seen.withValue { $0.append("\(spaceID == space.id) \(cwd ?? "-") \(String(describing: fetch))") }
