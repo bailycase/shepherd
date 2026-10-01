@@ -24,6 +24,8 @@ List only what you actually ran and what you observed. For example:
 - `PI_PACKAGE_DIR=… node --test Tests/Extensions/*.test.mjs`: passed
 - `Shepherd (Dev)` Xcode build succeeded; manually <what you exercised>
 If you did not exercise the changed behavior, write "Not tested" and why.
+CI runs a fast lane here (the unit tier and the suites your paths can affect); add the `full-ci`
+label to run every suite.
 -->
 
 ## UI changes

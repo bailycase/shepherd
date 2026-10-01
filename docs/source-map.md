@@ -319,10 +319,15 @@ Tests/
   Designs/                design fixtures: real and synthetic boards, the Shepherd canvas.json,
                           and element-ids.json (WebKit's numbering of each board's elements)
   DesignSurfaceKitIntegrationTests/Fixtures/  a small design (loops, conditionals, an import)
-  Release/                Python tests for scripts/release.py
+  Release/                Python tests for scripts/release.py and the CI helpers
+  ci-suite-times.json     each suite's seconds on a CI runner, which the shards are cut from
   ShepherdIOSChecks/      the iOS client's scripts
 scripts/               release.py (the release workflow's rules), sign-app.sh (release
                        signing), sync-embedded-extension.py, ci_mtimes.py (CI's incremental builds),
+                       ci_impact.py (the lane and the fast lane's suites), ci_shards.py (equal
+                       shards from Tests/ci-suite-times.json), ci_run_tests.py (a shard under a
+                       watchdog, failed tests retried once), ci_testlog.py (test output reader),
+                       ci_report.py (the one tracking issue),
                        pi_engine.py + pi-engine-pin.json (stage and verify the pi engine),
                        sign-engine.sh (node, with the engine's entitlements), check_pr_body.py
                        (the pr-body workflow: what a UI or autonomous-feature PR body must say)

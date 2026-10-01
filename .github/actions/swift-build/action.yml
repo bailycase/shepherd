@@ -43,6 +43,9 @@ runs:
         version=$(shasum -a 256 <<<"$toolchain" | cut -c1-12)
         echo "prefix=spm-build-$RUNNER_OS-e$CACHE_EPOCH-$version" >> "$GITHUB_OUTPUT"
         echo "epoch=$CACHE_EPOCH" >> "$GITHUB_OUTPUT"
+        # An entry is named for the commit built. That is not github.sha when a scheduled
+        # run (always on master) checks out nightly.
+        echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
     # Checked-out dependencies: about 1 GB of git packs that no toolchain change
     # invalidates, so a build-cache miss never re-clones them.
@@ -88,7 +91,7 @@ runs:
           !.build/checkouts
           !.build/artifacts
           !.build/workspace-state.json
-        key: ${{ steps.swift.outputs.prefix }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
+        key: ${{ steps.swift.outputs.prefix }}-${{ hashFiles('Package.resolved') }}-${{ steps.swift.outputs.sha }}
         restore-keys: |
           ${{ steps.swift.outputs.prefix }}-${{ hashFiles('Package.resolved') }}-
           ${{ steps.swift.outputs.prefix }}-
@@ -114,8 +117,12 @@ runs:
       shell: bash
       env:
         RESTORED: ${{ steps.build.outputs.cache-matched-key }}
+        EXACT: ${{ steps.build.outputs.cache-hit }}
       run: |
-        if [ -n "$RESTORED" ]; then
+        # An entry for this very commit (the shards restoring what the build job saved) holds
+        # a finished build: it has no stale target to find, and SwiftPM would spend a minute
+        # loading the package graph to find nothing to do.
+        if [ -n "$RESTORED" ] && [ "$EXACT" != true ]; then
           shopt -s nullglob
           versions=(.build/*/debug/swift-version-*.txt)
           shopt -u nullglob
@@ -128,13 +135,17 @@ runs:
         log="$RUNNER_TEMP/swift-build.log"
         build() { swift build --build-tests $SWIFTPM_FLAGS 2>&1 | tee "$log"; }
         status=0
-        build || status=$?
-        if [ "$status" -ne 0 ] && [ -n "$RESTORED" ] && stale=$(python3 scripts/ci_stale_link.py "$log"); then
-          echo "::warning::stale objects in the restored build ($stale) failed to link; rebuilding from scratch"
-          find .build -mindepth 1 -maxdepth 1 ! -name repositories ! -name checkouts \
-            ! -name artifacts ! -name workspace-state.json -exec rm -rf {} +
-          status=0
+        if [ "$EXACT" = true ]; then
+          echo "this commit's build was restored whole: nothing to build"
+        else
           build || status=$?
+          if [ "$status" -ne 0 ] && [ -n "$RESTORED" ] && stale=$(python3 scripts/ci_stale_link.py "$log"); then
+            echo "::warning::stale objects in the restored build ($stale) failed to link; rebuilding from scratch"
+            find .build -mindepth 1 -maxdepth 1 ! -name repositories ! -name checkouts \
+              ! -name artifacts ! -name workspace-state.json -exec rm -rf {} +
+            status=0
+            build || status=$?
+          fi
         fi
         [ "$status" -eq 0 ] || exit "$status"
         # SwiftPM copies binary frameworks (Sparkle) to Products/<config>,
@@ -161,4 +172,4 @@ runs:
           !.build/checkouts
           !.build/artifacts
           !.build/workspace-state.json
-        key: ${{ steps.swift.outputs.prefix }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
+        key: ${{ steps.swift.outputs.prefix }}-${{ hashFiles('Package.resolved') }}-${{ steps.swift.outputs.sha }}
