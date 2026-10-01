@@ -58,7 +58,7 @@ class Index:
             self.sections += sections_of(name, lines)
         self.leads: list[tuple[list[str], str]] = []
         for name, lines in files.items():
-            for first, _end, text in lead_in_blocks(lines, 0, len(lines)):
+            for first, _end, text, _level in lead_in_blocks(lines, 0, len(lines), bullets=True):
                 self.leads.append((tokens(text), name))
 
     def resolve(self, name: str) -> str | None:

@@ -190,6 +190,48 @@ class DesignSectionTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("no heading matches the path", err)
 
+    def test_a_name_that_is_no_heading_finds_a_bold_lead_in_block(self):
+        code, out, _ = run(["The row"], self.docs)
+        self.assertEqual(code, 0)
+        self.assertIn("# block: The row", out)
+        self.assertIn("the row line", out)
+        self.assertNotIn("the card line", out)
+
+    def test_a_top_level_bullet_with_a_bold_lead_in_is_a_block_inside_its_lead_in(self):
+        (self.docs / "menus.md").write_text(
+            "# Menus\n\n> Read when menus.\n\n**Menus** float.\n\n"
+            "- **Slash menu** (a): opens on slash.\n  more slash text\n"
+            "- **Model picker** (b): opens on chord.\n\n**After.** later\n", encoding="utf-8")
+        code, out, _ = run(["Slash menu"], self.docs)
+        self.assertEqual(code, 0)
+        self.assertIn("more slash text", out)
+        self.assertNotIn("opens on chord", out)
+        code, out, _ = run(["Menus › Model picker"], self.docs)
+        self.assertEqual(code, 0)
+        self.assertIn("opens on chord", out)
+        self.assertNotIn("more slash text", out)
+
+    def test_a_lead_in_name_two_files_share_is_ambiguous(self):
+        (self.docs / "gamma.md").write_text("# Gamma\n\n**The row:**\n\nother row\n", encoding="utf-8")
+        code, out, err = run(["The row"], self.docs)
+        self.assertEqual(code, 2)
+        self.assertIn("names several blocks", err)
+
+    def test_a_block_over_the_cap_prints_its_parts_not_its_lines(self):
+        body = "".join(f"filler line {n}\n" for n in range(design_section.MAX_BLOCK + 20))
+        (self.docs / "big.md").write_text(
+            f"# Big\n\n> Read when big.\n\n**First part.**\n\n{body}\n**Second part.**\n\nlast\n", encoding="utf-8")
+        code, out, _ = run(["Big"], self.docs)
+        self.assertEqual(code, 0)
+        self.assertIn("too long to print whole", out)
+        self.assertIn("**Second part.**", out)
+        self.assertNotIn("filler line 5", out)
+        code, out, _ = run(["Big › Second part"], self.docs)
+        self.assertIn("last", out)
+        self.assertNotIn("too long", out)
+        code, out, _ = run(["Big", "--full"], self.docs)
+        self.assertIn("filler line 5\n", out)
+
     def test_an_unknown_name_fails_with_a_suggestion(self):
         code, out, err = run(["Alpha part to"], self.docs)
         self.assertEqual(code, 2)
