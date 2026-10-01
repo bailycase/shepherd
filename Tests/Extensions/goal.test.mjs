@@ -215,6 +215,11 @@ test("a parent's actual user question stops goal automation without aborting the
     assert.match(f.goal.reason, /your answer/);
     assert.equal(f.aborted, 0);
     assert.equal(await f.check(), undefined);
+    await assert.rejects(f.action({ action: "resume" }), /Answer the question/);
+    await f.emit("tool_execution_end", { toolName: "ask_user", toolCallId: "question" });
+    assert.match(f.goal.reason, /Answer received/);
+    await f.action({ action: "resume" });
+    assert.equal(f.goal.state, "working");
   } finally { await f.close(); }
 });
 

@@ -32,6 +32,7 @@ public enum GoalExtension {
           timeLimitSeconds?: number; tokenLimit?: number; reason?: string; evidence?: string;
         };
         const KEY = "shepherd.goal";
+        const USER_WAIT_TOOL = /(?:^|[^a-z0-9])(?:ask|question)(?:[^a-z0-9]|$)/i;
         const DEFAULT_MODELS = ["anthropic/claude-haiku-4-5", "openai/gpt-5.1-codex-mini", "google/gemini-2.5-flash"];
         const active = (goal: Goal | null) => goal?.state === "working" || goal?.state === "checking";
         const textOf = (content) => typeof content === "string" ? content : (content ?? []).filter((c) => c.type === "text").map((c) => c.text).join("\n");
@@ -90,6 +91,7 @@ public enum GoalExtension {
           let workOwner: string | undefined, assistantTokens = 0;
           let sessionContext: ExtensionContext | undefined, childrenActive = false, boundaryVisited = false;
           const childTokens = new Map<string, number>();
+          const questions = new Set<string>();
 
           function tick() {
             if (goal && clock !== undefined) {
@@ -175,17 +177,19 @@ public enum GoalExtension {
             const text = ["set", "edit"].includes(value.action) ? objective(value.text) : undefined;
             const budget = value.action === "set" ? limits(value) : undefined;
             if (!["set", "clear"].includes(value.action) && !goal) throw Error("No goal is set.");
+            if (value.action === "resume" && questions.size) throw Error("Answer the question before resuming the goal.");
             generation++; cancelCheck();
             if (goal && value.action !== "set") goal.revision++;
             switch (value.action) {
               case "set":
                 stopClock(); blockerKey = ""; blockerCount = 0; consecutiveNoProgress = 0; lastEvidenceID = null; yielding = false;
                 startEntryId = ctx.sessionManager.getLeafId();
-                goal = { id: randomUUID(), revision: 1, text, state: "working", elapsedSeconds: 0, tokensUsed: 0, ...budget };
+                goal = { id: randomUUID(), revision: 1, text, state: questions.size ? "needsYou" : "working", elapsedSeconds: 0, tokensUsed: 0,
+                  ...budget, ...(questions.size ? { reason: "The agent is waiting for your answer." } : {}) };
                 save(ctx);
                 pi.sendMessage({ customType: "shepherd.goal.set", display: true, content: "Goal set\n" + goal.text,
                   details: { goalID: goal.id, text: goal.text } }, { triggerTurn: false });
-                kickoff(ctx); break;
+                if (active(goal)) kickoff(ctx); break;
               case "clear":
                 stopClock(); goal = null; blockerKey = ""; blockerCount = 0; consecutiveNoProgress = 0; lastEvidenceID = null; startEntryId = null; workOwner = undefined;
                 save(ctx); break;
@@ -233,7 +237,7 @@ public enum GoalExtension {
           function restore(_event, ctx: ExtensionContext) {
             generation++; sessionEpoch++; cancelCheck(); stopClock();
             goal = null; blockerKey = ""; blockerCount = 0; startEntryId = null; yielding = false; workOwner = undefined; assistantTokens = 0;
-            sessionContext = ctx; childrenActive = false; childTokens.clear(); consecutiveNoProgress = 0; lastEvidenceID = null;
+            sessionContext = ctx; childrenActive = false; childTokens.clear(); questions.clear(); consecutiveNoProgress = 0; lastEvidenceID = null;
             for (const entry of ctx.sessionManager.getBranch()) {
               if (entry.type !== "custom" || entry.customType !== KEY) continue;
               const data = entry.data;
@@ -260,6 +264,7 @@ public enum GoalExtension {
           pi.on("before_agent_start", (_event, ctx) => { yielding = false; boundaryVisited = false; startClock(ctx); checkLimits(ctx, true); });
           pi.on("agent_start", (_event, ctx) => { boundaryVisited = false; startClock(ctx); });
           pi.on("agent_settled", (_event, ctx) => {
+            questions.clear();
             // Raw abort can skip agent_before_settle entirely in pi.
             if (goal?.state === "checking") transition("needsYou", ctx, "Goal check interrupted.");
             else if (active(goal) && !boundaryVisited) transition("needsYou", ctx, "Work stopped before the goal check.");
@@ -268,9 +273,17 @@ public enum GoalExtension {
           });
           // A time limit must not kill a tool halfway through a write; stop before the next request.
           pi.on("tool_execution_start", (event, ctx) => {
-            if (active(goal) && /(?:^|[^a-z0-9])(?:ask|question)(?:[^a-z0-9]|$)/i.test(event.toolName)) {
+            if (!USER_WAIT_TOOL.test(event.toolName)) return;
+            questions.add(event.toolCallId);
+            if (active(goal)) {
               generation++;
               transition("needsYou", ctx, "The agent is waiting for your answer.");
+            }
+          });
+          pi.on("tool_execution_end", (event, ctx) => {
+            if (questions.delete(event.toolCallId) && !questions.size && goal?.state === "needsYou"
+              && goal.reason === "The agent is waiting for your answer.") {
+              transition("needsYou", ctx, "Answer received; resume to continue the goal.");
             }
           });
           pi.on("turn_end", (_event, ctx) => {
