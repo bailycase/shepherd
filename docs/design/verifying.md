@@ -31,6 +31,14 @@
   SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter PreviewTests
   ```
 
+- **Text size:** `Preview.renderMatrix` renders light and dark at each text scale (1 and 1.5 by
+  default; the Mac's largest Text size is 1.3), writing `<surface>-x1.5-<light|dark>.png` beside
+  the others. Use it where clipping or wrapping could hide, and render empty and long text too.
+- **Real data:** a preview is driven from the real producer (the store, the extension's output, the
+  formatter), never strings copied from the board; copy that differs from the board is a departure
+  to list or a bug to fix.
+- **Controls:** `ControlPress` (Tests/ShepherdTestSupport) presses a control by accessibility label
+  and measures its hit area, in a process of its own (docs/testing.md › Pressing a control).
 - **Windows:** preview windows sit off-screen and never take focus.
 - **Motion:** SwiftUI keeps animating in an off-screen window, so `MotionProbe`
   (`Tests/ShepherdAppIntegrationTests/Support`) records a thin strip of one every few milliseconds
