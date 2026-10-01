@@ -411,7 +411,9 @@ extension RPCThreadState {
                 completion(.failure(code: "send_cancelled", message: "The send was cancelled before pi started it."))
                 return
             }
+            let commandDone = self.beginCommandWindow(for: prompt)
             self.session.request(.prompt(message: prompt, images: rpcImages, streamingBehavior: .followUp), timeout: Self.promptTimeout) { [weak self] result in
+                commandDone?()
                 guard let self else { return }
                 let failure = Self.dispatchFailure(result)
                 if let failure, case .failure(let code, _) = failure, code != "outcome_unknown" {
@@ -458,7 +460,7 @@ extension RPCThreadState {
         return context + text
     }
 
-    private func isExtensionCommand(_ text: String) -> Bool {
+    func isExtensionCommand(_ text: String) -> Bool {
         guard text.hasPrefix("/") else { return false }
         let name = text.dropFirst().prefix { !$0.isWhitespace }
         return commands?.contains { $0.name == name && $0.source == "extension" } == true
@@ -473,7 +475,9 @@ extension RPCThreadState {
         unboundSteers.append(id)
         steersInFlight += 1
         let rpcImages = item.images.map { RPCImage(data: $0.data.base64EncodedString(), mimeType: $0.mimeType) }
+        let commandDone = beginCommandWindow(for: item.promptText)
         session.request(.prompt(message: item.promptText, images: rpcImages, streamingBehavior: .steer), timeout: Self.promptTimeout) { [weak self] result in
+            commandDone?()
             guard let self else { return }
             self.unboundSteers.removeAll { $0 == id }
             self.steersInFlight -= 1
