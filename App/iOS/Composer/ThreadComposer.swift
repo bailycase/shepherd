@@ -38,6 +38,7 @@ struct ThreadComposer: View {
         let host = hosts.host(ref.host)
         let live = store.isLive && host?.phase.isConnected == true
         let wide = sizeClass == .regular
+        let goalSize: NWGoalSize = wide && !navigator.padSidebarOverlays ? .desktop : .touch
         VStack(alignment: .leading, spacing: MobileLayout.composerSpacing) {
             if let notice = store.notice {
                 banner(notice)
@@ -48,13 +49,13 @@ struct ThreadComposer: View {
             ForEach(store.widgets) { widget in
                 ComposerWidget(title: widget.title, text: widget.text)
             }
-            if store.goal != nil || (store.dialogs.isEmpty && answering(store, state: state) == nil) {
+            if store.goal != nil || store.dialogs.isEmpty {
                 if store.goal != nil || store.tray != nil {
-                    NWDockStack(size: wide ? .pad : .phone, showsTray: true, showsQueue: !state.rows.isEmpty) {
+                    NWDockStack(size: store.goal != nil && goalSize == .desktop ? .pointer : wide ? .pad : .phone, showsTray: true, showsQueue: !state.rows.isEmpty) {
                         VStack(spacing: 0) {
                             if store.goal != nil {
                                 ThreadGoalCard(store: store, active: live,
-                                               size: wide && !navigator.padSidebarOverlays ? .desktop : .touch, framed: false)
+                                               size: goalSize, framed: false)
                             }
                             if let tray = store.tray {
                                 SubagentTraySection(ref: ref, tray: tray, store: store, state: state,
