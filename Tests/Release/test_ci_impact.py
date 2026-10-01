@@ -201,9 +201,32 @@ class EventTests(unittest.TestCase):
     def test_other_labels_do_not(self):
         self.assertEqual(pr(["README.md"], labels=("bug",)).swift, False)
 
-    def test_a_push_to_nightly_runs_the_full_lane_builds_once_and_reports(self):
+    def test_a_push_to_nightly_builds_in_each_shard_saves_from_the_last_and_reports(self):
         plan = self.plan(event="push", ref="refs/heads/nightly")
-        self.assertEqual((plan.lane, plan.scope, plan.shared_build, plan.report, plan.repeat), ("full", "all", True, True, 1))
+        self.assertEqual((plan.lane, plan.scope, plan.report, plan.repeat), ("full", "all", True, 1))
+        self.assertEqual((plan.shared_build, plan.save_cache, plan.clean), (False, True, False))
+        saves = [s["save"] for s in json.loads(plan.outputs()["shards"])]
+        self.assertEqual(saves, [False, False, False, True])
+
+    def test_the_first_push_of_the_day_builds_from_scratch_once_in_its_own_job(self):
+        plan = self.plan(event="push", ref="refs/heads/nightly", clean_due=True)
+        self.assertEqual((plan.clean, plan.shared_build, plan.save_cache), (True, True, False))
+        self.assertEqual([s["save"] for s in json.loads(plan.outputs()["shards"])], [False] * 4, "the build job saves")
+
+    def test_a_manual_clean_run_builds_once_too(self):
+        plan = self.plan(event="workflow_dispatch", ref="refs/heads/nightly", dispatch_lane="full", clean=True)
+        self.assertEqual((plan.clean, plan.shared_build), (True, True))
+
+    def test_a_pull_request_never_saves_or_builds_in_a_job_of_its_own_or_goes_clean(self):
+        plan = ci_impact.plan_for(event="pull_request", base_ref="master", ref="refs/pull/1/merge", files=["README.md"],
+                                  root=ROOT, times=TIMES, clean=True, clean_due=True)
+        self.assertEqual((plan.shared_build, plan.save_cache, plan.clean), (False, False, False))
+        self.assertEqual([s["save"] for s in json.loads(plan.outputs()["shards"])], [False] * 4)
+
+    def test_a_fast_run_saves_nothing(self):
+        plan = pr(["Sources/ShepherdApp/Thread/Composer.swift"])
+        self.assertFalse(plan.save_cache)
+        self.assertTrue(all(not s["save"] for s in json.loads(plan.outputs()["shards"])))
 
     def test_a_push_to_a_branch_that_is_not_nightly_or_master_does_not_report(self):
         plan = self.plan(event="push", ref="refs/heads/feat/x")
@@ -231,9 +254,15 @@ class EventTests(unittest.TestCase):
         plan = self.plan(event="workflow_dispatch", ref="refs/heads/nightly", dispatch_lane="flake-hunt")
         self.assertEqual((plan.repeat, plan.report), (3, True))
 
-    def test_shared_build_can_be_switched_off_by_a_manual_run(self):
-        plan = self.plan(event="push", ref="refs/heads/nightly", shared_build=False)
-        self.assertFalse(plan.shared_build)
+    def test_the_daily_run_builds_clean_once_and_saves_from_the_build_job(self):
+        plan = self.plan(event="schedule", ref="refs/heads/master")
+        self.assertEqual((plan.clean, plan.shared_build, plan.save_cache), (True, True, False))
+
+    def test_a_manual_run_can_force_either_way_of_building(self):
+        plan = self.plan(event="push", ref="refs/heads/nightly", clean_due=True, shared_build=False)
+        self.assertEqual((plan.clean, plan.shared_build, plan.save_cache), (True, False, True))
+        plan = self.plan(event="push", ref="refs/heads/nightly", shared_build=True)
+        self.assertEqual((plan.clean, plan.shared_build, plan.save_cache), (False, True, False))
 
 
 class OutputTests(unittest.TestCase):
@@ -248,7 +277,7 @@ class OutputTests(unittest.TestCase):
 
     def test_a_run_without_swift_still_has_one_harmless_matrix_entry(self):
         out = pr(["README.md"]).outputs()
-        self.assertEqual(json.loads(out["shards"]), [{"id": "1/1", "slug": "1of1"}])
+        self.assertEqual(json.loads(out["shards"]), [{"id": "1/1", "slug": "1of1", "save": False}])
 
     def test_the_summary_says_what_ran_and_why(self):
         plan = pr(["Sources/ShepherdApp/Thread/Composer.swift", "README.md"])

@@ -253,19 +253,22 @@ class Plan:
     estimated_seconds: float
     reasons: list[str] = field(default_factory=list)
     repeat: int = 1
-    shared_build: bool = False
+    shared_build: bool = False     # one job builds, the shards restore it
+    save_cache: bool = False       # without one, the last shard saves its build for the next run
     report: bool = False
     clean: bool = False
     checkout_ref: str = ""
 
     def outputs(self) -> dict[str, str]:
         ids = [f"{i}/{self.shards}" for i in range(1, self.shards + 1)] if self.swift else ["1/1"]
+        shards = [{"id": s, "slug": s.replace("/", "of"), "save": self.save_cache and i == len(ids)}
+                  for i, s in enumerate(ids, 1)]
         return {
             "lane": self.lane,
             "swift": str(self.swift).lower(),
             "scope": self.scope,
             "selection": json.dumps(self.selection, separators=(",", ":")),
-            "shards": json.dumps([{"id": s, "slug": s.replace("/", "of")} for s in ids], separators=(",", ":")),
+            "shards": json.dumps(shards, separators=(",", ":")),
             "repeat": str(self.repeat),
             "shared_build": str(self.shared_build).lower(),
             "report": str(self.report).lower(),
@@ -396,9 +399,16 @@ def plan_for(
     root: str = ".",
     times: dict[str, float] | None = None,
     clean: bool = False,
+    clean_due: bool = False,
     shared_build: bool | None = None,
 ) -> Plan:
-    """The plan for one workflow run."""
+    """The plan for one workflow run.
+
+    A full run outside a pull request builds incrementally on the last build, in every shard,
+    and its last shard saves the build for the next run; measured, that beats a build job the
+    shards wait for by over a minute. The first run of each UTC day (`clean_due`), a `clean` run
+    and the daily run build from scratch, once, in a job of their own that every shard restores.
+    """
     times = times or {}
     on_branch = ref in ("refs/heads/nightly", "refs/heads/master")
     if event == "schedule":
@@ -415,7 +425,9 @@ def plan_for(
     elif event == "workflow_dispatch":
         if dispatch_lane == "flake-hunt":
             plan = full_plan("a manual flake hunt: the full lane, three passes", repeat=FLAKE_HUNT_PASSES)
-            plan.shared_build, plan.report, plan.clean = True, on_branch, clean
+            plan.clean = clean or clean_due
+            plan.shared_build = plan.clean if shared_build is None else shared_build
+            plan.save_cache, plan.report = not plan.shared_build, on_branch
             plan.estimated_seconds = sum(times.values())
             return plan
         if dispatch_lane in ("auto", "full") or files is None:
@@ -425,9 +437,11 @@ def plan_for(
     if forced:
         plan = full_plan(forced)
         plan.estimated_seconds = sum(times.values())
-        plan.shared_build = (event != "pull_request") if shared_build is None else shared_build
+        outside_pr = event != "pull_request"
+        plan.clean = outside_pr and (clean or clean_due)
+        plan.shared_build = outside_pr and (plan.clean if shared_build is None else shared_build)
+        plan.save_cache = outside_pr and not plan.shared_build
         plan.report = event in ("push", "workflow_dispatch") and on_branch
-        plan.clean = clean
         return plan
 
     # The fast lane.
@@ -516,6 +530,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--times", default=DEFAULT_TIMES)
     parser.add_argument("--root", default=".")
     parser.add_argument("--clean", action="store_true")
+    parser.add_argument("--clean-due", action="store_true", help="no clean build has been made today (UTC)")
     parser.add_argument("--shared-build", choices=("true", "false", ""), default="")
     parser.add_argument("--report", action="store_true", help="file the tracking issue even off nightly and master")
     args = parser.parse_args(argv)
@@ -524,7 +539,7 @@ def main(argv: list[str]) -> int:
         event=args.event, base_ref=args.base, ref=args.ref,
         labels=tuple(x for x in args.labels.split(",") if x), dispatch_lane=args.lane,
         files=changed_files(args.files_from) if args.files_from else None,
-        root=args.root, times=times, clean=args.clean,
+        root=args.root, times=times, clean=args.clean, clean_due=args.clean_due,
         shared_build=None if not args.shared_build else args.shared_build == "true",
     )
     if args.report and plan.lane == "full":

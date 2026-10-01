@@ -38,9 +38,10 @@ on:
         type: boolean
         default: false
       shared_build:
-        description: Build once in a job of its own and let the shards restore it (otherwise each shard builds)
-        type: boolean
-        default: true
+        description: auto builds once in a job of its own only when a clean build is due; true or false forces it either way
+        type: choice
+        options: [auto, "true", "false"]
+        default: auto
       report:
         description: File the tracking issue even though this is not nightly or master (to test the report)
         type: boolean
@@ -84,6 +85,18 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.event_name == 'schedule' && 'nightly' || '' }}
+      # The first full run of each UTC day builds from scratch (see the build job).
+      - name: Today's clean build
+        id: day
+        run: echo "key=ci-clean-build-$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
+      - name: Has today's clean build been made
+        id: marker
+        if: ${{ github.event_name != 'pull_request' }}
+        uses: actions/cache/restore@v4
+        with:
+          path: .ci-clean-marker
+          key: ${{ steps.day.outputs.key }}
+          lookup-only: true
       - name: Plan
         id: plan
         env:
@@ -96,6 +109,7 @@ jobs:
           CLEAN: ${{ inputs.clean }}
           SHARED_BUILD: ${{ inputs.shared_build }}
           FORCE_REPORT: ${{ inputs.report }}
+          CLEAN_DUE: ${{ github.event_name != 'pull_request' && steps.marker.outputs.cache-hit != 'true' }}
         run: |
           args=()
           if [ "$EVENT" = pull_request ]; then
@@ -110,8 +124,9 @@ jobs:
             args+=(--files-from changed.txt)
           fi
           [ "$CLEAN" = true ] && args+=(--clean)
+          [ "$CLEAN_DUE" = true ] && args+=(--clean-due)
           [ "$FORCE_REPORT" = true ] && args+=(--report)
-          [ -n "$SHARED_BUILD" ] && args+=(--shared-build "$SHARED_BUILD")
+          [ -n "$SHARED_BUILD" ] && [ "$SHARED_BUILD" != auto ] && args+=(--shared-build "$SHARED_BUILD")
           python3 scripts/ci_impact.py --event "$EVENT" --base "$BASE_REF" --ref "$REF" \
             --labels "$LABELS" --lane "$LANE" "${args[@]}"
 
@@ -165,11 +180,13 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-  # After a push (or the daily and manual runs) the build is made once, here, and saved for the
-  # shards and for every pull request into the same branch. A pull request has no such job: its
-  # shards each restore the base branch's newest build and compile only what the pull request
-  # changed. A build is incremental on top of the last one, except the first of each UTC day,
-  # which is clean, so drift stays within a day (a manual `clean` forces one too).
+  # A full run outside a pull request builds incrementally in every shard, on top of the last
+  # build, and its last shard saves the result for the next run and for pull requests into the
+  # same branch (measured: over a minute quicker than building here and restoring in the shards).
+  # This job exists for the runs that start from scratch, which are the first of each UTC day,
+  # the daily run and a manual `clean`: it builds once, saves, and writes today's marker, and
+  # every shard restores its build. A pull request has none; its shards each restore the base
+  # branch's newest build and compile what the pull request changed.
   build:
     name: build
     needs: plan
@@ -180,29 +197,21 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.plan.outputs.checkout_ref }}
-      - name: Today's clean build
-        id: day
-        run: echo "key=ci-clean-build-$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
-      - name: Has today's clean build been made
-        id: marker
-        uses: actions/cache/restore@v4
-        with:
-          path: .ci-clean-marker
-          key: ${{ steps.day.outputs.key }}
-          lookup-only: true
       - uses: ./.github/actions/swift-build
         with:
-          clean: ${{ needs.plan.outputs.clean == 'true' || steps.marker.outputs.cache-hit != 'true' }}
+          clean: ${{ needs.plan.outputs.clean == 'true' }}
           save: "true"
-      - name: Remember it
-        if: ${{ steps.marker.outputs.cache-hit != 'true' }}
-        run: echo "$(date -u)" > .ci-clean-marker
+      - name: Remember today's clean build
+        if: ${{ needs.plan.outputs.clean == 'true' }}
+        run: |
+          echo "$(date -u)" > .ci-clean-marker
+          echo "key=ci-clean-build-$(date -u +%Y%m%d)" >> "$GITHUB_ENV"
       - name: Save the marker
-        if: ${{ steps.marker.outputs.cache-hit != 'true' }}
+        if: ${{ needs.plan.outputs.clean == 'true' }}
         uses: actions/cache/save@v4
         with:
           path: .ci-clean-marker
-          key: ${{ steps.day.outputs.key }}
+          key: ${{ env.key }}
 
   tests:
     name: tests ${{ matrix.shard.id }}
@@ -221,12 +230,14 @@ jobs:
         with:
           ref: ${{ needs.plan.outputs.checkout_ref }}
 
-      # Restores the build the build job saved, or (pull requests, no build job) the base
-      # branch's newest and compiles what this change touched. Pull requests save nothing, which
-      # keeps the cache quota free and an upload off the critical path.
+      # Restores the build the build job saved, or the newest one of the branch (the base
+      # branch's, for a pull request) and compiles what this change touched. Pull requests save
+      # nothing, which keeps the cache quota free and an upload off the critical path; on a
+      # push, the last shard saves, right after its build and before its tests.
       - uses: ./.github/actions/swift-build
         with:
           clean: ${{ needs.plan.outputs.shared_build != 'true' && needs.plan.outputs.clean == 'true' }}
+          save: ${{ matrix.shard.save }}
 
       # Serially within a shard: on the shared 3-core runner, tests run in parallel queued behind
       # one another's main-thread work until their waits ran out. The tests that block the main
