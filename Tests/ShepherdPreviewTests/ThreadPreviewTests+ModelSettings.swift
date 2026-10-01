@@ -22,7 +22,7 @@ extension ThreadPreviewTests {
 
     /// The popover in each state the composer reaches: Standard, Fast, a model with no raised
     /// tier (no Speed row), and a model with every thinking level (the segments wrap). Rendered
-    /// across appearances and text sizes (`Preview.renderMatrix`): at 1.5 a clipped title shows.
+    /// across appearances and text sizes (`Preview.renderMatrix`): at 1.3 a clipped title may show.
     @Test func modelSettingsPopoverStates() async throws {
         let size = CGSize(width: 1180, height: 620)
         try await Preview.renderMatrix("composer-model-settings", size: size) {
