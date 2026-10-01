@@ -121,7 +121,7 @@ private struct NeedsYouDetail: View {
                             .nwCard(radius: NWListMetrics.cardRadius, fill: nw.bgSunken)
                     }
                     if item.reply == .open {
-                        Text(item.dialogID == nil && item.runID == nil
+                        Text(item.dialogID == nil
                              ? "Open the thread to see what it is waiting for."
                              : "Answer this one in the thread.")
                             .nwText(.caption).foregroundStyle(nw.textTertiary)
@@ -141,7 +141,7 @@ private struct NeedsYouDetail: View {
             }
             NWHairline()
             HStack(spacing: NW.Space.m) {
-                Button(item.runID == nil ? "Open thread" : "Open subagent") { navigator.open(item.route) }
+                Button("Open thread") { navigator.open(item.route) }
                     .buttonStyle(.nw(item.reply == .open ? .primary : .ghost, size: .l))
                 Spacer(minLength: NW.Space.m)
                 if let failure {

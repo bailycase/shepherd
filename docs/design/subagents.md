@@ -3,19 +3,23 @@
 > Read when you change the subagent tray, its cards, or its record lines in a thread.
 
 Subagents live in a **tray above the composer** while they run (SubagentTray, NWAgents;
-Subagents, SubagentsDone, SubagentsQueue): one row each, answered, steered, stopped or opened
-from there, in the same card as Up next. The thread keeps two quiet lines for them, where they
+Subagents, SubagentsDone, SubagentsQueue): one row each, steered, stopped or opened from there,
+in the same card as Up next. The thread keeps two quiet lines for them, where they
 started and where they finished, and both open the inspector, so finished runs stay browsable.
-Raw wait or status dumps never appear. Subagents have no sidebar rows; one waiting on you marks
-its agent's row instead (see Sidebar). Behavior is specified in
+Raw wait or status dumps never appear. Subagents have no sidebar rows, and **a subagent never asks
+you anything**: one that has a question asks its parent agent, which answers it or asks you
+itself, in its own thread, as an ordinary question (Composer, questions), and passes your answer
+down. So a subagent's question marks no row in Needs you, posts no notification, and takes
+nothing over the composer: it shows quietly on the subagent's own row. Behavior is specified in
 [native-subagents.md](../native-subagents.md).
 
-The components are ShepherdUI's Agents set (`Components/Agents/SubagentTray.swift`,
-and the question dock, `Components/Composer/QuestionDock.swift`). `NativeSubagentTray` (ShepherdRemote, shared with iOS) derives the
+The components are ShepherdUI's Agents set (`Components/Agents/SubagentTray.swift`).
+`NativeSubagentTray` (ShepherdRemote, shared with iOS) derives the
 tray's header and rows once per change on the thread store (`NativeThreadStore.tray`), and the
 turn's record (`NativeSubagentRecord`) with its presentation; `SubagentPresentation` maps them onto
 the components' values, and `Thread/Subagents.swift` lays out the tray. State always comes from
-`AgentState` (a queued run and a run paused before its next model request both draw as `queued`).
+`AgentState` (a queued run, a run paused before its next model request and a run waiting on its
+parent's answer all draw as `queued`; a subagent never draws `attention`, which is yours).
 
 - **When the tray shows** (`nativeTrayRuns`): only runs started during the current turn, plus
   genuinely live or waiting work continuing from an earlier turn. Finished runs stay as that
@@ -36,13 +40,14 @@ the components' values, and `Thread/Subagents.swift` lays out the tray. State al
   edges. Alone, either one is its own card.
 - **Header** (32pt, 12pt leading, 6pt trailing, items 8pt apart): `NWBranchGlyph` at 12pt in
   `textTertiary`, "3 subagents" in `.nwSans(12, .semibold)` `textSecondary`, one 6pt cell per run
-  (radius 2, 2pt apart, in the state's color; queued and paused cells are `lineStrong`; at most
-  twelve, in row order), then the tally in `.nwMono(11)`: "1 needs you" in `lanternText`, "1
-  running" in `running`, "1 done" in `textTertiary`, "1 failed" in `failed`, in that order (with
-  "queued" and "paused" after running), joined by " · "; "all done" once every run finished well.
-  A spacer, then Collapse (`chevron.down`, a 24pt circular icon button; it turns to point right
-  while collapsed). Collapsed, the tray is its header alone: the cells and counts still say who
-  needs you (SubagentTray · collapsed). The header's hairline is the first row's.
+  (radius 2, 2pt apart, in the state's color; queued, paused and waiting-on-parent cells are
+  `lineStrong`; at most twelve, in row order), then the tally in `.nwMono(11)`: "1 running" in
+  `running`, "1 done" in `textTertiary`, "1 failed" in `failed`, in that order (with "queued" and
+  "paused" after running, then "1 waiting on parent", all `textTertiary`), joined by " · "; "all
+  done" once every run finished well. A spacer, then Collapse (`chevron.down`, a 24pt circular
+  icon button; it turns to point right while collapsed). Collapsed, the tray is its header alone:
+  the cells and counts still say what runs and what waits (SubagentTray · collapsed). The
+  header's hairline is the first row's.
 - **A row** (`NWSubagentTrayRow`; 36pt minimum, 12pt leading, 6pt trailing, items 9pt apart, a
   hairline above): the state in a 13pt slot (a 7pt `NWStatusDot`, glowing while it needs you; a
   `done` checkmark or a `failed` cross once finished), the name in `.nwMono(12, .semibold)` in a
@@ -56,9 +61,11 @@ the components' values, and `Thread/Subagents.swift` lays out the tray. State al
     Between calls the last call reads in the past ("Edited B.swift"), still; before any call,
     "Starting". Its diff so far and its time since it started ("37m").
   - **Queued / paused:** "Waiting to start", or "Paused before its next model request".
-  - **Needs you:** the row on `lanternTint`; "asks: " and the question's asking sentence in
-    `lanternText`; its wait since the child asked (`shepherd_parent_message`; no figure without
-    one); then **Answer** (lantern `s` button) in the trailing slot.
+  - **Asked the parent:** a quiet waiting row: the hollow `queued` dot, "asked the parent: " and
+    the question's asking sentence in `textSecondary` ("asked the parent" alone when it gave
+    none), and its wait since the child asked (`shepherd_parent_message`; no figure without one).
+    The question is its parent's to answer, or to ask you in its own thread, so the row has no
+    tint, glow or Answer: nothing on it is yours to do. Hover keeps Steer, Stop and Open.
   - **Done:** the first sentence of what it did, without its final period, in `textSecondary`;
     its diff and its duration ("41m").
   - **Failed:** why, in `failed`, without the exit code it leads with ("context limit reached
@@ -67,31 +74,24 @@ the components' values, and `Thread/Subagents.swift` lays out the tray. State al
     (`stop.fill`) and Open (`chevron.right`), 24pt circular icon buttons, take the trailing slot.
     At rest, and on a finished run, the slot holds a 10pt `chevron.right` in `textTertiary`.
   - **Selected** (its run open in the inspector): `bgSelected` with a 2pt rule on its leading
-    edge, `running` (`lantern` on a row that needs you, which keeps its tint and shows the
-    chevron in place of Answer, since the inspector shows the question).
+    edge, `running`.
 - **Order and length** (SubagentTray · 8 subagents): up to four runs keep spawn order (the
-  boards' worker · reviewer · tests); a longer tray sorts the runs that need you first, then live
-  ones, then failed, then done, and shows four rows and "Show 4 more" (a 30pt row, Geist 12
+  boards' worker · reviewer · tests); a longer tray sorts the live runs first (one waiting on its
+  parent among them), then failed, then done, and shows four rows and "Show 4 more" (a 30pt row, Geist 12
   `textSecondary`, 34pt leading inset; "Show fewer" once open). Open, a tray of more than eight
   rows scrolls inside a lazy stack eight rows tall (`AppLayout.trayExpandedMaxRows`).
 - **What a row does:** a click opens its run in the inspector (again closes it); Steer opens it
-  with its Steer field focused; Stop stops the run; Answer opens its question. Its context menu
-  and accessibility actions carry Open (or Close the Inspector), Answer…, and the run's controls
-  (Pause or Continue and Stop while live, Re-run once finished). Controls are disabled while the
+  with its Steer field focused; Stop stops the run, or closes the question of one waiting on its
+  parent. Its context menu and accessibility actions carry Open (or Close the Inspector) and the
+  run's controls (Pause or Continue and Stop while live, Stop alone while it waits on its parent,
+  Re-run once finished). Controls are disabled while the
   thread can't take commands (its agent is off screen, or its host has no subagent control).
-- **Answer → the question dock** (SubagentTray › Answer → question dock; QuestionStates › from a
-  subagent): the run's question takes over the composer area, the tray and Up next with it, until
-  it is answered or hidden, in the same dock as pi's own questions (`NWQuestionDock`, see
-  Composer, questions, and menus › The question dock): the shared head with a 13pt `lanternText`
-  branch glyph and "reviewer is asking" (Hide the question, or Esc, closes the dock; its row's
-  Answer opens it again), the question in Geist 14.5 semibold (inline Markdown), then its answers
-  as numbered cards (titles in Geist 13 semibold over 12 `textSecondary`), the first the run
-  marked "Recommended". Its answer is a message to the run, so a picked card opens its note field
-  and Something else… is the last row; a question with no answers is an open question ("Reply to
-  reviewer…"). Answer (↩) sends the option as the run offered it (with the note after a blank
-  line) or the words typed to that run only, before its next turn. SubagentTray draws the dock
-  smaller (10×12 padding, the question at 13.5, 8×10 cards with 12.5 titles over 11.5, and no
-  Something else); the dock follows QuestionStates, which draws every asker's dock.
+- **No Answer, and no question dock for a subagent.** A subagent that has a question puts it to its
+  parent: the parent's extension is told (docs/native-subagents.md › Questions and results), and
+  answers it from what it knows, or asks you in its own thread, as pi's own question in the
+  composer's place, then passes your answer down. What a subagent's row offers is Steer (you
+  speaking to the child yourself, over its parent: it resumes the child with your words and ends
+  its question) and Stop (which closes the question and marks the run stopped).
 - **In the thread** (`NWSubagentRecordLine`, SubagentTray › SubagentRecord): an activity line in
   look (26pt, 12.5 `textSecondary`, the meta in `.nwMono(11)` `textTertiary`, a 13pt branch glyph
   and a 10pt chevron; a real button with the row hover; with no run to open, no chevron, its
@@ -113,7 +113,9 @@ the components' values, and `Thread/Subagents.swift` lays out the tray. State al
   labels stay intact. Results, questions and controls use run identity, never the label.
 - **Background coordination stays out of chat.** Routine child progress updates its record,
   not a new parent turn. Questions and unread completion can wake an idle parent; results that
-  arrive while it works are batched into one continuation at its settlement boundary. Reading
+  arrive while it works are batched into one continuation at its settlement boundary. A question
+  is the child's to its parent: its notice tells the parent to answer it, or to ask you in its own
+  thread and pass your answer down, and says so once however many children asked. Reading
   a result or receiving it through Wait consumes its pending notification. A question does not
   also generate a completion wake. Stop prevents late results from restarting the parent.
   The native tray remains the progress display; no receipt-only assistant response is requested.

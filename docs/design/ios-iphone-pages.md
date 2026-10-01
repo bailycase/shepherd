@@ -11,12 +11,12 @@ connected hosts, newest first.
   on you"). On `bgWindow`, 14pt sides, cards 10pt apart. Pull to refresh.
 - **A card** (`NWAttentionCard`): `bgRaised`, 1px `lineSubtle`, 12pt corners, 10×14 padding, 6pt
   apart inside:
-  - The origin line: a 14pt `lanternText` glyph (a branch for a subagent, a bolt for an
-    automation run, a folded map for a mission; a glowing 8pt `lantern` dot for a thread) and
-    "Subagent · Restyle native UI", "Thread", "Automation · Triage new Sentry issues" (12
+  - The origin line: a 14pt `lanternText` glyph (a bolt for an automation run, a folded map for a
+    mission; a glowing 8pt `lantern` dot for a thread) and
+    "Thread", "Automation · Triage new Sentry issues" (12
     `textTertiary`), with the time since trailing ("now", "2m", "14m", "1h"). The app adds the
     host's badge when there are several hosts (`NWAttentionCard`).
-  - The title (15/600): the thread's name, or who asks ("reviewer asks"). An automation's card is
+  - The title (15/600): the thread's name. An automation's card is
     titled by its question ("Is this a regression from #231?") over the asker's context ("NilPointer
     in PlaceOrder started 40 minutes after #231 merged.").
   - The question (13.5/1.4 `textSecondary`), and the asker's message under it.
@@ -24,12 +24,6 @@ connected hosts, newest first.
     short options shows them (the first primary); a confirm shows Yes (primary) and No (a pi confirm
     carries no labels of its own). Then Open (ghost; secondary when it is the only action), which
     goes where the question can be answered. Input and editor questions show Open alone.
-- **A subagent's question** answers in place with its options ("Replace everywhere", "Rename new
-  ones"), as its card in the thread does: at most three short ones, the first primary, and a tap
-  sends that option to the run as its reply (`FleetDigest.SubagentQuestion.options`,
-  `HomeFeed.choose`). A reply in its own words, more options, or a host that takes no subagent
-  commands shows Open alone, which opens the run. Home's row and the iPad's detail answer the same
-  way.
 - **Not built yet:** a mission's item ("Mission", "Checkout funnel events", "orders is stuck after 3
   tries. The planner suggests a retry with a hint.", Retry with hint and Open), and a thread's plan
   approval ("Plan ready: …", Approve plan and Read plan). They wait for Missions and plan approval

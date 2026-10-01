@@ -37,7 +37,7 @@ draws emphasis (a Live Activity, the iPad boards' buttons); Finished work's acti
 | Group | Kind | Title | Body (the board's words) | Actions, in order | Level | Grouped by |
 | --- | --- | --- | --- | --- | --- | --- |
 | Needs you | Planner question | the mission ("Refund events") | the question: "Which key joins a refund to the funnel?" | each option, the planner's pick first ("order_id", "payment_id"), then Reply… | Active | mission |
-| Needs you | Subagent question | "thread · subagent" ("Restyle native UI · reviewer") | the question: "Rename the new tokens, or replace the old ones everywhere?" | each option the subagent offered ("Replace everywhere", "Rename new ones"), then Reply… | Active | thread |
+| Needs you | Subagent question (**not sent**: a subagent asks its parent, never you) | "thread · subagent" ("Restyle native UI · reviewer") | the question: "Rename the new tokens, or replace the old ones everywhere?" | each option the subagent offered ("Replace everywhere", "Rename new ones"), then Reply… | Active | thread |
 | Needs you | Plan to approve | the thread ("Dock review pane") | "Plan ready: dock the review pane on the right." | Approve plan, Open | Active | thread |
 | Needs you | Stuck lane | the mission ("Checkout funnel events") | "orders is stuck after 3 tries." (the banner adds the planner's pick: "The planner suggests a retry with a hint.") | Retry with hint, Replan the lane, Open | Time Sensitive | mission |
 | Needs you | Out of budget | the mission | "Paused at 6M tokens. About 0.9M to finish." | Add 1M and resume, Open | Time Sensitive | mission |
@@ -55,10 +55,10 @@ draws emphasis (a Live Activity, the iPad boards' buttons); Finished work's acti
 - **The subtitle is the kind** as this table names it ("Planner question", "Turn finished"), plus "·
   *where*" when the moment has a place ("Stuck lane · orders-svc"). Host offline's is "Host"
   (NotifiPadCenter).
-- **Which setting covers a kind** (NotifSettings › Send me): Questions and approvals (planner,
-  subagent and automation questions, plans, reviews), Blocked work (stuck lanes, empty budgets),
+- **Which setting covers a kind** (NotifSettings › Send me): Questions and approvals (planner and
+  automation questions, plans, reviews; a subagent's question is not sent), Blocked work (stuck lanes, empty budgets),
   Failures (failed turns, failed automations, hosts going offline), Finished work.
-- **Built:** on the Mac, Subagent question, Automation question, Turn failed, Turn finished and Host
+- **Built:** on the Mac, Automation question, Turn failed, Turn finished and Host
   offline, plus a thread's own question (any pi dialog: "Question"), each as this table words it
   (see On the Mac today). An automation's run is an ordinary agent wearing the automation's name,
   so its question asks as Automation question, and its failure and finish post as that agent's
@@ -102,8 +102,7 @@ A notification, top to bottom (NotifCatalog › Anatomy; NotifPhoneBanner):
 
 1. **Interruption level:** "TIME SENSITIVE" over the title, on stuck lanes and empty budgets only.
    The system draws it.
-2. **Title:** the mission, thread or automation (the host, for Host offline), never "Shepherd". A
-   subagent's question is "*thread* · *subagent*".
+2. **Title:** the mission, thread or automation (the host, for Host offline), never "Shepherd".
 3. **Subtitle:** the kind and where: "Stuck lane · orders-svc".
 4. **Body:** one sentence, with the planner's pick when there is one: "orders is stuck after 3
    tries. The planner suggests a retry with a hint."
@@ -139,8 +138,9 @@ The board's categories (NotifCatalog's `NotificationCategories.swift`):
   NotifPhoneRich, Open review). Other options carry none. MobileAnswer draws `map` on its Open
   mission instead; the boards disagree, so settle it before building.
 - **Answers go where the question came from.** A typed answer or a chosen option goes to the
-  subagent that asked, not its parent thread (NotifPhoneReply: "Goes to the reviewer, not the parent
-  thread."), and to the planner for a planner question. Tapping a choice needs no typing.
+  planner for a planner question, and to pi's dialog for a thread's. The boards also draw a reply
+  that goes to the subagent that asked (NotifPhoneReply: "Goes to the reviewer, not the parent
+  thread."), which Shepherd does not build: a subagent never asks you. Tapping a choice needs no typing.
 - **Answering never opens Shepherd** (NWMissions: the choices are actions "so answering never opens
   the app"). Open, Review and Review patch open Shepherd at the thing.
 
@@ -187,7 +187,7 @@ icon (radius 6) beside the title (14pt semibold) and its meta (a mono 10pt "TIME
   what choosing it means in `textSecondary` ("payments-svc already has it on every refund"), the
   pick marked "· planner's pick" in `lanternText`. Actions: the pick (`checkmark`), the other
   option, Reply…, Open mission.
-- **Subagent question, replying** (NotifPhoneReply): the question notification on top; under it,
+- **Subagent question, replying** (NotifPhoneReply; **not built**: a subagent never asks you): the question notification on top; under it,
   over the keyboard, the choices as 34pt buttons (radius 8, `bgRaised`, 13.5pt) on a `bgSunken`
   strip, then the reply field: a capsule at least 38pt tall (radius 19, `bgRaised`, a `lineStrong`
   border, 16pt text, a lantern caret) with **Send** beside it (16pt semibold, `running`). Tapping a
@@ -218,7 +218,8 @@ icon (radius 6) beside the title (14pt semibold) and its meta (a mono 10pt "TIME
   NotifiPadCenter), no button is primary. **Platform limit:** iPadOS, like iOS, shows a
   notification's actions only once it is expanded, so building this as drawn needs a decision first.
 - **Banner** (NotifiPadBanner): 480pt wide, centred 30pt under the top edge, over whatever is on
-  screen: the subagent's question with Replace everywhere (primary), Rename new ones, Reply…. The
+  screen: the board's subagent question with Replace everywhere (primary), Rename new ones, Reply…
+  (not built: a subagent never asks you). The
   board's backdrop (the Missions list and a stuck lane's detail) belongs to Missions.
 - **Notification Center** (NotifiPadCenter): a 520pt column, 36pt from the right edge, headed
   "Notification Center" and the app's group ("Shepherd · 9"). Rich previews show at full width:
@@ -243,11 +244,10 @@ every connected host's (`ShepherdViewModel+Notifications.swift` decides when;
 | A turn failed | the thread | Turn failed | the error's first line, or "The model request failed." | Retry, Open | Active |
 | The thread asks (any pi dialog: confirm, select, input, editor) | the thread | Question, or Automation question for an automation's run | the question | the dock's choices: each option (Yes and No for a confirm), and Reply… for an input or editor | Active |
 | An asking tool waits and no question follows within 2s | the thread | Question | "Waiting on your answer." | none: a click opens it | Active |
-| A subagent asks | "*thread* · *subagent*" | Subagent question | the question | each option it offered, then Reply… ("Reply to *subagent*…") | Active |
 | A connected host goes away (Shepherd retries it) | "*host* is offline" | Host offline | "Remote agents resume when it’s back." | Retry | Active |
 | The agent's `notify` tool | the tool's title | none | the agent's name, then the tool's body | none | Active |
 
-- **Every host's threads:** a remote thread's questions and its subagents' post as this Mac's do,
+- **Every host's threads:** a remote thread's questions post as this Mac's do,
   and a host that drops while connected posts Host offline once (NotifMac). A remote turn's end
   posts nothing yet (see below).
 - **When:** a turn's banner posts only when a turn ends (working to done); idle churn from a launch
@@ -257,8 +257,7 @@ every connected host's (`ShepherdViewModel+Notifications.swift` decides when;
 - **Actions** (the catalog's categories, one per set of actions; macOS shows the first as the
   banner's button and the rest under **Options**): Retry retries the failed turn in place, once
   the agent is idle (Thread › Retry; a host from before that gets the prompt again); Review selects the thread and opens its Changes; Retry on a
-  host reconnects at once; an option answers pi's dialog or steers the subagent that asked with the
-  option, and Reply… opens a field whose **Send** does the same with the words typed. Answering and
+  host reconnects at once; an option answers pi's dialog, and Reply… opens a field whose **Send** does the same with the words typed. Answering and
   retrying never bring Shepherd forward; Open and Review do. A question answered meanwhile takes
   nothing. Glyphs follow the boards: `arrow.clockwise` on Retry, `text.bubble` on Reply…,
   `chevron.right` on Open.
@@ -266,9 +265,8 @@ every connected host's (`ShepherdViewModel+Notifications.swift` decides when;
   names its host too; a host's is its own), so macOS stacks a thread's banners together.
 - **Quotes:** an error, question or result is cut to its first line, at most 200 characters, ending
   in "…" when cut.
-- **Replacing and removing:** a thread's turn banners replace each other, and so do its questions;
-  each subagent's question has its own, posted once per question however often its extension
-  republishes, and again only when the question changes. A question's banner comes down once it is
+- **Replacing and removing:** a thread's turn banners replace each other, and so do its questions. A
+  subagent's question posts none: it goes to its parent. A question's banner comes down once it is
   answered (anywhere: here, in the thread, or on another device), a host's once it is back, and a
   deleted thread's with it. Every `notify` is its own.
 - **Clicking** brings Shepherd forward and selects the thread (see Anatomy). Banners from the
@@ -316,7 +314,7 @@ height (48pt, or 56pt with a second line: the title at 15pt, the line under it a
 `textTertiary`), 14pt side padding, and `.nwSwitch` switches (30 × 18, lantern when on).
 
 - **Send me** (a switch each; all four are on in the board):
-  - Questions and approvals: "Planner, subagent and automation questions, plans, reviews"
+  - Questions and approvals: "Planner and automation questions, plans, reviews"
   - Blocked work: "Stuck lanes and empty budgets. Can break through Focus."
   - Failures: "Failed turns, failed automations, hosts going offline"
   - Finished work: "Quietly, and in your Scheduled Summary"
@@ -399,8 +397,8 @@ secondary, buttons are 14% white, and the state colors are Night Watch's dark va
 - **Compact** (a 36pt pill beside the camera, 12pt inside):
   - Thread: a spinner and the current command (mono 11.5pt, 55% white: "swift test"), elapsed on the
     right (mono 12.5pt semibold, `running`: "4:12").
-  - Subagents: the crook and how many are running ("3", white), then a lantern dot (8pt) and how
-    many need you ("1", `lantern`).
+  - Subagents: the crook and how many are running ("3", white), the board adds a lantern dot (8pt)
+    and how many need you ("1", `lantern`), which Shepherd would not draw: a subagent never needs you.
   - Automation: a bolt and "CI", and on the right an 18pt ring that fills as checks pass (`running`
     over 18% white).
   - Design agent: a pen-nib glyph and the design ("Onboarding", 55% white), boards drawn so far on
@@ -415,11 +413,11 @@ secondary, buttons are 14% white, and the state colors are Night Watch's dark va
     (12.5pt, 55%, the counts in `done` and `failed`); then **Steer** and **Stop** (38pt capsules,
     radius 19, 14% white, 14pt semibold; Stop's text `failed`). Steer opens a text field without
     launching the app; Stop asks nothing.
-  - Subagents: the crook, "reviewer needs you" (15pt semibold) and the thread ("Restyle native UI",
+  - Subagents (as the board draws it; not for Shepherd, whose subagents never ask you): the crook, "reviewer needs you" (15pt semibold) and the thread ("Restyle native UI",
     12pt, 55%); the question (13.5pt, code in mono 12pt: "Two token names collide with
     `Tokens.textSecondary`. Rename the new ones, or replace the old ones everywhere?"); its options
     as buttons, the first primary (`lantern`, `textOnLantern`: "Replace all"), then "Rename new
-    ones". A subagent's question is answered in place.
+    ones". The board answers a subagent's question in place.
   - Design agent: the pen nib, "Onboarding flow" and "2 of 4"; the boards as 62pt tiles (radius 8,
     8pt apart), filling in as they're drawn: a drawn board's thumbnail, the one being drawn
     shimmering on 12% white with a small spinner, the rest empty at 6% white; then **Open boards**.

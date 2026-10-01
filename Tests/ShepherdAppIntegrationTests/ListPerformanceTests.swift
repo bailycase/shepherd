@@ -1183,7 +1183,7 @@ struct ListPerformanceTests {
 
         var body: some View {
             SubagentTrayView(tray: NativeSubagentTray(runs), state: state, runs: runs,
-                             actions: SubagentActions(inspect: { _ in }, command: { _, _, _, _ in }), answer: { _ in })
+                             actions: SubagentActions(inspect: { _ in }, command: { _, _, _, _ in }))
                 .frame(width: 800)
         }
     }

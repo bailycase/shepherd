@@ -60,7 +60,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | Running | [thread](thread.md), [composer](composer.md) | Thread (A turn while pi works); Composer, questions, and menus | Built |
 | SlashMenu | [composer](composer.md) | Composer, questions, and menus › Slash menu | Built |
 | ModelPicker | [composer](composer.md) | Composer, questions, and menus › Model picker | Built |
-| ComposerSpeed | [composer](composer.md), [dialogs-and-palette](dialogs-and-palette.md), [settings](settings.md) | Composer, questions, and menus › The control row, Speed menu; Command palette; Settings › Agents | Built |
+| ComposerSpeed | [composer](composer.md), [dialogs-and-palette](dialogs-and-palette.md), [settings](settings.md) | Composer, questions, and menus › The control row, Model settings (its Speed control); Command palette; Settings › Agents | Built (its separate Speed chip and menu are replaced by the Composer & menus board's one popover) |
 | CommandPalette | [dialogs-and-palette](dialogs-and-palette.md) | Command palette | Built |
 | ToolRows | [thread](thread.md) | Thread › Activity lines | Built |
 | ChangesSplit | [design-tool](design-tool.md) | Side pane › Changes (toolbar, compare row, strip, file headers, split, comments, send bar) | Built |

@@ -287,7 +287,7 @@ events come out on stdout, one record per LF.
 - **Requests** (`NativeThreadRequest`): `snapshot`, `send` (follow-up or steer delivery, optional
   images and design context; see The queue and Design context), `abort` (see The queue), `answer`, `setModel`, `setThinking`,
   `subagentCommand` (message, cancel, resume, pause, continue; routed to the children
-  extension's control connection, never the parent model), `compact` (pi's `compact`, with what
+  extension's control connection, never the parent model: the user's own Steer and Stop), `compact` (pi's `compact`, with what
   to keep; see Context and compaction), `subagentTranscript` (one page of a
   child's session file, read from its last 8 MiB; a message the user sent the child, recorded
   in `user-messages.jsonl` beside the session, carries `origin: .user`), and `queue`
@@ -813,8 +813,8 @@ components ([docs/design/thread.md](design/thread.md) specifies their look):
     (`QueueStackState`: the editor, Undo rows, expansion, a drag) around `NativeQueueRules`
   - the Send menu (two rows), and the keys that send while pi works (↩ queues, ⌘↩ steers now)
   - the slash menu, fed from pi's command registry
-  - the question dock (`QuestionDock`, pi's question or a subagent's in the card's place, from
-    `NativeQuestionPrompt`; Hide the question keeps only that question folded:
+  - the question dock (`QuestionDock`, pi's question in the card's place, from
+    `NativeQuestionPrompt`; a subagent's question never takes it, since a subagent asks its parent; Hide the question keeps only that question folded:
     `NativeQuestionHiding`, shared with the iPad's card) and extension widgets
 - **`Subagents`** and **`SubagentPresentation`:** the tray above the composer, with the store's
   tray (`NativeSubagentTray`) mapped onto the components' values.

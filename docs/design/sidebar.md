@@ -40,16 +40,15 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
      opens Settings ▸ Pi, where the bundled extensions are. Opening Hosts opens More; the
      disclosure is not kept across launches.
 - **Needs you** (`NWSidebarSection(.needsYou(count:))`): it appears only while something waits on
-  you: every agent on this Mac or a connected host that is blocked or has a subagent asking,
-  automation runs included. The header is "Needs you" in Geist 11.5 medium `lanternText` with the
-  count trailing in mono 10.5 `lanternText`, padded 14pt (10) above, 4pt below, and 8pt (6) at the
-  sides. Each row (`NWSidebarRow`) is 28pt (22), radius 8, padded 8pt (6), with a 14pt leading slot
+  you: every agent on this Mac or a connected host that is blocked, automation runs included
+  (a subagent never waits on you: its question goes to its parent). The header is "Needs you" in
+  Geist 11.5 medium `lanternText` with the count trailing in mono 10.5 `lanternText`, padded 14pt
+  (10) above, 4pt below, and 8pt (6) at the sides. Each row (`NWSidebarRow`) is 28pt (22), radius 8, padded 8pt (6), with a 14pt leading slot
   and a 9pt (7) gap. The slot holds a thread's glowing 6pt `lantern` dot, or an automation run's
   13pt (11) `bolt` in `lanternText`. The title is in the row font, truncating at the tail. The
   reason trails in mono 10 `lanternText` ("retention?", "approve plan"): the agent's own word or
   two for its question (`Agent.waitingReason`) when its asking tool gave one, else the question
-  its thread asks (`Agent.waitingOn`); for an asking subagent, its own reason
-  (`ChildQuestion.short`), else its role or name; else "ASK". Cut to 14 characters at a word
+  its thread asks (`Agent.waitingOn`); else "ASK". Cut to 14 characters at a word
   (`NeedsYouReason`, shared with the iPad). Most recently active first. The agent is asked for the reason
   (the user's decision, 2026-09-25: "Ask the agent for a short reason"): Shepherd's status
   extension gives every asking tool (named like `ask` or `question`, the same rule that sets

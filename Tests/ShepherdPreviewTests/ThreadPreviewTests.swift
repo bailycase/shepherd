@@ -623,9 +623,9 @@ struct ThreadPreviewTests {
         }
     }
 
-    /// QuestionStates › from a subagent (and SubagentTray › Answer → question dock): named after
-    /// the subagent, with a note in the picked answer and Something else, since its answer is a
-    /// message to the run.
+    /// The question dock's subagent variant (QuestionStates › from a subagent): named after the
+    /// subagent, with a note in the picked answer and Something else, since its answer is a
+    /// message to the run. No surface shows it any more: a subagent asks its parent, never the user.
     @Test func subagentQuestionStates() async throws {
         let question = "Rename the new token names, or replace `Tokens.textSecondary` everywhere?"
         let options = ["Replace everywhere (Recommended)\n41 call sites move to the spec colors. One PR, bigger diff.",
@@ -676,7 +676,7 @@ struct ThreadPreviewTests {
             Text(text).font(.nw(.body)).foregroundStyle(placeholder ? Color.nw.textTertiary : Color.nw.textPrimary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        let size = CGSize(width: 1450, height: 760)
+        let size = CGSize(width: 1450, height: 880)
         try await Preview.render("composer-states", size: size) {
             HStack(alignment: .top, spacing: 32) {
                 VStack(alignment: .leading, spacing: 24) {
@@ -693,12 +693,10 @@ struct ThreadPreviewTests {
                     HStack(alignment: .top, spacing: 24) {
                         NWModelPicker(query: .constant(""), sections: Self.boardModels, selection: .constant(0), shortcut: "⇧⌘M",
                                       onChoose: { _ in }, onClose: {})
-                        NWModelSettings(models: [NWModelOption(id: "openai/gpt-6.1-sol", title: "gpt-6.1-sol", isCurrent: true),
-                                            NWModelOption(id: "anthropic/claude-opus", title: "claude-opus")],
-                                        thinking: Self.thinkingOptions(["low", "medium", "high", "xhigh"]), currentThinking: "xhigh",
-                                        speeds: [NWSpeedOption(id: "standard", title: "Standard", detail: "", boosted: false),
-                                                 NWSpeedOption(id: "fast", title: "Fast", detail: "", boosted: true)], currentSpeed: "fast",
-                                        chooseModel: { _ in }, chooseThinking: { _ in }, chooseSpeed: { _ in }, allModels: {}, close: {})
+                        VStack(alignment: .leading, spacing: 24) {
+                            Self.modelSettings(speed: "fast")
+                            Self.modelSettings(speed: "standard")
+                        }
                     }
                 }
                 .frame(width: NWComposerMetrics.modelPickerWidth + 24 + NWComposerMetrics.modelSettingsWidth)

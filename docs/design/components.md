@@ -15,7 +15,7 @@ Components › Status and feedback.
 | --- | --- | --- | --- |
 | Agent working | `running` | blue dot; elapsed trailing | Stop (outlined beside Send with a draft); ↩ waits in Up next; ⌘↩ steers now |
 | Agent blocked on a question | `attention` | lantern dot, glowing; "ASK" | the question panel in place of the field |
-| A subagent needs you | `attention` | its agent's row: lantern dot, glowing; "ASK" | the card's answers and Reply… |
+| A subagent asked its parent | `queued` (waiting, hollow) | none: its agent's row stays as it was | none: its tray row says "asked the parent" |
 | Agent done | `done` | green dot | Send |
 | Agent done, its turn failed | `failed` | red dot | Send |
 | Agent idle | `idle` | hollow ring | Send |
@@ -25,8 +25,9 @@ Components › Status and feedback.
 | Restored, waiting for your pi to come over | `idle` | `clock` glyph; "waiting" in mono 10 `textTertiary` | Send, which waits; the thread ends in "Waiting to continue" |
 | pi not signed in (this Mac) | `attention` | in Needs you: lantern dot, glowing; "sign in" | Send; the thread ends in the Not signed in card |
 
-Subagent runs use the same states on their dots, glyphs, pills, and steps: running, needs you,
-done, failed, and queued (queued or paused, hollow). Tool calls use running, done, and failed.
+Subagent runs use the same states on their dots, glyphs, pills, and steps: running, done,
+failed, and queued (queued, paused, or waiting on its parent, hollow). A subagent never draws
+`attention`: that state is the user's. Tool calls use running, done, and failed.
 
 **Not built yet: stuck.** `AgentState.stuck` marks an agent or run that has been running too
 long without progress. Its dot and pill take `failed`'s color and tint and say for how long
@@ -61,7 +62,7 @@ composing chrome by hand. Debug builds have a **Component Gallery** (View menu,
 | Containers | `NWSectionHeader`, `NWGroupCard`, `NWCardRow`, `NWHairline`, `NWChoiceRow` (`NWChoiceRowMetrics`), `NWFlowLayout`, `NWMarkupText` | `SettingsComponents.swift`; hairlines everywhere; `NWMarkupText` for Settings' descriptions (Mac and iOS); `NWChoiceRow` in the iOS client's New thread pickers; `NWFlowLayout` for wrapping chips and answers (iOS) |
 | Navigation | `NWSidebar`, `NWSidebarTopBar`, `NWSidebarDestination`, `NWSidebarSection`, `NWSidebarRow`, `NWSidebarFooter`, `NWDropIndicator`, `NWDensity`; `NWThreadToolbar`, `NWPaneToggle`, `NWOptionsMenu`, `NWPaneHeader`; `.nwCommandPalette(isPresented:)`, `NWPaletteCard`, `NWPaletteSearchRow`, `NWPaletteSectionHeader`, `NWPaletteRow` | `SidebarView.swift`, `ThreadHeader.swift`, `RootView.swift`, `CommandPaletteView.swift`; the review's header (`DiffReviewView.swift`) and the inspector's ⋯ menu (`Thread/SubagentInspector.swift`) |
 | Thread | `NWUserBubble` (its time shown while `revealed`; `origin: .steered`), `NWQueueDivider`, `NWAgentProse`, `NWCodeBlock`, `NWThinking`, `NWActivityLine`, `NWActivityCalls`, `NWChangesCard`, `NWDiffStat`, `NWInlineCode`, `NWAttachmentChip`, `NWTurnFooter` (shown while `revealed`), `NWTurnError` (card, Details, folded), `NWRetryLine`, `NWJumpToLatest`, `.nwShimmer(active:)` (live text) | `Thread/ThreadView.swift`, `ThreadTurns.swift` (with each turn's `MessageHover`), `ThreadTools.swift`, `ThreadMarkdown.swift` |
-| Composer | `NWComposer`, `.nwComposerChip(active:)`, `NWChipChevron`, `NWComposerActionButton` (outlined Stop, Send's ring), `NWMenuHeader`, `NWSlashMenu`, `NWModelPicker`, `NWThinkingMenu`, `NWSendMenu`, `NWPlaceMenu` and `NWPlaceChipLabel` (the New thread page's workplace); the question dock: `NWQuestionDock` (`NWQuestionDockContent`, `NWQuestionDockMetrics`, `.nwQuestionCard()`), `NWQuestionHead`, `NWQuestionDockHidden` (over `NWQuestionHiddenLine`); the queue: `NWQueueStack`, `NWQueueRow`, `NWQueueEditor`, `NWQueueDeletedRow`, `NWQueueMoreRow`, `NWQueueNumber`, `NWQueueGlyph`, `NWGripGlyph`, `NWQueueMetrics` | `Thread/Composer.swift`, `Thread/QuestionDock.swift`, `Thread/QueueStack.swift` |
+| Composer | `NWComposer`, `.nwComposerChip(active:)`, `NWChipChevron`, `NWComposerActionButton` (outlined Stop, Send's ring), `NWMenuHeader`, `NWSlashMenu`, `NWModelPicker`, `NWModelSettings` (`NWModelSettingsLabel`, `NWComposerBranchLabel`, `NWFastBolt`), `NWSendMenu`, `NWPlaceMenu` and `NWPlaceChipLabel` (the New thread page's workplace); the question dock: `NWQuestionDock` (`NWQuestionDockContent`, `NWQuestionDockMetrics`, `.nwQuestionCard()`), `NWQuestionHead`, `NWQuestionDockHidden` (over `NWQuestionHiddenLine`); the queue: `NWQueueStack`, `NWQueueRow`, `NWQueueEditor`, `NWQueueDeletedRow`, `NWQueueMoreRow`, `NWQueueNumber`, `NWQueueGlyph`, `NWGripGlyph`, `NWQueueMetrics` | `Thread/Composer.swift`, `Thread/QuestionDock.swift`, `Thread/QueueStack.swift` |
 | Agents | `NWSubagentTray` (`NWSubagentTrayRun`, `NWSubagentTraySummary`, `NWSubagentTrayRow`, `NWSubagentTrayMoreRow`), `NWDockStack`, `NWSubagentRecordLine`, `NWInspectorHeader`, `NWRunBrief`, `NWRunActions`, `NWBranchGlyph`, `NWElapsedText`, `NWDuration`, `NWInlineMarkup`, `.nwRunArrival`; touch forms for iOS (the tray's `.pad` and `.phone` sizes, `NWRunCard`, `NWRunHeader`, `NWRunTabs`, `NWSteerField`, …) | `Thread/Subagents.swift`, `Thread/SubagentInspector.swift`, `Thread/SubagentPresentation.swift`; the iOS client |
 | Review | The Changes pane: `NWScopeButton`, `NWViewedPill`, `NWCompareRow`, `NWFileStrip`, `NWFileHeader`, `NWViewedCheckbox`, `NWDiffView` over `NWChangesRow`s (`NWDiffLine`, `NWSplitDiffLine`, `NWDiffHatch`, `NWDiffFoldRow`), `NWInlineComment`, `NWCommentEditor`, `NWReviewSendBar`, `NWChangesFileList`, the menus (`NWChangesMenu`, `NWChangesMenuRow`, `NWChangesMenuToggle`, `NWChangesMenuSearch`), `NWDiffMetrics`, `NWChangesMetrics`; the commit form (`NWCommitMessageEditor`, `NWCommitFileRow`, `NWCommitOptionRow`); touch forms for iOS (`NWTouchDiffLine`, `NWSplitDiffRow`, `NWTouchFileStrip`, `NWLineCommentBar`, `NWReviewFileRow`, `NWReviewComposer`, …) | `DiffReviewView.swift`, `ChangesMenus.swift`, `ChangesRows.swift`, `ReviewCommitSheet.swift`; the iOS client |
 | Dialogs | `NWDialog` (`NWDialogMetrics`), `NWDialogStatus`, `NWSheetRow`, `NWChecklistRow`, `NWSettingsNavRow` | `DialogSheet.swift`, `AppDialogs.swift`, the sheets, `QuitConfirmation.swift`, `SettingsView.swift` |
@@ -259,8 +260,8 @@ trail, top-aligned, 6pt apart, as small (24pt) buttons. Default icons:
   alias?"), the asker's context as the message ("Migrating touches 31 call sites; an alias is
   4 lines but leaves two token systems."), then the answers the asker offered (the first
   primary, the rest secondary) and a ghost **Reply…**. In the app a thread's own question is
-  the composer's question panel and a subagent's is on its card, each with the offered answers
-  and Reply… (Composer, Subagents); no surface draws the banner form yet.
+  the composer's question panel (Composer); a subagent's goes to its parent, so no surface asks
+  you for it, and no surface draws the banner form yet.
 - **A repeated failure** (failed): "<what> failed <n> times" ("tests failed 3 times"), a
   diagnosis that says whether retrying helps ("3 snapshot tests fail at Dynamic Type XL.
   Retrying won't help."), and **Open replay** (secondary). **Not built yet:** nothing counts

@@ -542,6 +542,13 @@ extension PreviewTests {
         try await Preview.render("new-thread-model-controls-\(Int(width))", size: CGSize(width: width, height: 760)) {
             RootView(vm: vm)
         }
+        // The popover under the card, with Fast chosen and then Standard.
+        for tier in [ServiceTier.fast, .standard] {
+            vm.newThread.setServiceTier(tier)
+            try await Preview.render("new-thread-model-settings-\(tier.rawValue)-\(Int(width))", size: CGSize(width: width, height: 760)) {
+                NewThreadPage(vm: vm, chrome: PageHeaderChrome(), settingsOpen: true)
+            }
+        }
     }
 
     /// The New thread composer with two images attached (drop, paste or the paperclip), and with

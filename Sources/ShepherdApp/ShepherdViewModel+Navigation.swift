@@ -18,12 +18,11 @@ extension ShepherdViewModel {
     }
 
     var blockedCount: Int {
-        // Child runs needing attention count toward the waiting rollup: a
-        // stuck subagent is exactly as attention-worthy as a blocked agent.
-        return state.agents.count { $0.status == .blocked } + childRuns.attentionCount
+        // The threads waiting on the user. A subagent's question is not among them: it goes to its
+        // parent, which asks the user in its own thread when it must.
+        state.agents.count { $0.status == .blocked }
             + remoteHosts.connections.filter { $0.phase == .connected }.reduce(0) { total, connection in
                 total + connection.state.agents.count { $0.status == .blocked }
-                    + connection.children.values.reduce(0) { $0 + $1.count(where: \.needsAttention) }
             }
     }
 
@@ -69,12 +68,11 @@ extension ShepherdViewModel {
     /// What Needs you, Pinned and Recents are derived from.
     var sidebarSource: SidebarSource {
         SidebarSource(
-            local: state, localChildren: childRuns.rows, failedTurns: failedTurns, cannotStart: cannotStart,
+            local: state, failedTurns: failedTurns, cannotStart: cannotStart,
             notSignedIn: Set(notSignedIn.keys), waiting: waitingForImport, statusSince: statusSince,
             openRuns: openAutomationRuns,
             hosts: remoteHosts.connections.map {
-                SidebarSource.Host(id: $0.id, name: $0.config.name, state: $0.state, children: $0.children,
-                                   offline: $0.phase != .connected)
+                SidebarSource.Host(id: $0.id, name: $0.config.name, state: $0.state, offline: $0.phase != .connected)
             }, designs: designToolEnabled)
     }
 

@@ -17,13 +17,13 @@ With no thread selected the detail is the Overview (`PadOverview`).
   hosts the detail is the no-hosts state.
 - **Needs you cards** (`NWAttentionCard`): `bgRaised`, a 1px `lineSubtle` line, radius 12, 10×12
   inset, 8pt apart. The origin line: a 14pt `lanternText` glyph (a glowing 8pt `lantern` dot for
-  a blocked thread), its kind at 12 `textTertiary` ("Thread", "Subagent", "Automation"), its age
-  trailing; the title at 14.5/600 ("reviewer · Restyle native UI" for a subagent); the question
+  a blocked thread), its kind at 12 `textTertiary` ("Thread", "Automation"), its age
+  trailing; the title at 14.5/600 (the thread's name); the question
   at 13/1.4 `textSecondary`; then the answers as 28pt buttons at radius 6, 12.5: the first
   primary, the rest secondary. The asker's short options (up to three, each up to 32
   characters), or Yes and No, answer in place; anything else shows Open.
-  - The board answers a subagent in place ("Replace all", "Rename new"); the app offers Open
-    there.
+  - The board answers a subagent here ("Replace all", "Rename new"); the app draws no subagent
+    card: a subagent asks its parent, never you.
   - **Not built yet:** a mission's card ("Mission · now", "Retry with hint", Open).
   - The board's "Approve plan" and "Read" are the answers a plan-approval question would offer.
     Shepherd shows them only when the asker offers them (Principles: no permission model); a
@@ -33,7 +33,7 @@ With no thread selected the detail is the Overview (`PadOverview`).
   "THREADS · 3", "AUTOMATIONS · 1". Rows (10×12 inset, hairlines between): the state glyph in a
   16pt column, the title at 14/500, its clock in mono 11 `textTertiary` ("4:12", "37m"), and
   under it, in mono 11.5 `textTertiary`, what it does now: the running command ("swift test
-  --filter toolPreview"), its subagents ("3 subagents · 1 needs you"), or its command and host
+  --filter toolPreview"), its subagents ("3 subagents · 1 waiting on parent"), or its command and host
   ("swift build · This Mac"): `NWCaptionBand`, `NWOverviewRow` and `FleetThreadRow.now`; the
   subagents are the ones still going, an asking one included. The glyph is the running spinner
   (`NWListRow.Leading.glyph`), the branch in `running` while its subagents work, or the state's
@@ -59,29 +59,27 @@ its full context.
   "Needs you" (17/600) with "5 waiting" at 12.5 `textTertiary` (the app puts "3 things are
   waiting on you" at the list's top). Items (10pt inset, 2pt apart; `NWAttentionCard(style:
   .item)`: no line, the app's radius 8): 12pt inset at radius 10, the chosen one on `bgSelected`: the origin line (a 14pt `lanternText` glyph or a glowing 8pt dot,
-  "Subagent · Restyle native UI" at 12 `textTertiary`, the age trailing), the title at 15/600
-  ("reviewer asks"), the question at 13/1.4 `textSecondary`.
+  "Thread" at 12 `textTertiary`, the age trailing), the title at 15/600
+  (the thread's name), the question at 13/1.4 `textSecondary`.
 - **Detail header:** the title (17/600) and the pill with its age ("Needs you · 2m"); **not built
   yet:** a ••• menu (40pt) trailing (the board does not show its items).
 - **Detail** (16×20 inset, 14pt apart): the question at 17/1.5, selectable, inline code in mono
   12 on `bgSunken`. The asker's longer message in mono on `bgSunken` (a 1px `lineSubtle` line,
-  radius 8, 12×14 inset, 12/1.65). "Answer this one in the thread." under a subagent's question;
+  radius 8, 12×14 inset, 12/1.65). "Answer this one in the thread." under a question that needs typing;
   "Open the thread to see what it is waiting for." under a blocked thread.
 - **Not built yet: structured context and trade-offs.** The board's code block names each file
   with its use count in `textTertiary` ("Sources/ShepherdApp/Tokens.swift · 41 uses",
   "…DesignTokens.swift · new, from the spec"). Its answers are cards (`bgRaised`, radius 12,
   12×14 inset): the title at 15/600, the asker's pick outlined in `lanternText` with a
   "reviewer's pick" tag (mono 9.5 `lanternText` in a 16pt box with a 1px `lanternText` line,
-  radius 4), and trade-offs as "· " lines at 13.5/1.45 `textSecondary`. A subagent answers here
-  like any other asker.
+  radius 4), and trade-offs as "· " lines at 13.5/1.45 `textSecondary`.
 - **Where it came from** ("WHERE IT CAME FROM"): 34pt lines with a 14pt `textTertiary` glyph, the
   source at 14.5 `textSecondary` and its meta in mono 11.5 `textTertiary`: "reviewer · Restyle
   native UI · async · opus · 2m ago"; "Parent thread is waiting · worker keeps going". The app
-  shows one row (the thread, "A thread", "Its subagent reviewer" or "A run of the automation
-  <name>", its age ("· 2m ago") and the host tag); the mode, model and the parent's state are
-  **not built yet** (a subagent's question reaches the client without them).
+  shows one row (the thread, "A thread" or "A run of the automation <name>", its age ("· 2m ago")
+  and the host tag); the mode, model and the parent's state are **not built yet**.
 - **Foot** (a hairline above, 12×20 inset, 26 under, 36pt buttons, trailing): Open thread
-  (ghost; Open subagent for a run, primary when Open is all there is), then the answers as
+  (ghost; primary when Open is all there is), then the answers as
   secondary buttons with the asker's pick last, primary ("Rename new ones", then "Replace
   everywhere").
 - **Not built yet:** mission items ("Mission · planner").

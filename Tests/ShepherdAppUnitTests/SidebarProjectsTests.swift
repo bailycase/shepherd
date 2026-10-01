@@ -65,7 +65,7 @@ struct SidebarProjectsTests {
         #expect(projects.map(\.rollup) == [.waiting, .running, .quiet])
         let asks = projects[0].rows.first
         #expect(asks?.title == "asks" && asks?.leading == .dot(.attention))
-        #expect(asks?.accessory == .reason(SidebarDerivation.reason(question: "Approve the plan?", children: [])))
+        #expect(asks?.accessory == .reason(SidebarDerivation.reason(question: "Approve the plan?")))
     }
 
     // MARK: Leaving the tree
@@ -148,7 +148,7 @@ struct SidebarProjectsTests {
 
     private func remoteHost(_ name: String = "horizon", spaces: [Space], agents: [Agent], offline: Bool = false,
                             id: UUID? = nil) -> SidebarSource.Host {
-        SidebarSource.Host(id: id ?? host, name: name, state: ShepherdState(spaces: spaces, agents: agents), children: [:],
+        SidebarSource.Host(id: id ?? host, name: name, state: ShepherdState(spaces: spaces, agents: agents),
                            offline: offline)
     }
 
