@@ -258,6 +258,23 @@ struct AgentsPreviewTests {
         }
     }
 
+    /// A run that asked its parent: its question under "Asked the parent" where a finished run shows its result,
+    /// Stop without Pause, and the Steer field still there. Nothing on it answers the question.
+    @Test func threadSubagentInspectorAsked() async throws {
+        let fixture = ThreadFixture(Threads.subagents(Array(Threads.liveRuns.prefix(3)), running: true))
+        fixture.transcripts["native-reviewer"] = Threads.workerTranscript
+        defer { fixture.store.stop() }
+        let panes = RightPaneState()
+        panes.runByAgent[AgentID(rawValue: "a")] = "native-reviewer"
+        try await Preview.render("thread-subagent-inspector-asked", size: CGSize(width: 1370, height: 900), ready: { fixture.store.ready }) {
+            RightPaneSplit(state: panes, showPane: true) {
+                fixture.thread(inspected: "native-reviewer")
+            } pane: {
+                SubagentInspector(store: fixture.store, runID: "native-reviewer", active: true, close: {}, select: { _ in }, fork: { _ in nil })
+            }
+        }
+    }
+
     /// The finished tests run with its touched files and inline code in its result.
     private static var doneRuns: [ChildRun] {
         var runs = Threads.doneRuns
