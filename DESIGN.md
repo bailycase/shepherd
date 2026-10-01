@@ -5053,7 +5053,7 @@ composing chrome by hand. Debug builds have a **Component Gallery** (View menu,
 | Pi sign-in (`Components/PiSignIn/`) | `NWProviderBadge`, `NWProviderRow` (`NWProviderStatus`, `NWProviderStatusLine`, `NWProviderDot`), `NWProviderMenuButton`, `NWKeySourceLabel` (`NWKeySource`), `NWSharedLoginNote`, `NWReimportRow` (`NWFreshness`), `NWCardLabel`, `NWExtensionRow`, `NWSheetHeader`, `NWSheetSubtitle`, `NWSheetFooter`, `NWSheetCard`, `NWStepMark`, `NWImportStepRow`, `NWImportSummary`, `NWImportSignInRow`, `NWSignInChoiceTile`, `NWSignInStepRow` and `NWSignInSteps`, `NWDeviceCode`, `NWFailureBox`, `NWNoteCard`, `NWFieldLabel`, `NWAgentWaitingLine`, `NWAgentNotSignedInCard`, `NWPiSignInMetrics`; `NWSidebarRow.Leading.waiting` | `SettingsPiSignIn.swift`, `SettingsPiFromYourPi.swift`, `PiImportSheet.swift`, `PiSignInSheet.swift`, `Thread/ThreadView.swift` |
 | Automations | `NWAutomationRow` (a row with its switch), `NWAutomationSwitch`, `NWFactRow` and `NWFactText`, `NWAutomationPrompt`, `NWRunBars`, `NWRunRow`, `NWAutomationMetrics`; the Mac's table: `NWAutomationTableRow`, `NWRunOutcome` and `NWRunOutcomeLabel`, `NWAutomationRunLine` | `Pages/AutomationsPage.swift`; the iOS client's `Automations/` |
 | Pages | `NWPageHeader`, `NWPageFilterField`, `NWTableColumns` and `NWTableHead`, `.nwPageCard()`, `NWPageFact`, `NWPageSectionLabel`, `NWPageQuote`, `NWPageMetrics`; `NWHostPageCard` and `NWHostFact` (`NWHostPageMetrics`, in `Fleet/`) | `Pages/` (the sidebar destinations' pages) |
-| Design tool (partly built; `Components/DesignTool/`) | `NWDesignCanvas`, `NWBoardFrame`, `NWSelectionRing`, `NWCommentPin`, `NWBoardActions`, `NWCanvasToolbar`, `NWCommentCard`, `NWCommentThread`, `NWTweakRow`, `NWTokenChip`, `NWTweakScope`, `NWDesignSystemChip`, `NWTokenSwatch`, `NWExportFormatCard`, `NWLiveLinkField` (see Design tool). Built: the canvas, frames, selection ring, toolbar, system chip, the comment pin, thread and card, the export format card (with `NWExportSheet`), and `NWActivityLine`'s `.drew` and `.checked` kinds | `Thread/ThreadTools.swift` (the activity lines), `DesignScreen.swift`, `DesignExportSheet.swift`, `Thread/ThreadView.swift` (a comment's card in the chat) |
+| Design tool (partly built; `Components/DesignTool/`) | `NWDesignCanvas`, `NWBoardFrame`, `NWSelectionRing`, `NWCommentPin`, `NWBoardActions`, `NWCanvasToolbar`, `NWCommentCard`, `NWCommentThread`, `NWTweakRow`, `NWTokenChip`, `NWTweakScope`, `NWTweakPieceNote`, `NWDesignSystemChip`, `NWTokenSwatch`, `NWExportFormatCard`, `NWLiveLinkField` (see Design tool). Built: the canvas, frames, selection ring, toolbar, system chip, the comment pin, thread and card, the export format card (with `NWExportSheet`), and `NWActivityLine`'s `.drew` and `.checked` kinds | `Thread/ThreadTools.swift` (the activity lines), `DesignScreen.swift`, `DesignExportSheet.swift`, `Thread/ThreadView.swift` (a comment's card in the chat) |
 | Missions map (not built yet; `Components/MissionMap/`) | `NWMissionMap`, `NWStation`, `NWTerminus`, `NWFlowWire`, `NWDataWire`, `NWForkBar`, `NWJoinBar`, `NWOutcomeChip`, `NWPinRow`, `NWLane`, `NWFog`, `NWFrontierChip` (see Missions: the map) | nothing yet |
 | Mission screens (not built yet; `Components/Missions/`) | `NWMissionHeader`, `NWPhaseBar`, `NWBudgetMeter`, `NWHostChip`, `NWChoiceCard`, the mission question card, `NWPlannerNote`, `NWAttemptRow`, `NWCheckpointRow`, `NWSpendBar`, `NWTrainCard`, `NWTrainGateRow`, `NWTrainRuleRow`, `NWRepoTimeline`, `NWPathLockRow`, `NWContractRow`, `NWDiffAnnotation`, `NWTraceSpan`, `NWMergeActions`, `NWRollbackRow`, `NWTemplateInput`; iPhone: `NWMissionLiveActivity`, `NWMissionNotification`, `NWLaneStrip`; in `Components/Agents`: `NWMissionNode`, `NWInboxItem`, `NWClaimRow` (see Missions: motion, keyboard and parts to build; Mission components) | nothing yet |
 
@@ -8569,7 +8569,8 @@ systems, the system chip opening its page, and New design's system card;
 docs/designs.md › Design systems), Export (its sheet, the four formats and Attach to a thread;
 docs/designs.md › Export and import), and deleting (with Undo), renaming and duplicating designs and
 design systems and importing a Claude Design project from a ZIP or a folder (Delete and import,
-below), and design references (Implement in a thread…, Copy reference, the composer's @ picker,
+below), shared pieces (a board other boards import: its "used in" label, Go to Source and Tweak's
+note on a use; Shared pieces, below), and design references (Implement in a thread…, Copy reference, the composer's @ picker,
 the reference chip, the agent's "Looked at…" line and the thread's note back on the canvas;
 Design references, below). Not built: the live link, Attach to a mission, Present
 mode's own board, Tweak snapping to an installed system's tokens, and every iPhone and iPad part;
@@ -8610,7 +8611,8 @@ tool work reads as activity lines.
   "18 tokens · 9 components".
 - **Not drawn on any board**, so design them before building: the Designs page with no designs,
   a design still loading, a failed drawing or sync, an offline host, Present mode (until it is,
-  Present shows the board focused: A design, below), the chat pane's •••, and keyboard shortcuts
+  Present shows the board focused: A design, below), the chat pane's •••, a shared piece's label,
+  Go to Source and the Tweak tab's note on a use (Shared pieces, below), and keyboard shortcuts
   (Import's ⇧⌘I is ImportFileMenu's). Any shortcut added goes through
   `KeybindingsStore`.
 
@@ -8794,7 +8796,9 @@ are off the tokens). Opening a design fills the main column: the header, then th
   boards draw no zoom limits.
   - **Boards** (`NWBoardFrame`) sit in a grid 44pt apart, from 44pt in and 52pt down. Each has
     its label 24pt above it: the name in 12 semibold (`textPrimary` when selected, else
-    `textSecondary`) and, 8pt after it, its size in mono 10.5 `textTertiary`. The frame is the
+    `textSecondary`) and, 8pt after it, its size in mono 10.5 `textTertiary`; a shared piece other
+    boards import adds, 8pt after the size, "used in 3 boards" in sans 10.5 `textTertiary`
+    (Shared pieces, below). The frame is the
     board's page at the canvas's zoom, radius 4, with a 1px black 30% outline and a soft drop
     shadow (0, 12, 32 at black 35%). A selected board wears a 2pt `running` ring outside the
     frame. Several boards can be selected at once (DZExport shows two); how is not drawn, and
@@ -8852,7 +8856,13 @@ are off the tokens). Opening a design fills the main column: the header, then th
     - "Drew 4 boards" · "3 directions + phone" (the nib; `.drew`)
     - "Checked against acme-web" · "0 off-system values" (`checkmark.shield`; `.checked`)
     - "Updated A and A · phone" · "funnel card · 1 change" (`pencil`, as an edit; a rewrite with
-      `board_write` and a change in place with `board_edit` read alike)
+      `board_write`, a change in place with `board_edit` and one `boards_edit` over many boards,
+      "Updated 12 boards", read alike; the boards a batch wrote are counted, not the ones it
+      asked for; a batch that wrote nothing, a dry run or an atomic one that did not match, is
+      an ordinary tool line saying so)
+    - "Drew 1 board and updated Home" (`board_extract`: the piece drawn, its source updated);
+      `board_search` joins the explore line as a search; `board_render` and the checkpoint tools
+      are ordinary tool lines (the thread's other tools)
 
     A comment you make on the canvas joins the chat as its `NWCommentCard` (below), and the
     agent's answer sits inside the card under a hairline: its activity line, then its reply
@@ -8867,6 +8877,38 @@ are off the tokens). Opening a design fills the main column: the header, then th
     and attachments. A model or level change goes to the design agent's pi as a thread's does
     (`setModel`, `setThinking`). What it sends still carries the canvas's view record. A system
     build's chat (DZSystem) and a remote design's chat have the same composer.
+
+### Shared pieces (not drawn on any board)
+
+**Built on the Mac** (docs/designs.md › Shared pieces). A **piece** is a board other boards import
+with `<dc-import name="Card">`: it is drawn once and every importer follows it. The boards draw
+none of this, so these are Shepherd's, made of the canvas's own parts; there is no Components
+page, and nothing here adds a control the user has to learn.
+
+- **The label.** A piece that at least one other board imports says so in its board label, after
+  the size: "used in 3 boards" ("used in 1 board"), in sans 10.5 `textTertiary`
+  (`NWBoardLabel`; the accessibility label gets it too). Boards nothing imports show nothing
+  extra. The count is derived once per design revision (`DesignUsageIndex`), never per board
+  redraw.
+- **Picking a use.** Selection stops at a `<dc-import>`: a click anywhere in a piece's drawing
+  picks the import ("component · Card"), never an element inside it, which belongs to the piece.
+  A comment on it is about that use.
+- **Go to Source.** With a use picked, the right-click menu has **Go to Source** (`arrow.turn.down.right`,
+  after Tweak, before the reference actions), and the Tweak tab's note has a small secondary
+  **Go to source** button. It picks the piece's board whole, brings it to the middle of the view
+  (and its page into view). It is offered only when the piece has a frame on the canvas, and has
+  no chord.
+- **Tweak on a use** (`NWTweakPieceNote`): the piece draws the instance, so a style written on it
+  would do nothing and the tab offers none. Where the groups would be, a **Shared piece** group
+  (`.nwSectionLabel()`, 14×18 padding, a hairline under it): "This is one use of Card, drawn by 3
+  boards. Its look comes from the piece: change the piece to change every use." in 11.5/1.45
+  `textTertiary` (the scope note's), and Go to source under it. Nothing is written, and Reset is
+  off.
+- **Redrawing.** A board that imports a piece redraws when the piece changes (live view and
+  snapshot), and a board that imports nothing does not.
+- **Not drawn here:** a Components page, a piece's usage list (the agent finds usages with
+  `board_search`), and the iPhone and iPad (a remote design draws no usage label, its pieces
+  redraw only when the viewer's board reloads).
 
 ### Comments (DZCanvas, DZTweak, NWDesignTool)
 
@@ -9065,6 +9107,8 @@ Undo is still saving waits for it.
     - **Apply to:** Scope (`NWTweakScope`: "This board" · "Every funnel card", that is, every
       element that matches), with what it reaches under it in 11.5/1.45 `textTertiary`: "Every
       funnel card: A and A · phone. Values snap to acme-web tokens."
+  - On an element that is one use of a shared piece, the groups give way to the **Shared piece**
+    note (Shared pieces, above; `NWTweakPieceNote`).
   - A footer pinned to the bottom (12×14 padding, a hairline above): **Reset** (ghost, 24pt) on
     the leading edge, a spacer, and **Ask the agent instead…** (secondary, 24pt) on the trailing
     edge.
@@ -9274,8 +9318,8 @@ iPhone and iPad none of it.
 **Partly built** (`Packages/ShepherdUI/.../Components/DesignTool/`, each with a `#Preview` in both
 appearances): `NWDesignCanvas`, `NWBoardFrame`, `NWCanvasToolbar`, `NWDesignSystemChip`,
 `NWSelectionRing` (with `NWSelectionTag`), `NWCommentPin`, `NWCommentThread`, `NWCommentCard`,
-the Tweak parts `NWTweakRow` (with `NWTweakHeader`, `NWTweakGroup`, `NWTweakNote` and
-`NWTweakFooter`), `NWTokenChip` (with `NWTokenChipFlow`) and `NWTweakScope`, `NWBoardActions`
+the Tweak parts `NWTweakRow` (with `NWTweakHeader`, `NWTweakGroup`, `NWTweakNote`,
+`NWTweakPieceNote` and `NWTweakFooter`), `NWTokenChip` (with `NWTokenChipFlow`) and `NWTweakScope`, `NWBoardActions`
 (with `NWDirectionTile`, `NWCanvasNote` and `NWBoardPresentation`), and the page parts
 `NWDesignCard`, `NWDesignSystemCard`, `NWDesignStartCard`, `NWDesignHeader` and
 `NWDesignPaneTabs`, the Chat composer section's two sizes (`NWComposer` with
@@ -9292,7 +9336,7 @@ both appearances:
 | Component | What it is |
 | --- | --- |
 | `NWDesignCanvas` | The pannable, zoomable canvas on `bgBase` with its 22pt dot grid, holding the board frames, pins and threads (NWSwift; no specimen on NWDesignTool: see A design: canvas and chat) |
-| `NWBoardFrame(board, isSelected:)` | A board with its label above, its size in mono, and a `running` ring when selected |
+| `NWBoardFrame(board, isSelected:)` | A board with its label above, its size in mono, and a `running` ring when selected; a shared piece's label adds "used in 3 boards" (not drawn on the board) |
 | `NWSelectionRing(element)` | Picks an element inside a board for comments or tweaks (built: `.selected` with its tag, `.hover` the ring alone) |
 | `NWCommentPin(number)` | The numbered pin, lantern "because a pin is something you asked for" (built) |
 | `NWBoardActions(selection)` | Comment, Tweak, Variations, Duplicate, and •••, floating over the selected board (built, `.regular` and DZCanvas's `.compact`; with `NWDirectionTile`, `NWCanvasNote` and `NWBoardPresentation`) |
@@ -9303,6 +9347,7 @@ both appearances:
 | `NWTweakRow(control)` | A slider, segmented picker, or switch: the label leading, the value trailing |
 | `NWTokenChip(token, isSelected:)` | A color from the system's tokens, never a free hex |
 | `NWTweakScope` | Apply to one board or every matching element |
+| `NWTweakPieceNote(piece, boards:, goToSource:)` | The Tweak tab's note on one use of a shared piece, with Go to source (built; not drawn on a board) |
 | `NWDesignSystemChip(system)` | In the design header; opens the system |
 | `NWTokenSwatch(token)` | A token read from the repo's tokens file, with the line it came from (the specimen: a 44pt swatch 96 wide, mono 11 and 10; DZSystem draws 56pt with mono 11.5 and 10.5) |
 | `NWExportFormatCard(format)` | HTML, ZIP, PDF, PNG |
