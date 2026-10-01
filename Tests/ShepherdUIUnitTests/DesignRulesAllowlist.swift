@@ -47,7 +47,6 @@ enum DesignRuleAllowlist {
         .init(.rawGlyphName, "App/iOS/Settings/ExperimentsScreens.swift", 2, bolt),
         .init(.rawGlyphName, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Automations/Automations.swift", 1, bolt),
         .init(.rawGlyphName, "Sources/ShepherdApp/SettingsExperiments.swift", 1, bolt),
-        .init(.rawGlyphName, "Sources/ShepherdApp/ShepherdViewModel+Palette.swift", 1, "The palette's Toggle fast mode row uses the outline bolt, which is the automations' glyph; the Fast mark is the filled bolt (NWGlyph.fastBolt). Settle which the palette board draws before changing it."),
         .init(.rawGlyphName, "Sources/ShepherdApp/SidebarModel.swift", 7, bolt),
         // Literal font sizes.
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Agents/AgentParts.swift", 1, font),

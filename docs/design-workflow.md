@@ -48,9 +48,9 @@ One line per item. It is the list you compare against later, so make it checkabl
 - Render from the real producer: the store, the extension's own output, the formatter, driven the
   way the app drives them, never strings copied from the board. A preview with the board's literals
   looks right and hides copy bugs.
-- Render the matrix, in both appearances: each state, empty, long text, and text scale 1.5. Previews
+- Render the matrix, in both appearances: each state, empty, long text, and text scale 1.3. Previews
   are in `Tests/ShepherdPreviewTests` (docs/testing.md › Previews); `Preview.renderMatrix` draws
-  light and dark at each scale (the Mac's largest Text size is 1.3, 1.5 is the stress case). The
+  light and dark at each scale (1.3 is the Mac's largest Text size; iOS Dynamic Type goes further). The
   PNGs land in `$SHEPHERD_PREVIEW_DIR`:
 
   ```sh

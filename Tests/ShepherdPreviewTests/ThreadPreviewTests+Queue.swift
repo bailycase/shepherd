@@ -121,6 +121,64 @@ extension ThreadPreviewTests {
         }
     }
 
+    /// Steer now at rest (decided by the user, 2026-10-01): while pi works the first queued row wears a labelled
+    /// Steer now button that is there without the pointer, and its Edit and Delete still come in on hover beside
+    /// it; the other rows keep their hover icons, and an idle queue is as it was. Drawn from the real stack
+    /// (`QueueRowView` over a host's queue), then the touch rows with the button the iPhone and iPad give the same row.
+    @Test func queueSteerAtRest() async throws {
+        let long = "Also cover partial refunds, refunds of a refund, and the settled-then-reversed case in the ledger tests, and then update the consumer."
+        let rest = QueueStackFixture(QueueThreads.queued)
+        let hovered = QueueStackFixture(QueueThreads.queued)
+        let lengthy = QueueStackFixture([long, "Use table-driven tests, like ledger_test.go.", "Then open a draft PR."], images: [0: ["checkout.png"]])
+        let steering = QueueStackFixture(["Don’t touch the migrations in this PR.", QueueThreads.queued[0], QueueThreads.queued[1]], steering: 1)
+        let idle = QueueStackFixture(QueueThreads.queued, running: false)
+        let all = [rest, hovered, lengthy, steering, idle]
+        defer { all.forEach { $0.store.stop() } }
+        let size = CGSize(width: 1180, height: 760)
+        try await Preview.renderMatrix("queue-steer-at-rest", size: size, ready: {
+            guard all.allSatisfy({ $0.store.ready && $0.state.rows.count == 3 }) else { return false }
+            hovered.state.hover(hovered.id(0).uuidString).hovering = true
+            lengthy.state.hover(lengthy.id(0).uuidString).hovering = true
+            return true
+        }) {
+            let running = NativeQueueStack.steerLabel(running: true)
+            VStack(alignment: .leading, spacing: 28) {
+                HStack(alignment: .top, spacing: 24) {
+                    Self.cell("Mac · at rest", rest)
+                    Self.cell("Mac · first row hovered", hovered)
+                }
+                HStack(alignment: .top, spacing: 24) {
+                    Self.cell("Mac · long text and an attachment, hovered", lengthy)
+                    Self.cell("Mac · a Steering row above it", steering)
+                }
+                HStack(alignment: .top, spacing: 24) {
+                    Self.cell("Mac · idle (Send now on hover only)", idle)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("iPhone and iPad · \(running) on the first queued row").font(.nwMono(11)).foregroundStyle(Color.nw.textSecondary)
+                        NWTouchQueueCard(count: 3) {
+                            VStack(spacing: 0) {
+                                NWTouchQueueRow(long, images: 1, kind: .queued(number: 1), steer: {}, steerLabel: running)
+                                NWTouchQueueRow(QueueThreads.queued[1], kind: .queued(number: 2)).overlay(alignment: .top) { NWHairline() }
+                                NWTouchQueueRow(QueueThreads.queued[2], kind: .queued(number: 3)).overlay(alignment: .top) { NWHairline() }
+                            }
+                        } options: { EmptyView() }
+                        .frame(width: 390)
+                    }
+                }
+            }
+            .padding(32)
+            .frame(width: size.width, height: size.height, alignment: .topLeading)
+            .background(Color.nw.bgWindow)
+        }
+    }
+
+    private static func cell(_ title: String, _ fixture: QueueStackFixture) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.nwMono(11)).foregroundStyle(Color.nw.textSecondary)
+            fixture.fixture.stack().frame(width: 540)
+        }
+    }
+
     /// In the thread: messages the queue delivered as one turn under "From the queue · 2", each
     /// with the time it was sent (shown here as on hover), and a message steered in mid-turn.
     @Test func threadQueue() async throws {
@@ -166,8 +224,9 @@ final class QueueStackFixture {
     var store: NativeThreadStore { fixture.store }
     var state: QueueStackState { fixture.state }
 
-    init(_ texts: [String], steering: Int = 0, images: [Int: [String]] = [:]) {
-        fixture = QueueThreadFixture(QueueThreads.running, queue: QueueFixture.messages(texts, steering: steering, images: images))
+    init(_ texts: [String], steering: Int = 0, images: [Int: [String]] = [:], running: Bool = true) {
+        fixture = QueueThreadFixture(running ? QueueThreads.running : QueueThreads.idle,
+                                     queue: QueueFixture.messages(texts, steering: steering, images: images))
     }
 
     func id(_ index: Int) -> UUID { fixture.id(index) }
@@ -299,6 +358,13 @@ enum QueueThreads {
         return snapshot(opening(at: t0), provisional: [
             ActivityThreads.tool("p1", "bash", ["command": "go test ./ledger/..."], start: now - 18_000, end: nil, status: "running"),
         ], running: true)
+    }
+
+    /// The same thread once pi has settled: the queue waits (paused) and Send now is each row's hover action.
+    static var idle: NativeThreadSnapshot {
+        var snapshot = snapshot(opening(at: now - 3 * 60_000), running: false)
+        snapshot.queue = NativeQueue(mode: .all, paused: true)
+        return snapshot
     }
 
     /// QueueSteer: the tests passed, a test file started, a message steered in, and pi editing

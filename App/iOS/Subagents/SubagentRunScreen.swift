@@ -172,9 +172,12 @@ struct SubagentRunView: View {
                 Text(notice).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
             }
             if let run, let summary, nativeRunAcceptsSteer(run) {
-                NWSteerField(text: $draft, prompt: "Steer \(summary.name)…",
-                             caption: "to: \(summary.name) · not the parent · lands before its next turn",
-                             isEnabled: commands.enabled, focus: $steering, accessibilityLabel: "Steer \(summary.name)") {
+                // The same Steer command, called Reply while the run waits on its parent's answer.
+                let words = nativeRunSteerWords(run)
+                NWSteerField(text: $draft, prompt: "\(words.label(summary.name))…",
+                             caption: words.caption(summary.name),
+                             isEnabled: commands.enabled, focus: $steering, accessibilityLabel: words.label(summary.name),
+                             sendLabel: words.verb) {
                     steer(commands)
                 }
             } else if let run {

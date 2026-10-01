@@ -26,30 +26,24 @@ public enum NWTouchQuestionMetrics {
     public static let grabber = CGSize(width: 36, height: 5)
     /// How far down a drag on the grabber must go to hide the question.
     public static let grabberDragToHide: CGFloat = 24
-    /// Something else…'s card, at least this tall (MobileQuestion's 46pt).
-    public static let otherHeight: CGFloat = 46
     /// A yes or a no, side by side.
     public static let yesNoHeight: CGFloat = 48
 }
 
 /// The panel: on a phone it is docked to the bottom edge with its top corners rounded, a lantern
 /// line along them and a grabber (MobileQuestion); on iPad a card with a lantern line all around
-/// (iPadQuestion). The head names the asker ("Agent is asking", or a subagent's name with the
-/// branch glyph); `count` shows "1 / N" when several questions wait. `hide` folds the question
+/// (iPadQuestion). The head says "Agent is asking"; `count` shows "1 / N" when several questions wait. `hide` folds the question
 /// and never answers it: on iPad a 40pt circle trailing the head (Hide the question), docked a
 /// tap on the grabber or a drag down from it.
 public struct NWQuestionCard<Content: View>: View {
     let docked: Bool
     let count: Int
-    let asker: NWQuestionAsker
     let hide: (() -> Void)?
     let content: Content
 
-    public init(docked: Bool, count: Int = 1, asker: NWQuestionAsker = .agent, hide: (() -> Void)? = nil,
-                @ViewBuilder content: () -> Content) {
+    public init(docked: Bool, count: Int = 1, hide: (() -> Void)? = nil, @ViewBuilder content: () -> Content) {
         self.docked = docked
         self.count = count
-        self.asker = asker
         self.hide = hide
         self.content = content()
     }
@@ -65,8 +59,8 @@ public struct NWQuestionCard<Content: View>: View {
             }
             HStack(spacing: NW.Space.s) {
                 HStack(spacing: NW.Space.s) {
-                    NWQuestionAskerGlyph(asker: asker, size: NWQuestionHeadMetrics.glyph)
-                    Text(asker.title).font(.nw(.caption, weight: .semibold)).foregroundStyle(nw.lanternText)
+                    NWQuestionAskerGlyph(size: NWQuestionHeadMetrics.glyph)
+                    Text(NWQuestionHead.title).font(.nw(.caption, weight: .semibold)).foregroundStyle(nw.lanternText)
                         .lineLimit(1)
                     Spacer(minLength: NW.Space.m)
                     if count > 1 {
@@ -75,7 +69,7 @@ public struct NWQuestionCard<Content: View>: View {
                     }
                 }
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel(count > 1 ? "\(asker.title), 1 of \(count)" : asker.title)
+                .accessibilityLabel(count > 1 ? "\(NWQuestionHead.title), 1 of \(count)" : NWQuestionHead.title)
                 .accessibilityAddTraits(.isHeader)
                 if !docked, let hide {
                     NWQuestionCardToggle(hidden: false, action: hide)
@@ -123,15 +117,13 @@ private struct NWQuestionGrabber: View {
 
 /// A question folded on iPad (Hide the question) so you can read the thread. It still holds
 /// the composer's place, because the agent is still waiting: the card's lantern line around one
-/// row of the asker's glyph, the question (truncating), a small **Answer**, and Show the
+/// row of the question mark, the question (truncating), a small **Answer**, and Show the
 /// question; either button unfolds it.
 public struct NWQuestionCardHiddenLine: View {
-    let asker: NWQuestionAsker
     let question: String
     let show: () -> Void
 
-    public init(asker: NWQuestionAsker = .agent, question: String, show: @escaping () -> Void) {
-        self.asker = asker
+    public init(question: String, show: @escaping () -> Void) {
         self.question = question
         self.show = show
     }
@@ -139,12 +131,12 @@ public struct NWQuestionCardHiddenLine: View {
     public var body: some View {
         let nw = Color.nw
         HStack(spacing: NW.Space.l) {
-            NWQuestionAskerGlyph(asker: asker, size: NWTouchQuestionMetrics.hiddenGlyph)
+            NWQuestionAskerGlyph(size: NWTouchQuestionMetrics.hiddenGlyph)
                 .accessibilityHidden(true)
             Text(question).font(.nw(.headline)).foregroundStyle(nw.textPrimary)
                 .lineLimit(1).truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityLabel("\(asker.title): \(question)")
+                .accessibilityLabel("\(NWQuestionHead.title): \(question)")
             Button("Answer", action: show)
                 .buttonStyle(.nw(.secondary, size: .m))
                 .accessibilityLabel("Answer the question")
@@ -206,26 +198,23 @@ private struct NWTouchQuestionCardChrome: View {
 
 /// One answer the asker offered: its number, "Recommended" when the asker said so, the title,
 /// and a description under it; a tap picks it (`action`). Picked, it takes a lantern line and
-/// tint, and its number fills. `footer` sits inside the card under the text, outside the tap:
-/// the picked option's note field (`NWQuestionNoteField`) for an asker that takes one.
-public struct NWQuestionOptionCard<Footer: View>: View {
+/// tint, and its number fills.
+public struct NWQuestionOptionCard: View {
     let number: Int
     let title: String
     let detail: String?
     let recommended: Bool
     let selected: Bool
     let action: () -> Void
-    let footer: Footer
 
     public init(number: Int, title: String, detail: String? = nil, recommended: Bool = false, selected: Bool = false,
-                action: @escaping () -> Void, @ViewBuilder footer: () -> Footer) {
+                action: @escaping () -> Void) {
         self.number = number
         self.title = title
         self.detail = detail
         self.recommended = recommended
         self.selected = selected
         self.action = action
-        self.footer = footer()
     }
 
     public var body: some View {
@@ -260,7 +249,6 @@ public struct NWQuestionOptionCard<Footer: View>: View {
             .accessibilityLabel("\(number). \(title)\(recommended ? ", recommended" : "")")
             .accessibilityHint(detail ?? "")
             .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
-            footer
         }
         .padding(NW.Space.l)
         // Side by side (iPad), the cards of a row share its height.
@@ -269,70 +257,6 @@ public struct NWQuestionOptionCard<Footer: View>: View {
         .nwBorder(selected ? nw.lantern : nw.lineSubtle, radius: NW.Radius.m)
         .nwAnimation(.hover, value: selected)
         .contentShape(shape)
-    }
-}
-
-extension NWQuestionOptionCard where Footer == EmptyView {
-    public init(number: Int, title: String, detail: String? = nil, recommended: Bool = false, selected: Bool = false,
-                action: @escaping () -> Void) {
-        self.init(number: number, title: title, detail: detail, recommended: recommended, selected: selected,
-                  action: action) { EmptyView() }
-    }
-}
-
-/// The picked option's note (QuestionPick): a field inside its card, "Add a note…", sent with
-/// the answer.
-public struct NWQuestionNoteField: View {
-    @Binding var text: String
-
-    public init(text: Binding<String>) {
-        _text = text
-    }
-
-    public var body: some View {
-        TextField("Add a note…", text: $text, axis: .vertical)
-            .lineLimit(1...4)
-            .font(.nw(.ui))
-            .tint(Color.nw.lantern)
-            .textFieldStyle(.plain)
-            .padding(.horizontal, NW.Space.m)
-            .padding(.vertical, NW.Space.s)
-            .background(Color.nw.bgWindow, in: RoundedRectangle(cornerRadius: NW.Radius.s))
-            .nwBorder(Color.nw.lineStrong, radius: NW.Radius.s)
-            .accessibilityLabel("Note with your answer")
-    }
-}
-
-/// Something else… (MobileQuestion): the last row, its number and a field in place for an answer
-/// in the person's own words. Typing there picks it; picked, it takes the picked style.
-public struct NWQuestionOtherCard<Field: View>: View {
-    let number: Int
-    let selected: Bool
-    let field: Field
-
-    /// `field`: the caller's `TextField` (so it keeps the focus), drawn plain in the card.
-    public init(number: Int, selected: Bool, @ViewBuilder field: () -> Field) {
-        self.number = number
-        self.selected = selected
-        self.field = field()
-    }
-
-    public var body: some View {
-        let nw = Color.nw
-        HStack(spacing: NW.Space.l) {
-            NWQuestionNumber(number, filled: selected)
-            field
-                .font(.nw(.ui))
-                .tint(nw.lantern)
-                .textFieldStyle(.plain)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.horizontal, NW.Space.l)
-        .padding(.vertical, NW.Space.m)
-        .frame(maxWidth: .infinity, minHeight: NWTouchQuestionMetrics.otherHeight, alignment: .leading)
-        .background(selected ? nw.lanternTint : nw.bgWindow, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-        .nwBorder(selected ? nw.lantern : nw.lineSubtle, radius: NW.Radius.m)
-        .nwAnimation(.hover, value: selected)
     }
 }
 

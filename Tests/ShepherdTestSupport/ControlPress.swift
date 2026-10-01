@@ -64,6 +64,29 @@ public struct AccessibilityNode {
     /// VoiceOver's press. False when the element does not take it.
     @discardableResult public func press() -> Bool { flag("accessibilityPerformPress") }
 
+    private var customActions: [NSAccessibilityCustomAction] {
+        let selector = NSSelectorFromString("accessibilityCustomActions")
+        guard object.responds(to: selector),
+              let list = object.perform(selector)?.takeUnretainedValue() as? [NSAccessibilityCustomAction] else { return [] }
+        return list
+    }
+
+    /// The custom actions VoiceOver's action menu offers on this element (`accessibilityAction(named:)`
+    /// and `accessibilityActions`), by name.
+    public var actionNames: [String] { customActions.map(\.name) }
+
+    /// Runs the custom action `name`, as VoiceOver's action menu does. False when the element offers
+    /// none by that name.
+    @discardableResult public func perform(action name: String) -> Bool {
+        guard let action = customActions.first(where: { $0.name == name }) else { return false }
+        if let handler = action.handler { return handler() }
+        if let target = action.target, let selector = action.selector {
+            _ = (target as AnyObject).perform(selector)
+            return true
+        }
+        return false
+    }
+
     /// The element's frame in screen coordinates.
     public var frame: NSRect {
         let selector = NSSelectorFromString("accessibilityFrame")
@@ -219,6 +242,34 @@ public enum ControlPress {
             throw ControlPressError(reason: .refused, description: "\(control) does not take a press: it is drawn as a control but has no action. The window offers: \(list)")
         }
         return control
+    }
+
+    /// The custom actions VoiceOver's action menu offers on the one element whose label contains `text`,
+    /// by name: where a row's controls are not separate controls (a row that combines its children, whose
+    /// hover buttons are reached through its actions).
+    public static func actions(onLabelContaining text: String, under host: NSView) -> [String] {
+        AccessibilityNode.all(under: host).first { $0.label?.contains(text) == true && !$0.actionNames.isEmpty }?.actionNames ?? []
+    }
+
+    /// Runs the custom action `name` of the one element whose label contains `text`, as VoiceOver's
+    /// action menu does, and nothing is posted to the window. Throws a `ControlPressError` listing the
+    /// elements that offer actions when none matches, or when none has that action.
+    public static func perform(_ name: String, onLabelContaining text: String, under host: NSView) throws {
+        let nodes = AccessibilityNode.all(under: host).filter { !$0.actionNames.isEmpty }
+        let list = nodes.isEmpty ? "none" : nodes.map { "\"\($0.label ?? "(no label)")\": \($0.actionNames.joined(separator: ", "))" }.joined(separator: "; ")
+        let matches = nodes.filter { $0.label?.contains(text) == true }
+        guard !matches.isEmpty else {
+            throw ControlPressError(reason: .notFound, description: "No element labelled with \"\(text)\" offers actions. The window offers: \(list)")
+        }
+        guard matches.count == 1 else {
+            throw ControlPressError(reason: .ambiguous, description: "\(matches.count) elements labelled with \"\(text)\" offer actions (\(list))")
+        }
+        guard matches[0].actionNames.contains(name) else {
+            throw ControlPressError(reason: .notFound, description: "\"\(text)\" has no action \"\(name)\". The window offers: \(list)")
+        }
+        guard matches[0].perform(action: name) else {
+            throw ControlPressError(reason: .refused, description: "The action \"\(name)\" of \"\(text)\" ran nothing")
+        }
     }
 
     /// The controls whose hit area is smaller than `minimum` in either direction, from the frame the

@@ -433,6 +433,13 @@ public final class SessionServer: @unchecked Sendable {
     public let changes: ChangesService
     /// How queues go for agents with no choice of their own (Settings ▸ Agents).
     private var defaultQueueMode: NativeQueueMode = .all
+    /// The names Settings ▸ Pi ▸ Slash commands turned off, left out of every thread's `/` menu.
+    private var hiddenSlashCommands: Set<String> = []
+    /// Every command pi has listed on this host since the app started (a name once, the last listing
+    /// winning), by name: what the Slash commands page lists. Written on the server queue and read
+    /// from any thread through `slashCommandCatalog`.
+    private let slashCatalogLock = NSLock()
+    private var slashCatalog: [NativeCommand] = []
     private var listenFD: Int32 = -1
     private var ownershipFD: Int32 = -1
     private var isStarted = false
@@ -749,6 +756,41 @@ public final class SessionServer: @unchecked Sendable {
             // What they are sent of the workspace changed with it: its designs and their agents.
             if !self.store.state.designs.isEmpty { self.broadcastRemoteState(self.store.state, to: readers) }
         }
+    }
+
+    /// Every slash command a pi on this host has listed since the app started, whether or not it is
+    /// hidden from the menu: the Slash commands page lists these, so a hidden one can come back. A
+    /// name appears once; commands of threads that have since stopped stay listed.
+    public var slashCommandCatalog: [NativeCommand] {
+        slashCatalogLock.withLock { slashCatalog }
+    }
+
+    /// Told on the main queue when `slashCommandCatalog` changes: a new command, or a changed
+    /// description, source or argument hint.
+    public var onSlashCommandCatalogChanged: (([NativeCommand]) -> Void)?
+
+    /// Leaves `names` out of every thread's `/` menu on this host, in every client, and puts back
+    /// the rest. A thread's snapshot moves at once. Typing a hidden command still runs it.
+    public func setHiddenSlashCommands(_ names: Set<String>) {
+        queue.async {
+            guard self.hiddenSlashCommands != names else { return }
+            self.hiddenSlashCommands = names
+            for session in self.sessions.values { session.thread?.hiddenCommands = names }
+        }
+    }
+
+    /// Merges a thread's listing into the catalog (server queue).
+    private func mergeSlashCommands(_ listed: [NativeCommand]) {
+        let next: [NativeCommand]? = slashCatalogLock.withLock {
+            var byName = Dictionary(slashCatalog.map { ($0.name, $0) }, uniquingKeysWith: { _, new in new })
+            for command in listed { byName[command.name] = command }
+            let merged = byName.values.sorted { $0.name < $1.name }
+            guard merged != slashCatalog else { return nil }
+            slashCatalog = merged
+            return merged
+        }
+        guard let next else { return }
+        DispatchQueue.main.async { [weak self] in self?.onSlashCommandCatalogChanged?(next) }
     }
 
     /// The queue mode of every agent that has not chosen its own (`NativeQueueAction.setMode`).
@@ -5147,6 +5189,8 @@ public final class SessionServer: @unchecked Sendable {
             session.beforeOffQueueDecode = beforeOffQueueDecode
             let thread = RPCThreadState(session: session, queue: sessionQueue, originStore: originStore)
             thread.defaultQueueMode = defaultQueueMode
+            thread.hiddenCommands = hiddenSlashCommands
+            thread.onCommandsListed = { [weak serverWeak] listed in serverWeak?.mergeSlashCommands(listed) }
             let offers = serviceTierOffers
             thread.serviceTierOffer = { offers.tiers(for: $0) }
             thread.applyServiceTier = { [weak serverWeak] tier, done in
