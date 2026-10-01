@@ -156,8 +156,8 @@ screen from these parts; the sections after this one give each board's specifics
   (`MobileLayout.searchGutter`) only on Search and Changes, and 16 elsewhere.
 - **Cards** (`NWListCard`, `.nwCard(radius: MobileLayout.cardRadius)`): `bgRaised`, a 1px
   `lineSubtle` line, 12pt corners (`NWListMetrics.cardRadius`), rows separated by 1px `lineSubtle`
-  rules. Home's cards alone are `bgWindow` on its `bgBase` screen. A card that needs you (a
-  subagent's question) takes a `lanternText` line; a running one (Automations' Running now) a
+  rules. Home's cards alone are `bgWindow` on its `bgBase` screen. A card that needs you (a thread's
+  question) takes a `lanternText` line; a running one (Automations' Running now) a
   `running` line with a 3pt `runningTint` ring.
 - **List rows** (`NWListRow`): 14pt sides, 8pt vertical padding, 12pt between parts. A leading
   column 18–20pt wide (`NWListMetrics.leadingWidth`) holds an 8pt status dot or a 15–17pt glyph in
@@ -189,7 +189,7 @@ screen from these parts; the sections after this one give each board's specifics
   600 `textOnLantern`, secondary `bgRaised` with a 1px `lineStrong` line and 500 `textPrimary`; two
   share the width with 10pt between them.
 - **Buttons inside cards** use `.buttonStyle(.nw(_:size:))`: Needs you's answers are 28pt (`.m`:
-  12.5, 10pt sides); a subagent's answers and a host's Retry are 32pt (`.l`: 13, 14pt sides; the
+  12.5, 10pt sides); a host's Retry is 32pt (`.l`: 13, 14pt sides; the
   app's Retry on More and Home is `.s`, 24pt). The first answer is primary, the rest secondary, and
   Open or Reply… ghost. Each keeps its drawn size and hits at 44pt.
 - **Switches:** `.toggleStyle(.nwSwitch)`, 30×18, `lantern` on, `lineStrong` off, hit at 44pt.
@@ -240,12 +240,10 @@ merges into one Home.
   reached."), and Retry (`.nw(.secondary, size: .s)`, `arrow.clockwise`). A refused token or another
   protocol says so and waits for Edit or Retry.
 - **Needs you** (head in `lanternText` with its count): 52pt rows, each a glowing 8pt `lantern` dot
-  for a thread, or the origin's 15pt glyph in `lanternText` (a bolt for an automation run, a branch
-  for a subagent); the thread's name, the question in `lanternText` mono 11 under it, and (the
+  for a thread, or the origin's 15pt glyph in `lanternText` (a bolt for an automation run); the thread's name, the question in `lanternText` mono 11 under it, and (the
   app's, with several hosts) its host badge. At
   most two rows (`HomeLimits.needsYou`), then a 44pt link row: "See all N" when more wait, else
-  "Answer in Needs you". A row opens where the question is answered (the thread, or the asking
-  subagent's run). The board shortens a plan's question to "approve plan" ("Dock review pane");
+  "Answer in Needs you". A row opens where the question is answered (the thread). The board shortens a plan's question to "approve plan" ("Dock review pane");
   to Shepherd a plan is an ordinary question (Principles: No permission model), so the row shows
   the question the asker wrote.
 - **Not built yet:** a mission's stuck lane as a Needs you row (a folded-map glyph in
@@ -445,14 +443,14 @@ next step. Steer now on a row and Steer all now are the same interrupt.
   and menus › Questions; `QuestionPanel` on `NativeQuestionPrompt`, as the Mac's dock): Answer is
   the only button, and picking another option moves the pick. A yes or a no (pi's confirm, or two
   short options) is two cards side by side that answer on a tap; an open question (pi's input or
-  editor, a reply to a subagent) is a field over Answer. The grabber is Hide the question: a tap,
+  editor) is a field over Answer. The grabber is Hide the question: a tap,
   or a drag down from it, folds the panel to one line (`NWQuestionCardHiddenLine`, the iPad's),
   which never answers it; Answer or Show the question on that line opens it again, and the next
   question arrives open.
 - **What each asker takes** is the dock's table: pi's select takes only one of its options, so it
-  gets no note and no Something else…; a subagent's question gets both (the note field inside the
-  picked card, "Add a note…"; Something else… as the last card, 46pt, its number and a field in
-  place, which typing picks). pi's question has no Dismiss: **Stop** refuses it.
+  gets no note and no Something else… (the note field and the Something else… card, which only a
+  subagent's question took, are not drawn: a subagent asks its parent). pi's question has no
+  Dismiss: **Stop** refuses it.
 - **While pi asks** the header shows "Needs you" with a glowing dot and no Stop or •••. The app
   keeps both: Stop is how a question is refused (the host cancels the questions pi waits on, then
   stops the turn), as on the Mac.
@@ -473,32 +471,26 @@ record lines, a list, and a screen per run.
   "3 subagents" at 13/600, the cells and tally, Collapse as a 34pt circle); 44pt rows (14pt
   leading, 10pt apart): the state in a 14pt slot, the name in mono 13.5/600 in a 68pt column,
   what it is doing at 14 (the subject in mono 13), its time in mono 11, and a chevron in a 34pt
-  slot; the diff stat drops. A run that needs you shows Answer (lantern `m`) in the slot. Tapping
-  a row pushes its run's screen; touch and hold for Open, Answer, and the run's controls. Past
+  slot; the diff stat drops. A run that asked its parent says "asked the parent: …" quietly, with no
+  Answer. Tapping a row pushes its run's screen; touch and hold for Open and the run's controls. Past
   four runs, "Show N more"; open, the rows scroll inside, never more than a share of the
   composer's room. The tray's rules (when it shows, the order, what each state says) are the
   Mac's.
-- **Answer** opens the run's question in the composer's place, docked to the bottom edge as pi's
-  own questions are (`QuestionPanel`, "reviewer is asking" with the branch glyph): its answers as
-  numbered cards with a note on the picked one and Something else…, or a reply field; Answer
-  sends it to that run only (the option, then the note after a blank line, as on the Mac), and
-  hiding it (the grabber, or iPad's Hide the question) returns to the tray.
 - **In the thread** (MobileSteer): "Started 3 subagents · worker · reviewer · tests" where the
   turn spawned them (32pt, 14), and "3 subagents finished · 45m · 7 files · +318 −64" once they
   have; both, and the footer's "3 subagents", open the runs list.
-- **The runs list** (MobileSubagents; `SubagentListScreen`): "Subagents" over "1 running · 1 needs
-  you" in the state's color, on `bgBase` with 14pt padding. "This turn" with its count heads the
+- **The runs list** (MobileSubagents; `SubagentListScreen`): "Subagents" over "1 running · 1 waiting
+  on parent" in the state's color, on `bgBase` with 14pt padding. "This turn" with its count heads the
   live runs as cards (`NWRunCard`; 12×14 padding, 8pt inside):
   - Head: the branch glyph in the state's color, the name (mono 15/600), its tags ("background ·
     fable-5-1", 12 `textTertiary`), and a 20pt pill trailing (the state's tint and a 6pt dot: "37m"
-    running, "Needs you · 2m" glowing, "4m 02s" done).
+    running, "Waiting on parent · 2m", "4m 02s" done).
   - Running: "step 1 of 3" (mono 12), a 4pt progress bar (`lineSubtle` track, `running` fill, 2pt
     corners), the tokens ("922k", mono), then the current call in mono 12 `textSecondary` on one
     line.
-  - Needs you (a `lanternText` line): the question at 14/1.45 with inline code (mono 12 on
-    `bgSunken`, a `lineSubtle` line, 4pt corners), then its answers as 32pt buttons (the first
-    primary, the rest secondary) and Reply… (ghost), which opens a field for a free answer.
-    Answering sends it at once.
+  - Asked the parent (a quiet card, a `lineSubtle` line): the question at 14/1.45 with inline code
+    (mono 12 on `bgSunken`, a `lineSubtle` line, 4pt corners), then "It offered: …" in caption
+    `textTertiary`. It is to read: nothing on the card answers it.
   - Done: its result at 14 and its diff stat.
   - "Earlier in this thread" with "kept after they finish" heads the finished runs as one card of
     56pt rows: a `done` check, the name (mono 15/500) over "summary · 1h ago" (12.5 `textTertiary`),
@@ -512,7 +504,7 @@ record lines, a list, and a screen per run.
     shows between calls (LiveText's "Thinking…" is the thread's alone). The app draws the live
     call without the board's output tail: the child's session holds no streamed output (Where
     Shepherd departs from the boards).
-  - Its question, while it waits on you, on `lanternTint` with its answers.
+  - Its question, while it waits on its parent, on `bgSunken`, with the answers it offered, to read.
   - The steer field (`NWSteerField`) at the bottom: a 44pt capsule, "Steer worker…", Send inside it,
     and under it "to: worker · not the parent · lands before its next turn" (mono 11 `textTertiary`,
     8pt sides). Only while the run takes a steer; a finished run shows Re-run and Copy transcript

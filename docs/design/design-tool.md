@@ -192,7 +192,7 @@ opens this page in the main column, with the sidebar showing and Designs selecte
     attach (`paperclip`, "Attach a screenshot or file"), the model chip, the thinking chip
     in the combined model-settings button, and Send (the composer's 28pt lantern circle, 35% until there is text).
     The model and level are This Mac's defaults (Settings ▸ Agents) until picked; the model
-    picker and the thinking menu open under the card, as on New thread, and the design agent
+    picker and the model-settings popover open under the card, as on New thread, and the design agent
     starts on what they say. After that they stay with the design's pi session. There is no
     context ring before the design has a conversation. The board also draws "/ commands": left
     out for New thread's reason (no pi runs before the design exists to list its commands);

@@ -145,6 +145,8 @@ Each is one line here; the full rule is in [docs/rules.md](docs/rules.md) under 
   the page over. (Browser tools act only on their own thread's page)
 - Agents never delete each other on their own: `agent_delete` opens `PeerDeleteDialog`.
 - Shepherd does not nest agents: subagents are display state, never persisted, with no sidebar rows.
+  A subagent never asks the user: its question goes to its parent, which answers it or asks the user
+  in its own thread, so a child's question marks no row and posts no notification.
 
 **Repositories, pi and data**
 - Only the listed paths mutate a repository: worktree add, Delete Worktree Agent, Finalize, per-file

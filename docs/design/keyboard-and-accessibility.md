@@ -78,14 +78,13 @@ The Changes pane's keys are listed with the pane (Side pane › Changes).
   and a turn's footer, a comment's Edit and Delete, a diff line's `+`) are always reachable as
   buttons or named actions for VoiceOver.
 - **Rows read as one element:**
-  - agent rows: "title, [worktree,] running / needs you / idle / done" (needs you also while one
-    of its subagents asks); automation rows: "name, automation, state"
+  - agent rows: "title, [worktree,] running / needs you / idle / done" ; automation rows: "name, automation, state"
   - activity lines: "Explored 7 files, read 5, search 2, 0.9s, done", with Expanded / Collapsed
     and the hint "Shows the calls"; the live line: "Pushing, git push origin main, running"; live
     thinking: "Thinking"; call rows: "edit, Sources/A.swift, +58 −41"
-  - the subagent tray's header: "3 subagents, 1 needs you, 1 running, 1 done"; its rows: "name,
+  - the subagent tray's header: "3 subagents, 1 running, 1 waiting on parent, 1 done"; its rows: "name,
     state, what it is doing" ("worker, Running, Editing NativeThreadPresentation.swift"), with
-    Open, Answer and the run's controls as actions; the thread's record lines: "Started 3
+    Open and the run's controls as actions; the thread's record lines: "Started 3
     subagents, worker · reviewer · tests"
   - diff lines: "Removed line 16: …", with Comment as a named action; file chips: "FleetView.swift,
     modified, 10 added, 54 removed, viewed"

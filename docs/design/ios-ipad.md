@@ -92,8 +92,9 @@ selected thread, or the Overview when none is. Other screens push over the detai
   rows keep their state word.
 - **Needs you rows** end in the reason in mono 10 `lanternText`. The boards summarize the
   question ("retention?", "approve plan", "orders stuck") or name the subagent that asks
-  ("reviewer"); the app writes the agent's own short reason when it gave one, cut as on the Mac
-  (`NeedsYouReason`), else "asked you" or "needs you", and a subagent's own reason, else its name.
+  ("reviewer"), which the app does not draw: a subagent never asks you. The app writes the
+  agent's own short reason when it gave one, cut as on the Mac (`NeedsYouReason`), else "asked
+  you" or "needs you".
 - **Recents rows** end in the host tag (mono 10 `textTertiary` in a 1px `lineSubtle` box at
   radius 4) only when threads from several hosts mix. Running rows draw no sparkline (see
   Where Shepherd departs). **Not built yet:** a design's row (the diamond glyph, and "4 boards"
@@ -252,7 +253,8 @@ header's pill turns "Needs you" (attention, glowing).
   the chosen card (`NWQuestionNoteField`: `bgWindow`, a 1px `lineStrong` line, radius 6, "Add a
   note…", a `lantern` caret) sent with the answer, and **"Something else…"**, a last full-width
   row (`NWQuestionOtherCard`: at least 46pt, its number outlined, a field in place): only for an
-  asker that takes them, a subagent (the dock's What each asker takes). pi's dialogs take neither.
+  asker that takes them (the dock's What each asker takes). None does now: pi's dialogs take
+  neither, and a subagent asks its parent.
 - **Foot:** Answer, primary, 36pt, trailing, enabled once there is an answer; there is no
   Dismiss (Stop refuses pi's question, as on the Mac and the phone). A yes or a no is two cards
   side by side that answer on a tap; an open question is a field over Answer.

@@ -12,7 +12,7 @@
     a draft (Stop outlined beside Send), a Steering row under a steered message, the editor with
     a Deleted row and the Send menu, every row and stack state, and "From the queue" and
     "Steered" in the thread
-  - the subagent tray (every state, one card with Up next, the question dock, the record
+  - the subagent tray (every state, a hovered waiting row, one card with Up next, the record
     lines, and its iPad and iPhone sizes), a thread with it live, finished, and with a queue,
     and the inspector
   - the review pane, and its Commit… sheet in every state

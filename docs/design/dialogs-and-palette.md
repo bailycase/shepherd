@@ -33,13 +33,13 @@ surface: every destination and command in it is also in the sidebar or the menus
     not an automation's run, and not in the project tree), Choose model… ("<model>", ⇧⌘M),
     Toggle fast mode ("Switch this thread between Standard and Fast", a `bolt`; ComposerSpeed;
     listed only while the thread's model offers a service tier, and it switches the tier as the
-    Speed menu would, with no menu), Review diff ("working tree · 4 files", the checkout's changed files as the branch chip counts
+    model-settings popover's Speed control would, with no popover), Review diff ("working tree · 4 files", the checkout's changed files as the branch chip counts
     them; ⇧⌘B, the side pane's chord), Review PR changes ("PR #24" once the agent's review has
     found its pull request), and the Terminal menu's commands while a
     thread with a layout is on screen: Show or Hide terminal (⌘J; with none it opens one), New
     terminal (⌘D), and Maximize or Restore terminal (⇧⌘↩, offered only while the thread has a
     terminal), named for what they will do.
-  - **Subagents:** each live or recent run: its label, "<parent> · running 37m" ("needs you",
+  - **Subagents:** each live or recent run: its label, "<parent> · running 37m" ("waiting on parent",
     "done", "failed"; a remote run's parent adds " · <host>"), and `arrow.turn.down.right` in its
     run's state color.
   - **Agents** (with a query, or in the Agents scope): each agent in sidebar order with "<space> ·
@@ -116,7 +116,7 @@ and the title stays still while rows disclose.
   acts; changing the window under a sheet mid-dismissal wedges the modal session.
 
 New Agent's Model row takes "provider/id" (pi's default, or Settings' default, prefilled in that
-form), and its Thinking row follows the composer's thinking chip: it shows only while the chosen
+form), and its Thinking row follows the composer's model-settings button: it shows only while the chosen
 model (blank: the target's default) takes a thinking level, as the target's catalog says. A model
 the catalog does not know, or a catalog still loading, keeps it. It offers Off, Minimal, Low, Medium
 and High, with Extra high and Max where the target's models.json maps them

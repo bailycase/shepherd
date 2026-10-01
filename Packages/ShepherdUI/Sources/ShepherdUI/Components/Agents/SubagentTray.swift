@@ -1,8 +1,9 @@
 import SwiftUI
 
 // The subagent tray (SubagentTray, NWAgents boards): subagents dock above the composer while
-// they run, one row each, and share one card with Up next (`NWDockStack`). A row answers,
-// steers, stops or opens its run; the thread keeps two lines for them (`NWSubagentRecordLine`).
+// they run, one row each, and share one card with Up next (`NWDockStack`). A row steers, stops
+// or opens its run; a run that asked its parent a question only says so, quietly: the user is
+// never asked by a subagent. The thread keeps two lines for them (`NWSubagentRecordLine`).
 // The app hands every value in, derived once per change.
 
 /// The tray's three sizes: the Mac's pointer rows, and touch rows on iPad and iPhone
@@ -82,8 +83,9 @@ public struct NWSubagentTrayRun: Equatable, Identifiable, Sendable {
         case working(verb: String, subject: String?, live: Bool)
         /// Queued, or paused before its next model request.
         case waiting(String)
-        /// Its question, after "asks: ".
-        case asks(String)
+        /// The question it put to its parent, which answers it or asks the user: "asked the
+        /// parent: <question>", or "asked the parent" when it gave none.
+        case asked(String)
         /// What it did.
         case result(String)
         /// Why it failed.
@@ -116,8 +118,8 @@ public struct NWSubagentTrayRun: Equatable, Identifiable, Sendable {
         self.accessibilityLabel = accessibilityLabel ?? name
     }
 
-    /// Still going: it can be steered and stopped.
-    public var isLive: Bool { state == .running || state == .queued || state == .attention }
+    /// Still going: it can be steered and stopped (a run waiting on its parent draws as queued).
+    public var isLive: Bool { state == .running || state == .queued }
 }
 
 /// The header: "3 subagents", a cell per run, and the tally.
@@ -144,20 +146,18 @@ public struct NWSubagentTraySummary: Equatable, Sendable {
         self.tally = tally
     }
 
-    /// "3 subagents, 1 needs you, 1 running, 1 done"
+    /// "3 subagents, 1 running, 1 waiting on parent, 1 done"
     public var accessibilityLabel: String { ([title] + tally.map(\.text)).joined(separator: ", ") }
 }
 
 /// What a row's controls do. nil hides a control.
 public struct NWSubagentTrayActions {
     public var open: () -> Void
-    public var answer: (() -> Void)?
     public var steer: (() -> Void)?
     public var stop: (() -> Void)?
 
-    public init(open: @escaping () -> Void, answer: (() -> Void)? = nil, steer: (() -> Void)? = nil, stop: (() -> Void)? = nil) {
+    public init(open: @escaping () -> Void, steer: (() -> Void)? = nil, stop: (() -> Void)? = nil) {
         self.open = open
-        self.answer = answer
         self.steer = steer
         self.stop = stop
     }
@@ -167,7 +167,7 @@ public struct NWSubagentTrayActions {
 
 /// The tray's section of the dock: its header, then its rows (each draws the hairline above
 /// it, so a long list can sit in a lazy stack). Collapsed it is the header alone, whose cells
-/// and tally still say who needs you.
+/// and tally still say what is running and what waits.
 public struct NWSubagentTray<Rows: View>: View {
     let summary: NWSubagentTraySummary
     let size: NWSubagentTraySize
@@ -195,7 +195,7 @@ public struct NWSubagentTray<Rows: View>: View {
     }
 }
 
-/// "3 subagents", its cells, "1 needs you · 1 running · 1 done", and Collapse.
+/// "3 subagents", its cells, "1 running · 1 waiting on parent · 1 done", and Collapse.
 public struct NWSubagentTrayHeader: View {
     let summary: NWSubagentTraySummary
     let size: NWSubagentTraySize
@@ -252,20 +252,16 @@ public struct NWSubagentTrayHeader: View {
         var text = Text("")
         for (index, part) in summary.tally.enumerated() {
             if index > 0 { text = text + Text(" · ").foregroundColor(nw.textTertiary) }
-            let color: Color = switch part.state {
-            case .attention: nw.lanternText
-            case .some(let state): state.color
-            case nil: nw.textTertiary
-            }
+            let color: Color = part.state?.color ?? nw.textTertiary
             text = text + Text(part.text).foregroundColor(color)
         }
         return text.font(.nwMono(11)).monospacedDigit()
     }
 }
 
-/// One run: its state, name, what it is doing (or asks, or did), its diff and time, then
-/// Answer for a question, Steer · Stop · Open while the pointer is over a live run, else a
-/// chevron. The whole row opens the run in the inspector; the open row wears the selection.
+/// One run: its state, name, what it is doing (or asked its parent, or did), its diff and time,
+/// then Steer · Stop · Open while the pointer is over a live run, else a chevron. The whole row
+/// opens the run in the inspector; the open row wears the selection.
 public struct NWSubagentTrayRow: View {
     let run: NWSubagentTrayRun
     let size: NWSubagentTraySize
@@ -290,7 +286,6 @@ public struct NWSubagentTrayRow: View {
         let _ = NWRenderProbe.tick("tray.row")
         let nw = Color.nw
         let m = size.metrics
-        let asks = run.state == .attention
         HStack(spacing: m.rowSpacing) {
             stateMark(m)
             if let role = run.role {
@@ -320,12 +315,12 @@ public struct NWSubagentTrayRow: View {
                     NWElapsedText(since: since, until: run.until).font(.nwMono(11)).foregroundStyle(nw.textTertiary).fixedSize()
                 }
             }
-            trailing(m, asks: asks)
+            trailing(m)
         }
         .padding(.leading, m.rowLeading)
         .padding(.trailing, m.rowTrailing)
         .frame(minHeight: m.rowHeight)
-        .background { background(nw, asks: asks) }
+        .background { background(nw) }
         .overlay(alignment: .top) { NWHairline() }
         .contentShape(Rectangle())
         .onTapGesture(perform: actions.open)
@@ -370,19 +365,16 @@ public struct NWSubagentTrayRow: View {
             .nwShimmer(active: live)
         case .waiting(let text), .result(let text):
             Text(text).font(.nwSans(m.textSize)).foregroundStyle(nw.textSecondary).lineLimit(1).truncationMode(.tail)
-        case .asks(let question):
-            Text("asks: " + question).font(.nwSans(m.textSize)).foregroundStyle(nw.lanternText).lineLimit(1).truncationMode(.tail)
+        case .asked(let question):
+            Text(question.isEmpty ? "asked the parent" : "asked the parent: " + question)
+                .font(.nwSans(m.textSize)).foregroundStyle(nw.textSecondary).lineLimit(1).truncationMode(.tail)
         case .failed(let reason):
             Text(reason).font(.nwSans(m.textSize)).foregroundStyle(nw.failed).lineLimit(1).truncationMode(.tail)
         }
     }
 
-    @ViewBuilder private func trailing(_ m: NWSubagentTrayMetrics, asks: Bool) -> some View {
-        if asks, !selected, let answer = actions.answer {
-            Button("Answer", action: answer)
-                .buttonStyle(.nw(.primary, size: size == .pointer ? .s : .m))
-                .disabled(!enabled)
-        } else if size == .pointer, hovering, run.isLive, !asks {
+    @ViewBuilder private func trailing(_ m: NWSubagentTrayMetrics) -> some View {
+        if size == .pointer, hovering, run.isLive {
             HStack(spacing: NW.Space.xxs) {
                 if let steer = actions.steer {
                     icon("arrow.turn.down.right", "Steer \(run.name)", m, action: steer)
@@ -413,11 +405,11 @@ public struct NWSubagentTrayRow: View {
         .accessibilityLabel(label)
     }
 
-    @ViewBuilder private func background(_ nw: NWPalette, asks: Bool) -> some View {
-        let fill: Color = asks ? nw.lanternTint : selected ? nw.bgSelected : hovering ? nw.bgHover : .clear
+    @ViewBuilder private func background(_ nw: NWPalette) -> some View {
+        let fill: Color = selected ? nw.bgSelected : hovering ? nw.bgHover : .clear
         fill.overlay(alignment: .leading) {
             if selected {
-                (asks ? nw.lantern : nw.running).frame(width: NWSubagentTrayMetrics.selectionRule)
+                nw.running.frame(width: NWSubagentTrayMetrics.selectionRule)
             }
         }
     }

@@ -3,7 +3,7 @@
 > Read when you change the composer, its model-settings popover, slash menu, context meter, a question, or the send path.
 
 `Composer` (`Thread/Composer.swift`) on `NWComposer`, `NWSlashMenu`, `NWModelPicker`,
-`NWThinkingMenu`, and `NWSendMenu`, with Up next above the card (below). Sizes are
+`NWModelSettings`, and `NWSendMenu`, with Up next above the card (below). Sizes are
 `NWComposerMetrics`; the app's own are in `AppLayout+Thread.swift`. The boards: Composer & menus
 (NWComposer, NWComposerLight: one anatomy in both appearances, every color a role), SlashMenu,
 ModelPicker, and the Question boards (QuestionAsk, QuestionPick, QuestionAnswered,
@@ -40,24 +40,44 @@ it (the palette's New agent with options…, New space on <host>…, and "PR #24
 - attach: a 14pt `paperclip` in `textSecondary`, in a 26pt circular icon button (`.nwIcon`),
   only when the agent accepts images, and disabled at four attachments. Tooltip "Attach images
   (drop or paste also works), up to 4"; VoiceOver "Attach file".
-- One model-settings button (`NWModelSettingsLabel`): the model's short name in mono 12,
-  a tertiary dot separator, the thinking level in sans 12, then the chevron. A Fast tier adds
-  an outline bolt in `lanternText`; Standard draws nothing. Unsupported thinking and speed
-  are absent. The full model id remains in the tooltip and VoiceOver label.
+- One model-settings button (`NWModelSettingsLabel`; "claude-opus · Medium ⌄"): the model's
+  short name in mono 12, a tertiary dot separator, the thinking level in sans 12, then the
+  chevron, all in `textSecondary`. While speed is Fast the button adds a **filled** bolt in
+  `lantern` after the level (`NWFastBolt`, `bolt.fill` at 11pt medium, the one definition every
+  place that shows Fast draws through); Standard draws nothing, and a model with no Fast tier
+  never shows the bolt, even while the agent's own tier is still Fast. Unsupported thinking and
+  speed are absent. The full model id remains in the tooltip and VoiceOver label ("Model
+  settings: <id>", with the level and Fast as its value). ModelSettingsSummary decides what the
+  button says, for the thread's composer and the New thread page's alike.
 - Typing `/` opens commands. There is no commands button.
 - After the spacer, the checkout menu sits in the composer instead of the Mac thread header.
   `NWComposerBranchLabel` is a 26pt ghost chip with a 13pt worktree or house glyph, the branch
-  in mono 11.5, and a nonzero changed-file count in mono 10.5 `lanternText`, then the chevron.
+  in mono 11.5 (`textSecondary`, as the model's name), and a nonzero changed-file count in mono
+  10.5 `lanternText` ("●3"), then the chevron.
   Its existing Show Changes, Copy Branch Name, Copy Path and Show in Finder actions remain.
   While the agent's question replaces the card, the checkout menu remains accessible in the header.
-- `NWModelSettings` floats above the card, leading-aligned, 328pt wide, radius 12, with 6pt
-  padding and 28pt model rows. It shows the current model, one available recent model, and
-  All models… opening the full picker. Thinking and Speed sit below hairline separators.
-  Thinking has one 28pt row per supported level, with its note and a check on the current
-  level, so Off through Max remains readable without wrapping. Speed uses a segmented control
-  with 24pt buttons on `bgSunken`. Only real supported levels and tiers appear. Model selection closes the popover;
-  thinking and speed can change while it stays open. Arrow keys move through its choices,
-  Return chooses and Escape closes. Tall content scrolls inside the room above the composer.
+- `NWModelSettings` (the board's "One button opens one popover") floats above the card,
+  leading-aligned, 328pt wide, radius 12, with 6pt padding. Its sections have mono caps
+  headers (`NWMenuHeader`: MODEL, THINKING, SPEED) over hairline separators.
+  - **MODEL:** 28pt rows in mono 12: the current model (a check in `running` on its trailing
+    side), one available recent model, and All models… (Geist `ui`, `textSecondary`, a trailing
+    chevron) opening the full picker. A model with a Fast tier wears a filled `NWFastBolt`
+    before its check (the picker's "fast" tag, as a glyph); a model without one wears none.
+  - **THINKING:** a segmented control of the levels the model takes (Low · Medium · High ·
+    Extra high; Off to Max where it has them), in equal 24pt segments on a `bgSunken` track
+    (a `lineSubtle` line, radius 6); the chosen segment is lifted on `bgSelected` with a
+    `lineStrong` line (radius 4), semibold in `textPrimary`, the others medium in
+    `textSecondary`. Up to four levels share one row; more wrap onto balanced rows of the same
+    track (5 levels 3 + 2, 7 levels 4 + 3), so no title is cut. A level's note ("quick",
+    "default") is its tooltip.
+  - **SPEED:** the same control, Standard | Fast, the Fast segment wearing the bolt before its
+    word. It exists only for a model that offers a raised tier, so a model without one has no
+    Speed row.
+  - Model selection closes the popover; a level or a speed can change while it stays open. The
+    whole of a segment answers a click (not just its word: its content shape is the
+    segment), and a segment is no `Button`, as no row is. ↑↓ walk every choice top to bottom (the
+    models, All models…, each level, each speed) and the highlight (`runningTint`) follows the
+    pointer too, ↩ chooses, Esc closes. Tall content scrolls inside the room above the composer.
 - a spacer, then "Starting…" only while a slow pi keeps the thread waiting (see States),
   then the context ring (Context meter, below) 6pt before the action, a 28pt circle: **Send** (a
   14pt `arrow.up` in `textOnLantern` on `lantern`, at 35% until there is something to send) or
@@ -215,15 +235,16 @@ line in Geist Mono 10.5 `textTertiary` ("Checkout.tsx:88", only when the page pr
 9pt remove × in `textTertiary`; its tooltip is the full selector. At most five wait at once, and
 they go with the next message, on a host that takes them (`browserElements`).
 
-**Questions** from pi or an extension (select, confirm, input, editor), and a subagent's opened
-from its row, take the composer's place, never a row in the scrolling thread, so a blocked agent
-is always answerable (QuestionAsk, QuestionPick, QuestionAnswered, QuestionStates). pi stops and
-asks once; the thread above keeps what pi found, and the question holds only the question, its
+**Questions** from pi or an extension (select, confirm, input, editor) take the composer's place,
+never a row in the scrolling thread, so a blocked agent is always answerable (QuestionAsk,
+QuestionPick, QuestionAnswered, QuestionStates). A subagent's question never does: a subagent
+asks its parent, which asks here, as pi's own question, only when it cannot answer it
+(Subagents). pi stops and asks once; the thread above keeps what pi found, and the question holds only the question, its
 answers, and yours.
 
 **The question dock** (`Thread/QuestionDock.swift` on ShepherdUI's `NWQuestionDock`; the shared
 presentation is `NativeQuestionPrompt` in ShepherdRemote, for the touch clients too). It replaces
-the whole composer card, not just its field, for pi's own question and a subagent's alike. Its
+the whole composer card, not just its field, for pi's own question. Its
 rules (QuestionStates › Rules):
 
 1. **It takes the composer's place.** While pi waits, the bottom of the thread is the question:
@@ -287,13 +308,14 @@ rules (QuestionStates › Rules):
     side by side, 6pt apart, each 44pt (its number, the title in semibold, Recommended; its parts
     10pt apart), answering on click. Answer shows only with Something else; without it the dock
     has no footer (a confirm's is only its timeout line).
-  - **Open question:** no options (pi's input and editor, a subagent's question without
-    answers): a field at least 64pt tall (`bgWindow`, radius 8, a `lineStrong` line, 10pt above
+  - **Open question:** no options (pi's input and editor): a field at least 64pt tall (`bgWindow`, radius 8, a `lineStrong` line, 10pt above
     and below and 12pt at the sides, 13.5 at 1.5; up to 6 lines, 12 for an editor, then it
     scrolls) holding the asker's prefill, and Answer. It takes the keyboard when it arrives in
     the focused thread.
-  - **From a subagent:** "<name> is asking" with the branch glyph, the question at 14.5, option
-    titles at 13 over 12 (SubagentTray › Answer → question dock; see Subagents).
+  - **From a subagent (no longer shown):** "<name> is asking" with the branch glyph, the question
+    at 14.5, option titles at 13 over 12. No surface draws it now: a subagent asks its parent,
+    never the user (see Subagents). The variant stays in the components, with its note and
+    Something else…, until the board goes.
 - **Hidden** (QuestionStates): Esc or Hide the question shrinks the dock to one 46pt line
   (`NWQuestionDockHidden`), so you can read the thread; it still holds the composer's place,
   because pi is still waiting. The line is the same lantern card (radius 12, 14pt leading and 8pt
@@ -330,8 +352,8 @@ rules (QuestionStates › Rules):
   included, placed after the call that asked and before pi's next reply, and kept per pi
   session beside the queue's origins, so it survives a relaunch. A question still open when pi
   moves to another session (`/new`, `/resume`) is not recorded. When a tool asked, its own
-  activity line stays too. A subagent's question is not recorded here: its answer joins the
-  child's transcript as the user's message.
+  activity line stays too. A subagent's question is not recorded here: it is not the user's, and
+  a Steer the user sends the child joins its transcript as the user's message.
 - **Not built with it:** your note under the option's title, 4pt apart (QuestionAnswered), since
   none of pi's dialogs takes a note (What each asker takes).
 
@@ -344,7 +366,7 @@ rules (QuestionStates › Rules):
 | pi's confirm (`ctx.ui.confirm`) | yes or no | true or false | no | no |
 | pi's input (`ctx.ui.input`) | open | a string | — | — |
 | pi's editor (`ctx.ui.editor`) | open, 12 lines | a string, as typed | — | — |
-| A subagent (`shepherd_parent_message`, `needsReply`, up to six `options`) | choice, yes or no, or open | any text, sent to the run as a message (the option as offered, then the note after a blank line) | yes | yes |
+| A subagent | none | it is no asker of the user: it asks its parent (`shepherd_parent_message`, `needsReply`), which asks here, as an ordinary question, when it must | — | — |
 
 An asking tool (any tool named `ask` or `question`, such as `ask_user`) asks through the dialogs
 above, so its question is the row of the dialog it opens. Its `short` reason is for the sidebar's
@@ -353,8 +375,7 @@ Needs you (Sidebar); the dock never shows it.
 **Not built yet: Pick several** (QuestionStates › Kinds: rows at least 40pt with a 14pt
 `.nwCheckbox`, the label in mono 13 semibold for a host or a path and a note in 12
 `textTertiary`, a ticked row in the picked style, and "Answer with 2 hosts"). No asker takes
-several answers: pi's select returns one option, and a subagent's options are offered to pick
-one. It waits for an asker that says it takes several. Any of pi's dialogs can also be cancelled (pi returns undefined or
+several answers: pi's select returns one option. It waits for an asker that says it takes several. Any of pi's dialogs can also be cancelled (pi returns undefined or
 false to its asker), which only Stop does. pi's `custom` UI is not supported in RPC mode, so a
 tool built on it never reaches Shepherd.
 
@@ -372,9 +393,9 @@ a docked pane it narrows to the card. They share one anatomy (NWComposer › Men
 
 - `.nwPopover()` at radius 12 (a 1px `lineStrong` line, `bgRaised`, the popover shadow), with 6pt
   padding (the model picker's parts carry their own)
-- section headers (`NWMenuHeader`, 24pt; SlashMenu, ModelPicker): Geist 10.5 semibold, uppercase,
-  tracked 6%, `textSecondary`, with an optional trailing count in mono 11 `textTertiary` ("4 of
-  23"), 8pt from the sides (10pt in the model picker)
+- section headers (`NWMenuHeader`, 24pt; NWComposer › Menus: COMMANDS, RECENT, MODEL, THINKING,
+  SPEED): mono 10 medium, uppercase, tracked 6%, `textTertiary`, with an optional trailing count
+  in mono 11 `textTertiary` ("4 of 23"), 8pt from the sides (10pt in the model picker)
 - rows (`NWMenuRow`, 28pt unless a menu says otherwise), radius 6 (the boards' 7 on the radius
   scale), 8pt side padding, their parts 10pt apart, with a `runningTint` highlight that the pointer
   moves too; the current choice wears a `running` check. Rows are not `Button`s (the field or the
@@ -450,7 +471,9 @@ a docked pane it narrows to the card. They share one anatomy (NWComposer › Men
   fallback keeps its declared maps, and a host without `thinking.levels.v1` takes Off to High.
   The thread's current model lists what pi reports for it, which
   is live (`NativeModelChoices.thinkingLines`). The iOS picker's rows carry the same line under the
-  name. Trailing, the row's context size in mono 11 `textTertiary` ("200K", "1M"). The whole id
+  name. Trailing, a "fast" tag in mono 11 `textTertiary` on a model that offers a Fast tier (the
+  host's service-tier table, `ModelListing.serviceTiers`), then the row's context size in mono 11
+  `textTertiary` ("200K", "1M"). The whole id
   is the row's tooltip and what VoiceOver reads, with the levels. A query keeps the models whose
   id contains it and moves the highlight to the top. While the catalog loads, the list opens with a 12pt spinner and "Loading
   models…" in caption tertiary. Choosing sets the model, records it in Recent, and returns focus to
@@ -459,27 +482,22 @@ a docked pane it narrows to the card. They share one anatomy (NWComposer › Men
   (`ModelCatalog`, `ModelPickerState`; this Mac's catalog is asked once per process, off the main
   actor), and a hover moves the highlight without redrawing the list or scrolling it
   (`ComposerMenuPerformanceTests`).
-- **Thinking menu** (`NWThinkingMenu`, 220pt; NWComposer): from the thinking chip, which also
-  closes it. "Thinking", then one 28pt row per level pi offers the thread's model
+- **Model settings** (`NWModelSettings`, 328pt; NWComposer › Menus; the control row above): from the
+  model-settings button, which also closes it, over the card as the other composer menus are
+  (left-aligned, 8pt above it, never moving the thread). It takes focus with the first row
+  highlighted. The levels are the ones pi offers the thread's model
   (`get_available_thinking_levels`, carried as the snapshot's `thinkingLevels`), in pi's order:
   Off, Minimal ("fastest"), Low ("quick"), Medium ("default"), High ("slower, deeper"), Extra
   high ("deeper still"), Max ("slowest, deepest"). A reasoning model usually has Off to High with
   Minimal; Extra high and Max only where pi maps them; a host that does not say offers Off, Low,
-  Medium and High. The level in `ui` regular `textPrimary`, its note in Geist 12 `textTertiary`,
-  and the check on the current level, trailing. It takes focus with the current level
-  highlighted. The chip names the level the same way ("Extra high").
-- **Speed menu** (`NWSpeedMenu`, 280pt; ComposerSpeed): from the speed chip, which also closes it,
-  over the card as the other composer menus are (left-aligned, 8pt above it, never moving the
-  thread). "Speed", then a two-line 40pt row per tier the model offers, the Send menu's
-  anatomy: the title in `ui` regular `textPrimary` (Fast wears a filled bolt in `lantern` before
-  it) over what it does in Geist 12 `textTertiary`, and the check on the current one, trailing.
-  Standard: "Default speed and price". Fast: "Faster responses, billed at a higher rate". ↑↓ move,
-  ↩ chooses, Esc closes; it takes focus with the current tier highlighted. A change applies to the
-  next model call of the running agent (the request already in flight is not changed) and
-  persists with the thread. Fast asks the provider for priority processing, which is billed at a
-  higher rate and which the provider may decline under load: the thread's cost figures follow
-  the tier the provider reports. `ThreadCommandCenter.Command.speedMenu` opens it the way
-  `thinkingMenu` opens Thinking (no chord).
+  Medium and High; a model without reasoning has no Thinking row. The tiers are Standard
+  ("Default speed and price") and Fast ("Faster responses, billed at a higher rate"), the
+  tooltips of their segments. A change applies to the next model call of the running agent (the
+  request already in flight is not changed) and persists with the thread. Fast asks the provider
+  for priority processing, which is billed at a higher rate and which the provider may decline
+  under load: the thread's cost figures follow the tier the provider reports.
+  `ThreadCommandCenter.Command.thinkingMenu` and `.speedMenu` open this popover (no chord), and
+  ⌘K's Toggle fast mode switches the tier without opening it.
 - **Agent context menu** (NWComposer › Menus: "Native NSMenu in Swift; shown for spec"): a
   native menu (`.contextMenu`), never a custom popover: Rename… with its keys (⌘R), Fork from here
   and Copy transcript (each with its glyph), a separator, Open in Finder, a separator, and Delete

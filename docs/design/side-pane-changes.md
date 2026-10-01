@@ -62,7 +62,8 @@ inspector; the tray's Steer opens it with its Steer field focused.
   `textTertiary` line: "model · thinking high · 78 turns · 922k tok" while live, "model · 11
   turns · done 11:02" once finished, the last part in the state's color; the full line is its
   tooltip. A run that has left the list reads "no longer listed". Trailing, 4pt apart:
-  Pause/Continue (secondary `s`, with the card's tooltip) and Stop (danger `s`) for a live run,
+  Pause/Continue (secondary `s`, with the card's tooltip) and Stop (danger `s`) for a live run (a
+  run waiting on its parent has Stop alone: nothing runs to pause, and Stop closes its question),
   ‹ › (28pt `nwIcon`, "Previous subagent", "Next subagent", disabled at the ends) to step through
   siblings, a ⋯ menu (`NWOptionsMenu` "Inspector options": Refresh Transcript while live; Copy
   Transcript and Show Session File in Finder once finished), and close ("Close the inspector").
@@ -73,7 +74,9 @@ inspector; the tray's Steer opens it with its Steer field focused.
   0.5pt tracking, `textTertiary`), with "step n / m · 62%" trailing in Geist Mono 10.5
   `textTertiary` while live; the goal in `ui` `textSecondary`, up to six lines, selectable. Once
   finished, RESULT with its label in the state's color and the result in `ui` `textPrimary` as
-  inline Markdown (up to eight lines; a failed run's exit reason). Under it, up to five touched
+  inline Markdown (up to eight lines; a failed run's exit reason). A run that asked its parent shows
+  its question there instead, under "Asked the parent" (the question as inline Markdown, then "It
+  offered: …" with the answers it gave): to read, never to answer. Under it, up to five touched
   files as `running` links in Geist Mono 11, truncated in the middle, each with its diff stat
   (Geist Mono 11): a link opens the review pane at the file ("Review this file"), or reveals it
   in Finder where there is no review. Then "n more files" in Geist Mono 11 `textTertiary`.
@@ -96,7 +99,8 @@ inspector; the tray's Steer opens it with its Steer field focused.
     in mono (the run's turns, one per reply of the model as the header counts them, up to the
     first reply at or after the topmost turn on screen; `SubagentPresentation.position`), with
     "Scroll for the rest" trailing while there is more below.
-- **A Steer composer** while the run is live (Subagents): the composer card's anatomy on
+- **A Steer composer** while the run is live (Subagents; a run waiting on its parent is live, and
+  its Steer is you speaking over the parent): the composer card's anatomy on
   `bgRaised`, radius 8, a `lineStrong` line (`textTertiary` with a 3pt `bgSelected` ring while
   focused), set in 10pt from the top and 12pt from the sides, under a hairline. The field ("Steer
   <name> — delivered before its next turn", the placeholder in `textTertiary`) is `body`, one to
