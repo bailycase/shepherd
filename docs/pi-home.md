@@ -159,7 +159,8 @@ Every launch is built by `PiLaunch` (pinned in `PiLaunchTests`):
 /bin/zsh -l -c "cd -- '<cwd>' && exec '<home>/bin/pi' --mode rpc \
   --session-dir '<home>/sessions/--<cwd>--' --session-id '<id>' [--model … --thinking …] -e …"
 # the model catalog, from inside the home so no project's .pi applies
-/bin/zsh -l -c "cd -- '<home>' && exec '<home>/bin/pi' --list-models"
+# get_available_models and get_state RPC records on stdin, then EOF; no prompt or saved session
+/bin/zsh -l -c "cd -- '<home>' && exec '<home>/bin/pi' --mode rpc --no-session --no-tools --no-skills --no-prompt-templates --no-themes --no-context-files --no-approve"
 # PR descriptions and commit messages
 /bin/zsh -l -c "exec '<home>/bin/pi' --print --no-session --no-tools … --model '<m>' -- '<prompt>'"
 ```
