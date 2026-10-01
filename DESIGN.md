@@ -138,7 +138,8 @@ And the rules that follow from them:
 | Queue & steer: a row's actions take room only while it is hovered | An 82pt slot is always laid out, empty at rest | Details on hover: hovering never re-truncates the text |
 | Queue & steer: message times at rest | On hover (Details on hover) | The thread's rule |
 | Queue & steer: the queue's keys are "shown in menus and tooltips only" | Also listed under Settings ▸ Keyboard ▸ While the agent is working, in the Keyboard card's order | Settings ▸ Keyboard lists every chord the app answers, and ⌘↩ is rebound there; nothing is written in or under the composer |
-| Earlier ComposerSpeed and full-window boards show separate Model, Thinking and Speed chips | NWComposer v168 has one model-settings button and popover, with a bolt only for Fast; ⌘K's Toggle fast mode and Settings ▸ Agents ▸ Speed for new threads remain | The attached NWComposer v168 replaces the older separate-chip anatomy on the Mac |
+| Earlier ComposerSpeed and full-window boards show separate Model, Thinking and Speed chips | The Composer & menus board (NWComposer, NWModelSettings; the user's 2026-10-01 design) has one model-settings button and one popover, with a filled bolt only for Fast; ⌘K's Toggle fast mode and Settings ▸ Agents ▸ Speed for new threads remain | The board replaces the older separate-chip anatomy on the Mac. The canvas's NWComposer and ComposerSpeed boards still draw the old chips until the user's board is added |
+| Composer & menus: the model picker's rows are one line with a trailing check | Two-line 40pt rows with a leading check, the thinking levels under each name, and the context size; a model with a Fast tier also wears a "fast" tag | The ModelPicker board's rows (above) carry real information the new board's rows leave out: the user's call whether the picker follows the new board |
 | Background events as in-app toasts (`.nwToast`) | A system notification when a thread finishes a turn, fails one, or asks a question, or one of its subagents asks, or a connected host goes away, while you aren't watching it (`AgentNotifications`; see Notifications and Live Activities) | Reaches you outside the app |
 | Missions: the Missions page, the mission map, evidence review | Not built; specified in full under Missions, each part marked Not built yet | Out of scope for this pass |
 | Sidebar — Projects (SidebarTree, SidebarProjects, SidebarProjectsHosts): designs ("Settings redesign · 6 boards", "Checkout funnel dashboard · 4 boards") in their project's folder, and "Every kind … all live in the project they work on" | Designs are not in the project tree: they stay under the Designs destination and in ⌘K | The user's decision (2026-09-26): designs stand alone outside spaces since #118, so they have no project to sit in |
@@ -2034,7 +2035,7 @@ text.
 ### Composer, questions, and menus
 
 `Composer` (`Thread/Composer.swift`) on `NWComposer`, `NWSlashMenu`, `NWModelPicker`,
-`NWThinkingMenu`, and `NWSendMenu`, with Up next above the card (below). Sizes are
+`NWModelSettings`, and `NWSendMenu`, with Up next above the card (below). Sizes are
 `NWComposerMetrics`; the app's own are in `AppLayout+Thread.swift`. The boards: Composer & menus
 (NWComposer, NWComposerLight: one anatomy in both appearances, every color a role), SlashMenu,
 ModelPicker, and the Question boards (QuestionAsk, QuestionPick, QuestionAnswered,
@@ -2071,24 +2072,44 @@ it (the palette's New agent with options…, New space on <host>…, and "PR #24
 - attach: a 14pt `paperclip` in `textSecondary`, in a 26pt circular icon button (`.nwIcon`),
   only when the agent accepts images, and disabled at four attachments. Tooltip "Attach images
   (drop or paste also works), up to 4"; VoiceOver "Attach file".
-- One model-settings button (`NWModelSettingsLabel`): the model's short name in mono 12,
-  a tertiary dot separator, the thinking level in sans 12, then the chevron. A Fast tier adds
-  an outline bolt in `lanternText`; Standard draws nothing. Unsupported thinking and speed
-  are absent. The full model id remains in the tooltip and VoiceOver label.
+- One model-settings button (`NWModelSettingsLabel`; "claude-opus · Medium ⌄"): the model's
+  short name in mono 12, a tertiary dot separator, the thinking level in sans 12, then the
+  chevron, all in `textSecondary`. While speed is Fast the button adds a **filled** bolt in
+  `lantern` after the level (`NWFastBolt`, `bolt.fill` at 11pt medium, the one definition every
+  place that shows Fast draws through); Standard draws nothing, and a model with no Fast tier
+  never shows the bolt, even while the agent's own tier is still Fast. Unsupported thinking and
+  speed are absent. The full model id remains in the tooltip and VoiceOver label ("Model
+  settings: <id>", with the level and Fast as its value). ModelSettingsSummary decides what the
+  button says, for the thread's composer and the New thread page's alike.
 - Typing `/` opens commands. There is no commands button.
 - After the spacer, the checkout menu sits in the composer instead of the Mac thread header.
   `NWComposerBranchLabel` is a 26pt ghost chip with a 13pt worktree or house glyph, the branch
-  in mono 11.5, and a nonzero changed-file count in mono 10.5 `lanternText`, then the chevron.
+  in mono 11.5 (`textSecondary`, as the model's name), and a nonzero changed-file count in mono
+  10.5 `lanternText` ("●3"), then the chevron.
   Its existing Show Changes, Copy Branch Name, Copy Path and Show in Finder actions remain.
   While the agent's question replaces the card, the checkout menu remains accessible in the header.
-- `NWModelSettings` floats above the card, leading-aligned, 328pt wide, radius 12, with 6pt
-  padding and 28pt model rows. It shows the current model, one available recent model, and
-  All models… opening the full picker. Thinking and Speed sit below hairline separators.
-  Thinking has one 28pt row per supported level, with its note and a check on the current
-  level, so Off through Max remains readable without wrapping. Speed uses a segmented control
-  with 24pt buttons on `bgSunken`. Only real supported levels and tiers appear. Model selection closes the popover;
-  thinking and speed can change while it stays open. Arrow keys move through its choices,
-  Return chooses and Escape closes. Tall content scrolls inside the room above the composer.
+- `NWModelSettings` (the board's "One button opens one popover") floats above the card,
+  leading-aligned, 328pt wide, radius 12, with 6pt padding. Its sections have mono caps
+  headers (`NWMenuHeader`: MODEL, THINKING, SPEED) over hairline separators.
+  - **MODEL:** 28pt rows in mono 12: the current model (a check in `running` on its trailing
+    side), one available recent model, and All models… (Geist `ui`, `textSecondary`, a trailing
+    chevron) opening the full picker. A model with a Fast tier wears a filled `NWFastBolt`
+    before its check (the picker's "fast" tag, as a glyph); a model without one wears none.
+  - **THINKING:** a segmented control of the levels the model takes (Low · Medium · High ·
+    Extra high; Off to Max where it has them), in equal 24pt segments on a `bgSunken` track
+    (a `lineSubtle` line, radius 6); the chosen segment is lifted on `bgSelected` with a
+    `lineStrong` line (radius 4), semibold in `textPrimary`, the others medium in
+    `textSecondary`. Up to four levels share one row; more wrap onto balanced rows of the same
+    track (5 levels 3 + 2, 7 levels 4 + 3), so no title is cut. A level's note ("quick",
+    "default") is its tooltip.
+  - **SPEED:** the same control, Standard | Fast, the Fast segment wearing the bolt before its
+    word. It exists only for a model that offers a raised tier, so a model without one has no
+    Speed row.
+  - Model selection closes the popover; a level or a speed can change while it stays open. The
+    whole of a segment answers a click (not just its word: its content shape is the
+    segment), and a segment is no `Button`, as no row is. ↑↓ walk every choice top to bottom (the
+    models, All models…, each level, each speed) and the highlight (`runningTint`) follows the
+    pointer too, ↩ chooses, Esc closes. Tall content scrolls inside the room above the composer.
 - a spacer, then "Starting…" only while a slow pi keeps the thread waiting (see States),
   then the context ring (Context meter, below) 6pt before the action, a 28pt circle: **Send** (a
   14pt `arrow.up` in `textOnLantern` on `lantern`, at 35% until there is something to send) or
@@ -2403,9 +2424,9 @@ a docked pane it narrows to the card. They share one anatomy (NWComposer › Men
 
 - `.nwPopover()` at radius 12 (a 1px `lineStrong` line, `bgRaised`, the popover shadow), with 6pt
   padding (the model picker's parts carry their own)
-- section headers (`NWMenuHeader`, 24pt; SlashMenu, ModelPicker): Geist 10.5 semibold, uppercase,
-  tracked 6%, `textSecondary`, with an optional trailing count in mono 11 `textTertiary` ("4 of
-  23"), 8pt from the sides (10pt in the model picker)
+- section headers (`NWMenuHeader`, 24pt; NWComposer › Menus: COMMANDS, RECENT, MODEL, THINKING,
+  SPEED): mono 10 medium, uppercase, tracked 6%, `textTertiary`, with an optional trailing count
+  in mono 11 `textTertiary` ("4 of 23"), 8pt from the sides (10pt in the model picker)
 - rows (`NWMenuRow`, 28pt unless a menu says otherwise), radius 6 (the boards' 7 on the radius
   scale), 8pt side padding, their parts 10pt apart, with a `runningTint` highlight that the pointer
   moves too; the current choice wears a `running` check. Rows are not `Button`s (the field or the
@@ -2481,7 +2502,9 @@ a docked pane it narrows to the card. They share one anatomy (NWComposer › Men
   fallback keeps its declared maps, and a host without `thinking.levels.v1` takes Off to High.
   The thread's current model lists what pi reports for it, which
   is live (`NativeModelChoices.thinkingLines`). The iOS picker's rows carry the same line under the
-  name. Trailing, the row's context size in mono 11 `textTertiary` ("200K", "1M"). The whole id
+  name. Trailing, a "fast" tag in mono 11 `textTertiary` on a model that offers a Fast tier (the
+  host's service-tier table, `ModelListing.serviceTiers`), then the row's context size in mono 11
+  `textTertiary` ("200K", "1M"). The whole id
   is the row's tooltip and what VoiceOver reads, with the levels. A query keeps the models whose
   id contains it and moves the highlight to the top. While the catalog loads, the list opens with a 12pt spinner and "Loading
   models…" in caption tertiary. Choosing sets the model, records it in Recent, and returns focus to
@@ -2490,27 +2513,22 @@ a docked pane it narrows to the card. They share one anatomy (NWComposer › Men
   (`ModelCatalog`, `ModelPickerState`; this Mac's catalog is asked once per process, off the main
   actor), and a hover moves the highlight without redrawing the list or scrolling it
   (`ComposerMenuPerformanceTests`).
-- **Thinking menu** (`NWThinkingMenu`, 220pt; NWComposer): from the thinking chip, which also
-  closes it. "Thinking", then one 28pt row per level pi offers the thread's model
+- **Model settings** (`NWModelSettings`, 328pt; NWComposer › Menus; the control row above): from the
+  model-settings button, which also closes it, over the card as the other composer menus are
+  (left-aligned, 8pt above it, never moving the thread). It takes focus with the first row
+  highlighted. The levels are the ones pi offers the thread's model
   (`get_available_thinking_levels`, carried as the snapshot's `thinkingLevels`), in pi's order:
   Off, Minimal ("fastest"), Low ("quick"), Medium ("default"), High ("slower, deeper"), Extra
   high ("deeper still"), Max ("slowest, deepest"). A reasoning model usually has Off to High with
   Minimal; Extra high and Max only where pi maps them; a host that does not say offers Off, Low,
-  Medium and High. The level in `ui` regular `textPrimary`, its note in Geist 12 `textTertiary`,
-  and the check on the current level, trailing. It takes focus with the current level
-  highlighted. The chip names the level the same way ("Extra high").
-- **Speed menu** (`NWSpeedMenu`, 280pt; ComposerSpeed): from the speed chip, which also closes it,
-  over the card as the other composer menus are (left-aligned, 8pt above it, never moving the
-  thread). "Speed", then a two-line 40pt row per tier the model offers, the Send menu's
-  anatomy: the title in `ui` regular `textPrimary` (Fast wears a filled bolt in `lantern` before
-  it) over what it does in Geist 12 `textTertiary`, and the check on the current one, trailing.
-  Standard: "Default speed and price". Fast: "Faster responses, billed at a higher rate". ↑↓ move,
-  ↩ chooses, Esc closes; it takes focus with the current tier highlighted. A change applies to the
-  next model call of the running agent (the request already in flight is not changed) and
-  persists with the thread. Fast asks the provider for priority processing, which is billed at a
-  higher rate and which the provider may decline under load: the thread's cost figures follow
-  the tier the provider reports. `ThreadCommandCenter.Command.speedMenu` opens it the way
-  `thinkingMenu` opens Thinking (no chord).
+  Medium and High; a model without reasoning has no Thinking row. The tiers are Standard
+  ("Default speed and price") and Fast ("Faster responses, billed at a higher rate"), the
+  tooltips of their segments. A change applies to the next model call of the running agent (the
+  request already in flight is not changed) and persists with the thread. Fast asks the provider
+  for priority processing, which is billed at a higher rate and which the provider may decline
+  under load: the thread's cost figures follow the tier the provider reports.
+  `ThreadCommandCenter.Command.thinkingMenu` and `.speedMenu` open this popover (no chord), and
+  ⌘K's Toggle fast mode switches the tier without opening it.
 - **Agent context menu** (NWComposer › Menus: "Native NSMenu in Swift; shown for spec"): a
   native menu (`.contextMenu`), never a custom popover: Rename… with its keys (⌘R), Fork from here
   and Copy transcript (each with its glyph), a separator, Open in Finder, a separator, and Delete
@@ -3770,7 +3788,7 @@ surface: every destination and command in it is also in the sidebar or the menus
     not an automation's run, and not in the project tree), Choose model… ("<model>", ⇧⌘M),
     Toggle fast mode ("Switch this thread between Standard and Fast", a `bolt`; ComposerSpeed;
     listed only while the thread's model offers a service tier, and it switches the tier as the
-    Speed menu would, with no menu), Review diff ("working tree · 4 files", the checkout's changed files as the branch chip counts
+    model-settings popover's Speed control would, with no popover), Review diff ("working tree · 4 files", the checkout's changed files as the branch chip counts
     them; ⇧⌘B, the side pane's chord), Review PR changes ("PR #24" once the agent's review has
     found its pull request), and the Terminal menu's commands while a
     thread with a layout is on screen: Show or Hide terminal (⌘J; with none it opens one), New
@@ -4786,7 +4804,7 @@ and the title stays still while rows disclose.
   acts; changing the window under a sheet mid-dismissal wedges the modal session.
 
 New Agent's Model row takes "provider/id" (pi's default, or Settings' default, prefilled in that
-form), and its Thinking row follows the composer's thinking chip: it shows only while the chosen
+form), and its Thinking row follows the composer's model-settings button: it shows only while the chosen
 model (blank: the target's default) takes a thinking level, as the target's catalog says. A model
 the catalog does not know, or a catalog still loading, keeps it. It offers Off, Minimal, Low, Medium
 and High, with Extra high and Max where the target's models.json maps them
@@ -5065,7 +5083,7 @@ composing chrome by hand. Debug builds have a **Component Gallery** (View menu,
 | Containers | `NWSectionHeader`, `NWGroupCard`, `NWCardRow`, `NWHairline`, `NWChoiceRow` (`NWChoiceRowMetrics`), `NWFlowLayout`, `NWMarkupText` | `SettingsComponents.swift`; hairlines everywhere; `NWMarkupText` for Settings' descriptions (Mac and iOS); `NWChoiceRow` in the iOS client's New thread pickers; `NWFlowLayout` for wrapping chips and answers (iOS) |
 | Navigation | `NWSidebar`, `NWSidebarTopBar`, `NWSidebarDestination`, `NWSidebarSection`, `NWSidebarRow`, `NWSidebarFooter`, `NWDropIndicator`, `NWDensity`; `NWThreadToolbar`, `NWPaneToggle`, `NWOptionsMenu`, `NWPaneHeader`; `.nwCommandPalette(isPresented:)`, `NWPaletteCard`, `NWPaletteSearchRow`, `NWPaletteSectionHeader`, `NWPaletteRow` | `SidebarView.swift`, `ThreadHeader.swift`, `RootView.swift`, `CommandPaletteView.swift`; the review's header (`DiffReviewView.swift`) and the inspector's ⋯ menu (`Thread/SubagentInspector.swift`) |
 | Thread | `NWUserBubble` (its time shown while `revealed`; `origin: .steered`), `NWQueueDivider`, `NWAgentProse`, `NWCodeBlock`, `NWThinking`, `NWActivityLine`, `NWActivityCalls`, `NWChangesCard`, `NWDiffStat`, `NWInlineCode`, `NWAttachmentChip`, `NWTurnFooter` (shown while `revealed`), `NWTurnError` (card, Details, folded), `NWRetryLine`, `NWJumpToLatest`, `.nwShimmer(active:)` (live text) | `Thread/ThreadView.swift`, `ThreadTurns.swift` (with each turn's `MessageHover`), `ThreadTools.swift`, `ThreadMarkdown.swift` |
-| Composer | `NWComposer`, `.nwComposerChip(active:)`, `NWChipChevron`, `NWComposerActionButton` (outlined Stop, Send's ring), `NWMenuHeader`, `NWSlashMenu`, `NWModelPicker`, `NWThinkingMenu`, `NWSendMenu`, `NWPlaceMenu` and `NWPlaceChipLabel` (the New thread page's workplace); the question dock: `NWQuestionDock` (`NWQuestionDockContent`, `NWQuestionDockMetrics`, `.nwQuestionCard()`), `NWQuestionHead`, `NWQuestionDockHidden` (over `NWQuestionHiddenLine`); the queue: `NWQueueStack`, `NWQueueRow`, `NWQueueEditor`, `NWQueueDeletedRow`, `NWQueueMoreRow`, `NWQueueNumber`, `NWQueueGlyph`, `NWGripGlyph`, `NWQueueMetrics` | `Thread/Composer.swift`, `Thread/QuestionDock.swift`, `Thread/QueueStack.swift` |
+| Composer | `NWComposer`, `.nwComposerChip(active:)`, `NWChipChevron`, `NWComposerActionButton` (outlined Stop, Send's ring), `NWMenuHeader`, `NWSlashMenu`, `NWModelPicker`, `NWModelSettings` (`NWModelSettingsLabel`, `NWComposerBranchLabel`, `NWFastBolt`), `NWSendMenu`, `NWPlaceMenu` and `NWPlaceChipLabel` (the New thread page's workplace); the question dock: `NWQuestionDock` (`NWQuestionDockContent`, `NWQuestionDockMetrics`, `.nwQuestionCard()`), `NWQuestionHead`, `NWQuestionDockHidden` (over `NWQuestionHiddenLine`); the queue: `NWQueueStack`, `NWQueueRow`, `NWQueueEditor`, `NWQueueDeletedRow`, `NWQueueMoreRow`, `NWQueueNumber`, `NWQueueGlyph`, `NWGripGlyph`, `NWQueueMetrics` | `Thread/Composer.swift`, `Thread/QuestionDock.swift`, `Thread/QueueStack.swift` |
 | Agents | `NWSubagentTray` (`NWSubagentTrayRun`, `NWSubagentTraySummary`, `NWSubagentTrayRow`, `NWSubagentTrayMoreRow`), `NWDockStack`, `NWSubagentRecordLine`, `NWInspectorHeader`, `NWRunBrief`, `NWRunActions`, `NWBranchGlyph`, `NWElapsedText`, `NWDuration`, `NWInlineMarkup`, `.nwRunArrival`; touch forms for iOS (the tray's `.pad` and `.phone` sizes, `NWRunCard`, `NWRunHeader`, `NWRunTabs`, `NWSteerField`, …) | `Thread/Subagents.swift`, `Thread/SubagentInspector.swift`, `Thread/SubagentPresentation.swift`; the iOS client |
 | Review | The Changes pane: `NWScopeButton`, `NWViewedPill`, `NWCompareRow`, `NWFileStrip`, `NWFileHeader`, `NWViewedCheckbox`, `NWDiffView` over `NWChangesRow`s (`NWDiffLine`, `NWSplitDiffLine`, `NWDiffHatch`, `NWDiffFoldRow`), `NWInlineComment`, `NWCommentEditor`, `NWReviewSendBar`, `NWChangesFileList`, the menus (`NWChangesMenu`, `NWChangesMenuRow`, `NWChangesMenuToggle`, `NWChangesMenuSearch`), `NWDiffMetrics`, `NWChangesMetrics`; the commit form (`NWCommitMessageEditor`, `NWCommitFileRow`, `NWCommitOptionRow`); touch forms for iOS (`NWTouchDiffLine`, `NWSplitDiffRow`, `NWTouchFileStrip`, `NWLineCommentBar`, `NWReviewFileRow`, `NWReviewComposer`, …) | `DiffReviewView.swift`, `ChangesMenus.swift`, `ChangesRows.swift`, `ReviewCommitSheet.swift`; the iOS client |
 | Dialogs | `NWDialog` (`NWDialogMetrics`), `NWDialogStatus`, `NWSheetRow`, `NWChecklistRow`, `NWSettingsNavRow` | `DialogSheet.swift`, `AppDialogs.swift`, the sheets, `QuitConfirmation.swift`, `SettingsView.swift` |
@@ -8764,7 +8782,7 @@ opens this page in the main column, with the sidebar showing and Designs selecte
     attach (`paperclip`, "Attach a screenshot or file"), the model chip, the thinking chip
     in the combined model-settings button, and Send (the composer's 28pt lantern circle, 35% until there is text).
     The model and level are This Mac's defaults (Settings ▸ Agents) until picked; the model
-    picker and the thinking menu open under the card, as on New thread, and the design agent
+    picker and the model-settings popover open under the card, as on New thread, and the design agent
     starts on what they say. After that they stay with the design's pi session. There is no
     context ring before the design has a conversation. The board also draws "/ commands": left
     out for New thread's reason (no pi runs before the design exists to list its commands);
@@ -9551,7 +9569,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | Running | Thread (A turn while pi works); Composer, questions, and menus | Built |
 | SlashMenu | Composer, questions, and menus › Slash menu | Built |
 | ModelPicker | Composer, questions, and menus › Model picker | Built |
-| ComposerSpeed | Composer, questions, and menus › The control row, Speed menu; Command palette; Settings › Agents | Built |
+| ComposerSpeed | Composer, questions, and menus › The control row, Model settings (its Speed control); Command palette; Settings › Agents | Built (its separate Speed chip and menu are replaced by the Composer & menus board's one popover) |
 | CommandPalette | Command palette | Built |
 | ToolRows | Thread › Activity lines | Built |
 | ChangesSplit | Side pane › Changes (toolbar, compare row, strip, file headers, split, comments, send bar) | Built |
