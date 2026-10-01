@@ -8,7 +8,7 @@ import Testing
 struct KeybindingsTests {
     // MARK: Defaults
 
-    /// DESIGN.md's keyboard table is the contract.
+    /// docs/design/keyboard-and-accessibility.md's keyboard table is the contract.
     @Test(arguments: [
         (ShortcutAction.newAgent, "⌘N"), (.newAgentOptions, "⇧⌘T"), (.newSpace, "⇧⌘N"),
         (.renameAgent, "⌘R"), (.deleteAgent, "⇧⌘W"), (.commandPalette, "⌘K"),

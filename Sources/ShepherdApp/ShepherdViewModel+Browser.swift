@@ -5,7 +5,7 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
 
-/// A local thread's Browser (DESIGN.md › Side pane › Browser): what its page asks of the app.
+/// A local thread's Browser (docs/design/side-pane-changes.md › Side pane › Browser): what its page asks of the app.
 /// The page itself is `BrowserSession` (`BrowserHost.swift`).
 extension ShepherdViewModel {
     /// Reads the dev servers the thread's folder offers, once per session, off the main thread. A

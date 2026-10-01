@@ -9,7 +9,7 @@ import Testing
 @testable import ShepherdApp
 
 /// A long thread never draws blank while it follows its tail: not after a send, not as the turn
-/// streams, and not as it finishes (DESIGN.md › Thread). Read from what the window draws, not
+/// streams, and not as it finishes (docs/design/thread.md › Thread). Read from what the window draws, not
 /// from the scroll view's numbers: the failure this guards left the scroll view reporting the
 /// tail (distance 0) while the lazy stack had placed its rows elsewhere and the viewport drew
 /// nothing but the composer. It needed `defaultScrollAnchor(.bottom)` over a stack of estimated

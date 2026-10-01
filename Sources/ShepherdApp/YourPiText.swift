@@ -1,7 +1,7 @@
 import Foundation
 import ShepherdSessions
 
-/// The words Settings ▸ Pi ▸ From your pi uses for what came from the user's pi (DESIGN.md › Pi ▸
+/// The words Settings ▸ Pi ▸ From your pi uses for what came from the user's pi (docs/design/settings-pi.md › Pi ▸
 /// From your pi). They name files and counts, never a credential's value.
 enum YourPiText {
     /// Settings ▸ Pi ▸ Copied's instructions row: "`AGENTS.md` · 38 lines · no `APPEND_SYSTEM.md`".

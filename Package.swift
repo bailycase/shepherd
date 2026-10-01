@@ -102,7 +102,7 @@ let package = Package(
             // in Contents/Frameworks, which only this rpath reaches in a release build.
             linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
         ),
-        // Tests come in two tiers (see AGENTS.md "Testing"):
+        // Tests come in two tiers (see docs/testing.md):
         //   *UnitTests — pure logic: no processes, sockets, windows, or sleeps. `swift test --filter UnitTests`.
         //   *IntegrationTests and ShepherdPreviewTests — real servers, stub pi, git, AppKit
         //   windows, rendered previews. `swift test --filter "IntegrationTests|PreviewTests"`.

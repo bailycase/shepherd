@@ -7,7 +7,7 @@ import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
 
-/// A pi that stops before it serves keeps its agent (DESIGN.md › Thread › Can't start), through
+/// A pi that stops before it serves keeps its agent (docs/design/thread.md › Thread › Can't start), through
 /// the real view model and the stub pi launched the way the app launches pi: the pane stays with
 /// its thread, which says why, the sidebar row reads "can't start", and Retry starts pi again.
 @Suite("Agent start problems", .mainActorExclusive)

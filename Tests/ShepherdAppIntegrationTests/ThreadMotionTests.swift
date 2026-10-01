@@ -10,7 +10,7 @@ import Testing
 @testable import ShepherdApp
 
 /// The thread's and the composer's motion, recorded from a real `ThreadView` in an off-screen
-/// window (DESIGN.md › Motion). Changes arrive the way the app's do: a snapshot the store pulls,
+/// window (docs/design/motion.md › Motion). Changes arrive the way the app's do: a snapshot the store pulls,
 /// a command from the command center, a draft typed into the store. Nothing here clicks or
 /// types.
 ///

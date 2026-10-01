@@ -3,7 +3,7 @@ import ShepherdProtocol
 @testable import ShepherdRemote
 import Testing
 
-/// Thinking the thread can show (DESIGN.md › Thread, Thinking): a disclosure when there is text
+/// Thinking the thread can show (docs/design/thread.md › Thread, Thinking): a disclosure when there is text
 /// to read, a plain "Thought for Ns" line when the model shared none but it was timed, nothing
 /// when it was neither; live thinking is drawn whatever it holds.
 @Suite("Thinking presentation")

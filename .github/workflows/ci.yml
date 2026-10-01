@@ -5,7 +5,7 @@ name: CI
 # rebuilds the caches clean, so every PR based on nightly starts warm. Tests
 # whose verdict depends on the machine's speed (frame sampling, wall-clock
 # budgets) skip here, where GitHub sets CI=true; `swift test` runs them locally
-# (AGENTS.md, Testing).
+# (docs/testing.md).
 on:
   push:
     branches: [master, nightly]

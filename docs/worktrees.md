@@ -4,7 +4,7 @@ Shepherd runs agents in a space's checkout. When you want an agent isolated from
 Shepherd can create a git worktree for it, then later finalize it (commit, push, open a PR, clean
 up) or delete it. These flows, plus the review pane's per-file Revert, commit from review
 (`ReviewCommit.swift`), and the Changes engine's snapshots and its Undo of an agent's last turn
-(AGENTS.md › Only these paths mutate repositories, [changes.md](changes.md)), are the only places
+(docs/rules.md › Only these paths mutate repositories, [changes.md](changes.md)), are the only places
 Shepherd changes a repository. It never prunes worktrees and never deletes a remote branch.
 
 The Changes engine's snapshots write only loose objects into `.git/objects` (through an index
@@ -94,7 +94,7 @@ Finalize Worktree… and Delete Worktree Agent….
 
 **Finalize Worktree…** is in a worktree agent's context menu. The sheet goes through these
 phases: checking → setup (only if a check fails) → input → running → done or failed. It is an
-`NWDialog` like every sheet ([DESIGN.md](../DESIGN.md#dialogs-and-sheets)): the checks and the
+`NWDialog` like every sheet ([docs/design/dialogs-and-palette.md](design/dialogs-and-palette.md)): the checks and the
 pipeline steps are checklist rows, each a state glyph, a label, and a one-line detail.
 
 ### Setup checks
