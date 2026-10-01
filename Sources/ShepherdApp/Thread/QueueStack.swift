@@ -658,6 +658,8 @@ struct QueueRowView: View, Equatable {
                     steerLabel: running ? "Steer now" : "Send now",
                     steerShortcut: steerShortcut,
                     steerHelp: running ? NativeSendChoice.steerNowHelp : "Send this now",
+                    // The next message to go wears Steer now at rest while pi works; idle, nothing changes.
+                    steerLabelled: running && kind == .queued(number: 1),
                     edit: id.map { id in { actions.edit(id) } },
                     delete: id.map { id in { actions.delete(id) } },
                     deleteShortcut: deleteShortcut,

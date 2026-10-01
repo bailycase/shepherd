@@ -26,10 +26,10 @@ final class QueueThread {
     private(set) var threadScroll: NSScrollView?
 
     init(queue: [NativeQueuedMessage] = [], draft: String = "", messages: Int = 40, size: CGSize = CGSize(width: 900, height: 700),
-         interrupts: Bool = false) {
+         interrupts: Bool = false, running: Bool = true) {
         self.size = size
         var snapshot = ComposerThread.snapshot(messages: messages, commands: [])
-        snapshot.running = true
+        snapshot.running = running
         snapshot.supportedActions.append("sendImages")
         if interrupts { snapshot.supportedActions.append("interrupt") }
         host = QueueFixture(snapshot)

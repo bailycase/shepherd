@@ -214,7 +214,10 @@ Up next follows iOS (and Composer › Up next); on iPad it is a card above the c
     with its 12pt glyph; `NWTouchQueueRow(wide: true)`, where the phone puts "↳ Steering" under
     the text), and Back to the queue (a 34pt circle).
   - A queued row on `bgRaised`: its number in a 22pt circle (a 1px `lineStrong` line, mono 11.5
-    `textSecondary`), then the text at 15; an image count when it carries images.
+    `textSecondary`), then the text at 15; an image count when it carries images. The first
+    queued row while the agent runs also has a labelled **Steer now** button after them (decided
+    by the user, 2026-10-01; iPhone and iPad alike, see iPhone: Up next), a hardware ⌘↩ staying
+    as it is.
 - **Swipe** a queued row left: Edit (80pt, `bgSelected`, a 17pt `pencil` over "Edit" at 12/500)
   and Delete (80pt, `failed`, white). Long-press: Steer now, Edit, Move to top, Delete. A delete
   leaves an Undo row.
