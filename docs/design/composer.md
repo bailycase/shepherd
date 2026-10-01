@@ -49,7 +49,12 @@ it (the palette's New agent with options…, New space on <host>…, and "PR #24
   speed are absent. The full model id remains in the tooltip and VoiceOver label ("Model
   settings: <id>", with the level and Fast as its value). ModelSettingsSummary decides what the
   button says, for the thread's composer and the New thread page's alike.
-- Typing `/` opens commands. There is no commands button.
+- Typing `/` opens commands. There is no commands button. Typing `@` (at the start or after a
+  space, in a thread that takes design references) opens the design picker at once: "Loading
+  designs…" until this Mac's designs are read, then their rows, "No designs yet" or "Nothing
+  matches", and "Couldn't load designs." with Retry when the read takes too long. ↩ over it
+  chooses its highlighted row and never sends the message. Design tool › Design references ›
+  The @ picker has the rest.
 - After the spacer, the checkout menu sits in the composer instead of the Mac thread header.
   `NWComposerBranchLabel` is a 26pt ghost chip with a 13pt worktree or house glyph, the branch
   in mono 11.5 (`textSecondary`, as the model's name), and a nonzero changed-file count in mono

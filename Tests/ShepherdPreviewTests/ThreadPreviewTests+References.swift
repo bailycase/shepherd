@@ -229,23 +229,49 @@ extension ThreadPreviewTests {
         return snapshot
     }
 
+    /// `matrix` renders at text scale 1.3 as well (`Preview.renderMatrix`).
     private func renderReferences(_ surface: String, _ snapshot: NativeThreadSnapshot, chips: DesignReferenceChips, draft: String = "",
-                                  attached: [NativeAttachedReference] = [], open: Bool = false, expanded: Bool = false,
+                                  attached: [NativeAttachedReference] = [], open: Bool = false, expanded: Bool = false, matrix: Bool = false,
                                   ready: @escaping @MainActor () -> Bool = { true }) async throws {
         let fixture = ThreadFixture(snapshot)
         defer { fixture.store.stop() }
         let store = fixture.store
-        try await Preview.render(surface, size: Self.referenceSize, ready: {
+        let isReady: @MainActor () -> Bool = {
             guard store.ready, !store.rows.isEmpty || snapshot.messages.isEmpty else { return false }
             if store.attachedReferences.isEmpty, !attached.isEmpty { for reference in attached { _ = store.attach(reference: reference) } }
             if store.draft != draft, !draft.isEmpty { store.draft = draft }
             return ready()
-        }) {
-            fixture.thread(title: "Checkout page polish", workingDirectory: "~/Developer/dashboard-web")
-                .environment(\.designReferences, chips)
-                .environment(\.designReferencesOpen, open)
-                .environment(\.designReferencesExpanded, expanded)
         }
+        if matrix {
+            try await Preview.renderMatrix(surface, size: Self.referenceSize, ready: isReady) {
+                fixture.thread(title: "Checkout page polish", workingDirectory: "~/Developer/dashboard-web")
+                    .environment(\.designReferences, chips)
+            }
+        } else {
+            try await Preview.render(surface, size: Self.referenceSize, ready: isReady) {
+                fixture.thread(title: "Checkout page polish", workingDirectory: "~/Developer/dashboard-web")
+                    .environment(\.designReferences, chips)
+                    .environment(\.designReferencesOpen, open)
+                    .environment(\.designReferencesExpanded, expanded)
+            }
+        }
+    }
+
+    /// The thread's references with no design read yet: the host's read of this Mac's designs
+    /// answers `catalog` after `delay` (never, when nil), and gives up after `timeout`.
+    static func referenceChipsReading(_ catalog: DesignMentionCatalog? = nil, delay: Duration? = nil,
+                                      timeout: Duration = .milliseconds(150)) -> DesignReferenceChips {
+        let picture = referencePicture()
+        return DesignReferenceChips(agentID: AgentID(rawValue: "preview"), io: DesignReferenceChips.IO(
+            picture: { _ in picture },
+            catalog: {
+                guard let delay, let catalog else {
+                    try? await Task.sleep(for: .seconds(3_600))
+                    return DesignMentionCatalog()
+                }
+                try? await Task.sleep(for: delay)
+                return catalog
+            }, startDesign: {}), catalogTimeout: timeout)
     }
 
     static var attachedReference: NativeAttachedReference {
@@ -275,6 +301,37 @@ extension ThreadPreviewTests {
     @Test func referenceAtSearch() async throws {
         try await renderReferences("thread-reference-at-search", Self.referenceSnapshot(sent: false), chips: Self.referenceChips(),
                                    draft: "Match the funnel in @funnel")
+    }
+
+    /// The designs are still being read: "@" opens the picker at once with its one quiet line, and
+    /// nothing to choose. (No board draws it: docs/design/design-tool-references.md › The @ picker.)
+    @Test func referenceAtLoading() async throws {
+        let chips = Self.referenceChipsReading(timeout: .seconds(60))
+        try await renderReferences("thread-reference-at-loading", Self.referenceSnapshot(sent: false), chips: chips,
+                                   draft: "Match the funnel in @", matrix: true, ready: { chips.catalogStage == .loading })
+    }
+
+    /// The read took too long: "Couldn't load designs." with Retry, as the composer's own picker draws it.
+    @Test func referenceAtFailed() async throws {
+        let chips = Self.referenceChipsReading()
+        try await renderReferences("thread-reference-at-failed", Self.referenceSnapshot(sent: false), chips: chips,
+                                   draft: "Match the funnel in @", matrix: true, ready: {
+                                       if case .failed = chips.catalogStage { true } else { false }
+                                   })
+    }
+
+    /// The read found no designs: "No designs yet.", said only after it did.
+    @Test func referenceAtNoDesigns() async throws {
+        let chips = Self.referenceChipsReading(DesignMentionCatalog(), delay: .zero)
+        try await renderReferences("thread-reference-at-none", Self.referenceSnapshot(sent: false), chips: chips,
+                                   draft: "Match the funnel in @", matrix: true, ready: { chips.catalogStage == .rows })
+    }
+
+    /// A word typed while loading, then a catalog that has no design by that name: "Nothing matches".
+    @Test func referenceAtNothingMatches() async throws {
+        let chips = Self.referenceChipsReading(Self.mentionCatalog, delay: .zero)
+        try await renderReferences("thread-reference-at-nothing", Self.referenceSnapshot(sent: false), chips: chips,
+                                   draft: "Match the funnel in @pricng", matrix: true, ready: { chips.catalogStage == .rows })
     }
 
     /// RefSentThread: the message carries the chip; the agent looks at it (one quiet line) and
