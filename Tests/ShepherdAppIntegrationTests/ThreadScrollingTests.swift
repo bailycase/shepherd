@@ -18,6 +18,7 @@ private final class ThreadHarness {
     let commands = ThreadCommandCenter()
     var snapshot: NativeThreadSnapshot
     let window: OffscreenWindow
+    private let pillWidth = ceil(NSHostingView(rootView: NWJumpToLatest(action: {})).fittingSize.width)
     var olderRequests = 0
     var olderReply: CheckedContinuation<NativeThreadResult, Never>?
 
@@ -103,8 +104,11 @@ private final class ThreadHarness {
     var showsJumpPill: Bool {
         window.layout()
         let host = window.host
-        // The pill floats just above the composer: OCR only the lower half.
-        let region = NSRect(x: 0, y: host.isFlipped ? host.bounds.height / 2 : 0, width: host.bounds.width, height: host.bounds.height / 2)
+        // Keep surrounding transcript words out of the pill's OCR line. Measure the native
+        // control so the crop follows its font and text scale rather than a guessed width.
+        let region = NSRect(x: host.bounds.midX - pillWidth / 2,
+                            y: host.isFlipped ? host.bounds.height / 2 : 0,
+                            width: pillWidth, height: host.bounds.height / 2)
         guard let bitmap = host.bitmapImageRepForCachingDisplay(in: region) else {
             Issue.record("Could not capture the thread while checking the jump pill")
             return false
