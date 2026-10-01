@@ -42,8 +42,8 @@ struct SettingsSearchTests {
         ("service tier", .agents, ["Speed for new threads"]),
         ("speed", .agents, ["Speed for new threads"]),
         ("github", .worktrees, ["Merge PR automatically"]),
-        ("steer", .agents, ["Return while the agent is working"]),
-        ("queue", .agents, ["Return while the agent is working", "When a turn ends, send the queue"]),
+        ("queue", .agents, ["When a turn ends, send the queue"]),
+        ("steer", .keyboard, ["Shortcuts"]),
         ("all at once", .agents, ["When a turn ends, send the queue"]),
         ("system prompt", .instructions, ["AGENTS.md", "APPEND_SYSTEM.md"]),
         ("sync", .instructions, ["Same on every host"]),
@@ -95,6 +95,14 @@ struct SettingsSearchTests {
     @Test func aKeywordFindsOnlyTheSectionsThatOwnIt() {
         let hits = SettingsSection.allCases.filter { !$0.matches(for: "dark").isEmpty }
         #expect(hits == [.appearance])
+    }
+
+    /// ↩ always queues while pi works and ⌘↩ steers now, so Agents has no Return setting: only how
+    /// the queue goes. The keys are Keyboard's.
+    @Test func agentsHasNoReturnWhileWorkingSetting() {
+        #expect(!SettingsSection.agents.items.contains("Return while the agent is working"))
+        #expect(SettingsSection.agents.matches(for: "steer").isEmpty)
+        #expect(SettingsSection.agents.matches(for: "next step").isEmpty)
     }
 
     /// "theme" finds only the themes copied from your pi, never a theme-sync switch.

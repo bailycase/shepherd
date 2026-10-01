@@ -140,13 +140,10 @@ struct KeybindingsTests {
     }
 
     /// Settings ▸ Keyboard's While the agent is working group is the board's Keyboard card, in its
-    /// order; ↩ and the alternate send say what they do under the Return setting.
-    @Test(arguments: [
-        (ReturnWhileWorking.queue, ["Send, waiting for the turn to end", "Send and steer now"]),
-        (.steer, ["Send, steering at the next step", "Send and steer now"]),
-    ])
-    func whileWorkingKeysFollowTheBoardAndTheReturnSetting(setting: ReturnWhileWorking, sendTitles: [String]) {
-        #expect(WhileWorkingKey.all.map { $0.title(setting) } == sendTitles + [
+    /// order: ↩ queues, ⌘↩ steers now, and neither follows a setting.
+    @Test func whileWorkingKeysFollowTheBoard() {
+        #expect(WhileWorkingKey.all.map(\.title) == [
+            "Queue it, the agent takes it when the turn ends", "Send and steer now",
             "Edit the last queued message", "Move the focused message", "Delete the focused message",
             "Steer the focused message now", "Stop the agent",
         ])
@@ -163,7 +160,6 @@ struct KeybindingsTests {
         let keys = KeybindingsStore(store: Fixture.defaults())
         #expect(AgentSettings.explanation(keys).contains("⌘N"))
         #expect(TerminalSettings.shellSubtitle(keys).contains("⌘D"))
-        #expect(AgentSettings.returnDescription(keys).hasSuffix("\(keys.display(.alternateSend)) always steers now: it stops the agent and sends at once."))
 
         #expect(keys.assign(KeyChord(key: "j", command: true, option: true), to: .newAgent) == nil)
         #expect(keys.assign(KeyChord(key: "e", command: true, option: true), to: .newTerminal) == nil)
@@ -173,8 +169,8 @@ struct KeybindingsTests {
 
         let before = keys.display(.alternateSend)
         #expect(keys.assign(KeyChord(key: "s", command: true, option: true), to: .alternateSend) == nil)
-        let queue = AgentSettings.returnDescription(keys)
-        #expect(queue.contains(keys.display(.alternateSend)) && !queue.contains(before))
+        let help = Composer.sendHelp(working: true, send: keys.sendDisplay, alternate: keys.display(.alternateSend))
+        #expect(help.contains(keys.display(.alternateSend)) && !help.contains(before))
     }
 
     // MARK: Validation
