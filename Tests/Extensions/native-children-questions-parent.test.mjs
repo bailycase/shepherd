@@ -102,7 +102,9 @@ async function startParent(dir, provider) {
   return {
     events, get stderr() { return err; },
     prompt(message) { pi.stdin.write(JSON.stringify({ type: "prompt", message }) + "\n"); },
-    settled: () => events.filter((e) => e.type === "agent_settled").length,
+    // Every turn that started has settled. How turns divide depends on timing (a question that lands while the parent
+    // still works is a continuation of its turn), so the tests wait on what was said, never on a count of turns.
+    idle: () => events.some((e) => e.type === "agent_start") && events.filter((e) => e.type === "agent_start").length === events.filter((e) => e.type === "agent_settled").length,
     stop() { pi.stdin.end(); pi.kill("SIGTERM"); },
   };
 }
@@ -123,9 +125,9 @@ test("a real parent answers a child's question itself, from the notice, with the
   const parent = await startParent(dir, provider);
   try {
     parent.prompt("START db");
-    // The parent's turn that started the child ends; the child asks; the notice wakes the parent for the next turn, which
-    // answers; the child finishes; its completion wakes the parent once more.
-    await until("the parent to have answered and heard the child finish", () => parent.settled() >= 3 && resumeCalls(provider).length === 1);
+    // The child asks; the notice reaches the parent (waking it, or at the end of the turn it is in); the parent answers;
+    // the child finishes and its completion reaches the parent.
+    await until("the parent to have answered the child", () => resumeCalls(provider).length === 1);
     const [answer] = resumeCalls(provider);
     assert.match(answer.id, /^native-/);
     assert.match(answer.questionID, /^[\w-]+\/\w+$/, "the questionID the notice named, attempt and call");
@@ -138,9 +140,8 @@ test("a real parent answers a child's question itself, from the notice, with the
     assert(notice.includes(`questionID: ${answer.questionID}`));
     assert.equal(notice.split("Answer it yourself if you can").length - 1, 1, "the instructions come once");
     // The child went on from its parent's answer, as its own next turn, and its result came back.
-    const childAnswered = provider.requests.find((r) => JSON.stringify(r.messages).includes("You are a Shepherd child")
-      && textOf(r.messages.at(-1)).startsWith("Postgres."));
-    assert(childAnswered, "the child received the parent's answer as its next message");
+    await until("the child to receive the parent's answer as its next message", () => provider.requests.some((r) => JSON.stringify(r.messages).includes("You are a Shepherd child")
+      && textOf(r.messages.at(-1)).startsWith("Postgres.")));
     await until("the child's result to reach the parent", () => parentRequests(provider).some((r) => textOf(r.messages.at(-1)).includes("Used: Postgres.")));
   } finally { parent.stop(); provider.server.closeAllConnections(); provider.server.close(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
@@ -151,8 +152,10 @@ test("a real parent that cannot answer asks the user in its own reply, and passe
   const parent = await startParent(dir, provider);
   try {
     parent.prompt("START customer");
-    await until("the parent to have asked the user", () => parent.settled() >= 2 && parentRequests(provider).some((r) => textOf(r.messages.at(-1)).includes("Which customer is this for?")));
-    await sleep(500);
+    await until("the parent to have asked the user", () => parent.events.some((e) => e.type === "message_end" && e.message?.role === "assistant"
+      && textOf(e.message).includes("Which customer should it be?")));
+    await until("the parent to be idle", () => parent.idle());
+    await sleep(300);
     assert.equal(resumeCalls(provider).length, 0, "it did not guess an answer for the user");
     const asked = parent.events.filter((e) => e.type === "message_end" && e.message?.role === "assistant").map((e) => textOf(e.message));
     assert(asked.some((text) => text.includes("Which customer should it be?")), "the question to the user is the parent's own reply");

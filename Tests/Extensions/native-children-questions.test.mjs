@@ -43,6 +43,8 @@ function fixtureServer() {
       call(`ask-${topic}`, "shepherd_parent_message", { message: `Which ${topic} should I use?`, needsReply: true, options: ["Replace everywhere", "Rename new ones"], short: `${topic}?` });
     } else if (last.role === "user" && text.includes("ASK_UI")) {
       call("ask-ui", "ask_user", { question: "Which retention?" });
+    } else if (last.role === "tool" && JSON.stringify(body.messages).includes("ASK_SLOW")) {
+      await sleep(1200); say({ content: "I asked my parent." });
     } else if (last.role === "user" && text.includes("SLOWER")) {
       await sleep(6000); say({ content: `reply:${text}` });
     } else {
@@ -202,6 +204,21 @@ test("the parent answers with the questionID and the child continues; an obsolet
   const secondDone = await askingState(second.id);
   assert.match(secondDone.output, /reply:Rename new ones/);
   assert.equal(secondDone.needsReply, false);
+});
+
+test("an answer that comes while the child is still finishing the turn it asked in waits for it, and is not lost with it", async () => {
+  const child = await h.call("start", { task: "ASK_PARENT:race ASK_SLOW", role: "scout", mission: false });
+  const dir = path.dirname(child.sessionFile), status = () => JSON.parse(fs.readFileSync(path.join(dir, "status.json")));
+  await until(() => status().needsReply === true);
+  assert.equal(status().state, "running", "the child asked and is still writing its last words");
+  const answer = "Replace everywhere, quickly.";
+  // The parent, woken by the question, answers at once: a message into that turn would end with the turn's process.
+  await h.call("message", { id: child.id, message: answer, questionID: status().questionID });
+  const done = await askingState(child.id);
+  assert.equal(done.state, "complete");
+  assert.equal(done.needsReply, false);
+  assert.match(done.output, /reply:Replace everywhere, quickly\./, "the child answered from its parent's words, not from its first turn");
+  assert(fs.readFileSync(child.sessionFile, "utf8").includes(answer));
 });
 
 test("a user's own steer closes the question, and the parent's later answer to it is refused as obsolete", async () => {

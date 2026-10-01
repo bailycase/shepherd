@@ -1101,14 +1101,28 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
   pi.registerTool({ name: "shepherd_child_start", label: "start child", parameters: startSchema,
     description: "Start an owned background Pi helper. Use shepherd_child_agents for discovered profiles. Explicit call overrides profile, then Shepherd defaults, then parent model/thinking. Fresh or fork context; tools intersect the parent allowlist. Cwd is not a sandbox. Progress stays in the child record. A child never reaches the user: when it is blocked it asks you (needsReply, in a notice and in wait/result with a questionID): answer it yourself if you can with shepherd_child_resume and that questionID, else ask the user in your own reply and pass their answer down. delivery:report stores completion without waking the parent, so the user can keep chatting; delivery:continue resumes dependent work; a question wakes you in either. Result/wait reads consume pending notices. Default creates a mission; mission:false opts out. No nested delegation or automatic worktrees.",
     async execute(id, p, signal, _update, ctx) { return result(await start(p, signal, ctx, undefined, id)); } });
-  // The parent's answer to a child's question: while the child still works it is a message, and once it has finished its
-  // turn to wait (the usual case) it resumes the child with the answer. Either tool takes it, with the questionID.
+  // The parent's answer to a child's question, from either tool with the questionID. A child that asked is told to finish
+  // its turn, and its process ends when that turn settles, so an answer sent into the turn is lost with it. The answer
+  // therefore waits for the child to finish (a prompt parent answers while the child still writes "I asked my parent")
+  // and resumes it; a child that keeps working past the wait is steered instead.
+  const ANSWER_WAIT_MS = 20_000;
   async function answerChild(run, message, mode, signal, ctx) {
-    if (!run.needsReply || !run.questionID) throw Error("Child question changed; read its current result before answering");
-    if (run.proc && !run.exited && !run.settled && !run.cancelled) return send(run, message, mode);
+    const question = run.questionID;
+    const changed = () => { if (!run.needsReply || !question || run.questionID !== question) throw Error("Child question changed; read its current result before answering"); };
+    changed();
+    const working = () => run.proc && !run.exited && !run.settled && !run.cancelled;
+    if (working()) {
+      await new Promise((resolve) => {
+        const timer = setTimeout(resolve, ANSWER_WAIT_MS); timer.unref?.();
+        const done = () => { clearTimeout(timer); resolve(); };
+        run.closed.then(done); signal?.addEventListener("abort", done, { once: true });
+      });
+      signal?.throwIfAborted(); changed();
+    }
+    if (working()) return send(run, message, mode);
     return resume(run, message, signal, ctx);
   }
-  pi.registerTool({ name: "shepherd_child_message", label: "message child", description: "Message a running child. Acceptance is not completion. Steer runs after current tools; followUp waits for the turn to end. To answer a child's question (needsReply), pass its questionID: it answers a child still working, and resumes one that finished its turn to wait for the answer.",
+  pi.registerTool({ name: "shepherd_child_message", label: "message child", description: "Message a running child. Acceptance is not completion. Steer runs after current tools; followUp waits for the turn to end. To answer a child's question (needsReply), pass its questionID: it waits for the child to finish the turn it asked in, then resumes it with the answer.",
     parameters: Type.Object({ id: idSchema, message: textSchema, mode: Type.Optional(StringEnum(["steer", "followUp"])),
       questionID: Type.Optional(Type.String({ description: "Question identity returned by child_result or its notice. Rejects an answer to an obsolete question or attempt." })) }),
     async execute(_id, p, signal, _update, ctx) {
