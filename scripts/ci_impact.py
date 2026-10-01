@@ -66,7 +66,7 @@ SMOKE = [
 AREAS: dict[str, list[str]] = {
     "thread": [
         APP + r"(Thread|Composer|QueueStack|QuestionDock|ProseImage|NewThread|MotionProbe|ServiceTier|ControlMotion|"
-              r"ModelCatalog|ListPerformance|HiddenAgents)",
+              r"ModelCatalog|ListPerformance|HiddenAgents|SubagentMotion)",
         PRV + r"ThreadPreviewTests",
     ],
     "browser": [
@@ -91,7 +91,7 @@ AREAS: dict[str, list[str]] = {
     "shell": [
         APP + r"(Sidebar|Workspace|ShellMotion|RightPaneMotion|PaletteMotion|SettingsMotion|Space|AgentStartup|"
               r"AgentLifecycle|AgentLaunch|AgentPeerDeletion|AgentStartProblem|IdleCost|ListPerformance|HiddenAgents|"
-              r"InstructionsEditor)",
+              r"InstructionsEditor|ServerStartupRefusal)",
         PRV + r"(PreviewTests|AgentsPreviewTests)",
     ],
     "settings": [
@@ -192,6 +192,7 @@ RULES: list[tuple[str, object, str]] = [
      "shared UI (tokens, controls, containers): every app suite draws it"),
     # ShepherdApp, by feature; what no feature claims runs the app's whole integration tier
     # (the other modules' integration tests cannot depend on it).
+    ("Sources/ShepherdApp/MCPExtension.swift", area("settings"), "the embedded MCP client (MCPEndToEndTests runs it)"),
     ("Sources/ShepherdApp/*Extension.swift", UNIT, "an embedded extension (the byte-identity unit test)"),
     ("Sources/ShepherdApp/Thread/**", area("thread"), "the thread and composer"),
     ("Sources/ShepherdApp/ThreadHeader.swift", area("thread"), "the thread header"),
