@@ -330,6 +330,43 @@ class WatchdogTests(unittest.TestCase):
             self.assertEqual(f.read(), "hello\n")
         self.assertEqual(stdout.getvalue(), "hello\n")
 
+    def test_cancelling_the_helper_stops_the_tests_it_started(self):
+        # The runner cancels a job with SIGINT, then SIGTERM; the tests run in a session of their own.
+        import subprocess
+        folder = tempfile.mkdtemp()
+        log, pidfile = os.path.join(folder, "run.log"), os.path.join(folder, "pid")
+        code = ("import sys; sys.path.insert(0, %r); import ci_run_tests as r; "
+                "r.Runner().stream(['sh', '-c', 'echo $$ > %s; exec sleep 731'], %r, 120)"
+                % (os.path.join(ROOT, "scripts"), pidfile, log))
+        helper = subprocess.Popen([sys.executable, "-c", code], stderr=subprocess.DEVNULL)
+        child = None
+        try:
+            deadline = time.time() + 10
+            while time.time() < deadline and not (os.path.exists(pidfile) and open(pidfile).read().strip()):
+                time.sleep(0.05)
+            with open(pidfile) as f:
+                child = int(f.read().strip())
+            os.kill(child, 0)                      # alive
+            helper.send_signal(2)
+            helper.wait(timeout=10)
+            deadline = time.time() + 10
+            gone = False
+            while time.time() < deadline and not gone:
+                try:
+                    os.kill(child, 0)
+                    time.sleep(0.05)
+                except ProcessLookupError:
+                    gone = True
+            self.assertTrue(gone, "the child is gone")
+        finally:
+            if helper.poll() is None:
+                helper.kill()
+            if child is not None:
+                try:
+                    os.kill(child, 9)
+                except ProcessLookupError:
+                    pass
+
     def test_a_run_that_outlives_its_budget_is_killed_with_everything_it_started(self):
         log = os.path.join(tempfile.mkdtemp(), "run.log")
         script = "import subprocess,sys,time; subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)']); time.sleep(60)"

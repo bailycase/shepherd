@@ -90,11 +90,13 @@ class Runner:
             except subprocess.TimeoutExpired:
                 fired = True
                 self.sample_hung_hosts(proc.pid)
-                try:
-                    os.killpg(proc.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
+                kill_group(proc.pid)
                 proc.wait()
+            except BaseException:
+                # The runner cancelling the job (SIGINT, or SIGTERM turned into an exit): the tests
+                # run in a session of their own, so nothing else would stop them.
+                kill_group(proc.pid)
+                raise
             reader.join(timeout=10)
             if proc.stdout is not None:
                 proc.stdout.close()
@@ -115,6 +117,13 @@ class Runner:
                 except OSError:
                     pass
         print("::endgroup::", flush=True)
+
+
+def kill_group(pid: int) -> None:
+    try:
+        os.killpg(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
 
 
 def descendants(ps_table: str, root: int) -> list[tuple[int, str]]:
@@ -468,4 +477,5 @@ def main(argv: list[str], runner: Runner | None = None, env: dict[str, str] | No
 
 
 if __name__ == "__main__":
+    signal.signal(signal.SIGTERM, lambda _signum, _frame: sys.exit(143))
     sys.exit(main(sys.argv[1:]))
