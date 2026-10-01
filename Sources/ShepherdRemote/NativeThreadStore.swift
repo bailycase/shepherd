@@ -1346,7 +1346,8 @@ public final class NativeThreadStore {
     /// Goal controls remain available during a turn and its separate evaluation.
     @discardableResult
     public func goalAction(_ action: NativeGoalAction) async -> Bool {
-        guard ready, !busy, loadError == nil, supportedActions.contains("goal"), action.isValid, let current = snapshot else { return false }
+        guard ready, !busy, loadError == nil, supportedActions.contains("goal"), action.isValid, let current = snapshot,
+              action != .resume || dialogs.isEmpty else { return false }
         let operation = UUID()
         return await perform(.goal(expectedSessionID: current.piSessionID, generation: current.generation, operationID: operation,
                                    action: action, expectedGoalID: goal?.id, expectedGoalRevision: goal?.revision),

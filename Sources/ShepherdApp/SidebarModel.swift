@@ -49,6 +49,7 @@ struct SidebarListRow: Identifiable, Equatable {
     let title: String
     let leading: NWSidebarRow.Leading
     var accessory: NWSidebarRow.Accessory
+    var hasGoal = false
     var selected = false
     /// A thread the Activity sidebar can pin: not an automation run or a design. Only the
     /// Activity lists say so, so the project tree's menus offer no Pin.
@@ -291,7 +292,7 @@ enum SidebarDerivation {
         }
         return SidebarListRow(
             id: .local(agent.id), title: agent.name, leading: leading,
-            accessory: agent.goalState != nil ? .goal : accessory,
+            accessory: accessory, hasGoal: agent.goalState != nil,
             help: agent.worktreeBranch.map { "\(agent.name) · worktree \($0)" } ?? agent.name,
             accessibilityLabel: label(agent, word: word, automation: automation != nil, host: nil)
                 + (agent.goalState != nil ? ", goal" : ""),
@@ -324,7 +325,7 @@ enum SidebarDerivation {
         let help = agent.worktreeBranch.map { "\(agent.name) · worktree \($0)" } ?? agent.name
         return SidebarListRow(
             id: .remote(RemoteAgentRef(hostID: host.id, agentID: agent.id)), title: agent.name, leading: leading,
-            accessory: agent.goalState != nil ? .goal : accessory, offline: host.offline,
+            accessory: accessory, hasGoal: agent.goalState != nil, offline: host.offline,
             help: host.offline ? "\(help) · \(host.name) is offline" : help,
             accessibilityLabel: label(agent, word: word, automation: automation, host: host.name)
                 + (host.offline ? ", host offline" : "") + (agent.goalState != nil ? ", goal" : ""),

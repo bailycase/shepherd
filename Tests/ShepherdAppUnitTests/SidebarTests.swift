@@ -86,6 +86,26 @@ struct SidebarRecentsTests {
         #expect(rows["remote"]?.accessibilityLabel == "remote, running, on horizon")
     }
 
+    @Test func goalsSupplementTheAskElapsedAndHostAccessories() {
+        let since = Date(timeIntervalSince1970: 100)
+        var working = agent("working", status: .working)
+        working.goalState = "working"
+        var asking = agent("asking", status: .blocked, waiting: "Retention?")
+        asking.goalState = "needsYou"
+        var remote = agent("remote", status: .working)
+        remote.goalState = "checking"
+        let lists = SidebarDerivation.lists(SidebarSource(
+            local: ShepherdState(spaces: [space], agents: [working, asking]), statusSince: [working.id: since],
+            hosts: [SidebarSource.Host(id: host, name: "horizon", state: ShepherdState(spaces: [space], agents: [remote]))]))
+        let rows = Dictionary(uniqueKeysWithValues: (lists.recents + lists.needsYou).map { ($0.title, $0) })
+        #expect(rows["working"]?.hasGoal == true)
+        #expect(rows["working"]?.accessory == .elapsed(since: since))
+        #expect(rows["asking"]?.hasGoal == true)
+        #expect(rows["asking"]?.accessory == .reason("Retention?"))
+        #expect(rows["remote"]?.hasGoal == true)
+        #expect(rows["remote"]?.accessory == .tag("horizon"))
+    }
+
     /// An agent whose pi stopped before it served reads "can't start" in red, a thread's or a
     /// run's, until Retry (docs/design/sidebar.md › Sidebar).
     @Test func anAgentWhosePiCannotStartSaysSo() {

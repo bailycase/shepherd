@@ -19,7 +19,7 @@ struct ThreadGoalCard: View {
     var body: some View {
         if let goal = store.goal {
             NWGoalCard(state: goal.cardState, time: goal.timeLabel, meta: goal.metaLabel, text: goal.text,
-                       size: size, framed: framed, pause: { act(.pause) }, resume: { act(.resume) }, edit: {
+                       size: size, framed: framed, resumeEnabled: store.dialogs.isEmpty, pause: { act(.pause) }, resume: { act(.resume) }, edit: {
                            text = goal.text
                            editing = true
                        }, clear: { act(.clear) })
@@ -49,7 +49,7 @@ struct ThreadGoalCard: View {
                                     let value = text
                                     Task { if await store.goalAction(.edit(text: value)) { editing = false } }
                                 }
-                                .disabled(!enabled || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                .disabled(!enabled || goal.state == .met || text == goal.text || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                             }
                         }
                         .onAppear { focused = true }
@@ -67,21 +67,36 @@ struct ThreadGoalCard: View {
 
 /// Structured goal records read as quiet dividers on both the parent and child transcripts.
 struct GoalRecordLine: View {
-    let text: String
+    let record: NativeGoalRecord
+
+    init(text: String) { record = NativeGoalRecord(text) }
 
     var body: some View {
-        HStack(spacing: NW.Space.m) {
-            NWHairline().frame(minWidth: NW.Space.l)
-            Text(text).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-                .layoutPriority(1)
-            NWHairline().frame(minWidth: NW.Space.l)
+        VStack(spacing: NW.Space.s) {
+            HStack(spacing: NW.Space.m) {
+                NWHairline().frame(minWidth: NW.Space.l)
+                Text(record.line).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(record.isClosing ? 2 : nil)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                    .layoutPriority(1)
+                NWHairline().frame(minWidth: NW.Space.l)
+            }
+            if let evidence = record.evidence {
+                DisclosureGroup {
+                    Text(evidence).font(.nw(.mono)).foregroundStyle(Color.nw.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                } label: {
+                    if record.showsDetails { Text("Details") } else { Text("Evidence") }
+                }
+                .font(.nw(.caption))
+                .foregroundStyle(Color.nw.textTertiary)
+                .tint(Color.nw.textSecondary)
+            }
         }
         .padding(.vertical, NW.Space.xs)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(text)
     }
 }
 

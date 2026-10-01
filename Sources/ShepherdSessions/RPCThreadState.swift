@@ -1144,7 +1144,7 @@ final class RPCThreadState {
                 description = String(decoding: Array(text.utf8.prefix(NativeCommand.maxDescriptionBytes)), as: UTF8.self)
             }
             result.append(NativeCommand(name: name, description: description, source: item["source"]?.stringValue,
-                                        arguments: argumentHint(item["argumentHint"]?.stringValue)))
+                                        arguments: argumentHint(item["argumentHint"]?.stringValue) ?? (name == "goal" ? "<condition>" : nil)))
             if result.count == NativeCommand.maxCount { break }
         }
         return result
