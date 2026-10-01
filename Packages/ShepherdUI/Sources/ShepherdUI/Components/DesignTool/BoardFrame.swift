@@ -43,7 +43,8 @@ public struct NWBoardFrame<Slot: View>: View, Equatable {
 }
 
 /// A board's label: its name and, 8pt after it, its size, then (for a shared piece other boards
-/// import) how many use it, "used in 3 boards", in the size's 10.5 `textTertiary`.
+/// import) how many use it, "used in 3 boards", in sans 10.5 `textTertiary`, left out of a label
+/// too narrow to hold it beside the name and size.
 public struct NWBoardLabel: View {
     let title: String
     let size: String
@@ -58,6 +59,18 @@ public struct NWBoardLabel: View {
     }
 
     public var body: some View {
+        if let usage {
+            // The count is the first thing a narrow label gives up: the name and size stay.
+            ViewThatFits(in: .horizontal) {
+                row(usage)
+                row(nil)
+            }
+        } else {
+            row(nil)
+        }
+    }
+
+    private func row(_ usage: String?) -> some View {
         HStack(spacing: NWDesignMetrics.labelSpacing) {
             Text(title)
                 .font(.nwSans(NWDesignMetrics.labelSize, .semibold))
