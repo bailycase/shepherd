@@ -678,13 +678,10 @@ public final class SessionServer: @unchecked Sendable {
     /// (asking pi shells out), so the server calls it off its queue.
     public typealias ModelCatalog = @Sendable () -> ModelListing
 
-    /// pi's own catalog (`pi --list-models`, else models.json) and settings.json's default, all
+    /// pi's composed model catalog over RPC, else models.json, and settings.json's default, all
     /// as "provider/id".
     public static func piModelCatalog(_ pi: PiSetup) -> ModelCatalog {
-        {
-            ModelListing(entries: pi.catalog.entriesOrConfigured(), defaultModel: PiConfig.defaultModel(in: pi.home),
-                         levelMaps: PiConfig.thinkingLevelMaps(in: pi.home))
-        }
+        { pi.catalog.listing() }
     }
 
     /// This Mac's models as a remote client's `listModels` gets them, for the local New Agent
@@ -1767,12 +1764,13 @@ public final class SessionServer: @unchecked Sendable {
                 self?.queue.async {
                     guard let self, self.clients[client.fd] === client else { return }
                     self.send(.models(id: id, models: listing.models, defaultModel: listing.defaultModel,
-                                     withoutThinking: listing.withoutThinking, thinkingLevels: listing.thinkingLevels), to: client)
+                                     withoutThinking: listing.withoutThinking, thinkingLevels: listing.thinkingLevels,
+                                     serviceTiers: listing.serviceTiers, contexts: listing.contexts), to: client)
                 }
             }
         case .addSpace(let id, let path):
             remoteAddSpace(id: id, path: path, client: client)
-        case .createAgent(let id, let spaceID, let cwd, let model, let thinking, let initialPrompt, let worktreeBranch, let worktreeBase, let worktreeFetchFirst, let initialImages):
+        case .createAgent(let id, let spaceID, let cwd, let model, let thinking, let initialPrompt, let worktreeBranch, let worktreeBase, let worktreeFetchFirst, let initialImages, let serviceTier):
             let images = initialImages ?? []
             // Refused before anything is made: pi would refuse them once the agent exists.
             guard images.isEmpty || initialPrompt?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false,
@@ -1791,7 +1789,8 @@ public final class SessionServer: @unchecked Sendable {
                     worktreeBranch: worktreeBranch,
                     worktreeBase: worktreeBase,
                     worktreeFetchFirst: worktreeFetchFirst,
-                    initialImages: images
+                    initialImages: images,
+                    serviceTier: serviceTier
                 ),
                 client: client
             )

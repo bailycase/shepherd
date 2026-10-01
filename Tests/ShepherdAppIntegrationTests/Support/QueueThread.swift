@@ -10,6 +10,8 @@ import SwiftUI
 /// an off-screen window, with the composer's "Up next" state in the test's hands. Spinners hold
 /// still (Reduce Motion), so a settled window draws the same picture twice. Nothing here clicks
 /// or presses a key: hover is seeded, handlers are called, events are built and never posted.
+/// The host stops pi for Steer now only when `interrupts` says so (`interrupt` in its
+/// `supportedActions`); without it Steer now falls back to steering the message in.
 @MainActor
 final class QueueThread {
     nonisolated static let key = "queue"
@@ -23,11 +25,13 @@ final class QueueThread {
     /// The thread's own scroll view, found before any menu opens.
     private(set) var threadScroll: NSScrollView?
 
-    init(queue: [NativeQueuedMessage] = [], draft: String = "", messages: Int = 40, size: CGSize = CGSize(width: 900, height: 700)) {
+    init(queue: [NativeQueuedMessage] = [], draft: String = "", messages: Int = 40, size: CGSize = CGSize(width: 900, height: 700),
+         interrupts: Bool = false) {
         self.size = size
         var snapshot = ComposerThread.snapshot(messages: messages, commands: [])
         snapshot.running = true
         snapshot.supportedActions.append("sendImages")
+        if interrupts { snapshot.supportedActions.append("interrupt") }
         host = QueueFixture(snapshot)
         host.change(queue)
         store.draft = draft
