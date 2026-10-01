@@ -1,6 +1,7 @@
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdUI
 import Testing
 @testable import ShepherdApp
 
@@ -29,7 +30,7 @@ struct PaletteContextTests {
     @Test func toggleFastModeIsListedOnlyWhereTheModelOffersATier() throws {
         #expect(ShepherdViewModel.fastModePaletteItem(offered: false) == nil)
         let item = try #require(ShepherdViewModel.fastModePaletteItem(offered: true))
-        #expect(item.title == "Toggle fast mode" && item.section == .thisThread && item.icon == "bolt")
+        #expect(item.title == "Toggle fast mode" && item.section == .thisThread && item.icon == NWGlyph.fastBolt.symbolName)
         #expect(item.kind == .action("fastMode"))
     }
 
