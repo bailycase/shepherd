@@ -17,6 +17,9 @@ public struct DesignHit: Equatable, Sendable {
     public var name: String?
     /// What the canvas's tag calls it: "card", "text", "button", "image", "component"…
     public var noun: String
+    /// For a `<dc-import>`: the board it mounts, as its `name` writes it ("Card"): the element is one
+    /// use of that shared piece. Nil for any other element, a design system's component included.
+    public var piece: String?
 
     /// The nouns a tag may use; the bridge's anything else reads "element".
     public static let nouns: Set<String> = ["text", "image", "line", "shape", "card", "group", "button", "link", "field", "component"]
@@ -24,7 +27,8 @@ public struct DesignHit: Equatable, Sendable {
     /// Beyond any board: a rect past it is not a board's.
     static let maxCoordinate: CGFloat = 100_000
 
-    public init(tid: Int, path: [Int], rect: CGRect, kind: DesignElementKind, label: String? = nil, name: String? = nil, noun: String) {
+    public init(tid: Int, path: [Int], rect: CGRect, kind: DesignElementKind, label: String? = nil, name: String? = nil, noun: String,
+                piece: String? = nil) {
         self.tid = tid
         self.path = path
         self.rect = rect
@@ -32,6 +36,7 @@ public struct DesignHit: Equatable, Sendable {
         self.label = label
         self.name = name
         self.noun = noun
+        self.piece = piece
     }
 
     /// A bridge answer, or nil when it isn't one: a tid or path outside the view record's
@@ -53,6 +58,7 @@ public struct DesignHit: Equatable, Sendable {
         name = (object["name"] as? String).flatMap(DesignViewRecord.label).map { String($0.prefix(Self.maxName)) }
         let noun = object["noun"] as? String ?? ""
         self.noun = Self.nouns.contains(noun) ? noun : "element"
+        piece = (object["piece"] as? String).flatMap { $0.isEmpty || $0.count > Self.maxName * 3 ? nil : $0 }
     }
 
     /// Its id on `board`.

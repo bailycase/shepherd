@@ -141,7 +141,8 @@ test("without its design, socket or agent the extension registers nothing", () =
 test("a design's agent gets the design and comment tools", async () => {
   await withDesign(() => null, async (pi) => {
     assert.deepEqual([...pi.tools.keys()].sort(),
-      ["board_edit", "board_write", "canvas_update", "comment_list", "comment_reply", "design_check", "design_read", "markup_propose",
+      ["board_edit", "board_extract", "board_render", "board_search", "board_write", "boards_edit", "canvas_update", "checkpoint_create",
+        "checkpoint_list", "checkpoint_restore", "comment_list", "comment_reply", "design_check", "design_read", "markup_propose",
         "system_read", "system_write"]);
   });
 });
@@ -171,8 +172,11 @@ test("every run's prompt names the design, its boards and the tools-only rule", 
     assert.match(added, /"Checkout funnel"/);
     assert.match(added, /- A\.dc\.html "A · Funnel first" · 1280×800 at \(0, 0\)/);
     assert.match(added, /- B\.dc\.html \(no frame on the canvas yet\)/);
-    assert.match(added, /change it only with board_edit, board_write and canvas_update/);
+    assert.match(added, /change it only with board_edit, boards_edit, board_write, board_extract and canvas_update/);
     assert.match(added, /board_edit for a small change to a board/);
+    assert.match(added, /boards_edit for the same edits on many boards as one change/);
+    assert.match(added, /Find things with board_search/);
+    assert.match(added, /Every write answers a short report/);
     assert.match(added, /skill-dir\/SKILL\.md/);
   }, { skillDirectory: "/support/skill-dir" });
 });

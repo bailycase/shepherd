@@ -104,6 +104,18 @@ struct DesignLifecycleWordsTests {
         #expect(designBoardsDrawing([]) == 0)
     }
 
+    @Test func aBatchEditAndAnExtractionCountTheBoardsTheyNameAndAPieceIsOneToo() {
+        func call(_ tool: String, _ args: String, _ id: String) -> NativeThreadMessage {
+            NativeThreadMessage(entryID: id, role: "toolResult", blocks: [], toolName: tool, argumentsText: args)
+        }
+        let messages = [
+            call("boards_edit", #"{"paths":["A.dc.html","B.dc.html"],"boards":[{"path":"C.dc.html","edits":[]}]}"#, "1"),
+            call("board_extract", #"{"path":"A.dc.html","element":"A.dc.html#1:0","piece":"TopBar.dc.html"}"#, "2"),
+            call("board_search", #"{"text":"x"}"#, "3"),
+        ]
+        #expect(designBoardsDrawing(messages) == 4)
+    }
+
     // MARK: Delete design system
 
     @Test func theSystemDialogAnswersWhatBreaks() {
