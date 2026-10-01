@@ -249,12 +249,10 @@ header's pill turns "Needs you" (attention, glowing).
   - At rest: `bgWindow`, a 1px `lineSubtle` line, the number outlined in `lineStrong` with
     `textSecondary`. Chosen: `lanternTint` with a `lantern` line, the number on `lantern` in
     `textOnLantern` semibold.
-- **A note in the chosen answer** ("Keep the encrypted secret out of the PR."): a field inside
-  the chosen card (`NWQuestionNoteField`: `bgWindow`, a 1px `lineStrong` line, radius 6, "Add a
-  note…", a `lantern` caret) sent with the answer, and **"Something else…"**, a last full-width
-  row (`NWQuestionOtherCard`: at least 46pt, its number outlined, a field in place): only for an
-  asker that takes them (the dock's What each asker takes). None does now: pi's dialogs take
-  neither, and a subagent asks its parent.
+- **No note and no "Something else…".** The board draws a note field in the chosen answer and a
+  last full-width "Something else…" row, but no asker takes either: pi's dialogs take neither,
+  and a subagent asks its parent (the dock's What each asker takes). The components that drew
+  them (`NWQuestionNoteField`, `NWQuestionOtherCard`) were pruned, with the subagent variant.
 - **Foot:** Answer, primary, 36pt, trailing, enabled once there is an answer; there is no
   Dismiss (Stop refuses pi's question, as on the Mac and the phone). A yes or a no is two cards
   side by side that answer on a tap; an open question is a field over Answer.

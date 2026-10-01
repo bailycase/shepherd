@@ -36,18 +36,6 @@ private enum AgentsSamples {
     }
 }
 
-#Preview("Subagent question dock") {
-    NWPreviewBoth {
-        NWQuestionDockSample(NWQuestionDockContent(
-            asker: .subagent("reviewer"), question: "Rename the new token names, or replace the old ones everywhere?", kind: .choice,
-            options: [
-                NWQuestionDockOption(number: 1, title: "Replace everywhere", detail: "Old names go; 31 call sites change.", recommended: true),
-                NWQuestionDockOption(number: 2, title: "Rename the new ones", detail: "Keeps both; adds an alias."),
-            ], takesNote: true, takesOther: true))
-        .frame(width: 620)
-    }
-}
-
 #Preview("Inspector parts") {
     NWPreviewBoth {
         VStack(spacing: 0) {

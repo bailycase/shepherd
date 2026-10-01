@@ -3,12 +3,10 @@ import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
-/// A question in the composer's place (MobileQuestion, iPadQuestion boards), pi's own or a
-/// subagent's, so a blocked agent is always answerable. It follows the question dock's rules
-/// (docs/design/composer.md › Questions; `NativeQuestionPrompt`, as the Mac's dock does): numbered options to
-/// pick, then Answer; a yes or a no that answers on a tap; an open question's field; and, for an
-/// asker that takes them, a note on the picked option and Something else… for an answer in the
-/// person's own words. Answer is the only button: Stop in the thread's header refuses pi's
+/// pi's question in the composer's place (MobileQuestion, iPadQuestion boards), so a blocked agent
+/// is always answerable. It follows the question dock's rules (docs/design/composer.md ›
+/// Questions; `NativeQuestionPrompt`, as the Mac's dock does): numbered options to pick, then
+/// Answer; a yes or a no that answers on a tap; an open question's field. Answer is the only button: Stop in the thread's header refuses pi's
 /// question, and hiding (the grabber, or iPad's Hide the question) folds it without answering.
 struct QuestionPanel: View {
     let prompt: NativeQuestionPrompt
@@ -25,7 +23,7 @@ struct QuestionPanel: View {
     /// The panel's width: a wide one (iPad) lays two answers side by side.
     @State private var width: CGFloat = 0
 
-    private enum Field: Hashable { case note, other, text }
+    private enum Field: Hashable { case text }
 
     init(prompt: NativeQuestionPrompt, count: Int = 1, enabled: Bool, docked: Bool = false, hide: (() -> Void)? = nil,
          answer: @escaping (NativeQuestionAnswer) -> Void) {
@@ -40,7 +38,7 @@ struct QuestionPanel: View {
 
     var body: some View {
         let nw = Color.nw
-        NWQuestionCard(docked: docked, count: count, asker: Self.asker(prompt.asker), hide: hide) {
+        NWQuestionCard(docked: docked, count: count, hide: hide) {
             // The question and its answers scroll inside a panel too tall for the screen (a
             // long message, a large text size); Answer stays in reach under them.
             VStack(alignment: .leading, spacing: NW.Space.l) {
@@ -67,21 +65,10 @@ struct QuestionPanel: View {
             }
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
-        .onChange(of: picks.other) { _, other in
-            // Typing in Something else picks it.
-            if let number = prompt.otherNumber, !other.isEmpty { picks.picked = number }
-        }
         .accessibilityLabel("Question: \(prompt.question)")
     }
 
     static let timeoutNotice = "The agent may stop waiting for this answer"
-
-    static func asker(_ asker: NativeQuestionAsker) -> NWQuestionAsker {
-        switch asker {
-        case .agent: .agent
-        case .subagent(let name): .subagent(name)
-        }
-    }
 
     /// The asker's answers: numbered options, a yes and a no, or the field.
     @ViewBuilder private var choices: some View {
@@ -104,7 +91,6 @@ struct QuestionPanel: View {
                 } else {
                     ForEach(prompt.options) { option($0) }
                 }
-                other
             }
         case .yesNo:
             VStack(spacing: NW.Space.s) {
@@ -121,7 +107,6 @@ struct QuestionPanel: View {
                         .frame(minHeight: NWTouchQuestionMetrics.yesNoHeight)
                     }
                 }
-                other
             }
         case .open:
             TextField(prompt.placeholder, text: $picks.text, axis: .vertical)
@@ -135,32 +120,10 @@ struct QuestionPanel: View {
     }
 
     private func option(_ option: NativeQuestionOption) -> some View {
-        let picked = picks.picked == option.number
-        return NWQuestionOptionCard(number: option.number, title: option.title, detail: option.detail,
-                                    recommended: option.recommended, selected: picked) {
+        NWQuestionOptionCard(number: option.number, title: option.title, detail: option.detail,
+                             recommended: option.recommended, selected: picks.picked == option.number) {
             // Picking another option moves the pick; nothing is answered until Answer.
             picks.picked = option.number
-            if field == .other { field = nil }
-        } footer: {
-            if picked, prompt.takesNote {
-                NWQuestionNoteField(text: $picks.note)
-                    .focused($field, equals: .note)
-            }
-        }
-    }
-
-    /// Something else…: the last row, for an asker that takes words of its own.
-    @ViewBuilder private var other: some View {
-        if let number = prompt.otherNumber {
-            NWQuestionOtherCard(number: number, selected: picks.picked == number) {
-                TextField("Something else…", text: $picks.other, axis: .vertical)
-                    .lineLimit(1...4)
-                    .focused($field, equals: .other)
-                    .accessibilityLabel("\(number). Something else")
-            }
-            .onChange(of: field) { _, field in
-                if field == .other { picks.picked = number }
-            }
         }
     }
 
