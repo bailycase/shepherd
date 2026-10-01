@@ -4,7 +4,7 @@ import ShepherdCore
 @testable import ShepherdSessions
 import ShepherdTestSupport
 
-/// Between fork and exec a PTY child may only make async-signal-safe calls (AGENTS.md: "PTY
+/// Between fork and exec a PTY child may only make async-signal-safe calls (docs/rules.md: "PTY
 /// children"). A child that touches the Swift runtime there can deadlock or crash whenever
 /// another thread holds a runtime lock at the moment of the fork.
 @Suite("PTY fork safety", .integrationTimeLimit)

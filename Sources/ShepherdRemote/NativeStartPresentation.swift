@@ -1,7 +1,7 @@
 import Foundation
 import ShepherdProtocol
 
-/// What the composer's Can't start banner says (DESIGN.md › Composer › States › Can't start).
+/// What the composer's Can't start banner says (docs/design/composer.md › Composer › States › Can't start).
 extension NativeStartProblem {
     public var title: String {
         switch kind {

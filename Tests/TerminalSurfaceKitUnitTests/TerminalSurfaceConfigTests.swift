@@ -51,7 +51,7 @@ struct TerminalSurfaceConfigTests {
         })
     }
 
-    /// DESIGN.md's default shortcut table, in ghostty syntax. (ShortcutAction lives in the app,
+    /// docs/design/keyboard-and-accessibility.md's default shortcut table, in ghostty syntax. (ShortcutAction lives in the app,
     /// so the table is spelled out here; a rebound chord arrives through `extraUnbinds`.)
     private static let defaultAppChords = [
         "cmd+n", "shift+cmd+t", "shift+cmd+n", "cmd+r", "shift+cmd+w", "cmd+k", "cmd+down", "cmd+up",

@@ -1,6 +1,6 @@
 import Foundation
 
-// The dev servers a folder offers (DESIGN.md › Side pane: Browser › Nothing open): the package.json
+// The dev servers a folder offers (docs/design/side-pane-browser.md › Side pane: Browser › Nothing open): the package.json
 // scripts that serve an app, and the port each most likely serves on. Pure reading of files, shared
 // by the Mac app (a local thread's folder) and a host's server, which answers a remote viewer's
 // `RemoteAgentQuery.devServers` for the thread's folder on its own disk.

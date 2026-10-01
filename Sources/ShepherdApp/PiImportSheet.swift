@@ -3,7 +3,7 @@ import ShepherdUI
 import ShepherdSessions
 import ShepherdRemote
 
-/// The first launch's sheet as it stands (PiImport*; DESIGN.md › Dialogs and sheets › Bringing
+/// The first launch's sheet as it stands (PiImport*; docs/design/dialogs-and-palette.md › Dialogs and sheets › Bringing
 /// over your pi): the copy's steps while it runs, then how it ended. Plain values, derived by
 /// pure functions (`PiImportSheetTests`).
 struct PiImportSheetState: Identifiable, Equatable {

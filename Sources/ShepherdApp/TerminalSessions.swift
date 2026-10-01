@@ -40,7 +40,7 @@ final class TerminalSessionStore {
             case failed(String)
             case exited(Int32?)
             /// An agent's pi stopped before it served (or Shepherd stopped it): the agent stays,
-            /// its thread says why, and Retry starts pi again (DESIGN.md › Thread › Can't start).
+            /// its thread says why, and Retry starts pi again (docs/design/thread.md › Thread › Can't start).
             case stopped
         }
 

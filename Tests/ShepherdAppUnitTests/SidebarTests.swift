@@ -90,7 +90,7 @@ struct SidebarRecentsTests {
     }
 
     /// An agent whose pi stopped before it served reads "can't start" in red, a thread's or a
-    /// run's, until Retry (DESIGN.md › Sidebar).
+    /// run's, until Retry (docs/design/sidebar.md › Sidebar).
     @Test func anAgentWhosePiCannotStartSaysSo() {
         let stopped = agent("stopped", at: 2)
         let run = agent("Nightly", at: 1)

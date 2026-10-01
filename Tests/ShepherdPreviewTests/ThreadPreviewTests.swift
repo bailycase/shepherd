@@ -18,7 +18,7 @@ import Testing
 @MainActor
 struct ThreadPreviewTests {
     /// Long enough for a one-shot motion a test starts to come fully to rest: a spring reads as
-    /// done at its anchor (240ms at most) and settles by about 1.7× it (DESIGN.md › Motion).
+    /// done at its anchor (240ms at most) and settles by about 1.7× it (docs/design/motion.md › Motion).
     static let motionAtRest: TimeInterval = 0.45
 
     private func render(_ surface: String, _ snapshot: NativeThreadSnapshot, size: CGSize = CGSize(width: 1180, height: 900),

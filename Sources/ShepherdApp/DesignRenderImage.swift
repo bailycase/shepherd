@@ -4,7 +4,7 @@ import ImageIO
 import UniformTypeIdentifiers
 
 /// The picture `board_render` hands a design agent, kept small: it goes into pi's session and is
-/// re-sent whenever the conversation loads (AGENTS.md › Dropped images), and the extension socket's
+/// re-sent whenever the conversation loads (docs/rules.md › Dropped images), and the extension socket's
 /// frames stop at 1 MiB. The longest edge is at most 1600 px and the file about 350 KB: a PNG when
 /// it fits (a board is flat color and crisp text, which PNG keeps), else a JPEG that steps its
 /// quality down, then the picture shrinks.
