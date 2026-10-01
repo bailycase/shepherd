@@ -9,6 +9,9 @@ import ShepherdSessions
 @MainActor
 extension ShepherdViewModel {
     func installAgentPeerControl() {
+        // The server enforces Settings ▸ Pi ▸ Agent-to-agent messages; it asks until it is told.
+        server.setAgentMessagePolicy(settings.agentMessages)
+        settings.onAgentMessagesChange = { [weak server] policy in server?.setAgentMessagePolicy(policy) }
         server.onAgentPeerCancellation = { [weak self] token in
             MainActor.assumeIsolated {
                 if self?.peerDeleteConfirmation?.requestID == token {
