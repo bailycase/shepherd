@@ -29,16 +29,13 @@ extension Date {
 }
 
 extension FleetAttention {
-    /// Where Open goes: the asking subagent's run, or the thread.
-    var route: MobileRoute {
-        runID.map { SubagentHooks.run(thread: ref.agentRef, runID: $0) } ?? .thread(ref.agentRef)
-    }
+    /// Where Open goes: the thread.
+    var route: MobileRoute { .thread(ref.agentRef) }
 
     var leading: NWListRow.Leading {
         switch origin {
         case .thread: .state(.attention)
         case .automation: .symbol("bolt", .attention)
-        case .subagent: .symbol("arrow.triangle.branch", .attention)
         }
     }
 
@@ -47,7 +44,6 @@ extension FleetAttention {
         switch origin {
         case .thread: "A thread"
         case .automation(let name): "A run of the automation \(name)"
-        case .subagent(let name): "Its subagent \(name)"
         }
     }
 
@@ -56,7 +52,6 @@ extension FleetAttention {
         switch origin {
         case .thread: nil
         case .automation: "bolt"
-        case .subagent: "arrow.triangle.branch"
         }
     }
 }

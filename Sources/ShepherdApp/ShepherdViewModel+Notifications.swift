@@ -100,28 +100,15 @@ extension ShepherdViewModel {
         }
     }
 
-    /// An agent's subagents as published: a run that starts asking posts, one answered comes down.
-    func notifySubagents(_ agent: Agent, children: [ChildRun]) {
-        guard Self.notifiesAsThread(agent.id, in: state) else { return }
-        let (asking, answered) = notifications.localSubagents.update(agent.id, children: children)
-        subagentBanners(.agent(agent.id), name: agent.name, asking: asking, answered: answered)
-    }
-
-    private func subagentBanners(_ target: BannerTarget, name: String, asking: [ChildRun], answered: [String]) {
-        notifications.remove(answered.map { AgentBanners.subagentIdentifier($0, target) })
-        guard !asking.isEmpty, !isWatching(target) else { return }
-        for run in asking { notifications.post(AgentBanners.subagentQuestion(run, of: name, target: target)) }
-    }
-
-    /// The agent is gone: its questions' banners go with it.
+    /// The agent is gone: its question's banner goes with it. A subagent's question never posts
+    /// one: it goes to its parent, which asks the user in its own thread when it must.
     func forgetNotifications(of agentID: AgentID) {
         let target = BannerTarget.agent(agentID)
-        let runs = notifications.localSubagents.forget(agentID)
         notifications.localAsks.forget(agentID)
-        notifications.remove(runs.map { AgentBanners.subagentIdentifier($0, target) } + [AgentBanners.identifier("question", target)])
+        notifications.remove([AgentBanners.identifier("question", target)])
     }
 
-    /// Every host's threads notify here as this Mac's do: their questions and their subagents'.
+    /// Every host's threads notify here as this Mac's do: their questions.
     /// A host that goes away while connected posts once, and its banner goes when it is back.
     func notifyRemote() {
         guard notifications.available else { return }
@@ -150,8 +137,6 @@ extension ShepherdViewModel {
                 default:
                     break
                 }
-                let (asking, answered) = notifications.remoteSubagents.update(ref, children: connection.children[agent.id] ?? [])
-                subagentBanners(target, name: agent.name, asking: asking, answered: answered)
             }
         }
         // Agents a connected host no longer has, and every agent of a removed host. A host away
@@ -221,34 +206,16 @@ extension ShepherdViewModel {
                                              operationID: UUID(), text: prompt, delivery: .followUp))
     }
 
-    /// An option or Reply…'s words, to whoever asked: pi's dialog, or the subagent run. A question
-    /// answered elsewhere meanwhile takes nothing.
+    /// An option or Reply…'s words, to pi's dialog that asked. A question answered elsewhere
+    /// meanwhile takes nothing.
     private func answer(_ target: BannerTarget, question: String?, option: Int?, words: String?) async {
         guard let question, let thread = await snapshot(target) else { return }
-        if let dialog = thread.dialogs.first(where: { $0.id == question }) {
-            let prompt = NativeQuestionPrompt(dialog: dialog)
-            guard let reply = AgentBanners.answer(prompt, option: option, words: words),
-                  let answer = prompt.dialogAnswer(reply) else { return }
-            _ = try? await request(target, .answer(expectedSessionID: thread.piSessionID, generation: thread.generation,
-                                                   operationID: UUID(), dialogID: dialog.id, answer: answer))
-            return
-        }
-        guard let run = children(of: target).first(where: { $0.runID == question && $0.needsAttention }) else { return }
-        let prompt = NativeQuestionPrompt(runID: run.runID, name: nativeRunNames(run).name,
-                                          question: AgentBanners.runQuestion(run) ?? "", options: run.question?.options)
+        guard let dialog = thread.dialogs.first(where: { $0.id == question }) else { return }
+        let prompt = NativeQuestionPrompt(dialog: dialog)
         guard let reply = AgentBanners.answer(prompt, option: option, words: words),
-              let text = prompt.messageReply(reply) else { return }
-        _ = try? await request(target, .subagentCommand(expectedSessionID: thread.piSessionID, generation: thread.generation,
-                                                        operationID: UUID(), runID: run.runID, action: .message, text: text,
-                                                        mode: .steer))
-    }
-
-    private func children(of target: BannerTarget) -> [ChildRun] {
-        switch target {
-        case .agent(let id): children(of: id)
-        case .remote(let ref): remoteHosts.connections.first { $0.id == ref.hostID }?.children[ref.agentID] ?? []
-        case .host: []
-        }
+              let answer = prompt.dialogAnswer(reply) else { return }
+        _ = try? await request(target, .answer(expectedSessionID: thread.piSessionID, generation: thread.generation,
+                                               operationID: UUID(), dialogID: dialog.id, answer: answer))
     }
 
     // MARK: The thread

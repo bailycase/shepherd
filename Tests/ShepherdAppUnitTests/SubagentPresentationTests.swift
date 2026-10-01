@@ -21,8 +21,8 @@ struct SubagentPresentationTests {
 
     @Test(arguments: [
         ("running", false, false, AgentState.running), ("queued", false, false, .queued), ("running", true, false, .queued),
-        ("running", false, true, .attention), ("complete", false, false, .done), ("failed", false, false, .failed),
-        ("stopped", false, false, .failed),
+        ("running", false, true, .queued), ("complete", false, true, .queued), ("complete", false, false, .done),
+        ("failed", false, false, .failed), ("stopped", false, false, .failed),
     ])
     func runsMapOntoTheOneStatusEnum(state: String, paused: Bool, asking: Bool, expected: AgentState) {
         var run = Self.run(state: state)
@@ -36,6 +36,21 @@ struct SubagentPresentationTests {
         #expect(SubagentPresentation.stateLabel(run) == nil)
         run.paused = true
         #expect(SubagentPresentation.stateLabel(run) == "Paused")
+    }
+
+    /// A subagent never asks the user: whatever it asks, no run draws as `attention`, the one state that is the
+    /// user's; it waits, outlined, and says whom it waits on.
+    @Test func aRunThatAskedItsParentWaitsAndNeverNeedsTheUser() {
+        var run = Self.run(state: "complete")
+        run.needsAttention = true
+        run.question = ChildQuestion(text: "Rename or replace?", options: ["Replace everywhere", "Rename new ones"])
+        #expect(SubagentPresentation.state(run) == .queued)
+        #expect(SubagentPresentation.stateLabel(run) == "Waiting on parent")
+        #expect(!SubagentPresentation.isFinished(run), "it keeps its Steer field and Stop, not the finished bar")
+        #expect(SubagentPresentation.askedText(run) == "Rename or replace?\n\nIt offered: Replace everywhere · Rename new ones")
+        #expect(SubagentPresentation.askedText(Self.run()) == nil)
+        #expect(SubagentPresentation.isFinished(Self.run(state: "complete")))
+        for phase in NativeRunPhase.allCases { #expect(SubagentPresentation.state(phase) != .attention, "\(phase)") }
     }
 
     @Test(arguments: [
@@ -52,7 +67,7 @@ struct SubagentPresentationTests {
 
     // MARK: Tray
 
-    @Test(arguments: [(NativeRunPhase.running, AgentState.running), (.queued, .queued), (.paused, .queued), (.needsYou, .attention),
+    @Test(arguments: [(NativeRunPhase.running, AgentState.running), (.queued, .queued), (.paused, .queued), (.asked, .queued),
                       (.done, .done), (.failed, .failed)])
     func phasesMapOntoTheOneStatusEnum(phase: NativeRunPhase, state: AgentState) {
         #expect(SubagentPresentation.state(phase) == state)
@@ -65,9 +80,9 @@ struct SubagentPresentationTests {
         let tray = NativeSubagentTray([Self.run("w"), asking, Self.run("t", state: "complete", startedAt: Self.t0 + 2, endedAt: Self.t0 + 60_000)])
         let (summary, rows) = SubagentPresentation.tray(tray)
         #expect(summary.title == "3 subagents")
-        #expect(summary.cells == [.running, .attention, .done])
-        #expect(summary.tally == [.init("1 needs you", state: .attention), .init("1 running", state: .running), .init("1 done")])
-        #expect(rows.map(\.state) == [.running, .attention, .done])
+        #expect(summary.cells == [.running, .queued, .done])
+        #expect(summary.tally == [.init("1 running", state: .running), .init("1 waiting on parent"), .init("1 done")])
+        #expect(rows.map(\.state) == [.running, .queued, .done])
         #expect(rows.map(\.name) == ["restyle", "restyle", "restyle"])
         #expect(rows.map(\.role) == ["worker", "worker", "worker"])
     }

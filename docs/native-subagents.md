@@ -22,10 +22,9 @@ both apply when an agent next launches.
   pi-subagents package yourself, it keeps working as before.
 - **Subagent display** loads `shepherd-subagents.ts`, the only publisher of `setAgentChildren`.
   It merges native children with pi-subagents reports into the runs behind the subagent tray
-  above the composer, the thread's record lines, the inspector, the palette's Subagents section,
-  and the needs-you mark a waiting child puts on its agent in the sidebar's Needs you. With display
-  off, children still run but none of that UI appears, and tray commands fail because the server
-  only accepts runs that were published.
+  above the composer, the thread's record lines, the inspector and the palette's Subagents
+  section. With display off, children still run but none of that UI appears, and tray commands
+  fail because the server only accepts runs that were published.
 
 **Native subagent defaults** appear only while Native subagents is on. They apply on the next
 parent launch.
@@ -134,21 +133,74 @@ settings produce diagnostics and are not imported. This is not full pi-subagents
 | `shepherd_workflow` | Runs a script (below). |
 | `shepherd_mission` | Manages mission records (below). |
 
-**Questions and results.** Routine `shepherd_parent_message` progress updates only the child
-record, without waking the parent or appending a chat message. For a question
-the child sets `needsReply` (and optionally `short`, 1–3 words its parent's Needs you row shows,
-like "retention?"), finishes its turn, and waits for an explicit continuation. Questions notify
-once, without a second completion wake. Unread completion wakes an idle parent; while the parent
-works, pending results are combined at `agent_before_settle` into one continuation, not separate
-follow-up turns. Explicit result reads and completed waits consume their pending notices; a
-cancelled wait hands its completion back. Notifications are hidden coordination messages, not
-user requests, and tell the parent not to acknowledge receipt. Stop/error settlement suppresses
-automatic wake until the parent starts again. Delivery is not durable or exactly-once across a crash.
+**Questions and results.** A subagent never reaches the user: it asks its parent, and the parent
+answers it or asks the user itself, in its own thread, then passes the answer down. Routine
+`shepherd_parent_message` progress updates only the child record, without waking the parent or
+appending a chat message. For a question the child sets `needsReply` (with `options` when it has
+a few answers, and optionally `short`, 1–3 words), finishes its turn, and waits for an explicit
+continuation. The child is told so in its prompt and in its tool:
+
+> You never talk to the user: nothing you write reaches them. When you are blocked on a question,
+> or on a decision that is not yours to make, ask your parent, never the user: call
+> `shepherd_parent_message` with `needsReply: true` and your question (`options:` when it has a few
+> possible answers), then finish your turn. Your parent answers it, or asks the user and passes the
+> answer down, and your work continues with the answer. A question inside your final answer is read
+> as a result, not as a question. Don't guess when the answer matters, and don't ask what you can
+> find out yourself.
+
+Any other way a child could ask fails closed. A human dialog its pi opens (`select`, `confirm`,
+`input`, `editor`, which an ask-style tool of a user extension uses) is refused and stops the child
+with "A child never reaches the user: ask your parent with shepherd_parent_message (needsReply:
+true) and finish your turn", which the parent reads in the child's result. Project permission
+prompts never open (`--no-approve`), and a child's tools are only those of its profile.
+
+**What the parent is told.** The question reaches the parent as a hidden coordination notice (it
+stays in its context, so a question outlives the turn in which the parent asks the user), with
+the child's id, the question, the answers it offered, its attempt and its `questionID`, and
+instructions that come once per delivery, however many children asked:
+
+> Each child above that needs a reply asked you, its parent, a question it cannot settle itself.
+> It never reaches the user, so it is waiting on you.
+> - Answer it yourself if you can, from what you know, the files or your tools: call
+>   `shepherd_child_resume` with the child's id, your answer as `message` and its `questionID`
+>   (`shepherd_child_message` takes the same arguments).
+> - Only if you cannot, ask the USER yourself, in your own reply: your question tool if you have
+>   one, otherwise a plain question in your message. Then end your turn; the question stays
+>   pending. When the user answers, pass the answer down the same way, with the same id and
+>   `questionID`.
+> - Do not ignore a question, and do not ask the user what you can answer. With several questions,
+>   answer what you can and put the rest in one message to the user, naming each child.
+
+An idle parent is woken by the question as it is by an unread completion; while the parent works,
+the notice joins the batch delivered at `agent_before_settle`, so several children that asked
+arrive as one continuation. Questions notify once, without a second completion wake, and in
+either delivery mode. `shepherd_child_wait` and `shepherd_child_result` return a child that asked
+with `needsReply`, its `questionID` and a `parentAction` naming the exact call that answers it;
+`shepherd_child_result` without an id lists who still waits, and a wait for all hands over a
+child that asked once it has finished its turn, without holding it for the others. The answer is
+`shepherd_child_resume` (or `shepherd_child_message`) with the `questionID`: it waits for the child
+to finish the turn it asked in (its process ends when that turn settles, and an answer sent into the
+turn would be lost with it, which a prompt parent would otherwise do) and then resumes it. An answer to a question that
+changed, was answered, or was closed is refused ("Child question changed"). Stop on a child that
+waits for its parent, from the tray, the inspector or `shepherd_child_cancel`, closes the
+question and marks the child stopped; the user's own Steer ends it too, since it resumes the
+child. Nothing times out: a child whose parent never answers waits until Stopped.
+
+Unread completion wakes an idle parent; while the parent works, pending results are combined at
+`agent_before_settle` into one continuation, not separate follow-up turns. Explicit result reads
+and completed waits consume their pending notices; a cancelled wait hands its completion back.
+Notifications are hidden coordination messages, not user requests, and tell the parent not to
+acknowledge receipt. Stop/error settlement suppresses automatic wake until the parent starts
+again. Delivery is not durable or exactly-once across a crash.
 
 `delivery: "report"` on a child or workflow stores its completion as hidden context without
-starting a parent turn. `"continue"` is the compatible default for dependent work. Blocking
-questions can notify in either mode. Results include an attempt ID and, while asking, a
-`questionID`; pass that ID to message/resume when answering to reject an obsolete question.
+starting a parent turn. `"continue"` is the compatible default for dependent work. A question
+notifies, and wakes an idle parent, in either mode. Results include an attempt ID and, while
+asking, a `questionID`; pass that ID to message/resume when answering to reject an obsolete
+question. A workflow's child that asks ends its turn like any other: its `runs.run` result has
+`needsReply: true`, `questionID` and `question` (its `output` is not a result), and the workflow's
+summary and completion notice list the children that asked, with the same instructions. The
+parent answers them once the workflow ends (a child is resumed only after its workflow).
 
 An accepted queued user send while the parent works sends `parentInput` on its registered children
 connection. That ends a child/workflow wait with `waitInterrupted: "user_input"` and the Pi
@@ -234,7 +286,9 @@ each run has a deadline of at most 30 minutes (`timeoutSeconds` can lower it).
 ```
 
 - **`runs.run(key, params)`** resolves after the child exits cleanly, or rejects on failure. A
-  result has `key`, `id`/`runId`, `agent`, `ok`, `state`, `output`, and `error`.
+  result has `key`, `id`/`runId`, `agent`, `ok`, `state`, `output`, and `error`. A child that asked
+  its parent a question instead of finishing also has `needsReply: true`, `questionID` and
+  `question`: its `output` is not a result, so a script checks `needsReply` before using it.
 - **`runs.all([...])`** runs a batch of at most 16. It returns per-child outcomes in order,
   without failing siblings on ordinary errors. A failed item carries only `key`, `ok:false`,
   `state:"failed"`, and `error`.
@@ -338,7 +392,9 @@ actual names.
 - **Commands:** card buttons and the inspector's composer send `subagentCommand` through the
   server to the children extension's `helloChildren` control connection on the Shepherd socket.
   The extension answers `childCommandResult` after calling the same functions the tools use:
-  message, cancel, and resume. The parent model is never involved.
+  message, cancel, and resume. The parent model is never involved: these are the user's own Steer
+  and Stop. The host still accepts a message to a child that asked (an older client's Answer
+  sends one), and resumes the child with it as the user's words.
 - **Errors:** a command times out after 15 s. If the extension is not connected, the command
   fails with "children extension not connected"; the extension reconnects every 2 s.
 - **Pause and Continue** are child-only commands. Pause holds the child at its next
@@ -358,9 +414,11 @@ is what they do.
     Stop and Open on hover; Pause or Continue and Stop in the context menu and accessibility
     actions, and visible in the inspector.
   - Queued or paused: "Waiting to start", or "Paused before its next model request".
-  - Needs you: "asks:" and its question, with Answer, which opens the question in the
-    composer's place: the child's options to choose from, or a reply. The answer reaches only
-    that child.
+  - Asked the parent: "asked the parent:" and its question, quietly, drawn as waiting (the child
+    asked its parent, which answers or asks the user in its own thread; the user is never asked
+    by a child, so there is no Answer and nothing takes the composer's place). Steer and Stop
+    stay: Steer speaks to the child over its parent, and Stop closes the question. The tally
+    reads "waiting on parent", and the tray stays until the question is answered.
   - Done: the first sentence of its summary, its diff and duration. Failed: why.
 - **The record:** the thread keeps "Started 3 subagents" where the first `shepherd_child_start`
   row was (workflow children, including `/run`, at the `shepherd_workflow` row; children with no
@@ -408,9 +466,9 @@ it.
   an error and creates nothing. Remote agents have no Fork.
 
 **Sidebar.** Children have no sidebar rows; everything about a run lives in the parent's thread
-(and the palette). A child waiting on your answer puts its parent in the sidebar's Needs you (the
-lantern dot, with the child's role or name as the reason), so the sidebar still says which thread
-to open. Live and finished children leave the parent's row as it is.
+(and the palette). A child's question marks nothing there, and posts no notification: it goes to
+its parent, and only the parent's own question (a thread waiting on you) puts its row in Needs
+you. Live, asking and finished children leave the parent's row as it is.
 
 Child runs are display state reported by the extension. Shepherd never persists them.
 
@@ -470,7 +528,14 @@ PI_PACKAGE_DIR="$(npm root -g)/@earendil-works/pi-coding-agent" \
   of that: what a child is launched with (which `-e`, which `SHEPHERD_*` survive, the no-connection
   case), the messages for a bad role, profile or model, and a design agent's design tools relayed to
   real children through a real parent (`native-children-provider`, `design-relay` and
-  `native-children-design` tests).
+  `native-children-design` tests). `native-children-questions` runs real children that ask: the
+  rule in the child's prompt and tool, the notice and instructions the parent gets (idle, working,
+  `report` delivery, several children at once), `wait` and `result`, the parent's answer by
+  `questionID` and the refusal of an obsolete one, a user's Steer and Stop on a child that asked,
+  a workflow's child that asks, and a child that opens a human dialog.
+  `native-children-questions-parent` does the same loop with a real parent pi on a scripted provider:
+  the parent is woken by the question, answers it with the `questionID`, or asks the user in its own
+  reply and, in a later turn, finds the question still in its context and passes the user's answer down.
 - **Real-model smoke test:** opt-in and uses your existing authentication:
   `PI_SMOKE_MODEL=<provider/model> node Tests/Extensions/native-children.smoke.mjs`.
 

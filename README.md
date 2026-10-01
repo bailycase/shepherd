@@ -37,8 +37,8 @@ coherent over covering every use case.
   let the agent open, run, read, and close its own. Terminals render with
   [libghostty](https://ghostty.org).
 - **Subagents.** The bundled native subagent runtime lets an agent start child agents and script
-  workflows. Runs appear as live cards in the thread and open in an inspector docked beside it;
-  one waiting on your answer marks its agent in the sidebar.
+  workflows. Runs appear as live cards in the thread and open in an inspector docked beside it.
+  A subagent never asks you: it asks its parent agent, which answers or asks you in its own thread.
 - **Review.** A review pane docks beside the thread with the working-tree or PR diff and inline
   comments. It sends "request changes" (or "commit") back to the agent as its next turn. An
   agent can ready it on its own checkout or another repository or worktree; only you open the pane.

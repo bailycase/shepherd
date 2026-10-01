@@ -1317,8 +1317,11 @@ the target's registered connection ([docs/agent-coordination.md](docs/agent-coor
 
 Shepherd does not nest agents. pi extensions own subagent execution (the bundled native runtime
 is on by default), and the app only *projects* the results: the tray above the parent's
-composer, two record lines in its thread, the inspector, and the palette. Subagents have no sidebar rows; one
-waiting on you marks its parent's row. Child runs are display state and never persisted.
+composer, two record lines in its thread, the inspector, and the palette. Subagents have no sidebar rows,
+and a subagent never asks the user: its question goes to its parent agent, which answers it or asks
+the user in its own thread and passes the answer down ([docs/native-subagents.md](docs/native-subagents.md)
+› Questions and results), so a child's question marks no row, posts no notification and takes
+nothing over the composer. Child runs are display state and never persisted.
 
 **Switching is a visibility flip, never a remount.** `WorkspaceSelection.mountedTabs` keeps every
 mounted agent layout in the view tree, and selection only changes which one is visible (a hosting

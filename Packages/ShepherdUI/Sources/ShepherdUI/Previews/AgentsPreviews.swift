@@ -6,13 +6,13 @@ private enum AgentsSamples {
         NWSubagentTrayRun(id: "worker", name: "worker", state: .running,
                           line: .working(verb: "Editing", subject: "NativeThreadPresentation.swift", live: true),
                           added: 31, removed: 4, since: now.addingTimeInterval(-37 * 60)),
-        NWSubagentTrayRun(id: "reviewer", name: "reviewer", state: .attention,
-                          line: .asks("Rename the new token names, or replace the old ones everywhere?"), since: now.addingTimeInterval(-130)),
+        NWSubagentTrayRun(id: "reviewer", name: "reviewer", state: .queued,
+                          line: .asked("Rename the new token names, or replace the old ones everywhere?"), since: now.addingTimeInterval(-130)),
         NWSubagentTrayRun(id: "tests", name: "tests", state: .done, line: .result("Added 6 presentation tests · 14 pass"),
                           added: 96, removed: 3, since: now.addingTimeInterval(-600), until: now.addingTimeInterval(-600 + 242)),
     ]
-    static let liveSummary = NWSubagentTraySummary(title: "3 subagents", cells: [.running, .attention, .done], tally: [
-        .init("1 needs you", state: .attention), .init("1 running", state: .running), .init("1 done"),
+    static let liveSummary = NWSubagentTraySummary(title: "3 subagents", cells: [.running, .queued, .done], tally: [
+        .init("1 running", state: .running), .init("1 waiting on parent"), .init("1 done"),
     ])
 }
 
@@ -23,7 +23,7 @@ private enum AgentsSamples {
             NWDockStack(showsTray: true, showsQueue: false) {
                 NWSubagentTray(AgentsSamples.liveSummary, collapsed: collapsed, onToggle: { collapsed.toggle() }) {
                     ForEach(AgentsSamples.live) { run in
-                        NWSubagentTrayRow(run, selected: run.id == "worker", actions: NWSubagentTrayActions(open: {}, answer: {}, steer: {}, stop: {}))
+                        NWSubagentTrayRow(run, selected: run.id == "worker", actions: NWSubagentTrayActions(open: {}, steer: {}, stop: {}))
                     }
                 }
             } queue: {

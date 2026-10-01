@@ -97,18 +97,6 @@ struct ThreadComposer: View {
                     .padding(.bottom, wide ? 0 : -MobileLayout.composerBottom)
                     .nwTransition(.content)
                 }
-            } else if let run = answering(store, state: state), let prompt = nativeSubagentQuestionPrompt(run) {
-                // A subagent's question, from its row's Answer: hiding it returns to the tray.
-                QuestionPanel(prompt: prompt, enabled: live && store.takesSubagentCommands, docked: !wide,
-                              hide: { withNWAnimation(.content) { state.answeringRun = nil } }) { answer in
-                    guard let reply = prompt.messageReply(answer) else { return }
-                    SubagentCommands(store: store, enabled: live && store.takesSubagentCommands).send(run.runID, .answer(reply))
-                    withNWAnimation(.content) { state.answeringRun = nil }
-                }
-                .id("subagent:" + run.id)
-                .padding(.horizontal, wide ? 0 : -MobileLayout.gutter)
-                .padding(.bottom, wide ? 0 : -MobileLayout.composerBottom)
-                .nwTransition(.content)
             } else {
                 if let matches = state.matches {
                     NWTouchCommandList(commands: matches.commands.map(Self.command), total: matches.total, query: matches.query,
@@ -157,12 +145,6 @@ struct ThreadComposer: View {
                 Task { await store.setModel(model) }
             }
         }
-    }
-
-    /// The run whose question is open from its row's Answer, while it still asks.
-    private func answering(_ store: NativeThreadStore, state: ComposerState) -> NativeSubagent? {
-        guard let id = state.answeringRun else { return nil }
-        return store.subagents.first { $0.runID == id && nativeRunPhase($0) == .needsYou }
     }
 
     /// Asks the catalog again for a new connection, or once the thread reports a thinking level.

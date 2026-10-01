@@ -200,7 +200,21 @@ test("live children defer goal evaluation, child attention needs the user, and e
     publish({ owner: "fixture-session", children: [{ runID: "child", state: "running", tokens: 5 }] });
     assert.equal(await f.check(), undefined); assert.equal(f.calls.length, 0); assert.equal(f.goal.tokensUsed, 8);
     publish({ owner: "fixture-session", children: [{ runID: "child", state: "running", tokens: 5, needsAttention: true }] });
-    assert.equal(f.goal.state, "needsYou"); assert.match(f.goal.reason, /child/);
+    assert.equal(f.goal.state, "working"); // The child asks its parent, never the user.
+    assert.equal(await f.check(), undefined);
+    assert.equal(f.calls.length, 0);
+  } finally { await f.close(); }
+});
+
+test("a parent's actual user question stops goal automation without aborting the tool", async () => {
+  const f = fixture();
+  try {
+    await f.start();
+    await f.emit("tool_execution_start", { toolName: "ask_user", toolCallId: "question" });
+    assert.equal(f.goal.state, "needsYou");
+    assert.match(f.goal.reason, /your answer/);
+    assert.equal(f.aborted, 0);
+    assert.equal(await f.check(), undefined);
   } finally { await f.close(); }
 });
 
