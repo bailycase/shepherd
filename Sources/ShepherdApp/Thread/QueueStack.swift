@@ -514,7 +514,7 @@ struct QueueStackView: View {
         NWQueueStack(count: state.count, paused: NativeQueueStack.pausedReason(paused: store.queuePaused, notice: store.queueNotice),
                      collapsed: state.collapsed,
                      scrolls: rows.last?.kind == .more(hidden: 0, expanded: true) && rows.count - 1 > NWQueueMetrics.expandedMaxRows,
-                     drop: state.dropSlot, framed: framed,
+                     drop: state.dropSlot, framed: framed, afterGoalCheck: store.goal != nil,
                      onToggle: { withNWAnimation(.disclosure) { state.collapsed.toggle() } }) {
             ForEach(rows) { row in
                 QueueRowView(row: row, hover: state.hover(row.id), focused: focusedRow.wrappedValue == row.id, running: running,

@@ -85,8 +85,9 @@ enum StatusExtension {
         let designReferences = design == nil ? designReferences : nil
         // Nor does it get the browser: that is a thread's own page.
         let browserExtensionPath = design == nil ? browserExtensionPath : nil
+        // Child result delivery must run before the goal's final-settlement evaluator.
         let extensions = [extensionPath, ServiceTierExtension.path(in: home), instructions?.extensionPath, panesExtensionPath, reviewExtensionPath, subagentsExtensionPath,
-                          childrenExtensionPath, namerExtensionPath, design?.extensionPath, designReferences?.extensionPath,
+                          childrenExtensionPath, GoalExtension.path(in: home), namerExtensionPath, design?.extensionPath, designReferences?.extensionPath,
                           mcp?.extensionPath, browserExtensionPath].compactMap { $0 }
         let line = try PiLaunch.agent(home: home, cwd: cwd, sessionID: piSessionID, model: model, thinking: thinking?.rawValue,
                                       extensions: extensions, untrustedProject: PiLaunch.isHomeFolder(cwd, userHome: userHome))
@@ -126,6 +127,7 @@ enum StatusExtension {
         }
         // Fast or Standard is the agent's own (the host keeps its file), so every agent gets this.
         env.merge(ServiceTierExtension.environment(for: agentID, in: home)) { _, value in value }
+        env[GoalExtension.environmentKey] = "1"
         if let model { env["SHEPHERD_MODEL"] = model }
         return SessionCommand(argv: line.argv, env: env)
     }

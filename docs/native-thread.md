@@ -520,6 +520,14 @@ and persists `Agent.serviceTier` before it answers. Gated by `setServiceTier` in
 from an older host's snapshot and refuses the request there). `NativeThreadStore.offersServiceTier`
 is the client's rule for drawing the control: the action and more than one tier.
 
+## Goals
+
+The snapshot's optional `goal` is the live projection of a session-persisted conversation goal.
+The `goal` action changes it during work or checking, fenced by the session and displayed goal
+revision. Remotely it requires `native.goal.v1`. It is absent on older hosts. The dedicated
+machine widget never renders as ordinary widget text. See [Conversation goals](goals.md) for
+completion checking, limits, controls, restore behavior, and the queue's yield boundary.
+
 ## Context and compaction
 
 What fills the model's context window rides the snapshot as `context` (`NativeThreadContext`,

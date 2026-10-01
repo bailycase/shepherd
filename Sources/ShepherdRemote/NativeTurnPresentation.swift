@@ -45,6 +45,8 @@ public struct NativeTurnPresentation: Equatable, Sendable {
         /// lines do (SubagentsDone).
         case subagents(id: String, lines: [NativeSubagentRecordLine])
         case note(id: String, text: String)
+        /// Goal set and completion checks divide stretches of automatic work.
+        case goalRecord(id: String, text: String)
         /// A failed request to the model, pi's automatic retries of it merged in. `final` when it
         /// ended the turn (it offers Retry); `folded` when it shows as one line: pi retried it
         /// and the turn went on, or the next turn failed the same way (the store folds those).
@@ -61,7 +63,7 @@ public struct NativeTurnPresentation: Equatable, Sendable {
 
         public var id: String {
             switch self {
-            case .thinking(let id, _, _, _, _, _), .prose(let id, _, _, _), .subagents(let id, _), .note(let id, _), .error(let id, _, _, _),
+            case .thinking(let id, _, _, _, _, _), .prose(let id, _, _, _), .subagents(let id, _), .note(let id, _), .goalRecord(let id, _), .error(let id, _, _, _),
                  .steer(let id, _, _, _), .activity(let id, _), .retrying(let id, _): id
             case .compaction(let row): "compaction:" + row.id
             case .question(let row): "question:" + row.id
@@ -123,6 +125,7 @@ public func nativeTurnPresentation(
         case prose(String, streaming: Bool)
         case tool(NativeThreadMessage)
         case note(String)
+        case goalRecord(String)
         /// Consecutive failed requests: pi's automatic retries of one.
         case error([NativeThreadMessage])
         case steer(String, Double?, Int)
@@ -151,6 +154,10 @@ public func nativeTurnPresentation(
         if message.role == "user" {
             let text = message.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n")
             raw.append(.steer(text, message.timestamp, message.blocks.count { $0.kind == .unsupportedImage }))
+            continue
+        }
+        if message.role == "custom", ["shepherd.goal.set", "shepherd.goal.check"].contains(message.customType ?? "") {
+            raw.append(.goalRecord(message.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n")))
             continue
         }
         if message.toolName != nil || message.role == "toolResult" {
@@ -290,6 +297,9 @@ public func nativeTurnPresentation(
             let parsed = prose(id, text, live && streaming)
             items.append(.prose(id: id, text: text, blocks: parsed.blocks, openFence: parsed.endsInOpenFence))
             copy.append(text)
+        case .goalRecord(let text):
+            flushStretch()
+            items.append(.goalRecord(id: nextID("goal"), text: text))
         case .note(let text):
             flushStretch()
             items.append(.note(id: nextID("note"), text: text))

@@ -977,6 +977,7 @@ public final class SessionServer: @unchecked Sendable {
                     for id in stale {
                         if let i = state.agents.firstIndex(where: { $0.id == id }) {
                             state.agents[i].status = .idle
+                            state.agents[i].goalState = nil
                         }
                     }
                     // Inspector tabs are session-scoped UI: their viewer
@@ -3628,6 +3629,7 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     private func applyAgentStatus(agentID: AgentID, status: AgentStatus) {
+        let status: AgentStatus = rpcThread(forAgent: agentID)?.goal?.state == .needsYou && status != .working ? .blocked : status
         var failure: TurnFailure?
         if status == .done, let thread = rpcThread(forAgent: agentID) {
             // Between queued turns pi settles for a moment; the agent is not done (and must not
@@ -3678,6 +3680,8 @@ public final class SessionServer: @unchecked Sendable {
     /// written on its own (nor ever to state.json).
     func applyAgentQuestion(agentID: AgentID, question: String?, reason: String? = nil) {
         guard let index = store.state.agents.firstIndex(where: { $0.id == agentID }) else { return }
+        let goal = rpcThread(forAgent: agentID)?.goal
+        let question = question ?? (goal?.state == .needsYou ? goal?.reason ?? "Goal needs you" : nil)
         let reason = question == nil ? nil : reason
         let agent = store.state.agents[index]
         guard agent.waitingOn != question || agent.waitingReason != reason else { return }
@@ -5180,6 +5184,29 @@ public final class SessionServer: @unchecked Sendable {
             thread.dispatchSubagentCommand = { [weak serverWeak] runID, action, text, mode, done in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { done("Agent is gone."); return }
                 server.sendChildCommand(agentID: agentID, runID: runID, action: action, text: text, mode: mode, completion: done)
+            }
+            thread.onGoalChanged = { [weak serverWeak, weak thread] goal in
+                guard let server = serverWeak, let agentID = server.agentID(forSession: sid),
+                      let index = server.store.state.agents.firstIndex(where: { $0.id == agentID }) else { return }
+                let previous = server.store.state.agents[index].goalState
+                server.store.updateLive { $0.agents[index].goalState = goal?.state.rawValue }
+                if goal?.state == .needsYou {
+                    server.applyAgentQuestion(agentID: agentID, question: goal?.reason ?? "Goal needs you")
+                    server.applyAgentStatus(agentID: agentID, status: .blocked)
+                } else {
+                    let question = RPCThreadState.question(in: thread?.dialogs ?? [])
+                    server.applyAgentQuestion(agentID: agentID, question: question?.title, reason: question?.reason)
+                    server.applyAgentStatus(agentID: agentID, status: question != nil ? .blocked : thread?.running == true ? .working : .done)
+                }
+                let state = server.store.state
+                server.broadcastRemoteState(state)
+                server.hopToMain { [weak server] in
+                    server?.onStateChanged?(state)
+                    if previous != nil, previous != goal?.state.rawValue, let goal,
+                       goal.state == .met || goal.state == .needsYou {
+                        server?.onNotify?(agentID, goal.state == .met ? "Goal met" : "Goal needs you", goal.evidence ?? goal.reason ?? goal.text)
+                    }
+                }
             }
             thread.onRevision = { [weak serverWeak] in serverWeak?.threadRevised(sessionID: sid) }
             thread.onQuestionChanged = { [weak serverWeak] question in

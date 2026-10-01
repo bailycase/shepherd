@@ -212,7 +212,7 @@ struct Composer: View {
     private var accessories: [String] {
         let banner = store.startProblem.map { !(hidesNotSignedIn && $0.kind == .notSignedIn) } == true ? "cannotStart" : store.loadError != nil ? "lost" : input.attachments.error != nil ? "attachment" : referenceError != nil ? "reference" : store.notice != nil ? "notice" : nil
         return [banner].compactMap { $0 } + store.widgets.map(\.id) + (queueStack.isVisible ? ["queue"] : [])
-            + (showsTray ? ["tray"] : []) + (answeringRun != nil ? ["answering"] : [])
+            + (showsTray ? ["tray"] : []) + (store.goal != nil ? ["goal"] : []) + (answeringRun != nil ? ["answering"] : [])
     }
 
     private var showsTray: Bool { subagents != nil && store.tray != nil }
@@ -298,11 +298,12 @@ struct Composer: View {
                     .nwTransition(.list, edge: .bottom)
             }
             // The subagents and "Up next" grow upward from the card, which never moves.
-            if answeringRun == nil, showsTray || queueStack.isVisible {
+            if store.goal != nil || (answeringRun == nil && (showsTray || queueStack.isVisible)) {
                 ComposerDock(tray: store.tray, trayState: trayState, runs: store.subagents, actions: subagents,
-                             answer: { answering = $0.runID }, showsQueue: queueStack.isVisible) {
+                             answer: { answering = $0.runID }, showsQueue: queueStack.isVisible,
+                             goalStore: store, goalActive: active) {
                     if queueStack.isVisible {
-                        QueueStackView(state: queueStack, store: store, running: running, animated: !catchingUp, framed: !showsTray,
+                        QueueStackView(state: queueStack, store: store, running: running, animated: !catchingUp, framed: !showsTray && store.goal == nil,
                                        focusedRow: $focusedRow, focusComposer: { composing = true })
                     }
                 }
@@ -365,6 +366,9 @@ struct Composer: View {
         .onChange(of: openMenu, initial: true) { _, open in
             dismissal.dismiss = closeMenu(open)
             dismissal.watch(open != .none)
+        }
+        .onChange(of: store.goal?.id, initial: true) { _, id in
+            if id != nil { queueStack.collapsed = true }
         }
         .onChange(of: store.queue, initial: true) { _, queue in
             // The stack takes the queue a render later, outside the catch-up's transaction: a

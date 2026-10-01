@@ -63,23 +63,34 @@ struct SubagentTrayView: View {
     let runs: [ChildRun]
     let actions: SubagentActions
     let answer: (ChildRun) -> Void
+    var goalPresent = false
 
     var body: some View {
         let values = SubagentPresentation.tray(tray)
         let items = SubagentTrayLayout.items(values.rows, expanded: state.expanded)
         let byID = Dictionary(runs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        NWSubagentTray(values.summary, collapsed: state.collapsed,
-                       onToggle: { withNWAnimation(.disclosure) { state.collapsed.toggle() } }) {
-            if state.expanded, values.rows.count > AppLayout.trayExpandedMaxRows {
-                // A workflow of hundreds of runs scrolls inside, building only the rows on screen.
-                ScrollView {
-                    LazyVStack(spacing: 0) { list(items.dropLast(), byID) }
+        VStack(spacing: 0) {
+            NWSubagentTray(values.summary, collapsed: state.collapsed,
+                           onToggle: { withNWAnimation(.disclosure) { state.collapsed.toggle() } }) {
+                if state.expanded, values.rows.count > AppLayout.trayExpandedMaxRows {
+                    // A workflow of hundreds of runs scrolls inside, building only the rows on screen.
+                    ScrollView {
+                        LazyVStack(spacing: 0) { list(items.dropLast(), byID) }
+                    }
+                    .frame(height: CGFloat(AppLayout.trayExpandedMaxRows) * NWSubagentTrayMetrics.pointer.rowHeight)
+                    if let last = items.last { item(last, byID) }
+                } else {
+                    VStack(spacing: 0) { list(items[...], byID) }
                 }
-                .frame(height: CGFloat(AppLayout.trayExpandedMaxRows) * NWSubagentTrayMetrics.pointer.rowHeight)
-                if let last = items.last { item(last, byID) }
-            } else {
-                VStack(spacing: 0) { list(items[...], byID) }
             }
+            // A goal folds the busywork, never a question waiting for the user.
+            if goalPresent && state.collapsed {
+                let waiting = values.rows.filter { $0.state == .attention }.map(SubagentTrayLayout.Item.run)
+                list(waiting[...], byID)
+            }
+        }
+        .onChange(of: goalPresent, initial: true) { _, present in
+            if present { state.collapsed = true }
         }
     }
 
@@ -157,12 +168,25 @@ struct ComposerDock<Queue: View>: View {
     let actions: SubagentActions?
     let answer: (ChildRun) -> Void
     let showsQueue: Bool
+    var goalStore: NativeThreadStore? = nil
+    var goalActive = true
     @ViewBuilder let queue: () -> Queue
 
     var body: some View {
-        if let tray, let actions {
+        if goalStore?.goal != nil || (tray != nil && actions != nil) {
             NWDockStack(showsTray: true, showsQueue: showsQueue) {
-                SubagentTrayView(tray: tray, state: trayState, runs: runs, actions: actions, answer: answer)
+                VStack(spacing: 0) {
+                    if let goalStore, goalStore.goal != nil {
+                        ThreadGoalCard(store: goalStore, active: goalActive, framed: false)
+                    }
+                    if let tray, let actions {
+                        SubagentTrayView(tray: tray, state: trayState, runs: runs, actions: actions, answer: answer,
+                                         goalPresent: goalStore?.goal != nil)
+                            .overlay(alignment: .top) {
+                                if goalStore?.goal != nil { NWHairline(color: Color.nw.lineStrong) }
+                            }
+                    }
+                }
             } queue: {
                 queue()
             }

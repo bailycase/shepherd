@@ -756,6 +756,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.nativeRetryCapability,
             RemoteProtocol.nativeInterruptCapability, RemoteProtocol.browserTunnelCapability, RemoteProtocol.browserDriveCapability,
             RemoteProtocol.nativeServiceTierCapability, RemoteProtocol.createAgentServiceTierCapability,
+            RemoteProtocol.nativeGoalCapability,
             // Offered only while the host's Design tool is on (SessionServer.setDesignsServed).
             RemoteProtocol.designsCapability, RemoteProtocol.designMarkupCapability, RemoteProtocol.designDeleteCapability,
         ]

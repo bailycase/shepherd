@@ -70,7 +70,8 @@ struct ThreadScreen: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    ThreadTitle(name: agent?.name ?? "Thread", status: status, branch: branch, wide: sizeClass == .regular)
+                    ThreadTitle(name: agent?.name ?? "Thread", status: status, branch: branch, wide: sizeClass == .regular,
+                                goalTime: store.goal?.timeLabel)
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     if agent != nil {
@@ -367,6 +368,7 @@ struct ThreadTitle: View {
     var branch: AgentBranchLabel?
     /// iPad: the name, the chip and a pill on one line.
     var wide = false
+    var goalTime: String? = nil
 
     var body: some View {
         Group {
@@ -387,8 +389,12 @@ struct ThreadTitle: View {
             Text(name).font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary).lineLimit(1)
             // The branch truncates in the middle; the status word stays whole.
             HStack(spacing: NW.Space.s) {
-                NWStatusDot(status.state)
-                Text(status.label).fontWeight(.medium).foregroundStyle(status.state.textColor).fixedSize()
+                if let goalTime {
+                    NWGoalHeaderPill(time: goalTime)
+                } else {
+                    NWStatusDot(status.state)
+                    Text(status.label).fontWeight(.medium).foregroundStyle(status.state.textColor).fixedSize()
+                }
                 // A worktree names its branch; your own checkout says so in lantern (MobileQuestion).
                 if let branch {
                     let checkout = branch.kind == .checkout
@@ -420,8 +426,11 @@ struct ThreadTitle: View {
                              changedFiles: branch.changedFiles, host: branch.host, showsChevron: false)
                     .layoutPriority(-1)
             }
-            NWStatusPill(status.state, label: meta.elapsed.map { "\(status.label) · \($0)" } ?? status.label)
-                .fixedSize()
+            if let goalTime { NWGoalHeaderPill(time: goalTime) }
+            else {
+                NWStatusPill(status.state, label: meta.elapsed.map { "\(status.label) · \($0)" } ?? status.label)
+                    .fixedSize()
+            }
         }
     }
 }
