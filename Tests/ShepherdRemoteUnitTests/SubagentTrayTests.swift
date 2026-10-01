@@ -57,15 +57,20 @@ struct SubagentTrayTests {
         #expect(nativeTrayRow(Self.run("x")).added == nil, "no diff, no stat")
     }
 
-    /// A run waiting on you shows its question after "asks:", timed from when it asked.
-    @Test func aRunThatNeedsYouAsks() {
+    /// A run that asked its parent says so quietly, timed from when it asked: the user is never asked.
+    @Test func aRunThatAskedItsParentSaysSo() {
         var run = Self.run("r", role: "reviewer", needsAttention: true)
         run.question = ChildQuestion(text: "Two token names collide with existing `Tokens.textSecondary`. Rename the new token names, or replace the old ones everywhere?")
         run.lastActivity = ChildActivity(tool: "shepherd_parent_message", at: 5_000)
         let row = nativeTrayRow(run)
-        #expect(row.line == .asks("Rename the new token names, or replace the old ones everywhere?"))
+        #expect(row.phase == .asked)
+        #expect(row.line == .asked("Rename the new token names, or replace the old ones everywhere?"))
         #expect(row.since == 5_000)
-        #expect(row.accessibilityLabel == "task, reviewer, Needs you, asks: Rename the new token names, or replace the old ones everywhere?")
+        #expect(row.accessibilityLabel == "task, reviewer, Waiting on parent, asked the parent: Rename the new token names, or replace the old ones everywhere?")
+        run.question = nil
+        run.attentionText = nil
+        #expect(nativeTrayRow(run).line == .asked(""), "a question with no words still says the run asked")
+        #expect(nativeTrayRow(run).accessibilityLabel == "task, reviewer, Waiting on parent, asked the parent")
     }
 
     @Test(arguments: [("exit 1 · context limit reached after 41 turns", "context limit reached after 41 turns"),
@@ -94,7 +99,9 @@ struct SubagentTrayTests {
         #expect([first, second].map(nativeRunSummary).map(\.result) == ["Fixed the Mac client.", "Fixed the phone client."])
         second.needsAttention = true
         second.question = ChildQuestion(text: "Ship it?")
-        #expect(try #require(nativeSubagentQuestionPrompt(second)).id == "second")
+        let asking = NativeSubagentTray([second, first]).rows
+        #expect(asking.map(\.line) == [.result("Fixed the Mac client"), .asked("Ship it?")])
+        #expect(nativeRunSummary(second).question == "Ship it?" && nativeRunSummary(first).question == nil)
     }
 
     @Test func workflowRowsKeepTheirLaneIdentityWhenTheRunIDIsShared() {
@@ -112,8 +119,8 @@ struct SubagentTrayTests {
 
     // MARK: Order and header
 
-    /// Up to four runs keep spawn order; past that, needs you, then live, failed, done.
-    @Test func aLongTraySortsTheRunsToActOnFirst() {
+    /// Up to four runs keep spawn order; past that, live runs (one waiting on its parent among them), failed, done.
+    @Test func aLongTraySortsTheRunsStillGoingFirst() {
         let three = [Self.run("tests", state: "complete", startedAt: 3, endedAt: 4), Self.run("worker", startedAt: 1),
                      Self.run("reviewer", startedAt: 2, needsAttention: true)]
         #expect(nativeTrayOrder(three).map(\.runID) == ["worker", "reviewer", "tests"])
@@ -121,15 +128,16 @@ struct SubagentTrayTests {
                      Self.run("f1", state: "failed", startedAt: 3, endedAt: 4), Self.run("w2", startedAt: 4),
                      Self.run("r1", startedAt: 5, needsAttention: true), Self.run("d2", state: "complete", startedAt: 6, endedAt: 7),
                      Self.run("w3", startedAt: 7), Self.run("d3", state: "complete", startedAt: 8, endedAt: 9)]
-        #expect(nativeTrayOrder(eight).map(\.runID) == ["r1", "w1", "w2", "w3", "f1", "d1", "d2", "d3"])
+        #expect(nativeTrayOrder(eight).map(\.runID) == ["w1", "w2", "r1", "w3", "f1", "d1", "d2", "d3"],
+                "a question for the parent is nothing to act on, so it takes no lead")
     }
 
     @Test func theHeaderCountsEachStateAndSaysAllDoneAtTheEnd() {
         let live = NativeSubagentTray([Self.run("w", startedAt: 1), Self.run("r", startedAt: 2, needsAttention: true),
                                        Self.run("t", state: "complete", startedAt: 3, endedAt: 4)])
         #expect(live.title == "3 subagents")
-        #expect(live.cells == [.running, .needsYou, .done])
-        #expect(live.tally == [NativeTrayTally(text: "1 needs you", phase: .needsYou), NativeTrayTally(text: "1 running", phase: .running),
+        #expect(live.cells == [.running, .asked, .done])
+        #expect(live.tally == [NativeTrayTally(text: "1 running", phase: .running), NativeTrayTally(text: "1 waiting on parent", phase: nil),
                                NativeTrayTally(text: "1 done", phase: nil)])
         #expect(!live.allDone)
         let done = NativeSubagentTray([Self.run("a", state: "complete", endedAt: 1), Self.run("b", state: "complete", endedAt: 2)])
@@ -198,23 +206,5 @@ struct SubagentTrayTests {
         #expect(record.finished?.meta == "1m · 1 failed")
         #expect(NativeSubagentRecord([]) == nil)
         #expect(try #require(NativeSubagentRecord([Self.run("a")])).finished == nil, "still running")
-    }
-
-    // MARK: Answering
-
-    @Test func aQuestionAnsweredFromTheTrayOffersItsAnswersANoteAndItsOwnWordsElseAReply() throws {
-        var run = Self.run("r", role: "reviewer", needsAttention: true)
-        run.question = ChildQuestion(text: "Rename or replace?", options: ["Replace everywhere", "Rename new ones"])
-        let prompt = try #require(nativeSubagentQuestionPrompt(run))
-        #expect(prompt.asker == .subagent("task") && prompt.question == "Rename or replace?")
-        #expect(prompt.options.map(\.title) == ["Replace everywhere", "Rename new ones"])
-        #expect(prompt.takesNote && prompt.otherNumber == 3 && prompt.showsAnswer)
-        run.question = ChildQuestion(text: "Which base?")
-        let reply = try #require(nativeSubagentQuestionPrompt(run))
-        #expect(reply.kind == .open && reply.placeholder == "Reply to task…")
-        run.question = nil
-        run.attentionText = nil
-        #expect(try #require(nativeSubagentQuestionPrompt(run)).question == "Waiting on your answer")
-        #expect(nativeSubagentQuestionPrompt(Self.run("w")) == nil)
     }
 }

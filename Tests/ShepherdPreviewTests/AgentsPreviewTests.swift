@@ -75,7 +75,7 @@ struct AgentsPreviewTests {
         }
     }
 
-    private static let noActions = NWSubagentTrayActions(open: {}, answer: {}, steer: {}, stop: {})
+    private static let noActions = NWSubagentTrayActions(open: {}, steer: {}, stop: {})
 
     private static func tray(_ tray: NativeSubagentTray, size: NWSubagentTraySize = .pointer, collapsed: Bool = false,
                              hovered: String? = nil, selected: String? = nil, shown: Int? = nil) -> some View {
@@ -116,7 +116,7 @@ struct AgentsPreviewTests {
     @Test func subagentTray() async throws {
         let live = Self.live, done = Self.done, eight = Self.eight
         let rows = SubagentPresentation.tray(live).rows
-        let states = [(rows[0], "running · hover", true, false), (rows[1], "needs you", false, false), (rows[0], "selected (inspector open)", false, true),
+        let states = [(rows[0], "running · hover", true, false), (rows[1], "asked the parent", false, false), (rows[0], "selected (inspector open)", false, true),
                       (rows[2], "done", false, false), (SubagentPresentation.tray(eight).rows[4], "failed", false, false)]
         try await Preview.render("subagent-tray", size: CGSize(width: 1600, height: 1400)) {
             VStack(alignment: .leading, spacing: 36) {
@@ -128,7 +128,7 @@ struct AgentsPreviewTests {
                     Sheet(title: "SubagentTray · all done", note: "Stays until you send your next message, then folds into the thread's record.", width: nil) {
                         Self.dock(Self.tray(done))
                     }
-                    Sheet(title: "SubagentTray · collapsed", note: "One line. The cells and counts still say who needs you.", width: nil) {
+                    Sheet(title: "SubagentTray · collapsed", note: "One line. The cells and counts still say what runs and what waits on its parent.", width: nil) {
                         Self.dock(Self.tray(live, collapsed: true))
                     }
                 }
@@ -136,15 +136,11 @@ struct AgentsPreviewTests {
                     Sheet(title: "DockStack · subagents + Up next", note: "One card, two sections. Each collapses on its own.", width: nil) {
                         Self.dock(Self.tray(live), queue: true)
                     }
-                    Sheet(title: "SubagentTray · 8 subagents", note: "Needs-you rows sort first, then running, then finished. Four rows, then Show more.", width: nil) {
+                    Sheet(title: "SubagentTray · 8 subagents", note: "Live rows (one waits on its parent) sort first, then failed, then finished. Four rows, then Show more.", width: nil) {
                         Self.dock(Self.tray(eight, shown: NativeSubagentTray.shownRows))
                     }
-                    Sheet(title: "Answer → question dock", note: "Answer takes over the composer area, labelled with the subagent.", width: nil) {
-                        QuestionDock(prompt: NativeQuestionPrompt(runID: "r", name: "reviewer",
-                                                                  question: "Rename the new token names, or replace the old ones everywhere?",
-                                                                  options: ["Replace everywhere (Recommended)\nOld names go; 31 call sites change.",
-                                                                            "Rename the new ones\nKeeps both; adds an alias."]),
-                                     enabled: true, hidden: false, focused: false, answer: { _ in }, setHidden: { _ in })
+                    Sheet(title: "SubagentTray · hover a waiting row", note: "Steer and Stop stay; there is no Answer: its parent answers, or asks you in its own thread.", width: nil) {
+                        Self.dock(Self.tray(live, hovered: rows[1].id))
                     }
                 }
                 Text("Rows and the thread record").nwSectionLabel()

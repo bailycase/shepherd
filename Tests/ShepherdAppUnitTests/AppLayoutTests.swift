@@ -73,7 +73,7 @@ struct AgentStateMappingTests {
         #expect(AgentState(status) == state)
     }
 
-    @Test(arguments: [(NativeSubagentState.running, AgentState.running), (.needsYou, .attention), (.done, .done), (.failed, .failed)])
+    @Test(arguments: [(NativeSubagentState.running, AgentState.running), (.asked, .queued), (.done, .done), (.failed, .failed)])
     func subagentStateMapsToItsState(_ subagent: NativeSubagentState, _ state: AgentState) {
         #expect(AgentState(subagent) == state)
     }

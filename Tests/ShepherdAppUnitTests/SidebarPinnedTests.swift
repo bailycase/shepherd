@@ -32,7 +32,7 @@ struct SidebarPinnedTests {
             SidebarSource(local: ShepherdState(spaces: [space], agents: local),
                           hosts: remote.isEmpty ? [] : [SidebarSource.Host(id: host, name: "horizon",
                                                                             state: ShepherdState(spaces: [space], agents: remote),
-                                                                            children: [:], offline: offline)]),
+                                                                            offline: offline)]),
             pins: SidebarPins(pins))
     }
 
@@ -80,15 +80,6 @@ struct SidebarPinnedTests {
         let answered = derive([pinned, other], pins: [local(pinned), local(other)])
         #expect(answered.needsYou.isEmpty)
         #expect(answered.pinned.map(\.title) == ["pinned", "other"])
-    }
-
-    @Test func aPinnedSubagentQuestionAlsoMovesItsThreadToNeedsYou() {
-        let parent = agent("parent", at: 5)
-        let lists = SidebarDerivation.lists(
-            SidebarSource(local: ShepherdState(spaces: [space], agents: [parent]),
-                          localChildren: [parent.id: [Fixture.child("r", attention: true)]]),
-            pins: SidebarPins([local(parent)]))
-        #expect(lists.needsYou.map(\.title) == ["parent"] && lists.pinned.isEmpty)
     }
 
     /// A remote thread pins like a local one, keeps its host's tag and reads "on horizon".
@@ -142,7 +133,7 @@ struct SidebarPinnedTests {
         var remoteState = ShepherdState(spaces: [space], agents: [remoteRun])
         remoteState.automations = [Automation(name: "Remote run", prompt: "p", cwd: "/tmp", agentID: remoteRun.id)]
         let lists = SidebarDerivation.lists(
-            SidebarSource(local: state, hosts: [SidebarSource.Host(id: host, name: "horizon", state: remoteState, children: [:])],
+            SidebarSource(local: state, hosts: [SidebarSource.Host(id: host, name: "horizon", state: remoteState)],
                           designs: true),
             pins: SidebarPins([local(run), remote(remoteRun), .local(drawer.id)]))
         #expect(lists.pinned.isEmpty)

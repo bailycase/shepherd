@@ -16,12 +16,12 @@ extension MobileLayout {
 }
 
 extension AgentState {
-    /// A run's phase: a queued run and a run paused before its next model request both wait.
+    /// A run's phase: a queued run, a run paused before its next model request and a run waiting on
+    /// its parent's answer all wait. A subagent never draws `attention`, which is the user's.
     init(_ phase: NativeRunPhase) {
         switch phase {
         case .running: self = .running
-        case .queued, .paused: self = .queued
-        case .needsYou: self = .attention
+        case .queued, .paused, .asked: self = .queued
         case .done: self = .done
         case .failed: self = .failed
         }
@@ -37,7 +37,7 @@ enum SubagentValues {
     static func card(_ summary: NativeRunSummary) -> NWRunCardValue {
         NWRunCardValue(
             id: summary.id, name: summary.name, tags: summary.tags, state: AgentState(summary.phase),
-            stateLabel: summary.phase == .paused ? nativeRunPhaseLabel(.paused) : nil, detail: summary.detail,
+            stateLabel: [.paused, .asked].contains(summary.phase) ? nativeRunPhaseLabel(summary.phase) : nil, detail: summary.detail,
             step: summary.step, progress: summary.progress, progressLabel: summary.progress == nil ? nil : "Context window used",
             tokens: summary.tokens, question: summary.question, options: summary.options,
             since: date(summary.startedAt), until: date(summary.endedAt), waitingSince: date(summary.askedAt),
@@ -55,7 +55,7 @@ enum SubagentValues {
         let line: NWSubagentTrayRun.Line = switch row.line {
         case .working(let verb, let subject, let live): .working(verb: verb, subject: subject, live: live)
         case .waiting(let text): .waiting(text)
-        case .asks(let question): .asks(question)
+        case .asked(let question): .asked(question)
         case .result(let text): .result(text)
         case .failed(let reason): .failed(reason)
         }
@@ -107,10 +107,6 @@ struct SubagentCommands {
     func send(_ runID: String, _ command: NativeRunCommand?) {
         guard enabled, let command else { return }
         Task { await store.subagentCommand(runID: runID, action: command.action, text: command.text, mode: command.mode) }
-    }
-
-    func answer(_ runID: String) -> (String) -> Void {
-        { send(runID, .answer($0)) }
     }
 
     func control(_ runID: String, _ control: NativeRunControl) {

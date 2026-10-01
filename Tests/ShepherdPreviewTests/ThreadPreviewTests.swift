@@ -623,9 +623,9 @@ struct ThreadPreviewTests {
         }
     }
 
-    /// QuestionStates › from a subagent (and SubagentTray › Answer → question dock): named after
-    /// the subagent, with a note in the picked answer and Something else, since its answer is a
-    /// message to the run.
+    /// The question dock's subagent variant (QuestionStates › from a subagent): named after the
+    /// subagent, with a note in the picked answer and Something else, since its answer is a
+    /// message to the run. No surface shows it any more: a subagent asks its parent, never the user.
     @Test func subagentQuestionStates() async throws {
         let question = "Rename the new token names, or replace `Tokens.textSecondary` everywhere?"
         let options = ["Replace everywhere (Recommended)\n41 call sites move to the spec colors. One PR, bigger diff.",
