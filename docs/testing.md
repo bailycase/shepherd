@@ -385,7 +385,10 @@ depend on the machine's speed skip on CI (`CI=true`).
   crash, the watchdog, an issue the list cannot attribute to a test, or more than eight failing
   tests. The extension tests are retried by name the same way. Every failure also gets an
   `::error file=,line=` annotation and a row in the summary, and the shard's full log is the
-  `ci-logs-*` artifact. A flaky test is a bug to fix, not a pass to ignore.
+  `ci-logs-*` artifact. A flaky test is a bug to fix, not a pass to ignore: the tracking issue
+  (below) counts the runs each one was flaky in, and a test flaky in nearly every run fails its
+  first attempt almost every time and passes alone, which points at the test (its order, state it
+  shares, a wait that assumes an idle machine) before the machine.
 - **The daily run and the tracking issue:** the full lane runs daily on `nightly` with each shard's
   tests three times (a test that fails some passes is flaky; `schedule` fires only from the
   default branch's copy of the workflow, so it starts once `master` has this file, and until then
