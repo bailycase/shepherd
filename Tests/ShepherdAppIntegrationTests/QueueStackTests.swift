@@ -197,7 +197,9 @@ struct QueueStackIntegrationTests {
         #expect(thread.host.sends.first?.delivery == .interrupt)
         #expect(thread.host.sends.first?.text == draft)
         try await eventuallyOnMain("the draft to lead Up next") { thread.host.queue.first?.text == draft }
-        #expect(thread.state.rows.map(\.kind) == [.queued(number: 1), .queued(number: 2)])
+        try await eventuallyOnMain("both messages to draw as queued rows") {
+            thread.state.rows.map(\.kind) == [.queued(number: 1), .queued(number: 2)]
+        }
         #expect(thread.host.queue.allSatisfy { $0.state == .queued })
         #expect(thread.store.draft.isEmpty)
     }
