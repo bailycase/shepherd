@@ -7,7 +7,7 @@ import Testing
 struct SettingsFooterTests {
     @Test(arguments: SettingsSection.allCases)
     func theFooterNamesTheAgentExceptOnThePiPages(section: SettingsSection) {
-        let word = [.pi, .piSignIn, .piFromYourPi].contains(section) ? "pi" : "agent"
+        let word = [.pi, .piSignIn, .piFromYourPi, .piSlashCommands].contains(section) ? "pi" : "agent"
         #expect(SettingsView.versions(app: "Shepherd 0.1.0", agent: "0.87.1", on: section) == "Shepherd 0.1.0 · \(word) 0.87.1")
     }
 
