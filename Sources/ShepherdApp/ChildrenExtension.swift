@@ -296,9 +296,13 @@ enum ChildrenExtension {
 
         const RELAY_KEY = Symbol.for("shepherd.design.relay.v1");
         // The design tools a helper may use. comment_reply and markup_propose are the design agent's own voice
-        // toward the viewer (it answers a comment once every helper has finished), so they are never relayed.
-        const DESIGN_RELAYED = ["design_read", "design_check", "system_read", "comment_list", "board_write", "board_edit", "canvas_update", "system_write"];
-        const DESIGN_TOOLS = [...DESIGN_RELAYED, "comment_reply", "markup_propose"];
+        // toward the viewer (it answers a comment once every helper has finished), and checkpoint_restore rewinds
+        // every board, siblings' work included, so none of the three is ever relayed.
+        const DESIGN_RELAYED = [
+          "design_read", "design_check", "system_read", "comment_list", "board_write", "board_edit", "boards_edit", "board_search",
+          "board_render", "board_extract", "checkpoint_create", "checkpoint_list", "canvas_update", "system_write",
+        ];
+        const DESIGN_TOOLS = [...DESIGN_RELAYED, "comment_reply", "markup_propose", "checkpoint_restore"];
         const RELAY_TITLE = "shepherd-relay:v1:";
         // A request or a result: the extension socket's own frame cap, since a board is at most 900,000 bytes.
         const MAX_RELAY_BYTES = 1024 * 1024;
@@ -315,7 +319,7 @@ enum ChildrenExtension {
         export function designToolsProblem(names, relay) {
           if (!relay) return `${names.join(", ")}: design tools are relayed only to the helpers of a design agent, and this session draws no design. Drop them from the profile's tools.`;
           const own = names.filter((name) => !DESIGN_RELAYED.includes(name));
-          if (own.length) return `${own.join(", ")} can't be relayed to a helper: the design agent answers the viewer's comments and proposes their markup itself, once its helpers are done. Relayed: ${DESIGN_RELAYED.join(", ")}.`;
+          if (own.length) return `${own.join(", ")} can't be relayed to a helper: the design agent answers the viewer's comments, proposes their markup and restores checkpoints itself, once its helpers are done. Relayed: ${DESIGN_RELAYED.join(", ")}.`;
           const absent = names.filter((name) => !relay.tools.has(name));
           if (absent.length) return `${absent.join(", ")} isn't available from this design agent's extension.`;
           return undefined;
@@ -359,8 +363,18 @@ enum ChildrenExtension {
             if (typeof spec?.name !== "string" || !DESIGN_RELAYED.includes(spec.name) || !spec.parameters || typeof spec.parameters !== "object") continue;
             pi.registerTool({ name: spec.name, label: String(spec.label ?? spec.name), description: String(spec.description ?? spec.name),
               promptSnippet: typeof spec.promptSnippet === "string" ? spec.promptSnippet : undefined, parameters: spec.parameters,
-              async execute(_id, params, signal, _update, ctx) { return relayedCall(spec.name, params, signal, ctx); } });
+              async execute(_id, params, signal, _update, ctx) { return pictureForModel(await relayedCall(spec.name, params, signal, ctx), ctx); } });
           }
+        }
+
+        // A picture (board_render) is for a model that can view one: the helper's own, which the parent can't know. A
+        // helper whose model's input kinds are known and lack images gets the words alone.
+        export function pictureForModel(result, ctx) {
+          const kinds = ctx?.model?.input;
+          if (!Array.isArray(kinds) || kinds.includes("image")) return result;
+          const content = result.content.filter((part) => part?.type !== "image");
+          if (content.length === result.content.length) return result;
+          return { ...result, content: [...content, { type: "text", text: "This helper's model can't view images, so the picture is not attached. Read the board's markup instead." }] };
         }
 
         // The parent's side: serves one relayed call (a helper's `input` request) and answers it on the helper's
@@ -387,11 +401,20 @@ enum ChildrenExtension {
           run.relays.set(callId, controller);
           try {
             const params = validateToolArguments({ name, parameters: tool.parameters }, { id: callId, name, arguments: request.params ?? {} });
-            const result = await tool.execute(`relay-${run.id}-${callId}`, params, controller.signal, undefined, ctx);
+            // The parent's own model is no judge of what a helper's can see: the picture goes, and the helper's side decides.
+            const callCtx = ctx && typeof ctx === "object" ? Object.create(ctx, { model: { value: undefined } }) : ctx;
+            const result = await tool.execute(`relay-${run.id}-${callId}`, params, controller.signal, undefined, callCtx);
             // A cancelled call has no one left to answer.
             if (controller.signal.aborted) return;
-            const content = (result?.content ?? []).filter((part) => part?.type === "text").map((part) => ({ type: "text", text: String(part.text ?? "") }));
-            const size = content.reduce((total, part) => total + Buffer.byteLength(part.text), 0);
+            // Text, and a picture (board_render) as long as it is a small base64 image: nothing else crosses.
+            const content = (result?.content ?? []).flatMap((part) => {
+              if (part?.type === "text") return [{ type: "text", text: String(part.text ?? "") }];
+              if (part?.type === "image" && typeof part.data === "string" && typeof part.mimeType === "string" && /^image\/(png|jpeg)$/.test(part.mimeType)) {
+                return [{ type: "image", data: part.data, mimeType: part.mimeType }];
+              }
+              return [];
+            });
+            const size = content.reduce((total, part) => total + Buffer.byteLength(part.type === "text" ? part.text : part.data), 0);
             if (size > MAX_RELAY_BYTES) return fail(`${name}'s result is ${size} bytes; the relay carries at most ${MAX_RELAY_BYTES}`);
             reply({ ok: true, content, details: result?.details });
           } catch (error) {

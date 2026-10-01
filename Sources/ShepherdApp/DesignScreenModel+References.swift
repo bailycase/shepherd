@@ -118,6 +118,11 @@ extension DesignScreenModel {
                     self?.paneTab = .tweak
                 })
             }
+            if let element = selection.element, let source = pieceBoard(for: element) {
+                items.append(NWCanvasMenuItem(id: "go-to-source", title: "Go to Source", symbol: "arrow.turn.down.right") { [weak self] in
+                    self?.goToSource(source)
+                })
+            }
             items.append(.divider("reference"))
         }
         if referenceActions != nil {

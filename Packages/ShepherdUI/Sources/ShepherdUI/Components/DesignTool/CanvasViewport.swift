@@ -105,9 +105,11 @@ public struct NWCanvasBoard: Identifiable, Equatable, Sendable {
     public var content: Int
     /// The room its label has among the boards around it (`NWLabelRoom.rooms`).
     public var labelRoom: NWLabelRoom
+    /// "used in 3 boards", for a shared piece other boards import; nil for any other board.
+    public var usage: String?
 
     public init(id: String, frame: CGRect, title: String, size: String, isSelected: Bool = false, content: Int = 0,
-                labelRoom: NWLabelRoom = .open) {
+                labelRoom: NWLabelRoom = .open, usage: String? = nil) {
         self.id = id
         self.frame = frame
         self.title = title
@@ -115,6 +117,7 @@ public struct NWCanvasBoard: Identifiable, Equatable, Sendable {
         self.isSelected = isSelected
         self.content = content
         self.labelRoom = labelRoom
+        self.usage = usage
     }
 
     /// Where its label is drawn on screen at `viewport`; nil where it isn't drawn.

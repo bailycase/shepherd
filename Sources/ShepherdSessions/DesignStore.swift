@@ -29,6 +29,17 @@ public enum DesignStoreError: Error, Hashable, Sendable, CustomStringConvertible
     /// Pencil markup the store won't hand on, or a proposal it won't make: why.
     case invalidMarkup(String)
     case noSuchVersion(DesignPath, Int)
+    /// A batch edit, extraction or render request that can't be carried out: why.
+    case invalidEdit(String)
+    /// A write held to the design's tokens (`strict`) that introduces values they don't hold.
+    case offSystem(DesignPath, system: String, [DesignTokenFinding])
+    case invalidSearch(DesignBoardSearch.Failure)
+    case invalidCheckpoint(String)
+    case noSuchCheckpoint(String)
+    case checkpointExists(String)
+    case checkpointTooLarge(Int)
+    /// A `board_extract` that can't be carried out: why.
+    case invalidExtract(String)
     /// A folder that can't become a design: why (`DesignImport.Problem`, or its canvas).
     case importRefused(String)
     case io(String)
@@ -52,6 +63,14 @@ public enum DesignStoreError: Error, Hashable, Sendable, CustomStringConvertible
         case .tooManyComments: return "too_many_comments"
         case .invalidMarkup: return "invalid_markup"
         case .noSuchVersion: return "no_such_version"
+        case .invalidEdit: return "invalid_edit"
+        case .offSystem: return "tokens_off_system"
+        case .invalidSearch(let failure): return failure.code
+        case .invalidCheckpoint: return "invalid_checkpoint"
+        case .noSuchCheckpoint: return "no_such_checkpoint"
+        case .checkpointExists: return "checkpoint_exists"
+        case .checkpointTooLarge: return "checkpoint_too_large"
+        case .invalidExtract: return "invalid_extract"
         case .importRefused: return "import_refused"
         case .io: return "io_failed"
         }
@@ -79,6 +98,23 @@ public enum DesignStoreError: Error, Hashable, Sendable, CustomStringConvertible
         case .tooManyComments: return "a design keeps at most \(DesignComment.maxComments) comments"
         case .invalidMarkup(let why): return why
         case .noSuchVersion(let path, let number): return "\(path) keeps no version \(number)"
+        case .invalidEdit(let why): return why
+        case .offSystem(let path, let system, let findings):
+            let listed = findings.prefix(8).map { finding in
+                "\(finding.value) ×\(finding.count) (line \(finding.lines.prefix(3).map(String.init).joined(separator: ", ")))"
+                    + (finding.nearest.map { ", nearest \($0)" } ?? "")
+            }.joined(separator: "; ")
+            let more = findings.count > 8 ? "; and \(findings.count - 8) more" : ""
+            return "the write to \(path) introduces \(findings.count) value\(findings.count == 1 ? "" : "s") that \(system) doesn't hold: "
+                + "\(listed)\(more). Use its tokens, or write with tokens \"warn\" or \"snap\". Nothing was changed."
+        case .invalidSearch(let failure): return failure.description
+        case .invalidCheckpoint(let why): return why
+        case .noSuchCheckpoint(let name): return "no checkpoint named \"\(name)\" (checkpoint_list shows them)"
+        case .checkpointExists(let name):
+            return "a checkpoint named \"\(name)\" exists (names are not case sensitive): restore it, or pick another name"
+        case .invalidExtract(let why): return why
+        case .checkpointTooLarge(let bytes):
+            return "this design is \(bytes / 1_000_000) MB of boards; a checkpoint may not exceed \(DesignCheckpointName.maxBytesPerDesign / 1_000_000) MB"
         case .importRefused(let why): return why
         case .io(let message): return message
         }
@@ -96,17 +132,19 @@ public final class DesignStore: @unchecked Sendable {
     public let directory: URL
     /// A design holds at most this many files.
     public static let maxFiles = 512
+    /// How many checkpoints, and how many bytes of them, a design keeps (tests lower them).
+    var checkpointCaps = (count: DesignCheckpointName.maxPerDesign, bytes: DesignCheckpointName.maxBytesPerDesign)
 
     private let queue = DispatchQueue(label: "shepherd.designs", qos: .userInitiated)
 
     /// What the store knows of each design it has touched. Queue-confined.
-    private struct Loaded {
+    struct Loaded {
         var revision: UInt64
         var index: DesignIndex
         /// Each board file's hash; read on first need.
         var files: [DesignPath: String]?
     }
-    private var loaded: [DesignID: Loaded] = [:]
+    var loaded: [DesignID: Loaded] = [:]
     /// Each design's comments.json as last read or written. Queue-confined.
     private var commentFiles: [DesignID: DesignComments] = [:]
     /// Each served file's hash, while its size and modification time hold. Queue-confined.
@@ -119,6 +157,11 @@ public final class DesignStore: @unchecked Sendable {
     /// The hash of each file served in pieces (`project/<path>`, `assets/<name>`), while its size
     /// and modification time hold, so a piece reads only its own bytes. Queue-confined.
     private var pieceHashes: [DesignID: [String: ServedHash]] = [:]
+    /// Each design's `<dc-import>`s by board hash, so a revision's usage index re-reads only the boards
+    /// that changed. Queue-confined.
+    var importsBySHA: [DesignID: [String: [DesignImports.Raw]]] = [:]
+    /// Each design's usage index at the revision it was built for. Queue-confined.
+    var usageIndexes: [DesignID: (revision: UInt64, index: DesignUsageIndex)] = [:]
 
     public init(directory: URL) {
         self.directory = directory
@@ -290,21 +333,26 @@ public final class DesignStore: @unchecked Sendable {
     }
 
     /// Queue: what the store remembers of a design, dropped when its folder moves or goes.
-    private func forget(_ id: DesignID) {
+    func forget(_ id: DesignID) {
         loaded[id] = nil
         commentFiles[id] = nil
         servedHashes[id] = nil
         pieceHashes[id] = nil
+        importsBySHA[id] = nil
+        usageIndexes[id] = nil
     }
 
     /// Writes one board's whole source, when the design is still at `baseRevision` (nil: any).
     /// The content it replaces is kept as the board's next version.
-    func writeBoard(_ id: DesignID, path: DesignPath, source: String, baseRevision: UInt64?) async throws -> DesignWriteResult {
+    func writeBoard(_ id: DesignID, path: DesignPath, source: String, baseRevision: UInt64?,
+                    tokens: DesignTokenMode? = nil) async throws -> DesignWriteResult {
         try await run {
-            let written = try self.writeOnQueue(id, [path: source], baseRevision: baseRevision)
+            let old = self.currentText(id, path)
+            let (written, report) = try self.writeReported(id, path: path, old: old, new: source, baseRevision: baseRevision, mode: tokens ?? .warn)
             var result = written.result
             result.sha256 = written.shas[path]
             result.created = written.created.contains(path)
+            result.report = report
             return result
         }
     }
@@ -315,7 +363,8 @@ public final class DesignStore: @unchecked Sendable {
     /// can land between them, and two edits of one board each apply to what the other left. The
     /// revision is compared first (`stale_revision`); a failed edit, or a result the checks
     /// refuse, changes nothing.
-    func editBoard(_ id: DesignID, path: DesignPath, edits: [DesignBoardEdit], baseRevision: UInt64?) async throws -> DesignBoardEdited {
+    func editBoard(_ id: DesignID, path: DesignPath, edits: [DesignBoardEdit], baseRevision: UInt64?,
+                   tokens: DesignTokenMode? = nil) async throws -> DesignBoardEdited {
         try await run {
             var design = try self.load(id)
             try Self.compare(baseRevision, design.revision)
@@ -323,20 +372,26 @@ public final class DesignStore: @unchecked Sendable {
             guard files[path] != nil else { throw DesignStoreError.noSuchBoard(path) }
             let data: Data
             do { data = try Data(contentsOf: self.fileURL(id, path)) } catch { throw DesignStoreError.noSuchBoard(path) }
+            let old = String(decoding: data, as: UTF8.self)
             let applied: DesignBoardEdits.Applied
             switch Result(catching: { () throws(DesignBoardEdits.Failure) in
-                try DesignBoardEdits.apply(edits, to: String(decoding: data, as: UTF8.self))
+                try DesignBoardEdits.apply(edits, to: old)
             }) {
             case .success(let edited): applied = edited
             case .failure(let failure): throw DesignStoreError.editFailed(path, failure)
             }
             let written: Written
-            do { written = try self.writeOnQueue(id, [path: applied.source], baseRevision: baseRevision) } catch DesignStoreError.refused(let refusal) {
+            let report: DesignBoardReport
+            do {
+                (written, report) = try self.writeReported(id, path: path, old: old, new: applied.source, baseRevision: baseRevision,
+                                                          mode: tokens ?? .warn)
+            } catch DesignStoreError.refused(let refusal) {
                 throw DesignStoreError.editRefused(path, refusal)
             }
             var result = written.result
             result.sha256 = written.shas[path]
             result.created = false
+            result.report = report
             return DesignBoardEdited(result: result, replaced: applied.replaced)
         }
     }
@@ -711,7 +766,7 @@ public final class DesignStore: @unchecked Sendable {
         }
     }
 
-    private struct Written {
+    struct Written {
         var result: DesignWriteResult
         var shas: [DesignPath: String]
         var versions: [DesignPath: Int]
@@ -719,8 +774,10 @@ public final class DesignStore: @unchecked Sendable {
     }
 
     /// Queue: checks every source, keeps what each changed board held as a version, writes them
-    /// atomically, and moves the revision once.
-    private func writeOnQueue(_ id: DesignID, _ sources: [DesignPath: String], baseRevision: UInt64?) throws -> Written {
+    /// atomically, and moves the revision once. With `index`, canvas.json becomes it in the same
+    /// change (an extraction placing the piece it made), once every board is written.
+    func writeOnQueue(_ id: DesignID, _ sources: [DesignPath: String], baseRevision: UInt64?,
+                      index: DesignIndex? = nil) throws -> Written {
         var design = try load(id)
         try Self.compare(baseRevision, design.revision)
         var warnings: [DesignBoardCheck.Warning] = []
@@ -772,6 +829,12 @@ public final class DesignStore: @unchecked Sendable {
         }
         let wrote = changed.contains { files[$0.path] == shas[$0.path] }
         design.files = files
+        if wrote, failure == nil, let index, index != design.index {
+            do { try index.encoded().write(to: indexURL(id), options: .atomic) } catch {
+                failure = .io("could not write canvas.json: \(error.localizedDescription)")
+            }
+            if failure == nil { design.index = index }
+        }
         if wrote {
             try commit(&design, id)
             // A rewrite renumbers a board's elements: its comments find theirs again.
@@ -787,7 +850,7 @@ public final class DesignStore: @unchecked Sendable {
 
     /// Writes a board's file atomically, only inside the design: never through a linked folder
     /// that leads outside it, and no folder is made there.
-    private func writeFile(_ id: DesignID, _ path: DesignPath, _ data: Data) throws {
+    func writeFile(_ id: DesignID, _ path: DesignPath, _ data: Data) throws {
         let url = try fileURL(id, path)
         let folder = url.deletingLastPathComponent()
         guard let project = projectFolder(for: id), Self.isInside(Self.deepestExisting(folder), project) else {
@@ -808,17 +871,17 @@ public final class DesignStore: @unchecked Sendable {
 
     /// Where a board's versions live: `versions/<path>/<n>.dc.html`, beside `project/`, so the
     /// board scheme never serves them and they are no board.
-    private func versionsFolder(_ id: DesignID, _ path: DesignPath) throws -> URL {
+    func versionsFolder(_ id: DesignID, _ path: DesignPath) throws -> URL {
         guard let folder = folder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
         return folder.appendingPathComponent("versions", isDirectory: true).appendingPathComponent(path.rawValue, isDirectory: true)
     }
 
-    private struct Kept {
+    struct Kept {
         var version: DesignBoardVersion
         var url: URL
     }
 
-    private func versionsOnQueue(_ id: DesignID, _ path: DesignPath) throws -> [Kept] {
+    func versionsOnQueue(_ id: DesignID, _ path: DesignPath) throws -> [Kept] {
         let folder = try versionsFolder(id, path)
         let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
         return names.compactMap { name -> Kept? in
@@ -834,7 +897,7 @@ public final class DesignStore: @unchecked Sendable {
 
     /// Keeps the board's file as its next version, then forgets all but the newest
     /// `DesignBoardVersion.kept`. Returns the version's number.
-    private func keepVersion(_ id: DesignID, _ path: DesignPath) throws -> Int {
+    func keepVersion(_ id: DesignID, _ path: DesignPath) throws -> Int {
         let current = try fileURL(id, path)
         let data: Data
         do { data = try Data(contentsOf: current) } catch {
@@ -1513,7 +1576,7 @@ public final class DesignStore: @unchecked Sendable {
         }
     }
 
-    private func installedSystemsOnQueue(_ id: DesignID, index: DesignIndex) throws -> [DesignSystemInstalled] {
+    func installedSystemsOnQueue(_ id: DesignID, index: DesignIndex) throws -> [DesignSystemInstalled] {
             guard let project = self.projectFolder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
             return (index.designSystems ?? []).compactMap { record -> DesignSystemInstalled? in
                 guard let namespace = record.namespace, DesignPath.isSystemNamespace(namespace) else { return nil }
@@ -2017,7 +2080,7 @@ public final class DesignStore: @unchecked Sendable {
     /// Queue: the comments on `board` find their elements again in `source` (nil: the board is
     /// gone), and the file is written when any moved. A comments.json that can't be read or
     /// written is left for the next change; the board's own write already happened.
-    private func reanchorComments(_ id: DesignID, board: DesignPath, source: String?) {
+    func reanchorComments(_ id: DesignID, board: DesignPath, source: String?) {
         guard var file = try? loadComments(id), file.comments.contains(where: { $0.board == board && $0.isOpen }) else { return }
         let next = DesignCommentAnchor.reanchor(file.comments, board: board, source: source)
         guard next != file.comments else { return }
@@ -2032,7 +2095,7 @@ public final class DesignStore: @unchecked Sendable {
 
     // MARK: Queue
 
-    private func run<T>(_ body: @escaping () throws -> T) async throws -> T {
+    func run<T>(_ body: @escaping () throws -> T) async throws -> T {
         try await withCheckedThrowingContinuation { continuation in
             queue.async {
                 do { continuation.resume(returning: try body()) } catch { continuation.resume(throwing: error) }
@@ -2040,7 +2103,7 @@ public final class DesignStore: @unchecked Sendable {
         }
     }
 
-    private static func compare(_ base: UInt64?, _ current: UInt64) throws {
+    static func compare(_ base: UInt64?, _ current: UInt64) throws {
         if let base, base != current { throw DesignStoreError.stale(base: base, current: current) }
     }
 
@@ -2051,7 +2114,7 @@ public final class DesignStore: @unchecked Sendable {
     }
 
     /// The design as the store knows it, read from disk on first touch.
-    private func load(_ id: DesignID) throws -> Loaded {
+    func load(_ id: DesignID) throws -> Loaded {
         if let design = loaded[id] { return design }
         guard let folder = folder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
         let data: Data
@@ -2068,7 +2131,7 @@ public final class DesignStore: @unchecked Sendable {
     }
 
     /// Every `.dc.html` under `project/` (outside `ds/`) with its hash, read once and kept.
-    private func files(of id: DesignID, _ design: inout Loaded) throws -> [DesignPath: String] {
+    func files(of id: DesignID, _ design: inout Loaded) throws -> [DesignPath: String] {
         if let files = design.files { return files }
         guard let project = projectFolder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
         var files: [DesignPath: String] = [:]
@@ -2092,7 +2155,7 @@ public final class DesignStore: @unchecked Sendable {
 
     /// Bumps the revision, keeps it on disk (so a base from before a relaunch still compares),
     /// and remembers the design.
-    private func commit(_ design: inout Loaded, _ id: DesignID) throws {
+    func commit(_ design: inout Loaded, _ id: DesignID) throws {
         design.revision += 1
         loaded[id] = design
         try writeRevision(design.revision, of: id)
@@ -2107,23 +2170,23 @@ public final class DesignStore: @unchecked Sendable {
         }
     }
 
-    private func indexURL(_ id: DesignID) throws -> URL {
+    func indexURL(_ id: DesignID) throws -> URL {
         guard let project = projectFolder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
         return project.appendingPathComponent("canvas.json")
     }
 
-    private func fileURL(_ id: DesignID, _ path: DesignPath) throws -> URL {
+    func fileURL(_ id: DesignID, _ path: DesignPath) throws -> URL {
         guard let project = projectFolder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
         return project.appendingPathComponent(path.rawValue)
     }
 
     /// Whether `folder`, with its links resolved, is `project` or inside it.
-    private static func isInside(_ folder: URL, _ project: URL) -> Bool {
+    static func isInside(_ folder: URL, _ project: URL) -> Bool {
         (folder.resolvingSymlinksInPath().path + "/").hasPrefix(project.resolvingSymlinksInPath().path + "/")
     }
 
     /// `folder`, or its nearest ancestor that exists.
-    private static func deepestExisting(_ folder: URL) -> URL {
+    static func deepestExisting(_ folder: URL) -> URL {
         var url = folder
         while !FileManager.default.fileExists(atPath: url.path), url.pathComponents.count > 1 {
             url = url.deletingLastPathComponent()

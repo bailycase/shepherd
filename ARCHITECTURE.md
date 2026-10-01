@@ -196,7 +196,7 @@ panel under the thread never narrows what the dock rule measures.
 ## A design on screen
 
 ```text
-agent's board_write / board_edit / canvas_update → SessionServer → DesignStore (its own queue: check, write, revision)
+agent's board_write / board_edit / boards_edit / board_extract / canvas_update → SessionServer → DesignStore (its own queue: check, write, revision)
   → commitDesignWrite (server queue: boardCount, lastActiveAt) → onDesignRevision (paced, watched designs)
   → DesignScreenModel.refresh (the snapshot: index, revision, each board's sha)
   → DesignHost.update (only boards whose sha changed)
@@ -365,7 +365,12 @@ speaks for**, below; [SECURITY.md](SECURITY.md)).
   them itself, only for the agent that draws the design, by reading and writing through
   `DesignStore` off its queue (`design`, `designBoard`, `designWritten`, `designEdited`: a
   `board_edit` applies its find-and-replace edits to the board's text on that queue and writes
-  the result as a `board_write` does). `design_check` runs in the extension against the
+  the result as a `board_write` does). `boards_edit`, `board_search`, `board_extract` and
+  `checkpoint_*` (`designEditBoards`, `designSearch`, `designExtract`, `designCheckpoint`) are
+  served the same way, the batch and the extraction as one write each. `board_render`
+  (`designRender`) is the one that needs the app: the server reads the board's files, hands the
+  job to the GUI (`onDesignRender`), which draws it off screen one at a time, and answers with
+  the picture or a timeout (docs/designs.md › Batch edits). `design_check` runs in the extension against the
   design's installed systems, else the CSS custom properties in its working folder (the design's
   own folder: a design belongs to no project). It hands pi the design skill through `resources_discover` and
   adds the design's facts to each run's system prompt ([docs/designs.md](docs/designs.md)).
