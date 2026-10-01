@@ -48,10 +48,11 @@ public enum PiLaunch {
         return Line(script: script)
     }
 
-    /// pi's model catalog (`pi --list-models`), from inside the home, so a project's `.pi` never
-    /// applies (a cwd of `~` would make `~/.pi` the project).
+    /// One-shot capability RPC requests, with no persisted session or prompt, from inside
+    /// the home so a project's `.pi` never applies. Keeps provider extensions for their models.
     public static func listModels(home: PiHome) -> Line {
-        Line(script: "cd -- \(quoted(home.directory.path)) && exec \(quoted(home.launcher.path)) --list-models")
+        Line(script: "cd -- \(quoted(home.directory.path)) && exec \(quoted(home.launcher.path))"
+             + " --mode rpc --no-session --no-tools --no-skills --no-prompt-templates --no-themes --no-context-files --no-approve")
     }
 
     /// Whether `cwd` is the user's home folder, which no agent's pi trusts as a project.

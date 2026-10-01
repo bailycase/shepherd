@@ -2,7 +2,10 @@
 
 A thread can ask its provider to answer faster at a higher price. The composer's **Speed**
 control (Standard or Fast) sets it per thread, ⌘K's **Toggle fast mode** flips it, and Settings ▸
-Agents ▸ **Speed for new threads** is what a new thread starts on. The UI is in DESIGN.md ›
+Agents ▸ **Speed for new threads** is what a new thread starts on. New thread shares the composer's
+Speed chip and menu and can override that default before its first prompt, locally and on a host
+with `agent.create.serviceTier.v1`. Older hosts keep their default and show no creation-speed chip.
+The UI is in DESIGN.md ›
 Composer (ComposerSpeed); this page is how it works and what was verified.
 
 - **Standard** sends nothing: the provider's default tier.
