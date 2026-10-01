@@ -148,13 +148,15 @@ struct NewThreadPage: View {
                 .disabled(draft.attachments.isFull)
                 .help("Attach images (drop or paste also works), up to \(NativeImage.maxPerSend)")
                 .accessibilityLabel("Attach file")
+            let summary = ModelSettingsSummary(model: draft.model, thinking: draft.thinkingLevel(vm).rawValue, thinkingOffered: !levels.isEmpty,
+                                               speed: draft.serviceTier, speedOffered: tiers.count > 1, shortenedName: short)
             Button { toggle(.settings) } label: {
-                NWModelSettingsLabel(model: short ? nativeModelCompactName(draft.model) : nativeModelShortName(draft.model),
-                                     thinking: levels.isEmpty ? nil : NativeThinkingLevel.title(draft.thinkingLevel(vm).rawValue),
-                                     fast: tiers.count > 1 && draft.serviceTier != .standard)
+                NWModelSettingsLabel(model: summary.name, thinking: summary.thinking, fast: summary.fast)
             }
             .buttonStyle(.nwComposerChip(active: menu == .settings || menu == .models))
             .help("Model settings: \(draft.model)")
+            .accessibilityLabel("Model settings: \(draft.model.isEmpty ? "default model" : draft.model)")
+            .accessibilityValue(summary.value)
             Spacer(minLength: NW.Space.m)
             Button { toggle(.place) } label: { NWPlaceChipLabel(project: chip.project, host: chip.host) }
                 .buttonStyle(.nwComposerChip(active: menu == .place))
@@ -184,7 +186,8 @@ struct NewThreadPage: View {
             case .settings:
                 let levels = draft.thinkingLevels(vm)
                 let tiers = draft.serviceTiers(vm)
-                NWModelSettings(models: ModelCatalog.settingsModels(catalog: draft.catalog, current: draft.model, recent: RecentModels.load().map(\.id)),
+                NWModelSettings(models: ModelCatalog.settingsModels(catalog: draft.catalog, current: draft.model, recent: RecentModels.load().map(\.id),
+                                                                    currentOffersFast: tiers.count > 1),
                                 thinking: NativeThinkingLevel.levels(levels.map(\.rawValue)).map {
                                     NWThinkingOption(id: $0.id, title: $0.title, note: $0.note)
                                 }, currentThinking: draft.thinkingLevel(vm).rawValue,

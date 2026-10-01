@@ -870,7 +870,8 @@ struct Composer: View {
 
     /// Current model first, then one recent model. Never offer a stale unavailable model.
     private var settingsModels: [NWModelOption] {
-        ModelCatalog.settingsModels(catalog: catalog, current: store.model, recent: RecentModels.load().map(\.id))
+        ModelCatalog.settingsModels(catalog: catalog, current: store.model, recent: RecentModels.load().map(\.id),
+                                    currentOffersFast: store.offersServiceTier)
     }
 
     /// A chip's menu takes over from the slash menu, which stays closed for the draft as typed
@@ -1188,18 +1189,17 @@ struct ComposerControls: View, Equatable {
 
     @ViewBuilder private func modelChip(compact: Bool) -> some View {
         if let name = model.model {
+            let summary = ModelSettingsSummary(model: name, thinking: model.thinking, thinkingOffered: model.thinkingShown, speed: model.speed,
+                                               speedOffered: model.speedShown, shortenedName: compact, dropsThinking: compact)
             Button(action: actions.models) {
-                NWModelSettingsLabel(model: compact ? nativeModelCompactName(name) : nativeModelShortName(name),
-                                     thinking: model.thinkingShown && !compact ? model.thinking.map { NativeThinkingLevel.title($0) } : nil,
-                                     fast: model.speedShown && model.speed != .standard,
+                NWModelSettingsLabel(model: summary.name, thinking: summary.thinking, fast: summary.fast,
                                      changeable: model.modelChangeable || model.thinkingShown || model.speedShown)
             }
             .buttonStyle(.nwComposerChip(active: model.modelsOpen))
             .disabled(!model.modelEnabled && !(model.thinkingShown && model.thinkingEnabled) && !(model.speedShown && model.speedEnabled))
             .help("Model settings: \(name)")
             .accessibilityLabel("Model settings: \(name)")
-            .accessibilityValue([model.thinkingShown ? model.thinking.map(NativeThinkingLevel.title) : nil,
-                                 model.speedShown && model.speed != .standard ? "Fast" : nil].compactMap { $0 }.joined(separator: ", "))
+            .accessibilityValue(summary.value)
         }
     }
 
