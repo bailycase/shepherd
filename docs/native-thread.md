@@ -140,7 +140,10 @@ events come out on stdout, one record per LF.
   `get_commands` (the slash-command registry, capped at 128 commands; pi sends no argument
   hints, so the host reads each prompt template's `argument-hint` from the frontmatter of the
   file pi names in its `sourceInfo`, off the server queue, and commits the hints as the
-  commands' additive `arguments` once read). Until `get_state` and
+  commands' additive `arguments` once read; a command no thread can run is left out: the
+  host's own `/shepherd-retry`, and pi's terminal-only built-in `/llama`, which answers
+  "available in interactive mode" in RPC. Shepherd's bundled extensions register nothing a
+  thread can't show: docs/native-subagents.md › Slash commands). Until `get_state` and
   `get_messages` have answered, requests fail with `native_starting` ("The agent is starting."): pi
   answers `get_state` first, and a thread served before a long history arrives would show a
   resumed agent as a new, empty one. pi reads stdin only once it has started, so a pi slower
