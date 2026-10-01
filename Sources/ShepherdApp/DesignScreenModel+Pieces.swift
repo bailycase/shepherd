@@ -2,7 +2,7 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 
-// Shared pieces on the Mac's canvas (docs/designs.md › Shared pieces; DESIGN.md › Shared pieces): a
+// Shared pieces on the Mac's canvas (docs/designs.md › Shared pieces; docs/design/design-tool.md › Shared pieces): a
 // piece other boards import says how many use it, and an element that is one use of a piece
 // (selection stops at its `<dc-import>`) offers Go to source, which brings the piece's board into
 // view. The canvas is read-only about a use: Tweak writes no style on an instance, since the

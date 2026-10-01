@@ -3,7 +3,7 @@ import Testing
 import ShepherdProtocol
 @testable import ShepherdRemote
 
-/// An agent's `browser_*` calls as activity lines (DESIGN.md › Side pane: Browser › In the thread).
+/// An agent's `browser_*` calls as activity lines (docs/design/side-pane-browser.md › Side pane: Browser › In the thread).
 @Suite("Browser activity lines")
 struct BrowserActivityTests {
     typealias F = Fixture

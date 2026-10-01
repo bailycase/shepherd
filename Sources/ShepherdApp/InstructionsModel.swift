@@ -5,7 +5,7 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
 
-/// Settings ▸ Instructions on the Mac (DESIGN.md › Instructions): Shepherd's root instructions
+/// Settings ▸ Instructions on the Mac (docs/design/settings-instructions.md › Instructions): Shepherd's root instructions
 /// for pi on this Mac, kept by the server's `InstructionsStore`, and on every remote host, read
 /// and saved over `instructions.v1`.
 ///

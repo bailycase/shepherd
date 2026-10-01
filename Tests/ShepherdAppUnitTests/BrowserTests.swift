@@ -6,7 +6,7 @@ import ShepherdUI
 import Testing
 @testable import ShepherdApp
 
-/// The Browser tab's rules (DESIGN.md › Side pane › Browser): the address field, the viewport
+/// The Browser tab's rules (docs/design/side-pane-changes.md › Side pane › Browser): the address field, the viewport
 /// widths, the dev servers a repository offers, what the page's scripts report, and where a
 /// picked element's popover goes.
 @Suite("Browser")

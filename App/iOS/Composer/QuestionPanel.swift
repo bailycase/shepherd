@@ -5,7 +5,7 @@ import ShepherdRemote
 
 /// A question in the composer's place (MobileQuestion, iPadQuestion boards), pi's own or a
 /// subagent's, so a blocked agent is always answerable. It follows the question dock's rules
-/// (DESIGN.md › Questions; `NativeQuestionPrompt`, as the Mac's dock does): numbered options to
+/// (docs/design/composer.md › Questions; `NativeQuestionPrompt`, as the Mac's dock does): numbered options to
 /// pick, then Answer; a yes or a no that answers on a tap; an open question's field; and, for an
 /// asker that takes them, a note on the picked option and Something else… for an answer in the
 /// person's own words. Answer is the only button: Stop in the thread's header refuses pi's

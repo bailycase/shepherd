@@ -161,12 +161,12 @@ Shepherd agent when you want those.
 
 ## Documentation
 
-- [AGENTS.md](AGENTS.md): the working guide for coding agents and contributors. It covers build
-  and test, the source map, and the rules that are easy to break.
+- [AGENTS.md](AGENTS.md): the short working guide for coding agents and contributors. It links to
+  build and test, the source map, and the rules that are easy to break in `docs/`.
 - [ARCHITECTURE.md](ARCHITECTURE.md): modules, runtime ownership, data flow, remote, and
   persistence.
-- [DESIGN.md](DESIGN.md): the UI and interaction specification: Night Watch, Shepherd's design
-  system, and every surface built on it.
+- [DESIGN.md](DESIGN.md): the rules for UI changes. [docs/design/](docs/design/README.md) has the
+  spec of every surface built on Night Watch, Shepherd's design system.
 - [docs/native-thread.md](docs/native-thread.md): how an agent's `pi --mode rpc` process
   becomes its thread.
 - [docs/native-subagents.md](docs/native-subagents.md): the bundled subagent runtime.

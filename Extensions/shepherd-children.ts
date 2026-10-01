@@ -486,7 +486,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     turns: run.turns, toolCalls: run.toolCalls, tokens: run.tokens, contextPercent: run.contextPercent, files: fileChanges(run), added: run.added, removed: run.removed, lastActivity: run.lastActivity, questionOptions: run.questionOptions, questionText: run.questionText, questionShort: run.questionShort,
     attempt: run.attempt, questionID: run.questionID, exitCode: run.exitCode, toolCallID: run.toolCallID, stepIndex: run.stepIndex,
     relaying: run.relays?.size || undefined });
-  // Card projection for the native thread (DESIGN.md › Subagents). Every field
+  // Card projection for the native thread (docs/design/subagents.md › Subagents). Every field
   // past asyncDir is optional on the Swift side; undefined keys vanish in JSON.stringify.
   function card(run) {
     const workflow = run.workflowId ? workflows.get(run.workflowId) : undefined;

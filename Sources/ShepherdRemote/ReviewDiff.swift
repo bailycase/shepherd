@@ -137,7 +137,7 @@ public func reviewFile(matching path: String, in files: [DiffFile]) -> DiffFile?
 
 // MARK: Rows
 
-/// Runs of more same-kind lines than this fold (DESIGN.md › Right pane).
+/// Runs of more same-kind lines than this fold (docs/design/side-pane-changes.md › Right pane).
 public let reviewCollapseThreshold = 8
 
 /// One rendered row of a file's diff.
@@ -158,7 +158,7 @@ public struct ReviewRow: Identifiable, Equatable, Sendable {
     }
 }
 
-/// A file's rows with long runs folded (DESIGN.md › Right pane): more than eight same-kind lines
+/// A file's rows with long runs folded (docs/design/side-pane-changes.md › Right pane): more than eight same-kind lines
 /// in a row keep a few at each end and fold the middle into one strip. `expandedRuns` nil
 /// expands everything.
 public func reviewRows(_ file: DiffFile, expandedRuns: Set<String>?, threshold: Int = reviewCollapseThreshold) -> [ReviewRow] {

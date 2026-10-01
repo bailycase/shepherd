@@ -4,7 +4,7 @@ import Observation
 import ShepherdCore
 import ShepherdRemote
 
-/// A tab of the side pane beside a thread (DESIGN.md › Side pane). Only the tabs Shepherd has
+/// A tab of the side pane beside a thread (docs/design/side-pane-changes.md › Side pane). Only the tabs Shepherd has
 /// are here; Artifacts and Files join as cases when they are built, each with its content in
 /// `SidePaneView` and its ⌃ digit following its place.
 enum SidePaneTab: String, CaseIterable, Hashable, Sendable {
@@ -57,7 +57,7 @@ enum SidePaneOwner: Hashable {
     }
 }
 
-/// The side pane beside a thread (DESIGN.md › Side pane): one pane per window, docked right,
+/// The side pane beside a thread (docs/design/side-pane-changes.md › Side pane): one pane per window, docked right,
 /// with a tab per surface (Changes today). The subagent inspector takes the pane over while a run
 /// is inspected; closing it goes back to the tab underneath, if the pane was open. Nothing opens
 /// the pane by itself: when pi opens something for it (`review_diff`), the tab takes a dot, and

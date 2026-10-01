@@ -4,7 +4,7 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
 
-// The Mac's notifications (NotifCatalog, NotifMac; DESIGN.md › Notifications and Live
+// The Mac's notifications (NotifCatalog, NotifMac; docs/design/notifications.md › Notifications and Live
 // Activities › Mac): when each is posted and taken down, and what its actions do. `AgentBanners`
 // words them; `AgentNotifications` posts them.
 extension ShepherdViewModel {

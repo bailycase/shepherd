@@ -5,7 +5,7 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
 
-// A direct commit from review (AGENTS.md › Only these paths mutate repositories): the files the
+// A direct commit from review (docs/rules.md › Only these paths mutate repositories): the files the
 // reviewer ticked, with the message they confirmed, then optionally a push to the branch's
 // upstream (set when there is none) or a pushed branch with a pull request (gh). Each step gates
 // the next, git's own stderr is reported, nothing is ever forced, and no file outside the

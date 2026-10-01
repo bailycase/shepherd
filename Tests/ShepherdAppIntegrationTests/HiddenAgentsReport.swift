@@ -10,7 +10,7 @@ import Testing
 /// `PERF | … | … | …`: a scroll step in the Changes pane, a keystroke, a status report, and a
 /// switch. (A streamed reply's pulls land between the run loop's turns, where nothing here can
 /// fence one off from the server's and pi's work; `ListPerformanceTests` counts its updates.)
-/// Build it in release for numbers that match the app (AGENTS.md › Testing);
+/// Build it in release for numbers that match the app (docs/testing.md › Testing);
 /// `ListPerformanceTests` pins the counts behind them.
 ///
 ///     SHEPHERD_PERF_REPORT=1 swift test --filter HiddenAgentsReport

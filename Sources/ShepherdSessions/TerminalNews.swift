@@ -1,7 +1,7 @@
 import Foundation
 
 /// How far a terminal's news has got: output worth a dot on a tab that is off screen
-/// (DESIGN.md › Terminal panel). Every read of a PTY advances its output sequence, the attach
+/// (docs/design/terminal.md › Terminal panel). Every read of a PTY advances its output sequence, the attach
 /// watermark, but a shell or a TUI answers a new window size (SIGWINCH) by drawing its screen
 /// again, and a redraw is not news. So output read within `redrawWindow` of a resize the PTY
 /// received advances nothing here; a command still printing after that window does.
