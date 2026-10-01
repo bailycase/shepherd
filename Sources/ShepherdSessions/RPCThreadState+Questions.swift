@@ -81,12 +81,13 @@ extension RPCThreadState {
         return result
     }
 
-    /// Text a record keeps: up to the thread's per-message limit (or `limit` bytes).
+    /// Text a record keeps: up to the thread's per-message limit (or `limit` bytes), without
+    /// copying the discarded tail or splitting a UTF-8 scalar.
     static func clippedText(_ text: String, limit: Int = textLimit) -> String {
-        let raw = Array(text.utf8)
+        let raw = text.utf8
         guard raw.count > limit else { return text }
-        var end = limit
-        while end > 0, raw[end] & 0xC0 == 0x80 { end -= 1 }
-        return String(decoding: raw[0..<end], as: UTF8.self)
+        var end = raw.index(raw.startIndex, offsetBy: limit)
+        while end > raw.startIndex, raw[end] & 0xC0 == 0x80 { end = raw.index(before: end) }
+        return String(decoding: raw[..<end], as: UTF8.self)
     }
 }

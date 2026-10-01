@@ -42,6 +42,25 @@ struct DataPathBenchmarks {
         Bench.report("history.\(mib).total", Bench.median(decode) + Bench.median(project), "ms")
     }
 
+    /// Large tool output is clipped to 16 KiB for a row. Measure projection separately from
+    /// JSON decode, so copying the discarded tail cannot hide in the decoder's cost.
+    @Test(arguments: [16 << 10, 1 << 20, 12 << 20])
+    func largeOutputProjection(bytes: Int) {
+        let text = String(repeating: "x", count: bytes)
+        let message = RPCMessage(role: "toolResult", content: [.text(text)])
+        var costs: [Double] = []
+        var kept = 0
+        for _ in 0..<5 {
+            costs.append(Bench.time {
+                for _ in 0..<100 {
+                    kept = RPCThreadState.project(entryID: "t:output", message: message).blocks[0].text.utf8.count
+                }
+            } * 1000 / 100)
+        }
+        #expect(kept == RPCThreadState.textLimit)
+        Bench.report("project.output\(bytes)bytes", Bench.median(costs), "us/row")
+    }
+
     // MARK: Streaming
 
     @Test func streamingDeltaCost() throws {
