@@ -336,8 +336,18 @@ function registerRelayTools(pi) {
     if (typeof spec?.name !== "string" || !DESIGN_RELAYED.includes(spec.name) || !spec.parameters || typeof spec.parameters !== "object") continue;
     pi.registerTool({ name: spec.name, label: String(spec.label ?? spec.name), description: String(spec.description ?? spec.name),
       promptSnippet: typeof spec.promptSnippet === "string" ? spec.promptSnippet : undefined, parameters: spec.parameters,
-      async execute(_id, params, signal, _update, ctx) { return relayedCall(spec.name, params, signal, ctx); } });
+      async execute(_id, params, signal, _update, ctx) { return pictureForModel(await relayedCall(spec.name, params, signal, ctx), ctx); } });
   }
+}
+
+// A picture (board_render) is for a model that can view one: the helper's own, which the parent can't know. A
+// helper whose model's input kinds are known and lack images gets the words alone.
+export function pictureForModel(result, ctx) {
+  const kinds = ctx?.model?.input;
+  if (!Array.isArray(kinds) || kinds.includes("image")) return result;
+  const content = result.content.filter((part) => part?.type !== "image");
+  if (content.length === result.content.length) return result;
+  return { ...result, content: [...content, { type: "text", text: "This helper's model can't view images, so the picture is not attached. Read the board's markup instead." }] };
 }
 
 // The parent's side: serves one relayed call (a helper's `input` request) and answers it on the helper's
@@ -364,7 +374,9 @@ export async function serveRelay(run, event, { relay, ctx, answer }) {
   run.relays.set(callId, controller);
   try {
     const params = validateToolArguments({ name, parameters: tool.parameters }, { id: callId, name, arguments: request.params ?? {} });
-    const result = await tool.execute(`relay-${run.id}-${callId}`, params, controller.signal, undefined, ctx);
+    // The parent's own model is no judge of what a helper's can see: the picture goes, and the helper's side decides.
+    const callCtx = ctx && typeof ctx === "object" ? Object.create(ctx, { model: { value: undefined } }) : ctx;
+    const result = await tool.execute(`relay-${run.id}-${callId}`, params, controller.signal, undefined, callCtx);
     // A cancelled call has no one left to answer.
     if (controller.signal.aborted) return;
     // Text, and a picture (board_render) as long as it is a small base64 image: nothing else crosses.

@@ -184,6 +184,10 @@ test("a helper gets the batch tools through its parent too, a rendered board's p
     assert.equal(saved[0].content[0].text, "The design has no checkpoints.");
     assert(host.frames.every((frame) => frame.agentID === "designer-1" && frame.designID === "d1" && frame.connection === 1), "all on the parent's connection");
 
+    // The parent's own model is no judge of the helper's: a parent that can't view images still relays the picture.
+    const blind = await serve(newRun(["board_render"]), request("board_render", { path: "A.dc.html" }, "r6"), relay, { cwd: "/parent", model: { input: ["text"] } });
+    assert.deepEqual(blind[0].content, [{ type: "text", text: "A.dc.html · 390×844" }, { type: "image", ...png }]);
+
     // A restore rewinds every board, siblings' work included: a profile can't list it, and a forged list is refused.
     for (const list of [["checkpoint_restore"], ["checkpoint_create"]]) {
       const forged = newRun(list);
@@ -333,6 +337,18 @@ test("a helper's proxy sends one request up its channel and returns the parent's
   await assert.rejects(children.relayedCall("board_edit", {}, undefined, helperContext(() => "not json").ctx), /answer was not understood/);
   await assert.rejects(children.relayedCall("board_edit", { source: "x".repeat(1024 * 1024) }, undefined, helperContext(() => "").ctx), /larger than the 1048576 byte relay limit/);
   await assert.rejects(children.relayedCall("board_edit", {}, undefined, { ui: {} }), /no channel to its parent/);
+});
+
+test("a picture reaches a helper only when its own model can view images", () => {
+  const result = { content: [{ type: "text", text: "A.dc.html · 390×844" }, { type: "image", data: "iVBORw0KGgo=", mimeType: "image/png" }], details: { path: "A.dc.html" } };
+  assert.equal(children.pictureForModel(result, { model: { input: ["text", "image"] } }), result);
+  assert.equal(children.pictureForModel(result, {}), result, "a model whose kinds are unknown gets it");
+  const words = children.pictureForModel(result, { model: { input: ["text"] } });
+  assert.deepEqual(words.content.map((part) => part.type), ["text", "text"]);
+  assert.match(words.content[1].text, /can't view images/);
+  assert.deepEqual(words.details, result.details);
+  const plain = { content: [{ type: "text", text: "Edited A.dc.html" }] };
+  assert.equal(children.pictureForModel(plain, { model: { input: ["text"] } }), plain, "a text answer is never changed");
 });
 
 test("a helper that is aborted, or never answered, tells its parent which call to drop", async () => {
