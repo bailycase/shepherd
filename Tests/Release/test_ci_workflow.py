@@ -84,7 +84,7 @@ class WorkflowShapeTests(unittest.TestCase):
         gate = JOBS["ci"]
         self.assertIn("name: CI", gate)
         self.assertEqual(sorted(needs(gate)), ["build", "extensions", "plan", "release-rules", "tests"])
-        self.assertIn("always()", gate)
+        self.assertIn("!cancelled()", gate)
         self.assertIn("needs.plan.result != 'skipped'", gate)
 
     def test_the_gate_passes_for_success_and_skipped_and_fails_for_anything_else(self):
@@ -108,7 +108,7 @@ class WorkflowShapeTests(unittest.TestCase):
     def test_the_shards_come_from_the_plan_and_run_even_when_the_pull_request_has_no_build_job(self):
         tests = JOBS["tests"]
         self.assertIn("fromJSON(needs.plan.outputs.shards)", tests)
-        self.assertIn("always()", tests)
+        self.assertIn("!cancelled()", tests)
         self.assertIn("needs.build.result == 'skipped'", tests)
         self.assertIn("needs.plan.outputs.swift == 'true'", tests)
         self.assertIn("fail-fast: false", tests)
@@ -174,6 +174,12 @@ class WorkflowShapeTests(unittest.TestCase):
     def test_the_scheduled_run_tests_nightly_not_master(self):
         self.assertIn("github.event_name == 'schedule' && 'nightly'", JOBS["plan"])
         self.assertIn("ref: ${{ needs.plan.outputs.checkout_ref }}", JOBS["tests"])
+
+    def test_no_job_survives_its_runs_cancellation(self):
+        # A job-level `always()` runs on after the run is cancelled (macOS shards kept running for a
+        # superseded pull request run); `!cancelled()` is the status function that does not.
+        for name, job in JOBS.items():
+            self.assertNotRegex(job, r"(?m)^    if: .*always\(\)", name)
 
     def test_a_newer_run_cancels_the_running_one_with_a_literal_true(self):
         # An expression here (github.event_name != 'schedule') left the running run alone while the
