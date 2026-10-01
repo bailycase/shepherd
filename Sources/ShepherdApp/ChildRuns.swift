@@ -122,9 +122,4 @@ struct ChildRuns {
     func children(of agentID: AgentID) -> [ChildRun] {
         rows[agentID] ?? []
     }
-
-    /// Children needing attention, fleet-wide — feeds the waiting rollup.
-    var attentionCount: Int {
-        rows.values.reduce(0) { $0 + $1.count(where: \.needsAttention) }
-    }
 }

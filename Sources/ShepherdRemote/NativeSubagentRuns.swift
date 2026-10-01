@@ -9,25 +9,27 @@ import ShepherdProtocol
 // MARK: Phase
 
 /// A run's state: the four card states, with the two ways a live run waits (queued, or paused
-/// before its next model request) told apart.
+/// before its next model request) told apart, and the way it waits on its parent: `asked`, a
+/// question put to the parent agent, which answers it or asks the user itself. A child never
+/// needs the user, so no phase says it does.
 public enum NativeRunPhase: String, CaseIterable, Equatable, Sendable {
-    case running, queued, paused, needsYou, done, failed
+    case running, queued, paused, asked, done, failed
 
-    /// Still going: running, waiting to start or to continue, or waiting on your answer.
+    /// Still going: running, waiting to start or to continue, or waiting on its parent's answer.
     public var isLive: Bool {
         switch self {
-        case .running, .queued, .paused, .needsYou: true
+        case .running, .queued, .paused, .asked: true
         case .done, .failed: false
         }
     }
 
-    /// The tally's word ("2 running · 1 needs you").
+    /// The tally's word ("2 running · 1 waiting on parent").
     public var word: String {
         switch self {
         case .running: "running"
         case .queued: "queued"
         case .paused: "paused"
-        case .needsYou: "needs you"
+        case .asked: "waiting on parent"
         case .done: "done"
         case .failed: "failed"
         }
@@ -36,7 +38,7 @@ public enum NativeRunPhase: String, CaseIterable, Equatable, Sendable {
 
 public func nativeRunPhase(_ run: ChildRun) -> NativeRunPhase {
     switch nativeSubagentState(run) {
-    case .needsYou: .needsYou
+    case .asked: .asked
     case .done: .done
     case .failed: .failed
     case .running: run.paused == true ? .paused : run.state == "queued" ? .queued : .running
@@ -83,8 +85,8 @@ public struct NativeRunSummary: Equatable, Sendable, Identifiable {
     public var phase: NativeRunPhase
     /// One line: what it is doing, why it waits, what it did, or why it failed.
     public var detail: String
-    /// The group card's shorter line: "step 1 of 3 · edit ThreadView.swift", "needs you: rename
-    /// or replace?", "14 of 14 pass".
+    /// The group card's shorter line: "step 1 of 3 · edit ThreadView.swift", "asked the parent:
+    /// rename or replace?", "14 of 14 pass".
     public var compactDetail: String
     /// "step 1 of 3", while live.
     public var step: String?
@@ -93,15 +95,15 @@ public struct NativeRunSummary: Equatable, Sendable, Identifiable {
     /// "922k", tokens used so far.
     public var tokens: String?
     /// Its question and the answers it offered (the first is the recommended one), while it
-    /// needs you.
+    /// waits on its parent's answer.
     public var question: String?
     public var options: [String]
     /// Milliseconds since the epoch.
     public var startedAt: Double?
     /// Set once finished.
     public var endedAt: Double?
-    /// When it began waiting on you: the time of its `shepherd_parent_message` call. nil when
-    /// nothing gives an honest start.
+    /// When it began waiting on its parent: the time of its `shepherd_parent_message` call. nil
+    /// when nothing gives an honest start.
     public var askedAt: Double?
     /// Its combined diff, once it has one.
     public var added: Int?
@@ -125,13 +127,13 @@ public struct NativeRunSummary: Equatable, Sendable, Identifiable {
     }
 }
 
-/// The state's word for headers and VoiceOver: "Running", "Needs you", "Paused".
+/// The state's word for headers and VoiceOver: "Running", "Waiting on parent", "Paused".
 public func nativeRunPhaseLabel(_ phase: NativeRunPhase) -> String {
     switch phase {
     case .running: "Running"
     case .queued: "Queued"
     case .paused: "Paused"
-    case .needsYou: "Needs you"
+    case .asked: "Waiting on parent"
     case .done: "Done"
     case .failed: "Failed"
     }
@@ -164,13 +166,13 @@ public func nativeRunSummary(_ run: ChildRun) -> NativeRunSummary {
     case .paused:
         summary.detail = "paused before its next model request"
         summary.compactDetail = "paused"
-    case .needsYou:
+    case .asked:
         let question = run.question?.text ?? run.attentionText ?? ""
-        summary.detail = "waiting on your answer"
+        summary.detail = "waiting on its parent's answer"
         summary.question = question.isEmpty ? nil : question
         summary.options = run.question?.options ?? []
         summary.askedAt = nativeRunAskedAt(run)
-        summary.compactDetail = question.isEmpty ? "needs you" : "needs you: " + nativeQuestionLine(question)
+        summary.compactDetail = question.isEmpty ? "asked the parent" : "asked the parent: " + nativeQuestionLine(question)
     case .done:
         let line = nativeRunSummaryLine(run)
         summary.detail = line.isEmpty ? "finished" : line
@@ -204,8 +206,8 @@ public func nativeRunActivity(_ run: ChildRun) -> String {
 /// transcript reads the child's session file, which holds only finished calls, so the call is
 /// built from what the run reports: its tool, and the command or path of its running
 /// `lastActivity` (an older host reports only the tool), timed from when it began. It has no
-/// output to tail. nil between calls (a transcript shows no "Thinking…"), while the run asks,
-/// and once it has ended.
+/// output to tail. nil between calls (a transcript shows no "Thinking…"), while the run waits on
+/// its parent's answer, and once it has ended.
 public func nativeRunLive(_ run: ChildRun) -> NativeActivityBurst? {
     guard !run.isTerminal, !run.needsAttention, let tool = run.currentTool else { return nil }
     let activity = run.lastActivity.flatMap { $0.isRunning && $0.tool == tool ? $0 : nil }
@@ -219,8 +221,8 @@ public func nativeRunLive(_ run: ChildRun) -> NativeActivityBurst? {
     return nativeActivityBurst([call])
 }
 
-/// A native child asks through `shepherd_parent_message`, so that call's time is when it began
-/// waiting; anything else gives no honest start.
+/// A native child asks its parent through `shepherd_parent_message`, so that call's time is when
+/// it began waiting; anything else gives no honest start.
 public func nativeRunAskedAt(_ run: ChildRun) -> Double? {
     guard let last = run.lastActivity, last.tool == "shepherd_parent_message" else { return nil }
     return last.at
@@ -301,19 +303,19 @@ public func nativeRunSections(_ runs: [ChildRun], placements: [String: NativeSub
 }
 
 /// The header's line over a set of runs: the live phases while any run is live ("1 running · 1
-/// needs you"), else how they ended ("all done", "2 done · 1 failed"). `phase` colors it:
-/// running first, then needs you, then queued or paused, then failed, else done.
+/// waiting on parent"), else how they ended ("all done", "2 done · 1 failed"). `phase` colors
+/// it: running first, then waiting on the parent, then queued or paused, then failed, else done.
 public func nativeRunTally(_ runs: [ChildRun]) -> (text: String, phase: NativeRunPhase)? {
     guard !runs.isEmpty else { return nil }
     let phases = runs.map(nativeRunPhase)
     let live = phases.contains(where: \.isLive)
-    let order: [NativeRunPhase] = live ? [.running, .queued, .paused, .needsYou] : [.done, .failed]
+    let order: [NativeRunPhase] = live ? [.running, .queued, .paused, .asked] : [.done, .failed]
     let parts = order.compactMap { phase -> String? in
         let count = phases.count { $0 == phase }
         return count > 0 ? "\(count) \(phase.word)" : nil
     }
     let text = !live && !phases.contains(.failed) ? "all done" : parts.joined(separator: " · ")
-    let lead = [NativeRunPhase.running, .needsYou, .queued, .paused, .failed].first(where: phases.contains) ?? .done
+    let lead = [NativeRunPhase.running, .asked, .queued, .paused, .failed].first(where: phases.contains) ?? .done
     return (text, lead)
 }
 
@@ -367,13 +369,13 @@ public enum NativeRunControl: String, CaseIterable, Equatable, Sendable {
     }
 }
 
-/// A live run pauses (or continues) and stops; one waiting on you only stops; a finished run
-/// re-runs.
+/// A live run pauses (or continues) and stops; one waiting on its parent only stops (nothing
+/// runs to pause, and Stop closes its question); a finished run re-runs.
 public func nativeRunControls(_ run: ChildRun) -> [NativeRunControl] {
     switch nativeRunPhase(run) {
     case .running, .queued: [.pause, .stop]
     case .paused: [.continue, .stop]
-    case .needsYou: [.stop]
+    case .asked: [.stop]
     case .done, .failed: [.rerun]
     }
 }
@@ -383,8 +385,9 @@ public func nativeRunAcceptsSteer(_ run: ChildRun) -> Bool {
     nativeRunPhase(run).isLive
 }
 
-/// One `subagentCommand`'s arguments: a steer or an answer reaches only that child, delivered
-/// before its next turn; a control carries no text.
+/// One `subagentCommand`'s arguments: a steer reaches only that child, delivered before its next
+/// turn (to a child waiting on its parent it is the user speaking over the parent, and ends its
+/// question); a control carries no text.
 public struct NativeRunCommand: Equatable, Sendable {
     public var action: NativeSubagentAction
     public var text: String?
@@ -404,11 +407,6 @@ public struct NativeRunCommand: Equatable, Sendable {
     public static func steer(_ draft: String) -> NativeRunCommand? {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         return text.isEmpty ? nil : NativeRunCommand(message: text)
-    }
-
-    /// An answer to the child's question: one of its options, or a reply typed for it.
-    public static func answer(_ reply: String) -> NativeRunCommand? {
-        steer(reply)
     }
 }
 

@@ -125,13 +125,11 @@ struct SidebarSource: Equatable {
         var id: UUID
         var name: String
         var state: ShepherdState
-        var children: [AgentID: [ChildRun]]
         /// Not connected: `state` is what it last sent this launch.
         var offline = false
     }
 
     var local: ShepherdState
-    var localChildren: [AgentID: [ChildRun]] = [:]
     /// This Mac's agents whose last turn ended in an error.
     var failedTurns: Set<AgentID> = []
     /// This Mac's agents whose pi stopped before it served, waiting for Retry.
@@ -182,11 +180,12 @@ enum SidebarDerivation {
         for (index, agent) in source.local.agents.enumerated() {
             if let design = agent.designID, designs.contains(design) { continue }
             let automation = localRuns[agent.id]
-            let children = source.localChildren[agent.id] ?? []
             let notSignedIn = source.notSignedIn.contains(agent.id)
-            let needsYou = agent.status == .blocked || children.contains(where: \.needsAttention) || notSignedIn
+            // A subagent's question goes to its parent, never to the user: only the thread's own
+            // question, or a missing sign-in, puts its row in Needs you.
+            let needsYou = agent.status == .blocked || notSignedIn
             let run = automation.flatMap { source.openRuns[$0.id] }.flatMap { $0.agentID == agent.id ? $0 : nil }
-            let row = localRow(agent, automation: automation, run: run, children: children, needsYou: needsYou,
+            let row = localRow(agent, automation: automation, run: run, needsYou: needsYou,
                                failed: source.failedTurns.contains(agent.id), cannotStart: source.cannotStart.contains(agent.id),
                                notSignedIn: notSignedIn, waiting: source.waiting.contains(agent.id), since: source.statusSince[agent.id])
             entries.append(entry(row, automation == nil ? .local(agent.id) : nil, needsYou: needsYou,
@@ -203,10 +202,9 @@ enum SidebarDerivation {
             let runs = Set(host.state.automations.compactMap(\.agentID))
             // A host sends no design's agent (`withoutDesigns`); one from before that is no thread either.
             for (index, agent) in host.state.agents.enumerated() where !host.state.isDesignAgent(agent) {
-                let children = host.offline ? [] : host.children[agent.id] ?? []
                 // Nothing on an offline host can be answered, so none of it waits on you here.
-                let needsYou = !host.offline && (agent.status == .blocked || children.contains(where: \.needsAttention))
-                let row = remoteRow(agent, host: host, automation: runs.contains(agent.id), children: children, needsYou: needsYou)
+                let needsYou = !host.offline && agent.status == .blocked
+                let row = remoteRow(agent, host: host, automation: runs.contains(agent.id), needsYou: needsYou)
                 let pin = runs.contains(agent.id) ? nil : PinnedThread.remote(RemoteAgentRef(hostID: host.id, agentID: agent.id))
                 entries.append(entry(row, pin, needsYou: needsYou, key: agent.lastActiveAt ?? -1, host: hostIndex + 1, index: index))
             }
@@ -235,14 +233,9 @@ enum SidebarDerivation {
     }
 
     /// The short reason a Needs you row gives: the agent's own word or two for its question
-    /// ("retention?"), else the question cut short; else the asking subagent's own reason, else
-    /// its name; else "ASK".
-    static func reason(question: String?, short: String? = nil, children: [ChildRun]) -> String {
+    /// ("retention?"), else the question cut short; else "ASK".
+    static func reason(question: String?, short: String? = nil) -> String {
         if let question = question.flatMap(nonEmpty) { return shortened(short.flatMap(nonEmpty) ?? question) }
-        if let child = children.first(where: \.needsAttention),
-           let reason = child.question?.short.flatMap(nonEmpty) ?? nonEmpty(child.role ?? child.label) {
-            return shortened(reason)
-        }
         return "ASK"
     }
 
@@ -256,7 +249,7 @@ enum SidebarDerivation {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    static func localRow(_ agent: Agent, automation: Automation?, run: AutomationRun?, children: [ChildRun],
+    static func localRow(_ agent: Agent, automation: Automation?, run: AutomationRun?,
                          needsYou: Bool, failed: Bool, cannotStart: Bool = false, notSignedIn: Bool = false, waiting: Bool = false,
                          since: Date?) -> SidebarListRow {
         let failed = failed && agent.status == .done
@@ -276,7 +269,7 @@ enum SidebarDerivation {
             word = "waiting"
         } else if needsYou {
             leading = automation == nil ? .dot(.attention) : .glyph("bolt", attention: true)
-            accessory = .reason(reason(question: agent.waitingOn, short: agent.waitingReason, children: children))
+            accessory = .reason(reason(question: agent.waitingOn, short: agent.waitingReason))
             word = "needs you"
         } else if cannotStart {
             leading = automation == nil ? .dot(.failed) : .glyph("bolt", attention: false)
@@ -314,14 +307,14 @@ enum SidebarDerivation {
             worktree: false, automation: nil, automationLive: false)
     }
 
-    static func remoteRow(_ agent: Agent, host: SidebarSource.Host, automation: Bool, children: [ChildRun],
-                                  needsYou: Bool) -> SidebarListRow {
+    static func remoteRow(_ agent: Agent, host: SidebarSource.Host, automation: Bool,
+                          needsYou: Bool) -> SidebarListRow {
         let leading: NWSidebarRow.Leading
         let accessory: NWSidebarRow.Accessory
         let word: String
         if needsYou {
             leading = automation ? .glyph("bolt", attention: true) : .dot(.attention)
-            accessory = .reason(reason(question: agent.waitingOn, short: agent.waitingReason, children: children))
+            accessory = .reason(reason(question: agent.waitingOn, short: agent.waitingReason))
             word = "needs you"
         } else {
             leading = automation ? .glyph("bolt", attention: false) : .dot(AgentState(agent.status))

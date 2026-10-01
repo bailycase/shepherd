@@ -293,12 +293,11 @@ private struct TreeBuilder {
                 project = nil
             }
             guard let project else { continue }
-            let children = source.localChildren[agent.id] ?? []
             let notSignedIn = source.notSignedIn.contains(agent.id)
-            let waiting = agent.status == .blocked || children.contains(where: \.needsAttention) || notSignedIn
+            let waiting = agent.status == .blocked || notSignedIn
             let run = automation.flatMap { source.openRuns[$0.id] }.flatMap { $0.agentID == agent.id ? $0 : nil }
             let live = automation != nil && AutomationRow.isLive(agent, run: run)
-            let row = SidebarDerivation.localRow(agent, automation: automation, run: run, children: children, needsYou: waiting,
+            let row = SidebarDerivation.localRow(agent, automation: automation, run: run, needsYou: waiting,
                                                  failed: source.failedTurns.contains(agent.id), cannotStart: source.cannotStart.contains(agent.id),
                                                  notSignedIn: notSignedIn, waiting: source.waiting.contains(agent.id),
                                                  since: source.statusSince[agent.id])
@@ -336,10 +335,8 @@ private struct TreeBuilder {
                 project = projectOf[space.id]
             }
             guard let project else { continue }
-            let children = host.offline ? [] : host.children[agent.id] ?? []
-            let waiting = !host.offline && (agent.status == .blocked || children.contains(where: \.needsAttention))
-            var row = SidebarDerivation.remoteRow(agent, host: host, automation: automation != nil, children: children,
-                                                  needsYou: waiting)
+            let waiting = !host.offline && agent.status == .blocked
+            var row = SidebarDerivation.remoteRow(agent, host: host, automation: automation != nil, needsYou: waiting)
             // Grouped, the section says which host: the row carries no tag.
             if options.groupByHost, case .tag = row.accessory { row.accessory = .none }
             add(Entry(row: row, waiting: waiting, running: !host.offline && agent.status == .working, key: agent.lastActiveAt ?? -1,

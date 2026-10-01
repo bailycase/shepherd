@@ -267,6 +267,12 @@ public enum GoalExtension {
             if (goal) save(ctx);
           });
           // A time limit must not kill a tool halfway through a write; stop before the next request.
+          pi.on("tool_execution_start", (event, ctx) => {
+            if (active(goal) && /(?:^|[^a-z0-9])(?:ask|question)(?:[^a-z0-9]|$)/i.test(event.toolName)) {
+              generation++;
+              transition("needsYou", ctx, "The agent is waiting for your answer.");
+            }
+          });
           pi.on("turn_end", (_event, ctx) => {
             checkLimits(ctx);
             if (goal?.state === "needsYou" && limitReason()) ctx.abort();
@@ -275,10 +281,9 @@ public enum GoalExtension {
             const ctx = sessionContext;
             if (!ctx || data?.owner !== ctx.sessionManager.getSessionId() || !Array.isArray(data.children)) return;
             const hadChildren = childrenActive;
-            childrenActive = data.children.some((c) => ["running", "queued"].includes(c.state));
-            if (active(goal) && data.children.some((c) => c.needsAttention)) {
-              generation++; transition("needsYou", ctx, "A child needs your answer or permission.");
-            }
+            // A child asks its parent, not the user. Let the native child controller wake the
+            // parent to answer it before a goal check can accept that child as finished.
+            childrenActive = data.children.some((c) => ["running", "queued"].includes(c.state) || c.needsAttention);
             let delta = 0;
             for (const child of data.children) {
               const n = tokensOf({ totalTokens: child.tokens });

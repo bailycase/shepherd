@@ -68,13 +68,13 @@ struct AgentComponentTests {
     }
 
     @Test func aTrayHeaderReadsAsItsTitleThenItsTally() {
-        let summary = NWSubagentTraySummary(title: "3 subagents", cells: [.running, .attention, .done],
-                                            tally: [.init("1 needs you", state: .attention), .init("1 running", state: .running), .init("1 done")])
-        #expect(summary.accessibilityLabel == "3 subagents, 1 needs you, 1 running, 1 done")
+        let summary = NWSubagentTraySummary(title: "3 subagents", cells: [.running, .queued, .done],
+                                            tally: [.init("1 running", state: .running), .init("1 waiting on parent"), .init("1 done")])
+        #expect(summary.accessibilityLabel == "3 subagents, 1 running, 1 waiting on parent, 1 done")
     }
 
-    /// Only a run still going can be steered and stopped; one waiting on you counts as going.
-    @Test(arguments: [(AgentState.running, true), (.queued, true), (.attention, true), (.done, false), (.failed, false)])
+    /// Only a run still going can be steered and stopped; one waiting on its parent draws as queued, so it counts as going.
+    @Test(arguments: [(AgentState.running, true), (.queued, true), (.done, false), (.failed, false)])
     func aTrayRowIsLiveUntilItsRunEnds(state: AgentState, live: Bool) {
         let run = NWSubagentTrayRun(id: "w", name: "worker", state: state, line: .waiting(""))
         #expect(run.isLive == live)

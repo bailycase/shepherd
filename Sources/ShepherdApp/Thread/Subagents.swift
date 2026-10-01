@@ -6,7 +6,9 @@ import ShepherdRemote
 // Subagents (SubagentTray, Subagents, SubagentsDone, SubagentsQueue boards): while a turn's
 // subagents run they dock above the composer in the tray, one row each, sharing one card with
 // Up next; the thread keeps a line where they started and one where they finished, and both
-// open the inspector. The tray stays until your next message once every run has finished.
+// open the inspector. The tray stays until your next message once every run has finished. A
+// subagent never asks the user: one that has a question says so quietly on its row, and its
+// parent answers it or asks the user in its own thread.
 
 /// What the tray and the thread's record ask the thread to do. `inspect` opens (or closes) the
 /// inspector for a run; `steer` opens it with its Steer field focused.
@@ -19,7 +21,7 @@ struct SubagentActions {
 }
 
 extension EnvironmentValues {
-    /// Whether the thread takes commands from its tray (Stop, an answer): its agent is on screen
+    /// Whether the thread takes commands from its tray (Steer, Stop): its agent is on screen
     /// and its host supports them. An environment value the rows read, so switching agents
     /// redraws the rows and not the turns around them.
     @Entry var threadActionsEnabled = true
@@ -62,7 +64,6 @@ struct SubagentTrayView: View {
     let state: SubagentTrayState
     let runs: [ChildRun]
     let actions: SubagentActions
-    let answer: (ChildRun) -> Void
     var goalPresent = false
 
     var body: some View {
@@ -83,9 +84,9 @@ struct SubagentTrayView: View {
                     VStack(spacing: 0) { list(items[...], byID) }
                 }
             }
-            // A goal folds the busywork, never a question waiting for the user.
+            // A goal folds the busywork, but keeps a child's question to its parent visible.
             if goalPresent && state.collapsed {
-                let waiting = values.rows.filter { $0.state == .attention }.map(SubagentTrayLayout.Item.run)
+                let waiting = values.rows.filter { if case .asked = $0.line { true } else { false } }.map(SubagentTrayLayout.Item.run)
                 list(waiting[...], byID)
             }
         }
@@ -104,8 +105,7 @@ struct SubagentTrayView: View {
             switch item {
             case .run(let value):
                 if let run = byID[value.id] {
-                    SubagentTrayRow(value: value, run: run, selected: run.runID == actions.inspectedRunID, actions: actions,
-                                    answer: answer)
+                    SubagentTrayRow(value: value, run: run, selected: run.runID == actions.inspectedRunID, actions: actions)
                         .equatable()
                 }
             case .more(let hidden, let expanded):
@@ -124,7 +124,6 @@ struct SubagentTrayRow: View, Equatable {
     let run: ChildRun
     let selected: Bool
     let actions: SubagentActions
-    let answer: (ChildRun) -> Void
     @Environment(\.threadActionsEnabled) private var enabled
 
     nonisolated static func == (a: SubagentTrayRow, b: SubagentTrayRow) -> Bool {
@@ -132,16 +131,15 @@ struct SubagentTrayRow: View, Equatable {
     }
 
     var body: some View {
-        let live = !run.isTerminal
-        let phase = nativeRunPhase(run)
+        // A run waiting on its parent's answer has finished its process, but it is still going: the
+        // user can steer it (speaking over its parent) and stop it (closing its question).
+        let live = nativeRunPhase(run).isLive
         NWSubagentTrayRow(value, selected: selected, enabled: enabled, actions: NWSubagentTrayActions(
             open: { actions.inspect(run) },
-            answer: phase == .needsYou ? { answer(run) } : nil,
-            steer: live && phase != .needsYou ? { (actions.steer ?? actions.inspect)(run) } : nil,
+            steer: live ? { (actions.steer ?? actions.inspect)(run) } : nil,
             stop: live ? { actions.command(run, .cancel, nil, nil) } : nil))
             .contextMenu {
                 Button(selected ? "Close the Inspector" : "Open") { actions.inspect(run) }
-                if phase == .needsYou { Button("Answer…") { answer(run) }.disabled(!enabled) }
                 ForEach(nativeRunControls(run), id: \.self) { control in
                     Button(control.title, role: control == .stop ? .destructive : nil) {
                         actions.command(run, control.action, nil, nil)
@@ -150,7 +148,6 @@ struct SubagentTrayRow: View, Equatable {
                 }
             }
             .accessibilityActions {
-                if phase == .needsYou { Button("Answer") { answer(run) } }
                 if enabled {
                     ForEach(nativeRunControls(run), id: \.self) { control in
                         Button(control.title) { actions.command(run, control.action, nil, nil) }
@@ -166,7 +163,6 @@ struct ComposerDock<Queue: View>: View {
     let trayState: SubagentTrayState
     let runs: [ChildRun]
     let actions: SubagentActions?
-    let answer: (ChildRun) -> Void
     let showsQueue: Bool
     var goalStore: NativeThreadStore? = nil
     var goalActive = true
@@ -180,7 +176,7 @@ struct ComposerDock<Queue: View>: View {
                         ThreadGoalCard(store: goalStore, active: goalActive, framed: false)
                     }
                     if let tray, let actions {
-                        SubagentTrayView(tray: tray, state: trayState, runs: runs, actions: actions, answer: answer,
+                        SubagentTrayView(tray: tray, state: trayState, runs: runs, actions: actions,
                                          goalPresent: goalStore?.goal != nil)
                             .overlay(alignment: .top) {
                                 if goalStore?.goal != nil { NWHairline(color: Color.nw.lineStrong) }
@@ -193,31 +189,6 @@ struct ComposerDock<Queue: View>: View {
         } else {
             // Up next alone draws its own card.
             queue()
-        }
-    }
-}
-
-/// A subagent's question in the composer's place, from its row's Answer (SubagentTray ›
-/// Answer → question dock): the question dock, labelled with the subagent. The answer steers
-/// only that run; hiding it (Hide the question, Esc) closes the dock, and its row's Answer
-/// opens it again.
-struct SubagentQuestion: View {
-    let run: ChildRun
-    let enabled: Bool
-    /// The thread has the keyboard: the dock takes its keys.
-    let focused: Bool
-    let actions: SubagentActions
-    let hide: () -> Void
-
-    var body: some View {
-        let prompt = NativeQuestionPrompt(runID: run.runID, name: nativeRunNames(run).name,
-                                          question: run.question?.text ?? run.attentionText ?? "", options: run.question?.options)
-        QuestionDock(prompt: prompt, enabled: enabled, hidden: false, focused: focused) { answer in
-            guard let reply = prompt.messageReply(answer) else { return }
-            actions.command(run, .message, reply, .steer)
-            hide()
-        } setHidden: { hidden in
-            if hidden { hide() }
         }
     }
 }

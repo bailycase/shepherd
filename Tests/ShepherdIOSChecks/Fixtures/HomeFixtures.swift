@@ -135,8 +135,8 @@ enum HomeFixtureData {
         return snapshot
     }
 
-    /// A running thread whose reviewer subagent asks a question, offering two answers
-    /// (MobileInbox: they answer in place).
+    /// A running thread whose reviewer subagent asked its parent a question, offering two answers.
+    /// It is the parent's to answer, so the thread is not in Needs you.
     static func subagentAsking(at now: Double) -> NativeThreadSnapshot {
         let text = "Two token names collide. Rename the new ones, or replace the old ones everywhere?"
         var reviewer = ChildRun(runID: "run-reviewer", label: "reviewer", state: "running", startedAt: now - 120_000,

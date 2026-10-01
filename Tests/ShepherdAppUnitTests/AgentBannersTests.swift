@@ -140,35 +140,6 @@ struct AgentBannersTests {
         #expect(unread.subtitle == "Automation question")
     }
 
-    private func asking(_ id: String, _ question: String?, options: [String]? = ["Yes", "No"]) -> ChildRun {
-        var run = Fixture.child(id, attention: true)
-        run.question = question.map { ChildQuestion(text: $0, options: options) }
-        return run
-    }
-
-    @Test func aSubagentsQuestionNamesTheThreadAndTheSubagent() {
-        let agent = agent(.working)
-        let target = BannerTarget.agent(agent.id)
-        let banner = AgentBanners.subagentQuestion(asking("worker", "Delete the old fixtures?\nThey are unused."), of: agent.name, target: target)
-        #expect(banner.title == "Fix login · worker")
-        #expect(banner.subtitle == "Subagent question")
-        #expect(banner.body == "Delete the old fixtures?")
-        #expect(banner.actions == [.option(1, title: "Yes"), .option(2, title: "No"), .reply(placeholder: "Reply to worker…")])
-        #expect(banner.question == "worker")
-        #expect(banner.group == "thread:\(agent.id.rawValue)")
-        #expect(banner.identifier == "shepherd-subagent-\(agent.id.rawValue)-worker")
-    }
-
-    /// Falls back to the run's attention text, and to a sentence of its own.
-    @Test func aSubagentQuestionWithoutTextStillPosts() {
-        var run = Fixture.child("lane", attention: true)
-        run.attentionText = "Waiting on approval"
-        let target = BannerTarget.agent(AgentID())
-        #expect(AgentBanners.subagentQuestion(run, of: "Fix login", target: target).body == "Waiting on approval")
-        #expect(AgentBanners.subagentQuestion(Fixture.child("lane", attention: true), of: "Fix login", target: target).body
-                == "Waiting on your answer.")
-    }
-
     @Test func aHostGoingAwaySaysSoWithRetry() {
         let id = UUID()
         let banner = AgentBanners.hostOffline(name: "horizon", hostID: id)
@@ -191,7 +162,7 @@ struct AgentBannersTests {
 
     // MARK: Answering
 
-    @Test func anOptionOrReplyAnswersWhoeverAsked() throws {
+    @Test func anOptionOrReplyAnswersPisDialog() throws {
         let select = NativeQuestionPrompt(dialog: NativeThreadDialog(id: "d", kind: .select, title: "Key?", options: ["order_id", "payment_id"]))
         let picked = try #require(AgentBanners.answer(select, option: 2, words: nil))
         #expect(select.dialogAnswer(picked) == .select(value: "payment_id"))
@@ -203,10 +174,6 @@ struct AgentBannersTests {
         let input = NativeQuestionPrompt(dialog: NativeThreadDialog(id: "d", kind: .input, title: "Name?"))
         #expect(AgentBanners.answer(input, option: nil, words: "  shepherd ").flatMap(input.dialogAnswer) == .input(value: "shepherd"))
         #expect(AgentBanners.answer(input, option: nil, words: "   ") == nil)
-
-        let subagent = NativeQuestionPrompt(runID: "r", name: "reviewer", question: "Rename?", options: ["Replace everywhere", "Rename new ones"])
-        #expect(AgentBanners.answer(subagent, option: 1, words: nil).flatMap(subagent.messageReply) == "Replace everywhere")
-        #expect(AgentBanners.answer(subagent, option: nil, words: "Neither").flatMap(subagent.messageReply) == "Neither")
     }
 
     @Test func aResponseNamesItsActionAmongTheBannersActions() {
@@ -229,24 +196,6 @@ struct AgentBannersTests {
     }
 
     // MARK: Once per question
-
-    /// One banner per question: a republish of the same question posts nothing, a new question
-    /// from the same run posts again, and a run that stops asking comes down.
-    @Test func eachSubagentQuestionPostsOnceAndComesDownWhenAnswered() {
-        var asks = SubagentAsks<AgentID>()
-        let agent = AgentID(), other = AgentID()
-        #expect(asks.update(agent, children: [Fixture.child("live"), asking("a", "First?")]).asking.map(\.id) == ["a"])
-        #expect(asks.update(agent, children: [Fixture.child("live"), asking("a", "First?")]).asking.isEmpty, "a republish")
-        #expect(asks.update(agent, children: [asking("a", "First?"), asking("b", "Other?")]).asking.map(\.id) == ["b"])
-        #expect(asks.update(agent, children: [asking("a", "Second?"), asking("b", "Other?")]).asking.map(\.id) == ["a"])
-        #expect(asks.update(other, children: [asking("a", "Second?")]).asking.map(\.id) == ["a"], "agents apart")
-        let answered = asks.update(agent, children: [Fixture.child("a"), asking("b", "Other?")])
-        #expect(answered.asking.isEmpty)
-        #expect(answered.answered == ["a"])
-        #expect(asks.update(agent, children: [asking("a", "Second?"), asking("b", "Other?")]).asking.map(\.id) == ["a"])
-        #expect(asks.forget(agent) == ["a", "b"])
-        #expect(asks.update(agent, children: [asking("b", "Other?")]).asking.map(\.id) == ["b"])
-    }
 
     @Test func eachThreadQuestionPostsOnceAndComesDownWhenAnswered() {
         var asks = ThreadAsks<AgentID>()

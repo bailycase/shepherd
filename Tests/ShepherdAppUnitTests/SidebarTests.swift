@@ -22,12 +22,10 @@ struct SidebarRecentsTests {
         return agent
     }
 
-    private func source(_ local: [Agent], remote: [Agent] = [], children: [AgentID: [ChildRun]] = [:],
-                        remoteChildren: [AgentID: [ChildRun]] = [:]) -> SidebarSource {
-        SidebarSource(local: ShepherdState(spaces: [space], agents: local), localChildren: children,
+    private func source(_ local: [Agent], remote: [Agent] = []) -> SidebarSource {
+        SidebarSource(local: ShepherdState(spaces: [space], agents: local),
                       hosts: remote.isEmpty ? [] : [SidebarSource.Host(id: host, name: "horizon",
-                                                                        state: ShepherdState(spaces: [space], agents: remote),
-                                                                        children: remoteChildren)])
+                                                                        state: ShepherdState(spaces: [space], agents: remote))])
     }
 
     @Test func recentsAreMostRecentlyActiveFirstAcrossHosts() {
@@ -74,8 +72,7 @@ struct SidebarRecentsTests {
             local: ShepherdState(spaces: [space], agents: [failed, running, agent("idle", at: 3), agent("done", status: .done, at: 2)]),
             failedTurns: [failed.id], statusSince: [running.id: since],
             hosts: [SidebarSource.Host(id: host, name: "horizon",
-                                       state: ShepherdState(spaces: [space], agents: [agent("remote", status: .working, at: 1)]),
-                                       children: [:])]))
+                                       state: ShepherdState(spaces: [space], agents: [agent("remote", status: .working, at: 1)]))]))
         let rows = Dictionary(uniqueKeysWithValues: lists.recents.map { ($0.title, $0) })
         #expect(rows["failed"]?.leading == .dot(.failed))
         #expect(rows["failed"]?.accessory == NWSidebarRow.Accessory.none)
@@ -131,7 +128,7 @@ struct SidebarRecentsTests {
             local: ShepherdState(spaces: [space], agents: [agent("here", at: 1)]),
             hosts: [SidebarSource.Host(id: host, name: "horizon",
                                        state: ShepherdState(spaces: [space], agents: [asking, agent("idle", at: 2)]),
-                                       children: [asking.id: [Fixture.child("r", state: "blocked", attention: true)]], offline: true)]))
+                                       offline: true)]))
         #expect(lists.needsYou.isEmpty)
         #expect(lists.recents.map(\.title) == ["asks", "idle", "here"])
         #expect(lists.recents.map(\.offline) == [true, true, false])
@@ -175,34 +172,26 @@ struct SidebarRecentsTests {
 struct SidebarNeedsYouTests {
     private let space = Fixture.space("shepherd")
 
-    @Test func blockedAgentsAndAskingSubagentsNeedYouAndLeaveRecents() {
+    /// A subagent's question goes to its parent, so only a thread's own question puts it here
+    /// (the sidebar is not even given the children: `SidebarSource` holds threads and hosts).
+    @Test func blockedAgentsNeedYouAndLeaveRecents() {
         var blocked = Fixture.agent("blocked", in: space).agent
         blocked.status = .blocked
         blocked.waitingOn = "Retention: 30 days or 13 months?"
-        let parent = Fixture.agent("parent", in: space).agent
-        var reviewer = Fixture.child("r1", attention: true)
-        reviewer.role = "reviewer"
         let quiet = Fixture.agent("quiet", in: space).agent
-        let lists = SidebarDerivation.lists(SidebarSource(
-            local: ShepherdState(spaces: [space], agents: [blocked, parent, quiet]),
-            localChildren: [parent.id: [reviewer], quiet.id: [Fixture.child("live")]]))
-        #expect(Set(lists.needsYou.map(\.title)) == ["blocked", "parent"])
+        let lists = SidebarDerivation.lists(SidebarSource(local: ShepherdState(spaces: [space], agents: [blocked, quiet])))
+        #expect(lists.needsYou.map(\.title) == ["blocked"])
         #expect(lists.recents.map(\.title) == ["quiet"])
-        let rows = Dictionary(uniqueKeysWithValues: lists.needsYou.map { ($0.title, $0) })
-        #expect(rows["blocked"]?.leading == .dot(.attention))
-        #expect(rows["blocked"]?.accessory == .reason("Retention…"))
-        #expect(rows["parent"]?.accessory == .reason("reviewer"))
+        let row = lists.needsYou[0]
+        #expect(row.leading == .dot(.attention))
+        #expect(row.accessory == .reason("Retention…"))
     }
 
-    /// The question's own text, else the subagent asking, else ASK.
-    @Test func theReasonIsTheQuestionThenTheSubagentThenAsk() {
-        var named = Fixture.child("run", attention: true)
-        named.role = "planner"
-        #expect(SidebarDerivation.reason(question: "approve plan", children: [named]) == "approve plan")
-        #expect(SidebarDerivation.reason(question: "  ", children: [named]) == "planner")
-        #expect(SidebarDerivation.reason(question: nil, children: [Fixture.child("labelled", attention: true)]) == "labelled")
-        #expect(SidebarDerivation.reason(question: nil, children: [Fixture.child("live")]) == "ASK")
-        #expect(SidebarDerivation.reason(question: nil, children: []) == "ASK")
+    /// The question's own text, else ASK.
+    @Test func theReasonIsTheQuestionElseAsk() {
+        #expect(SidebarDerivation.reason(question: "approve plan") == "approve plan")
+        #expect(SidebarDerivation.reason(question: "  ") == "ASK")
+        #expect(SidebarDerivation.reason(question: nil) == "ASK")
     }
 
     /// The agent's own word or two for its question when its asking tool gave one; the question
@@ -215,24 +204,12 @@ struct SidebarNeedsYouTests {
         ("approve the migration plan now", "approve the…"),
     ])
     func anAgentsOwnReasonComesBeforeItsCutQuestion(short: String?, reason: String) {
-        #expect(SidebarDerivation.reason(question: "Retention: 30 days or 13 months?", short: short, children: []) == reason)
+        #expect(SidebarDerivation.reason(question: "Retention: 30 days or 13 months?", short: short) == reason)
     }
 
     /// A reason without a question is stale: the row falls back as if none were given.
     @Test func aReasonWithoutAQuestionIsIgnored() {
-        #expect(SidebarDerivation.reason(question: nil, short: "retention?", children: []) == "ASK")
-    }
-
-    /// An asking subagent's own reason, else its name.
-    @Test func anAskingSubagentsOwnReasonComesBeforeItsName() {
-        var child = Fixture.child("run", attention: true)
-        child.role = "reviewer"
-        child.question = ChildQuestion(text: "Rename the new ones, or replace the old ones everywhere?", short: "token names?")
-        #expect(SidebarDerivation.reason(question: nil, children: [child]) == "token names?")
-        child.question?.short = " "
-        #expect(SidebarDerivation.reason(question: nil, children: [child]) == "reviewer")
-        child.question = nil
-        #expect(SidebarDerivation.reason(question: nil, children: [child]) == "reviewer")
+        #expect(SidebarDerivation.reason(question: nil, short: "retention?") == "ASK")
     }
 
     /// Local and remote rows alike wear the reason the agent gave.
@@ -246,7 +223,7 @@ struct SidebarNeedsYouTests {
         remote.waitingOn = "Approve the plan as written?"
         remote.waitingReason = "approve plan"
         let lists = SidebarDerivation.lists(SidebarSource(local: ShepherdState(spaces: [space], agents: [local]), hosts: [
-            SidebarSource.Host(id: UUID(), name: "horizon", state: ShepherdState(spaces: [space], agents: [remote]), children: [:]),
+            SidebarSource.Host(id: UUID(), name: "horizon", state: ShepherdState(spaces: [space], agents: [remote])),
         ]))
         let rows = Dictionary(uniqueKeysWithValues: lists.needsYou.map { ($0.title, $0) })
         #expect(rows["local"]?.accessory == .reason("retention?"))
@@ -281,7 +258,7 @@ struct SidebarNeedsYouTests {
         remote.status = .blocked
         remote.waitingOn = "merge?"
         let lists = SidebarDerivation.lists(SidebarSource(local: state, hosts: [
-            SidebarSource.Host(id: UUID(), name: "horizon", state: ShepherdState(spaces: [space], agents: [remote]), children: [:]),
+            SidebarSource.Host(id: UUID(), name: "horizon", state: ShepherdState(spaces: [space], agents: [remote])),
         ]))
         let rows = Dictionary(uniqueKeysWithValues: lists.needsYou.map { ($0.title, $0) })
         #expect(rows["Nightly"]?.leading == .glyph("bolt", attention: true))

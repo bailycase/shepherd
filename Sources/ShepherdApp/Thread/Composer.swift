@@ -105,8 +105,6 @@ struct Composer: View {
     private var queueStack: QueueStackState { queueState ?? ownQueueStack }
     /// The subagent tray's collapse and "Show N more".
     @State private var trayState = SubagentTrayState()
-    /// The run whose question is open in the composer's place (from its row's Answer).
-    @State private var answering: String?
     /// pi's question the user shrank to its hidden line.
     @State private var questionHiding = NativeQuestionHiding()
     /// The queued message with keyboard focus, if one has it.
@@ -212,7 +210,7 @@ struct Composer: View {
     private var accessories: [String] {
         let banner = store.startProblem.map { !(hidesNotSignedIn && $0.kind == .notSignedIn) } == true ? "cannotStart" : store.loadError != nil ? "lost" : input.attachments.error != nil ? "attachment" : referenceError != nil ? "reference" : store.notice != nil ? "notice" : nil
         return [banner].compactMap { $0 } + store.widgets.map(\.id) + (queueStack.isVisible ? ["queue"] : [])
-            + (showsTray ? ["tray"] : []) + (store.goal != nil ? ["goal"] : []) + (answeringRun != nil ? ["answering"] : [])
+            + (showsTray ? ["tray"] : []) + (store.goal != nil ? ["goal"] : [])
     }
 
     private var showsTray: Bool { subagents != nil && store.tray != nil }
@@ -227,12 +225,6 @@ struct Composer: View {
             },
             steer: steerSubagent,
             inspectedRunID: inspectedRunID)
-    }
-
-    /// The run whose question is open, while it still asks.
-    private var answeringRun: ChildRun? {
-        guard let answering, subagents != nil else { return nil }
-        return store.subagents.first { $0.runID == answering && nativeRunPhase($0) == .needsYou }
     }
 
     /// pi's question in the composer's place, by the identity its dock takes.
@@ -298,10 +290,9 @@ struct Composer: View {
                     .nwTransition(.list, edge: .bottom)
             }
             // The subagents and "Up next" grow upward from the card, which never moves.
-            if store.goal != nil || (answeringRun == nil && (showsTray || queueStack.isVisible)) {
+            if store.goal != nil || showsTray || queueStack.isVisible {
                 ComposerDock(tray: store.tray, trayState: trayState, runs: store.subagents, actions: subagents,
-                             answer: { answering = $0.runID }, showsQueue: queueStack.isVisible,
-                             goalStore: store, goalActive: active) {
+                             showsQueue: queueStack.isVisible, goalStore: store, goalActive: active) {
                     if queueStack.isVisible {
                         QueueStackView(state: queueStack, store: store, running: running, animated: !catchingUp, framed: !showsTray && store.goal == nil,
                                        focusedRow: $focusedRow, focusComposer: { composing = true })
@@ -311,18 +302,10 @@ struct Composer: View {
                 .zIndex(queueStack.dragging == nil ? 0 : 1)
                 .nwTransition(.list, edge: .bottom)
             }
-            // A question takes the card's place (the question dock): a subagent's answered from
-            // its row until it is answered or hidden, else pi's own while pi waits on it.
+            // pi's own question takes the card's place (the question dock) while pi waits on it. A
+            // subagent's never does: it asks its parent, which asks here only when it must.
             Group {
-                if let run = answeringRun, let subagents {
-                    SubagentQuestion(run: run, enabled: active && store.supports("subagents"), focused: active && isFocused,
-                                     actions: subagents) {
-                        answering = nil
-                        composing = true
-                    }
-                    .id(run.runID)
-                    .nwTransition(.content)
-                } else if let dialog = dialogs.first, let session = store.session, let questionKey {
+                if let dialog = dialogs.first, let session = store.session, let questionKey {
                     QuestionDock(prompt: NativeQuestionPrompt(dialog: dialog), count: dialogs.count,
                                  enabled: active && store.supports("answer"), hidden: questionHiding.isHidden(questionKey),
                                  focused: active && isFocused) { answer in
@@ -392,11 +375,11 @@ struct Composer: View {
         .onChange(of: keyMonitor.presses) { _, _ in sendTheOtherWay() }
         // A hold that opened the Send menu and let go elsewhere leaves the next click a send.
         .onChange(of: menu) { _, menu in if menu != .send { sendHeld = false } }
-        .onChange(of: active && questionKey == nil && answeringRun == nil, initial: true) { _, available in
+        .onChange(of: active && questionKey == nil, initial: true) { _, available in
             input.available = available
         }
         .onChange(of: input.focusRequest) { _, _ in
-            guard active, questionKey == nil, answeringRun == nil else { return }
+            guard active, questionKey == nil else { return }
             composing = true
         }
         .onDisappear {
@@ -406,9 +389,9 @@ struct Composer: View {
         }
         // Let any deferred AppKit focus release finish before claiming the field (again once a
         // question gives the card back).
-        .task(id: FieldClaim(focused: active && isFocused, question: questionKey != nil || answeringRun != nil)) {
+        .task(id: FieldClaim(focused: active && isFocused, question: questionKey != nil)) {
             composing = false
-            guard active && isFocused, questionKey == nil, answeringRun == nil else { return }
+            guard active && isFocused, questionKey == nil else { return }
             await Task.yield()
             guard !Task.isCancelled else { return }
             composing = true

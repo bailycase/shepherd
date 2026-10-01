@@ -211,7 +211,7 @@ extension ShepherdViewModel {
         let elapsed = nativeSubagentElapsed(child, now: Date()).map(nativeSubagentShortDuration)
         let status = switch state {
         case .running: elapsed.map { "running \($0)" } ?? "running"
-        case .needsYou: "needs you"
+        case .asked: "waiting on parent"
         case .done: "done"
         case .failed: "failed"
         }

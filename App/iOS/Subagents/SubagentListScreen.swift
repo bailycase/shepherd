@@ -108,7 +108,6 @@ struct SubagentListContent: View {
         let run = store.subagents.first { $0.id == summary.id }
         return NWRunCard(SubagentValues.card(summary), isSelected: selected, isEnabled: commands.enabled,
                          open: { open(summary.runID) },
-                         answer: summary.phase == .needsYou ? commands.answer(summary.runID) : nil,
                          rerun: summary.phase == .failed ? { commands.control(summary.runID, .rerun) } : nil)
             .equatable()
             .contextMenu {
