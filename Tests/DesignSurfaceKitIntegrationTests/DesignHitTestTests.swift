@@ -53,6 +53,8 @@ struct DesignHitTestTests {
         #expect(hitCard.tid == 11 && hitCard.path == [1, 4, 0])
         #expect(hitCard.noun == "component" && hitCard.name == "Card" && hitCard.tag == "component · Card")
         #expect(hitCard.rect == cardRect, "the import's own drawing, not every card the loop drew")
+        #expect(hitCard.piece == "Card", "a use of a shared piece says which, as its import writes the name")
+        #expect(title.piece == nil && hitButton.piece == nil, "an ordinary element is no use of a piece")
 
         // The root, where nothing inside it is drawn: a filled container reads as a card.
         let root = try #require(await view.hitTest(at: CGPoint(x: 395, y: 295)))

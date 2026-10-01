@@ -183,7 +183,9 @@ inherits and what it doesn't.
 - **A design agent's design tools.** A helper has none of its parent's identity, so it can't call
   the design tools itself. A profile of a helper started by a design agent may list them in `tools:`
   (`design_read`, `design_check`, `system_read`, `comment_list`, `board_write`, `board_edit`,
-  `canvas_update`, `system_write`; not `comment_reply` or `markup_propose`): the parent runs each
+  `boards_edit`, `board_search`, `board_render`, `board_extract`, `checkpoint_create`,
+  `checkpoint_list`, `canvas_update`, `system_write`; not `comment_reply`, `markup_propose` or
+  `checkpoint_restore`): the parent runs each
   call through its own design extension, on its own connection, and returns the result or error to
   the helper. Nothing else is relayed, nothing to a parent that draws no design, and a profile
   that lists them for one fails at the start, saying why. It needs no `extensions:` line; if one
@@ -299,23 +301,31 @@ parent's processes.
 ## Slash commands
 
 These call the runtime directly, without a model turn. In Shepherd (RPC mode), typing one in the
-composer or choosing it from the `/` menu produces a text report. The pickers and fleet overlay
+composer or choosing it from the `/` menu leaves its report in the thread as a note: a displayed
+message that starts no turn (`pi.sendMessage` with `display: true` and `triggerTurn: false`),
+because pi's `ctx.ui.notify` reaches the host as a toast the thread never draws. The note joins
+the conversation the model reads, as anything the user pasted would. The pickers and fleet overlay
 appear only when the same extension runs in pi's interactive TUI.
 
-| Command | Behavior |
-| --- | --- |
-| `/subagents [agent]` | Profile list or one profile's details, source file, and diagnostics. |
-| `/run <agent> <task…> [--bg] [--fork]` | A one-child workflow. Foreground by default (it blocks the command until done); `--bg` runs it in the background, `--fork` uses fork context. Only trailing standalone flags are stripped. Task text is JSON-encoded, never interpolated. |
-| `/subagents-fleet [id]` | Live list and transcript of this parent's children. |
-| `/subagents-stop [id]` | Stops one active child after confirmation, naming its workflow if stopping it may cancel siblings. |
-| `/subagents-models [agent]` | Effective models from the local catalog, with no network probes. |
-| `/subagents-doctor` | Pi version, project trust, defaults, discovery errors, retained counts, and the actual command names. It makes no repairs. |
-| `/missions [id]` | Mission list or one full record. |
-| `/workflows [id]` | Workflow list or one status and output. |
+| Command | Behavior | Under Shepherd |
+| --- | --- | --- |
+| `/subagents [agent]` | Profile list or one profile's details, source file, and diagnostics. | Registered |
+| `/run <agent> <task…> [--bg] [--fork]` | A one-child workflow. Foreground by default (it blocks the command until done); `--bg` runs it in the background, `--fork` uses fork context. Only trailing standalone flags are stripped. Task text is JSON-encoded, never interpolated. | Registered |
+| `/subagents-fleet [id]` | Live list and transcript of this parent's children. | Not registered: the tray and the inspector are the fleet |
+| `/subagents-stop [id]` | Stops one active child after confirmation, naming its workflow if stopping it may cancel siblings. | Not registered: each card and the inspector have Stop |
+| `/subagents-models [agent]` | Effective models from the local catalog, with no network probes. | Registered |
+| `/subagents-doctor` | Pi version, project trust, defaults, discovery errors, retained counts, and the actual command names. It makes no repairs. | Registered |
+| `/missions [id]` | Mission list or one full record. | Registered |
+| `/workflows [id]` | Workflow list or one status and output. | Registered |
+
+"Under Shepherd" is `SHEPHERD_AGENT_ID` being set, which every agent's pi has
+(`listedCommandNames`). Anywhere else the extension registers all eight, as before. A command that
+fails reports `error · …` the same way, so none of them is silent.
 
 If a command name is already taken, or the pi-subagents `subagent` tool is registered, the whole
-family registers with a `shepherd-` prefix instead (`/shepherd-run`, `/shepherd-missions`, …).
-`/subagents-doctor` lists the actual names.
+family registers with a `shepherd-` prefix instead (`/shepherd-run`, `/shepherd-missions`, …); a
+name taken only by a command Shepherd leaves out changes nothing. `/subagents-doctor` lists the
+actual names.
 
 ## How Shepherd shows them
 

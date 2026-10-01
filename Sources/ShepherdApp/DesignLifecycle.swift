@@ -166,14 +166,20 @@ struct DeleteDesignWords: Hashable {
 }
 
 /// The boards the design agent is drawing in the turn it is working on: the distinct paths of
-/// its board writes and edits since the viewer's last message.
+/// its board writes, edits, batch edits and extractions since the viewer's last message.
 func designBoardsDrawing(_ messages: [NativeThreadMessage]) -> Int {
     var paths = Set<String>()
     for message in messages.reversed() {
         if message.role == "user" { break }
-        guard message.toolName == "board_write" || message.toolName == "board_edit", let data = message.argumentsText?.data(using: .utf8),
-              let args = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let path = args["path"] as? String else { continue }
-        paths.insert(path)
+        guard let tool = message.toolName, ["board_write", "board_edit", "boards_edit", "board_extract"].contains(tool),
+              let data = message.argumentsText?.data(using: .utf8),
+              let args = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+        if let path = args["path"] as? String { paths.insert(path) }
+        paths.formUnion(args["paths"] as? [String] ?? [])
+        paths.formUnion((args["boards"] as? [[String: Any]] ?? []).compactMap { $0["path"] as? String })
+        if tool == "board_extract", let piece = args["piece"] as? String {
+            paths.insert(piece.hasSuffix(DesignPath.fileExtension) ? piece : piece + DesignPath.fileExtension)
+        }
     }
     return paths.count
 }

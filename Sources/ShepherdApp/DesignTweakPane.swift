@@ -9,9 +9,18 @@ import ShepherdUI
 struct DesignTweakPane: View {
     @Bindable var model: DesignTweakModel
     let target: DesignTweakTarget?
+    /// What the tab says of a selected use of a shared piece: how many boards use it, and the way to its board.
+    var piece: DesignPieceNote?
     /// "Ask the agent instead…": the chat, ready to type.
     let ask: () -> Void
     @Environment(\.undoManager) private var undoManager
+
+    init(model: DesignTweakModel, target: DesignTweakTarget?, piece: DesignPieceNote? = nil, ask: @escaping () -> Void) {
+        self.model = model
+        self.target = target
+        self.piece = piece
+        self.ask = ask
+    }
 
     var body: some View {
         let shown = model.presentation
@@ -22,9 +31,12 @@ struct DesignTweakPane: View {
                 Spacer(minLength: 0)
             } else {
                 NWTweakHeader(board: shown.board, element: shown.element,
-                              note: shown.problem ?? "Changes show on the canvas as you drag.")
+                              note: shown.problem ?? (shown.instanceOf != nil ? "One use of a shared piece." : "Changes show on the canvas as you drag."))
                 ScrollView {
                     VStack(spacing: 0) {
+                        if let name = shown.instanceOf {
+                            NWTweakPieceNote(piece: name, boards: piece?.boards, goToSource: piece?.goToSource)
+                        }
                         ForEach(Array(shown.groups.enumerated()), id: \.element.id) { index, group in
                             NWTweakGroup(group.title, divided: index < shown.groups.count - 1 || shown.scopeName != nil) {
                                 ForEach(group.rows) { row in DesignTweakRowView(row: row, model: model) }

@@ -57,7 +57,8 @@ struct PiLaunchTests {
             script: #"cd -- '/w/a:b\c' && exec "# + launcher + #" --mode rpc --session-dir '\#(sessions)/--w-a-b-c--' --session-id 's' --thinking 'low'"#),
         Row(name: "the model catalog, from inside the home",
             line: PiLaunch.listModels(home: home),
-            script: "cd -- '/Users/me/Library/Application Support/Shepherd/pi' && exec \(launcher) --list-models"),
+            script: "cd -- '/Users/me/Library/Application Support/Shepherd/pi' && exec \(launcher)"
+                + " --mode rpc --no-session --no-tools --no-skills --no-prompt-templates --no-themes --no-context-files --no-approve"),
         Row(name: "a PR description or commit message draft",
             line: PiLaunch.draft(home: home, model: "anthropic/claude-haiku-4-5", prompt: "Summarise it's change"),
             script: "exec \(launcher)"

@@ -8,6 +8,7 @@ public struct RemoteCreateAgentRequest: Sendable {
     public var cwd: String?
     public var model: String?
     public var thinking: ThinkingLevel?
+    public var serviceTier: ServiceTier?
     public var initialPrompt: String?
     /// Go to pi with the opening prompt (`RemoteProtocol.createAgentImagesCapability`).
     public var initialImages: [NativeImage]
@@ -24,13 +25,15 @@ public struct RemoteCreateAgentRequest: Sendable {
         worktreeBranch: String? = nil,
         worktreeBase: String? = nil,
         worktreeFetchFirst: Bool? = nil,
-        initialImages: [NativeImage] = []
+        initialImages: [NativeImage] = [],
+        serviceTier: ServiceTier? = nil
     ) {
         self.spaceID = spaceID
         self.initialImages = initialImages
         self.cwd = cwd
         self.model = model
         self.thinking = thinking
+        self.serviceTier = serviceTier
         self.initialPrompt = initialPrompt
         self.worktreeBranch = worktreeBranch
         self.worktreeBase = worktreeBase

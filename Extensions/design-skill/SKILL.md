@@ -1,6 +1,6 @@
 ---
 name: shepherd-design
-description: How to draw and revise a Shepherd design, a canvas of HTML boards (.dc.html) written with design_read, board_write, board_edit, canvas_update and design_check, in a design system read with system_read and built with system_write. Read it before drawing or changing any board.
+description: How to draw and revise a Shepherd design, a canvas of HTML boards (.dc.html) written with design_read, board_write, board_edit, boards_edit, canvas_update and design_check, searched with board_search, seen with board_render, kept safe with checkpoints and shared through pieces, in a design system read with system_read and built with system_write. Read it before drawing or changing any board.
 ---
 
 # Drawing a Shepherd design
@@ -16,8 +16,13 @@ your design tools:
 | `design_read(path)` | one board's whole source |
 | `board_write(path, source, baseRevision?)` | writes one board's whole source |
 | `board_edit(path, edits, baseRevision?)` | changes one board in place with find-and-replace edits |
+| `boards_edit(paths?, edits?, boards?, atomic?, dry_run?, checkpoint?)` | the same edits on many boards as one change, each board reported |
+| `board_search(text? / tag? attribute? class? / usages?)` | finds text, elements or a piece's usages across the boards, with element ids |
+| `board_render(path, width?, height?, scale?, props?)` | an image of a board as the app draws it |
+| `board_extract(path, element, piece, …)` | lifts an element into a shared piece and imports it back |
+| `checkpoint_create(name)`, `checkpoint_list()`, `checkpoint_restore(name)` | named copies of every board and the canvas, to go back to |
 | `canvas_update(changes, baseRevision?)` | a JSON merge patch for canvas.json |
-| `design_check(path?)` | colors and sizes the design system (else the stylesheets in your working folder) doesn't name, with their lines |
+| `design_check(path?, snap?)` | colors and sizes the design system (else the stylesheets in your working folder) doesn't name, with their lines; `snap` fixes one board |
 | `comment_list(all?)` | the comments the viewer pinned to elements, with their replies |
 | `comment_reply(id, text)` | your answer under a comment's pin |
 | `markup_propose(proposals)` | comments proposed from the viewer's Pencil markup |
@@ -80,11 +85,44 @@ Read `format.md` before your first board in a session.
   - The result is checked as a whole board write is, so the same rules hold: keep the
     `support.js` head line, and the root's size equal to `$preview`. A result that breaks one is
     refused whole.
-  - A change to several boards is one `board_edit` per board. Do not `board_edit` a board you
-    are about to `board_write`.
+  - Do not `board_edit` a board you are about to `board_write`.
+- **A change to several boards is one `boards_edit`,** not a `board_edit` per board: `paths`
+  get the shared `edits`, and `boards` gives a board edits of its own. The default is partial:
+  the boards that match are written and the others reported (no match, with the edit that
+  failed and how many times it matched; refused; missing; unchanged), as one revision and one
+  reload per changed board. `dry_run` reports what would change and writes nothing; `atomic`
+  writes nothing unless every board matches. Use `dry_run` first when the edit is risky, and
+  `checkpoint` to save the design under a name before a sweeping change.
+- **Find the boards and elements with `board_search`,** never by reading every board.
+  `text` (a regular expression with `regex`) searches the markup by default, `scope: "text"`
+  the words a board shows, `scope: "labels"` its aria-labels, alt, title, placeholder, data-el
+  and import names. `tag`, `attribute` (with `value`) and `class` find elements by structure,
+  so a `<div>` top bar is found as well as a `<header>`, and each match comes with its element
+  id (`File.dc.html#tid:path`), what it sits in and a snippet. `usages: "Card"` finds the
+  boards that import a piece. Results are bounded; the last line says how many more there are.
+- **Read what the write tells you.** Every `board_write`, `board_edit` and `boards_edit` answers
+  with a short report: whether the tags balance (and where the first imbalance is), that there
+  is one root, the root's size against `$preview` and the frame, the size and a compact diff
+  against the version it replaced, imports of boards that don't exist, and the off-system
+  values this write introduced. Fix what it names before you reply; a report that finds nothing
+  says so in a line.
+- **Hold a write to the design's tokens with `tokens`:** `warn` (the default) lists the
+  off-system colors and sizes this write introduced; `snap` replaces each with the nearest
+  token as `var(--token)` and says what it changed; `strict` refuses the write and lists them.
+  `design_check(path, snap: true)` does the same for the values already on one board.
+- **Look at a board with `board_render`** when layout, spacing or color is the question: it
+  draws the board as the app does, at its frame's size, optionally at another `width`, at
+  `scale` 2, or with `props` set. It costs far more than reading markup, so reach for it to
+  check a result, not to find one. A tall board may come back reduced.
+- **Checkpoint before a sweeping change.** `checkpoint_create("before rebrand")` saves every
+  board and canvas.json under a name (a design keeps 20, and saving past that drops the oldest);
+  `checkpoint_list()` lists them; `checkpoint_restore(name)` puts everything back as one change,
+  first saving the design as "before restore <name>" so the restore can be undone. Comments and
+  installed design systems are never part of a checkpoint. Restoring rewinds every board, a
+  helper's included, so it is yours to call.
 - **An element lives on several boards.** When asked to change a card, a label or a button,
   change it on every board that holds it (each direction and each size), and say which boards
-  you changed.
+  you changed. When it is a shared piece (below) there is one board to change.
 - **Revisions.** Pass the `baseRevision` you read. A write refused as `stale_revision` means the
   design changed meanwhile: read the boards again, redo the change on them once, and if it is
   refused again, tell the user and stop.
@@ -93,14 +131,53 @@ Read `format.md` before your first board in a session.
   stay as they are, including ones you don't recognize.
 - **Check** the boards you changed with `design_check` before you reply.
 
+## Shared pieces
+
+A piece is a board other boards import with `<dc-import name="Card">`: it is drawn once, and
+every board that imports it follows when it changes. It is how a card, a top bar or a button
+stays the same everywhere without being written out on each board.
+
+- **Extract when an element repeats.** The same card, bar or button on two or more boards (or
+  several times on one) belongs in a piece. `board_extract(path, element, piece)` lifts the
+  element (its id from `design_read` or `board_search`) into a new board beside the source and
+  puts the `<dc-import>` in its place, as one change. `props` turns text in the element into
+  props the importer passes (`{name: "label", text: "Pay now"}` makes `{{ label }}` in the piece and
+  `label="Pay now"` on the import); `copies` (a list of boards, or `"all"`) replaces other
+  boards' exact copies of the element with imports too. Copies that differ are skipped and
+  reported, never merged.
+- **Name a piece** like a component, in PascalCase (`TopBar`, `StepCard`), as its own file
+  beside the boards that use it (`TopBar.dc.html`), or in a folder you import from by its path
+  (`parts/TopBar`): an import resolves from the importing board's own folder and never climbs
+  out of it.
+- **A piece is a board.** It has a root with a fixed size and the same `$preview`, so it draws
+  on its own. It needs no frame on the canvas: leave it off for a piece nobody needs to open,
+  or give it one to design and Tweak it. Declare in its `data-props` what an importer may vary,
+  few of them.
+- **Props are the import's attributes,** read as `this.props.x`: text, numbers, and a whole-value
+  hole for a list or a handler (`items="{{ rows }}"`). Pass text as an attribute, `children="Save"`
+  included. **Markup written inside a `<dc-import>` is not passed down:** a piece has no slots, so
+  a piece that needs a differing inside takes it as a prop (a string, a list) or becomes two pieces.
+- **Imports nest at most 8 deep,** and a board that imports itself, directly or through others,
+  draws a placeholder where the loop would close. Keep pieces a layer or two deep.
+- **A change to a piece is one change to its own board:** `board_edit` it, and every importer
+  redraws. To swap one piece for another across the design, `board_search` with
+  `usages: "OldCard"` to find the importers, then one `boards_edit` replacing
+  `name="OldCard"` with `name="NewCard"` in them.
+- **Picking a use of a piece** points at the `<dc-import>`, not at the elements inside it: those
+  belong to the piece. A comment on one is about that use. The viewer's Tweak does not edit style
+  on a use; change the piece instead.
+
 ## Helpers
 
 A native helper (`shepherd_child_start`, `shepherd_workflow`) can change boards for you, in
 parallel, when its profile lists design tools in `tools:`, for example `tools: read, design_read,
 board_edit, design_check`. A helper may be given `design_read`, `design_check`, `system_read`,
-`comment_list`, `board_write`, `board_edit`, `canvas_update` and `system_write`; `comment_reply`
-and `markup_propose` stay yours. It acts on this design through you and can reach no other. Its
-profile needs no `extensions:` line for them.
+`comment_list`, `board_write`, `board_edit`, `boards_edit`, `board_search`, `board_render`,
+`board_extract`, `checkpoint_create`, `checkpoint_list`, `canvas_update` and `system_write`;
+`comment_reply`, `markup_propose` and `checkpoint_restore` stay yours. It acts on this design
+through you and can reach no other. Its profile needs no `extensions:` line for them. A helper
+given `board_render` gets the picture when its own model reads images, and the words alone
+when it doesn't.
 
 - **Give each helper its own boards,** named exactly, and the rules its task needs: a helper
   has not read this skill, so say what to keep (the `support.js` head line, a root the size of
