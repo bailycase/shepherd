@@ -36,7 +36,7 @@ or App/iOS changes (docs/design-workflow.md). A comment like this one is a place
 
 - **Design:** <!-- the design you built from, saved in the repo (docs/design/boards/<Name>.png), and its board or section -->
 - **Departures:** <!-- every difference from the design you kept, each with a reason. Write "none" if none. The user decides, never you. -->
-- **Rendered:** <!-- every state, empty and long text, light and dark, text scale 1.5, drawn from the real data path (store, extension output, formatter), never strings copied from the design; where the images are -->
+- **Rendered:** <!-- every state, empty and long text, light and dark, text scale 1.3, drawn from the real data path (store, extension output, formatter), never strings copied from the design; where the images are -->
 - **Controls used:** <!-- each control, pressed with ControlPress in every state it appears in: the request it sent, the state it left, its hit area -->
 - **Not verified:** <!-- what you could not check, and why -->
 
