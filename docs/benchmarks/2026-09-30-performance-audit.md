@@ -118,7 +118,11 @@ backpressure remain candidates, not confirmed bottlenecks or completed fixes.
   agents and a 4.7 MiB local history. Stub pi received twelve each of `get_state`, `get_messages`, and `get_session_stats`.
   All launch directories and pi homes were inside scratch paths. The environment had no API
   key variables; no managed-provider configuration existed. No real model request was made.
-- The app had an onscreen 1440 by 900 window. Window capture was unavailable, so this run
+- The post-merge native-renderer Dev build was also run under a new scratch bundle identity
+  with those 12 agents and a 100-line Swift fence in the fixture history. All twelve completed
+  the startup RPC set, their paths were isolated, and no API-key variables or managed-provider
+  config existed. That app was stopped afterward.
+- The earlier app had an onscreen 1440 by 900 window. Window capture was unavailable, so this run
   verifies launch and RPC startup, not visual correctness or displayed smoothness. The app
   was stopped and its pane closed afterward.
 - Post-merge validation passed 3,036 selected tests: all 2,983 unit tests, 38 native-thread tests,
