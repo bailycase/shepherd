@@ -61,19 +61,26 @@ def collect(results_dir: str) -> dict:
 def parse_state(body: str) -> dict:
     start = body.find(STATE_OPEN)
     if start < 0:
-        return {"flaky": {}, "last_red": None}
+        return fresh_state()
     end = body.find(STATE_CLOSE, start + len(STATE_OPEN))
     try:
         state = json.loads(body[start + len(STATE_OPEN):end])
     except ValueError:
-        return {"flaky": {}, "last_red": None}
-    state.setdefault("flaky", {})
-    state.setdefault("last_red", None)
+        return fresh_state()
+    for key, value in fresh_state().items():
+        state.setdefault(key, value)
     return state
+
+
+def fresh_state() -> dict:
+    return {"flaky": {}, "last_red": None, "runs_seen": 0, "last_counted": ""}
 
 
 def merge_flaky(state: dict, flaky: list[dict], run: str, today: str) -> dict:
     """Add one run's flaky tests to the running counts: how often each failed, in how many passes."""
+    if state["last_counted"] != run:
+        state["runs_seen"] += 1
+        state["last_counted"] = run
     seen = state["flaky"]
     for item in flaky:
         entry = seen.setdefault(item["id"], {"failed": 0, "passes": 0, "runs": 0, "first": today,
@@ -102,12 +109,14 @@ def render_body(state: dict, repo: str) -> str:
     if flaky:
         rows = sorted(flaky.items(), key=lambda kv: (-kv[1]["failed"], kv[0]))[:MAX_FLAKY_ROWS]
         lines += ["### Flaky tests", "",
-                  "A test is flaky when it failed and then passed on retry (pull request and push runs) or failed in "
-                  "some passes of the daily three-pass run. Counts are over every recorded run.", "",
-                  "| Test | Failed / passes | Runs | Last seen | Where | Last message |", "|---|--:|--:|---|---|---|"]
+                  "A test is flaky when it failed and then passed on retry or failed in some passes of the daily "
+                  "three-pass run. Counts are over the runs recorded since this issue was opened; a test that is "
+                  "flaky in nearly every run fails on its first attempt almost every time, which points at the test "
+                  "(its order, its shared state) before the machine.", "",
+                  "| Test | Failed / attempts | Flaky in runs | Last seen | Where | Last message |", "|---|--:|--:|---|---|---|"]
         for test_id, e in rows:
             where = f"{e['file']}:{e['line']}" if e.get("line") else e.get("file", "")
-            lines.append(f"| `{test_id}` | {e['failed']} / {e['passes']} | {e['runs']} | {e['last']} | {where} | "
+            lines.append(f"| `{test_id}` | {e['failed']} / {e['passes']} | {e['runs']} of {state['runs_seen']} | {e['last']} | {where} | "
                          f"{e['message'].replace('|', chr(92) + '|').replace(chr(10), ' ')} |")
         if len(flaky) > len(rows):
             lines.append(f"\n… and {len(flaky) - len(rows)} more in the state below.")
@@ -157,7 +166,7 @@ def report(*, results: str, result: str, repo: str, run_id: str, sha: str, ref: 
     if issue is None and not red and not collected["flaky"]:
         return ["green and nothing flaky: no issue needed"]
     url = f"{server}/{repo}/actions/runs/{run_id}"
-    state = parse_state(issue["body"]) if issue else {"flaky": {}, "last_red": None}
+    state = parse_state(issue["body"]) if issue else fresh_state()
     was_red = state.get("last_red") is not None and not state["last_red"].get("recovered")
     merge_flaky(state, collected["flaky"], run_id, today)
     if red:
