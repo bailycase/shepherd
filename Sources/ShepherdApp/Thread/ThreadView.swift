@@ -64,8 +64,14 @@ struct ThreadView: View {
     /// Only this Mac's agents may receive paths from this Mac.
     var allowsLocalFiles = false
     var retainedInput: ThreadInput? = nil
+    /// What watches the thread for a stranded scroll position; a test holds its own to read.
+    var retainedTailGuard: ThreadTailGuard? = nil
+    /// Whether the scroll view keeps the tail itself (`ThreadTailAnchor.isNative`); a test drives either.
+    var nativeTail = ThreadTailAnchor.isNative
     @State private var fallbackInput = ThreadInput()
     private var input: ThreadInput { retainedInput ?? fallbackInput }
+    @State private var fallbackTailGuard = ThreadTailGuard()
+    private var tailGuard: ThreadTailGuard { retainedTailGuard ?? fallbackTailGuard }
     @State private var follower = NativeScrollFollower()
     @State private var historyPaging = NativeHistoryPaging()
     @State private var historyAnchor = ThreadHistoryAnchor()
@@ -103,6 +109,7 @@ struct ThreadView: View {
         let settled = active && !catchingUp
         let arrived = arrivals.update(rows.map(\.id), session: store.sessionKey, active: active, catchingUp: catchingUp)
         ScrollViewReader { proxy in
+            let _ = keepTail(proxy, hasRows: !rows.isEmpty)
             ZStack(alignment: .bottom) {
                 ScrollView {
                     // Never animated as a whole (rows, their text, and the tail anchor change on
@@ -149,6 +156,7 @@ struct ThreadView: View {
                     .padding(.horizontal, gutter)
                     .frame(maxWidth: .infinity)
                     .background { ThreadInputBackground(input: input) }
+                    .background { ThreadScrollViewFinder(guardian: tailGuard) }
                     .environment(\.compactionExpansion, store.compactions)
                     .environment(\.turnErrorExpansion, store.errors)
                     // A local agent's images draw from its folder; a remote agent's files are not here.
@@ -161,6 +169,9 @@ struct ThreadView: View {
                 .modifier(ComposerInsetPadding(inset: composerInset))
                 // A margin rather than padding so scrollTo(.top) keeps the 28pt above a turn.
                 .contentMargins(.top, AppLayout.threadTop, for: .scrollContent)
+                // Which rows are in view, for `ThreadTailGuard`: nothing, or not the tail while
+                // following it, is a view the lazy stack stranded.
+                .onScrollTargetVisibilityChange(idType: String.self, threshold: 0) { tailGuard.targets($0) }
                 .onChange(of: rows.first?.id) { _, first in
                     historyAnchor.prepended(firstID: first, session: store.sessionKey, active: active) { id in
                         proxy.scrollTo(id, anchor: .top)
@@ -171,16 +182,19 @@ struct ThreadView: View {
                     historyAnchor.cancel()
                     loadVisibleHistory()
                 }
-                .modifier(ThreadTailAnchor(sticky: follower.sticky))
+                .modifier(ThreadTailAnchor(sticky: follower.sticky, native: nativeTail))
                 .onScrollGeometryChange(for: NativeScrollProbe.self, of: Self.probe) { old, new in
                     // Intent is a wheel tick (350 ms window) or a live drag phase.
                     let gesture = Date() <= wheelIntentUntil || follower.userScrolling
                     // Where nothing anchors the scroll view, every reading is the layout's own:
                     // growth, a shrinking history, the composer resizing and a send's collapsing
                     // tray all land back on the tail as they arrive.
-                    if follower.observe(from: old, to: new, gesture: gesture, nativeAnchor: ThreadTailAnchor.isNative) {
+                    // The guard walks the scroll view itself while it repairs one, and is not fought.
+                    if follower.observe(from: old, to: new, gesture: gesture, nativeAnchor: nativeTail), !tailGuard.repairing {
                         proxy.scrollTo(Self.bottomID, anchor: .bottom)
                     }
+                    tailGuard.distance = new.distance
+                    tailGuard.suspect()
                 }
                 .onScrollPhaseChange { _, phase, context in
                     // Only a live finger/wheel counts. Momentum and programmatic phases are not
@@ -189,6 +203,7 @@ struct ThreadView: View {
                     if phase == .interacting {
                         historyAnchor.cancel()
                         historyPaging.beginScroll()
+                        tailGuard.readerMoved()
                     }
                     if phase == .idle {
                         follower.observe(distanceFromBottom: Self.distanceFromBottom(context.geometry))
@@ -210,10 +225,14 @@ struct ThreadView: View {
                         if !wasFollowing {
                             proxy.scrollTo(Self.bottomID, anchor: .bottom)
                         }
+                        tailGuard.asked()
                     }
                 }
                 // New output at the tail is what "unseen" means, never the content height.
-                .onChange(of: rows.last) { _, _ in follower.contentArrived() }
+                .onChange(of: rows.last) { _, _ in
+                    follower.contentArrived()
+                    tailGuard.suspect()
+                }
                 .modifier(ThreadCommandHandler(key: commandKey, active: active) { command in
                     handle(command, proxy: proxy)
                 })
@@ -230,6 +249,7 @@ struct ThreadView: View {
                              historyAnchor.cancel()
                              follower.jumpToLatest()
                              proxy.scrollTo(Self.bottomID, anchor: .bottom)
+                             tailGuard.asked()
                          } : nil, finder: finder, queueState: queueState, contextDetailsOpen: contextDetailsOpen,
                          inspectSubagent: inspectSubagent, steerSubagent: steerSubagent, inspectedRunID: inspectedRunID,
                          designChat: designChat, restartPi: restartPi,
@@ -262,6 +282,7 @@ struct ThreadView: View {
         .onAppear { installWheelMonitor() }
         .onDisappear {
             historyAnchor.cancel()
+            tailGuard.stop()
             store.stop()
             if let wheelMonitor { NSEvent.removeMonitor(wheelMonitor) }
             wheelMonitor = nil
@@ -269,7 +290,7 @@ struct ThreadView: View {
         // Hidden, the thread stops polling and keeps what it shows; shown again, it polls from
         // there (`NativeThreadStore.suspend`).
         .task(id: active) {
-            guard active else { historyAnchor.cancel(); store.suspend(); return }
+            guard active else { historyAnchor.cancel(); tailGuard.stop(); store.suspend(); return }
             await store.run(request: request, preview: preview)
         }
     }
@@ -301,7 +322,20 @@ struct ThreadView: View {
         }
     }
 
-    private static let bottomID = "thread-bottom"
+    /// The scroll target at the end of the thread: scrolled to when following, and in view
+    /// whenever the tail is (`ThreadTailGuard`).
+    static let bottomID = "thread-bottom"
+
+    /// What the tail guard reads when a check comes due, refreshed by every render and never
+    /// observed.
+    private func keepTail(_ proxy: ScrollViewProxy, hasRows: Bool) {
+        tailGuard.bottomID = Self.bottomID
+        tailGuard.hasRows = hasRows
+        tailGuard.active = active
+        tailGuard.following = follower.sticky
+        tailGuard.userScrolling = follower.userScrolling
+        tailGuard.land = { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
+    }
 
     private var historyEnabled: Bool { active && store.ready && !store.loadingOlder && !follower.sticky }
 
@@ -348,6 +382,7 @@ struct ThreadView: View {
                 jumpedTurn = nil
                 follower.jumpToLatest()
                 proxy.scrollTo(Self.bottomID, anchor: .bottom)
+                tailGuard.asked()
                 return
             }
             jumpedTurn = userTurns[target]
@@ -393,6 +428,7 @@ struct ThreadView: View {
                 historyAnchor.cancel()
                 wheelIntentUntil = Date().addingTimeInterval(0.35)
                 historyPaging.beginScroll()
+                tailGuard.readerMoved()
             }
             return event
         }
@@ -554,9 +590,13 @@ final class ThreadFinder {
 /// (the blank thread after a send or a finished turn; `ThreadBlankScreenTests`). Before 27 the
 /// anchors stay: `scrollTo`, the follower's only way to the tail without them, builds every row of
 /// a long thread there (`ListPerformanceTests`: 120 row builds against a budget of 40), so a short
-/// window can still draw blank on macOS 26 (a known issue in `ThreadBlankScreenTests`).
+/// window can still draw blank on macOS 26 (a known issue in `ThreadBlankScreenTests`). Either
+/// way, a lazy stack over rows of very different heights can strand a following view past its
+/// rows, in a window of any height: `ThreadTailGuard` puts it back (`ThreadTailFlowTests` runs the
+/// thread both ways).
 struct ThreadTailAnchor: ViewModifier {
     let sticky: Bool
+    let native: Bool
 
     /// The scroll view keeps the tail itself, as the follower's `nativeAnchor` says.
     static var isNative: Bool {
@@ -564,7 +604,7 @@ struct ThreadTailAnchor: ViewModifier {
     }
 
     @ViewBuilder func body(content: Content) -> some View {
-        if Self.isNative {
+        if native {
             content
                 .defaultScrollAnchor(.bottom, for: .initialOffset)
                 // While stuck, growth keeps the tail pinned without any scrollTo; detaching only
