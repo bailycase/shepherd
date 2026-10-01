@@ -259,9 +259,8 @@ struct ComposerMenuPerformanceTests {
         let thread = ComposerThread(animated: false)
         defer { thread.close() }
         try await thread.waitUntilReady()
-        let levels = thread.store.thinkingLevels.count
-
-        for (step, rows) in [("open", levels), ("close", 0)] {
+        // Current model, All models, and one row per supported thinking level.
+        for (step, rows) in [("open", 2 + thread.store.thinkingLevels.count), ("close", 0)] {
             let counts = try await counting(thread) { thread.commands.send(.thinkingMenu, to: ComposerThread.key) }
             #expect(counts["composer.body", default: 0] == 1, "\(step): \(counts)")
             #expect(counts["thread.view", default: 0] == 0, "\(step): \(counts)")

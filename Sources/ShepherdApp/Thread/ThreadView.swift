@@ -31,6 +31,8 @@ struct ThreadView: View {
     /// The empty thread's title and the composer placeholder name the agent and its folder.
     var agentName: String? = nil
     var workingDirectory: String? = nil
+    var branch: AgentBranchLabel? = nil
+    var showChanges: (() -> Void)? = nil
     /// Opens a subagent in the inspector.
     var inspectSubagent: ((ChildRun) -> Void)? = nil
     /// Opens a subagent in the inspector with its Steer field focused (the tray's Steer).
@@ -56,6 +58,7 @@ struct ThreadView: View {
     var queueState: QueueStackState? = nil
     /// Previews: the composer opens with the context ring's details showing.
     var contextDetailsOpen = false
+    var modelSettingsOpen = false
     /// A design's chat: its composer says the design's placeholder.
     var designChat = false
     /// Only this Mac's agents may receive paths from this Mac.
@@ -221,7 +224,8 @@ struct ThreadView: View {
                 // The composer draws "Jump to latest" over the fade it lays on the thread and under
                 // its card and menus, so the pill reads clearly and never covers an open menu.
                 Composer(store: store, input: input, allowsLocalFiles: allowsLocalFiles, active: active, isFocused: isFocused, agentName: agentName, hasTurns: !rows.isEmpty,
-                         gutter: gutter, listModels: listModels, commandKey: commandKey,
+                         gutter: gutter, listModels: listModels, branch: branch, directory: allowsLocalFiles ? workingDirectory : nil,
+                         showChanges: showChanges, modelSettingsOpen: modelSettingsOpen, commandKey: commandKey,
                          jumpToLatest: follower.showsJump(running: running) ? {
                              historyAnchor.cancel()
                              follower.jumpToLatest()

@@ -46,6 +46,11 @@ struct HiddenAgentsWorkspace {
         let visible = vm.threadStores.store(for: agents[0].agent.id)
         try await eventuallyOnMain("the visible thread to load", timeout: .seconds(60)) { visible.ready }
         try await eventuallyOnMain("every layout to mount") { vm.mountedTabs.count == agents.count }
+        // Measure updates after every stub has served, not while hidden sessions finish booting.
+        for agent in agents { _ = try await app.readyThread(agent.agent.id) }
+        try await eventuallyOnMain("every mounted session to finish attaching") {
+            agents.allSatisfy { vm.sessions.session(for: $0.piPane, in: $0.tab).phase == .live }
+        }
         vm.openReview(agentID: agents[0].agent.id, path: nil)
         try await eventuallyOnMain("the diff to load", timeout: .seconds(60)) {
             ListPerf.settle(window)

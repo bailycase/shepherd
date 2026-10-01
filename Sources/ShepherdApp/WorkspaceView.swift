@@ -122,6 +122,7 @@ struct AgentLayoutModel: Equatable {
         let piSessionID: String
         /// Waiting for the first launch's copy, or not signed in: the line or card at its end.
         var authNotice: ThreadAuthNotice? = nil
+        var branch: AgentBranchLabel? = nil
     }
 
     let tab: Tab
@@ -206,7 +207,7 @@ struct AgentLayoutModel: Equatable {
             let thread = agentsByTab[tab.id].flatMap { agent in
                 tab.layout.leaves.first { primaryAgent(in: tab, pane: $0, agents: [agent]) != nil }
                     .map { Thread(agentID: agent.id, paneID: $0.id, agentName: agent.name, piSessionID: agent.effectivePiSessionID,
-                                  authNotice: notice(agent)) }
+                                  authNotice: notice(agent), branch: AgentBranchLabel(agent: agent)) }
             }
             let owner = thread.map { SidePaneOwner.local($0.agentID) }
             let terminal = terminals.panel(TerminalPanelKey(host: nil, tab: tab.id))
@@ -488,6 +489,7 @@ struct PaneTreeView: View {
             agentName: thread?.agentName ?? "",
             piSessionID: thread?.piSessionID,
             authNotice: thread?.authNotice,
+            branch: thread?.branch,
             inspectingRunID: thread == nil ? nil : model.inspectingRunID,
             threadAgentID: thread == nil ? model.thread?.agentID : nil
         )
@@ -508,6 +510,7 @@ struct PaneLeafModel: Equatable {
     var piSessionID: String? = nil
     /// The line or card at the end of the thread (`ThreadAuthNotice`).
     var authNotice: ThreadAuthNotice? = nil
+    var branch: AgentBranchLabel? = nil
     /// The subagent the right pane inspects (`AgentLayoutView`): the thread yields keyboard focus.
     let inspectingRunID: String?
     /// For a terminal pane, the agent whose thread its selection can be added to.
@@ -544,6 +547,8 @@ struct PaneLeafView: View, Equatable {
                     commandKey: ThreadCommandCenter.key(local: agentID),
                     agentName: model.agentName,
                     workingDirectory: pane.cwd,
+                    branch: model.branch,
+                    showChanges: { [vm] in vm.openReview(agentID: agentID, path: nil) },
                     inspectSubagent: { [vm] in vm.toggleSubagentInspector(agentID: agentID, runID: $0.runID) },
                     steerSubagent: { [vm] in vm.steerSubagent(agentID: agentID, runID: $0.runID) },
                     inspectedRunID: inspecting,
@@ -592,6 +597,8 @@ struct AgentThreadPane: View {
     var commandKey: String?
     let agentName: String
     var workingDirectory: String?
+    var branch: AgentBranchLabel? = nil
+    var showChanges: (() -> Void)? = nil
     var inspectSubagent: ((ChildRun) -> Void)? = nil
     var steerSubagent: ((ChildRun) -> Void)? = nil
     var inspectedRunID: String? = nil
@@ -613,7 +620,7 @@ struct AgentThreadPane: View {
             switch session.phase {
             case .connecting, .live, .stopped:
                 ThreadView(store: store, active: active, isFocused: isFocused, request: request, preview: preview, commandKey: commandKey,
-                           agentName: agentName, workingDirectory: workingDirectory, inspectSubagent: inspectSubagent,
+                           agentName: agentName, workingDirectory: workingDirectory, branch: branch, showChanges: showChanges, inspectSubagent: inspectSubagent,
                            steerSubagent: steerSubagent, inspectedRunID: inspectedRunID, review: review, turnActions: turnActions,
                            restartPi: restartPi, authNotice: authNotice, authActions: authActions, slashLogin: designChat ? nil : slashLogin,
                            designChat: designChat, allowsLocalFiles: true, retainedInput: input)
@@ -982,6 +989,10 @@ struct RemoteAgentThreadPane: View {
             request: { try await vm.remoteHosts.nativeThread(ref, request: $0) },
             commandKey: ThreadCommandCenter.key(remote: ref),
             agentName: agentName,
+            branch: vm.remoteHosts.connections.first(where: { $0.id == ref.hostID }).flatMap { connection in
+                connection.state.agents.first(where: { $0.id == ref.agentID }).flatMap { AgentBranchLabel(agent: $0, host: connection.config.name) }
+            },
+            showChanges: { vm.openRemoteReview(ref, path: nil) },
             inspectSubagent: { run in
                 if vm.subagentInspector.remoteRuns[ref] == run.runID {
                     vm.subagentInspector.remoteRuns.removeValue(forKey: ref)
