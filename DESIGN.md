@@ -1505,7 +1505,20 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   composer collapsing leaves past it, returns to it at once. The native top-margin allowance
   and fitting content's normal empty space do not trigger overscroll recovery. (The iOS thread
   and the Mac thread before 27 anchor natively, so they let the anchor settle a view past the
-  end first.) While a
+  end first.) The Mac thread also watches which rows SwiftUI says are in view
+  (`ThreadTailGuard`). The lazy stack guesses the heights of the rows it has not measured, and
+  over rows of very different heights (a long answer, a turn of a hundred tool calls) the
+  guesses move by thousands of points under a view that follows its tail: a turn settling into
+  its footer, the terminal panel or the composer resizing, a long history opening. That can
+  leave the scroll view at an offset its numbers call the tail but that lies past every row the
+  stack placed. Nothing is realized there and nothing moves it, so the thread draws nothing, in
+  a window of any height, and a view that keeps following lets the reader scroll no way out of
+  it. The guard notices that no row is in view, or that a following thread rests more than 80pt
+  above its tail with the bottom marker out of view, waits for the layout to be quiet (160ms at
+  most, for a thread drawing nothing), and lands on the tail again; when that is not enough it
+  walks the scroll view back toward the rows and then down a page at a time until the marker is
+  in view. A reader's scroll, or one that just ended, is never moved, and a thread that is not
+  stranded is never touched (`ThreadTailFlowTests`). While a
   gesture is live, layout changes never move the view either: a drag up measures the rows it
   reveals, and landing on the tail then would pull the thread out from under the finger. "↓ Jump to latest"
   (`NWJumpToLatest`, a `bgRaised` capsule above the composer) appears while detached if the
