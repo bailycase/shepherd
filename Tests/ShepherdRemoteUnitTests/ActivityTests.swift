@@ -297,6 +297,65 @@ struct ActivityTests {
         #expect(failed.map(\.label) == ["Board edit failed"])
     }
 
+    @Test func aBatchEditReadsAsAnUpdateOfTheBoardsItWroteNotTheOnesItAsked() {
+        let asked = ["paths": ["A.dc.html", "B.dc.html", "C.dc.html"], "edits": [["find": "a", "replace": "b"]]] as [String: Any]
+        let partial = nativeActivityBursts([call("boards_edit", asked, output: """
+            Edited 2 of 3 boards as one change · revision 5
+            Edited (matches replaced per edit): A.dc.html (1), B.dc.html (2+1)
+            """)])
+        #expect(partial.map(\.label) == ["Updated A and B"])
+        #expect(partial[0].kind == .drew && partial[0].isBoardUpdate)
+        #expect(partial[0].calls.map(\.stat) == ["edited"])
+        let truncated = nativeActivityBursts([call("boards_edit", asked, output: """
+            Edited 9 of 9 boards as one change · revision 5
+            Edited (matches replaced per edit): A.dc.html (1), B.dc.html (1), C.dc.html (1), and 6 more
+            """)])
+        #expect(truncated.map(\.label) == ["Updated A, B and C"], "a list cut with \"and N more\" falls back to the boards asked")
+        let mixed = nativeActivityBursts([call("boards_edit", asked, output: "Edited 3 of 3 boards as one change · revision 5\nEdited (matches replaced per edit): A.dc.html (1), B.dc.html (1), C.dc.html (1)"),
+                                          boardWrite("D.dc.html", created: true)])
+        #expect(mixed.map(\.label) == ["Drew 1 board and updated A, B and C"])
+    }
+
+    @Test func aBatchThatWroteNothingIsAnOrdinaryToolLineAndAFailedOneSaysSo() {
+        let args = ["paths": ["A.dc.html"], "dry_run": true] as [String: Any]
+        let dry = nativeActivityBurst([call("boards_edit", args, output: "Dry run: 1 of 1 board would be edited; nothing was written · revision 5")])
+        #expect(dry.kind == .other && dry.calls[0].boards.isEmpty)
+        let blocked = nativeActivityBurst([call("boards_edit", args, output: "Nothing written (atomic): 1 of 2 boards did not match, and 1 would have been edited · revision 5")])
+        #expect(blocked.kind == .other)
+        let failed = nativeActivityBursts([call("boards_edit", args, output: "the design has changed (stale_revision)", error: true)])
+        #expect(failed.map(\.label) == ["Batch edit failed"])
+        let running = nativeActivityBursts([call("boards_edit", args, status: "running")])
+        #expect(running.map(\.label) == ["Drawing"])
+    }
+
+    @Test func extractingAPieceDrawsANewBoardAndUpdatesTheSource() {
+        let burst = nativeActivityBurst([call("board_extract", ["path": "Home.dc.html", "element": "Home.dc.html#3:0.1", "piece": "TopBar"],
+                                              output: "Extracted TopBar.dc.html · one change · revision 6")])
+        #expect(burst.kind == .drew && !burst.isBoardUpdate)
+        #expect(burst.calls[0].board == "TopBar.dc.html" && burst.calls[0].boardCreated == true && burst.calls[0].stat == "new piece")
+        let failed = nativeActivityBursts([call("board_extract", ["path": "Home.dc.html"], output: "no such element (no_such_element)", error: true)])
+        #expect(failed.map(\.label) == ["Extraction failed"])
+    }
+
+    @Test func searchingBoardsIsExploringAndNamesWhatItLookedFor() {
+        let text = nativeActivityBurst([call("board_search", ["text": "Sign in"], output: "3 matches in 2 boards")])
+        #expect(text.kind == .explore && text.calls[0].explore == .search && text.calls[0].detail == "Sign in")
+        #expect(nativeActivityBurst([call("board_search", ["usages": "TopBar"])]).calls[0].detail == "usages of TopBar")
+        #expect(nativeActivityBurst([call("board_search", ["tag": "div", "class": "bar"])]).calls[0].detail == ".bar")
+        #expect(nativeActivityBurst([call("board_search", ["tag": "header"])]).calls[0].detail == "<header>")
+    }
+
+    @Test func renderingABoardAndCheckpointsAreOrdinaryToolLines() {
+        let render = nativeActivityBurst([call("board_render", ["path": "Home.dc.html"], output: "Rendered Home.dc.html · 1280×800")])
+        #expect(render.kind == .other && render.calls[0].detail == "Home.dc.html")
+        let saved = nativeActivityBurst([call("checkpoint_create", ["name": "before-rebrand"], output: "Saved checkpoint")])
+        #expect(saved.kind == .other && saved.calls[0].detail == "before-rebrand")
+        let listed = nativeActivityBurst([call("checkpoint_list", output: "2 checkpoints")])
+        #expect(listed.calls[0].detail == "list")
+        let restored = nativeActivityBurst([call("checkpoint_restore", ["name": "before-rebrand"], output: "Restored")])
+        #expect(restored.calls[0].detail == "before-rebrand")
+    }
+
     @Test func aBurstThatDrawsAndUpdatesSaysBoth() {
         let bursts = nativeActivityBursts([boardWrite("B.dc.html", created: true), boardWrite("A.dc.html", created: false)])
         #expect(bursts.map(\.label) == ["Drew 1 board and updated A"])

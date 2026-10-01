@@ -200,7 +200,7 @@ struct DesignChatPane: View {
                         .background(Color.nw.bgWindow)
                 }
                 if let tweak = screen.tweak, tab == .tweak {
-                    DesignTweakPane(model: tweak, target: screen.tweakTarget) { [vm] in
+                    DesignTweakPane(model: tweak, target: screen.tweakTarget, piece: screen.pieceNote) { [vm] in
                         // "Ask the agent instead…": the chat, its composer taking the keyboard; the
                         // message it sends carries the selection as data.
                         screen.paneTab = .chat

@@ -233,7 +233,8 @@ extension ShepherdViewModel {
                 await self.threadStores.store(for: agentID).send(text: text, designContext: record)
                 return true
             },
-            report: { [weak self] in self?.remoteActionError = $0 })
+            report: { [weak self] in self?.remoteActionError = $0 },
+            usage: { try await server.designUsage($0) })
     }
 
     /// The canvas's comment changes through the server. A change based on comments that moved on

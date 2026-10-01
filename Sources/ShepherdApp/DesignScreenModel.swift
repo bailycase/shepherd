@@ -17,6 +17,9 @@ struct DesignElementPick: Equatable {
     var tag: String
     /// What a comment on it is on: its `data-el` name, else its words ("Checkout funnel").
     var words: String? = nil
+    /// For a `<dc-import>`: the piece's board name as the import writes it ("Card"); the element is
+    /// one use of that shared piece.
+    var piece: String? = nil
 }
 
 /// What a design's canvas asks its host about comments (`SessionServer`'s comment mutations).
@@ -40,6 +43,9 @@ struct DesignCanvasActions {
     var ask: (DesignID, String, DesignViewRecord) async -> Bool
     /// Says what went wrong (the app's error dialog).
     var report: (String) -> Void
+    /// Which boards import which, as of the design's current revision (a host without the Design
+    /// tool's pieces answers none).
+    var usage: (DesignID) async throws -> DesignUsageIndex = { _ in DesignUsageIndex() }
 }
 
 /// A comment's card as the chat and the Comments tab draw it.
@@ -99,6 +105,9 @@ final class DesignScreenModel {
     /// The element under the pointer with Select.
     private(set) var hover: DesignElementPick?
     private(set) var snapshot: DesignSnapshot?
+    /// Which boards import which, read with each pull: a piece's boards redraw when it changes, and the
+    /// canvas says how many boards use it.
+    private(set) var usage = DesignUsageIndex()
     /// The last pull failed (the canvas keeps what it drew).
     private(set) var loadError: String?
     /// The chat pane's tab (DZCanvas, DZTweak): Chat, Comments or Tweak.
@@ -201,7 +210,7 @@ final class DesignScreenModel {
     var boards: [NWCanvasBoard] {
         guard let snapshot else { return [] }
         let tokens = host?.tokens ?? [:]
-        var boards = Self.boards(snapshot.index, page: page, selected: selectedWhole, tokens: tokens, rooms: labelRooms)
+        var boards = Self.boards(snapshot.index, page: page, selected: selectedWhole, tokens: tokens, rooms: labelRooms, usage: usage)
         if !movedTo.isEmpty || moving != nil {
             for index in boards.indices {
                 guard let path = DesignPath(boards[index].id) else { continue }
@@ -216,7 +225,7 @@ final class DesignScreenModel {
     }
 
     static func boards(_ index: DesignIndex, page: String? = nil, selected: Set<DesignPath>, tokens: [DesignPath: Int],
-                       rooms: [String: NWLabelRoom] = [:]) -> [NWCanvasBoard] {
+                       rooms: [String: NWLabelRoom] = [:], usage: DesignUsageIndex = DesignUsageIndex()) -> [NWCanvasBoard] {
         canvasOrder(index).compactMap { path in
             guard let board = index.boards[path], index.isOnPage(path, page) else { return nil }
             let title = board.title?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -224,7 +233,7 @@ final class DesignScreenModel {
                                  title: title?.isEmpty == false ? title! : path.stem,
                                  size: NWCanvasBoard.sizeLabel(CGSize(width: board.w, height: board.h)),
                                  isSelected: selected.contains(path), content: tokens[path] ?? 0,
-                                 labelRoom: rooms[path.rawValue] ?? .open)
+                                 labelRoom: rooms[path.rawValue] ?? .open, usage: usage.label(for: path))
         }
     }
 
@@ -291,6 +300,8 @@ final class DesignScreenModel {
             pulls += 1
             do {
                 let next = try await fetchSnapshot(designID)
+                // Before the boards are handed to the renderer: a board's drawing includes the pieces it imports.
+                if let read = try? await canvasActions?.usage(designID), read != usage { usage = read }
                 apply(next)
                 loadError = nil
             } catch {
@@ -326,8 +337,10 @@ final class DesignScreenModel {
         for (path, board) in next.index.boards {
             guard let sha = next.boards[path] else { continue }
             let tweaks = next.index.tweaks(for: path)
+            let pieces = usage.dependencies(of: path).compactMap { piece in next.boards[piece].map { "\(piece.rawValue):\($0)" } }
             boards[path] = DesignHost.Board(size: CGSize(width: board.w, height: board.h), sha: sha,
-                                            props: tweaks.isEmpty ? nil : DesignTweakModel.json(.object(tweaks)))
+                                            props: tweaks.isEmpty ? nil : DesignTweakModel.json(.object(tweaks)),
+                                            deps: pieces.isEmpty ? nil : pieces.joined(separator: ","))
         }
         host?.update(boards)
         if let tweak { Task { await tweak.snapshotChanged(next) } }
@@ -506,7 +519,7 @@ final class DesignScreenModel {
     var tweakTarget: DesignTweakTarget? {
         guard let pick = picks.last else { return nil }
         guard let element = pick.element else { return DesignTweakTarget(board: pick.board, element: nil, kind: .other, tag: nil) }
-        return DesignTweakTarget(board: pick.board, element: element.id, kind: element.kind, tag: element.tag)
+        return DesignTweakTarget(board: pick.board, element: element.id, kind: element.kind, tag: element.tag, instanceOf: element.piece)
     }
 
     /// A tweak previewed on a board: its selected elements are measured again where they are
