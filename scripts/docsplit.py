@@ -16,6 +16,7 @@ from typing import Iterable, Sequence
 FENCE = re.compile(r"^\s*(`{3,}|~{3,})")
 HEADING = re.compile(r"^(#{1,6})\s+(\S.*?)\s*$")
 LEAD_IN = re.compile(r"^\*\*([^*]+?)\*\*")
+BULLET_LEAD_IN = re.compile(r"^[-*]\s+\*\*([^*]+?)\*\*")
 
 
 @dataclass(frozen=True)
@@ -65,6 +66,12 @@ def clean_title(title: str) -> str:
 def tokens(text: str) -> list[str]:
     t = clean_title(text).lower().replace("'", "").replace("’", "")
     return re.findall(r"[\w▸-]+", t)
+
+
+def contains(have: Sequence[str], want: Sequence[str]) -> bool:
+    """`want` is a run of consecutive words in `have`."""
+    n = len(want)
+    return n > 0 and any(list(have[i:i + n]) == list(want) for i in range(len(have) - n + 1))
 
 
 def split_top(text: str, sep: str) -> list[str]:
@@ -194,11 +201,15 @@ def resolve_entry(entry: str, sections: Sequence[Section]) -> list[Resolved]:
     return [Resolved(s, f) for s, f in frontier]
 
 
-def lead_in_blocks(lines: Sequence[str], start: int, end: int) -> list[tuple[int, int, str]]:
-    """Blocks of a section that open with a bold lead-in in column 0 ("**The card:**"):
-    (first line, end line, lead-in text). A block ends at the next lead-in or heading."""
-    hs = {h.line for h in headings(lines[start:end])}
-    marks: list[tuple[int, str]] = []
+def lead_in_blocks(lines: Sequence[str], start: int, end: int,
+                   bullets: bool = False) -> list[tuple[int, int, str, int]]:
+    """Blocks of a section that open with a bold lead-in: (first line, end line, text, level).
+
+    Level 1 is a paragraph starting `**The card:**` in column 0; it runs to the next level 1
+    lead-in or heading. With `bullets`, a top-level bullet `- **Slash menu** (...)` is a level 2
+    block inside it, running to the next bullet or lead-in."""
+    heads = {start + h.line for h in headings(lines[start:end])}
+    marks: list[tuple[int, str, int]] = []
     fence = False
     for i in range(start, end):
         line = lines[i]
@@ -208,13 +219,16 @@ def lead_in_blocks(lines: Sequence[str], start: int, end: int) -> list[tuple[int
         if fence:
             continue
         m = LEAD_IN.match(line)
+        level = 1
+        if not m and bullets:
+            m, level = BULLET_LEAD_IN.match(line), 2
         if m:
-            marks.append((i, m.group(1).strip().rstrip(":").strip()))
-    heads = [start + h for h in hs]
+            marks.append((i, m.group(1).strip().rstrip(":").strip(), level))
     out = []
-    for n, (i, text) in enumerate(marks):
-        stops = [m[0] for m in marks[n + 1:n + 2]] + [h for h in heads if h > i] + [end]
-        out.append((i, min(stops), text))
+    for n, (i, text, level) in enumerate(marks):
+        stops = [end] + [h for h in heads if h > i]
+        stops += [j for j, _t, lv in marks[n + 1:] if lv <= level][:1]
+        out.append((i, min(stops), text, level))
     return out
 
 

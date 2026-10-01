@@ -222,14 +222,19 @@ DESIGN.md. If a design disagrees with a spec here, build the design, update the 
 same change, and tell the user every place you could not match it. A departure from a design
 is the user's call, never yours.
 
-**Find a spec.** Look the board up in the index below and print only its sections:
+**Find a spec.** Do not read this index through: find the board with `--boards | grep -i <word>`
+and print only its sections.
 
 ```sh
-python3 scripts/design_section.py ComposerSpeed        # a board, from the index
-python3 scripts/design_section.py "Up next"            # or a heading
-python3 scripts/design_section.py ComposerSpeed --full # the whole section, not the narrowed block
-python3 scripts/design_section.py --list               # every board and heading
+python3 scripts/design_section.py --boards | grep -i composer   # which boards touch the composer
+python3 scripts/design_section.py ComposerSpeed          # a board: its status and the blocks it names
+python3 scripts/design_section.py "Up next"              # a heading
+python3 scripts/design_section.py "Composer, questions, and menus › The card"   # a block inside it
+python3 scripts/design_section.py ComposerSpeed --full   # every line, not the narrowed block or outline
+python3 scripts/design_section.py --list                 # the files and what each is for
 ```
+
+A block over 250 lines prints as an outline of its parts; read one with a path as above.
 
 **Reading a spec.**
 

@@ -4,13 +4,15 @@
     python3 scripts/design_section.py ComposerSpeed         # a board from docs/design/README.md's index
     python3 scripts/design_section.py "Up next"             # a heading, fuzzy-matched
     python3 scripts/design_section.py "iOS: iPad › Thread"  # a path, to choose between two headings
-    python3 scripts/design_section.py ComposerSpeed --full  # the whole section, not the narrowed block
+    python3 scripts/design_section.py "The control row"     # a bold lead-in block, when no heading has that name
+    python3 scripts/design_section.py ComposerSpeed --full  # every line, not the narrowed block or the outline
     python3 scripts/design_section.py ComposerSpeed --outline
     python3 scripts/design_section.py --list                # the files, what each is for
     python3 scripts/design_section.py --boards | --headings
 
 Every printed block starts with its file and 1-based line range, so you can read more with
-`sed -n 'A,Bp' <file>`. An ambiguous or unknown name fails with the candidates and exit
+`sed -n 'A,Bp' <file>`. A block over 250 lines prints as an outline of its parts (read one with
+a path, or add --full). An ambiguous or unknown name fails with the candidates and exit
 status 2. Standard library only.
 """
 from __future__ import annotations
@@ -24,6 +26,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from docsplit import (  # noqa: E402
     Section,
+    contains,
     headings,
     lead_in_blocks,
     resolve_entry,
@@ -34,6 +37,8 @@ from docsplit import (  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DOCS = ROOT / "docs" / "design"
+# A block longer than this prints as an outline of its lead-ins (read one with a path, or --full).
+MAX_BLOCK = 250
 
 
 class Fail(Exception):
@@ -55,6 +60,10 @@ class Docs:
                 continue
             self.lines[p.name] = p.read_text(encoding="utf-8").split("\n")
             self.sections += sections_of(p.name, self.lines[p.name])
+        self.leads: list[tuple[str, int, int, str]] = []  # (file, first line, end line, lead-in text)
+        for name, have in self.lines.items():
+            for first, end, text, _level in lead_in_blocks(have, 0, len(have), bullets=True):
+                self.leads.append((name, first, end, text))
         self.boards = self._boards(docs / "README.md")
 
     @staticmethod
@@ -97,12 +106,7 @@ def pick_heading(query: str, sections: list[Section]) -> tuple[Section, list[Sec
             return top[0], [s for s in equal if s is not top[0]]
         raise Fail(ambiguous(query, top))
     n = len(wanted)
-
-    def contains(s: Section) -> bool:
-        have = tokens(s.title)
-        return any(have[i:i + n] == wanted for i in range(len(have) - n + 1))
-
-    near = [s for s in sections if contains(s)]
+    near = [s for s in sections if contains(tokens(s.title), wanted)]
     if not near:
         raise Fail("")
     starts = [s for s in near if tokens(s.title)[:n] == wanted]
@@ -145,14 +149,16 @@ def blocks_for(docs: Docs, entry: str, full: bool) -> list[Block]:
         if not full and r.focus:
             found: list[Block] = []
             have = docs.lines[s.file]
-            leads = lead_in_blocks(have, s.start, s.end)
+            leads = lead_in_blocks(have, s.start, s.end, bullets=True)
             for term in r.focus:
                 want = tokens(term)
                 if not want:
                     continue
-                for first, end, text in leads:
-                    t = tokens(text)
-                    if any(t[i:i + len(want)] == want for i in range(len(t) - len(want) + 1)):
+                for level in (1, 2):
+                    hit = next(((first, end, text) for first, end, text, lv in leads
+                                if lv == level and contains(tokens(text), want)), None)
+                    if hit:
+                        first, end, text = hit
                         found.append(Block(s.file, first, end, f"{s.title} \u203a {text}",
                                            f"narrowed from {s.file}:{s.start + 1}-{s.end}; --full prints the section"))
                         break
@@ -179,22 +185,43 @@ def outline(docs: Docs, b: Block) -> list[str]:
     out = []
     for h in headings(lines[b.start:b.end]):
         out.append(f"  {b.file}:{b.start + h.line + 1}  {'#' * h.level} {h.title}")
-    for first, _end, text in lead_in_blocks(lines, b.start, b.end):
+    for first, _end, text, _level in lead_in_blocks(lines, b.start, b.end):
         out.append(f"  {b.file}:{first + 1}  **{text}**")
     return sorted(out, key=lambda r: int(r.split(":")[1].split()[0]))
 
 
-def emit(docs: Docs, blocks: list[Block], mode: str, out) -> None:
+def emit(docs: Docs, blocks: list[Block], mode: str, out, full: bool = False) -> None:
     for b in blocks:
+        size = b.end - b.start
         head = f"--- {docs.shown(b.file)}:{b.start + 1}-{b.end}  {b.label}"
         if b.note:
             head += f"  ({b.note})"
         print(head, file=out)
-        if mode == "outline":
+        if mode == "text" and size > MAX_BLOCK and not full:
+            print(f"This block is {size} lines, too long to print whole. Its parts:", file=out)
+            print("\n".join(outline(docs, b)), file=out)
+            print(f"\nRead one part with: design_section.py \"{b.label} \u203a <part>\"   "
+                  f"(or all {size} lines with --full, or: sed -n '{b.start + 1},{b.end}p' {docs.shown(b.file)})", file=out)
+        elif mode == "outline":
             print("\n".join(outline(docs, b)), file=out)
         else:
             print("\n".join(docs.lines[b.file][b.start:b.end]).rstrip("\n"), file=out)
         print(file=out)
+
+
+def find_leads(query: str, docs: Docs) -> list[tuple[str, int, int, str]]:
+    """Bold lead-in blocks ("**The control row:**") the query names, equal titles first."""
+    want = tokens(query)
+    if not want:
+        return []
+    equal, near = [], []
+    for lead in docs.leads:
+        t = tokens(lead[3])
+        if t == want:
+            equal.append(lead)
+        elif contains(t, want):
+            near.append(lead)
+    return equal or near
 
 
 def run(query: str, docs: Docs, full: bool = False, outline_only: bool = False, out=None) -> int:
@@ -206,7 +233,7 @@ def run(query: str, docs: Docs, full: bool = False, outline_only: bool = False, 
         if not found:
             raise Fail(f"no heading matches the path '{query}'. Try --headings, or a shorter name.")
         print(f"# path: {query}\n", file=out)
-        emit(docs, found, mode, out)
+        emit(docs, found, mode, out, full)
         return 0
     board = find_board(query, docs.boards)
     if board is None:
@@ -215,6 +242,16 @@ def run(query: str, docs: Docs, full: bool = False, outline_only: bool = False, 
         except Fail as e:
             if str(e):
                 raise
+            leads = find_leads(query, docs)
+            if leads:
+                if len(leads) > 1:
+                    rows = "\n".join(f"  {f}:{a + 1}-{z}  **{t}**" for f, a, z, t in leads[:12])
+                    raise Fail(f"'{query}' names several blocks; name one with a path such as "
+                               f"\"<heading> \u203a {query}\":\n{rows}")
+                f, a, z, t = leads[0]
+                print(f"# block: {t}\n", file=out)
+                emit(docs, [Block(f, a, z, t)], mode, out, full)
+                return 0
             near = fuzzy_boards(query, docs.boards)
             if len(near) == 1:
                 board = near[0]
@@ -231,7 +268,7 @@ def run(query: str, docs: Docs, full: bool = False, outline_only: bool = False, 
             if others:
                 print("# also matches: " + "; ".join(f"{o.file}:{o.start + 1} {o.title}" for o in others[:5]), file=out)
             print(file=out)
-            emit(docs, [Block(section.file, section.start, section.end, section.title)], mode, out)
+            emit(docs, [Block(section.file, section.start, section.end, section.title)], mode, out, full)
             return 0
     print(f"# board: {', '.join(board.names)}  status: {board.status}", file=out)
     print(f"# specified in: {board.specified}", file=out)
@@ -246,7 +283,7 @@ def run(query: str, docs: Docs, full: bool = False, outline_only: bool = False, 
                 found.append(Block(name, top.start, top.end, top.title))
         mode = "outline"
         print("# no section of its Specified in cell names a heading; outlines of its files:\n", file=out)
-    emit(docs, collapse(found), mode, out)
+    emit(docs, collapse(found), mode, out, full)
     return 0
 
 
@@ -267,7 +304,8 @@ def listing(docs: Docs, what: str, out) -> None:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("query", nargs="*", help="a board name or a heading")
-    ap.add_argument("--full", action="store_true", help="print the whole section, not the block a Specified-in entry names")
+    ap.add_argument("--full", action="store_true",
+                    help="print every line: the whole section, not the block a Specified-in entry names or an outline")
     ap.add_argument("--outline", action="store_true", help="print only the headings and bold lead-ins, with line numbers")
     ap.add_argument("--list", action="store_true", help="the files in docs/design and what each is for")
     ap.add_argument("--boards", action="store_true", help="every board with its status and files")
