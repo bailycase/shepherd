@@ -131,7 +131,7 @@ class ReportTests(unittest.TestCase):
         entry = state["flaky"]["M.S/u()"]
         self.assertEqual((entry["failed"], entry["passes"], entry["runs"]), (2, 4, 2))
         self.assertEqual((entry["first"], entry["last"]), ("2026-10-01", "2026-10-02"))
-        self.assertIn("| `M.S/u()` | 2 / 4 | 2 | 2026-10-02 | Tests/M/S.swift:30 | timed out |", fake.issue["body"])
+        self.assertIn("| `M.S/u()` | 2 / 4 | 2 of 2 | 2026-10-02 | Tests/M/S.swift:30 | timed out |", fake.issue["body"])
         self.assertEqual(fake.comments, [], "flaky tests alone do not comment")
 
     def test_the_flake_hunt_counts_failed_passes_of_three(self):
@@ -141,6 +141,19 @@ class ReportTests(unittest.TestCase):
         self.report(fake, "success")
         entry = ci_report.parse_state(fake.issue["body"])["flaky"]["M.S/u()"]
         self.assertEqual((entry["failed"], entry["passes"]), (1, 3))
+
+    def test_a_run_counts_once_however_many_flaky_tests_it_has_and_green_runs_count_too(self):
+        write_results(self.results, "1of4", flaky=[FLAKY, dict(FLAKY, id="M.S/v()")])
+        fake = FakeGh()
+        self.report(fake, "success", run="100")
+        self.assertEqual(ci_report.parse_state(fake.issue["body"])["runs_seen"], 1)
+        write_results(self.results, "1of4")
+        self.report(fake, "success", run="101")
+        self.report(fake, "success", run="101")
+        state = ci_report.parse_state(fake.issue["body"])
+        self.assertEqual(state["runs_seen"], 2)
+        self.assertEqual(state["flaky"]["M.S/u()"]["runs"], 1)
+        self.assertIn("| 1 of 2 |", fake.issue["body"])
 
     def test_a_cancelled_run_reports_nothing(self):
         fake = FakeGh()
@@ -154,12 +167,13 @@ class ReportTests(unittest.TestCase):
         self.assertIn("a job failed before or after the tests", fake.comments[0])
 
     def test_the_state_survives_a_body_with_no_block_or_a_broken_one(self):
-        self.assertEqual(ci_report.parse_state("hello"), {"flaky": {}, "last_red": None})
-        self.assertEqual(ci_report.parse_state("<!-- ci-health-state {oops -->"), {"flaky": {}, "last_red": None})
+        self.assertEqual(ci_report.parse_state("hello"), ci_report.fresh_state())
+        self.assertEqual(ci_report.parse_state("<!-- ci-health-state {oops -->"), ci_report.fresh_state())
 
     def test_a_long_flaky_list_shows_the_worst_in_the_table_and_keeps_all_in_the_state(self):
-        state = {"flaky": {f"M.S/t{i}()": {"failed": i, "passes": 10, "runs": 1, "first": "d", "last": "d", "file": "f",
-                                           "line": 1, "message": ""} for i in range(60)}, "last_red": None}
+        state = dict(ci_report.fresh_state(), flaky={
+            f"M.S/t{i}()": {"failed": i, "passes": 10, "runs": 1, "first": "d", "last": "d", "file": "f", "line": 1,
+                            "message": ""} for i in range(60)})
         body = ci_report.render_body(state, "o/r")
         self.assertIn("`M.S/t59()`", body)
         self.assertNotIn("| `M.S/t3()` |", body)
