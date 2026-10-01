@@ -9,9 +9,10 @@ import Testing
 @testable import ShepherdApp
 
 /// The model-settings popover, over the real composer in a real window, pressed the way VoiceOver
-/// presses: each control is found in the accessibility tree and its press action run, and
-/// nothing is posted to the window. SwiftUI draws that tree only for a process an assistive
-/// client is attached to, which is process-wide, so each scenario runs in its own process.
+/// presses: each control is found in the accessibility tree and its press action run
+/// (`ControlPress`), and nothing is posted to the window. SwiftUI draws that tree only for a
+/// process an assistive client is attached to, which is process-wide, so each scenario runs in
+/// its own process.
 ///
 /// The Speed control once could not be clicked: its segments were `Button`s with a clear
 /// background, so the only part of the Fast segment that answered a click was its label, 39×16pt
@@ -50,8 +51,7 @@ struct ModelSettingsPopoverTests {
     /// Opens the popover through the button, as a click would.
     @MainActor
     private static func openPopover(_ thread: ComposerThread, chip label: String = chip) async throws {
-        let chip = try #require(thread.window.element(label), "the composer has its model-settings button")
-        try #require(chip.press(), "the button takes a press")
+        try thread.window.press(label)
         try await thread.settle()
     }
 
@@ -78,7 +78,7 @@ struct ModelSettingsPopoverTests {
 
         #expect(thread.window.element("gpt-6-luna, current, offers Fast") != nil, "the model row with a Fast tier wears the bolt")
 
-        try #require(segments[1].press(), "the Fast segment takes a press")
+        try thread.window.press("Fast", in: "Speed")
         try await eventuallyOnMain("the thread to say Fast") { thread.store.serviceTier == .fast }
         #expect(tier("fast", in: thread.requests), "the host was asked for Fast")
         try await eventuallyOnMain("the button to carry the Fast mark") { button()?.value == "Medium, Fast" }
@@ -86,7 +86,7 @@ struct ModelSettingsPopoverTests {
         segments = thread.window.buttons(in: "Speed")
         #expect(segments.map(\.isSelected) == [false, true], "the popover stayed open and shows Fast chosen")
 
-        try #require(segments[0].press(), "the Standard segment takes a press")
+        try thread.window.press("Standard", in: "Speed")
         try await eventuallyOnMain("the thread to say Standard") { thread.store.serviceTier == .standard }
         #expect(tier("standard", in: thread.requests))
         try await eventuallyOnMain("the button to lose the Fast mark") { button()?.value == "Medium" }
@@ -119,6 +119,10 @@ struct ModelSettingsPopoverTests {
         }
         try check("Speed", perRow: [2])
         try check("Thinking", perRow: [4, 3])
+        let controls = ["Speed", "Thinking"].flatMap { ControlPress.controls(in: $0, under: thread.window.host) }
+        try #require(controls.count == 9, "the Speed and Thinking rows list their nine segments")
+        #expect(ControlPress.undersized(controls, minimum: .desktop).isEmpty,
+                "every segment has a desktop hit area: \(ControlPress.undersized(controls, minimum: .desktop))")
     }
 
     /// A model that offers no raised tier has no Speed row (and no bolt), a level changes while the
@@ -136,14 +140,14 @@ struct ModelSettingsPopoverTests {
         #expect(!all.contains { $0.label?.contains("offers Fast") == true }, "and no bolt on its row")
         #expect(thread.window.buttons(in: "Thinking").map(\.label) == ["Low", "Medium", "High", "Extra high"])
 
-        try #require(thread.window.buttons(in: "Thinking")[3].press())
+        try thread.window.press("Extra high", in: "Thinking")
         try await eventuallyOnMain("the thread to say Extra high") { thread.store.thinking == "xhigh" }
         try await eventuallyOnMain("the button to say Extra high") { thread.window.element(label)?.value == "Extra high" }
         #expect(thread.window.element("Model, thinking and speed") != nil, "a level leaves the popover open")
 
         // All models… hands over to the full picker (choosing a model would record it in Recent, in
         // the process's own preferences).
-        try #require(thread.window.element("All models…")?.press())
+        try thread.window.press("All models…")
         try await thread.settle()
         #expect(thread.window.element("Model, thinking and speed") == nil, "All models… closes the popover")
         #expect(thread.window.element("Choose a model") != nil, "and opens the full picker")
@@ -171,13 +175,13 @@ struct ModelSettingsPopoverTests {
         func button() -> AccessibilityNode? { window.element(label) }
         try await eventuallyOnMain("the page's model-settings button") { button() != nil }
 
-        try #require(button()?.press())
+        try window.press(label)
         try await eventuallyOnMain("the popover") { window.buttons(in: "Speed").count == 2 }
-        try #require(window.buttons(in: "Speed")[1].press(), "the Fast segment takes a press")
+        try window.press("Fast", in: "Speed")
         try await eventuallyOnMain("the draft to say Fast") { draft.serviceTier == .fast }
         try await eventuallyOnMain("the button to carry the Fast mark") { button()?.value?.hasSuffix("Fast") == true }
         #expect(window.buttons(in: "Speed").map(\.isSelected) == [false, true])
-        try #require(window.buttons(in: "Speed")[0].press())
+        try window.press("Standard", in: "Speed")
         try await eventuallyOnMain("the draft to say Standard") { draft.serviceTier == .standard }
         try await eventuallyOnMain("the button to lose the Fast mark") { button()?.value?.hasSuffix("Fast") == false }
     }

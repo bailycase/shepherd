@@ -1,0 +1,39 @@
+name: PR body
+
+# Fails a pull request whose body lacks what a reviewer needs: for UI work, its Departures, what
+# was Rendered and the Controls used; for a feature that acts on its own, its Bounds, Data,
+# Restart and stop and Decisions (scripts/check_pr_body.py, .github/pull_request_template.md,
+# docs/design-workflow.md). A pull request that touches no UI and has no such section passes in
+# seconds. It runs again when the body is edited, so fixing the description fixes the check.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr-body-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-body:
+    name: PR body
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/check_pr_body.py
+          sparse-checkout-cone-mode: false
+      # The body reaches the script through the environment, never through the shell's text.
+      - name: Check the pull request body
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" --jq '.[].filename' > "$RUNNER_TEMP/changed-files.txt"
+          python3 scripts/check_pr_body.py --files-file "$RUNNER_TEMP/changed-files.txt"
