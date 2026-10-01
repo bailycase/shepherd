@@ -8,9 +8,9 @@ private struct NWPreviewComposerControls: View {
     var body: some View {
         Button {} label: { Image(systemName: "paperclip") }.buttonStyle(.nwIcon(size: NWComposerMetrics.chipHeight))
             .accessibilityLabel("Attach file")
-        Button {} label: { HStack(spacing: NW.Space.s) { Text("/").font(.nwMono(12)); Text("commands") } }.buttonStyle(.nwComposerChip())
-        Button {} label: { HStack(spacing: NW.Space.s) { Text("claude-opus").font(.nwMono(12)); NWChipChevron() } }.buttonStyle(.nwComposerChip())
+        Button {} label: { NWModelSettingsLabel(model: "claude-opus", thinking: "Medium") }.buttonStyle(.nwComposerChip())
         Spacer(minLength: NW.Space.m)
+        Button {} label: { NWComposerBranchLabel(branch: "agent/swiftui-previews", changes: 3) }.buttonStyle(.nwComposerChip())
         if draft {
             HStack(spacing: NW.Space.s) {
                 NWComposerActionButton(.stop, outlined: true) {}
@@ -46,14 +46,13 @@ private struct NWPreviewComposerControls: View {
 /// and the compact size of a 420pt chat pane, whose chips drop their words.
 private struct NWPreviewSizedControls: View {
     var ring = false
+    @Environment(\.nwComposerSize) private var size
 
     var body: some View {
         Button {} label: { Image(systemName: "paperclip") }.buttonStyle(.nwIcon(size: NWComposerMetrics.chipHeight))
             .accessibilityLabel("Attach file")
-        Button {} label: { NWComposerCommandsLabel() }.buttonStyle(.nwComposerChip())
-        Button {} label: { HStack(spacing: NW.Space.s) { Text("claude-opus").font(.nw(.code)); NWChipChevron() } }
+        Button {} label: { NWModelSettingsLabel(model: "claude-opus", thinking: size == .compact ? nil : "Medium") }
             .buttonStyle(.nwComposerChip())
-        Button {} label: { NWComposerThinkingLabel(level: "Medium") }.buttonStyle(.nwComposerChip())
         Spacer(minLength: NW.Space.m)
         if ring { NWContextRing(.fill(0.34, .calm)) }
         NWComposerActionButton(.send, enabled: false) {}
@@ -110,10 +109,7 @@ private struct NWPreviewSpeedControls: View {
     var body: some View {
         Button {} label: { Image(systemName: "paperclip") }.buttonStyle(.nwIcon(size: NWComposerMetrics.chipHeight))
             .accessibilityLabel("Attach file")
-        Button {} label: { NWComposerCommandsLabel() }.buttonStyle(.nwComposerChip())
-        Button {} label: { HStack(spacing: NW.Space.s) { Text("gpt-5.5").font(.nw(.code)); NWChipChevron() } }.buttonStyle(.nwComposerChip())
-        Button {} label: { NWComposerThinkingLabel(level: "Medium") }.buttonStyle(.nwComposerChip())
-        Button {} label: { NWComposerSpeedLabel(value: value, boosted: boosted) }.buttonStyle(.nwComposerChip())
+        Button {} label: { NWModelSettingsLabel(model: "gpt-5.5", thinking: "Medium", fast: boosted) }.buttonStyle(.nwComposerChip())
             .accessibilityLabel("Speed: \(value)")
         Spacer(minLength: NW.Space.m)
         NWComposerActionButton(.send, enabled: false) {}
@@ -142,9 +138,7 @@ private let nwPreviewSpeedOptions = [
                 Text("Follow up…").font(.nw(.body)).foregroundStyle(.nw.textTertiary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } controls: {
-                Button {} label: { NWComposerCommandsLabel() }.buttonStyle(.nwComposerChip())
-                Button {} label: { NWComposerThinkingLabel(level: "Medium") }.buttonStyle(.nwComposerChip())
-                Button {} label: { NWComposerSpeedLabel(value: "Fast", boosted: true) }.buttonStyle(.nwComposerChip())
+                Button {} label: { NWModelSettingsLabel(model: "gpt-5.5", fast: true) }.buttonStyle(.nwComposerChip())
                 Spacer(minLength: NW.Space.m)
                 NWComposerActionButton(.send, enabled: false) {}
             }

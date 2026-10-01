@@ -27,8 +27,13 @@ struct ComposerMenuTests {
             switch self {
             case .slash: return NWComposerMetrics.menuHeaderHeight + CGFloat(NWComposerMetrics.menuMaxRows) * NWComposerMetrics.slashRowHeight + padding
             case .models: return NWComposerMetrics.modelSearchHeight + 2 * NW.Space.xs + NWComposerMetrics.modelPickerMaxHeight
-            case .thinking: return NWComposerMetrics.menuHeaderHeight + 4 * NWComposerMetrics.menuRowHeight + padding
-            case .speed: return NWComposerMetrics.menuHeaderHeight + 2 * NWComposerMetrics.speedMenuRowHeight + padding
+            case .thinking, .speed:
+                // Current model + All models, and one row per supported thinking level.
+                let thinking = NW.Space.xs * 2 + 1 + NWComposerMetrics.menuHeaderHeight
+                    + 5 * NWComposerMetrics.menuRowHeight
+                let models = NWComposerMetrics.menuHeaderHeight + 2 * NWComposerMetrics.menuRowHeight + padding
+                let speed = NW.Space.xs * 2 + 1 + NWComposerMetrics.menuHeaderHeight + NW.Height.controlS + NW.Space.xxs * 2 + NW.Space.s
+                return models + thinking + (self == .speed ? speed : 0)
             }
         }
 
@@ -36,8 +41,7 @@ struct ComposerMenuTests {
             switch self {
             case .slash: .infinity
             case .models: NWComposerMetrics.modelPickerWidth
-            case .thinking: NWComposerMetrics.thinkingMenuWidth
-            case .speed: NWComposerMetrics.speedMenuWidth
+            case .thinking, .speed: NWComposerMetrics.modelSettingsWidth
             }
         }
 
@@ -88,20 +92,42 @@ struct ComposerMenuTests {
         #expect(abs(solid.maxY - (thread.cardTop - AppLayout.menuGap)) <= 2, "ends 8pt above the card: \(solid)")
     }
 
-    /// The Speed chip draws in the control row only when the host offers a tier for the model:
-    /// the same thread on the same model, with and without the host's tiers, differs in the row
-    /// beside Thinking and nowhere else.
-    @Test func theSpeedChipShowsOnlyForAModelThatOffersATier() async throws {
-        let plain = ComposerThread(model: "openai/gpt-6-luna"), tiered = ComposerThread(speed: true)
-        defer { plain.close(); tiered.close() }
+    @Test(arguments: [
+        ["off", "minimal", "low", "medium", "high"],
+        ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+    ])
+    func everySupportedThinkingLevelHasItsOwnRow(_ levels: [String]) async throws {
+        let thread = ComposerThread(thinkingLevels: levels)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        let whole = CGRect(origin: .zero, size: thread.size)
+        let before = FrameTimer.capture(thread.window, whole)
+        Menu.thinking.open(in: thread)
+        try await thread.settle()
+        let after = FrameTimer.capture(thread.window, whole)
+        let band = Int(thread.cardTop - NWComposerMetrics.focusRing - 1)
+        let solid = try #require(Pixels.bounds(differing: before, after, rows: 0..<band, by: Self.edge))
+        let height = Menu.thinking.height + CGFloat(levels.count - 5) * NWComposerMetrics.menuRowHeight
+        #expect(abs(solid.height - height) <= 2, "one full-height row per level: \(solid)")
+        #expect(abs(solid.width - NWComposerMetrics.modelSettingsWidth) <= 2, "all rows stay inside the popover")
+    }
+
+    /// Standard adds nothing to the unified button; Fast adds a bolt without changing height.
+    @Test func onlyFastSpeedAddsAnIndicatorToModelSettings() async throws {
+        let plain = ComposerThread(model: "openai/gpt-6-luna"), standard = ComposerThread(speed: true), fast = ComposerThread(speed: true, fast: true)
+        defer { plain.close(); standard.close(); fast.close() }
         try await plain.waitUntilReady()
-        try await tiered.waitUntilReady()
-        #expect(plain.composerInset == tiered.composerInset, "the chip sits in the row the composer already has")
+        try await standard.waitUntilReady()
+        try await fast.waitUntilReady()
+        #expect(plain.composerInset == standard.composerInset)
+        #expect(plain.composerInset == fast.composerInset)
         let card = CGRect(x: 0, y: plain.cardTop, width: plain.size.width, height: plain.size.height - plain.cardTop)
-        let withoutChip = FrameTimer.capture(plain.window, card)
-        let withChip = FrameTimer.capture(tiered.window, card)
-        let changed = try #require(Pixels.bounds(differing: withoutChip, withChip, rows: 0..<Int(card.height), by: 0.05), "the row draws a chip")
-        #expect(changed.minX > plain.columnLeading, "inside the card's row, past its own edge: \(changed)")
+        let withoutTier = FrameTimer.capture(plain.window, card)
+        let standardTier = FrameTimer.capture(standard.window, card)
+        let fastTier = FrameTimer.capture(fast.window, card)
+        #expect(withoutTier == standardTier, "Standard draws no speed indicator")
+        let changed = try #require(Pixels.bounds(differing: standardTier, fastTier, rows: 0..<Int(card.height), by: 0.05), "Fast draws a bolt")
+        #expect(changed.minX > plain.columnLeading, "inside the control row: \(changed)")
     }
 
     /// The composer takes the keyboard while its thread is the focused pane (the window is never

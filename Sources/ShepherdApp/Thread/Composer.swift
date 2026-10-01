@@ -9,7 +9,7 @@ import ShepherdSessions
 
 /// The composer (NWComposer board): pinned under the thread in the same 820pt column, a fade
 /// above it, the `NWComposer` card with the field (or a pending question) and one row of
-/// controls: attach · / commands · model · thinking · Send or Stop. Menus float over the thread
+/// controls: attach · model settings · worktree · Send or Stop. Menus float over the thread
 /// above the card, so opening one never moves the thread or changes the composer's height.
 /// Messages sent while pi works wait in "Up next" above the card (`QueueStackView`) or steer in at
 /// pi's next step: ↩ does what Settings says, ⌘↩ always steers now (stops pi and sends), and the
@@ -33,6 +33,11 @@ struct Composer: View {
     let gutter: CGFloat
     /// Another host's catalog; nil for this Mac's (`ModelCatalog.loadLocal`).
     var listModels: (() async -> ModelCatalog)?
+    var branch: AgentBranchLabel? = nil
+    var directory: String? = nil
+    var showChanges: (() -> Void)? = nil
+    /// A preview can open the same settings popover used by the app.
+    var modelSettingsOpen = false
     /// This thread's key in the command center: ⇧⌘M's model picker and the thinking menu come
     /// to the composer by it, and open with one redraw of the composer alone.
     var commandKey: String? = nil
@@ -90,8 +95,7 @@ struct Composer: View {
     /// Kept as the answer, not the room, so a live resize redraws the composer only when the
     /// menu would change sides.
     @State private var sendMenuFitsBeside = false
-    /// How far the context ring's trailing edge sits in from the card's: its details open above
-    /// it, trailing edges aligned.
+    /// The context details align with the ring's trailing edge.
     @State private var meterInset: CGFloat = 0
     @State private var dismissal = ComposerMenuDismissal()
     /// Owned here, not by the thread: claiming the keyboard redraws the composer alone.
@@ -140,11 +144,11 @@ struct Composer: View {
         blank ? min(delay, AppLayout.blankStartingIndicatorDelay) : delay
     }
 
-    private enum Menu: Equatable { case models, thinking, speed, send, context }
+    private enum Menu: Equatable { case models, settings, send, context }
 
     /// The menu over the card, whichever path opened it (typing "/", a chip, ⇧⌘M, Esc, holding
     /// Send).
-    private enum OpenMenu: Equatable { case none, slash, mention, models, thinking, speed, send, context }
+    private enum OpenMenu: Equatable { case none, slash, mention, models, settings, send, context }
 
     // One effective state: a lost connection wins over a cached running snapshot (error maps
     // to Send + an inline error, never Stop).
@@ -197,8 +201,7 @@ struct Composer: View {
         if mentionShown { return .mention }
         return switch menu {
         case .models: .models
-        case .thinking: .thinking
-        case .speed: .speed
+        case .settings: .settings
         case .send: .send
         case .context: .context
         case nil: .none
@@ -445,7 +448,10 @@ struct Composer: View {
             commandIndex = 0
             if partial != nil { menu = nil }
         }
-        .task { if contextDetailsOpen { menu = .context } }
+        .task {
+            if contextDetailsOpen { menu = .context }
+            else if modelSettingsOpen { openSettings() }
+        }
         // The catalog decides whether the thinking chip applies; this Mac's is asked once per process.
         .task { if catalog?.isEmpty != false { await loadModels() } }
         // ⇧⌘M and the thinking menu's command, watched apart from the thread and the composer.
@@ -531,23 +537,21 @@ struct Composer: View {
                 .equatable()
                 .nwTransition(.overlay, anchor: .bottomLeading)
             }
-            if menu == .thinking, let thinking = store.thinking {
-                ThinkingMenu(options: thinkingOptions, current: thinking) { level in
-                    menu = nil
-                    composing = true
-                    Task { await store.setThinking(level.id) }
-                } close: { menu = nil; composing = true }
-                .equatable()
-                .nwTransition(.overlay, anchor: .bottomLeading)
-            }
-            if menu == .speed, store.offersServiceTier {
-                SpeedMenu(options: speedOptions, current: store.serviceTier.rawValue) { option in
-                    menu = nil
-                    composing = true
-                    if let tier = ServiceTier(rawValue: option.id) { Task { await store.setServiceTier(tier) } }
-                } close: { menu = nil; composing = true }
-                .equatable()
-                .nwTransition(.overlay, anchor: .bottomLeading)
+            if menu == .settings {
+                NWModelSettings(models: settingsModels, thinking: thinkingAvailable ? thinkingOptions : [],
+                                currentThinking: store.thinking, speeds: store.offersServiceTier ? speedOptions : [],
+                                currentSpeed: store.serviceTier.rawValue, modelEnabled: store.supports("setModel"),
+                                thinkingEnabled: store.supports("setThinking"), speedEnabled: store.supports("setServiceTier"), maxHeight: room,
+                                chooseModel: { model in
+                                    menu = nil
+                                    composing = true
+                                    RecentModels.record(model.id, thread: agentName)
+                                    Task { await store.setModel(model.id) }
+                                }, chooseThinking: { level in Task { await store.setThinking(level) } },
+                                chooseSpeed: { id in
+                                    if let tier = ServiceTier(rawValue: id) { Task { await store.setServiceTier(tier) } }
+                                }, allModels: { openModels() }, close: { menu = nil; composing = true })
+                    .nwTransition(.overlay, anchor: .bottomLeading)
             }
         }
         // Its own height, not the card's, which the overlay proposes.
@@ -575,7 +579,7 @@ struct Composer: View {
 
     // MARK: Card
 
-    /// The context ring's details, above the ring, trailing edges aligned (ContextDetails).
+    /// The context details above the ring, trailing edges aligned (ContextDetails).
     private var contextDetails: some View {
         ZStack(alignment: .bottomTrailing) {
             if menu == .context {
@@ -622,7 +626,7 @@ struct Composer: View {
         } field: {
             field.nwEntrance(.content)
         } controls: {
-            ComposerControls(model: controlsModel, actions: controlsActions, store: store).equatable()
+            ComposerControls(model: controlsModel, actions: controlsActions, store: store, directory: directory, showChanges: showChanges).equatable()
         }
         .coordinateSpace(.named(Self.cardSpace))
     }
@@ -650,6 +654,7 @@ struct Composer: View {
             .lineSpacing(max(0, NWTextStyle.body.lineSpacing - 1))
             .foregroundStyle(Color.nw.textPrimary)
             .autocorrectionDisabled()
+            .tint(Color.nw.lantern)
             .focused($composing)
             .onKeyPress(.return, phases: .down) { press in
                 if press.modifiers.contains(.shift) { return .ignored }
@@ -771,13 +776,11 @@ struct Composer: View {
         let stops = working && draftEmpty
         return ComposerControlsModel(
             active: active, canAttach: canAttach, attachFull: input.attachments.isFull,
-            hasCommands: !commands.isEmpty, commandsActive: commandQuery != nil,
             model: store.model, modelChangeable: store.supportedActions.contains("setModel"),
-            modelEnabled: store.supports("setModel"), modelsOpen: menu == .models,
+            modelEnabled: store.supports("setModel"), modelsOpen: menu == .models || menu == .settings,
             thinking: store.thinking, thinkingShown: thinkingAvailable, thinkingEnabled: store.supports("setThinking"),
-            thinkingOpen: menu == .thinking,
             speed: store.serviceTier, speedShown: store.offersServiceTier, speedEnabled: store.supports("setServiceTier"),
-            speedOpen: menu == .speed,
+            branch: branch,
             startingShown: startingShown, busy: store.busy, stops: stops, beside: working && !draftEmpty && !store.busy,
             sendRinged: menu == .send, contextOpen: menu == .context,
             stopEnabled: active && store.supports("abort"),
@@ -790,15 +793,7 @@ struct Composer: View {
     private var controlsActions: ComposerControlsActions {
         ComposerControlsActions(
             attach: { picking = true },
-            commands: {
-                store.draft = "/"
-                dismissedQuery = nil
-                menu = nil
-                composing = true
-            },
-            models: { openModels() },
-            thinking: { toggleThinking() },
-            speed: { toggleSpeed() },
+            models: { openSettings() },
             stop: { stop() },
             send: { if sendHeld { sendHeld = false } else { sendDraft(.primary) } },
             sendMenu: { openSendMenu() },
@@ -862,16 +857,24 @@ struct Composer: View {
 
     private func toggleThinking() {
         guard thinkingAvailable, store.supports("setThinking") else { NSSound.beep(); return }
-        guard menu != .thinking else { menu = nil; return }
-        dismissCommands()
-        menu = .thinking
+        openSettings()
     }
 
     private func toggleSpeed() {
         guard store.offersServiceTier, store.supports("setServiceTier") else { NSSound.beep(); return }
-        guard menu != .speed else { menu = nil; return }
+        openSettings()
+    }
+
+    private func openSettings() {
+        guard menu != .settings else { menu = nil; return }
         dismissCommands()
-        menu = .speed
+        menu = .settings
+        Task { await loadModels() }
+    }
+
+    /// Current model first, then one recent model. Never offer a stale unavailable model.
+    private var settingsModels: [NWModelOption] {
+        ModelCatalog.settingsModels(catalog: catalog, current: store.model, recent: RecentModels.load().map(\.id))
     }
 
     /// A chip's menu takes over from the slash menu, which stays closed for the draft as typed
@@ -1088,8 +1091,6 @@ struct ComposerControlsModel: Equatable {
     var active: Bool
     var canAttach: Bool
     var attachFull: Bool
-    var hasCommands: Bool
-    var commandsActive: Bool
     var model: String?
     /// The host lets the model change (the chevron); `modelEnabled` is whether it can right now.
     var modelChangeable: Bool
@@ -1098,12 +1099,11 @@ struct ComposerControlsModel: Equatable {
     var thinking: String?
     var thinkingShown: Bool
     var thinkingEnabled: Bool
-    var thinkingOpen: Bool
-    /// The Speed chip: the agent's tier, shown while the model offers one besides Standard.
+    /// The agent's tier, shown as a bolt while Fast, only for a model that offers it.
     var speed: ServiceTier
     var speedShown: Bool
     var speedEnabled: Bool
-    var speedOpen: Bool
+    var branch: AgentBranchLabel?
     var startingShown: Bool
     var busy: Bool
     /// Stop takes the corner: pi works and the field is empty.
@@ -1111,7 +1111,6 @@ struct ComposerControlsModel: Equatable {
     /// Stop stands aside outlined: pi works, with a draft to send.
     var beside: Bool
     var sendRinged: Bool
-    /// The context ring's details are open.
     var contextOpen: Bool
     var stopEnabled: Bool
     var actionEnabled: Bool
@@ -1122,22 +1121,18 @@ struct ComposerControlsModel: Equatable {
 /// What the control row's controls do, kept apart from the model so they never count as a change.
 struct ComposerControlsActions {
     var attach: () -> Void
-    var commands: () -> Void
     var models: () -> Void
-    var thinking: () -> Void
-    var speed: () -> Void
     var stop: () -> Void
     var send: () -> Void
     var sendMenu: () -> Void
     var holdSend: () -> Void
     var context: () -> Void
-    /// How far the ring's trailing edge sits in from the card's.
     var meterInset: (CGFloat) -> Void
 }
 
-/// The composer's control row: attach · / commands · model · thinking, then the context ring and
+/// The composer's control row: attach · model settings · worktree, then the context ring and
 /// Send or Stop, with full chip labels when they fit; in a narrow thread (a docked right pane) the chips drop their words
-/// ("/", the thinking level alone) instead of truncating mid-word, after "Starting…" drops
+/// (the thinking level drops) instead of truncating mid-word, after "Starting…" drops
 /// its own. At the compact size (`NWComposerSize`: a design's chat) they never show their words. `ViewThatFits` builds and measures every alternative, each with its tooltips and
 /// accessibility, whenever the row is rebuilt, so the row compares what it draws first: a
 /// keystroke past the first character and the field losing focus to a menu rebuild the field,
@@ -1147,10 +1142,12 @@ struct ComposerControls: View, Equatable {
     let actions: ComposerControlsActions
     /// Handed to the ring, which reads its meter; the row itself reads nothing from it.
     let store: NativeThreadStore
+    var directory: String? = nil
+    var showChanges: (() -> Void)? = nil
 
     @Environment(\.nwComposerSize) private var size
 
-    static func == (a: Self, b: Self) -> Bool { a.model == b.model && a.store === b.store }
+    static func == (a: Self, b: Self) -> Bool { a.model == b.model && a.store === b.store && a.directory == b.directory }
 
     var body: some View {
         ComposerControlsMinimum {
@@ -1164,8 +1161,7 @@ struct ComposerControls: View, Equatable {
                 }
                 // A new model or level cross-fades. Only these: typing and width changes stay instant.
                 .nwAnimation(.content, value: [model.model, model.thinking, model.speedShown ? model.speed.rawValue : nil])
-                // The ring and the action, 6pt apart, keep their place whatever the chips drop; out
-                // of the fitting candidates, each is built once (a streamed chunk redraws neither).
+                // The ring and Send keep their place outside the fitting candidates.
                 HStack(spacing: NW.Space.s) {
                     ContextMeterButton(store: store, expanded: model.contextOpen, toggle: actions.context)
                         .equatable()
@@ -1189,43 +1185,30 @@ struct ComposerControls: View, Equatable {
                     .help("Attach images (drop or paste also works), up to \(NativeImage.maxPerSend)")
                     .accessibilityLabel("Attach file")
             }
-            if model.hasCommands {
-                Button(action: actions.commands) { NWComposerCommandsLabel(short: compact) }
-                .buttonStyle(.nwComposerChip(active: model.commandsActive))
-                .help("Commands")
-                .accessibilityLabel("Commands")
-            }
             modelChip(compact: compact)
-            thinkingChip(compact: compact)
-            speedChip(compact: compact)
             Spacer(minLength: NW.Space.m)
             if model.startingShown { startingIndicator(label: startingLabel).nwTransition(.content) }
+            if let branch = model.branch {
+                BranchChipMenu(branch: branch, directory: directory, showChanges: showChanges)
+            }
         }
         .nwAnimation(.content, value: model.startingShown)
     }
 
     @ViewBuilder private func modelChip(compact: Bool) -> some View {
         if let name = model.model {
-            ComposerModelChip(model: name, short: compact, changeable: model.modelChangeable,
-                              enabled: model.modelEnabled, active: model.modelsOpen, action: actions.models)
-        }
-    }
-
-    /// The level pi runs at, opening the levels pi offers the model; hidden when the model takes
-    /// no thinking level.
-    @ViewBuilder private func thinkingChip(compact: Bool) -> some View {
-        if model.thinkingShown, let thinking = model.thinking {
-            ComposerThinkingChip(level: thinking, short: compact, enabled: model.thinkingEnabled,
-                                 active: model.thinkingOpen, action: actions.thinking)
-        }
-    }
-
-    /// How fast the agent asks its provider to answer, opening the tiers its model offers; hidden
-    /// when the model offers none (an Anthropic or Gemini model, an older host).
-    @ViewBuilder private func speedChip(compact: Bool) -> some View {
-        if model.speedShown {
-            ComposerSpeedChip(tier: model.speed, short: compact, enabled: model.speedEnabled,
-                              active: model.speedOpen, action: actions.speed)
+            Button(action: actions.models) {
+                NWModelSettingsLabel(model: compact ? nativeModelCompactName(name) : nativeModelShortName(name),
+                                     thinking: model.thinkingShown && !compact ? model.thinking.map { NativeThinkingLevel.title($0) } : nil,
+                                     fast: model.speedShown && model.speed != .standard,
+                                     changeable: model.modelChangeable || model.thinkingShown || model.speedShown)
+            }
+            .buttonStyle(.nwComposerChip(active: model.modelsOpen))
+            .disabled(!model.modelEnabled && !(model.thinkingShown && model.thinkingEnabled) && !(model.speedShown && model.speedEnabled))
+            .help("Model settings: \(name)")
+            .accessibilityLabel("Model settings: \(name)")
+            .accessibilityValue([model.thinkingShown ? model.thinking.map(NativeThinkingLevel.title) : nil,
+                                 model.speedShown && model.speed != .standard ? "Fast" : nil].compactMap { $0 }.joined(separator: ", "))
         }
     }
 
@@ -1364,36 +1347,6 @@ final class SlashMatchCache {
     static func row(_ command: NativeCommand) -> NWSlashCommand {
         NWSlashCommand(name: command.name, description: command.description, arguments: command.arguments,
                        tag: command.source.flatMap { $0 == "extension" ? nil : $0 == SlashLogin.source ? SlashLogin.tag : $0 })
-    }
-}
-
-/// The thinking menu over `NWThinkingMenu`, compared on the levels it offers and the current
-/// one, so a composer redraw for something else leaves its rows alone.
-struct ThinkingMenu: View, Equatable {
-    let options: [NWThinkingOption]
-    let current: String
-    let choose: (NWThinkingOption) -> Void
-    let close: () -> Void
-
-    static func == (a: Self, b: Self) -> Bool { a.options == b.options && a.current == b.current }
-
-    var body: some View {
-        NWThinkingMenu(options: options, current: current, onChoose: choose, onClose: close)
-    }
-}
-
-/// The speed menu over `NWSpeedMenu`, compared on the tiers it offers and the current one, so a
-/// composer redraw for something else leaves its rows alone.
-struct SpeedMenu: View, Equatable {
-    let options: [NWSpeedOption]
-    let current: String
-    let choose: (NWSpeedOption) -> Void
-    let close: () -> Void
-
-    static func == (a: Self, b: Self) -> Bool { a.options == b.options && a.current == b.current }
-
-    var body: some View {
-        NWSpeedMenu(options: options, current: current, onChoose: choose, onClose: close)
     }
 }
 
