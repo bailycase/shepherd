@@ -89,14 +89,14 @@ enum Preview {
     /// (`ThemeStore.shared.textScale`, which multiplies every Night Watch font), so clipping,
     /// truncation and wrapping that only show at a larger text size are in the images. Scale 1 writes
     /// `<surface>-<light|dark>.png` as `render` does; another scale writes
-    /// `<surface>-x<scale>-<light|dark>.png`. The Mac's largest Text size setting is 1.3; 1.5 is the
-    /// stress case a design review asks for (iOS Dynamic Type goes further). The scale is put back
+    /// `<surface>-x<scale>-<light|dark>.png`. The Mac's largest Text size setting is 1.3, the scale a design review
+    /// asks for (iOS Dynamic Type goes further; pass a larger scale to stress one control). The scale is put back
     /// when the renders are done. Pass what `render` takes, with `ready` running at each scale.
     @MainActor
     static func renderMatrix<V: View>(
         _ surface: String,
         size: CGSize,
-        scales: [CGFloat] = [1, 1.5],
+        scales: [CGFloat] = [1, 1.3],
         ready: @escaping @MainActor () -> Bool = { true },
         @ViewBuilder _ content: () -> V
     ) async throws {

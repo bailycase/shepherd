@@ -7,8 +7,8 @@ import ShepherdRemote
 // MARK: Dock
 
 /// A question in the composer's place (the question dock): pi's own (select, confirm, input,
-/// editor) or a subagent's, drawn by `NWQuestionDock` from its shared presentation
-/// (`NativeQuestionPrompt`). It keeps the person's picks while it waits, answers through
+/// editor), drawn by `NWQuestionDock` from its shared presentation (`NativeQuestionPrompt`). A
+/// subagent's never is: it asks its parent. It keeps the person's picks while it waits, answers through
 /// `answer`, and takes the dock's keys (1–9, ↩, Esc) while its thread has the keyboard.
 struct QuestionDock: View {
     let prompt: NativeQuestionPrompt
@@ -38,7 +38,7 @@ struct QuestionDock: View {
         self.answer = answer
         self.setHidden = setHidden
         let picks = picks ?? NativeQuestionPicks(prompt)
-        _selection = State(initialValue: NWQuestionDockSelection(picked: picks.picked, note: picks.note, other: picks.other, text: picks.text))
+        _selection = State(initialValue: NWQuestionDockSelection(picked: picks.picked, text: picks.text))
     }
 
     var body: some View {
@@ -47,7 +47,7 @@ struct QuestionDock: View {
         // hiding and showing keep the key monitor watching.
         ZStack(alignment: .bottom) {
             if hidden {
-                NWQuestionDockHidden(Self.asker(prompt.asker), question: prompt.question, keys: hints) { setHidden(false) }
+                NWQuestionDockHidden(question: prompt.question, keys: hints) { setHidden(false) }
                     .nwTransition(.content)
             } else {
                 // A question that cannot be answered here says why, and its answers stand down.
@@ -108,9 +108,6 @@ struct QuestionDock: View {
         case .pickAndAnswer(let number):
             selection.picked = number
             send(selection)
-        case .writeOther:
-            if let other = prompt.otherNumber { selection.picked = other }
-            field = .other
         case .answer:
             send(selection)
         case .hide:
@@ -130,14 +127,7 @@ struct QuestionDock: View {
     }
 
     static func picks(_ selection: NWQuestionDockSelection) -> NativeQuestionPicks {
-        NativeQuestionPicks(picked: selection.picked, note: selection.note, other: selection.other, text: selection.text)
-    }
-
-    static func asker(_ asker: NativeQuestionAsker) -> NWQuestionAsker {
-        switch asker {
-        case .agent: .agent
-        case .subagent(let name): .subagent(name)
-        }
+        NativeQuestionPicks(picked: selection.picked, text: selection.text)
     }
 
     /// What the dock draws for `prompt`.
@@ -148,9 +138,9 @@ struct QuestionDock: View {
         case .open: .open
         }
         return NWQuestionDockContent(
-            asker: asker(prompt.asker), count: count, question: prompt.question, message: prompt.message, kind: kind,
+            count: count, question: prompt.question, message: prompt.message, kind: kind,
             options: prompt.options.map { NWQuestionDockOption(number: $0.number, title: $0.title, detail: $0.detail, recommended: $0.recommended) },
-            takesNote: prompt.takesNote, takesOther: prompt.takesOther, placeholder: prompt.placeholder, multiline: prompt.multiline,
+            placeholder: prompt.placeholder, multiline: prompt.multiline,
             notice: prompt.blocked ?? (prompt.mayTimeOut ? timeoutNotice : nil), showsAnswer: prompt.showsAnswer)
     }
 

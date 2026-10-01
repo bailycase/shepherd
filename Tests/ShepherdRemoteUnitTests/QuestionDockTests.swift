@@ -2,8 +2,8 @@ import ShepherdProtocol
 import Testing
 @testable import ShepherdRemote
 
-/// The question dock's presentation: each asker's question shaped by the answer it needs, only
-/// the affordances the asker can take, the answer the picks make, and the dock's keys.
+/// The question dock's presentation: pi's question shaped by the answer it needs, only the
+/// affordances pi's dialogs can take, the answer the picks make, and the dock's keys.
 @Suite("Question dock")
 struct QuestionDockTests {
     static let select = NativeThreadDialog(id: "d1", kind: .select, title: "How should I handle Horizon’s uncommitted edits?",
@@ -54,46 +54,23 @@ struct QuestionDockTests {
 
     // MARK: Honest affordances
 
-    /// pi's select returns one of its options, confirm a bool, input and editor a string: none
-    /// takes a note or a free answer beside its options.
-    @Test(arguments: [NativeThreadDialog.Kind.select, .confirm, .input, .editor])
-    func pisQuestionsOfferNoNoteAndNoSomethingElse(kind: NativeThreadDialog.Kind) {
+    /// pi's select returns one of its options, confirm a bool, input and editor a string: the dock
+    /// draws a pick or a field and nothing beside it, so a pick is only ever one of the options.
+    @Test(arguments: [
+        (NativeThreadDialog.Kind.select, 4), (.confirm, 3), (.input, 1), (.editor, 1),
+    ])
+    func aNumberPastTheOptionsIsNoPick(kind: NativeThreadDialog.Kind, past: Int) {
         let prompt = NativeQuestionPrompt(dialog: NativeThreadDialog(id: "d", kind: kind, title: "Q", options: kind == .select ? ["A", "B", "C"] : nil))
-        #expect(!prompt.takesNote)
-        #expect(!prompt.takesOther)
-        #expect(prompt.otherNumber == nil)
-    }
-
-    /// A subagent's answer is a message to its run, so it takes a note and words of its own.
-    @Test func aSubagentsQuestionTakesANoteAndSomethingElse() {
-        let prompt = NativeQuestionPrompt(runID: "r1", name: "reviewer", question: "Rename, or replace?",
-                                          options: ["Replace everywhere (Recommended)\n41 call sites.", "Rename the new ones\nKeeps both."])
-        #expect(prompt.asker == .subagent("reviewer"))
-        #expect(prompt.takesNote && prompt.takesOther)
-        #expect(prompt.otherNumber == 3, "Something else is the last row")
-        #expect(prompt.kind == .choice)
-    }
-
-    @Test func aSubagentsQuestionWithoutAnswersIsAReply() {
-        let prompt = NativeQuestionPrompt(runID: "r1", name: "reviewer", question: "What next?", options: nil)
-        #expect(prompt.kind == .open)
-        #expect(prompt.otherNumber == nil)
-        #expect(prompt.placeholder == "Reply to reviewer…")
-    }
-
-    @Test func aSubagentsYesOrNoKeepsAnswerForSomethingElse() {
-        let prompt = NativeQuestionPrompt(runID: "r1", name: "tests", question: "Is this a regression?", options: ["Yes, fix it", "No"])
-        #expect(prompt.kind == .yesNo)
-        #expect(prompt.showsAnswer)
+        #expect(prompt.answer(NativeQuestionPicks(picked: past)) == nil)
+        #expect(prompt.action(for: .number(past), picks: NativeQuestionPicks(), hidden: false, editing: false) == .pass)
     }
 
     // MARK: Answers
 
     @Test func aSelectAnswersWithTheOptionExactlyAsOffered() throws {
         let prompt = NativeQuestionPrompt(dialog: Self.select)
-        let answer = try #require(prompt.answer(NativeQuestionPicks(picked: 1, note: "ignored")))
+        let answer = try #require(prompt.answer(NativeQuestionPicks(picked: 1)))
         #expect(prompt.dialogAnswer(answer) == .select(value: Self.select.options![0]))
-        #expect(prompt.messageReply(answer) == nil)
     }
 
     @Test(arguments: [(1, true), (2, false)])
@@ -127,30 +104,10 @@ struct QuestionDockTests {
         #expect(!NativeQuestionPrompt(dialog: NativeThreadDialog(id: "t", kind: .confirm, title: "Q")).mayTimeOut)
     }
 
-    @Test(arguments: [
-        (NativeQuestionPicks(picked: 1), "Replace everywhere (Recommended)\n41 call sites."),
-        (NativeQuestionPicks(picked: 1, note: " Keep the old names as aliases. "), "Replace everywhere (Recommended)\n41 call sites.\n\nKeep the old names as aliases."),
-        (NativeQuestionPicks(picked: 3, note: "not sent", other: "Ask the design team first"), "Ask the design team first"),
-    ])
-    func aSubagentGetsTheOptionWithItsNoteOrTheWordsTyped(picks: NativeQuestionPicks, reply: String) throws {
-        let prompt = NativeQuestionPrompt(runID: "r1", name: "reviewer", question: "Rename, or replace?",
-                                          options: ["Replace everywhere (Recommended)\n41 call sites.", "Rename the new ones"])
-        let answer = try #require(prompt.answer(picks))
-        #expect(prompt.messageReply(answer) == reply)
-        #expect(prompt.dialogAnswer(answer) == nil)
-    }
-
-    @Test func somethingElseAnswersOnlyOnceItHasWords() {
-        let prompt = NativeQuestionPrompt(runID: "r1", name: "reviewer", question: "Q", options: ["A\nwhy", "B\nwhy"])
-        #expect(prompt.answer(NativeQuestionPicks(picked: 3, other: "  ")) == nil)
-        #expect(prompt.answer(NativeQuestionPicks(picked: 3, other: "C")) == .words("C"))
-    }
-
     // MARK: Keys
 
     static let choice = NativeQuestionPrompt(dialog: select)
     static let yesNo = NativeQuestionPrompt(dialog: NativeThreadDialog(id: "c", kind: .confirm, title: "Clear?"))
-    static let subagent = NativeQuestionPrompt(runID: "r1", name: "reviewer", question: "Q", options: ["A\nwhy", "B\nwhy"])
     static let open = NativeQuestionPrompt(dialog: NativeThreadDialog(id: "i", kind: .input, title: "Name?"))
 
     @Test(arguments: [
@@ -159,15 +116,11 @@ struct QuestionDockTests {
         (choice, .number(4), NativeQuestionPicks(), false, false, .pass),
         // A yes or a no answers as it is picked.
         (yesNo, .number(1), NativeQuestionPicks(), false, false, .pickAndAnswer(1)),
-        // Something else's number puts the keyboard in it.
-        (subagent, .number(3), NativeQuestionPicks(), false, false, .writeOther),
         // In a field, numbers type.
-        (subagent, .number(1), NativeQuestionPicks(), false, true, .pass),
         (open, .number(1), NativeQuestionPicks(), false, true, .pass),
         // ↩ answers once there is an answer, from a field too.
         (choice, .answer, NativeQuestionPicks(), false, false, .pass),
         (choice, .answer, NativeQuestionPicks(picked: 1), false, false, .answer),
-        (subagent, .answer, NativeQuestionPicks(picked: 1, note: "why"), false, true, .answer),
         (open, .answer, NativeQuestionPicks(text: "main"), false, true, .answer),
         (open, .answer, NativeQuestionPicks(), false, true, .pass),
         // Esc hides, from a field too, and shows again.

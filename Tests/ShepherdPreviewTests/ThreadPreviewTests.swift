@@ -623,36 +623,6 @@ struct ThreadPreviewTests {
         }
     }
 
-    /// The question dock's subagent variant (QuestionStates › from a subagent): named after the
-    /// subagent, with a note in the picked answer and Something else, since its answer is a
-    /// message to the run. No surface shows it any more: a subagent asks its parent, never the user.
-    @Test func subagentQuestionStates() async throws {
-        let question = "Rename the new token names, or replace `Tokens.textSecondary` everywhere?"
-        let options = ["Replace everywhere (Recommended)\n41 call sites move to the spec colors. One PR, bigger diff.",
-                       "Rename the new ones\nNew names get an nw prefix. Old screens keep the old gray."]
-        let prompt = NativeQuestionPrompt(runID: "r", name: "reviewer", question: question, options: options)
-        let size = CGSize(width: 1400, height: 900)
-        try await Preview.render("question-subagent", size: size) {
-            HStack(alignment: .top, spacing: 32) {
-                VStack(alignment: .leading, spacing: 28) {
-                    Self.dock(prompt)
-                    Self.dock(prompt, picks: NativeQuestionPicks(picked: 1, note: "Keep the old names as aliases for a release."))
-                }
-                .frame(width: 600)
-                VStack(alignment: .leading, spacing: 28) {
-                    Self.dock(prompt, picks: NativeQuestionPicks(picked: 3, other: "Ask the design team which names they want first"))
-                    Self.dock(NativeQuestionPrompt(runID: "t", name: "tests", question: "Is this a regression from #231?", options: ["Yes, fix it", "No"]))
-                    Self.dock(NativeQuestionPrompt(runID: "w", name: "worker", question: "What should the new table be called?", options: nil))
-                }
-                .frame(width: 600)
-                Spacer(minLength: 0)
-            }
-            .padding(32)
-            .frame(width: size.width, height: size.height, alignment: .topLeading)
-            .background(Color.nw.bgWindow)
-        }
-    }
-
     private static func dock(_ prompt: NativeQuestionPrompt, count: Int = 1, hidden: Bool = false,
                              picks: NativeQuestionPicks? = nil) -> some View {
         QuestionDock(prompt: prompt, count: count, enabled: true, hidden: hidden, focused: false, picks: picks,

@@ -254,6 +254,8 @@ final class ShepherdViewModel {
     let instructions: InstructionsModel
     /// Settings ▸ Experiments ▸ Suggested instructions: what this Mac's agents suggested.
     let suggestions: SuggestionsModel
+    /// Settings ▸ Pi ▸ Slash commands: the commands pi lists on this Mac, and which the `/` menu hides.
+    let slashCommands: SlashCommandsModel
     /// Settings ▸ Skills: every host's agent skills, This Mac's through `localSkills`.
     let skills: ClientSkills
     @ObservationIgnored let localSkills: LocalSkillsClient
@@ -514,6 +516,7 @@ final class ShepherdViewModel {
         self.instructions = instructions
         self.suggestions = SuggestionsModel(store: server.suggestions, instructionsStore: server.instructions, instructions: instructions)
         self.skills = ClientSkills(defaults: sidebarDefaults)
+        self.slashCommands = SlashCommandsModel(catalog: server.slashCommandCatalog, hidden: self.settings.hiddenSlashCommands)
         self.localSkills = LocalSkillsClient(store: server.skills)
         self.mcp = mcp ?? MCPStore(dependencies: .app(engine: server.pi.engine, home: server.pi.files, clientPath: ShepherdViewModel.mcpClientPath,
                                                       openURL: { NSWorkspace.shared.open($0) },
@@ -677,6 +680,13 @@ final class ShepherdViewModel {
         // Queues go the way Settings ▸ Agents says, unless an agent's own ••• menu chose.
         server.setDefaultQueueMode(self.settings.queueDelivery)
         self.settings.onQueueDeliveryChange = { [weak server] mode in server?.setDefaultQueueMode(mode) }
+        // The `/` menu of every thread leaves out what Settings ▸ Pi ▸ Slash commands turned off.
+        server.setHiddenSlashCommands(self.settings.hiddenSlashCommands)
+        self.settings.onHiddenSlashCommandsChange = { [weak server, weak model = self.slashCommands] names in
+            server?.setHiddenSlashCommands(names)
+            model?.setHidden(names)
+        }
+        server.onSlashCommandCatalogChanged = { [weak model = self.slashCommands] catalog in model?.catalog = catalog }
         // Remote clients see designs only while the Design tool is on here.
         server.setDesignsServed(self.settings.designToolEnabled)
         self.settings.onDesignToolChange = { [weak server] on in server?.setDesignsServed(on) }

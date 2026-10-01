@@ -130,7 +130,9 @@ private struct NWTouchQueueHeader<Options: View>: View {
 /// One row of the touch stack:
 ///
 /// - **Queued:** its number (the order it goes), the text on up to two lines, and a photo glyph
-///   with a count for its images. Its actions are the app's swipe actions and long-press menu.
+///   with a count for its images. Its actions are the app's swipe actions and long-press menu. The
+///   first queued row while pi works also wears **Steer now** as a labelled button (`steer`), since
+///   touch has no hover to reveal it as the Mac's does.
 /// - **Steering:** on `runningTint`, the still `running` steer glyph in the number's place, the text, "↳
 ///   Steering" under it (on iPad, `wide`, the "Steering" pill after the text; iPadQueue), and Back to
 ///   the queue.
@@ -148,19 +150,25 @@ public struct NWTouchQueueRow: View {
     let kind: Kind
     let held: Bool
     let wide: Bool
+    let steer: (() -> Void)?
+    let steerLabel: String
     let back: (() -> Void)?
     let undo: (() -> Void)?
 
-    /// `held` marks a message an editor is open on elsewhere. `back` is a steering row's Back
+    /// `held` marks a message an editor is open on elsewhere. `steer` is a queued row's labelled
+    /// Steer now (`steerLabel`: Steer now, or Send now while pi is idle); `back` a steering row's Back
     /// to the queue; `undo` a deleted row's Undo. `wide` (iPad) puts a steering row's pill
     /// after its text.
     public init(_ text: String, images: Int = 0, kind: Kind, held: Bool = false, wide: Bool = false,
+                steer: (() -> Void)? = nil, steerLabel: String = "Steer now",
                 back: (() -> Void)? = nil, undo: (() -> Void)? = nil) {
         self.text = text
         self.images = images
         self.kind = kind
         self.held = held
         self.wide = wide
+        self.steer = steer
+        self.steerLabel = steerLabel
         self.back = back
         self.undo = undo
     }
@@ -175,7 +183,9 @@ public struct NWTouchQueueRow: View {
     private var message: some View {
         let nw = Color.nw
         let steering = kind == .steering
-        return HStack(spacing: NW.Space.l) {
+        // The row's text and its Back to the queue are one VoiceOver element; Steer now, which the app also
+        // offers as a named action, stays a button of its own beside it.
+        let content = HStack(spacing: NW.Space.l) {
             ZStack {
                 switch kind {
                 case .queued(let number): NWQueueNumber(number).nwTransition(.content)
@@ -224,6 +234,18 @@ public struct NWTouchQueueRow: View {
                 .accessibilityLabel("Back to the queue")
             }
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityLabel)
+        .modifier(NWTouchNamedAction(name: "Back to the queue", action: steering ? back : nil))
+        return HStack(spacing: NW.Space.m) {
+            content
+            if !steering, let steer {
+                Button(action: steer) { Label(steerLabel, systemImage: "arrow.turn.down.right") }
+                    .buttonStyle(.nw(.secondary, size: .s))
+                    .fixedSize()
+                    .nwTransition(.content)
+            }
+        }
         .padding(.leading, NW.Space.l)
         .padding(.trailing, steering && back != nil ? NW.Space.xs : NW.Space.l)
         .padding(.vertical, NW.Space.s)
@@ -232,9 +254,6 @@ public struct NWTouchQueueRow: View {
         .background(steering ? nw.runningTint : nw.bgRaised)
         .nwComponentAnimation(.content, value: kind)
         .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityLabel)
-        .modifier(NWTouchNamedAction(name: "Back to the queue", action: steering ? back : nil))
     }
 
     private var accessibilityLabel: String {

@@ -416,6 +416,11 @@ next step. Steer now on a row and Steer all now are the same interrupt.
 - **Queued rows:** 48pt on `bgRaised` with a `lineSubtle` rule above: the number in a 22pt
   `lineStrong` ring (mono 11.5 `textSecondary`), then the message at 15 on one line. The app lets it
   wrap to two, and shows an image count and "Being edited" while an editor elsewhere holds it.
+  **The first queued row while pi works also wears Steer now as a button** (decided by the user,
+  2026-10-01; no board draws it): `.nw(.secondary, size: .s)`, `arrow.turn.down.right` and "Steer
+  now", after the message and its image count, hit at 44pt, so touch, which has no hover, sees
+  what the Mac shows at rest. Its swipe actions and long-press menu (which keeps Steer now) are
+  unchanged, and an idle queue draws no button (the header's Send now is its action).
 - **Swipe** a queued row left (MobileQueue): two 75pt actions slide in, Edit (`bgSelected`,
   `textPrimary`, a pencil over 12/500) and Delete (`failed`, white); a full swipe deletes. The app
   uses the system swipe actions.
@@ -448,8 +453,8 @@ next step. Steer now on a row and Steer all now are the same interrupt.
   which never answers it; Answer or Show the question on that line opens it again, and the next
   question arrives open.
 - **What each asker takes** is the dock's table: pi's select takes only one of its options, so it
-  gets no note and no Something else… (the note field and the Something else… card, which only a
-  subagent's question took, are not drawn: a subagent asks its parent). pi's question has no
+  gets no note and no Something else… (the components that drew them, which only a subagent's
+  question used, were pruned: a subagent asks its parent). pi's question has no
   Dismiss: **Stop** refuses it.
 - **While pi asks** the header shows "Needs you" with a glowing dot and no Stop or •••. The app
   keeps both: Stop is how a question is refused (the host cancels the questions pi waits on, then
