@@ -45,8 +45,8 @@ struct ThreadHeader: View, Equatable {
         let _ = NWRenderProbe.tick("thread.header")
         NWThreadToolbar(title, project: project, titleHelp: "\(project) / \(title)", leadingInset: leadingInset, sidebar: showSidebar) {
             // A question takes the composer's place, so its checkout menu moves back here.
-            if !store.dialogs.isEmpty, let branch {
-                BranchChipMenu(branch: branch, directory: directory, showChanges: showChanges)
+            if let branch {
+                QuestionBranchMenu(store: store, branch: branch, directory: directory, showChanges: showChanges)
             }
         } trailing: {
             if let togglePane {
@@ -62,6 +62,20 @@ struct ThreadHeader: View, Equatable {
                     Button(PinWords.menuTitle(pinned: pinned), systemImage: PinWords.symbol(pinned: pinned), action: togglePin)
                 }
             }
+        }
+    }
+}
+
+/// Observe question changes here, not in the toolbar that hosts the fallback.
+private struct QuestionBranchMenu: View {
+    let store: NativeThreadStore
+    let branch: AgentBranchLabel
+    let directory: String?
+    let showChanges: (() -> Void)?
+
+    var body: some View {
+        if !store.dialogs.isEmpty {
+            BranchChipMenu(branch: branch, directory: directory, showChanges: showChanges)
         }
     }
 }
