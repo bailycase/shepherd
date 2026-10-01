@@ -41,7 +41,8 @@ Detail: [docs/overview.md](docs/overview.md).
 7. **Review before the PR:** run the `design-reviewer` helper (skill `design-review`), or when it is
    not installed do the same review yourself ([docs/design-workflow.md](docs/design-workflow.md)),
    and fix or report what it finds.
-8. **You are not done until 5, 6 and 7 pass.** Say what you verified and what you could not.
+8. **You are not done until 5, 6 and 7 pass** (and, for a feature that acts on its own, the section
+   below). Say what you verified and what you could not.
 
 ## Features that act on their own
 

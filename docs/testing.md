@@ -211,6 +211,9 @@ feed name or signing setting that drifts from the script fails before a release 
 (what staging keeps and refuses, and `verify-app`'s engine checks), the pin, the engine's
 entitlements, `sign-app.sh`'s and `sign-engine.sh`'s signing of node (on macOS), the "Embed pi
 engine" phase, and the Release workflow's staging and signing steps.
+`Tests/Release/test_check_pr_body.py` tests `scripts/check_pr_body.py`, the `pr-body` workflow's
+check that a UI or autonomous-feature PR body says its Departures, Rendered, Controls used,
+Bounds, Data, Restart and stop and Decisions, against the PR template and the workflow file.
 
 **Tests never take the user's focus or drive their mouse or keyboard.**
 
@@ -325,6 +328,10 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
 - **Extensions:** embedded extensions byte-identical to `Extensions/*` (all twenty files, and
   the design skill's two files).
 - **Themes:** every theme variant complete, and the WCAG contrast rules met.
+- **Design rules:** `DesignRulesTests` scans the Mac app, ShepherdUI and the iOS client for a
+  literal font size, a status color tinted by an opacity, a raw color and a registered glyph named
+  as a string (`NWGlyph`), with a table pinning each pattern and `DesignRuleAllowlist` for what
+  predates them. The allowlist only shrinks; never add an entry for new code.
 - **App logic:** keybindings (defaults, validation, stored overrides for removed actions
   ignored), palette and settings search, workspace selection and parking, sidebar ordering and
   reveal, pinned threads (their order, persistence and pruning, Needs you winning, the digits),
