@@ -2745,6 +2745,10 @@ public final class SessionServer: @unchecked Sendable {
                 let rendered = try await server.renderDesignBoard(designID, request: request)
                 return .designRendered(id: id, text: rendered.text, image: rendered.image)
             }
+        case .designExtract(let id, let agentID, let designID, let request):
+            designRequest(id: id, agentID: agentID, designID: designID, path: request.path, client: client) { server, _ in
+                .designExtracted(id: id, result: try await server.extractDesignPiece(designID, request: request))
+            }
         case .designUpdateIndex(let id, let agentID, let designID, let changes, let baseRevision):
             designRequest(id: id, agentID: agentID, designID: designID, path: nil, client: client) { server, _ in
                 let result = try await server.updateDesignIndex(designID, patch: changes, baseRevision: baseRevision)
@@ -3548,6 +3552,7 @@ public final class SessionServer: @unchecked Sendable {
              .designSearchResult(let id, _),
              .designCheckpoints(let id, _),
              .designRendered(let id, _, _),
+             .designExtracted(let id, _),
              .designComments(let id, _),
              .designComment(let id, _),
              .designSystems(let id, _),
@@ -4514,6 +4519,15 @@ public final class SessionServer: @unchecked Sendable {
     public func searchDesign(_ designID: DesignID, query: DesignSearchQuery) async throws -> DesignSearchResult {
         guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
         return try await designs.search(designID, query: query)
+    }
+
+    /// `board_extract`: an element becomes a piece and an import takes its place, with exact copies
+    /// elsewhere, as one change (`DesignStore.extract`).
+    public func extractDesignPiece(_ designID: DesignID, request: DesignExtractRequest) async throws -> DesignExtractResult {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        let extracted = try await designs.extract(designID, request: request)
+        try await enqueue { try self.commitDesignWrite(designID, extracted.result) }
+        return extracted
     }
 
     /// Which boards of the design import which: built once per revision (`DesignStore.usage`).

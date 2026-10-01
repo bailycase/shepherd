@@ -38,6 +38,8 @@ public enum DesignStoreError: Error, Hashable, Sendable, CustomStringConvertible
     case noSuchCheckpoint(String)
     case checkpointExists(String)
     case checkpointTooLarge(Int)
+    /// A `board_extract` that can't be carried out: why.
+    case invalidExtract(String)
     /// A folder that can't become a design: why (`DesignImport.Problem`, or its canvas).
     case importRefused(String)
     case io(String)
@@ -68,6 +70,7 @@ public enum DesignStoreError: Error, Hashable, Sendable, CustomStringConvertible
         case .noSuchCheckpoint: return "no_such_checkpoint"
         case .checkpointExists: return "checkpoint_exists"
         case .checkpointTooLarge: return "checkpoint_too_large"
+        case .invalidExtract: return "invalid_extract"
         case .importRefused: return "import_refused"
         case .io: return "io_failed"
         }
@@ -109,6 +112,7 @@ public enum DesignStoreError: Error, Hashable, Sendable, CustomStringConvertible
         case .noSuchCheckpoint(let name): return "no checkpoint named \"\(name)\" (checkpoint_list shows them)"
         case .checkpointExists(let name):
             return "a checkpoint named \"\(name)\" exists (names are not case sensitive): restore it, or pick another name"
+        case .invalidExtract(let why): return why
         case .checkpointTooLarge(let bytes):
             return "this design is \(bytes / 1_000_000) MB of boards; a checkpoint may not exceed \(DesignCheckpointName.maxBytesPerDesign / 1_000_000) MB"
         case .importRefused(let why): return why
@@ -770,8 +774,10 @@ public final class DesignStore: @unchecked Sendable {
     }
 
     /// Queue: checks every source, keeps what each changed board held as a version, writes them
-    /// atomically, and moves the revision once.
-    func writeOnQueue(_ id: DesignID, _ sources: [DesignPath: String], baseRevision: UInt64?) throws -> Written {
+    /// atomically, and moves the revision once. With `index`, canvas.json becomes it in the same
+    /// change (an extraction placing the piece it made), once every board is written.
+    func writeOnQueue(_ id: DesignID, _ sources: [DesignPath: String], baseRevision: UInt64?,
+                      index: DesignIndex? = nil) throws -> Written {
         var design = try load(id)
         try Self.compare(baseRevision, design.revision)
         var warnings: [DesignBoardCheck.Warning] = []
@@ -823,6 +829,12 @@ public final class DesignStore: @unchecked Sendable {
         }
         let wrote = changed.contains { files[$0.path] == shas[$0.path] }
         design.files = files
+        if wrote, failure == nil, let index, index != design.index {
+            do { try index.encoded().write(to: indexURL(id), options: .atomic) } catch {
+                failure = .io("could not write canvas.json: \(error.localizedDescription)")
+            }
+            if failure == nil { design.index = index }
+        }
         if wrote {
             try commit(&design, id)
             // A rewrite renumbers a board's elements: its comments find theirs again.

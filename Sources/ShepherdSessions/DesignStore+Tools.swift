@@ -184,6 +184,105 @@ extension DesignStore {
                                  checkpoint: checkpoint, pruned: pruned)
     }
 
+    // MARK: board_extract
+
+    /// Lifts an element out of a board into a piece, puts a `<dc-import>` in its place, replaces exact
+    /// copies in other boards, and places the piece on the canvas when asked: the piece, every
+    /// changed board and canvas.json as one revision (`DesignExtraction`).
+    func extract(_ id: DesignID, request: DesignExtractRequest) async throws -> DesignExtractResult {
+        try await run { try self.extractOnQueue(id, request) }
+    }
+
+    private func extractOnQueue(_ id: DesignID, _ request: DesignExtractRequest) throws -> DesignExtractResult {
+        var design = try load(id)
+        try Self.compare(request.baseRevision, design.revision)
+        let files = try self.files(of: id, &design)
+        let board: DesignPath
+        do { board = try DesignPath.validate(request.path) } catch { throw DesignStoreError.invalidPath(request.path, error) }
+        guard files[board] != nil, let boardText = currentText(id, board) else { throw DesignStoreError.noSuchBoard(board) }
+        var checkpointName: String?
+        if let raw = request.checkpoint {
+            guard let clean = DesignCheckpointName.clean(raw) else {
+                throw DesignStoreError.invalidCheckpoint("a checkpoint name is 1 to \(DesignCheckpointName.maxLength) characters of letters, digits, spaces and _ - . , ' ( ) # + :")
+            }
+            checkpointName = clean
+        }
+        let piece: DesignPath
+        switch Result(catching: { () throws(DesignExtraction.Failure) in try DesignExtraction.piecePath(request.piece, beside: board) }) {
+        case .success(let path): piece = path
+        case .failure(let failure): throw DesignStoreError.invalidExtract(failure.message)
+        }
+        let stem = piece.stem.lowercased()
+        if let other = Set(files.keys).union(design.index.boards.keys).sorted().first(where: { $0.stem.lowercased() == stem }) {
+            throw DesignStoreError.invalidExtract("\(other) already has the name \(piece.stem): pick another name for the piece, or import \(other)")
+        }
+
+        var sources: [DesignPath: String] = [board: boardText]
+        var skipped: [DesignExtractResult.Skipped] = []
+        if request.allCopies {
+            for path in orderedBoards(design, files: files) where path != board {
+                if let text = currentText(id, path) { sources[path] = text }
+            }
+        } else {
+            for raw in request.copies {
+                guard let path = DesignPath(raw) else { skipped.append(.init(path: raw, why: "not a board path")); continue }
+                guard path != board else { continue }
+                guard files[path] != nil, let text = currentText(id, path) else { skipped.append(.init(path: raw, why: "no such board")); continue }
+                sources[path] = text
+            }
+        }
+        let plan: DesignExtraction.Plan
+        switch Result(catching: { () throws(DesignExtraction.Failure) in
+            try DesignExtraction.plan(request, board: board, piece: piece, sources: sources)
+        }) {
+        case .success(let made): plan = made
+        case .failure(let failure): throw DesignStoreError.invalidExtract(failure.message)
+        }
+
+        var index: DesignIndex?
+        if let frame = request.frame {
+            let bottom = design.index.boards.values.map { $0.y + $0.h }.max() ?? -120
+            var entry: [String: JSONValue] = [
+                "x": .number(frame.x ?? 0), "y": .number(frame.y ?? bottom + 120),
+                "w": .number(frame.w ?? plan.size.width), "h": .number(frame.h ?? plan.size.height),
+                "title": .string(frame.title ?? piece.stem),
+            ]
+            if let page = frame.page { entry["page"] = .string(page) }
+            let merged: DesignIndex
+            do { merged = try design.index.merging(.object(["boards": .object([piece.rawValue: .object(entry)])])) } catch {
+                throw DesignStoreError.invalidIndex([String(describing: error)])
+            }
+            let known = Set(design.index.problems())
+            let problems = merged.problems().filter { !known.contains($0) }
+            guard problems.isEmpty else { throw DesignStoreError.invalidIndex(problems) }
+            index = merged
+        }
+
+        var checkpoint: DesignCheckpointInfo?
+        var pruned: [String] = []
+        if let checkpointName {
+            let made = try createCheckpointOnQueue(id, name: checkpointName)
+            checkpoint = made.info
+            pruned = made.pruned
+        }
+        var all = plan.sources
+        all[piece] = plan.pieceSource
+        let written = try writeOnQueue(id, all, baseRevision: nil, index: index)
+        design = try load(id)
+        let after = try self.files(of: id, &design)
+        func report(_ path: DesignPath, old: String?, new: String) -> DesignBoardReport {
+            DesignBoardReporter.report(path: path, old: old, new: new, frame: design.index.boards[path], boards: Set(after.keys),
+                                       tokens: nil, enforcement: nil)
+        }
+        let copies = plan.replaced.sorted { $0.key < $1.key }.map { path, count in
+            DesignExtractResult.Replaced(path: path.rawValue, count: count, report: report(path, old: sources[path], new: plan.sources[path] ?? ""))
+        }
+        return DesignExtractResult(
+            result: written.result, piece: piece.rawValue, importTag: plan.importTag, boards: copies, skipped: skipped + plan.skipped,
+            warnings: plan.warnings, pieceReport: report(piece, old: nil, new: plan.pieceSource),
+            sourceReport: report(board, old: boardText, new: plan.sources[board] ?? boardText), checkpoint: checkpoint, pruned: pruned)
+    }
+
     // MARK: board_search
 
     /// The design's boards in canvas order (back to front), then any the canvas doesn't list.

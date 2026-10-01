@@ -70,10 +70,26 @@ public struct DesignUsageIndex: Hashable, Sendable {
     public var importers: [DesignPath: [DesignPath]]
     /// A board → the `<dc-import>` names no board of the design answers to, sorted.
     public var missing: [DesignPath: [String]]
+    /// A board → the boards it imports (those the design has), sorted, never itself.
+    public var imports: [DesignPath: [DesignPath]]
 
-    public init(importers: [DesignPath: [DesignPath]] = [:], missing: [DesignPath: [String]] = [:]) {
+    public init(importers: [DesignPath: [DesignPath]] = [:], missing: [DesignPath: [String]] = [:],
+                imports: [DesignPath: [DesignPath]] = [:]) {
         self.importers = importers
         self.missing = missing
+        self.imports = imports
+    }
+
+    /// Every board `board` draws from, through its imports and theirs, sorted: when one of them
+    /// changes, `board` draws differently though its own file didn't. A cycle ends where it closes.
+    public func dependencies(of board: DesignPath) -> [DesignPath] {
+        var seen = Set<DesignPath>()
+        var queue = imports[board] ?? []
+        while let next = queue.popLast() {
+            guard next != board, seen.insert(next).inserted else { continue }
+            queue.append(contentsOf: imports[next] ?? [])
+        }
+        return seen.sorted()
     }
 
     /// How many boards import `piece`.
@@ -83,6 +99,7 @@ public struct DesignUsageIndex: Hashable, Sendable {
     public static func build(imports: [DesignPath: [DesignImports.Reference]], boards: Set<DesignPath>) -> DesignUsageIndex {
         var importers: [DesignPath: Set<DesignPath>] = [:]
         var missing: [DesignPath: Set<String>] = [:]
+        var uses: [DesignPath: Set<DesignPath>] = [:]
         for (board, references) in imports {
             for reference in references {
                 guard let target = reference.target else {
@@ -90,13 +107,17 @@ public struct DesignUsageIndex: Hashable, Sendable {
                     continue
                 }
                 if boards.contains(target) {
-                    if target != board { importers[target, default: []].insert(board) }
+                    if target != board {
+                        importers[target, default: []].insert(board)
+                        uses[board, default: []].insert(target)
+                    }
                 } else {
                     missing[board, default: []].insert(reference.name)
                 }
             }
         }
-        return DesignUsageIndex(importers: importers.mapValues { $0.sorted() }, missing: missing.mapValues { $0.sorted() })
+        return DesignUsageIndex(importers: importers.mapValues { $0.sorted() }, missing: missing.mapValues { $0.sorted() },
+                                imports: uses.mapValues { $0.sorted() })
     }
 
     /// The label the canvas puts beside a piece's title: "used in 3 boards"; nil when no board does.

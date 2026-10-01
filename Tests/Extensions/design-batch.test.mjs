@@ -439,6 +439,7 @@ test("board_extract sends the element, the piece, its props, size, frame and cop
     boards: [{ path: "B.dc.html", count: 2 }], skipped: [{ path: "flows/C.dc.html", why: "it is in another folder" }],
     warnings: ["the piece still reads {{ step.name }} from the old board"], checkpoint: { name: "before extract" },
     pieceReport: { ...BALANCED, diff: undefined, created: true, delta: undefined },
+    sourceReport: { ...BALANCED, missingImports: ["Gone"] },
   };
   await withDesign(() => ({ type: "designExtracted", result }), async (pi, frames) => {
     const out = await pi.tools.get("board_extract").execute("t1", {
@@ -457,6 +458,7 @@ test("board_extract sends the element, the piece, its props, size, frame and cop
     assert.match(data, /^Imported in place: <dc-import name="Card" label="Pay now"><\/dc-import>$/m);
     assert.match(data, /^Skipped flows\/C\.dc\.html: it is in another folder$/m);
     assert.match(data, /^Warning: the piece still reads/m);
+    assert.match(data, /^A\.dc\.html: Imports a board that doesn't exist: Gone$/m, "a problem in the board it changed is named with its board");
     assert.match(textOf(out), /\nThe piece, Card\.dc\.html:\ntags balanced · one root/);
     assert.deepEqual(extractRequest({ path: "A", element: "1:0", piece: "P", copies: ["B.dc.html"] }), { path: "A", element: "1:0", piece: "P", copies: ["B.dc.html"] });
     await assert.rejects(pi.tools.get("board_extract").execute("t2", { path: "A.dc.html", element: "", piece: "Card" }), /needs path, element and piece/);
