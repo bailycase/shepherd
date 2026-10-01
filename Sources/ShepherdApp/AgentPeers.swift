@@ -57,7 +57,7 @@ extension ShepherdViewModel {
                 return
             }
             // The target's panes extension adds report-only context or sends a user task.
-            let framed = "[from: \(sender.name)] \(text)"
+            let framed = AgentMessageFraming.framed(from: sender.name, text)
             if server.pushMessage(toAgent: target.id, text: framed, delivery: delivery) {
                 respond(.ok)
             } else {

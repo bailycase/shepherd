@@ -3141,7 +3141,7 @@ public final class SessionServer: @unchecked Sendable {
                 reply(.error(id: id, code: "invalid", message: "steering text must contain 1 to 32768 bytes"), to: client)
                 return
             }
-            forwarded.text = "[from: \(sender.name)] \(text)"
+            forwarded.text = AgentMessageFraming.framed(from: sender.name, text)
         }
         let target = clients.values.first { !$0.isRemote && $0.agentID == targetAgentID }
         guard request.operation == .delete || target != nil else {

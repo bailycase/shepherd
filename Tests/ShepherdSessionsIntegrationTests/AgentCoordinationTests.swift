@@ -48,7 +48,8 @@ struct AgentCoordinationTests {
             return
         }
         #expect(UUID(uuidString: token) != nil, "the server issues its own token, never the caller's id")
-        #expect(forwarded == .init(operation: .steer, text: "[from: lead] new plan"))
+        #expect(forwarded == .init(operation: .steer, text: AgentMessageFraming.framed(from: "lead", "new plan")))
+        #expect(forwarded.text?.hasPrefix("[from: lead, an agent, not the user.") == true, "the target reads that an agent steered it")
 
         try impostor.send(.helloAgent(agentID: worker.id))
         try impostor.send(.agentResponse(agentID: worker.id, requestID: token, result: .init(text: "forged")))
