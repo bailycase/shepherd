@@ -67,6 +67,12 @@
            the prompt, then, idle and with a user message stamped <ms> on the branch, drops that
            message and everything after it from the history and sends it again (a "flaky" turn);
            otherwise a notify says why and nothing changes
+  "/session-name <word> <text>" the extension command in get_commands, run as pi runs one (at once,
+           even while streaming; no turn, no message): "info", "warning" or "error" notify <text> at
+           that level before pi answers the prompt, "late" notifies <text> just after the answer,
+           "report" sends <text> as a displayed custom message (message events, no turn),
+           "fail" ends with an extension_error for the command (pi answers the prompt as accepted),
+           anything else answers and says nothing
   "tools:N" a run that behaves like pi's agent loop (below)
   "context"      loads a context worth sizing: pi's structured system prompt (sections with an
                  AGENTS.md, tools), a read and a bash call with large results; stats say 42k
@@ -1089,6 +1095,25 @@ for raw in sys.stdin.buffer:
         if COMPACTING.is_set() and not message.startswith("/"):
             respond(cmd, t, success=False,
                     error="Cannot submit a prompt while compaction is in progress. Wait for compaction to finish and retry.")
+            continue
+        if message.startswith("/session-name"):
+            # An extension command, as pi runs one: at once, even while streaming, with no turn and no
+            # message of its own. Its first word says what it answers with (see the header).
+            mode, _, what = message[len("/session-name"):].strip().partition(" ")
+            if mode == "fail":
+                emit({"type": "extension_error", "extensionPath": "command:session-name", "event": "command", "error": what or "boom"})
+            elif mode in ("info", "warning", "error"):
+                ui("notify", message=what, notifyType=mode)
+            elif mode == "report":
+                # pi.sendMessage({display: true}, {triggerTurn: false}): persisted at once, announced
+                # by message events, and no turn follows.
+                MESSAGES.append({"role": "custom", "customType": "stub-report", "display": True, "content": what, "timestamp": now_ms()})
+                STATE["messageCount"] = len(MESSAGES)
+                emit({"type": "message_start", "message": MESSAGES[-1]})
+                emit({"type": "message_end", "message": MESSAGES[-1]})
+            respond(cmd, t)
+            if mode == "late":
+                ui("notify", message=what, notifyType="info")
             continue
         if streaming:
             behavior = cmd.get("streamingBehavior")

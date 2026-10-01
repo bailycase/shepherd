@@ -412,8 +412,9 @@ function abortRelays(run) {
   run.relays?.clear();
 }
 
-// `timers` lets tests observe the control tick; pi passes only `pi`.
-export default function shepherdChildren(pi, timers = { setInterval, clearInterval }) {
+// `timers` lets tests observe the control tick, and `commandEnv` decides which commands register
+// (shepherd-children-ui.ts); pi passes only `pi`.
+export default function shepherdChildren(pi, timers = { setInterval, clearInterval }, commandEnv = process.env) {
   if (process.env.SHEPHERD_CHILD === "1") {
     // Cooperative pause at the next model-request boundary. In-flight tools finish normally;
     // the RPC reader remains available for continue/cancel while the context hook waits.
@@ -1326,5 +1327,5 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       `scope · ${defaults.scope} · context · ${defaults.context} · concurrency · ${defaults.concurrency}`,
       `${runs.size} retained children · ${[...runs.values()].filter((r) => ["running", "queued"].includes(r.state)).length} active · ${workflows.size} workflows`,
       "no provider probes · no configuration changes · children stop with this parent"],
-  });
+  }, commandEnv);
 }

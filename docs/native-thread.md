@@ -140,7 +140,10 @@ events come out on stdout, one record per LF.
   `get_commands` (the slash-command registry, capped at 128 commands; pi sends no argument
   hints, so the host reads each prompt template's `argument-hint` from the frontmatter of the
   file pi names in its `sourceInfo`, off the server queue, and commits the hints as the
-  commands' additive `arguments` once read). Until `get_state` and
+  commands' additive `arguments` once read; a command no thread can run is left out: the
+  host's own `/shepherd-retry`, and pi's terminal-only built-in `/llama`, which answers
+  "available in interactive mode" in RPC. Shepherd's bundled extensions register nothing a
+  thread can't show: docs/native-subagents.md › Slash commands). Until `get_state` and
   `get_messages` have answered, requests fail with `native_starting` ("The agent is starting."): pi
   answers `get_state` first, and a thread served before a long history arrives would show a
   resumed agent as a new, empty one. pi reads stdin only once it has started, so a pi slower
@@ -234,8 +237,32 @@ events come out on stdout, one record per LF.
     after a relaunch; one from before a compaction's kept messages went with what was
     summarized.
 - **Widgets:** `setWidget` text (ANSI stripped) becomes a `NativeThreadWidget`: at most 16, 4 KiB
-  of text each, 32 KiB in total. Machine payloads, `notify`, `setStatus`, and `setTitle` are
-  dropped, because they belong to pi's TUI chrome.
+  of text each, 32 KiB in total. Machine payloads, `setStatus`, and `setTitle` are dropped,
+  because they belong to pi's TUI chrome, and so is a `notify` nobody asked for (below).
+- **What a command says back** (`RPCThreadState+CommandNotices.swift`): pi's RPC mode has no
+  toast, and most extension commands report with `ctx.ui.notify`, so a command the user ran
+  would look like one that did nothing. While an extension command the user sent is in flight
+  (from the host handing pi its prompt until pi answers it, plus 1.5 s: pi answers once the
+  handler returned), a `notify` becomes a row, and so does the `extension_error` pi sends when
+  the handler throws ("/name failed: …"). A `notify` at any other time ("Ponytail loaded") is
+  still dropped.
+  - **The row** is a message with entry id `n:<uuid>`, one text block (ANSI stripped, 4 KiB at
+    most) and no time, so it never stretches the turn it lands in. `info` is role `custom`, a
+    plain note; `warning` and `error` are those roles, which every client draws as a note
+    reading "warning · …" (no new field or request, so older clients and hosts need nothing, and
+    remote clients see the same rows). It joins the live rows when it arrives.
+  - **It survives a history refresh** the way a question record does: pi's session holds
+    nothing of it, so the host keeps the newest 16 (not persisted: a command leaves nothing in
+    pi's session either) and places them in pi's history by when they arrived
+    (`interleave(_:into:)`, shared with the questions), dropping the live row in the same turn,
+    so it is never drawn twice. A session switch (`/new`, `/resume`) drops them.
+  - **It costs nothing for a thread that runs no command:** a `notify` finds no window open and
+    returns, and the extension-command check is a lookup in the command list already held.
+  - **A command that answers with a message** (`pi.sendMessage` with `display: true`, as the
+    bundled commands do) is already in pi's history when its `message_end` arrives, and an idle
+    pi has no turn whose end would refresh it, so the host refreshes history then (never while a
+    run goes on: `agent_end` does, and Shepherd's own `shepherd-child` reports stay with the
+    subagent cards).
 - **Snapshots** are bounded:
   - 240 KiB in total, of which live content (live rows, then dialogs) may use 120 KiB. A page
     each of live assistant messages and tool calls stays; user rows always stay, because they
