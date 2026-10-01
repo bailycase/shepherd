@@ -882,7 +882,7 @@ Vendor/libghostty-spm/ GhosttyTerminal (prebuilt libghostty)
 `SessionServer.nativeThread` serves locally and, over TCP, remotely
 ([docs/native-thread.md](docs/native-thread.md)). Messages sent while pi works wait in a queue
 the host holds (never pi's own, whose modes write the user's pi settings) and go when pi
-settles, or are steered in; a user message joins the thread only when pi starts it
+settles, or go at once after pi is stopped (Steer now); a user message joins the thread only when pi starts it
 (docs/native-thread.md › The queue).
 
 **Status reporting.** The status extension reports `setAgentStatus` fire-and-forget (the server
@@ -958,7 +958,9 @@ variables are blanked, as are pi's `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSI
   - native thread requests, with the context and Compact now behind `native.context.v1`, Retry
     in place behind `native.retry.v1`, and Steer now (a message that stops pi and goes at once,
     `interrupt` in `supportedActions`, sent as a steer to a host without it) behind
-    `native.interrupt.v1`, and an agent's service tier (`setServiceTier`, the snapshot's
+    `native.interrupt.v1` (Return queues, `followUp`, and no client offers a steer as a choice;
+    `NativeThreadDelivery.steer` stays on the wire for older clients and that fallback), and an
+    agent's service tier (`setServiceTier`, the snapshot's
     `serviceTier` and `serviceTiers`; no Speed control from a host without it) behind
     `native.serviceTier.v1`
   - attach, detach, input, resize, and acknowledged paste
