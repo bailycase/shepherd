@@ -36,12 +36,23 @@ These experiments were reverted.
 The Mac code block now uses a selectable AppKit text field, retaining the syntax colors,
 Geist Mono, text scale and Copy button. Bridging each distinct syntax color once avoids
 SwiftUI resolving every attributed run. iOS keeps its existing SwiftUI text. The first native
-prototype measured 19.4 ms; a repeat with the fitting layout measured 17.9 ms. The retained
-version uses one horizontal scroll view so a resize across the fit boundary does not replace
-the field that owns a selection. It measured 20.7 and 21.2 ms, about 41% less main-thread CPU
+prototype measured 19.4 ms; a repeat with the fitting layout measured 17.9 ms. A variant with
+one always-present horizontal scroll view, so a resize across the fit boundary would not replace
+the field that owns a selection, measured 20.7 and 21.2 ms, about 41% less main-thread CPU
 than the 36.2 ms baseline. The post-merge validation measured 12.8 ms, with 16.8 ms process CPU
 and the same seven highlight renders. This variation is why the conservative comparison uses
 21.2 ms. These reports measure CPU, not smooth displayed frame pacing.
+
+Integrating with `nightly` kept the fitting layout instead (`ViewThatFits`: the code draws
+directly when its longest line fits, and sits in a horizontal scroll view only when it does
+not), the one the Mac code block had before this change and iOS still has. In a debug build the
+two layouts around the native field measured the same: `streamedCodeChunk` 29.2, 20.8 and
+24.5 ms with the scroll view against 26.6, 26.2 and 24.0 ms with `ViewThatFits`, and an
+interleaved first layout of a 20-line block (median of 30) 7.1 against 7.7 ms. With no cost
+to recover, the fitting layout keeps every block that fits free of a nested scroll view in the
+thread's wheel path, and a selection survives chunks, highlight updates and resizes that
+leave the code on the same side of the fit boundary; crossing it replaces the field, as it
+replaced the SwiftUI text before.
 
 The existing highlight budget still passed: a burst renders the growing fence at most twice,
 and settlement renders the complete fence once. Tree-sitter work is already throttled and
