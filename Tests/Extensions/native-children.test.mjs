@@ -586,7 +586,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     assert.deepEqual(editorCard.result, { files: 1, added: 2, removed: 0, tools: 2, tokens: 4 });
     assert.deepEqual(JSON.parse(fs.readFileSync(path.join(path.dirname(editor.sessionFile), "status.json"))).files, editorCard.files);
     const shell = await h.call("start", { task: `SHELL:printf '%s' "$SHEPHERD_AGENT_ID:$SHEPHERD_SOCKET:$SHEPHERD_CHILD" > '${dir}/env'; sleep 20`, role: "worker" });
-    await until(() => fs.existsSync(path.join(dir, "env"))); assert.equal(fs.readFileSync(path.join(dir, "env"), "utf8"), "::1");
+    await until(() => fs.existsSync(path.join(dir, "env")) && fs.readFileSync(path.join(dir, "env"), "utf8") !== ""); assert.equal(fs.readFileSync(path.join(dir, "env"), "utf8"), "::1");
     await until(() => h.projections.at(-1).children.some((c) => c.runID === shell.id && c.currentTool === "bash"));
     const shellCard = h.projections.at(-1).children.find((c) => c.runID === shell.id);
     assert.equal(shellCard.currentTool, "bash"); assert.equal(shellCard.state, "running");
