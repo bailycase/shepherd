@@ -3,6 +3,7 @@ import AppKit
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdUI
 
 /// The ⌘K command palette: agent and space lifecycle on the keyboard instead
 /// of a menu bar. Items are destinations (agents, spaces, subagent
@@ -141,7 +142,7 @@ extension ShepherdViewModel {
     static func fastModePaletteItem(offered: Bool) -> PaletteItem? {
         guard offered else { return nil }
         return PaletteItem(id: "action.fastMode", kind: .action("fastMode"), section: .thisThread, title: "Toggle fast mode",
-                           subtitle: "Switch this thread between Standard and Fast", icon: "bolt")
+                           subtitle: "Switch this thread between Standard and Fast", icon: NWGlyph.fastBolt.symbolName)
     }
 
     /// Switches the thread on screen between Standard and Fast, as the composer's Speed menu would.
