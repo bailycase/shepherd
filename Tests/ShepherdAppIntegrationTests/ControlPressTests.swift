@@ -26,6 +26,12 @@ struct ControlPressTests {
         }
     }
 
+    @Test func aRowsActionMenuIsListedAndRunWhereItsControlsAreNotSeparate() async {
+        await #expect(processExitsWith: .success) {
+            await recordingErrors { try await Self.performingActions() }
+        }
+    }
+
     // MARK: Scenarios
 
     @MainActor
@@ -139,5 +145,55 @@ struct ControlPressTests {
         #expect(!desktop.contains("Whole button"), "a padded button with a content shape is the whole rectangle: \(controls)")
         let touch = ControlPress.undersized(controls, minimum: .touch).compactMap(\.label)
         #expect(touch.sorted() == ["Label only", "Tiny"], "the whole 122×56 button clears a finger's 44pt: \(controls)")
+    }
+
+    /// A row that combines its children is one element, and what its hover buttons do is in its
+    /// action menu: the menu's names are listed, an action runs the row's own handler, and an action
+    /// the row lacks (or a row nobody has) is refused, running nothing.
+    @MainActor
+    static func performingActions() async throws {
+        AccessibilityNode.enable()
+        let counter = Counter()
+        struct Rows: View {
+            let counter: Counter
+            var body: some View {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("First row")
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("First row")
+                        .accessibilityAction(named: "Reply") { counter.presses.append("reply first") }
+                        .accessibilityAction(named: "Stop") { counter.presses.append("stop first") }
+                    Text("Second row")
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("Second row")
+                        .accessibilityAction(named: "Steer") { counter.presses.append("steer second") }
+                }
+                .padding(20)
+            }
+        }
+        let window = OffscreenWindow(size: CGSize(width: 400, height: 200), dark: true, Rows(counter: counter))
+        defer { window.close() }
+        window.layout()
+
+        #expect(Set(ControlPress.actions(onLabelContaining: "First", under: window.host)) == ["Reply", "Stop"])
+        #expect(ControlPress.actions(onLabelContaining: "Nobody", under: window.host).isEmpty)
+        try ControlPress.perform("Reply", onLabelContaining: "First", under: window.host)
+        try ControlPress.perform("Steer", onLabelContaining: "Second", under: window.host)
+        #expect(counter.presses == ["reply first", "steer second"], "each action ran its own row's handler")
+
+        func refusal(_ body: () throws -> Void) -> ControlPressError? {
+            do { try body() } catch let error as ControlPressError { return error } catch {}
+            return nil
+        }
+        let lacks = try #require(refusal { try ControlPress.perform("Steer", onLabelContaining: "First", under: window.host) },
+                                 "an action the row does not offer is refused")
+        #expect(lacks.reason == .notFound && lacks.description.contains("First row"), "and says what the window offers: \(lacks)")
+        let missing = try #require(refusal { try ControlPress.perform("Reply", onLabelContaining: "Nobody", under: window.host) },
+                                   "a row nobody has is refused")
+        #expect(missing.reason == .notFound)
+        let twins = try #require(refusal { try ControlPress.perform("Reply", onLabelContaining: "row", under: window.host) },
+                                 "two rows that match are ambiguous")
+        #expect(twins.reason == .ambiguous)
+        #expect(counter.presses == ["reply first", "steer second"], "none of the refused presses ran a handler")
     }
 }

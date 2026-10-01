@@ -258,6 +258,11 @@ be tested has not tried this. `ModelSettingsPopoverTests` is the worked example,
   `ControlPress.undersized(_, minimum: .desktop)` (24pt) or `.touch` (44pt) names those too small.
   A plain-style button with a clear background and no `.contentShape` answers a click only over its
   label, and its frame says so. Check every state the design draws, since the controls differ.
+- **A row's actions:** a row that combines its children is one element, and its hover buttons are
+  its accessibility actions (what VoiceOver's action menu offers). `ControlPress.actions(onLabelContaining:under:)`
+  lists their names and `ControlPress.perform("Reply", onLabelContaining: "reviewer", under: host)` runs one;
+  `SubagentReplyTests` presses a tray row that way. A pointer's hover button is not in the tree,
+  so what it reaches is the same closure the action runs.
 - A control that is not drawn in a state is not in the tree: assert its absence with `controls()`.
 
 **Which tier a change needs:**

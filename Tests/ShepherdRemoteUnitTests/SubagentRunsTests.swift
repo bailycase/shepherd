@@ -285,6 +285,27 @@ struct SubagentRunsTests {
         #expect(!nativeRunAcceptsSteer(Self.run("d", state: "complete")))
     }
 
+    /// It is one command, so a run that did not ask keeps Steer and only a run that asked its parent has it
+    /// called Reply, with the tooltip saying what the user is doing.
+    @Test(arguments: [
+        (Self.run("r"), "Steer", "Steer worker", nil as String?), (Self.run("q", state: "queued"), "Steer", "Steer worker", nil),
+        (Self.run("p", paused: true), "Steer", "Steer worker", nil),
+        (Self.run("n", needsAttention: true), "Reply", "Reply to worker", "Answer this subagent yourself. It was waiting on its parent."),
+        (Self.run("n", state: "complete", needsAttention: true), "Reply", "Reply to worker",
+         "Answer this subagent yourself. It was waiting on its parent."),
+    ])
+    func onlyARunThatAskedItsParentCallsSteerReply(run: ChildRun, verb: String, label: String, help: String?) {
+        let words = nativeRunSteerWords(run)
+        #expect(words.verb == verb)
+        #expect(words.label("worker") == label)
+        #expect(words.help == help)
+    }
+
+    @Test func theTouchFieldSaysWhoItReachesAndWhyForAReply() {
+        #expect(NativeRunSteerWords.steer.caption("worker") == "to: worker · not the parent · lands before its next turn")
+        #expect(NativeRunSteerWords.reply.caption("worker") == "to: worker · not the parent · it was waiting on its parent")
+    }
+
     // MARK: Transcript
 
     static func message(_ id: String) -> NativeThreadMessage {

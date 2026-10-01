@@ -113,6 +113,8 @@ struct SubagentTrayRow: View, Equatable {
     let run: ChildRun
     let selected: Bool
     let actions: SubagentActions
+    /// Draws the pointer's hover controls from the start (previews and tests; the pointer sets it live).
+    var hovering = false
     @Environment(\.threadActionsEnabled) private var enabled
 
     nonisolated static func == (a: SubagentTrayRow, b: SubagentTrayRow) -> Bool {
@@ -123,12 +125,16 @@ struct SubagentTrayRow: View, Equatable {
         // A run waiting on its parent's answer has finished its process, but it is still going: the
         // user can steer it (speaking over its parent) and stop it (closing its question).
         let live = nativeRunPhase(run).isLive
-        NWSubagentTrayRow(value, selected: selected, enabled: enabled, actions: NWSubagentTrayActions(
+        // The same Steer command either way; a run that asked its parent has it called Reply.
+        let words = nativeRunSteerWords(run)
+        let steer = { (actions.steer ?? actions.inspect)(run) }
+        NWSubagentTrayRow(value, selected: selected, enabled: enabled, hovering: hovering, actions: NWSubagentTrayActions(
             open: { actions.inspect(run) },
-            steer: live ? { (actions.steer ?? actions.inspect)(run) } : nil,
+            steer: live ? steer : nil, steerLabel: words.label(value.name), steerHelp: words.help,
             stop: live ? { actions.command(run, .cancel, nil, nil) } : nil))
             .contextMenu {
                 Button(selected ? "Close the Inspector" : "Open") { actions.inspect(run) }
+                if live { Button(words.verb, action: steer).disabled(!enabled).help(words.help ?? "") }
                 ForEach(nativeRunControls(run), id: \.self) { control in
                     Button(control.title, role: control == .stop ? .destructive : nil) {
                         actions.command(run, control.action, nil, nil)
@@ -138,6 +144,7 @@ struct SubagentTrayRow: View, Equatable {
             }
             .accessibilityActions {
                 if enabled {
+                    if live { Button(words.verb, action: steer) }
                     ForEach(nativeRunControls(run), id: \.self) { control in
                         Button(control.title) { actions.command(run, control.action, nil, nil) }
                     }

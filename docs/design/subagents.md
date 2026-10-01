@@ -65,13 +65,15 @@ parent's answer all draw as `queued`; a subagent never draws `attention`, which 
     the question's asking sentence in `textSecondary` ("asked the parent" alone when it gave
     none), and its wait since the child asked (`shepherd_parent_message`; no figure without one).
     The question is its parent's to answer, or to ask you in its own thread, so the row has no
-    tint, glow or Answer: nothing on it is yours to do. Hover keeps Steer, Stop and Open.
+    tint, glow or Answer: nothing on it is yours to do. Hover keeps Stop and Open, and its Steer
+    is called **Reply** (below).
   - **Done:** the first sentence of what it did, without its final period, in `textSecondary`;
     its diff and its duration ("41m").
   - **Failed:** why, in `failed`, without the exit code it leads with ("context limit reached
     after 41 turns").
-  - **Hover** (a live run, on the Mac): `bgHover`, and Steer (`arrow.turn.down.right`), Stop
-    (`stop.fill`) and Open (`chevron.right`), 24pt circular icon buttons, take the trailing slot.
+  - **Hover** (a live run, on the Mac): `bgHover`, and Steer (`arrow.turn.down.right`; Reply on
+    a run that asked its parent), Stop (`stop.fill`) and Open (`chevron.right`), 24pt circular
+    icon buttons, take the trailing slot.
     At rest, and on a finished run, the slot holds a 10pt `chevron.right` in `textTertiary`.
   - **Selected** (its run open in the inspector): `bgSelected` with a 2pt rule on its leading
     edge, `running`.
@@ -82,16 +84,28 @@ parent's answer all draw as `queued`; a subagent never draws `attention`, which 
   rows scrolls inside a lazy stack eight rows tall (`AppLayout.trayExpandedMaxRows`).
 - **What a row does:** a click opens its run in the inspector (again closes it); Steer opens it
   with its Steer field focused; Stop stops the run, or closes the question of one waiting on its
-  parent. Its context menu and accessibility actions carry Open (or Close the Inspector) and the
-  run's controls (Pause or Continue and Stop while live, Stop alone while it waits on its parent,
-  Re-run once finished). Controls are disabled while the
+  parent. Its context menu and accessibility actions carry Open (or Close the Inspector), Steer
+  while the run is live, and the run's controls (Pause or Continue and Stop while live, Stop alone
+  while it waits on its parent, Re-run once finished). Controls are disabled while the
   thread can't take commands (its agent is off screen, or its host has no subagent control).
+- **Reply** (decided by the user, 2026-10-01): on a run that asked its parent (`needsReply`, the
+  `asked` phase) the Steer action is called **Reply**, everywhere it is offered: the hover button
+  (VoiceOver "Reply to <name>", tooltip "Answer this subagent yourself. It was waiting on its
+  parent."), the context menu item and accessibility action, the inspector's field (its
+  label "Reply to <role>", its placeholder "Reply to <role> — it was waiting on its parent", its
+  button) and the touch screens' field (its prompt, accessibility label and Reply button, and the
+  caption "to: <name> · not the parent · it was waiting on its parent"). It is the same Steer
+  command, which also ends the child's question, so only the words change (`NativeRunSteerWords`);
+  every run that did not ask keeps "Steer". A child waiting on its parent never times out, and
+  Stop closes it: there is no timeout and no capability gate for it.
 - **No Answer, and no question dock for a subagent.** A subagent that has a question puts it to its
   parent: the parent's extension is told (docs/native-subagents.md › Questions and results), and
   answers it from what it knows, or asks you in its own thread, as pi's own question in the
-  composer's place, then passes your answer down. What a subagent's row offers is Steer (you
-  speaking to the child yourself, over its parent: it resumes the child with your words and ends
-  its question) and Stop (which closes the question and marks the run stopped).
+  composer's place, then passes your answer down. What a subagent's row offers is Reply (the Steer
+  action under its asked-run name: you speaking to the child yourself, over its parent, which
+  resumes the child with your words and ends its question) and Stop (which closes the question
+  and marks the run stopped). The dock that once drew a subagent's question, with a note and
+  Something else…, is gone from the components (Composer, questions, and menus › Questions).
 - **In the thread** (`NWSubagentRecordLine`, SubagentTray › SubagentRecord): an activity line in
   look (26pt, 12.5 `textSecondary`, the meta in `.nwMono(11)` `textTertiary`, a 13pt branch glyph
   and a 10pt chevron; a real button with the row hover; with no run to open, no chevron, its
