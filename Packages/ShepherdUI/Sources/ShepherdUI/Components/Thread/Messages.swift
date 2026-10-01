@@ -208,18 +208,13 @@ public struct NWCodeBlock: View {
             .padding(.trailing, NW.Space.s)
             .frame(height: NWThreadMetrics.codeHeaderHeight)
             .overlay(alignment: .bottom) { NWHairline() }
-            #if os(macOS)
-            // One field keeps its selection when the code or column crosses the fit boundary.
-            ScrollView(.horizontal) { codeText }
-                .scrollIndicators(.hidden)
-                .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
-            #else
+            // The code draws directly when its longest line fits the column, so the thread's
+            // wheel never meets a nested scroll view there, and scrolls sideways only when it does not.
             ViewThatFits(in: .horizontal) {
                 codeText
                 ScrollView(.horizontal) { codeText }
                     .scrollIndicators(.hidden)
             }
-            #endif
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(nw.bgSunken, in: RoundedRectangle(cornerRadius: NW.Radius.m))

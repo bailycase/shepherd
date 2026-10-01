@@ -19,15 +19,36 @@ struct ThreadCodeBlockTests {
         #expect(field.attributedStringValue.string == code)
         let height = field.frame.height
         #expect(height > 0)
-        let scroll = try #require(ListPerf.scrollView(in: window))
-        let document = try #require(scroll.documentView)
-        #expect((document.frame.width > scroll.contentSize.width) == long)
+        #expect(codeFields(in: window.host, code: code).count == 1)
+        let scroll = ListPerf.scrollView(in: window)
+        #expect((scroll != nil) == long, "only code wider than its column sits in a scroll view")
+        if let scroll, let document = scroll.documentView { #expect(document.frame.width > scroll.contentSize.width) }
         window.window.setContentSize(CGSize(width: 240, height: 320))
         ListPerf.settle(window)
         let resized = try #require(codeField(in: window.host, code: code))
         #expect(resized === field && resized.window === window.window)
         #expect(resized.frame.height == height, "narrowing scrolls sideways instead of wrapping")
         #expect(resized.attributedStringValue.string == code)
+    }
+
+    @Test func aColumnNarrowerThanTheCodeScrollsSidewaysInsteadOfWrapping() throws {
+        let code = "let sheep = \"🐑\"\nlet count = 42"
+        let window = OffscreenWindow(size: CGSize(width: 480, height: 320), dark: false, NWCodeBlock(code, language: "swift"))
+        defer { window.close() }
+        ListPerf.settle(window)
+        let height = try #require(codeField(in: window.host, code: code)).frame.height
+        #expect(ListPerf.scrollView(in: window) == nil)
+        window.window.setContentSize(CGSize(width: 80, height: 320))
+        ListPerf.settle(window)
+        #expect(codeFields(in: window.host, code: code).count == 1)
+        #expect(try #require(codeField(in: window.host, code: code)).frame.height == height, "narrowing never wraps")
+        let scroll = try #require(ListPerf.scrollView(in: window))
+        #expect(try #require(scroll.documentView).frame.width > scroll.contentSize.width)
+        window.window.setContentSize(CGSize(width: 480, height: 320))
+        ListPerf.settle(window)
+        #expect(ListPerf.scrollView(in: window) == nil)
+        #expect(codeFields(in: window.host, code: code).count == 1)
+        #expect(try #require(codeField(in: window.host, code: code)).frame.height == height)
     }
 
     @Test func aSelectionSurvivesTheNextCodeChunk() throws {
@@ -56,8 +77,9 @@ struct ThreadCodeBlockTests {
         #expect(editor.string == grown)
         #expect(editor.selectedRange() == selection)
         #expect(field.currentEditor() === editor)
-        window.window.setContentSize(CGSize(width: 80, height: 320))
+        window.window.setContentSize(CGSize(width: 200, height: 320))
         ListPerf.settle(window)
+        #expect(ListPerf.scrollView(in: window) == nil, "the narrower column still holds the code")
         #expect(codeField(in: window.host, code: grown) === field)
         #expect(editor.selectedRange() == selection && field.currentEditor() === editor)
         var colored = AttributedString(grown)
@@ -72,10 +94,11 @@ struct ThreadCodeBlockTests {
     }
 
     private func codeField(in view: NSView, code: String) -> NSTextField? {
-        if let field = view as? NSTextField, field.stringValue == code { return field }
-        for child in view.subviews {
-            if let field = codeField(in: child, code: code) { return field }
-        }
-        return nil
+        codeFields(in: view, code: code).first
+    }
+
+    private func codeFields(in view: NSView, code: String) -> [NSTextField] {
+        let own = (view as? NSTextField).flatMap { $0.stringValue == code ? [$0] : nil } ?? []
+        return own + view.subviews.flatMap { codeFields(in: $0, code: code) }
     }
 }
