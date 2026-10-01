@@ -183,7 +183,9 @@ inherits and what it doesn't.
 - **A design agent's design tools.** A helper has none of its parent's identity, so it can't call
   the design tools itself. A profile of a helper started by a design agent may list them in `tools:`
   (`design_read`, `design_check`, `system_read`, `comment_list`, `board_write`, `board_edit`,
-  `canvas_update`, `system_write`; not `comment_reply` or `markup_propose`): the parent runs each
+  `boards_edit`, `board_search`, `board_render`, `board_extract`, `checkpoint_create`,
+  `checkpoint_list`, `canvas_update`, `system_write`; not `comment_reply`, `markup_propose` or
+  `checkpoint_restore`): the parent runs each
   call through its own design extension, on its own connection, and returns the result or error to
   the helper. Nothing else is relayed, nothing to a parent that draws no design, and a profile
   that lists them for one fails at the start, saying why. It needs no `extensions:` line; if one
