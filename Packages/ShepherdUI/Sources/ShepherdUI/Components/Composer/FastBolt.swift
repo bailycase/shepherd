@@ -7,13 +7,13 @@ import SwiftUI
 ///
 /// It is hidden from VoiceOver: the control that wears it says "Fast" itself.
 public struct NWFastBolt: View {
-    /// The SF Symbol for a raised tier.
-    public static let symbol = "bolt.fill"
+    /// The SF Symbol for a raised tier (`NWGlyph.fastBolt`).
+    public static let symbol = NWGlyph.fastBolt.symbolName
 
     public init() {}
 
     public var body: some View {
-        Image(systemName: Self.symbol)
+        NWGlyph.fastBolt.image
             .font(.system(size: NWComposerMetrics.chipSymbol, weight: .medium))
             .foregroundStyle(Color.nw.lantern)
             .accessibilityHidden(true)

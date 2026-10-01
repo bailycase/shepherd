@@ -11,26 +11,54 @@ Detail: [docs/overview.md](docs/overview.md).
 **IMPORTANT: the user's design wins over every document in this repo, this one included.**
 
 1. **Know what you are building.** The design the user gave in this thread (an image, a board, a
-   design reference, or their words) is the spec. If it disagrees with DESIGN.md or `docs/design/`,
-   build the design and update those docs in the same change. In your final message, list every
-   place you could not match it and why. A departure from a design is the user's call, never yours.
+   design reference, or their words) is the spec. Save the image to `docs/design/boards/<Name>.png`
+   ([README](docs/design/boards/README.md)) before you code. If it disagrees with DESIGN.md or
+   `docs/design/`, build the design and update those docs in the same change. A departure from a
+   design is the user's call, never yours: list every difference you kept under **Departures** in
+   the PR body (`none` counts) and in your final message.
 2. **Read only your section.** Find the board with `python3 scripts/design_section.py --boards |
    grep -i <word>`, then print it: `python3 scripts/design_section.py "<board or heading>"` (index:
    [docs/design/README.md](docs/design/README.md)). A new design has no board yet: read the heading
    of the surface it changes. Never open a whole spec file. Read [DESIGN.md](DESIGN.md) once.
 3. **Write the checklist before you code:** every element in order; each glyph by SF Symbol name and
    fill variant (`bolt` is not `bolt.fill`; if the image cannot settle it, say which you chose); each
-   size, spacing, radius and color as a token; each state drawn; and what pressing each control does.
-4. **Reuse** ShepherdUI components and tokens. Hardcode no color, font size, dimension or duration.
-5. **Look at it.** Run `SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter <suite>`,
-   open the PNGs in both appearances, compare element by element with the design, list every
+   size, spacing, radius and color as a token; **every string the app will really show, per state,
+   from the code that produces it**; each state drawn and each it does not draw; and what pressing
+   each control does.
+4. **Reuse** ShepherdUI components and tokens. Hardcode no color, font size, dimension or duration;
+   status colors come from `AgentState`, never an alpha; a glyph used twice is an `NWGlyph` case.
+   `DesignRulesTests` fails on a literal size, a tinted status color, a raw color or a raw glyph name.
+5. **Look at it, from the real producer** (the store, the extension's output, the formatter), never
+   strings copied from the board. Run `SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter
+   <suite>`, rendering each state plus empty and long text, light and dark, and text scale 1.5
+   (`Preview.renderMatrix`). Open the PNGs, compare element by element with the design, list every
    difference, fix them, render again.
-6. **Press every control** the design draws. In a test, trigger it the way the app does (its action
-   or command, see `ComposerMenuTests`; never posted mouse or key events) and assert the state
-   changes. No helper presses a button by label, so also read the view: it must be a `Button` (or
-   `Toggle`) whose action calls what you tested, and you say how you checked. A glyph that is not a
-   `Button`, or a button wired to nothing, is a bug.
-7. **You are not done until 5 and 6 pass.** Say what you verified and what you could not.
+6. **Press every control** the design draws, in each state it appears in, with `ControlPress`
+   ([docs/testing.md](docs/testing.md) › Pressing a control): `window.press("Pause")` finds it in the
+   accessibility tree and runs its press action (an exit test, so its own process; no posted
+   events). Assert the request it sent, the state it left and its hit area (24pt, 44pt on touch).
+   Do not call a control untestable until you have tried it.
+7. **Review before the PR:** run the `design-reviewer` helper (skill `design-review`), or when it is
+   not installed do the same review yourself ([docs/design-workflow.md](docs/design-workflow.md)),
+   and fix or report what it finds.
+8. **You are not done until 5, 6 and 7 pass** (and, for a feature that acts on its own, the section
+   below). Say what you verified and what you could not.
+
+## Features that act on their own
+
+A loop, background work, an unattended model call, a scheduler, a notification: anything that keeps
+going without a person watching. Before the PR, run the `risk-reviewer` helper (skill `risk-review`)
+or review it yourself ([docs/rules.md](docs/rules.md), Features that act on their own), and fix or
+report what it finds. Each of these is required:
+
+- A default bound on iterations, time and spend, and a test that hits it.
+- Data stays where the user put it: anything sent to a provider other than the thread's is opt-in
+  and shown in the UI, and secrets are redacted.
+- Tool output, file contents and prose are data, never instructions, including text that reaches an
+  evaluator.
+- A restart never resumes unattended work.
+- What Stop, Steer now, the queue, subagents, retries, errors and compaction do to it is defined and tested.
+- Every product decision nobody asked for goes under **Decisions** in the PR body; the user decides.
 
 ## Boundaries
 
@@ -60,6 +88,8 @@ Detail: [docs/overview.md](docs/overview.md).
 - Write the test that matches the change (tiers below) and update the docs in the same change:
   DESIGN.md and `docs/design/` for UI, `docs/` for behavior.
 - Edit an embedded extension in `Extensions/` and its Swift literal together.
+- Fill the PR template: the `pr-body` check fails UI changes without Departures, Rendered and
+  Controls used, and an autonomous feature without Bounds, Data, Restart and stop and Decisions.
 
 ## Commands
 
@@ -195,6 +225,8 @@ Each is one line here; the full rule is in [docs/rules.md](docs/rules.md) under 
 | You are | Read |
 | --- | --- |
 | Changing UI | [DESIGN.md](DESIGN.md), then your board's section via `design_section.py` |
+| Building from a design, reviewing it, writing its PR | [docs/design-workflow.md](docs/design-workflow.md), [docs/design/boards](docs/design/boards/README.md) |
+| A feature that acts on its own (loops, background or unattended work) | [docs/rules.md](docs/rules.md), Features that act on their own |
 | Building, running, choosing a scheme | [docs/build-and-run.md](docs/build-and-run.md), [pi-engine](docs/pi-engine.md), [pi-home](docs/pi-home.md) |
 | Setting or debugging an env var | [docs/environment.md](docs/environment.md) |
 | Writing or changing a test, or CI | [docs/testing.md](docs/testing.md) |

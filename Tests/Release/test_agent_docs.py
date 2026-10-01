@@ -19,7 +19,7 @@ DESIGN_MAX_LINES = 300
 
 # Reference sections that moved out of AGENTS.md, each with a one-line "Read when" header.
 MOVED_FROM_AGENTS = ["overview", "build-and-run", "environment", "testing", "source-map", "data-flow",
-                     "remote-protocol", "rules", "releases", "gotchas"]
+                     "remote-protocol", "rules", "releases", "gotchas", "design-workflow"]
 
 LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 FENCE = re.compile(r"^\s*(`{3,}|~{3,})")
@@ -87,6 +87,19 @@ class ContentTests(unittest.TestCase):
         self.assertIn("the user's design wins", head)
         self.assertIn("design_section.py", head)
 
+    def test_the_procedure_names_the_guards_that_catch_what_reviews_found(self):
+        text = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        for needle in ("docs/design/boards/<Name>.png", "Departures", "from the code that produces it", "ControlPress",
+                       "Preview.renderMatrix", "DesignRulesTests", "NWGlyph", "design-reviewer", "risk-reviewer",
+                       "## Features that act on their own"):
+            self.assertIn(needle, text, f"AGENTS.md no longer mentions {needle}")
+        self.assertNotRegex(text, r"(?i)no helper presses a button")
+
+    def test_the_saved_design_folder_explains_itself(self):
+        lines = read_lines(ROOT / "docs" / "design" / "boards" / "README.md")
+        self.assertTrue(lines[0].startswith("# "))
+        self.assertTrue(any(l.startswith("> Read when") for l in lines[:6]))
+
     def test_design_md_puts_the_users_design_above_its_own_rules(self):
         text = (ROOT / "DESIGN.md").read_text(encoding="utf-8")
         self.assertIn("## Precedence", text)
@@ -116,6 +129,7 @@ class LinkTests(unittest.TestCase):
     def test_links_in_every_moved_doc_and_design_spec_resolve(self):
         files = [ROOT / "docs" / f"{n}.md" for n in MOVED_FROM_AGENTS]
         files += sorted((ROOT / "docs" / "design").glob("*.md"))
+        files.append(ROOT / "docs" / "design" / "boards" / "README.md")
         problems = []
         for f in files:
             problems += broken_links(f)

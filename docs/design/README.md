@@ -6,7 +6,9 @@
 reference) comes first. Then the board or the canvas. Then these specs. Then the rules in
 DESIGN.md. If a design disagrees with a spec here, build the design, update the spec in the
 same change, and tell the user every place you could not match it. A departure from a design
-is the user's call, never yours.
+is the user's call, never yours. The design image is saved in [boards/](boards/README.md) with the
+change that builds it, and every difference you kept is listed under Departures in the PR body
+([docs/design-workflow.md](../design-workflow.md)).
 
 **Find a spec.** Do not read this index through: find the board with `--boards | grep -i <word>`
 and print only its sections.
