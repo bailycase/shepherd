@@ -30,7 +30,7 @@ on:
         options: [auto, fast, full, flake-hunt]
         default: auto
       base:
-        description: With lane fast, the branch to diff against to choose the suites (for example nightly)
+        description: With lane fast, the branch or commit to diff against to choose the suites (for example nightly)
         type: string
         default: ""
       clean:
@@ -103,7 +103,10 @@ jobs:
             git diff --name-only --no-renames HEAD^1 HEAD > changed.txt
             args+=(--files-from changed.txt)
           elif [ "$EVENT" = workflow_dispatch ] && [ -n "$DISPATCH_BASE" ]; then
-            git diff --name-only --no-renames "origin/$DISPATCH_BASE...HEAD" > changed.txt
+            # A branch name or any commit.
+            base="origin/$DISPATCH_BASE"
+            git rev-parse --verify -q "$base^{commit}" > /dev/null || base="$DISPATCH_BASE"
+            git diff --name-only --no-renames "$base...HEAD" > changed.txt
             args+=(--files-from changed.txt)
           fi
           [ "$CLEAN" = true ] && args+=(--clean)
