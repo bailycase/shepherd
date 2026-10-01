@@ -157,20 +157,16 @@ struct QueueStackTests {
 
     // MARK: Sending
 
-    /// ↩ goes the way Settings says while pi works; ⌘↩ always steers now (stops pi and sends).
+    /// ↩ queues while pi works, and ⌘↩ steers now (stops pi and sends). Nothing steers at the
+    /// next step.
     @Test(arguments: [
-        (ComposerSendKey.primary, ReturnWhileWorking.queue, NativeThreadDelivery.followUp),
-        (.alternate, .queue, .interrupt),
-        (.primary, .steer, .steer),
-        (.alternate, .steer, .interrupt),
+        (ComposerSendKey.primary, NativeThreadDelivery.followUp),
+        (.alternate, .interrupt),
     ])
-    func returnFollowsTheSettingAndTheAlternateSendDoesTheOther(key: ComposerSendKey, setting: ReturnWhileWorking,
-                                                                 delivery: NativeThreadDelivery) {
-        #expect(key.delivery(setting) == delivery)
+    func returnQueuesAndTheAlternateSendSteersNow(key: ComposerSendKey, delivery: NativeThreadDelivery) {
+        #expect(key.delivery == delivery)
     }
 
-    /// The Send menu lists the three ways from the gentlest: wait for the turn to end, steer at
-    /// the next step, steer now, with ↩ on the Return setting's row and ⌘↩ on Steer now.
     /// The Send menu stands beside the card only where the thread has room for it and its
     /// margin; else it opens above the card.
     @Test(arguments: [(0, false), (283, false), (284, true), (400, true)] as [(CGFloat, Bool)])
@@ -178,27 +174,30 @@ struct QueueStackTests {
         #expect(Composer.sendMenuBeside(room: room) == beside)
     }
 
-    @Test(arguments: [
-        (ReturnWhileWorking.queue, ["↩", nil, "⌘↩"] as [String?]),
-        (.steer, [nil, "↩", "⌘↩"]),
-    ])
-    func theSendMenusKeysFollowTheReturnSetting(setting: ReturnWhileWorking, shortcuts: [String?]) {
-        let options = Composer.sendOptions(setting, send: "↩", alternate: "⌘↩")
-        #expect(options.map(\.id) == ["wait", "nextStep", "now"])
-        #expect(options.map(\.title) == ["Wait for the turn to end", "Steer at the next step", "Steer now"])
-        #expect(options.map(\.shortcut) == shortcuts)
-        #expect(Composer.sendTitles(setting).primary == (setting == .queue ? "Wait for the turn to end" : "Steer at the next step"))
-        #expect(Composer.sendTitles(setting).alternate == "Steer now")
+    /// The Send menu lists two ways, the gentlest first: wait for the turn to end on ↩, steer now
+    /// on ⌘↩ (or the rebound chord). There is no row for steering at the next step.
+    @Test func theSendMenuOffersWaitingOnReturnAndSteerNowOnTheAlternate() {
+        let options = Composer.sendOptions(send: "↩", alternate: "⌘↩")
+        #expect(options.map(\.id) == ["wait", "now"])
+        #expect(options.map(\.title) == ["Wait for the turn to end", "Steer now"])
+        #expect(options.map(\.shortcut) == ["↩", "⌘↩"])
+        #expect(options.allSatisfy { !$0.detail.isEmpty })
+
+        let rebound = Composer.sendOptions(send: "↩", alternate: "⌥⌘S")
+        #expect(rebound.map(\.shortcut) == ["↩", "⌥⌘S"])
     }
 
-    /// Choosing a row sends the way the row says, and the row the Return setting names is the one
-    /// the menu opens on.
-    @Test(arguments: [(ReturnWhileWorking.queue, 0), (.steer, 1)])
-    func everyMenuRowSendsItsOwnDeliveryAndTheSettingsRowLeadsTheHighlight(setting: ReturnWhileWorking, highlighted: Int) {
-        let options = Composer.sendOptions(setting, send: "↩", alternate: "⌘↩")
-        #expect(options.compactMap { NativeSendChoice(rawValue: $0.id)?.delivery } == [.followUp, .steer, .interrupt])
-        #expect(options.firstIndex { $0.id == setting.choice.id } == highlighted)
-        #expect(options.allSatisfy { !$0.detail.isEmpty })
+    /// Choosing a row sends the way the row says: waiting is a follow-up, Steer now an interrupt,
+    /// and neither is the next-step steer.
+    @Test func everyMenuRowSendsItsOwnDelivery() {
+        let options = Composer.sendOptions(send: "↩", alternate: "⌘↩")
+        #expect(options.compactMap { NativeSendChoice(rawValue: $0.id)?.delivery } == [.followUp, .interrupt])
+    }
+
+    /// The Send button's tooltip names both ways: "Send (↩)" at rest, "Queue (↩) · Steer now (⌘↩)" while pi works.
+    @Test(arguments: [(false, "Send (↩)"), (true, "Queue (↩) · Steer now (⌘↩)")])
+    func theSendTooltipNamesTheWaysToSend(working: Bool, help: String) {
+        #expect(Composer.sendHelp(working: working, send: "↩", alternate: "⌘↩") == help)
     }
 
     /// Esc closes a menu, then the command list, and only then stops pi.

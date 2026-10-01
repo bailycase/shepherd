@@ -62,21 +62,20 @@ struct KeyboardSettings: View {
     }
 
     /// The keys for sending while pi works and for the queue, as the Queue & steer boards'
-    /// Keyboard card lists them: ↩ says what it does under the Return setting, the alternate
-    /// send always steers now, and only the alternate send can be rebound.
+    /// Keyboard card lists them: ↩ queues, the alternate send steers now, and only the alternate
+    /// send can be rebound.
     private var whileWorking: some View {
-        let setting = AppSettings.shared.returnWhileWorking
-        return SettingsGroup(title: "While the agent is working") {
+        SettingsGroup(title: "While the agent is working") {
             ForEach(WhileWorkingKey.all) { key in
                 switch key {
                 case .send:
-                    SettingsRow(title: key.title(setting)) { NWKeycap(keys.sendDisplay) }
+                    SettingsRow(title: key.title) { NWKeycap(keys.sendDisplay) }
                 case .alternateSend:
-                    shortcutRow(.alternateSend, title: key.title(setting))
+                    shortcutRow(.alternateSend, title: key.title)
                 case .fixed(let chord):
-                    SettingsRow(title: key.title(setting)) { NWKeycap(keys: chord.keys) }
+                    SettingsRow(title: key.title) { NWKeycap(keys: chord.keys) }
                 case .steerFocused:
-                    SettingsRow(title: key.title(setting)) { NWKeycap(keys.display(.alternateSend)) }
+                    SettingsRow(title: key.title) { NWKeycap(keys.display(.alternateSend)) }
                 }
             }
         }

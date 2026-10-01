@@ -6,8 +6,9 @@ import ShepherdRemote
 @testable import ShepherdSessions
 import ShepherdTestSupport
 
-/// Sending while pi works: steering at pi's next step (the default), and Steer now, which stops
-/// pi as Stop does and sends the message at once as the next turn (`RPCThreadState+Interrupt`).
+/// Sending while pi works: steering at pi's next step (what an older client sends, and what Steer
+/// now falls back to), and Steer now, which stops pi as Stop does and sends the message at once as
+/// the next turn (`RPCThreadState+Interrupt`).
 /// Against the stub's model of pi 0.87.1 (see `stub-pi.py`, and `Tests/Extensions/
 /// steer-interrupt.test.mjs` for the real thing): a "tools:N" run makes N tool calls, each waiting
 /// for `finishTool(k)`; an abort fails the running call and ends the run, its answer coming after

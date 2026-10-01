@@ -14,7 +14,10 @@ struct QueueRowModel: Equatable, Identifiable {
     enum Kind: Equatable {
         /// Waiting; `number` is its place in the order it goes (1 is next).
         case queued(number: Int)
-        /// Handed to pi, to read once its current tool calls finish.
+        /// Handed to pi, to read once its current tool calls finish. Return queues, so this is
+        /// only where Steer now falls back to a steer (a host that can't stop pi, or one that
+        /// can't just now: a compaction, a prompt still on its way, pi refusing the abort) or
+        /// an older client sent one.
         case steering
         /// Open in the editor, in its place.
         case editing(number: Int)
@@ -131,7 +134,7 @@ enum QueueRowKey: Equatable {
     case delete
     /// ↩: edit it.
     case edit
-    /// ⌘↩ (`alternateSend`): steer it in (send it now while pi is idle).
+    /// ⌘↩ (`alternateSend`): Steer now (send it now while pi is idle).
     case steer
     /// Esc or ⇥: back to the composer's field.
     case leave

@@ -192,9 +192,10 @@ keep the version for real breaks.
 - **Composer (`ThreadComposer`, `Composer/`):** on iPhone a paperclip beside a capsule field,
   with the commands, model and thinking chips above it while it is in use; on iPad the Mac's
   card with that row under the field. The thinking chip, like the Mac's, hides for a model the
-  host's `listModels` says takes no thinking level. Send steers at the next step while pi works (a message that begins with "/" waits; hold Send for the
-  three ways, `NativeSendChoice`, Steer now among them: it stops pi where the host can). Up
-  next draws the host's queue: steering messages first with Back to the queue, queued ones
+  host's `listModels` says takes no thinking level. Send queues the message while pi works (it goes when the turn ends; hold Send for the
+  two ways, `NativeSendChoice`: Wait for the turn to end, and Steer now, which stops pi where the host
+  can and steers where it can't). ⌘↩ on a hardware keyboard presses Send, so it queues. Up
+  next draws the host's queue: the rare steering message first (Steer now's fallback) with Back to the queue, queued ones
   with swipe (Edit, Delete) and long-press (Steer now, Edit, Move to top, Delete) actions, an
   Undo row for a delete, and a ••• menu (Steer or Send all now, the delivery mode, Clear). A
   paused queue (after Stop, or a failed turn) shows Send now in its header, with its reason as
