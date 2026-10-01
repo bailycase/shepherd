@@ -89,7 +89,7 @@ swift test --filter UnitTests                # fast tier: seconds
 swift test --filter IntegrationTests         # real server, stub pi, git, off-screen windows
 SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter PreviewTests
 swift test                                   # everything (previews skip without SHEPHERD_PREVIEW_DIR)
-CI=true swift test --no-parallel             # what CI runs (in four shards): serially, timing-sensitive tests skipped
+CI=true swift test --no-parallel             # what CI's full lane runs (in four shards): serially, timing-sensitive tests skipped
 PI_PACKAGE_DIR="$(npm root -g)/@earendil-works/pi-coding-agent" node --test Tests/Extensions/*.test.mjs
 python3 -m unittest discover -s Tests/Release   # the release workflow's rules (scripts/release.py), CI's stale-link check
 ```
@@ -462,23 +462,63 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
   the nightly notice armed once), the support directory and listener port per edition, and the
   release rules (every trigger, feed routing, the legacy aliases, every feed item arm64 only).
 
-CI (`.github/workflows/ci.yml`) runs on pull requests and pushes to `master`, skipping the
-timing-sensitive tests. Docs-only changes (`docs/**`, `*.md`) don't trigger it.
+CI (`.github/workflows/ci.yml`) has two lanes, and its `plan` job (`scripts/ci_impact.py`) picks
+one and writes into the run's summary which suites run and why. `CI` is the one check to require:
+it passes when every job the plan asked for did (a job the plan skipped counts as passing). There
+are no workflow path filters, because a filtered-out workflow never reports `CI`. Tests that
+depend on the machine's speed skip on CI (`CI=true`).
 
-- **Shards:** four `macos-26` jobs each build (`.github/actions/swift-build`) and run
-  `swift test --skip-build --no-parallel` over their share of the suites. W, R and A take the
-  App integration suites their regexes name (`W_RE`, `R_RE`, `A_RE` in the workflow); C `--skip`s
-  all three and runs everything else, so a new or renamed suite always lands in C. Each shard
-  lists its suites' times in the run's summary: when the slowest shard beats the fastest by more
-  than 20 s over two runs, move a suite. A shard that runs no tests fails, and so does a C whose
-  count differs from what `swift test list` leaves after the three regexes (a dead `--skip`).
+- **Fast lane**, every pull request into `nightly`: the unit tier (seconds), a smoke set (`SMOKE`),
+  and the integration suites the changed paths can affect, in one to four `macos-26` shards
+  (about 200 s of tests each). The impact map (`RULES` and `AREAS` in `scripts/ci_impact.py`) is
+  explicit and conservative; the first rule a path matches decides it:
+  - Docs, `*.md`, `Extensions/` (node tests, and `Tests/Release`'s check that each embedded copy
+    equals its canonical file), `Tests/Extensions/`, `Tests/Release/`, `scripts/`, `App/iOS/` and
+    the release workflow run no Swift at all; the extension tests and release rules always run.
+  - A path with an owner (the thread and composer, Browser, Design tool, review and worktrees,
+    terminals, sidebar and workspace, Settings and pi, automations and hosts) runs that area's
+    suites. A changed test file runs the suites it declares, a test helper or fixture its whole
+    target. A ShepherdApp file no area owns runs the app's whole integration tier: the server's and
+    the design renderer's integration tests cannot depend on it.
+  - Anything shared, or any path the map doesn't know, runs everything: ShepherdCore,
+    ShepherdProtocol, ShepherdRemote, ShepherdSessions' core files (SessionServer, RPC, PTY, pi
+    launch), `Package.swift` and `Package.resolved`, the Xcode project, test support, CI itself.
+  - Add the `full-ci` label to a pull request, or run the workflow by hand (`gh workflow run ci.yml
+    --ref <branch> -f lane=full`), to run everything. `-f lane=fast -f base=nightly` runs the fast
+    lane's choice for a branch. `Tests/Release/test_ci_impact.py` fails when a pattern matches no
+    suite or no file, so a rename cannot silently narrow a rule.
+- **Full lane**, pushes to `nightly` and `master`, pull requests into `master` or labelled
+  `full-ci`, the daily run and manual runs: every suite, in four shards. `Tests/ci-suite-times.json`
+  holds each suite's seconds; `scripts/ci_shards.py` assigns suites longest first, each to the
+  lightest shard, and a suite the file doesn't know goes to the lightest shard (the summary says
+  so). Every shard computes the same cut from `swift test list` and checks it is a partition, and
+  fails if it ran another number of tests than it was given, or none. After a change that moves
+  the times, regenerate the file from a full run: `gh run download <run> -p 'ci-results-swift-*'
+  -D /tmp/t && python3 scripts/ci_shards.py record /tmp/t/*/suite-times.json`, and commit it.
+- **Flaky tests:** when a shard fails, `scripts/ci_run_tests.py` reruns only the failed tests once
+  (`--filter` of their ids, still serially). A test that passes the second time is flaky: a
+  `::warning::`, a row in the step summary and `flaky.json` in the shard's `ci-results-*`
+  artifact. One that fails again fails the shard. Nothing is retried after a build failure, a
+  crash, the watchdog, an issue the list cannot attribute to a test, or more than eight failing
+  tests. The extension tests are retried by name the same way. Every failure also gets an
+  `::error file=,line=` annotation and a row in the summary, and the shard's full log is the
+  `ci-logs-*` artifact. A flaky test is a bug to fix, not a pass to ignore.
+- **The daily run and the tracking issue:** the full lane runs daily on `nightly` with each shard's
+  tests three times (a test that fails some passes is flaky; `schedule` fires only from the
+  default branch's copy of the workflow, so it starts once `master` has this file, and until then
+  `gh workflow run ci.yml --ref nightly -f lane=flake-hunt` does the same). After a full lane on
+  `nightly` or `master`, `scripts/ci_report.py` keeps one issue labelled `ci-health`: a comment
+  per red run with its failing tests, a table of flaky tests in the body (counts kept across runs
+  in a hidden JSON block), a comment when green returns. It reopens a closed issue, never closes
+  one and never opens a second.
 - **Serial within a shard:** on the shared 3-core runner, a parallel run queued tests behind one
-  another's main-thread work until their waits ran out. A watchdog samples a test host still
-  running after 10 minutes, then ends the run.
-- **Release rules** run on `ubuntu-latest` (stdlib Python). **Extension tests** run there too,
-  with Node 24 and the modular pi package version from `scripts/pi-engine-pin.json`, installed
-  with lifecycle scripts disabled. The `CI` job passes only when every Swift shard, extension
-  tests and release rules did; it is the one check to require.
+  another's main-thread work until their waits ran out. A watchdog ends a test host that stops
+  making progress after 2.5 times its shard's recorded seconds (at least 8 minutes), after
+  sampling its stacks.
+- **Release rules** run on `ubuntu-latest` (stdlib Python): the release workflow's, the CI
+  helpers', the docs' and the embedded extensions'. **Extension tests** run there too, with Node
+  24 and the modular pi package version from `scripts/pi-engine-pin.json`, installed with
+  lifecycle scripts disabled.
 - **Caches:** dependency checkouts (keyed on `Package.resolved`) and build products (one entry per
   commit, restored from the nearest earlier one) are cached apart. `scripts/ci_mtimes.py` puts
   each unchanged source's saved mtime back after checkout, so a restored build compiles only
@@ -491,22 +531,23 @@ timing-sensitive tests. Docs-only changes (`docs/**`, `*.md`) don't trigger it.
   changed (a few seconds when nothing did). A link that still fails with undefined symbols and no
   other error (`scripts/ci_stale_link.py`, tested in `Tests/Release`) gets a `::warning::` and
   one rebuild from scratch that keeps the dependency checkouts; a compile error fails at once.
-  A push to `nightly` runs no tests: its `warm` job builds from scratch and saves
-  both caches where every PR based on `nightly` can read them. Pull requests save nothing, so
-  every push to one restores that entry and compiles the PR's changes on top; a PR into
-  `master` reads only `master`'s. Master pushes and manual runs save from shard C, before its
-  tests (never on `nightly`, where the warm job saves). Run the workflow by hand with `clean` to
-  ignore the build cache. A corrupt cache: bump `CACHE_EPOCH` in the action to orphan every
-  entry, build and dependencies, or clear one
-  ref's with `gh cache delete --all --ref refs/pull/N/merge` (or `refs/heads/<branch>`).
-- **Checking a CI change:** a pull request's run is cold ("Cache not found") until `nightly`
-  holds an entry for the same toolchain and epoch, and it saves nothing, so it cannot show an
-  incremental build. Before merging, run the workflow by hand on the branch, let it finish (a
-  second run on the same ref cancels the first), push a small source change, and run it again:
-  its shards restore the first run's entry by prefix, "Restore source mtimes" reports about as
-  many new or changed files as the push touched, and the build compiles only their modules. A
-  rerun of an unchanged commit is an exact hit and tests nothing. After the merge, the `warm`
-  job's entry should be what the next push to any PR into `nightly` restores.
+  A push to `nightly` or `master` (and the daily and manual runs) builds once, in the `build` job,
+  incrementally on the last build except the first of each UTC day, which is clean, and saves both
+  caches under that commit; the shards restore it exactly. Pull requests have no build job and
+  save nothing: each shard restores the base branch's newest entry and compiles the pull
+  request's changes on top, so a pull request into `master` reads only `master`'s. Run the
+  workflow by hand with `clean` to ignore the build cache, or `shared_build: false` to have every
+  shard build. A corrupt cache: bump `CACHE_EPOCH` in the action to orphan every entry, build and
+  dependencies, or clear one ref's with `gh cache delete --all --ref refs/pull/N/merge` (or
+  `refs/heads/<branch>`).
+- **Checking a CI change:** a pull request's run exercises the pull request's copy of the workflow
+  and is cold ("Cache not found") until `nightly` holds an entry for the same toolchain and
+  epoch, and it saves nothing, so it cannot show an incremental build. Before merging, run the
+  workflow by hand on the branch, let it finish (a second run on the same ref cancels the first),
+  push a small source change, and run it again: the `build` job restores the first run's entry by
+  prefix, "Restore source mtimes" reports about as many new or changed files as the push touched,
+  and the build compiles only their modules. A rerun of an unchanged commit is an exact hit.
+  `-f lane=fast -f base=<the branch before the change>` shows the impact map's choice for it.
 
 ## Source map
 
@@ -823,10 +864,15 @@ Tests/
   Designs/                design fixtures: real and synthetic boards, the Shepherd canvas.json,
                           and element-ids.json (WebKit's numbering of each board's elements)
   DesignSurfaceKitIntegrationTests/Fixtures/  a small design (loops, conditionals, an import)
-  Release/                Python tests for scripts/release.py
+  Release/                Python tests for scripts/release.py and the CI helpers
+  ci-suite-times.json     each suite's seconds on a CI runner, which the shards are cut from
   ShepherdIOSChecks/      the iOS client's scripts
 scripts/               release.py (the release workflow's rules), sign-app.sh (release
                        signing), sync-embedded-extension.py, ci_mtimes.py (CI's incremental builds),
+                       ci_impact.py (the lane and the fast lane's suites), ci_shards.py (equal
+                       shards from Tests/ci-suite-times.json), ci_run_tests.py (a shard under a
+                       watchdog, failed tests retried once), ci_testlog.py (test output reader),
+                       ci_report.py (the one tracking issue),
                        pi_engine.py + pi-engine-pin.json (stage and verify the pi engine),
                        sign-engine.sh (node, with the engine's entitlements)
 Vendor/libghostty-spm/ GhosttyTerminal (prebuilt libghostty)
@@ -1454,8 +1500,8 @@ breaking changes), one logical change per commit, with no AI or attribution line
 
 `nightly` is the integration branch. Feature branches (`feat/…`, `fix/…`) come off it and merge
 back through a PR with a merge commit (`--no-ff`). Every push to `nightly` ships a Shepherd
-Nightly build. CI runs the tests on pull requests and on `master`; a push to `nightly` only
-rebuilds CI's caches.
+Nightly build. CI runs the fast lane on pull requests into `nightly`, and the full lane after a
+push to `nightly` or `master` (Testing).
 
 ## Releases
 
