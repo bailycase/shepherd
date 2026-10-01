@@ -2,7 +2,7 @@
 
 Every Shepherd agent is `pi --mode rpc` running on plain pipes, and Shepherd is the only UI pi
 has. This document follows one agent from process launch to what appears on screen.
-[DESIGN.md](../DESIGN.md) specifies how the thread looks; [native-subagents.md](native-subagents.md)
+[docs/design/thread.md](design/thread.md) specifies how the thread looks; [native-subagents.md](native-subagents.md)
 covers how subagents run.
 
 ```text
@@ -626,7 +626,7 @@ transport differs.
     pushed revision (`revisionAvailable()`, below), so a thread on screen pulls at once instead
     of at its next poll. The launch queue ends on the same signal.
     Remote clients keep polling; the remote protocol has no push for this.
-  - **Can't start** (DESIGN.md › Thread › Can't start): a pi that exits before its thread
+  - **Can't start** (docs/design/thread.md › Thread › Can't start): a pi that exits before its thread
     serves, or one Shepherd stops (`stopKeepingAgent`, and a pi launched to resume a session
     that warns it will create a new one under that id), keeps its agent. The server keeps a
     start record per RPC session (`PiStartRecord`: stderr without colour codes, the exit code,
@@ -792,19 +792,19 @@ The pure derivations live in ShepherdRemote:
   `NativeToolRow`).
 
 `Sources/ShepherdApp/Thread/` renders them with ShepherdUI's Thread, Composer, and Agents
-components ([DESIGN.md](../DESIGN.md) specifies their look):
+components ([docs/design/thread.md](design/thread.md) specifies their look):
 
 - **`ThreadView`:** the scroll view, tail following, turn jumps (⌥⌘↑/↓), notices, and the empty
   thread.
 - **`ThreadTurns`:** the user bubble, the agent turn (its parts, then the changes card and the
-  footer with copy and retry, the latest turn only; see Retry), and, between tools, the live "Thinking…" (DESIGN.md › Thread ›
+  footer with copy and retry, the latest turn only; see Retry), and, between tools, the live "Thinking…" (docs/design/thread.md › Thread ›
   Live text). A turn tracks the pointer over it
   (`MessageHover`): its time and footer show only while it is hovered.
 - **`ThreadTools`:** activity lines, their calls, and the sheet for a call's full output or raw
   arguments.
 - **`ThreadMarkdown`:** prose and code blocks. The reply's blocks come parsed from the store
   (`nativeMarkdownParse`, ShepherdRemote: tables, task and nested lists, images, `<details>`,
-  footnotes; see DESIGN.md › Rich content in prose); inline Markdown is styled once per text
+  footnotes; see docs/design/thread.md › Rich content in prose); inline Markdown is styled once per text
   (`NWProseInline`), and code blocks are colored by tree-sitter off the main actor and cached.
 - **`Composer`:**
   - the field, attachments (resized to a 2000 px longest edge; at most 4 images of 2 MiB each)

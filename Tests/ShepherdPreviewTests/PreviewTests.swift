@@ -110,8 +110,8 @@ struct PreviewTests {
         }
     }
 
-    /// The thread on a model that offers a service tier: the Speed chip beside Thinking, and with
-    /// `open` the speed menu above the card (ComposerSpeed board).
+    /// The thread on a model that offers a service tier: the model-settings button (a bolt while
+    /// Fast), and with `open` the popover above the card with its Speed control.
     private func speedThread(tier: ServiceTier, open: Bool = false) async throws {
         var snapshot = Threads.idle
         snapshot.model = "openai/gpt-6-luna"

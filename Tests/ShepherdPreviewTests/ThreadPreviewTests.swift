@@ -18,7 +18,7 @@ import Testing
 @MainActor
 struct ThreadPreviewTests {
     /// Long enough for a one-shot motion a test starts to come fully to rest: a spring reads as
-    /// done at its anchor (240ms at most) and settles by about 1.7× it (DESIGN.md › Motion).
+    /// done at its anchor (240ms at most) and settles by about 1.7× it (docs/design/motion.md › Motion).
     static let motionAtRest: TimeInterval = 0.45
 
     private func render(_ surface: String, _ snapshot: NativeThreadSnapshot, size: CGSize = CGSize(width: 1180, height: 900),
@@ -676,7 +676,7 @@ struct ThreadPreviewTests {
             Text(text).font(.nw(.body)).foregroundStyle(placeholder ? Color.nw.textTertiary : Color.nw.textPrimary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        let size = CGSize(width: 1450, height: 760)
+        let size = CGSize(width: 1450, height: 880)
         try await Preview.render("composer-states", size: size) {
             HStack(alignment: .top, spacing: 32) {
                 VStack(alignment: .leading, spacing: 24) {
@@ -693,12 +693,10 @@ struct ThreadPreviewTests {
                     HStack(alignment: .top, spacing: 24) {
                         NWModelPicker(query: .constant(""), sections: Self.boardModels, selection: .constant(0), shortcut: "⇧⌘M",
                                       onChoose: { _ in }, onClose: {})
-                        NWModelSettings(models: [NWModelOption(id: "openai/gpt-6.1-sol", title: "gpt-6.1-sol", isCurrent: true),
-                                            NWModelOption(id: "anthropic/claude-opus", title: "claude-opus")],
-                                        thinking: Self.thinkingOptions(["low", "medium", "high", "xhigh"]), currentThinking: "xhigh",
-                                        speeds: [NWSpeedOption(id: "standard", title: "Standard", detail: "", boosted: false),
-                                                 NWSpeedOption(id: "fast", title: "Fast", detail: "", boosted: true)], currentSpeed: "fast",
-                                        chooseModel: { _ in }, chooseThinking: { _ in }, chooseSpeed: { _ in }, allModels: {}, close: {})
+                        VStack(alignment: .leading, spacing: 24) {
+                            Self.modelSettings(speed: "fast")
+                            Self.modelSettings(speed: "standard")
+                        }
                     }
                 }
                 .frame(width: NWComposerMetrics.modelPickerWidth + 24 + NWComposerMetrics.modelSettingsWidth)

@@ -3,9 +3,10 @@
 A thread can ask its provider to answer faster at a higher price. The composer's **Speed**
 control (Standard or Fast) sets it per thread, ⌘K's **Toggle fast mode** flips it, and Settings ▸
 Agents ▸ **Speed for new threads** is what a new thread starts on. New thread shares the composer's
-Speed chip and menu and can override that default before its first prompt, locally and on a host
-with `agent.create.serviceTier.v1`. Older hosts keep their default and show no creation-speed chip.
-The UI is in DESIGN.md ›
+model-settings popover (its Speed control, with a bolt on the button while Fast) and can override
+that default before its first prompt, locally and on a host with `agent.create.serviceTier.v1`.
+Older hosts keep their default and show no creation-speed control.
+The UI is in docs/design/composer.md ›
 Composer (ComposerSpeed); this page is how it works and what was verified.
 
 - **Standard** sends nothing: the provider's default tier.
@@ -46,9 +47,9 @@ a disabled one.
   honors.
 - **Adding Flex** (or any tier) is a data change: a `ServiceTier` case (`flex`, title, summary),
   a `wire` entry per rule that takes it (`[.flex: "flex"]`), the same in the extension's `RULES`,
-  and rows in the JSON table. The snapshot, the menu (one row per offered tier), the palette
-  toggle (Standard and the first raised tier) and the file format already carry any tier. What it
-  still needs is a decision about the chip (a third state's glyph and words) and the
+  and rows in the JSON table. The snapshot, the Speed control (one segment per offered tier), the
+  palette toggle (Standard and the first raised tier) and the file format already carry any tier.
+  What it still needs is a decision about the button (a third state's glyph and words) and the
   toggle's meaning.
 
 ## How a change reaches pi

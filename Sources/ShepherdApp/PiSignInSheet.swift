@@ -2,7 +2,7 @@ import SwiftUI
 import ShepherdUI
 import ShepherdSessions
 
-/// Sign in to <provider> (DESIGN.md › Dialogs and sheets › Sign in to <provider>; SignInBrowser,
+/// Sign in to <provider> (docs/design/dialogs-and-palette.md › Dialogs and sheets › Sign in to <provider>; SignInBrowser,
 /// SignInDevice, SignInPaste, SignInKey, SignInPortBusy): one sheet, four flows, over Settings or
 /// the first launch's sheet. pi's own login runs behind it; this only draws where it stands.
 struct PiSignInSheet: View {

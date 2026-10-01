@@ -1,9 +1,40 @@
+import AppKit
 import Foundation
+import SwiftUI
 import Testing
 @testable import ShepherdUI
 
 @Suite("Thread components")
 struct ThreadComponentTests {
+    @Test(arguments: [false, true])
+    @MainActor func nativeCodeKeepsUnicodeAndSyntaxColorsWhenTheAppearanceChanges(dark: Bool) throws {
+        var keyword = AttributedString("let")
+        keyword.foregroundColor = Color.nw.synKeyword
+        let source = keyword + AttributedString(" sheep = \"🐑\"\nlet tail")
+        let font = NSFont.monospacedSystemFont(ofSize: NWTextStyle.code.size, weight: .regular)
+        let native = NWNativeCodeText.attributedCode(String(source.characters), highlighted: source,
+                                                    font: font, lineSpacing: 4)
+        #expect(native.string == "let sheep = \"🐑\"\nlet tail")
+        #expect(source.runs.first?.foregroundColor == Color.nw.synKeyword, "cached highlights stay untouched")
+        #expect(native.attribute(.font, at: 0, effectiveRange: nil) as? NSFont == font)
+        let color = try #require(native.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor)
+        let plain = try #require(native.attribute(.foregroundColor, at: 4, effectiveRange: nil) as? NSColor)
+        // Resolve the same native attributes in both appearances, as a retained block does.
+        for appearance in [dark, !dark] {
+            let theme = appearance ? ThemeDefinition.nightWatch.dark : ThemeDefinition.nightWatch.light
+            let expected = try #require(HexColor(theme.syntax.keyword))
+            let expectedPlain = try #require(HexColor(theme.colors.textPrimary))
+            NSAppearance(named: appearance ? .darkAqua : .aqua)!.performAsCurrentDrawingAppearance {
+                for (actual, role) in [(color, expected), (plain, expectedPlain)] {
+                    let rgb = actual.usingColorSpace(.sRGB)!
+                    #expect(abs(rgb.redComponent - role.red) < 0.002)
+                    #expect(abs(rgb.greenComponent - role.green) < 0.002)
+                    #expect(abs(rgb.blueComponent - role.blue) < 0.002)
+                }
+            }
+        }
+    }
+
     /// Only thinking with something to open is a disclosure with a chevron: live "Thinking…"
     /// and a thought the model kept back are plain lines, whatever they carry.
     @Test(arguments: [

@@ -3,7 +3,7 @@ import ShepherdProtocol
 import Testing
 @testable import ShepherdSessions
 
-/// How a pi that stopped before it served is read (DESIGN.md › Thread › Can't start): pi's own
+/// How a pi that stopped before it served is read (docs/design/thread.md › Thread › Can't start): pi's own
 /// stderr lines, as chalk colours them, and its exit code, to a cause.
 @Suite("pi start records")
 struct PiStartRecordTests {

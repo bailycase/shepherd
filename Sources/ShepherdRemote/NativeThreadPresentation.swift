@@ -214,7 +214,7 @@ public func nativeDurationText(_ seconds: Double, live: Bool = false) -> String 
     return String(format: "%ldh %02ldm", whole / 3600, (whole % 3600) / 60)
 }
 
-/// The iOS client's header pill; the Mac toolbar shows no pill (DESIGN.md › Status language).
+/// The iOS client's header pill; the Mac toolbar shows no pill (docs/design/components.md › Status language).
 public enum NativeAgentPill: Equatable, Sendable {
     case idle, running, needsApproval, error, stopped
 
@@ -402,7 +402,7 @@ public func nativeHeadTruncated(_ path: String, max: Int) -> String {
     return "…" + path.suffix(max - 1)
 }
 
-// MARK: Subagent cards (DESIGN.md › Subagents)
+// MARK: Subagent cards (docs/design/subagents.md › Subagents)
 
 /// The four card states. `running` covers queued; every non-complete terminal state
 /// (failed/stopped/rejected) renders as failed, since all of them end without a result.
@@ -571,7 +571,7 @@ public final class NativeHistoryPaging {
 /// bb's sticky-bottom rule as a value: follow the tail until the user scrolls away, re-stick
 /// once they return to within `threshold` of the bottom. Programmatic growth never detaches.
 public struct NativeScrollFollower: Equatable, Sendable {
-    /// DESIGN.md › Thread: the tail follows while the reader is within 80pt of the bottom.
+    /// docs/design/thread.md › Thread: the tail follows while the reader is within 80pt of the bottom.
     public static let threshold: Double = 80
     public var sticky = true
     /// Set for the duration of a wheel/drag gesture (or shortly after a wheel tick).
