@@ -21,7 +21,7 @@ extension ThreadPreviewTests {
             NWModelOption(id: "anthropic/claude-fable-5-1", title: "claude-fable-5-1", subtitle: "Off · Minimal · Low · Medium · High · Extra high · Max", note: "200K"),
         ]),
         NWModelSection(title: "anthropic", options: [
-            NWModelOption(id: "anthropic/claude-sonnet", title: "claude-sonnet", subtitle: "Off · Minimal · Low · Medium · High", note: "200K"),
+            NWModelOption(id: "anthropic/claude-sonnet", title: "claude-sonnet", subtitle: "Off · Minimal · Low · Medium · High", note: "200K", fast: true),
             NWModelOption(id: "anthropic/claude-haiku", title: "claude-haiku", subtitle: "No thinking", note: "200K"),
         ]),
     ]

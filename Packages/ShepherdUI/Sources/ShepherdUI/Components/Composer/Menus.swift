@@ -345,13 +345,17 @@ public struct NWModelOption: Identifiable, Equatable, Sendable {
     /// A trailing note in mono 11 (the context size, "200K").
     public var note: String?
     public var isCurrent: Bool
+    /// The model offers a raised service tier (Fast): the picker tags its row "fast", and the
+    /// model-settings popover marks it with a bolt.
+    public var fast: Bool
 
-    public init(id: String, title: String, subtitle: String? = nil, note: String? = nil, isCurrent: Bool = false) {
+    public init(id: String, title: String, subtitle: String? = nil, note: String? = nil, isCurrent: Bool = false, fast: Bool = false) {
         self.id = id
         self.title = title
         self.subtitle = subtitle
         self.note = note
         self.isCurrent = isCurrent
+        self.fast = fast
     }
 }
 
@@ -595,12 +599,17 @@ struct NWModelListRow: View, Equatable {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    // The model has a Fast tier (NWComposer › Menus: "fast" beside claude-sonnet).
+                    if option.fast {
+                        Text("fast").font(.nwMono(11)).foregroundStyle(nw.textTertiary).fixedSize()
+                    }
                     if let note = option.note {
                         Text(note).font(.nwMono(11)).foregroundStyle(nw.textTertiary).fixedSize()
                     }
                 }
                 .help(option.id)
-                .accessibilityLabel(option.id + (option.isCurrent ? ", current" : "") + (option.subtitle.map { ", \($0)" } ?? ""))
+                .accessibilityLabel(option.id + (option.isCurrent ? ", current" : "") + (option.fast ? ", offers Fast" : "")
+                    + (option.subtitle.map { ", \($0)" } ?? ""))
             }
         }
     }
