@@ -10,8 +10,14 @@ import ShepherdUI
 enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
     case newAgent, newAgentOptions, newSpace, renameAgent
     case commandPalette, nextAgent, previousAgent
-    case splitVertical, splitHorizontal, closePane, deleteAgent
-    case focusNextPane, focusPreviousPane
+    case deleteAgent
+    /// The terminal's chords keep the names they were stored under (a saved chord survives):
+    /// New Terminal was Split Vertically, Close Terminal was Close Pane, and Next and Previous
+    /// Terminal were Focus Next and Previous Pane. Split Horizontally is gone with the splits.
+    case newTerminal = "splitVertical"
+    case closeTerminal = "closePane"
+    case nextTerminal = "focusNextPane"
+    case previousTerminal = "focusPreviousPane"
     case toggleSidebar, toggleRightPane, modelPicker, stopAgent, previousTurn, nextTurn, inspectSubagent
     case toggleTerminal, maximizeTerminal
     /// File ▸ Import Claude Design Project… (ImportFileMenu), with the Design tool on.
@@ -39,12 +45,11 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .commandPalette: return "Command Palette"
         case .nextAgent: return "Next Agent"
         case .previousAgent: return "Previous Agent"
-        case .splitVertical: return "Split Vertically"
-        case .splitHorizontal: return "Split Horizontally"
-        case .closePane: return "Close Pane"
+        case .newTerminal: return "New Terminal"
+        case .closeTerminal: return "Close Terminal"
         case .deleteAgent: return "Delete Agent"
-        case .focusNextPane: return "Focus Next Pane"
-        case .focusPreviousPane: return "Focus Previous Pane"
+        case .nextTerminal: return "Next Terminal"
+        case .previousTerminal: return "Previous Terminal"
         case .toggleSidebar: return "Show or Hide Sidebar"
         case .toggleRightPane: return "Show or Hide Side Pane"
         case .modelPicker: return "Choose Model…"
@@ -106,12 +111,12 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .commandPalette: return KeyChord(key: "k", command: true)
         case .nextAgent: return KeyChord(key: "down", command: true)
         case .previousAgent: return KeyChord(key: "up", command: true)
-        case .splitVertical: return KeyChord(key: "d", command: true)
-        case .splitHorizontal: return KeyChord(key: "d", command: true, shift: true)
-        case .closePane: return KeyChord(key: "w", command: true)
+        case .newTerminal: return KeyChord(key: "d", command: true)
+        case .closeTerminal: return KeyChord(key: "w", command: true)
         case .deleteAgent: return KeyChord(key: "w", command: true, shift: true)
-        case .focusNextPane: return KeyChord(key: "right", command: true, option: true)
-        case .focusPreviousPane: return KeyChord(key: "left", command: true, option: true)
+        // The macOS chords for the next and previous tab, which the Keyboard board draws too.
+        case .nextTerminal: return KeyChord(key: "]", command: true, shift: true)
+        case .previousTerminal: return KeyChord(key: "[", command: true, shift: true)
         case .toggleSidebar: return KeyChord(key: "s", command: true, shift: true)
         case .toggleRightPane: return KeyChord(key: "b", command: true, shift: true)
         // The spec's ⌘M is the system Minimize chord (reserved), so the picker takes ⇧⌘M.
@@ -136,8 +141,8 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
 }
 
 /// Settings ▸ Keyboard's "While the agent is working" rows, in the order of the Queue & steer boards'
-/// Keyboard card: the send keys, then the queue's own. ↩'s title follows the Return setting, so
-/// the row says what the key does now; the alternate send always steers now.
+/// Keyboard card: the send keys, then the queue's own. ↩ queues the message for the turn's end;
+/// the alternate send steers now.
 enum WhileWorkingKey: Hashable, Identifiable {
     /// ↩ (fixed).
     case send
@@ -152,9 +157,9 @@ enum WhileWorkingKey: Hashable, Identifiable {
 
     var id: Self { self }
 
-    func title(_ setting: ReturnWhileWorking) -> String {
+    var title: String {
         switch self {
-        case .send: setting == .steer ? "Send, steering at the next step" : "Send, waiting for the turn to end"
+        case .send: "Queue it, the agent takes it when the turn ends"
         case .alternateSend: "Send and steer now"
         case .fixed(let chord): chord.title
         case .steerFocused: "Steer the focused message now"

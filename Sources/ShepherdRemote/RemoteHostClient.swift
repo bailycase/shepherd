@@ -280,13 +280,14 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// The host's pi models, its configured default, and which take no thinking level.
     public func listModels() async throws -> ModelListing {
         let reply = try await request { id in .listModels(id: id) }
-        guard case .models(_, let models, let defaultModel, let withoutThinking, let thinkingLevels) = reply else {
+        guard case .models(_, let models, let defaultModel, let withoutThinking, let thinkingLevels, let serviceTiers, let contexts) = reply else {
             if case .error(_, let code, let message) = reply {
                 throw RemoteHostClientError.rejected(code: code, message: message)
             }
             throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected listModels reply")
         }
-        return ModelListing(models: models, defaultModel: defaultModel, withoutThinking: withoutThinking, thinkingLevels: thinkingLevels)
+        return ModelListing(models: models, defaultModel: defaultModel, withoutThinking: withoutThinking,
+                            thinkingLevels: thinkingLevels, serviceTiers: serviceTiers, contexts: contexts)
     }
 
     /// Create a space from a directory on the host.
@@ -314,8 +315,12 @@ public final class RemoteHostClient: @unchecked Sendable {
         worktreeBranch: String? = nil,
         worktreeBase: String? = nil,
         worktreeFetchFirst: Bool? = nil,
-        initialImages: [NativeImage] = []
+        initialImages: [NativeImage] = [],
+        serviceTier: ServiceTier? = nil
     ) async throws -> AgentID {
+        if serviceTier != nil, !capabilities.contains(RemoteProtocol.createAgentServiceTierCapability) {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to choose a new thread's speed.")
+        }
         // An older host would drop the images and start the thread without them.
         if !initialImages.isEmpty, !capabilities.contains(RemoteProtocol.createAgentImagesCapability) {
             throw RemoteHostClientError.rejected(code: "update_required", message: Self.createAgentImagesRefusal)
@@ -330,7 +335,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         if images != nil, Self.overFrame(.createAgent(id: 0, spaceID: spaceID, cwd: cwd, model: model, thinking: thinking,
                                                       initialPrompt: initialPrompt, worktreeBranch: worktreeBranch,
                                                       worktreeBase: worktreeBase, worktreeFetchFirst: worktreeFetchFirst,
-                                                      initialImages: images)) {
+                                                      initialImages: images, serviceTier: serviceTier)) {
             throw RemoteHostClientError.rejected(code: "too_large", message: Self.imagesTooLarge)
         }
         let reply = try await request(timeout: 120) { id in
@@ -344,7 +349,8 @@ public final class RemoteHostClient: @unchecked Sendable {
                 worktreeBranch: worktreeBranch,
                 worktreeBase: worktreeBase,
                 worktreeFetchFirst: worktreeFetchFirst,
-                initialImages: images
+                initialImages: images,
+                serviceTier: serviceTier
             )
         }
         guard case .agentCreated(_, let agentID) = reply else {
@@ -773,7 +779,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     @discardableResult
     public func openPane(agentID: AgentID, relativeTo paneID: PaneID, axis: SplitAxis) async throws -> PaneID {
         guard capabilities.contains(RemoteProtocol.paneControlCapability) else {
-            throw RemoteHostClientError.rejected(code: "unsupported", message: "host needs a newer Shepherd build for remote panes")
+            throw RemoteHostClientError.rejected(code: "unsupported", message: "host needs a newer Shepherd build for remote terminals")
         }
         let reply = try await request { id in
             .openPane(id: id, agentID: agentID, axis: axis, relativeTo: paneID)
@@ -789,7 +795,7 @@ public final class RemoteHostClient: @unchecked Sendable {
 
     public func closePane(agentID: AgentID, paneID: PaneID) async throws {
         guard capabilities.contains(RemoteProtocol.paneControlCapability) else {
-            throw RemoteHostClientError.rejected(code: "unsupported", message: "host needs a newer Shepherd build for remote panes")
+            throw RemoteHostClientError.rejected(code: "unsupported", message: "host needs a newer Shepherd build for remote terminals")
         }
         let reply = try await request { id in .closePane(id: id, agentID: agentID, paneID: paneID) }
         try expectOk(reply)
@@ -797,7 +803,7 @@ public final class RemoteHostClient: @unchecked Sendable {
 
     public func resizePaneSplit(agentID: AgentID, split: PaneNode, ratio: Double) async throws {
         guard capabilities.contains(RemoteProtocol.paneControlCapability) else {
-            throw RemoteHostClientError.rejected(code: "unsupported", message: "host needs a newer Shepherd build for remote panes")
+            throw RemoteHostClientError.rejected(code: "unsupported", message: "host needs a newer Shepherd build for remote terminals")
         }
         let reply = try await request { id in
             .resizePaneSplit(id: id, agentID: agentID, split: split, ratio: ratio)
@@ -980,7 +986,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         switch reply {
         case .nativeThread(let id, _), .uploadResult(let id, _), .creationOptions(let id, _), .agentResult(let id, _), .helloOk(let id, _, _), .ok(let id), .paneOpened(let id, _),
              .state(let id, _), .attached(let id, _),
-             .dirListing(let id, _, _, _), .models(let id, _, _, _, _),
+             .dirListing(let id, _, _, _), .models(let id, _, _, _, _, _, _),
              .spaceAdded(let id, _), .agentCreated(let id, _), .automationResult(let id, _), .instructions(let id, _),
              .suggestions(let id, _), .hostSettings(let id, _), .skills(let id, _), .design(let id, _),
              .browserClaimed(let id, _):

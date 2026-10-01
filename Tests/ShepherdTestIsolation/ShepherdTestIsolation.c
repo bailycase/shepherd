@@ -1,6 +1,6 @@
 // Process-wide test isolation, installed once when the test bundle loads: before any test runs
 // and before any thread could be reading the environment, which is the only safe moment to call
-// setenv. Tests never mutate the environment themselves (see AGENTS.md "Testing").
+// setenv. Tests never mutate the environment themselves (see docs/testing.md).
 //
 // Every test process (and every exit-test child) gets its own scratch root:
 //   support/  SHEPHERD_SUPPORT_DIR: extensions, themes, and shell integration install here,

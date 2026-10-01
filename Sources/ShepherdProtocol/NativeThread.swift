@@ -408,9 +408,11 @@ public struct NativeCommand: Codable, Hashable, Sendable {
 
 /// How a message sent while pi works reaches it. While pi is idle every one is a plain send.
 public enum NativeThreadDelivery: String, Codable, Hashable, Sendable, CaseIterable {
-    /// It waits in the queue and goes when the turn ends.
+    /// It waits in the queue and goes when the turn ends. What Return sends.
     case followUp
-    /// pi reads it once its current tool calls finish, before its next step.
+    /// pi reads it once its current tool calls finish, before its next step. No client offers it
+    /// as a choice any more: older clients still send it, and a client sends it for `interrupt`
+    /// to a host that can't stop pi. The host keeps handling it.
     case steer
     /// pi stops what it is doing, as Stop does, and the message goes at once as the next turn
     /// in the same session. Gated by `interrupt` in `supportedActions` and, remotely,
@@ -510,7 +512,7 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
     /// pi is retrying a failed request on its own (TurnErrors › While it retries). nil when it
     /// isn't, and from older hosts.
     public var retry: NativeThreadRetry?
-    /// The agent's pi stopped before it served this thread, and why (DESIGN.md › Thread › Can't
+    /// The agent's pi stopped before it served this thread, and why (docs/design/thread.md › Thread › Can't
     /// start). The host keeps the agent and answers with only this until pi starts again: no
     /// history, no actions. nil otherwise, and from older hosts.
     public var startProblem: NativeStartProblem?

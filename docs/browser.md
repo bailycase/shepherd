@@ -2,10 +2,10 @@
 
 A pi agent can use the Browser tab of its own thread: open a page, read it, click and type in it,
 take a screenshot, read its console and run a script in it. The page is the one the user sees in
-the side pane (DESIGN.md › Side pane: Browser); the agent and the user share it. On a thread hosted
+the side pane (docs/design/side-pane-browser.md › Side pane: Browser); the agent and the user share it. On a thread hosted
 on another Mac the page is the **viewer's** (Remote, below): the agent on the host drives the page
 the viewer sees. This file is how that works and where its limits are. The Mac tab itself (one page
-per thread, the toolbar, Select an element, the console drawer) is DESIGN.md's.
+per thread, the toolbar, Select an element, the console drawer) is [the design spec's](design/side-pane-browser.md).
 
 ## The tools
 
@@ -68,7 +68,7 @@ A tool acts on **its own thread's page and nothing else**, and its arguments can
   `--no-extensions` and none of Shepherd's variables, the extension is inert in a child
   (`SHEPHERD_CHILD`) and in a design's agent (`SHEPHERD_DESIGN_ID`), and a design's agent is not
   launched with it (`TerminalSessionStore.wantsBrowser`).
-- Each thread's page is its own `WKWebView` in a website data store of its own (DESIGN.md › Side
+- Each thread's page is its own `WKWebView` in a website data store of its own (docs/design/side-pane-browser.md › Side
   pane: Browser), so two threads can each have a page open at once and share no cookie, local or
   session storage, or cache. `BrowserAgentTests.twoThreadsPagesShareNoCookieOrStorage` and
   `BrowserAgentFlowTests` check it.
@@ -87,10 +87,10 @@ A tool acts on **its own thread's page and nothing else**, and its arguments can
 ## The switch
 
 Settings ▸ Pi ▸ Bundled extensions has a **Browser tools** row, on by default (a seventh row: the
-board draws six, DESIGN.md › Settings). A remote client changes it as any bundled extension
+board draws six, docs/design/settings.md › Settings). A remote client changes it as any bundled extension
 (`HostSettingsMapping.bundled`, id `browser`). Running agents keep their extensions until they
 restart. With it on, `StatusExtension.command` adds the extension with `-e` and sets
-`SHEPHERD_EXT_BROWSER` to its installed path; terminal panes blank the variable.
+`SHEPHERD_EXT_BROWSER` to its installed path; terminals blank the variable.
 
 ## What the agent reads
 
@@ -240,7 +240,7 @@ properties:
 While any browser tool is running, and for four seconds after the last (a sequence of tools keeps it
 up), the pane draws over the page (never in it): a 2pt `running` ring inset the page, an 18pt
 `running` pointer where the last click or type pointed, and a floating card under the toolbar,
-"Agent is clicking through checkout", with **Take over** (DESIGN.md › Side pane: Browser › The agent
+"Agent is clicking through checkout", with **Take over** (docs/design/side-pane-browser.md › Side pane: Browser › The agent
 is using it). The words are the tool's `note`, else a phrase from the action and its target
 (`BrowserNote`): `clicking “Pay $148.00”`, `typing in “Email”`, `opening localhost:5173`. Every tool
 shows it, the console and screenshots included.
@@ -534,8 +534,8 @@ is answered by id, so a slow connect never times out the connection.
   default; when it goes off the connected clients that read capability changes are told, and every open
   tunnel is closed). The same capability covers `RemoteAgentQuery.devServers` (the thread's folder on the
   host, read off the server's queue) and `RemoteAgentAction.openTerminal`, which Start uses to run the
-  script in a new terminal pane on the host; the host runs it only in the thread's folder or one inside
-  it (`startCommandForRemote`), by the rules of an agent's `pane_open`.
+  script in a new terminal on the host; the host runs it only in the thread's folder or one inside
+  it (`startCommandForRemote`), by the rules of an agent's `terminal_open`.
 
 ### What the iPad reuses
 

@@ -4,7 +4,7 @@ Settings ▸ Skills manages the agent skills pi reads: folders of instructions a
 agent picks up when a task calls for them. Skills are global. By default every change goes to
 every host, so every thread and automation on every host gets the same set. This page is the
 design: where a host keeps its skills, how Shepherd installs, updates and turns them off, how
-clients change them over the remote protocol, and how skills.sh fits in. DESIGN.md › Settings ›
+clients change them over the remote protocol, and how skills.sh fits in. docs/design/settings.md › Settings ›
 Skills and the iPhone and iPad sections describe what the pages look like.
 
 ## What pi reads

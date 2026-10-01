@@ -434,7 +434,7 @@ struct ListPerformanceReport {
 
         var body: some View {
             SubagentTrayView(tray: NativeSubagentTray(runs), state: state, runs: runs,
-                             actions: SubagentActions(inspect: { _ in }, command: { _, _, _, _ in }), answer: { _ in })
+                             actions: SubagentActions(inspect: { _ in }, command: { _, _, _, _ in }))
                 .padding(NW.Space.l)
                 .frame(width: 800, height: 800, alignment: .top)
                 .background(Color.nw.bgWindow)

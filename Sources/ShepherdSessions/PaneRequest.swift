@@ -8,6 +8,7 @@ public struct RemoteCreateAgentRequest: Sendable {
     public var cwd: String?
     public var model: String?
     public var thinking: ThinkingLevel?
+    public var serviceTier: ServiceTier?
     public var initialPrompt: String?
     /// Go to pi with the opening prompt (`RemoteProtocol.createAgentImagesCapability`).
     public var initialImages: [NativeImage]
@@ -24,13 +25,15 @@ public struct RemoteCreateAgentRequest: Sendable {
         worktreeBranch: String? = nil,
         worktreeBase: String? = nil,
         worktreeFetchFirst: Bool? = nil,
-        initialImages: [NativeImage] = []
+        initialImages: [NativeImage] = [],
+        serviceTier: ServiceTier? = nil
     ) {
         self.spaceID = spaceID
         self.initialImages = initialImages
         self.cwd = cwd
         self.model = model
         self.thinking = thinking
+        self.serviceTier = serviceTier
         self.initialPrompt = initialPrompt
         self.worktreeBranch = worktreeBranch
         self.worktreeBase = worktreeBase
@@ -47,18 +50,18 @@ public struct RemoteCreateAgentError: Error, Sendable {
 import ShepherdCore
 import ShepherdProtocol
 
-/// A pane-control request from an agent's panes extension, decoded from the
-/// wire and handed to the GUI.
+/// A terminal-control request from an agent's panes extension (its `terminal_*` tools) or a
+/// remote client, decoded from the wire and handed to the GUI.
 ///
-/// The server owns PTYs but not layouts: which panes exist, how they are split,
-/// and which is focused all live in the view model. So pane requests are
-/// forwarded rather than handled here, and the server only correlates the
-/// request id with the reply.
+/// The server owns PTYs but not layouts: which terminals exist and which has the keyboard live in
+/// the view model. So these requests are forwarded rather than handled here, and the server only
+/// correlates the request id with the reply. A terminal is always a tab of its own, so `open`
+/// carries the wire's `axis` and `relativeTo` (an older client names where to split) and the GUI
+/// ignores both.
 public enum PaneRequest: Hashable, Sendable {
     case list(agentID: AgentID)
     case open(agentID: AgentID, axis: SplitAxis, cwd: String?, relativeTo: PaneID?, command: String?)
     case close(agentID: AgentID, paneID: PaneID)
-    case resizeSplit(agentID: AgentID, split: PaneNode, ratio: Double)
     case focus(agentID: AgentID, paneID: PaneID)
     case sendInput(agentID: AgentID, paneID: PaneID, text: String, submit: Bool)
     case read(agentID: AgentID, paneID: PaneID)
@@ -68,7 +71,6 @@ public enum PaneRequest: Hashable, Sendable {
         case .list(let agentID),
              .open(let agentID, _, _, _, _),
              .close(let agentID, _),
-             .resizeSplit(let agentID, _, _),
              .focus(let agentID, _),
              .sendInput(let agentID, _, _, _),
              .read(let agentID, _):

@@ -2,7 +2,7 @@
 
 Every Shepherd agent is `pi --mode rpc` running on plain pipes, and Shepherd is the only UI pi
 has. This document follows one agent from process launch to what appears on screen.
-[DESIGN.md](../DESIGN.md) specifies how the thread looks; [native-subagents.md](native-subagents.md)
+[docs/design/thread.md](design/thread.md) specifies how the thread looks; [native-subagents.md](native-subagents.md)
 covers how subagents run.
 
 ```text
@@ -19,8 +19,8 @@ the server speaks pi's RPC protocol directly.
 
 ## Launch
 
-`TerminalSessionStore` (`TerminalSessions.swift`) spawns an agent's primary pane as an RPC
-session (`SessionRuntime.rpc`). Every other pane is a PTY running the shell configured in
+`TerminalSessionStore` (`TerminalSessions.swift`) spawns an agent's thread as an RPC
+session (`SessionRuntime.rpc`). Every terminal is a PTY running the shell configured in
 Settings ▸ Terminal. `StatusExtension.command` builds the agent command with `PiLaunch.agent`,
 which builds every pi launch line. It always goes through a zsh login shell, so the user's `PATH`
 reaches pi's tools, and it enters the agent's folder after the shell's startup files have run:
@@ -43,7 +43,7 @@ stand-in), never a `pi` looked up on PATH ([pi-home.md](pi-home.md)).
   `--model`/`--thinking` are passed only while that file has no conversation (a fresh session).
 - **Extensions** are installed into the support directory from embedded literals and loaded
   with `-e`. Nothing is installed into a pi home. The status extension is always loaded; the
-  rest follow Settings ▸ Pi ▸ Bundled extensions: "Panes and agent tools", "Diff review tool",
+  rest follow Settings ▸ Pi ▸ Bundled extensions: "Terminals and agent tools", "Diff review tool",
   "Subagent display", "Native subagents", "Name agents automatically" (the namer, and only
   for agents whose name is not final), "Browser tools" (the `browser_*` tools on the thread's own
   Browser page, for agents that draw no design; docs/browser.md), and "Design references"
@@ -51,7 +51,7 @@ stand-in), never a `pi` looked up on PATH ([pi-home.md](pi-home.md)).
   Design tool is on; `SHEPHERD_DESIGN_REFS`).
 - **Environment:**
   - Always: `SHEPHERD_AGENT_ID`, `SHEPHERD_SOCKET`, `SHEPHERD_EXT_STATUS`.
-  - With the panes extension: `SHEPHERD_EXT_PANES`.
+  - With the terminal tools' extension (id `panes`): `SHEPHERD_EXT_PANES`.
   - With the browser extension: `SHEPHERD_EXT_BROWSER`.
   - With native subagents: `SHEPHERD_NATIVE_CHILDREN=1`, `SHEPHERD_EXT_CHILDREN`, and the
     `SHEPHERD_CHILD_*` defaults.
@@ -140,7 +140,10 @@ events come out on stdout, one record per LF.
   `get_commands` (the slash-command registry, capped at 128 commands; pi sends no argument
   hints, so the host reads each prompt template's `argument-hint` from the frontmatter of the
   file pi names in its `sourceInfo`, off the server queue, and commits the hints as the
-  commands' additive `arguments` once read). Until `get_state` and
+  commands' additive `arguments` once read; a command no thread can run is left out: the
+  host's own `/shepherd-retry`, and pi's terminal-only built-in `/llama`, which answers
+  "available in interactive mode" in RPC. Shepherd's bundled extensions register nothing a
+  thread can't show: docs/native-subagents.md › Slash commands). Until `get_state` and
   `get_messages` have answered, requests fail with `native_starting` ("The agent is starting."): pi
   answers `get_state` first, and a thread served before a long history arrives would show a
   resumed agent as a new, empty one. pi reads stdin only once it has started, so a pi slower
@@ -234,8 +237,32 @@ events come out on stdout, one record per LF.
     after a relaunch; one from before a compaction's kept messages went with what was
     summarized.
 - **Widgets:** `setWidget` text (ANSI stripped) becomes a `NativeThreadWidget`: at most 16, 4 KiB
-  of text each, 32 KiB in total. Machine payloads, `notify`, `setStatus`, and `setTitle` are
-  dropped, because they belong to pi's TUI chrome.
+  of text each, 32 KiB in total. Machine payloads, `setStatus`, and `setTitle` are dropped,
+  because they belong to pi's TUI chrome, and so is a `notify` nobody asked for (below).
+- **What a command says back** (`RPCThreadState+CommandNotices.swift`): pi's RPC mode has no
+  toast, and most extension commands report with `ctx.ui.notify`, so a command the user ran
+  would look like one that did nothing. While an extension command the user sent is in flight
+  (from the host handing pi its prompt until pi answers it, plus 1.5 s: pi answers once the
+  handler returned), a `notify` becomes a row, and so does the `extension_error` pi sends when
+  the handler throws ("/name failed: …"). A `notify` at any other time ("Ponytail loaded") is
+  still dropped.
+  - **The row** is a message with entry id `n:<uuid>`, one text block (ANSI stripped, 4 KiB at
+    most) and no time, so it never stretches the turn it lands in. `info` is role `custom`, a
+    plain note; `warning` and `error` are those roles, which every client draws as a note
+    reading "warning · …" (no new field or request, so older clients and hosts need nothing, and
+    remote clients see the same rows). It joins the live rows when it arrives.
+  - **It survives a history refresh** the way a question record does: pi's session holds
+    nothing of it, so the host keeps the newest 16 (not persisted: a command leaves nothing in
+    pi's session either) and places them in pi's history by when they arrived
+    (`interleave(_:into:)`, shared with the questions), dropping the live row in the same turn,
+    so it is never drawn twice. A session switch (`/new`, `/resume`) drops them.
+  - **It costs nothing for a thread that runs no command:** a `notify` finds no window open and
+    returns, and the extension-command check is a lookup in the command list already held.
+  - **A command that answers with a message** (`pi.sendMessage` with `display: true`, as the
+    bundled commands do) is already in pi's history when its `message_end` arrives, and an idle
+    pi has no turn whose end would refresh it, so the host refreshes history then (never while a
+    run goes on: `agent_end` does, and Shepherd's own `shepherd-child` reports stay with the
+    subagent cards).
 - **Snapshots** are bounded:
   - 240 KiB in total, of which live content (live rows, then dialogs) may use 120 KiB. A page
     each of live assistant messages and tool calls stays; user rows always stay, because they
@@ -260,7 +287,7 @@ events come out on stdout, one record per LF.
 - **Requests** (`NativeThreadRequest`): `snapshot`, `send` (follow-up or steer delivery, optional
   images and design context; see The queue and Design context), `abort` (see The queue), `answer`, `setModel`, `setThinking`,
   `subagentCommand` (message, cancel, resume, pause, continue; routed to the children
-  extension's control connection, never the parent model), `compact` (pi's `compact`, with what
+  extension's control connection, never the parent model: the user's own Steer and Stop), `compact` (pi's `compact`, with what
   to keep; see Context and compaction), `subagentTranscript` (one page of a
   child's session file, read from its last 8 MiB; a message the user sent the child, recorded
   in `user-messages.jsonl` beside the session, carries `origin: .user`), and `queue`
@@ -324,11 +351,12 @@ one prompt at a time.
 - **Send** (`send`): while pi is idle (`running` false and no prompt of ours on its way) the
   message goes to pi at once as a prompt, with `streamingBehavior: followUp` so a pi that has
   just started a run of its own queues it rather than refusing it (idle, pi treats it as a
-  plain prompt). While pi works there are three deliveries (`NativeThreadDelivery`, and
-  `NativeSendChoice` names them for the clients): a `followUp` is appended to the queue and
-  answered at once; a `steer` is handed to pi (below); an `interrupt` stops pi first (Steer now,
-  below). Which one ↩ uses is the client's setting (Settings ▸ Agents ▸ Return while the agent is
-  working; steering unless the user chose waiting), and a client never steers a message that
+  plain prompt). While pi works there are three deliveries (`NativeThreadDelivery`), and a
+  client offers two of them (`NativeSendChoice`): a `followUp` is appended to the queue and
+  answered at once (what ↩ sends: there is no setting, and a stored Return choice from an earlier
+  version is ignored); an `interrupt` stops pi first (Steer now, below; ⌘↩). A `steer` is handed to
+  pi (below) but no client offers it as a choice: an older client still sends one, and a client
+  sends it for Steer now to a host that can't stop pi. A client never steers a message that
   begins with "/" (`NativeQueueRules.delivery(_:forText:)`): pi runs a command only at the start of
   a message it starts, so it waits for the turn to end. The queued item's id is the send's
   operation id. A send also resumes a paused queue. At most 32 items and 64 KiB of text wait
@@ -353,8 +381,9 @@ one prompt at a time.
     one queued message with its own text, send time, and image count, so the thread can show
     them apart even though pi has one message. A refusal puts the items back at the head,
     pauses the queue, and says why (`notice`).
-- **Steer:** the item is marked steering (steering items sit above the queue, in the order
-  they were steered) and sent as `prompt` with `streamingBehavior: steer`. pi's `queue_update`
+- **Steer** (an older client's send, or Steer now where the host can't stop pi; no current
+  surface offers it as a choice): the item is marked steering (steering items sit above the queue,
+  in the order they were steered) and sent as `prompt` with `streamingBehavior: steer`. pi's `queue_update`
   names the text it queued for it (pi expands templates first), and the user message pi later
   starts with that text is the item landing: it leaves the queue and joins the run with
   `origin: .steered`, after the tool calls pi was running. pi runs every call of a batch and
@@ -587,27 +616,27 @@ transport differs.
   decode the others. pi reporting only Off (a model without reasoning) hides the thinking chip.
 - **Starting and unavailable agents** (`NativeThreadCode`):
   - `native_starting`: the agent exists but its pi is not serving yet. The app adds a new
-    agent before it spawns pi and binds the process to the pane, a restored agent's pane keeps
+    agent before it spawns pi and binds the process to its thread, a restored agent's thread keeps
     the previous run's session until its pi respawns (in the launch queue), and pi itself
     takes a moment to answer `get_state` and `get_messages`. Clients poll from the moment an
     agent appears, so this is never an error.
-  - **Servable signal:** the moment an agent's pi serves (and its pane is bound to that pi,
+  - **Servable signal:** the moment an agent's pi serves (and its thread is bound to that pi,
     whichever comes last), `SessionServer.onNativeThreadServable` tells the local app, once per
     pi, after the state broadcast of the binding. The app hands that agent's thread store a
     pushed revision (`revisionAvailable()`, below), so a thread on screen pulls at once instead
     of at its next poll. The launch queue ends on the same signal.
     Remote clients keep polling; the remote protocol has no push for this.
-  - **Can't start** (DESIGN.md › Thread › Can't start): a pi that exits before its thread
+  - **Can't start** (docs/design/thread.md › Thread › Can't start): a pi that exits before its thread
     serves, or one Shepherd stops (`stopKeepingAgent`, and a pi launched to resume a session
     that warns it will create a new one under that id), keeps its agent. The server keeps a
     start record per RPC session (`PiStartRecord`: stderr without colour codes, the exit code,
     the cause) and reports the exit as a `SessionExit` that keeps the agent. Until another pi
-    is bound to the pane, a snapshot of that agent answers with the problem alone
+    is bound to the thread, a snapshot of that agent answers with the problem alone
     (`NativeThreadSnapshot.startProblem`, generation `start-problem`, no history, no actions);
     every other request is `native_unavailable`. `retryStart` makes it `native_starting` until
     the new pi is bound, and that pi takes the opening prompt the stopped one never read. An
     older client ignores the field and draws an empty thread it cannot send to.
-  - `native_unavailable`, with the reason: the agent no longer exists, its pane runs no pi, or
+  - `native_unavailable`, with the reason: the agent no longer exists, its thread runs no pi, or
     its pi exited after it served (with the exit code, also after the app retired the session).
   - Hosts advertise `native.thread.starting.v1`. `RemoteHostClient` reads `native_unavailable`
     from an older host as starting: such a host said that while pi started, and it retires an
@@ -644,7 +673,7 @@ output grows.
   frame instead of at its next poll. The store says when its poll loop runs (`isLive`,
   `onLiveChange`), `NativeThreadStores.live` collects those agents, and the view model hands
   them to the server (`TerminalSessionStore.watchThreadRevisions`), which pushes only watched
-  agents: each revision `RPCThreadState` reaches (or a pane bound to a pi) queues its agent, and
+  agents: each revision `RPCThreadState` reaches (or a thread bound to a pi) queues its agent, and
   one main-queue delivery a display frame (`SessionServer.revisionPushSpacing`) carries every
   agent queued since, so an agent no one watches costs no main-queue work at all.
   `onThreadRevision` then calls the agent's `revisionAvailable()`
@@ -721,8 +750,8 @@ output grows.
 - **Running state:** `settledRunning` keeps `running` true for 400 ms after it drops, so tool
   boundaries don't flicker the live "Thinking…" or the Stop button.
 - **Drafts and gating:** `draft` belongs to the store; `send(images:delivery:)` sends with a
-  delivery chosen at send time (the Mac composer's ↩, ⌘↩, or its Send menu). `delivery` is kept
-  for the iOS client, which still picks one ahead of time.
+  delivery chosen at send time (the Mac composer's ↩ queues and ⌘↩ steers now, or its Send menu's
+  two rows). `delivery` is the default for a send that names none (`.followUp`).
   `supports(_:)` gates every control on `supportedActions` and on the store being ready and not
   busy.
 - **Errors:** transport failures and a pi that is gone surface as `loadError` (the composer's
@@ -763,29 +792,29 @@ The pure derivations live in ShepherdRemote:
   `NativeToolRow`).
 
 `Sources/ShepherdApp/Thread/` renders them with ShepherdUI's Thread, Composer, and Agents
-components ([DESIGN.md](../DESIGN.md) specifies their look):
+components ([docs/design/thread.md](design/thread.md) specifies their look):
 
 - **`ThreadView`:** the scroll view, tail following, turn jumps (⌥⌘↑/↓), notices, and the empty
   thread.
 - **`ThreadTurns`:** the user bubble, the agent turn (its parts, then the changes card and the
-  footer with copy and retry, the latest turn only; see Retry), and, between tools, the live "Thinking…" (DESIGN.md › Thread ›
+  footer with copy and retry, the latest turn only; see Retry), and, between tools, the live "Thinking…" (docs/design/thread.md › Thread ›
   Live text). A turn tracks the pointer over it
   (`MessageHover`): its time and footer show only while it is hovered.
 - **`ThreadTools`:** activity lines, their calls, and the sheet for a call's full output or raw
   arguments.
 - **`ThreadMarkdown`:** prose and code blocks. The reply's blocks come parsed from the store
   (`nativeMarkdownParse`, ShepherdRemote: tables, task and nested lists, images, `<details>`,
-  footnotes; see DESIGN.md › Rich content in prose); inline Markdown is styled once per text
+  footnotes; see docs/design/thread.md › Rich content in prose); inline Markdown is styled once per text
   (`NWProseInline`), and code blocks are colored by tree-sitter off the main actor and cached.
 - **`Composer`:**
   - the field, attachments (resized to a 2000 px longest edge; at most 4 images of 2 MiB each)
   - chips: model with its picker on ⇧⌘M, and thinking
   - Up next (`QueueStack`): the host's queue above the card, with the stack's own view state
     (`QueueStackState`: the editor, Undo rows, expansion, a drag) around `NativeQueueRules`
-  - the Send menu, and the keys that send while pi works (↩ per Settings, ⌘↩ the other)
+  - the Send menu (two rows), and the keys that send while pi works (↩ queues, ⌘↩ steers now)
   - the slash menu, fed from pi's command registry
-  - the question dock (`QuestionDock`, pi's question or a subagent's in the card's place, from
-    `NativeQuestionPrompt`; Hide the question keeps only that question folded:
+  - the question dock (`QuestionDock`, pi's question in the card's place, from
+    `NativeQuestionPrompt`; a subagent's question never takes it, since a subagent asks its parent; Hide the question keeps only that question folded:
     `NativeQuestionHiding`, shared with the iPad's card) and extension widgets
 - **`Subagents`** and **`SubagentPresentation`:** the tray above the composer, with the store's
   tray (`NativeSubagentTray`) mapped onto the components' values.

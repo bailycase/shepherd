@@ -66,6 +66,52 @@ public extension PaneNode {
         leaves.first { $0.id == id }
     }
 
+    /// The layout's terminals when `thread` is the agent's own pane: the layout's largest
+    /// subtrees that hold no thread, oldest first, each read left to right. The shallowest
+    /// subtree is the oldest, since a terminal opened beside the thread lands closest to it.
+    /// Empty when the layout does not hold `thread`.
+    func terminals(besideThread thread: PaneID) -> [LeafPane] {
+        guard contains(thread) else { return [] }
+        var terminals: [LeafPane] = []
+        var node = self
+        while case .split(_, _, let first, let second) = node {
+            if first.contains(thread) {
+                terminals += second.leaves
+                node = first
+            } else {
+                terminals += first.leaves
+                node = second
+            }
+        }
+        return terminals
+    }
+
+    /// Whether the layout has a subtree of several terminals beside `thread`, as older builds
+    /// made with Split right and Split down.
+    func hasSplitTerminals(besideThread thread: PaneID) -> Bool {
+        guard contains(thread) else { return false }
+        var node = self
+        while case .split(_, _, let first, let second) = node {
+            let beside = first.contains(thread) ? second : first
+            if case .split = beside { return true }
+            node = first.contains(thread) ? first : second
+        }
+        return false
+    }
+
+    /// The layout with every terminal in a tab of its own: what a layout with split terminals
+    /// becomes when loaded. Each terminal keeps its session, folder and title, the order the
+    /// tabs had is kept, and the thread stays where the tabs hang from. A layout that has no
+    /// split terminals, or does not hold `thread`, is returned as it is.
+    func flatteningTerminals(besideThread thread: PaneID) -> PaneNode {
+        guard hasSplitTerminals(besideThread: thread), let own = leaf(withID: thread) else { return self }
+        var layout = PaneNode.leaf(own)
+        for terminal in terminals(besideThread: thread).reversed() {
+            layout = .split(axis: .horizontal, ratio: 0.5, first: layout, second: .leaf(terminal))
+        }
+        return layout
+    }
+
     /// Replace the leaf `paneID` with a split of it and `newPane`. Returns nil when the pane is absent.
     func splitting(pane paneID: PaneID, axis: SplitAxis, newPane: LeafPane, ratio: Double = 0.5) -> PaneNode? {
         switch self {

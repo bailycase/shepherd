@@ -25,6 +25,23 @@ const clip = (text, limit = MAX_TEXT) => {
 // A question's sidebar reason ("retention?"): one line, or undefined when not given.
 const shortReason = (value) => typeof value === "string" && value.trim() ? clip(value.trim().replace(/\s+/g, " "), 120) : undefined;
 const result = (data) => ({ content: [{ type: "text", text: JSON.stringify(data) }], details: data });
+
+// A child never reaches the user. What it is told about questions (its prompt, and the guideline of its tool) and
+// what its parent is told when one arrives: the parent answers it or asks the user itself, then passes the answer down
+// (docs/native-subagents.md › Questions and results).
+export const CHILD_ASK_RULE = "You never talk to the user: nothing you write reaches them. When you are blocked on a question, or on a decision that is not yours to make, ask your parent, never the user: call shepherd_parent_message with needsReply: true and your question (options: when it has a few possible answers), then finish your turn. Your parent answers it, or asks the user and passes the answer down, and your work continues with the answer. A question inside your final answer is read as a result, not as a question. Don't guess when the answer matters, and don't ask what you can find out yourself.";
+export const CHILD_UI_REFUSAL = "A child never reaches the user: ask your parent with shepherd_parent_message (needsReply: true) and finish your turn.";
+export const PARENT_QUESTION_GUIDE = "Each child above that needs a reply asked you, its parent, a question it cannot settle itself. It never reaches the user, so it is waiting on you.\n"
+  + "- Answer it yourself if you can, from what you know, the files or your tools: call shepherd_child_resume with the child's id, your answer as message and its questionID (shepherd_child_message takes the same arguments).\n"
+  + "- Only if you cannot, ask the USER yourself, in your own reply: your question tool if you have one, otherwise a plain question in your message. Then end your turn; the question stays pending. When the user answers, pass the answer down the same way, with the same id and questionID.\n"
+  + "- Do not ignore a question, and do not ask the user what you can answer. With several questions, answer what you can and put the rest in one message to the user, naming each child.";
+// One asking child as its parent reads it: the question, the answers it offered, and the ids to answer with.
+function askLine(run) {
+  const options = run.questionOptions?.length ? `\nOptions it offered: ${run.questionOptions.join(" | ")}` : "";
+  return `Child ${run.id} (${run.role}): Needs reply: ${run.questionText ?? clip(run.output, 600)}${options}\nAttempt: ${run.attempt ?? "unknown"}\nquestionID: ${run.questionID}`;
+}
+// What a result tells the parent about a child that asked, with the exact call that answers it.
+const parentAction = (run) => `This child asked its parent (you) a question and waits on you; it never reaches the user. Answer it yourself if you can: shepherd_child_resume {id: "${run.id}", message: <your answer>, questionID: "${run.questionID}"}. If you cannot, ask the USER yourself in your reply, end your turn, and pass their answer down with the same call. Do not ask the user what you can answer.`;
 // Same rule as the desktop tool row preview: an obvious action field first, then the first result line.
 export function toolPreview(args, resultText) {
   const first = (value) => typeof value === "string" && value.trim() ? value.split("\n")[0].slice(0, 120) : undefined;
@@ -269,9 +286,13 @@ export function modelNotFound(requested, models, { origin, where = "this Pi" } =
 
 const RELAY_KEY = Symbol.for("shepherd.design.relay.v1");
 // The design tools a helper may use. comment_reply and markup_propose are the design agent's own voice
-// toward the viewer (it answers a comment once every helper has finished), so they are never relayed.
-const DESIGN_RELAYED = ["design_read", "design_check", "system_read", "comment_list", "board_write", "board_edit", "canvas_update", "system_write"];
-const DESIGN_TOOLS = [...DESIGN_RELAYED, "comment_reply", "markup_propose"];
+// toward the viewer (it answers a comment once every helper has finished), and checkpoint_restore rewinds
+// every board, siblings' work included, so none of the three is ever relayed.
+const DESIGN_RELAYED = [
+  "design_read", "design_check", "system_read", "comment_list", "board_write", "board_edit", "boards_edit", "board_search",
+  "board_render", "board_extract", "checkpoint_create", "checkpoint_list", "canvas_update", "system_write",
+];
+const DESIGN_TOOLS = [...DESIGN_RELAYED, "comment_reply", "markup_propose", "checkpoint_restore"];
 const RELAY_TITLE = "shepherd-relay:v1:";
 // A request or a result: the extension socket's own frame cap, since a board is at most 900,000 bytes.
 const MAX_RELAY_BYTES = 1024 * 1024;
@@ -288,7 +309,7 @@ export function designRelay(env = process.env) {
 export function designToolsProblem(names, relay) {
   if (!relay) return `${names.join(", ")}: design tools are relayed only to the helpers of a design agent, and this session draws no design. Drop them from the profile's tools.`;
   const own = names.filter((name) => !DESIGN_RELAYED.includes(name));
-  if (own.length) return `${own.join(", ")} can't be relayed to a helper: the design agent answers the viewer's comments and proposes their markup itself, once its helpers are done. Relayed: ${DESIGN_RELAYED.join(", ")}.`;
+  if (own.length) return `${own.join(", ")} can't be relayed to a helper: the design agent answers the viewer's comments, proposes their markup and restores checkpoints itself, once its helpers are done. Relayed: ${DESIGN_RELAYED.join(", ")}.`;
   const absent = names.filter((name) => !relay.tools.has(name));
   if (absent.length) return `${absent.join(", ")} isn't available from this design agent's extension.`;
   return undefined;
@@ -332,8 +353,18 @@ function registerRelayTools(pi) {
     if (typeof spec?.name !== "string" || !DESIGN_RELAYED.includes(spec.name) || !spec.parameters || typeof spec.parameters !== "object") continue;
     pi.registerTool({ name: spec.name, label: String(spec.label ?? spec.name), description: String(spec.description ?? spec.name),
       promptSnippet: typeof spec.promptSnippet === "string" ? spec.promptSnippet : undefined, parameters: spec.parameters,
-      async execute(_id, params, signal, _update, ctx) { return relayedCall(spec.name, params, signal, ctx); } });
+      async execute(_id, params, signal, _update, ctx) { return pictureForModel(await relayedCall(spec.name, params, signal, ctx), ctx); } });
   }
+}
+
+// A picture (board_render) is for a model that can view one: the helper's own, which the parent can't know. A
+// helper whose model's input kinds are known and lack images gets the words alone.
+export function pictureForModel(result, ctx) {
+  const kinds = ctx?.model?.input;
+  if (!Array.isArray(kinds) || kinds.includes("image")) return result;
+  const content = result.content.filter((part) => part?.type !== "image");
+  if (content.length === result.content.length) return result;
+  return { ...result, content: [...content, { type: "text", text: "This helper's model can't view images, so the picture is not attached. Read the board's markup instead." }] };
 }
 
 // The parent's side: serves one relayed call (a helper's `input` request) and answers it on the helper's
@@ -360,11 +391,20 @@ export async function serveRelay(run, event, { relay, ctx, answer }) {
   run.relays.set(callId, controller);
   try {
     const params = validateToolArguments({ name, parameters: tool.parameters }, { id: callId, name, arguments: request.params ?? {} });
-    const result = await tool.execute(`relay-${run.id}-${callId}`, params, controller.signal, undefined, ctx);
+    // The parent's own model is no judge of what a helper's can see: the picture goes, and the helper's side decides.
+    const callCtx = ctx && typeof ctx === "object" ? Object.create(ctx, { model: { value: undefined } }) : ctx;
+    const result = await tool.execute(`relay-${run.id}-${callId}`, params, controller.signal, undefined, callCtx);
     // A cancelled call has no one left to answer.
     if (controller.signal.aborted) return;
-    const content = (result?.content ?? []).filter((part) => part?.type === "text").map((part) => ({ type: "text", text: String(part.text ?? "") }));
-    const size = content.reduce((total, part) => total + Buffer.byteLength(part.text), 0);
+    // Text, and a picture (board_render) as long as it is a small base64 image: nothing else crosses.
+    const content = (result?.content ?? []).flatMap((part) => {
+      if (part?.type === "text") return [{ type: "text", text: String(part.text ?? "") }];
+      if (part?.type === "image" && typeof part.data === "string" && typeof part.mimeType === "string" && /^image\/(png|jpeg)$/.test(part.mimeType)) {
+        return [{ type: "image", data: part.data, mimeType: part.mimeType }];
+      }
+      return [];
+    });
+    const size = content.reduce((total, part) => total + Buffer.byteLength(part.type === "text" ? part.text : part.data), 0);
     if (size > MAX_RELAY_BYTES) return fail(`${name}'s result is ${size} bytes; the relay carries at most ${MAX_RELAY_BYTES}`);
     reply({ ok: true, content, details: result?.details });
   } catch (error) {
@@ -389,8 +429,9 @@ function abortRelays(run) {
   run.relays?.clear();
 }
 
-// `timers` lets tests observe the control tick; pi passes only `pi`.
-export default function shepherdChildren(pi, timers = { setInterval, clearInterval }) {
+// `timers` lets tests observe the control tick, and `commandEnv` decides which commands register
+// (shepherd-children-ui.ts); pi passes only `pi`.
+export default function shepherdChildren(pi, timers = { setInterval, clearInterval }, commandEnv = process.env) {
   if (process.env.SHEPHERD_CHILD === "1") {
     // Cooperative pause at the next model-request boundary. In-flight tools finish normally;
     // the RPC reader remains available for continue/cancel while the context hook waits.
@@ -422,7 +463,9 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     }
     pi.registerTool({
       name: "shepherd_parent_message", label: "message parent",
-      description: "Update your child record with progress without interrupting the parent. For a blocking question, set needsReply and finish this turn; the parent is notified and can resume with an answer. Your final answer is delivered automatically; do not also send it here.",
+      description: "Ask your parent, or update your child record with progress. You never reach the user: when you are blocked on a question or a decision that is not yours to make, ask your parent, never the user. Set needsReply: true with your question (options: when it has a few possible answers) and finish this turn; the parent is notified, then answers it or asks the user and passes the answer down, and you continue with it. Without needsReply this only updates your child record, without interrupting the parent. Your final answer is delivered automatically; do not also send it here.",
+      promptSnippet: "Ask your parent a question (needsReply), never the user, or record progress",
+      promptGuidelines: ["Never ask the user anything: you cannot reach them. When you are blocked on a question, ask your parent with shepherd_parent_message (needsReply: true, options when it has a few answers) and finish your turn; the answer arrives as your next message."],
       parameters: Type.Object({ message: textSchema, needsReply: Type.Optional(Type.Boolean()), options: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 200 }), { maxItems: 6 })),
         short: Type.Optional(Type.String({ description: "For a question: what you need in 1-3 words, shown beside your parent's thread in Shepherd's sidebar while you wait (e.g. \"retention?\", \"approve plan\")." })) }),
       async execute(_id, params) { return result({ shepherdParentMessage: params.message, needsReply: params.needsReply === true, options: params.needsReply === true ? params.options : undefined, short: params.needsReply === true ? shortReason(params.short) : undefined }); },
@@ -462,7 +505,9 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     turns: run.turns, toolCalls: run.toolCalls, tokens: run.tokens, contextPercent: run.contextPercent, files: fileChanges(run), added: run.added, removed: run.removed, lastActivity: run.lastActivity, questionOptions: run.questionOptions, questionText: run.questionText, questionShort: run.questionShort,
     attempt: run.attempt, questionID: run.questionID, exitCode: run.exitCode, toolCallID: run.toolCallID, stepIndex: run.stepIndex,
     relaying: run.relays?.size || undefined });
-  // Card projection for the native thread (DESIGN.md › Subagents). Every field
+  // A result as the parent model reads it: a child that asked also says what to do about it.
+  const forParent = (run, extra = {}) => ({ ...summary(run), ...extra, ...(run.needsReply && run.questionID ? { parentAction: parentAction(run) } : {}) });
+  // Card projection for the native thread (docs/design/subagents.md › Subagents). Every field
   // past asyncDir is optional on the Swift side; undefined keys vanish in JSON.stringify.
   function card(run) {
     const workflow = run.workflowId ? workflows.get(run.workflowId) : undefined;
@@ -549,20 +594,27 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     noticeTimer = undefined;
     if (!active || parentWorking || parentInterrupted || sessionContext?.isIdle?.() === false || !pendingNotices.size) return;
     const notices = [...pendingNotices.values()];
-    const content = notices.map((n) => n.content).join("\n\n");
+    const content = compose(notices);
     pendingNotices.clear();
     try { pi.sendMessage(noticeMessage(content), { triggerTurn: !userInputWaiting && !directInputWaiting && notices.some((n) => n.wake), deliverAs: "followUp" }); }
     catch { /* Results remain retrievable by id. */ }
   }
   const noticeMessage = (content) => ({ customType: "shepherd-child", content,
     display: false, details: { backgroundReport: true } });
+  // Everything delivered together, with the parent's instructions for the questions in it said once.
+  const compose = (notices) => notices.map((n) => n.content).join("\n\n") + (notices.some((n) => n.question) ? `\n\n${PARENT_QUESTION_GUIDE}` : "");
   function notify(run, message) {
     if (!current(run) || run.workflowId) return;
-    const content = `Child ${run.id} (${run.role}): ${clip(message)}\nAttempt: ${run.attempt ?? "unknown"}${run.questionID ? `\nQuestion: ${run.questionID}` : ""}\nUse this result to continue the task. Do not acknowledge receipt or repeat it unless it changes the user's outcome.`;
-    enqueueNotice(run.id, content, run.needsReply || run.delivery !== "report");
+    const content = `Child ${run.id} (${run.role}): ${clip(message)}\nAttempt: ${run.attempt ?? "unknown"}\nUse this result to continue the task. Do not acknowledge receipt or repeat it unless it changes the user's outcome.`;
+    enqueueNotice(run.id, content, run.delivery !== "report");
   }
-  function enqueueNotice(id, content, wake = true) {
-    pendingNotices.set(id, { content, wake });
+  // A child's question goes to its parent in either delivery mode, and wakes an idle one; it notifies once.
+  function notifyQuestion(run) {
+    if (!current(run) || run.workflowId) return;
+    enqueueNotice(run.id, `${askLine(run)}\nDo not acknowledge receipt: act on it.`, true, true);
+  }
+  function enqueueNotice(id, content, wake = true, question = false) {
+    pendingNotices.set(id, { content, wake, question });
     if (!noticeTimer) { noticeTimer = setTimeout(flushIdleNotices, 0); noticeTimer.unref(); }
   }
   pi.on("before_agent_start", () => { userInputWaiting = false; directInputWaiting = false; });
@@ -578,7 +630,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     if (event.outcome !== "completed") { parentInterrupted = true; return; }
     if (!pendingNotices.size) return;
     const notices = [...pendingNotices.values()];
-    const content = notices.map((n) => n.content).join("\n\n");
+    const content = compose(notices);
     pendingNotices.clear();
     return { entries: [...event.entries, { type: "custom_message", ...noticeMessage(content) }],
       continue: event.continue || (!userInputWaiting && !directInputWaiting && notices.some((n) => n.wake)) };
@@ -621,6 +673,14 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       await run.closed;
     })();
     return run.stopping;
+  }
+  // Stop on a child that finished its turn to ask has no process to stop: it closes the question instead, so nothing
+  // waits on an answer, and an answer the parent sends later is refused as obsolete.
+  function dismissQuestion(run, reason = "Cancelled") {
+    if (run.proc || !run.needsReply) return;
+    run.needsReply = false; run.questionID = undefined; run.questionText = undefined; run.questionShort = undefined; run.questionOptions = undefined;
+    run.state = "stopped"; run.error = reason; run.endedAt ??= Date.now();
+    pendingNotices.delete(run.id); save(run);
   }
   function releaseWriter(run) {
     const dir = path.join(run.dir, "writer"), owner = path.join(dir, "owner.json");
@@ -690,7 +750,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
           run.questionShort = run.needsReply ? shortReason(details.short) : undefined;
           if (run.needsReply) {
             run.questionNotified = true;
-            notify(run, `Needs reply: ${run.output}`);
+            notifyQuestion(run);
           }
         }
       }
@@ -698,7 +758,8 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     } else if (event.type === "message_end" && event.message?.role === "assistant") {
       const message = event.message;
       run.output = clip((message.content ?? []).filter((p) => p.type === "text").map((p) => p.text).join("\n"));
-      run.error = ["error", "aborted"].includes(message.stopReason) ? clip(message.errorMessage || message.stopReason) : undefined;
+      // A stop gave its own reason ("Child requested unsupported human interaction…"); the abort it caused is not the cause.
+      if (!run.cancelled) run.error = ["error", "aborted"].includes(message.stopReason) ? clip(message.errorMessage || message.stopReason) : undefined;
       run.lastStop = message.stopReason;
       run.turns = (run.turns ?? 0) + 1;
       if (Number.isFinite(message.usage?.totalTokens)) run.tokens = (run.tokens ?? 0) + message.usage.totalTokens;
@@ -717,7 +778,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       } });
     } else if (event.type === "extension_ui_request" && ["select", "confirm", "input", "editor"].includes(event.method)) {
       run.proc.stdin.write(JSON.stringify({ type: "extension_ui_response", id: event.id, cancelled: true }) + "\n");
-      void stop(run, `Child requested unsupported human interaction: ${clip(event.title, 200)}. Ask through shepherd_parent_message.`);
+      void stop(run, `Child requested unsupported human interaction (${event.method}): ${clip(event.title, 200)}. ${CHILD_UI_REFUSAL}`);
     } else if (event.type === "agent_settled" && !run.cancelled && !run.settled) {
       run.settled = true;
       if (run.lastStop === "length") run.error ||= "Incomplete answer: child reached its output token limit; resume to continue";
@@ -832,7 +893,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
           const request = JSON.parse(fs.readFileSync(stopFile, "utf8"));
           if (typeof request.id === "string" && /^[\w-]{1,80}$/.test(request.id)) requestID = request.id;
           fs.unlinkSync(stopFile);
-          await stop(run);
+          await stop(run); dismissQuestion(run);
           run.controlNotice = `stop accepted · ${run.state}`;
         } catch (error) { run.controlNotice = `control failed: ${clip(error.message)}`; try { fs.unlinkSync(stopFile); } catch {} }
         run.controlRequestID = requestID;
@@ -864,7 +925,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
   async function childCommand(frame) {
     const run = get(String(frame.runID ?? ""));
     const text = typeof frame.text === "string" ? frame.text : "";
-    if (frame.action === "cancel") { await stop(run); return; }
+    if (frame.action === "cancel") { await stop(run); dismissQuestion(run); return; }
     if (frame.action === "resume") { await resume(run, run.task, undefined, sessionContext); return; }
     if (frame.action === "pause" || frame.action === "continue") {
       if (!run.proc || run.exited || run.settled || run.cancelled) throw Error("Child is not running");
@@ -1029,7 +1090,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
           const sm = SessionManager.inMemory(cwd);
           fs.writeFileSync(run.sessionFile, JSON.stringify(sm.getHeader()) + "\n", { mode: 0o600 });
         }
-        fs.writeFileSync(path.join(dir, "prompt.md"), `You are a Shepherd child, not the parent. ${profile.prompt}\nWork only on the delegated task. No nested helpers, workflows, schedules, or worktree management. Routine progress stays in your child record; do not send a separate completion message, your final answer is delivered automatically. Use shepherd_parent_message for a question that blocks work, set needsReply and finish your turn. Your parent can resume with an answer.\n`, { mode: 0o600 });
+        fs.writeFileSync(path.join(dir, "prompt.md"), `You are a Shepherd child, not the parent. ${profile.prompt}\nWork only on the delegated task. No nested helpers, workflows, schedules, or worktree management. Routine progress stays in your child record; do not send a separate completion message, your final answer is delivered automatically.\n${CHILD_ASK_RULE}\n`, { mode: 0o600 });
         const { dir: _dir, output: _output, files: _files, ...descriptor } = run;
         pi.appendEntry("shepherd-child", descriptor);
         return await launch(run, params.task, signal);
@@ -1038,23 +1099,46 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
   pi.registerTool({ name: "shepherd_child_agents", label: "child agents", description: "List effective agent profiles, sources and unsupported-field diagnostics. Reads user files and trusted project files without changing them.",
     parameters: Type.Object({}), async execute(_id, _p, _s, _u, ctx) { return result({ defaults, ...discoverChildAgents(ctx, defaults.scope) }); } });
   pi.registerTool({ name: "shepherd_child_start", label: "start child", parameters: startSchema,
-    description: "Start an owned background Pi helper. Use shepherd_child_agents for discovered profiles. Explicit call overrides profile, then Shepherd defaults, then parent model/thinking. Fresh or fork context; tools intersect the parent allowlist. Cwd is not a sandbox. Progress stays in the child record. delivery:report stores completion without waking the parent, so the user can keep chatting; delivery:continue resumes dependent work. Result/wait reads consume pending notices. Default creates a mission; mission:false opts out. No nested delegation or automatic worktrees.",
+    description: "Start an owned background Pi helper. Use shepherd_child_agents for discovered profiles. Explicit call overrides profile, then Shepherd defaults, then parent model/thinking. Fresh or fork context; tools intersect the parent allowlist. Cwd is not a sandbox. Progress stays in the child record. A child never reaches the user: when it is blocked it asks you (needsReply, in a notice and in wait/result with a questionID): answer it yourself if you can with shepherd_child_resume and that questionID, else ask the user in your own reply and pass their answer down. delivery:report stores completion without waking the parent, so the user can keep chatting; delivery:continue resumes dependent work; a question wakes you in either. Result/wait reads consume pending notices. Default creates a mission; mission:false opts out. No nested delegation or automatic worktrees.",
     async execute(id, p, signal, _update, ctx) { return result(await start(p, signal, ctx, undefined, id)); } });
-  pi.registerTool({ name: "shepherd_child_message", label: "message child", description: "Message a running child. Acceptance is not completion. Steer runs after current tools; followUp waits for the turn to end.",
+  // The parent's answer to a child's question, from either tool with the questionID. A child that asked is told to finish
+  // its turn, and its process ends when that turn settles, so an answer sent into the turn is lost with it. The answer
+  // therefore waits for the child to finish (a prompt parent answers while the child still writes "I asked my parent")
+  // and resumes it; a child that keeps working past the wait is steered instead.
+  const ANSWER_WAIT_MS = 20_000;
+  async function answerChild(run, message, mode, signal, ctx) {
+    const question = run.questionID;
+    const changed = () => { if (!run.needsReply || !question || run.questionID !== question) throw Error("Child question changed; read its current result before answering"); };
+    changed();
+    const working = () => run.proc && !run.exited && !run.settled && !run.cancelled;
+    if (working()) {
+      await new Promise((resolve) => {
+        const timer = setTimeout(resolve, ANSWER_WAIT_MS); timer.unref?.();
+        const done = () => { clearTimeout(timer); resolve(); };
+        run.closed.then(done); signal?.addEventListener("abort", done, { once: true });
+      });
+      signal?.throwIfAborted(); changed();
+    }
+    if (working()) return send(run, message, mode);
+    return resume(run, message, signal, ctx);
+  }
+  pi.registerTool({ name: "shepherd_child_message", label: "message child", description: "Message a running child. Acceptance is not completion. Steer runs after current tools; followUp waits for the turn to end. To answer a child's question (needsReply), pass its questionID: it waits for the child to finish the turn it asked in, then resumes it with the answer.",
     parameters: Type.Object({ id: idSchema, message: textSchema, mode: Type.Optional(StringEnum(["steer", "followUp"])),
-      questionID: Type.Optional(Type.String({ description: "Question identity returned by child_result. Rejects an answer to an obsolete question or attempt." })) }),
-    async execute(_id, p) {
+      questionID: Type.Optional(Type.String({ description: "Question identity returned by child_result or its notice. Rejects an answer to an obsolete question or attempt." })) }),
+    async execute(_id, p, signal, _update, ctx) {
       const run = get(p.id);
       if (p.questionID && (!run.needsReply || p.questionID !== run.questionID)) throw Error("Child question changed; read its current result before answering");
-      return result(await send(run, p.message, p.mode));
+      return result(p.questionID ? await answerChild(run, p.message, p.mode, signal, ctx) : await send(run, p.message, p.mode));
     } });
   pi.registerTool({ name: "shepherd_child_result", label: "child results", description: "Read one child result or list this parent's retained children. Output is capped at 16 KiB per result and may be truncated; full conversation is in sessionFile. No live work survives parent shutdown.",
     parameters: Type.Object({ id: Type.Optional(idSchema) }),
     async execute(_id, p) {
       if (p.id) pendingNotices.delete(p.id);
-      return result(p.id ? summary(get(p.id)) : [...runs.values()].map((r) => ({ id: r.id, role: r.role, state: r.state, task: clip(r.task, 160) })));
+      // The list names the children that wait on an answer, so a question is never lost with its notice.
+      return result(p.id ? forParent(get(p.id)) : [...runs.values()].map((r) => ({ id: r.id, role: r.role, state: r.state, task: clip(r.task, 160),
+        ...(r.needsReply ? { needsReply: true, questionID: r.questionID, question: r.questionText } : {}) })));
     } });
-  pi.registerTool({ name: "shepherd_child_wait", label: "wait for children", description: "Wait for selected children, up to 60 seconds. New user input ends the wait immediately without stopping children; waitInterrupted names this outcome. Timeout or cancellation also leaves children running. Returns bounded results for up to 16 ids.",
+  pi.registerTool({ name: "shepherd_child_wait", label: "wait for children", description: "Wait for selected children, up to 60 seconds. New user input ends the wait immediately without stopping children; waitInterrupted names this outcome. Timeout or cancellation also leaves children running. A child that asked a question (needsReply, with a questionID and parentAction) ends a wait for all. Returns bounded results for up to 16 ids.",
     parameters: Type.Object({ ids: Type.Array(idSchema, { minItems: 1, maxItems: 16 }), all: Type.Optional(Type.Boolean()), timeoutSeconds: Type.Optional(Type.Number({ minimum: 0, maximum: 60 })) }),
     async execute(_id, p, signal) {
       const selected = p.ids.map(get), watched = [...new Set(selected)], deadline = Date.now() + (p.timeoutSeconds ?? 30) * 1000;
@@ -1066,11 +1150,13 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
           signal?.throwIfAborted();
           if (userInputWaiting || directInputWaiting || parentInputVersion !== inputVersion) break;
           const done = selected.map((r) => !["running", "queued"].includes(r.state));
-          if (p.all ? done.every(Boolean) : done.some(Boolean)) break;
+          // A child that asked waits on the parent, so a wait for all hands it over without holding it up.
+          const asked = selected.some((r) => r.needsReply && !["running", "queued"].includes(r.state));
+          if (p.all ? done.every(Boolean) || asked : done.some(Boolean)) break;
           await new Promise((r) => setTimeout(r, 100));
         }
         const interrupted = userInputWaiting || directInputWaiting || parentInputVersion !== inputVersion;
-        const value = { ...result(selected.map((r) => ({ ...summary(r), output: clip(r.output, 4096),
+        const value = { ...result(selected.map((r) => forParent(r, { output: clip(r.output, 4096),
           ...(interrupted ? { waitInterrupted: "user_input" } : {}) }))), ...(interrupted ? { terminate: true } : {}) };
         answered = true;
         return value;
@@ -1085,12 +1171,12 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       }
     } });
   pi.registerTool({ name: "shepherd_child_cancel", label: "cancel child", description: "Clear queued work, abort, and terminate an owned child. Returns only after its process exits. Session history remains available for explicit continuation.",
-    parameters: Type.Object({ id: idSchema }), async execute(_id, p) { const run = get(p.id); await stop(run); pendingNotices.delete(run.id); return result(summary(run)); } });
-  pi.registerTool({ name: "shepherd_child_resume", label: "continue child", description: "Continue a completed, failed, or stopped child session with a new task or answer. Keeps its role, model, cwd, and history. Rejects concurrent writers and missing transcripts. Does not replay interrupted work automatically.",
-    parameters: Type.Object({ id: idSchema, message: textSchema, questionID: Type.Optional(Type.String({ description: "Question identity returned by child_result; refuses stale answers." })) }), async execute(_id, p, signal, _update, ctx) {
+    parameters: Type.Object({ id: idSchema }), async execute(_id, p) { const run = get(p.id); await stop(run); dismissQuestion(run); pendingNotices.delete(run.id); return result(summary(run)); } });
+  pi.registerTool({ name: "shepherd_child_resume", label: "continue child", description: "Continue a completed, failed, or stopped child session with a new task or answer. This is how you answer a child's question (needsReply): pass its questionID. Keeps its role, model, cwd, and history. Rejects concurrent writers and missing transcripts. Does not replay interrupted work automatically.",
+    parameters: Type.Object({ id: idSchema, message: textSchema, questionID: Type.Optional(Type.String({ description: "Question identity returned by child_result or its notice; refuses stale answers." })) }), async execute(_id, p, signal, _update, ctx) {
       const run = get(p.id);
       if (p.questionID && (!run.needsReply || p.questionID !== run.questionID)) throw Error("Child question changed; read its current result before answering");
-      return result(await resume(run, p.message, signal, ctx));
+      return result(p.questionID ? await answerChild(run, p.message, undefined, signal, ctx) : await resume(run, p.message, signal, ctx));
     } });
   async function resume(run, message, signal, ctx) {
     if (!active) throw Error("No active parent session");
@@ -1155,10 +1241,17 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     workflowScript: Type.Optional(Type.String({ minLength: 1, maxLength: 32768 })), task: Type.Optional(textSchema),
     async: Type.Optional(Type.Boolean()), timeoutSeconds: Type.Optional(Type.Number({ minimum: 0.1, maximum: 1800 })),
     missionId: Type.Optional(idSchema), mission: Type.Optional(Type.Union([Type.Boolean(), missionSchema])) }, { additionalProperties: false });
-  const workflowSummary = (w) => ({ id: w.id, state: w.state, output: w.output, error: w.error, missionId: w.missionId, missionWarning: w.missionWarning,
-    children: [...w.keys].map(([key, run]) => ({ key, id: run.id, state: run.state })) });
+  // The children of a workflow that ended their turn on a question to its parent, which answers them after the workflow.
+  const workflowAsks = (w) => [...w.keys.values()].filter((run) => run.workflowId === w.id && run.needsReply && run.questionID);
+  const workflowSummary = (w) => {
+    const asking = workflowAsks(w);
+    return { id: w.id, state: w.state, output: w.output, error: w.error, missionId: w.missionId, missionWarning: w.missionWarning,
+      children: [...w.keys].map(([key, run]) => ({ key, id: run.id, state: run.state,
+        ...(asking.includes(run) ? { needsReply: true, questionID: run.questionID, question: run.questionText } : {}) })),
+      ...(asking.length ? { parentAction: `${asking.length === 1 ? "A child" : `${asking.length} children`} of this workflow asked you a question and wait on you, never on the user. Answer each yourself if you can with shepherd_child_resume {id, message, questionID}; ask the USER yourself, in one message, only what you cannot answer, and pass their answer down the same way.` } : {}) };
+  };
   pi.registerTool({ name: "shepherd_workflow", label: "workflow", parameters: workflowSchema,
-    description: "Start a background JavaScript statement body with runs.run(key,{agent,task,...}), runs.all([{key,agent,task,...}]), runs.steer(key,message,{mode}), runs.status(key), runs.cancel(key). Await or return calls. Use ordinary sequencing/branching; no imports, process or filesystem API. This is restricted execution, NOT an OS sandbox. Children retain their normal tools. Default 30-minute deadline and enclosing mission; mission:false disables persistence and state.get/set. delivery:report records completion without waking the parent; continue resumes dependent work. async:false waits; new user input interrupts action:wait without stopping children. status/wait/cancel target this parent's workflow id. No automatic retries, worktrees or scheduling.",
+    description: "Start a background JavaScript statement body with runs.run(key,{agent,task,...}), runs.all([{key,agent,task,...}]), runs.steer(key,message,{mode}), runs.status(key), runs.cancel(key). Await or return calls. Use ordinary sequencing/branching; no imports, process or filesystem API. This is restricted execution, NOT an OS sandbox. Children retain their normal tools. Default 30-minute deadline and enclosing mission; mission:false disables persistence and state.get/set. delivery:report records completion without waking the parent; continue resumes dependent work. A child that is blocked asks you instead of finishing: its runs.run result then has needsReply:true, questionID and question (its output is not a result); once the workflow ends, answer it yourself with shepherd_child_resume {id, message, questionID} or ask the user and pass their answer down. A question wakes you in either delivery. async:false waits; new user input interrupts action:wait without stopping children. status/wait/cancel target this parent's workflow id. No automatic retries, worktrees or scheduling.",
     async execute(id, params, signal, _update, ctx) { return runWorkflow(params, signal, ctx, undefined, id); } });
   async function runWorkflow(params, signal, ctx, onSlashComplete, toolCallID) {
       const p = checked(workflowSchema, params), action = p.action ?? "start";
@@ -1210,7 +1303,9 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
         guard();
         await run.closed;
         guard();
-        const value = { key, id: run.id, runId: run.id, agent: run.role, ok: run.state === "complete", state: run.state, output: run.output, error: run.error };
+        // A child that asked ended its turn on a question for the parent: `output` is not its result, `question` is.
+        const value = { key, id: run.id, runId: run.id, agent: run.role, ok: run.state === "complete", state: run.state, output: run.output, error: run.error,
+          ...(run.needsReply ? { needsReply: true, questionID: run.questionID, question: run.questionText } : {}) };
         if (run.state !== "complete") throw Error(`Child ${key} ${run.state}: ${run.error || run.output}`);
         return value;
       }
@@ -1262,8 +1357,12 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
             m.workflow = { id: w.id, state: w.state, error: w.error };
           }); } catch (error) { w.missionWarning = clip(error.message); }
           if (active && owner === w.owner && onSlashComplete) { if (w.async) onSlashComplete(workflowSummary(w)); }
-          else if (active && owner === w.owner && w.async) enqueueNotice(w.id,
-            `Workflow ${w.id}: ${w.state}\n${w.error || clip(JSON.stringify(w.output))}\nUse this result to continue the task; do not acknowledge receipt.`, p.delivery !== "report");
+          else if (active && owner === w.owner && w.async) {
+            const asking = workflowAsks(w);
+            enqueueNotice(w.id,
+              `Workflow ${w.id}: ${w.state}\n${w.error || clip(JSON.stringify(w.output))}${asking.map((run) => `\n${askLine(run)}`).join("")}\nUse this result to continue the task; do not acknowledge receipt.`,
+              p.delivery !== "report" || asking.length > 0, asking.length > 0);
+          }
         }
       })();
       if (p.async === false) {
@@ -1303,5 +1402,5 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       `scope · ${defaults.scope} · context · ${defaults.context} · concurrency · ${defaults.concurrency}`,
       `${runs.size} retained children · ${[...runs.values()].filter((r) => ["running", "queued"].includes(r.state)).length} active · ${workflows.size} workflows`,
       "no provider probes · no configuration changes · children stop with this parent"],
-  });
+  }, commandEnv);
 }

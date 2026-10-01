@@ -101,6 +101,33 @@ struct EngineSmokeTests {
         #expect(after?["deepseek"] == nil)
     }
 
+    @Test func aCatalogReadsBuiltInAndExtensionCapabilitiesAndExitsOnInputEOF() throws {
+        let engine = try #require(EngineSmoke.engine)
+        let scratch = try makeScratchDirectory("engine-catalog")
+        let home = PiHome(directory: scratch.appendingPathComponent("pi"), engine: .bundled(engine), userHome: scratch.path)
+        try home.install()
+        try Data(#"{"openai":{"type":"api_key","key":"fixture-only"}}"#.utf8).write(to: home.directory.appendingPathComponent("auth.json"))
+        try Data(#"{"providers":{"fixture":{"baseUrl":"http://127.0.0.1:9/v1","apiKey":"fixture-only","api":"openai-responses","models":[{"id":"max","reasoning":true,"thinkingLevelMap":{"minimal":null,"xhigh":"xhigh","max":"max"}}]}}}"#.utf8)
+            .write(to: home.directory.appendingPathComponent("models.json"))
+        let connection = CLIProxyAPIStore.Connection(enabled: true, baseURL: "http://127.0.0.1:9/v1", apiKey: "fixture-only",
+            models: [.init(id: "~openai/gpt-5.4", owned_by: "openai")], updatedAt: 1)
+        try PiHome.write(JSONEncoder().encode(connection), to: home.directory.appendingPathComponent(CLIProxyAPIStore.fileName), mode: 0o600)
+        let environment = ["HOME": scratch.path, "TMPDIR": scratch.path + "/", "ZDOTDIR": scratch.path, "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"]
+        let catalog = PiModelCatalog(home: home, timeout: 20, environment: environment, ready: { true })
+        let entries = catalog.entries()
+        let custom = try #require(entries.first { $0.id == "fixture/max" })
+        #expect(custom.thinkingLevels == ["off", "low", "medium", "high", "xhigh", "max"])
+        let builtIn = try #require(entries.first { $0.id == "openai/gpt-5.4" })
+        let proxy = try #require(entries.first { $0.id == "cliproxyapi/~openai/gpt-5.4" })
+        #expect(builtIn.thinkingLevels?.contains("xhigh") == true)
+        #expect(proxy.thinkingLevels == builtIn.thinkingLevels && proxy.api == "openai-responses")
+        let listing = catalog.listing()
+        #expect(listing.defaultModel != nil, "pi supplies its automatic default when settings pin none")
+        #expect(listing.offeredThinkingLevels("fixture/max").map(\.rawValue) == ["off", "low", "medium", "high", "xhigh", "max"])
+        #expect(listing.offeredServiceTiers(proxy.id) == [.standard, .fast])
+        #expect(!FileManager.default.fileExists(atPath: home.sessions.path), "reading capabilities creates no saved conversation")
+    }
+
     @Test func managedProxyLoadsInIsolatedSessionsAndRefreshesWithoutRestarting() async throws {
         let engine = try #require(EngineSmoke.engine)
         let scratch = try makeScratchDirectory("engine-cpa")

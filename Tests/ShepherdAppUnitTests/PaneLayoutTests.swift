@@ -203,22 +203,3 @@ struct AttachReplayWatermarkTests {
         #expect(TerminalSessionStore.PaneSession.output(after: 3, from: buffered).isEmpty)
     }
 }
-
-/// A divider takes the focus tint only while the focused pane is on one of its sides.
-@Suite("Pane dividers")
-@MainActor
-struct PaneDividerTests {
-    private let first = LeafPane(cwd: "/tmp/first")
-    private let second = LeafPane(cwd: "/tmp/second")
-    private let third = LeafPane(cwd: "/tmp/third")
-
-    @Test func aDividerBorderingTheFocusedPaneWearsTheFocusDivider() {
-        let nested = PaneNode.split(axis: .horizontal, ratio: 0.5, first: .leaf(second), second: .leaf(third))
-        let tree = PaneNode.split(axis: .vertical, ratio: 0.5, first: .leaf(first), second: nested)
-        #expect(paneSeparatorColor(tree, focused: third.id) == Color.nw.focusDivider)
-        #expect(paneSeparatorColor(nested, focused: third.id) == Color.nw.focusDivider)
-        #expect(paneSeparatorColor(nested, focused: first.id) == Color.nw.lineStrong, "the focused pane is not beside it")
-        #expect(paneSeparatorColor(tree, focused: nil) == Color.nw.lineStrong)
-        #expect(paneSeparatorColor(.leaf(first), focused: first.id) == Color.nw.lineStrong, "a leaf has no divider")
-    }
-}

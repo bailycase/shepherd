@@ -257,6 +257,50 @@ public struct NWTweakNote: View {
     }
 }
 
+/// An element that is one use of a shared piece (`NWTweakPieceNote`): the piece draws it, so a style
+/// written on the instance would do nothing, and the tab offers none. It is the "Shared piece" group
+/// at the tab's padding, saying where a change goes (the piece, once, for every board that uses it)
+/// in the scope note's 11.5/1.45 `textTertiary`, with a small ghost "Go to source" under it when the
+/// piece has a frame on the canvas to go to. Under it, a hairline.
+public struct NWTweakPieceNote: View {
+    let piece: String
+    let boards: String?
+    let goToSource: (() -> Void)?
+
+    /// `piece` is its name ("Card"); `boards` how many boards use it ("3 boards"), when known;
+    /// `goToSource` brings the piece's board into view (nil: it has no frame).
+    public init(piece: String, boards: String? = nil, goToSource: (() -> Void)?) {
+        self.piece = piece
+        self.boards = boards
+        self.goToSource = goToSource
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Shared piece")
+                .nwSectionLabel()
+                .foregroundStyle(Color.nw.textTertiary)
+                .padding(.bottom, NWDesignMetrics.tweakLabelGap)
+            Text("This is one use of \(piece)\(boards.map { ", drawn by \($0)" } ?? ""). Its look comes from the piece: change the piece to change every use.")
+                .font(.nwSans(NWDesignMetrics.tweakNoteSize))
+                .lineSpacing(NWDesignMetrics.tweakScopeNoteLineSpacing)
+                .foregroundStyle(Color.nw.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+            if let goToSource {
+                Button("Go to source", action: goToSource)
+                    .buttonStyle(.nw(.secondary, size: .s))
+                    .padding(.top, NWDesignMetrics.tweakControlSpacing)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, NWDesignMetrics.tweakPaddingVertical)
+        .padding(.horizontal, NWDesignMetrics.tweakPaddingHorizontal)
+        .overlay(alignment: .bottom) { NWHairline() }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Shared piece \(piece)")
+    }
+}
+
 /// The Tweak tab's footer, pinned to its bottom: Reset (ghost, 24pt) leading and "Ask the agent
 /// instead…" (secondary, 24pt) trailing, at 12×14 padding under a hairline.
 public struct NWTweakFooter: View {

@@ -3,7 +3,7 @@ import ShepherdTestKit
 import Testing
 @testable import ShepherdProtocol
 
-/// The dev servers a folder offers (DESIGN.md › Side pane: Browser › Nothing open). The code lives in
+/// The dev servers a folder offers (docs/design/side-pane-browser.md › Side pane: Browser › Nothing open). The code lives in
 /// ShepherdProtocol because a host's server reads its threads' folders for a remote viewer.
 @Suite("Dev server discovery")
 struct DevServerDiscoveryTests {

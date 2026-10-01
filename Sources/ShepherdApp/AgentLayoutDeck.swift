@@ -3,7 +3,7 @@ import ShepherdCore
 import ShepherdUI
 import SwiftUI
 
-/// Every mounted agent layout, each in a hosting view of its own (DESIGN.md › Performance).
+/// Every mounted agent layout, each in a hosting view of its own (docs/design/performance.md › Performance).
 ///
 /// In one view graph, every update in the visible layout (a scroll step, a keystroke, a streamed
 /// reply) also walked the hidden ones, and a status report reran every layout's wrapper: each

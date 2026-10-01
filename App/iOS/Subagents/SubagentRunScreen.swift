@@ -105,18 +105,16 @@ struct SubagentRunView: View {
                     if let summary {
                         // The inspector heads the run with its card, which carries its question.
                         if !compact {
-                            NWRunCard(SubagentValues.card(summary), isEnabled: commands.enabled, open: nil,
-                                      answer: summary.phase == .needsYou ? commands.answer(runID) : nil)
+                            NWRunCard(SubagentValues.card(summary), isEnabled: commands.enabled, open: nil)
                                 .equatable()
                         }
                         NWRunGoal(goal: summary.goal, label: compact ? "Goal · from the parent" : "Goal",
                                   note: run.flatMap(Self.goalNote), result: summary.result,
                                   resultState: AgentState(summary.phase))
                         if compact, let question = summary.question {
-                            NWRunQuestion(question, options: summary.options, name: summary.name, isEnabled: commands.enabled,
-                                          answer: commands.answer(runID))
+                            NWRunQuestion(question, options: summary.options)
                                 .padding(NW.Space.l)
-                                .background(Color.nw.lanternTint, in: RoundedRectangle(cornerRadius: MobileLayout.cardRadius))
+                                .background(Color.nw.bgSunken, in: RoundedRectangle(cornerRadius: MobileLayout.cardRadius))
                         }
                     } else {
                         Text("This run is no longer listed.").font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)

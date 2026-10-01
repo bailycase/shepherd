@@ -6,13 +6,13 @@ import ShepherdProtocol
 @Suite("Subagent cards")
 struct SubagentCardTests {
     @Test func boardRunsMapToTheFourCardStates() {
-        #expect(Board.cards.map(nativeSubagentState) == [.running, .needsYou, .done, .failed])
+        #expect(Board.cards.map(nativeSubagentState) == [.running, .asked, .done, .failed])
     }
 
     @Test(arguments: [
         ("queued", false, NativeSubagentState.running), ("running", false, .running), ("complete", false, .done),
         ("failed", false, .failed), ("stopped", false, .failed), ("rejected", false, .failed), ("paused", false, .failed),
-        ("pondering", false, .running), ("complete", true, .needsYou),
+        ("pondering", false, .running), ("complete", true, .asked),
     ])
     func stateMapping(state: String, needsAttention: Bool, expected: NativeSubagentState) {
         #expect(nativeSubagentState(Fixture.run("r", state: state, needsAttention: needsAttention)) == expected)
@@ -36,12 +36,6 @@ struct SubagentRollupTests {
         #expect(nativeSubagentRollup(Board.cards) == "4 subagents · 1.1m tok")
         #expect(nativeSubagentRollup([Fixture.run("a")]) == "1 subagent")
         #expect(nativeSubagentRollup([]) == nil)
-    }
-
-    @Test func needsYouLabelAgreesInNumber() {
-        #expect(nativeSubagentNeedsYouLabel(Board.cards) == "1 subagent needs you")
-        #expect(nativeSubagentNeedsYouLabel([Board.reviewer, Board.reviewer]) == "2 subagents need you")
-        #expect(nativeSubagentNeedsYouLabel([Board.worker]) == nil)
     }
 }
 

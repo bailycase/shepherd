@@ -9,7 +9,7 @@ import Testing
 @testable import ShepherdApp
 
 /// A long thread never draws blank while it follows its tail: not after a send, not as the turn
-/// streams, and not as it finishes (DESIGN.md › Thread). Read from what the window draws, not
+/// streams, and not as it finishes (docs/design/thread.md › Thread). Read from what the window draws, not
 /// from the scroll view's numbers: the failure this guards left the scroll view reporting the
 /// tail (distance 0) while the lazy stack had placed its rows elsewhere and the viewport drew
 /// nothing but the composer. It needed `defaultScrollAnchor(.bottom)` over a stack of estimated
@@ -33,6 +33,8 @@ struct ThreadBlankScreenTests {
     @MainActor
     final class Rig {
         let store = NativeThreadStore()
+        /// What watches the thread for a stranded scroll position, held to say in a failure what SwiftUI had in view.
+        let tailGuard = ThreadTailGuard()
         let host: QueueFixture
         let window: OffscreenWindow
         let size: CGSize
@@ -45,10 +47,11 @@ struct ThreadBlankScreenTests {
             host = QueueFixture(ThreadBlankScreenTests.snapshot(messages, revision: 1))
             window = OffscreenWindow(size: size, dark: true)
             window.show(ThreadView(store: store, active: true, isFocused: false, request: { [host] in host.answer($0) },
-                                   commandKey: "blank", listModels: { .empty }))
+                                   commandKey: "blank", listModels: { .empty }, retainedTailGuard: tailGuard))
         }
 
         func close() {
+            tailGuard.stop()
             store.stop()
             window.close()
         }
@@ -118,7 +121,7 @@ struct ThreadBlankScreenTests {
                     return drawn > 0 && reading.distance >= -2 && reading.distance <= NativeScrollFollower.threshold
                 }
             } catch {
-                throw TimedOut(what: "\(what): the thread to draw its tail (\(drawn) pixels drawn; \(last.map(String.init(describing:)) ?? "no scroll view"))")
+                throw TimedOut(what: "\(what): the thread to draw its tail (\(drawn) pixels drawn; \(last.map(String.init(describing:)) ?? "no scroll view"); in view: \(tailGuard.visible.suffix(3)) of \(store.rows.count) rows)")
             }
         }
     }

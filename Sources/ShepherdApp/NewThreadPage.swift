@@ -7,7 +7,7 @@ import ShepherdUI
 
 /// The New thread page (NavNewThread; ⌘N or the first destination): "What should the agent work
 /// on?", the composer with attach, the workplace chip (project · host, with the worktree option
-/// in its menu), the model and thinking chips and Send, and the Continue card for the most recent
+/// in its menu), the shared model, thinking and speed chips and Send, and the Continue card for the most recent
 /// running thread, and "Start a design" while the Design tool is on. Sending creates the agent
 /// with the prompt and its images as its opening message and opens its thread. The mission card
 /// waits on Missions, so it is not shown.
@@ -19,8 +19,16 @@ struct NewThreadPage: View {
     @State private var picker: ModelPickerState?
     @State private var dropTargeted = false
     @State private var picking = false
+    @State private var dismissal = ComposerMenuDismissal()
 
-    private enum Menu: Equatable { case place, models, thinking }
+    private enum Menu: Equatable { case place, models, settings }
+
+    /// `settingsOpen` starts with the model-settings popover open, for the preview renders.
+    init(vm: ShepherdViewModel, chrome: PageHeaderChrome, settingsOpen: Bool = false) {
+        self.vm = vm
+        self.chrome = chrome
+        _menu = State(initialValue: settingsOpen ? .settings : nil)
+    }
 
     private var draft: NewThreadState { vm.newThread }
 
@@ -57,6 +65,12 @@ struct NewThreadPage: View {
         .background(Color.nw.bgWindow)
         .nwAnimation(.content, value: draft.notice(vm))
         .onChange(of: draft.focusRequest, initial: true) { composing = true }
+        .onChange(of: menu) { _, open in
+            let menu = $menu
+            dismissal.dismiss = { menu.wrappedValue = nil }
+            dismissal.watch(open != nil)
+        }
+        .onDisappear { dismissal.watch(false) }
         .fileImporter(isPresented: $picking, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in
             guard case .success(let urls) = result else { return }
             draft.attach(urls: urls)
@@ -84,6 +98,7 @@ struct NewThreadPage: View {
             .font(Font.nw(.body))
             .foregroundStyle(Color.nw.textPrimary)
             .autocorrectionDisabled()
+            .tint(Color.nw.lantern)
             .focused($composing)
             .onKeyPress(.return, phases: .down) { press in
                 if press.modifiers.contains(.shift) { return .ignored }
@@ -105,48 +120,55 @@ struct NewThreadPage: View {
             draft.attach(providers)
             return true
         }
+        .background { ComposerMenuRegion(dismissal: dismissal) }
         .overlay(alignment: .bottomLeading) { menus }
     }
 
     private var controls: some View {
-        let hosts = NewThreadState.hosts(vm)
-        let chip = NewThreadPlaces.chip(hosts, chosen: draft.place)
+        ComposerControlsMinimum {
+            HStack(spacing: NW.Space.xxs) {
+                ViewThatFits(in: .horizontal) {
+                    controlChips(short: false)
+                    controlChips(short: true)
+                }
+                .nwAnimation(.content, value: [draft.model, draft.thinking.rawValue, draft.serviceTier.rawValue])
+                if draft.starting {
+                    ProgressView().progressViewStyle(.nwSpinner(color: Color.nw.textTertiary))
+                        .frame(width: NWComposerMetrics.actionSize, height: NWComposerMetrics.actionSize)
+                        .accessibilityLabel("Starting")
+                } else {
+                    NWComposerActionButton(.send, enabled: draft.blocker(vm) == nil) { draft.send(vm) }
+                        .help(draft.blocker(vm) ?? "Send (\(KeybindingsStore.shared.sendDisplay))")
+                }
+            }
+            .nwAnimation(.content, value: draft.starting)
+        }
+    }
+
+    private func controlChips(short: Bool) -> some View {
+        let chip = NewThreadPlaces.chip(NewThreadState.hosts(vm), chosen: draft.place)
         let levels = draft.thinkingLevels(vm)
-        let blocker = draft.blocker(vm)
+        let tiers = draft.serviceTiers(vm)
         return HStack(spacing: NW.Space.xxs) {
             Button { picking = true } label: { Image(systemName: "paperclip") }
                 .buttonStyle(.nwIcon(size: NWComposerMetrics.chipHeight))
                 .disabled(draft.attachments.isFull)
                 .help("Attach images (drop or paste also works), up to \(NativeImage.maxPerSend)")
                 .accessibilityLabel("Attach file")
+            let summary = ModelSettingsSummary(model: draft.model, thinking: draft.thinkingLevel(vm).rawValue, thinkingOffered: !levels.isEmpty,
+                                               speed: draft.serviceTier, speedOffered: tiers.count > 1, shortenedName: short)
+            Button { toggle(.settings) } label: {
+                NWModelSettingsLabel(model: summary.name, thinking: summary.thinking, fast: summary.fast)
+            }
+            .buttonStyle(.nwComposerChip(active: menu == .settings || menu == .models))
+            .help("Model settings: \(draft.model)")
+            .accessibilityLabel("Model settings: \(draft.model.isEmpty ? "default model" : draft.model)")
+            .accessibilityValue(summary.value)
+            Spacer(minLength: NW.Space.m)
             Button { toggle(.place) } label: { NWPlaceChipLabel(project: chip.project, host: chip.host) }
                 .buttonStyle(.nwComposerChip(active: menu == .place))
                 .help(draft.worktree ? "In a new worktree of \(chip.project) on \(chip.host)" : "\(chip.project) on \(chip.host)")
-            Button { openModels() } label: {
-                HStack(spacing: NW.Space.s) {
-                    Text(NewThreadRules.shortModel(draft.model)).font(Font.nw(.code)).lineLimit(1).truncationMode(.middle)
-                    NWChipChevron()
-                }
-            }
-            .buttonStyle(.nwComposerChip(active: menu == .models))
-            .help(draft.model.isEmpty ? "Model: the default" : "Model: \(draft.model)")
-            .accessibilityLabel("Model \(NewThreadRules.shortModel(draft.model))")
-            if !levels.isEmpty {
-                Button { toggle(.thinking) } label: { NWComposerThinkingLabel(level: draft.thinking.clamped(to: levels).title) }
-                .buttonStyle(.nwComposerChip(active: menu == .thinking))
-                .accessibilityLabel("Thinking level: \(draft.thinking.clamped(to: levels).title)")
-            }
-            Spacer(minLength: NW.Space.m)
-            if draft.starting {
-                ProgressView().progressViewStyle(.nwSpinner(color: Color.nw.textTertiary))
-                    .frame(width: NWComposerMetrics.actionSize, height: NWComposerMetrics.actionSize)
-                    .accessibilityLabel("Starting")
-            } else {
-                NWComposerActionButton(.send, enabled: blocker == nil) { draft.send(vm) }
-                    .help(blocker ?? "Send (\(KeybindingsStore.shared.sendDisplay))")
-            }
         }
-        .nwAnimation(.content, value: draft.starting)
     }
 
     // MARK: Menus
@@ -168,21 +190,34 @@ struct NewThreadPage: View {
                     } close: { menu = nil; composing = true }
                     .nwTransition(.overlay, anchor: .topLeading)
                 }
-            case .thinking:
+            case .settings:
                 let levels = draft.thinkingLevels(vm)
-                NWThinkingMenu(options: NativeThinkingLevel.levels(levels.map(\.rawValue)).map {
-                    NWThinkingOption(id: $0.id, title: $0.title, note: $0.note)
-                }, current: draft.thinking.clamped(to: levels).rawValue) { option in
-                    menu = nil
-                    composing = true
-                    if let level = ThinkingLevel(rawValue: option.id) { draft.setThinking(level) }
-                } onClose: { menu = nil; composing = true }
-                .nwTransition(.overlay, anchor: .topLeading)
+                let tiers = draft.serviceTiers(vm)
+                NWModelSettings(models: ModelCatalog.settingsModels(catalog: draft.catalog, current: draft.model, recent: RecentModels.load().map(\.id),
+                                                                    currentOffersFast: tiers.count > 1),
+                                thinking: NativeThinkingLevel.levels(levels.map(\.rawValue)).map {
+                                    NWThinkingOption(id: $0.id, title: $0.title, note: $0.note)
+                                }, currentThinking: draft.thinkingLevel(vm).rawValue,
+                                speeds: tiers.count > 1 ? tiers.map {
+                                    NWSpeedOption(id: $0.rawValue, title: $0.title, detail: $0.summary, boosted: $0 != .standard)
+                                } : [], currentSpeed: draft.serviceTier.rawValue,
+                                chooseModel: { model in
+                                    RecentModels.record(model.id, thread: nil)
+                                    draft.setModel(model.id)
+                                    menu = nil
+                                    composing = true
+                                }, chooseThinking: { id in
+                                    if let level = ThinkingLevel(rawValue: id) { draft.setThinking(level) }
+                                }, chooseSpeed: { id in
+                                    if let tier = ServiceTier(rawValue: id) { draft.setServiceTier(tier) }
+                                }, allModels: openModels, close: { menu = nil; composing = true })
+                    .nwTransition(.overlay, anchor: .topLeading)
             case nil:
                 EmptyView()
             }
         }
         .fixedSize()
+        .background { ComposerMenuRegion(dismissal: dismissal) }
         .alignmentGuide(.bottom) { $0[.top] - AppLayout.menuGap }
         .nwAnimation(.overlay, value: menu)
     }

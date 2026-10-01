@@ -101,7 +101,7 @@ struct AppSettingsCommands: Commands {
 }
 
 /// File ▸ New Thread, New Agent with Options…, New Space…, Import Claude Design Project… (⇧⌘I,
-/// with the Design tool on), and ⌘W as Close Pane.
+/// with the Design tool on), and ⌘W as Close Terminal.
 struct FileCommands: Commands {
     let vm: ShepherdViewModel
     let keys: KeybindingsStore
@@ -123,8 +123,8 @@ struct FileCommands: Commands {
             }
         }
         CommandGroup(replacing: .saveItem) {
-            Button("Close Pane") { later { vm.closeFocusedPane() } }
-                .keyboardShortcut(keys.shortcut(.closePane))
+            Button("Close Terminal") { later { vm.closeFocusedTerminal() } }
+                .keyboardShortcut(keys.shortcut(.closeTerminal))
         }
     }
 }
@@ -173,28 +173,26 @@ struct ViewCommands: Commands {
     }
 }
 
+/// The Terminal menu: New Terminal, show or hide the panel, maximize it, and the tab to go to.
 struct PaneCommands: Commands {
     let vm: ShepherdViewModel
     let keys: KeybindingsStore
     let bindings: [ShortcutAction: KeyChord]
 
     var body: some Commands {
-        CommandMenu("Pane") {
-            Button("Split Vertically") { later { vm.splitFocusedPane(axis: .vertical) } }
-                .keyboardShortcut(keys.shortcut(.splitVertical))
-            Button("Split Horizontally") { later { vm.splitFocusedPane(axis: .horizontal) } }
-                .keyboardShortcut(keys.shortcut(.splitHorizontal))
-            Divider()
-            Button("Focus Next Pane") { later { vm.focusAdjacentPane(1) } }
-                .keyboardShortcut(keys.shortcut(.focusNextPane))
-            Button("Focus Previous Pane") { later { vm.focusAdjacentPane(-1) } }
-                .keyboardShortcut(keys.shortcut(.focusPreviousPane))
+        CommandMenu("Terminal") {
+            Button("New Terminal") { later { vm.newTerminalTab() } }
+                .keyboardShortcut(keys.shortcut(.newTerminal))
             Divider()
             Button("Show or Hide Terminal") { later { vm.toggleTerminalPanel() } }
                 .keyboardShortcut(keys.shortcut(.toggleTerminal))
             Button("Maximize or Restore Terminal") { later { vm.toggleTerminalMaximized() } }
                 .keyboardShortcut(keys.shortcut(.maximizeTerminal))
-            Button("New Terminal") { later { vm.newTerminalTab() } }
+            Divider()
+            Button("Next Terminal") { later { vm.selectAdjacentTerminal(1) } }
+                .keyboardShortcut(keys.shortcut(.nextTerminal))
+            Button("Previous Terminal") { later { vm.selectAdjacentTerminal(-1) } }
+                .keyboardShortcut(keys.shortcut(.previousTerminal))
         }
     }
 }

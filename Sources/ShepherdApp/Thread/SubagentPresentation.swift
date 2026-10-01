@@ -9,30 +9,48 @@ import ShepherdRemote
 enum SubagentPresentation {
     // MARK: State
 
-    /// A run on Night Watch's one status enum. A queued run and a run paused before its next
-    /// model request both wait: hollow and outlined.
+    /// A run on Night Watch's one status enum. A queued run, a run paused before its next model
+    /// request and a run waiting on its parent's answer all wait: hollow and outlined. None of
+    /// them is `attention`, which is the user's.
     static func state(_ run: ChildRun) -> AgentState {
         switch nativeSubagentState(run) {
-        case .needsYou: .attention
+        case .asked: .queued
         case .done: .done
         case .failed: .failed
         case .running: run.state == "queued" || run.paused == true ? .queued : .running
         }
     }
 
+    /// Done, failed or stopped, and asking nothing: nothing more happens to it unless it is re-run.
+    /// A run waiting on its parent's answer is not finished.
+    static func isFinished(_ run: ChildRun) -> Bool {
+        !nativeRunPhase(run).isLive
+    }
+
+    /// What a run that asked its parent shows in place of a result: its question, then the answers
+    /// it offered. nil for a run that asks nothing.
+    static func askedText(_ run: ChildRun) -> String? {
+        guard nativeRunPhase(run) == .asked else { return nil }
+        let question = run.question?.text ?? run.attentionText ?? ""
+        guard !question.isEmpty else { return nil }
+        let options = run.question?.options ?? []
+        return options.isEmpty ? question : question + "\n\nIt offered: " + options.joined(separator: " · ")
+    }
+
     /// The pill's word where the state's own word would mislead ("Paused" is not "Queued").
     static func stateLabel(_ run: ChildRun) -> String? {
-        nativeSubagentState(run) == .running && run.paused == true ? "Paused" : nil
+        if nativeSubagentState(run) == .asked { return "Waiting on parent" }
+        return nativeSubagentState(run) == .running && run.paused == true ? "Paused" : nil
     }
 
     // MARK: Tray
 
-    /// A phase on Night Watch's one status enum: queued and paused runs both wait.
+    /// A phase on Night Watch's one status enum: queued runs, paused runs and runs waiting on
+    /// their parent all wait.
     static func state(_ phase: NativeRunPhase) -> AgentState {
         switch phase {
         case .running: .running
-        case .queued, .paused: .queued
-        case .needsYou: .attention
+        case .queued, .paused, .asked: .queued
         case .done: .done
         case .failed: .failed
         }
@@ -49,7 +67,7 @@ enum SubagentPresentation {
         let line: NWSubagentTrayRun.Line = switch row.line {
         case .working(let verb, let subject, let live): .working(verb: verb, subject: subject, live: live)
         case .waiting(let text): .waiting(text)
-        case .asks(let question): .asks(question)
+        case .asked(let question): .asked(question)
         case .result(let text): .result(text)
         case .failed(let reason): .failed(reason)
         }

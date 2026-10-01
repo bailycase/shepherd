@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-/// The providers Settings ▸ Pi ▸ Sign-in offers (DESIGN.md › Pi ▸ Sign-in): the account
+/// The providers Settings ▸ Pi ▸ Sign-in offers (docs/design/settings-pi.md › Pi ▸ Sign-in): the account
 /// sign-ins the pi Shepherd ships has, in the boards' order, and every provider that takes a key.
 /// Names and words only; pi's own login does the signing in (`PiSignInBridge`).
 public enum PiSignInCatalog {
@@ -154,7 +154,7 @@ public struct PiCustomProvider: Equatable, Sendable, Identifiable {
     }
 }
 
-/// How Shepherd's copy of something stands against the user's pi (DESIGN.md › Pi ▸ From your pi).
+/// How Shepherd's copy of something stands against the user's pi (docs/design/settings-pi.md › Pi ▸ From your pi).
 public enum PiFreshness: String, Equatable, Sendable {
     case sameAsYourPi
     case newerInYourPi

@@ -18,7 +18,7 @@ import Testing
 @MainActor
 struct ThreadPreviewTests {
     /// Long enough for a one-shot motion a test starts to come fully to rest: a spring reads as
-    /// done at its anchor (240ms at most) and settles by about 1.7× it (DESIGN.md › Motion).
+    /// done at its anchor (240ms at most) and settles by about 1.7× it (docs/design/motion.md › Motion).
     static let motionAtRest: TimeInterval = 0.45
 
     private func render(_ surface: String, _ snapshot: NativeThreadSnapshot, size: CGSize = CGSize(width: 1180, height: 900),
@@ -623,9 +623,9 @@ struct ThreadPreviewTests {
         }
     }
 
-    /// QuestionStates › from a subagent (and SubagentTray › Answer → question dock): named after
-    /// the subagent, with a note in the picked answer and Something else, since its answer is a
-    /// message to the run.
+    /// The question dock's subagent variant (QuestionStates › from a subagent): named after the
+    /// subagent, with a note in the picked answer and Something else, since its answer is a
+    /// message to the run. No surface shows it any more: a subagent asks its parent, never the user.
     @Test func subagentQuestionStates() async throws {
         let question = "Rename the new token names, or replace `Tokens.textSecondary` everywhere?"
         let options = ["Replace everywhere (Recommended)\n41 call sites move to the spec colors. One PR, bigger diff.",
@@ -664,18 +664,11 @@ struct ThreadPreviewTests {
         func controls(stop: Bool = false, enabled: Bool = false) -> some View {
             Group {
                 Button {} label: { Image(systemName: "paperclip") }.buttonStyle(.nwIcon(size: NWComposerMetrics.chipHeight))
-                Button {} label: { HStack(spacing: 6) { Text("/").font(.nwMono(12)); Text("commands") } }.buttonStyle(.nwComposerChip())
-                Button {} label: { HStack(spacing: 6) { Text("claude-opus").font(.nwMono(12)); NWChipChevron() } }.buttonStyle(.nwComposerChip())
-                Button {} label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "lightbulb").font(.system(size: 11, weight: .medium))
-                        Text("Thinking")
-                        Text("Medium").foregroundStyle(Color.nw.textPrimary).fontWeight(.medium)
-                        NWChipChevron()
-                    }
-                }
-                .buttonStyle(.nwComposerChip())
+                Button {} label: { NWModelSettingsLabel(model: "claude-opus", thinking: "Medium") }
+                    .buttonStyle(.nwComposerChip())
                 Spacer(minLength: 8)
+                BranchChipMenu(branch: AgentBranchLabel(kind: .worktree, branch: "agent/swiftui-previews", changedFiles: 3),
+                               directory: nil, showChanges: nil)
                 NWComposerActionButton(stop ? .stop : .send, enabled: stop || enabled) {}
             }
         }
@@ -683,7 +676,7 @@ struct ThreadPreviewTests {
             Text(text).font(.nw(.body)).foregroundStyle(placeholder ? Color.nw.textTertiary : Color.nw.textPrimary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        let size = CGSize(width: 1320, height: 760)
+        let size = CGSize(width: 1450, height: 880)
         try await Preview.render("composer-states", size: size) {
             HStack(alignment: .top, spacing: 32) {
                 VStack(alignment: .leading, spacing: 24) {
@@ -700,11 +693,13 @@ struct ThreadPreviewTests {
                     HStack(alignment: .top, spacing: 24) {
                         NWModelPicker(query: .constant(""), sections: Self.boardModels, selection: .constant(0), shortcut: "⇧⌘M",
                                       onChoose: { _ in }, onClose: {})
-                        NWThinkingMenu(options: Self.thinkingOptions(["off", "low", "medium", "high"]), current: "medium",
-                                       onChoose: { _ in }, onClose: {})
+                        VStack(alignment: .leading, spacing: 24) {
+                            Self.modelSettings(speed: "fast")
+                            Self.modelSettings(speed: "standard")
+                        }
                     }
                 }
-                .frame(width: NWComposerMetrics.modelPickerWidth + 24 + NWComposerMetrics.thinkingMenuWidth)
+                .frame(width: NWComposerMetrics.modelPickerWidth + 24 + NWComposerMetrics.modelSettingsWidth)
                 Spacer(minLength: 0)
             }
             .padding(32)

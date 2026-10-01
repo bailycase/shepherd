@@ -28,11 +28,9 @@ final class ComposerState {
     private(set) var models: ModelListing?
     /// The commands a "/…" draft matches.
     private(set) var matches: NativeSlashMatches?
-    /// The subagent tray: collapsed to its header, a long one showing every run, and the run
-    /// whose question is open in the composer's place (its row's Answer).
+    /// The subagent tray: collapsed to its header, and a long one showing every run.
     var trayCollapsed = false
     var trayExpanded = false
-    var answeringRun: String?
     /// pi's question folded on iPad (Hide the question): only that one stays folded.
     var questionHiding = NativeQuestionHiding()
     @ObservationIgnored private var undo: [NativeQueueUndo] = []

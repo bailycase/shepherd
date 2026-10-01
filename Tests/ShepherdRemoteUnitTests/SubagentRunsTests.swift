@@ -18,7 +18,7 @@ struct SubagentRunsTests {
 
     @Test(arguments: [
         ("running", false, nil, NativeRunPhase.running), ("queued", false, nil, .queued), ("running", false, true, .paused),
-        ("queued", false, true, .paused), ("running", true, nil, .needsYou), ("complete", false, nil, .done),
+        ("queued", false, true, .paused), ("running", true, nil, .asked), ("complete", true, nil, .asked), ("complete", false, nil, .done),
         ("failed", false, nil, .failed), ("stopped", false, nil, .failed), ("pondering", false, nil, .running),
     ] as [(String, Bool, Bool?, NativeRunPhase)])
     func runsMapToTheirPhase(state: String, needsAttention: Bool, paused: Bool?, expected: NativeRunPhase) {
@@ -26,7 +26,17 @@ struct SubagentRunsTests {
     }
 
     @Test func onlyUnfinishedPhasesAreLive() {
-        #expect(NativeRunPhase.allCases.filter(\.isLive) == [.running, .queued, .paused, .needsYou])
+        #expect(NativeRunPhase.allCases.filter(\.isLive) == [.running, .queued, .paused, .asked])
+    }
+
+    /// A child never needs the user: whatever it asks goes to its parent, so no phase, word or
+    /// label of a run says the user is wanted.
+    @Test func noRunPhaseSaysItNeedsTheUser() {
+        for phase in NativeRunPhase.allCases {
+            #expect(!phase.word.lowercased().contains("you"), "\(phase)")
+            #expect(!nativeRunPhaseLabel(phase).lowercased().contains("you"), "\(phase)")
+        }
+        #expect(NativeRunPhase.asked.word == "waiting on parent")
     }
 
     // MARK: Names
@@ -87,16 +97,17 @@ struct SubagentRunsTests {
         #expect(summary.meta == nil)
     }
 
-    @Test func aRunWaitingOnYouCarriesItsQuestionAndWhenItAsked() {
+    @Test func aRunWaitingOnItsParentCarriesItsQuestionAndWhenItAsked() {
         var run = Self.run("r", role: "reviewer", startedAt: Self.start, needsAttention: true)
         run.question = ChildQuestion(text: "Two token names collide with `Tokens.textSecondary`. Rename the new ones, or replace the old ones everywhere?",
                                      options: ["Replace everywhere", "Rename new ones"])
         run.lastActivity = ChildActivity(tool: "shepherd_parent_message", at: Self.start + 5_000)
         let summary = nativeRunSummary(run)
-        #expect(summary.phase == .needsYou)
+        #expect(summary.phase == .asked)
+        #expect(summary.detail == "waiting on its parent's answer")
         #expect(summary.options == ["Replace everywhere", "Rename new ones"])
         #expect(summary.askedAt == Self.start + 5_000)
-        #expect(summary.compactDetail == "needs you: Rename the new ones, or replace the old ones everywhere?")
+        #expect(summary.compactDetail == "asked the parent: Rename the new ones, or replace the old ones everywhere?")
     }
 
     @Test func aWaitWithoutAParentMessageHasNoStart() {
@@ -214,9 +225,9 @@ struct SubagentRunsTests {
 
     @Test func theTallyCountsLivePhasesWhileAnyRunIsLive() {
         let runs = [Self.run("a"), Self.run("b", needsAttention: true), Self.run("c", state: "complete")]
-        #expect(nativeRunTally(runs)?.text == "1 running · 1 needs you")
+        #expect(nativeRunTally(runs)?.text == "1 running · 1 waiting on parent")
         #expect(nativeRunTally(runs)?.phase == .running)
-        #expect(nativeRunTally([Self.run("b", needsAttention: true)])?.phase == .needsYou)
+        #expect(nativeRunTally([Self.run("b", needsAttention: true)])?.phase == .asked)
     }
 
     @Test func aFinishedTallySaysHowTheRunsEnded() {
@@ -265,9 +276,9 @@ struct SubagentRunsTests {
         #expect(command?.text == "also check the iPad layout")
         #expect(command?.mode == .steer)
         #expect(NativeRunCommand.steer(" \n ") == nil)
-        #expect(NativeRunCommand.answer("Rename new ones") == NativeRunCommand.steer("Rename new ones"))
     }
 
+    /// The user can still speak to a child that is waiting on its parent: Steer stays, and Stop closes its question.
     @Test func onlyALiveRunTakesASteer() {
         #expect(nativeRunAcceptsSteer(Self.run("r")))
         #expect(nativeRunAcceptsSteer(Self.run("n", needsAttention: true)))
