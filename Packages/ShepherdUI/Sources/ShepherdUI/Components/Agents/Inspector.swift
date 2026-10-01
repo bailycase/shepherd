@@ -57,19 +57,22 @@ public struct NWInspectorHeader<Trailing: View>: View {
 
 /// A run's brief under the inspector header (Agents board): its GOAL (with an optional mono
 /// note on the right, "step 1 / 1 · 62%"), and once it finished its RESULT in the state's color
-/// followed by the caller's file links.
+/// followed by the caller's file links. A run that asked its parent shows its question under
+/// "Asked the parent" in the place of the result.
 public struct NWRunBrief<Files: View>: View {
     let goal: String
     let note: String?
     let result: String?
+    let resultLabel: String
     let resultState: AgentState
     @ViewBuilder let files: () -> Files
 
-    public init(goal: String, note: String? = nil, result: String? = nil, resultState: AgentState = .done,
-                @ViewBuilder files: @escaping () -> Files) {
+    public init(goal: String, note: String? = nil, result: String? = nil, resultLabel: String = "Result",
+                resultState: AgentState = .done, @ViewBuilder files: @escaping () -> Files) {
         self.goal = goal
         self.note = note
         self.result = result
+        self.resultLabel = resultLabel
         self.resultState = resultState
         self.files = files
     }
@@ -94,7 +97,7 @@ public struct NWRunBrief<Files: View>: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             if let result {
                 VStack(alignment: .leading, spacing: NW.Space.m) {
-                    NWBriefLabel(text: "Result", color: resultState.textColor)
+                    NWBriefLabel(text: resultLabel, color: resultState.textColor)
                     NWInlineText(text: result, codeSize: 11.5).equatable()
                         .font(.nw(.ui, weight: .regular)).lineSpacing(NW.Space.xs)
                         .foregroundStyle(nw.textPrimary)
@@ -115,8 +118,9 @@ public struct NWRunBrief<Files: View>: View {
 }
 
 extension NWRunBrief where Files == EmptyView {
-    public init(goal: String, note: String? = nil, result: String? = nil, resultState: AgentState = .done) {
-        self.init(goal: goal, note: note, result: result, resultState: resultState) { EmptyView() }
+    public init(goal: String, note: String? = nil, result: String? = nil, resultLabel: String = "Result",
+                resultState: AgentState = .done) {
+        self.init(goal: goal, note: note, result: result, resultLabel: resultLabel, resultState: resultState) { EmptyView() }
     }
 }
 

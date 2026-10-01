@@ -18,8 +18,9 @@ public struct NativeTrayRow: Equatable, Sendable, Identifiable {
         case working(verb: String, subject: String?, live: Bool)
         /// Queued, or paused before its next model request.
         case waiting(String)
-        /// Waiting on you: its question.
-        case asks(String)
+        /// Waiting on its parent's answer: the question it asked (empty when it gave none). The
+        /// user is never asked: the parent answers, or asks the user in its own thread.
+        case asked(String)
         /// Finished: the first sentence of what it did.
         case result(String)
         /// Failed: why.
@@ -36,7 +37,7 @@ public struct NativeTrayRow: Equatable, Sendable, Identifiable {
     public var added: Int?
     public var removed: Int?
     /// When its figure counts from (ms): the start of a live run, the question of a run that
-    /// waits on you, else nil (no honest start).
+    /// waits on its parent, else nil (no honest start).
     public var since: Double?
     /// When a finished run ended (ms): its figure is its duration.
     public var until: Double?
@@ -46,14 +47,14 @@ public struct NativeTrayRow: Equatable, Sendable, Identifiable {
         let words: String = switch line {
         case .working(let verb, let subject, _): [verb, subject].compactMap { $0 }.joined(separator: " ")
         case .waiting(let text), .result(let text), .failed(let text): text
-        case .asks(let question): "asks: " + question
+        case .asked(let question): question.isEmpty ? "asked the parent" : "asked the parent: " + question
         }
         return [name, role, nativeRunPhaseLabel(phase), words].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
     }
 }
 
-/// One tally part of the tray's header ("1 needs you"), with the phase that colors it (nil:
-/// the quiet tertiary color).
+/// One tally part of the tray's header ("1 waiting on parent"), with the phase that colors it
+/// (nil: the quiet tertiary color).
 public struct NativeTrayTally: Equatable, Sendable, Identifiable {
     public var id: String { text }
     public var text: String
@@ -66,7 +67,7 @@ public struct NativeSubagentTray: Equatable, Sendable {
     public var title: String
     /// One cell per run, in row order.
     public var cells: [NativeRunPhase]
-    /// "1 needs you · 1 running · 1 done", or "all done".
+    /// "1 running · 1 waiting on parent · 1 done", or "all done".
     public var tally: [NativeTrayTally]
     public var rows: [NativeTrayRow]
 
@@ -95,15 +96,15 @@ public struct NativeSubagentTray: Equatable, Sendable {
 }
 
 /// The tray's order: up to `shownRows` runs keep spawn order (the boards' worker · reviewer ·
-/// tests); past that, the runs that need you come first, then live runs, then failed, then
-/// done, each in spawn order, so the rows above "Show N more" are the ones to act on.
+/// tests); past that, live runs (those waiting on their parent among them) come first, then
+/// failed, then done, each in spawn order, so the rows above "Show N more" are the ones still
+/// going.
 public func nativeTrayOrder(_ runs: [ChildRun]) -> [ChildRun] {
     let spawn = runs.sorted { ($0.startedAt ?? 0, $0.id) < ($1.startedAt ?? 0, $1.id) }
     guard spawn.count > NativeSubagentTray.shownRows else { return spawn }
     func rank(_ phase: NativeRunPhase) -> Int {
         switch phase {
-        case .needsYou: 0
-        case .running, .queued, .paused: 1
+        case .running, .queued, .paused, .asked: 1
         case .failed: 2
         case .done: 3
         }
@@ -112,17 +113,17 @@ public func nativeTrayOrder(_ runs: [ChildRun]) -> [ChildRun] {
         .map(\.element)
 }
 
-/// "1 needs you · 3 running · 3 done · 1 failed" while any run is live or any failed; "all
-/// done" once every run finished well.
+/// "3 running · 1 waiting on parent · 3 done · 1 failed" while any run is live or any failed;
+/// "all done" once every run finished well.
 public func nativeTrayTally(_ phases: [NativeRunPhase]) -> [NativeTrayTally] {
     guard !phases.isEmpty else { return [] }
     if !phases.contains(where: \.isLive), !phases.contains(.failed) { return [NativeTrayTally(text: "all done", phase: nil)] }
-    let order: [NativeRunPhase] = [.needsYou, .running, .queued, .paused, .done, .failed]
+    let order: [NativeRunPhase] = [.running, .queued, .paused, .asked, .done, .failed]
     return order.compactMap { phase in
         let count = phases.count { $0 == phase }
         guard count > 0 else { return nil }
         let color: NativeRunPhase? = switch phase {
-        case .needsYou, .running, .failed: phase
+        case .running, .failed: phase
         default: nil
         }
         return NativeTrayTally(text: "\(count) \(phase.word)", phase: color)
@@ -143,9 +144,9 @@ public func nativeTrayRow(_ run: ChildRun) -> NativeTrayRow {
         since = nil
     case .paused:
         line = .waiting("Paused before its next model request")
-    case .needsYou:
+    case .asked:
         let question = run.question?.text ?? run.attentionText ?? ""
-        line = .asks(question.isEmpty ? "your answer" : nativeQuestionLine(question))
+        line = .asked(question.isEmpty ? "" : nativeQuestionLine(question))
         since = nativeRunAskedAt(run)
     case .done:
         let summary = nativeRunSummaryLine(run)
@@ -297,16 +298,4 @@ public struct NativeSubagentRecord: Hashable, Sendable {
         finished = NativeSubagentRecordLine(title: nativeCount(ordered.count, "subagent") + " finished", meta: meta.joined(separator: " · "))
         finishedAt = last
     }
-}
-
-// MARK: Answering from the tray
-
-/// A run's question as the question dock shows it once its row's Answer is tapped (touch; the
-/// Mac's dock builds the same prompt): its answers to pick from, a note and Something else, or
-/// a reply. nil once it no longer asks.
-public func nativeSubagentQuestionPrompt(_ run: ChildRun) -> NativeQuestionPrompt? {
-    guard nativeRunPhase(run) == .needsYou else { return nil }
-    let text = run.question?.text ?? run.attentionText ?? ""
-    return NativeQuestionPrompt(runID: run.runID, name: nativeRunNames(run).name,
-                                question: text.isEmpty ? "Waiting on your answer" : text, options: run.question?.options)
 }

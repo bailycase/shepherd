@@ -62,7 +62,7 @@ struct FleetTests {
         #expect(digest.lastActivity == 9_000)
     }
 
-    @Test func theFirstDialogIsTheQuestionAndAnAskingSubagentIsKept() {
+    @Test func theFirstDialogIsTheQuestionAndAChildWaitingOnItsParentIsOnlyCounted() {
         var child = Fixture.run("run-1", needsAttention: true)
         child.role = "reviewer"
         child.question = ChildQuestion(text: "Rename or replace?")
@@ -72,8 +72,7 @@ struct FleetTests {
         ], subagents: [Fixture.run("quiet"), child]))
         #expect(digest.question == FleetDigest.Question(dialogID: "d1", kind: .select, title: "Where?", message: "Pick one",
                                                        options: ["Left", "Right"]))
-        #expect(digest.subagentQuestion == FleetDigest.SubagentQuestion(runID: "run-1", label: "reviewer", text: "Rename or replace?",
-                                                                       answerable: false))
+        #expect(digest.subagentsAsking == 1, "counted for the row, but it is the parent's to answer")
     }
 
     @Test(arguments: [
@@ -85,7 +84,7 @@ struct FleetTests {
         (.done, [Fixture.run("background")], true),
         (.idle, [Fixture.run("finished", state: "failed"), Fixture.run("unknown-state", state: "queued")], true),
     ] as [(AgentStatus, [ChildRun]?, Bool)])
-    func aSettledThreadStaysWatchedWhileASubagentMayStillAsk(status: AgentStatus, runs: [ChildRun]?, watched: Bool) {
+    func aSettledThreadStaysWatchedWhileASubagentIsStillGoing(status: AgentStatus, runs: [ChildRun]?, watched: Bool) {
         let digest = runs.map { Self.digest(Self.snapshot(subagents: $0)) }
         #expect(FleetDigest.watches(status: status, digest: digest) == watched)
     }
@@ -95,9 +94,9 @@ struct FleetTests {
         #expect(FleetDigest.watches(status: .idle, digest: Self.digest(Self.snapshot(dialogs: [
             NativeThreadDialog(id: "d1", kind: .confirm, title: "Sure?"),
         ]))))
-        #expect(FleetDigest.watches(status: .done, digest: Self.digest(Self.snapshot(subagents: [
+        #expect(!FleetDigest.watches(status: .done, digest: Self.digest(Self.snapshot(subagents: [
             Fixture.run("asking", state: "paused", needsAttention: true),
-        ]))))
+        ]))), "a child's question is its parent's: nothing in it for Home to poll for")
     }
 
     @Test func anUnchangedAnswerMatchesOnlyTheSameSessionAndRevision() {
@@ -144,20 +143,6 @@ struct FleetTests {
         #expect(try #require(model.needsYou.first).reason == reason)
     }
 
-    /// An asking subagent's chip is its own reason when it gave one, else its name.
-    @Test(arguments: [("token names?" as String?, "token names?"), ("rename or replace tokens", "rename or…"),
-                      (nil, "reviewer"), ("", "reviewer")])
-    func anAskingSubagentsReasonIsItsOwnWhenItGaveOne(short: String?, reason: String) throws {
-        var child = Fixture.run("run-1", needsAttention: true)
-        child.label = "reviewer"
-        child.question = ChildQuestion(text: "Rename or replace?", short: short)
-        let model = FleetModel(hosts: [Self.host(Self.studio, "Studio", agents: [Self.agent("restyle", .working)])],
-                               digests: [Self.ref("restyle"): Self.digest(Self.snapshot(running: true, subagents: [child]))])
-        let item = try #require(model.needsYou.first)
-        #expect(item.reason == reason)
-        #expect(item.origin == .subagent("reviewer"), "the subagent is still named by its label")
-    }
-
     @Test func aThreadWhoseHostTakesNoAnswersIsAnsweredInTheThread() throws {
         let dialog = NativeThreadDialog(id: "d", kind: .confirm, title: "Q")
         let snapshot = Self.snapshot(running: true, dialogs: [dialog], actions: [])
@@ -177,42 +162,31 @@ struct FleetTests {
         #expect(item.originLabel == "Thread")
     }
 
-    @Test func anAskingSubagentIsItsOwnItemAndItsThreadStaysInRecentsOnlyIfNothingElseAsks() throws {
+    /// A subagent asks its parent, never the user: whatever it asks, its thread is not in Needs you, and nothing
+    /// there is answered from Home.
+    @Test(arguments: [AgentStatus.working, .done, .idle])
+    func aSubagentsQuestionNeverMakesAnItemInNeedsYou(status: AgentStatus) {
         var child = Fixture.run("run-1", needsAttention: true)
         child.label = "reviewer"
-        child.attentionText = "Rename or replace?"
-        let model = FleetModel(hosts: [Self.host(Self.studio, "Studio", agents: [Self.agent("restyle", .working)])],
-                               digests: [Self.ref("restyle"): Self.digest(Self.snapshot(running: true, subagents: [child]))])
-        let item = try #require(model.needsYou.first)
-        #expect(item.origin == .subagent("reviewer"))
-        #expect(item.title == "reviewer asks")
-        #expect(item.originLabel == "Subagent · Restyle")
-        #expect(item.question == "Rename or replace?")
-        #expect(item.runID == "run-1")
-        #expect(item.reply == .open)
-        #expect(model.recents.isEmpty)
-        #expect(model.running.map(\.ref) == [Self.ref("restyle")])
+        child.question = ChildQuestion(text: "Rename or replace?", options: ["Replace everywhere", "Rename new ones"], short: "token names?")
+        let snapshot = Self.snapshot(running: status == .working, subagents: [child], actions: ["subagents"])
+        let model = FleetModel(hosts: [Self.host(Self.studio, "Studio", agents: [Self.agent("restyle", status)])],
+                               digests: [Self.ref("restyle"): Self.digest(snapshot)])
+        #expect(model.needsYou.isEmpty)
+        #expect(model.hosts.first?.needsYou == 0)
+        #expect(model.recents.map(\.ref) == [Self.ref("restyle")], "an ordinary row in Recents")
+        #expect(!model.summary.contains("need"))
     }
 
-    /// A subagent's offered answers answer in place, as a select's do, where the host takes
-    /// subagent commands; a reply of its own, or too many options, opens its run.
-    @Test(arguments: [
-        (["Replace everywhere", "Rename new ones"], ["subagents"], FleetAttention.Reply.choose(["Replace everywhere", "Rename new ones"])),
-        (["Replace everywhere", "Rename new ones"], [], .open),
-        ([], ["subagents"], .open),
-        (["A", "B", "C", "D"], ["subagents"], .open),
-    ] as [([String], [String], FleetAttention.Reply)])
-    func anAskingSubagentsOptionsAnswerInPlaceWhereItsHostTakesThem(options: [String], actions: [String],
-                                                                    reply: FleetAttention.Reply) throws {
+    @Test func aRowSaysHowManySubagentsWaitOnTheirParent() throws {
         var child = Fixture.run("run-1", needsAttention: true)
         child.label = "reviewer"
-        child.question = ChildQuestion(text: "Rename or replace?", options: options)
-        let snapshot = Self.snapshot(running: true, subagents: [child], actions: actions)
+        let snapshot = Self.snapshot(running: true, subagents: [child, Fixture.run("worker")])
         let model = FleetModel(hosts: [Self.host(Self.studio, "Studio", agents: [Self.agent("restyle", .working)])],
                                digests: [Self.ref("restyle"): Self.digest(snapshot)])
-        let item = try #require(model.needsYou.first)
-        #expect(item.reply == reply)
-        #expect(item.runID == "run-1" && item.dialogID == nil)
+        let row = try #require(model.running.first)
+        #expect(row.subagents == 2 && row.subagentsAsking == 1)
+        #expect(row.now == "2 subagents · 1 waiting on parent")
     }
 
     @Test func onlyConnectedHostsAskAndOfflineRowsAreTheirLastKnownState() {

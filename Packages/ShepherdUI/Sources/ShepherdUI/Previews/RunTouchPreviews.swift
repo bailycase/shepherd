@@ -7,8 +7,8 @@ private enum RunTouchSamples {
                                        detail: "edit Sources/ShepherdRemote/NativeThreadPresentation.swift", step: "step 1 of 3",
                                        progress: 0.34, progressLabel: "Context window used", tokens: "922k",
                                        since: now.addingTimeInterval(-37 * 60))
-    static let reviewer = NWRunCardValue(id: "reviewer", name: "reviewer", tags: "async · opus", state: .attention,
-                                         detail: "waiting on your answer",
+    static let reviewer = NWRunCardValue(id: "reviewer", name: "reviewer", tags: "async · opus", state: .queued,
+                                         stateLabel: "Waiting on parent", detail: "waiting on its parent's answer",
                                          question: "Two token names collide with existing `Tokens.textSecondary`. Rename the new ones, or replace the old ones everywhere?",
                                          options: ["Replace everywhere", "Rename new ones"], since: now.addingTimeInterval(-300),
                                          waitingSince: now.addingTimeInterval(-120))
@@ -31,7 +31,7 @@ private enum RunTouchSamples {
     NWPreviewBoth {
         VStack(spacing: NW.Space.m) {
             NWRunCard(RunTouchSamples.worker, open: {})
-            NWRunCard(RunTouchSamples.reviewer, open: {}, answer: { _ in })
+            NWRunCard(RunTouchSamples.reviewer, open: {})
             NWRunCard(RunTouchSamples.tests, isSelected: true, open: {})
             NWRunCard(RunTouchSamples.failed, open: {}, rerun: {})
             NWRunCard(RunTouchSamples.paused, open: {})

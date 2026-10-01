@@ -81,14 +81,14 @@ struct AgentBanner: Equatable {
     let identifier: String
     let target: BannerTarget
     let title: String
-    /// The kind ("Turn finished", "Subagent question"), or nothing for the notify tool's own.
+    /// The kind ("Turn finished", "Question"), or nothing for the notify tool's own.
     let subtitle: String?
     let body: String
     let level: Level
     let actions: [BannerAction]
     /// Grouped by the thing, not the app: a thread's banners stack together.
     let group: String
-    /// What a question's actions answer: pi's dialog id, or the subagent run's id.
+    /// What a question's actions answer: pi's dialog id.
     var question: String? = nil
 
     var sound: Bool { level == .active }
@@ -97,11 +97,6 @@ struct AgentBanner: Equatable {
 enum AgentBanners {
     /// The longest error, question or result a banner quotes, in characters.
     static let quoteLimit = 200
-
-    /// What a subagent run asks: its question, or the attention text it published.
-    static func runQuestion(_ run: ChildRun) -> String? {
-        run.question?.text ?? run.attentionText
-    }
 
     /// A status report's banner: a turn that finished or failed. Only working→done wants you;
     /// idle churn (launch resets, session restarts) does not, and neither does anything while
@@ -138,16 +133,6 @@ enum AgentBanners {
                            group: group(target))
     }
 
-    /// A subagent's question: "thread · subagent", its options, then Reply….
-    static func subagentQuestion(_ run: ChildRun, of agentName: String, target: BannerTarget) -> AgentBanner {
-        let name = nativeRunNames(run).name
-        let prompt = NativeQuestionPrompt(runID: run.runID, name: name, question: AgentBanners.runQuestion(run) ?? "",
-                                          options: run.question?.options)
-        return AgentBanner(identifier: subagentIdentifier(run.id, target), target: target, title: "\(agentName) · \(name)",
-                           subtitle: "Subagent question", body: quote(AgentBanners.runQuestion(run)) ?? "Waiting on your answer.",
-                           level: .active, actions: answers(prompt), group: group(target), question: run.runID)
-    }
-
     /// A remote host that went away while Shepherd was connected to it.
     static func hostOffline(name: String, hostID: UUID) -> AgentBanner {
         let target = BannerTarget.host(hostID)
@@ -175,8 +160,6 @@ enum AgentBanners {
     }
 
     static func identifier(_ kind: String, _ target: BannerTarget) -> String { "shepherd-\(kind)-\(target.key)" }
-
-    static func subagentIdentifier(_ runID: String, _ target: BannerTarget) -> String { "shepherd-subagent-\(target.key)-\(runID)" }
 
     static func group(_ target: BannerTarget) -> String { "thread:\(target.key)" }
 
@@ -227,34 +210,6 @@ enum AgentBanners {
             }
             .filter { !$0.isEmpty }
             .joined(separator: "\n")
-    }
-}
-
-/// Which subagent runs are asking, per agent, so a banner goes up once per question: when a
-/// run starts asking, or asks something new. The extension republishes every 45 s, and the
-/// sidebar's rows can be swept, so this keeps its own memory.
-struct SubagentAsks<Key: Hashable> {
-    private var asking: [Key: [String: String]] = [:]
-
-    /// Takes an agent's full published runs and returns those that began asking since the last,
-    /// and the ids of runs that stopped asking (answered, or gone).
-    mutating func update(_ key: Key, children: [ChildRun]) -> (asking: [ChildRun], answered: [String]) {
-        let previous = asking[key] ?? [:]
-        var current: [String: String] = [:]
-        var started: [ChildRun] = []
-        for run in children where run.needsAttention {
-            let question = AgentBanners.runQuestion(run) ?? ""
-            current[run.id] = question
-            if previous[run.id] != question { started.append(run) }
-        }
-        asking[key] = current.isEmpty ? nil : current
-        return (started, previous.keys.filter { current[$0] == nil }.sorted())
-    }
-
-    /// Forgets `key`, returning the runs it had asking.
-    @discardableResult
-    mutating func forget(_ key: Key) -> [String] {
-        asking.removeValue(forKey: key).map { $0.keys.sorted() } ?? []
     }
 }
 
