@@ -215,6 +215,43 @@ engine" phase, and the Release workflow's staging and signing steps.
 - Nothing touches the user's support directory, preferences, pi configuration or sessions,
   `~/.agents`, `$TMPDIR/shepherd-drops`, or a running Shepherd.
 
+**Pressing a control** (`ControlPress`, `Tests/ShepherdTestSupport/ControlPress.swift`) is how a
+test proves that a control the design draws is a control, is enabled in the state the design
+says, does what it should, and has a hit area a person can hit. It finds the control in the
+window's accessibility tree and runs its press action, as VoiceOver does: nothing is posted to
+the window, so it never takes the user's pointer or keyboard. A test that says a control cannot
+be tested has not tried this. `ModelSettingsPopoverTests` is the worked example,
+`ControlPressTests` pins the helper.
+
+- **Opt in with a process of its own.** SwiftUI draws the accessibility tree only while an
+  assistive client is attached to the process, and attaching (`AccessibilityNode.enable()`) is
+  process-wide, so each scenario is an exit test that calls `enable()` first:
+
+  ```swift
+  @Test func pauseSendsPause() async {
+      await #expect(processExitsWith: .success) { await recordingErrors { try await Self.pausing() } }
+  }
+  @MainActor static func pausing() async throws {
+      AccessibilityNode.enable()
+      let window = OffscreenWindow(size: size, dark: true, MyView(model: model))
+      defer { window.close() }
+      try window.press("Pause")        // by accessibility label; role defaults to AXButton
+      try await eventuallyOnMain("the host to be asked to pause") { model.requests == [.pause] }
+  }
+  ```
+
+- **Press by label:** `window.press("Fast", in: "Speed")` (a group's label scopes the search),
+  `press("Edit", nth: 1)` among equals, `press("Open", role: ControlRole.popUpButton)`. It returns
+  the `Control` (role, label, value, frame, enabled). A missing label, a disabled or hidden
+  control, a view that only says it is a button and takes no press, and two controls with one label
+  each throw a `ControlPressError` that lists every control the window offers. Assert what the press
+  did (the request sent, the state left), not only that it pressed.
+- **Hit areas:** `window.controls()` lists every actionable control with its frame, and
+  `ControlPress.undersized(_, minimum: .desktop)` (24pt) or `.touch` (44pt) names those too small.
+  A plain-style button with a clear background and no `.contentShape` answers a click only over its
+  label, and its frame says so. Check every state the design draws, since the controls differ.
+- A control that is not drawn in a state is not in the tree: assert its absence with `controls()`.
+
 **Which tier a change needs:**
 
 - A model, parser, projection, presentation rule, keybinding, or search change needs a unit test.
