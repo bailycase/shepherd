@@ -532,6 +532,9 @@ PI_PACKAGE_DIR="$(npm root -g)/@earendil-works/pi-coding-agent" \
   `report` delivery, several children at once), `wait` and `result`, the parent's answer by
   `questionID` and the refusal of an obsolete one, a user's Steer and Stop on a child that asked,
   a workflow's child that asks, and a child that opens a human dialog.
+  `native-children-questions-parent` does the same loop with a real parent pi on a scripted provider:
+  the parent is woken by the question, answers it with the `questionID`, or asks the user in its own
+  reply and, in a later turn, finds the question still in its context and passes the user's answer down.
 - **Real-model smoke test:** opt-in and uses your existing authentication:
   `PI_SMOKE_MODEL=<provider/model> node Tests/Extensions/native-children.smoke.mjs`.
 
