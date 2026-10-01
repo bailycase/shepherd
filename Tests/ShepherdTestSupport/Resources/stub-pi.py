@@ -1019,6 +1019,12 @@ for raw in sys.stdin.buffer:
             STATE["model"] = dict(STATE["model"], id=cmd.get("modelId"), provider=cmd.get("provider"),
                                   api=apis.get(key, STATE["model"].get("api")))
             respond(cmd, t, data=STATE["model"])
+    elif t == "get_available_models":
+        respond(cmd, t, data={"models": [
+            {"provider": "anthropic", "id": "claude-opus-4-5", "api": "anthropic-messages", "contextWindow": 200000, "reasoning": True},
+            {"provider": "openai", "id": "gpt-5", "api": "openai-responses", "contextWindow": 400000, "reasoning": True,
+             "thinkingLevelMap": {"minimal": None, "xhigh": "xhigh"}},
+        ]})
     elif t == "get_available_thinking_levels":
         spec = os.environ.get("STUB_PI_THINKING_LEVELS", "off,minimal,low,medium,high")
         if spec == "unsupported":

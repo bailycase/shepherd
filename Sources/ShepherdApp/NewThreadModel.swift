@@ -92,7 +92,7 @@ enum NewThreadPlaces {
 }
 
 /// The New thread page's draft (NavNewThread): what to do, with which images, where, with which
-/// model and level, and whether in a new worktree. Owned by the view model, so it survives the
+/// model, thinking and speed, and whether in a new worktree. Owned by the view model, so it survives the
 /// page going away.
 @MainActor @Observable
 final class NewThreadState {
@@ -101,19 +101,20 @@ final class NewThreadState {
     var attachments = ComposerAttachments()
     private(set) var place: NewThreadPlace?
     var worktree = false
-    /// The model and level the thread starts with; a blank model is the target's default.
+    /// The model, thinking and speed the thread starts with; a blank model is the target's default.
     private(set) var model = ""
     private(set) var thinking: ThinkingLevel = .medium
+    private(set) var serviceTier: ServiceTier = .standard
     /// The target's catalog, for the model picker and the levels its model takes.
     private(set) var listing: ModelListing?
     private(set) var catalog: ModelCatalog?
-    /// A host's defaults are loading.
+    /// The target's defaults and model capabilities are loading.
     private(set) var loadingDefaults = false
     private(set) var starting = false
     var error: String?
     /// Bumped to give the field the keyboard (⌘N, the destination).
     var focusRequest = 0
-    @ObservationIgnored private var edited = (model: false, thinking: false)
+    @ObservationIgnored private var edited = (model: false, thinking: false, speed: false)
     @ObservationIgnored private var defaultsRequest = UUID()
     @ObservationIgnored private var defaultsHost: UUID??
 
@@ -186,10 +187,32 @@ final class NewThreadState {
         edited.thinking = true
     }
 
+    func setServiceTier(_ tier: ServiceTier) {
+        serviceTier = tier
+        edited.speed = true
+    }
+
+    func serviceTiers(_ vm: ShepherdViewModel) -> [ServiceTier] {
+        if let host = place?.host,
+           vm.remoteHosts.connections.first(where: { $0.id == host })?.supportsCreateAgentServiceTier != true { return [] }
+        return listing?.offeredServiceTiers(model) ?? []
+    }
+
     /// The levels the chosen model takes before its pi starts; empty when it takes none.
     func thinkingLevels(_ vm: ShepherdViewModel) -> [ThinkingLevel] {
         let all = place?.host.flatMap { id in vm.remoteHosts.connections.first { $0.id == id }?.supportsAllThinkingLevels } ?? true
         return ThinkingLevel.offered(model: model, listing: listing, hostTakesAllLevels: all)
+    }
+
+    /// Unknown capabilities don't silently downgrade the choice; pi resolves it at startup.
+    func thinkingLevel(_ vm: ShepherdViewModel) -> ThinkingLevel {
+        let id = model.trimmingCharacters(in: .whitespaces)
+        let knowsModel = listing?.models.contains(id.isEmpty ? listing?.defaultModel ?? "" : id) == true
+        if knowsModel, listing?.takesThinking(id) == false { return .off }
+        let takesAllLevels = place?.host.flatMap { host in
+            vm.remoteHosts.connections.first(where: { $0.id == host })?.supportsAllThinkingLevels
+        } ?? true
+        return knowsModel || !takesAllLevels ? thinking.clamped(to: thinkingLevels(vm)) : thinking
     }
 
     /// Whether the chosen project can take a new worktree: a git checkout here, or a host that
@@ -202,32 +225,32 @@ final class NewThreadState {
         return vm.state.spaces.first { $0.id == place.space }.map(vm.spaceIsRepo) ?? false
     }
 
-    /// Model and level from the target: This Mac's settings, or the host's `creationOptions`,
+    /// Model, thinking and speed from the target: This Mac's settings, or the host's `creationOptions`,
     /// and the target's catalog. A user's pick survives a reload for the same target.
     private func loadDefaults(_ vm: ShepherdViewModel) {
         let host = place?.host
-        if defaultsHost == .some(host), !loadingDefaults, listing != nil { return }
-        if defaultsHost != .some(host) { edited = (false, false) }
+        if defaultsHost != .some(host) { edited = (false, false, false) }
         defaultsHost = .some(host)
         let request = UUID()
         defaultsRequest = request
         listing = nil
         catalog = nil
+        loadingDefaults = true
         guard let host else {
-            loadingDefaults = false
             if !edited.model { model = vm.settings.agentDefaults.model ?? PiConfig.defaultModel(in: vm.server.pi.home) ?? "" }
             if !edited.thinking { thinking = vm.settings.defaultThinking }
+            if !edited.speed { serviceTier = vm.settings.defaultServiceTier }
             let server = vm.server
             Task {
                 let listing = await Task.detached(priority: .userInitiated) { server.modelListing() }.value
-                let catalog = await ModelCatalog.loadLocal(from: server.pi.catalog)
+                let catalog = await ModelCatalog.derive(listing, hostTakesAllLevels: true)
                 guard defaultsRequest == request else { return }
                 self.listing = listing
                 self.catalog = catalog
+                loadingDefaults = false
             }
             return
         }
-        loadingDefaults = true
         let space = place?.space
         Task {
             do {
@@ -236,12 +259,16 @@ final class NewThreadState {
                 guard defaultsRequest == request else { return }
                 if !edited.model { model = options.model ?? "" }
                 if !edited.thinking { thinking = options.thinking }
-                loadingDefaults = false
+                if !edited.speed { serviceTier = options.serviceTier ?? .standard }
                 if let listing = try? await vm.remoteHosts.listModels(hostID: host), defaultsRequest == request {
                     let all = vm.remoteHosts.connections.first { $0.id == host }?.supportsAllThinkingLevels ?? false
                     self.listing = listing
-                    catalog = await ModelCatalog.derive(listing, hostTakesAllLevels: all)
+                    let catalog = await ModelCatalog.derive(listing, hostTakesAllLevels: all)
+                    guard defaultsRequest == request else { return }
+                    self.catalog = catalog
                 }
+                guard defaultsRequest == request else { return }
+                loadingDefaults = false
             } catch {
                 guard defaultsRequest == request else { return }
                 loadingDefaults = false
@@ -263,7 +290,7 @@ final class NewThreadState {
         } else {
             let server = vm.server
             listing = await Task.detached(priority: .utility) { server.modelListing() }.value
-            loaded = await ModelCatalog.loadLocal(from: server.pi.catalog)
+            loaded = await ModelCatalog.derive(listing, hostTakesAllLevels: true)
         }
         guard self.place == place else { return }
         self.listing = listing
@@ -279,7 +306,7 @@ final class NewThreadState {
                 return "That host is offline."
             }
             if loadingDefaults { return "Loading \(connection.config.name)'s defaults…" }
-        }
+        } else if loadingDefaults { return "Loading models…" }
         if prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Describe the task first." }
         return imagesRefusal(vm)
     }
@@ -293,7 +320,9 @@ final class NewThreadState {
         let submittedWorktree = worktree
         let text = submittedPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let chosenModel = model.trimmingCharacters(in: .whitespaces)
-        let level = thinking.clamped(to: thinkingLevels(vm))
+        let level = thinkingLevel(vm)
+        let tier = place.host == nil || vm.remoteHosts.connections.first(where: { $0.id == place.host })?.supportsCreateAgentServiceTier == true
+            ? serviceTier : nil
         let useWorktree = worktree && offersWorktree(vm)
         let images = attachments.images
         starting = true
@@ -312,7 +341,7 @@ final class NewThreadState {
                         hostID: host, spaceID: space.id, cwd: space.path, model: chosenModel.isEmpty ? nil : chosenModel,
                         thinking: level, initialPrompt: text,
                         worktreeBranch: useWorktree ? NewThreadRules.generatedBranch() : nil,
-                        worktreeBase: base?.base, worktreeFetchFirst: base?.fetchFirst, initialImages: images)
+                        worktreeBase: base?.base, worktreeFetchFirst: base?.fetchFirst, initialImages: images, serviceTier: tier)
                 } else {
                     guard let space = vm.state.spaces.first(where: { $0.id == place.space }) else {
                         throw AgentStartFailure(message: "That project is gone.")
@@ -320,6 +349,7 @@ final class NewThreadState {
                     var config = NewAgentConfig(spaceID: space.id, workingDirectory: space.path,
                                                 model: chosenModel.isEmpty ? nil : chosenModel, thinking: level, initialPrompt: text)
                     config.initialImages = images
+                    config.serviceTier = tier
                     if useWorktree {
                         let repo = space.path
                         let branch = GitWorktree.generatedBranch()

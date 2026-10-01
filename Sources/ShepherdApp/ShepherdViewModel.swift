@@ -715,7 +715,8 @@ final class ShepherdViewModel {
                         : GitWorktree.resolveBase(repo: repo, mode: mode, fetchFirst: fetch)
                 }.value
                 completion(.success(.init(base: resolution.display, note: resolution.note, fetchFirst: fetch,
-                                          model: self.settings.agentDefaults.model ?? PiConfig.defaultModel(in: self.server.pi.home), thinking: self.settings.defaultThinking)))
+                                          model: self.settings.agentDefaults.model ?? PiConfig.defaultModel(in: self.server.pi.home),
+                                          thinking: self.settings.defaultThinking, serviceTier: self.settings.defaultServiceTier)))
             }
         }
         // Remote clients create agents through this host's normal spawn flow.
@@ -733,6 +734,7 @@ final class ShepherdViewModel {
                 initialPrompt: request.initialPrompt
             )
             config.initialImages = request.initialImages
+            config.serviceTier = request.serviceTier
             Task { @MainActor in
                 do {
                     if let branch = request.worktreeBranch {

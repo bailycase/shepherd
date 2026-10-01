@@ -1292,8 +1292,10 @@ one. The New agent sheet (⇧⌘T) stays for its directory and base fields.
   the ramp; set it with `Font.nwSans`.
 - **Composer:** the thread's `NWComposer`, 720pt wide, drawn focused (a `textTertiary` border and a
   3pt `bgSelected` ring). The placeholder is "Describe the task…". Its control row is attach, the
-  workplace chip, the model chip, Thinking with its level (only while the model takes one), and
-  Send, a 28pt `lantern` circle at 35% until there is a prompt and a project. ↩ sends and ⇧↩ adds a
+  workplace chip, then the normal composer's shared Model, Thinking and Speed controls. Thinking
+  appears only while the model takes a level, Speed only while the target supports choosing a tier
+  at creation and the model offers one. The chips use the thread's compact labels when needed to
+  fit, with Send outside the fitting candidates. Send is a 28pt `lantern` circle at 35% until there is a prompt and a project. ↩ sends and ⇧↩ adds a
   line. Why Send cannot go is its tooltip ("Describe the task first.", "Add a project to start a
   thread.", "Loading build-01's defaults…"), and a failure shows under the card in `failed`.
 - **Images** (the user's decision, 2026-09-25: "Build it (Recommended)") attach as in a thread's
@@ -1322,9 +1324,16 @@ one. The New agent sheet (⇧⌘T) stays for its directory and base fields.
   chosen project while the page shows. A host's project offers New Agent with Options….
 - The page opens in the project of the thread last on screen (a remote thread's, on its host), else
   the one chosen before, else This Mac's first, else a connected host's first.
-- **Model and Thinking:** the target's defaults (Settings ▸ Agents on this Mac, the host's
-  `creationOptions` on a host), changed through the model picker (ModelPicker) and the thinking menu,
-  which open under the card, over what is beneath.
+- **Model, Thinking and Speed:** the target's defaults (Settings ▸ Agents on this Mac, the host's
+  `creationOptions` on a host), changed through the same chips and menus as the thread composer,
+  opening under the card over what is beneath. The model listing comes from pi's composed models
+  over RPC, including built-in and provider-extension thinking maps, not a reasoning yes/no guess.
+  Send waits for those capabilities to load so an Extra high or Max default is not silently
+  downgraded. If the catalog is unavailable, the chosen level stays intact for pi to resolve;
+  only a known model's supported set or an older host's Off-to-High limit clamps it. A chosen speed travels with creation before the opening prompt, locally and on a
+  host offering `agent.create.serviceTier.v1`; older hosts show no Speed control and keep their
+  own default. Reopening keeps explicit choices, and each host has its own defaults. A click
+  outside or Esc closes these menus, as in the thread composer.
 - **Send** creates the agent with the prompt and its images as its opening message (on this Mac
   `startAgent`, on a host `createAgent`), opens its thread, and clears the draft.
 - **Suggestions:** the cards under the composer, 38pt below it (the column's 24pt gap plus 14),
@@ -2459,9 +2468,10 @@ a docked pane it narrows to the card. They share one anatomy (NWComposer › Men
   thinking levels the model takes and nothing else, in pi's order and the thinking menu's titles
   ("Off · Minimal · Low · Medium · High", with "Extra high" and "Max" where the model has them),
   truncating at its end, or "No thinking" for a model without reasoning (the check already marks
-  the current model). The levels follow the New Agent sheet's rule (the catalog's reasoning flag,
-  and models.json's `thinkingLevelMap` for Extra high and Max; Off to High on a host without
-  `thinking.levels.v1`), except that the thread's current model lists what pi reports for it, which
+  the current model). The levels follow the New Agent sheet's rule: pi's composed capabilities,
+  including built-in, configured and extension-supplied thinking maps. A configuration-only
+  fallback keeps its declared maps, and a host without `thinking.levels.v1` takes Off to High.
+  The thread's current model lists what pi reports for it, which
   is live (`NativeModelChoices.thinkingLines`). The iOS picker's rows carry the same line under the
   name. Trailing, the row's context size in mono 11 `textTertiary` ("200K", "1M"). The whole id
   is the row's tooltip and what VoiceOver reads, with the levels. A query keeps the models whose

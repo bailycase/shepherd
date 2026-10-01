@@ -116,6 +116,7 @@ final class RemoteHostStore {
         var skillsClient: (any SkillsClient)? { phase == .connected ? client : nil }
         /// The host takes every level pi has in `createAgent` (older hosts: Off to High).
         var supportsAllThinkingLevels: Bool { client?.capabilities.contains(RemoteProtocol.thinkingLevelsCapability) == true }
+        var supportsCreateAgentServiceTier: Bool { client?.capabilities.contains(RemoteProtocol.createAgentServiceTierCapability) == true }
         /// The host takes the terminal panel's Rename tab and Kill process.
         var supportsTerminalControl: Bool { client?.capabilities.contains(RemoteProtocol.terminalControlCapability) == true }
         /// The host takes a new thread's images with its opening prompt.
@@ -491,7 +492,8 @@ final class RemoteHostStore {
         worktreeBranch: String? = nil,
         worktreeBase: String? = nil,
         worktreeFetchFirst: Bool? = nil,
-        initialImages: [NativeImage] = []
+        initialImages: [NativeImage] = [],
+        serviceTier: ServiceTier? = nil
     ) async throws -> AgentID {
         guard let client = connections.first(where: { $0.id == hostID })?.client else {
             throw RemoteHostClientError.disconnected
@@ -505,7 +507,8 @@ final class RemoteHostStore {
             worktreeBranch: worktreeBranch,
             worktreeBase: worktreeBase,
             worktreeFetchFirst: worktreeFetchFirst,
-            initialImages: initialImages
+            initialImages: initialImages,
+            serviceTier: serviceTier
         )
     }
 
