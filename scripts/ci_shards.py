@@ -44,7 +44,7 @@ def write_times(path: str, suites: dict[str, float], note: str = "") -> None:
     body = {
         "version": 1,
         "about": "Seconds each test suite took on a CI runner, from scripts/ci_shards.py record. "
-                 "The shards and the fast lane's shard count are balanced from it (the Testing docs).",
+                 "The shards and the fast lane's shard count are balanced from it (docs/testing.md).",
         "suites": {k: round(suites[k], 2) for k in sorted(suites)},
     }
     if note:

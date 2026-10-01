@@ -1,6 +1,6 @@
 {
  "version": 1,
- "about": "Seconds each test suite took on a CI runner, from scripts/ci_shards.py record. The shards and the fast lane's shard count are balanced from it (the Testing docs).",
+ "about": "Seconds each test suite took on a CI runner, from scripts/ci_shards.py record. The shards and the fast lane's shard count are balanced from it (docs/testing.md).",
  "suites": {
   "DesignSurfaceKitIntegrationTests.DesignBoardExportTests": 4.93,
   "DesignSurfaceKitIntegrationTests.DesignBoardViewTests": 7.57,
