@@ -32,11 +32,11 @@ extension ThreadPreviewTests {
 
     /// The SlashMenu, ModelPicker and composer menu boards at the app's sizes: the slash menu over
     /// an 820pt composer card (typed "/s", a long name, a prompt, the highlighted row's ⏎), the
-    /// model picker searched for "opus" over long ids, and the thinking menu for a model with all
-    /// seven levels and one with pi's standard five.
+    /// model picker searched for "opus" over long ids, and the model settings popover for a model
+    /// with all seven levels and one with pi's standard five.
     @Test func composerMenus() async throws {
         let column: CGFloat = 820
-        let size = CGSize(width: 924, height: 1010)
+        let size = CGSize(width: 924, height: 1110)
         let commands = [
             NWSlashCommand(name: "shepherd-subagents-fleet", description: "Run a fleet of subagents over the plan's steps and gather their results",
                            arguments: "[plan]", tag: "skill"),
@@ -65,17 +65,16 @@ extension ThreadPreviewTests {
             NWComposer(isFocused: true) {
                 Text(draft).font(.nw(.body)).foregroundStyle(Color.nw.textPrimary).frame(maxWidth: .infinity, alignment: .leading)
             } controls: {
-                Button {} label: { HStack(spacing: 6) { Text("/").font(.nwMono(12)); Text("commands") } }.buttonStyle(.nwComposerChip())
-                Button {} label: {
-                    HStack(spacing: 6) {
-                        Text("~anthropic/claude-opus-4-8-thinking-max").font(.nw(.code)).lineLimit(1).truncationMode(.middle)
-                        NWChipChevron()
-                    }
-                }
-                .buttonStyle(.nwComposerChip())
+                Button {} label: { NWModelSettingsLabel(model: "claude-opus-4-8-thinking-max", thinking: "Max") }.buttonStyle(.nwComposerChip())
                 Spacer(minLength: 8)
                 NWComposerActionButton(.send, enabled: true) {}
             }
+        }
+        func settings(_ levels: [String], current: String) -> some View {
+            NWModelSettings(models: [NWModelOption(id: "anthropic/claude-opus-4-8-thinking-max", title: "claude-opus-4-8-thinking-max", isCurrent: true),
+                                     NWModelOption(id: "anthropic/claude-opus-4-6", title: "claude-opus-4-6")],
+                            thinking: Self.thinkingOptions(levels), currentThinking: current, speeds: [], currentSpeed: "standard",
+                            chooseModel: { _ in }, chooseThinking: { _ in }, chooseSpeed: { _ in }, allModels: {}, close: {})
         }
         try await Preview.render("composer-menus", size: size) {
             VStack(alignment: .leading, spacing: 20) {
@@ -92,10 +91,10 @@ extension ThreadPreviewTests {
                 HStack(alignment: .bottom, spacing: 20) {
                     NWModelPicker(query: .constant("opus"), sections: opus, selection: .constant(1), shortcut: "⇧⌘M",
                                   onChoose: { _ in }, onClose: {})
-                    NWThinkingMenu(options: Self.thinkingOptions(["off", "minimal", "low", "medium", "high", "xhigh", "max"]),
-                                   current: "xhigh", onChoose: { _ in }, onClose: {})
-                    NWThinkingMenu(options: Self.thinkingOptions(["off", "minimal", "low", "medium", "high"]),
-                                   current: "medium", onChoose: { _ in }, onClose: {})
+                    VStack(alignment: .leading, spacing: 20) {
+                        settings(["off", "minimal", "low", "medium", "high", "xhigh", "max"], current: "xhigh")
+                        settings(["off", "minimal", "low", "medium", "high"], current: "medium")
+                    }
                 }
             }
             .padding(32)
