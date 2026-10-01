@@ -525,7 +525,7 @@ public struct NWElementPopover: View {
     }
 }
 
-/// An element picked in the Browser, as a chip (PaneBrowser's composer; DESIGN.md › Composer):
+/// An element picked in the Browser, as a chip (PaneBrowser's composer; docs/design/composer.md › Composer):
 /// 26pt, padding 0×8, radius 6, a `lineStrong` line, the 12pt element glyph, the label in Geist
 /// Mono 12, the source in Geist Mono 10.5 `textTertiary` when known, and a 9pt remove × in the
 /// composer. `.compact` is the queue's read-only chip: 22pt, an 11pt `textSecondary` glyph, the

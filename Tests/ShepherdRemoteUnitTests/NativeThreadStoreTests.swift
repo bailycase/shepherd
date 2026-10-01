@@ -786,7 +786,7 @@ struct NativeThreadStoreTests {
     }
 
     /// Only a send that goes into the thread now brings the reader to the tail; a follow-up sent
-    /// while pi works waits in Up next (DESIGN.md › Thread › Following).
+    /// while pi works waits in Up next (docs/design/thread.md › Thread › Following).
     @Test(arguments: [
         (running: false, delivery: NativeThreadDelivery.followUp, queued: false),
         (running: false, delivery: .steer, queued: false),

@@ -441,7 +441,7 @@ struct BrowserKey: Equatable, Sendable {
 // MARK: Screenshots
 
 /// A screenshot goes into pi's session and is re-sent whenever the conversation loads, so it is
-/// clamped like a dropped image (AGENTS.md › Dropped images): the longest edge at most 1280 px,
+/// clamped like a dropped image (docs/rules.md › Dropped images): the longest edge at most 1280 px,
 /// JPEG at about 0.7, and each result about 300 KB at most.
 enum BrowserImageClamp {
     static let maxEdge = 1280

@@ -7,7 +7,7 @@ import ShepherdProtocol
 /// resolves to two git objects — a tree or commit on each side — and a diff runs between them.
 /// The working tree becomes a tree through a snapshot: `git add -A` and `git write-tree` on an
 /// index file of Shepherd's own, in the support directory, never the user's. Its only effect on
-/// the repository is loose objects in `.git/objects` (AGENTS.md › Only these paths mutate
+/// the repository is loose objects in `.git/objects` (docs/rules.md › Only these paths mutate
 /// repositories).
 ///
 /// Everything here blocks on git, so it runs on the engine's own queues: never the server

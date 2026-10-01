@@ -13,7 +13,7 @@ import ShepherdRemote
 /// and edit lines, `AgentActionsMenu` (Search/) in the options menu, the windows' hooks
 /// (Windows/): Open in new window, a turn's Send to… and drag, and text dropped on the composer,
 /// and the terminal (Terminal/): `threadTerminal` under the thread and `TerminalMenuItems` in the
-/// options menu (no header button: the terminal is only a toggle, DESIGN.md › Terminal panel).
+/// options menu (no header button: the terminal is only a toggle, docs/design/terminal.md › Terminal panel).
 struct ThreadScreen: View {
     let ref: AgentRef
     @Environment(MobileHosts.self) private var hosts
@@ -127,7 +127,7 @@ struct ThreadTranscript: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.composerDesignChat) private var designChat
     @Environment(\.designMarkupCanvas) private var markupCanvas
-    /// Follows the tail until the reader drags away from it (DESIGN.md › Thread › Following).
+    /// Follows the tail until the reader drags away from it (docs/design/thread.md › Thread › Following).
     @State private var follower = NativeScrollFollower()
     @State private var historyPaging = NativeHistoryPaging()
     @State private var visibleTurn: String?
@@ -441,7 +441,7 @@ extension EnvironmentValues {
     @Entry var threadSidePaneOpen = false
 }
 
-/// The header's one side-pane button (iPad; DESIGN.md › iOS: iPad › Thread): Show side pane opens
+/// The header's one side-pane button (iPad; docs/design/ios-ipad.md › iOS: iPad › Thread): Show side pane opens
 /// the Changes pane; while a pane shows it is lit (`runningTint`, the glyph in `running`) and
 /// hides it.
 private struct ThreadSidePaneButton: View {

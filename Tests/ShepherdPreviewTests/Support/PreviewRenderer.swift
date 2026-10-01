@@ -68,7 +68,7 @@ enum Preview {
                         && lines.contains { $0.localizedCaseInsensitiveContains(settledText) }
                 }
             }
-            // Let appear transitions finish before capturing: DESIGN.md › Motion anchors one-shot
+            // Let appear transitions finish before capturing: docs/design/motion.md › Motion anchors one-shot
             // motion at 240ms at most, when its spring reads as done.
             for _ in 0..<4 {
                 try await Task.sleep(for: .milliseconds(60))

@@ -1,6 +1,6 @@
 # The Changes engine
 
-The Changes pane (DESIGN.md › Review — the Changes pane; boards ChangesSplit, ChangesScope,
+The Changes pane (docs/design/side-pane-changes.md › Review — the Changes pane; boards ChangesSplit, ChangesScope,
 ChangesBase, ChangesUnified, ChangesLastTurn, ChangesWide, and the iPad and iPhone review boards)
 draws what the host's engine computes. The engine is `ChangesService`
 (`Sources/ShepherdSessions/Changes/`), owned by `SessionServer` as `server.changes`. The Mac calls

@@ -34,7 +34,7 @@ public struct NativeAttachedFile: Identifiable, Hashable, Sendable {
 }
 
 /// An element picked in the thread's Browser, waiting in the composer beside the draft
-/// (DESIGN.md › Side pane › Browser): its chip, and the element the host fences for pi.
+/// (docs/design/side-pane-changes.md › Side pane › Browser): its chip, and the element the host fences for pi.
 public struct NativeAttachedElement: Identifiable, Hashable, Sendable {
     public let id: UUID
     public let element: BrowserElement

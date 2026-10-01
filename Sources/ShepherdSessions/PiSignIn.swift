@@ -2,7 +2,7 @@ import Foundation
 import ShepherdProtocol
 import ShepherdRemote
 
-// Settings ▸ Pi ▸ Sign-in's bridge to pi's own login (DESIGN.md › Dialogs and sheets › Sign in to
+// Settings ▸ Pi ▸ Sign-in's bridge to pi's own login (docs/design/dialogs-and-palette.md › Dialogs and sheets › Sign in to
 // <provider>): `Extensions/shepherd-sign-in.mjs` runs `ModelRuntime.login` against Shepherd's pi
 // home on the engine's node, and speaks JSON lines. These are its two halves, and the process.
 // Nothing of a credential ever crosses: the app sends what the user typed (a key, a pasted code)

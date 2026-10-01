@@ -3,7 +3,7 @@ import ShepherdProtocol
 import ShepherdSessions
 import ShepherdUI
 
-/// `/login` and `/logout` (SlashLogin, SlashLoginArgs; DESIGN.md › Composer › /login and /logout):
+/// `/login` and `/logout` (SlashLogin, SlashLoginArgs; docs/design/composer.md › Composer › /login and /logout):
 /// two commands of Shepherd's own in a local agent's slash menu that never reach pi. Sending one
 /// opens Settings ▸ Pi ▸ Sign-in; with a provider, `/login` scrolls there and starts its sign-in.
 enum SlashLogin {

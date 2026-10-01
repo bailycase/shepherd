@@ -10,7 +10,7 @@ import Testing
 import UniformTypeIdentifiers
 @testable import ShepherdApp
 
-/// Rich content in prose (DESIGN.md › Thread › Rich content in prose): tables, task lists,
+/// Rich content in prose (docs/design/thread.md › Thread › Rich content in prose): tables, task lists,
 /// nested lists, footnotes, images, disclosures, and diagram and math fences, in light and dark:
 ///
 ///     SHEPHERD_PREVIEW_DIR=/tmp/previews swift test --filter ThreadPreviewTests

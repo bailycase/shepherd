@@ -1,6 +1,6 @@
 import Foundation
 
-/// Why an agent's pi stopped before it served its thread (DESIGN.md › Thread › Can't start): the
+/// Why an agent's pi stopped before it served its thread (docs/design/thread.md › Thread › Can't start): the
 /// host names the cause from pi's exit and its last lines on stderr, keeps the agent, and says so
 /// in the thread's snapshot (`NativeThreadSnapshot.startProblem`) until pi starts again.
 public struct NativeStartProblem: Codable, Hashable, Sendable {

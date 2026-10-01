@@ -740,7 +740,7 @@ runtime already does, and this section records it (`DesignPieceImportTests`).
   size and no `size`, or a piece that exists. The piece needs no frame; `frame` gives it one.
 - **Swapping a piece** is `board_search(usages: "Old")` then one `boards_edit` replacing the import's
   `name` in those boards. The skill says so.
-- **On the Mac's canvas** (DESIGN.md › Shared pieces): a piece other boards import says "used in
+- **On the Mac's canvas** (docs/design/design-tool.md › Shared pieces): a piece other boards import says "used in
   N boards" in its label; a board that imports a piece redraws (live view and snapshot) when the
   piece changes and a board that imports nothing does not (`DesignHost.Board.deps`, from the
   usage index; a live view loads again and keeps what it imported); a pick on a use offers **Go to
@@ -1254,7 +1254,7 @@ design reaches an ordinary thread (Design agents and ordinary threads, above), a
 reaches a design's agent. The whole feature waits behind Settings ▸ Experiments ▸ Design tool.
 "Implement in a thread…", "Copy reference", the composer's @ picker, the reference chip and the
 canvas's thread pins are built on the Mac from DesignRefStates and the Ref* boards (On the Mac,
-below; DESIGN.md › Design references); the model below is what they call.
+below; docs/design/design-tool-references.md › Design references); the model below is what they call.
 
 ### The reference
 
@@ -1468,7 +1468,7 @@ goes fenced as data.
 
 ### On the Mac
 
-The surfaces (DESIGN.md › Design references has their measures):
+The surfaces (docs/design/design-tool-references.md › Design references has their measures):
 
 - **The canvas** (`DesignScreenModel+References.swift`): the selection is the reference (the last
   pick: an element, or a board picked whole; nothing selected, the whole design,

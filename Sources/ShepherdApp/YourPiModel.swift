@@ -2,7 +2,7 @@ import Foundation
 import ShepherdSessions
 
 /// Settings ▸ Pi's view of Shepherd's sign-ins and the user's own pi, and the first launch's copy
-/// from it with its sheet (DESIGN.md › Pi ▸ Sign-in, Pi ▸ From your pi, Dialogs and sheets ›
+/// from it with its sheet (docs/design/settings-pi.md › Pi ▸ Sign-in, Pi ▸ From your pi, Dialogs and sheets ›
 /// Bringing over your pi). Every read and write runs off the main thread (`YourPiImport`: plain
 /// files, a login shell the first time); what views draw is the latest `survey`, a plain value.
 @MainActor @Observable

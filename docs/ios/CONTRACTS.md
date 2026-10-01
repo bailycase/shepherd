@@ -294,7 +294,8 @@ WindowGroup(for: MobileWindowSeed.self) { $seed in MobileWindowRoot(app: app, se
 
 ## Rules every track follows
 
-- **Design:** the boards and [DESIGN.md](../../DESIGN.md) are the authority. Tokens only:
+- **Design:** the user's design in the thread comes first, then the boards, the specs in
+  [docs/design/](../design/README.md) and the rules in [DESIGN.md](../../DESIGN.md). Tokens only:
   `Color.nw`, `Font.nw`/`.nwText`, `NW.Space`/`Radius`/`Height`, and `MobileLayout` for the
   app's own measures (add yours as an extension in your folder). No hardcoded colors, font
   sizes or dimensions in views. Reuse ShepherdUI components before hand-rolling one.
