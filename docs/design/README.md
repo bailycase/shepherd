@@ -292,6 +292,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | [components](components.md) | Read when you build a control or a status piece: the shared component inventory and how a status reads. |
 | [composer](composer.md) | Read when you change the composer, its model-settings popover, slash menu, context meter, a question, or the send path. |
 | [departures](departures.md) | Read when a board and the app disagree. Each row is a decision the user made; a new departure is the user's call, never an agent's. |
+| [goal safety review](goal-safety-review.md) | Read when changing goals after PR #189's user review: model disclosure, confirmation, limits and narrow clock observation. |
 | [design-tool-references](design-tool-references.md) | Read when you work on design references, Tweak, design systems, export, deletion and import, or the Design tool on iOS. |
 | [design-tool](design-tool.md) | Read when you work on the Design tool (Settings ▸ Experiments ▸ Design tool): designs, canvas, comments. |
 | [dialogs-and-palette](dialogs-and-palette.md) | Read when you change the command palette, a dialog or a sheet. |

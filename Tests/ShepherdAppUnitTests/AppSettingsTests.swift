@@ -17,6 +17,7 @@ struct AppSettingsTests {
         #expect(settings.defaultThinking == .medium)
         #expect(settings.defaultServiceTier == .standard, "new threads start on Standard")
         #expect(settings.autoNameAgents)
+        #expect(!settings.goalCrossProviderEvaluation, "cross-provider goal checks require consent")
         #expect(settings.piPanesExtension && settings.piReviewExtension && settings.piDesignReferences)
         #expect(settings.piSubagentsExtension && settings.piNativeSubagents)
         #expect(settings.piBrowserExtension, "Browser tools are on by default")
@@ -30,6 +31,20 @@ struct AppSettingsTests {
         #expect(settings.childConcurrency == 4 && settings.childContext == "fresh" && settings.childScope == "both")
         #expect(settings.childModel.isEmpty && settings.childThinking.isEmpty)
         #expect(settings.queueDelivery == .all, "the queue arrives as one turn")
+    }
+
+    @Test func crossProviderConsentPersistsOptOutAndReset() {
+        let store = Fixture.defaults()
+        let settings = AppSettings(store: store)
+        settings.goalCrossProviderEvaluation = true
+        #expect(AppSettings(store: store).goalCrossProviderEvaluation)
+        settings.goalCrossProviderEvaluation = false
+        #expect(!AppSettings(store: store).goalCrossProviderEvaluation)
+        settings.goalCrossProviderEvaluation = true
+        settings.resetToDefaults()
+        #expect(!settings.goalCrossProviderEvaluation)
+        #expect(!AppSettings(store: store).goalCrossProviderEvaluation)
+        #expect(store.object(forKey: AppSettings.Key.goalCrossProviderEvaluation) == nil)
     }
 
     /// While pi works: how the queue goes persists, resets, and a new delivery default reaches

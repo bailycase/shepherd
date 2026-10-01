@@ -14,6 +14,7 @@ struct HostSettingsMappingTests {
         let app = AppSettings(store: Fixture.defaults())
         app.defaultModel = "anthropic/claude-opus"
         app.defaultThinking = .high
+        app.goalCrossProviderEvaluation = true
         app.worktreeBaseMode = .head
         app.worktreeAutoMergePR = true
         app.worktreeMergeMethod = .rebase
@@ -22,6 +23,7 @@ struct HostSettingsMappingTests {
         #expect(settings.shepherdVersion == "0.4.2" && settings.piVersion == "0.87.1")
         #expect(settings.defaultModel == "anthropic/claude-opus")
         #expect(settings.defaultThinking == .high)
+        #expect(settings.goalCrossProviderEvaluation)
         #expect(settings.worktreeBase == .head)
         #expect(settings.mergePRAutomatically && settings.mergeMethod == .rebase)
         #expect(settings.bundledExtensions.map(\.id) == ["namer", "panes", "review", "nativeSubagents", "subagents", "mcp", "browser"])
@@ -60,6 +62,11 @@ struct HostSettingsMappingTests {
         #expect(app.defaultModel == "openai/gpt-5")
         HostSettingsMapping.apply(.defaultModel(nil), to: app)
         #expect(app.defaultModel.isEmpty)
+        #expect(!app.goalCrossProviderEvaluation)
+        HostSettingsMapping.apply(.goalCrossProviderEvaluation(true), to: app)
+        #expect(app.goalCrossProviderEvaluation)
+        HostSettingsMapping.apply(.goalCrossProviderEvaluation(false), to: app)
+        #expect(!app.goalCrossProviderEvaluation)
         HostSettingsMapping.apply(.queueDelivery(.oneAtATime), to: app)
         #expect(app.queueDelivery == .oneAtATime)
         HostSettingsMapping.apply(.worktreeBase(.head), to: app)
@@ -80,7 +87,8 @@ struct HostSettingsMappingTests {
 
     /// Every change the protocol names reaches the setting it names, as the snapshot reads back.
     @Test(arguments: [
-        HostSettingChange.defaultThinking(.low), .fetchBeforeCreating(false), .commitRemainingWork(false),
+        HostSettingChange.defaultThinking(.low), .goalCrossProviderEvaluation(true), .goalCrossProviderEvaluation(false),
+        .fetchBeforeCreating(false), .commitRemainingWork(false),
         .generatePRDescriptions(false), .deleteLocalBranch(false), .mergePRAutomatically(true),
         .bundledExtension(id: "review", on: false), .bundledExtension(id: "nativeSubagents", on: false),
     ])

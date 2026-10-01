@@ -3681,7 +3681,7 @@ public final class SessionServer: @unchecked Sendable {
     func applyAgentQuestion(agentID: AgentID, question: String?, reason: String? = nil) {
         guard let index = store.state.agents.firstIndex(where: { $0.id == agentID }) else { return }
         let goal = rpcThread(forAgent: agentID)?.goal
-        let question = question ?? (goal?.state == .needsYou ? goal?.reason ?? "Goal needs you" : nil)
+        let question = question ?? (goal?.state == .needsYou ? goal?.metaLabel : nil)
         let reason = question == nil ? nil : reason
         let agent = store.state.agents[index]
         guard agent.waitingOn != question || agent.waitingReason != reason else { return }
@@ -5190,21 +5190,18 @@ public final class SessionServer: @unchecked Sendable {
                       let index = server.store.state.agents.firstIndex(where: { $0.id == agentID }) else { return }
                 let previous = server.store.state.agents[index].goalState
                 server.store.updateLive { $0.agents[index].goalState = goal?.state.rawValue }
-                if goal?.state == .needsYou {
-                    server.applyAgentQuestion(agentID: agentID, question: goal?.reason ?? "Goal needs you")
-                    server.applyAgentStatus(agentID: agentID, status: .blocked)
-                } else {
-                    let question = RPCThreadState.question(in: thread?.dialogs ?? [])
-                    server.applyAgentQuestion(agentID: agentID, question: question?.title, reason: question?.reason)
-                    server.applyAgentStatus(agentID: agentID, status: question != nil ? .blocked : thread?.running == true ? .working : .done)
-                }
+                let question = RPCThreadState.question(in: thread?.dialogs ?? [])
+                // An open dialog already published its own title and short reason.
+                if question == nil { server.applyAgentQuestion(agentID: agentID, question: nil) }
+                server.applyAgentStatus(agentID: agentID, status: goal?.state == .needsYou || question != nil ? .blocked
+                                       : thread?.running == true ? .working : .done)
                 let state = server.store.state
                 server.broadcastRemoteState(state)
                 server.hopToMain { [weak server] in
                     server?.onStateChanged?(state)
                     if previous != nil, previous != goal?.state.rawValue, let goal,
                        goal.state == .met || goal.state == .needsYou {
-                        server?.onNotify?(agentID, goal.state == .met ? "Goal met" : "Goal needs you", goal.evidence ?? goal.reason ?? goal.text)
+                        server?.onNotify?(agentID, goal.state == .met ? "Goal met" : "Goal needs you", goal.notificationLabel)
                     }
                 }
             }

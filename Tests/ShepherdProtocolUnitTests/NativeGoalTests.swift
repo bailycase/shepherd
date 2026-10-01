@@ -77,7 +77,7 @@ struct NativeGoalTests {
 
     @Test func runtimeGeneratedSnapshotsSupplyAllFiveHumanMetadataLinesAndDisclosedProof() throws {
         struct Fixture: Decodable {
-            struct Record: Decodable { let content: String }
+            struct Record: Decodable { let content: String; let details: JSONValue? }
             let goals: [NativeGoal]
             let records: [Record]
         }
@@ -91,7 +91,7 @@ struct NativeGoalTests {
         ]
         for goal in fixture.goals {
             #expect(goal.isValid)
-            #expect(goal.timeLabel == "6m 40s")
+            #expect(goal.timeLabel(at: Date(timeIntervalSince1970: (goal.runningSince ?? 0) / 1000)) == "6m 40s")
             #expect(goal.metaLabel == expected[goal.state.rawValue])
             #expect(try Wire.roundTrip(goal) == goal)
             for text in [goal.reason, goal.summary, goal.metaLabel].compactMap({ $0 }) {
@@ -104,17 +104,89 @@ struct NativeGoalTests {
         let parts = met.components(separatedBy: "\n\nDetails:\n")
         #expect(parts.first == "Goal met · 41 tests passed")
         #expect(parts.count == 2)
-        #expect(parts[1].contains("proof: 41 tests passed\tgo vet is clean\nFull ledger proof."))
+        #expect(!met.contains("proof:"), "model-visible content never repeats raw proof")
+        let details = try #require(fixture.records.first?.details)
+        #expect(details["checkedBy"]?.stringValue == "fixture/worker")
+        let proof = try #require(details["verdict"]?["evidence"]?.arrayValue)
+        #expect(proof.count == 3)
+        #expect(proof.allSatisfy { ($0["quote"]?.stringValue?.filter { !$0.isWhitespace }.count ?? 0) >= 24 })
+        #expect(proof.contains { $0["requirementId"]?.stringValue == "r3" && $0["quote"]?.stringValue == "Consumer immutability regression passed." })
     }
 
-    @Test(arguments: [NativeGoalAction.set(text: "tests pass", timeLimitSeconds: 1800, tokenLimit: 100000), .pause, .resume, .clear, .edit(text: "tests and lint pass")])
+    @Test(arguments: [NativeGoalAction.set(text: "tests pass", timeLimitSeconds: 1800, tokenLimit: 100000), .pause, .resume, .clear, .confirm,
+                      .edit(text: "tests and lint pass"), .edit(text: "tests pass", timeLimitSeconds: 600, tokenLimit: 200000),
+                      .edit(text: "tests pass", clearTimeLimit: true, clearTokenLimit: true)])
     func everyControlRoundTripsWithoutTurningItsTextIntoInstructions(_ action: NativeGoalAction) throws {
         let request = NativeThreadRequest.goal(expectedSessionID: "s", generation: "g", operationID: UUID(), action: action,
-                                               expectedGoalID: Self.id, expectedGoalRevision: 3)
+                                               expectedGoalID: Self.id, expectedGoalRevision: 3, expectedGoalState: .checking)
         #expect(try Wire.roundTrip(request) == request)
         #expect(action.command.hasPrefix("/shepherd-goal {"))
         let body = Data(action.command.dropFirst("/shepherd-goal ".count).utf8)
         #expect(try JSONSerialization.jsonObject(with: body) is [String: Any])
+    }
+
+    @Test func editsDistinguishPreservedChangedAndLiftedLimitsAndDecodeLegacyTextOnly() throws {
+        let legacy = try JSONDecoder().decode(NativeGoalAction.self, from: Data(#"{"edit":{"text":"Tests pass"}}"#.utf8))
+        #expect(legacy == .edit(text: "Tests pass"))
+        func fields(_ action: NativeGoalAction) throws -> [String: Any] {
+            try #require(JSONSerialization.jsonObject(with: Data(action.command.dropFirst("/shepherd-goal ".count).utf8)) as? [String: Any])
+        }
+        let preserve = try fields(legacy)
+        #expect(preserve["timeLimitSeconds"] == nil && preserve["tokenLimit"] == nil)
+        let changed = try fields(.edit(text: "Tests pass", timeLimitSeconds: 120, tokenLimit: 1000))
+        #expect(changed["timeLimitSeconds"] as? Double == 120 && changed["tokenLimit"] as? Int == 1000)
+        let lifted = try fields(.edit(text: "Tests pass", clearTimeLimit: true, clearTokenLimit: true))
+        #expect(lifted["timeLimitSeconds"] is NSNull && lifted["tokenLimit"] is NSNull)
+        #expect(!NativeGoalAction.edit(text: "Tests pass", timeLimitSeconds: 0).isValid)
+        #expect(!NativeGoalAction.edit(text: "Tests pass", tokenLimit: 5, clearTokenLimit: true).isValid)
+    }
+
+    @Test func anActiveClockAdvancesLocallyAndStoppedStatesStayFrozen() throws {
+        var goal = NativeGoal(id: Self.id, text: "Tests pass", state: .working, elapsedSeconds: 60, runningSince: 1_000_000)
+        let date = Date(timeIntervalSince1970: 1005)
+        #expect(goal.elapsed(at: date) == 65)
+        #expect(goal.timeLabel(at: date) == "1m 5s")
+        #expect(goal.clockStart == Date(timeIntervalSince1970: 940))
+        #expect(goal.elapsed(at: Date(timeIntervalSince1970: 990)) == 60)
+        goal.state = .paused
+        #expect(goal.clockStart == nil && goal.elapsed(at: date) == 60)
+        goal.runningSince = .infinity
+        #expect(!goal.isValid)
+    }
+
+    @Test func confirmationAndModelDisclosureRoundTripWithSafeNotificationMetadata() throws {
+        var goal = NativeGoal(id: Self.id, text: "SECRET goal text", state: .needsYou, tokensUsed: 3000,
+                              reason: "SECRET checker reason", evidence: "SECRET tool quote", summary: "SECRET summary",
+                              checkedBy: "provider/thread-model", confirmationRequired: true, checkCount: 25)
+        #expect(goal.isValid)
+        #expect(try Wire.roundTrip(goal) == goal)
+        #expect(!goal.notificationLabel.contains("SECRET"))
+        goal.state = .met
+        #expect(!goal.isValid)
+        goal.confirmationRequired = false; goal.confirmedByUser = true
+        #expect(goal.isValid)
+        #expect(try Wire.roundTrip(goal) == goal)
+        #expect(goal.notificationLabel == "3k tokens · confirmed by you")
+        #expect(goal.metaLabel == "3k tokens", "the separate attestation line avoids repeating confirmation in metadata")
+        goal.confirmedByUser = false
+        #expect(goal.notificationLabel == "3k tokens · recorded evidence accepted")
+        goal.checkedBy = "model\nSECRET tool quote"
+        #expect(!goal.isValid)
+        goal.checkedBy = "model\u{7f}"
+        #expect(!goal.isValid)
+        goal.checkedBy = String(repeating: "x", count: 257)
+        #expect(!goal.isValid)
+    }
+
+    @Test func reasonBoundsMatchTheControllerAt4096UTF16Units() {
+        var goal = NativeGoal(id: Self.id, text: "Tests pass", state: .needsYou, reason: String(repeating: "x", count: 4096))
+        #expect(goal.isValid)
+        goal.reason! += "x"
+        #expect(!goal.isValid)
+        goal.reason = String(repeating: "😀", count: 2048)
+        #expect(goal.isValid)
+        goal.reason! += "😀"
+        #expect(!goal.isValid)
     }
 
     @Test func oldSnapshotsHaveNoGoalAndNewSnapshotsKeepIt() throws {

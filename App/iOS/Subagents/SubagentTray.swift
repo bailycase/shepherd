@@ -51,7 +51,7 @@ struct SubagentTraySection: View {
                     }
                 }
             }
-            if store.goal != nil && state.trayCollapsed {
+            if store.hasGoal && state.trayCollapsed {
                 ForEach(waiting) { value in
                     VStack(spacing: 0) {
                         if let run = byID[value.id] {
@@ -61,7 +61,7 @@ struct SubagentTraySection: View {
                 }
             }
         }
-        .onChange(of: store.goal?.id, initial: true) { _, id in
+        .onChange(of: store.goalID, initial: true) { _, id in
             if id != nil { state.trayCollapsed = true }
         }
     }

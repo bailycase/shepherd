@@ -5,6 +5,7 @@ import ShepherdRemote
 import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSessions
 
 @Suite("Goal previews", .serialized, .mainActorExclusive,
        .enabled(if: Preview.enabled && !Preview.liveModel, "set SHEPHERD_PREVIEW_DIR to render previews"))
@@ -12,15 +13,28 @@ import Testing
 struct GoalPreviewTests {
     /// Generated and checked by goal.test.mjs from the extension's published widgets/messages.
     private struct Runtime: Decodable {
-        struct Record: Decodable { let content: String }
-        let goals: [NativeGoal]
+        struct Record: Decodable {
+            let customType: String
+            let content: String
+            let details: JSONValue?
+        }
+        var goals: [NativeGoal]
+        let confirmationGoal: NativeGoal
+        let confirmedGoal: NativeGoal
+        let editorGoal: NativeGoal
         let records: [Record]
     }
 
     private static func runtime() throws -> Runtime {
         let path = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Extensions/goal-runtime-fixtures.json")
-        return try JSONDecoder().decode(Runtime.self, from: Data(contentsOf: path))
+        var runtime = try JSONDecoder().decode(Runtime.self, from: Data(contentsOf: path))
+        // Runtime fixtures use a fake epoch. Keep their accrued time, not decades of wall time.
+        let now = Date().timeIntervalSince1970 * 1000
+        for index in runtime.goals.indices where runtime.goals[index].isActive && runtime.goals[index].runningSince != nil {
+            runtime.goals[index].runningSince = now
+        }
+        return runtime
     }
 
     @Test(arguments: [NWGoalSize.desktop, .touch])
@@ -28,28 +42,105 @@ struct GoalPreviewTests {
         let goals = try Self.runtime().goals
         let touch = size == .touch
         try await Preview.render(touch ? "goal-states-touch" : "goal-states-desktop",
-                                 size: CGSize(width: touch ? 398 : 720, height: touch ? 660 : 560)) {
+                                 size: CGSize(width: touch ? 398 : 720, height: touch ? 720 : 650)) {
             VStack(alignment: .leading, spacing: NW.Space.l) {
                 ForEach(goals, id: \.state) { goal in
                     NWGoalCard(state: goal.cardState, time: goal.timeLabel, meta: goal.metaLabel, text: goal.text,
-                               size: size, pause: {}, resume: {}, edit: {}, clear: {})
+                               size: size, confirmationRequired: goal.confirmationRequired == true,
+                               checkedBy: goal.checkedBy, confirmedByUser: goal.confirmedByUser == true,
+                               pause: {}, resume: {}, edit: {}, clear: {})
                 }
                 Spacer(minLength: 0)
             }
             .padding(NW.Space.l)
+            .frame(width: touch ? 398 : 720, height: touch ? 720 : 650, alignment: .top)
+            .background(Color.nw.bgWindow)
+        }
+    }
+
+    @Test(arguments: [NWGoalSize.desktop, .touch])
+    func confirmationCheckerAndUserAttestationGrowTheCard(_ size: NWGoalSize) async throws {
+        let runtime = try Self.runtime()
+        let touch = size == .touch
+        try await Preview.render(touch ? "goal-confirmation-touch" : "goal-confirmation-desktop",
+                                 size: CGSize(width: touch ? 398 : 720, height: touch ? 500 : 430)) {
+            VStack(spacing: NW.Space.l) {
+                ForEach([true, false], id: \.self) { enabled in
+                    let goal = runtime.confirmationGoal
+                    NWGoalCard(state: goal.cardState, time: goal.timeLabel, meta: goal.metaLabel,
+                               text: goal.text, size: size, resumeEnabled: enabled,
+                               confirmationRequired: goal.confirmationRequired == true, checkedBy: goal.checkedBy,
+                               pause: {}, resume: {}, edit: {}, clear: {})
+                }
+                let met = runtime.confirmedGoal
+                NWGoalCard(state: met.cardState, time: met.timeLabel, meta: met.metaLabel, text: met.text,
+                           size: size, checkedBy: met.checkedBy, confirmedByUser: met.confirmedByUser == true,
+                           pause: {}, resume: {}, edit: {}, clear: {})
+                Spacer(minLength: 0)
+            }
+            .padding(NW.Space.l)
+            .frame(width: touch ? 398 : 720, height: touch ? 500 : 430, alignment: .top)
+            .background(Color.nw.bgWindow)
+        }
+    }
+
+    @Test func editedAndLiftedLimitsUseTheExistingInlineEditorFields() async throws {
+        let goal = try Self.runtime().editorGoal
+        try await Preview.render("goal-edit-limits", size: CGSize(width: 720, height: 600)) {
+            VStack(alignment: .leading, spacing: NW.Space.l) {
+                ForEach([true, false], id: \.self) { capped in
+                    VStack(alignment: .leading, spacing: NW.Space.s) {
+                        NWGoalCard(state: goal.cardState, time: goal.timeLabel, meta: goal.metaLabel, text: goal.text,
+                                   framed: false, checkedBy: goal.checkedBy, pause: {}, resume: {}, edit: {}, clear: {})
+                        VStack(alignment: .leading, spacing: NW.Space.s) {
+                            TextField("Goal condition", text: .constant(goal.text))
+                                .textFieldStyle(.plain).font(.nw(.body))
+                            NWGoalLimitFields(limits: .constant(NWGoalLimits(seconds: capped ? goal.timeLimitSeconds : nil,
+                                                                          tokens: capped ? goal.tokenLimit : nil)))
+                            HStack(spacing: NW.Space.s) {
+                                Spacer()
+                                Button("Cancel") {}.buttonStyle(.nw(.ghost, size: .s))
+                                Button("Save") {}.buttonStyle(.nw(.secondary, size: .s)).disabled(capped)
+                            }
+                        }
+                        .padding(NW.Space.l)
+                        .overlay(alignment: .top) { NWHairline() }
+                    }
+                    .background(Color.nw.bgRaised)
+                    .nwBorder(Color.nw.lineStrong, radius: NWGoalSize.desktop.radius)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(NW.Space.l)
+            .frame(width: 720, height: 600, alignment: .top)
             .background(Color.nw.bgWindow)
         }
     }
 
     @Test func publishedRecordsKeepTheirEvidenceBehindDisclosure() async throws {
         let records = try Self.runtime().records
-        let presentation = NativeTurnPresentation(items: records.enumerated().map { index, record in
-            .goalRecord(id: "record-\(index)", text: record.content)
-        }, changes: nil, toolCalls: 0, copyText: "", endedAt: nil)
-        try await Preview.render("goal-thread-records", size: CGSize(width: 720, height: 440)) {
+        let messages = records.enumerated().map { index, record in
+            RPCThreadState.project(entryID: "record-\(index)", message: RPCMessage(
+                role: "custom", content: [.text(record.content)], customType: record.customType,
+                display: true, details: record.details))
+        }
+        let presentation = nativeTurnPresentation(messages, live: false)
+        for (record, message) in zip(records, messages) where record.customType == "shepherd.goal.check" {
+            let shown = NativeGoalRecord(message.blocks.map(\.text).joined(separator: "\n"))
+            if let model = record.details?["checkedBy"]?.stringValue {
+                #expect(shown.line.contains("Checked by " + model), "native projection exposes the fixture's actual checker")
+            }
+            if let feedback = record.details?["verdict"]?["reason"]?.stringValue {
+                #expect(shown.evidence?.contains(feedback) == true, "full fixture feedback remains under Details")
+            }
+            if let error = record.details?["error"]?.stringValue {
+                #expect(shown.evidence?.contains(error) == true, "fixture diagnostics remain under Details")
+            }
+        }
+        try await Preview.render("goal-thread-records", size: CGSize(width: 720, height: 560)) {
             AgentTurn(presentation: presentation, live: false, footer: false)
                 .padding(NW.Space.xl)
-                .frame(width: 720, height: 440, alignment: .top)
+                .frame(width: 720, height: 560, alignment: .top)
                 .background(Color.nw.bgWindow)
         }
     }

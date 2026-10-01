@@ -53,6 +53,7 @@ final class AppSettings {
         static let defaultModel = "shepherd.agent.defaultModel"
         static let defaultThinking = "shepherd.agent.defaultThinking"
         static let defaultServiceTier = "shepherd.agent.defaultServiceTier"
+        static let goalCrossProviderEvaluation = "shepherd.agent.goalCrossProviderEvaluation"
         static let autoNameAgents = "shepherd.agent.autoName"
         static let skillsInSlashMenu = "shepherd.skills.slashMenu"
         static let mcpOpenSignInPages = "shepherd.mcp.openSignInPages"
@@ -93,7 +94,7 @@ final class AppSettings {
 
         static let all = [
             terminalFontFamily, terminalFontSize, defaultModel,
-            defaultThinking, defaultServiceTier, autoNameAgents, queueDelivery, shellPath,
+            defaultThinking, defaultServiceTier, goalCrossProviderEvaluation, autoNameAgents, queueDelivery, shellPath,
             piPanesExtension, piReviewExtension, piSubagentsExtension, piNativeSubagents,
             piMCPExtension, piBrowserExtension, piDesignReferences,
             childConcurrency, childModel, childThinking, childContext, childScope,
@@ -154,6 +155,12 @@ final class AppSettings {
     /// keeps its own after that, and one whose model offers no tier ignores it.
     var defaultServiceTier: ServiceTier {
         didSet { store.set(defaultServiceTier.rawValue, forKey: Key.defaultServiceTier) }
+    }
+
+    /// Explicit consent to send goal-check context to another provider. Applied at the next
+    /// agent start, including a restart; running agents keep their launch policy.
+    var goalCrossProviderEvaluation: Bool {
+        didSet { store.set(goalCrossProviderEvaluation, forKey: Key.goalCrossProviderEvaluation) }
     }
 
     /// Off means agents keep their provisional name (the truncated opening
@@ -408,6 +415,7 @@ final class AppSettings {
             .flatMap(ThinkingLevel.init(rawValue:)) ?? Defaults.thinking
         defaultServiceTier = store.string(forKey: Key.defaultServiceTier)
             .flatMap(ServiceTier.init(rawValue:)) ?? Defaults.serviceTier
+        goalCrossProviderEvaluation = store.object(forKey: Key.goalCrossProviderEvaluation) as? Bool ?? false
         autoNameAgents = store.object(forKey: Key.autoNameAgents) as? Bool ?? Defaults.autoNameAgents
         skillsInSlashMenu = store.object(forKey: Key.skillsInSlashMenu) as? Bool ?? Defaults.skillsInSlashMenu
         // The directory now uses Shepherd's public API; discard the retired credential.
@@ -504,6 +512,7 @@ final class AppSettings {
         defaultModel = ""
         defaultThinking = Defaults.thinking
         defaultServiceTier = Defaults.serviceTier
+        goalCrossProviderEvaluation = false
         autoNameAgents = Defaults.autoNameAgents
         skillsInSlashMenu = Defaults.skillsInSlashMenu
         mcpOpenSignInPages = false

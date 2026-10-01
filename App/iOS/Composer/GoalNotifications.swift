@@ -64,8 +64,7 @@ final class GoalNotifications: NSObject, UNUserNotificationCenterDelegate {
             let content = UNMutableNotificationContent()
             content.title = goal.state == .met ? "Goal met" : "Goal needs you"
             content.subtitle = store.hostName ?? "Shepherd"
-            content.body = [goal.text, goal.state == .met ? goal.evidence : goal.reason]
-                .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n")
+            content.body = goal.notificationLabel
             content.sound = .default
             content.threadIdentifier = "goal:\(ref.host.uuidString):\(ref.agent.rawValue)"
             do {

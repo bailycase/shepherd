@@ -24,6 +24,24 @@ struct GoalControlsTests {
         }
     }
 
+    @Test func confirmationShowsTheCheckerAndRequiresAnExplicitEnabledPress() async {
+        await #expect(processExitsWith: .success) {
+            await recordingErrors { try await Self.confirmation() }
+        }
+    }
+
+    @Test func checkerAndAttestationGrowBothCardSizesAndStayAccessible() async {
+        await #expect(processExitsWith: .success) {
+            await recordingErrors { try await Self.attributionGeometry() }
+        }
+    }
+
+    @Test func editingOnlyLimitsAndLiftingThemUsesTheDisplayedGoalFence() async {
+        await #expect(processExitsWith: .success) {
+            await recordingErrors { try await Self.editLimits() }
+        }
+    }
+
     @Test func aPendingQuestionDisablesResumeUntilTheQuestionIsAnswered() async {
         await #expect(processExitsWith: .success) {
             await recordingErrors { try await Self.answerThenResume() }
@@ -114,12 +132,12 @@ struct GoalControlsTests {
                 guard let self else { return .failure(code: "gone", message: "Host released") }
                 self.requests.append(value)
                 switch value {
-                case .goal(let session, let generation, let operation, let action, let expectedID, let expectedRevision):
+                case .goal(let session, let generation, let operation, let action, let expectedID, let expectedRevision, let expectedState):
                     guard session == self.snapshot.piSessionID, generation == self.snapshot.generation,
                           var current = self.snapshot.goal else {
                         return .failure(code: "stale_session", message: "The session changed.")
                     }
-                    guard expectedID == current.id, expectedRevision == current.revision else {
+                    guard expectedID == current.id, expectedRevision == current.revision, expectedState == current.state else {
                         return .failure(code: "stale_goal", message: "The goal changed. Refresh it before acting.")
                     }
                     // Mirror shepherd-goal: edit changes the condition, not the state/reason;
@@ -135,10 +153,23 @@ struct GoalControlsTests {
                         self.snapshot.goal = nil
                         self.snapshot.revision += 1
                         return .accepted(operationID: operation)
-                    case .edit(let text):
-                        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return .failure(code: "invalid", message: "Empty goal condition.") }
-                        if text == current.text { return .accepted(operationID: operation) }
+                    case .confirm:
+                        guard current.state == .needsYou, current.confirmationRequired == true, self.snapshot.dialogs.isEmpty else {
+                            return .failure(code: "invalid", message: "Confirmation unavailable.")
+                        }
+                        current.state = .met
+                        current.confirmationRequired = false
+                        current.confirmedByUser = true
+                    case .edit(let text, let time, let tokens, let clearTime, let clearTokens):
+                        guard action.isValid else { return .failure(code: "invalid", message: "Invalid goal edit.") }
+                        let nextTime = clearTime == true ? nil : time ?? current.timeLimitSeconds
+                        let nextTokens = clearTokens == true ? nil : tokens ?? current.tokenLimit
+                        if text == current.text && nextTime == current.timeLimitSeconds && nextTokens == current.tokenLimit {
+                            return .accepted(operationID: operation)
+                        }
                         current.text = text
+                        current.timeLimitSeconds = nextTime
+                        current.tokenLimit = nextTokens
                     case .set: return .failure(code: "invalid", message: "This fixture edits existing goals only.")
                     }
                     current.revision += 1
@@ -170,7 +201,9 @@ struct GoalControlsTests {
         func ready() async throws {
             try await eventuallyOnMain("the goal thread to load its card") {
                 store.ready && store.goal == snapshot.goal && Set(buttons) == Set(snapshot.goal.map { goal in
-                    GoalControlsTests.states.first { $0.0 == goal.state }!.1
+                    goal.state == .needsYou && goal.confirmationRequired == true
+                        ? ["Confirm goal", "Edit goal", "Clear goal"]
+                        : GoalControlsTests.states.first { $0.0 == goal.state }!.1
                 } ?? [])
             }
             #expect(!window.window.isKeyWindow, "the fixture never takes the user's focus")
@@ -188,11 +221,11 @@ struct GoalControlsTests {
 
         func expectRequest(_ action: NativeGoalAction, fencedBy goal: NativeGoal, index: Int = 0) throws {
             try #require(goalRequests.indices.contains(index))
-            guard case .goal(let session, let generation, _, let sent, let id, let revision) = goalRequests[index] else {
+            guard case .goal(let session, let generation, _, let sent, let id, let revision, let state) = goalRequests[index] else {
                 Issue.record("Missing goal request"); return
             }
             #expect(session == snapshot.piSessionID && generation == snapshot.generation)
-            #expect(sent == action && id == goal.id && revision == goal.revision)
+            #expect(sent == action && id == goal.id && revision == goal.revision && state == goal.state)
         }
 
         func close() { store.stop(); window.close() }
@@ -301,6 +334,176 @@ struct GoalControlsTests {
     }
 
     @MainActor
+    private static func confirmation() async throws {
+        AccessibilityNode.enable()
+        var candidate = goal(.needsYou)
+        candidate.confirmationRequired = true
+        candidate.checkedBy = "anthropic/claude-haiku"
+        for pending in [false, true] {
+            let question = NativeThreadDialog(id: "confirmation-question", kind: .confirm, title: "Continue?")
+            let host = Host(goal: candidate, dialogs: pending ? [question] : [])
+            defer { host.close() }
+            try await host.ready()
+            try await eventuallyOnMain("checker attribution and Confirm to attach") {
+                host.window.elements().contains { (($0.label ?? "") + ($0.value ?? "")).contains("Checked by anthropic/claude-haiku") }
+                    && host.button("Confirm goal") != nil
+            }
+            #expect(host.button("Resume goal") == nil)
+            #expect(host.button("Confirm goal")?.goalHelp == "Confirm that every requirement is met despite missing recorded evidence. This is your attestation, not independent verification.")
+            if pending {
+                #expect(host.button("Confirm goal")?.goalIsEnabled == false)
+                _ = host.button("Confirm goal")?.press()
+                #expect(host.goalRequests.isEmpty)
+                try host.press("Yes")
+                try await eventuallyOnMain("answer to enable Confirm") {
+                    host.store.dialogs.isEmpty && !host.store.busy && host.button("Confirm goal")?.goalIsEnabled == true
+                }
+            }
+            let displayed = try #require(host.store.goal)
+            try host.press("Confirm goal")
+            try await eventuallyOnMain("explicit attestation to show Met and Confirmed by you") {
+                host.store.goal?.state == .met && host.store.goal?.confirmedByUser == true && !host.store.busy
+                    && host.window.elements().contains { (($0.label ?? "") + ($0.value ?? "")).contains("Confirmed by you") }
+            }
+            try host.expectRequest(.confirm, fencedBy: displayed)
+            #expect(host.goalRequests.count == 1)
+            #expect(!host.window.window.isKeyWindow)
+        }
+        // Touch explains the attestation visibly before the same header/menu callback can run.
+        for pending in [false, true] {
+            var heights: [CGFloat] = []
+            for confirming in [false, true] {
+                var presses = 0
+                let touch = OffscreenWindow(size: CGSize(width: 366, height: 360), dark: true)
+                defer { touch.close() }
+                touch.show(NWGoalCard(state: .needsYou, time: "6m 40s", meta: "confirm", text: candidate.text, size: .touch,
+                                     resumeEnabled: !pending, confirmationRequired: confirming, checkedBy: candidate.checkedBy,
+                                     pause: {}, resume: { presses += 1 }, edit: {}, clear: {})
+                    .accessibilityLabel("Goal section")
+                    .frame(maxHeight: .infinity, alignment: .top))
+                let label = confirming ? "Confirm goal" : "Resume goal"
+                try await eventuallyOnMain("touch action and reason to attach") { touch.element(label) != nil }
+                let card = try #require(touch.element("Goal section")).frame
+                heights.append(card.height)
+                let reason = touch.elements().first { $0.label == "looks met, evidence incomplete, confirm" || $0.value == "looks met, evidence incomplete, confirm" }
+                if confirming {
+                    let explanation = try #require(reason)
+                    #expect(card.insetBy(dx: -0.5, dy: -0.5).contains(explanation.frame), "the missing-evidence reason is visible inside the growing card")
+                    #expect(touch.element(label)?.goalHelp == "Confirm that every requirement is met despite missing recorded evidence. This is your attestation, not independent verification.")
+                    #expect(touch.element("Resume goal") == nil)
+                } else {
+                    #expect(reason == nil, "ordinary touch Needs you does not gain confirmation copy")
+                }
+                #expect(touch.element(label)?.goalIsEnabled == !pending)
+                if pending {
+                    _ = touch.element(label)?.press()
+                    #expect(presses == 0, "an unanswered question disables attestation")
+                } else {
+                    try #require(touch.element(label)?.press() == true)
+                    #expect(presses == 1)
+                }
+                #expect(!touch.window.isKeyWindow)
+            }
+            #expect(heights[1] > heights[0], "the visible confirmation reason grows touch anatomy instead of clipping: \(heights)")
+        }
+    }
+
+    @MainActor
+    private static func attributionGeometry() async throws {
+        AccessibilityNode.enable()
+        for size in [NWGoalSize.desktop, .touch] {
+            var heights: [CGFloat] = []
+            for attribution in 0...2 {
+                let window = OffscreenWindow(size: CGSize(width: size == .touch ? 366 : 620, height: 360), dark: true)
+                defer { window.close() }
+                window.show(NWGoalCard(state: .met, time: "6m 40s", meta: "71k tokens", text: "Tests pass.", size: size,
+                                       checkedBy: attribution > 0 ? "anthropic/claude-haiku" : nil, confirmedByUser: attribution > 1,
+                                       pause: {}, resume: {}, edit: {}, clear: {})
+                    .accessibilityLabel("Goal section")
+                    .frame(maxHeight: .infinity, alignment: .top))
+                try await eventuallyOnMain("attribution card to attach") { window.element("Goal section") != nil }
+                let card = try #require(window.element("Goal section")).frame
+                heights.append(card.height)
+                for copy in [attribution > 0 ? "Checked by anthropic/claude-haiku" : nil,
+                             attribution > 1 ? "Confirmed by you" : nil].compactMap({ $0 }) {
+                    let label = try #require(window.elements().first { $0.label == copy || $0.value == copy })
+                    #expect(card.insetBy(dx: -0.5, dy: -0.5).contains(label.frame), "\(copy) is visible within the growing card")
+                }
+                #expect(!window.window.isKeyWindow)
+            }
+            #expect(heights[0] >= size.cardHeight && heights[1] > heights[0] && heights[2] > heights[1],
+                    "checker and attestation each add vertical space: \(size) \(heights)")
+        }
+    }
+
+    @MainActor
+    private static func editLimits() async throws {
+        AccessibilityNode.enable()
+        var original = goal(.paused)
+        original.timeLimitSeconds = 1800
+        original.tokenLimit = 200_000
+        let host = Host(goal: original)
+        defer { host.close() }
+        try await host.ready()
+        try host.press("Edit goal")
+        try await eventuallyOnMain("limit fields to attach") { host.window.element("Time limit (minutes)")?.value == "30.0" }
+        #expect(host.button("Save")?.goalIsEnabled == false)
+        let time = try #require(host.window.element("Time limit (minutes)"))
+        let tokens = try #require(host.window.element("Token budget"))
+        for invalid in ["0", "-1", "nan", "inf", "1e309", "nonsense"] {
+            try #require(time.setGoalValue(invalid))
+            try await eventuallyOnMain("invalid minutes to disable Save") { host.button("Save")?.goalIsEnabled == false }
+        }
+        try #require(time.setGoalValue("12.5"))
+        for invalid in ["0", "-1", "1.5", "99999999999999999999999", "nan"] {
+            try #require(tokens.setGoalValue(invalid))
+            try await eventuallyOnMain("invalid tokens to disable Save") { host.button("Save")?.goalIsEnabled == false }
+        }
+        try #require(tokens.setGoalValue("100000"))
+        try await eventuallyOnMain("only changed limits to enable Save") { host.button("Save")?.goalIsEnabled == true }
+        try host.press("Save")
+        try await eventuallyOnMain("only limits to change") { host.store.goal?.timeLimitSeconds == 750 && !host.store.busy && host.window.element("Goal condition") == nil }
+        try host.expectRequest(.edit(text: original.text, timeLimitSeconds: 750, tokenLimit: 100_000), fencedBy: original)
+        #expect(host.store.goal?.text == original.text && host.store.goal?.state == .paused && host.store.goal?.reason == original.reason)
+        let limited = try #require(host.store.goal)
+        try host.press("Edit goal")
+        try await eventuallyOnMain("limits to reopen") { host.window.element("Token budget")?.value == "100000" }
+        try #require(host.window.element("Time limit (minutes)")?.setGoalValue("") == true)
+        try #require(host.window.element("Token budget")?.setGoalValue("") == true)
+        try await eventuallyOnMain("blank limits to enable Save") { host.button("Save")?.goalIsEnabled == true }
+        try host.press("Save")
+        try await eventuallyOnMain("blank fields to lift both caps") {
+            host.store.goal?.timeLimitSeconds == nil && host.store.goal?.tokenLimit == nil && !host.store.busy
+                && host.window.element("Goal condition") == nil
+        }
+        try host.expectRequest(.edit(text: original.text, clearTimeLimit: true, clearTokenLimit: true), fencedBy: limited, index: 1)
+        try host.press("Edit goal")
+        try await eventuallyOnMain("uncapped editor to reopen") { host.window.element("Token budget") != nil }
+        try #require(host.window.element("Token budget")?.setGoalValue("50000") == true)
+        try await eventuallyOnMain("limit edit to enable Save") { host.button("Save")?.goalIsEnabled == true }
+        host.snapshot.goal?.revision += 1
+        host.snapshot.revision += 1
+        await host.store.refresh()
+        try await eventuallyOnMain("stale editor to disable Save") { host.button("Save")?.goalIsEnabled == false }
+        _ = host.button("Save")?.press()
+        #expect(host.goalRequests.count == 2, "a stale editor sends no mutation")
+        try host.press("Cancel")
+        try await eventuallyOnMain("stale editor to close") { host.window.element("Token budget") == nil }
+        try host.press("Edit goal")
+        try await eventuallyOnMain("fresh editor to reopen") { host.window.element("Token budget") != nil }
+        try #require(host.window.element("Token budget")?.setGoalValue("50000") == true)
+        try await eventuallyOnMain("fresh limit edit to enable Save") { host.button("Save")?.goalIsEnabled == true }
+        host.snapshot.goal?.state = .needsYou
+        host.snapshot.revision += 1
+        await host.store.refresh()
+        try await eventuallyOnMain("a changed displayed state without a revision bump to disable Save") { host.button("Save")?.goalIsEnabled == false }
+        _ = host.button("Save")?.press()
+        #expect(host.goalRequests.count == 2)
+        try host.press("Cancel")
+        #expect(!host.window.window.isKeyWindow)
+    }
+
+    @MainActor
     private static func answerThenResume() async throws {
         AccessibilityNode.enable()
         for state in [NativeGoalState.paused, .needsYou] {
@@ -371,6 +574,23 @@ struct GoalControlsTests {
         try await eventuallyOnMain("the refreshed press to pause") { host.goalRequests.count == 2 && host.store.goal?.state == .paused && !host.store.busy }
         try host.expectRequest(.pause, fencedBy: newer, index: 1)
         #expect(host.store.goal?.revision == newer.revision + 1)
+
+        let changedState = Host(goal: original)
+        defer { changedState.close() }
+        try await changedState.ready()
+        var paused = original
+        paused.state = .paused
+        changedState.snapshot.goal = paused
+        changedState.snapshot.revision += 1
+        try changedState.press("Pause goal")
+        try await eventuallyOnMain("the old Working button to be rejected against a new Paused state") {
+            changedState.store.notice?.contains("goal changed") == true && changedState.store.goal == paused && !changedState.store.busy
+        }
+        try changedState.expectRequest(.pause, fencedBy: original)
+        #expect(changedState.snapshot.goal == paused, "a stale displayed state cannot apply the old action")
+        try changedState.press("Resume goal")
+        try await eventuallyOnMain("the refreshed Paused button to resume") { changedState.store.goal?.state == .working && !changedState.store.busy }
+        try changedState.expectRequest(.resume, fencedBy: paused, index: 1)
     }
 
     // The same clipping boundary as the app: an unframed goal is the first section of NWDockStack.
@@ -497,6 +717,12 @@ struct GoalControlsTests {
 
 @MainActor
 private extension AccessibilityNode {
+    var goalHelp: String? {
+        let selector = NSSelectorFromString("accessibilityHelp")
+        guard object.responds(to: selector) else { return nil }
+        return object.perform(selector)?.takeUnretainedValue() as? String
+    }
+
     var goalIsEnabled: Bool {
         let selector = NSSelectorFromString("isAccessibilityEnabled")
         guard object.responds(to: selector) else { return false }

@@ -30,7 +30,13 @@ struct RemoteHostSettingsTests {
         #expect(fetched.defaultModel == "anthropic/claude-opus")
         let changed = try await client.hostSettings(.change(.bundledExtension(id: "review", on: false)))
         #expect(changed.bundledExtensions.map(\.on) == [false])
-        #expect(requests.current == [.fetch, .change(.bundledExtension(id: "review", on: false))])
+        #expect(!fetched.goalCrossProviderEvaluation)
+        let optedIn = try await client.hostSettings(.change(.goalCrossProviderEvaluation(true)))
+        #expect(optedIn.goalCrossProviderEvaluation)
+        let optedOut = try await client.hostSettings(.change(.goalCrossProviderEvaluation(false)))
+        #expect(!optedOut.goalCrossProviderEvaluation)
+        #expect(requests.current == [.fetch, .change(.bundledExtension(id: "review", on: false)),
+                                    .change(.goalCrossProviderEvaluation(true)), .change(.goalCrossProviderEvaluation(false))])
     }
 
     @Test func aHostsGUIThatCantApplyAChangeSaysWhy() async throws {

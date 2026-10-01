@@ -169,17 +169,17 @@ struct ComposerDock<Queue: View>: View {
     @ViewBuilder let queue: () -> Queue
 
     var body: some View {
-        if goalStore?.goal != nil || (tray != nil && actions != nil) {
+        if goalStore?.hasGoal == true || (tray != nil && actions != nil) {
             NWDockStack(showsTray: true, showsQueue: showsQueue) {
                 VStack(spacing: 0) {
-                    if let goalStore, goalStore.goal != nil {
+                    if let goalStore, goalStore.hasGoal {
                         ThreadGoalCard(store: goalStore, active: goalActive, framed: false)
                     }
                     if let tray, let actions {
                         SubagentTrayView(tray: tray, state: trayState, runs: runs, actions: actions,
-                                         goalPresent: goalStore?.goal != nil)
+                                         goalPresent: goalStore?.hasGoal == true)
                             .overlay(alignment: .top) {
-                                if goalStore?.goal != nil { NWHairline(color: Color.nw.lineStrong) }
+                                if goalStore?.hasGoal == true { NWHairline(color: Color.nw.lineStrong) }
                             }
                     }
                 }

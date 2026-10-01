@@ -20,18 +20,13 @@ struct GoalRecordTests {
         #expect(record.evidence == text)
     }
 
-    @Test func runtimeStopsKeepFullFeedbackAndAuthenticationErrorsBehindDisclosure() throws {
-        struct Fixture: Decodable {
-            struct Record: Decodable { let content: String }
-            let records: [Record]
-        }
-        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let fixture = try JSONDecoder().decode(Fixture.self, from: Data(contentsOf: root.appendingPathComponent("Tests/Extensions/goal-runtime-fixtures.json")))
-        let decision = NativeGoalRecord(try #require(fixture.records.first { $0.content.contains("Choose staging or production") }?.content))
-        #expect(decision.line == "Goal needs you · choose a deployment target")
+    @Test func projectedDiagnosticsStayDisclosedAndTheModelRemainsVisible() {
+        let decision = NativeGoalRecord("Goal needs you · looks met, evidence incomplete, confirm\nChecked by fixture/worker\n\nDetails:\nMissing evidence:\nr2: verify deployment\n\nTool evidence:\nproof-id: a recorded successful result")
+        #expect(decision.line == "Goal needs you · looks met, evidence incomplete, confirm\nChecked by fixture/worker")
         #expect(decision.showsDetails)
-        #expect(decision.evidence?.contains("Choose staging or production; do not deploy until the user decides.") == true)
-        let error = NativeGoalRecord(try #require(fixture.records.first { $0.content.contains("No authenticated goal evaluator") }?.content))
+        #expect(decision.evidence?.contains("r2: verify deployment") == true)
+        #expect(!decision.line.contains("proof-id"))
+        let error = NativeGoalRecord("Goal needs you · goal check failed · try again\n\nDetails:\nNo authenticated goal evaluator model is available.")
         #expect(error.line == "Goal needs you · goal check failed · try again")
         #expect(error.evidence == "No authenticated goal evaluator model is available.")
         #expect(error.showsDetails)

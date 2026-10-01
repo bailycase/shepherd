@@ -1074,6 +1074,7 @@ final class TerminalSessionStore {
             subagentsExtensionPath: settings.piSubagentsExtension ? try SubagentsExtension.installedPath() : nil,
             childrenExtensionPath: settings.piNativeSubagents ? try ChildrenExtension.installedPath() : nil,
             childEnvironment: settings.childEnvironment,
+            goalCrossProviderEvaluation: settings.goalCrossProviderEvaluation,
             namerExtensionPath: settings.autoNameAgents ? try NamerExtension.installedPath() : nil,
             needsName: Self.wantsNamer(for: agent, autoName: settings.autoNameAgents),
             isAutomation: isAutomation,

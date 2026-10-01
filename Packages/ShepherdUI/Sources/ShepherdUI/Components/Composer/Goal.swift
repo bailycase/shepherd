@@ -4,6 +4,8 @@ import SwiftUI
 public enum NWGoalState: CaseIterable, Equatable, Sendable {
     case working, checking, met, paused, needsYou
 
+    static let confirmationExplanation = "Confirm that every requirement is met despite missing recorded evidence. This is your attestation, not independent verification."
+
     var label: String {
         switch self {
         case .working: "Working"
@@ -110,6 +112,10 @@ public struct NWGoalCard: View {
     let size: NWGoalSize
     let framed: Bool
     let resumeEnabled: Bool
+    let confirmationRequired: Bool
+    let checkedBy: String?
+    let confirmedByUser: Bool
+    let clockStart: Date?
     @ScaledMetric(relativeTo: .body) private var dynamicScale = 1
     let pause: () -> Void
     let resume: () -> Void
@@ -118,6 +124,8 @@ public struct NWGoalCard: View {
 
     public init(state: NWGoalState, time: String, meta: String, text: String,
                 size: NWGoalSize = .desktop, framed: Bool = true, resumeEnabled: Bool = true,
+                confirmationRequired: Bool = false, checkedBy: String? = nil, confirmedByUser: Bool = false,
+                clockStart: Date? = nil,
                 pause: @escaping () -> Void, resume: @escaping () -> Void,
                 edit: @escaping () -> Void, clear: @escaping () -> Void) {
         self.state = state
@@ -127,6 +135,10 @@ public struct NWGoalCard: View {
         self.size = size
         self.framed = framed
         self.resumeEnabled = resumeEnabled
+        self.confirmationRequired = confirmationRequired
+        self.checkedBy = checkedBy
+        self.confirmedByUser = confirmedByUser
+        self.clockStart = clockStart
         self.pause = pause
         self.resume = resume
         self.edit = edit
@@ -134,21 +146,41 @@ public struct NWGoalCard: View {
     }
 
     public var body: some View {
+        let _ = NWRenderProbe.tick("goal.card")
         let scale = max(1, ThemeStore.shared.textScale * dynamicScale)
         VStack(spacing: 0) {
             NWGoalCardHeader(state: state, time: time, meta: meta, size: size, scale: scale,
-                             resumeEnabled: resumeEnabled, pause: pause, resume: resume, edit: edit, clear: clear)
-            Text(text)
-                .help(text)
-                .font(.nwSans(size.textFont))
-                .foregroundStyle(Color.nw.textPrimary)
-                .lineLimit(size.textLines)
-                .truncationMode(.tail)
-                .padding(.horizontal, NWGoalMetrics.textInset)
-                .padding(.top, max(NW.Space.m * scale, size.hitTarget - size.headerHeight * scale))
-                .padding(.bottom, NW.Space.m * scale)
-                .frame(maxWidth: .infinity, minHeight: (size.cardHeight - size.headerHeight) * scale, alignment: .leading)
-                .overlay(alignment: .top) { NWHairline() }
+                             resumeEnabled: resumeEnabled, confirmationRequired: confirmationRequired,
+                             clockStart: clockStart, pause: pause, resume: resume, edit: edit, clear: clear)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(text)
+                    .help(text)
+                    .font(.nwSans(size.textFont))
+                    .foregroundStyle(Color.nw.textPrimary)
+                    .lineLimit(size.textLines)
+                    .truncationMode(.tail)
+                    .padding(.top, max(NW.Space.m * scale, size.hitTarget - size.headerHeight * scale))
+                    .padding(.bottom, NW.Space.m * scale)
+                    .frame(maxWidth: .infinity, minHeight: (size.cardHeight - size.headerHeight) * scale, alignment: .leading)
+                let touchConfirmation = size == .touch && state == .needsYou && confirmationRequired
+                if touchConfirmation || checkedBy != nil || confirmedByUser {
+                    VStack(alignment: .leading, spacing: NW.Space.s) {
+                        if touchConfirmation {
+                            Text("looks met, evidence incomplete, confirm")
+                                .font(.nw(.caption))
+                                .foregroundStyle(AgentState.attention.textColor)
+                        }
+                        if let checkedBy { Text("Checked by \(checkedBy)") }
+                        if confirmedByUser { Text("Confirmed by you") }
+                    }
+                    .font(.nwMono(NWGoalMetrics.metaFont))
+                    .foregroundStyle(Color.nw.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.bottom, NW.Space.m * scale)
+                }
+            }
+            .padding(.horizontal, NWGoalMetrics.textInset)
+            .overlay(alignment: .top) { NWHairline() }
         }
         .background(framed ? Color.nw.bgRaised : .clear, in: RoundedRectangle(cornerRadius: size.radius))
         .nwBorder(framed ? Color.nw.lineStrong : .clear, radius: size.radius)
@@ -157,7 +189,16 @@ public struct NWGoalCard: View {
             if size == .touch {
                 if !meta.isEmpty { Text(meta) }
                 if state.offersPause { Button("Pause goal", systemImage: "pause", action: pause) }
-                if state.offersResume { Button("Resume goal", systemImage: "play", action: resume).disabled(!resumeEnabled) }
+                if state.offersResume {
+                    if state == .needsYou && confirmationRequired {
+                        Button("Confirm goal", action: resume)
+                            .disabled(!resumeEnabled)
+                            .help(NWGoalState.confirmationExplanation)
+                            .accessibilityHint(NWGoalState.confirmationExplanation)
+                    } else {
+                        Button("Resume goal", systemImage: "play", action: resume).disabled(!resumeEnabled)
+                    }
+                }
                 if state.offersEdit { Button("Edit goal", systemImage: "pencil", action: edit) }
                 Button("Clear goal", systemImage: "xmark", action: clear)
             }
@@ -173,6 +214,8 @@ private struct NWGoalCardHeader: View {
     let size: NWGoalSize
     let scale: CGFloat
     let resumeEnabled: Bool
+    let confirmationRequired: Bool
+    let clockStart: Date?
     let pause: () -> Void
     let resume: () -> Void
     let edit: () -> Void
@@ -205,7 +248,7 @@ private struct NWGoalCardHeader: View {
         HStack(spacing: NW.Space.m) {
             NWGoalGlyph().foregroundStyle(Color.nw.textSecondary)
             Text("Goal").font(.nwSans(size.labelFont, .semibold)).foregroundStyle(Color.nw.textSecondary)
-            NWGoalPill(state: state, time: time, size: size)
+            NWGoalPill(state: state, time: time, size: size, clockStart: clockStart)
         }
         .fixedSize(horizontal: true, vertical: false)
         .frame(minHeight: size.headerHeight * scale)
@@ -225,12 +268,14 @@ private struct NWGoalCardHeader: View {
 
     @ViewBuilder private var actions: some View {
         if state.offersResume {
-            Button("Resume", action: resume)
+            let confirming = state == .needsYou && confirmationRequired
+            Button(confirming ? "Confirm" : "Resume", action: resume)
                 .buttonStyle(NWGoalActionStyle(size: size, icon: false))
                 .padding(.top, size.actionOffset(scale: scale))
                 .disabled(!resumeEnabled)
-                .help("Resume goal")
-                .accessibilityLabel("Resume goal")
+                .help(confirming ? NWGoalState.confirmationExplanation : "Resume goal")
+                .accessibilityHint(confirming ? NWGoalState.confirmationExplanation : "")
+                .accessibilityLabel(confirming ? "Confirm goal" : "Resume goal")
         }
         if state.offersPause { NWGoalIconButton(symbol: "pause", label: "Pause goal", size: size, action: pause) }
         if size == .desktop && state.offersEdit {
@@ -248,13 +293,27 @@ public struct NWGoalPill: View {
     let size: NWGoalSize
     @ScaledMetric(relativeTo: .body) private var dynamicScale = 1
 
-    public init(state: NWGoalState, time: String, size: NWGoalSize = .desktop) {
+    let clockStart: Date?
+
+    public init(state: NWGoalState, time: String, size: NWGoalSize = .desktop, clockStart: Date? = nil) {
         self.state = state
         self.time = time
         self.size = size
+        self.clockStart = clockStart
     }
 
     public var body: some View {
+        if let clockStart, state.offersPause {
+            TimelineView(NWElapsedSchedule(start: clockStart, style: .long)) { context in
+                let _ = NWRenderProbe.tick("goal.clock")
+                pill(time: NWGoalTime.text(context.date.timeIntervalSince(clockStart)))
+            }
+        } else {
+            pill(time: time)
+        }
+    }
+
+    private func pill(time: String) -> some View {
         HStack(spacing: NW.Space.s) {
             NWGoalStatusMark(state: state)
                 .frame(width: state.offersPause ? NWGoalMetrics.statusGlyph : nil)
@@ -277,9 +336,25 @@ public struct NWGoalPill: View {
 public struct NWGoalHeaderPill: View {
     let time: String
 
-    public init(time: String) { self.time = time }
+    let clockStart: Date?
+
+    public init(time: String, clockStart: Date? = nil) {
+        self.time = time
+        self.clockStart = clockStart
+    }
 
     public var body: some View {
+        if let clockStart {
+            TimelineView(NWElapsedSchedule(start: clockStart, style: .long)) { context in
+                let _ = NWRenderProbe.tick("goal.headerClock")
+                pill(time: NWGoalTime.text(context.date.timeIntervalSince(clockStart)))
+            }
+        } else {
+            pill(time: time)
+        }
+    }
+
+    private func pill(time: String) -> some View {
         HStack(spacing: NW.Space.s) {
             NWGoalGlyph()
             Text(time.isEmpty ? "Goal" : "Goal · \(time)").font(.nwMono(NWGoalMetrics.desktopPillFont)).monospacedDigit()
@@ -290,6 +365,72 @@ public struct NWGoalHeaderPill: View {
         .background(AgentState.running.tint ?? .clear, in: Capsule())
         .fixedSize()
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// Goal clocks retain the native goal's unpadded minutes/seconds copy, not NWDuration's row copy.
+enum NWGoalTime {
+    static func text(_ elapsed: TimeInterval) -> String {
+        let seconds = Int(min(max(elapsed, 0), Double(Int.max / 2)))
+        if seconds >= 3600 { return "\(seconds / 3600)h \(seconds % 3600 / 60)m" }
+        return "\(seconds / 60)m \(seconds % 60)s"
+    }
+}
+
+/// Shared editor values keep macOS inline and iOS sheet validation identical.
+public struct NWGoalLimits: Equatable, Sendable {
+    public var minutes: String
+    public var tokens: String
+    private let originalSeconds: Double?
+    private let originalMinutes: String
+
+    public init(seconds: Double?, tokens: Int?) {
+        originalSeconds = seconds
+        originalMinutes = seconds.map { String($0 / 60) } ?? ""
+        minutes = originalMinutes
+        self.tokens = tokens.map(String.init) ?? ""
+    }
+
+    public var seconds: Double? {
+        // Preserve an untouched cap exactly across seconds/minutes floating-point conversion.
+        minutes == originalMinutes ? originalSeconds : Double(minutes.trimmingCharacters(in: .whitespacesAndNewlines)).map { $0 * 60 }
+    }
+    public var tokenLimit: Int? { Int(tokens.trimmingCharacters(in: .whitespacesAndNewlines)) }
+    public var clearsTime: Bool { minutes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    public var clearsTokens: Bool { tokens.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    public var isValid: Bool {
+        (clearsTime || seconds.map { $0.isFinite && $0 > 0 } == true)
+            && (clearsTokens || tokenLimit.map { $0 > 0 } == true)
+    }
+}
+
+public struct NWGoalLimitFields: View {
+    @Binding var limits: NWGoalLimits
+
+    public init(limits: Binding<NWGoalLimits>) { _limits = limits }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: NW.Space.s) {
+            field("Time limit (minutes)", text: $limits.minutes)
+            field("Token budget", text: $limits.tokens)
+        }
+    }
+
+    private func field(_ label: String, text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: NW.Space.xs) {
+            Text(label).font(.nw(.caption)).foregroundStyle(Color.nw.textSecondary).accessibilityHidden(true)
+            TextField("No limit", text: text)
+                .textFieldStyle(.plain)
+                .font(.nw(.mono))
+                .foregroundStyle(Color.nw.textPrimary)
+                .padding(NW.Space.s)
+                .background(Color.nw.bgSunken, in: RoundedRectangle(cornerRadius: NW.Radius.s))
+                .nwBorder(Color.nw.lineSubtle, radius: NW.Radius.s)
+                .accessibilityLabel(label)
+                #if os(iOS)
+                .keyboardType(.decimalPad)
+                #endif
+        }
     }
 }
 

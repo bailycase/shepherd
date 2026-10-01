@@ -210,7 +210,7 @@ struct Composer: View {
     private var accessories: [String] {
         let banner = store.startProblem.map { !(hidesNotSignedIn && $0.kind == .notSignedIn) } == true ? "cannotStart" : store.loadError != nil ? "lost" : input.attachments.error != nil ? "attachment" : referenceError != nil ? "reference" : store.notice != nil ? "notice" : nil
         return [banner].compactMap { $0 } + store.widgets.map(\.id) + (queueStack.isVisible ? ["queue"] : [])
-            + (showsTray ? ["tray"] : []) + (store.goal != nil ? ["goal"] : [])
+            + (showsTray ? ["tray"] : []) + (store.hasGoal ? ["goal"] : [])
     }
 
     private var showsTray: Bool { subagents != nil && store.tray != nil }
@@ -290,11 +290,11 @@ struct Composer: View {
                     .nwTransition(.list, edge: .bottom)
             }
             // The subagents and "Up next" grow upward from the card, which never moves.
-            if store.goal != nil || showsTray || queueStack.isVisible {
+            if store.hasGoal || showsTray || queueStack.isVisible {
                 ComposerDock(tray: store.tray, trayState: trayState, runs: store.subagents, actions: subagents,
                              showsQueue: queueStack.isVisible, goalStore: store, goalActive: active) {
                     if queueStack.isVisible {
-                        QueueStackView(state: queueStack, store: store, running: running, animated: !catchingUp, framed: !showsTray && store.goal == nil,
+                        QueueStackView(state: queueStack, store: store, running: running, animated: !catchingUp, framed: !showsTray && !store.hasGoal,
                                        focusedRow: $focusedRow, focusComposer: { composing = true })
                     }
                 }
@@ -350,7 +350,7 @@ struct Composer: View {
             dismissal.dismiss = closeMenu(open)
             dismissal.watch(open != .none)
         }
-        .onChange(of: store.goal?.id, initial: true) { _, id in
+        .onChange(of: store.goalID, initial: true) { _, id in
             if id != nil { queueStack.collapsed = true }
         }
         .onChange(of: store.queue, initial: true) { _, queue in

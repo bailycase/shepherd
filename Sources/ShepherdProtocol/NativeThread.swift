@@ -44,7 +44,7 @@ public enum NativeThreadRequest: Codable, Hashable, Sendable {
     case setServiceTier(expectedSessionID: String, generation: String, operationID: UUID, tier: String)
     /// Goal controls execute even during work or evaluation; fenced by the displayed goal revision.
     case goal(expectedSessionID: String, generation: String, operationID: UUID, action: NativeGoalAction,
-              expectedGoalID: String? = nil, expectedGoalRevision: Int? = nil)
+              expectedGoalID: String? = nil, expectedGoalRevision: Int? = nil, expectedGoalState: NativeGoalState? = nil)
 
     public var images: [NativeImage] {
         if case .send(_, _, _, _, _, let images, _, _, _) = self { return images ?? [] }

@@ -508,13 +508,14 @@ struct QueueStackView: View {
     let focusComposer: () -> Void
 
     var body: some View {
+        let _ = NWRenderProbe.tick("queue.body")
         let rows = state.rows
         let keys = KeybindingsStore.shared
         let actions = QueueRowActions(state: state, store: store, running: running)
         NWQueueStack(count: state.count, paused: NativeQueueStack.pausedReason(paused: store.queuePaused, notice: store.queueNotice),
                      collapsed: state.collapsed,
                      scrolls: rows.last?.kind == .more(hidden: 0, expanded: true) && rows.count - 1 > NWQueueMetrics.expandedMaxRows,
-                     drop: state.dropSlot, framed: framed, afterGoalCheck: store.goal != nil,
+                     drop: state.dropSlot, framed: framed, afterGoalCheck: store.hasGoal,
                      onToggle: { withNWAnimation(.disclosure) { state.collapsed.toggle() } }) {
             ForEach(rows) { row in
                 QueueRowView(row: row, hover: state.hover(row.id), focused: focusedRow.wrappedValue == row.id, running: running,
