@@ -89,6 +89,54 @@ wrote it: `[from: <sender>, an agent, not the user. Reply with agent_send only i
 reply.] <text>` (`AgentMessageFraming`). The sender's name is one short line without brackets, since
 an agent's name comes from its first prompt. A `report` is hidden context under the same header.
 
+## Approving what agents do to other threads
+
+Settings ▸ Pi ▸ Agent-to-agent messages (`AgentMessagePolicy`) decides what an agent's call on
+another thread does. **The host enforces it** (`SessionServer.gateAgentAction`, before anything is
+sent, relayed or started): the extension only asks, so a modified one cannot get around it, and
+every message that reaches the gate has already passed the identity rule (a connection speaks only
+for the agent whose pi opened it).
+
+| Call | Gated |
+| --- | --- |
+| `agent_send`, `agent_steer`, `agent_interrupt` | yes: they act on another thread |
+| `agent_spawn` | yes: it starts a thread, with a prompt, in a folder the agent chose |
+| `agent_read` of another thread | yes: its conversation enters the caller's context, and a thread's text is the user's to share. Reading your own thread is not |
+| `agent_list`, `agent_wait` | no: `agent_list` names threads, and `agent_wait` returns only whether one is idle |
+| `agent_delete` | its own dialog asks every time, whatever the setting; Never refuses it first |
+
+- **Ask me** (the default, also what a bare `SessionServer` does): the call parks on the server. The
+  app opens `PeerApprovalDialog` for it ([dialogs-and-palette](design/dialogs-and-palette.md)),
+  and the caller waits. **Allow once** does that call. **Allow for this thread** does it and every
+  later gated call from the same agent, to any thread, until the app quits or that agent's pi
+  restarts (an allowance is tied to the pi's session and is never written to disk), and it
+  allows what the agent already has waiting. **Deny** answers the caller `not_approved`: "The user
+  did not approve. Don't message other agents unless the user asks you to." Nothing is done.
+- **Always allow**: gated calls go through as they always did; no dialog.
+- **Never**: every gated call, and `agent_delete`, is refused `not_allowed` at once, without a
+  dialog ("The user has turned agent-to-agent messages off. …"). Switching to Never also refuses
+  what is waiting. Any change of the setting forgets every "Allow for this thread".
+- **An automation run** (a watch agent) cannot be asked, so under Ask it is refused
+  (`not_allowed`: "An automation run can't ask the user … unless the user set Agent-to-agent
+  messages to Always allow. Use notify instead."). Only Always allow lets it message. That includes
+  a `replyToCreator` report: its `agent_send` to the creator needs Always allow, and otherwise the
+  watcher's notification is the only report.
+- **A call that waits ends** when the user answers, the caller cancels it (Stop cancels the tool
+  call, and the dialog closes), the caller's connection closes, the setting becomes Never, or two
+  minutes pass (`not_approved`: "The user did not approve in time. …"). A late answer finds nothing
+  waiting and does nothing. An answer claims the call's token on the server queue, so a call is done
+  at most once.
+- **Several may wait**, one dialog each, shown one at a time: up to 8 per agent, then `busy`. A
+  duplicate request id is `busy`.
+- Calls that could not be done anyway (an unknown or own thread, a folder that is not one, a
+  target with no running pi, empty text) are refused as before, without asking.
+- **Remote.** The dialog opens on the host's own window, as the Delete agent dialog does; nothing
+  on the wire changes. A thread on a host nobody is sitting at gets no answer, so its call times
+  out after two minutes with `not_approved`. A host that serves threads to another Mac should set
+  Always allow or Never in its own Settings ▸ Pi.
+- **What the user sends is never gated**: a message typed in a thread (from any client), `/`
+  commands, a review sent back, an automation's own prompt.
+
 ## How a live request travels
 
 `agent_read`, `agent_steer`, `agent_interrupt`, and `agent_wait` are served by the target's own

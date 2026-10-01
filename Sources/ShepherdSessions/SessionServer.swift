@@ -470,7 +470,29 @@ public final class SessionServer: @unchecked Sendable {
         var deletionConfirmed = false
     }
     private var agentRequests: [String: PendingAgentRequest] = [:]
+    /// A pending request's token lapsed (cancelled, its caller gone, timed out): the app closes
+    /// the dialog it opened for it, whichever kind (`PeerDeleteDialog`, `PeerApprovalDialog`).
     public var onAgentPeerCancellation: ((String) -> Void)?
+
+    /// A gated call (`AgentGatedAction`) waiting for the user's answer to its dialog. It carries
+    /// what to do on each answer, so the answer needs only its token. Server queue only.
+    private struct PendingApproval {
+        let caller: ExtensionConnection
+        /// The caller's own request id (`cancelAgentRequest` names it).
+        let id: Int
+        let senderID: AgentID
+        let timer: DispatchWorkItem
+        let perform: () -> Void
+        let fail: (_ code: String, _ message: String) -> Void
+    }
+    private var approvals: [String: PendingApproval] = [:]
+    private var threadGrants = AgentThreadGrants()
+    private var agentMessagePolicy: AgentMessagePolicy = .default
+    private var approvalTimeout = AgentMessageGate.approvalTimeout
+    /// A gated call needs the user's answer (`AgentMessagePolicy.ask`): the app opens its dialog
+    /// and answers with `resolveAgentApproval`. Delivered on the main actor. With no handler an
+    /// asked call is refused `unsupported`.
+    public var onAgentApprovalRequest: ((AgentApprovalPrompt) -> Void)?
 
     private var nextChildCommandID = 0
     /// RPC sessions retired this run, with their exit codes (nil: a signal). A pane still bound
@@ -799,6 +821,34 @@ public final class SessionServer: @unchecked Sendable {
             self.defaultQueueMode = mode
             for session in self.sessions.values { session.thread?.defaultQueueMode = mode }
         }
+    }
+
+    /// Settings ▸ Pi ▸ Agent-to-agent messages (docs/agent-coordination.md › Approving what agents
+    /// do to other threads). Until the app says otherwise the server asks. A new choice starts
+    /// over: what the user allowed "for this thread" is asked again, and Never refuses what is
+    /// waiting for an answer.
+    public func setAgentMessagePolicy(_ policy: AgentMessagePolicy) {
+        queue.async {
+            guard policy != self.agentMessagePolicy else { return }
+            self.agentMessagePolicy = policy
+            self.threadGrants.removeAll()
+            guard policy == .never else { return }
+            for token in Array(self.approvals.keys) {
+                self.lapseApproval(token, code: "not_allowed", message: AgentMessageGate.offMessage)
+            }
+        }
+    }
+
+    /// How long an approval dialog waits (tests shorten it; the app keeps two minutes).
+    public func setAgentApprovalTimeout(_ seconds: TimeInterval) {
+        queue.async { self.approvalTimeout = seconds }
+    }
+
+    /// The user's answer to an `AgentApprovalPrompt`. False when the request is no longer waiting
+    /// (cancelled, timed out, its agent gone), in which case nothing happens. Allowing performs the
+    /// call, once here, so a late or repeated answer can never do it again.
+    public func resolveAgentApproval(_ token: String, _ decision: AgentApprovalDecision) async -> Bool {
+        await enqueueValue { self.resolveApproval(token, decision) }
     }
 
     /// The last committed state, from any thread and without waiting for the server queue: a
@@ -1159,6 +1209,10 @@ public final class SessionServer: @unchecked Sendable {
         for token in Array(agentRequests.keys) {
             finishAgentRequest(token, result: .init(text: "server stopped", code: "disconnected"))
         }
+        for token in Array(approvals.keys) {
+            lapseApproval(token, code: "disconnected", message: "server stopped")
+        }
+        threadGrants.removeAll()
         if let acceptSource {
             acceptSource.cancel()
         } else if listenFD >= 0 {
@@ -2574,6 +2628,10 @@ public final class SessionServer: @unchecked Sendable {
         for (token, request) in agentRequests where !request.deletionConfirmed && (request.caller === client || request.target === client) {
             finishAgentRequest(token, result: .init(text: "agent connection closed", code: "disconnected"))
         }
+        // Its calls still waiting for the user have nobody to answer: they are dropped, never done.
+        for (token, pending) in approvals where pending.caller === client {
+            lapseApproval(token, code: "disconnected", message: "agent connection closed")
+        }
         client.upload = nil
         client.tunnels?.closeAll()
         client.tunnels = nil
@@ -2677,6 +2735,10 @@ public final class SessionServer: @unchecked Sendable {
             finishAgentRequest(token, result: result)
         case .cancelAgentRequest(let id, let agentID):
             guard client.agentID == agentID else { return }
+            // A call still waiting for the user's answer: its dialog closes, and nothing is done.
+            for (token, pending) in approvals where pending.caller === client && pending.id == id {
+                lapseApproval(token, code: "cancelled", message: "request cancelled")
+            }
             for (token, pending) in agentRequests where pending.caller === client && pending.id == id && !pending.deletionConfirmed {
                 finishAgentRequest(token, result: .init(text: "request cancelled", code: "cancelled"))
             }
@@ -2689,10 +2751,22 @@ public final class SessionServer: @unchecked Sendable {
                 return
             }
             guard !refusesDesignPeer(id: id, sender: agentID, target: targetAgentID, client: client) else { return }
-            routeAgentPeerRequest(
-                .send(agentID: agentID, targetAgentID: targetAgentID, text: text, delivery: delivery),
-                requestID: id,
-                client: client
+            gateAgentAction(
+                senderID: agentID, requestID: id, client: client,
+                action: .send(targetAgentID: targetAgentID, text: text, delivery: delivery),
+                preflight: { self.sendProblem(sender: agentID, target: targetAgentID).map { .error(id: id, code: $0.code, message: $0.message) } },
+                fail: { [weak self, weak client] code, message in
+                    guard let self, let client else { return }
+                    reply(.error(id: id, code: code, message: message), to: client)
+                },
+                perform: { [weak self, weak client] in
+                    guard let self, let client else { return }
+                    routeAgentPeerRequest(
+                        .send(agentID: agentID, targetAgentID: targetAgentID, text: text, delivery: delivery),
+                        requestID: id,
+                        client: client
+                    )
+                }
             )
         case .spawnAgent(let id, let agentID, let cwd, let prompt):
             guard !cwd.isEmpty, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -2700,10 +2774,18 @@ public final class SessionServer: @unchecked Sendable {
                 return
             }
             guard !refusesDesignPeer(id: id, sender: agentID, client: client) else { return }
-            routeAgentPeerRequest(
-                .spawn(agentID: agentID, cwd: cwd, prompt: prompt),
-                requestID: id,
-                client: client
+            gateAgentAction(
+                senderID: agentID, requestID: id, client: client,
+                action: .spawn(cwd: cwd, prompt: prompt),
+                preflight: { self.spawnProblem(sender: agentID, cwd: cwd).map { .error(id: id, code: $0.code, message: $0.message) } },
+                fail: { [weak self, weak client] code, message in
+                    guard let self, let client else { return }
+                    reply(.error(id: id, code: code, message: message), to: client)
+                },
+                perform: { [weak self, weak client] in
+                    guard let self, let client else { return }
+                    routeAgentPeerRequest(.spawn(agentID: agentID, cwd: cwd, prompt: prompt), requestID: id, client: client)
+                }
             )
         case .createAutomation(let id, let name, let prompt, let cwd, let enabled, let start):
             let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -3143,6 +3225,54 @@ public final class SessionServer: @unchecked Sendable {
             }
             forwarded.text = AgentMessageFraming.framed(from: sender.name, text)
         }
+        let failed: (String, String) -> Void = { [weak self, weak client] code, message in
+            guard let self, let client else { return }
+            reply(.agentResult(id: id, result: .init(text: message, code: code)), to: client)
+        }
+        let serve: () -> Void = { [weak self, weak client] in
+            guard let self, let client else { return }
+            relayCoordination(id: id, agentID: agentID, targetAgentID: targetAgentID, request: request,
+                              forwarded: forwarded, client: client)
+        }
+        let action: AgentGatedAction?
+        switch request.operation {
+        case .read where agentID != targetAgentID: action = .read(targetAgentID: targetAgentID)
+        case .steer: action = .steer(targetAgentID: targetAgentID, text: request.text ?? "")
+        case .interrupt: action = .interrupt(targetAgentID: targetAgentID)
+        default: action = nil
+        }
+        if let action {
+            gateAgentAction(senderID: agentID, requestID: id, client: client, action: action,
+                            preflight: { self.coordinationProblem(targetAgentID: targetAgentID).map { .error(id: id, code: $0.code, message: $0.message) } },
+                            fail: failed, perform: serve)
+            return
+        }
+        // Deleting has a dialog of its own that asks every time; the setting only turns it off.
+        if request.operation == .delete {
+            switch AgentMessageGate.deleteVerdict(policy: agentMessagePolicy,
+                                                  senderIsAutomation: Self.automationRunAgentIDs(in: store.state).contains(agentID)) {
+            case .refuse(let code, let message): failed(code, message); return
+            case .perform, .ask: break
+            }
+        }
+        serve()
+    }
+
+    /// Server queue: relays a live request to the target's own connection under a token of its
+    /// own (or, for a deletion, hands it to the app's dialog). Everything is looked at again: a
+    /// call the user approved a moment ago may find its target gone.
+    private func relayCoordination(id: Int, agentID: AgentID, targetAgentID: AgentID, request: AgentCoordinationRequest,
+                                   forwarded: AgentCoordinationRequest, client: ExtensionConnection) {
+        guard store.state.agents.contains(where: { $0.id == agentID }),
+              store.state.agents.contains(where: { $0.id == targetAgentID }) else {
+            reply(.error(id: id, code: "no_such_agent", message: "registered sender and existing target required"), to: client)
+            return
+        }
+        guard agentRequests.values.filter({ $0.caller === client }).count < 16,
+              !agentRequests.values.contains(where: { $0.caller === client && $0.id == id }) else {
+            reply(.error(id: id, code: "busy", message: "too many pending agent requests or duplicate id"), to: client)
+            return
+        }
         let target = clients.values.first { !$0.isRemote && $0.agentID == targetAgentID }
         guard request.operation == .delete || target != nil else {
             reply(.error(id: id, code: "not_running", message: "target has no live Shepherd extension connection"), to: client)
@@ -3178,6 +3308,117 @@ public final class SessionServer: @unchecked Sendable {
         } else if let target {
             reply(.agentRequest(id: 0, requestID: token, targetAgentID: targetAgentID, request: forwarded), to: target)
         }
+    }
+
+    // MARK: - Approving what agents do to other threads
+
+    /// Server queue: applies `agentMessagePolicy` to one gated call from `senderID`. The call
+    /// is done by `perform` (now, or once the user allows it) and answered by `fail` when it is
+    /// not (refused, denied, timed out, cancelled): never both, and never done twice. The extension
+    /// is untrusted for this: it only asks, and nothing it sends can answer a dialog.
+    private func gateAgentAction(senderID: AgentID, requestID: Int, client: ExtensionConnection, action: AgentGatedAction,
+                                 preflight: () -> ExtensionReply?,
+                                 fail: @escaping (_ code: String, _ message: String) -> Void,
+                                 perform: @escaping () -> Void) {
+        let verdict = AgentMessageGate.verdict(
+            policy: agentMessagePolicy,
+            senderIsAutomation: Self.automationRunAgentIDs(in: store.state).contains(senderID),
+            hasThreadGrant: threadGrants.allows(senderID, session: piSessionID(ofAgent: senderID)))
+        switch verdict {
+        case .perform:
+            perform()
+        case .refuse(let code, let message):
+            fail(code, message)
+        case .ask:
+            // Nobody is asked about a call that could not be done anyway.
+            if let problem = preflight() {
+                reply(problem, to: client)
+                return
+            }
+            guard let handler = onAgentApprovalRequest else {
+                fail("unsupported", "native approval unavailable")
+                return
+            }
+            guard approvals.values.filter({ $0.senderID == senderID }).count < AgentMessageGate.pendingLimitPerAgent,
+                  !approvals.values.contains(where: { $0.caller === client && $0.id == requestID }) else {
+                fail("busy", AgentMessageGate.busyMessage)
+                return
+            }
+            let token = UUID().uuidString
+            let timer = DispatchWorkItem { [weak self] in
+                self?.lapseApproval(token, code: "not_approved", message: AgentMessageGate.timedOutMessage)
+            }
+            approvals[token] = PendingApproval(caller: client, id: requestID, senderID: senderID, timer: timer,
+                                               perform: perform, fail: fail)
+            queue.asyncAfter(deadline: .now() + approvalTimeout, execute: timer)
+            let prompt = AgentApprovalPrompt(requestID: token, senderID: senderID, action: action)
+            hopToMain { handler(prompt) }
+        }
+    }
+
+    /// Server queue: the user's answer. Claiming the token is what allows the call, so it can be
+    /// allowed once, and not after it lapsed.
+    private func resolveApproval(_ token: String, _ decision: AgentApprovalDecision) -> Bool {
+        guard let pending = approvals.removeValue(forKey: token) else { return false }
+        pending.timer.cancel()
+        switch decision {
+        case .deny:
+            pending.fail("not_approved", AgentMessageGate.deniedMessage)
+        case .allowOnce:
+            pending.perform()
+        case .allowForThread:
+            threadGrants.grant(pending.senderID, session: piSessionID(ofAgent: pending.senderID))
+            pending.perform()
+            // What else this agent has waiting is allowed by the same answer.
+            for (otherToken, other) in approvals where other.senderID == pending.senderID {
+                approvals.removeValue(forKey: otherToken)
+                other.timer.cancel()
+                hopToMain { [weak self] in self?.onAgentPeerCancellation?(otherToken) }
+                other.perform()
+            }
+        }
+        return true
+    }
+
+    /// Server queue: a waiting call that will not be done (cancelled, its caller gone, timed out,
+    /// or the user turned the setting to Never): its caller is told why, and the app closes its dialog.
+    private func lapseApproval(_ token: String, code: String, message: String) {
+        guard let pending = approvals.removeValue(forKey: token) else { return }
+        pending.timer.cancel()
+        pending.fail(code, message)
+        hopToMain { [weak self] in self?.onAgentPeerCancellation?(token) }
+    }
+
+    /// The session of the pi that runs `agentID` now, nil when none is bound: what "Allow for this
+    /// thread" is tied to, so a restarted pi asks again.
+    private func piSessionID(ofAgent agentID: AgentID) -> SessionID? {
+        rpcThread(forAgent: agentID)?.session.id
+    }
+
+    /// Why a message to `target` could not be delivered whoever allowed it, or nil.
+    private func sendProblem(sender: AgentID, target: AgentID) -> (code: String, message: String)? {
+        let state = store.state
+        guard sender != target else { return ("self_send", "an agent cannot message itself") }
+        guard state.agents.contains(where: { $0.id == sender }) else { return ("no_such_agent", "unknown agent \(sender)") }
+        guard state.agents.contains(where: { $0.id == target }) else { return ("no_such_agent", "unknown agent \(target)") }
+        return nil
+    }
+
+    /// Why a new thread could not be started in `cwd`, or nil.
+    private func spawnProblem(sender: AgentID, cwd: String) -> (code: String, message: String)? {
+        guard store.state.agents.contains(where: { $0.id == sender }) else { return ("no_such_agent", "unknown agent \(sender)") }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: (cwd as NSString).expandingTildeInPath, isDirectory: &isDirectory),
+              isDirectory.boolValue else { return ("no_such_directory", "\(cwd) is not a directory") }
+        return nil
+    }
+
+    /// Why a live request to `target` could not be served, or nil: it has no panes connection.
+    private func coordinationProblem(targetAgentID: AgentID) -> (code: String, message: String)? {
+        guard clients.values.contains(where: { !$0.isRemote && $0.agentID == targetAgentID }) else {
+            return ("not_running", "target has no live Shepherd extension connection")
+        }
+        return nil
     }
 
     /// A design's agent is no peer thread: it neither lists, messages, spawns, reads nor controls
