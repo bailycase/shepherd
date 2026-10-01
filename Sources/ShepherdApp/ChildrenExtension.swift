@@ -296,9 +296,13 @@ enum ChildrenExtension {
 
         const RELAY_KEY = Symbol.for("shepherd.design.relay.v1");
         // The design tools a helper may use. comment_reply and markup_propose are the design agent's own voice
-        // toward the viewer (it answers a comment once every helper has finished), so they are never relayed.
-        const DESIGN_RELAYED = ["design_read", "design_check", "system_read", "comment_list", "board_write", "board_edit", "canvas_update", "system_write"];
-        const DESIGN_TOOLS = [...DESIGN_RELAYED, "comment_reply", "markup_propose"];
+        // toward the viewer (it answers a comment once every helper has finished), and checkpoint_restore rewinds
+        // every board, siblings' work included, so none of the three is ever relayed.
+        const DESIGN_RELAYED = [
+          "design_read", "design_check", "system_read", "comment_list", "board_write", "board_edit", "boards_edit", "board_search",
+          "board_render", "board_extract", "checkpoint_create", "checkpoint_list", "canvas_update", "system_write",
+        ];
+        const DESIGN_TOOLS = [...DESIGN_RELAYED, "comment_reply", "markup_propose", "checkpoint_restore"];
         const RELAY_TITLE = "shepherd-relay:v1:";
         // A request or a result: the extension socket's own frame cap, since a board is at most 900,000 bytes.
         const MAX_RELAY_BYTES = 1024 * 1024;
@@ -315,7 +319,7 @@ enum ChildrenExtension {
         export function designToolsProblem(names, relay) {
           if (!relay) return `${names.join(", ")}: design tools are relayed only to the helpers of a design agent, and this session draws no design. Drop them from the profile's tools.`;
           const own = names.filter((name) => !DESIGN_RELAYED.includes(name));
-          if (own.length) return `${own.join(", ")} can't be relayed to a helper: the design agent answers the viewer's comments and proposes their markup itself, once its helpers are done. Relayed: ${DESIGN_RELAYED.join(", ")}.`;
+          if (own.length) return `${own.join(", ")} can't be relayed to a helper: the design agent answers the viewer's comments, proposes their markup and restores checkpoints itself, once its helpers are done. Relayed: ${DESIGN_RELAYED.join(", ")}.`;
           const absent = names.filter((name) => !relay.tools.has(name));
           if (absent.length) return `${absent.join(", ")} isn't available from this design agent's extension.`;
           return undefined;
@@ -390,8 +394,15 @@ enum ChildrenExtension {
             const result = await tool.execute(`relay-${run.id}-${callId}`, params, controller.signal, undefined, ctx);
             // A cancelled call has no one left to answer.
             if (controller.signal.aborted) return;
-            const content = (result?.content ?? []).filter((part) => part?.type === "text").map((part) => ({ type: "text", text: String(part.text ?? "") }));
-            const size = content.reduce((total, part) => total + Buffer.byteLength(part.text), 0);
+            // Text, and a picture (board_render) as long as it is a small base64 image: nothing else crosses.
+            const content = (result?.content ?? []).flatMap((part) => {
+              if (part?.type === "text") return [{ type: "text", text: String(part.text ?? "") }];
+              if (part?.type === "image" && typeof part.data === "string" && typeof part.mimeType === "string" && /^image\/(png|jpeg)$/.test(part.mimeType)) {
+                return [{ type: "image", data: part.data, mimeType: part.mimeType }];
+              }
+              return [];
+            });
+            const size = content.reduce((total, part) => total + Buffer.byteLength(part.type === "text" ? part.text : part.data), 0);
             if (size > MAX_RELAY_BYTES) return fail(`${name}'s result is ${size} bytes; the relay carries at most ${MAX_RELAY_BYTES}`);
             reply({ ok: true, content, details: result?.details });
           } catch (error) {
