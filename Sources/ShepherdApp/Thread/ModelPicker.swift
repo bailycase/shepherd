@@ -92,9 +92,9 @@ struct ModelCatalog: Sendable {
     static func loadLocal(from source: PiModelCatalog) async -> ModelCatalog {
         let key = ObjectIdentifier(source)
         let task = loadingLocal[key] ?? Task.detached(priority: .utility) {
-            let entries = source.entries()
-            return ModelCatalog(entries, levels: ModelListing(entries: entries, defaultModel: nil,
-                                                              levelMaps: PiConfig.thinkingLevelMaps(in: source.home)).thinkingLevels)
+            let entries = source.entriesOrConfigured()
+            let listing = ModelListing(entries: entries, defaultModel: nil, levelMaps: PiConfig.thinkingLevelMaps(in: source.home))
+            return ModelCatalog(entries, levels: listing.thinkingLevels)
         }
         loadingLocal[key] = task
         let catalog = await task.value

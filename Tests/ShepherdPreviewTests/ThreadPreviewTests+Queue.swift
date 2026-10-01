@@ -204,7 +204,7 @@ private struct QueueStatesBoard: View {
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 10) {
                     label("SendMenu (right-click or hold Send)")
-                    NWSendMenu(options: Composer.sendOptions(.queue, send: "↩", alternate: "⌘↩"), onChoose: { _ in }, onClose: {})
+                    NWSendMenu(options: Composer.sendOptions(send: "↩", alternate: "⌘↩"), onChoose: { _ in }, onClose: {})
                 }
                 cell("QueueStack · expanded (scrolls past six)", expanded)
                 VStack(alignment: .trailing, spacing: 10) {

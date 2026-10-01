@@ -44,7 +44,6 @@ struct AgentSettings: View {
                 }
             }
             SettingsGroup(title: "While the agent is working") {
-                ReturnWhileWorkingRow(selection: $settings.returnWhileWorking, keys: keys)
                 SettingsRow(title: "When a turn ends, send the queue", subtitle: "All at once arrives as one turn, in the order you queued it.") {
                     NWSegmentedPicker("When a turn ends, send the queue", selection: $settings.queueDelivery,
                                       options: [(NativeQueueMode.oneAtATime, "One per turn"), (.all, "All at once")])
@@ -61,30 +60,8 @@ struct AgentSettings: View {
         }
     }
 
-    /// What each choice does, and what the alternate chord always does (as it is bound now).
-    /// Steering says what pi does: it waits for the tool calls in flight, then reads the message
-    /// before its next step; steering now stops it first.
-    static func returnDescription(_ keys: KeybindingsStore) -> String {
-        "Steering lands once the agent’s current tool calls finish. Waiting holds the message in Up next until the turn ends. "
-            + "\(keys.display(.alternateSend)) always steers now: it stops the agent and sends at once."
-    }
-
     /// Names New Agent's chord as it is bound now, so a rebind never leaves the copy wrong.
     static func explanation(_ keys: KeybindingsStore) -> String {
         "Defaults for agents you create with \(keys.display(.newAgent)) or the New Agent sheet. Existing agents keep their settings."
-    }
-}
-
-/// Settings ▸ Agents ▸ Return while the agent is working: what ↩ does with a message while the
-/// agent works. The first choice is the default; ⌘↩ always steers now.
-struct ReturnWhileWorkingRow: View {
-    @Binding var selection: ReturnWhileWorking
-    let keys: KeybindingsStore
-
-    var body: some View {
-        SettingsRow(title: "Return while the agent is working", subtitle: AgentSettings.returnDescription(keys)) {
-            NWSegmentedPicker("Return while the agent is working", selection: $selection,
-                              options: [(.steer, ReturnWhileWorking.steer.title), (.queue, ReturnWhileWorking.queue.title)])
-        }
     }
 }
