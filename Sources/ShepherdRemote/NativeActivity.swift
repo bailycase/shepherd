@@ -323,6 +323,8 @@ public struct NativeActivityCall: Equatable, Sendable, Identifiable {
     /// the result doesn't say, as while it runs, or when it changed nothing).
     public var board: String?
     public var boardCreated: Bool?
+    /// For a boards_edit that wrote: the boards it named (its paths, and each board with edits of its own).
+    public var boards: [String]
     /// For a design_check: the system it checked against and how many values were off it; both
     /// nil when no system was found.
     public var system: String?
@@ -398,6 +400,7 @@ extension NativeActivityCall {
         self.subagent = nil
         self.board = nil
         self.boardCreated = nil
+        self.boards = []
         self.system = nil
         self.offSystem = nil
         self.designRef = nil
@@ -537,6 +540,55 @@ extension NativeActivityCall {
                 boardCreated = firstLine.hasPrefix("Edited ") ? false : nil
                 stat = boardCreated == false ? "edited" : "unchanged"
             }
+        case "boards_edit":
+            // The same edits on many boards as one change: "Updated 12 boards". A dry run, or an atomic
+            // call that matched nothing, wrote none: it is an ordinary tool line saying so.
+            label = "boards"
+            let asked = ((args?["paths"] as? [String]) ?? []) + ((args?["boards"] as? [[String: Any]]) ?? []).compactMap { $0["path"] as? String }
+            // The result lists the boards it wrote ("Edited (matches replaced per edit): A.dc.html (1), B.dc.html (2)"),
+            // which is fewer than were asked when some did not match; a long list says "and N more", so the ask stands.
+            let written = lines.first { $0.hasPrefix("Edited (matches replaced per edit): ") }.map {
+                $0.dropFirst("Edited (matches replaced per edit): ".count).components(separatedBy: ", ")
+            }
+            let named = written.flatMap { list in
+                list.contains { $0.hasPrefix("and ") } ? nil : list.map { String($0.split(separator: " ", maxSplits: 1).first ?? "") }.filter { !$0.isEmpty }
+            } ?? asked
+            detail = nativeCount(named.count, "board")
+            if !failed, !running, !firstLine.hasPrefix("Edited ") {
+                kind = .other
+                detail = firstLine
+            } else {
+                kind = .drew
+                boards = named
+                if !failed, !running { stat = "edited" }
+            }
+        case "board_extract":
+            // A piece made from an element: the piece is a board drawn, the source one updated.
+            kind = .drew
+            label = "board"
+            let piece = firstLine.hasPrefix("Extracted ") ? firstLine.dropFirst("Extracted ".count).split(separator: " ").first.map(String.init) : nil
+            board = piece ?? string("piece")
+            detail = board ?? firstLine
+            isPath = board != nil
+            boards = string("path").map { [$0] } ?? []
+            if !failed, !running {
+                boardCreated = piece != nil ? true : nil
+                stat = piece != nil ? "new piece" : "unchanged"
+            }
+        case "board_search":
+            kind = .explore
+            explore = .search
+            detail = string("text") ?? string("usages").map { "usages of \($0)" } ?? string("class").map { ".\($0)" } ?? string("attribute")
+                ?? string("tag").map { "<\($0)>" } ?? "boards"
+        case "board_render":
+            kind = .other
+            label = "render"
+            detail = string("path") ?? firstLine
+            isPath = string("path") != nil
+        case "checkpoint_create", "checkpoint_list", "checkpoint_restore":
+            kind = .other
+            label = "checkpoint"
+            detail = string("name") ?? (name == "checkpoint_list" ? "list" : firstLine)
         case "canvas_update":
             kind = .drew
             label = "canvas"
@@ -641,7 +693,7 @@ public struct NativeActivityBurst: Equatable, Sendable, Identifiable {
     /// A drawing burst that only rewrote boards: it reads "Updated A and A · phone" and wears the
     /// edit glyph rather than the nib.
     public var isBoardUpdate: Bool {
-        kind == .drew && calls.contains { $0.board != nil } && !calls.contains { $0.boardCreated == true }
+        kind == .drew && calls.contains { $0.board != nil || !$0.boards.isEmpty } && !calls.contains { $0.boardCreated == true }
     }
 }
 
@@ -745,6 +797,8 @@ private func failedLabel(_ call: NativeActivityCall) -> String {
         switch call.name {
         case "canvas_update": return "Canvas update failed"
         case "board_edit": return "Board edit failed"
+        case "boards_edit": return "Batch edit failed"
+        case "board_extract": return "Extraction failed"
         default: return "Board write failed"
         }
     case .checked: return "Check failed"
@@ -945,6 +999,7 @@ private func drewWords(_ calls: [NativeActivityCall]) -> (String, [String]) {
     var order: [String] = []
     var created: Set<String> = []
     for call in calls {
+        for board in call.boards where !order.contains(board) { order.append(board) }
         guard let board = call.board else { continue }
         if !order.contains(board) { order.append(board) }
         if call.boardCreated == true { created.insert(board) }
