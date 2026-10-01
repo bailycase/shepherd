@@ -265,23 +265,58 @@ test("fleet component preserves identity/drafts, refreshes lifecycle while pause
   view.handleInput('p'); assert(view.render(100).some((l)=>l.includes('full transcript:')));
 });
 
-test("native command handlers use direct operations, gate overlays by mode, and require stop confirmation", async () => {
+// The two commands Shepherd's thread has its own surfaces for (the tray, the inspector and Stop).
+const coveredByShepherd = ['subagents-fleet', 'subagents-stop'];
+const nativeCommandFixture = (existing = [{name:'run'}]) => {
   const commands = new Map(), entries = [], messages = [], calls = [];
-  const pi = {getCommands:()=>[{name:'run'}],getAllTools:()=>[],registerCommand:(n,c)=>commands.set(n,c),registerEntryRenderer(){},appendEntry:(_t,e)=>entries.push(e),sendMessage:(m,o)=>messages.push({m,o})};
+  const pi = {getCommands:()=>existing,getAllTools:()=>[],registerCommand:(n,c)=>commands.set(n,c),registerEntryRenderer(){},appendEntry:(_t,e)=>entries.push(e),sendMessage:(m,o)=>messages.push({m,o})};
   const run = {id:'native-a',role:'scout',task:'task',state:'running'};
   const runtime = {defaults:{scope:'bundled',context:'fresh'},catalog:()=>({agents:[],diagnostics:[]}),doctor:()=>['supported'],list:()=>[run],get:()=>run,
     workflow:async(p)=>{calls.push(p);return{id:'w',state:'complete',output:'ok'};},stop:async(id)=>{calls.push(id);return{id,state:'stopped'};},missions:()=>[],workflows:()=>[]};
-  ui.registerNativeCommands(pi,runtime);
-  const ctx = {mode:'rpc',hasUI:true,ui:{custom:()=>assert.fail('RPC must not open a custom overlay'),notify(){},confirm:async()=>false,select:async()=>undefined}};
+  return {commands,entries,messages,calls,pi,runtime};
+};
+
+test("native command handlers use direct operations, gate overlays by mode, and require stop confirmation", async () => {
+  const {commands,entries,messages,calls,pi,runtime} = nativeCommandFixture();
+  ui.registerNativeCommands(pi,runtime,{});
+  assert.deepEqual([...commands.keys()].sort(), ui.commandNames.map((n)=>`shepherd-${n}`).sort());
+  const ctx = {mode:'rpc',hasUI:true,ui:{custom:()=>assert.fail('RPC must not open a custom overlay'),notify:()=>assert.fail('RPC has no toast: a notify never reaches the thread'),confirm:async()=>false,select:async()=>undefined}};
   await commands.get('shepherd-run').handler('scout inspect --fork',ctx); assert.equal(calls[0].async,false);
   await commands.get('shepherd-run').handler('scout inspect --bg',ctx); assert.equal(calls[1].async,true);
   await commands.get('shepherd-subagents-fleet').handler('',ctx);
   await commands.get('shepherd-subagents-stop').handler('native-a',ctx); assert.equal(calls.length,2);
   ctx.ui.confirm=async()=>true; await commands.get('shepherd-subagents-stop').handler('native-a',ctx); assert.equal(calls.at(-1),'native-a');
-  await commands.get('shepherd-subagents-doctor').handler('',ctx); assert(entries.at(-1).text.includes('/shepherd-run'));
+  await commands.get('shepherd-subagents-doctor').handler('',ctx); assert(messages.at(-1).m.content.includes('/shepherd-run'));
   await commands.get('shepherd-subagents-fleet').handler('',{mode:'print',hasUI:false});
-  assert(messages.every(({o})=>o.triggerTurn===false && o.deliverAs !== 'nextTurn'));
-  assert(entries.some((e)=>e.text.includes('native-a')));
+  assert(messages.every(({m,o})=>m.customType==='shepherd-native-report' && m.display===true && o.triggerTurn===false && o.deliverAs !== 'nextTurn'));
+  assert(messages.some(({m})=>m.content.includes('native-a')));
+  assert.deepEqual(entries,[],'only the TUI draws an entry; a message already carries the report');
+  const tui = {mode:'tui',hasUI:true,ui:{custom:async()=>{},notify:()=>assert.fail('the TUI draws the entry')}};
+  await commands.get('shepherd-subagents-doctor').handler('',tui); assert(entries.at(-1).text.includes('/shepherd-run'));
+});
+
+test("under Shepherd the fleet overlay and Stop are not registered, and every command that is says something in the thread", async () => {
+  const env = {SHEPHERD_AGENT_ID: 'agent'};
+  assert.deepEqual(ui.listedCommandNames(env), ui.commandNames.filter((n)=>!coveredByShepherd.includes(n)));
+  assert.deepEqual(ui.listedCommandNames({}), ui.commandNames, 'any other use keeps every command');
+  const {commands,entries,messages,pi,runtime} = nativeCommandFixture([]);
+  const names = ui.registerNativeCommands(pi,runtime,env);
+  assert.deepEqual([...commands.keys()].sort(), ['missions','run','subagents','subagents-doctor','subagents-models','workflows']);
+  assert.equal(names.run,'run');
+  // What Shepherd's pi does with each: RPC mode, a UI whose notify the thread never draws.
+  const ctx = {mode:'rpc',hasUI:true,isProjectTrusted:()=>true,ui:{notify:()=>assert.fail('a notify is not drawn'),confirm:async()=>false,select:async()=>undefined}};
+  for (const [name,command] of commands) {
+    const before = messages.length;
+    await command.handler(name === 'run' ? 'scout inspect' : '',ctx);
+    assert.equal(messages.length,before+1,`/${name} answers with one message`);
+    assert.equal(messages.at(-1).m.display,true);
+    assert.equal(messages.at(-1).o.triggerTurn,false);
+  }
+  assert.deepEqual(entries,[]);
+  // Doctor lists the names that exist, and a collision elsewhere on a command that is not registered changes nothing.
+  assert(!messages.find(({m})=>m.content.includes('NATIVE SUBAGENTS')).m.content.includes('/subagents-fleet'));
+  assert.equal(ui.nativeCommandNames([{name:'subagents-fleet'}],[],ui.listedCommandNames(env)).run,'run');
+  assert.equal(ui.nativeCommandNames([{name:'subagents-fleet'}],[]).run,'shepherd-run');
 });
 
 test("standalone inspector refreshes lifecycle while paused, distinguishes literal stop, confirms run-wide stop and exits on ctrl+c", async () => {

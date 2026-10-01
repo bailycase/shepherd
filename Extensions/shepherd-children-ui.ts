@@ -3,10 +3,16 @@ import { Input, Text, matchesKey, truncateToWidth } from "@earendil-works/pi-tui
 import { cleanText, clipColumns, duration, endTime, readTranscript, TranscriptViewport, wrapColumns, displayWidth, identityLine, composerLabel, repliesByResume, statusColor, stopScope } from "./shepherd-inspect.mjs";
 
 export const commandNames = ["subagents", "run", "subagents-fleet", "subagents-stop", "subagents-models", "subagents-doctor", "missions", "workflows"];
-export function nativeCommandNames(commands, tools) {
+// Under Shepherd these two are not registered: the thread has the tray, the inspector and Stop for
+// them, and its pi runs in RPC mode, so there is no terminal for the fleet overlay.
+const coveredByShepherd = ["subagents-fleet", "subagents-stop"];
+export function listedCommandNames(env = process.env) {
+  return env.SHEPHERD_AGENT_ID ? commandNames.filter((name) => !coveredByShepherd.includes(name)) : commandNames;
+}
+export function nativeCommandNames(commands, tools, listed = commandNames) {
   const occupied = new Set(commands.map((c) => c.name.split(":")[0]));
   const legacy = tools.some((t) => t.name === "subagent" || /(?:^|[/:])pi-subagents(?:[@/]|$)/.test(t.sourceInfo?.source ?? ""));
-  const collisions = legacy || commandNames.some((name) => occupied.has(name));
+  const collisions = legacy || listed.some((name) => occupied.has(name));
   return Object.fromEntries(commandNames.map((name) => {
     let chosen = collisions ? `shepherd-${name}` : name;
     while (occupied.has(chosen)) chosen = `shepherd-${chosen}`;
@@ -191,22 +197,26 @@ export class FleetView {
   hint(id) { return this.keys.getKeys(id).join("/"); }
 }
 
-export function registerNativeCommands(pi, runtime) {
-  const names = nativeCommandNames(pi.getCommands(), pi.getAllTools());
-  const aliasNote = names.run !== "run" ? `command collision detected · native commands use /${names.run} and /${names["subagents-fleet"]}; existing commands are unchanged` : "native command names available without aliases";
+export function registerNativeCommands(pi, runtime, env = process.env) {
+  const listed = listedCommandNames(env);
+  const names = nativeCommandNames(pi.getCommands(), pi.getAllTools(), listed);
+  const aliasNote = names.run !== "run" ? `command collision detected · native commands use /${names.run} and /${names.workflows}; existing commands are unchanged` : "native command names available without aliases";
   pi.registerEntryRenderer("shepherd-native-report", (entry) => new Text(cleanText(entry.data.text), 0, 0));
+  // The TUI draws the entry. RPC mode (Shepherd's) has no toast: a notify there never reaches the
+  // thread, so the report goes as a message, which the thread draws as a note.
   const report = (ctx, text) => {
     text = cleanText(text);
-    pi.appendEntry("shepherd-native-report", { text });
-    if (ctx.mode !== "tui") {
-      if (ctx.hasUI) ctx.ui.notify(text, "info");
-      else pi.sendMessage({ customType: "shepherd-native-report", content: text, display: true }, { triggerTurn: false });
-    }
+    if (ctx.mode === "tui") { pi.appendEntry("shepherd-native-report", { text }); return; }
+    if (ctx.hasUI && ctx.mode !== "rpc") ctx.ui.notify(text, "info");
+    else pi.sendMessage({ customType: "shepherd-native-report", content: text, display: true }, { triggerTurn: false });
   };
-  const register = (name, handler) => pi.registerCommand(names[name], {
-    description: `Native ${name} · ${name === "run" ? "launch child workflow" : "inspect owned runtime"}`,
-    handler: async (args, ctx) => { try { await handler(args, ctx); } catch (error) { report(ctx, `error · ${error.message}`); } },
-  });
+  const register = (name, handler) => {
+    if (!listed.includes(name)) return;
+    pi.registerCommand(names[name], {
+      description: `Native ${name} · ${name === "run" ? "launch child workflow" : "inspect owned runtime"}`,
+      handler: async (args, ctx) => { try { await handler(args, ctx); } catch (error) { report(ctx, `error · ${error.message}`); } },
+    });
+  };
   register("subagents", async (args, ctx) => {
     const catalog = runtime.catalog(ctx); let name = oneArgument(args);
     if (!name && !catalog.agents.length) { report(ctx, ["no native agents", ...diagnosticLines(catalog)].join("\n")); return; }
@@ -262,7 +272,7 @@ export function registerNativeCommands(pi, runtime) {
     let diagnostics;
     try { diagnostics = diagnosticLines(runtime.catalog(ctx)); }
     catch (error) { diagnostics = [`discovery error · ${error.message}`]; }
-    report(ctx, ["NATIVE SUBAGENTS", ...runtime.doctor(ctx), aliasNote, ...commandNames.map((n) => `/${names[n]}`), ...diagnostics].join("\n"));
+    report(ctx, ["NATIVE SUBAGENTS", ...runtime.doctor(ctx), aliasNote, ...listed.map((n) => `/${names[n]}`), ...diagnostics].join("\n"));
   });
   register("missions", (args, ctx) => {
     const id = oneArgument(args), records = runtime.missions(id);

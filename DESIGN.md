@@ -2419,7 +2419,13 @@ a docked pane it narrows to the card. They share one anatomy (NWComposer › Men
   the field and sends it when it can; ⇥ completes "/name " to keep typing. Esc closes it for the
   draft as typed; typing more reopens it. The list is pi's command registry, never hard-coded, so
   pi's interactive built-ins, which the boards draw (/resume, /reload), appear only if pi's
-  `get_commands` starts returning them. Settings ▸ Skills ▸ Skills in the / menu, off, leaves the
+  `get_commands` starts returning them. A command no thread can run is not in it: the host leaves
+  out Retry's own `/shepherd-retry` and pi's terminal-only `/llama`, and Shepherd's bundled
+  extensions register nothing the thread cannot show (no `/subagents-fleet` overlay or
+  `/subagents-stop`: the tray, the inspector and Stop do that). What a command the user ran says
+  back is a note in the thread where they are looking, in the Thread's note style: a plain note,
+  or "warning · …" and "error · …" when the command said so, never a toast; a toast nobody asked
+  for is still not drawn. Settings ▸ Skills ▸ Skills in the / menu, off, leaves the
   skills out (on the Mac). Its rows are lazy, a highlight moving redraws only the two
   rows it moves between, and only ↑↓ scroll the highlight into view (the pointer's is already under
   the pointer).
