@@ -182,8 +182,8 @@ class WorkflowShapeTests(unittest.TestCase):
             self.assertNotRegex(job, r"(?m)^    if: .*always\(\)", name)
 
     def test_a_newer_run_cancels_the_running_one_with_a_literal_true(self):
-        # An expression here (github.event_name != 'schedule') left the running run alone while the
-        # new one waited for it: only a literal cancelled it.
+        # The group cancels what runs in it; the jobs that outlive the cancellation are the ones with
+        # `always()` (test_no_job_survives_its_runs_cancellation).
         block = WORKFLOW.split("\nconcurrency:", 1)[1].split("\ndefaults:", 1)[0]
         self.assertRegex(block, r"(?m)^  cancel-in-progress: true$")
 
