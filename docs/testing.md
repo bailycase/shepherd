@@ -364,8 +364,10 @@ depend on the machine's speed skip on CI (`CI=true`).
     launch), `Package.swift` and `Package.resolved`, the Xcode project, test support, CI itself.
   - Add the `full-ci` label to a pull request, or run the workflow by hand (`gh workflow run ci.yml
     --ref <branch> -f lane=full`), to run everything. `-f lane=fast -f base=nightly` runs the fast
-    lane's choice for a branch. `Tests/Release/test_ci_impact.py` fails when a pattern matches no
-    suite or no file, so a rename cannot silently narrow a rule.
+    lane's choice for a branch. Adding any other label also starts a run (a workflow cannot filter
+    on a label's name), but every job in it is skipped and it cancels nothing; GitHub shows its
+    skipped checks beside the real ones, and a skipped check passes. `Tests/Release/test_ci_impact.py`
+    fails when a pattern matches no suite or no file, so a rename cannot silently narrow a rule.
 - **Full lane**, pushes to `nightly` and `master`, pull requests into `master` or labelled
   `full-ci`, the daily run and manual runs: every suite, in four shards. `Tests/ci-suite-times.json`
   holds each suite's seconds; `scripts/ci_shards.py` assigns suites longest first, each to the
