@@ -2,7 +2,7 @@ import Testing
 import ShepherdProtocol
 @testable import ShepherdSessions
 
-/// `pi --list-models` prints an aligned table; its format is not a contract, so parsing is lenient.
+/// pi's RPC capabilities and the older aligned table both feed the picker.
 @Suite("pi model catalog parsing")
 struct PiModelCatalogTests {
     private let table = """
@@ -11,6 +11,28 @@ struct PiModelCatalogTests {
     anthropic     claude-sonnet-4-5                1M       64K      yes       yes
     cpa           ~anthropic/claude-opus-latest    128K     16.4K    no        no
     """
+
+    @Test func rpcModelsKeepComposedThinkingLevelsAndOnlyCapabilityFields() {
+        let reply = #"{"type":"response","id":"shepherd-models","command":"get_available_models","success":true,"data":{"models":[{"provider":"cliproxyapi","id":"~openai/gpt-5","api":"openai-responses","contextWindow":400000,"reasoning":true,"thinkingLevelMap":{"minimal":null,"xhigh":"xhigh","max":"max"},"headers":{"Authorization":"fixture-only"}},{"provider":"fixture","id":"plain","reasoning":false,"contextWindow":1000000}]}}"#
+        let entries = PiModelCatalog.parseEntries(reply)
+        #expect(entries.map(\.id) == ["cliproxyapi/~openai/gpt-5", "fixture/plain"])
+        #expect(entries.first?.context == "400K" && entries.last?.context == "1M")
+        #expect(entries.first?.api == "openai-responses")
+        #expect(entries.first?.thinkingLevels == ["off", "low", "medium", "high", "xhigh", "max"])
+        #expect(entries.last?.thinkingLevels == ["off"])
+        let listing = ModelListing(entries: entries, defaultModel: entries.first?.id,
+                                   levelMaps: ["cliproxyapi/~openai/gpt-5": ["minimal": "minimal"]])
+        #expect(listing.offeredThinkingLevels(nil).map(\.rawValue) == ["off", "low", "medium", "high", "xhigh", "max"],
+                "pi's composed map wins over incomplete configuration")
+        #expect(listing.offeredThinkingLevels("fixture/plain").isEmpty)
+        #expect(listing.entries.first?.context == "400K", "the shared listing keeps picker context labels")
+    }
+
+    @Test func rpcStateIdentifiesTheAutomaticDefaultWithoutReadingProviderConfiguration() {
+        let state = #"{"type":"response","id":"shepherd-model-state","command":"get_state","success":true,"data":{"model":{"provider":"openai","id":"gpt-5","reasoning":true,"headers":{"Authorization":"fixture-only"}}}}"#
+        #expect(PiModelCatalog.parseDefaultModel(state) == "openai/gpt-5")
+        #expect(PiModelCatalog.parseDefaultModel(table) == nil)
+    }
 
     @Test func rowsBecomeProviderSlashModelInCatalogOrder() {
         #expect(PiModelCatalog.parse(table) == [
@@ -67,6 +89,14 @@ struct ModelListingTests {
         let maps: [String: [String: String?]] = ["qa/max": ["xhigh": "xhigh", "max": "max", "minimal": nil], "qa/plain": ["max": "max"]]
         let listing = ModelListing(entries: entries, defaultModel: nil, levelMaps: maps)
         #expect(listing.thinkingLevels == ["qa/max": ["off", "low", "medium", "high", "xhigh", "max"]])
+    }
+
+    @Test func creationSpeedUsesTheTargetsDefaultModelAndHidesUnknownModels() {
+        let listing = ModelListing(models: ["openai/gpt-5", "anthropic/claude-opus"], defaultModel: "openai/gpt-5",
+                                   serviceTiers: ["openai/gpt-5": ["standard", "fast"]])
+        #expect(listing.offeredServiceTiers("") == [.standard, .fast])
+        #expect(listing.offeredServiceTiers(" anthropic/claude-opus ").isEmpty)
+        #expect(listing.offeredServiceTiers("unknown/model").isEmpty)
     }
 
     @Test func anOlderHostsListingReadsAsModelsThatReason() {

@@ -524,6 +524,26 @@ extension PreviewTests {
         }
     }
 
+    @Test(arguments: [720.0, 1280.0])
+    func newThreadWithFullModelControls(width: CGFloat) async throws {
+        let listing = ModelListing(models: ["openai/gpt-5.4"], defaultModel: "openai/gpt-5.4",
+                                   thinkingLevels: ["openai/gpt-5.4": ["off", "low", "medium", "high", "xhigh"]],
+                                   serviceTiers: ["openai/gpt-5.4": ["standard", "fast"]])
+        let workspace = try PreviewWorkspace(modelCatalog: { listing })
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        try await workspace.seed(ShepherdState(spaces: [Space(name: "shepherd", path: workspace.dir.path)]))
+        vm.openNewThread()
+        try await eventuallyOnMain("creation model controls to load") { !vm.newThread.loadingDefaults }
+        vm.newThread.setModel("openai/gpt-5.4")
+        vm.newThread.setThinking(.xhigh)
+        vm.newThread.setServiceTier(.fast)
+        vm.newThread.prompt = "Fix the new thread controls"
+        try await Preview.render("new-thread-model-controls-\(Int(width))", size: CGSize(width: width, height: 760)) {
+            RootView(vm: vm)
+        }
+    }
+
     /// The New thread composer with two images attached (drop, paste or the paperclip), and with
     /// a fifth refused ("At most 4 images per message.") under the card.
     @Test(arguments: ["new-thread-attachments", "new-thread-attachments-full"])

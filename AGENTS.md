@@ -1627,7 +1627,7 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   Shepherd's support directory and hands them to the sessions Shepherd starts through
   `shepherd-instructions.ts`; pi run by hand doesn't read them.
 - **pi's formats:** `PiConfig` (models.json, settings.json) and `PiModelCatalog`
-  (`pi --list-models`) parse defensively, because pi's formats are not our contract.
+  (`get_available_models` over one-shot RPC) parse defensively, because pi's formats are not our contract.
 - **Binding:** `SessionServer.start()` refuses to bind over a live socket (it probes with a
   connect) and replaces stale socket files. The remote listener reports bind failures rather than
   silently serving nothing.
