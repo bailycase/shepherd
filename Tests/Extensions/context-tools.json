@@ -57,7 +57,6 @@
     {
       "tools": [
         "agent_list",
-        "agent_send",
         "agent_read",
         "agent_steer",
         "agent_interrupt",
@@ -68,10 +67,21 @@
       "group": "agent",
       "extension": "shepherd-panes.ts",
       "verdicts": {
-        "thread": "defer",
-        "automation": "defer"
+        "thread": "defer"
       },
-      "reason": "Reaching other threads is something the user asks for; 1.0k tokens in every thread for a rare use. Defer behind tool_search in Phase B."
+      "reason": "Reaching other threads is something the user asks for, and each description now says so first (agent-to-agent messages); 1.4k tokens in every thread for a rare use. Defer behind tool_search in Phase B."
+    },
+    {
+      "tools": [
+        "agent_send"
+      ],
+      "group": "agent",
+      "extension": "shepherd-panes.ts",
+      "verdicts": {
+        "thread": "defer",
+        "automation": "keep"
+      },
+      "reason": "Messaging another thread is the user's call in a thread (defer in Phase B). An automation's run reports completion to the thread that made it with it, the only agent tool a run gets."
     },
     {
       "tools": [
@@ -87,7 +97,7 @@
       "verdicts": {
         "thread": "defer"
       },
-      "reason": "Managing automations is rare; 0.75k tokens. A run's own agent never gets them (an automation cannot start automations). Defer in Phase B."
+      "reason": "Managing automations is rare; 0.8k tokens. A run's own agent never gets them (an automation cannot start automations). Defer in Phase B."
     },
     {
       "tools": [

@@ -26,7 +26,7 @@ const extension = (name) => path.join(root, "Extensions", name);
 export const THREAD_EXTENSIONS = [
   ["cliproxyapi", "shepherd-cliproxyapi.ts"], ["status", "shepherd-status.ts"], ["service-tier", "shepherd-service-tier.ts"],
   ["instructions", "shepherd-instructions.ts"], ["panes", "shepherd-panes.ts"], ["review", "shepherd-review.ts"],
-  ["subagents", "shepherd-subagents.ts"], ["children", "shepherd-children.ts"], ["namer", "shepherd-namer.ts"],
+  ["subagents", "shepherd-subagents.ts"], ["children", "shepherd-children.ts"], ["goal", "shepherd-goal.ts"], ["namer", "shepherd-namer.ts"],
   ["design", "shepherd-design.ts"], ["design-refs", "shepherd-design-refs.ts"], ["mcp", "shepherd-mcp.ts"],
   ["browser", "shepherd-browser.ts"], ["context", "shepherd-context.ts"],
 ];
@@ -168,6 +168,8 @@ export async function startThread(options = {}) {
     if (options.instructions !== false) env.SHEPHERD_INSTRUCTIONS_DIR = instructions;
     if (wants("children")) Object.assign(env, { SHEPHERD_NATIVE_CHILDREN: "1", SHEPHERD_EXT_CHILDREN: extension("shepherd-children.ts"), SHEPHERD_CHILD_CONCURRENCY: "4",
       SHEPHERD_CHILD_MODEL: "", SHEPHERD_CHILD_THINKING: "", SHEPHERD_CHILD_CONTEXT: "fresh", SHEPHERD_CHILD_SCOPE: "both" });
+    // The goal controller is loaded in every agent and does nothing until a goal is set (the experiment is off here).
+    if (wants("goal")) Object.assign(env, { SHEPHERD_EXT_GOAL: "1", SHEPHERD_GOALS_ENABLED: "0", SHEPHERD_GOAL_MODELS: "" });
     if (options.needsName !== false) env.SHEPHERD_NEEDS_NAME = "1";
     if (options.automation) env.SHEPHERD_AUTOMATION = "1";
     if (options.designRefs) env.SHEPHERD_DESIGN_REFS = options.designRefs === "granted" ? "granted" : "on";
@@ -250,9 +252,10 @@ export async function capture(scenario, options = {}) {
     const [request] = thread.mainRequests();
     if (!request) throw Error(`no model request was recorded (${thread.stderr.slice(0, 500)})`);
     const seen = thread.tools();
-    // A built-in's source is "<builtin:read>"; an extension's is a path, kept relative to the repository.
-    const sources = Object.fromEntries(seen.all.map((tool) => [tool.name,
-      !tool.source ? "" : tool.source.startsWith("<") ? tool.source : path.relative(root, tool.source).replaceAll(path.sep, "/")]));
+    // A built-in's source is "<builtin:read>" (pi 1.0: "builtin:read"); an extension's is a path, kept relative to the repository.
+    const sourceOf = (source) => !source ? "" : source.startsWith("<") ? source : source.startsWith("builtin:") ? `<${source}>`
+      : path.relative(root, source).replaceAll(path.sep, "/");
+    const sources = Object.fromEntries(seen.all.map((tool) => [tool.name, sourceOf(tool.source)]));
     return { scenario, path: request.path, body: request.body, toolSources: sources, activeTools: seen.active, projectFile: path.join(thread.project, "AGENTS.md"),
       loaded: thread.extensionsLoaded };
   } finally {
