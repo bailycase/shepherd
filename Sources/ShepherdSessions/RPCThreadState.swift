@@ -13,6 +13,14 @@ final class RPCThreadState {
     static let textLimit = 16 * 1024
     static let snapshotLimit = 240 * 1024
     static let activeLimit = 120 * 1024
+    /// What the snapshot's other lists may weigh (`fitting`), so a long thread's cards and recorded
+    /// turns never squeeze its history out, and the room history and the live run always keep
+    /// whatever the rest weighs (`budget`).
+    static let subagentsLimit = 64 * 1024
+    static let turnChangesLimit = 48 * 1024
+    static let widgetsLimit = 64 * 1024
+    static let historyReserve = 96 * 1024
+    static let activeReserve = 48 * 1024
     static let pageSize = 50
     static let dialogLimit = 8
     static let dialogBytes = 48 * 1024
@@ -159,7 +167,15 @@ final class RPCThreadState {
     /// Told each time pi lists its commands, so the server can keep the host's catalog.
     var onCommandsListed: (([NativeCommand]) -> Void)?
     /// Native child runs as last published by the children extension over the socket.
-    private(set) var subagents: [NativeSubagent] = [] { didSet { subagentsHash = subagents.hashValue } }
+    private(set) var subagents: [NativeSubagent] = [] {
+        didSet {
+            guard subagents != oldValue else { return }
+            subagentsHash = subagents.hashValue
+            snapshotSubagents = Self.fitting(subagents, limit: Self.subagentsLimit)
+        }
+    }
+    /// What a snapshot carries of `subagents`: the runs within their budget (`fitting`).
+    private(set) var snapshotSubagents: [NativeSubagent] = []
     private var commandsHash = Optional<[NativeCommand]>.none.hashValue
     private var subagentsHash = [NativeSubagent]().hashValue
     private var dialogsHash = [NativeThreadDialog]().hashValue
@@ -262,7 +278,14 @@ final class RPCThreadState {
         return line.isEmpty ? nil : String(line.prefix(shortReasonLimit))
     }
     private var dialogBytes: [Int]?
-    private var widgets: [(id: String, value: NativeThreadWidget)] = [] { didSet { widgetsHash = widgets.map(\.value).hashValue } }
+    private var widgets: [(id: String, value: NativeThreadWidget)] = [] {
+        didSet {
+            widgetsHash = widgets.map(\.value).hashValue
+            snapshotWidgets = Self.fitting(widgets.map(\.value), limit: Self.widgetsLimit)
+        }
+    }
+    /// What a snapshot carries of `widgets`, within their budget.
+    private var snapshotWidgets: [NativeThreadWidget] = []
     private(set) var goal: NativeGoal?
     private var goalsAvailable = false
     /// SessionServer supplies the host experiment policy before the thread starts.
@@ -382,7 +405,14 @@ final class RPCThreadState {
     /// be queued behind the run it ends and never run).
     var interruptAbortPending = false
     /// The agent's recorded turns, as the server last set them (`setTurnChanges`).
-    private(set) var turnChanges: [ChangesTurn]? { didSet { turnChangesHash = turnChanges.hashValue } }
+    private(set) var turnChanges: [ChangesTurn]? {
+        didSet {
+            turnChangesHash = turnChanges.hashValue
+            snapshotTurnChanges = turnChanges.map { Self.fitting($0, limit: Self.turnChangesLimit) }
+        }
+    }
+    /// What a snapshot carries of `turnChanges`, within its budget.
+    private var snapshotTurnChanges: [ChangesTurn]?
     private var turnChangesHash = Optional<[ChangesTurn]>.none.hashValue
     /// Whether the server has set them since the thread started.
     private(set) var turnChangesSet = false
@@ -437,7 +467,7 @@ final class RPCThreadState {
             ShepherdLog.info("rpc session \(self.session.id) has not started within \(timeout)s; asking again")
             self.bootstrap(timeout: timeout)
         }
-        refreshMessages(timeout: timeout) { [weak self] _ in
+        refreshMessages(timeout: timeout, bootstrapAttempt: attempt) { [weak self] _ in
             // Loaded or not (a history over the record cap never arrives), the thread serves now;
             // an attempt the bootstrap has since repeated waits for the repeat.
             guard let self, attempt == self.bootstrapAttempts, generation == self.generation else { return }
@@ -1092,25 +1122,33 @@ final class RPCThreadState {
         }
     }
 
-    func refreshMessages(timeout: TimeInterval = 10, done: ((Result<RPCResponse, RPCError>) -> Void)? = nil) {
+    /// `bootstrapAttempt` is the bootstrap's attempt this fetch belongs to. A pi slower than the
+    /// request deadline answers an earlier attempt's fetch only after the deadline gave up on it:
+    /// that one declares nothing, because the retry's history is still on its way, and serving the
+    /// thread before it lands shows a long history as an empty one.
+    func refreshMessages(timeout: TimeInterval = 10, bootstrapAttempt: Int? = nil,
+                         done: ((Result<RPCResponse, RPCError>) -> Void)? = nil) {
         let generation = generation
         session.request(.getMessages, timeout: timeout) { [weak self] result in
             defer { done?(result) }
             guard let self, generation == self.generation else { return }
+            let superseded = bootstrapAttempt.map { $0 != self.bootstrapAttempts } ?? false
             // A failed history fetch must not lock out snapshots, Send, or Stop forever.
             // Reset already discarded the old session; serve the new one as incomplete, as
             // bootstrap does, and let a later refresh recover its history.
             defer {
-                self.historyPending = false
+                if !superseded { self.historyPending = false }
                 self.commit()
                 self.announceIfServable()
                 self.drainIfReady()
             }
             guard case .success(let response) = result, response.success,
                   let messages = response.messages else {
-                self.projectionClipped = true
+                if !superseded { self.projectionClipped = true }
                 return
             }
+            // The whole history is here again: nothing is left out of it.
+            self.projectionClipped = false
             let history = Self.projectHistory(self.markingStopped(messages),
                                               sentReferences: self.origins.compactMapValues(\.references)) { value, message in
                 if message.role == "compactionSummary", let summary = message.summary,
@@ -1791,10 +1829,10 @@ final class RPCThreadState {
         var base = NativeThreadSnapshot(
             piSessionID: piSessionID ?? "", generation: generation, revision: revision, running: running,
             model: model, thinking: thinking, thinkingLevels: thinkingLevels, supportedActions: Self.supportedActions + (goalsAvailable ? ["goal"] : []), dialogsSupported: true,
-            dialogs: [], widgets: widgets.map(\.value), messages: [], provisional: [],
+            dialogs: [], widgets: snapshotWidgets, messages: [], provisional: [],
             clipped: projectionClipped || dialogs.contains { $0.unavailable == "payload-limit" },
-            runtime: "rpc", stats: stats, commands: commands, subagents: subagents, context: context,
-            turnChanges: turnChanges, retry: retry,
+            runtime: "rpc", stats: stats, commands: commands, subagents: snapshotSubagents, context: context,
+            turnChanges: snapshotTurnChanges, retry: retry,
             serviceTier: serviceTier.rawValue, serviceTiers: serviceTiers.map(\.rawValue), goal: goal
         )
         // The rest encodes without the queue, which adds `,"queue":` and its cached size.
@@ -1846,8 +1884,9 @@ final class RPCThreadState {
     /// byte. Active output is trimmed to `activeLimit` first (the oldest provisional rows that are
     /// not user rows, which open the turns the rest belong to; then the newest dialogs), then
     /// history fills the rest of `snapshotLimit` from `historyEnd` back, a
-    /// page at most. The decisions are the ones encoding the growing snapshot made; returns the
-    /// snapshot and its exact encoded size.
+    /// page at most. A base that weighs more than the snapshot may never leaves the live rows
+    /// less than `activeReserve` nor history less than `historyReserve`. The decisions are the
+    /// ones encoding the growing snapshot made; returns the snapshot and its exact encoded size.
     static func budget(
         _ base: NativeThreadSnapshot,
         baseBytes: Int,
@@ -1866,8 +1905,11 @@ final class RPCThreadState {
         func size() -> Int {
             baseBytes + flag() + list(active.count - dropped.count, activeSum) + list(dialogCount, dialogSum)
         }
+        // Live content may use up to `activeLimit` of the snapshot, but a heavy base never leaves it
+        // less than `activeReserve`, or a long thread's run would draw nothing while it streams.
+        let activeCap = max(activeLimit, baseBytes + activeReserve)
         var next = 0
-        while size() > activeLimit {
+        while size() > activeCap {
             while next < active.count, active[next].value.role == "user" { next += 1 }
             guard next < active.count else { break }
             activeSum -= active[next].bytes
@@ -1875,19 +1917,21 @@ final class RPCThreadState {
             next += 1
             clipped = true
         }
-        while size() > activeLimit, dialogCount > 0 {
+        while size() > activeCap, dialogCount > 0 {
             dialogCount -= 1
             dialogSum -= dialogs[dialogCount].bytes
             clipped = true
         }
-        // Each message is counted with a comma, as when the growing snapshot was encoded.
+        // Each message is counted with a comma, as when the growing snapshot was encoded. History
+        // always has `historyReserve` to fill, whatever the rest of the snapshot weighs.
         var budgeted = size()
+        let limit = max(snapshotLimit, budgeted + historyReserve)
         var page: [Sized<NativeThreadMessage>] = []
         var index = historyEnd - 1
         while index >= 0 {
             let entry = history(index)
             budgeted += entry.bytes + 1
-            if budgeted > snapshotLimit {
+            if budgeted > limit {
                 clipped = true
                 break
             }

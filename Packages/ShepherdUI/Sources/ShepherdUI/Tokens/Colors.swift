@@ -88,6 +88,13 @@ public final class NWPalette: Sendable {
     public let contextInstructions: Color
     public let contextMessages: Color
     public let contextToolResults: Color
+    /// The parts a thread's written files, reasoning, screenshots and the rest add (the same
+    /// rule: swatches and bar segments, never text): the syntax string and variable colors, the
+    /// terminal's cyan, and a `lineStrong` bar for what is not itemized.
+    public let contextToolCalls: Color
+    public let contextReasoning: Color
+    public let contextImages: Color
+    public let contextOther: Color
 
     public init(_ theme: ThemeDefinition) {
         let (l, d) = (theme.light.colors, theme.dark.colors)
@@ -158,6 +165,12 @@ public final class NWPalette: Sendable {
         contextInstructions = synKeyword
         contextMessages = synFunction
         contextToolResults = synType
+        contextToolCalls = synString
+        // The syntax blues are taken (messages, and the number color is a blue beside them): the terminal's cyan is the one hue left.
+        let (lp, dp) = (theme.light.terminal.palette, theme.dark.terminal.palette)
+        contextReasoning = lp.count > 6 && dp.count > 6 ? Color(light: lp[6], dark: dp[6]) : synNumber
+        contextImages = synVariable
+        contextOther = role(\.lineStrong)
     }
 }
 

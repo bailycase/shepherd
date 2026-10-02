@@ -43,7 +43,7 @@ function scripted(body) {
   const owed = notice && { id: textOf(notice).match(/Child (native-[\w-]+)/)?.[1], questionID: textOf(notice).match(/questionID: (\S+)/)?.[1] };
   if (last.role === "tool") return { text: "Done." };
   if (lastText.startsWith("START")) {
-    return call("shepherd_child_start", { role: "scout", task: lastText.includes("db") ? "ASK_PARENT db" : "ASK_PARENT customer", mission: false });
+    return call("shepherd_child_start", { role: "scout", task: lastText.includes("db") ? "ASK_PARENT db" : "ASK_PARENT customer" });
   }
   if (lastText.startsWith("The user says:")) {
     // The notice is still in this turn's context, though the turn that read it ended to ask the user.

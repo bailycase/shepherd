@@ -5,6 +5,7 @@ import ShepherdUI
 import SwiftUI
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdSessions
 
 /// The context meter's boards: ContextDetails (the ring's details over the Main thread),
 /// ContextFull (almost full), ContextCompacted (a compaction in the thread, the dashed ring), and
@@ -36,6 +37,60 @@ extension ThreadPreviewTests {
         defer { fixture.store.stop() }
         try await Preview.render("thread-context-details", size: CGSize(width: 1180, height: 900),
                                  ready: { fixture.store.ready && fixture.store.contextDetails != nil }) {
+            fixture.thread(contextDetailsOpen: true)
+        }
+    }
+
+    /// A long thread's context as the host itemizes it (decided by the user, 2026-10-01): the system prompt and the
+    /// instruction files with what each is made of, the agent's written files, its reasoning, a screenshot, and
+    /// what the provider's total holds beyond all of it as Other, never as "System prompt and tools". Drawn from the
+    /// real producer: `RPCThreadState.estimate` over pi's messages (a system entry with sections and tools, usage on
+    /// each call) held against the provider's total. Light and dark, and at the largest Text size.
+    @Test func contextDetailsBreakdown() async throws {
+        func text(_ count: Int) -> String { String(repeating: "x", count: count) }
+        func tool(_ name: String, _ chars: Int) -> JSONValue { .object(["name": .string(name), "description": .string(text(chars))]) }
+        let project = "<project_context>\n<project_instructions path=\"/Users/me/Developer/Shepherd/AGENTS.md\">\n\(text(19_200))\n</project_instructions>\n"
+            + "<project_instructions path=\"/Users/me/Library/Application Support/Shepherd/instructions/AGENTS.md\">\n\(text(2_400))\n</project_instructions>\n</project_context>"
+        let browser: [String] = ["browser_open", "browser_read", "browser_click", "browser_type", "browser_press", "browser_scroll", "browser_wait",
+                                 "browser_screenshot", "browser_console", "browser_eval", "browser_back", "browser_forward", "browser_reload"]
+        let terminal: [String] = ["terminal_list", "terminal_open", "terminal_run", "terminal_read", "terminal_focus", "terminal_close"]
+        var tools: [JSONValue] = [tool("read", 700), tool("bash", 900), tool("edit", 800), tool("write", 400)]
+        tools += browser.map { tool($0, 1_000) }
+        tools += terminal.map { tool($0, 600) }
+        tools += [tool("mcp", 1_600), tool("github_search_code", 700)]
+        let sections: [String: String?] = ["preamble": text(5_600), "skills": text(3_400), "project_context": project, "addendum": text(900)]
+        let system = RPCMessage(role: "system", content: [], timestamp: 1, sections: sections, toolsAdded: tools)
+        let user = RPCMessage(role: "user", content: [.text(text(1_600))], timestamp: 3)
+        // The first call's count says what the fixed part cost: the sizing agrees with it, so nothing is rescaled.
+        let fixed = RPCThreadState.estimate([system, user])
+        let firstPrompt = Double(fixed.system + fixed.instructions + 400)
+        var calls: [RPCMessage] = []
+        for index in 1...6 {
+            let arguments: [String: JSONValue] = index == 2
+                ? ["path": .string("docs/plan.md"), "content": .string(text(24_000))] : ["command": .string("swift test --filter Native")]
+            let block = RPCContentBlock.toolCall(id: "c\(index)", name: index == 2 ? "write" : "bash", arguments: .object(arguments))
+            let usage = RPCUsage(input: index == 1 ? firstPrompt : 60_000, output: 3_000, reasoning: 2_500)
+            calls.append(RPCMessage(role: "assistant", content: [.thinking(""), block], stopReason: "toolUse", timestamp: Double(10 + index * 2), usage: usage))
+        }
+        var messages: [RPCMessage] = [system, user]
+        for (index, call) in calls.enumerated() {
+            messages.append(call)
+            var content: [RPCContentBlock] = [.text(text(index == 4 ? 30_000 : 6_000))]
+            if index == 3 { content.append(.image(mimeType: "image/png", data: "AAAA")) }
+            messages.append(RPCMessage(role: "toolResult", content: content, toolName: index == 1 ? "write" : "bash",
+                                       toolCallId: "c\(index + 1)", timestamp: Double(11 + index * 2)))
+        }
+        let estimate = RPCThreadState.estimate(messages)
+        let tokens = estimate.total + 7_200
+        let held = try #require(RPCThreadState.scaled(estimate, to: tokens))
+        let context = NativeThreadContext(tokens: tokens, window: 200_000, autoCompactAt: 200_000 - 16_384, autoCompact: true, keepRecent: 20_000,
+                                          split: held.split, largest: held.largest)
+        #expect(held.split.other == 7_200 && held.split.reasoning == 15_000 && held.split.images == RPCThreadState.imageTokens)
+        #expect(held.split.toolCalls > 6_000)
+        let fixture = ThreadFixture(Self.withContext(ActivityThreads.idle, context))
+        defer { fixture.store.stop() }
+        try await Preview.renderMatrix("thread-context-breakdown", size: CGSize(width: 1180, height: 1000), scales: [1, 1.3],
+                                       ready: { fixture.store.ready && fixture.store.contextDetails != nil }) {
             fixture.thread(contextDetailsOpen: true)
         }
     }
@@ -146,7 +201,13 @@ extension ThreadPreviewTests {
     /// touch-sized rows and buttons ("tap to find in thread"); and the compaction lines at a
     /// phone's width, where the rules go and Show summary moves under the words.
     @Test func contextTouch() async throws {
-        let split = NativeContextDetails(context: Self.context(tokens: 42_000), model: "anthropic/claude-opus")
+        func part(_ label: String, _ tokens: Int) -> NativeContextPart { NativeContextPart(label: label, tokens: tokens) }
+        let parts = NativeContextSplit(
+            system: 6_800, instructions: 3_000, messages: 9_100, toolResults: 24_800, instructionFiles: ["AGENTS.md"], toolCalls: 3_100,
+            reasoning: 6_000, images: 2_100, other: 4_000,
+            systemParts: [part("browser tools", 2_300), part("skills", 1_900), part("pi · system prompt", 1_500), part("pi tools", 700)],
+            instructionParts: [part("Shepherd/AGENTS.md", 2_000), part("pi/AGENTS.md", 1_000)])
+        let split = NativeContextDetails(context: Self.context(tokens: 59_000, split: parts), model: "anthropic/claude-opus")
         let full = NativeContextDetails(context: Self.context(tokens: 178_000, split: NativeContextSplit(
             system: 6_800, instructions: 1_400, messages: 31_600, toolResults: 138_200, instructionFiles: ["AGENTS.md"])), model: "anthropic/claude-opus")
         let rows = [
