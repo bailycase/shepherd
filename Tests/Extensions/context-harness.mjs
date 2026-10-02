@@ -88,7 +88,8 @@ async function until(what, fn, timeout = 60000) {
  * - `project`: the project's AGENTS.md text (default: the repository's own), or false for none.
  * - `skills`, `mcp`: the fixtures above, on by default for a thread.
  * - `designRefs`: SHEPHERD_DESIGN_REFS ("on" or "granted"); `automation`: SHEPHERD_AUTOMATION=1.
- * - `trim`: the context-trimming extension's switch (SHEPHERD_EXT_CONTEXT), on unless false.
+ * - `trim`: the context-trimming extension's switch (SHEPHERD_EXT_CONTEXT): on, `false` (off: not loaded), or "inert"
+ *   (loaded without its variable).
  * - `settings`: keys for the pi home's settings.json; `env`: extra environment; `onRequest`/`usage`: the provider's hooks.
  */
 export async function startThread(options = {}) {
@@ -122,7 +123,7 @@ export async function startThread(options = {}) {
   }
   fs.writeFileSync(path.join(config, "settings.json"), JSON.stringify({ retry: { enabled: false }, compaction: { enabled: false }, transport: "sse", ...options.settings }));
 
-  const fake = await startProvider({ onRequest: options.onRequest, usage: options.usage });
+  const fake = await startProvider({ onRequest: options.onRequest, usage: options.usage, uniqueIds: true });
   const model = { id: "gpt-6-sol", name: "gpt-6-sol", reasoning: false, input: ["text"], contextWindow: options.contextWindow ?? 272000, maxTokens: 8192,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
   const baseUrl = `http://127.0.0.1:${fake.port}${api === "anthropic-messages" ? "" : "/v1"}`;
@@ -147,7 +148,9 @@ export async function startThread(options = {}) {
     PI_PACKAGE_DIR: pkg, SHEPHERD_MODEL: "openai/gpt-6-sol" };
   const args = [path.join(pkg, "dist/bundle/cli.js"), "--mode", "rpc", "--session-dir", path.join(dir, "sessions"), "--session-id", options.sessionID ?? "7f1d2c3a-0000-4000-8000-000000000001",
     "--model", "openai/gpt-6-sol"];
-  if (names.length === 0) args.push("-ne", "-ns", "-np", "--no-context-files");
+  // -ne keeps pi from discovering extensions of its own (and, in pi 1.0, loading its built-in ones); each -e still loads.
+  args.push("-ne");
+  if (names.length === 0) args.push("-ns", "-np", "--no-context-files");
   if (options.skills === false && names.length > 0) args.push("-ns");
   for (const [name, file] of THREAD_EXTENSIONS) {
     if (!wants(name)) continue;
@@ -175,9 +178,11 @@ export async function startThread(options = {}) {
       const mcp = mcpFixture(support);
       Object.assign(env, { SHEPHERD_EXT_MCP: extension("shepherd-mcp.ts"), SHEPHERD_EXT_MCP_CLIENT: extension("shepherd-mcp-client.mjs"), SHEPHERD_EXT_MCP_CONFIG: mcp.config, SHEPHERD_EXT_MCP_CACHE: mcp.cache });
     }
-    if (wants("context") && options.trim !== false) env.SHEPHERD_EXT_CONTEXT = extension("shepherd-context.ts");
+    // trim: false is the switch off (the app passes no -e and no variable); "inert" loads the file without its variable.
+    if (wants("context") && options.trim !== false && options.trim !== "inert") env.SHEPHERD_EXT_CONTEXT = extension("shepherd-context.ts");
   }
   Object.assign(env, options.env);
+  for (const file of options.extra ?? []) args.push("-e", file);
   args.push("-e", probe);
 
   const child = spawn(process.execPath, args, { cwd: project, stdio: ["pipe", "pipe", "pipe"], env });
@@ -202,11 +207,11 @@ export async function startThread(options = {}) {
       return events.find((e) => e.type === "response" && e.id === id);
     },
     // Sends a prompt and waits for the turn to settle.
-    async turn(message = "hi") {
+    async turn(message = "hi", timeout = 60000) {
       const before = thread.settled();
       const reply = await thread.request({ type: "prompt", message });
       if (!reply.success) throw Error(`prompt refused: ${JSON.stringify(reply)}`);
-      await until("the turn to settle", () => thread.settled() === before + 1);
+      await until("the turn to settle", () => thread.settled() === before + 1, timeout);
     },
     async messages() { return (await thread.request({ type: "get_messages" })).data.messages; },
     // The requests the thread's own model calls made, not the namer's side request.
@@ -265,13 +270,90 @@ export const SCENARIOS = {
   design: { design: true },
 };
 
+/**
+ * A fake provider's script for a Responses-API thread: in the turn the user's Nth message opens (counting from
+ * zero), the model makes the tool calls `plan[N]` lists, one command each in order (a string, or `{ command,
+ * reasoning }` with that many characters of reasoning payload before the call), then answers with text.
+ * Only the thread's own requests call tools: a compaction's summary request and the namer's carry no bash.
+ */
+export function scriptedBashCalls(plan) {
+  // The script follows the user's messages, not what is left in the request: a compaction takes earlier calls out of it.
+  let lastText, turn = -1, issued = 0;
+  return (entry) => {
+    const input = entry.body?.input;
+    if (!Array.isArray(input) || !(entry.body.tools ?? []).some((tool) => tool.name === "bash")) return {};
+    const lastUser = input.findLast((item) => item.role === "user");
+    const text = lastUser ? JSON.stringify(lastUser.content) : undefined;
+    if (text !== undefined && text !== lastText) { lastText = text; turn++; issued = 0; }
+    const steps = (typeof plan === "function" ? plan : (n) => plan[n] ?? [])(Math.max(turn, 0));
+    const step = steps[issued];
+    if (step === undefined) return {};
+    issued++;
+    return typeof step === "string" ? { call: step } : { call: step.command, reasoning: step.reasoning };
+  };
+}
+
+const chars4 = (value) => Math.ceil(JSON.stringify(value).length / 4);
+
+/**
+ * A long thread, as numbers: each turn the model reads a big search result (about 11,600 tokens, pi's bash tool
+ * returns up to 50 KB), a file (about 3,000) and runs a small command, then answers. Returns, for every turn, the
+ * tokens of the last request it sent, and how much of each request repeated the one before it (what a provider's
+ * prompt cache can reuse). `trim` is the context-trimming switch.
+ */
+export async function simulate({ turns = 24, trim = true, pkg, ...options } = {}) {
+  const row = (turn, call, count, width) =>
+    `awk 'BEGIN{for(i=1;i<=${count};i++) printf "%d.${call}.%d ${"x".repeat(width)} %d\\n", ${turn}, i, i}'`;
+  const plan = (turn) => [row(turn + 1, 1, 800, 50), row(turn + 1, 2, 220, 45), "git status --short | head -5"];
+  const thread = await startThread({ pkg, trim, needsName: false, onRequest: scriptedBashCalls(plan), usage: (entry) => ({ input: chars4(entry.body), output: 40 }), ...options });
+  try {
+    const perTurn = [];
+    const requests = [];
+    for (let turn = 1; turn <= turns; turn++) {
+      const before = thread.mainRequests().length;
+      await thread.turn(`turn ${turn}: look into the next part of the code`);
+      const sent = thread.mainRequests();
+      requests.push(...sent.slice(before));
+      perTurn.push({ turn, tokens: chars4(sent.at(-1).body), requests: sent.length - before });
+    }
+    // What a prefix cache can reuse: the leading tool definitions and messages a request repeats from the one before.
+    const prompt = (request) => [...(request.body.tools ?? []).map((t) => JSON.stringify(t)), ...request.body.input.map((item) => JSON.stringify(item))];
+    const reuse = [];
+    let sent = 0, billed = 0;
+    const CACHED_PRICE = 0.1; // a cached input token costs a tenth of a new one (Anthropic's cache read; OpenAI's newer models are close)
+    requests.forEach((request, i) => {
+      const next = prompt(request);
+      const total = next.reduce((sum, item) => sum + item.length, 0);
+      let repeated = 0;
+      if (i > 0) {
+        const previous = prompt(requests[i - 1]);
+        let same = 0;
+        while (same < previous.length && previous[same] === next[same]) repeated += previous[same++].length;
+        reuse.push(repeated / previous.reduce((sum, item) => sum + item.length, 0));
+      }
+      sent += total / 4;
+      billed += (total - repeated) / 4 + (repeated / 4) * CACHED_PRICE;
+    });
+    return { perTurn, requests: requests.length, sentTokens: Math.round(sent), billedTokens: Math.round(billed),
+      reuse: { mean: reuse.reduce((a, b) => a + b, 0) / Math.max(1, reuse.length), min: Math.min(...reuse), below: reuse.filter((r) => r < 0.999).length, of: reuse.length } };
+  } finally {
+    await thread.stop();
+  }
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const flag = (name, fallback) => { const i = process.argv.indexOf(`--${name}`); return i >= 0 ? process.argv[i + 1] : fallback; };
   const pkg = flag("pi", process.env.PI_PACKAGE_DIR);
   const api = flag("api", "openai-responses");
-  const wanted = (flag("scenario", Object.keys(SCENARIOS).join(","))).split(",");
-  const result = { api, scenarios: {} };
-  for (const name of wanted) result.scenarios[name] = await capture(name, { pkg, api });
-  result.piVersion = JSON.parse(fs.readFileSync(path.join(pkg, "package.json"), "utf8")).version;
-  process.stdout.write(JSON.stringify(result) + "\n", () => process.exit(0));
+  const piVersion = JSON.parse(fs.readFileSync(path.join(pkg, "package.json"), "utf8")).version;
+  if (process.argv.includes("--simulate")) {
+    const turns = Number(flag("turns", "24"));
+    const result = { piVersion, turns, without: await simulate({ turns, trim: false, pkg }), with: await simulate({ turns, trim: true, pkg }) };
+    process.stdout.write(JSON.stringify(result) + "\n", () => process.exit(0));
+  } else {
+    const wanted = (flag("scenario", Object.keys(SCENARIOS).join(","))).split(",");
+    const result = { api, piVersion, scenarios: {} };
+    for (const name of wanted) result.scenarios[name] = await capture(name, { pkg, api });
+    process.stdout.write(JSON.stringify(result) + "\n", () => process.exit(0));
+  }
 }
