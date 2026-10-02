@@ -493,7 +493,7 @@ The ring's Show summary opens the same card.
 
 The supplied **Goal card** board, with **MobileGoal** and **iPadGoal**, is the authority for this card.
 The [second safety review](goal-safety-review.md) amends its controls and model disclosure; its
-[revision-301 image](references/goal-states-r301.png) is saved here. `NWGoalCard` has five states:
+[revision-301 image](boards/GoalStates.png) is saved here. `NWGoalCard` has five states:
 Working, Checking, Met, Paused, and Needs you. All headers use the reference's two-ring goal
 glyph. Working has a pulsing blue dot, Checking a blue spinner, Met a green checkmark,
 Paused a gray pause mark, and Needs you an amber dot. Reduced motion disables animation.

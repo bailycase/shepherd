@@ -46,12 +46,12 @@ struct GoalCheckSettingsTests {
 
         let defaultLaunch = try await launch()
         #expect(defaultLaunch.env["SHEPHERD_GOAL_MODELS"] == "")
-        try #require(toggle()?.press() == true, "the native Toggle takes VoiceOver's press")
+        try window.press(label, role: #require(toggle()?.role))
         try await eventuallyOnMain("cross-provider consent to be granted") { settings.goalCrossProviderEvaluation }
         let optedIn = try await launch()
         #expect(optedIn.env["SHEPHERD_GOAL_MODELS"]
                 == "anthropic/claude-haiku-4-5,openai/gpt-5.1-codex-mini,google/gemini-2.5-flash")
-        try #require(toggle()?.press() == true)
+        try window.press(label, role: #require(toggle()?.role))
         try await eventuallyOnMain("cross-provider consent to be withdrawn") { !settings.goalCrossProviderEvaluation }
         let optedOut = try await launch()
         #expect(optedOut.env["SHEPHERD_GOAL_MODELS"] == "")

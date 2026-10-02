@@ -87,7 +87,7 @@ struct GoalControlsTests {
             .padding(NW.Space.l).frame(width: 640, height: 240, alignment: .top))
         try await eventuallyOnMain("the Details disclosure to attach") { window.element("Details") != nil }
         #expect(!window.elements().contains { (($0.label ?? "") + ($0.value ?? "")).contains("entry-7f9a4d") })
-        try #require(window.element("Details")?.press() == true)
+        try window.press("Details", role: #require(window.element("Details")?.role))
         try await eventuallyOnMain("the proof to appear after its disclosure is pressed") {
             window.elements().contains { (($0.label ?? "") + ($0.value ?? "")).contains("entry-7f9a4d") }
         }
@@ -216,7 +216,7 @@ struct GoalControlsTests {
         func press(_ label: String) throws {
             let button = try #require(button(label), "\(label) exists")
             try #require(button.goalIsEnabled, "\(label) is enabled")
-            try #require(button.press(), "\(label) accepts its accessibility press")
+            try window.press(label)
         }
 
         func expectRequest(_ action: NativeGoalAction, fencedBy goal: NativeGoal, index: Int = 0) throws {
@@ -399,7 +399,7 @@ struct GoalControlsTests {
                     _ = touch.element(label)?.press()
                     #expect(presses == 0, "an unanswered question disables attestation")
                 } else {
-                    try #require(touch.element(label)?.press() == true)
+                    try touch.press(label)
                     #expect(presses == 1)
                 }
                 #expect(!touch.window.isKeyWindow)
@@ -675,7 +675,7 @@ struct GoalControlsTests {
                 }
                 let expected = states.first { $0.0 == native }!.1.filter { size == .desktop || $0 != "Edit goal" }
                 #expect(Set(measured.actions.keys) == Set(expected))
-                for label in expected { try #require(window.element(label)?.press() == true) }
+                for label in expected { try window.press(label) }
                 #expect(pressed == expected, "every drawn header action calls its handler")
             }
             let pairs: [(NWGoalState, NWGoalState)] = [(.working, .checking), (.paused, .needsYou)]
