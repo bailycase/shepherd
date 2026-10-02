@@ -161,7 +161,7 @@ events come out on stdout, one record per LF.
   - `tool_execution_*` upserts running and finished tool calls, with start times for live
     durations.
   - **A call being written** is a tool row before it runs, so a thread whose reply has moved on
-    to a big `write` does not look idle. `message_update`'s `toolcall_start` (pi 0.87.1: `id`,
+    to a big `write` does not look idle. `message_update`'s `toolcall_start` (pi 1.0.0: `id`,
     `toolName`, `contentIndex`) creates the row `provisional:tool:<call id>` with status
     `streaming` and no output; the client draws it as a running call (`NativeActivityCall`
     reads `streaming` as `running`, as it has since native threads shipped, so an older client
@@ -175,7 +175,7 @@ events come out on stdout, one record per LF.
     start time (`startedAt`) is when the model named the call, one clock through its run and
     into history.
     - **Leaving:** a reply pi ends `aborted` or `error` (a Stop, a failed request) runs none of
-      its calls, though its `message_end` still carries the one it was writing (pi 0.87.1 ends
+      its calls, though its `message_end` still carries the one it was writing (pi 1.0.0 ends
       the call with what it parsed): the rows still `streaming` go with it. Any other end hands
       the calls to pi, whose executions continue the rows (`length` included: pi answers each
       with an error result). `agent_end`, `agent_settled` and a session switch drop any that
@@ -348,7 +348,7 @@ switching agents. Nothing in it has reached pi except a steering item. The snaps
 as `queue` (`NativeQueue`: items, mode, paused, notice); a snapshot without one comes from an
 older host, which sends every message straight to pi.
 
-pi 0.87.1's own queues are text-only lists with no edit, remove, or reorder
+pi 1.0.0's own queues are text-only lists with no edit, remove, or reorder
 (`clear_queue` empties both), and `set_steering_mode` / `set_follow_up_mode` write the user's
 pi `settings.json`, so Shepherd never sends them and keeps its own queue instead, handing pi
 one prompt at a time.
@@ -432,7 +432,7 @@ one prompt at a time.
      pauses the queue. Unlike Stop, the queue does not pause.
   2. `clear_queue` takes back the steers pi still holds; they return to the queue behind the
      interrupting messages, so the abort cannot deliver them into the run it ends.
-  3. `abort`. Checked against real pi 0.87.1: pi emits `agent_end` and `agent_settled`, and
+  3. `abort`. Checked against real pi 1.0.0: pi emits `agent_end` and `agent_settled`, and
      answers the abort only after them. A running `bash` is killed, a tool call that was still
      streaming in never starts, and the run's last reply is aborted (an empty error reply
      "This operation was aborted" after a killed tool call). The aborted reply stays in the
@@ -586,7 +586,7 @@ draw no context meter.
   idle and no prompt of its own is on its way (`busy` otherwise, or while a compaction runs). The
   answer is the dispatch: pi answers `compact` only once the summary is written, and reports the
   compaction as events meanwhile.
-- **Never `set_auto_compaction`:** pi 0.87.1 handles it with
+- **Never `set_auto_compaction`:** pi 1.0.0 handles it with
   `SettingsManager.setCompactionEnabled`, which writes `compaction.enabled` into the user's global
   `settings.json` (Shepherd's pi home's). Shepherd writes only its own keys there, so
   there is no Compact automatically switch (the user's call, 2026-09-25).
@@ -862,7 +862,7 @@ requests sent to its host.
   "question-timeout" with a 150 ms timeout, and "select-newsession", a question left open
   while pi moves to another session; `QuestionRecordTests`).
   For example, `LargeHistoryTests` loads a 6 MiB history. A "tools:N" prompt runs a pi-like
-  agent loop with pi 0.87.1's queues (steering read after each tool batch, follow-ups when the
+  agent loop with pi 1.0.0's queues (steering read after each tool batch, follow-ups when the
   run would stop, `queue_update`, `clear_queue`, abort keeping follow-ups, and a stranded steer
   with "hold-settle", and a compaction after the last reply with "compact-hold", during which it
   refuses prompts as pi does); `QueueTests` and `InterruptTests` (Steer now, its fallbacks and
@@ -871,7 +871,7 @@ requests sent to its host.
   (`STUB_PI_STARTUP_DELAY`, `_GATE`, `_EXIT`, or `stub-pi-startup.json` in its cwd for a pi the
   app launches) hold or fail pi's boot, as `ThreadStartupTests` and `AgentStartupTests` do.
 - **Real pi (`node --test Tests/Extensions/*.test.mjs`, with `PI_PACKAGE_DIR` set):**
-  `steer-interrupt.test.mjs` proves the recipe Steer now relies on against pi 0.87.1 itself,
+  `steer-interrupt.test.mjs` proves the recipe Steer now relies on against pi 1.0.0 itself,
   with a local fake provider: a steer lands after the tool batch and before the next model call
   (several land one at a time), `clear_queue` then `abort` then a plain `prompt` yields the new
   message exactly once, `agent_settled` comes before the abort's answer, a killed `bash` is gone,

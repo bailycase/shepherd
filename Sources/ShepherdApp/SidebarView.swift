@@ -7,10 +7,10 @@ import ShepherdRemote
 
 /// The sidebar (NWNavigation; Main, Running, NavNewThread, NavAutomations, NavHosts): the top bar
 /// with Search and Hide sidebar, the destinations (New thread, Automations, More ▸ Hosts and
-/// Extensions), Needs you, Pinned, Recents, and the footer with the Mac's user and Settings.
-/// Subagents have no rows; one waiting on you puts its thread in Needs you.
+/// Extensions), activity groups, Designs, and the footer with the Mac's user and Settings.
+/// Subagents have no rows; their questions go to their parent agent.
 ///
-/// Needs you, Pinned and Recents are one lazy list: a fleet runs to hundreds of threads, and only the rows
+/// Activity groups are one lazy list: a fleet runs to hundreds of threads, and only the rows
 /// on screen are built. Each row is a plain value compared before it redraws, so a status report
 /// or a selection redraws the rows it changed and nothing else.
 struct SidebarView: View {
@@ -70,24 +70,7 @@ private struct SidebarDestinations: View {
 
 // MARK: Lists
 
-/// One element of the lazy list: a section's header or a row.
-private enum SidebarItem: Identifiable, Equatable {
-    case header(NWSidebarSection.Kind)
-    case row(SidebarListRow)
-
-    var id: AnyHashable {
-        switch self {
-        case .header(.needsYou): AnyHashable("header.needsYou")
-        case .header(.pinned): AnyHashable("header.pinned")
-        case .header(.recents): AnyHashable("header.recents")
-        case .header(.host(let name, _)): AnyHashable("header.host.\(name)")
-        case .row(let row): AnyHashable(row.id)
-        }
-    }
-}
-
-/// The list under the destinations, taking the rest of the column: Needs you (only while
-/// something waits), Pinned (only while something is pinned), then Recents, or the project tree (Settings ▸ Appearance ▸ Organize by). One
+/// The activity groups or project tree under the destinations (Settings ▸ Appearance ▸ Organize by). One
 /// scroll view either way, so switching keeps the row on screen selected and scrolls it into view.
 private struct SidebarListsView: View {
     var vm: ShepherdViewModel
@@ -111,6 +94,7 @@ private struct SidebarListsView: View {
             .onChange(of: vm.sidebarRevealRequest) {
                 guard let target = vm.selectedSidebarRow else { return }
                 vm.openProjectHoldingSelection()
+                vm.openActivitySectionHoldingSelection()
                 DispatchQueue.main.async {
                     withNWAnimation(.scroll) { proxy.scrollTo(AnyHashable(target)) }
                 }
@@ -119,14 +103,13 @@ private struct SidebarListsView: View {
     }
 }
 
-/// Needs you, Pinned (only while something is pinned), then Recents, in one lazy stack.
+/// Status groups and Designs in one flat lazy stack; folded groups retain only their header.
 private struct SidebarActivityList: View {
     var vm: ShepherdViewModel
 
     var body: some View {
-        let lists = vm.presentedSidebarLists
-        let items = Self.items(lists)
-        LazyVStack(alignment: .leading, spacing: AppLayout.sidebarRowSpacing) {
+        let items = vm.sidebarActivityItems
+        LazyVStack(alignment: .leading, spacing: 0) {
             ForEach(items) { item in
                 SidebarItemView(vm: vm, item: item)
                     .equatable()
@@ -137,40 +120,27 @@ private struct SidebarActivityList: View {
         .nwAnimation(.list, value: items.map(\.id))
     }
 
-    private static func items(_ lists: SidebarLists) -> [SidebarItem] {
-        var items: [SidebarItem] = []
-        if !lists.needsYou.isEmpty {
-            items.append(.header(.needsYou(count: lists.needsYou.count)))
-            items += lists.needsYou.map(SidebarItem.row)
-        }
-        if !lists.pinned.isEmpty {
-            items.append(.header(.pinned))
-            items += lists.pinned.map(SidebarItem.row)
-        }
-        if !lists.recents.isEmpty {
-            items.append(.header(.recents))
-            items += lists.recents.map(SidebarItem.row)
-        }
-        return items
-    }
 }
 
 /// One element, a single view whatever it shows (a lazy stack's fast path), redrawn only when
 /// its values change.
 private struct SidebarItemView: View, Equatable {
     var vm: ShepherdViewModel
-    let item: SidebarItem
+    let item: SidebarActivityItem
 
     static func == (a: SidebarItemView, b: SidebarItemView) -> Bool { a.vm === b.vm && a.item == b.item }
 
     var body: some View {
         VStack(spacing: 0) {
             switch item {
-            case .header(let kind):
-                NWSidebarSection(kind)
+            case .header(let section, let count, let collapsed):
+                NWSidebarSectionHeader(section.title, count: count, isExpanded: !collapsed,
+                                       attention: section == .needsYou, pulse: section == .working,
+                                       toggle: { vm.toggleActivitySection(section) },
+                                       markAllSeen: section == .done ? { vm.markAllSidebarDoneSeen() } : nil)
             case .row(let row):
                 NWSidebarRow(row.title, leading: row.leading, selected: row.selected, dimmed: row.offline,
-                             accessory: row.accessory, hasGoal: row.hasGoal)
+                             accessory: accessory(row), hasGoal: row.hasGoal)
                     .help(row.help)
                     .sidebarTapRow { vm.selectSidebarRow(row.id) }
                     .accessibilityLabel(row.accessibilityLabel)
@@ -178,6 +148,16 @@ private struct SidebarItemView: View, Equatable {
                     .contextMenu { SidebarRowMenu(vm: vm, row: row) }
             }
         }
+    }
+}
+
+private extension SidebarItemView {
+    func accessory(_ row: SidebarListRow) -> NWSidebarRow.Accessory {
+        if row.section == .working, case .local(let id) = row.id {
+            if case .shortcut = row.accessory { return row.accessory }
+            return .activity(vm.sidebarActivitySamples[id] ?? [])
+        }
+        return row.accessory
     }
 }
 

@@ -5,8 +5,7 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
 
-// The sidebar as plain values (NWNavigation; Main, Running, NavNewThread, NavAutomations,
-// NavHosts): the destinations, Needs you, Pinned, Recents, and the footer. Derived once per change from
+// The sidebar as plain values (NWNavigation): destinations, status groups, Designs and footer. Derived once per change from
 // This Mac's state and every connected host's, never in a view's body.
 
 /// A page the main column shows in place of a thread.
@@ -54,8 +53,11 @@ struct SidebarListRow: Identifiable, Equatable {
     /// A thread the Activity sidebar can pin: not an automation run or a design. Only the
     /// Activity lists say so, so the project tree's menus offer no Pin.
     var pinnable = false
-    /// Pinned, wherever it shows: Needs you keeps a pinned thread that waits on you.
+    /// A pinned thread stays in Pinned, including while it waits on the user.
     var pinned = false
+    var section: SidebarActivitySection = .recents
+    /// App-owned completion generation, unchanged by sends or repeated snapshots.
+    var completion: Int?
     /// A remote thread whose host is not connected: its last known state, dimmed, and its menu
     /// has nothing to offer until the host is back.
     var offline = false
@@ -71,49 +73,42 @@ struct SidebarListRow: Identifiable, Equatable {
     let automationLive: Bool
 }
 
-/// Needs you, Pinned and Recents in display order, before selection and ⌘-digit hints are applied.
+/// Activity groups in display order, before selection and ⌘-digit hints are applied.
 struct SidebarLists: Equatable {
-    /// Everything waiting on you: a thread's question, a subagent asking, an automation run
-    /// that asked. Most recently active first. A pinned thread that waits on you is here, not
-    /// in Pinned, and returns to Pinned once it doesn't.
+    /// Unpinned threads waiting on the user, most recently active first.
     var needsYou: [SidebarListRow] = []
     /// The threads the user pinned, in the order they pinned them (oldest first).
     var pinned: [SidebarListRow] = []
-    /// Every other agent, local and remote, automation runs included, most recently active
-    /// first (`Agent.lastActiveAt`).
+    var working: [SidebarListRow] = []
+    /// Finished, unseen threads; reading one keeps it here until another thread opens.
+    var done: [SidebarListRow] = []
+    /// Idle and seen threads, most recently active first (`Agent.lastActiveAt`).
     var recents: [SidebarListRow] = []
+    var designs: [SidebarListRow] = []
     /// Every row once, Needs you's first and the rest most recently active first, pinned or
     /// not: what a launch shows and the New thread page's Continue card read. Unmarked, as derived.
     var activity: [SidebarListRow] = []
 
-    /// The rows ⌘↑/↓ walk through, in the order they are drawn: Needs you, Pinned, then Recents.
-    var all: [SidebarListRow] { needsYou + pinned + recents }
+    var all: [SidebarListRow] { sections.flatMap(\.rows) }
 
-    /// The rows ⌘1–9 reach, in order: Pinned's, then Recents' (a design takes no digit). Needs
-    /// you takes none.
-    var shortcutRows: [SidebarListRow] {
-        pinned + recents.filter { if case .design = $0.id { false } else { true } }
+    /// Needs you and Designs have no digit; folded groups have no visible hint or target.
+    var shortcutRows: [SidebarListRow] { shortcutRows(collapsed: []) }
+
+    func shortcutRows(collapsed: Set<SidebarActivitySection>) -> [SidebarListRow] {
+        sections.filter { $0.section != .needsYou && $0.section != .designs && !collapsed.contains($0.section) }
+            .flatMap(\.rows)
     }
 
-    /// The lists with the row on screen marked, and the first nine thread rows of Pinned and
-    /// Recents wearing their ⌘-digit while ⌘ is held.
-    func presented(selected: SidebarRowID?, shortcuts: Bool) -> SidebarLists {
+    func presented(selected: SidebarRowID?, shortcuts: Bool,
+                   collapsed: Set<SidebarActivitySection> = []) -> SidebarLists {
         var lists = self
-        if let selected {
-            for index in lists.needsYou.indices where lists.needsYou[index].id == selected { lists.needsYou[index].selected = true }
-            for index in lists.pinned.indices where lists.pinned[index].id == selected { lists.pinned[index].selected = true }
-            for index in lists.recents.indices where lists.recents[index].id == selected { lists.recents[index].selected = true }
-        }
-        if shortcuts {
-            var digit = 0
-            for index in lists.pinned.indices where digit < 9 {
-                digit += 1
-                lists.pinned[index].accessory = .shortcut("⌘\(digit)")
-            }
-            for index in lists.recents.indices where digit < 9 {
-                if case .design = lists.recents[index].id { continue }
-                digit += 1
-                lists.recents[index].accessory = .shortcut("⌘\(digit)")
+        let digits = shortcuts ? Dictionary(uniqueKeysWithValues: shortcutRows(collapsed: collapsed).prefix(9).enumerated()
+            .map { ($0.element.id, "⌘\($0.offset + 1)") }) : [:]
+        for path in [\SidebarLists.pinned, \.needsYou, \.working, \.done, \.recents, \.designs] {
+            for index in lists[keyPath: path].indices {
+                let id = lists[keyPath: path][index].id
+                lists[keyPath: path][index].selected = id == selected
+                if let digit = digits[id] { lists[keyPath: path][index].accessory = .shortcut(digit) }
             }
         }
         return lists
@@ -131,6 +126,7 @@ struct SidebarSource: Equatable {
     }
 
     var local: ShepherdState
+    var completions: [SidebarRowID: SidebarCompletions.Record] = [:]
     /// This Mac's agents whose last turn ended in an error.
     var failedTurns: Set<AgentID> = []
     /// This Mac's agents whose pi stopped before it served, waiting for Retry.
@@ -145,7 +141,7 @@ struct SidebarSource: Equatable {
     var openRuns: [AutomationID: AutomationRun] = [:]
     /// Every configured host, in configured order; one that is offline lists what it last sent.
     var hosts: [Host] = []
-    /// Settings ▸ Experiments ▸ Design tool: This Mac's designs are Recents rows. Their agents
+    /// Settings ▸ Experiments ▸ Design tool: This Mac's designs have their own group. Their agents
     /// never are: a design's chat is its agent's thread.
     var designs = false
 }
@@ -153,9 +149,9 @@ struct SidebarSource: Equatable {
 enum SidebarDerivation {
     private typealias Entry = (row: SidebarListRow, pin: PinnedThread?, needsYou: Bool, key: Double, host: Int, index: Int)
 
-    /// Needs you, Pinned and Recents, in order. Pure: the same source and pins always give the
-    /// same lists.
-    @MainActor static func lists(_ source: SidebarSource, pins: SidebarPins = SidebarPins()) -> SidebarLists {
+    /// Exclusive activity groups. The same source, pins and seen generations give the same lists.
+    @MainActor static func lists(_ source: SidebarSource, pins: SidebarPins = SidebarPins(),
+                                seen: [SidebarRowID: Int] = [:]) -> SidebarLists {
         NWRenderProbe.tick("sidebar.lists")
         let pinned = Set(pins.threads)
         var entries: [Entry] = []
@@ -163,6 +159,17 @@ enum SidebarDerivation {
         /// automation's run, a design). Only a pinned thread keeps its pin on the entry.
         func entry(_ row: SidebarListRow, _ pin: PinnedThread?, needsYou: Bool, key: Double, host: Int, index: Int) -> Entry {
             var row = row
+            if row.completion != nil {
+                let completion = source.completions[row.id]
+                row.completion = completion?.generation ?? 1
+                if case .local(let id) = row.id, !source.failedTurns.contains(id) {
+                    let settled = row.automation.flatMap { source.openRuns[$0] }
+                        .flatMap { $0.agentID == id ? $0.settledAt : nil }
+                    let milliseconds = completion?.completedAt ?? (key >= 0 ? key : nil)
+                        ?? settled.map { $0 * 1000 } ?? source.statusSince[id].map { $0.timeIntervalSince1970 * 1000 }
+                    if let milliseconds { row.accessory = .age(since: Date(timeIntervalSince1970: milliseconds / 1000)) }
+                }
+            }
             var kept: PinnedThread?
             if let pin {
                 row.pinnable = true
@@ -193,8 +200,8 @@ enum SidebarDerivation {
                                  key: agent.lastActiveAt ?? -1, host: 0, index: index))
         }
         if source.designs {
-            // A system build's page opens from its system, never from Recents.
-            // A design removed from Recents stays out until it changes (DesignRecentsMenu).
+            // A system build opens from its system. Remove from Recents hides a design's
+            // sidebar row until it changes again (DesignRecentsMenu).
             for (index, design) in source.local.designs.enumerated() where design.inRecents {
                 entries.append(entry(designRow(design), nil, needsYou: false, key: design.lastActiveAt, host: 0, index: index))
             }
@@ -221,15 +228,28 @@ enum SidebarDerivation {
         var pinnedRows: [PinnedThread: SidebarListRow] = [:]
         var calm: [SidebarListRow] = []
         for entry in entries {
-            if entry.needsYou {
-                lists.needsYou.append(entry.row)
+            if !entry.needsYou { calm.append(entry.row) }
+            if let pin = entry.pin {
+                pinnedRows[pin] = entry.row
                 continue
             }
-            calm.append(entry.row)
-            if let pin = entry.pin { pinnedRows[pin] = entry.row } else { lists.recents.append(entry.row) }
+            switch entry.row.section {
+            case .needsYou: lists.needsYou.append(entry.row)
+            case .working: lists.working.append(entry.row)
+            case .done:
+                if seen[entry.row.id] == entry.row.completion { lists.recents.append(entry.row) }
+                else { lists.done.append(entry.row) }
+            case .designs: lists.designs.append(entry.row)
+            case .recents, .pinned: lists.recents.append(entry.row)
+            }
         }
         lists.pinned = pins.threads.compactMap { pinnedRows[$0] }
-        lists.activity = lists.needsYou + calm
+        lists.done.sort { a, b in
+            let left = source.completions[a.id], right = source.completions[b.id]
+            let leftTime = left?.completedAt ?? -1, rightTime = right?.completedAt ?? -1
+            return leftTime != rightTime ? leftTime > rightTime : (left?.generation ?? 0) > (right?.generation ?? 0)
+        }
+        lists.activity = entries.filter(\.needsYou).map(\.row) + calm
         return lists
     }
 
@@ -290,21 +310,25 @@ enum SidebarDerivation {
             accessory = agent.status == .working ? since.map { .elapsed(since: $0) } ?? .none : .none
             word = AgentRow.statusWord(agent.status, turnFailed: failed)
         }
+        let finished = !needsYou && !cannotStart && !waiting && (agent.status == .done || (automation != nil && !live && run?.settledAt != nil))
+        let section: SidebarActivitySection = needsYou ? .needsYou : waiting || cannotStart ? .recents
+            : live || agent.status == .working ? .working : finished ? .done : .recents
         return SidebarListRow(
             id: .local(agent.id), title: agent.name, leading: leading,
             accessory: accessory, hasGoal: agent.goalState != nil,
+            section: section, completion: finished ? 1 : nil,
             help: agent.worktreeBranch.map { "\(agent.name) · worktree \($0)" } ?? agent.name,
             accessibilityLabel: label(agent, word: word, automation: automation != nil, host: nil)
                 + (agent.goalState != nil ? ", goal" : ""),
             worktree: agent.worktreeBranch != nil, automation: automation?.id, automationLive: live)
     }
 
-    /// A design in Recents (NavDesigns): the nib in place of the status dot, and its board count.
+    /// A design in its own sidebar group: the nib and its board count.
     private static func designRow(_ design: Design) -> SidebarListRow {
         let boards = DesignsPageModel.boardsText(design.boardCount ?? 0)
         return SidebarListRow(
             id: .design(design.id), title: design.name, leading: .glyph("pencil.tip", attention: false),
-            accessory: .text(boards), help: design.name, accessibilityLabel: "\(design.name), design, \(boards)",
+            accessory: .text(boards), section: .designs, help: design.name, accessibilityLabel: "\(design.name), design, \(boards)",
             worktree: false, automation: nil, automationLive: false)
     }
 
@@ -325,8 +349,11 @@ enum SidebarDerivation {
         let help = agent.worktreeBranch.map { "\(agent.name) · worktree \($0)" } ?? agent.name
         return SidebarListRow(
             id: .remote(RemoteAgentRef(hostID: host.id, agentID: agent.id)), title: agent.name, leading: leading,
-            accessory: accessory, hasGoal: agent.goalState != nil, offline: host.offline,
-            help: host.offline ? "\(help) · \(host.name) is offline" : help,
+            accessory: accessory, hasGoal: agent.goalState != nil,
+            section: host.offline ? .recents : needsYou ? .needsYou : agent.status == .working ? .working
+                : agent.status == .done ? .done : .recents,
+            completion: agent.status == .done ? 1 : nil,
+            offline: host.offline, help: host.offline ? "\(help) · \(host.name) is offline" : help,
             accessibilityLabel: label(agent, word: word, automation: automation, host: host.name)
                 + (host.offline ? ", host offline" : "") + (agent.goalState != nil ? ", goal" : ""),
             worktree: agent.worktreeBranch != nil, automation: nil, automationLive: false)

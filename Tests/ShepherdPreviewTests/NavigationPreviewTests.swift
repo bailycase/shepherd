@@ -71,6 +71,47 @@ extension PreviewTests {
         }
     }
 
+    /// NWNavigation revision 420: all groups, independently folded groups, no Done, reading
+    /// Done, empty and long titles, through the same state, pin and completion paths as the app.
+    @Test(arguments: ["full", "collapsed", "allCollapsed", "doneCollapsed", "nodone", "selectedDone", "afterReadingDone", "empty", "long"])
+    func sidebarActivity(state sample: String) async throws {
+        let (workspace, agents) = try await populatedWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        vm.settings.designToolEnabled = true
+        var state = vm.state
+        state.designs = [Design(name: "Checkout funnel dashboard", createdAt: 1, lastActiveAt: 2, boardCount: 4),
+                         Design(name: "Onboarding flow", createdAt: 1, lastActiveAt: 1, boardCount: 2)]
+        if sample == "long" {
+            state.agents[0].name = "Investigate SwiftUI live preview with a title that extends well beyond the sidebar width"
+            state.designs[0].name = "Checkout funnel dashboard with unusually long board and project names"
+        }
+        if sample == "empty" { state = ShepherdState() }
+        try await workspace.seed(state)
+        if sample != "empty" {
+            vm.pinThread(.local(agents[2].id))
+            var time = Date().addingTimeInterval(-40)
+            vm.sidebarActivityLast[agents[3].id] = time
+            for gap in [5.0, 2, 7, 3, 6, 1, 4, 2, 3, 1] {
+                time = time.addingTimeInterval(gap)
+                vm.recordSidebarActivity(agents[3].id, at: time)
+            }
+            if sample == "collapsed" { vm.collapsedActivitySections = [.working, .recents, .designs] }
+            if sample == "allCollapsed" { vm.collapsedActivitySections = Set(SidebarActivitySection.allCases) }
+            if sample == "doneCollapsed" { vm.collapsedActivitySections = [.done] }
+            if sample == "nodone" { vm.markAllSidebarDoneSeen() }
+            if sample == "selectedDone" || sample == "afterReadingDone" { vm.selectAgent(agents[4].id) }
+            if sample == "afterReadingDone" {
+                vm.selectAgent(agents[3].id)
+                #expect(!vm.sidebarLists.done.contains { $0.id == .local(agents[4].id) })
+                #expect(vm.sidebarLists.recents.contains { $0.id == .local(agents[4].id) })
+            }
+        }
+        try await Preview.renderMatrix("sidebar-activity-\(sample)", size: CGSize(width: 232, height: 820)) {
+            SidebarView(vm: vm).nwDensity(.standard)
+        }
+    }
+
     /// Needs you's reasons (NWNavigation, Main): the agent's own word or two when its asking tool
     /// gave one ("retention?", "approve plan"), the question cut short when it gave none, and an
     /// asking subagent's own reason ("token names?") beside one that gave none (its name).
@@ -101,7 +142,7 @@ extension PreviewTests {
         labelled.question?.short = "token names?"
         vm.applyAgentChildren(agents[2].id, [labelled])
         vm.applyAgentChildren(agents[4].id, [Threads.liveRuns[1]])
-        try await Preview.render("sidebar-needs-you-reasons", size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 460)) {
+        try await Preview.render("sidebar-needs-you-reasons", size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 620)) {
             SidebarView(vm: vm)
         }
     }
@@ -125,7 +166,7 @@ extension PreviewTests {
         try await workspace.seed(ShepherdState(spaces: [space], tabs: tabs, agents: agents))
         let vm = workspace.vm
         vm.cannotStart = [agents[1].id]
-        try await Preview.render("sidebar-cannot-start", size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 320)) {
+        try await Preview.render("sidebar-cannot-start", size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 440)) {
             SidebarView(vm: vm)
         }
     }
@@ -152,7 +193,7 @@ extension PreviewTests {
         vm.notSignedIn = [agents[0].id: NotSignedIn(provider: "anthropic", at: Date())]
         vm.cannotStart = [agents[0].id]
         vm.waitingForImport = [agents[1].id]
-        try await Preview.render("sidebar-waiting-and-sign-in", size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 360)) {
+        try await Preview.render("sidebar-waiting-and-sign-in", size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 460)) {
             SidebarView(vm: vm)
         }
     }
@@ -170,17 +211,37 @@ extension PreviewTests {
         }
     }
 
-    /// Pinned (Sidebar › Pinned, SidebarPinned): two pinned threads between Needs you and Recents,
-    /// in the order they were pinned, and a third pinned one that waits on you, which Needs you
-    /// keeps until it is answered.
+    /// Pinned comes first, in pin order, including the thread waiting on the user.
     @Test func sidebarPinned() async throws {
         let (workspace, agents) = try await populatedWorkspace()
         defer { workspace.stop() }
         let vm = workspace.vm
         for index in [4, 2, 1] { vm.pinThread(.local(agents[index].id)) }
-        #expect(vm.sidebarLists.pinned.map(\.title) == ["Fix remote nightly", "Fix remote subagent deletion"])
-        #expect(vm.sidebarLists.needsYou.contains { $0.title == "Dock review pane" && $0.pinned })
+        #expect(vm.sidebarLists.pinned.map(\.title) == ["Fix remote nightly", "Fix remote subagent deletion", "Dock review pane"])
+        #expect(vm.sidebarLists.needsYou.isEmpty)
         try await Preview.render("sidebar-pinned", size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 760)) {
+            SidebarView(vm: vm)
+        }
+    }
+
+    /// The same pinned thread in every status: its row never moves into a status group.
+    @Test(arguments: AgentStatus.allCases)
+    func sidebarPinnedStatus(status: AgentStatus) async throws {
+        let (workspace, agents) = try await populatedWorkspace()
+        defer { workspace.stop() }
+        var state = workspace.vm.state
+        state.agents[2].status = status
+        if status == .blocked {
+            state.agents[2].waitingOn = "Approve the plan?"
+            state.agents[2].waitingReason = "approve plan"
+        }
+        try await workspace.seed(state)
+        let vm = workspace.vm, row = SidebarRowID.local(agents[2].id)
+        vm.pinThread(row)
+        #expect(vm.sidebarLists.pinned.map(\.id) == [row])
+        #expect((vm.sidebarLists.needsYou + vm.sidebarLists.working + vm.sidebarLists.done + vm.sidebarLists.recents)
+            .allSatisfy { $0.id != row })
+        try await Preview.render("sidebar-pinned-\(status.rawValue)", size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 760)) {
             SidebarView(vm: vm)
         }
     }
@@ -222,7 +283,7 @@ extension PreviewTests {
         let starting = try #require(vm.automationRun(automations[0], agent: vm.automationAgent(automations[0])))
         #expect(AutomationRow.isLive(vm.automationAgent(automations[0]), run: starting))
 
-        try await Preview.render("sidebar-automations", size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 360)) {
+        try await Preview.render("sidebar-automations", size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 480)) {
             SidebarView(vm: vm)
         }
     }

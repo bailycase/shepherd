@@ -52,8 +52,9 @@ struct PiSignInSessionTests {
         #expect(session.flow == .paste)
     }
 
-    /// pi 0.87.1's Anthropic login listens on its port even for a pasted code, so a taken port
-    /// returns the sheet to the port's box, with no paste to offer.
+    /// pi 0.87.1's Anthropic login listened on its port even for a pasted code (pi 1.0's no longer
+    /// fails with the port taken, but the sheet is as drawn), so a taken port returns the sheet to
+    /// the port's box, with no paste to offer.
     @Test func aTakenPortDuringAPasteSaysSoAndAnthropicOffersNoPaste() {
         let (session, _, _) = Self.session("anthropic")
         session.handle(.failed(PiSignInFailure(.portBusy, reason: "busy", port: 53692)))

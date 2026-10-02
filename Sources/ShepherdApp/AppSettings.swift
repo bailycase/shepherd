@@ -61,6 +61,7 @@ final class AppSettings {
         static let mcpProjectConfig = "shepherd.mcp.projectConfig"
         static let mcpSameEverywhere = "shepherd.mcp.sameEverywhere"
         static let queueDelivery = "shepherd.agent.queueDelivery"
+        static let agentMessages = "shepherd.pi.agentMessages"
         static let piPanesExtension = "shepherd.pi.extension.panes"
         static let piReviewExtension = "shepherd.pi.extension.review"
         static let piSubagentsExtension = "shepherd.pi.extension.subagents"
@@ -97,7 +98,7 @@ final class AppSettings {
         static let all = [
             terminalFontFamily, terminalFontSize, defaultModel,
             defaultThinking, defaultServiceTier, goalCrossProviderEvaluation, autoNameAgents, queueDelivery, shellPath,
-            piPanesExtension, piReviewExtension, piSubagentsExtension, piNativeSubagents,
+            agentMessages, piPanesExtension, piReviewExtension, piSubagentsExtension, piNativeSubagents,
             piMCPExtension, piBrowserExtension, piDesignReferences,
             childConcurrency, childModel, childThinking, childContext, childScope,
             uiDensity, uiTextScale, sidebarWidth, sidebarRowDensity,
@@ -226,6 +227,19 @@ final class AppSettings {
     func setSlashCommand(_ name: String, on: Bool) {
         if on { hiddenSlashCommands.remove(name) } else { hiddenSlashCommands.insert(name) }
     }
+
+    /// Settings ▸ Pi ▸ Agent-to-agent messages: what an agent's call to message, steer, interrupt,
+    /// read or start another thread does. Ask me until the user says otherwise. The server
+    /// enforces it, taking each choice through `onAgentMessagesChange`.
+    var agentMessages: AgentMessagePolicy {
+        didSet {
+            store.set(agentMessages.rawValue, forKey: Key.agentMessages)
+            if agentMessages != oldValue { onAgentMessagesChange?(agentMessages) }
+        }
+    }
+
+    /// Hands a new choice to the server (set by the view model).
+    @ObservationIgnored var onAgentMessagesChange: ((AgentMessagePolicy) -> Void)?
 
     var piPanesExtension: Bool {
         didSet { store.set(piPanesExtension, forKey: Key.piPanesExtension) }
@@ -459,6 +473,8 @@ final class AppSettings {
         mcpSameEverywhere = store.object(forKey: Key.mcpSameEverywhere) as? Bool ?? true
         queueDelivery = store.string(forKey: Key.queueDelivery)
             .flatMap(NativeQueueMode.init(rawValue:)) ?? Defaults.queueDelivery
+        agentMessages = store.string(forKey: Key.agentMessages)
+            .flatMap(AgentMessagePolicy.init(rawValue:)) ?? AgentMessagePolicy.default
         piPanesExtension = store.object(forKey: Key.piPanesExtension) as? Bool ?? true
         piReviewExtension = store.object(forKey: Key.piReviewExtension) as? Bool ?? true
         piSubagentsExtension = store.object(forKey: Key.piSubagentsExtension) as? Bool ?? true
@@ -560,6 +576,7 @@ final class AppSettings {
         sidebarStyle = Defaults.sidebarStyle
         sidebarGroupByHost = false
         sidebarKeepIdleDays = Defaults.sidebarKeepIdleDays
+        agentMessages = AgentMessagePolicy.default
         piPanesExtension = true
         piReviewExtension = true
         piSubagentsExtension = true
@@ -631,6 +648,17 @@ final class AppSettings {
         }
         var seen = Set<String>()
         return shells.filter { seen.insert($0).inserted }
+    }
+}
+
+extension AgentMessagePolicy {
+    /// The words Settings ▸ Pi shows for each choice.
+    var title: String {
+        switch self {
+        case .ask: "Ask me"
+        case .always: "Always allow"
+        case .never: "Never"
+        }
     }
 }
 

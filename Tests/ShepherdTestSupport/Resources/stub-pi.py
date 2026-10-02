@@ -18,7 +18,7 @@
            streaming) and `continue-3` (the call running) appear in the cwd. An abort at any
            pause ends it as pi ends a stopped request: toolcall_end with the arguments parsed so
            far, an `aborted` message_end that still carries the call, no tool_execution_start,
-           then agent_end and agent_settled. Its events are the shapes pi 0.87.1 sends
+           then agent_end and agent_settled. Its events are the shapes pi 1.0.0 sends
            (Tests/Extensions/tool-call-stream.test.mjs pins them against the real thing).
   "browser-peer <agentID> <socket>" the browser extension's registration, from this process and
            from a process it starts (as an agent's bash tool would), in one turn: this process says
@@ -88,7 +88,7 @@ kept after the summary, and stats' contextUsage tokens and percent null until th
 With "hold" in the instructions it waits for the file `compact-done` first. A session of fewer
 than three messages fails ("Nothing to compact (session too small)").
 
-pi's queues, as pi 0.87.1 behaves (docs/rpc-commands.md, and transcripts of the real thing):
+pi's queues, as pi 1.0.0 behaves (docs/rpc-commands.md, and transcripts of the real thing):
   - While a run streams, `prompt` needs `streamingBehavior`, else pi refuses it ("Agent is
     already processing..."). `steer` / `followUp` append to that queue, stamped when queued,
     then pi emits `queue_update` with both queues' text, then answers the prompt.
