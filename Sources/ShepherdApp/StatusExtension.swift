@@ -68,6 +68,8 @@ enum StatusExtension {
         subagentsExtensionPath: String?,
         childrenExtensionPath: String? = nil,
         childEnvironment: [String: String] = [:],
+        goalCrossProviderEvaluation: Bool = false,
+        goalsEnabled: Bool = false,
         namerExtensionPath: String? = nil,
         needsName: Bool = false,
         isAutomation: Bool = false,
@@ -85,8 +87,9 @@ enum StatusExtension {
         let designReferences = design == nil ? designReferences : nil
         // Nor does it get the browser: that is a thread's own page.
         let browserExtensionPath = design == nil ? browserExtensionPath : nil
+        // Child result delivery must run before the goal's final-settlement evaluator.
         let extensions = [extensionPath, ServiceTierExtension.path(in: home), instructions?.extensionPath, panesExtensionPath, reviewExtensionPath, subagentsExtensionPath,
-                          childrenExtensionPath, namerExtensionPath, design?.extensionPath, designReferences?.extensionPath,
+                          childrenExtensionPath, GoalExtension.path(in: home), namerExtensionPath, design?.extensionPath, designReferences?.extensionPath,
                           mcp?.extensionPath, browserExtensionPath].compactMap { $0 }
         let line = try PiLaunch.agent(home: home, cwd: cwd, sessionID: piSessionID, model: model, thinking: thinking?.rawValue,
                                       extensions: extensions, untrustedProject: PiLaunch.isHomeFolder(cwd, userHome: userHome))
@@ -126,6 +129,12 @@ enum StatusExtension {
         }
         // Fast or Standard is the agent's own (the host keeps its file), so every agent gets this.
         env.merge(ServiceTierExtension.environment(for: agentID, in: home)) { _, value in value }
+        // Keep the controller loaded so the experiment can change without restarting pi.
+        env[GoalExtension.environmentKey] = "1"
+        env["SHEPHERD_GOALS_ENABLED"] = goalsEnabled ? "1" : "0"
+        // Always override an inherited opt-in; absence would leak the app's launch environment.
+        env["SHEPHERD_GOAL_MODELS"] = goalCrossProviderEvaluation
+            ? "anthropic/claude-haiku-4-5,openai/gpt-5.1-codex-mini,google/gemini-2.5-flash" : ""
         if let model { env["SHEPHERD_MODEL"] = model }
         return SessionCommand(argv: line.argv, env: env)
     }

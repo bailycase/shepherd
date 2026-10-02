@@ -169,6 +169,8 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     /// tier ignores it (`ServiceTierSupport`). Decodes `.standard` from older state files, and is
     /// written only when it isn't.
     public var serviceTier: ServiceTier
+    /// Live goal projection for sidebar badges. The durable record belongs to the pi session.
+    public var goalState: String?
 
     public init(
         id: AgentID = AgentID(),
@@ -190,7 +192,8 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         checkout: AgentCheckout? = nil,
         designID: DesignID? = nil,
         designGrants: [DesignGrant] = [],
-        serviceTier: ServiceTier = .standard
+        serviceTier: ServiceTier = .standard,
+        goalState: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -212,6 +215,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         self.designID = designID
         self.designGrants = designGrants
         self.serviceTier = serviceTier
+        self.goalState = goalState
     }
 
     /// The pi session to launch this agent with. Falls back to the agent's id,
@@ -223,7 +227,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     private enum CodingKeys: String, CodingKey {
         case id, name, spaceID, tabID, paneID, status, model, thinkingLevel, nameIsFinal
         case piSessionID, worktreeBranch, worktreeBase, worktreePath, lastActiveAt, waitingOn, waitingReason, checkout, designID, runtime
-        case designGrants, serviceTier
+        case designGrants, serviceTier, goalState
     }
 
     public init(from decoder: Decoder) throws {
@@ -260,6 +264,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         // Absent before service tiers; a tier this build does not know (a newer build's) reads
         // as Standard, which sends nothing.
         serviceTier = ((try? c.decodeIfPresent(ServiceTier.self, forKey: .serviceTier)) ?? nil) ?? .standard
+        goalState = try c.decodeIfPresent(String.self, forKey: .goalState)
         // `runtime` is ignored: agents from the terminal era ("terminal") relaunch over RPC in
         // the same pi session, which is the whole migration.
     }
@@ -286,6 +291,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         try c.encodeIfPresent(designID, forKey: .designID)
         if !designGrants.isEmpty { try c.encode(designGrants, forKey: .designGrants) }
         if serviceTier != .standard { try c.encode(serviceTier, forKey: .serviceTier) }
+        try c.encodeIfPresent(goalState, forKey: .goalState)
         // Older remote clients default a missing runtime to terminal and would try to attach a
         // PTY that does not exist.
         try c.encode(SessionRuntime.rpc, forKey: .runtime)
@@ -530,13 +536,14 @@ extension ShepherdState {
     /// The state as state.json keeps it: without what only a running host knows (the question
     /// each agent waits on and its short reason, and each design's board count).
     public var persisted: ShepherdState {
-        let waiting = agents.contains(where: { $0.waitingOn != nil || $0.waitingReason != nil })
+        let waiting = agents.contains(where: { $0.waitingOn != nil || $0.waitingReason != nil || $0.goalState != nil })
         let counted = designs.contains(where: { $0.boardCount != nil })
         guard waiting || counted else { return self }
         var state = self
         for index in state.agents.indices {
             state.agents[index].waitingOn = nil
             state.agents[index].waitingReason = nil
+            state.agents[index].goalState = nil
         }
         for index in state.designs.indices {
             state.designs[index].boardCount = nil

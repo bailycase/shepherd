@@ -44,6 +44,15 @@ struct AgentBannersTests {
         #expect(banner.identifier == "shepherd-status-\(agent.id.rawValue)")
     }
 
+    @Test(arguments: ["working", "checking", "met", "paused", "needsYou"])
+    func goalsDoNotAlsoPostIntermediateTurnFinishedBanners(_ state: String) {
+        var agent = agent(.done)
+        agent.goalState = state
+        let banner = AgentBanners.status(of: agent, from: .working, failure: nil, watching: false)
+        #expect((banner == nil) == (state == "working" || state == "checking"))
+        if state != "working", state != "checking" { #expect(banner?.subtitle == "Turn finished") }
+    }
+
     /// Launch resets, session restarts and a question are not a turn ending, and nothing posts
     /// while you're watching the agent.
     @Test(arguments: [

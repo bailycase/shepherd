@@ -17,7 +17,8 @@ Sources/
   ShepherdProtocol/    ExtensionMessage/ExtensionReply (+ ChildRun, PaneInfo, …; and
                        ExtensionMessage+Speaker: whose voice each message is), RemoteMessage
                        (RemoteRequest/RemoteReply, RemoteProtocol version + capabilities),
-                       NativeThread (requests, results, NativeThreadSnapshot), NativeThreadContext
+                       NativeThread (requests, results, NativeThreadSnapshot), NativeGoal (goal states,
+                       confirmation, evaluator disclosure, interval clock and typed controls), NativeThreadContext
                        (the context and compactions), RPCWire (pi's
                        JSONL, lenient), Framing (NDJSON, LineBuffer, 1 MiB cap), ShepherdPaths,
                        ShepherdEdition (Shepherd or Shepherd Nightly, from the bundle id),
@@ -63,7 +64,8 @@ Sources/
                        BrowserDriveOwners claim rules) and DevServers (a folder's package.json dev
                        servers).
   ShepherdRemote/      RemoteHostClient, NativeThreadStore (@Observable), NativeThreadPresentation,
-                       NativeTurnPresentation (a turn's items), NativeMarkdown (the prose
+                       NativeTurnPresentation (a turn's items), NativeGoalRecord (goal lines and
+                       display-only diagnostic disclosures), NativeMarkdown (the prose
                        parser: tables, lists, images, details, footnotes), NativeActivity
                        (activity lines, the changes card), NativeQueueRules (the queue's rules,
                        host and client), NativeContextPresentation (the context ring, its
@@ -94,7 +96,8 @@ Sources/
                        ShepherdLog. Shared with the iOS client.
   ShepherdPTYSpawn/    The PTY child side (fork → exec) in C: no Swift runs between the two.
   ShepherdSessions/    SessionServer (state, sessions, extension socket, remote listener),
-                       RPCSession, RPCThreadState (+Queue: the queue of messages sent while pi
+                       GoalExtension (embedded shepherd-goal.ts; session-persisted bounded continuation
+                       and a separate same-model evaluator), RPCSession, RPCThreadState (+Queue: the queue of messages sent while pi
                        works; +Context: what fills the context, compactions; +SnapshotLists: the
                        cards, recorded turns and widgets a snapshot carries, each within its own
                        budget), ThreadOriginStore (where delivered messages came from, kept per pi
@@ -211,7 +214,8 @@ Sources/
       TerminalPanelLayout (TerminalPanelGeometry, pure), TerminalPanelViews (strip, divider)
     Thread/            ThreadView, ThreadTurns, ThreadTools (activity lines), ThreadMarkdown,
                        Composer, QuestionDock (a question in the composer's place),
-                       QueueStack ("Up next", the queue above the composer),
+                       QueueStack ("Up next", the queue above the composer), GoalCard (goal controls,
+                       condition editor, local clock pill and transcript disclosures),
                        ContextMeter (the ring beside Send, its details, compaction lines),
                        ComposerMentions (the @ picker's rules, a pasted reference),
                        ComposerReturnKey (what ↩, ⇧↩, ⌥↩ and ⌘↩ do in the field),
@@ -283,6 +287,8 @@ Packages/
                        Its unit tests live in the root package (Tests/ShepherdUIUnitTests).
 Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free):
   shepherd-status.ts      status + active pi session, Retry (/shepherd-retry; docs/native-thread.md › Retry)
+  shepherd-goal.ts        /goal and typed controls, bounded continuation and a separate authenticated
+                         evaluator; loaded after children; canonical state in pi session entries
   shepherd-namer.ts       agent titles
   shepherd-panes.ts       terminal_* (open/list/run/read/focus/close), agent_*
                           (list/send/spawn/read/steer/interrupt/wait/delete),

@@ -120,6 +120,25 @@ struct SnapshotBudgetTests {
         #expect(bytes == RPCThreadState.bytes(snapshot))
     }
 
+    /// The Goal card's data is a field of the snapshot beside the cards and turns (not a widget, so
+    /// not under the widgets' cap): a goal as big as one gets stays whole, and history keeps its
+    /// reserve beside it.
+    @Test func aGoalAsBigAsOneGetsSurvivesTheBudgetBesideAHeavyBase() {
+        var base = Self.heavyBase(runs: RPCThreadState.fitting(Self.heavyRuns, limit: RPCThreadState.subagentsLimit), turns: Self.heavyTurns)
+        let goal = NativeGoal(id: "goal-1", revision: 7, text: String(repeating: "g", count: 32768), state: .working, elapsedSeconds: 120,
+                              tokensUsed: 40_000, reason: String(repeating: "r", count: 4096), evidence: String(repeating: "e", count: 8192),
+                              summary: String(repeating: "s", count: 2000), checkedBy: "same-model evaluator", runningSince: 1_790_000_000_000, checkCount: 3)
+        base.goal = goal
+        let history = (0..<80).map { Self.message($0, bytes: 4000) }
+
+        let (snapshot, bytes) = Self.budget(base, history: history)
+
+        #expect(snapshot.goal == goal, "the goal card's data is carried whole")
+        #expect(snapshot.messages.count >= 20, "\(snapshot.messages.count) messages")
+        #expect(snapshot.messages.last?.entryID == "m:79")
+        #expect(bytes == RPCThreadState.bytes(snapshot))
+    }
+
     @Test func aBaseThatFitsLeavesTheBudgetsAsTheyWere() {
         var base = Self.heavyBase(runs: [], turns: [])
         base.commands = []

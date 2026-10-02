@@ -48,6 +48,7 @@ struct SidebarListRow: Identifiable, Equatable {
     let title: String
     let leading: NWSidebarRow.Leading
     var accessory: NWSidebarRow.Accessory
+    var hasGoal = false
     var selected = false
     /// A thread the Activity sidebar can pin: not an automation run or a design. Only the
     /// Activity lists say so, so the project tree's menus offer no Pin.
@@ -313,10 +314,12 @@ enum SidebarDerivation {
         let section: SidebarActivitySection = needsYou ? .needsYou : waiting || cannotStart ? .recents
             : live || agent.status == .working ? .working : finished ? .done : .recents
         return SidebarListRow(
-            id: .local(agent.id), title: agent.name, leading: leading, accessory: accessory,
+            id: .local(agent.id), title: agent.name, leading: leading,
+            accessory: accessory, hasGoal: agent.goalState != nil,
             section: section, completion: finished ? 1 : nil,
             help: agent.worktreeBranch.map { "\(agent.name) · worktree \($0)" } ?? agent.name,
-            accessibilityLabel: label(agent, word: word, automation: automation != nil, host: nil),
+            accessibilityLabel: label(agent, word: word, automation: automation != nil, host: nil)
+                + (agent.goalState != nil ? ", goal" : ""),
             worktree: agent.worktreeBranch != nil, automation: automation?.id, automationLive: live)
     }
 
@@ -346,13 +349,13 @@ enum SidebarDerivation {
         let help = agent.worktreeBranch.map { "\(agent.name) · worktree \($0)" } ?? agent.name
         return SidebarListRow(
             id: .remote(RemoteAgentRef(hostID: host.id, agentID: agent.id)), title: agent.name, leading: leading,
-            accessory: accessory,
+            accessory: accessory, hasGoal: agent.goalState != nil,
             section: host.offline ? .recents : needsYou ? .needsYou : agent.status == .working ? .working
                 : agent.status == .done ? .done : .recents,
             completion: agent.status == .done ? 1 : nil,
             offline: host.offline, help: host.offline ? "\(help) · \(host.name) is offline" : help,
             accessibilityLabel: label(agent, word: word, automation: automation, host: host.name)
-                + (host.offline ? ", host offline" : ""),
+                + (host.offline ? ", host offline" : "") + (agent.goalState != nil ? ", goal" : ""),
             worktree: agent.worktreeBranch != nil, automation: nil, automationLive: false)
     }
 

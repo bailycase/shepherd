@@ -294,7 +294,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .remote: ["Hosts", "Add host", "Listener", "Token"]
         case .keyboard: ["Shortcuts", "Reset all shortcuts"]
         case .advanced: ["Workspace state", "Extension socket", "Update channel", "Check for updates", "Reset settings"]
-        case .experiments: ["Suggested instructions", "Learn from", "Can suggest for", "Waiting for you", "Added from suggestions",
+        case .experiments: ["Goals", "Suggested instructions", "Learn from", "Can suggest for", "Waiting for you", "Added from suggestions",
                             "Design tool"]
         }
     }

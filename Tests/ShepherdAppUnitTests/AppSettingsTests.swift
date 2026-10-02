@@ -17,6 +17,8 @@ struct AppSettingsTests {
         #expect(settings.defaultThinking == .medium)
         #expect(settings.defaultServiceTier == .standard, "new threads start on Standard")
         #expect(settings.autoNameAgents)
+        #expect(!settings.goalCrossProviderEvaluation, "cross-provider goal checks require consent")
+        #expect(!settings.goalsEnabled, "Goals is an opt-in experiment")
         #expect(settings.piPanesExtension && settings.piReviewExtension && settings.piDesignReferences)
         #expect(settings.piSubagentsExtension && settings.piNativeSubagents)
         #expect(settings.piBrowserExtension, "Browser tools are on by default")
@@ -65,6 +67,37 @@ struct AppSettingsTests {
 
     @Test func theChoicesAreWordedAsTheDesignSays() {
         #expect(AgentMessagePolicy.allCases.map(\.title) == ["Ask me", "Always allow", "Never"])
+    }
+
+    @Test func theGoalsExperimentPersistsAndResetPausesItThroughTheLiveCallback() {
+        let store = Fixture.defaults()
+        let settings = AppSettings(store: store)
+        var changes: [Bool] = []
+        settings.onGoalsChange = { changes.append($0) }
+        settings.goalsEnabled = true
+        settings.goalsEnabled = true
+        #expect(AppSettings(store: store).goalsEnabled)
+        settings.goalsEnabled = false
+        #expect(!AppSettings(store: store).goalsEnabled)
+        settings.goalsEnabled = true
+        settings.resetToDefaults()
+        #expect(changes == [true, false, true, false])
+        #expect(!settings.goalsEnabled && !AppSettings(store: store).goalsEnabled)
+        #expect(store.object(forKey: AppSettings.Key.goalsEnabled) == nil)
+    }
+
+    @Test func crossProviderConsentPersistsOptOutAndReset() {
+        let store = Fixture.defaults()
+        let settings = AppSettings(store: store)
+        settings.goalCrossProviderEvaluation = true
+        #expect(AppSettings(store: store).goalCrossProviderEvaluation)
+        settings.goalCrossProviderEvaluation = false
+        #expect(!AppSettings(store: store).goalCrossProviderEvaluation)
+        settings.goalCrossProviderEvaluation = true
+        settings.resetToDefaults()
+        #expect(!settings.goalCrossProviderEvaluation)
+        #expect(!AppSettings(store: store).goalCrossProviderEvaluation)
+        #expect(store.object(forKey: AppSettings.Key.goalCrossProviderEvaluation) == nil)
     }
 
     /// While pi works: how the queue goes persists, resets, and a new delivery default reaches

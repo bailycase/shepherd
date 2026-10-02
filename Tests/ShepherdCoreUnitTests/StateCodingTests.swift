@@ -62,6 +62,14 @@ struct StateCodingTests {
         #expect(try Fixture.roundTrip(agent) == agent)
     }
 
+    @Test func liveGoalStateCrossesTheWireButIsNeverPersisted() throws {
+        var state = try Fixture.decode(ShepherdState.self, Self.terminalEraFile)
+        #expect(state.agents[0].goalState == nil)
+        state.agents[0].goalState = "needsYou"
+        #expect(try Fixture.roundTrip(state).agents[0].goalState == "needsYou")
+        #expect(state.persisted.agents[0].goalState == nil)
+    }
+
     @Test func aNewAgentAlsoEncodesItsRuntimeAsRPC() throws {
         let agent = Agent(name: "n", spaceID: SpaceID(), tabID: TabID())
         #expect(try Fixture.encodeObject(agent)["runtime"] as? String == "rpc")
