@@ -75,8 +75,8 @@ struct SidebarListTests {
 
         let reporter = try ExtensionClient(path: app.scratch.socketPath)
         try reporter.send(.setAgentStatus(agentID: quiet.agent.id, status: .working))
-        try await eventuallyOnMain("the working thread to lead Recents") {
-            vm.sidebarLists.recents.map(\.title) == ["quiet", "asker"]
+        try await eventuallyOnMain("the working thread to enter Working") {
+            vm.sidebarLists.working.map(\.title) == ["quiet"] && vm.sidebarLists.recents.map(\.title) == ["asker"]
         }
         let started = try #require(app.server.state.agents.first { $0.id == quiet.agent.id }?.lastActiveAt)
         try reporter.send(.setAgentStatus(agentID: quiet.agent.id, status: .working))
@@ -97,6 +97,7 @@ struct SidebarListTests {
                   case .reason(let reason) = row.accessory else { return false }
             return reason == "Clear session?"
         }
-        #expect(vm.sidebarLists.recents.map(\.title) == ["quiet"])
+        #expect(vm.sidebarLists.working.map(\.title) == ["quiet"])
+        #expect(vm.sidebarLists.recents.isEmpty)
     }
 }
