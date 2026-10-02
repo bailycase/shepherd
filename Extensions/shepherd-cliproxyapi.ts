@@ -134,6 +134,7 @@ export default function (pi: ExtensionAPI) {
   let revision: string | undefined;
   let busy = false;
   let session: ExtensionContext | undefined;
+  let sessionRevision = 0;
   let refresh = Promise.resolve();
   // The CLI can fall back before session_start even on a fresh --model request. Remember
   // the requested identity until an explicit selection; never infer permission from fallback.
@@ -228,12 +229,10 @@ export default function (pi: ExtensionAPI) {
     return refresh;
   }
 
-  function blocksRestoredModel(ctx: ExtensionContext): boolean {
+  function blockedModel(ctx: ExtensionContext): string | undefined {
     // Pi may select another authenticated provider when a saved model is unavailable.
     // Existing conversations keep their branch's model entries, including assistant-only
-    // legacy sessions. Explicit set/cycle records a new model_change and clears this guard.
-    if (requested && (ctx.model?.provider !== ID || ctx.model.id !== requested.slice(ID.length + 1) ||
-      !models.some((model) => model.id === requested!.slice(ID.length + 1)))) return true;
+    // legacy sessions. An explicit launch request takes precedence over that history.
     let saved: { provider: string; id: string } | undefined;
     for (const entry of ctx.sessionManager.getBranch()) {
       if (entry.type === "model_change") saved = { provider: entry.provider, id: entry.modelId };
@@ -241,8 +240,30 @@ export default function (pi: ExtensionAPI) {
         saved = { provider: entry.message.provider, id: entry.message.model };
       }
     }
-    return saved?.provider === ID && (ctx.model?.provider !== ID || ctx.model.id !== saved.id ||
-      !models.some((model) => model.id === saved.id));
+    if (requested) saved = { provider: ID, id: requested.slice(ID.length + 1) };
+    if (saved?.provider === ID && (ctx.model?.provider !== ID || ctx.model.id !== saved.id ||
+      !models.some((model) => model.id === saved.id))) return saved.id;
+  }
+
+  async function recoverModel(ctx: ExtensionContext, id: string): Promise<boolean> {
+    // Only repair an idle session, once per input. No discovery request, family matching,
+    // prompt replay or provider switch: the complete saved identity must still be available.
+    if (busy || !ctx.isIdle() || !models.some((model) => model.id === id)) return false;
+    const revision = sessionRevision;
+    try {
+      const result = await ctx.modelRegistry.refresh({ providers: [ID], allowNetwork: false,
+        signal: AbortSignal.timeout(5000) });
+      if (result.aborted || result.errors.has(ID) || sessionRevision !== revision || busy || !ctx.isIdle()) return false;
+      // A user selection or session switch during the refresh wins over recovery.
+      if (blockedModel(ctx) !== id) return blockedModel(ctx) === undefined;
+      const model = ctx.modelRegistry.find(ID, id);
+      if (!model || model.provider !== ID || model.id !== id || !models.some((item) => item.id === id)) return false;
+      if (!await pi.setModel(model)) return false;
+      return ctx.model?.provider === ID && ctx.model.id === id && models.some((item) => item.id === id);
+    } catch {
+      // Registry/auth errors may carry configuration. The existing safe notice is enough.
+      return false;
+    }
   }
   function notifyBlocked(ctx: ExtensionContext) {
     if (ctx.hasUI) ctx.ui.notify("This conversation's CLIProxyAPI model is unavailable. Re-enable it and select it, or explicitly choose another model before sending.", "error");
@@ -254,9 +275,10 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     fs.unwatchFile(path, changed);
     session = ctx;
+    sessionRevision++;
     busy = false;
     await reload(ctx);
-    if (blocksRestoredModel(ctx)) notifyBlocked(ctx);
+    if (blockedModel(ctx)) notifyBlocked(ctx);
     fs.watchFile(path, { persistent: false, interval: 1000 }, changed);
   });
   pi.on("model_select", (event) => {
@@ -264,21 +286,23 @@ export default function (pi: ExtensionAPI) {
   });
   pi.on("input", async (_event, ctx) => {
     await reload(ctx);
-    if (blocksRestoredModel(ctx)) {
+    const blocked = blockedModel(ctx);
+    if (blocked && !await recoverModel(ctx, blocked)) {
       notifyBlocked(ctx);
       return { action: "handled" };
     }
   });
   pi.on("session_before_compact", (_event, ctx) => {
-    if (blocksRestoredModel(ctx)) { notifyBlocked(ctx); return { cancel: true }; }
+    if (blockedModel(ctx)) { notifyBlocked(ctx); return { cancel: true }; }
   });
   pi.on("session_before_tree", (event, ctx) => {
-    if (event.preparation.userWantsSummary && blocksRestoredModel(ctx)) { notifyBlocked(ctx); return { cancel: true }; }
+    if (event.preparation.userWantsSummary && blockedModel(ctx)) { notifyBlocked(ctx); return { cancel: true }; }
   });
   pi.on("agent_start", () => { busy = true; });
   pi.on("agent_settled", async (_event, ctx) => { busy = false; await reload(ctx); });
   pi.on("session_shutdown", () => {
     session = undefined;
+    sessionRevision++;
     fs.unwatchFile(path, changed);
   });
 }

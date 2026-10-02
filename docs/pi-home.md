@@ -52,6 +52,17 @@ reasoning fields and Responses tool schemas. Only session-mode instances watch t
 updates wait until idle and never redirect an in-flight turn. The model catalog's fingerprint
 includes the connection file. Configuration and credentials never travel to remote clients.
 
+When a restored conversation's managed model does not match pi's current selection, its next
+input attempts to restore the exact `cliproxyapi/<model ID>` once, only while idle. The model
+must still appear in Shepherd's saved proxy catalog. Recovery refreshes only the local provider
+registry with networking disabled and a five-second abort signal, then selects that exact model.
+It never chooses a similar name, another provider, or another model in the same family, and
+never replays the prompt. Startup alone does not attempt recovery. A turn starting, a session
+change, or an explicit user selection during the refresh takes precedence. If recovery fails,
+the existing input guard still blocks the send, compaction and summarized tree navigation.
+The guard's error notification is not yet reliably surfaced for ordinary sends by the host;
+that separate send-result fix is still needed to preserve a blocked draft.
+
 ### Moving from an imported pi provider
 
 There is no automatic migration of `pi-cliproxyapi-provider`. Both providers can coexist while
