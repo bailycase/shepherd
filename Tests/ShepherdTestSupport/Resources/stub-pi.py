@@ -870,10 +870,12 @@ def ui(method, **fields):
 # evaluator or automatic worker turns. Runtime behavior is tested against pinned pi separately.
 goal_file = os.environ.get("STUB_PI_GOAL_FILE")
 goal = None
+goals_enabled = os.environ.get("SHEPHERD_GOALS_ENABLED", "1" if goal_file else "0") == "1"
 
 
 def publish_goal():
-    ui("setWidget", widgetKey="shepherd.goal", widgetLines=["SHEPHERD_GOAL:" + json.dumps(goal)])
+    ui("setWidget", widgetKey="shepherd.goal",
+       widgetLines=["SHEPHERD_GOAL:" + json.dumps(goal)] if goals_enabled else None)
 
 
 def watch_goal():
@@ -1131,8 +1133,14 @@ for raw in sys.stdin.buffer:
             respond(cmd, t, success=False,
                     error="Cannot submit a prompt while compaction is in progress. Wait for compaction to finish and retry.")
             continue
-        if goal_file and message.startswith("/shepherd-goal "):
-            action = json.loads(message[len("/shepherd-goal "):])["action"]
+        if (goal_file or os.environ.get("SHEPHERD_EXT_GOAL") == "1") and message.startswith("/shepherd-goal "):
+            control = json.loads(message[len("/shepherd-goal "):])
+            action = control["action"]
+            if action == "configure":
+                goals_enabled = control["enabled"]
+                if not goals_enabled and goal and goal["state"] in ("working", "checking"):
+                    goal = dict(goal, state="paused", revision=goal.get("revision", 1) + 1)
+                publish_goal()
             if goal and action in ("pause", "interrupt") and goal["state"] in ("working", "checking"):
                 goal = dict(goal, state="paused", revision=goal.get("revision", 1) + 1)
                 publish_goal()

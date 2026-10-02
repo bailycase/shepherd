@@ -10,7 +10,6 @@ struct ThreadGoalCard: View {
     var framed = true
     @State private var editing = false
     @State private var text = ""
-    @State private var limits = NWGoalLimits(seconds: nil, tokens: nil)
     @State private var editedGoal: NativeGoal?
     @FocusState private var focused: Bool
 
@@ -28,7 +27,6 @@ struct ThreadGoalCard: View {
                            act(goal.state == .needsYou && goal.confirmationRequired == true ? .confirm : .resume, goal: goal)
                        }, edit: {
                            text = goal.text
-                           limits = NWGoalLimits(seconds: goal.timeLimitSeconds, tokens: goal.tokenLimit)
                            editedGoal = goal
                            editing = true
                        }, clear: { act(.clear, goal: goal) })
@@ -42,7 +40,6 @@ struct ThreadGoalCard: View {
                                 .foregroundStyle(Color.nw.textPrimary)
                                 .focused($focused)
                                 .accessibilityLabel("Goal condition")
-                            NWGoalLimitFields(limits: $limits)
                             if let notice = store.notice {
                                 Text(notice).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
                             }
@@ -57,7 +54,7 @@ struct ThreadGoalCard: View {
                             ToolbarItem(placement: .confirmationAction) {
                                 Button("Save") {
                                     guard let displayed = editedGoal else { return }
-                                    let action = editAction(displayed)
+                                    let action = NativeGoalAction.edit(text: text)
                                     Task { if await store.goalAction(action, displayedGoal: displayed) { editing = false } }
                                 }
                                 .disabled(!canSave(store.goal))
@@ -73,16 +70,8 @@ struct ThreadGoalCard: View {
     private func canSave(_ goal: NativeGoal?) -> Bool {
         guard enabled, let goal, goal.state != .met, let displayed = editedGoal,
               displayed.id == goal.id, displayed.revision == goal.revision, displayed.state == goal.state,
-              limits.isValid, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
-        return text != displayed.text || limits.seconds != displayed.timeLimitSeconds || limits.tokenLimit != displayed.tokenLimit
-    }
-
-    private func editAction(_ goal: NativeGoal) -> NativeGoalAction {
-        .edit(text: text,
-              timeLimitSeconds: limits.seconds != goal.timeLimitSeconds ? limits.seconds : nil,
-              tokenLimit: limits.tokenLimit != goal.tokenLimit ? limits.tokenLimit : nil,
-              clearTimeLimit: limits.clearsTime && goal.timeLimitSeconds != nil ? true : nil,
-              clearTokenLimit: limits.clearsTokens && goal.tokenLimit != nil ? true : nil)
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        return text != displayed.text
     }
 
     private func act(_ action: NativeGoalAction, goal: NativeGoal) {

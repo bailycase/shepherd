@@ -12,8 +12,6 @@ public struct NativeGoal: Codable, Hashable, Sendable, Identifiable {
     public var state: NativeGoalState
     public var elapsedSeconds: Double
     public var tokensUsed: Int
-    public var timeLimitSeconds: Double?
-    public var tokenLimit: Int?
     public var reason: String?
     public var evidence: String?
     public var summary: String?
@@ -25,8 +23,8 @@ public struct NativeGoal: Codable, Hashable, Sendable, Identifiable {
     public var checkCount: Int?
 
     public init(id: String, revision: Int = 1, text: String, state: NativeGoalState,
-                elapsedSeconds: Double = 0, tokensUsed: Int = 0, timeLimitSeconds: Double? = nil,
-                tokenLimit: Int? = nil, reason: String? = nil, evidence: String? = nil, summary: String? = nil,
+                elapsedSeconds: Double = 0, tokensUsed: Int = 0,
+                reason: String? = nil, evidence: String? = nil, summary: String? = nil,
                 checkedBy: String? = nil, confirmationRequired: Bool? = nil, confirmedByUser: Bool? = nil,
                 runningSince: Double? = nil, checkCount: Int? = nil) {
         self.id = id
@@ -35,8 +33,6 @@ public struct NativeGoal: Codable, Hashable, Sendable, Identifiable {
         self.state = state
         self.elapsedSeconds = elapsedSeconds
         self.tokensUsed = tokensUsed
-        self.timeLimitSeconds = timeLimitSeconds
-        self.tokenLimit = tokenLimit
         self.reason = reason
         self.evidence = evidence
         self.summary = summary
@@ -97,8 +93,6 @@ public struct NativeGoal: Codable, Hashable, Sendable, Identifiable {
     public var isValid: Bool {
         UUID(uuidString: id) != nil && revision >= 1 && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && text.utf16.count <= 32768 && elapsedSeconds.isFinite && elapsedSeconds >= 0 && tokensUsed >= 0
-            && (timeLimitSeconds == nil || timeLimitSeconds!.isFinite && timeLimitSeconds! > 0)
-            && (tokenLimit == nil || tokenLimit! > 0)
             && (reason?.utf16.count ?? 0) <= 4096 && (evidence?.utf16.count ?? 0) <= 8192
             && (summary?.utf16.count ?? 0) <= 40 && (checkedBy?.utf16.count ?? 0) <= 256
             && (checkedBy == nil || !checkedBy!.contains(where: { $0.isNewline || $0.isASCII && ($0.asciiValue! < 32 || $0.asciiValue! == 127) }))
@@ -118,19 +112,13 @@ public struct NativeGoal: Codable, Hashable, Sendable, Identifiable {
 }
 
 public enum NativeGoalAction: Codable, Hashable, Sendable {
-    case set(text: String, timeLimitSeconds: Double? = nil, tokenLimit: Int? = nil)
+    case set(text: String)
     case pause, resume, clear, confirm
-    /// Omitted limits preserve them; clear flags emit explicit null to lift them.
-    case edit(text: String, timeLimitSeconds: Double? = nil, tokenLimit: Int? = nil,
-              clearTimeLimit: Bool? = nil, clearTokenLimit: Bool? = nil)
+    case edit(text: String)
 
     public var isValid: Bool {
         switch self {
-        case .set(let text, let time, let tokens):
-            validText(text) && (time == nil || time!.isFinite && time! > 0) && (tokens == nil || tokens! > 0)
-        case .edit(let text, let time, let tokens, let clearTime, let clearTokens):
-            validText(text) && (time == nil || time!.isFinite && time! > 0) && (tokens == nil || tokens! > 0)
-                && !(clearTime == true && time != nil) && !(clearTokens == true && tokens != nil)
+        case .set(let text), .edit(let text): validText(text)
         default: true
         }
     }
@@ -142,16 +130,8 @@ public enum NativeGoalAction: Codable, Hashable, Sendable {
     public var command: String {
         var object: [String: Any]
         switch self {
-        case .set(let text, let time, let tokens):
-            object = ["action": "set", "text": text]
-            if let time { object["timeLimitSeconds"] = time }
-            if let tokens { object["tokenLimit"] = tokens }
-        case .edit(let text, let time, let tokens, let clearTime, let clearTokens):
-            object = ["action": "edit", "text": text]
-            if let time { object["timeLimitSeconds"] = time }
-            if let tokens { object["tokenLimit"] = tokens }
-            if clearTime == true { object["timeLimitSeconds"] = NSNull() }
-            if clearTokens == true { object["tokenLimit"] = NSNull() }
+        case .set(let text): object = ["action": "set", "text": text]
+        case .edit(let text): object = ["action": "edit", "text": text]
         case .pause: object = ["action": "pause"]
         case .resume: object = ["action": "resume"]
         case .clear: object = ["action": "clear"]

@@ -27,10 +27,14 @@
     session generation. Controller transitions increment that revision; accounting updates do
     not. Optional `checkedBy`, `confirmationRequired`, `confirmedByUser`, `checkCount` and
     `runningSince` decode absent on older hosts. The interval start is epoch milliseconds;
-    clients update only the pill clock locally. Typed Edit omits preserved limits and uses
-    `clearTimeLimit`/`clearTokenLimit` to lift them; the host emits explicit null in controller JSON. Confirm is user attestation, not independent verification. A host without
+    clients update only the pill clock locally. Set/Edit carry only condition text; goals have no
+    time/token caps and legacy budget fields are ignored. Confirm is user attestation, not independent verification. A host without
     the capability hides these controls but keeps ordinary chat. Stop and Steer now pause the
     goal and cancel Checking before aborting pi, never resuming the goal for the replacement turn
+  - `experiments.goals.v1` supports `HostSettings.goalsEnabled` and its change, default false.
+    Settings > Experiments switches each host live; off pauses/cancels goal work and hides its
+    controls without restarting agents, clearing saved goals or aborting in-flight tools.
+    On leaves preserved goals Paused until explicit Resume. Missing/null settings default off.
   - attach, detach, input, resize, and acknowledged paste
   - terminal open and close (`openPane`, `closePane`)
   - `listDir`, `listModels`, `addSpace`, and `createAgent` with `creationOptions` (and the

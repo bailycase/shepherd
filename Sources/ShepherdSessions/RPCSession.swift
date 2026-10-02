@@ -46,6 +46,7 @@ final class RPCSession: @unchecked Sendable {
     /// (`SHEPHERD_AGENT_ID`), and the server knows the pi speaks for it before any pane holds it
     /// (`SessionServer.isPiProcess`).
     let launchAgentID: AgentID?
+    let hasGoalController: Bool
     private(set) var exitCode: Int32?
 
     /// Every stdout record that is not a `response` (unknown types included).
@@ -54,6 +55,8 @@ final class RPCSession: @unchecked Sendable {
     var onStderr: ((String) -> Void)?
     /// Invoked after the child is reaped and stdout is drained. nil = signal.
     var onExit: ((Int32?) -> Void)?
+    /// One-shot retry when stdin's queued bytes drain; never called from `send`.
+    var onInputDrained: (() -> Void)?
 
     /// Same bound as the PTY input queue. Rejected writes are all-or-none.
     static let outputQueueLimit = PTYSession.inputQueueLimit
@@ -99,6 +102,8 @@ final class RPCSession: @unchecked Sendable {
     private var stderrBuffer = Data()
     private var pendingOutput = Data()
     private var pendingOutputOffset = 0
+    /// Bytes retained in stdin's bounded queue (also used by backpressure tests).
+    var pendingInputBytes: Int { pendingOutput.count - pendingOutputOffset }
     private var pendingRequests: [String: (Result<RPCResponse, RPCError>) -> Void] = [:]
     private var nextRequestID = 0
     private var reaped = false
@@ -135,6 +140,7 @@ final class RPCSession: @unchecked Sendable {
         self.queue = queue
         self.cwd = params.cwd
         self.launchAgentID = params.env?["SHEPHERD_AGENT_ID"].map { AgentID(rawValue: $0) }
+        self.hasGoalController = params.env?[GoalExtension.environmentKey] == "1"
         guard !params.command.isEmpty else { throw SpawnError(message: "rpc session needs a command") }
         let argv = params.command
         self.command = argv
@@ -250,8 +256,7 @@ final class RPCSession: @unchecked Sendable {
             ShepherdLog.warning("rpc session \(self.id) failed to encode \(command.type): \(error)")
             return false
         }
-        let pendingCount = pendingOutput.count - pendingOutputOffset
-        guard line.count <= Self.outputQueueLimit - pendingCount else {
+        guard line.count <= Self.outputQueueLimit - pendingInputBytes else {
             ShepherdLog.warning("rpc session \(self.id) command dropped: pending output limit is \(Self.outputQueueLimit) bytes")
             return false
         }
@@ -720,13 +725,22 @@ final class RPCSession: @unchecked Sendable {
         }
         pendingOutput.removeAll(keepingCapacity: true)
         pendingOutputOffset = 0
-        cancelWriteSource()
+        // A synchronous send may empty stdin before the write-source event runs.
+        if onInputDrained == nil { cancelWriteSource() }
     }
 
     private func armWriteSource() {
         guard writeSource == nil, !stdinClosed else { return }
         let source = DispatchSource.makeWriteSource(fileDescriptor: stdinFD, queue: queue)
-        source.setEventHandler { [weak self] in self?.drainPendingOutput() }
+        source.setEventHandler { [weak self] in
+            guard let self else { return }
+            self.drainPendingOutput()
+            guard self.isAlive, !self.stdinClosed, self.pendingInputBytes == 0 else { return }
+            let retry = self.onInputDrained
+            self.onInputDrained = nil
+            self.cancelWriteSource()
+            retry?()
+        }
         source.setCancelHandler {}
         writeSource = source
         source.activate()
@@ -740,6 +754,7 @@ final class RPCSession: @unchecked Sendable {
     private func closeStdin() {
         guard !stdinClosed else { return }
         stdinClosed = true
+        onInputDrained = nil
         cancelWriteSource()
         pendingOutput.removeAll(keepingCapacity: false)
         pendingOutputOffset = 0

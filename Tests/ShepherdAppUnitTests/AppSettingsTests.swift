@@ -18,6 +18,7 @@ struct AppSettingsTests {
         #expect(settings.defaultServiceTier == .standard, "new threads start on Standard")
         #expect(settings.autoNameAgents)
         #expect(!settings.goalCrossProviderEvaluation, "cross-provider goal checks require consent")
+        #expect(!settings.goalsEnabled, "Goals is an opt-in experiment")
         #expect(settings.piPanesExtension && settings.piReviewExtension && settings.piDesignReferences)
         #expect(settings.piSubagentsExtension && settings.piNativeSubagents)
         #expect(settings.piBrowserExtension, "Browser tools are on by default")
@@ -31,6 +32,23 @@ struct AppSettingsTests {
         #expect(settings.childConcurrency == 4 && settings.childContext == "fresh" && settings.childScope == "both")
         #expect(settings.childModel.isEmpty && settings.childThinking.isEmpty)
         #expect(settings.queueDelivery == .all, "the queue arrives as one turn")
+    }
+
+    @Test func theGoalsExperimentPersistsAndResetPausesItThroughTheLiveCallback() {
+        let store = Fixture.defaults()
+        let settings = AppSettings(store: store)
+        var changes: [Bool] = []
+        settings.onGoalsChange = { changes.append($0) }
+        settings.goalsEnabled = true
+        settings.goalsEnabled = true
+        #expect(AppSettings(store: store).goalsEnabled)
+        settings.goalsEnabled = false
+        #expect(!AppSettings(store: store).goalsEnabled)
+        settings.goalsEnabled = true
+        settings.resetToDefaults()
+        #expect(changes == [true, false, true, false])
+        #expect(!settings.goalsEnabled && !AppSettings(store: store).goalsEnabled)
+        #expect(store.object(forKey: AppSettings.Key.goalsEnabled) == nil)
     }
 
     @Test func crossProviderConsentPersistsOptOutAndReset() {

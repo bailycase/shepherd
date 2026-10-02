@@ -703,6 +703,9 @@ public final class RemoteHostClient: @unchecked Sendable {
                 code: "update_required", message: "Update Shepherd on the host to see its settings from here."
             )
         }
+        if case .change(.goalsEnabled) = request, !capabilities.contains(RemoteProtocol.goalExperimentCapability) {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to toggle the Goals experiment.")
+        }
         let reply = try await self.request { .hostSettings(id: $0, request: request) }
         switch reply {
         case .hostSettings(_, let settings): return settings

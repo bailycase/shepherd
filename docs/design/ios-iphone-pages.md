@@ -103,7 +103,8 @@ keyboard is up while the query is empty.
   Appearance keeps the half-filled circle the Mac's Settings uses. A value shows once a host has
   answered (`SettingsStore`): Defaults, Extensions and About's agent are the settings host's (the
   one their pages last showed, else the first that serves its settings), Instructions the first
-  host whose files read, and Experiments "1 on" or "Off" once any host serves suggestions. About
+  host whose files read, and Experiments counts enabled features, "1 on", "2 on" or "Off",
+  once a host serves suggestions or the Goals experiment. About
   says "build N" until a host reports its agent's version. Every Settings screen reads every host as it
   appears, again as a host connects, and on pull to refresh.
 - **Not built yet:** Notifications (which events notify: Needs you by default; it waits for push
@@ -257,8 +258,14 @@ SettingsSkills): every host's agent skills, the same on every host, over `skills
 ## iPhone: Experiments (MobileExperiments)
 
 Settings ▸ Experiments: features still being tried, each off until turned on
-(`Settings/ExperimentsScreens.swift`; the Mac's page is SettingsExperiments). Its one experiment
-spans every host (`suggestions.v1`); `ClientSuggestions` (ShepherdRemote) holds every rule.
+(`Settings/ExperimentsScreens.swift`; the Mac's page is SettingsExperiments). Suggested
+instructions spans every host (`suggestions.v1`); `ClientSuggestions` holds every rule. Goals
+adds a separate card per connected host with `experiments.goals.v1`, using the same lantern tile
+and native switch, the existing two-ring mark, "Goals on <host>", and the description "Keep a
+conversation working toward a condition you set with /goal. No time or token budgets. Turning
+this off pauses active goals without clearing them." Off is the default. It applies live on
+that host, preserves paused goals and never resumes them on re-enable. The footnote explains
+that Resume is still required; unsupported hosts get no switch.
 
 - **The page:** "‹ Settings", the large title "Experiments", on `bgBase`, 14pt sides, 10pt apart.
   "Still being tried out. Each is off until you turn it on." (13.5/1.5 `textSecondary`).

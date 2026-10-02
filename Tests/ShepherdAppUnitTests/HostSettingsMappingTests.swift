@@ -15,6 +15,7 @@ struct HostSettingsMappingTests {
         app.defaultModel = "anthropic/claude-opus"
         app.defaultThinking = .high
         app.goalCrossProviderEvaluation = true
+        app.goalsEnabled = true
         app.worktreeBaseMode = .head
         app.worktreeAutoMergePR = true
         app.worktreeMergeMethod = .rebase
@@ -23,7 +24,7 @@ struct HostSettingsMappingTests {
         #expect(settings.shepherdVersion == "0.4.2" && settings.piVersion == "0.87.1")
         #expect(settings.defaultModel == "anthropic/claude-opus")
         #expect(settings.defaultThinking == .high)
-        #expect(settings.goalCrossProviderEvaluation)
+        #expect(settings.goalCrossProviderEvaluation && settings.goalsEnabled)
         #expect(settings.worktreeBase == .head)
         #expect(settings.mergePRAutomatically && settings.mergeMethod == .rebase)
         #expect(settings.bundledExtensions.map(\.id) == ["namer", "panes", "review", "nativeSubagents", "subagents", "mcp", "browser"])
@@ -88,6 +89,7 @@ struct HostSettingsMappingTests {
     /// Every change the protocol names reaches the setting it names, as the snapshot reads back.
     @Test(arguments: [
         HostSettingChange.defaultThinking(.low), .goalCrossProviderEvaluation(true), .goalCrossProviderEvaluation(false),
+        .goalsEnabled(true), .goalsEnabled(false),
         .fetchBeforeCreating(false), .commitRemainingWork(false),
         .generatePRDescriptions(false), .deleteLocalBranch(false), .mergePRAutomatically(true),
         .bundledExtension(id: "review", on: false), .bundledExtension(id: "nativeSubagents", on: false),

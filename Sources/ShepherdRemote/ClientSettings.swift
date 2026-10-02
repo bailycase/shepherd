@@ -124,6 +124,7 @@ public final class ClientHostSettings {
     }
 
     private func show(_ change: HostSettingChange, on host: SettingsHost) -> Bool {
+        if case .goalsEnabled = change, !host.serves(RemoteProtocol.goalExperimentCapability) { return false }
         guard !forgotten.contains(host.id), case .loaded(var settings)? = loaded[host.id] else { return false }
         settings.apply(change)
         loaded[host.id] = .loaded(settings)

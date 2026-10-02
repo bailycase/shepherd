@@ -36,8 +36,7 @@ struct NativeGoalTests {
         goal.elapsedSeconds = .infinity
         #expect(!goal.isValid)
         #expect(!NativeGoalAction.set(text: " ").isValid)
-        #expect(!NativeGoalAction.set(text: "Tests pass", timeLimitSeconds: -1).isValid)
-        #expect(!NativeGoalAction.set(text: "Tests pass", tokenLimit: 0).isValid)
+        #expect(!NativeGoalAction.edit(text: String(repeating: "x", count: 32769)).isValid)
     }
 
     @Test func summaryIsAdditiveAndLegacyMetEvidenceNeverBecomesMetadata() throws {
@@ -113,9 +112,8 @@ struct NativeGoalTests {
         #expect(proof.contains { $0["requirementId"]?.stringValue == "r3" && $0["quote"]?.stringValue == "Consumer immutability regression passed." })
     }
 
-    @Test(arguments: [NativeGoalAction.set(text: "tests pass", timeLimitSeconds: 1800, tokenLimit: 100000), .pause, .resume, .clear, .confirm,
-                      .edit(text: "tests and lint pass"), .edit(text: "tests pass", timeLimitSeconds: 600, tokenLimit: 200000),
-                      .edit(text: "tests pass", clearTimeLimit: true, clearTokenLimit: true)])
+    @Test(arguments: [NativeGoalAction.set(text: "tests pass"), .pause, .resume, .clear, .confirm,
+                      .edit(text: "tests and lint pass")])
     func everyControlRoundTripsWithoutTurningItsTextIntoInstructions(_ action: NativeGoalAction) throws {
         let request = NativeThreadRequest.goal(expectedSessionID: "s", generation: "g", operationID: UUID(), action: action,
                                                expectedGoalID: Self.id, expectedGoalRevision: 3, expectedGoalState: .checking)
@@ -125,20 +123,17 @@ struct NativeGoalTests {
         #expect(try JSONSerialization.jsonObject(with: body) is [String: Any])
     }
 
-    @Test func editsDistinguishPreservedChangedAndLiftedLimitsAndDecodeLegacyTextOnly() throws {
-        let legacy = try JSONDecoder().decode(NativeGoalAction.self, from: Data(#"{"edit":{"text":"Tests pass"}}"#.utf8))
+    @Test func legacyBudgetFieldsAreIgnoredAndNeverSentByNewControls() throws {
+        let legacy = try JSONDecoder().decode(NativeGoalAction.self, from: Data(#"{"edit":{"text":"Tests pass","timeLimitSeconds":120,"tokenLimit":1000,"clearTimeLimit":true}}"#.utf8))
         #expect(legacy == .edit(text: "Tests pass"))
-        func fields(_ action: NativeGoalAction) throws -> [String: Any] {
-            try #require(JSONSerialization.jsonObject(with: Data(action.command.dropFirst("/shepherd-goal ".count).utf8)) as? [String: Any])
-        }
-        let preserve = try fields(legacy)
-        #expect(preserve["timeLimitSeconds"] == nil && preserve["tokenLimit"] == nil)
-        let changed = try fields(.edit(text: "Tests pass", timeLimitSeconds: 120, tokenLimit: 1000))
-        #expect(changed["timeLimitSeconds"] as? Double == 120 && changed["tokenLimit"] as? Int == 1000)
-        let lifted = try fields(.edit(text: "Tests pass", clearTimeLimit: true, clearTokenLimit: true))
-        #expect(lifted["timeLimitSeconds"] is NSNull && lifted["tokenLimit"] is NSNull)
-        #expect(!NativeGoalAction.edit(text: "Tests pass", timeLimitSeconds: 0).isValid)
-        #expect(!NativeGoalAction.edit(text: "Tests pass", tokenLimit: 5, clearTokenLimit: true).isValid)
+        let fields = try #require(JSONSerialization.jsonObject(with: Data(legacy.command.dropFirst("/shepherd-goal ".count).utf8)) as? [String: Any])
+        #expect(Set(fields.keys) == ["action", "text"])
+        let goal = try JSONDecoder().decode(NativeGoal.self, from: Data("""
+        {"id":"\(Self.id)","revision":1,"text":"Tests pass","state":"paused","elapsedSeconds":86400,"tokensUsed":999999,"timeLimitSeconds":1,"tokenLimit":1}
+        """.utf8))
+        #expect(goal.isValid && goal.tokensUsed == 999999 && goal.elapsedSeconds == 86400)
+        let encoded = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(goal)) as? [String: Any])
+        #expect(encoded["timeLimitSeconds"] == nil && encoded["tokenLimit"] == nil)
     }
 
     @Test func anActiveClockAdvancesLocallyAndStoppedStatesStayFrozen() throws {

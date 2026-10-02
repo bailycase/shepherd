@@ -64,7 +64,7 @@ export async function realPi(dir, { script = defaultScript, settings = {}, env =
   } } }));
   const child = spawn(process.execPath, [path.join(pkg, "dist/bundle/cli.js"), "--mode", "rpc", "--session-dir", sessions,
     "-ne", "-ns", "-np", "--model", "fixture/worker", ...[source, ...extensions].flatMap((p) => ["-e", p])], { cwd: dir, stdio: ["pipe", "pipe", "pipe"], env: {
-      PATH: process.env.PATH, HOME: dir, TMPDIR: dir, PI_CODING_AGENT_DIR: config, PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", SHEPHERD_EXT_GOAL: "1", ...env,
+      PATH: process.env.PATH, HOME: dir, TMPDIR: dir, PI_CODING_AGENT_DIR: config, PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", SHEPHERD_EXT_GOAL: "1", SHEPHERD_GOALS_ENABLED: "1", ...env,
     } });
   const events = []; let output = "", stderr = "", counter = 0;
   child.stdout.on("data", (chunk) => {
@@ -76,7 +76,7 @@ export async function realPi(dir, { script = defaultScript, settings = {}, env =
     get stderr() { return stderr; },
     goal: () => {
       const widget = events.filter((e) => e.type === "extension_ui_request" && e.method === "setWidget" && e.widgetKey === "shepherd.goal").at(-1);
-      return widget ? JSON.parse(widget.widgetLines[0].slice("SHEPHERD_GOAL:".length)) : undefined;
+      return widget?.widgetLines ? JSON.parse(widget.widgetLines[0].slice("SHEPHERD_GOAL:".length)) : undefined;
     },
     send(command) { const id = `req${++counter}`; child.stdin.write(JSON.stringify({ id, ...command }) + "\n"); return id; },
     async response(id, what) {

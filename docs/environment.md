@@ -31,8 +31,11 @@
   - With the matching extension on: `SHEPHERD_EXT_PANES`, `SHEPHERD_EXT_BROWSER` (the installed
     `shepherd-browser.ts`, for Settings ▸ Pi ▸ Browser tools; never in a design's agent),
     `SHEPHERD_NATIVE_CHILDREN`,
-    `SHEPHERD_EXT_CHILDREN`, and `SHEPHERD_CHILD_*`; `SHEPHERD_EXT_GOAL=1` enables the
-    conversation-goal controller, installed as `shepherd-goal.ts` after the child controller.
+    `SHEPHERD_EXT_CHILDREN`, and `SHEPHERD_CHILD_*`; `SHEPHERD_EXT_GOAL=1` loads the
+    conversation-goal controller after the child controller, even while the experiment is off
+    so it can switch live. `SHEPHERD_GOALS_ENABLED` is explicitly `0` by default, `1` only while
+    Settings > Experiments > Goals is on. The host's internal configure command updates running
+    controllers without restarting pi; off pauses/cancels goal work without aborting tools.
     `SHEPHERD_GOAL_MODELS` is explicitly empty by default, so checks use the thread's exact
     provider/model. Settings > Agents > Allow cross-provider goal checks supplies the
     Haiku/Codex Mini/Gemini Flash preference list only after opt-in. Shepherd overrides an

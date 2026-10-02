@@ -69,6 +69,7 @@ enum StatusExtension {
         childrenExtensionPath: String? = nil,
         childEnvironment: [String: String] = [:],
         goalCrossProviderEvaluation: Bool = false,
+        goalsEnabled: Bool = false,
         namerExtensionPath: String? = nil,
         needsName: Bool = false,
         isAutomation: Bool = false,
@@ -128,7 +129,9 @@ enum StatusExtension {
         }
         // Fast or Standard is the agent's own (the host keeps its file), so every agent gets this.
         env.merge(ServiceTierExtension.environment(for: agentID, in: home)) { _, value in value }
+        // Keep the controller loaded so the experiment can change without restarting pi.
         env[GoalExtension.environmentKey] = "1"
+        env["SHEPHERD_GOALS_ENABLED"] = goalsEnabled ? "1" : "0"
         // Always override an inherited opt-in; absence would leak the app's launch environment.
         env["SHEPHERD_GOAL_MODELS"] = goalCrossProviderEvaluation
             ? "anthropic/claude-haiku-4-5,openai/gpt-5.1-codex-mini,google/gemini-2.5-flash" : ""

@@ -435,6 +435,7 @@ public final class SessionServer: @unchecked Sendable {
     private var defaultQueueMode: NativeQueueMode = .all
     /// The names Settings ▸ Pi ▸ Slash commands turned off, left out of every thread's `/` menu.
     private var hiddenSlashCommands: Set<String> = []
+    private var goalsEnabled = false
     /// Every command pi has listed on this host since the app started (a name once, the last listing
     /// winning), by name: what the Slash commands page lists. Written on the server queue and read
     /// from any thread through `slashCommandCatalog`.
@@ -776,6 +777,15 @@ public final class SessionServer: @unchecked Sendable {
             guard self.hiddenSlashCommands != names else { return }
             self.hiddenSlashCommands = names
             for session in self.sessions.values { session.thread?.hiddenCommands = names }
+        }
+    }
+
+    /// Settings ▸ Experiments ▸ Goals applies to live controllers without restarting pi.
+    public func setGoalsEnabled(_ enabled: Bool) {
+        queue.async {
+            guard self.goalsEnabled != enabled else { return }
+            self.goalsEnabled = enabled
+            for session in self.sessions.values { session.thread?.setGoalsEnabled(enabled) }
         }
     }
 
@@ -5194,6 +5204,7 @@ public final class SessionServer: @unchecked Sendable {
             let thread = RPCThreadState(session: session, queue: sessionQueue, originStore: originStore)
             thread.defaultQueueMode = defaultQueueMode
             thread.hiddenCommands = hiddenSlashCommands
+            thread.setGoalsEnabled(goalsEnabled, notifyController: false)
             thread.onCommandsListed = { [weak serverWeak] listed in serverWeak?.mergeSlashCommands(listed) }
             let offers = serviceTierOffers
             thread.serviceTierOffer = { offers.tiers(for: $0) }

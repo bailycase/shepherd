@@ -90,6 +90,7 @@ final class AppSettings {
         static let worktreeDeleteLocalBranch = "shepherd.worktree.deleteLocalBranch"
         static let worktreeAutoMergePR = "shepherd.worktree.autoMergePR"
         static let worktreeMergeMethod = "shepherd.worktree.mergeMethod"
+        static let goalsEnabled = "shepherd.experiments.goals"
         static let designToolEnabled = "shepherd.experiments.designTool"
         static let implementOpensThread = "shepherd.designs.implementOpensThread"
 
@@ -107,7 +108,7 @@ final class AppSettings {
             worktreeDeleteLocalBranch, worktreeAutoMergePR,
             worktreeMergeMethod, skillsInSlashMenu, hiddenSlashCommands,
             mcpOpenSignInPages, mcpProjectConfig, mcpSameEverywhere,
-            designToolEnabled, implementOpensThread,
+            goalsEnabled, designToolEnabled, implementOpensThread,
         ]
 
         /// What Reset settings clears: everything but Remote's listener, which only its own
@@ -402,6 +403,15 @@ final class AppSettings {
         didSet { store.set(worktreeMergeMethod.rawValue, forKey: Key.worktreeMergeMethod) }
     }
 
+    /// Settings ▸ Experiments ▸ Goals. Off pauses active goals without discarding them.
+    var goalsEnabled: Bool {
+        didSet {
+            store.set(goalsEnabled, forKey: Key.goalsEnabled)
+            if goalsEnabled != oldValue { onGoalsChange?(goalsEnabled) }
+        }
+    }
+    @ObservationIgnored var onGoalsChange: ((Bool) -> Void)?
+
     /// Settings ▸ Experiments ▸ Design tool: the Designs destination, design rows in Recents,
     /// and New thread's "Start a design". Off by default; designs made while it was on keep
     /// their files and agents while it is off.
@@ -435,6 +445,7 @@ final class AppSettings {
             .flatMap(ThinkingLevel.init(rawValue:)) ?? Defaults.thinking
         defaultServiceTier = store.string(forKey: Key.defaultServiceTier)
             .flatMap(ServiceTier.init(rawValue:)) ?? Defaults.serviceTier
+        goalsEnabled = store.object(forKey: Key.goalsEnabled) as? Bool ?? false
         goalCrossProviderEvaluation = store.object(forKey: Key.goalCrossProviderEvaluation) as? Bool ?? false
         autoNameAgents = store.object(forKey: Key.autoNameAgents) as? Bool ?? Defaults.autoNameAgents
         skillsInSlashMenu = store.object(forKey: Key.skillsInSlashMenu) as? Bool ?? Defaults.skillsInSlashMenu
@@ -533,6 +544,7 @@ final class AppSettings {
         defaultModel = ""
         defaultThinking = Defaults.thinking
         defaultServiceTier = Defaults.serviceTier
+        goalsEnabled = false
         goalCrossProviderEvaluation = false
         autoNameAgents = Defaults.autoNameAgents
         skillsInSlashMenu = Defaults.skillsInSlashMenu

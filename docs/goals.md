@@ -1,10 +1,12 @@
 # Conversation goals
 
-`/goal <condition>` keeps one conversation working until a separate model check accepts recorded evidence or it needs the user. It is not a mission or a background scheduler.
+Settings > Experiments > Goals is off by default. Turn it on to use `/goal <condition>`, which keeps one conversation working until a separate model check accepts recorded evidence or it needs the user. It is not a mission or a background scheduler.
 
-A new unattended run defaults to 25 checks, 30 minutes and 200,000 reported tokens. Legacy goals with absent limits receive these defaults on restore; explicit version-2 lifted caps stay lifted. The time/token defaults and legacy migration are provisional product choices recorded under Decisions in PR #189. `/goal --for 30m --tokens 100000 <condition>` overrides them. `/goal`, `/goal status`, `/goal pause`, `/goal resume`, and `/goal clear` inspect or control the goal. Edit can change a limit without changing the condition; a blank limit field lifts that cap. The 25-check stop remains. Resume renews the configured unattended time/token windows and check count while preserving cumulative usage.
+Goals have no time limits, token limits or budgets. Elapsed time and reported tokens are information only. Legacy saved caps are ignored on restore and disappear from new snapshots. `/goal`, `/goal status`, `/goal pause`, `/goal resume`, and `/goal clear` inspect or control the goal. Edit changes the condition only. Resume renews the 25-check count while preserving cumulative usage; stalled-progress guards can stop earlier.
 
-Pause stops continuation, evaluation and accounting, but does not kill a tool already running. Stop and Steer now pause/cancel the controller before interrupting work. Their following ordinary turn cannot inherit an expired goal's abort. Answering a question never resumes the goal automatically.
+The experiment switch applies to running agents without restarting them. Off cancels Checking, pauses active goals, stops goal accounting/continuation, and hides goal chrome and `/goal` from the menu. Typed and native goal controls reject while off. It does not kill an in-flight tool, discard the queue, clear the saved goal or remove historical transcript records. On makes the preserved goal available again but never resumes it automatically. A full pi input pipe retains disable before the latest On policy and retries once the queued bytes drain; it never drops that disable barrier or clears ordinary input. Reset settings turns the experiment off. iPhone/iPad Settings > Experiments has a switch for each connected host that supports `experiments.goals.v1`.
+
+Pause stops continuation, evaluation and accounting, but does not kill a tool already running. Stop and Steer now pause/cancel the controller before interrupting work. Following ordinary turns remain independent of the paused goal. Answering a question never resumes the goal automatically.
 
 ## Evaluation and disclosure
 
@@ -28,11 +30,13 @@ Repeated tool calls with new entry IDs do not establish progress. The controller
 
 Transient worker `message_end` provider errors are not final stop decisions while pi retries. Final settlement determines whether work failed. A 529 followed by a successful retry may continue to evaluation. Missing permissions, credentials or a decision stops at Needs you. Children ask their parent first; only a parent's actual user question stops on the user. Resume and Confirm remain unavailable until that question closes.
 
+Set, Edit or Resume while pi works keeps a cancellable kickoff in the controller until the run and ordinary queue settle. Pause, Stop or experiment disablement cancels it; it never leaves a hidden kickoff in pi's ordinary follow-up queue.
+
 A queued message asks the goal to yield after its next check. The host then delivers Up next in its existing order. Deleting, steering or draining the last held row releases that yield so an idle Working goal is not stranded. Stop/session changes do not wake it; Steer now cancels Checking and leaves the goal Paused. Pause does not discard the queue.
 
-Elapsed time counts active work/checking, including active children. Tokens include reported worker, child, evaluator and cache usage. A token cap is a usage/spend proxy, not a fixed currency guarantee, and can overshoot by an in-flight response. A time limit stops at a safe boundary, not halfway through a write. Only goal-owned work can be aborted by the limit transition. Later ordinary turns complete without charging or renewing a stopped goal.
+Elapsed time counts active work/checking, including active children. Tokens include reported worker, child, evaluator and cache usage. Neither total stops a goal. There is no elapsed-time, token or currency ceiling; a worker's in-flight turn can still take time and incur provider charges after Pause or experiment disablement. Later ordinary turns complete without charging a paused goal. The 25-check and progress guards bound automatic continuation, and each evaluator request retains its technical timeout/output bound.
 
-Controls carry session generation and the displayed goal ID/revision/state. Pause, Resume and Confirm require all those fences; both host and controller reject a stale state. Controller transitions increment revision, accounting updates do not. Editing preserves the offered state and reason, cancels stale evaluation, and changes limits or text only when different. Met remains clear-only; an editor whose check becomes Met cannot apply its old proof to a new condition.
+Controls carry session generation and the displayed goal ID/revision/state. Pause, Resume and Confirm require all those fences; both host and controller reject a stale state. Controller transitions increment revision, accounting updates do not. Editing preserves the offered state and reason, cancels stale evaluation, and changes text only when different. Met remains clear-only; an editor whose check becomes Met cannot apply its old proof to a new condition.
 
 ## Persistence and projection
 
@@ -50,4 +54,4 @@ The base desktop/touch anatomy is 70/92pt with 32/40pt headers and 10/12pt corne
 
 Meta is short runtime copy. Working shows tokens; Checking names safe command heads or basenames of recorded results; Met adds a structured short summary; Paused says "paused by you · the clock stops"; Needs you gives a word-bounded lowercase reason. Unresolved/quoted/substituted calls use "checking · commands unavailable"; no results use "checking · no tool results to read". Raw IDs/quotes stay in Details; legacy Evidence records remain readable. `/goal <condition>` appears in the slash menu.
 
-See [the card spec](design/thread.md#goal-card). Long-condition truncation and the existing desktop inline/iOS sheet edit surfaces remain pending user decisions under PR #189's Departures. That section also records retained geometry, tint and legacy-summary differences. All unrequested implementation choices are listed separately under Decisions.
+See [the card spec](design/thread.md#goal-card). PR #189's Departures list long-condition truncation, the existing desktop inline/iOS sheet editors, geometry, tint and legacy-summary differences in the user-approved renders. Actual device interactions remain unverified. Unrequested implementation choices are listed separately under Decisions.

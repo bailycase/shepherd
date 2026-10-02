@@ -7,8 +7,6 @@
       "state": "working",
       "elapsedSeconds": 400,
       "tokensUsed": 71000,
-      "timeLimitSeconds": 1800,
-      "tokenLimit": 200000,
       "checkCount": 0,
       "confirmationRequired": false,
       "confirmedByUser": false,
@@ -21,8 +19,6 @@
       "state": "checking",
       "elapsedSeconds": 400,
       "tokensUsed": 71000,
-      "timeLimitSeconds": 1800,
-      "tokenLimit": 200000,
       "checkCount": 1,
       "reason": "checking go test, go vet",
       "confirmationRequired": false,
@@ -37,8 +33,6 @@
       "state": "met",
       "elapsedSeconds": 400,
       "tokensUsed": 104000,
-      "timeLimitSeconds": 1800,
-      "tokenLimit": 200000,
       "checkCount": 1,
       "reason": "ledger tests and vet passed",
       "confirmationRequired": false,
@@ -54,8 +48,6 @@
       "state": "paused",
       "elapsedSeconds": 400,
       "tokensUsed": 71000,
-      "timeLimitSeconds": 1800,
-      "tokenLimit": 200000,
       "checkCount": 0,
       "reason": "paused by you · the clock stops",
       "confirmationRequired": false,
@@ -68,8 +60,6 @@
       "state": "needsYou",
       "elapsedSeconds": 400,
       "tokensUsed": 71021,
-      "timeLimitSeconds": 1800,
-      "tokenLimit": 200000,
       "checkCount": 3,
       "reason": "the same test failed 3 times in a row",
       "confirmationRequired": false,
@@ -86,8 +76,6 @@
     "state": "needsYou",
     "elapsedSeconds": 400,
     "tokensUsed": 71007,
-    "timeLimitSeconds": 1800,
-    "tokenLimit": 200000,
     "checkCount": 1,
     "reason": "looks met, evidence incomplete, confirm",
     "confirmationRequired": true,
@@ -103,8 +91,6 @@
     "state": "met",
     "elapsedSeconds": 400,
     "tokensUsed": 71007,
-    "timeLimitSeconds": 1800,
-    "tokenLimit": 200000,
     "checkCount": 1,
     "reason": "confirmed by you",
     "confirmationRequired": false,
@@ -121,8 +107,6 @@
     "elapsedSeconds": 0,
     "tokensUsed": 0,
     "checkCount": 0,
-    "timeLimitSeconds": 1800,
-    "tokenLimit": 200000,
     "reason": "paused by you · the clock stops",
     "confirmationRequired": false,
     "confirmedByUser": false
@@ -295,7 +279,7 @@
   "commands": [
     {
       "name": "goal",
-      "description": "Start a goal: /goal [--for 30m] [--tokens 100000] <condition>; status, pause, resume, clear"
+      "description": "Start a goal: /goal <condition>; status, pause, resume, clear"
     }
   ]
 }

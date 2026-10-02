@@ -37,6 +37,9 @@ survive "does this help a person supervise ten working agents at once?"
 - Terminals are tabs under a thread, one terminal per tab. No splits, no global shells.
 - Copy says "the agent", never "pi", except where the user's own pi is the subject (Settings ▸ Pi).
 - Missions and the Artifacts and Files tabs are not built: nothing shows or links to them.
+- Conversation Goals are default off under Settings ▸ Experiments. Goals have no time/token
+  budgets; elapsed time and token counts are reporting only. Off pauses active goals without
+  clearing them, and re-enable never resumes work by itself.
 
 ## Principles, in priority order
 

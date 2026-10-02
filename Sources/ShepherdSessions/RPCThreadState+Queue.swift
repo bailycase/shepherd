@@ -152,6 +152,7 @@ extension RPCThreadState {
               completion: @escaping (NativeThreadResult) -> Void) {
         // From here the copies are pi's (a prompt) or wait in the queue, which withholds them.
         sendingDesignPayloads.subtract(designPayloads)
+        if let failure = goalCommandFailure(text, context: context) { completion(failure); return }
         if images.isEmpty, context == nil, text == "/goal" || text.hasPrefix("/goal "),
            commands?.contains(where: { $0.name == "goal" }) == true {
             let commandDone = beginCommandWindow(for: text)
@@ -222,6 +223,8 @@ extension RPCThreadState {
                 completion(.failure(code: "invalid", message: "A queued message needs text up to 16 KiB."))
                 return
             }
+            guard let item = items.first(where: { $0.entry.id == id && $0.entry.state == .queued }) else { completion(missing); return }
+            if let failure = goalCommandFailure(text, context: item.context) { completion(failure); return }
             var candidate = items
             guard NativeQueueRules.edit(id, text: text, in: &candidate) else { completion(missing); return }
             guard admitsQueue(candidate) else { completion(queueFull); return }
@@ -437,6 +440,7 @@ extension RPCThreadState {
     func dispatch(id: UUID, text: String, context: String? = nil, images: [NativeImage], parts: [NativeQueuePart]?, items batch: [QueueItem],
                   designPayloads: [UUID] = [], completion: @escaping (NativeThreadResult) -> Void) {
         let prompt = Self.prompt(text, context: context)
+        if let failure = goalCommandFailure(prompt) { completion(failure); return }
         stopRequested = false
         let expectsMessage = !isExtensionCommand(prompt)
         dispatches.append(Dispatch(id: id, text: prompt, parts: parts, items: batch, expectsMessage: expectsMessage,
@@ -513,6 +517,16 @@ extension RPCThreadState {
         return context + text
     }
 
+    /// Validate the effective prompt at admission and delivery; fenced content is never a command.
+    private func goalCommandFailure(_ text: String, context: String? = nil) -> NativeThreadResult? {
+        let prompt = Self.prompt(text, context: context)
+        guard prompt.hasPrefix("/") else { return nil }
+        let name = prompt.dropFirst().prefix { !$0.isWhitespace }
+        if name == "shepherd-goal" { return .failure(code: "invalid", message: "This is a host control command. Use /goal.") }
+        if name == "goal", !goalsEnabled { return .failure(code: "unsupported", message: "Enable Goals in Settings > Experiments.") }
+        return nil
+    }
+
     func isExtensionCommand(_ text: String) -> Bool {
         guard text.hasPrefix("/") else { return false }
         let name = text.dropFirst().prefix { !$0.isWhitespace }
@@ -526,6 +540,7 @@ extension RPCThreadState {
     /// command, which leaves nothing to land), else the failure.
     func steerDispatch(_ id: UUID, done: @escaping (NativeThreadResult?) -> Void) {
         guard let item = items.first(where: { $0.entry.id == id }) else { done(nil); return }
+        if let failure = goalCommandFailure(item.promptText) { done(failure); return }
         unboundSteers.append(id)
         steersInFlight += 1
         let rpcImages = item.images.map { RPCImage(data: $0.data.base64EncodedString(), mimeType: $0.mimeType) }

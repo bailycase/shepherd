@@ -84,23 +84,23 @@ struct GoalPreviewTests {
         }
     }
 
-    @Test func editedAndLiftedLimitsUseTheExistingInlineEditorFields() async throws {
+    @Test func theObjectiveOnlyEditorShowsUnchangedAndChangedSaveStates() async throws {
         let goal = try Self.runtime().editorGoal
-        try await Preview.renderMatrix("goal-edit-limits", size: CGSize(width: 720, height: 720)) {
+        try await Preview.renderMatrix("goal-edit", size: CGSize(width: 720, height: 440)) {
             VStack(alignment: .leading, spacing: NW.Space.l) {
-                ForEach([true, false], id: \.self) { capped in
+                ForEach([false, true], id: \.self) { changed in
                     VStack(alignment: .leading, spacing: NW.Space.s) {
                         NWGoalCard(state: goal.cardState, time: goal.timeLabel, meta: goal.metaLabel, text: goal.text,
                                    framed: false, checkedBy: goal.checkedBy, pause: {}, resume: {}, edit: {}, clear: {})
                         VStack(alignment: .leading, spacing: NW.Space.s) {
-                            TextField("Goal condition", text: .constant(goal.text))
+                            TextField("Goal condition", text: .constant(changed ? goal.text + " Run the race checks too." : goal.text), axis: .vertical)
                                 .textFieldStyle(.plain).font(.nw(.body))
-                            NWGoalLimitFields(limits: .constant(NWGoalLimits(seconds: capped ? goal.timeLimitSeconds : nil,
-                                                                          tokens: capped ? goal.tokenLimit : nil)))
+                                .foregroundStyle(Color.nw.textPrimary)
+                                .lineLimit(1...NWComposerMetrics.fieldMaxLines)
                             HStack(spacing: NW.Space.s) {
                                 Spacer()
                                 Button("Cancel") {}.buttonStyle(.nw(.ghost, size: .s))
-                                Button("Save") {}.buttonStyle(.nw(.secondary, size: .s)).disabled(capped)
+                                Button("Save") {}.buttonStyle(.nw(.secondary, size: .s)).disabled(!changed)
                             }
                         }
                         .padding(NW.Space.l)
@@ -112,7 +112,7 @@ struct GoalPreviewTests {
                 Spacer(minLength: 0)
             }
             .padding(NW.Space.l)
-            .frame(width: 720, height: 720, alignment: .top)
+            .frame(width: 720, height: 440, alignment: .top)
             .background(Color.nw.bgWindow)
         }
     }

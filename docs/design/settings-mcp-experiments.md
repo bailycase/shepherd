@@ -45,7 +45,15 @@ It sits between Skills and Remote in the nav, with `server.rack`. Stage 1 serves
 The last page of the nav, with `flask` (`SettingsExperiments.swift`, `SuggestionsModel`): features
 still being tried, each off until the user turns it on. Header: "Experiments", then "Features
 we're still trying out. Each is off until you turn it on." Its experiments are Suggested
-instructions and the Design tool. The Design tool's card (not drawn on the board) is the same card
+instructions, the Design tool and Goals. Goals uses the same experiment card and native switch,
+with its existing two-stroked-ring mark in the lantern tile, "Goals", and "Keep a conversation
+working toward a condition you set with /goal. No time or token budgets. Turning this off pauses
+active goals without clearing them." It has no budget fields/options and defaults off
+(`AppSettings.goalsEnabled`). The switch applies live to this host's running agents. Off cancels
+Checking, pauses active goals, hides goal chrome and the slash row, and rejects goal controls;
+on shows the preserved Paused goal but never resumes it. Ordinary work and in-flight tools are
+not aborted. The user requested this card after the supplied GoalStates board.
+The Design tool's card (not drawn on the board) is the same card
 with the nib in its tile, "Design tool", "Describe a page or flow and a design agent draws it as
 HTML boards on a canvas you pan and zoom. Adds Designs to the sidebar and “Start a design” to New
 thread.", and its switch; it has no options and no "on since" tag, and it is a preference of this

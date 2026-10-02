@@ -197,6 +197,7 @@ struct AgentLaunchCommandTests {
         needsName: Bool = false,
         isAutomation: Bool = false,
         goalCrossProviderEvaluation: Bool = false,
+        goalsEnabled: Bool = false,
         model: String? = nil,
         thinking: ThinkingLevel? = nil
     ) -> SessionCommand {
@@ -207,7 +208,7 @@ struct AgentLaunchCommandTests {
             socketPath: "/tmp/shepherd.sock", extensionPath: "/tmp/status.ts",
             panesExtensionPath: path(0), reviewExtensionPath: path(1), subagentsExtensionPath: path(2),
             childrenExtensionPath: path(4), childEnvironment: ["SHEPHERD_CHILD_CONCURRENCY": "7"],
-            goalCrossProviderEvaluation: goalCrossProviderEvaluation,
+            goalCrossProviderEvaluation: goalCrossProviderEvaluation, goalsEnabled: goalsEnabled,
             namerExtensionPath: path(3), needsName: needsName, isAutomation: isAutomation,
             model: model, thinking: thinking
         )
@@ -221,8 +222,15 @@ struct AgentLaunchCommandTests {
         #expect(bare.env == [
             "SHEPHERD_AGENT_ID": "agent-id", "SHEPHERD_SOCKET": "/tmp/shepherd.sock", "SHEPHERD_EXT_STATUS": "/tmp/status.ts",
             "SHEPHERD_EXT_SERVICE_TIER": "/tmp/support/pi/service-tier/agent-id.json",
-            "SHEPHERD_EXT_GOAL": "1", "SHEPHERD_GOAL_MODELS": "",
+            "SHEPHERD_EXT_GOAL": "1", "SHEPHERD_GOALS_ENABLED": "0", "SHEPHERD_GOAL_MODELS": "",
         ])
+    }
+
+    @Test func theGoalControllerLoadsForLiveSwitchingButTheExperimentIsOffUntilChosen() {
+        #expect(command().env["SHEPHERD_GOALS_ENABLED"] == "0")
+        #expect(command(goalsEnabled: true).env["SHEPHERD_GOALS_ENABLED"] == "1")
+        let inherited = ["SHEPHERD_GOALS_ENABLED": "1"]
+        #expect(inherited.merging(command().env) { _, new in new }["SHEPHERD_GOALS_ENABLED"] == "0")
     }
 
     @Test func crossProviderModelsAreOptInAndOptOutOverridesInheritedConsent() {

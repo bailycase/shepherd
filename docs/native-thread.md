@@ -532,13 +532,15 @@ is the client's rule for drawing the control: the action and more than one tier.
 The snapshot's optional `goal` is the live projection of a session-persisted conversation goal.
 The `goal` action changes it during work or checking, fenced by the session and displayed goal
 revision and state. Pause/Resume/Confirm require the displayed ID/revision/state; controller
-transitions increment revision but accounting snapshots do not. Edit's absent limits preserve
-them; typed clear flags become explicit null in controller JSON to lift them. Optional model/confirmation/check-count/interval fields decode
+transitions increment revision but accounting snapshots do not. Set/Edit change the condition;
+goals have no time/token caps. Legacy budget fields are ignored. Optional model/confirmation/check-count/interval fields decode
 on older sessions. Full redacted checker feedback stays in display-only custom-message details;
 `RPCMessage` decodes those for goal checks only and projection adds the transcript disclosure.
 Remotely it requires `native.goal.v1`. It is absent on older hosts. The dedicated
 machine widget never renders as ordinary widget text. See [Conversation goals](goals.md) for
-completion checking, limits, controls, restore behavior, and the queue's yield boundary.
+completion checking, experiment enablement, controls, restore behavior, and the queue's yield boundary.
+Settings > Experiments > Goals is default off. The host hides the slash command, rejects goal
+controls and cancels/pauses live controllers while off; re-enabling never resumes automatically.
 
 ## Context and compaction
 
