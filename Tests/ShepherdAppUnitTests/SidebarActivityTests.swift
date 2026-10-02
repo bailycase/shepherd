@@ -26,14 +26,15 @@ struct SidebarActivityTests {
             let lists = SidebarDerivation.lists(SidebarSource(
                 local: ShepherdState(spaces: [space], agents: [pin, idle, asking, working, done], designs: [design]), designs: true),
                 pins: SidebarPins([.local(pin.id)]))
-            #expect(lists.sections.map(\.section) == SidebarActivitySection.allCases)
-            #expect(lists.all.map(\.title) == ["pinned", "asking", "working", "done", "idle", "Dashboard"])
+            #expect(lists.sections.map(\.section) == [.done, .pinned, .needsYou, .working, .recents, .designs])
+            #expect(lists.all.map(\.title) == ["done", "pinned", "asking", "working", "idle", "Dashboard"])
+            #expect(lists.items(collapsed: []).first == .header(.done, count: 1, collapsed: false))
             #expect(Set(lists.all.map(\.id)).count == 6)
             #expect(lists.pinned.first?.leading == .dot(AgentState(status)))
             let items = lists.items(collapsed: [.working, .recents, .designs])
             #expect(items.count == 9, "six headers, three visible rows")
-            #expect(lists.visibleRows(collapsed: [.working, .recents, .designs]).map(\.title) == ["pinned", "asking", "done"])
-            #expect(lists.shortcutRows(collapsed: [.working, .recents, .designs]).map(\.title) == ["pinned", "done"])
+            #expect(lists.visibleRows(collapsed: [.working, .recents, .designs]).map(\.title) == ["done", "pinned", "asking"])
+            #expect(lists.shortcutRows(collapsed: [.working, .recents, .designs]).map(\.title) == ["done", "pinned"])
         }
         #expect(SidebarLists().items(collapsed: Set(SidebarActivitySection.allCases)).isEmpty)
     }

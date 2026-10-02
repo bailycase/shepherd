@@ -112,6 +112,61 @@ extension PreviewTests {
         }
     }
 
+    @Test(arguments: [NativeGoalState.working, .checking])
+    func sidebarActiveGoal(state: NativeGoalState) async throws {
+        let w = try PreviewWorkspace()
+        defer { w.stop() }
+        let file = w.dir.appendingPathComponent("goal.json")
+        let goal = NativeGoal(id: "00000000-0000-0000-0000-000000000001", text: "Sidebar checks pass", state: state)
+        try Data("null".utf8).write(to: file)
+        let info = try await w.server.createSession(params: CreateSessionParams(cwd: w.dir.path, command: StubPi.command,
+            env: ["STUB_PI_GOAL_FILE": file.path, "SHEPHERD_EXT_GOAL": "1", "SHEPHERD_GOALS_ENABLED": "0"], runtime: .rpc))
+        let space = Space(name: "Shepherd", path: w.dir.path)
+        let id = AgentID()
+        let pane = LeafPane(sessionID: info.id, cwd: space.path, agentID: id)
+        let tab = ShepherdCore.Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
+        let agent = Agent(id: id, name: "Fix sidebar grouping", spaceID: space.id, tabID: tab.id, paneID: pane.id)
+        try await w.seed(ShepherdState(spaces: [space], tabs: [tab], agents: [agent]))
+        let vm = w.vm, server = w.server
+        try await eventuallyAsync("the disabled goal controller to be ready") {
+            guard case .snapshot(let snapshot) = try await server.nativeThread(agentID: id, request: .snapshot()) else { return false }
+            return !snapshot.piSessionID.isEmpty && snapshot.goal == nil
+        }
+        w.settings.goalsEnabled = true
+        server.setGoalsEnabled(true)
+        try await eventuallyAsync("the enabled goal controller") {
+            guard case .snapshot(let snapshot) = try await server.nativeThread(agentID: id, request: .snapshot()) else { return false }
+            return snapshot.supportedActions.contains("goal") && snapshot.goal == nil
+        }
+        try JSONEncoder().encode(goal).write(to: file, options: .atomic)
+        try await eventuallyAsync("the live goal widget") {
+            guard case .snapshot(let snapshot) = try await server.nativeThread(agentID: id, request: .snapshot()) else { return false }
+            return snapshot.goal?.state == state && !snapshot.running
+        }
+        try await eventuallyOnMain("the active goal in Working") { vm.sidebarLists.working.map(\.id) == [.local(id)] }
+        try await Preview.renderMatrix("sidebar-goal-\(state.rawValue)", size: CGSize(width: 232, height: 820)) {
+            SidebarView(vm: vm).nwDensity(.standard)
+        }
+    }
+
+    @Test func sidebarOpeningThread() async throws {
+        try StubPi.installAsEngine()
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        try Data(#"{"gate":"release-pi"}"#.utf8)
+            .write(to: workspace.dir.appendingPathComponent("stub-pi-startup.json"))
+        let space = Space(name: "Shepherd", path: workspace.dir.path)
+        try await workspace.seed(ShepherdState(spaces: [space]))
+        let config = NewAgentConfig(spaceID: space.id, workingDirectory: space.path,
+                                    thinking: .medium, initialPrompt: "Fix the sidebar startup jump")
+        let id = try await workspace.vm.startAgent(config, focusWindow: false)
+        #expect(workspace.vm.sidebarLists.working.map(\.id) == [.local(id)])
+        #expect(workspace.vm.sidebarLists.recents.isEmpty)
+        try await Preview.renderMatrix("sidebar-opening-thread", size: CGSize(width: 232, height: 820)) {
+            SidebarView(vm: workspace.vm).nwDensity(.standard)
+        }
+    }
+
     /// Needs you's reasons (NWNavigation, Main): the agent's own word or two when its asking tool
     /// gave one ("retention?", "approve plan"), the question cut short when it gave none, and an
     /// asking subagent's own reason ("token names?") beside one that gave none (its name).

@@ -134,6 +134,10 @@ extension ShepherdViewModel {
     func deliverOpeningDesignReferences(_ references: [NativeAttachedReference], text: String, images: [NativeImage],
                                         to agentID: AgentID) -> Task<Void, Never> {
         Task {
+            defer {
+                sidebarPreparingOpeningTurns.remove(agentID)
+                reconcileSidebarOpeningTurn(agentID)
+            }
             do {
                 let pinned = references.map(\.reference)
                 guard pinned.count <= DesignReferenceRecord.maxPerMessage else {
@@ -143,6 +147,7 @@ extension ShepherdViewModel {
                 try await sendDirectly(references, text: text, images: images, to: agentID)
             } catch {
                 let reason = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+                sidebarOpeningTurns.remove(agentID)
                 remoteActionError = "The thread started, but its design didn't go: \(reason)"
                 let store = threadStores.store(for: agentID)
                 if store.draft.isEmpty, !text.isEmpty { store.draft = text }

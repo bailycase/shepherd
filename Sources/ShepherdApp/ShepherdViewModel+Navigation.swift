@@ -68,7 +68,7 @@ extension ShepherdViewModel {
     /// The activity groups' inputs, including remote hosts and completion generations.
     var sidebarSource: SidebarSource {
         SidebarSource(
-            local: state, completions: sidebarCompletions.records, failedTurns: failedTurns, cannotStart: cannotStart,
+            local: state, openingTurns: sidebarOpeningTurns, completions: sidebarCompletions.records, failedTurns: failedTurns, cannotStart: cannotStart,
             notSignedIn: Set(notSignedIn.keys), waiting: waitingForImport, statusSince: statusSince,
             openRuns: openAutomationRuns,
             hosts: remoteHosts.connections.map {

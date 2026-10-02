@@ -27,7 +27,7 @@ struct GoalCheckSettingsTests {
         defer { app.stop() }
         let file = app.dir.appendingPathComponent("goal.json")
         let goal = NativeGoal(id: "00000000-0000-0000-0000-000000000001", text: "Tests pass", state: .working)
-        try JSONEncoder().encode(goal).write(to: file)
+        try Data("null".utf8).write(to: file)
         let info = try await app.server.createSession(params: CreateSessionParams(cwd: app.dir.path, command: StubPi.command,
             env: ["STUB_PI_GOAL_FILE": file.path, "SHEPHERD_EXT_GOAL": "1", "SHEPHERD_GOALS_ENABLED": "0"], runtime: .rpc))
         let space = Fixture.space(path: app.dir.path)
@@ -48,11 +48,32 @@ struct GoalCheckSettingsTests {
             if case .snapshot(let value) = try await app.server.nativeThread(agentID: agent.agent.id, request: .snapshot()) { return value }
             return nil
         }
-        var active: NativeThreadSnapshot?
-        try await eventuallyAsync("the live controller to become available") {
-            active = try await snapshot()
-            return active?.goal?.id == goal.id && active?.supportedActions.contains("goal") == true
+        try await eventuallyAsync("the enabled controller to become available") {
+            let value = try await snapshot()
+            return value?.goal == nil && value?.supportedActions.contains("goal") == true
         }
+        // Publish after enablement; disabled bootstrap correctly pauses an already active goal.
+        try JSONEncoder().encode(goal).write(to: file, options: .atomic)
+        var active: NativeThreadSnapshot?
+        try await eventuallyAsync("the live controller to publish its active goal") {
+            active = try await snapshot()
+            return active?.goal?.id == goal.id && active?.goal?.state == .working
+        }
+        try await eventuallyOnMain("the active goal to keep its idle pi thread in Working") {
+            vm.sidebarLists.working.map(\.id) == [.local(agent.agent.id)]
+        }
+        #expect(active?.running == false)
+        #expect(vm.sidebarLists.done.isEmpty && vm.sidebarLists.recents.isEmpty)
+        #expect(vm.sidebarLists.working.first?.hasGoal == true)
+        let sidebar = OffscreenWindow(size: CGSize(width: 232, height: 650), dark: true, SidebarView(vm: vm))
+        defer { sidebar.close() }
+        let label = "\(agent.agent.name), running, goal"
+        try await eventuallyOnMain("the active goal sidebar row") {
+            sidebar.layout()
+            return sidebar.controls().contains { $0.label == label }
+        }
+        try sidebar.press(label)
+        #expect(vm.selectedAgentID == agent.agent.id)
         try window.press("Goals", role: #require(toggle()?.role))
         try await eventuallyAsync("off to hide the card and reject controls") {
             let value = try await snapshot()
@@ -69,6 +90,7 @@ struct GoalCheckSettingsTests {
         #expect(AppSettings(store: app.defaults).goalsEnabled)
         #expect((await app.server.listSessions()).filter(\.isAlive).count == 1)
         #expect(paused?.running == false, "turning Goals back on never starts work")
+        try await eventuallyOnMain("the paused goal to leave Working") { vm.sidebarLists.working.isEmpty }
     }
 
     @MainActor

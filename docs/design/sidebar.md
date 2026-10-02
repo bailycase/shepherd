@@ -6,10 +6,11 @@
 `Components/Navigation/Sidebar.swift`): the sidebar every Mac board draws (NWNavigation, and the
 sidebars of Main, Running, NavNewThread, NavAutomations and NavHosts). 232pt on `bgBase` by
 default, and it keeps its width when the side pane opens. Top to bottom: the top bar, the
-destinations, Pinned, Needs you, Working, Done, Recents, Designs, and the footer.
+destinations, Done, Pinned, Needs you, Working, Recents, Designs, and the footer.
 Reference: [NWNavigation.png](boards/NWNavigation.png), revision 420, and
 [NWNavigation-checklist.md](boards/NWNavigation-checklist.md). The user's clarification puts
-Pinned first and keeps pinned threads there regardless of status.
+Done first when it contains unseen completions. Pinned follows Done and keeps pinned threads
+there regardless of status. Empty groups remain hidden.
 Settings ▸ Appearance ▸ Organize by (or View ▸ Organize Sidebar By) swaps the activity groups for a project tree (Organized by project, below; it draws no pins); Activity is the
 default. Each part follows Settings ▸ Appearance ▸ Sidebar
 rows: Compact 22pt, Standard 28pt and Comfortable 36pt. Activity rows have no inter-row gap;
@@ -69,7 +70,7 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
 - **Not signed in:** an agent on this Mac whose pi can't start because it isn't signed in
   (Thread › Not signed in) is in Needs you too, with the glowing lantern dot and "sign in" as its
   reason (`NWSidebarRow(agent) · .notSignedIn`), until it starts again.
-- **Pinned**: the first group, in pin order, oldest pin first. It has the same disclosure and
+- **Pinned**: follows Done, in pin order, oldest pin first. It has the same disclosure and
   adjacent count as the other groups. Empty, it is absent. The user explicitly requested this
   addition to the supplied board. Its rows are Recents' rows, for a thread on
   this Mac or on a connected host alike (state dot, host tag, activity and completion age, the
@@ -101,10 +102,20 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
     with the source); a pin change redraws the moved row and both groups' count headers. A status
     report on a pinned thread redraws only its row (`ListPerformanceTests`).
 - **Working**: unpinned running threads and live automation runs, most recently active first.
+  A Working or Checking goal keeps its thread here between pi turns, on this Mac and connected
+  hosts. An open question still puts it in Needs you; pinned threads remain Pinned. Paused,
+  Met and cleared goals follow ordinary turn status.
+  A local thread created with an opening message appears here immediately, including while pi
+  starts, rather than briefly appearing in Recents. Its dot and accessibility label say running.
+  Empty threads still enter Recents. Startup failures retain their existing Needs you or
+  can't-start presentation. A command that starts no turn returns to Recents when no message
+  remains pending. This startup presentation is local view state, not a changed agent status
+  or a remote protocol field.
   Local rows draw a 28 × 12 blue sparkline from their last ten measured tool-completion rates.
   Before the first tool event it is flat, never a decorative waveform. Remote rows retain their
   host tag because the remote protocol carries no tool-activity samples.
-- **Done**: unpinned finished, unseen threads and settled automation runs. Opening one keeps it
+- **Done**: the first activity group when nonempty, above Pinned, Needs you and Working.
+  It contains unpinned finished, unseen threads and settled automation runs. Opening one keeps it
   here while read. Opening the same thread or a destination page changes nothing; opening a
   different thread marks the previous completion seen and moves it to Recents. A later completed
   turn returns it to Done. "Mark all seen" clears every current Done row, including the selected
@@ -127,7 +138,7 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
   slot is the thread's state dot (running blue, done green, failed red for a turn that ended in an
   error, hollow while idle) or an automation run's `bolt` in `textTertiary`. The selected row is
   `bgSelected` with its title in semibold. The trailing slot holds, in priority order:
-  1. the ⌘-digit hint on the first nine visible threads in Pinned, Working, Done and Recents while ⌘ is held ("⌘3", micro
+  1. the ⌘-digit hint on the first nine visible threads in Done, Pinned, Working and Recents while ⌘ is held ("⌘3", micro
      `textTertiary`)
   2. a remote agent's host as a tag: mono 10 `textTertiary`, padded 4pt at the sides, in a 1pt
      `lineSubtle` border at radius 4 ("horizon"). Threads on this Mac carry no tag.
@@ -168,7 +179,7 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
   below 720 and keeps its width while the side pane is open.
 - **Interaction:** list rows are tap views with button traits and accessibility actions, and
   destinations are buttons. Hovering never moves or resizes anything. ⌘1–9 select the first nine
-  visible threads of Pinned, Working, Done and Recents in display order. Needs you and Designs
+  visible threads of Done, Pinned, Working and Recents in display order. Needs you and Designs
   take no digit. ⌘↑/↓ walk every visible row in display order and wrap. Palette or programmatic
   selection unfolds the target's group and scrolls its row into view. Picking a row leaves a page for that thread.
 - **Context menus** keep every action an agent had:
@@ -205,7 +216,8 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
 
 ## Departures from revision 420
 
-- Pinned is an extra first group, explicitly requested by the user, and keeps pinned threads in
+- Done comes first when nonempty, as explicitly requested by the user.
+- Pinned is an extra group after Done, explicitly requested by the user, and keeps pinned threads in
   every status.
 - Compact section headers are 24pt instead of 22pt to meet the Mac minimum hit area. Thread rows
   remain 22pt.
