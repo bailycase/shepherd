@@ -323,18 +323,19 @@ def run_simulation(pi: str, turns: int) -> dict:
 
 
 def simulation_table(result: dict) -> str:
-    """Tokens of the last request of each turn, with and without trimming, for a thread whose every turn reads a
+    """Tokens of the last request of each turn, with and without clearing, for a thread whose every turn reads a
     big search result (about 11.6k tokens), a file (about 3k) and runs a small command."""
     without, trimmed = result["without"], result["with"]
     lines = [f"A {result['turns']}-turn thread on pi {result['piVersion']}: each turn reads about 11.6k tokens of search output, 3k of a file and a small "
-             f"command. Tokens in the last request of the turn (the ring's number); pi compacts past {AUTO_COMPACT_AT // 1000}k of a {WINDOW // 1000}k window.",
-             "", "| Turn | Without trimming | With trimming |", "| ---: | ---: | ---: |"]
+             f"command. Tokens in the last request of the turn (the ring's number); pi compacts past {AUTO_COMPACT_AT // 1000}k of a {WINDOW // 1000}k window "
+             "(auto-compaction is off in the harness, so the growth shows).",
+             "", "| Turn | Without clearing | With clearing |", "| ---: | ---: | ---: |"]
     for a, b in zip(without["perTurn"], trimmed["perTurn"]):
         if a["turn"] in (1, 3, 5, 6, 9, 12, 15, 18, 21, 24, result["turns"]) or a["turn"] % 6 == 0:
             note = " (compacts)" if a["tokens"] > AUTO_COMPACT_AT else ""
             lines.append(f"| {a['turn']} | {a['tokens']:,}{note} | {b['tokens']:,} |")
     first_over = next((a["turn"] for a in without["perTurn"] if a["tokens"] > AUTO_COMPACT_AT), None)
-    lines += ["", "| | Without trimming | With trimming |", "| --- | ---: | ---: |",
+    lines += ["", "| | Without clearing | With clearing |", "| --- | ---: | ---: |",
               f"| Requests | {without['requests']} | {trimmed['requests']} |",
               f"| Input tokens sent, all requests | {without['sentTokens']:,} | {trimmed['sentTokens']:,} |",
               f"| Same, a cached token counted at a tenth | {without['billedTokens']:,} | {trimmed['billedTokens']:,} |",
@@ -396,7 +397,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--check", action="store_true", help="compare with scripts/context-budget.json; exit 1 when a section grew")
     parser.add_argument("--update", action="store_true", help="write what was measured as the new ceilings")
     parser.add_argument("--ceilings", default=CEILINGS, help="the ceilings file (default: scripts/context-budget.json)")
-    parser.add_argument("--simulate", action="store_true", help="run a long thread with and without context trimming and print the table")
+    parser.add_argument("--simulate", action="store_true", help="run a long thread with and without context clearing and print the table")
     parser.add_argument("--turns", type=int, default=24, help="turns for --simulate")
     args = parser.parse_args(argv)
 

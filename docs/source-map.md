@@ -106,7 +106,8 @@ Sources/
                        PiEngine (which pi runs; BundledPiEngine, the one the app ships),
                        PiHome (Shepherd's pi home: the launcher, restore-env.sh, its settings),
                        PiCompactionThreshold (Settings ▸ Agents ▸ Compact at, as pi's per-model
-                       `compaction.modelOverrides`),
+                       `compaction.modelOverrides`), ContextToolGroups (what the Context card
+                       calls each tool's group; Tests/Extensions/context-tools.json is its audit),
                        YourPi (the user's own pi, read only; YourPiLocator, PiSessionFolder),
                        YourPiFiles (its auth.json, models.json, settings, trust and extensions,
                        parsed as plain files; PiProviders), YourPiImport (the first launch's
@@ -321,7 +322,9 @@ Tests/
                           QueueFixture (a host's queue without pi), eventually, recordingErrors,
                           ControlPress (press a control by accessibility label, measure hit
                           areas), the time-limit and timing-sensitive traits
-  Extensions/             node tests for the bundled extensions (+ native-thread-wire.json)
+  Extensions/             node tests for the bundled extensions (+ native-thread-wire.json);
+                          context-harness.mjs (a real pi on a fake provider, launched as the app
+                          launches an agent) with context-tools.json (the audit of every tool)
   Designs/                design fixtures: real and synthetic boards, the Shepherd canvas.json,
                           and element-ids.json (WebKit's numbering of each board's elements)
   DesignSurfaceKitIntegrationTests/Fixtures/  a small design (loops, conditionals, an import)
@@ -329,7 +332,9 @@ Tests/
   ci-suite-times.json     each suite's seconds on a CI runner, which the shards are cut from
   ShepherdIOSChecks/      the iOS client's scripts
 scripts/               release.py (the release workflow's rules), sign-app.sh (release
-                       signing), sync-embedded-extension.py, ci_mtimes.py (CI's incremental builds),
+                       signing), sync-embedded-extension.py, context_budget.py (what a thread's
+                       first request carries, and its ceilings in context-budget.json),
+                       ci_mtimes.py (CI's incremental builds),
                        ci_impact.py (the lane and the fast lane's suites), ci_shards.py (equal
                        shards from Tests/ci-suite-times.json), ci_run_tests.py (a shard under a
                        watchdog, failed tests retried once), ci_testlog.py (test output reader),
