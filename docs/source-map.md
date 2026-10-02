@@ -214,6 +214,7 @@ Sources/
                        QueueStack ("Up next", the queue above the composer),
                        ContextMeter (the ring beside Send, its details, compaction lines),
                        ComposerMentions (the @ picker's rules, a pasted reference),
+                       ComposerReturnKey (what ↩, ⇧↩, ⌥↩ and ⌘↩ do in the field),
                        DesignReferenceChips (a thread's chips, their preview, "Looked at…"),
                        ThreadTailGuard (a following thread the lazy stack stranded, put back),
                        Subagents, SubagentPresentation, SubagentInspector
@@ -275,7 +276,8 @@ Packages/
                                      NWDesignSystemBuildTile, NWDesignReferenceChip,
                                      NWDesignReferencePreview, NWThreadNotePin,
                                      NWThreadNoteCard, NWReferenceToast, NWImplementSheet,
-                                     NWDesignReferenceSpecimens); Composer's NWMentionPicker
+                                     NWDesignReferenceSpecimens); Composer's NWMentionPicker and
+                                     NWReturnKey (⇧↩ and ⌥↩ add a line in a field whose ↩ submits)
                        Previews/     a #Preview per component, light and dark
                        Diagnostics/  NWRenderProbe (row-body counts for tests; debug only)
                        Its unit tests live in the root package (Tests/ShepherdUIUnitTests).

@@ -6,7 +6,7 @@ import ShepherdUI
 import Testing
 @testable import ShepherdApp
 
-/// Pinned (Sidebar › Pinned): the section between Needs you and Recents, and what it does to the
+/// Pinned: the first, exclusive sidebar group, and what it does to the
 /// order, the digits and the walk.
 @Suite("Sidebar Pinned")
 @MainActor
@@ -42,8 +42,8 @@ struct SidebarPinnedTests {
         #expect(lists.recents.map(\.title) == ["a", "b"])
     }
 
-    /// Needs you, then Pinned, then Recents, and a thread shows once.
-    @Test func pinnedThreadsSitBetweenNeedsYouAndRecentsAndLeaveRecents() {
+    /// Pinned first, then Needs you and Recents, with one row per thread.
+    @Test func pinnedThreadsSitFirstAndLeaveRecents() {
         var asking = agent("asks", status: .blocked, at: 50, waiting: "Ship it?")
         asking.waitingReason = "ship it?"
         let old = agent("old", at: 10), new = agent("new", at: 30), middle = agent("middle", at: 20)
@@ -51,7 +51,7 @@ struct SidebarPinnedTests {
         #expect(lists.needsYou.map(\.title) == ["asks"])
         #expect(lists.pinned.map(\.title) == ["old"])
         #expect(lists.recents.map(\.title) == ["new", "middle"])
-        #expect(lists.all.map(\.title) == ["asks", "old", "new", "middle"])
+        #expect(lists.all.map(\.title) == ["old", "asks", "new", "middle"])
         #expect(Set(lists.all.map(\.id)).count == lists.all.count)
     }
 
@@ -64,16 +64,15 @@ struct SidebarPinnedTests {
         #expect(derive([busy, b, c], pins: [local(c), local(a), local(b)]).pinned.map(\.title) == ["c", "a", "b"])
     }
 
-    /// Attention wins: a pinned thread that needs you is in Needs you (its menu still says Unpin)
-    /// and returns to Pinned, in its place, once it is answered.
-    @Test func aPinnedThreadThatNeedsYouShowsInNeedsYouAndReturnsToPinned() {
+    /// Pinning wins. Status changes update the row without moving it out of Pinned.
+    @Test func aPinnedThreadThatNeedsYouStaysPinned() {
         let other = agent("other", at: 5)
         var pinned = agent("pinned", status: .blocked, at: 9, waiting: "Approve the plan?")
         let asking = derive([pinned, other], pins: [local(pinned), local(other)])
-        #expect(asking.needsYou.map(\.title) == ["pinned"])
-        #expect(asking.needsYou.first?.pinned == true)
-        #expect(asking.needsYou.first?.accessory == .reason("Approve the…"))
-        #expect(asking.pinned.map(\.title) == ["other"])
+        #expect(asking.needsYou.isEmpty)
+        #expect(asking.pinned.first?.pinned == true)
+        #expect(asking.pinned.first?.accessory == .reason("Approve the…"))
+        #expect(asking.pinned.map(\.title) == ["pinned", "other"])
         #expect(asking.recents.isEmpty)
         pinned.status = .working
         pinned.waitingOn = nil
@@ -137,8 +136,10 @@ struct SidebarPinnedTests {
                           designs: true),
             pins: SidebarPins([local(run), remote(remoteRun), .local(drawer.id)]))
         #expect(lists.pinned.isEmpty)
-        #expect(lists.recents.count == 3)
-        #expect(lists.recents.allSatisfy { !$0.pinnable && !$0.pinned })
+        #expect(lists.all.count == 3)
+        #expect(lists.done.map(\.title) == ["Nightly"])
+        #expect(lists.designs.map(\.title) == ["Dashboard"])
+        #expect(lists.all.allSatisfy { !$0.pinnable && !$0.pinned })
     }
 
     @Test func everyOtherThreadRowIsPinnableAndOnlyAPinnedOneIsPinned() {
@@ -194,11 +195,11 @@ struct SidebarPinnedTests {
         #expect(lists.shortcutRows.map(\.title) == ["pinned"])
     }
 
-    @Test func theWalkRunsNeedsYouThenPinnedThenRecents() {
+    @Test func theWalkRunsPinnedThenNeedsYouThenRecents() {
         let asking = agent("asks", status: .blocked, at: 9, waiting: "?")
         let pinned = agent("pinned", at: 1)
         let recent = agent("recent", at: 5)
-        #expect(derive([recent, pinned, asking], pins: [local(pinned)]).all.map(\.title) == ["asks", "pinned", "recent"])
+        #expect(derive([recent, pinned, asking], pins: [local(pinned)]).all.map(\.title) == ["pinned", "asks", "recent"])
     }
 
     @Test func theSelectedRowIsMarkedWherePinnedShowsIt() {
