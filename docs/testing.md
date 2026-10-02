@@ -340,6 +340,11 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
   built-in; a ZIP's table of contents checked before unpacking (zip slip, links, sizes), a ZIP
   and a folder importing, every failure leaving nothing, and importing again making a copy.
 - **Server:** every `SessionServer` state mutation.
+- **Snapshot budget:** a long, edit-heavy thread keeps its newest messages whatever the other
+  lists weigh (`SnapshotBudgetTests` over `RPCThreadState.budget` and `fitting`,
+  `ThreadSnapshotBudgetTests` over a real server with recorded turns and finished cards,
+  `ThreadHeavySnapshotTests` in the real workspace), and a pi slower than the request deadline is
+  never served without its history (`SlowStartHistoryTests`).
 - **Extension identity:** the real check against stub pis (`ExtensionIdentityTests`, and
   `ExtensionIdentityFlowTests` through the app's own launch): a pi's own process is served for
   its agent, a process it starts is refused and displaces no connection, this process claiming

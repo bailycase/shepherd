@@ -142,11 +142,11 @@ final class FakeThread {
 enum MountedWorkspace {
     /// The workspace restored, the first agent selected, and no window yet. The first agent is
     /// the most recently active, so it is the one the launch shows.
-    static func start(_ count: Int, in app: AppHarness) async throws -> (ShepherdViewModel, [AgentFixture]) {
+    static func start(_ count: Int, in app: AppHarness, env: (Int) -> [String: String] = { _ in [:] }) async throws -> (ShepherdViewModel, [AgentFixture]) {
         let space = Fixture.space(path: app.dir.path)
         var agents: [AgentFixture] = []
         for index in 0..<count {
-            var agent = try await app.liveAgent("agent \(index)", in: space, order: index)
+            var agent = try await app.liveAgent("agent \(index)", in: space, order: index, env: env(index))
             agent.agent.lastActiveAt = Double(count - index)
             agents.append(agent)
         }
@@ -157,9 +157,10 @@ enum MountedWorkspace {
         return (vm, agents)
     }
 
-    static func open(_ count: Int, in app: AppHarness, size: CGSize = CGSize(width: 1200, height: 800))
+    static func open(_ count: Int, in app: AppHarness, size: CGSize = CGSize(width: 1200, height: 800),
+                     env: (Int) -> [String: String] = { _ in [:] })
         async throws -> (ShepherdViewModel, OffscreenWindow, [AgentFixture]) {
-        let (vm, agents) = try await start(count, in: app)
+        let (vm, agents) = try await start(count, in: app, env: env)
         let window = OffscreenWindow(size: size, dark: true, WorkspaceView(vm: vm))
         let visible = vm.threadStores.store(for: agents[0].agent.id)
         try await eventuallyOnMain("the visible thread to load", timeout: .seconds(60)) { visible.ready }

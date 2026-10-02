@@ -153,7 +153,10 @@ events come out on stdout, one record per LF.
   answers `get_state` first, and a thread served before a long history arrives would show a
   resumed agent as a new, empty one. pi reads stdin only once it has started, so a pi slower
   than the 10 s request deadline answers requests already given up on; when `get_state` times
-  out, the bootstrap asks again.
+  out, the bootstrap asks again, and only the retry's `get_messages` ends the wait (the earlier
+  attempt's timeout declares nothing, or the thread would be served with an empty, clipped
+  history while the retry's is on its way). `clipped` from a failed history fetch clears when
+  the next one lands whole.
 - **Events** update the projection in place. The run pi is streaming is one ordered list of
   live rows (`provisional`), in the order pi produced them:
   - `message_start`, `message_update`, and `message_end` stream the current assistant message
@@ -272,6 +275,22 @@ events come out on stdout, one record per LF.
   - 240 KiB in total, of which live content (live rows, then dialogs) may use 120 KiB. A page
     each of live assistant messages and tool calls stays; user rows always stay, because they
     open the turns the rest belong to.
+  - **History is never squeezed out by the rest of the snapshot.** Beside its messages a snapshot
+    carries the subagents' cards, the recorded turns, the extensions' widgets, the slash
+    commands and the queue, and a long, edit-heavy thread's can weigh the whole 240 KiB by
+    themselves (twenty finished cards that each name thirty-two files by long worktree paths are
+    about 170 KiB). History once got only what they left, and with the newest message bigger than
+    that, nothing: a thread with no turns and its composer beside it. Now:
+    - The lists are bounded on their own, once per change (`RPCThreadState.fitting`). Subagent
+      cards: 64 KiB; a run still going or asking is never touched; finished runs, oldest first,
+      give up their lists of changed files (their `result` still counts them), then go. Recorded
+      turns: 48 KiB; the older ones keep their first five files (`fileCount` still says how many
+      they changed), then go, oldest first; the newest is never cut. Widgets: 64 KiB, in order,
+      the first always. Older clients read shorter lists as they always did.
+    - Whatever the rest weighs, history keeps room for 96 KiB (`historyReserve`: the newest 20
+      messages at the sizes a thread's messages have) and live content for 48 KiB
+      (`activeReserve`), so the snapshot can then pass 240 KiB, never by more than the
+      reserves. `clipped` still says only that messages were left out.
   - One 16 KiB text budget per message, shared across its blocks and tool fields, and at most
     128 blocks per message. Clipped content is flagged.
   - A monotonically increasing `revision`, the pi session ID, and a `generation`, so nothing

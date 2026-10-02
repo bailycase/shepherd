@@ -98,7 +98,9 @@ Sources/
   ShepherdSessions/    SessionServer (state, sessions, extension socket, remote listener),
                        GoalExtension (embedded shepherd-goal.ts; session-persisted bounded continuation
                        and a separate same-model evaluator), RPCSession, RPCThreadState (+Queue: the queue of messages sent while pi
-                       works; +Context: what fills the context, compactions), ThreadOriginStore (where delivered messages came from, kept per pi
+                       works; +Context: what fills the context, compactions; +SnapshotLists: the
+                       cards, recorded turns and widgets a snapshot carries, each within its own
+                       budget), ThreadOriginStore (where delivered messages came from, kept per pi
                        session), StreamingToolArguments (the fields a tool call being written
                        names, read from pi's argument fragments), BrowserTunnelHost (the host's side
                        of Browser tunnels: loopback connects, caps, idle, one session per remote
