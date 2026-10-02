@@ -14,10 +14,16 @@ import { pathToFileURL } from "node:url";
 
 const sse = (events) => events.map(([name, data]) => `${name ? `event: ${name}\n` : ""}data: ${typeof data === "string" ? data : JSON.stringify(data)}\n\n`).join("");
 
-// `call` makes the reply a bash tool call instead of text.
-function responses(model, tier, call) {
+// `call` makes the reply a bash tool call instead of text; `tool` ({ name, arguments }) makes it a call to any tool.
+function toolCall({ call, tool }) {
+  if (tool) return { name: tool.name, arguments: JSON.stringify(tool.arguments ?? {}) };
+  return call ? { name: "bash", arguments: JSON.stringify({ command: call }) } : undefined;
+}
+
+function responses(model, tier, decision) {
   const message = { type: "message", id: "msg_1", status: "completed", role: "assistant", content: [{ type: "output_text", text: "ok", annotations: [] }] };
-  const fn = call && { type: "function_call", id: "fc_1", call_id: "call_1", name: "bash", arguments: JSON.stringify({ command: call }), status: "completed" };
+  const wanted = toolCall(decision);
+  const fn = wanted && { type: "function_call", id: "fc_1", call_id: "call_1", name: wanted.name, arguments: wanted.arguments, status: "completed" };
   const item = fn ?? message;
   const events = [["response.created", { type: "response.created", response: { id: "resp_1", object: "response", status: "in_progress", model, output: [] } }]];
   if (fn) {
@@ -38,12 +44,13 @@ function responses(model, tier, call) {
   return sse(events);
 }
 
-function completions(model, tier, call) {
+function completions(model, tier, decision) {
   const chunk = (delta, finish, extra = {}) => ({ id: "c1", object: "chat.completion.chunk", created: 1, model, ...(tier ? { service_tier: tier } : {}),
     choices: [{ index: 0, delta, finish_reason: finish ?? null }], ...extra });
   const usage = { prompt_tokens: 1_000_000, completion_tokens: 1_000_000, total_tokens: 2_000_000 };
-  if (call) {
-    return sse([[null, chunk({ tool_calls: [{ index: 0, id: "call_1", type: "function", function: { name: "bash", arguments: JSON.stringify({ command: call }) } }] })],
+  const wanted = toolCall(decision);
+  if (wanted) {
+    return sse([[null, chunk({ tool_calls: [{ index: 0, id: "call_1", type: "function", function: { name: wanted.name, arguments: wanted.arguments } }] })],
       [null, chunk({}, "tool_calls", { usage })], [null, "[DONE]"]]);
   }
   return sse([[null, chunk({ content: "ok" })], [null, chunk({}, "stop", { usage })], [null, "[DONE]"]]);
@@ -61,7 +68,8 @@ function anthropic(model) {
 }
 
 // `onRequest({ index, path, body })` runs before the reply and may return { call: "shell command" } to make it a
-// tool call, or { status, text } to fail the request.
+// bash tool call, { tool: { name, arguments } } to make it a call to any tool, or { status, text } to fail the
+// request.
 export async function startProvider({ onRequest } = {}) {
   const requests = [];
   const server = http.createServer(async (req, res) => {
@@ -82,9 +90,9 @@ export async function startProvider({ onRequest } = {}) {
     res.writeHead(200, { "content-type": "text/event-stream" });
     const path = String(req.url).split("?")[0];
     const tier = body?.service_tier;
-    if (path.endsWith("/chat/completions")) res.end(completions(body?.model, tier, decision.call));
+    if (path.endsWith("/chat/completions")) res.end(completions(body?.model, tier, decision));
     else if (path.endsWith("/messages")) res.end(anthropic(body?.model));
-    else res.end(responses(body?.model, tier, decision.call));
+    else res.end(responses(body?.model, tier, decision));
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   return {
