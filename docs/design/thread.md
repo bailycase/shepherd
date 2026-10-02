@@ -89,7 +89,14 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   or polling; a changed cursor or session permits another fetch.
 - **Notices** above the thread explain degraded states in caption tertiary: "Last known thread ·
   refreshing before enabling actions", "This host's agent cannot answer questions here · update
-  Shepherd on the host", "Some earlier output is clipped".
+  Shepherd on the host", and one line for each thing the host reported shortening
+  (`NativeClipNotice`; docs/native-thread.md › RPCThreadState › Clipped): "Some messages couldn't be
+  read from pi · they appear after the agent's next reply", "Part of this turn's output is hidden
+  while it runs · it shows when the turn ends" (only while the thread runs), "A question from the
+  agent is too large to show here" (or "N questions from the agent are too large to show here"),
+  and, from a host that names no cause, "Some output is clipped". Each goes with its cause, none
+  has an action, and older pages to scroll up to or a long message (its row says "Output
+  truncated") draw no notice. They sit above the first turn, like the others.
 - **Starting:** while pi boots (a new agent, or one resuming after a relaunch) the thread is
   ready to use and quiet, never an error: it draws what it knows at once (a new agent's empty
   state, or its opening prompt as a message pi has not read yet, at 70%; a resuming agent's
@@ -387,7 +394,11 @@ tools merge only with the same tool. Consecutive lines form one part of the turn
   `textSecondary`, the meta in mono 11 tertiary, and a 10pt tertiary chevron (pointing right,
   turning down) when it expands, 8pt apart, with 4pt leading and 8pt trailing padding. It hugs
   its content and sits 4pt left of the column, so its glyph lines up with the prose. The label
-  never truncates; the meta truncates at its tail. It is a real button with a radius-6 `bgHover`
+  takes the room it needs, and the meta takes what is left and truncates at its tail (it leaves
+  when under four characters would show). A label wider than the line alone (the boards a design
+  agent updated by name, a page the Browser opened) truncates at its tail, so a row never
+  widens the thread: one that cannot shrink to its column widens the stack every row shares, and
+  the whole thread runs off its pane (`ThreadFitTests`). It is a real button with a radius-6 `bgHover`
   fill on hover; a line with nothing behind it draws no chevron (its place stays) and is not a
   button: no hover, no press, no focus, and VoiceOver hears only its words.
 
@@ -441,7 +452,8 @@ tools merge only with the same tool. Consecutive lines form one part of the turn
     the call runs, the line leaves and nothing stays behind.
 - **Calls** (expanded, `NWActivityCalls`): an indented list on the rail, 22pt rows in mono 11
   with no gap between them and 10pt between a row's columns: the kind in `textTertiary` in a
-  32pt column that widens for a longer name ("read", "edit", "bash", "spawn"), the path
+  32pt column that widens for a longer name ("read", "edit", "bash", "spawn"; at most 22
+  characters wide, a longer name truncates), the path
   (truncated at the head) or command (at the tail) in `textSecondary`, and a stat in
   `textTertiary` ("+58 −41", "160 lines", "3 matches", "17 passed", "exit 1"; in `failed` on
   a failed call). A row has a radius-4 hover fill and the full path or command as its tooltip.

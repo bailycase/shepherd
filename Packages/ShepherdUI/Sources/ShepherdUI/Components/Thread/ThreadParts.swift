@@ -19,6 +19,11 @@ public enum NWThreadMetrics {
     public static let callRowHeight: CGFloat = touchable(22)
     /// The calls list's kind column ("edit", "bash"), before it widens for longer names.
     public static let callLabelWidth: CGFloat = 32
+    /// The most characters the kind column widens for ("shepherd_child_message"); a longer name
+    /// truncates, so a tool with a long name never takes the room its detail needs.
+    public static let callLabelMaxCharacters = 22
+    /// The least room an activity line's meta gets (four mono 11 characters); with less it is not drawn.
+    public static let activityMetaMinimum: CGFloat = 26
     /// The hairline rail sits under the line's icon; its rows start 16pt right of it.
     public static let railInset: CGFloat = 9
     public static let railPadding: CGFloat = 16
