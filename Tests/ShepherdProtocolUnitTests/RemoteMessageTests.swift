@@ -216,14 +216,14 @@ enum RemoteSamples {
 
     static let hostSettings = HostSettings(
         shepherdVersion: "0.4.2", piVersion: "0.87.1", defaultModel: "anthropic/claude-opus", defaultThinking: .high,
-        queueDelivery: .oneAtATime, goalCrossProviderEvaluation: true,
+        queueDelivery: .oneAtATime, goalCrossProviderEvaluation: true, goalsEnabled: true,
         worktreeBase: .head, fetchBeforeCreating: false, mergePRAutomatically: true, mergeMethod: .rebase,
         bundledExtensions: [HostSettings.BundledExtension(id: "panes", name: "Panes and agent tools", on: true),
                             HostSettings.BundledExtension(id: "review", name: "Diff review tool", on: false)],
         installedExtensions: ["npm:@example/pi-tools@1.0.0"], updatePiDaily: true)
     static let hostSettingChanges: [HostSettingChange] = [
         .defaultModel("openai/gpt-5"), .defaultModel(nil), .defaultThinking(.low), .queueDelivery(.all),
-        .goalCrossProviderEvaluation(true), .goalCrossProviderEvaluation(false),
+        .goalCrossProviderEvaluation(true), .goalCrossProviderEvaluation(false), .goalsEnabled(true), .goalsEnabled(false),
         .worktreeBase(.fresh), .fetchBeforeCreating(true), .commitRemainingWork(false), .generatePRDescriptions(false),
         .deleteLocalBranch(false), .mergePRAutomatically(false), .mergeMethod(.squash),
         .bundledExtension(id: "review", on: true), .updatePiDaily(false), .updateExtensionsDaily(true),
@@ -592,6 +592,17 @@ struct RemoteReplyTests {
         #expect(try JSONDecoder().decode(HostSettings.self, from: JSONSerialization.data(withJSONObject: json)) == expected)
     }
 
+    @Test func legacyOrNullGoalExperimentSettingsAlwaysDefaultOff() throws {
+        var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(RemoteSamples.hostSettings)) as? [String: Any])
+        json.removeValue(forKey: "goalsEnabled")
+        var expected = RemoteSamples.hostSettings
+        expected.goalsEnabled = false
+        #expect(try JSONDecoder().decode(HostSettings.self, from: JSONSerialization.data(withJSONObject: json)) == expected)
+        json["goalsEnabled"] = NSNull()
+        #expect(try JSONDecoder().decode(HostSettings.self, from: JSONSerialization.data(withJSONObject: json)) == expected)
+        #expect(!HostSettings().goalsEnabled)
+    }
+
     /// A change applies to the one setting it names; a bundled extension the host doesn't have
     /// changes nothing.
     @Test func aHostSettingChangeAppliesToItsSettingAlone() {
@@ -773,7 +784,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.nativeRetryCapability,
             RemoteProtocol.nativeInterruptCapability, RemoteProtocol.browserTunnelCapability, RemoteProtocol.browserDriveCapability,
             RemoteProtocol.nativeServiceTierCapability, RemoteProtocol.createAgentServiceTierCapability,
-            RemoteProtocol.nativeGoalCapability,
+            RemoteProtocol.nativeGoalCapability, RemoteProtocol.goalExperimentCapability,
             // Offered only while the host's Design tool is on (SessionServer.setDesignsServed).
             RemoteProtocol.designsCapability, RemoteProtocol.designMarkupCapability, RemoteProtocol.designDeleteCapability,
         ]

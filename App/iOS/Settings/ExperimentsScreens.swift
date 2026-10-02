@@ -4,7 +4,7 @@ import ShepherdProtocol
 import ShepherdRemote
 
 // Settings ▸ Experiments on iPhone and iPad (MobileExperiments; home track): features still
-// being tried, each off until turned on. Its one experiment is Suggested instructions: agents
+// being tried, each off until turned on. Goals is a per-host switch. Suggested instructions: agents
 // draft a line for the root instructions when they learn something the hard way, and nothing is
 // written until you add it. It spans every host (`suggestions.v1`): turning it on or choosing
 // what it learns from changes every host, and the lines waiting are every host's, newest first.
@@ -35,8 +35,27 @@ struct ExperimentsScreen: View {
                     }
                     if !serving {
                         SettingsFootnote(settingsHosts.contains(where: \.isConnected)
-                            ? "Your hosts' Shepherd is too old for experiments. Update it to try them here."
-                            : "No host is online. Experiments show here once one is back.")
+                            ? "Your hosts' Shepherd is too old for suggested instructions. Update it to try them here."
+                            : "No host is online. Suggested instructions appears once one is back.")
+                    }
+                }
+                if !store.goalExperimentHosts.isEmpty {
+                    SettingsSection("Goals") {
+                        ForEach(store.goalExperimentHosts) { host in
+                            if let settings = store.hostSettings.settings(of: host) {
+                                GoalExperimentCard(host: host.name, isOn: settings.goalsEnabled) {
+                                    store.hostSettings.post(.goalsEnabled($0), on: host)
+                                }
+                            } else {
+                                SettingsFootnote("Reading Goals settings on \(host.name)…")
+                            }
+                        }
+                        SettingsFootnote("Applies immediately on the selected host. Turning it back on keeps goals paused until you Resume.")
+                    }
+                }
+                if let problem = store.hostSettings.problem {
+                    NWBanner(.failed, title: problem) {
+                        Button("OK") { store.hostSettings.dismissProblem() }.buttonStyle(.nw(.secondary))
                     }
                 }
                 if let problem = model.problem {
@@ -130,6 +149,38 @@ private struct SuggestedInstructionsCard: View {
                 .toggleStyle(.nwSwitch)
                 .labelsHidden()
                 .disabled(!enabled)
+        }
+        .padding(NW.Space.l)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .nwCard(radius: NWListMetrics.cardRadius)
+    }
+}
+
+private struct GoalExperimentCard: View {
+    let host: String
+    let isOn: Bool
+    let toggle: (Bool) -> Void
+
+    var body: some View {
+        let nw = Color.nw
+        HStack(alignment: .top, spacing: NW.Space.l) {
+            NWGoalGlyph()
+                .foregroundStyle(nw.lanternText)
+                .frame(width: MobileLayout.experimentTile, height: MobileLayout.experimentTile)
+                .background(nw.lanternTint, in: RoundedRectangle(cornerRadius: NW.Radius.m))
+            VStack(alignment: .leading, spacing: NW.Space.xs) {
+                Text("Goals on \(host)")
+                    .font(.nw(.ui, weight: .semibold))
+                    .foregroundStyle(nw.textPrimary)
+                Text("Keep a conversation working toward a condition you set with /goal. No time or token budgets. Turning this off pauses active goals without clearing them.")
+                    .nwText(size: MobileLayout.settingsNoteSize, lineHeight: MobileLayout.settingsNoteLineHeight)
+                    .foregroundStyle(nw.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Toggle("Goals on \(host)", isOn: Binding(get: { isOn }, set: toggle))
+                .toggleStyle(.nwSwitch)
+                .labelsHidden()
         }
         .padding(NW.Space.l)
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -377,63 +377,6 @@ enum NWGoalTime {
     }
 }
 
-/// Shared editor values keep macOS inline and iOS sheet validation identical.
-public struct NWGoalLimits: Equatable, Sendable {
-    public var minutes: String
-    public var tokens: String
-    private let originalSeconds: Double?
-    private let originalMinutes: String
-
-    public init(seconds: Double?, tokens: Int?) {
-        originalSeconds = seconds
-        originalMinutes = seconds.map { String($0 / 60) } ?? ""
-        minutes = originalMinutes
-        self.tokens = tokens.map(String.init) ?? ""
-    }
-
-    public var seconds: Double? {
-        // Preserve an untouched cap exactly across seconds/minutes floating-point conversion.
-        minutes == originalMinutes ? originalSeconds : Double(minutes.trimmingCharacters(in: .whitespacesAndNewlines)).map { $0 * 60 }
-    }
-    public var tokenLimit: Int? { Int(tokens.trimmingCharacters(in: .whitespacesAndNewlines)) }
-    public var clearsTime: Bool { minutes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-    public var clearsTokens: Bool { tokens.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-    public var isValid: Bool {
-        (clearsTime || seconds.map { $0.isFinite && $0 > 0 } == true)
-            && (clearsTokens || tokenLimit.map { $0 > 0 } == true)
-    }
-}
-
-public struct NWGoalLimitFields: View {
-    @Binding var limits: NWGoalLimits
-
-    public init(limits: Binding<NWGoalLimits>) { _limits = limits }
-
-    public var body: some View {
-        VStack(alignment: .leading, spacing: NW.Space.s) {
-            field("Time limit (minutes)", text: $limits.minutes)
-            field("Token budget", text: $limits.tokens)
-        }
-    }
-
-    private func field(_ label: String, text: Binding<String>) -> some View {
-        VStack(alignment: .leading, spacing: NW.Space.xs) {
-            Text(label).font(.nw(.caption)).foregroundStyle(Color.nw.textSecondary).accessibilityHidden(true)
-            TextField("No limit", text: text)
-                .textFieldStyle(.plain)
-                .font(.nw(.mono))
-                .foregroundStyle(Color.nw.textPrimary)
-                .padding(NW.Space.s)
-                .background(Color.nw.bgSunken, in: RoundedRectangle(cornerRadius: NW.Radius.s))
-                .nwBorder(Color.nw.lineSubtle, radius: NW.Radius.s)
-                .accessibilityLabel(label)
-                #if os(iOS)
-                .keyboardType(.decimalPad)
-                #endif
-        }
-    }
-}
-
 private struct NWGoalStatusMark: View {
     let state: NWGoalState
 

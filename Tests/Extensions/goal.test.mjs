@@ -22,6 +22,7 @@ const proof = { role: "toolResult", toolName: "bash", toolCallId: "call-check-1"
 
 function assertShortPublishedGoal(goal, entries = []) {
   if (!goal) return;
+  assert(!Object.hasOwn(goal, "timeLimitSeconds")); assert(!Object.hasOwn(goal, "tokenLimit"));
   const ids = [goal.id, ...entries.flatMap((e) => [e.id, e.message?.toolCallId,
     ...(Array.isArray(e.message?.content) ? e.message.content.filter((c) => c.type === "toolCall").map((c) => c.id) : [])])].filter(Boolean);
   for (const value of [goal.reason, goal.summary].filter((v) => v !== undefined)) {
@@ -35,7 +36,7 @@ function assertShortPublishedGoal(goal, entries = []) {
 
 function fixture({ entries = [], enabled = "1", models, auth = true, env = {} } = {}) {
   const handlers = new Map(), commands = new Map(), commandMetadata = [], widgets = [], prompts = [], calls = [], stored = structuredClone(entries), bus = new Map(), customMessages = [];
-  const options = { SHEPHERD_EXT_GOAL: enabled, SHEPHERD_GOAL_MODELS: "", ...env };
+  const options = { SHEPHERD_EXT_GOAL: enabled, SHEPHERD_GOALS_ENABLED: "1", SHEPHERD_GOAL_MODELS: "", ...env };
   const saved = Object.fromEntries(Object.keys(options).map((k) => [k, process.env[k]]));
   Object.assign(process.env, options);
   let index = 0, aborted = 0;
@@ -46,13 +47,18 @@ function fixture({ entries = [], enabled = "1", models, auth = true, env = {} } 
       appendEntry: (customType, data) => stored.push({ id: `entry${++index}`, type: "custom", customType, data: structuredClone(data) }),
       sendUserMessage: () => { throw Error("Goal kickoff must be a hidden custom message"); }, sendMessage: (message, options) => {
         customMessages.push({ message, options });
-        if (options.triggerTurn) prompts.push({ text: message.content, options });
+        if (options.triggerTurn) {
+          prompts.push({ text: message.content, options });
+          if (ctx.isIdle()) { handlers.get("before_agent_start")?.({}, ctx); handlers.get("agent_start")?.({}, ctx); }
+        }
       } });
   } finally { for (const [k, v] of Object.entries(saved)) v === undefined ? delete process.env[k] : process.env[k] = v; }
   const model = { provider: "fixture", id: "worker", contextWindow: 64000 };
-  const ctx = { model, mode: "rpc", isIdle: () => false, hasPendingMessages: () => false,
+  const ctx = { model, mode: "rpc", isIdle: () => true, hasPendingMessages: () => false,
     abort: () => { aborted++; }, ui: { setWidget: (key, lines) => {
-      assert.equal(key, "shepherd.goal"); assert.equal(lines.length, 1);
+      assert.equal(key, "shepherd.goal");
+      if (lines === undefined) { widgets.push(undefined); return; }
+      assert.equal(lines.length, 1);
       const goal = JSON.parse(lines[0].slice("SHEPHERD_GOAL:".length));
       assertShortPublishedGoal(goal, stored);
       widgets.push(goal);
@@ -66,7 +72,11 @@ function fixture({ entries = [], enabled = "1", models, auth = true, env = {} } 
     emit: (event, value = {}) => handlers.get(event)?.(value, ctx),
     action: (value) => commands.get("shepherd-goal")(JSON.stringify(value), ctx),
     start: (text = "All acceptance tests pass", extra = {}) => f.action({ action: "set", text, ...extra }),
-    check: (extra = {}) => f.emit("agent_before_settle", { entries: [], outcome: "completed", context: { contextEntries: stored.map((sourceEntry) => ({ sourceEntry, messages: sourceEntry.message ? [sourceEntry.message] : [] })) }, ...extra }),
+    async check(extra = {}) {
+      const idle = ctx.isIdle; ctx.isIdle = () => false;
+      try { return await f.emit("agent_before_settle", { entries: [], outcome: "completed", context: { contextEntries: stored.map((sourceEntry) => ({ sourceEntry, messages: sourceEntry.message ? [sourceEntry.message] : [] })) }, ...extra }); }
+      finally { ctx.isIdle = idle; }
+    },
     async work(tokens = 3) {
       const message = { role: "assistant", timestamp: 1, content: [{ type: "text", text: "Checked the implementation." },
         { type: "toolCall", id: "call-check-1", name: "bash", arguments: { command: "go test ./... && go vet ./..." } }], usage: { totalTokens: tokens }, stopReason: "stop" };
@@ -89,12 +99,49 @@ test("inert without the agent flag; startup always advertises capability with nu
   await f.close();
 });
 
-test("slash goal preserves its full condition, parses budgets, and starts a hidden data-marked prompt", async () => {
+test("loaded goals default off and reject disabled slash/mutating actions with Settings guidance; configure validates booleans and registers once", async () => {
+  const f = fixture({ env: { SHEPHERD_GOALS_ENABLED: undefined } });
+  try {
+    assert.equal(f.goal, undefined); assert.equal(f.commands.size, 2);
+    for (const args of ["", "status", "pause", "resume", "clear", "Acceptance passes"]) {
+      await assert.rejects(f.commands.get("goal")(args, f.ctx), /Settings > Experiments > Goals/);
+    }
+    for (const action of ["set", "edit", "pause", "resume", "clear", "confirm", "yield", "unyield", "interrupt"]) {
+      await assert.rejects(f.action({ action, text: "Acceptance passes" }), /Settings > Experiments > Goals/);
+    }
+    for (const enabled of [undefined, "1", 1, null]) await assert.rejects(f.action({ action: "configure", enabled }), /boolean enabled/);
+    await f.action({ action: "status" }); await f.work(500000); assert.equal(await f.check(), undefined);
+    assert.equal(f.goal, undefined); assert.equal(f.stored.filter((e) => e.customType === "shepherd.goal").length, 0);
+    assert.equal(f.calls.length, 0); assert.equal(f.prompts.length, 0);
+    await f.action({ action: "configure", enabled: true }); assert.equal(f.goal, null);
+    await f.action({ action: "configure", enabled: false }); await f.action({ action: "configure", enabled: true });
+    assert.equal(f.goal, null); assert.equal(f.commandMetadata.length, 2); assert.equal(f.prompts.length, 0);
+    await f.start(); await f.work(); const check = f.check(), before = structuredClone(f.goal);
+    await assert.rejects(f.action({ action: "configure", enabled: "false" }), /boolean enabled/);
+    assert.deepEqual(f.goal, before); assert(!f.calls[0].options.signal.aborted);
+    f.calls[0].resolve(response()); await check;
+  } finally { await f.close(); }
+});
+
+test("disabled restoration preserves an active legacy goal as Paused and enabling never resumes or charges ordinary work", async () => {
+  const goal = { id: "00000000-0000-0000-0000-000000000003", revision: 4, text: "Acceptance passes", state: "checking",
+    elapsedSeconds: 7200, tokensUsed: 900000, checkCount: 2, timeLimitSeconds: 1, tokenLimit: 1 };
+  const f = fixture({ env: { SHEPHERD_GOALS_ENABLED: "0" }, entries: [{ type: "custom", customType: "shepherd.goal", data: { goal } }] });
+  try {
+    assert.equal(f.goal, undefined); assert.equal(f.stored.at(-1).data.goal.state, "paused");
+    await f.emit("before_agent_start"); await f.work(1000000); assert.equal(await f.check(), undefined);
+    await f.action({ action: "configure", enabled: true });
+    assert.equal(f.goal.id, goal.id); assert.equal(f.goal.text, goal.text); assert.equal(f.goal.state, "paused");
+    assert.equal(f.goal.tokensUsed, 900000); assert.equal(f.goal.elapsedSeconds, 7200); assert.equal(f.goal.checkCount, 2);
+    assert.equal(f.prompts.length, 0); assert.equal(f.calls.length, 0);
+  } finally { await f.close(); }
+});
+
+test("slash goal preserves its full condition without budget options and starts a hidden data-marked prompt", async () => {
   const f = fixture();
   try {
-    await f.commands.get("goal")("--for 30m --tokens 100000 First condition\n  and ALL other conditions", f.ctx);
+    await f.commands.get("goal")("First condition\n  and ALL other conditions", f.ctx);
     assert.equal(f.goal.text, "First condition\n  and ALL other conditions");
-    assert.equal(f.goal.timeLimitSeconds, 1800); assert.equal(f.goal.tokenLimit, 100000);
     assert.match(f.goal.id, /^[0-9a-f-]{36}$/); assert.equal(f.goal.revision, 1);
     assert.match(f.prompts[0].text, /SHEPHERD_GOAL_DATA:/);
     assert.deepEqual(f.prompts[0].options, { deliverAs: "followUp", triggerTurn: true });
@@ -105,12 +152,10 @@ test("slash goal preserves its full condition, parses budgets, and starts a hidd
     assert.equal(f.stored.at(-1).customType, "shepherd.goal");
     assert.deepEqual(JSON.parse(JSON.stringify(f.stored.at(-1).data.goal)), f.widgets[1]);
     const before = structuredClone(f.goal);
-    for (const args of ["--for -1m Bad", "--tokens -3 Bad", "--for 0s Bad", "--for 2d Bad", "--tokens 1.2 Bad", "--for 2m"]) {
-      await assert.rejects(f.commands.get("goal")(args, f.ctx));
-      assert.deepEqual(f.goal, before);
-    }
     await f.commands.get("goal")("status", f.ctx);
     assert.equal(f.goal.id, before.id);
+    await f.commands.get("goal")("--for 30m --tokens 100000 are literal objective text, not options", f.ctx);
+    assert.equal(f.goal.text, "--for 30m --tokens 100000 are literal objective text, not options");
   } finally { await f.close(); }
 });
 
@@ -174,11 +219,12 @@ test("active edit restarts work after cancelling a check or while idle, but paus
   try {
     await f.start(); await f.work(); const check = f.check();
     await f.action({ action: "edit", text: "Replacement condition" }); await check;
-    assert.equal(f.prompts.length, 2); assert(!f.prompts[1].text.includes("Replacement condition"));
+    assert.equal(f.prompts.length, 1, "busy replacement is not put in pi's queue");
     assert((await f.emit("context", { messages: [] })).messages[0].content[0].text.includes("Replacement condition"));
     assert.equal(f.goal.state, "checking");
-    await f.emit("before_agent_start"); assert.equal(f.goal.state, "checking");
-    await f.emit("agent_start"); assert.equal(f.goal.state, "working");
+    await f.emit("agent_settled");
+    assert.equal(f.prompts.length, 2); assert(!f.prompts[1].text.includes("Replacement condition"));
+    assert.equal(f.goal.state, "working");
     f.ctx.isIdle = () => true;
     await f.action({ action: "edit", text: "New idle condition" }); assert.equal(f.prompts.length, 3);
     await f.action({ action: "pause" });
@@ -186,18 +232,66 @@ test("active edit restarts work after cancelling a check or while idle, but paus
   } finally { await f.close(); }
 });
 
-test("lowering a budget during gated Checking stops immediately with one final checkpoint/revision and no queued replacement work", async () => {
+test("busy pending kickoff waits behind yield and active children, then unyield/child completion starts it only once", async () => {
+  for (const hold of ["yield", "children"]) for (const action of ["set", "edit"]) {
+    const f = fixture();
+    try {
+      await f.start();
+      if (action === "edit") {
+        await f.work(); const check = f.check();
+        await f.action({ action, text: "Replacement condition" }); await check;
+      } else {
+        f.ctx.isIdle = () => false;
+        await f.action({ action, text: "Replacement condition" });
+      }
+      assert.equal(f.prompts.length, 1);
+      if (hold === "yield") await f.action({ action: "yield" });
+      else f.bus.get("shepherd:children:v1")({ owner: "fixture-session", children: [{ runID: "child", state: "running", tokens: 0 }] });
+      assert.equal(await f.check(), undefined); assert.equal(f.calls.length, action === "edit" ? 1 : 0);
+      f.ctx.isIdle = () => true; await f.emit("agent_settled");
+      assert.equal(f.prompts.length, 1); assert.equal(f.goal.state, action === "edit" ? "checking" : "working");
+      if (hold === "yield") { await f.action({ action: "unyield" }); await f.action({ action: "unyield" }); }
+      else for (let i = 0; i < 2; i++) f.bus.get("shepherd:children:v1")({ owner: "fixture-session", children: [{ runID: "child", state: "complete", tokens: 5 }] });
+      assert.equal(f.prompts.length, 2); assert.equal(f.aborted, 0);
+    } finally { await f.close(); }
+  }
+});
+
+for (const event of ["session_start", "session_tree", "session_shutdown"]) test(`${event} discards a busy pending kickoff and never resumes it`, async () => {
+  const f = fixture();
+  try {
+    await f.start(); f.ctx.isIdle = () => false; await f.action({ action: "set", text: "Replacement condition" });
+    assert.equal(f.prompts.length, 1);
+    await f.emit(event); f.ctx.isIdle = () => true; await f.emit("agent_settled");
+    assert.equal(f.prompts.length, 1); assert.equal(f.goal.state, "paused"); assert.equal(f.calls.length, 0);
+  } finally { await f.close(); }
+});
+
+test("live disable synchronously cancels Checking, hides availability and freezes accounting without aborting tools; enable never resumes", async (t) => {
+  let now = 0; t.mock.method(performance, "now", () => now);
   const f = fixture();
   try {
     await f.start(); await f.work(3); const check = f.check();
+    await f.action({ action: "yield" });
     const before = structuredClone(f.goal), checkpoints = f.stored.filter((e) => e.customType === "shepherd.goal").length, prompts = f.prompts.length;
-    await f.action({ action: "edit", text: "Updated condition", tokenLimit: 1 }); await check;
-    assert.equal(f.goal.state, "needsYou"); assert.equal(f.goal.reason, "hit the token limit"); assert.equal(f.goal.revision, before.revision + 1);
+    now = 2000;
+    const disabled = f.action({ action: "configure", enabled: false });
+    assert.equal(f.goal, undefined); assert(f.calls[0].options.signal.aborted); assert.equal(f.aborted, 0);
+    assert.equal(f.stored.at(-1).data.goal.state, "paused");
+    assert.equal(f.stored.at(-1).data.goal.revision, before.revision + 1);
     assert.equal(f.stored.filter((e) => e.customType === "shepherd.goal").length, checkpoints + 1);
-    assert.equal(f.stored.at(-1).data.goal.revision, f.goal.revision); assert.equal(f.stored.at(-1).data.goal.text, "Updated condition");
-    assert.equal(f.prompts.length, prompts); assert.equal(f.calls.length, 1); assert(f.calls[0].options.signal.aborted);
+    await disabled; assert.equal((await check).continue, false);
+    now = 2000000;
+    await f.work(1000000);
+    f.bus.get("shepherd:children:v1")({ owner: "fixture-session", children: [{ runID: "child", state: "complete", tokens: 500000 }] });
     f.calls[0].resolve(response("met", { evidence: [{ entryId: "proof", quote: "All 12 acceptance tests passed." }] })); await turn();
-    assert.equal(f.goal.state, "needsYou"); assert.equal(f.prompts.length, prompts); assert.equal(f.goal.tokensUsed, 3);
+    await f.action({ action: "configure", enabled: true });
+    assert.equal(f.goal.id, before.id); assert.equal(f.goal.text, before.text); assert.equal(f.goal.state, "paused");
+    assert.equal(f.goal.tokensUsed, 3); assert.equal(f.goal.elapsedSeconds, 2); assert.equal(f.goal.runningSince, undefined);
+    assert.equal(f.prompts.length, prompts); assert.equal(f.calls.length, 1); assert.equal(f.commandMetadata.length, 2);
+    await f.action({ action: "unyield" }); assert.equal(f.prompts.length, prompts);
+    await f.action({ action: "resume" }); await f.work(); const resumed = f.check(); f.calls[1].resolve(response());
+    assert.equal((await resumed).continue, true, "disabled yield state did not survive explicit Resume");
   } finally { await f.close(); }
 });
 
@@ -245,8 +339,8 @@ test("editing preserves offered states and reasons; identical text is a no-op, a
       assert.equal(f.goal.tokensUsed, before.tokensUsed);
       if (state === "checking") {
         await check; assert(f.calls[0].options.signal.aborted);
-        await f.emit("before_agent_start"); assert.equal(f.goal.state, "checking");
-        await f.emit("agent_start"); assert.equal(f.goal.state, "working"); await f.work();
+        assert.equal(f.goal.state, "checking");
+        await f.emit("agent_settled"); assert.equal(f.goal.state, "working"); await f.work();
         f.stored.at(-1).message.content.push({ type: "text", text: "All lint checks passed with zero warnings." });
         const fresh = f.check();
         assert.equal(JSON.parse(f.calls[1].context.messages[0].content[0].text).objective, before.text + " and lint is clean");
@@ -308,9 +402,7 @@ test("short human headers never expose model IDs, quotes or layout; details keep
   } finally { await f.close(); }
 });
 
-test("interrupted settlement and missing user answers publish exact short reasons, and 30m limits stay human", async (t) => {
-  let now = 0; t.mock.method(performance, "now", () => now);
-  t.mock.timers.enable({ apis: ["setTimeout"] });
+test("interrupted settlement and missing user answers publish exact short reasons", async () => {
   const f = fixture();
   try {
     await f.start(); await f.emit("agent_settled");
@@ -325,8 +417,7 @@ test("interrupted settlement and missing user answers publish exact short reason
     await f.emit("tool_execution_start", { toolName: "ask_user", toolCallId: "ask-1" });
     await f.start(); assert.equal(f.goal.reason, "waiting for your answer");
     await f.emit("tool_execution_end", { toolName: "ask_user", toolCallId: "ask-1" });
-    await f.start("Finish", { timeLimitSeconds: 1800 }); now = 1800000; t.mock.timers.tick(1800000);
-    assert.equal(f.goal.reason, "hit the 30m time limit");
+    assert.equal(f.goal.reason, "answer received · resume to continue");
   } finally { await f.close(); }
 });
 
@@ -446,37 +537,36 @@ test("user messages never resume a paused goal and paused idle time is not charg
   } finally { await f.close(); }
 });
 
-test("provider usage, including nested tool usage, enforces the token limit before evaluation", async () => {
+test("reported worker and tool usage beyond former defaults stays active without double charging or aborting", async () => {
   const f = fixture();
   try {
-    await f.start("Finish", { tokenLimit: 10 });
+    await f.start();
     await f.emit("message_start", { message: { role: "assistant" } });
-    const message = { role: "assistant", usage: { totalTokens: 6 }, stopReason: "stop" };
+    const message = { role: "assistant", usage: { totalTokens: 250000 }, stopReason: "stop" };
     await f.emit("message_update", { message }); await f.emit("message_end", { message });
-    assert.equal(f.goal.tokensUsed, 6, "cumulative usage is not double charged");
-    await f.emit("message_end", { message: { ...proof, usage: { totalTokens: 4 } } });
-    assert.equal(f.goal.tokensUsed, 10); assert.equal(f.goal.state, "needsYou"); assert.match(f.goal.reason, /token limit/);
-    await f.check(); assert.equal(f.calls.length, 0); assert.equal(f.aborted, 1);
-    await f.action({ action: "resume" }); assert.equal(f.goal.state, "working"); assert.equal(f.prompts.length, 2);
+    assert.equal(f.goal.tokensUsed, 250000, "cumulative usage is not double charged");
+    await f.emit("message_end", { message: { ...proof, usage: { totalTokens: 100000 } } });
+    assert.equal(f.goal.tokensUsed, 350000); assert.equal(f.goal.state, "working");
+    await f.emit("turn_end"); assert.equal(f.aborted, 0);
+    const check = f.check(); assert.equal(f.calls.length, 1); f.calls[0].resolve(response("needs_you", { reason: "Permission needed" })); await check;
+    assert.equal(f.goal.tokensUsed, 350007); assert.equal(f.goal.reason, "permission needed");
   } finally { await f.close(); }
 });
 
-test("ownership: after a cap an ordinary read-then-summary turn completes and explicit resume renews its window", async () => {
+for (const action of ["pause", "interrupt"]) test(`manual ${action} freezes goal accounting through subsequent ordinary read-summary work and explicit Resume preserves totals`, async (t) => {
+  let now = 0; t.mock.method(performance, "now", () => now);
   const f = fixture();
   try {
-    await f.start("Finish", { tokenLimit: 3 }); await f.work(3);
-    assert.equal(f.goal.state, "needsYou"); assert.equal(f.aborted, 1);
-    await f.emit("agent_settled");
-    await f.emit("before_agent_start", { prompt: "Read and summarize" });
-    await f.work(100); await f.emit("turn_end");
-    assert.equal(f.aborted, 1); assert.equal(f.goal.tokensUsed, 3);
-    await f.action({ action: "resume" });
-    assert.equal(f.goal.state, "working"); assert.equal(f.goal.checkCount, 0);
-    await f.work(2); assert.equal(f.goal.state, "working"); assert.equal(f.goal.tokensUsed, 5);
-    await f.action({ action: "edit", tokenLimit: 10, timeLimitSeconds: 30 });
-    assert.equal(f.goal.tokenLimit, 10); assert.equal(f.goal.timeLimitSeconds, 30);
-    await f.action({ action: "edit", tokenLimit: null, timeLimitSeconds: null });
-    assert.equal(f.goal.tokenLimit, undefined); assert.equal(f.goal.timeLimitSeconds, undefined);
+    await f.start(); await f.work(250000); now = 1900000;
+    await f.action({ action }); const stopped = structuredClone(f.goal);
+    assert.equal(stopped.state, "paused"); assert.equal(stopped.elapsedSeconds, 1900);
+    await f.emit("agent_settled"); now = 9000000;
+    await f.emit("before_agent_start", { prompt: "Read and summarize" }); await f.emit("agent_start");
+    await f.work(1000000); await f.emit("turn_end"); assert.equal(await f.check(), undefined); await f.emit("agent_settled");
+    assert.equal(f.aborted, 0); assert.deepEqual(f.goal, stopped); assert.equal(f.calls.length, 0);
+    await f.action({ action: "resume" }); assert.equal(f.goal.state, "working"); assert.equal(f.goal.checkCount, 0);
+    await f.work(2); now += 2000; await f.action({ action: "pause" });
+    assert.equal(f.goal.tokensUsed, 250002); assert.equal(f.goal.elapsedSeconds, 1902);
   } finally { await f.close(); }
 });
 
@@ -502,23 +592,25 @@ test("resume cannot reopen Met or reset its proof/accounting/check count; invali
   } finally { await f.close(); }
 });
 
-test("default unattended runtime budget settings are 30m, 200000 reported tokens and 25 checks; limits can be changed or lifted independently", async () => {
+test("obsolete set/edit cap fields never enter new snapshots or compact persisted checkpoints", async () => {
   const f = fixture();
   try {
-    await f.start(); assert.equal(f.goal.timeLimitSeconds, 1800); assert.equal(f.goal.tokenLimit, 200000); assert.equal(f.goal.checkCount, 0);
-    await f.action({ action: "edit", tokenLimit: 500 }); assert.equal(f.goal.timeLimitSeconds, 1800); assert.equal(f.goal.tokenLimit, 500);
-    await f.action({ action: "edit", timeLimitSeconds: null }); assert.equal(f.goal.timeLimitSeconds, undefined); assert.equal(f.goal.tokenLimit, 500);
-    await f.action({ action: "edit", tokenLimit: null }); assert.equal(f.goal.tokenLimit, undefined);
-    await f.action({ action: "edit", timeLimitSeconds: 60, tokenLimit: 1000 }); assert.equal(f.goal.timeLimitSeconds, 60); assert.equal(f.goal.tokenLimit, 1000);
+    await f.start("Acceptance passes", { tokenLimit: 1, timeLimitSeconds: 0.001 });
+    assert.equal(f.goal.checkCount, 0);
+    await f.action({ action: "edit", text: "Complete acceptance passes", tokenLimit: -1, timeLimitSeconds: "obsolete" });
     await f.action({ action: "pause" }); await f.action({ action: "resume" });
-    assert.equal(f.goal.checkCount, 0); assert.equal(f.goal.timeLimitSeconds, 60); assert.equal(f.goal.tokenLimit, 1000);
+    assert.equal(f.goal.checkCount, 0);
+    for (const entry of f.stored.filter((e) => e.customType === "shepherd.goal")) {
+      assert(!Object.hasOwn(entry.data.goal, "timeLimitSeconds")); assert(!Object.hasOwn(entry.data.goal, "tokenLimit"));
+      assert(!Object.hasOwn(entry.data, "budgetSeconds")); assert(!Object.hasOwn(entry.data, "budgetTokens"));
+    }
   } finally { await f.close(); }
 });
 
-test("caps: defaults are 200000 tokens and 25 consecutive checks even with novel content and changing reasons", async () => {
+test("25 consecutive checks stop even with novel content and changing reasons", async () => {
   const f = fixture();
   try {
-    await f.start(); assert.equal(f.goal.tokenLimit, 200000);
+    await f.start();
     for (let i = 0; i < 25; i++) {
       await f.work(0); f.stored.at(-1).id = `novel${i}`;
       f.stored.at(-1).message.content = `Distinct acceptance result content ${String.fromCharCode(65 + i)}.`;
@@ -530,7 +622,7 @@ test("caps: defaults are 200000 tokens and 25 consecutive checks even with novel
   } finally { await f.close(); }
 });
 
-test("legacy goals without budgets still restore with a 25-check cap, while explicitly lifted v2 limits remain lifted", async () => {
+test("legacy goals without check counts still stop at 25 checks after explicit Resume", async () => {
   const old = fixture({ entries: [{ type: "custom", customType: "shepherd.goal", data: { goal: {
     id: "00000000-0000-0000-0000-000000000003", revision: 1, text: "Legacy acceptance condition", state: "paused", elapsedSeconds: 0, tokensUsed: 0,
   } } }] });
@@ -543,13 +635,6 @@ test("legacy goals without budgets still restore with a 25-check cap, while expl
     }
     assert.equal(old.goal.reason, "hit the 25 check limit"); assert.equal(old.goal.checkCount, 25);
   } finally { await old.close(); }
-  const f = fixture();
-  try {
-    await f.start(); await f.action({ action: "edit", timeLimitSeconds: null, tokenLimit: null }); await f.action({ action: "pause" });
-    const restored = fixture({ entries: f.stored });
-    assert.equal(restored.goal.timeLimitSeconds, undefined); assert.equal(restored.goal.tokenLimit, undefined);
-    await restored.action({ action: "resume" }); assert.equal(restored.goal.checkCount, 0); await restored.close();
-  } finally { await f.close(); }
 });
 
 test("cancelling checks via Edit cannot bypass the 25-check unattended cap", async () => {
@@ -558,14 +643,14 @@ test("cancelling checks via Edit cannot bypass the 25-check unattended cap", asy
     await f.start();
     for (let i = 0; i < 25; i++) {
       const check = f.check(); await f.action({ action: "edit", text: `Replacement condition ${i}` }); await check;
-      await f.emit("agent_start");
+      await f.emit("agent_settled"); assert.equal(f.goal.state, "working");
     }
     const result = await f.check(); assert.equal(result.continue, false); assert.equal(f.calls.length, 25);
     assert.equal(f.goal.checkCount, 25); assert.equal(f.goal.reason, "hit the 25 check limit");
   } finally { await f.close(); }
 });
 
-test("caps: fresh IDs with identical content and randomized blocker keys do not manufacture progress", async () => {
+test("fresh IDs with identical content and randomized blocker keys do not manufacture progress", async () => {
   const f = fixture();
   try {
     await f.start();
@@ -595,10 +680,10 @@ test("pause stops worker, tool, child and late evaluator accounting as well as e
   } finally { await f.close(); }
 });
 
-test("reported cached worker, child and evaluator tokens all count toward the unattended usage cap without double charging", async () => {
+test("cached worker, child and evaluator tokens are reported without double charging or a usage cap", async () => {
   const f = fixture();
   try {
-    await f.start("Finish", { tokenLimit: 100 });
+    await f.start("Finish");
     const message = { role: "assistant", stopReason: "stop", usage: { input: 10, output: 5, cacheRead: 20, cacheWrite: 15 } };
     await f.emit("message_start", { message }); await f.emit("message_update", { message }); await f.emit("message_end", { message });
     assert.equal(f.goal.tokensUsed, 50);
@@ -606,53 +691,32 @@ test("reported cached worker, child and evaluator tokens all count toward the un
     assert.equal(f.goal.tokensUsed, 55); await f.work(0);
     const check = f.check(); f.calls[0].resolve({ ...response("met", { evidence: [{ entryId: "proof", quote: "All 12 acceptance tests passed." }] }),
       usage: { input: 10, output: 10, cacheRead: 30, cacheWrite: 10 } });
-    assert.equal((await check).continue, false); assert.equal(f.goal.tokensUsed, 115); assert.equal(f.goal.reason, "hit the token limit");
+    assert.equal((await check).continue, false); assert.equal(f.goal.tokensUsed, 115); assert.equal(f.goal.state, "met");
   } finally { await f.close(); }
 });
 
-test("nested evaluator usage reaching a limit cannot declare met or continue", async () => {
+test("large nested evaluator usage reports tokens and can verify Met without a goal budget", async () => {
   const f = fixture();
   try {
-    await f.start("Finish", { tokenLimit: 10 }); await f.work(3); const check = f.check();
-    f.calls[0].resolve(response("met", { evidence: [{ entryId: "proof", quote: "All 12 acceptance tests passed." }] }));
+    await f.start(); await f.work(250000); const check = f.check();
+    f.calls[0].resolve({ ...response("met", { evidence: [{ entryId: "proof", quote: "All 12 acceptance tests passed." }] }), usage: { totalTokens: 500000 } });
     const result = await check;
-    assert.equal(f.goal.tokensUsed, 10); assert.equal(f.goal.state, "needsYou"); assert(!result.continue); assert.match(f.goal.reason, /token limit/);
+    assert.equal(f.goal.tokensUsed, 750000); assert.equal(f.goal.state, "met"); assert(!result.continue); assert.equal(f.aborted, 0);
   } finally { await f.close(); }
 });
 
-test("time limit marks blocked work at runtime and stops only at a tool-safe turn boundary", async (t) => {
+test("long active work before the first provider token has no timer, abort or accounting window", async (t) => {
   let now = 0; t.mock.method(performance, "now", () => now);
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const f = fixture();
   try {
-    await f.start("Finish", { timeLimitSeconds: 2 });
-    await f.emit("message_start", { message: { role: "assistant" } });
-    now = 2000; t.mock.timers.tick(2000);
-    assert.equal(f.goal.state, "needsYou"); assert.match(f.goal.reason, /time limit/); assert.equal(f.aborted, 0);
-    assert.equal(f.goal.elapsedSeconds, 2); await f.check(); assert.equal(f.calls.length, 0);
-    await f.emit("turn_end"); assert.equal(f.aborted, 1);
-  } finally { await f.close(); }
-});
-
-test("time cap before the first provider token still owns that turn but never the next ordinary turn", async (t) => {
-  let now = 0; t.mock.method(performance, "now", () => now);
-  t.mock.timers.enable({ apis: ["setTimeout"] });
-  const f = fixture();
-  try {
-    await f.start("Finish", { timeLimitSeconds: 2 });
-    await f.emit("before_agent_start");
-    now = 2000; t.mock.timers.tick(2000);
-    assert.equal(f.goal.state, "needsYou"); assert.equal(f.aborted, 0);
-    await f.emit("message_start", { message: { role: "assistant" } });
-    await f.emit("message_end", { message: { role: "assistant", usage: { totalTokens: 100 } } });
-    await f.emit("turn_end");
-    assert.equal(f.aborted, 1, "stop the goal-owned loop at its safe boundary even after a delayed first token");
-    const stopped = f.goal;
-    await f.emit("agent_settled");
-    await f.emit("before_agent_start", { prompt: "Read and summarize normally" });
-    await f.work(100); await f.emit("turn_end");
-    assert.equal(f.aborted, 1); assert.equal(f.goal.tokensUsed, stopped.tokensUsed);
-    assert.equal(f.goal.elapsedSeconds, stopped.elapsedSeconds);
+    await f.start(); await f.emit("before_agent_start");
+    now = 7200000; t.mock.timers.tick(7200000);
+    await f.action({ action: "status" });
+    assert.equal(f.goal.state, "working"); assert.equal(f.goal.elapsedSeconds, 7200); assert.equal(f.aborted, 0);
+    await f.work(1000000); await f.emit("turn_end");
+    assert.equal(f.goal.state, "working"); assert.equal(f.goal.tokensUsed, 1000000); assert.equal(f.aborted, 0);
+    const check = f.check(); f.calls[0].resolve(response()); assert.equal((await check).continue, true);
   } finally { await f.close(); }
 });
 
@@ -668,14 +732,17 @@ test("nested calls time out even when a provider ignores AbortSignal; no stale v
   } finally { await f.close(); }
 });
 
-test("time budget expiring inside the evaluator takes precedence over a met verdict", async (t) => {
+test("elapsed reporting crossing the old default during evaluation does not cancel a valid Met verdict", async (t) => {
   let now = 0; t.mock.method(performance, "now", () => now);
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const f = fixture();
   try {
-    await f.start("Finish", { timeLimitSeconds: 3 }); await f.work(); const check = f.check();
-    now = 3000; t.mock.timers.tick(3000); const result = await check;
-    assert.equal(f.goal.state, "needsYou"); assert(!result.continue); assert(f.calls[0].options.signal.aborted);
+    await f.start(); now = 1799000; await f.work(); const check = f.check();
+    now = 1802000; t.mock.timers.tick(3000);
+    assert(!f.calls[0].options.signal.aborted);
+    f.calls[0].resolve(response("met", { evidence: [{ entryId: "proof", quote: "All 12 acceptance tests passed." }] }));
+    const result = await check;
+    assert.equal(f.goal.state, "met"); assert.equal(f.goal.elapsedSeconds, 1802); assert(!result.continue); assert.equal(f.aborted, 0);
   } finally { await f.close(); }
 });
 
@@ -720,6 +787,8 @@ test("met requires successful exact tool evidence, and a read-only evaluator rec
     const call = f.calls[0];
     assert.equal(JSON.parse(call.context.messages[0].content[0].text).objective, objective);
     assert.deepEqual(call.context.tools.map((t) => t.name), ["goal_verdict"]);
+    assert.equal(call.options.maxTokens, 2048); assert.equal(call.options.maxRetries, 0);
+    assert.equal(call.options.cacheRetention, "none"); assert.equal(call.options.reasoningEffort, "low");
     assert(!f.handlers.has("agent_end"));
     call.resolve(response("met", { reason: "All requirements verified", evidence: [{ requirementId: "r1", entryId: "proof", quote: "All 12 acceptance tests passed." }] }));
     const result = await check;
@@ -985,13 +1054,16 @@ test("legacy durable checker notes are stripped even when paused and pending not
   } finally { await f.close(); }
 });
 
-test("pending one-shot checker feedback clears on Edit, Set and session restoration", async () => {
-  for (const action of ["edit", "set", "restore"]) {
+test("pending one-shot checker feedback clears on Edit, Set, disable and session restoration", async () => {
+  for (const action of ["edit", "set", "restore", "configure"]) {
     const f = fixture();
     try {
       await f.start(); await f.work(); const check = f.check(); f.calls[0].resolve(response("not_met", { reason: "Pending coverage note" })); await check;
       if (action === "restore") { await f.emit("session_start"); await f.action({ action: "resume" }); }
-      else await f.action({ action, text: "Updated condition" });
+      else if (action === "configure") {
+        await f.action({ action: "configure", enabled: false }); await f.action({ action: "configure", enabled: true });
+        await f.action({ action: "resume" });
+      } else await f.action({ action, text: "Updated condition" });
       assert(!JSON.stringify(await f.emit("context", { messages: [] })).includes("Pending coverage note"));
     } finally { await f.close(); }
   }
@@ -1053,19 +1125,25 @@ test("transitions persist compact metadata, text only on set/edit, tokens and st
   } finally { await f.close(); }
 });
 
-test("legacy goals gain default unattended bounds while explicit v2 lifted caps stay lifted", async () => {
-  const f = fixture();
-  try {
-    await f.start(); await f.action({ action: "pause" });
-    const legacy = { ...f.goal }; delete legacy.timeLimitSeconds; delete legacy.tokenLimit;
-    const restored = fixture({ entries: [{ type: "custom", customType: "shepherd.goal", data: { goal: legacy } }] });
-    assert.equal(restored.goal.timeLimitSeconds, 1800); assert.equal(restored.goal.tokenLimit, 200000);
-    await restored.close();
-    await f.action({ action: "edit", timeLimitSeconds: null, tokenLimit: null });
-    const explicit = fixture({ entries: f.stored });
-    assert.equal(explicit.goal.timeLimitSeconds, undefined); assert.equal(explicit.goal.tokenLimit, undefined);
-    await explicit.close();
-  } finally { await f.close(); }
+test("legacy and v2 cap data is ignored even when malformed, stripped from restore/checkpoints and never revived by Resume", async () => {
+  for (const version of [undefined, 2]) for (const caps of [{}, { timeLimitSeconds: 1, tokenLimit: 1 }, { timeLimitSeconds: null, tokenLimit: null }, { timeLimitSeconds: "obsolete", tokenLimit: -1 }]) {
+    const goal = { id: "00000000-0000-0000-0000-000000000003", revision: 1, text: "Acceptance passes", state: "working",
+      elapsedSeconds: 7200, tokensUsed: 900000, ...caps };
+    const entries = [{ type: "custom", customType: "shepherd.goal", data: { version, goal, budgetSeconds: 10, budgetTokens: 20 } }];
+    if (version === 2) entries.push({ type: "custom", customType: "shepherd.goal", data: { version, goal: { ...goal, text: undefined, revision: 2 } } });
+    const f = fixture({ entries });
+    try {
+      assert.equal(f.goal.state, "paused"); assert.equal(f.goal.text, goal.text); assert.equal(f.goal.tokensUsed, 900000);
+      assert.equal(f.goal.elapsedSeconds, 7200); assert.equal(f.calls.length, 0); assert.equal(f.prompts.length, 0);
+      await f.action({ action: "resume" }); await f.work(250000); const check = f.check();
+      f.calls[0].resolve(response("met", { evidence: [{ entryId: "proof", quote: "All 12 acceptance tests passed." }] })); await check;
+      assert.equal(f.goal.state, "met"); assert.equal(f.goal.tokensUsed, 1150007); assert.equal(f.aborted, 0);
+      for (const entry of f.stored.slice(entries.length).filter((e) => e.customType === "shepherd.goal")) {
+        assert(!Object.hasOwn(entry.data.goal, "timeLimitSeconds")); assert(!Object.hasOwn(entry.data.goal, "tokenLimit"));
+        assert(!Object.hasOwn(entry.data, "budgetSeconds")); assert(!Object.hasOwn(entry.data, "budgetTokens"));
+      }
+    } finally { await f.close(); }
+  }
 });
 
 test("checker reasons accept the shared 4096 bound, reject larger values, and keep actual widget reasons short", async () => {
@@ -1213,7 +1291,7 @@ test("real pinned pi: immediate controls, structured nested checks, boundary con
     await until("goal capability", () => pi.goal() === null);
     const commands = (await pi.request({ type: "get_commands" })).data.commands;
     assert(commands.some((c) => c.name === "goal"));
-    assert.equal((await pi.request({ type: "prompt", message: "/goal --tokens 1000 Verify acceptance.txt contains the full acceptance result" })).success, true);
+    assert.equal((await pi.request({ type: "prompt", message: "/goal Verify acceptance.txt contains the full acceptance result" })).success, true);
     await until("checking with nested provider gated", () => pi.goal()?.state === "checking");
     const first = pi.goal();
     const stale = await pi.request({ type: "prompt", message: `/shepherd-goal ${JSON.stringify({ action: "pause", expectedGoalRevision: first.revision - 1 })}` });

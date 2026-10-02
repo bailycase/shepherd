@@ -265,10 +265,48 @@ final class RPCThreadState {
     private var widgets: [(id: String, value: NativeThreadWidget)] = [] { didSet { widgetsHash = widgets.map(\.value).hashValue } }
     private(set) var goal: NativeGoal?
     private var goalsAvailable = false
+    /// SessionServer supplies the host experiment policy before the thread starts.
+    private(set) var goalsEnabled = true
+    private var pendingGoalPolicy: Bool?
+    /// Off must reach pi even if On supersedes it before stdin has room.
+    private var pendingGoalDisable = false
     var goalYieldGeneration: String?
     private var goalCommand: UUID?
     private var goalCommandFailure: String?
     var onGoalChanged: ((NativeGoal?) -> Void)?
+
+    func setGoalsEnabled(_ enabled: Bool, notifyController: Bool = true) {
+        let changed = goalsEnabled != enabled
+        goalsEnabled = enabled
+        if !enabled {
+            goalYieldGeneration = nil
+            goalsAvailable = false
+            if goal != nil { goal = nil; onGoalChanged?(nil) }
+        }
+        if changed { rebuildCommands(); commit() }
+        if notifyController, session.hasGoalController {
+            pendingGoalPolicy = enabled
+            pendingGoalDisable = pendingGoalDisable || !enabled
+            flushGoalPolicy()
+        }
+    }
+
+    private func flushGoalPolicy() {
+        // At most two tiny records: a disable barrier, then the latest policy.
+        while let enabled = pendingGoalPolicy {
+            let next = pendingGoalDisable ? false : enabled
+            guard session.send(.prompt(message: "/shepherd-goal {\"action\":\"configure\",\"enabled\":\(next)}", streamingBehavior: .steer)) else {
+                if session.pendingInputBytes > 0, session.onInputDrained == nil {
+                    session.onInputDrained = { [weak self] in self?.flushGoalPolicy() }
+                }
+                return
+            }
+            pendingGoalDisable = false
+            if next == enabled { pendingGoalPolicy = nil }
+        }
+        session.onInputDrained = nil
+    }
+
     private var operations: [(id: String, operation: Operation)] = []
     var projectionClipped = false
     /// The last assistant message of the current run ended in a provider error.
@@ -390,6 +428,7 @@ final class RPCThreadState {
     /// started, so a pi slower than `timeout` answers requests that already timed out (and are
     /// dropped): ask again.
     func bootstrap(timeout: TimeInterval = 10) {
+        if session.hasGoalController { setGoalsEnabled(goalsEnabled) }
         bootstrapAttempts += 1
         let attempt = bootstrapAttempts
         let generation = generation
@@ -753,8 +792,8 @@ final class RPCThreadState {
                 self?.refreshState()
             }
         case .goal(_, _, _, let action, let expectedID, let expectedRevision, let expectedState):
-            guard goalsAvailable else { completion(.failure(code: "unsupported", message: "This agent has no goal controller.")); return }
-            guard action.isValid else { completion(.failure(code: "invalid", message: "A goal needs text up to 32768 characters and positive limits.")); return }
+            guard goalsEnabled && goalsAvailable else { completion(.failure(code: "unsupported", message: "Enable Goals in Settings > Experiments.")); return }
+            guard action.isValid else { completion(.failure(code: "invalid", message: "A goal needs text up to 32768 characters.")); return }
             if action == .pause || action == .resume || action == .confirm {
                 guard let goal, expectedID == goal.id, expectedRevision == goal.revision, expectedState == goal.state else {
                     completion(.failure(code: "stale_goal", message: "Use the displayed goal state and revision.")); return
@@ -1158,7 +1197,7 @@ final class RPCThreadState {
 
     /// `commands` from `allCommands`: nothing hidden lists everything, else the rest in pi's order.
     private func rebuildCommands() {
-        let visible = hiddenCommands.isEmpty ? allCommands : allCommands?.filter { !hiddenCommands.contains($0.name) }
+        let visible = allCommands?.filter { !hiddenCommands.contains($0.name) && (goalsEnabled || $0.name != "goal") }
         if visible != commands { commands = visible }
     }
 
@@ -1567,7 +1606,13 @@ final class RPCThreadState {
             guard let key = request.widgetKey else { return }
             let text = request.widgetLines.map { $0.map(Self.stripANSI).joined(separator: "\n") }
             if key == "shepherd.goal" {
-                guard let text, text.hasPrefix("SHEPHERD_GOAL:") else { return }
+                guard goalsEnabled else { return }
+                guard let text else {
+                    goalsAvailable = false
+                    if goal != nil { goal = nil; onGoalChanged?(nil) }
+                    return
+                }
+                guard text.hasPrefix("SHEPHERD_GOAL:") else { return }
                 let next = NativeGoal.readWidget(text)
                 guard next != nil || text == "SHEPHERD_GOAL:null" else { return }
                 goalsAvailable = true

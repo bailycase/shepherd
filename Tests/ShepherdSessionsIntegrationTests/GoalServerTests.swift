@@ -17,7 +17,8 @@ struct GoalServerTests {
     private func launch(_ host: ScratchServer) async throws -> PiAgent {
         let file = host.dir.appendingPathComponent("goal.json")
         try Data("null".utf8).write(to: file)
-        let pi = try await PiAgent.launch(on: host, env: ["STUB_PI_GOAL_FILE": file.path])
+        host.server.setGoalsEnabled(true)
+        let pi = try await PiAgent.launch(on: host, env: ["STUB_PI_GOAL_FILE": file.path, "SHEPHERD_EXT_GOAL": "1", "SHEPHERD_GOALS_ENABLED": "1"])
         _ = try await pi.snapshot("the goal controller to serve") { $0.supportedActions.contains("goal") }
         return pi
     }
@@ -49,7 +50,8 @@ struct GoalServerTests {
                   let value = try? JSONSerialization.jsonObject(with: Data(text.dropFirst("/shepherd-goal ".count).utf8)) as? [String: Any]
             else { return nil }
             let action = value["action"] as? String
-            return action == "status" ? nil : action
+            // Host experiment setup is not a queue/Stop/Steer lifecycle action.
+            return action == "status" || action == "configure" ? nil : action
         }
     }
 

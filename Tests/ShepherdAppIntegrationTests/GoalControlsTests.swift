@@ -36,9 +36,9 @@ struct GoalControlsTests {
         }
     }
 
-    @Test func editingOnlyLimitsAndLiftingThemUsesTheDisplayedGoalFence() async {
+    @Test func changingTheDisplayedRevisionOrStateDisablesAnOpenEditor() async {
         await #expect(processExitsWith: .success) {
-            await recordingErrors { try await Self.editLimits() }
+            await recordingErrors { try await Self.staleEditor() }
         }
     }
 
@@ -126,6 +126,7 @@ struct GoalControlsTests {
             snapshot = ComposerThread.snapshot(messages: 6, commands: [], dialogs: dialogs)
             snapshot.goal = goal
             snapshot.running = running
+            // This snapshot-only host opts in to goals; no AppSettings or SessionServer is involved.
             snapshot.supportedActions.append("goal")
             window = OffscreenWindow(dark: true)
             let request: NativeThreadStore.Request = { [weak self] value in
@@ -160,16 +161,10 @@ struct GoalControlsTests {
                         current.state = .met
                         current.confirmationRequired = false
                         current.confirmedByUser = true
-                    case .edit(let text, let time, let tokens, let clearTime, let clearTokens):
+                    case .edit(let text):
                         guard action.isValid else { return .failure(code: "invalid", message: "Invalid goal edit.") }
-                        let nextTime = clearTime == true ? nil : time ?? current.timeLimitSeconds
-                        let nextTokens = clearTokens == true ? nil : tokens ?? current.tokenLimit
-                        if text == current.text && nextTime == current.timeLimitSeconds && nextTokens == current.tokenLimit {
-                            return .accepted(operationID: operation)
-                        }
+                        if text == current.text { return .accepted(operationID: operation) }
                         current.text = text
-                        current.timeLimitSeconds = nextTime
-                        current.tokenLimit = nextTokens
                     case .set: return .failure(code: "invalid", message: "This fixture edits existing goals only.")
                     }
                     current.revision += 1
@@ -216,7 +211,8 @@ struct GoalControlsTests {
         func press(_ label: String) throws {
             let button = try #require(button(label), "\(label) exists")
             try #require(button.goalIsEnabled, "\(label) is enabled")
-            try window.press(label)
+            let control = try window.press(label)
+            #expect(ControlPress.undersized([control], minimum: .desktop).isEmpty, "\(label) has a full desktop hit target")
         }
 
         func expectRequest(_ action: NativeGoalAction, fencedBy goal: NativeGoal, index: Int = 0) throws {
@@ -279,6 +275,8 @@ struct GoalControlsTests {
             try host.press("Edit goal")
             try await eventuallyOnMain("\(state) editor to open") { host.window.element("Goal condition") != nil && host.button("Save") != nil }
             #expect(host.goalRequests.isEmpty && host.store.goal == original)
+            #expect(host.window.element("Time limit (minutes)") == nil && host.window.element("Token budget") == nil,
+                    "editing offers only the objective, not budgets")
             #expect(Set(host.buttons) == Set(offered), "editing leaves the goal's state and actions visible")
             let unchangedSave = try #require(host.button("Save"))
             #expect(!unchangedSave.goalIsEnabled, "unchanged Save is disabled")
@@ -437,70 +435,41 @@ struct GoalControlsTests {
     }
 
     @MainActor
-    private static func editLimits() async throws {
+    private static func staleEditor() async throws {
         AccessibilityNode.enable()
-        var original = goal(.paused)
-        original.timeLimitSeconds = 1800
-        original.tokenLimit = 200_000
-        let host = Host(goal: original)
-        defer { host.close() }
-        try await host.ready()
-        try host.press("Edit goal")
-        try await eventuallyOnMain("limit fields to attach") { host.window.element("Time limit (minutes)")?.value == "30.0" }
-        #expect(host.button("Save")?.goalIsEnabled == false)
-        let time = try #require(host.window.element("Time limit (minutes)"))
-        let tokens = try #require(host.window.element("Token budget"))
-        for invalid in ["0", "-1", "nan", "inf", "1e309", "nonsense"] {
-            try #require(time.setGoalValue(invalid))
-            try await eventuallyOnMain("invalid minutes to disable Save") { host.button("Save")?.goalIsEnabled == false }
+        for changesRevision in [true, false] {
+            let original = goal(.paused)
+            let host = Host(goal: original)
+            defer { host.close() }
+            try await host.ready()
+            try host.press("Edit goal")
+            try await eventuallyOnMain("the objective editor to open") { host.window.element("Goal condition") != nil }
+            let changed = "Ledger tests and race checks pass."
+            try #require(host.window.element("Goal condition")?.setGoalValue(changed) == true)
+            try await eventuallyOnMain("the objective edit to enable Save") { host.button("Save")?.goalIsEnabled == true }
+            if changesRevision { host.snapshot.goal?.revision += 1 }
+            else { host.snapshot.goal?.state = .needsYou }
+            host.snapshot.revision += 1
+            await host.store.refresh()
+            try await eventuallyOnMain("a stale displayed revision or state to disable Save") { host.button("Save")?.goalIsEnabled == false }
+            #expect(throws: ControlPressError.self) { try host.window.press("Save") }
+            #expect(host.goalRequests.isEmpty, "a stale editor sends no mutation")
+            try host.press("Cancel")
+            try await eventuallyOnMain("the stale editor to close") { host.window.element("Goal condition") == nil }
+            let refreshed = try #require(host.store.goal)
+            try host.press("Edit goal")
+            try await eventuallyOnMain("a fresh editor to use the refreshed condition") { host.window.element("Goal condition")?.value == refreshed.text }
+            #expect(host.button("Save")?.goalIsEnabled == false)
+            try #require(host.window.element("Goal condition")?.setGoalValue(changed) == true)
+            try await eventuallyOnMain("the fresh objective edit to enable Save") { host.button("Save")?.goalIsEnabled == true }
+            try host.press("Save")
+            try await eventuallyOnMain("the edit to apply with the refreshed fence") {
+                host.store.goal?.text == changed && !host.store.busy && host.window.element("Goal condition") == nil
+            }
+            try host.expectRequest(.edit(text: changed), fencedBy: refreshed)
+            #expect(host.goalRequests.count == 1 && host.store.goal?.state == refreshed.state && host.store.goal?.reason == refreshed.reason)
+            #expect(!host.window.window.isKeyWindow)
         }
-        try #require(time.setGoalValue("12.5"))
-        for invalid in ["0", "-1", "1.5", "99999999999999999999999", "nan"] {
-            try #require(tokens.setGoalValue(invalid))
-            try await eventuallyOnMain("invalid tokens to disable Save") { host.button("Save")?.goalIsEnabled == false }
-        }
-        try #require(tokens.setGoalValue("100000"))
-        try await eventuallyOnMain("only changed limits to enable Save") { host.button("Save")?.goalIsEnabled == true }
-        try host.press("Save")
-        try await eventuallyOnMain("only limits to change") { host.store.goal?.timeLimitSeconds == 750 && !host.store.busy && host.window.element("Goal condition") == nil }
-        try host.expectRequest(.edit(text: original.text, timeLimitSeconds: 750, tokenLimit: 100_000), fencedBy: original)
-        #expect(host.store.goal?.text == original.text && host.store.goal?.state == .paused && host.store.goal?.reason == original.reason)
-        let limited = try #require(host.store.goal)
-        try host.press("Edit goal")
-        try await eventuallyOnMain("limits to reopen") { host.window.element("Token budget")?.value == "100000" }
-        try #require(host.window.element("Time limit (minutes)")?.setGoalValue("") == true)
-        try #require(host.window.element("Token budget")?.setGoalValue("") == true)
-        try await eventuallyOnMain("blank limits to enable Save") { host.button("Save")?.goalIsEnabled == true }
-        try host.press("Save")
-        try await eventuallyOnMain("blank fields to lift both caps") {
-            host.store.goal?.timeLimitSeconds == nil && host.store.goal?.tokenLimit == nil && !host.store.busy
-                && host.window.element("Goal condition") == nil
-        }
-        try host.expectRequest(.edit(text: original.text, clearTimeLimit: true, clearTokenLimit: true), fencedBy: limited, index: 1)
-        try host.press("Edit goal")
-        try await eventuallyOnMain("uncapped editor to reopen") { host.window.element("Token budget") != nil }
-        try #require(host.window.element("Token budget")?.setGoalValue("50000") == true)
-        try await eventuallyOnMain("limit edit to enable Save") { host.button("Save")?.goalIsEnabled == true }
-        host.snapshot.goal?.revision += 1
-        host.snapshot.revision += 1
-        await host.store.refresh()
-        try await eventuallyOnMain("stale editor to disable Save") { host.button("Save")?.goalIsEnabled == false }
-        _ = host.button("Save")?.press()
-        #expect(host.goalRequests.count == 2, "a stale editor sends no mutation")
-        try host.press("Cancel")
-        try await eventuallyOnMain("stale editor to close") { host.window.element("Token budget") == nil }
-        try host.press("Edit goal")
-        try await eventuallyOnMain("fresh editor to reopen") { host.window.element("Token budget") != nil }
-        try #require(host.window.element("Token budget")?.setGoalValue("50000") == true)
-        try await eventuallyOnMain("fresh limit edit to enable Save") { host.button("Save")?.goalIsEnabled == true }
-        host.snapshot.goal?.state = .needsYou
-        host.snapshot.revision += 1
-        await host.store.refresh()
-        try await eventuallyOnMain("a changed displayed state without a revision bump to disable Save") { host.button("Save")?.goalIsEnabled == false }
-        _ = host.button("Save")?.press()
-        #expect(host.goalRequests.count == 2)
-        try host.press("Cancel")
-        #expect(!host.window.window.isKeyWindow)
     }
 
     @MainActor

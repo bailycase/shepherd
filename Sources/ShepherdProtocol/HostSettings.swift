@@ -47,6 +47,8 @@ public struct HostSettings: Codable, Hashable, Sendable {
     /// Explicit consent for goal checks to use another provider, for agents started afterwards.
     /// Older hosts omit this field, which reads as false.
     public var goalCrossProviderEvaluation: Bool
+    /// Settings ▸ Experiments ▸ Goals, default off, applied to running agents too.
+    public var goalsEnabled: Bool
 
     public var worktreeBase: WorktreeBase
     public var fetchBeforeCreating: Bool
@@ -65,7 +67,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
 
     public init(shepherdVersion: String? = nil, piVersion: String? = nil,
                 defaultModel: String? = nil, defaultThinking: ThinkingLevel = .medium, queueDelivery: NativeQueueMode = .all,
-                goalCrossProviderEvaluation: Bool = false,
+                goalCrossProviderEvaluation: Bool = false, goalsEnabled: Bool = false,
                 worktreeBase: WorktreeBase = .fresh, fetchBeforeCreating: Bool = true, commitRemainingWork: Bool = true,
                 generatePRDescriptions: Bool = true, deleteLocalBranch: Bool = true, mergePRAutomatically: Bool = false,
                 mergeMethod: MergeMethod = .squash,
@@ -77,6 +79,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
         self.defaultThinking = defaultThinking
         self.queueDelivery = queueDelivery
         self.goalCrossProviderEvaluation = goalCrossProviderEvaluation
+        self.goalsEnabled = goalsEnabled
         self.worktreeBase = worktreeBase
         self.fetchBeforeCreating = fetchBeforeCreating
         self.commitRemainingWork = commitRemainingWork
@@ -91,7 +94,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case shepherdVersion, piVersion, defaultModel, defaultThinking, queueDelivery, goalCrossProviderEvaluation
+        case shepherdVersion, piVersion, defaultModel, defaultThinking, queueDelivery, goalCrossProviderEvaluation, goalsEnabled
         case worktreeBase, fetchBeforeCreating, commitRemainingWork, generatePRDescriptions
         case deleteLocalBranch, mergePRAutomatically, mergeMethod, bundledExtensions, installedExtensions
         case updatePiDaily, updateExtensionsDaily
@@ -105,6 +108,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
         defaultThinking = try c.decode(ThinkingLevel.self, forKey: .defaultThinking)
         queueDelivery = try c.decode(NativeQueueMode.self, forKey: .queueDelivery)
         goalCrossProviderEvaluation = try c.decodeIfPresent(Bool.self, forKey: .goalCrossProviderEvaluation) ?? false
+        goalsEnabled = try c.decodeIfPresent(Bool.self, forKey: .goalsEnabled) ?? false
         worktreeBase = try c.decode(WorktreeBase.self, forKey: .worktreeBase)
         fetchBeforeCreating = try c.decode(Bool.self, forKey: .fetchBeforeCreating)
         commitRemainingWork = try c.decode(Bool.self, forKey: .commitRemainingWork)
@@ -125,6 +129,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
         case .defaultThinking(let level): defaultThinking = level
         case .queueDelivery(let mode): queueDelivery = mode
         case .goalCrossProviderEvaluation(let on): goalCrossProviderEvaluation = on
+        case .goalsEnabled(let on): goalsEnabled = on
         case .worktreeBase(let base): worktreeBase = base
         case .fetchBeforeCreating(let on): fetchBeforeCreating = on
         case .commitRemainingWork(let on): commitRemainingWork = on
@@ -147,6 +152,7 @@ public enum HostSettingChange: Codable, Hashable, Sendable {
     case defaultThinking(ThinkingLevel)
     case queueDelivery(NativeQueueMode)
     case goalCrossProviderEvaluation(Bool)
+    case goalsEnabled(Bool)
     case worktreeBase(HostSettings.WorktreeBase)
     case fetchBeforeCreating(Bool)
     case commitRemainingWork(Bool)

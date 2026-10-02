@@ -197,9 +197,15 @@ latency while a long history reloads, and a relaunch of agents with long histori
 
 **Goal safety regressions** use `GoalServerTests` for actual SessionServer widget/status/
 notification/queue/Stop/Steer boundaries, and `GoalControlsTests` for offscreen accessibility
-presses, limits, confirmation and stale controls. `goal-runtime.test.mjs` runs the pinned pi RPC
+presses, condition editing, confirmation and stale controls. `GoalExperimentTests` and the
+Experiments ControlPress scenario cover default off, live on/off, late widget rejection and
+preserved Paused goals without process restarts, held tools/ordinary queues, rejected hidden-command
+queue edits and fenced slash text remaining ordinary content. `GoalPolicyBackpressureTests` fills stdin,
+then verifies a retained disable barrier before the final On policy with one write-drain retry and no
+ordinary-record loss or abort. `goal-runtime.test.mjs` runs the pinned pi RPC
 process against scratch homes and loopback fake providers: compaction, real truncated reads,
-auto-retry 529 recovery, ordinary read-summary turns after limits, always-not-met 25 checks,
+auto-retry 529 recovery, uncapped accounting/legacy caps, ordinary work after Pause/disable,
+live experiment/Checking cancellation, busy Set/Edit/Resume cancellation, always-not-met 25 checks,
 queue yield/delete/steer recipes and manufactured-proof rejection. No external model calls or
 user credentials are needed. The runtime fixture preserves display-only details and feeds real
 RPC/native projection in previews. Device-level iOS interaction/notification delivery is a

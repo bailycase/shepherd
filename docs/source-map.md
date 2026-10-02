@@ -18,7 +18,7 @@ Sources/
                        ExtensionMessage+Speaker: whose voice each message is), RemoteMessage
                        (RemoteRequest/RemoteReply, RemoteProtocol version + capabilities),
                        NativeThread (requests, results, NativeThreadSnapshot), NativeGoal (goal states,
-                       limits, confirmation, evaluator disclosure, interval clock and typed controls), NativeThreadContext
+                       confirmation, evaluator disclosure, interval clock and typed controls), NativeThreadContext
                        (the context and compactions), RPCWire (pi's
                        JSONL, lenient), Framing (NDJSON, LineBuffer, 1 MiB cap), ShepherdPaths,
                        ShepherdEdition (Shepherd or Shepherd Nightly, from the bundle id),
@@ -212,7 +212,7 @@ Sources/
     Thread/            ThreadView, ThreadTurns, ThreadTools (activity lines), ThreadMarkdown,
                        Composer, QuestionDock (a question in the composer's place),
                        QueueStack ("Up next", the queue above the composer), GoalCard (goal controls,
-                       budget editor, local clock pill and transcript disclosures),
+                       condition editor, local clock pill and transcript disclosures),
                        ContextMeter (the ring beside Send, its details, compaction lines),
                        ComposerMentions (the @ picker's rules, a pasted reference),
                        DesignReferenceChips (a thread's chips, their preview, "Looked at…"),

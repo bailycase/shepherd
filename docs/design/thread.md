@@ -516,7 +516,7 @@ The per-state meta is one line of mono text from the runtime, not preview-only c
 - Met shows tokens and the evaluator's short human summary, such as "104k tokens · 41 tests passed".
 - Paused always says "paused by you · the clock stops", including after an edit.
 - Needs you gives a short lowercase reason, such as "the same test failed 3 times in a row", "waiting
-  for your answer", "hit the 30m time limit", or "hit the token limit". It never cuts a word in half.
+  for your answer", or "hit the 25-check limit". It never cuts a word in half.
 
 Phone cards omit header meta and put it in the long-press menu. The header shows Pause or Resume
 and Clear; Edit stays in that menu. iPad's wide layout draws the full desktop card. All iOS targets
@@ -531,13 +531,15 @@ text and actions cannot fit side by side, the header grows a second row instead 
 
 Pause stops automatic continuation without killing the current tool. Resume is disabled while
 the question that stopped the goal remains open. Edit preserves the current state and reason;
-Save is disabled for unchanged text and limits, or a stale displayed revision/state. The
-existing inline/sheet editor adds Time limit (minutes) and Token budget fields; blank removes
-the cap. Incomplete-evidence Met candidates offer Confirm instead of Resume, with an explicit
+Save is disabled for unchanged text or a stale displayed revision/state. The existing
+inline/sheet editor changes the condition only. Goals have no time/token budgets or limit
+fields. Incomplete-evidence Met candidates offer Confirm instead of Resume, with an explicit
 attestation explanation; no open question permits either action. Clear removes the goal, not its recorded checks. Met stays
 visible until cleared. Checking reflects a real separate model call, never a decorative delay.
 
-The slash menu has a `/goal <condition>` row. A recorded "Goal set" line names the condition,
+Settings > Experiments > Goals is off by default. While on, the slash menu has a
+`/goal <condition>` row. Off pauses active goals, hides their chrome and rejects their controls;
+on shows preserved Paused goals and never resumes automatically. A recorded "Goal set" line names the condition,
 a centered not-yet divider separates checks from the next stretch of work, and a one- or two-line
 "Goal met" closing line gives the short summary. Raw entry IDs, quotes and tabs appear only inside
 a transcript disclosure, never in the card's meta or closing line. Current checks use Details,

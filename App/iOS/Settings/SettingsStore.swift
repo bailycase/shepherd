@@ -91,9 +91,16 @@ final class SettingsStore {
         instructions.reference(in: hosts).flatMap { instructions.files(of: $0).snapshot }.map(HostSettingsPresentation.instructionsValue)
     }
 
-    /// Experiments' value: "1 on" or "Off", once a host says.
+    var goalExperimentHosts: [SettingsHost] {
+        hosts.filter { $0.serves(RemoteProtocol.goalExperimentCapability) }
+    }
+
+    /// Experiments' value counts enabled features, rather than the hosts that serve them.
     var experimentsValue: String? {
-        suggestions.hosts(hosts).isEmpty ? nil : HostSettingsPresentation.experimentsValue(on: suggestions.isOn(hosts))
+        let goalsOn = goalExperimentHosts.contains { hostSettings.settings(of: $0)?.goalsEnabled == true }
+        let count = (suggestions.isOn(hosts) ? 1 : 0) + (goalsOn ? 1 : 0)
+        guard !suggestions.hosts(hosts).isEmpty || !goalExperimentHosts.isEmpty else { return nil }
+        return count == 0 ? "Off" : "\(count) on"
     }
 
     /// The hosts as Settings ▸ Skills sees them.

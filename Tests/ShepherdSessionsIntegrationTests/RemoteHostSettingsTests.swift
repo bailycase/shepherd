@@ -35,8 +35,13 @@ struct RemoteHostSettingsTests {
         #expect(optedIn.goalCrossProviderEvaluation)
         let optedOut = try await client.hostSettings(.change(.goalCrossProviderEvaluation(false)))
         #expect(!optedOut.goalCrossProviderEvaluation)
+        #expect(!fetched.goalsEnabled)
+        #expect(client.capabilities.contains(RemoteProtocol.goalExperimentCapability))
+        #expect(try await client.hostSettings(.change(.goalsEnabled(true))).goalsEnabled)
+        #expect(!(try await client.hostSettings(.change(.goalsEnabled(false)))).goalsEnabled)
         #expect(requests.current == [.fetch, .change(.bundledExtension(id: "review", on: false)),
-                                    .change(.goalCrossProviderEvaluation(true)), .change(.goalCrossProviderEvaluation(false))])
+                                    .change(.goalCrossProviderEvaluation(true)), .change(.goalCrossProviderEvaluation(false)),
+                                    .change(.goalsEnabled(true)), .change(.goalsEnabled(false))])
     }
 
     @Test func aHostsGUIThatCantApplyAChangeSaysWhy() async throws {
