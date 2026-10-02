@@ -324,7 +324,8 @@ Tests/
   ShepherdTestSupport/    ScratchServer, StubPi (+ Resources/stub-pi.py), ExtensionClient,
                           QueueFixture (a host's queue without pi), eventually, recordingErrors,
                           ControlPress (press a control by accessibility label, measure hit
-                          areas), the time-limit and timing-sensitive traits
+                          areas), LongThreads (every kind of thread row with its longest words,
+                          for the layout tests and previews), the time-limit and timing-sensitive traits
   Extensions/             node tests for the bundled extensions (+ native-thread-wire.json)
   Designs/                design fixtures: real and synthetic boards, the Shepherd canvas.json,
                           and element-ids.json (WebKit's numbering of each board's elements)
