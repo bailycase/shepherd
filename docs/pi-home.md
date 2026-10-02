@@ -436,9 +436,11 @@ refuses pi's own package commands, and the pins turn off pi's update check and i
 - Built-in extensions: the list's rules (`PiHomeTests`: each of the three added once, an entry
   naming one kept, other entries kept in order), the entries written and left alone on a second
   install (`PiLauncherTests`), not shown as installed extensions or copied as files
-  (`PiConfigTests`, `YourPiResourcesTests`), and, against the real engine, a server in
-  `<home>/mcp.json` never started with `/mcp` not offered, and started with `+builtin:mcp`
-  (`EngineSmokeTests.piBuiltInMCPIsOffInShepherdsHomeUnlessSwitchedOn`).
+  (`PiConfigTests`, `YourPiResourcesTests`), and, against real pi, a server in `<home>/mcp.json`
+  never started with `/mcp` not offered, started with `+builtin:mcp`, a trusted project's
+  `.pi/mcp.json` the same, and `--no-extensions` loading no built-in
+  (`Tests/Extensions/builtin-extensions.test.mjs`, in CI; and, through the shipped engine,
+  `EngineSmokeTests.piBuiltInMCPIsOffInShepherdsHomeUnlessSwitchedOn`).
 - Engine smoke (opt-in, `SHEPHERD_ENGINE_SMOKE`): through the real launcher, an RPC `bash`
   command finds `pi` at the launcher and gets back a `NODE_OPTIONS` pi never saw; an agent in
   the user's home folder, whose pi names packages and extensions, loads none of their code, runs
