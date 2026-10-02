@@ -1097,9 +1097,17 @@ final class RPCThreadState {
 
     /// Commands of pi's own built-in extensions that only work in its terminal UI: in RPC mode
     /// pi's handler answers "available in interactive mode" and does nothing else (llama.cpp's
-    /// `/llama`, pi 0.87.1). pi lists a built-in extension's file as `<inline:…>`, so a user's
-    /// own command of the same name is kept.
+    /// `/llama`). pi lists a built-in extension's file as `builtin:<name>` (`<inline:<name>>`
+    /// before pi 0.99, which a host still on an older engine reports), so a user's own command of
+    /// the same name is kept.
     static let terminalOnlyBuiltIns: Set<String> = ["llama"]
+
+    /// Whether `path`, the `sourceInfo.path` pi lists a command under, is one of pi's own
+    /// built-in extensions rather than a file.
+    static func isBuiltInExtension(path: String?) -> Bool {
+        guard let path else { return false }
+        return path.hasPrefix("builtin:") || path.hasPrefix("<inline:")
+    }
 
     /// `commands` from `allCommands`: nothing hidden lists everything, else the rest in pi's order.
     private func rebuildCommands() {
@@ -1109,7 +1117,7 @@ final class RPCThreadState {
 
     /// get_commands → capped, byte-limited list. Over-long names are dropped, descriptions clipped.
     /// A command no thread can run is left out: the host's own `/shepherd-retry`, and pi's
-    /// terminal-only built-ins. An `argumentHint` pi sends is kept (pi 0.87.1 sends none;
+    /// terminal-only built-ins. An `argumentHint` pi sends is kept (pi 1.0 sends none;
     /// `readArgumentHints` reads a prompt template's from its file).
     static func projectCommands(_ value: JSONValue?) -> [NativeCommand] {
         guard let items = value?.arrayValue else { return [] }
@@ -1117,7 +1125,7 @@ final class RPCThreadState {
         for item in items {
             guard let name = item["name"]?.stringValue, !name.isEmpty, name.utf8.count <= NativeCommand.maxNameBytes,
                   name != retryCommand else { continue }
-            if terminalOnlyBuiltIns.contains(name), item["sourceInfo"]?["path"]?.stringValue?.hasPrefix("<inline:") == true { continue }
+            if terminalOnlyBuiltIns.contains(name), isBuiltInExtension(path: item["sourceInfo"]?["path"]?.stringValue) { continue }
             var description = item["description"]?.stringValue
             if let text = description, text.utf8.count > NativeCommand.maxDescriptionBytes {
                 description = String(decoding: Array(text.utf8.prefix(NativeCommand.maxDescriptionBytes)), as: UTF8.self)
