@@ -85,28 +85,53 @@ public struct NativeThreadContext: Codable, Hashable, Sendable {
     }
 }
 
-/// What the context is made of, in tokens scaled to pi's total. pi gives no breakdown: the host
-/// sizes each part from the messages pi holds (four characters a token, as pi estimates).
+/// What the context is made of, in tokens. pi gives no breakdown: the host sizes each part from the
+/// messages pi holds (four characters a token, a screenshot at its measured cost, a reasoning payload at its
+/// measured density) and anchors the fixed part, the system prompt, the tools and the instruction files, to
+/// the provider's own count for the first call after a start or a compaction. What the parts do not account
+/// for is `other`, never folded into another part.
 public struct NativeContextSplit: Codable, Hashable, Sendable {
     /// pi's system prompt and the tools' definitions.
     public var system: Int
-    /// Instruction files pi loaded into the prompt (AGENTS.md, CLAUDE.md).
+    /// Instruction files pi loaded into the prompt (AGENTS.md, CLAUDE.md), and APPEND_SYSTEM.md.
     public var instructions: Int
-    /// User and assistant messages, the agent's calls, and summaries.
+    /// User and assistant messages, hidden notices, and summaries.
     public var messages: Int
     public var toolResults: Int
     /// The instruction files' names, as pi loaded them.
     public var instructionFiles: [String]
+    /// The arguments of the agent's tool calls: the files its `write` and `edit` carried.
+    public var toolCalls: Int
+    /// The reasoning the model keeps and the provider has sent back with every call.
+    public var reasoning: Int
+    /// Images in the context: screenshots a tool returned, and pictures sent.
+    public var images: Int
+    /// What the total holds that the parts do not account for.
+    public var other: Int
+    /// The largest of what the system prompt and the tools are made of, each with its size.
+    public var systemParts: [NativeContextPart]
+    /// Each instruction file with its size.
+    public var instructionParts: [NativeContextPart]
 
-    public init(system: Int, instructions: Int, messages: Int, toolResults: Int, instructionFiles: [String] = []) {
+    public init(system: Int, instructions: Int, messages: Int, toolResults: Int, instructionFiles: [String] = [],
+                toolCalls: Int = 0, reasoning: Int = 0, images: Int = 0, other: Int = 0,
+                systemParts: [NativeContextPart] = [], instructionParts: [NativeContextPart] = []) {
         self.system = system
         self.instructions = instructions
         self.messages = messages
         self.toolResults = toolResults
         self.instructionFiles = instructionFiles
+        self.toolCalls = toolCalls
+        self.reasoning = reasoning
+        self.images = images
+        self.other = other
+        self.systemParts = systemParts
+        self.instructionParts = instructionParts
     }
 
-    private enum CodingKeys: String, CodingKey { case system, instructions, messages, toolResults, instructionFiles }
+    private enum CodingKeys: String, CodingKey {
+        case system, instructions, messages, toolResults, instructionFiles, toolCalls, reasoning, images, other, systemParts, instructionParts
+    }
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -115,9 +140,51 @@ public struct NativeContextSplit: Codable, Hashable, Sendable {
         messages = try values.decodeIfPresent(Int.self, forKey: .messages) ?? 0
         toolResults = try values.decodeIfPresent(Int.self, forKey: .toolResults) ?? 0
         instructionFiles = try values.decodeIfPresent([String].self, forKey: .instructionFiles) ?? []
+        toolCalls = try values.decodeIfPresent(Int.self, forKey: .toolCalls) ?? 0
+        reasoning = try values.decodeIfPresent(Int.self, forKey: .reasoning) ?? 0
+        images = try values.decodeIfPresent(Int.self, forKey: .images) ?? 0
+        other = try values.decodeIfPresent(Int.self, forKey: .other) ?? 0
+        systemParts = try values.decodeIfPresent([NativeContextPart].self, forKey: .systemParts) ?? []
+        instructionParts = try values.decodeIfPresent([NativeContextPart].self, forKey: .instructionParts) ?? []
     }
 
-    public var total: Int { system + instructions + messages + toolResults }
+    /// The parts a host from before them never sent stay off the wire when empty, so an older client reads what it always did.
+    public func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(system, forKey: .system)
+        try values.encode(instructions, forKey: .instructions)
+        try values.encode(messages, forKey: .messages)
+        try values.encode(toolResults, forKey: .toolResults)
+        try values.encode(instructionFiles, forKey: .instructionFiles)
+        if toolCalls != 0 { try values.encode(toolCalls, forKey: .toolCalls) }
+        if reasoning != 0 { try values.encode(reasoning, forKey: .reasoning) }
+        if images != 0 { try values.encode(images, forKey: .images) }
+        if other != 0 { try values.encode(other, forKey: .other) }
+        if !systemParts.isEmpty { try values.encode(systemParts, forKey: .systemParts) }
+        if !instructionParts.isEmpty { try values.encode(instructionParts, forKey: .instructionParts) }
+    }
+
+    /// The parts added up, saturating (a count from a provider can be any size).
+    public var total: Int {
+        [system, instructions, messages, toolResults, toolCalls, reasoning, images, other].reduce(0) { sum, part in
+            let (next, overflow) = sum.addingReportingOverflow(part)
+            return overflow ? Int.max : next
+        }
+    }
+}
+
+/// One part of the system prompt or the instructions, by what it is: "pi · system prompt", "browser tools",
+/// "instructions/AGENTS.md".
+public struct NativeContextPart: Codable, Hashable, Sendable, Identifiable {
+    public var label: String
+    public var tokens: Int
+
+    public var id: String { label }
+
+    public init(label: String, tokens: Int) {
+        self.label = label
+        self.tokens = tokens
+    }
 }
 
 /// One large item in the context: a tool result, named by the file or command it came from.

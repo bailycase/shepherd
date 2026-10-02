@@ -1070,7 +1070,7 @@ final class TerminalSessionStore {
             socketPath: ShepherdPaths.socketURL().path,
             extensionPath: try StatusExtension.installedPath(),
             panesExtensionPath: Self.wantsPanes(for: agent, enabled: settings.piPanesExtension) ? try PanesExtension.installedPath() : nil,
-            reviewExtensionPath: settings.piReviewExtension ? try ReviewExtension.installedPath() : nil,
+            reviewExtensionPath: Self.wantsReview(for: agent, enabled: settings.piReviewExtension) ? try ReviewExtension.installedPath() : nil,
             subagentsExtensionPath: settings.piSubagentsExtension ? try SubagentsExtension.installedPath() : nil,
             childrenExtensionPath: settings.piNativeSubagents ? try ChildrenExtension.installedPath() : nil,
             childEnvironment: settings.childEnvironment,
@@ -1087,6 +1087,7 @@ final class TerminalSessionStore {
                 ? (try DesignReferencesExtension.installedPath(), !agent.designGrants.isEmpty) : nil,
             mcp: try MCPLaunch.forAgents(settings: settings),
             browserExtensionPath: Self.wantsBrowser(for: agent, enabled: settings.piBrowserExtension) ? try BrowserExtension.installedPath() : nil,
+            contextExtensionPath: settings.trimToolOutput ? try ContextExtension.installedPath() : nil,
             userHome: pi.userHome,
             // Use another model (an agent not signed in): its next start takes the model picked.
             model: modelOverride ?? (sessionIsFresh ? agent.model : nil),
@@ -1097,6 +1098,12 @@ final class TerminalSessionStore {
     /// The panes extension (pane_*, agent_*, automation_*, notify) is for threads. A design's
     /// agent never gets it: its screen shows no panes, and it must not reach threads.
     static func wantsPanes(for agent: Agent, enabled: Bool) -> Bool {
+        enabled && agent.designID == nil
+    }
+
+    /// `review_diff` readies the side pane's Changes tab, which a design's screen has no room for and
+    /// whose folder is no repository to review: a design's agent never gets it (docs/context-budget.md).
+    static func wantsReview(for agent: Agent, enabled: Bool) -> Bool {
         enabled && agent.designID == nil
     }
 

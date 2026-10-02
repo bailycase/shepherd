@@ -127,8 +127,8 @@ enum Fixture {
 extension AppHarness {
     /// Spawns the scripted stub pi as an RPC session, the process an agent's thread talks to.
     /// `log` records every command the app writes to it.
-    func spawnStubPi(cwd: String? = nil, log: URL? = nil) async throws -> SessionID {
-        var env: [String: String] = [:]
+    func spawnStubPi(cwd: String? = nil, log: URL? = nil, env extra: [String: String] = [:]) async throws -> SessionID {
+        var env = extra
         if let log { env["STUB_PI_LOG"] = log.path }
         let info = try await server.createSession(params: CreateSessionParams(
             cwd: cwd ?? dir.path, command: StubPi.command, env: env.isEmpty ? nil : env, runtime: .rpc
@@ -137,8 +137,9 @@ extension AppHarness {
     }
 
     /// An agent whose pi pane is already bound to a running stub pi when the workspace loads.
-    func liveAgent(_ name: String = "worker", in space: Space, order: Int = 0, auxiliary: Int = 0, log: URL? = nil) async throws -> AgentFixture {
-        let session = try await spawnStubPi(cwd: space.path, log: log)
+    func liveAgent(_ name: String = "worker", in space: Space, order: Int = 0, auxiliary: Int = 0, log: URL? = nil,
+                   env: [String: String] = [:]) async throws -> AgentFixture {
+        let session = try await spawnStubPi(cwd: space.path, log: log, env: env)
         return Fixture.agent(name, in: space, order: order, auxiliary: auxiliary, piSession: session)
     }
 

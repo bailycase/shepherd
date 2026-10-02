@@ -35,8 +35,9 @@
     effect for running agents at once, and forgets every "Allow for this thread". A remote client
     does not set it: it is this Mac's own choice, like Remote's listener.
   - Diff review tool, "Let agents open the review pane with `review_diff`."
-  - Native subagents, "Shepherd helpers, agent files, scripted workflows and durable missions. Needs
-    pi 0.85.1+. Children stop with their parent." Turning it off hides the next group, which
+  - Native subagents, "Shepherd helpers, agent files and scripted workflows. Needs
+    pi 0.85.1+. Children stop with their parent." (the board adds "and durable missions", which are
+    off: docs/design/departures.md) Turning it off hides the next group, which
     discloses back when it returns.
   - Subagent display, "Show subagent runs in their agent's thread, the inspector and the palette.
     Off doesn't stop them running." (the board says "in the sidebar"; subagents have no sidebar

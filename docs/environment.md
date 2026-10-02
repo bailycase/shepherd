@@ -46,6 +46,12 @@
     `shepherd-mcp-client.mjs`), `SHEPHERD_EXT_MCP_CONFIG` (the config path the app resolved),
     `SHEPHERD_EXT_MCP_CACHE` (`<support>/mcp/tools.json`), and `SHEPHERD_EXT_MCP_PROJECT=1` while
     Settings ▸ MCP servers ▸ Also use a repo's .mcp.json is on.
+  - With Settings ▸ Agents ▸ Trim old tool output on: `SHEPHERD_EXT_CONTEXT` (the installed
+    `shepherd-context.ts`). Its numbers move with `SHEPHERD_CONTEXT_CLIP_TOKENS` (6000),
+    `SHEPHERD_CONTEXT_TRIGGER_PERCENT` (55), `SHEPHERD_CONTEXT_TARGET_PERCENT` (33),
+    `SHEPHERD_CONTEXT_KEEP_CALLS` (8) and `SHEPHERD_CONTEXT_GAP_CALLS` (20); the app sets none of
+    them, tests do (docs/context-budget.md). `SHEPHERD_MISSIONS=1` brings back the mission tool and
+    parameters of the native subagents, off in the app.
   - Per agent: `SHEPHERD_NEEDS_NAME`, `SHEPHERD_AUTOMATION`, `SHEPHERD_MODEL`,
     `SHEPHERD_SUGGEST_FILES` (the files its `suggest_instruction` may draft a line for, while
     Settings ▸ Experiments ▸ Suggested instructions is on for its kind of agent), and, for an

@@ -119,6 +119,7 @@ pi's queues, as pi 1.0.0 behaves (docs/rpc-commands.md, and transcripts of the r
     compaction_start (threshold), then it waits for the file `compact-done` (or an abort), then
     compaction_end. As in pi, a prompt that is not a command is refused meanwhile ("Cannot submit
     a prompt while compaction is in progress...").
+  - "long:P" in the prompt makes a run's final reply P paragraphs and a code block long.
   - Idle, a prompt with a streamingBehavior is a plain prompt.
 $STUB_PI_MESSAGES_FILE, when set, loads the history from that file at start and saves it
 after every "tools:N" run, like pi resuming its session file.
@@ -568,7 +569,12 @@ def agent_run(first):
                 done += 1
                 more = True
             else:
-                reply = {"role": "assistant", "content": [{"type": "text", "text": f"Reply to {text}"}],
+                answer = f"Reply to {text}"
+                if (long := re.search(r"long:(\d+)", text)):
+                    # A long answer: that many paragraphs, then a code block.
+                    answer += "".join(f"\n\nParagraph {i} of a long answer, written to wrap onto a second line or two inside the thread's column." for i in range(int(long.group(1))))
+                    answer += "\n\n```swift\n" + "\n".join(f"    let value{i} = compute({i})" for i in range(12)) + "\n```"
+                reply = {"role": "assistant", "content": [{"type": "text", "text": answer}],
                          "stopReason": "stop", "timestamp": now_ms()}
                 say(reply)
                 emit({"type": "turn_end", "message": reply, "toolResults": []})

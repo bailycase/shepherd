@@ -98,7 +98,9 @@ Sources/
   ShepherdSessions/    SessionServer (state, sessions, extension socket, remote listener),
                        GoalExtension (embedded shepherd-goal.ts; session-persisted bounded continuation
                        and a separate same-model evaluator), RPCSession, RPCThreadState (+Queue: the queue of messages sent while pi
-                       works; +Context: what fills the context, compactions), ThreadOriginStore (where delivered messages came from, kept per pi
+                       works; +Context: what fills the context, compactions; +SnapshotLists: the
+                       cards, recorded turns and widgets a snapshot carries, each within its own
+                       budget), ThreadOriginStore (where delivered messages came from, kept per pi
                        session), StreamingToolArguments (the fields a tool call being written
                        names, read from pi's argument fragments), BrowserTunnelHost (the host's side
                        of Browser tunnels: loopback connects, caps, idle, one session per remote
@@ -109,6 +111,9 @@ Sources/
                        rules, "Allow for this thread"), AgentMessageFraming (the header a recipient reads), RemoteFileUpload,
                        PiEngine (which pi runs; BundledPiEngine, the one the app ships),
                        PiHome (Shepherd's pi home: the launcher, restore-env.sh, its settings),
+                       PiCompactionThreshold (Settings ▸ Agents ▸ Compact at, as pi's per-model
+                       `compaction.modelOverrides`), ContextToolGroups (what the Context card
+                       calls each tool's group; Tests/Extensions/context-tools.json is its audit),
                        YourPi (the user's own pi, read only; YourPiLocator, PiSessionFolder),
                        YourPiFiles (its auth.json, models.json, settings, trust and extensions,
                        parsed as plain files; PiProviders), YourPiImport (the first launch's
@@ -317,6 +322,10 @@ Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free)
   shepherd-service-tier.ts  adds service_tier to the agent's own provider requests while its thread
                           is on Fast (the Speed control), from the agent's tier file; see
                           docs/service-tier.md
+  shepherd-context.ts     keeps the old, bulky parts of a long run (tool output, the contents of
+                          written files, reasoning payloads, screenshots) out of what the model is
+                          sent, and clips any one huge tool result; the thread keeps everything;
+                          see docs/context-budget.md
 Tests/
   <Module>UnitTests/, *IntegrationTests/, ShepherdPreviewTests/   the tiers above
   ShepherdTestIsolation/  C, run when a test bundle loads: scratch root, PATH, ZDOTDIR
@@ -326,7 +335,9 @@ Tests/
                           ControlPress (press a control by accessibility label, measure hit
                           areas), LongThreads (every kind of thread row with its longest words,
                           for the layout tests and previews), the time-limit and timing-sensitive traits
-  Extensions/             node tests for the bundled extensions (+ native-thread-wire.json)
+  Extensions/             node tests for the bundled extensions (+ native-thread-wire.json);
+                          context-harness.mjs (a real pi on a fake provider, launched as the app
+                          launches an agent) with context-tools.json (the audit of every tool)
   Designs/                design fixtures: real and synthetic boards, the Shepherd canvas.json,
                           and element-ids.json (WebKit's numbering of each board's elements)
   DesignSurfaceKitIntegrationTests/Fixtures/  a small design (loops, conditionals, an import)
@@ -334,7 +345,9 @@ Tests/
   ci-suite-times.json     each suite's seconds on a CI runner, which the shards are cut from
   ShepherdIOSChecks/      the iOS client's scripts
 scripts/               release.py (the release workflow's rules), sign-app.sh (release
-                       signing), sync-embedded-extension.py, ci_mtimes.py (CI's incremental builds),
+                       signing), sync-embedded-extension.py, context_budget.py (what a thread's
+                       first request carries, and its ceilings in context-budget.json),
+                       ci_mtimes.py (CI's incremental builds),
                        ci_impact.py (the lane and the fast lane's suites), ci_shards.py (equal
                        shards from Tests/ci-suite-times.json), ci_run_tests.py (a shard under a
                        watchdog, failed tests retried once), ci_testlog.py (test output reader),
