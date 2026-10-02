@@ -6,9 +6,10 @@ import AppKit
 /// What ↩ means in a multi-line field whose Return sends, saves or chooses (the composers, the
 /// queue's editor, inline comments): ⇧↩ and ⌥↩ add a line, anything else is the surface's own.
 ///
-/// A SwiftUI `TextField(axis: .vertical)` on the Mac is a field editor, and a field editor
-/// answers ↩ and ⇧↩ (`insertNewline:`, which AppKit's key bindings give both) by ending the
-/// edit, never by adding a line; only ⌥↩ (`insertNewlineIgnoringFieldEditor:`) does. So a handler
+/// A SwiftUI `TextField(axis: .vertical)` on the Mac is edited in a field editor
+/// (`_SystemTextFieldFieldEditor`). AppKit's key bindings give ↩ and ⇧↩ the same command,
+/// `insertNewline:`, and on macOS 27 that field editor answers it by ending the edit (it selects
+/// the text and adds none); only ⌥↩'s `insertNewlineIgnoringFieldEditor:` adds a line. So a handler
 /// that returns `.ignored` for ⇧↩ leaves the system nothing that inserts a newline. The handler
 /// adds the line itself (`lineBreak(for:)`), in the field editor, so the caret, the selection and
 /// undo behave as the system's own insertion does.
