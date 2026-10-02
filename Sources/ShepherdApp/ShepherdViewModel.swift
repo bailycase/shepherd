@@ -356,6 +356,9 @@ final class ShepherdViewModel {
         var id: String { requestID }
     }
     var peerDeleteConfirmation: PeerDeleteConfirmation?
+    /// Agents' calls on other threads waiting for the user (`PeerApprovalDialog`), oldest first and
+    /// shown one at a time. The server holds each call and does it only on an answer.
+    var peerApprovals: [AgentApprovalPrompt] = []
     /// A snapshot of the agent + space whose Finalize Worktree sheet is
     /// open. Copies, not IDs: the pipeline's last act retires the agent, and
     /// a live lookup would blank the sheet mid-success.
