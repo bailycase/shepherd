@@ -1041,13 +1041,18 @@ enum ChildrenExtension {
             await Promise.all([...runs.values()].map((run) => stop(run, "Parent session ended")));
           });
 
+          // Missions are not shipped (no screen shows them), so by default the model gets no mission tool or parameter and
+          // no record is written for a run. SHEPHERD_MISSIONS=1 brings all of it back (the tests that cover it set it).
+          const missionsOn = process.env.SHEPHERD_MISSIONS === "1";
           const missionSchema = Type.Object({ title: textSchema, objective: Type.Optional(textSchema) }, { additionalProperties: false });
+          const missionFields = missionsOn ? { missionId: Type.Optional(idSchema), mission: Type.Optional(Type.Union([Type.Boolean(), missionSchema])) } : {};
           const startSchema = Type.Object({ task: textSchema,
             delivery: Type.Optional(StringEnum(["report", "continue"], { description: "report stores the result without starting a parent turn; continue resumes the parent to finish dependent work (default). Blocking questions may notify in either mode." })), role: Type.Optional(idSchema), agent: Type.Optional(idSchema), context: Type.Optional(StringEnum(["fresh", "fork"])),
             cwd: Type.Optional(Type.String({ maxLength: 4096 })), model: Type.Optional(Type.String({ maxLength: 256 })),
-            thinking: Type.Optional(StringEnum(thinkingLevels)), missionId: Type.Optional(idSchema), mission: Type.Optional(Type.Union([Type.Boolean(), missionSchema])) }, { additionalProperties: false });
+            thinking: Type.Optional(StringEnum(thinkingLevels)), ...missionFields }, { additionalProperties: false });
           function checked(schema, params) { return validateToolArguments({ name: "shepherd", parameters: schema }, { id: "check", name: "shepherd", arguments: params }); }
           function missionFor(params, title) {
+            if (!missionsOn) return {};
             if (params.missionId && params.mission !== undefined) throw Error("Use missionId or mission, not both");
             if (params.mission === false) return {};
             try {
@@ -1126,7 +1131,7 @@ enum ChildrenExtension {
           pi.registerTool({ name: "shepherd_child_agents", label: "child agents", description: "List effective agent profiles, sources and unsupported-field diagnostics. Reads user files and trusted project files without changing them.",
             parameters: Type.Object({}), async execute(_id, _p, _s, _u, ctx) { return result({ defaults, ...discoverChildAgents(ctx, defaults.scope) }); } });
           pi.registerTool({ name: "shepherd_child_start", label: "start child", parameters: startSchema,
-            description: "Start an owned background Pi helper. Use shepherd_child_agents for discovered profiles. Explicit call overrides profile, then Shepherd defaults, then parent model/thinking. Fresh or fork context; tools intersect the parent allowlist. Cwd is not a sandbox. Progress stays in the child record. A child never reaches the user: when it is blocked it asks you (needsReply, in a notice and in wait/result with a questionID): answer it yourself if you can with shepherd_child_resume and that questionID, else ask the user in your own reply and pass their answer down. delivery:report stores completion without waking the parent, so the user can keep chatting; delivery:continue resumes dependent work; a question wakes you in either. Result/wait reads consume pending notices. Default creates a mission; mission:false opts out. No nested delegation or automatic worktrees.",
+            description: "Start an owned background Pi helper. Use shepherd_child_agents for discovered profiles. Explicit call overrides profile, then Shepherd defaults, then parent model/thinking. Fresh or fork context; tools intersect the parent allowlist. Cwd is not a sandbox. Progress stays in the child record. A child never reaches the user: when it is blocked it asks you (needsReply, in a notice and in wait/result with a questionID): answer it yourself if you can with shepherd_child_resume and that questionID, else ask the user in your own reply and pass their answer down. delivery:report stores completion without waking the parent, so the user can keep chatting; delivery:continue resumes dependent work; a question wakes you in either. Result/wait reads consume pending notices. " + (missionsOn ? "Default creates a mission; mission:false opts out. " : "") + "No nested delegation or automatic worktrees.",
             async execute(id, p, signal, _update, ctx) { return result(await start(p, signal, ctx, undefined, id)); } });
           // The parent's answer to a child's question, from either tool with the questionID. A child that asked is told to finish
           // its turn, and its process ends when that turn settles, so an answer sent into the turn is lost with it. The answer
@@ -1235,7 +1240,7 @@ enum ChildrenExtension {
             id: Type.Optional(idSchema), title: Type.Optional(textSchema), objective: Type.Optional(textSchema), summary: Type.Optional(textSchema),
             status: Type.Optional(StringEnum(["planned", "active", "waiting", "needs_decision", "complete", "cancelled"])),
             runId: Type.Optional(idSchema), attachment: Type.Optional(Type.Object({ title: textSchema, uri: textSchema }, { additionalProperties: false })) }, { additionalProperties: false });
-          pi.registerTool({ name: "shepherd_mission", label: "missions", description: "Create/list/show/update/close durable project-scoped records, attach an owned run or a descriptive attachment URI. Records do not execute files, grant permissions or restart work. Close does not cancel processes. At most 200 records listed; show by id for older records.",
+          if (missionsOn) pi.registerTool({ name: "shepherd_mission", label: "missions", description: "Create/list/show/update/close durable project-scoped records, attach an owned run or a descriptive attachment URI. Records do not execute files, grant permissions or restart work. Close does not cancel processes. At most 200 records listed; show by id for older records.",
             parameters: missionToolSchema, async execute(_id, params) {
               if (!active) throw Error("No active parent session");
               const p = checked(missionToolSchema, params);
@@ -1267,7 +1272,7 @@ enum ChildrenExtension {
           const workflowSchema = Type.Object({ delivery: Type.Optional(StringEnum(["report", "continue"])), action: Type.Optional(StringEnum(["start", "status", "cancel", "wait"])), id: Type.Optional(idSchema),
             workflowScript: Type.Optional(Type.String({ minLength: 1, maxLength: 32768 })), task: Type.Optional(textSchema),
             async: Type.Optional(Type.Boolean()), timeoutSeconds: Type.Optional(Type.Number({ minimum: 0.1, maximum: 1800 })),
-            missionId: Type.Optional(idSchema), mission: Type.Optional(Type.Union([Type.Boolean(), missionSchema])) }, { additionalProperties: false });
+            ...missionFields }, { additionalProperties: false });
           // The children of a workflow that ended their turn on a question to its parent, which answers them after the workflow.
           const workflowAsks = (w) => [...w.keys.values()].filter((run) => run.workflowId === w.id && run.needsReply && run.questionID);
           const workflowSummary = (w) => {
@@ -1278,7 +1283,7 @@ enum ChildrenExtension {
               ...(asking.length ? { parentAction: `${asking.length === 1 ? "A child" : `${asking.length} children`} of this workflow asked you a question and wait on you, never on the user. Answer each yourself if you can with shepherd_child_resume {id, message, questionID}; ask the USER yourself, in one message, only what you cannot answer, and pass their answer down the same way.` } : {}) };
           };
           pi.registerTool({ name: "shepherd_workflow", label: "workflow", parameters: workflowSchema,
-            description: "Start a background JavaScript statement body with runs.run(key,{agent,task,...}), runs.all([{key,agent,task,...}]), runs.steer(key,message,{mode}), runs.status(key), runs.cancel(key). Await or return calls. Use ordinary sequencing/branching; no imports, process or filesystem API. This is restricted execution, NOT an OS sandbox. Children retain their normal tools. Default 30-minute deadline and enclosing mission; mission:false disables persistence and state.get/set. delivery:report records completion without waking the parent; continue resumes dependent work. A child that is blocked asks you instead of finishing: its runs.run result then has needsReply:true, questionID and question (its output is not a result); once the workflow ends, answer it yourself with shepherd_child_resume {id, message, questionID} or ask the user and pass their answer down. A question wakes you in either delivery. async:false waits; new user input interrupts action:wait without stopping children. status/wait/cancel target this parent's workflow id. No automatic retries, worktrees or scheduling.",
+            description: "Start a background JavaScript statement body with runs.run(key,{agent,task,...}), runs.all([{key,agent,task,...}]), runs.steer(key,message,{mode}), runs.status(key), runs.cancel(key). Await or return calls. Use ordinary sequencing/branching; no imports, process or filesystem API. This is restricted execution, NOT an OS sandbox. Children retain their normal tools. Default 30-minute deadline" + (missionsOn ? " and enclosing mission; mission:false disables persistence and state.get/set" : "") + ". delivery:report records completion without waking the parent; continue resumes dependent work. A child that is blocked asks you instead of finishing: its runs.run result then has needsReply:true, questionID and question (its output is not a result); once the workflow ends, answer it yourself with shepherd_child_resume {id, message, questionID} or ask the user and pass their answer down. A question wakes you in either delivery. async:false waits; new user input interrupts action:wait without stopping children. status/wait/cancel target this parent's workflow id. No automatic retries, worktrees or scheduling.",
             async execute(id, params, signal, _update, ctx) { return runWorkflow(params, signal, ctx, undefined, id); } });
           async function runWorkflow(params, signal, ctx, onSlashComplete, toolCallID) {
               const p = checked(workflowSchema, params), action = p.action ?? "start";
