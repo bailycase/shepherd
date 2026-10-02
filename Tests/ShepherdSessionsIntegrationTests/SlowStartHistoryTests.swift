@@ -35,20 +35,28 @@ struct SlowStartHistoryTests {
             landed = await t.request(.snapshot()).snapshotValue
             return landed?.messages.isEmpty == false
         }
-        #expect(landed?.clipped == false, "the history landed whole, so nothing is clipped")
+        #expect(landed?.clipped == false && landed?.clips == nil, "the history landed whole, so nothing is clipped")
     }
 
-    /// A fetch that failed marked the thread clipped; the next one that lands whole clears it.
+    /// A fetch that failed says the history is unread; the next one that lands whole clears it.
     @Test func aHistoryThatLandsAfterAFailedFetchIsNotClipped() async throws {
         let t = try ThreadEventTests.Thread()
         defer { t.stop() }
         _ = try await t.ready()
         await withCheckedContinuation { continuation in
             t.queue.async {
-                t.state.projectionClipped = true
-                t.state.refreshMessages { _ in continuation.resume() }
+                t.state.historyUnread = true
+                t.state.commit()
+                continuation.resume()
             }
         }
-        #expect(try await t.snapshot().clipped == false)
+        let unread = try await t.snapshot()
+        #expect(unread.clips == NativeThreadClips(history: true) && unread.clipped)
+        await withCheckedContinuation { continuation in
+            t.queue.async { t.state.refreshMessages { _ in continuation.resume() } }
+        }
+        let landed = try await t.snapshot()
+        #expect(landed.clipped == false && landed.clips == nil)
+        #expect(landed.revision > unread.revision, "clients see the notice go")
     }
 }

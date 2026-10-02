@@ -236,6 +236,37 @@ struct NativeThreadWireTests {
         #expect(offered.serviceTier == "fast" && offered.serviceTiers == ["standard", "fast", "ultra"], "an unknown tier is the client's to ignore")
     }
 
+    /// What a snapshot shortened round trips, an older host's snapshot says nothing of it (the client
+    /// then reads `clipped` alone), and a fact that is not set stays off the wire.
+    @Test func whatASnapshotClippedRoundTripsAndStaysOffTheWireWhenNothingWas() throws {
+        let clips = NativeThreadClips(history: true, live: 3, questions: 2)
+        var snapshot = NativeThreadSnapshot(piSessionID: "s", generation: "g", revision: 8, running: true, supportedActions: ["send"],
+                                            dialogsSupported: true, dialogs: [], messages: [], provisional: [], clipped: true,
+                                            runtime: "rpc", clips: clips)
+        #expect(try Wire.roundTrip(NativeThreadResult.snapshot(value: snapshot)) == .snapshot(value: snapshot))
+        #expect(Set(try Wire.object(clips).keys) == ["history", "live", "questions"])
+        #expect(Set(try Wire.object(NativeThreadClips(live: 1)).keys) == ["live"])
+        #expect(Set(try Wire.object(NativeThreadClips(history: true)).keys) == ["history"])
+        #expect(NativeThreadClips().isEmpty && !clips.isEmpty)
+
+        snapshot.clips = nil
+        snapshot.clipped = false
+        #expect(try Wire.object(snapshot)["clips"] == nil, "nothing shortened sends no clips")
+
+        let older = try Wire.decode(NativeThreadSnapshot.self, Self.v1Snapshot)
+        #expect(older.clips == nil && !older.clipped)
+        let legacy = try Self.snapshot(adding: ["clipped": true])
+        #expect(legacy.clips == nil && legacy.clipped, "an older host's flag still reads as before")
+    }
+
+    /// A count that is missing, negative or of the wrong kind never fails the snapshot.
+    @Test func clipsDecodeLeniently() throws {
+        #expect(try Wire.decode(NativeThreadClips.self, "{}") == NativeThreadClips())
+        #expect(try Wire.decode(NativeThreadClips.self, #"{"live":-4,"questions":-1}"#) == NativeThreadClips())
+        #expect(try Wire.decode(NativeThreadClips.self, #"{"history":"yes","live":"many","questions":1.5}"#) == NativeThreadClips())
+        #expect(try Self.snapshot(adding: ["clips": ["history": true, "live": 2, "newer": "x"]]).clips == NativeThreadClips(history: true, live: 2))
+    }
+
     /// Values a newer pi or host adds read as unknown rather than failing the snapshot.
     @Test func unknownReasonsPhasesAndKindsDecodeLeniently() throws {
         let snapshot = try Self.snapshot(adding: [

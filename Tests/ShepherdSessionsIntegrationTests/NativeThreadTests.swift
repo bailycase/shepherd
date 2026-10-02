@@ -202,13 +202,14 @@ struct NativeThreadTests {
         }
         #expect(switched.generation != original.generation)
         #expect(switched.messages.isEmpty)
-        #expect(switched.clipped)
+        #expect(switched.clips == NativeThreadClips(history: true) && switched.clipped)
         #expect(try await pi.send("late", from: original) == stale)
         #expect(try await pi.send("recover", from: switched).failureCode == nil)
         let recovered = try await pi.snapshot("a later refresh to recover the switched history") {
             !$0.running && $0.messages.contains { $0.blocks.first?.text == "resumed answer" }
         }
         #expect(recovered.messages.prefix(2).map { $0.blocks.map(\.text).joined() } == ["resumed question", "resumed answer"])
+        #expect(!recovered.clipped && recovered.clips == nil, "the history that landed is whole, so the thread no longer says it could not read it")
     }
 
     @Test func anAnswerRejectedByClosedInputKeepsTheQuestionOpen() async throws {

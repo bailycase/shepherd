@@ -331,7 +331,12 @@ final class RPCThreadState {
     }
 
     private var operations: [(id: String, operation: Operation)] = []
-    var projectionClipped = false
+    /// The host could not read pi's history the last time it asked (`refreshMessages`), so the thread
+    /// may be missing messages: the snapshot says so (`clips.history`) until a fetch lands whole.
+    var historyUnread = false
+    /// Rows of the running turn's output `trimLive` dropped since history was last read: the snapshot
+    /// says so (`clips.live`), and the finished turn's history brings them back.
+    private(set) var liveLeftOut = 0
     /// The last assistant message of the current run ended in a provider error.
     var runFailed = false
     /// That error's message, when pi gave one.
@@ -1138,11 +1143,13 @@ final class RPCThreadState {
             }
             guard case .success(let response) = result, response.success,
                   let messages = response.messages else {
-                if !superseded { self.projectionClipped = true }
+                if !superseded { self.historyUnread = true }
                 return
             }
-            // The whole history is here again: nothing is left out of it.
-            self.projectionClipped = false
+            // The whole history is here again: what it could not read, and the live rows `trimLive`
+            // dropped, are in it.
+            self.historyUnread = false
+            self.liveLeftOut = 0
             let history = Self.projectHistory(self.markingStopped(messages),
                                               sentReferences: self.origins.compactMapValues(\.references)) { value, message in
                 if message.role == "compactionSummary", let summary = message.summary,
@@ -1362,7 +1369,8 @@ final class RPCThreadState {
         history.removeAll()
         historyVersion += 1
         currentAssistant = nil
-        projectionClipped = false
+        historyUnread = false
+        liveLeftOut = 0
         operationsByEntry.removeAll()
         questions.removeAll()
         commandNotices.removeAll()
@@ -1463,7 +1471,7 @@ final class RPCThreadState {
         func trim(_ matches: (LiveItem.Kind) -> Bool) {
             guard live.count(where: { matches($0.kind) }) > Self.pageSize, let first = live.firstIndex(where: { matches($0.kind) }) else { return }
             live.remove(at: first)
-            projectionClipped = true
+            liveLeftOut += 1
         }
         trim { if case .assistant = $0 { true } else { false } }
         trim { if case .tool = $0 { true } else { false } }
@@ -1750,6 +1758,8 @@ final class RPCThreadState {
         hasher.combine(widgetsHash)
         hasher.combine(goal)
         hasher.combine(goalsAvailable)
+        hasher.combine(historyUnread)
+        hasher.combine(liveLeftOut)
         hasher.combine(running)
         hasher.combine(model)
         hasher.combine(thinking)
@@ -1820,14 +1830,18 @@ final class RPCThreadState {
         bytesEncodedSinceSnapshot = 0
         #endif
         let dialogs = Array(self.dialogs.prefix(Self.dialogLimit))
+        // What this snapshot shortens or could not read: older history is not one of them (it is
+        // `olderCursor`'s), and a too large question says so itself in the dock.
+        let clips = NativeThreadClips(history: historyUnread, live: liveLeftOut)
         var base = NativeThreadSnapshot(
             piSessionID: piSessionID ?? "", generation: generation, revision: revision, running: running,
             model: model, thinking: thinking, thinkingLevels: thinkingLevels, supportedActions: Self.supportedActions + (goalsAvailable ? ["goal"] : []), dialogsSupported: true,
             dialogs: [], widgets: snapshotWidgets, messages: [], provisional: [],
-            clipped: projectionClipped || dialogs.contains { $0.unavailable == "payload-limit" },
+            clipped: !clips.isEmpty,
             runtime: "rpc", stats: stats, commands: commands, subagents: snapshotSubagents, context: context,
             turnChanges: snapshotTurnChanges, retry: retry,
-            serviceTier: serviceTier.rawValue, serviceTiers: serviceTiers.map(\.rawValue), goal: goal
+            serviceTier: serviceTier.rawValue, serviceTiers: serviceTiers.map(\.rawValue), goal: goal,
+            clips: clips.isEmpty ? nil : clips
         )
         // The rest encodes without the queue, which adds `,"queue":` and its cached size.
         let queue = queueValue
@@ -1855,10 +1869,8 @@ final class RPCThreadState {
         while index >= 0 {
             let message = history[index]
             size += bytes(message) + 1
-            if size > snapshotLimit {
-                value.clipped = true
-                break
-            }
+            // What does not fit is an older page (`olderCursor`), not clipped.
+            if size > snapshotLimit { break }
             value.messages.insert(message, at: 0)
             index -= 1
             if value.messages.count == pageSize { break }
@@ -1890,14 +1902,22 @@ final class RPCThreadState {
         history: (Int) -> Sized<NativeThreadMessage>
     ) -> (snapshot: NativeThreadSnapshot, bytes: Int) {
         func list(_ count: Int, _ sum: Int) -> Int { count == 0 ? 0 : sum + count - 1 }
-        var clipped = base.clipped
-        func flag() -> Int { clipped == base.clipped ? 0 : clipped ? -1 : 1 }
+        // What this snapshot leaves out of the live run or the questions joins `clips`; `clipped`
+        // and `clips` turn on together, and what they add to the encoded size is counted in `clipDelta`.
+        var clips = base.clips ?? NativeThreadClips()
+        let clipsField = ",\"clips\":".utf8.count
+        let baseClips = base.clips.map { Self.bytes($0) + clipsField } ?? 0
+        var clipDelta = 0
+        func clipped() {
+            let flag = (base.clipped || !clips.isEmpty) == base.clipped ? 0 : -1
+            clipDelta = (clips.isEmpty ? 0 : Self.bytes(clips) + clipsField) - baseClips + flag
+        }
         var dropped = Set<Int>()
         var activeSum = active.reduce(0) { $0 + $1.bytes }
         var dialogCount = dialogs.count
         var dialogSum = dialogs.reduce(0) { $0 + $1.bytes }
         func size() -> Int {
-            baseBytes + flag() + list(active.count - dropped.count, activeSum) + list(dialogCount, dialogSum)
+            baseBytes + clipDelta + list(active.count - dropped.count, activeSum) + list(dialogCount, dialogSum)
         }
         // Live content may use up to `activeLimit` of the snapshot, but a heavy base never leaves it
         // less than `activeReserve`, or a long thread's run would draw nothing while it streams.
@@ -1909,12 +1929,14 @@ final class RPCThreadState {
             activeSum -= active[next].bytes
             dropped.insert(next)
             next += 1
-            clipped = true
+            clips.live += 1
+            clipped()
         }
         while size() > activeCap, dialogCount > 0 {
             dialogCount -= 1
             dialogSum -= dialogs[dialogCount].bytes
-            clipped = true
+            clips.questions += 1
+            clipped()
         }
         // Each message is counted with a comma, as when the growing snapshot was encoded. History
         // always has `historyReserve` to fill, whatever the rest of the snapshot weighs.
@@ -1925,10 +1947,8 @@ final class RPCThreadState {
         while index >= 0 {
             let entry = history(index)
             budgeted += entry.bytes + 1
-            if budgeted > limit {
-                clipped = true
-                break
-            }
+            // Older history that does not fit is a page away (`olderCursor`), not clipped.
+            if budgeted > limit { break }
             page.append(entry)
             index -= 1
             if page.count == pageSize { break }
@@ -1938,7 +1958,8 @@ final class RPCThreadState {
         value.provisional = active.indices.filter { !dropped.contains($0) }.map { active[$0].value }
         value.dialogs = dialogs[..<dialogCount].map(\.value)
         value.messages = page.map(\.value)
-        value.clipped = clipped
+        value.clips = clips.isEmpty ? nil : clips
+        value.clipped = base.clipped || !clips.isEmpty
         var bytes = size() + list(page.count, page.reduce(0) { $0 + $1.bytes })
         if index >= 0, let first = page.first {
             value.olderCursor = first.value.entryID
