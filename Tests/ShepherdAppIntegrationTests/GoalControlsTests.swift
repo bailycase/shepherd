@@ -209,8 +209,8 @@ struct GoalControlsTests {
         }
 
         func press(_ label: String) throws {
-            let button = try #require(button(label), "\(label) exists")
-            try #require(button.goalIsEnabled, "\(label) is enabled")
+            let found = try #require(button(label), "\(label) exists")
+            try #require(found.goalIsEnabled, "\(label) is enabled")
             let control = try window.press(label)
             #expect(ControlPress.undersized([control], minimum: .desktop).isEmpty, "\(label) has a full desktop hit target")
         }
