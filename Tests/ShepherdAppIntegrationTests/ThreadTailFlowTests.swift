@@ -56,6 +56,17 @@ struct ThreadTailFlowTests {
         var running = false
         var subagents: [ChildRun] = []
         var turnChanges: [ChangesTurn]?
+        /// The host's queue (nil: a host without one); a send while it runs joins it, as pi's host does.
+        var queue: NativeQueue?
+        /// The prompts the host has sent pi and pi has not started yet, shown as pending rows (a
+        /// host with a queue shows its own, the way pi's does).
+        var sent: [NativeThreadMessage] = []
+        /// The host can stop pi for Steer now (`interrupt` in `supportedActions`).
+        var interrupts = false
+        /// The host refuses every send.
+        var refuses = false
+        /// What pi is asking, in the composer's place.
+        var dialogs: [NativeThreadDialog] = []
         var revision: UInt64 = 1
         var delay: Duration = .zero
         var olderRequests = 0
@@ -68,6 +79,10 @@ struct ThreadTailFlowTests {
             var value = Fx.snapshot(tail, provisional: provisional, running: running, revision: revision, turnChanges: turnChanges)
             value.olderCursor = tail.count < all.count ? tail.first?.entryID : nil
             value.subagents = subagents
+            value.provisional += sent
+            value.dialogs = dialogs
+            value.queue = queue
+            if interrupts { value.supportedActions.append("interrupt") }
             return value
         }
 
@@ -81,7 +96,20 @@ struct ThreadTailFlowTests {
                 var page = Fx.snapshot(Array(all[start..<index]), revision: revision)
                 page.olderCursor = start > 0 ? all[start].entryID : nil
                 return .snapshot(value: page)
-            case .send(_, _, let operation, _, _, _, _, _, _):
+            case .send(_, _, let operation, let text, let delivery, _, _, _, _):
+                if refuses { return .failure(code: "refused", message: "pi refused the message.") }
+                if running, queue != nil {
+                    var items = queue?.items ?? []
+                    items.append(NativeQueuedMessage(id: operation, text: text, sentAt: Date().timeIntervalSince1970 * 1000,
+                                                     state: delivery == .steer ? .steering : .queued))
+                    if delivery == .interrupt { NativeQueueRules.interrupt([operation], in: &items) }
+                    NativeQueueRules.normalize(&items)
+                    queue?.items = items
+                    bump()
+                } else if queue != nil {
+                    sent.append(NativeThreadMessage.pendingSend(operationID: operation, text: text, images: 0, timestamp: Date().timeIntervalSince1970 * 1000))
+                    bump()
+                }
                 return .accepted(operationID: operation)
             default:
                 return .snapshot(value: snapshot())
@@ -89,6 +117,14 @@ struct ThreadTailFlowTests {
         }
 
         func bump() { revision += 1 }
+
+        /// pi starts the prompt the host sent it: the host's pending row becomes the message pi read.
+        func piStarts(_ id: String, _ text: String, at: Double) {
+            var message = Fx.user(id, text, at: at)
+            message.operationID = sent.first?.operationID
+            sent.removeAll()
+            all.append(message)
+        }
     }
 
     static func history(turns: Int, mix: Mix) -> [NativeThreadMessage] {
@@ -109,6 +145,8 @@ struct ThreadTailFlowTests {
         var active = true
         var panel = false
         var panelHeight: CGFloat = 260
+        /// The thread offers the subagent tray (`inspectSubagent` is given), as the app's does.
+        var tray = false
     }
 
     /// The thread in the layout's arrangement: a leaf of fixed size in a ZStack, with the terminal
@@ -129,7 +167,7 @@ struct ThreadTailFlowTests {
                 let height = panel ? geo.size.height - model.panelHeight : geo.size.height
                 ZStack(alignment: .topLeading) {
                     ThreadView(store: store, active: active, isFocused: false, request: request, preview: preview,
-                               commandKey: "flow", listModels: { .empty }, retainedTailGuard: tailGuard, nativeTail: native)
+                               commandKey: "flow", inspectSubagent: model.tray ? { _ in } : nil, listModels: { .empty }, retainedTailGuard: tailGuard, nativeTail: native)
                         .frame(width: geo.size.width, height: height)
                     Color.nw.bgRaised
                         .frame(width: geo.size.width, height: model.panelHeight)
