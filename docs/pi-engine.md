@@ -52,6 +52,16 @@ so a second stage is offline (`--offline` insists on it). Nothing is written out
 `https://registry.npmjs.org/<name>/<version>`. The module versions must match pi's shrinkwrap.
 Then stage, build, and run the smoke test.
 
+A new pi can need modules the old one didn't. pi compiles its dependencies into `dist/bundle`, so
+only what the bundle resolves from `node_modules` at run time ships (`MODULE_KEEP`, and
+`MODULE_REQUIRED` for the files it finds by name): look for bare `import()`/`require` specifiers
+and `require.resolve` in the bundle's chunks, then prove each with a control (stage without the
+module and run the feature: pi 1.0 without `quickjs-wasi` answers a codemode script "Cannot find
+module 'quickjs-wasi/quickjs.wasm'"). Also run the extension tests against the pinned version
+(CI installs it from the pin), `EngineSmokeTests` and `EngineThreadTests`
+(docs/testing.md › Engine smoke), and compare the real engine's RPC replies and events with the
+last pin's.
+
 ## The Xcode phase
 
 "Embed pi engine" is the Mac target's last phase, in all three configurations. It checks the
@@ -80,6 +90,66 @@ entitlements anyway.
 `release.py verify-app` checks the engine before signing: node is arm64 only at the pinned
 version, pi and each module are the pinned versions, `node_modules` holds nothing else, nothing
 native or esbuild sits in the engine, and the licences are there.
+
+## pi 1.0
+
+What the move from 0.87.1 to 1.0.0 changed for Shepherd, as observed on the staged engine
+(`Tests/Extensions` against the pinned modular package, `EngineSmokeTests`, `EngineThreadTests`),
+not read off the changelog.
+
+**The bundle.** pi 1.0 ships MCP, codemode (model-written JavaScript in a QuickJS WebAssembly
+sandbox) and tool search as built-in extensions, and drops chord from the bundle's imports.
+`node_modules` is `jiti`, photon and `quickjs-wasi` (only `package.json` and `quickjs.wasm`; its
+`extensions/*.so` are WebAssembly side modules pi never loads, named like native code). The staged
+engine is 135 MB, from 134 MB.
+
+**MCP, codemode and tool search are off in Shepherd's pi.** Settings ▸ MCP servers and
+`shepherd-mcp.ts` manage the servers (docs/design/settings-mcp-experiments.md). Left on, pi's own
+MCP, run against a scratch home and a fake provider, does the following:
+
+- It reads `<home>/mcp.json` and the `.pi/mcp.json` of a trusted project (the user's trust
+  decisions are copied into the home, so a trusted repository counts), starts those servers
+  beside Shepherd's, turns `codemode` on as a fifth tool the model is offered, and adds an
+  `mcp_servers` section to every system prompt (349 characters more with one server).
+- With no server it adds only `/mcp`, whose answer over RPC is "No MCP servers configured. Add
+  them to <home>/mcp.json or .pi/mcp.json", files Shepherd doesn't read.
+- Codemode's nested tool calls arrive as `tool_execution_*` events with ids like `call_1/1` and a
+  `parentToolCallId`. The thread reads neither, so each would be a separate top-level tool row.
+
+`PiHome.install` therefore writes `-builtin:mcp`, `-builtin:codemode` and `-builtin:tool-search`
+into settings.json's `extensions` (pi's own switch, docs/settings.md › Resources), under pi's
+lock, with the home's other keys. It never replaces an entry that already names one of them in
+any form: **`+builtin:<name>` in `<home>/settings.json` turns one back on** (the one documented
+setting; codemode's nested calls then draw as above), and a project's `.pi/settings.json` can do
+the same for itself, but only once the project is trusted (checked: untrusted, its `+builtin:mcp`
+and `.pi/mcp.json` are ignored), as a trusted project may load its own extensions. `llama.cpp`, the fourth
+built-in, is a provider pi has always shipped and stays; `/llama` still does nothing over RPC and
+the thread's command menu leaves it out. `PiConfig.installedExtensions` (Settings ▸ Pi, a host's
+`hostSettings`) and the first copy from "your pi" ignore these entries. A launch that passes
+`--no-extensions` (drafts, native children) loads none of pi's built-ins either, whatever the
+settings say. `EngineSmokeTests.piBuiltInMCPIsOffInShepherdsHomeUnlessSwitchedOn` runs both
+sides against the real engine: a server in `<home>/mcp.json` is never started and `/mcp` isn't
+offered, and with `+builtin:mcp` the same file starts it.
+
+**RPC.** What the thread reads is unchanged (`EngineThreadTests` runs a turn, a tool call, a
+reasoning block, Stop with a queued message, an extension's question, a command's notice, a
+prompt template, a skill and Compact through the real `SessionServer`, on both 0.87.1 and 1.0.0;
+the extension UI requests are identical for every kind). Additions, none read yet: `prompt`,
+`steer` and `follow_up` replies carry `data.disposition` (`started`, `queued` or `handled`, the
+last for an extension command's prompt), assistant messages carry `thinkingLevel`, a bash result
+carries `structuredContent`, and `message_start` no longer carries `responseId` (it arrives at
+`message_end`). `get_commands` lists a built-in extension's file as `builtin:<name>` with
+`sourceInfo.source` `builtin`; 0.87.1 said `<inline:<name>>` and `inline`
+(`RPCThreadState.isBuiltInExtension` takes both). Session files are the same version (3): a
+seeded header is reused, and the warning for an unseeded `--session-id` has the same words.
+
+**Sign-in.** The bridge works unchanged against 1.0 for the logins Sign-in offers: Anthropic
+(whose login now asks for a method first, "Browser login" or "Copy code login (headless)"; the
+bridge answers with the browser, and the sheet's paste still works), OpenAI Codex (the provider
+pi now labels "legacy") and key logins. Not offered, on purpose: Sign in with ChatGPT on the
+`openai` provider (the bridge passes no `getDeviceId`, so pi answers "requires a device ID"; it
+would need `SettingsManager.getOrCreateDeviceId` and a catalog row), Anthropic's copy-code method
+(the sheet is on the machine with the browser), and the classifier-only `typesafe` provider.
 
 ## Size
 

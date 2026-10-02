@@ -222,6 +222,33 @@ struct PiLauncherTests {
         #expect(!files.fileExists(atPath: home.settings.path + ".lock"))
     }
 
+    /// pi 1.0 loads its own MCP, codemode and tool search in every session. Shepherd's MCP manages
+    /// the servers, so installing switches those three off in settings.json (`-builtin:<name>` in
+    /// `extensions`), keeps every other entry, honors one a person turned on, and writes nothing
+    /// once it is so.
+    @Test func installingSwitchesPisBuiltInMCPAndCodemodeOffAndKeepsTheRestOfTheList() throws {
+        let dir = try makeScratchDirectory("builtins")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let home = try Self.home(in: dir)
+        func extensions() throws -> [String]? {
+            let settings = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: home.settings)) as? [String: Any])
+            return settings["extensions"] as? [String]
+        }
+        #expect(try extensions() == ["-builtin:mcp", "-builtin:codemode", "-builtin:tool-search"])
+
+        try Data(#"{"defaultProvider":"anthropic","extensions":["/x/theirs.ts","+builtin:codemode"]}"#.utf8).write(to: home.settings)
+        try home.install()
+        #expect(try extensions() == ["/x/theirs.ts", "+builtin:codemode", "-builtin:mcp", "-builtin:tool-search"])
+        let settings = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: home.settings)) as? [String: Any])
+        #expect(settings["defaultProvider"] as? String == "anthropic")
+
+        let before = try Data(contentsOf: home.settings)
+        let modified = try FileManager.default.attributesOfItem(atPath: home.settings.path)[.modificationDate] as? Date
+        try home.install()
+        #expect(try Data(contentsOf: home.settings) == before)
+        #expect(try FileManager.default.attributesOfItem(atPath: home.settings.path)[.modificationDate] as? Date == modified)
+    }
+
     /// A sessions folder that is a symlink out of the home is refused before pi is given it.
     @Test func aSessionFolderOutsideTheHomeIsRefused() throws {
         let dir = try makeScratchDirectory("outside")
