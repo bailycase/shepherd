@@ -1507,9 +1507,13 @@ The surfaces (docs/design/design-tool-references.md › Design references has th
   one starts through the New thread page's creation (`startAgent`) in the chosen project, on a new
   worktree (`GitWorktree.add`, based per Settings ▸ Worktrees) named `agent/implement-<piece>` (a
   direction's letter dropped; "-2", "-3"… when taken), named "Implement <piece>" until the namer
-  names it, and gets the piece as its first message. A thread on screen sends through its store; one
-  that isn't (the sheet's usual case) through the host, once its pi serves
-  (`sendDesignReferences`, at most 90 seconds' wait), into the host's queue while pi works. "Open
+  names it, and gets the piece as its first message. A thread whose store is polling (on screen,
+  `isLive`) sends through its store; any other (the sheet's usual case: never shown, or shown and
+  hidden since, whose store stays `ready` but has no host to ask) through the host, once its pi
+  serves (`sendDesignReferences`, at most 90 seconds' wait), into the host's queue while pi works.
+  The host's answer decides the outcome: a message it took is sent however the thread's layout
+  changed meanwhile (never reported as a failure, never sent twice), and a refusal says why in
+  the host's words. "Open
   the thread after sending" is remembered (`AppSettings.implementOpensThread`,
   `shepherd.designs.implementOpensThread`); off, the canvas keeps the screen and a toast offers the
   thread. Copy reference pins the piece and copies its string (`copyToPasteboard`).
