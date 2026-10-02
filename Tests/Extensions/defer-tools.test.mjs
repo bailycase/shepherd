@@ -10,7 +10,7 @@ import * as path from "node:path";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import { createRequire } from "node:module";
-import { root, capture, startThread } from "./context-harness.mjs";
+import { root, capture, scriptedBashCalls, startThread } from "./context-harness.mjs";
 
 const pkg = process.env.PI_PACKAGE_DIR;
 if (!pkg) throw Error("Set PI_PACKAGE_DIR to the installed Pi package");
@@ -178,6 +178,24 @@ test("loading changes the request from its head on a model that cannot take a to
     const before = JSON.stringify(placed.requests[0].body.input), after = JSON.stringify(placed.requests[1].body.input);
     assert.ok(after.startsWith(before.slice(0, -1)), "the earlier request is a prefix of the later one");
   } finally { await plain.thread.stop(); await placed.thread.stop(); }
+});
+
+test("a compaction keeps what a search loaded declared", { timeout: 240000 }, async () => {
+  // pi compacts when the window fills, which is what this change is for: a thread that opened the browser must not lose it then.
+  const row = (turn, call) => `awk 'BEGIN{for(i=1;i<=${call === 1 ? 800 : 220};i++) printf "%d.${call}.%d ${"x".repeat(call === 1 ? 50 : 45)} %d\\n", ${turn}, i, i}'`;
+  const plan = (turn) => turn === 0 ? [search("open a web page"), call("browser_open", { url: "https://example.com/" })] : [row(turn, 1), row(turn, 2)];
+  const thread = await startThread({ needsName: false, onFrame: app, onRequest: scriptedBashCalls(plan), usage: (entry) => ({ input: Math.ceil(JSON.stringify(entry.body).length / 4), output: 40 }) });
+  try {
+    for (let turn = 0; turn < 5; turn++) await thread.turn(`turn ${turn}`, 120000);
+    const compacted = await thread.request({ type: "compact" });
+    assert.ok(compacted.success, JSON.stringify(compacted));
+    const before = thread.mainRequests().length;
+    await thread.turn("after the compaction", 120000);
+    const after = thread.mainRequests().slice(before);
+    assert.ok(after.length > 0);
+    for (const request of after) for (const name of BROWSER) assert.ok(names(request).includes(name), `${name} is declared after the compaction`);
+    assert.ok(JSON.stringify(after[0].body.input).includes("The conversation history before this point was compacted into the following summary"), "the compaction really replaced the early conversation");
+  } finally { await thread.stop(); }
 });
 
 // MARK: a restart

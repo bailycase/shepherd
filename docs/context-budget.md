@@ -173,7 +173,7 @@ before. A running agent follows at its next launch.
 - **A call needs the tool loaded.** A call to a deferred tool nobody loaded answers `Tool browser_open not
   found`, and nothing reaches Shepherd.
 - **A load is recorded in the transcript**, and clearing the search result out of a request does not unload
-  it (`defer-tools.test.mjs`, as `context-mcp.test.mjs` for an MCP tool). pi 1.0 does not bring a load back
+  it, nor does a compaction (`defer-tools.test.mjs`, as `context-mcp.test.mjs` for an MCP tool). pi 1.0 does not bring a load back
   when it starts again on a session in the RPC mode Shepherd runs (checked on an MCP tool too: the resumed
   request declares only the launch's set), so the status extension reads it off the transcript, the tools
   later system messages added, and re-activates the Shepherd ones; a thread that began with every tool
