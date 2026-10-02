@@ -107,21 +107,23 @@ public struct NWActivityLine: View {
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(failed ? nw.failed : nw.textTertiary)
                 .frame(width: NWThreadMetrics.activityIcon, height: NWThreadMetrics.activityIcon)
-            Text(label)
-                .font(.nw(.ui, weight: .regular))
-                .foregroundStyle(failed ? nw.failed : nw.textSecondary)
-                .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
-                .fixedSize(horizontal: !typeSize.isAccessibilitySize, vertical: true)
-                .layoutPriority(1)
-                .nwContentTransition(.numeric())
-            if !meta.isEmpty {
-                Text(meta)
-                    .font(.nwMono(11))
-                    .foregroundStyle(nw.textTertiary)
-                    .lineLimit(1)
+            NWActivityWords(metaMinimum: NWThreadMetrics.activityMetaMinimum * ThemeStore.shared.textScale) {
+                Text(label)
+                    .font(.nw(.ui, weight: .regular))
+                    .foregroundStyle(failed ? nw.failed : nw.textSecondary)
+                    .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
                     .truncationMode(.tail)
-                    .monospacedDigit()
+                    .fixedSize(horizontal: false, vertical: true)
                     .nwContentTransition(.numeric())
+                if !meta.isEmpty {
+                    Text(meta)
+                        .font(.nwMono(11))
+                        .foregroundStyle(nw.textTertiary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .monospacedDigit()
+                        .nwContentTransition(.numeric())
+                }
             }
             // Only a line with something behind it wears the chevron; its place stays.
             NWThreadChevron(isExpanded: isExpanded, shown: action != nil).foregroundStyle(nw.textTertiary)
@@ -142,14 +144,16 @@ public struct NWActivityLine: View {
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(nw.textSecondary)
                 .frame(width: NWThreadMetrics.activityIcon, height: NWThreadMetrics.activityIcon)
-            Text(label).font(.nw(.ui, weight: .regular))
-                .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
-                .fixedSize(horizontal: !typeSize.isAccessibilitySize, vertical: true)
-                .nwShimmer(active: true)
-                .layoutPriority(1)
-            if !meta.isEmpty {
-                Text(meta).font(.nwMono(11)).lineLimit(1).truncationMode(.tail)
+            NWActivityWords(metaMinimum: NWThreadMetrics.activityMetaMinimum * ThemeStore.shared.textScale) {
+                Text(label).font(.nw(.ui, weight: .regular))
+                    .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
+                    .truncationMode(.tail)
+                    .fixedSize(horizontal: false, vertical: true)
                     .nwShimmer(active: true)
+                if !meta.isEmpty {
+                    Text(meta).font(.nwMono(11)).lineLimit(1).truncationMode(.tail)
+                        .nwShimmer(active: true)
+                }
             }
             if let since {
                 NWElapsedText(since: since, style: .long).font(.nwMono(11)).foregroundStyle(nw.textTertiary).fixedSize()
@@ -173,6 +177,43 @@ public struct NWActivityLine: View {
         }
         .padding(.leading, NWThreadMetrics.liveTailIndent)
         .accessibilityHidden(true)
+    }
+}
+
+/// An activity line's words: the label, then the meta (when there is one) 8pt after it. The label
+/// takes the room it needs and truncates only when the line has no more, so a label naming boards
+/// or a page never widens the thread. The meta takes what is left, and leaves when that is not
+/// room for a few characters, since a letter cut in half is only noise.
+struct NWActivityWords: Layout {
+    /// The least room the meta gets.
+    let metaMinimum: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) -> CGSize {
+        measure(proposal.width, subviews).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) {
+        let parts = measure(bounds.width, subviews)
+        subviews[0].place(at: CGPoint(x: bounds.minX, y: bounds.midY), anchor: .leading,
+                          proposal: ProposedViewSize(width: parts.label.width, height: nil))
+        guard subviews.count > 1 else { return }
+        if parts.meta > 0 {
+            subviews[1].place(at: CGPoint(x: bounds.minX + parts.label.width + NW.Space.m, y: bounds.midY), anchor: .leading,
+                              proposal: ProposedViewSize(width: parts.meta, height: nil))
+        } else {
+            subviews[1].place(at: CGPoint(x: bounds.minX, y: bounds.midY), anchor: .leading, proposal: .zero)
+        }
+    }
+
+    /// The label's size and the width the meta gets (0: none), for `width` (nil: as wide as they want).
+    private func measure(_ width: CGFloat?, _ subviews: Subviews) -> (size: CGSize, label: CGSize, meta: CGFloat) {
+        let label = subviews[0].sizeThatFits(ProposedViewSize(width: width, height: nil))
+        guard subviews.count > 1 else { return (label, label, 0) }
+        let metaSize = subviews[1].sizeThatFits(ProposedViewSize(width: width.map { max(0, $0 - label.width - NW.Space.m) }, height: nil))
+        let room = width.map { $0 - label.width - NW.Space.m }
+        let meta = room.map { $0 >= metaMinimum ? min(metaSize.width, $0) : 0 } ?? metaSize.width
+        guard meta > 0 else { return (label, label, 0) }
+        return (CGSize(width: label.width + NW.Space.m + meta, height: max(label.height, metaSize.height)), label, meta)
     }
 }
 
@@ -311,8 +352,9 @@ public struct NWActivityCalls<Menu: View>: View {
     }
 
     public var body: some View {
-        // Geist Mono advances 0.6em: the column fits the longest kind, never less than 32pt.
-        let longest = rows.map(\.label.count).max() ?? 0
+        // Geist Mono advances 0.6em: the column fits the longest kind, never less than 32pt and
+        // never more than its cap (a longer name truncates).
+        let longest = min(rows.map(\.label.count).max() ?? 0, NWThreadMetrics.callLabelMaxCharacters)
         let labelWidth = max(NWThreadMetrics.callLabelWidth, (CGFloat(longest) * 11 * 0.6 * ThemeStore.shared.textScale).rounded(.up))
         NWActivityRail {
             VStack(alignment: .leading, spacing: 0) {
