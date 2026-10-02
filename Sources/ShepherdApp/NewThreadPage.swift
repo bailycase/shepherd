@@ -20,6 +20,11 @@ struct NewThreadPage: View {
     @State private var dropTargeted = false
     @State private var picking = false
     @State private var dismissal = ComposerMenuDismissal()
+    /// The @ picker: where it is and what it lists, derived once per change of the prompt (as the
+    /// thread composer's is).
+    @State private var mentions = MentionPickerState()
+    /// Where the field's caret is, for ⌫ at the start of the words (not observed).
+    @State private var caret = ComposerCaret()
 
     private enum Menu: Equatable { case place, models, settings }
 
@@ -31,6 +36,13 @@ struct NewThreadPage: View {
     }
 
     private var draft: NewThreadState { vm.newThread }
+
+    /// This Mac's designs, for the @ picker and the chips; nil with the Design tool off.
+    private var references: DesignReferenceChips? { vm.designToolEnabled ? draft.referenceChips : nil }
+
+    /// The @ picker is up: a mention is being typed. It says "Loading designs…" until the designs
+    /// are read, and for a project on another host a note that none can go there.
+    private var mentionShown: Bool { mentions.isOpen && references != nil }
 
     var body: some View {
         let _ = NWRenderProbe.tick("newThread.page")
@@ -60,16 +72,33 @@ struct NewThreadPage: View {
             .padding(.bottom, AppLayout.newThreadBottomPadding)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contentShape(Rectangle())
-            .onTapGesture { if menu != nil { menu = nil } }
+            .onTapGesture {
+                if menu != nil { menu = nil }
+                dismissMention()
+            }
         }
         .background(Color.nw.bgWindow)
         .nwAnimation(.content, value: draft.notice(vm))
         .onChange(of: draft.focusRequest, initial: true) { composing = true }
-        .onChange(of: menu) { _, open in
-            let menu = $menu
-            dismissal.dismiss = { menu.wrappedValue = nil }
-            dismissal.watch(open != nil)
+        .onChange(of: menu != nil || mentionShown, initial: true) { _, open in
+            let (menu, mentions, state) = ($menu, $mentions, vm.newThread)
+            dismissal.dismiss = {
+                if menu.wrappedValue != nil {
+                    menu.wrappedValue = nil
+                } else {
+                    mentions.wrappedValue.dismissed = state.prompt
+                    mentions.wrappedValue.close()
+                }
+            }
+            dismissal.watch(open)
         }
+        // A pasted reference becomes a chip; a mention opens the @ picker.
+        .onChange(of: draft.prompt, initial: true) { old, new in promptChanged(from: old, to: new) }
+        .onChange(of: references?.catalog) { _, _ in updateMentions() }
+        .onChange(of: references?.catalogStage) { _, _ in updateMentions() }
+        .onChange(of: references?.picturesVersion) { _, _ in if mentions.isOpen { updateMentions() } }
+        .onChange(of: draft.place) { _, _ in updateMentions() }
+        .onChange(of: mentionShown) { _, shown in if shown { menu = nil } }
         .onDisappear { dismissal.watch(false) }
         .fileImporter(isPresented: $picking, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in
             guard case .success(let urls) = result else { return }
@@ -80,7 +109,12 @@ struct NewThreadPage: View {
     // MARK: Composer
 
     private var composer: some View {
-        NWComposer(isFocused: composing || menu != nil || dropTargeted) {
+        NWComposer(isFocused: composing || menu != nil || mentionShown || dropTargeted) {
+            // Design pieces sit first, above the words (DesignReferenceChip(ref)).
+            ForEach(draft.references) { attached in
+                ComposerReferenceChip(attached: attached, references: references) { draft.detach(reference: attached.id) }
+                    .nwTransition(.list, edge: .leading)
+            }
             ForEach(draft.attachments.items) { attachment in
                 NWAttachmentChip(attachment.name, thumbnail: attachment.thumbnail) {
                     draft.attachments.remove(attachment.id)
@@ -88,7 +122,7 @@ struct NewThreadPage: View {
                 .nwTransition(.list, edge: .leading)
             }
         } field: {
-            TextField(text: Binding(get: { draft.prompt }, set: { draft.prompt = $0 }),
+            TextField(text: Binding(get: { draft.prompt }, set: { draft.prompt = $0 }), selection: caretBinding,
                       prompt: Text("Describe the task…").foregroundStyle(Color.nw.textTertiary),
                       axis: .vertical) {
                 Text("What should the agent work on?")
@@ -102,10 +136,56 @@ struct NewThreadPage: View {
             .focused($composing)
             .onKeyPress(.return, phases: .down) { press in
                 if let result = NWReturnKey.lineBreak(for: press) { return result }
+                // ↩ over the @ picker chooses its row, and never starts the thread.
+                if mentionShown {
+                    if let row = mentions.highlightedRow { chooseMention(row) }
+                    return .handled
+                }
                 draft.send(vm)
                 return .handled
             }
+            .onKeyPress(.tab) {
+                guard mentionShown else { return .ignored }
+                if let row = mentions.highlightedRow { chooseMention(row) }
+                return .handled
+            }
+            .onKeyPress(.upArrow) {
+                guard mentionShown else { return .ignored }
+                mentions.move(-1)
+                return .handled
+            }
+            .onKeyPress(.downArrow) {
+                guard mentionShown else { return .ignored }
+                mentions.move(1)
+                return .handled
+            }
+            // → drills into a design or a board; ← and ⌫ with nothing typed after the breadcrumb go back a level.
+            .onKeyPress(.rightArrow) {
+                guard mentionShown, let row = mentions.highlightedRow, row.trailing == .drill else { return .ignored }
+                chooseMention(row)
+                return .handled
+            }
+            .onKeyPress(.leftArrow) {
+                guard mentionShown, mentions.filterIsEmpty, mentions.scope != .designs else { return .ignored }
+                mentionBack()
+                return .handled
+            }
+            .onKeyPress(.delete) {
+                if mentionShown, mentions.filterIsEmpty, mentions.scope != .designs {
+                    mentionBack()
+                    return .handled
+                }
+                // ⌫ with the caret at the start of the words takes the last chip back.
+                guard let last = draft.references.last,
+                      ComposerCaret.takesBackChip(draft: draft.prompt, selection: caret.selection(in: draft.prompt)) else { return .ignored }
+                draft.detach(reference: last.id)
+                return .handled
+            }
             .onKeyPress(.escape) {
+                if mentionShown {
+                    dismissMention()
+                    return .handled
+                }
                 guard menu != nil else { return .ignored }
                 menu = nil
                 return .handled
@@ -116,12 +196,20 @@ struct NewThreadPage: View {
             controls
         }
         .nwAnimation(.list, value: draft.attachments.ids)
+        .nwAnimation(.list, value: draft.references.map(\.id))
         .onDrop(of: [.image, .fileURL], isTargeted: $dropTargeted) { providers in
             draft.attach(providers)
             return true
         }
         .background { ComposerMenuRegion(dismissal: dismissal) }
         .overlay(alignment: .bottomLeading) { menus }
+        .overlay(alignment: .bottomLeading) { mentionMenu }
+    }
+
+    /// The field's selection, kept in `caret` without redrawing the page. A selection the prompt has
+    /// outgrown (the prompt replaced from outside the field) reads as none.
+    private var caretBinding: Binding<TextSelection?> {
+        Binding(get: { [caret, draft] in caret.selection(in: draft.prompt) }, set: { [caret] in caret.selection = $0 })
     }
 
     private var controls: some View {
@@ -246,6 +334,104 @@ struct NewThreadPage: View {
 
     private func toggle(_ next: Menu) {
         menu = menu == next ? nil : next
+    }
+
+    // MARK: Design references
+
+    /// The @ picker, under the card as the page's other menus are: designs, then a design's boards
+    /// and a board's elements, or what it says before it has rows.
+    private var mentionMenu: some View {
+        ZStack(alignment: .topLeading) {
+            if mentionShown, menu == nil {
+                let content = mentions.content
+                NWMentionPicker(sections: content.sections, crumbs: content.crumbs, empty: content.empty, highlighted: mentions.highlighted,
+                                maxHeight: NWComposerMetrics.modelPickerMaxHeight, choose: { chooseMention($0) }, drill: { chooseMention($0) },
+                                back: { mentionBack() }, hover: { mentions.highlighted = $0 }, startDesign: references?.io.startDesign,
+                                retry: { references?.startCatalogRead() },
+                                appear: { id in
+                                    if let item = mentions.content.items[id] { references?.rowAppeared(item) }
+                                })
+                    .nwTransition(.overlay, anchor: .topLeading)
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .background { ComposerMenuRegion(dismissal: dismissal) }
+        .alignmentGuide(.bottom) { $0[.top] - AppLayout.menuGap }
+        .nwAnimation(.overlay, value: mentionShown && menu == nil)
+    }
+
+    /// Esc, a click away, or the Design tool going: the picker closes for the prompt as typed.
+    private func dismissMention() {
+        guard mentions.isOpen else { return }
+        mentions.dismissed = draft.prompt
+        mentions.close()
+    }
+
+    /// The prompt changed: a reference it gained by a paste becomes a chip (the text around it
+    /// stays), and the picker follows the mention it ends in.
+    private func promptChanged(from old: String, to new: String) {
+        guard references != nil else {
+            if mentions.isOpen { mentions.close() }
+            return
+        }
+        if let pasted = ComposerReferencePaste.extract(new, previous: old) {
+            draft.prompt = pasted.draft
+            for reference in pasted.references { attach(reference) }
+            return
+        }
+        updateMentions()
+    }
+
+    /// Derives what the picker lists for the prompt as it is; opening it reads this Mac's designs.
+    private func updateMentions() {
+        guard let references else { return }
+        let wasOpen = mentions.isOpen, scope = mentions.scope
+        let unavailable = draft.referencesUnavailable
+        // Opening reads the designs afresh: the picker says it is loading from this call on.
+        if unavailable == nil, mentions.opens(for: draft.prompt) { references.startCatalogRead() }
+        mentions.update(draft: draft.prompt, catalog: references.catalog, stage: references.catalogStage, unavailable: unavailable) {
+            references.rowPicture($0)
+        }
+        guard unavailable == nil else { return }
+        if mentions.isOpen, !wasOpen {
+            draft.referenceError = nil
+            references.io.wantPictures(mentions.scope)
+        } else if mentions.isOpen, mentions.scope != scope {
+            references.io.wantPictures(mentions.scope)
+        }
+    }
+
+    /// A row chosen: a design or board drills in; anything else joins the message as a chip, its
+    /// mention taken out of the words.
+    private func chooseMention(_ row: NWMentionRow) {
+        switch mentions.choose(row) {
+        case .drill(let text):
+            draft.prompt = text
+        case .pick(let reference, let text):
+            draft.prompt = text
+            attach(reference)
+        case nil:
+            break
+        }
+        composing = true
+    }
+
+    private func mentionBack() {
+        if let text = mentions.back() { draft.prompt = text }
+        composing = true
+    }
+
+    /// Pins `reference` and puts its chip in the composer; why it can't, under the card.
+    private func attach(_ reference: DesignReference) {
+        guard let references else { return }
+        let draft = draft
+        Task {
+            do {
+                try await references.io.attach(reference)
+            } catch {
+                draft.referenceError = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+            }
+        }
     }
 
     private func openModels() {

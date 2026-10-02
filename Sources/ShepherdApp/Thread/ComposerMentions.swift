@@ -262,7 +262,10 @@ struct MentionPickerState: Equatable {
     /// the mention still spells, listing `catalog`'s rows for it. With no catalog read yet it opens
     /// all the same, saying what `stage` is (reading, or why it couldn't) and listing nothing to
     /// choose; the words typed meanwhile filter the rows once they arrive.
-    mutating func update(draft: String, catalog: DesignMentionCatalog?, stage: DesignMentionLoad.Stage = .loading, now: Date = Date(),
+    /// `unavailable` is why no design can be attached where this picker is (a New thread project on
+    /// another host): it opens on that note alone, reads nothing and lists nothing.
+    mutating func update(draft: String, catalog: DesignMentionCatalog?, stage: DesignMentionLoad.Stage = .loading,
+                         unavailable: String? = nil, now: Date = Date(),
                          thumbnail: (DesignMentionItem) -> NWReferenceImage? = { _ in nil }) {
         guard draft != dismissed, let mention = ComposerMention.token(in: draft) else {
             close()
@@ -283,6 +286,12 @@ struct MentionPickerState: Equatable {
             filter = mention.text
         }
         self.mention = mention
+        if let unavailable {
+            content = MentionPickerContent()
+            content.empty = .unavailable(unavailable)
+            highlighted = nil
+            return
+        }
         guard let catalog else {
             content = MentionPickerContent()
             if case .failed(let reason) = stage { content.empty = .failed(reason: reason) } else { content.empty = .loading }
