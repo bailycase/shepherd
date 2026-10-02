@@ -169,16 +169,6 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     /// (`rate_limited`), a design that is gone, and a design's agent (`not_a_thread`).
     case designNote(id: Int, agentID: AgentID, reference: String, text: String)
 
-    // MARK: MCP servers
-
-    /// The MCP extension needs a server's credentials: its Keychain secrets, or an OAuth token
-    /// (`challenge` is a 401's or 403's raw `WWW-Authenticate`). Answered with
-    /// `ExtensionReply.mcpCredentials`, or `.error` with `needs_sign_in`, `expired`,
-    /// `needs_scopes`, `missing_secret`, `no_such_server` or `mcp_unavailable`.
-    case mcpCredentials(id: Int, agentID: AgentID, server: String, reason: MCPCredentialReason, challenge: String?)
-    /// A server's state changed in this agent's pi, or it listed its tools. Fire-and-forget.
-    case mcpReport(agentID: AgentID, report: MCPServerReport)
-
     // MARK: Browser (request/reply)
 
     /// The browser extension registered this connection as the agent's browser channel: from now
@@ -217,7 +207,6 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case designEditBoards, designSearch, designCheckpoint, designRender, designExtract
         case designSystemRead, designSystemWrite, designProposeComments
         case designGet, designNote
-        case mcpCredentials, mcpReport
         case helloBrowser, browser
     }
 
@@ -505,19 +494,6 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
                 reference: try c.decode(String.self, forKey: .reference),
                 text: try c.decode(String.self, forKey: .text)
             )
-        case .mcpCredentials:
-            self = .mcpCredentials(
-                id: try c.decode(Int.self, forKey: .id),
-                agentID: try c.decode(AgentID.self, forKey: .agentID),
-                server: try c.decode(String.self, forKey: .server),
-                reason: try c.decode(MCPCredentialReason.self, forKey: .reason),
-                challenge: try c.decodeIfPresent(String.self, forKey: .challenge)
-            )
-        case .mcpReport:
-            self = .mcpReport(
-                agentID: try c.decode(AgentID.self, forKey: .agentID),
-                report: try c.decode(MCPServerReport.self, forKey: .report)
-            )
         case .helloBrowser:
             self = .helloBrowser(agentID: try c.decode(AgentID.self, forKey: .agentID))
         case .browser:
@@ -778,17 +754,6 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(agentID, forKey: .agentID)
             try c.encode(reference, forKey: .reference)
             try c.encode(text, forKey: .text)
-        case .mcpCredentials(let id, let agentID, let server, let reason, let challenge):
-            try c.encode(Kind.mcpCredentials, forKey: .type)
-            try c.encode(id, forKey: .id)
-            try c.encode(agentID, forKey: .agentID)
-            try c.encode(server, forKey: .server)
-            try c.encode(reason, forKey: .reason)
-            try c.encodeIfPresent(challenge, forKey: .challenge)
-        case .mcpReport(let agentID, let report):
-            try c.encode(Kind.mcpReport, forKey: .type)
-            try c.encode(agentID, forKey: .agentID)
-            try c.encode(report, forKey: .report)
         case .helloBrowser(let agentID):
             try c.encode(Kind.helloBrowser, forKey: .type)
             try c.encode(agentID, forKey: .agentID)
@@ -1170,8 +1135,6 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     case designReference(id: Int, answer: DesignReferenceAnswer)
     /// A `designNote`: the note as the design keeps it.
     case designNote(id: Int, note: DesignThreadNote)
-    /// A server's credentials for the MCP extension (`ExtensionMessage.mcpCredentials`).
-    case mcpCredentials(id: Int, credentials: MCPCredentials)
     /// A `browser` request's answer: text, and for a screenshot an image (`BrowserOutcome`).
     case browserResult(id: Int, text: String, image: BrowserImage?)
 
@@ -1185,7 +1148,6 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case listing, system
         case proposals
         case answer, note
-        case credentials
         case image
     }
 
@@ -1197,7 +1159,6 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case designBatchEdited, designSearchResult, designCheckpoints, designRendered, designExtracted
         case designSystems, designSystem, designSystemWritten, designProposals
         case designReference, designNote
-        case mcpCredentials
         case browserResult
     }
 
@@ -1363,11 +1324,6 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
                 id: try c.decode(Int.self, forKey: .id),
                 result: try c.decode(DesignSystemWriteResult.self, forKey: .result)
             )
-        case .mcpCredentials:
-            self = .mcpCredentials(
-                id: try c.decode(Int.self, forKey: .id),
-                credentials: try c.decode(MCPCredentials.self, forKey: .credentials)
-            )
         case .browserResult:
             self = .browserResult(
                 id: try c.decode(Int.self, forKey: .id),
@@ -1511,10 +1467,6 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
             try c.encode(Kind.designNote, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(note, forKey: .note)
-        case .mcpCredentials(let id, let credentials):
-            try c.encode(Kind.mcpCredentials, forKey: .type)
-            try c.encode(id, forKey: .id)
-            try c.encode(credentials, forKey: .credentials)
         case .browserResult(let id, let text, let image):
             try c.encode(Kind.browserResult, forKey: .type)
             try c.encode(id, forKey: .id)

@@ -336,7 +336,7 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
   review leaves, and split terminal layouts flattened into tabs (saved layouts with a split tab
   become one tab per terminal, each keeping its session, folder and title; layouts already made of
   single-terminal tabs are not rewritten; inspector tabs and layouts with no thread are untouched).
-- **Extensions:** embedded extensions byte-identical to `Extensions/*` (all twenty files, and
+- **Extensions:** embedded extensions byte-identical to `Extensions/*` (all nineteen files, and
   the design skill's two files).
 - **Themes:** every theme variant complete, and the WCAG contrast rules met.
 - **Design rules:** `DesignRulesTests` scans the Mac app, ShepherdUI and the iOS client for a

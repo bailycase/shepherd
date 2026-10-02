@@ -240,11 +240,15 @@ Sources/
     RemoteHostStore, AgentPeers, AgentNotifications, ChildRuns, PiSessionFile (+ adoption from
       your pi), AppUpdater (Sparkle: UpdateChannel, UpdateChannelStore, ChannelDelegate),
       NightlyMovedNotice
-    Status/Namer/Panes/Review/Subagents/Children/Inspect/Instructions/Design/MCPExtension.swift
-      embedded extensions (DesignExtension also carries the design skill; MCPExtension the client)
-    MCP/ (MCPStore, MCPConfigFile, MCPSecretStore, MCPOAuth, MCPProbe, sheets),
-      SettingsMCP, ShepherdViewModel+MCP   Settings ▸ MCP servers: the config file, Keychain,
-      OAuth, and what agents report; answers the extension's credential requests
+    Status/Namer/Panes/Review/Subagents/Children/Inspect/Instructions/Design/MCPProjectExtension.swift
+      embedded extensions (DesignExtension also carries the design skill; MCPProjectExtension a
+      repo's .mcp.json)
+    MCP/ (MCPStore, MCPConfigFile, MCPPiConfig, MCPPiCLI, MCPSecretStore, MCPSignInFlow, MCPURLCheck,
+      MCPNames, MCPBudgetEstimate, MCPImport, sheets), SettingsMCP, ShepherdViewModel+MCP
+                       Settings ▸ MCP servers over pi's own MCP (docs/mcp.md): the user's mcp.json,
+                       the pi-format file derived from it, the Keychain values put in pi's
+                       environment, and each server's state and sign-in read from and run through
+                       `pi mcp`
   shepherd-cli/        `shepherd --import herdr` (writes state.json while Shepherd is not running).
 Packages/
   ShepherdUI/          Night Watch, its own local package (module ShepherdUI; macOS 26, iOS 27;
@@ -296,10 +300,8 @@ Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free)
                           native helpers through the children extension; see docs/designs.md
   shepherd-design-refs.ts an ordinary thread's design_get and design_note, registered only once the
                           thread holds a design reference; see docs/designs.md › Design references
-  shepherd-mcp.ts         the mcp tool (search, describe, call) and direct <server>_<tool> tools
-                          over the servers in Settings ▸ MCP servers; credentials from the app
-  shepherd-mcp-client.mjs the dependency-free MCP client (stdio, Streamable HTTP, legacy SSE),
-                          also run by the app as `node shepherd-mcp-client.mjs probe`
+  shepherd-mcp-project.ts a repo's .mcp.json registered on pi's MCP (`pi.registerMcpServer`), while
+                          Settings ▸ MCP servers ▸ Also use a repo's .mcp.json is on; docs/mcp.md
   shepherd-browser.ts     browser_open, browser_read, browser_click, browser_type, browser_press,
                           browser_scroll, browser_wait, browser_screenshot, browser_console,
                           browser_eval, browser_back, browser_forward and browser_reload, on the

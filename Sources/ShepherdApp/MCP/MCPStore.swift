@@ -31,6 +31,8 @@ final class MCPStore {
         var userHome: String = NSHomeDirectory()
         /// Writes pi's `mcp.json` (`MCPPiConfig`), in pi's home.
         var writePiConfig: (Data) throws -> Void = { _ in }
+        /// What Shepherd's own MCP left behind and nothing reads now: removed once at start.
+        var removeLeftovers: () -> Void = {}
 
         /// The app's: the real file and Keychain, pi's home and its `mcp` subcommands, the browser
         /// and the pasteboard.
@@ -43,7 +45,14 @@ final class MCPStore {
                                 preparePi: { await Task.detached(priority: .userInitiated) { pi.prepare()?.message }.value },
                                 authData: { try? Data(contentsOf: authFile) },
                                 openURL: openURL, copy: copy, now: { Date() }, userHome: home.userHome,
-                                writePiConfig: { try home.installMCPConfig($0) })
+                                writePiConfig: { try home.installMCPConfig($0) },
+                                removeLeftovers: {
+                                    // The tools cache of the extension Shepherd no longer runs, and the sign-ins its own OAuth kept:
+                                    // pi's are in its home now, and a Keychain token nothing reads is only a credential left lying.
+                                    try? FileManager.default.removeItem(at: ShepherdPaths.supportDirectory().appendingPathComponent("mcp/tools.json"))
+                                    let secrets = MCPSecrets.forApp()
+                                    for account in secrets.accounts(withPrefix: "oauth/") { secrets.remove(account) }
+                                })
         }
     }
 
@@ -109,6 +118,7 @@ final class MCPStore {
 
     init(dependencies: Dependencies) {
         self.dependencies = dependencies
+        dependencies.removeLeftovers()
         reload()
     }
 

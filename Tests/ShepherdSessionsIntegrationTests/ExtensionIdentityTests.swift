@@ -18,7 +18,7 @@ struct ExtensionIdentityTests {
         let peers = Locked<[AgentID]>([])
         let notifies = Locked<[String]>([])
         let automations = Locked<Int>(0)
-        /// Reviews, MCP requests and reports, and children reports.
+        /// Reviews and children reports.
         let others = Locked<[String]>([])
 
         init(_ server: SessionServer) {
@@ -39,11 +39,6 @@ struct ExtensionIdentityTests {
                 others.withValue { $0.append("review") }
                 respond(.failed(code: "seen", message: "seen"))
             }
-            server.onMCPRequest = { [others] _, respond in
-                others.withValue { $0.append("mcp request") }
-                respond(.failure(code: "seen", message: "seen"))
-            }
-            server.onMCPReport = { [others] agent, _ in others.withValue { $0.append("mcp report for \(agent.rawValue)") } }
             server.onAgentChildren = { [others] agent, _ in others.withValue { $0.append("children of \(agent.rawValue)") } }
         }
     }
@@ -173,7 +168,6 @@ struct ExtensionIdentityTests {
             .setAgentSession(agentID: victim, piSessionID: "another-session"),
             .setAgentChildren(agentID: victim, children: [ChildRun(runID: "x", label: "x", state: "running")]),
             .notify(agentID: victim, title: "fake", body: "from another process"),
-            .mcpReport(agentID: victim, report: MCPServerReport(server: "s", status: MCPServerStatus(state: .connected))),
             .agentResponse(agentID: victim, requestID: "token", result: AgentCoordinationResult(text: "made up")),
             .cancelAgentRequest(id: 90, agentID: victim),
         ]
@@ -201,7 +195,6 @@ struct ExtensionIdentityTests {
             .designProposeComments(id: 21, agentID: victim, designID: design, call: "toolu_1", proposals: []),
             .designGet(id: 22, agentID: victim, reference: "shepherd-design-ref://local/d1@1", what: "outline"),
             .designNote(id: 23, agentID: victim, reference: "shepherd-design-ref://local/d1@1", text: "note"),
-            .mcpCredentials(id: 24, agentID: victim, server: "linear", reason: .unauthorized, challenge: nil),
             .browser(id: 25, agentID: victim, request: .reload(note: nil)),
             .designEditBoard(id: 26, agentID: victim, designID: design, path: "A.dc.html",
                              edits: [DesignBoardEdit(find: "a", replace: "b")], baseRevision: nil),
@@ -212,7 +205,7 @@ struct ExtensionIdentityTests {
             .designRender(id: 30, agentID: victim, designID: design, request: DesignRenderRequest(path: "A.dc.html")),
             .designExtract(id: 31, agentID: victim, designID: design, request: DesignExtractRequest(path: "A.dc.html", element: "4", piece: "Card")),
         ]
-        // Every kind of message that names an agent as its actor (41 of the protocol's 48; the other
+        // Every kind of message that names an agent as its actor (39 of the protocol's 46; the other
         // seven name none) is in one of the two lists.
         func kind(_ message: ExtensionMessage) throws -> String {
             let object = try JSONSerialization.jsonObject(with: NDJSON.encode(message)) as? [String: Any]
@@ -220,7 +213,7 @@ struct ExtensionIdentityTests {
         }
         #expect((quiet + requests).allSatisfy { $0.speaksFor == victim })
         #expect(requests.allSatisfy { $0.replyID != nil } && quiet.allSatisfy { $0.replyID == nil })
-        #expect(Set(try (quiet + requests).map(kind)).count == 41)
+        #expect(Set(try (quiet + requests).map(kind)).count == 39)
 
         let client = try ExtensionClient(path: h.socketPath)
         for message in quiet + requests { try client.send(message) }
