@@ -631,9 +631,11 @@ public enum RPCEvent: Decodable, Hashable, Sendable {
     /// decode, so it is left in the record.
     case messageUpdate(delta: RPCAssistantDelta)
     case messageEnd(message: RPCMessage)
-    case toolExecutionStart(toolCallId: String, toolName: String, args: JSONValue?)
-    case toolExecutionUpdate(toolCallId: String, toolName: String, args: JSONValue?, partialResult: RPCToolResult?)
-    case toolExecutionEnd(toolCallId: String, toolName: String, result: RPCToolResult?, isError: Bool)
+    /// `parentToolCallId` names the call a nested one runs inside (a codemode script's calls to
+    /// other tools); a top-level call has none.
+    case toolExecutionStart(toolCallId: String, toolName: String, args: JSONValue?, parentToolCallId: String? = nil)
+    case toolExecutionUpdate(toolCallId: String, toolName: String, args: JSONValue?, partialResult: RPCToolResult?, parentToolCallId: String? = nil)
+    case toolExecutionEnd(toolCallId: String, toolName: String, result: RPCToolResult?, isError: Bool, parentToolCallId: String? = nil)
     case queueUpdate(steering: [String], followUp: [String])
     case extensionUIRequest(RPCExtensionUIRequest)
     case extensionError(extensionPath: String?, event: String?, error: String)
@@ -651,9 +653,16 @@ public enum RPCEvent: Decodable, Hashable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case type, messages, willRetry, message, toolResults, assistantMessageEvent
-        case toolCallId, toolName, args, partialResult, result, isError, steering, followUp
+        case toolCallId, parentToolCallId, toolName, args, partialResult, result, isError, steering, followUp
         case extensionPath, event, error, reason, aborted, errorMessage
         case attempt, maxAttempts, delayMs, success
+    }
+
+    /// A nested call's parent id. A value that is not a non-empty string is no parent: a malformed
+    /// field must not cost the event.
+    private static func parent(_ c: KeyedDecodingContainer<CodingKeys>) -> String? {
+        guard let id = (try? c.decodeIfPresent(String.self, forKey: .parentToolCallId)) ?? nil, !id.isEmpty else { return nil }
+        return id
     }
 
     public init(from decoder: Decoder) throws {
@@ -686,21 +695,24 @@ public enum RPCEvent: Decodable, Hashable, Sendable {
             self = .toolExecutionStart(
                 toolCallId: try c.decodeIfPresent(String.self, forKey: .toolCallId) ?? "",
                 toolName: try c.decodeIfPresent(String.self, forKey: .toolName) ?? "",
-                args: try c.decodeIfPresent(JSONValue.self, forKey: .args)
+                args: try c.decodeIfPresent(JSONValue.self, forKey: .args),
+                parentToolCallId: Self.parent(c)
             )
         case "tool_execution_update":
             self = .toolExecutionUpdate(
                 toolCallId: try c.decodeIfPresent(String.self, forKey: .toolCallId) ?? "",
                 toolName: try c.decodeIfPresent(String.self, forKey: .toolName) ?? "",
                 args: try c.decodeIfPresent(JSONValue.self, forKey: .args),
-                partialResult: try c.decodeIfPresent(RPCToolResult.self, forKey: .partialResult)
+                partialResult: try c.decodeIfPresent(RPCToolResult.self, forKey: .partialResult),
+                parentToolCallId: Self.parent(c)
             )
         case "tool_execution_end":
             self = .toolExecutionEnd(
                 toolCallId: try c.decodeIfPresent(String.self, forKey: .toolCallId) ?? "",
                 toolName: try c.decodeIfPresent(String.self, forKey: .toolName) ?? "",
                 result: try c.decodeIfPresent(RPCToolResult.self, forKey: .result),
-                isError: try c.decodeIfPresent(Bool.self, forKey: .isError) ?? false
+                isError: try c.decodeIfPresent(Bool.self, forKey: .isError) ?? false,
+                parentToolCallId: Self.parent(c)
             )
         case "queue_update":
             self = .queueUpdate(
