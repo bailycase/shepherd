@@ -18,7 +18,8 @@ request. So there are two halves, a guard on the start (below) and clearing for 
 `python3 scripts/context_budget.py` launches a real pi the way Shepherd launches an agent's
 (`Tests/Extensions/context-harness.mjs`): the extensions in `PiLaunch`'s order with the environment
 the app gives them, Settings ▸ Instructions' `AGENTS.md` and `APPEND_SYSTEM.md`, this repository's
-`AGENTS.md` as the project file, six skills, three MCP servers (one set to Each tool on its own),
+`AGENTS.md` as the project file, six skills, three MCP servers on pi's own MCP (two on Search, one on Direct; stand-ins from
+`Tests/Extensions/fixtures/fake-mcp-stdio.mjs`, connected before the measurement),
 all against a fake provider that records the request body. It counts what the first model request
 carried, section by section, and prints the table.
 
@@ -52,22 +53,22 @@ change found it; after has no mission tool or parameters (Missions) and the rule
 
 | Section | Before | After | Share of a 272k window |
 | --- | ---: | ---: | ---: |
-| pi: system prompt (preamble, tool list, rules, docs, cwd) | 766 | 766 | 0.3% |
+| pi: system prompt (preamble, tool list, rules, docs, cwd) | 766 | 771 | 0.3% |
 | pi: built-in tool definitions (read, bash, edit, write) | 696 | 696 | 0.3% |
-| Shepherd: tool snippets and rules added to the prompt | 946 | 946 | 0.3% |
+| Shepherd: tool snippets and rules added to the prompt | 946 | 949 | 0.3% |
 | Shepherd tools: terminal_* (panes) | 590 | 590 | 0.2% |
 | Shepherd tools: agent_* (panes) | 1,692 | 1,692 | 0.6% |
 | Shepherd tools: automation_*, notify (panes) | 904 | 904 | 0.3% |
 | Shepherd tools: review_diff | 245 | 245 | 0.1% |
 | Shepherd tools: native subagents (shepherd_child_*, workflow) | 2,015 | 1,547 | 0.6% |
 | Shepherd tools: browser_* | 2,178 | 2,178 | 0.8% |
-| Shepherd tools: mcp (one proxy tool) | 183 | 183 | 0.1% |
-| Shepherd tools: MCP servers set to Each tool on its own | 1,311 | 1,311 | 0.5% |
+| pi's MCP: tool_search and its server list (servers on Search) | 183 | 206 | 0.1% |
+| pi's MCP: tools of servers set to Direct | 1,311 | 1,326 | 0.5% |
 | Skills list | 441 | 441 | 0.2% |
 | Instructions: APPEND_SYSTEM.md | 88 | 88 | 0.0% |
 | Instructions: Settings ▸ Instructions' AGENTS.md | 891 | 891 | 0.3% |
-| Instructions: the project's AGENTS.md | 4,439 | 4,548 | 1.7% |
-| **Total before any work** | **17,384** | **17,026** | **6.3%** |
+| Instructions: the project's AGENTS.md | 4,439 | 4,556 | 1.7% |
+| **Total before any work** | **17,384** | **17,080** | **6.3%** |
 
 Two things the table shows besides this change. The agent-to-agent message wording that landed
 before it (each tool that reaches another thread now says first that it is only for what the user
@@ -107,7 +108,7 @@ Of an ordinary thread's tool definitions, 2.1k are kept and 6.5k deferrable.
 | `shepherd_workflow` | 385 | defer | defer | defer | A scripted run of helpers: one of the heaviest single descriptions for the rarest use. |
 | `shepherd_mission` | 0 | **drop** | **drop** | **drop** | Missions are deferred and no screen shows them. The 0 is its size now: it was about 470 tokens with its parameters on the two tools above. |
 | `browser_open` … `browser_reload` (13) | 2,182 | defer | defer | · | The thread's own Browser page: 13 tools and 5 prompt rules in every thread, and most threads never open a page. The first Phase B candidate. |
-| `mcp` | 183 | keep | keep | keep | One proxy tool for every server set to the default exposure; present only while a server is configured. |
+| `tool_search` | 159 | keep | keep | keep | pi's own tool search, which loads the tools of the MCP servers left on Search (docs/mcp.md); with the server list it adds to the prompt, 206 tokens, and only while a server is on Search. A server set to Direct declares its own `mcp__<server>__<tool>` tools instead (the user's, so not rows here); the Context card groups them as MCP. |
 | `design_get`, `design_note` | 476 | keep | · | · | Registered only once the thread holds a design reference. |
 | `suggest_instruction` | 0 | keep | keep | · | Registered only while Settings ▸ Experiments ▸ Suggested instructions is on for the kind of agent. |
 | `design_read` … `markup_propose` (17) | 4,872 | · | · | keep | What a design's agent draws and edits with; no other agent gets them. |
@@ -134,6 +135,14 @@ every result in full, and a switch off is byte-identical to no extension (a test
 
 **What counts as recent.** A user message can start a hundred tool calls, so "recent" is the last few
 model calls, not the last user turn. A call is an assistant message with its tool results.
+
+**MCP.** A result of pi's own MCP is a tool result like any other (`mcp__<server>__<tool>`, by its name in
+the stub), clipped and cleared the same. So is `tool_search`'s: it lists what it loaded, and a batch
+may remove that list from the request. The tools stay: pi loads a deferred tool through its active tool
+set (`setActiveTools`, a record of its own in the transcript that survives `/tree`, resume and a
+fork), not through the text of the result, so a tool a cleared search loaded is still declared and
+callable. `context-mcp.test.mjs` runs it on a real pi (the search cleared, the tool declared in every
+later request, and a call to it after the clearing answered).
 
 **What it does:**
 

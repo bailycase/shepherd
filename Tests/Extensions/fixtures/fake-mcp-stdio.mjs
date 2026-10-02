@@ -3,7 +3,7 @@
 // tools/list in pages of two, and tools that echo, fail, wait, read the environment, and change
 // the tool list. FAKE_MCP_CRASH makes it die at start with a message on stderr; FAKE_MCP_PIDFILE
 // gets its pid; FAKE_MCP_LOG gets every message it received; FAKE_MCP_TOOLS=<n> adds n tools shaped
-// like a real server's catalog (fake-mcp-catalog.mjs).
+// like a real server's catalog (fake-mcp-catalog.mjs); FAKE_MCP_CATALOG_FILE serves a catalog of its own.
 import * as fs from "node:fs";
 import { spawn } from "node:child_process";
 import * as catalog from "./fake-mcp-catalog.mjs";
@@ -23,7 +23,10 @@ if (process.env.FAKE_MCP_CRASH) {
   process.stderr.write("fake-mcp: can't read its config\n");
   process.exit(3);
 }
-const tools = [...catalog.base(), ...catalog.forge(Number(process.env.FAKE_MCP_TOOLS ?? 0))];
+// FAKE_MCP_CATALOG_FILE names a JSON array of tools ({name, description, inputSchema}) served instead of the built-in ones.
+const tools = process.env.FAKE_MCP_CATALOG_FILE
+  ? JSON.parse(fs.readFileSync(process.env.FAKE_MCP_CATALOG_FILE, "utf8"))
+  : [...catalog.base(), ...catalog.forge(Number(process.env.FAKE_MCP_TOOLS ?? 0))];
 const pendingSlow = new Map();
 
 function send(message) {
