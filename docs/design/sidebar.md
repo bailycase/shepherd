@@ -1,17 +1,19 @@
 # Sidebar
 
-> Read when you change the sidebar: its rows, Needs you, Pinned, Recents or Projects.
+> Read when you change sidebar activity groups, disclosures, thread rows or Projects.
 
 `SidebarView` (`SidebarView.swift`, its values in `SidebarModel.swift`) on `NWSidebar` (ShepherdUI,
 `Components/Navigation/Sidebar.swift`): the sidebar every Mac board draws (NWNavigation, and the
 sidebars of Main, Running, NavNewThread, NavAutomations and NavHosts). 232pt on `bgBase` by
 default, and it keeps its width when the side pane opens. Top to bottom: the top bar, the
-destinations, Needs you, Pinned (only while something is pinned), Recents, and the footer.
-Settings ▸ Appearance ▸ Organize by (or View ▸ Organize Sidebar By) swaps Needs you, Pinned and
-Recents for a project tree (Organized by project, below; it draws no pins); Activity is the
+destinations, Pinned, Needs you, Working, Done, Recents, Designs, and the footer.
+Reference: [NWNavigation.png](boards/NWNavigation.png), revision 420, and
+[NWNavigation-checklist.md](boards/NWNavigation-checklist.md). The user's clarification puts
+Pinned first and keeps pinned threads there regardless of status.
+Settings ▸ Appearance ▸ Organize by (or View ▸ Organize Sidebar By) swaps the activity groups for a project tree (Organized by project, below; it draws no pins); Activity is the
 default. Each part follows Settings ▸ Appearance ▸ Sidebar
-rows: Standard values are given first and Compact in parentheses; the boards draw no Comfortable
-sample, so it takes Standard's spacing at its 36pt rows.
+rows: Compact 22pt, Standard 28pt and Comfortable 36pt. Activity rows have no inter-row gap;
+destinations and the project tree keep their existing 1pt gap.
 
 The user's decisions, 2026-09-25: "Match the canvas (Recommended)": Recents replaces the This Mac /
 host / space tree, ⌘N opens the New thread page instead of starting an agent at once, spaces become
@@ -32,18 +34,26 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
   semibold and its icon in `textPrimary`. In order:
   1. **New thread**: a `plus` in a 20pt `bgSelected` circle, and its chord trailing as keycaps
      (`NWKeycap`, `KeybindingsStore`'s `.newAgent`). It opens the New thread page.
-  2. **Automations**: a `bolt`. It opens the Automations page.
-  3. **More**: a chevron in `textTertiary`, pointing right while closed and turned down while open.
+  2. **Designs**, while the Design tool experiment is on: the outline nib. It opens Designs.
+  3. **Automations**: an outline `bolt`. It opens the Automations page.
+  4. **More**: a chevron in `textTertiary`, pointing right while closed and turned down while open.
      It discloses its rows, indented to 22pt leading padding: **Hosts** (`display`), carrying "n
      offline" in mono 10 `failed` while a host is neither connected nor connecting (NavHosts: "1
      offline"), which opens the Hosts page; and **Extensions** (`puzzlepiece.extension`), which
      opens Settings ▸ Pi, where the bundled extensions are. Opening Hosts opens More; the
      disclosure is not kept across launches.
-- **Needs you** (`NWSidebarSection(.needsYou(count:))`): it appears only while something waits on
-  you: every agent on this Mac or a connected host that is blocked, automation runs included
+- **Section headers** (`NWSidebarSectionHeader`): omit empty groups. A 9pt outline chevron
+  points down while open and right while folded, 6pt before the title. The title is Geist 11.5
+  medium `textSecondary`; its adjacent count is Geist Mono 10.5 `textTertiary`. Needs you uses
+  `lanternText` for both. Header rows follow density with a 24pt minimum hit area and 6pt above.
+  Each disclosure persists independently in `shepherd.sidebar.collapsedActivitySections` on this
+  Mac. Folded groups keep their counts but build no rows. Folded Working keeps a blue pulsing
+  dot, static under Reduce Motion. Done's separate "Mark all seen" button remains available
+  while folded, with a 20pt visual height and 24pt hit area.
+- **Needs you**: unpinned agents on this Mac or a connected host that are blocked, automation runs included
   (a subagent never waits on you: its question goes to its parent). The header is "Needs you" in
-  Geist 11.5 medium `lanternText` with the count trailing in mono 10.5 `lanternText`, padded 14pt
-  (10) above, 4pt below, and 8pt (6) at the sides. Each row (`NWSidebarRow`) is 28pt (22), radius 8, padded 8pt (6), with a 14pt leading slot
+  Geist 11.5 medium `lanternText` with an adjacent mono 10.5 `lanternText` count.
+  Each row (`NWSidebarRow`) is 28pt (22), radius 8, padded 8pt (6), with a 14pt leading slot
   and a 9pt (7) gap. The slot holds a thread's glowing 6pt `lantern` dot, or an automation run's
   13pt (11) `bolt` in `lanternText`. The title is in the row font, truncating at the tail. The
   reason trails in mono 10 `lanternText` ("retention?", "approve plan"): the agent's own word or
@@ -59,18 +69,16 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
 - **Not signed in:** an agent on this Mac whose pi can't start because it isn't signed in
   (Thread › Not signed in) is in Needs you too, with the glowing lantern dot and "sign in" as its
   reason (`NWSidebarRow(agent) · .notSignedIn`), until it starts again.
-- **Pinned** (`NWSidebarSection(.pinned)`; SidebarPinned, which the canvas gains with this
-  section: no board drew it, see the departures): the threads the user pinned, between Needs you
-  and Recents, in the order they were pinned (oldest pin first). There is no Pinned section while
-  nothing is pinned, and its header is the others' own: "Pinned" in Geist 11.5 medium
-  `textTertiary`, spaced like Recents, with no count. Its rows are Recents' rows, for a thread on
-  this Mac or on a connected host alike (state dot, host tag, elapsed time and the rest, the
+- **Pinned**: the first group, in pin order, oldest pin first. It has the same disclosure and
+  adjacent count as the other groups. Empty, it is absent. The user explicitly requested this
+  addition to the supplied board. Its rows are Recents' rows, for a thread on
+  this Mac or on a connected host alike (state dot, host tag, activity and completion age, the
   selected row in `bgSelected`); a pinned row wears no glyph of its own, since the header says it,
   and VoiceOver adds ", pinned" to its label. The user's decisions for it, 2026-09-30 (the request
   was "pin threads at the top in a different labeled list", and no board drew one):
-  - **One place each:** a thread shows once. A pinned thread that waits on you is in Needs you
-    (attention wins, and its menu still says Unpin) and returns to its place in Pinned once it is
-    answered; Recents never repeats a pinned thread. A pinned thread on a host that dropped stays
+  - **One place each:** a pinned thread stays in Pinned while working, blocked, idle or done.
+    Its status dot, question reason and context menu still update. No other group repeats it.
+    A pinned thread on a host that dropped stays
     in Pinned as the host last sent it, dimmed and without Needs you, as in Recents; one on a host
     not reached since launch is absent until it connects.
   - **What is pinned:** threads on This Mac and on connected hosts. An automation's run is not
@@ -90,16 +98,36 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
     the thread that needs you, else the one most recently active (as before), and the New thread
     page's Continue card is the most recent running thread.
   - **Performance:** the lists derive once per change (`SidebarDerivation.lists` takes the pins
-    with the source); a pin change redraws only the rows that move and the headers that appear or
-    go, and a status report on a pinned thread only its row (`ListPerformanceTests`).
-- **Recents** (`NWSidebarSection(.recents)`): every other agent (one not pinned, or waiting on
-  you), on this Mac and every connected host, automation runs included, in one list, most
-  recently active first. The header is "Recents"
-  in Geist 11.5 medium `textTertiary`, spaced like Needs you, and the rows are the same. The leading
+    with the source); a pin change redraws the moved row and both groups' count headers. A status
+    report on a pinned thread redraws only its row (`ListPerformanceTests`).
+- **Working**: unpinned running threads and live automation runs, most recently active first.
+  Local rows draw a 28 × 12 blue sparkline from their last ten measured tool-completion rates.
+  Before the first tool event it is flat, never a decorative waveform. Remote rows retain their
+  host tag because the remote protocol carries no tool-activity samples.
+- **Done**: unpinned finished, unseen threads and settled automation runs. Opening one keeps it
+  here while read. Opening the same thread or a destination page changes nothing; opening a
+  different thread marks the previous completion seen and moves it to Recents. A later completed
+  turn returns it to Done. "Mark all seen" clears every current Done row, including the selected
+  one, without changing selection or folding Done. Local rows show completion age, such as
+  "2m ago". Failed turns keep their red dot. Remote rows retain the host tag.
+- **Completion bookkeeping** (`SidebarCompletions`): app-owned, ephemeral generations advance on
+  finished status edges, independently of the local callback/adoption pair. Repeated reports and
+  refused sends never create a local completion or change its captured time. Remote records
+  survive disconnects and use a changed `lastActiveAt` on reconnect as a catch-up hint. A refused
+  send during disconnection is indistinguishable from a missed completion; older hosts without
+  timestamps can miss a completion. An endpoint change resets that host's records. Authoritative
+  deletion prunes records, but an offline snapshot does not. No extra transcript polling or new
+  server fields.
+- **Designs**: a separate group below Recents while the Design tool experiment is on. Rows use
+  the outline nib and real board count, sorted by their design's last activity. A design's agent
+  never has a thread row. The existing Remove from Recents action hides that design's sidebar row
+  until it changes again.
+- **Recents**: idle and seen unpinned threads, most recently active first. Rows retain their state,
+  title, host tag and context menu. The leading
   slot is the thread's state dot (running blue, done green, failed red for a turn that ended in an
   error, hollow while idle) or an automation run's `bolt` in `textTertiary`. The selected row is
   `bgSelected` with its title in semibold. The trailing slot holds, in priority order:
-  1. the ⌘-digit hint on the first nine rows of Pinned and Recents while ⌘ is held ("⌘3", micro
+  1. the ⌘-digit hint on the first nine visible threads in Pinned, Working, Done and Recents while ⌘ is held ("⌘3", micro
      `textTertiary`)
   2. a remote agent's host as a tag: mono 10 `textTertiary`, padded 4pt at the sides, in a 1pt
      `lineSubtle` border at radius 4 ("horizon"). Threads on this Mac carry no tag.
@@ -110,13 +138,9 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
      (Thread › Can't start), with the red dot (a thread's) or the bolt (a run's); VoiceOver reads
      "can't start". It clears the moment Retry starts pi again. A remote agent's row doesn't say
      it: the host sends it only in the thread's snapshot.
-  5. an automation run's word in mono 10: "done", or "failed" in `failed`; its elapsed time while it
-     runs
-  6. a running thread's elapsed time ("4m", counting live in mono 10 `textTertiary`). The board
-     draws a sparkline here (see Where Shepherd departs from the boards).
+  5. a completion's age in mono 10 `textTertiary`, or "failed" in `failed` for a failed automation.
 
-  The list takes the rest of the column, scrolls, and clips at the bottom. The boards' "n boards"
-  belongs to designs, which are hidden until built.
+  All activity groups share one lazy scrolling stack in the rest of the column.
 - **Order** (`Agent.lastActiveAt`): the host stamps an agent when a turn starts or ends
   (`AgentStatus.movesRecents`; asking and being answered happen inside a turn) and when a message is
   sent to it, and the app stamps an agent it creates. A streamed token, a repeated status report or
@@ -125,7 +149,7 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
   and `waitingReason` are live state on `Agent`, broadcast to remote clients like a status;
   `waitingOn` and `waitingReason` are never written to state.json. At launch the most recently
   active agent on this Mac shows.
-- **Hosts:** a connected host's agents join the lists (Needs you, Pinned and Recents), tagged. A
+- **Hosts:** a connected host's agents join the appropriate activity group, tagged. A
   host that drops keeps its threads in Recents (or Pinned) as it last sent them (NavHosts' `horizon` rows), dimmed (`NWListMetrics.dimmedOpacity`,
   as on the iPad), never in Needs you since nothing there can be answered, and with a menu that
   says "Host Offline"; opening one shows the host's connection state. A host not reached since
@@ -136,19 +160,17 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
   semibold, the Mac user's full name (`NSFullUserName`) in `ui` medium over "This Mac · <the
   computer's name>" in mono 10 `textTertiary`, and a Settings gear as a 26pt icon button (⌘,) at
   the trailing end.
-- **Subagents have no rows.** They live in their agent's tray above the composer, the thread's
-  record lines, and the inspector (see Subagents below), and in the palette. A subagent waiting
-  on you puts its agent in Needs you, with its own short reason, else its name, as the reason;
-  live and finished subagents leave the agent's row as it is.
+- **Subagents have no rows.** They live in their agent's tray, thread record lines, inspector
+  and palette. Their questions go to their parent agent, not to the user. Only the thread's own
+  question or missing sign-in puts an unpinned agent in Needs you.
 - **Width:** 232pt by default, 190–340, by dragging the trailing edge (a 9pt handle, adjustable
   with VoiceOver in 16pt steps) or in Settings ▸ Appearance. It never narrows the main column
   below 720 and keeps its width while the side pane is open.
 - **Interaction:** list rows are tap views with button traits and accessibility actions, and
   destinations are buttons. Hovering never moves or resizes anything. ⌘1–9 select the first nine
-  rows of Pinned and then Recents in the order they are drawn (Needs you takes no digit, so
-  Pinned's rows take ⌘1 and on; a pinned thread that waits on you is in Needs you and has none),
-  ⌘↑/↓ walk Needs you, Pinned, then Recents and wrap, and keyboard selection scrolls the row
-  into view. Picking a row leaves a page for that thread.
+  visible threads of Pinned, Working, Done and Recents in display order. Needs you and Designs
+  take no digit. ⌘↑/↓ walk every visible row in display order and wrap. Palette or programmatic
+  selection unfolds the target's group and scrolls its row into view. Picking a row leaves a page for that thread.
 - **Context menus** keep every action an agent had:
   - This Mac's threads (NWComposer's agent menu, with today's items between its separators):
     Rename… with its keys (⌘R), Pin or Unpin (`pin`, `pin.slash`, named for what it does now),
@@ -169,7 +191,7 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
     Uncommitted Changes, Review PR Changes, and Delete Agent or Delete Worktree Agent…, while the
     host is connected. A pin is this Mac's own, so while the host is offline the menu keeps Pin or
     Unpin above Host Offline.
-  - Pin and Unpin are offered on a thread's row in Needs you, Pinned and Recents (Activity only),
+  - Pin and Unpin are offered on thread rows in every activity group (Activity only),
     never on an automation's run, a design, or a row of the project tree.
 - **Motion:** rows arriving, leaving and moving up animate `.list` (keyed on the rows' ids, never
   the rows), and More's rows disclose (`.disclosure`). Selecting a row changes no row's place, so
@@ -180,6 +202,17 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
   `collapsedHosts`, `localMachineCollapsed`, `automationsExpanded`, `expandedRemoteAutomations`,
   `collapsedRemoteSpaces`) stay in older preferences, unread. Projects, their counts and hover +,
   drag order, collapsing and host sections came back as the Projects style (2026-09-26).
+
+## Departures from revision 420
+
+- Pinned is an extra first group, explicitly requested by the user, and keeps pinned threads in
+  every status.
+- Compact section headers are 24pt instead of 22pt to meet the Mac minimum hit area. Thread rows
+  remain 22pt.
+- Remote rows keep their host tags instead of a sparkline or completion age. The protocol has no
+  activity samples, and the host identity must stay visible.
+- Missions and Archive remain hidden because their destinations do not exist. Designs and
+  Design systems remain behind the existing Design tool experiment.
 
 ## Organized by project (Sidebar — Projects)
 
