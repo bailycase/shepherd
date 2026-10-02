@@ -160,8 +160,9 @@ selected thread, or the Overview when none is. Other screens push over the detai
   as a link when the turn spawned runs. At rest (no hover).
 - **Notices** (caption `textTertiary`, above the turns; the app's, not the boards'): "<host> is
   offline · showing the last known thread", "This agent is no longer on <host>.", "Update
-  Shepherd on <host> to open threads here.", "Some output is clipped · the full thread is on
-  <host>", "This host was forgotten.", and a pi that can't start as the phone's one line (iPhone:
+  Shepherd on <host> to open threads here.", one line for each thing the host reported
+  shortening (Thread › Notices; nothing for older history or a long message), "This host was
+  forgotten.", and a pi that can't start as the phone's one line (iPhone:
   Thread › Banners). Older history loads automatically when the reader reaches the top, keeping
   their visible turn in place (Thread › History); there is no load-history button.
 

@@ -69,8 +69,9 @@ Sources/
                        parser: tables, lists, images, details, footnotes), NativeActivity
                        (activity lines, the changes card), NativeQueueRules (the queue's rules,
                        host and client), NativeContextPresentation (the context ring, its
-                       details, compaction lines), NativeQuestionDock (a question's kind, what
-                       its asker takes, the answer and the dock's keys),
+                       details, compaction lines), NativeClipNotice (what a thread says it
+                       was shortened: one line per fact the host reported), NativeQuestionDock
+                       (a question's kind, what its asker takes, the answer and the dock's keys),
                        TerminalPanel (a layout's terminal tabs, the key row's bytes, the panel's
                        height, RemoteTerminalLink), AutomationPresentation (automation rows, runs
                        and what a client may do), AgentBranchPresentation (the header's branch
