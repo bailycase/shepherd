@@ -60,8 +60,17 @@ It never chooses a similar name, another provider, or another model in the same 
 never replays the prompt. Startup alone does not attempt recovery. A turn starting, a session
 change, or an explicit user selection during the refresh takes precedence. If recovery fails,
 the existing input guard still blocks the send, compaction and summarized tree navigation.
-The guard's error notification is not yet reliably surfaced for ordinary sends by the host;
-that separate send-result fix is still needed to preserve a blocked draft.
+A blocked RPC input publishes the reserved `shepherd.inputBlocked` widget before pi's `handled`
+reply. It carries a version, SHA-256 input digest and model ID, never prompt text or credentials.
+The host converts that pair into `model_unavailable`, preserving the draft and attachments;
+a queued message returns to the paused queue. The Mac composer shows a failed banner and
+"Choose model" opens the existing picker. Remote clients receive the same failure through the
+existing send-result protocol and keep their drafts.
+
+The host serializes input preflights to distinguish identical or transformed concurrent inputs.
+Stop cancels inputs that have not reached pi. A timed-out preflight keeps its unknown outcome,
+cancels unsent inputs and fences later sends until the agent restarts, so a late marker cannot
+reject a newer message. Started or queued dispositions never become retryable model failures.
 
 ### Moving from an imported pi provider
 

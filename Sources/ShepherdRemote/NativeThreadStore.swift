@@ -92,7 +92,8 @@ public final class NativeThreadStore {
     public private(set) var startProblem: NativeStartProblem? { didSet { bothVersions() } }
     public private(set) var busy = false { didSet { bothVersions() } }
     public private(set) var loadError: String? { didSet { bothVersions() } }
-    public private(set) var notice: String? { didSet { chromeVersion &+= 1 } }
+    public private(set) var notice: String? { didSet { modelUnavailable = false; chromeVersion &+= 1 } }
+    public private(set) var modelUnavailable = false { didSet { chromeVersion &+= 1 } }
     public private(set) var sentCount = 0
     /// Whether the last accepted send waits in Up next (a follow-up sent while pi works) rather
     /// than going into the thread now. Set with `sentCount`, and read when it changes: only a
@@ -1365,7 +1366,7 @@ public final class NativeThreadStore {
 
     /// "provider/id"; gated by `setModel` in `supportedActions`.
     public func setModel(_ model: String) async {
-        guard supports("setModel"), let current = snapshot, current.model != model else { return }
+        guard supports("setModel"), let current = snapshot, current.model != model || modelUnavailable else { return }
         let operation = UUID()
         await perform(.setModel(expectedSessionID: current.piSessionID, generation: current.generation,
                                 operationID: operation, model: model), operation: operation, current: current)
@@ -1566,7 +1567,9 @@ public final class NativeThreadStore {
                 }
                 // Success is visible in the thread itself; only failures earn a notice.
                 notice = nil
-            case .failure(_, let message): notice = message
+            case .failure(let code, let message):
+                notice = message
+                modelUnavailable = code == "model_unavailable"
             default:
                 notice = Self.outcomeUnknown
             }
@@ -1608,8 +1611,11 @@ public final class NativeThreadStore {
             if unsure { notice = nil }
             if let sentText { forgetSent(sentText, typed: typed, files: files, references: references, elements: elements) }
             return true
-        case .failure(_, let message):
-            if unsure || notice == nil { notice = message }
+        case .failure(let code, let message):
+            if unsure || notice == nil {
+                notice = message
+                modelUnavailable = code == "model_unavailable"
+            }
             return false
         default:
             return false
