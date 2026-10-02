@@ -13,14 +13,17 @@ public final class PiModelCatalog: @unchecked Sendable {
     public struct Entry: Equatable, Sendable {
         public var id: String
         public var context: String?
+        /// The window in tokens, when pi reported one.
+        public var contextWindow: Int?
         public var reasoning: Bool
         public var api: String?
         /// The composed model's levels, including built-in and extension-supplied maps.
         public var thinkingLevels: [String]?
 
-        public init(id: String, context: String? = nil, reasoning: Bool = true, api: String? = nil, thinkingLevels: [String]? = nil) {
+        public init(id: String, context: String? = nil, contextWindow: Int? = nil, reasoning: Bool = true, api: String? = nil, thinkingLevels: [String]? = nil) {
             self.id = id
             self.context = context
+            self.contextWindow = contextWindow
             self.reasoning = reasoning
             self.api = api
             self.thinkingLevels = thinkingLevels
@@ -156,7 +159,7 @@ public final class PiModelCatalog: @unchecked Sendable {
                     count >= 1_000_000 ? String(format: "%.3gM", Double(count) / 1_000_000)
                         : count >= 1_000 ? String(format: "%.3gK", Double(count) / 1_000) : String(count)
                 }
-                return Entry(id: id, context: context, reasoning: model.reasoning, api: model.api,
+                return Entry(id: id, context: context, contextWindow: model.contextWindow, reasoning: model.reasoning, api: model.api,
                              thinkingLevels: ThinkingLevel.supported(reasoning: model.reasoning, levelMap: model.thinkingLevelMap).map(\.rawValue))
             }
         }

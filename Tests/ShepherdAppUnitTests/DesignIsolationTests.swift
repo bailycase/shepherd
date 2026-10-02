@@ -32,6 +32,15 @@ struct DesignIsolationTests {
         #expect(TerminalSessionStore.wantsPanes(for: agent, enabled: enabled) == wants)
     }
 
+    /// review_diff readies the Changes tab of a thread's side pane: a design's agent has none, so it
+    /// never gets the tool (it cost every design agent about 250 tokens for nothing), and the setting
+    /// decides for a thread.
+    @Test(arguments: [(false, true, true), (true, true, false), (false, false, false), (true, false, false)])
+    func onlyAThreadLaunchesWithTheReviewExtension(drawsDesign: Bool, enabled: Bool, wants: Bool) {
+        let agent = Agent(name: "a", spaceID: SpaceID(), tabID: TabID(), designID: drawsDesign ? DesignID() : nil)
+        #expect(TerminalSessionStore.wantsReview(for: agent, enabled: enabled) == wants)
+    }
+
     /// The browser tools drive a thread's own page: a design's agent never gets them, and the
     /// setting decides for a thread.
     @Test(arguments: [(false, true, true), (true, true, false), (false, false, false), (true, false, false)])

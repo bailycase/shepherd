@@ -5,6 +5,7 @@ import ShepherdUI
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSessions
 
 /// What a new worktree branches from (Settings ▸ Worktrees).
 enum WorktreeBaseMode: String, CaseIterable {
@@ -61,6 +62,8 @@ final class AppSettings {
         static let mcpProjectConfig = "shepherd.mcp.projectConfig"
         static let mcpSameEverywhere = "shepherd.mcp.sameEverywhere"
         static let queueDelivery = "shepherd.agent.queueDelivery"
+        static let trimToolOutput = "shepherd.agent.trimToolOutput"
+        static let compactAtPercent = "shepherd.agent.compactAtPercent"
         static let agentMessages = "shepherd.pi.agentMessages"
         static let piPanesExtension = "shepherd.pi.extension.panes"
         static let piReviewExtension = "shepherd.pi.extension.review"
@@ -97,7 +100,7 @@ final class AppSettings {
 
         static let all = [
             terminalFontFamily, terminalFontSize, defaultModel,
-            defaultThinking, defaultServiceTier, goalCrossProviderEvaluation, autoNameAgents, queueDelivery, shellPath,
+            defaultThinking, defaultServiceTier, goalCrossProviderEvaluation, autoNameAgents, queueDelivery, trimToolOutput, compactAtPercent, shellPath,
             agentMessages, piPanesExtension, piReviewExtension, piSubagentsExtension, piNativeSubagents,
             piMCPExtension, piBrowserExtension, piDesignReferences,
             childConcurrency, childModel, childThinking, childContext, childScope,
@@ -227,6 +230,28 @@ final class AppSettings {
     func setSlashCommand(_ name: String, on: Bool) {
         if on { hiddenSlashCommands.remove(name) } else { hiddenSlashCommands.insert(name) }
     }
+
+    /// Settings ▸ Agents ▸ Trim old tool output from the model's context: agents get
+    /// `shepherd-context.ts` (`SHEPHERD_EXT_CONTEXT`), which clips any one tool result in what the
+    /// model is sent and, as the context fills, clears the oldest tool output, file contents,
+    /// reasoning payloads and screenshots (docs/context-budget.md). The thread keeps all of it.
+    /// Agents launched after a change follow it.
+    var trimToolOutput: Bool {
+        didSet { store.set(trimToolOutput, forKey: Key.trimToolOutput) }
+    }
+
+    /// Settings ▸ Agents ▸ Compact at: the share of a model's window past which pi compacts on its
+    /// own (`PiCompactionThreshold.choices`); nil is pi's own default. Written into Shepherd's pi
+    /// home through `onCompactAtChange`, which a new agent reads at its start.
+    var compactAtPercent: Int? {
+        didSet {
+            if let compactAtPercent { store.set(compactAtPercent, forKey: Key.compactAtPercent) } else { store.removeObject(forKey: Key.compactAtPercent) }
+            if compactAtPercent != oldValue { onCompactAtChange?(compactAtPercent) }
+        }
+    }
+
+    /// Writes a new compaction share into the pi home (set by the view model).
+    @ObservationIgnored var onCompactAtChange: ((Int?) -> Void)?
 
     /// Settings ▸ Pi ▸ Agent-to-agent messages: what an agent's call to message, steer, interrupt,
     /// read or start another thread does. Ask me until the user says otherwise. The server
@@ -473,6 +498,8 @@ final class AppSettings {
         mcpSameEverywhere = store.object(forKey: Key.mcpSameEverywhere) as? Bool ?? true
         queueDelivery = store.string(forKey: Key.queueDelivery)
             .flatMap(NativeQueueMode.init(rawValue:)) ?? Defaults.queueDelivery
+        trimToolOutput = store.object(forKey: Key.trimToolOutput) as? Bool ?? true
+        compactAtPercent = (store.object(forKey: Key.compactAtPercent) as? Int).flatMap { PiCompactionThreshold.choices.contains($0) ? $0 : nil }
         agentMessages = store.string(forKey: Key.agentMessages)
             .flatMap(AgentMessagePolicy.init(rawValue:)) ?? AgentMessagePolicy.default
         piPanesExtension = store.object(forKey: Key.piPanesExtension) as? Bool ?? true
@@ -569,6 +596,8 @@ final class AppSettings {
         mcpProjectConfig = false
         mcpSameEverywhere = true
         queueDelivery = Defaults.queueDelivery
+        trimToolOutput = true
+        compactAtPercent = nil
         uiDensity = 1
         uiTextScale = 1
         sidebarWidth = Self.defaultSidebarWidth

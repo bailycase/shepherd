@@ -446,6 +446,20 @@ struct AgentLaunchCommandTests {
         #expect(ShellIntegration.command(shell: ["/bin/zsh"]).env["SHEPHERD_EXT_BROWSER"] == "")
     }
 
+    /// Settings ▸ Agents ▸ Trim old tool output: the extension loads last, with its own variable, and an
+    /// agent started without it has neither; a terminal blanks the variable like every agent-only one.
+    @Test func theContextExtensionLoadsLastWithItsOwnVariableOnlyWhenGiven() throws {
+        #expect(command().env["SHEPHERD_EXT_CONTEXT"] == nil)
+        #expect(!command().argv[3].contains("context.ts"))
+        let launch = try StatusExtension.command(
+            home: Self.home, cwd: "/tmp/project", agentID: AgentID(rawValue: "agent-id"), piSessionID: "s",
+            socketPath: "/tmp/shepherd.sock", extensionPath: "/tmp/status.ts", panesExtensionPath: "/tmp/panes.ts", reviewExtensionPath: nil,
+            subagentsExtensionPath: nil, browserExtensionPath: "/tmp/browser.ts", contextExtensionPath: "/tmp/context.ts", model: nil, thinking: nil)
+        #expect(launch.env["SHEPHERD_EXT_CONTEXT"] == "/tmp/context.ts")
+        #expect(launch.argv[3].hasSuffix(" -e '/tmp/browser.ts' -e '/tmp/context.ts'"), "after every other extension: its handler runs on what theirs left")
+        #expect(ShellIntegration.command(shell: ["/bin/zsh"]).env["SHEPHERD_EXT_CONTEXT"] == "")
+    }
+
     /// One setting decides a repo's .mcp.json (Settings ▸ MCP servers), and Settings ▸ Pi ▸ MCP
     /// servers decides whether the extension loads at all.
     @Test @MainActor func mcpLaunchFollowsTheSettings() {

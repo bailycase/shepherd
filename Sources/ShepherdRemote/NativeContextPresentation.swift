@@ -118,7 +118,7 @@ public struct NativeContextDetails: Equatable, Sendable {
     }
 
     public enum Part: String, Equatable, Sendable, CaseIterable {
-        case system, instructions, messages, toolResults
+        case system, instructions, messages, toolResults, toolCalls, reasoning, images, other
     }
 
     public struct Segment: Equatable, Sendable {
@@ -131,7 +131,16 @@ public struct NativeContextDetails: Equatable, Sendable {
         public var part: Part
         public var label: String
         public var value: String
+        /// What the part is made of, largest first, drawn quietly under it (the system prompt's groups,
+        /// the instruction files).
+        public var children: [Child] = []
         public var id: Part { part }
+    }
+
+    public struct Child: Equatable, Sendable, Identifiable {
+        public var label: String
+        public var value: String
+        public var id: String { label }
     }
 
     public struct Largest: Equatable, Sendable, Identifiable {
@@ -172,6 +181,12 @@ public struct NativeContextDetails: Equatable, Sendable {
     public var compactOffered: Bool
 
     public static let footnoteText = "The total is the agent’s. The split is Shepherd’s estimate from the messages."
+    /// With an Other row: what it is.
+    public static let footnoteWithOtherText = "The total is the agent’s. The split is Shepherd’s estimate from the messages; Other is what it cannot itemize."
+    /// A part below this many tokens draws no row of its own (the first four always do).
+    static let smallestExtraRow = 500
+    /// The parts under a row: at most this many.
+    static let childLimit = 4
 
     public init(context: NativeThreadContext, model: String?) {
         let window = context.window
@@ -231,7 +246,11 @@ public struct NativeContextDetails: Equatable, Sendable {
             segments = [Segment(part: .system, fraction: fraction(split.system)),
                         Segment(part: .instructions, fraction: fraction(split.instructions)),
                         Segment(part: .messages, fraction: fraction(split.messages)),
-                        Segment(part: .toolResults, fraction: fraction(split.toolResults))].filter { $0.fraction > 0 }
+                        Segment(part: .toolResults, fraction: fraction(split.toolResults)),
+                        Segment(part: .toolCalls, fraction: fraction(split.toolCalls)),
+                        Segment(part: .reasoning, fraction: fraction(split.reasoning)),
+                        Segment(part: .images, fraction: fraction(split.images)),
+                        Segment(part: .other, fraction: fraction(split.other))].filter { $0.fraction > 0 }
         } else {
             segments = [Segment(part: nil, fraction: fraction(tokens))]
         }
@@ -244,14 +263,24 @@ public struct NativeContextDetails: Equatable, Sendable {
         }
         guard let split else { return }
         let files = split.instructionFiles
-        let instructions = files.isEmpty ? "Instructions" : "Instructions · " + files[0] + (files.count > 1 ? " +\(files.count - 1)" : "")
-        rows = [Row(part: .system, label: "System prompt and tools", value: nativePreciseTokens(split.system)),
-                Row(part: .instructions, label: instructions, value: nativePreciseTokens(split.instructions)),
+        // A host that lists its instruction files by size says them under the row; an older one names the first in the label.
+        let instructions = !split.instructionParts.isEmpty || files.isEmpty ? "Instructions"
+            : "Instructions · " + files[0] + (files.count > 1 ? " +\(files.count - 1)" : "")
+        func children(_ parts: [NativeContextPart]) -> [Child] {
+            parts.prefix(Self.childLimit).map { Child(label: $0.label, value: nativePreciseTokens($0.tokens)) }
+        }
+        rows = [Row(part: .system, label: "System prompt and tools", value: nativePreciseTokens(split.system), children: children(split.systemParts)),
+                Row(part: .instructions, label: instructions, value: nativePreciseTokens(split.instructions), children: children(split.instructionParts)),
                 Row(part: .messages, label: "Messages", value: nativePreciseTokens(split.messages)),
                 Row(part: .toolResults, label: "Tool results", value: nativePreciseTokens(split.toolResults))]
+        // What a thread's reasoning, written files and screenshots cost is a row of its own when it is more than a rounding.
+        for (part, label, value) in [(Part.toolCalls, "Tool call contents", split.toolCalls), (.reasoning, "Reasoning", split.reasoning),
+                                     (.images, "Images", split.images), (.other, "Other", split.other)] where value >= Self.smallestExtraRow {
+            rows.append(Row(part: part, label: label, value: nativePreciseTokens(value)))
+        }
         free = nativePreciseTokens(max(0, window - tokens))
         largest = context.largest.map { Largest(entryID: $0.entryID, kind: $0.kind, label: $0.label, value: nativePreciseTokens($0.tokens)) }
-        footnote = Self.footnoteText
+        footnote = split.other >= Self.smallestExtraRow ? Self.footnoteWithOtherText : Self.footnoteText
     }
 
     /// "Tool results are 138k of it. The agent will compact on its own at 184k, before its next
@@ -260,7 +289,8 @@ public struct NativeContextDetails: Equatable, Sendable {
         var parts: [String] = []
         if let split {
             let named: [(String, Int)] = [("The system prompt and tools are", split.system), ("Instructions are", split.instructions),
-                                          ("Messages are", split.messages), ("Tool results are", split.toolResults)]
+                                          ("Messages are", split.messages), ("Tool results are", split.toolResults),
+                                          ("Tool call contents are", split.toolCalls), ("Reasoning is", split.reasoning), ("Images are", split.images)]
             if let (label, tokens) = named.max(by: { $0.1 < $1.1 }), tokens > 0 {
                 parts.append("\(label) \(nativeContextTokens(tokens)) of it.")
             }

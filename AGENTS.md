@@ -88,6 +88,9 @@ report what it finds. Each of these is required:
 - Write the test that matches the change (tiers below) and update the docs in the same change:
   DESIGN.md and `docs/design/` for UI, `docs/` for behavior.
 - Edit an embedded extension in `Extensions/` and its Swift literal together.
+- Keep tool output small: `| head`, `-n`, `--stat`, a file by range, a command that prints a summary.
+  Hand a broad search or a long log to a helper (`shepherd_child_start`) instead of reading it here.
+  A new tool, prompt line or instruction costs tokens in every thread: docs/context-budget.md.
 - Fill the PR template: the `pr-body` check fails UI changes without Departures, Rendered and
   Controls used, and an autonomous feature without Bounds, Data, Restart and stop and Decisions.
 
@@ -241,5 +244,6 @@ Each is one line here; the full rule is in [docs/rules.md](docs/rules.md) under 
 | Conversation goals | [docs/goals.md](docs/goals.md) |
 | Threads, the queue, subagents, agent tools | [native-thread](docs/native-thread.md), [native-subagents](docs/native-subagents.md), [agent-coordination](docs/agent-coordination.md) |
 | The Changes pane, worktrees, the Browser, skills, designs | [changes](docs/changes.md), [worktrees](docs/worktrees.md), [browser](docs/browser.md), [skills](docs/skills.md), [designs](docs/designs.md) |
+| Adding a tool, a prompt line or an instruction; a thread that compacts too often | [docs/context-budget.md](docs/context-budget.md) |
 | Hitting something odd (sockets, replay, quitting, pi's folders) | [docs/gotchas.md](docs/gotchas.md) |
 | The iPhone or iPad client | [docs/ios/README.md](docs/ios/README.md) |
