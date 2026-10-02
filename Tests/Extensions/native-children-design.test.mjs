@@ -9,6 +9,7 @@ import * as net from "node:net";
 import * as path from "node:path";
 import { spawn } from "node:child_process";
 import { children, childrenSource, harness, pkg, providerServer, root, scratchHome, sleep, tempDir, until, withEnv } from "./fixtures/children-harness.mjs";
+process.env.SHEPHERD_MISSIONS = "1"; // These tests cover mission records and the mission parameters, which are off unless this is set (docs/native-subagents.md › Missions).
 
 const designSource = path.join(root, "Extensions/shepherd-design.ts");
 const BOARD = "<!doctype html>\n<x-dc>Pay now</x-dc>\n";

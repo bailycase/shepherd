@@ -10,6 +10,7 @@ import * as net from "node:net";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
+process.env.SHEPHERD_MISSIONS = "1"; // These tests cover mission records and the mission parameters, which are off unless this is set (docs/native-subagents.md › Missions).
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 // pi's package, named: never a `pi` looked up on PATH.
 const pkg = process.env.PI_PACKAGE_DIR;

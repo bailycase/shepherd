@@ -79,6 +79,7 @@ enum StatusExtension {
         designReferences: (extensionPath: String, granted: Bool)? = nil,
         mcp: MCPLaunch? = nil,
         browserExtensionPath: String? = nil,
+        contextExtensionPath: String? = nil,
         userHome: String = NSHomeDirectory(),
         model: String?,
         thinking: ThinkingLevel?
@@ -90,7 +91,7 @@ enum StatusExtension {
         // Child result delivery must run before the goal's final-settlement evaluator.
         let extensions = [extensionPath, ServiceTierExtension.path(in: home), instructions?.extensionPath, panesExtensionPath, reviewExtensionPath, subagentsExtensionPath,
                           childrenExtensionPath, GoalExtension.path(in: home), namerExtensionPath, design?.extensionPath, designReferences?.extensionPath,
-                          mcp?.extensionPath, browserExtensionPath].compactMap { $0 }
+                          mcp?.extensionPath, browserExtensionPath, contextExtensionPath].compactMap { $0 }
         let line = try PiLaunch.agent(home: home, cwd: cwd, sessionID: piSessionID, model: model, thinking: thinking?.rawValue,
                                       extensions: extensions, untrustedProject: PiLaunch.isHomeFolder(cwd, userHome: userHome))
         var env = [
@@ -127,6 +128,8 @@ enum StatusExtension {
             env["SHEPHERD_EXT_MCP_CACHE"] = mcp.cachePath
             if mcp.useRepoConfig { env["SHEPHERD_EXT_MCP_PROJECT"] = "1" }
         }
+        // Settings ▸ Agents ▸ Trim old tool output: what the model is sent, never the thread (docs/context-budget.md).
+        if let contextExtensionPath { env["SHEPHERD_EXT_CONTEXT"] = contextExtensionPath }
         // Fast or Standard is the agent's own (the host keeps its file), so every agent gets this.
         env.merge(ServiceTierExtension.environment(for: agentID, in: home)) { _, value in value }
         // Keep the controller loaded so the experiment can change without restarting pi.

@@ -108,6 +108,47 @@ struct ContextPresentationTests {
         #expect(details.footnote == "The total is the agent’s. The split is Shepherd’s estimate from the messages.")
     }
 
+    /// A host that sizes what the prompt and the instruction files are made of has them said quietly under their rows,
+    /// largest first and four at most; the row's label no longer names the first file.
+    @Test func theSystemPromptAndInstructionsListTheirPartsUnderTheirRows() throws {
+        func part(_ label: String, _ tokens: Int) -> NativeContextPart { NativeContextPart(label: label, tokens: tokens) }
+        let split = NativeContextSplit(
+            system: 6_800, instructions: 3_000, messages: 9_100, toolResults: 24_800, instructionFiles: ["AGENTS.md", "CLAUDE.md"],
+            systemParts: [part("browser tools", 2_300), part("skills", 1_900), part("pi · system prompt", 1_500), part("pi tools", 700), part("terminal tools", 400)],
+            instructionParts: [part("Shepherd/AGENTS.md", 2_000), part("pi/AGENTS.md", 1_000)])
+        let details = NativeContextDetails(context: Self.context(tokens: 42_000, split: split), model: nil)
+        #expect(details.rows.map(\.label) == ["System prompt and tools", "Instructions", "Messages", "Tool results"])
+        #expect(details.rows[0].children.map(\.label) == ["browser tools", "skills", "pi · system prompt", "pi tools"])
+        #expect(details.rows[0].children.map(\.value) == ["2.3k", "1.9k", "1.5k", "700"])
+        #expect(details.rows[1].children.map(\.label) == ["Shepherd/AGENTS.md", "pi/AGENTS.md"])
+        #expect(details.rows[2].children.isEmpty && details.rows[3].children.isEmpty)
+    }
+
+    /// A thread's written files, reasoning and screenshots, and what no part explains, are rows of their own once
+    /// they are more than a rounding, in the bar too; the footnote says what Other is only when it is shown.
+    @Test func theNewPartsGetRowsSegmentsAndAFootnoteWhenTheyAreMoreThanARounding() throws {
+        let some = NativeContextSplit(system: 6_800, instructions: 1_400, messages: 9_100, toolResults: 24_800,
+                                      toolCalls: 3_100, reasoning: 499, images: 2_100, other: 12_000)
+        let details = NativeContextDetails(context: Self.context(tokens: 60_000, split: some), model: nil)
+        #expect(details.rows.map(\.label) == ["System prompt and tools", "Instructions", "Messages", "Tool results", "Tool call contents", "Images", "Other"])
+        #expect(details.rows.suffix(3).map(\.value) == ["3.1k", "2.1k", "12k"])
+        #expect(details.rows.suffix(3).map(\.part) == [.toolCalls, .images, .other])
+        #expect(details.segments.map(\.part) == [.system, .instructions, .messages, .toolResults, .toolCalls, .reasoning, .images, .other])
+        #expect(details.footnote == NativeContextDetails.footnoteWithOtherText)
+        let little = NativeContextSplit(system: 6_800, instructions: 1_400, messages: 9_100, toolResults: 24_800, other: 499)
+        let quiet = NativeContextDetails(context: Self.context(tokens: 42_000, split: little), model: nil)
+        #expect(quiet.rows.count == 4 && quiet.footnote == NativeContextDetails.footnoteText)
+    }
+
+    /// The residual is never called the system prompt: with nothing itemized the whole of an unexplained total is
+    /// Other.
+    @Test func anUnexplainedTotalIsOtherNeverTheSystemPrompt() throws {
+        let split = NativeContextSplit(system: 5_000, instructions: 1_000, messages: 3_000, toolResults: 2_000, other: 31_000)
+        let details = NativeContextDetails(context: Self.context(tokens: 42_000, split: split), model: nil)
+        #expect(details.rows.first { $0.label == "System prompt and tools" }?.value == "5k")
+        #expect(details.rows.first { $0.part == .other }?.value == "31k")
+    }
+
     /// Past 85% the details lead with the problem, naming the biggest part and the mark.
     @Test(arguments: [
         (true, "Tool results are 138k of it. The agent will compact on its own at 184k, before its next reply. Compact now to say what the summary should keep."),
@@ -118,6 +159,15 @@ struct ContextPresentationTests {
         let details = NativeContextDetails(context: Self.context(tokens: 178_000, split: split, auto: auto), model: nil)
         #expect(details.variant == .almostFull && details.title == "Context almost full" && details.total == "178k" && details.trailing == "89%")
         #expect(details.note == note && details.rows.isEmpty && details.largest.isEmpty)
+    }
+
+    /// The new parts are named too, so a thread full of reasoning does not read "Tool results are..." as its biggest.
+    @Test func almostFullNamesReasoningImagesAndWrittenFilesToo() {
+        let reasoning = NativeContextSplit(system: 6_800, instructions: 1_400, messages: 31_600, toolResults: 38_200, reasoning: 100_000)
+        let note = NativeContextDetails(context: Self.context(tokens: 178_000, split: reasoning), model: nil).note
+        #expect(note?.hasPrefix("Reasoning is 100k of it.") == true)
+        let written = NativeContextSplit(system: 6_800, instructions: 1_400, messages: 31_600, toolResults: 38_200, toolCalls: 90_000)
+        #expect(NativeContextDetails(context: Self.context(tokens: 178_000, split: written), model: nil).note?.hasPrefix("Tool call contents are 90k of it.") == true)
     }
 
     @Test func compactingAndJustCompactedHaveTheirOwnDetails() {
