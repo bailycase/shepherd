@@ -65,9 +65,16 @@ final class ShepherdViewModel {
     var destination: MainDestination?
     /// The sidebar's More is open, showing Hosts and Extensions. Ephemeral.
     var moreOpen = false
-    /// Needs you, Pinned and Recents, derived once per change of what they read (`SidebarSource`
-    /// and the pins).
-    @ObservationIgnored var sidebarListsCache: (source: SidebarSource, pins: SidebarPins, lists: SidebarLists)?
+    /// Activity groups, cached on their source, pins and seen completion generations.
+    @ObservationIgnored var sidebarListsCache: (source: SidebarSource, pins: SidebarPins, seen: [SidebarRowID: Int], lists: SidebarLists)?
+    var sidebarCompletions = SidebarCompletions()
+    /// Last ten measured tool-completion rates, not a decorative waveform.
+    var sidebarActivitySamples: [AgentID: [Double]] = [:]
+    @ObservationIgnored var sidebarActivityLast: [AgentID: Date] = [:]
+    var sidebarSeenCompletions: [SidebarRowID: Int] = [:]
+    /// Last opened thread, even while a destination covers it.
+    @ObservationIgnored var sidebarReadingThread: SidebarRowID?
+    @ObservationIgnored var sidebarReadingCompletion: Int?
     /// The project tree, derived once per change of what it reads (`SidebarSource`, and
     /// `SidebarTreeOptions` from Settings ▸ Appearance ▸ Sidebar).
     @ObservationIgnored var sidebarTreeCache: (source: SidebarSource, options: SidebarTreeOptions, tree: SidebarTree)?
@@ -189,6 +196,10 @@ final class ShepherdViewModel {
         didSet { sidebarDefaults.set(collapsedProjects.sorted(), forKey: Self.collapsedProjectsKey) }
     }
     static let collapsedProjectsKey = "shepherd.sidebar.collapsedProjects"
+    var collapsedActivitySections: Set<SidebarActivitySection> = [] {
+        didSet { sidebarDefaults.set(collapsedActivitySections.map(\.rawValue).sorted(), forKey: Self.collapsedActivitySectionsKey) }
+    }
+    static let collapsedActivitySectionsKey = "shepherd.sidebar.collapsedActivitySections"
     /// The threads pinned at the top of the Activity sidebar (Sidebar › Pinned), oldest pin first.
     /// Persisted beside the other sidebar choices; changed only by `pinThread`, `unpinThread`
     /// and `pruneSidebarPins` (ShepherdViewModel+SidebarPins).
@@ -356,6 +367,9 @@ final class ShepherdViewModel {
         var id: String { requestID }
     }
     var peerDeleteConfirmation: PeerDeleteConfirmation?
+    /// Agents' calls on other threads waiting for the user (`PeerApprovalDialog`), oldest first and
+    /// shown one at a time. The server holds each call and does it only on an answer.
+    var peerApprovals: [AgentApprovalPrompt] = []
     /// A snapshot of the agent + space whose Finalize Worktree sheet is
     /// open. Copies, not IDs: the pipeline's last act retires the agent, and
     /// a live lookup would blank the sheet mid-success.
@@ -533,6 +547,8 @@ final class ShepherdViewModel {
         // footer) stay in older preferences and are no longer read.
         sidebarHidden = sidebarDefaults.bool(forKey: "shepherd.sidebarHidden")
         collapsedProjects = Set(sidebarDefaults.stringArray(forKey: Self.collapsedProjectsKey) ?? [])
+        collapsedActivitySections = Set((sidebarDefaults.stringArray(forKey: Self.collapsedActivitySectionsKey) ?? [])
+            .compactMap(SidebarActivitySection.init(rawValue:)))
         sidebarPins = SidebarPins(defaults: sidebarDefaults)
 
         sessions.onStateChanged = { [weak self] serverState in
@@ -609,6 +625,7 @@ final class ShepherdViewModel {
         }
         self.remoteHosts.onProjectionChanged = { [weak self] in
             guard let self else { return }
+            self.reconcileSidebarCompletions()
             self.notifyRemote()
             let liveRemote = Set(self.remoteHosts.connections.flatMap { connection in
                 connection.state.agents.map { RemoteAgentRef(hostID: connection.id, agentID: $0.id) }
@@ -654,10 +671,11 @@ final class ShepherdViewModel {
             let monitor = CheckoutMonitor(read: checkoutReader) { [server] id, checkout in await server.setAgentCheckout(id, checkout) }
             monitor.directory = { [weak self] id in self?.checkoutDirectory(of: id) }
             checkouts = monitor
-            server.onAgentToolFinished = { [weak monitor] agentID, tool in
-                guard CheckoutMonitor.touchesFiles(tool: tool) else { return }
-                monitor?.refresh(agentID, after: .seconds(1))
-            }
+        }
+        server.onAgentToolFinished = { [weak self] agentID, tool in
+            guard let self else { return }
+            recordSidebarActivity(agentID)
+            if CheckoutMonitor.touchesFiles(tool: tool) { checkouts?.refresh(agentID, after: .seconds(1)) }
         }
         // Agents drive their own panes through the server's extension socket.
         installPaneControl()
@@ -1008,6 +1026,7 @@ final class ShepherdViewModel {
         state = serverState
         let runs = server.openAutomationRuns
         if runs != openAutomationRuns { openAutomationRuns = runs }
+        reconcileSidebarCompletions()
         threadStores.prune(live: Set(state.agents.map(\.id)))
         browsers.prune(live: Set(state.agents.map(\.id)))
         mcp.retainReports(of: Set(state.agents.map(\.id)))
@@ -1050,6 +1069,7 @@ final class ShepherdViewModel {
             let live = Set(state.agents.map(\.id))
             if let next = selectionHistory.last(where: live.contains) ?? launchAgentID,
                let agent = state.agents.first(where: { $0.id == next }) {
+                willOpenSidebarThread(design(drawnBy: agent).map { .design($0.id) } ?? .local(agent.id))
                 selectedAgentID = agent.id
                 selectedSpaceID = agent.spaceID
             }
@@ -1077,6 +1097,10 @@ final class ShepherdViewModel {
             // A repeated report must not invalidate every view that reads the workspace.
             if old != status { state.agents[index].status = status }
             if old != status || statusSince[id] == nil { statusSince[id] = Date() }
+            if old != status, old != .blocked, status == .working {
+                sidebarActivitySamples.removeValue(forKey: id)
+                sidebarActivityLast[id] = Date()
+            }
             // A turn starting or ending may have changed files.
             if old != status { checkouts?.refresh(id, after: .milliseconds(300)) }
             let failed = status == .done && failure != nil

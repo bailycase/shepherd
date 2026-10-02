@@ -227,7 +227,8 @@ enum YourPiResources {
         var filters = Filters()
         for case let raw as String in settings?[key] as? [Any] ?? [] {
             let entry = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard let first = entry.first else { continue }
+            // `builtin:mcp` and its `+`/`-` forms name pi's own built-in extensions, not files.
+            guard let first = entry.first, !PiHome.namesBuiltIn(entry) else { continue }
             switch first {
             case "!": filters.excluded.append(String(entry.dropFirst()))
             case "-": filters.removed.insert(absolute(String(entry.dropFirst()), agentDirectory: agentDirectory, home: userHome))

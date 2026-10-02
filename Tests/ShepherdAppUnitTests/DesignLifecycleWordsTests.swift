@@ -231,6 +231,6 @@ struct DesignLifecycleWordsTests {
         let hidden = Design(name: "Checkout", createdAt: 1, lastActiveAt: 50, recentsHiddenAt: 60)
         let changed = Design(name: "Onboarding", createdAt: 1, lastActiveAt: 70, recentsHiddenAt: 60)
         let lists = SidebarDerivation.lists(SidebarSource(local: ShepherdState(spaces: [space], designs: [hidden, changed]), designs: true))
-        #expect(lists.recents.map(\.id) == [.design(changed.id)])
+        #expect(lists.designs.map(\.id) == [.design(changed.id)])
     }
 }

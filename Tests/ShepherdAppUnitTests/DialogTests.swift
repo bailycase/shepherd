@@ -1,4 +1,5 @@
 import Testing
+import ShepherdSessions
 import ShepherdUI
 @testable import ShepherdApp
 
@@ -36,6 +37,22 @@ struct DialogTests {
 
     @Test func anUnreachableRepoSettingExplainsWhy() {
         #expect(WorktreeRepoSettingState.unavailable("needs gh access").checklist.detail == "needs gh access")
+    }
+
+    /// An agent's call waiting for the user: Deny is the ⎋ cancel, each Allow answers as it says, and
+    /// neither is the ⏎ default (a Return typed as the dialog appears allows nothing) or destructive.
+    @MainActor @Test func theApprovalDialogsButtonsAnswerAsTheySayAndNoneIsTheDefault() {
+        var answers: [AgentApprovalDecision] = []
+        let actions = PeerApprovalDialog.actions { answers.append($0) }
+
+        let labels = actions.map { $0.label }
+        let kinds = actions.map { $0.kind }
+        let enabled = actions.allSatisfy { $0.isEnabled }
+        #expect(labels == ["Deny", "Allow for this thread", "Allow once"])
+        #expect(kinds == [.cancel, .normal, .normal])
+        #expect(enabled)
+        for action in actions { action.action() }
+        #expect(answers == [.deny, .allowForThread, .allowOnce])
     }
 
     /// A fresh identity per render rebuilds every footer button; the label is stable.

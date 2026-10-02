@@ -77,6 +77,10 @@ struct SettingsSearchTests {
         ("turned off", .piSlashCommands, ["Hidden commands"]),
         ("engine", .pi, ["Shepherd's pi"]),
         ("browser", .pi, ["Browser tools"]),
+        ("agent-to-agent", .pi, ["Agent-to-agent messages"]),
+        ("agent_send", .pi, ["Agent-to-agent messages"]),
+        ("approve", .pi, ["Agent-to-agent messages"]),
+        ("spawn", .pi, ["Agent-to-agent messages"]),
         ("claude desktop", .mcp, ["Import…"]),
         (".mcp.json", .mcp, ["Also use a repo’s .mcp.json"]),
     ] as [(String, SettingsSection, [String])])

@@ -1,0 +1,1453 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<title>Night Watch — Navigation</title>
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap"><style>
+body{margin:0;font-family:'Geist', 'Inter', system-ui, sans-serif;color:#e8e9ec;background:#0d0e10;-webkit-font-smoothing:antialiased}
+a{color:#7aa7ff}
+button,textarea,input{font:inherit;color:inherit}
+button{cursor:pointer}
+.mono{font-family:'Geist Mono', 'JetBrains Mono', ui-monospace, monospace}
+.row:hover{background:rgba(255,255,255,0.045)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{animation:spin 1s linear infinite;transform-origin:center}
+@keyframes glow{0%,100%{opacity:1}50%{opacity:.35}}
+.glow{animation:glow 1.6s ease-in-out infinite}
+@keyframes shimmer{0%{opacity:.55}50%{opacity:1}100%{opacity:.55}}
+.skel{animation:shimmer 1.4s ease-in-out infinite}
+</style><style>
+body{margin:0}
+button{font:inherit;cursor:pointer}
+</style><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500&amp;display=swap"><style>
+body{margin:0;font-family:'Geist','Inter',system-ui,sans-serif;color:#e8e9ec}
+.mono{font-family:'Geist Mono','JetBrains Mono',ui-monospace,monospace}
+.row:hover{background:#16181b}
+</style><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500&amp;display=swap"><style>
+body{margin:0;font-family:'Geist','Inter',system-ui,sans-serif;color:#e8e9ec}
+</style><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500&amp;display=swap"><style>
+body{margin:0;font-family:'Geist','Inter',system-ui,sans-serif;color:#e8e9ec}
+.mono{font-family:'Geist Mono','JetBrains Mono',ui-monospace,monospace}
+.row:hover{background:#16181b}
+@keyframes glow{0%,100%{opacity:1}50%{opacity:.35}}
+.glow{animation:glow 1.6s ease-in-out infinite}
+</style><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500&amp;display=swap"><style>
+body{margin:0;font-family:'Geist','Inter',system-ui,sans-serif;color:#e8e9ec}
+button{font:inherit;cursor:pointer}
+.mono{font-family:'Geist Mono','JetBrains Mono',ui-monospace,monospace}
+</style><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500&amp;display=swap"><style>
+body{margin:0;font-family:'Geist','Inter',system-ui,sans-serif;color:#e8e9ec}
+.mono{font-family:'Geist Mono','JetBrains Mono',ui-monospace,monospace}
+button{font:inherit;color:inherit;cursor:pointer}
+@keyframes glow{0%,100%{opacity:1}50%{opacity:.35}}
+.glow{animation:glow 1.6s ease-in-out infinite}
+</style></head>
+<body>
+
+<div style="width: 1440px; height: 2800px; box-sizing: border-box; display: flex; flex-direction: column; background: #0d0e10; overflow: hidden;">
+<header style="flex-shrink: 0; display: flex; align-items: flex-end; gap: 24px; padding: 40px 56px 28px 56px; border-bottom: 1px solid #1f2226; background: #0a0b0c;">
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <span style="display: flex; align-items: center; gap: 8px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f2a93b" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 22V9.5a5 5 0 0 1 10 0v.5a2.5 2.5 0 0 1-5 0"></path></svg><span class="mono" style="font-size: 10.5px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: #5f656e;">Night Watch · Sidebar, toolbar, pane headers, window layout</span></span>
+      <span style="font-size: 30px; font-weight: 600; letter-spacing: -0.025em; line-height: 1.1;">Navigation</span>
+      <span style="font-size: 13.5px; line-height: 1.55; color: #9aa0a9; max-width: 760px;">How the window is organised and how you move between agents.</span>
+    </div>
+    <span class="mono" style="margin-left: auto; display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border: 1px solid #2c3035; border-radius: 4px; font-size: 11px; color: #9aa0a9;">Dark</span>
+  </header><div id="nwbody" style="display: flex; flex-direction: column; gap: 44px; padding: 36px 56px 56px 56px;"><section style="display: flex; flex-direction: column; gap: 14px;">
+      <div style="display: flex; align-items: baseline; gap: 12px; padding-bottom: 8px; border-bottom: 1px solid #1f2226;"><span class="mono" style="font-size: 11px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: #9aa0a9;">Sidebar</span><span style="font-size: 12.5px; color: #9aa0a9;">NWSidebar. 232pt on bgBase; it keeps its width when a right pane opens. Top to bottom: destinations (New thread ⌘N, Missions, Designs, Automations, More ▸ Hosts, Design systems, Extensions, Archive), then Needs you (anything waiting on you, any kind), Working, Done (finished and not yet seen; it leaves once you open it and click away), Recents, and Designs in their own section. Sections fold and remember it; a folded Working keeps a pulse. The 44pt top bar holds only the window controls: palette ⌘K and hide sidebar. The second sample shows Compact rows. Rows follow Settings ▸ Appearance ▸ Sidebar rows: Compact 22 · Standard 28 (default) · Comfortable 36. Settings ▸ Appearance ▸ Organize by swaps Needs you and Recents for a project tree; that style is on the Sidebar — Projects sheet.</span></div>
+      <div style="display: flex; gap: 20px; align-items: flex-start;"><div style="width: 264px; flex-shrink: 0; display: flex; flex-direction: column; gap: 10px;">
+        <div style="display: flex; flex-direction: column; gap: 10px; align-items: flex-start; justify-content: center; padding: 16px; border: 1px solid #1f2226; border-radius: 8px; background: #0d0e10;"><aside aria-label="Sidebar" style="width: 232px; height: 800px; flex-shrink: 0; box-sizing: border-box; display: flex; flex-direction: column; background: #0a0b0c; border: 1px solid #1f2226; border-radius: 8px; overflow: hidden;"><div style="height: 44px; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 231px; height: 44px; box-sizing: border-box; display: flex; align-items: center; gap: 4px; padding: 0 8px 0 14px; background: #0a0b0c;"><div style="display: flex; gap: 8px;"><span style="width: 12px; height: 12px; border-radius: 50%; background: #ff5f57;"></span><span style="width: 12px; height: 12px; border-radius: 50%; background: #febc2e;"></span><span style="width: 12px; height: 12px; border-radius: 50%; background: #28c840;"></span></div><span style="flex-grow: 1;"></span><button aria-label="Search (⌘K)" style="width: 26px; height: 26px; border: none; border-radius: 50%; background: transparent; display: inline-flex; align-items: center; justify-content: center; padding: 0;"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#9aa0a9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.5 10.5L14 14"></path></svg></button><button aria-label="Hide sidebar" style="width: 26px; height: 26px; border: none; border-radius: 50%; background: transparent; display: inline-flex; align-items: center; justify-content: center; padding: 0;"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#9aa0a9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><rect x="1.5" y="2.5" width="13" height="11" rx="2"></rect><path d="M6 2.5v11"></path></svg></button></div>
+</div><div style="padding: 2px 8px;">
+
+<nav aria-label="Destinations" style="width: 216px; height: 154px; box-sizing: border-box; display: flex; flex-direction: column; gap: 1px; background: #0a0b0c;">
+  
+    <div class="row" style="display: flex; align-items: center; gap: 9px; height: 30px; padding: 0 8px; border-radius: 8px; font-size: 13px;">
+      <span style="width: 20px; height: 20px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: rgba(255,255,255,0.08);"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#e8e9ec" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M8 3v10M3 8h10"></path></svg></span>
+      <span style="flex-grow: 1; min-width: 0; white-space: nowrap;">New thread</span>
+      <span style="display: flex; gap: 2px;"><kbd class="mono" style="min-width: 18px; height: 18px; padding: 0 4px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #2c3035; border-bottom-width: 1.5px; border-radius: 4px; background: #15171a; font-size: 10.5px; color: #9aa0a9;">⌘</kbd><kbd class="mono" style="min-width: 18px; height: 18px; padding: 0 4px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #2c3035; border-bottom-width: 1.5px; border-radius: 4px; background: #15171a; font-size: 10.5px; color: #9aa0a9;">N</kbd></span>
+    </div>
+  
+    <div class="row" style="display: flex; align-items: center; gap: 9px; height: 30px; padding: 0 8px; border-radius: 8px; font-size: 13px;">
+      <span style="width: 20px; display: flex; justify-content: center; flex-shrink: 0;"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="#9aa0a9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M1.5 3.5l4-1.5 5 1.5 4-1.5v10.5l-4 1.5-5-1.5-4 1.5z"></path><path d="M5.5 2v10.5M10.5 3.5V14"></path></svg></span>
+      <span style="flex-grow: 1; min-width: 0; white-space: nowrap;">Missions</span>
+      
+    </div>
+  
+    <div class="row" style="display: flex; align-items: center; gap: 9px; height: 30px; padding: 0 8px; border-radius: 8px; font-size: 13px;">
+      <span style="width: 20px; display: flex; justify-content: center; flex-shrink: 0;"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="#9aa0a9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M8 1.5l4 5.5-4 7.5-4-7.5z"></path><path d="M8 9v5.5"></path><circle cx="8" cy="7.8" r="1.2"></circle></svg></span>
+      <span style="flex-grow: 1; min-width: 0; white-space: nowrap;">Designs</span>
+      
+    </div>
+  
+    <div class="row" style="display: flex; align-items: center; gap: 9px; height: 30px; padding: 0 8px; border-radius: 8px; font-size: 13px;">
+      <span style="width: 20px; display: flex; justify-content: center; flex-shrink: 0;"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="#9aa0a9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M9 1.5L3.5 9H8l-1 5.5L12.5 7H8z"></path></svg></span>
+      <span style="flex-grow: 1; min-width: 0; white-space: nowrap;">Automations</span>
+      
+    </div>
+  
+    <div class="row" style="display: flex; align-items: center; gap: 9px; height: 30px; padding: 0 8px; border-radius: 8px; font-size: 13px;">
+      <span style="width: 20px; display: flex; justify-content: center; flex-shrink: 0;"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M6 3l5 5-5 5"></path></svg></span>
+      <span style="flex-grow: 1; min-width: 0; white-space: nowrap;">More</span>
+      
+    </div>
+  
+</nav>
+</div><div aria-label="Threads" style="padding: 0 8px; flex-grow: 1; min-height: 0; overflow: hidden;">
+
+<div style="width: 284px; height: 600px; box-sizing: border-box; display: flex; flex-direction: column; gap: 1px; overflow: hidden; background: #0a0b0c;">
+  <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; margin-top: 6px; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;">
+  <div style="width: 215px; height: 28px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 8px;">
+    <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="#f7c16e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M3 6l5 5 5-5"></path></svg>
+    <span style="font-size: 11.5px; font-weight: 500; white-space: nowrap; color: #f7c16e;">Needs you</span>
+    <span class="mono" style="font-size: 10.5px; white-space: nowrap; color: #f7c16e;">2</span>
+    
+    <span style="flex-grow: 1;"></span>
+    
+  </div>
+</div>
+</div>
+  <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#f7c16e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M1.5 3.5l4-1.5 5 1.5 4-1.5v10.5l-4 1.5-5-1.5-4 1.5z"></path><path d="M5.5 2v10.5M10.5 3.5V14"></path></svg>
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Checkout funnel events</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #f7c16e;">retention?</span>
+  
+</div></div>
+</div>
+  <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="glow" style="width: 6px; height: 6px; border-radius: 50%; background: #f2a93b; flex-shrink: 0;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Dock review pane</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #f7c16e;">approve plan</span>
+  
+</div></div>
+</div>
+  <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; margin-top: 6px; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;">
+  <div style="width: 215px; height: 28px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 8px;">
+    <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M3 6l5 5 5-5"></path></svg>
+    <span style="font-size: 11.5px; font-weight: 500; white-space: nowrap; color: #9aa0a9;">Working</span>
+    <span class="mono" style="font-size: 10.5px; white-space: nowrap; color: #5f656e;">3</span>
+    
+    <span style="flex-grow: 1;"></span>
+    
+  </div>
+</div>
+</div>
+  
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px; background: rgba(255,255,255,0.08);">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; border-radius: 50%; background: #7aa7ff; flex-shrink: 0;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600;">Investigate SwiftUI live preview</span>
+  
+  <svg width="28" height="12" viewBox="0 0 36 12" fill="none" stroke="#7aa7ff" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round" style="flex-shrink: 0;"><path d="M0 9L4 7L8 8L12 4L16 6L20 2L24 7L28 5L32 6L36 3"></path></svg>
+</div></div>
+</div>
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; border-radius: 50%; background: #7aa7ff; flex-shrink: 0;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Plan shepherd extensions</span>
+  
+  <svg width="28" height="12" viewBox="0 0 36 12" fill="none" stroke="#7aa7ff" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round" style="flex-shrink: 0;"><path d="M0 9L4 7L8 8L12 4L16 6L20 2L24 7L28 5L32 6L36 3"></path></svg>
+</div></div>
+</div>
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; border-radius: 50%; background: #7aa7ff; flex-shrink: 0;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Add refund events</span>
+  
+  <svg width="28" height="12" viewBox="0 0 36 12" fill="none" stroke="#7aa7ff" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round" style="flex-shrink: 0;"><path d="M0 9L4 7L8 8L12 4L16 6L20 2L24 7L28 5L32 6L36 3"></path></svg>
+</div></div>
+</div>
+  
+  
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; margin-top: 6px; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;">
+  <div style="width: 215px; height: 28px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 8px;">
+    <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M3 6l5 5 5-5"></path></svg>
+    <span style="font-size: 11.5px; font-weight: 500; white-space: nowrap; color: #9aa0a9;">Done</span>
+    <span class="mono" style="font-size: 10.5px; white-space: nowrap; color: #5f656e;">2</span>
+    
+    <span style="flex-grow: 1;"></span>
+    <button style="height: 20px; padding: 0 6px; border: none; border-radius: 4px; background: rgba(255,255,255,0.06); font-size: 10.5px; color: #9aa0a9; white-space: nowrap;">Mark all seen</button>
+  </div>
+</div>
+</div>
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; border-radius: 50%; background: #46c37b; flex-shrink: 0;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Fix pay button jump</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #5f656e;">2m ago</span>
+  
+</div></div>
+</div>
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; border-radius: 50%; background: #46c37b; flex-shrink: 0;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Payments metrics and dashboards</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #5f656e;">14m ago</span>
+  
+</div></div>
+</div>
+  
+  <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; margin-top: 6px; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;">
+  <div style="width: 215px; height: 28px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 8px;">
+    <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M3 6l5 5 5-5"></path></svg>
+    <span style="font-size: 11.5px; font-weight: 500; white-space: nowrap; color: #9aa0a9;">Recents</span>
+    <span class="mono" style="font-size: 10.5px; white-space: nowrap; color: #5f656e;">3</span>
+    
+    <span style="flex-grow: 1;"></span>
+    
+  </div>
+</div>
+</div>
+  
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; box-sizing: border-box; border-radius: 50%; border: 1px solid #5f656e;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Fix terminal output buffer</span>
+  
+  
+</div></div>
+</div>
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; box-sizing: border-box; border-radius: 50%; border: 1px solid #5f656e;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Fix remote subagent deletion</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #5f656e; padding: 0 4px; border: 1px solid #1f2226; border-radius: 4px;">horizon</span>
+  
+</div></div>
+</div>
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M9 1.5L3.5 9H8l-1 5.5L12.5 7H8z"></path></svg>
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Merge PR #24 after CI</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #5f656e;">done</span>
+  
+</div></div>
+</div>
+    
+  
+  <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; margin-top: 6px; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;">
+  <div style="width: 215px; height: 28px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 8px;">
+    <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M3 6l5 5 5-5"></path></svg>
+    <span style="font-size: 11.5px; font-weight: 500; white-space: nowrap; color: #9aa0a9;">Designs</span>
+    <span class="mono" style="font-size: 10.5px; white-space: nowrap; color: #5f656e;">2</span>
+    
+    <span style="flex-grow: 1;"></span>
+    
+  </div>
+</div>
+</div>
+  
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M8 1.5l4 5.5-4 7.5-4-7.5z"></path><path d="M8 9v5.5"></path><circle cx="8" cy="7.8" r="1.2"></circle></svg>
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Checkout funnel dashboard</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #5f656e;">4 boards</span>
+  
+</div></div>
+</div>
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M8 1.5l4 5.5-4 7.5-4-7.5z"></path><path d="M8 9v5.5"></path><circle cx="8" cy="7.8" r="1.2"></circle></svg>
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Settings redesign</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #5f656e;">6 boards</span>
+  
+</div></div>
+</div>
+  
+</div>
+<div hidden="" style="display: none;"><div style="display: flex; align-items: center; justify-content: space-between; padding: 14px 8px 4px 8px;"><span style="font-size: 11.5px; font-weight: 500; color: #f7c16e;">Needs you</span><span class="mono" style="font-size: 10.5px; color: #f7c16e;">2</span></div><div class="row" style="display: flex; align-items: center; gap: 9px; height: 28px; padding: 0 8px; border-radius: 8px; font-size: 12.5px; "><span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#f7c16e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M1.5 3.5l4-1.5 5 1.5 4-1.5v10.5l-4 1.5-5-1.5-4 1.5z"></path><path d="M5.5 2v10.5M10.5 3.5V14"></path></svg></span><span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Checkout funnel events</span><span class="mono" style="font-size: 10px; color: #f7c16e; white-space: nowrap;">retention?</span></div><div style="height: 28px; flex-shrink: 0; overflow: hidden; display: flex; align-items: center;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="glow" style="width: 6px; height: 6px; border-radius: 50%; background: #f2a93b; flex-shrink: 0;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Dock review pane</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #f7c16e;">approve plan</span>
+  
+</div></div>
+</div><div style="display: flex; align-items: center; justify-content: space-between; padding: 14px 8px 4px 8px;"><span style="font-size: 11.5px; font-weight: 500; color: #5f656e;">Recents</span></div><div class="row" style="display: flex; align-items: center; gap: 9px; height: 28px; padding: 0 8px; border-radius: 8px; font-size: 12.5px; background: rgba(255,255,255,0.08);"><span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #7aa7ff; flex-shrink: 0;"></span></span><span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600;">Investigate SwiftUI live preview</span><svg width="28" height="12" viewBox="0 0 36 12" fill="none" stroke="#7aa7ff" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round" style="flex-shrink: 0;"><path d="M0 9L4 7L8 8L12 4L16 6L20 2L24 7L28 5L32 6L36 3"></path></svg></div><div class="row" style="display: flex; align-items: center; gap: 9px; height: 28px; padding: 0 8px; border-radius: 8px; font-size: 12.5px; "><span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M8 1.5l4 5.5-4 7.5-4-7.5z"></path><circle cx="8" cy="7.8" r="1.2"></circle><path d="M8 9v5.5"></path></svg></span><span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Checkout funnel dashboard</span><span class="mono" style="font-size: 10px; color: #5f656e; white-space: nowrap;">4 boards</span></div><div class="row" style="display: flex; align-items: center; gap: 9px; height: 28px; padding: 0 8px; border-radius: 8px; font-size: 12.5px; "><span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #7aa7ff; flex-shrink: 0;"></span></span><span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Plan shepherd extensions</span><svg width="28" height="12" viewBox="0 0 36 12" fill="none" stroke="#7aa7ff" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round" style="flex-shrink: 0;"><path d="M0 9L4 7L8 8L12 4L16 6L20 2L24 7L28 5L32 6L36 3"></path></svg></div><div style="height: 28px; flex-shrink: 0; overflow: hidden; display: flex; align-items: center;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; box-sizing: border-box; border-radius: 50%; border: 1px solid #5f656e;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Fix remote subagent deletion</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #5f656e; padding: 0 4px; border: 1px solid #1f2226; border-radius: 4px;">horizon</span>
+  
+</div></div>
+</div><div class="row" style="display: flex; align-items: center; gap: 9px; height: 28px; padding: 0 8px; border-radius: 8px; font-size: 12.5px; "><span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M9 1.5L3.5 9H8l-1 5.5L12.5 7H8z"></path></svg></span><span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Merge PR #24 after CI</span><span class="mono" style="font-size: 10px; color: #5f656e; white-space: nowrap;">done</span></div><div class="row" style="display: flex; align-items: center; gap: 9px; height: 28px; padding: 0 8px; border-radius: 8px; font-size: 12.5px; "><span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M8 1.5l4 5.5-4 7.5-4-7.5z"></path><circle cx="8" cy="7.8" r="1.2"></circle><path d="M8 9v5.5"></path></svg></span><span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Settings redesign</span><span class="mono" style="font-size: 10px; color: #5f656e; white-space: nowrap;">6 boards</span></div><div style="height: 28px; flex-shrink: 0; overflow: hidden; display: flex; align-items: center;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; box-sizing: border-box; border-radius: 50%; border: 1px solid #5f656e;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Fix terminal output buffer</span>
+  
+  
+</div></div>
+</div><div class="row" style="display: flex; align-items: center; gap: 9px; height: 28px; padding: 0 8px; border-radius: 8px; font-size: 12.5px; "><span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M1.5 3.5l4-1.5 5 1.5 4-1.5v10.5l-4 1.5-5-1.5-4 1.5z"></path><path d="M5.5 2v10.5M10.5 3.5V14"></path></svg></span><span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Ship native UI v2</span><span class="mono" style="font-size: 10px; color: #5f656e; white-space: nowrap;">done</span></div><div style="height: 28px; flex-shrink: 0; overflow: hidden; display: flex; align-items: center;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; border-radius: 50%; background: #f0625e; flex-shrink: 0;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Fix remote nightly</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #5f656e; padding: 0 4px; border: 1px solid #1f2226; border-radius: 4px;">horizon</span>
+  
+</div></div>
+</div></div></div><div style="height: 52px; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 231px; height: 52px; box-sizing: border-box; display: flex; align-items: center; gap: 10px; padding: 0 12px; border-top: 1px solid #1f2226; background: #0a0b0c;">
+      <span style="width: 26px; height: 26px; border-radius: 50%; background: rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: center; font-size: 11.5px; font-weight: 600; flex-shrink: 0;">B</span>
+      <span style="display: flex; flex-direction: column; gap: 1px; min-width: 0;"><span style="font-size: 12.5px; font-weight: 500;">Baily</span><span class="mono" style="font-size: 10px; color: #5f656e; white-space: nowrap;">This Mac · build-01</span></span>
+      <span style="margin-left: auto;"><button aria-label="Settings" style="width: 26px; height: 26px; border: none; border-radius: 50%; background: transparent; display: inline-flex; align-items: center; justify-content: center; padding: 0;"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#9aa0a9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><circle cx="8" cy="8" r="2.3"></circle><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"></path></svg></button></span></div>
+</div></aside></div>
+        <div style="display: flex; flex-direction: column; gap: 4px;"><code class="mono" style="display: block; font-size: 11px; line-height: 1.6; color: #e8e9ec; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"><span style="color: #7ee0b5;">NWSidebar</span>(selection: <span style="color: #7aa7ff;">$agent</span>)</code></div>
+      </div><div style="width: 264px; flex-shrink: 0; display: flex; flex-direction: column; gap: 10px;">
+        <div style="display: flex; flex-direction: column; gap: 10px; align-items: flex-start; justify-content: center; padding: 16px; border: 1px solid #1f2226; border-radius: 8px; background: #0d0e10;"><aside aria-label="Sidebar" style="width: 232px; height: 800px; flex-shrink: 0; box-sizing: border-box; display: flex; flex-direction: column; background: #0a0b0c; border: 1px solid #1f2226; border-radius: 8px; overflow: hidden;"><div style="height: 44px; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 231px; height: 44px; box-sizing: border-box; display: flex; align-items: center; gap: 4px; padding: 0 8px 0 14px; background: #0a0b0c;"><div style="display: flex; gap: 8px;"><span style="width: 12px; height: 12px; border-radius: 50%; background: #ff5f57;"></span><span style="width: 12px; height: 12px; border-radius: 50%; background: #febc2e;"></span><span style="width: 12px; height: 12px; border-radius: 50%; background: #28c840;"></span></div><span style="flex-grow: 1;"></span><button aria-label="Search (⌘K)" style="width: 26px; height: 26px; border: none; border-radius: 50%; background: transparent; display: inline-flex; align-items: center; justify-content: center; padding: 0;"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#9aa0a9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.5 10.5L14 14"></path></svg></button><button aria-label="Hide sidebar" style="width: 26px; height: 26px; border: none; border-radius: 50%; background: transparent; display: inline-flex; align-items: center; justify-content: center; padding: 0;"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#9aa0a9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><rect x="1.5" y="2.5" width="13" height="11" rx="2"></rect><path d="M6 2.5v11"></path></svg></button></div>
+</div><nav aria-label="Destinations" style="display: flex; flex-direction: column; gap: 1px; padding: 2px 8px;"><div class="row" style="display: flex; align-items: center; gap: 7px; height: 24px; padding: 0 6px; border-radius: 8px; font-size: 12px; "><span style="width: 20px; height: 20px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: rgba(255,255,255,0.08);"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#e8e9ec" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M8 3v10M3 8h10"></path></svg></span><span style="flex-grow: 1; min-width: 0; white-space: nowrap;">New thread</span><span style="display: flex; gap: 2px;"><kbd class="mono" style="min-width: 18px; height: 18px; padding: 0 4px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #2c3035; border-bottom-width: 1.5px; border-radius: 4px; background: #15171a; font-size: 10.5px; color: #9aa0a9;">⌘</kbd><kbd class="mono" style="min-width: 18px; height: 18px; padding: 0 4px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #2c3035; border-bottom-width: 1.5px; border-radius: 4px; background: #15171a; font-size: 10.5px; color: #9aa0a9;">N</kbd></span></div><div class="row" style="display: flex; align-items: center; gap: 7px; height: 24px; padding: 0 6px; border-radius: 8px; font-size: 12px; "><span style="width: 20px; display: flex; justify-content: center; flex-shrink: 0;"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#9aa0a9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M1.5 3.5l4-1.5 5 1.5 4-1.5v10.5l-4 1.5-5-1.5-4 1.5z"></path><path d="M5.5 2v10.5M10.5 3.5V14"></path></svg></span><span style="flex-grow: 1; min-width: 0; white-space: nowrap;">Missions</span></div><div class="row" style="display: flex; align-items: center; gap: 7px; height: 24px; padding: 0 6px; border-radius: 8px; font-size: 12px; "><span style="width: 20px; display: flex; justify-content: center; flex-shrink: 0;"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#9aa0a9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M8 1.5l4 5.5-4 7.5-4-7.5z"></path><circle cx="8" cy="7.8" r="1.2"></circle><path d="M8 9v5.5"></path></svg></span><span style="flex-grow: 1; min-width: 0; white-space: nowrap;">Designs</span></div><div class="row" style="display: flex; align-items: center; gap: 7px; height: 24px; padding: 0 6px; border-radius: 8px; font-size: 12px; "><span style="width: 20px; display: flex; justify-content: center; flex-shrink: 0;"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#9aa0a9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M9 1.5L3.5 9H8l-1 5.5L12.5 7H8z"></path></svg></span><span style="flex-grow: 1; min-width: 0; white-space: nowrap;">Automations</span></div><div class="row" style="display: flex; align-items: center; gap: 7px; height: 24px; padding: 0 6px; border-radius: 8px; font-size: 12px; "><span style="width: 20px; display: flex; justify-content: center; flex-shrink: 0;"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M6 3l5 5-5 5"></path></svg></span><span style="flex-grow: 1; min-width: 0; white-space: nowrap;">More</span></div></nav><div aria-label="Threads" style="padding: 0 8px; flex-grow: 1; min-height: 0; overflow: hidden;">
+
+<div style="width: 284px; height: 600px; box-sizing: border-box; display: flex; flex-direction: column; gap: 1px; overflow: hidden; background: #0a0b0c;">
+  <div style="height: 22px; display: flex; align-items: center; flex-shrink: 0; margin-top: 6px; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;">
+  <div style="width: 215px; height: 22px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 6px;">
+    <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="#f7c16e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M3 6l5 5 5-5"></path></svg>
+    <span style="font-size: 11.5px; font-weight: 500; white-space: nowrap; color: #f7c16e;">Needs you</span>
+    <span class="mono" style="font-size: 10.5px; white-space: nowrap; color: #f7c16e;">2</span>
+    
+    <span style="flex-grow: 1;"></span>
+    
+  </div>
+</div>
+</div>
+  <div style="height: 22px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 7px; width: 215px; height: 22px; box-sizing: border-box; padding: 0 6px; border-radius: 8px; font-size: 12px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#f7c16e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M1.5 3.5l4-1.5 5 1.5 4-1.5v10.5l-4 1.5-5-1.5-4 1.5z"></path><path d="M5.5 2v10.5M10.5 3.5V14"></path></svg>
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Checkout funnel events</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #f7c16e;">retention?</span>
+  
+</div></div>
+</div>
+  <div style="height: 22px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 7px; width: 215px; height: 22px; box-sizing: border-box; padding: 0 6px; border-radius: 8px; font-size: 12px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="glow" style="width: 6px; height: 6px; border-radius: 50%; background: #f2a93b; flex-shrink: 0;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Dock review pane</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #f7c16e;">approve plan</span>
+  
+</div></div>
+</div>
+  <div style="height: 22px; display: flex; align-items: center; flex-shrink: 0; margin-top: 6px; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;">
+  <div style="width: 215px; height: 22px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 6px;">
+    <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M3 6l5 5 5-5"></path></svg>
+    <span style="font-size: 11.5px; font-weight: 500; white-space: nowrap; color: #9aa0a9;">Working</span>
+    <span class="mono" style="font-size: 10.5px; white-space: nowrap; color: #5f656e;">3</span>
+    
+    <span style="flex-grow: 1;"></span>
+    
+  </div>
+</div>
+</div>
+  
+    <div style="height: 22px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 7px; width: 215px; height: 22px; box-sizing: border-box; padding: 0 6px; border-radius: 8px; font-size: 12px; background: rgba(255,255,255,0.08);">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; border-radius: 50%; background: #7aa7ff; flex-shrink: 0;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600;">Investigate SwiftUI live preview</span>
+  
+  <svg width="28" height="12" viewBox="0 0 36 12" fill="none" stroke="#7aa7ff" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round" style="flex-shrink: 0;"><path d="M0 9L4 7L8 8L12 4L16 6L20 2L24 7L28 5L32 6L36 3"></path></svg>
+</div></div>
+</div>
+    <div style="height: 22px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 7px; width: 215px; height: 22px; box-sizing: border-box; padding: 0 6px; border-radius: 8px; font-size: 12px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; border-radius: 50%; background: #7aa7ff; flex-shrink: 0;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Plan shepherd extensions</span>
+  
+  <svg width="28" height="12" viewBox="0 0 36 12" fill="none" stroke="#7aa7ff" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round" style="flex-shrink: 0;"><path d="M0 9L4 7L8 8L12 4L16 6L20 2L24 7L28 5L32 6L36 3"></path></svg>
+</div></div>
+</div>
+    <div style="height: 22px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 7px; width: 215px; height: 22px; box-sizing: border-box; padding: 0 6px; border-radius: 8px; font-size: 12px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; border-radius: 50%; background: #7aa7ff; flex-shrink: 0;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Add refund events</span>
+  
+  <svg width="28" height="12" viewBox="0 0 36 12" fill="none" stroke="#7aa7ff" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round" style="flex-shrink: 0;"><path d="M0 9L4 7L8 8L12 4L16 6L20 2L24 7L28 5L32 6L36 3"></path></svg>
+</div></div>
+</div>
+  
+  
+    <div style="height: 22px; display: flex; align-items: center; flex-shrink: 0; margin-top: 6px; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;">
+  <div style="width: 215px; height: 22px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 6px;">
+    <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M3 6l5 5 5-5"></path></svg>
+    <span style="font-size: 11.5px; font-weight: 500; white-space: nowrap; color: #9aa0a9;">Done</span>
+    <span class="mono" style="font-size: 10.5px; white-space: nowrap; color: #5f656e;">2</span>
+    
+    <span style="flex-grow: 1;"></span>
+    <button style="height: 20px; padding: 0 6px; border: none; border-radius: 4px; background: rgba(255,255,255,0.06); font-size: 10.5px; color: #9aa0a9; white-space: nowrap;">Mark all seen</button>
+  </div>
+</div>
+</div>
+    <div style="height: 22px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 7px; width: 215px; height: 22px; box-sizing: border-box; padding: 0 6px; border-radius: 8px; font-size: 12px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; border-radius: 50%; background: #46c37b; flex-shrink: 0;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Fix pay button jump</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #5f656e;">2m ago</span>
+  
+</div></div>
+</div>
+    <div style="height: 22px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 7px; width: 215px; height: 22px; box-sizing: border-box; padding: 0 6px; border-radius: 8px; font-size: 12px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; border-radius: 50%; background: #46c37b; flex-shrink: 0;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Payments metrics and dashboards</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #5f656e;">14m ago</span>
+  
+</div></div>
+</div>
+  
+  <div style="height: 22px; display: flex; align-items: center; flex-shrink: 0; margin-top: 6px; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;">
+  <div style="width: 215px; height: 22px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 6px;">
+    <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M3 6l5 5 5-5"></path></svg>
+    <span style="font-size: 11.5px; font-weight: 500; white-space: nowrap; color: #9aa0a9;">Recents</span>
+    <span class="mono" style="font-size: 10.5px; white-space: nowrap; color: #5f656e;">3</span>
+    
+    <span style="flex-grow: 1;"></span>
+    
+  </div>
+</div>
+</div>
+  
+    <div style="height: 22px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 7px; width: 215px; height: 22px; box-sizing: border-box; padding: 0 6px; border-radius: 8px; font-size: 12px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; box-sizing: border-box; border-radius: 50%; border: 1px solid #5f656e;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Fix terminal output buffer</span>
+  
+  
+</div></div>
+</div>
+    <div style="height: 22px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 7px; width: 215px; height: 22px; box-sizing: border-box; padding: 0 6px; border-radius: 8px; font-size: 12px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; box-sizing: border-box; border-radius: 50%; border: 1px solid #5f656e;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Fix remote subagent deletion</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #5f656e; padding: 0 4px; border: 1px solid #1f2226; border-radius: 4px;">horizon</span>
+  
+</div></div>
+</div>
+    <div style="height: 22px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 7px; width: 215px; height: 22px; box-sizing: border-box; padding: 0 6px; border-radius: 8px; font-size: 12px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M9 1.5L3.5 9H8l-1 5.5L12.5 7H8z"></path></svg>
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Merge PR #24 after CI</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #5f656e;">done</span>
+  
+</div></div>
+</div>
+    
+  
+  <div style="height: 22px; display: flex; align-items: center; flex-shrink: 0; margin-top: 6px; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;">
+  <div style="width: 215px; height: 22px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 6px;">
+    <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M3 6l5 5 5-5"></path></svg>
+    <span style="font-size: 11.5px; font-weight: 500; white-space: nowrap; color: #9aa0a9;">Designs</span>
+    <span class="mono" style="font-size: 10.5px; white-space: nowrap; color: #5f656e;">2</span>
+    
+    <span style="flex-grow: 1;"></span>
+    
+  </div>
+</div>
+</div>
+  
+    <div style="height: 22px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 7px; width: 215px; height: 22px; box-sizing: border-box; padding: 0 6px; border-radius: 8px; font-size: 12px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M8 1.5l4 5.5-4 7.5-4-7.5z"></path><path d="M8 9v5.5"></path><circle cx="8" cy="7.8" r="1.2"></circle></svg>
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Checkout funnel dashboard</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #5f656e;">4 boards</span>
+  
+</div></div>
+</div>
+    <div style="height: 22px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 7px; width: 215px; height: 22px; box-sizing: border-box; padding: 0 6px; border-radius: 8px; font-size: 12px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M8 1.5l4 5.5-4 7.5-4-7.5z"></path><path d="M8 9v5.5"></path><circle cx="8" cy="7.8" r="1.2"></circle></svg>
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Settings redesign</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #5f656e;">6 boards</span>
+  
+</div></div>
+</div>
+  
+</div>
+<div hidden="" style="display: none;"><div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 6px 4px 6px;"><span style="font-size: 11.5px; font-weight: 500; color: #f7c16e;">Needs you</span><span class="mono" style="font-size: 10.5px; color: #f7c16e;">2</span></div><div class="row" style="display: flex; align-items: center; gap: 7px; height: 22px; padding: 0 6px; border-radius: 8px; font-size: 12px; "><span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="#f7c16e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M1.5 3.5l4-1.5 5 1.5 4-1.5v10.5l-4 1.5-5-1.5-4 1.5z"></path><path d="M5.5 2v10.5M10.5 3.5V14"></path></svg></span><span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Checkout funnel events</span><span class="mono" style="font-size: 10px; color: #f7c16e; white-space: nowrap;">retention?</span></div><div class="row" style="display: flex; align-items: center; gap: 7px; height: 22px; padding: 0 6px; border-radius: 8px; font-size: 12px; "><span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;"><span class="glow" style="width: 6px; height: 6px; border-radius: 50%; background: #f2a93b; flex-shrink: 0;"></span></span><span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Dock review pane</span><span class="mono" style="font-size: 10px; color: #f7c16e; white-space: nowrap;">approve plan</span></div><div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 6px 4px 6px;"><span style="font-size: 11.5px; font-weight: 500; color: #5f656e;">Recents</span></div><div class="row" style="display: flex; align-items: center; gap: 7px; height: 22px; padding: 0 6px; border-radius: 8px; font-size: 12px; background: rgba(255,255,255,0.08);"><span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #7aa7ff; flex-shrink: 0;"></span></span><span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600;">Investigate SwiftUI live preview</span><svg width="28" height="12" viewBox="0 0 36 12" fill="none" stroke="#7aa7ff" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round" style="flex-shrink: 0;"><path d="M0 9L4 7L8 8L12 4L16 6L20 2L24 7L28 5L32 6L36 3"></path></svg></div><div class="row" style="display: flex; align-items: center; gap: 7px; height: 22px; padding: 0 6px; border-radius: 8px; font-size: 12px; "><span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M8 1.5l4 5.5-4 7.5-4-7.5z"></path><circle cx="8" cy="7.8" r="1.2"></circle><path d="M8 9v5.5"></path></svg></span><span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Checkout funnel dashboard</span><span class="mono" style="font-size: 10px; color: #5f656e; white-space: nowrap;">4 boards</span></div><div class="row" style="display: flex; align-items: center; gap: 7px; height: 22px; padding: 0 6px; border-radius: 8px; font-size: 12px; "><span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #7aa7ff; flex-shrink: 0;"></span></span><span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Plan shepherd extensions</span><svg width="28" height="12" viewBox="0 0 36 12" fill="none" stroke="#7aa7ff" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round" style="flex-shrink: 0;"><path d="M0 9L4 7L8 8L12 4L16 6L20 2L24 7L28 5L32 6L36 3"></path></svg></div><div class="row" style="display: flex; align-items: center; gap: 7px; height: 22px; padding: 0 6px; border-radius: 8px; font-size: 12px; "><span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;"><span style="width: 6px; height: 6px; box-sizing: border-box; border-radius: 50%; border: 1px solid #5f656e;"></span></span><span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Fix remote subagent deletion</span><span class="mono" style="font-size: 10px; color: #5f656e; white-space: nowrap; padding: 0 4px; border: 1px solid #1f2226; border-radius: 4px;">horizon</span></div><div class="row" style="display: flex; align-items: center; gap: 7px; height: 22px; padding: 0 6px; border-radius: 8px; font-size: 12px; "><span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M9 1.5L3.5 9H8l-1 5.5L12.5 7H8z"></path></svg></span><span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Merge PR #24 after CI</span><span class="mono" style="font-size: 10px; color: #5f656e; white-space: nowrap;">done</span></div><div class="row" style="display: flex; align-items: center; gap: 7px; height: 22px; padding: 0 6px; border-radius: 8px; font-size: 12px; "><span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M8 1.5l4 5.5-4 7.5-4-7.5z"></path><circle cx="8" cy="7.8" r="1.2"></circle><path d="M8 9v5.5"></path></svg></span><span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Settings redesign</span><span class="mono" style="font-size: 10px; color: #5f656e; white-space: nowrap;">6 boards</span></div><div class="row" style="display: flex; align-items: center; gap: 7px; height: 22px; padding: 0 6px; border-radius: 8px; font-size: 12px; "><span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;"><span style="width: 6px; height: 6px; box-sizing: border-box; border-radius: 50%; border: 1px solid #5f656e;"></span></span><span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Fix terminal output buffer</span></div><div class="row" style="display: flex; align-items: center; gap: 7px; height: 22px; padding: 0 6px; border-radius: 8px; font-size: 12px; "><span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M1.5 3.5l4-1.5 5 1.5 4-1.5v10.5l-4 1.5-5-1.5-4 1.5z"></path><path d="M5.5 2v10.5M10.5 3.5V14"></path></svg></span><span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Ship native UI v2</span><span class="mono" style="font-size: 10px; color: #5f656e; white-space: nowrap;">done</span></div><div class="row" style="display: flex; align-items: center; gap: 7px; height: 22px; padding: 0 6px; border-radius: 8px; font-size: 12px; "><span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #f0625e; flex-shrink: 0;"></span></span><span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Fix remote nightly</span><span class="mono" style="font-size: 10px; color: #5f656e; white-space: nowrap; padding: 0 4px; border: 1px solid #1f2226; border-radius: 4px;">horizon</span></div></div></div><div style="height: 52px; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 231px; height: 52px; box-sizing: border-box; display: flex; align-items: center; gap: 10px; padding: 0 12px; border-top: 1px solid #1f2226; background: #0a0b0c;">
+      <span style="width: 26px; height: 26px; border-radius: 50%; background: rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: center; font-size: 11.5px; font-weight: 600; flex-shrink: 0;">B</span>
+      <span style="display: flex; flex-direction: column; gap: 1px; min-width: 0;"><span style="font-size: 12.5px; font-weight: 500;">Baily</span><span class="mono" style="font-size: 10px; color: #5f656e; white-space: nowrap;">This Mac · build-01</span></span>
+      <span style="margin-left: auto;"><button aria-label="Settings" style="width: 26px; height: 26px; border: none; border-radius: 50%; background: transparent; display: inline-flex; align-items: center; justify-content: center; padding: 0;"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#9aa0a9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><circle cx="8" cy="8" r="2.3"></circle><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"></path></svg></button></span></div>
+</div></aside></div>
+        <div style="display: flex; flex-direction: column; gap: 4px;"><code class="mono" style="display: block; font-size: 11px; line-height: 1.6; color: #e8e9ec; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"><span style="color: #7ee0b5;">NWSidebar</span>(selection: <span style="color: #7aa7ff;">$agent</span>)<br>  .nwDensity(.compact)</code></div>
+      </div><div style="width: 312px; flex-shrink: 0; display: flex; flex-direction: column; gap: 10px;">
+        <div style="display: flex; flex-direction: column; gap: 10px; align-items: flex-start; justify-content: center; padding: 16px; border: 1px solid #1f2226; border-radius: 8px; background: #0d0e10;"><div style="display: flex; flex-direction: column; gap: 2px; width: 280px; padding: 6px; background: #0a0b0c; border-radius: 8px;">
+      <a href="#" class="row" style="display: flex; align-items: center; gap: 9px; height: 28px; padding: 0 8px 0 8px; border-radius: 6px; text-decoration: none; color: #e8e9ec; "><span style="width: 6px; height: 6px; border-radius: 50%; background: #7aa7ff; flex-shrink: 0;"></span><span style="flex-grow: 1; min-width: 0; font-size: 12.5px;  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Running — sparkline</span><svg width="30" height="12" viewBox="0 0 36 12" fill="none" stroke="#7aa7ff" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round" style="flex-shrink: 0;"><path d="M0 9L4 7L8 8L12 4L16 6L20 2L24 7L28 5L32 6L36 3"></path></svg></a><a href="#" class="row" style="display: flex; align-items: center; gap: 9px; height: 28px; padding: 0 8px 0 8px; border-radius: 6px; text-decoration: none; color: #e8e9ec; "><span class="glow" style="width: 6px; height: 6px; border-radius: 50%; background: #f2a93b; flex-shrink: 0;"></span><span style="flex-grow: 1; min-width: 0; font-size: 12.5px;  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Needs you — ASK</span><span class="mono" style="font-size: 10px; color: #f7c16e;">ASK</span></a>
+      <a href="#" class="row" style="display: flex; align-items: center; gap: 9px; height: 28px; padding: 0 8px 0 8px; border-radius: 6px; text-decoration: none; color: #e8e9ec; background: rgba(255,255,255,0.08);"><span style="width: 6px; height: 6px; border-radius: 50%; background: #7aa7ff; flex-shrink: 0;"></span><span style="flex-grow: 1; min-width: 0; font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Selected</span></a><a href="#" class="row" style="display: flex; align-items: center; gap: 9px; height: 28px; padding: 0 8px 0 8px; border-radius: 6px; text-decoration: none; color: #e8e9ec; "><span style="width: 6px; height: 6px; box-sizing: border-box; border-radius: 50%; border: 1px solid #5f656e; flex-shrink: 0;"></span><span style="flex-grow: 1; min-width: 0; font-size: 12.5px;  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Idle</span></a><a href="#" class="row" style="display: flex; align-items: center; gap: 9px; height: 28px; padding: 0 8px 0 8px; border-radius: 6px; text-decoration: none; color: #e8e9ec; "><span style="width: 6px; height: 6px; border-radius: 50%; background: #f0625e; flex-shrink: 0;"></span><span style="flex-grow: 1; min-width: 0; font-size: 12.5px;  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Stuck</span><span class="mono" style="font-size: 10px; color: #f0625e;">14m</span></a><a href="#" style="background: rgba(255,255,255,0.045); display: flex; align-items: center; gap: 9px; height: 28px; padding: 0 8px 0 8px; border-radius: 6px; text-decoration: none; color: #e8e9ec; "><span style="width: 6px; height: 6px; box-sizing: border-box; border-radius: 50%; border: 1px solid #5f656e; flex-shrink: 0;"></span><span style="flex-grow: 1; min-width: 0; font-size: 12.5px;  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Hover</span></a>
+    </div></div>
+        <div style="display: flex; flex-direction: column; gap: 4px;"><code class="mono" style="display: block; font-size: 11px; line-height: 1.6; color: #e8e9ec; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"><span style="color: #7ee0b5;">NWSidebarRow</span>(agent)  <span style="color: #5f656e;">// look follows agent.state</span></code><span style="font-size: 11.5px; line-height: 1.45; color: #5f656e;">running (sparkline) · needs you (ASK, glow; also when one of its subagents waits) · selected · idle (hollow dot) · stuck · hover</span></div>
+      </div><div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px;">
+        <div style="display: flex; flex-direction: column; gap: 10px; align-items: flex-start; justify-content: center; padding: 16px; border: 1px solid #1f2226; border-radius: 8px; background: #0d0e10;"><div style="display: flex; flex-direction: column; width: 240px; padding: 6px; background: #0a0b0c; border-radius: 8px;"><div class="row" style="display: flex; align-items: center; gap: 9px; height: 30px; padding: 0 8px; border-radius: 8px; font-size: 13px; "><span style="width: 20px; height: 20px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: rgba(255,255,255,0.08);"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#e8e9ec" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M8 3v10M3 8h10"></path></svg></span><span style="flex-grow: 1; min-width: 0; white-space: nowrap;">New thread</span><span style="display: flex; gap: 2px;"><kbd class="mono" style="min-width: 18px; height: 18px; padding: 0 4px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #2c3035; border-bottom-width: 1.5px; border-radius: 4px; background: #15171a; font-size: 10.5px; color: #9aa0a9;">⌘</kbd><kbd class="mono" style="min-width: 18px; height: 18px; padding: 0 4px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; border: 1px solid #2c3035; border-bottom-width: 1.5px; border-radius: 4px; background: #15171a; font-size: 10.5px; color: #9aa0a9;">N</kbd></span></div><div class="row" style="display: flex; align-items: center; gap: 9px; height: 30px; padding: 0 8px; border-radius: 8px; font-size: 13px; background: rgba(255,255,255,0.08); font-weight: 600;"><span style="width: 20px; display: flex; justify-content: center; flex-shrink: 0;"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="#e8e9ec" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M1.5 3.5l4-1.5 5 1.5 4-1.5v10.5l-4 1.5-5-1.5-4 1.5z"></path><path d="M5.5 2v10.5M10.5 3.5V14"></path></svg></span><span style="flex-grow: 1; min-width: 0; white-space: nowrap;">Missions</span></div><div style="display: flex; align-items: center; justify-content: space-between; padding: 14px 8px 4px 8px;"><span style="font-size: 11.5px; font-weight: 500; color: #f7c16e;">Needs you</span><span class="mono" style="font-size: 10.5px; color: #f7c16e;">2</span></div><div class="row" style="display: flex; align-items: center; gap: 9px; height: 28px; padding: 0 8px; border-radius: 8px; font-size: 12.5px; "><span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#f7c16e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M1.5 3.5l4-1.5 5 1.5 4-1.5v10.5l-4 1.5-5-1.5-4 1.5z"></path><path d="M5.5 2v10.5M10.5 3.5V14"></path></svg></span><span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Checkout funnel events</span><span class="mono" style="font-size: 10px; color: #f7c16e; white-space: nowrap;">retention?</span></div><div style="display: flex; align-items: center; justify-content: space-between; padding: 14px 8px 4px 8px;"><span style="font-size: 11.5px; font-weight: 500; color: #5f656e;">Recents</span></div><div style="height: 28px; flex-shrink: 0; overflow: hidden; display: flex; align-items: center;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; border-radius: 50%; background: #f0625e; flex-shrink: 0;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Fix remote nightly</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #5f656e; padding: 0 4px; border: 1px solid #1f2226; border-radius: 4px;">horizon</span>
+  
+</div></div>
+</div></div></div>
+        <div style="display: flex; flex-direction: column; gap: 4px;"><code class="mono" style="display: block; font-size: 11px; line-height: 1.6; color: #e8e9ec; white-space: pre;"><span style="color: #7ee0b5;">NWSidebarDestination</span>(.missions, isSelected: <span style="color: #d7a6ff;">true</span>)<br><span style="color: #7ee0b5;">NWSidebarSection</span>(.needsYou, count: 2)<br><span style="color: #7ee0b5;">NWSidebarSection</span>(.working, count: 3)<br><span style="color: #7ee0b5;">NWSidebarSection</span>(.done, count: 2)<br><span style="color: #7ee0b5;">NWSidebarSection</span>(.recents)<br><span style="color: #7ee0b5;">NWSidebarSection</span>(.designs)</code><span style="font-size: 11.5px; line-height: 1.45; color: #5f656e;">Destinations never move. Needs you only appears while something waits on you. Designs have their own section, not a place in Recents; a remote host shows as a tag on the row.</span></div>
+      </div></div>
+    </section><section style="display: flex; flex-direction: column; gap: 14px;">
+      <div style="display: flex; align-items: baseline; gap: 12px; padding-bottom: 8px; border-bottom: 1px solid #1f2226;"><span class="mono" style="font-size: 11px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: #9aa0a9;">Thread list sections</span><span style="font-size: 12.5px; color: #9aa0a9;">The list under the destinations is one piece, SidebarThreads, built from SidebarSectionHeader and SidebarRow. Every screen imports it, so a change here reaches all of them. Order is most urgent first: Needs you (blocked on you), Working, Done (finished and unseen, with Mark all seen), Recents, then Designs. A section with nothing in it is not drawn. Clicking a thread in Done keeps it there while you read it; it moves to Recents when you open another thread.</span></div>
+      <div style="display: flex; gap: 12px; align-items: flex-start;">
+        <div style="width: 247px; flex-shrink: 0; display: flex; flex-direction: column; gap: 10px;"><div style="padding: 16px; border: 1px solid #1f2226; border-radius: 8px; background: #0a0b0c; height: 640px; box-sizing: border-box; overflow: hidden;">
+
+<div style="width: 284px; height: 600px; box-sizing: border-box; display: flex; flex-direction: column; gap: 1px; overflow: hidden; background: #0a0b0c;">
+  <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; margin-top: 6px; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;">
+  <div style="width: 215px; height: 28px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 8px;">
+    <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="#f7c16e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M3 6l5 5 5-5"></path></svg>
+    <span style="font-size: 11.5px; font-weight: 500; white-space: nowrap; color: #f7c16e;">Needs you</span>
+    <span class="mono" style="font-size: 10.5px; white-space: nowrap; color: #f7c16e;">2</span>
+    
+    <span style="flex-grow: 1;"></span>
+    
+  </div>
+</div>
+</div>
+  <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#f7c16e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M1.5 3.5l4-1.5 5 1.5 4-1.5v10.5l-4 1.5-5-1.5-4 1.5z"></path><path d="M5.5 2v10.5M10.5 3.5V14"></path></svg>
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Checkout funnel events</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #f7c16e;">retention?</span>
+  
+</div></div>
+</div>
+  <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="glow" style="width: 6px; height: 6px; border-radius: 50%; background: #f2a93b; flex-shrink: 0;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Dock review pane</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #f7c16e;">approve plan</span>
+  
+</div></div>
+</div>
+  <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; margin-top: 6px; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;">
+  <div style="width: 215px; height: 28px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 8px;">
+    <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M3 6l5 5 5-5"></path></svg>
+    <span style="font-size: 11.5px; font-weight: 500; white-space: nowrap; color: #9aa0a9;">Working</span>
+    <span class="mono" style="font-size: 10.5px; white-space: nowrap; color: #5f656e;">3</span>
+    
+    <span style="flex-grow: 1;"></span>
+    
+  </div>
+</div>
+</div>
+  
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px; background: rgba(255,255,255,0.08);">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; border-radius: 50%; background: #7aa7ff; flex-shrink: 0;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600;">Investigate SwiftUI live preview</span>
+  
+  <svg width="28" height="12" viewBox="0 0 36 12" fill="none" stroke="#7aa7ff" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round" style="flex-shrink: 0;"><path d="M0 9L4 7L8 8L12 4L16 6L20 2L24 7L28 5L32 6L36 3"></path></svg>
+</div></div>
+</div>
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; border-radius: 50%; background: #7aa7ff; flex-shrink: 0;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Plan shepherd extensions</span>
+  
+  <svg width="28" height="12" viewBox="0 0 36 12" fill="none" stroke="#7aa7ff" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round" style="flex-shrink: 0;"><path d="M0 9L4 7L8 8L12 4L16 6L20 2L24 7L28 5L32 6L36 3"></path></svg>
+</div></div>
+</div>
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; border-radius: 50%; background: #7aa7ff; flex-shrink: 0;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Add refund events</span>
+  
+  <svg width="28" height="12" viewBox="0 0 36 12" fill="none" stroke="#7aa7ff" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round" style="flex-shrink: 0;"><path d="M0 9L4 7L8 8L12 4L16 6L20 2L24 7L28 5L32 6L36 3"></path></svg>
+</div></div>
+</div>
+  
+  
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; margin-top: 6px; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;">
+  <div style="width: 215px; height: 28px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 8px;">
+    <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M3 6l5 5 5-5"></path></svg>
+    <span style="font-size: 11.5px; font-weight: 500; white-space: nowrap; color: #9aa0a9;">Done</span>
+    <span class="mono" style="font-size: 10.5px; white-space: nowrap; color: #5f656e;">2</span>
+    
+    <span style="flex-grow: 1;"></span>
+    <button style="height: 20px; padding: 0 6px; border: none; border-radius: 4px; background: rgba(255,255,255,0.06); font-size: 10.5px; color: #9aa0a9; white-space: nowrap;">Mark all seen</button>
+  </div>
+</div>
+</div>
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; border-radius: 50%; background: #46c37b; flex-shrink: 0;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Fix pay button jump</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #5f656e;">2m ago</span>
+  
+</div></div>
+</div>
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; border-radius: 50%; background: #46c37b; flex-shrink: 0;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Payments metrics and dashboards</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #5f656e;">14m ago</span>
+  
+</div></div>
+</div>
+  
+  <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; margin-top: 6px; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;">
+  <div style="width: 215px; height: 28px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 8px;">
+    <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M3 6l5 5 5-5"></path></svg>
+    <span style="font-size: 11.5px; font-weight: 500; white-space: nowrap; color: #9aa0a9;">Recents</span>
+    <span class="mono" style="font-size: 10.5px; white-space: nowrap; color: #5f656e;">3</span>
+    
+    <span style="flex-grow: 1;"></span>
+    
+  </div>
+</div>
+</div>
+  
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; box-sizing: border-box; border-radius: 50%; border: 1px solid #5f656e;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Fix terminal output buffer</span>
+  
+  
+</div></div>
+</div>
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; box-sizing: border-box; border-radius: 50%; border: 1px solid #5f656e;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Fix remote subagent deletion</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #5f656e; padding: 0 4px; border: 1px solid #1f2226; border-radius: 4px;">horizon</span>
+  
+</div></div>
+</div>
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M9 1.5L3.5 9H8l-1 5.5L12.5 7H8z"></path></svg>
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Merge PR #24 after CI</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #5f656e;">done</span>
+  
+</div></div>
+</div>
+    
+  
+  <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; margin-top: 6px; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;">
+  <div style="width: 215px; height: 28px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 8px;">
+    <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M3 6l5 5 5-5"></path></svg>
+    <span style="font-size: 11.5px; font-weight: 500; white-space: nowrap; color: #9aa0a9;">Designs</span>
+    <span class="mono" style="font-size: 10.5px; white-space: nowrap; color: #5f656e;">2</span>
+    
+    <span style="flex-grow: 1;"></span>
+    
+  </div>
+</div>
+</div>
+  
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M8 1.5l4 5.5-4 7.5-4-7.5z"></path><path d="M8 9v5.5"></path><circle cx="8" cy="7.8" r="1.2"></circle></svg>
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Checkout funnel dashboard</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #5f656e;">4 boards</span>
+  
+</div></div>
+</div>
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M8 1.5l4 5.5-4 7.5-4-7.5z"></path><path d="M8 9v5.5"></path><circle cx="8" cy="7.8" r="1.2"></circle></svg>
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Settings redesign</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #5f656e;">6 boards</span>
+  
+</div></div>
+</div>
+  
+</div>
+</div><div style="display: flex; flex-direction: column; gap: 4px;"><code class="mono" style="font-size: 11px; line-height: 1.6; color: #e8e9ec;"><span style="color: #7ee0b5;">SidebarThreads</span>(state: full)</code><span style="font-size: 11.5px; line-height: 1.45; color: #5f656e;">All five sections open. The open thread is highlighted in Working.</span></div></div>
+        <div style="width: 247px; flex-shrink: 0; display: flex; flex-direction: column; gap: 10px;"><div style="padding: 16px; border: 1px solid #1f2226; border-radius: 8px; background: #0a0b0c; height: 640px; box-sizing: border-box; overflow: hidden;">
+
+<div style="width: 284px; height: 600px; box-sizing: border-box; display: flex; flex-direction: column; gap: 1px; overflow: hidden; background: #0a0b0c;">
+  <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; margin-top: 6px; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;">
+  <div style="width: 215px; height: 28px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 8px;">
+    <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="#f7c16e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M3 6l5 5 5-5"></path></svg>
+    <span style="font-size: 11.5px; font-weight: 500; white-space: nowrap; color: #f7c16e;">Needs you</span>
+    <span class="mono" style="font-size: 10.5px; white-space: nowrap; color: #f7c16e;">2</span>
+    
+    <span style="flex-grow: 1;"></span>
+    
+  </div>
+</div>
+</div>
+  <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#f7c16e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M1.5 3.5l4-1.5 5 1.5 4-1.5v10.5l-4 1.5-5-1.5-4 1.5z"></path><path d="M5.5 2v10.5M10.5 3.5V14"></path></svg>
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Checkout funnel events</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #f7c16e;">retention?</span>
+  
+</div></div>
+</div>
+  <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="glow" style="width: 6px; height: 6px; border-radius: 50%; background: #f2a93b; flex-shrink: 0;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Dock review pane</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #f7c16e;">approve plan</span>
+  
+</div></div>
+</div>
+  <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; margin-top: 6px; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;">
+  <div style="width: 215px; height: 28px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 8px;">
+    <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M6 3l5 5-5 5"></path></svg>
+    <span style="font-size: 11.5px; font-weight: 500; white-space: nowrap; color: #9aa0a9;">Working</span>
+    <span class="mono" style="font-size: 10.5px; white-space: nowrap; color: #5f656e;">3</span>
+    <span class="glow" style="width: 5px; height: 5px; border-radius: 50%; background: #7aa7ff; flex-shrink: 0;"></span>
+    <span style="flex-grow: 1;"></span>
+    
+  </div>
+</div>
+</div>
+  
+  
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; margin-top: 6px; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;">
+  <div style="width: 215px; height: 28px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 8px;">
+    <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M3 6l5 5 5-5"></path></svg>
+    <span style="font-size: 11.5px; font-weight: 500; white-space: nowrap; color: #9aa0a9;">Done</span>
+    <span class="mono" style="font-size: 10.5px; white-space: nowrap; color: #5f656e;">2</span>
+    
+    <span style="flex-grow: 1;"></span>
+    <button style="height: 20px; padding: 0 6px; border: none; border-radius: 4px; background: rgba(255,255,255,0.06); font-size: 10.5px; color: #9aa0a9; white-space: nowrap;">Mark all seen</button>
+  </div>
+</div>
+</div>
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; border-radius: 50%; background: #46c37b; flex-shrink: 0;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Fix pay button jump</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #5f656e;">2m ago</span>
+  
+</div></div>
+</div>
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; border-radius: 50%; background: #46c37b; flex-shrink: 0;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Payments metrics and dashboards</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #5f656e;">14m ago</span>
+  
+</div></div>
+</div>
+  
+  <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; margin-top: 6px; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;">
+  <div style="width: 215px; height: 28px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 8px;">
+    <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M6 3l5 5-5 5"></path></svg>
+    <span style="font-size: 11.5px; font-weight: 500; white-space: nowrap; color: #9aa0a9;">Recents</span>
+    <span class="mono" style="font-size: 10.5px; white-space: nowrap; color: #5f656e;">3</span>
+    
+    <span style="flex-grow: 1;"></span>
+    
+  </div>
+</div>
+</div>
+  
+  <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; margin-top: 6px; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;">
+  <div style="width: 215px; height: 28px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 8px;">
+    <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M6 3l5 5-5 5"></path></svg>
+    <span style="font-size: 11.5px; font-weight: 500; white-space: nowrap; color: #9aa0a9;">Designs</span>
+    <span class="mono" style="font-size: 10.5px; white-space: nowrap; color: #5f656e;">2</span>
+    
+    <span style="flex-grow: 1;"></span>
+    
+  </div>
+</div>
+</div>
+  
+</div>
+</div><div style="display: flex; flex-direction: column; gap: 4px;"><code class="mono" style="font-size: 11px; line-height: 1.6; color: #e8e9ec;"><span style="color: #7ee0b5;">SidebarThreads</span>(state: collapsed)</code><span style="font-size: 11.5px; line-height: 1.45; color: #5f656e;">Working, Recents and Designs folded. Each keeps its count, and Working keeps a pulse while anything runs. Fold state is remembered.</span></div></div>
+        <div style="width: 247px; flex-shrink: 0; display: flex; flex-direction: column; gap: 10px;"><div style="padding: 16px; border: 1px solid #1f2226; border-radius: 8px; background: #0a0b0c; height: 640px; box-sizing: border-box; overflow: hidden;">
+
+<div style="width: 284px; height: 600px; box-sizing: border-box; display: flex; flex-direction: column; gap: 1px; overflow: hidden; background: #0a0b0c;">
+  <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; margin-top: 6px; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;">
+  <div style="width: 215px; height: 28px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 8px;">
+    <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="#f7c16e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M3 6l5 5 5-5"></path></svg>
+    <span style="font-size: 11.5px; font-weight: 500; white-space: nowrap; color: #f7c16e;">Needs you</span>
+    <span class="mono" style="font-size: 10.5px; white-space: nowrap; color: #f7c16e;">2</span>
+    
+    <span style="flex-grow: 1;"></span>
+    
+  </div>
+</div>
+</div>
+  <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#f7c16e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M1.5 3.5l4-1.5 5 1.5 4-1.5v10.5l-4 1.5-5-1.5-4 1.5z"></path><path d="M5.5 2v10.5M10.5 3.5V14"></path></svg>
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Checkout funnel events</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #f7c16e;">retention?</span>
+  
+</div></div>
+</div>
+  <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="glow" style="width: 6px; height: 6px; border-radius: 50%; background: #f2a93b; flex-shrink: 0;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Dock review pane</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #f7c16e;">approve plan</span>
+  
+</div></div>
+</div>
+  <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; margin-top: 6px; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;">
+  <div style="width: 215px; height: 28px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 8px;">
+    <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M3 6l5 5 5-5"></path></svg>
+    <span style="font-size: 11.5px; font-weight: 500; white-space: nowrap; color: #9aa0a9;">Working</span>
+    <span class="mono" style="font-size: 10.5px; white-space: nowrap; color: #5f656e;">3</span>
+    
+    <span style="flex-grow: 1;"></span>
+    
+  </div>
+</div>
+</div>
+  
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px; background: rgba(255,255,255,0.08);">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; border-radius: 50%; background: #7aa7ff; flex-shrink: 0;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600;">Investigate SwiftUI live preview</span>
+  
+  <svg width="28" height="12" viewBox="0 0 36 12" fill="none" stroke="#7aa7ff" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round" style="flex-shrink: 0;"><path d="M0 9L4 7L8 8L12 4L16 6L20 2L24 7L28 5L32 6L36 3"></path></svg>
+</div></div>
+</div>
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; border-radius: 50%; background: #7aa7ff; flex-shrink: 0;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Plan shepherd extensions</span>
+  
+  <svg width="28" height="12" viewBox="0 0 36 12" fill="none" stroke="#7aa7ff" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round" style="flex-shrink: 0;"><path d="M0 9L4 7L8 8L12 4L16 6L20 2L24 7L28 5L32 6L36 3"></path></svg>
+</div></div>
+</div>
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; border-radius: 50%; background: #7aa7ff; flex-shrink: 0;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Add refund events</span>
+  
+  <svg width="28" height="12" viewBox="0 0 36 12" fill="none" stroke="#7aa7ff" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round" style="flex-shrink: 0;"><path d="M0 9L4 7L8 8L12 4L16 6L20 2L24 7L28 5L32 6L36 3"></path></svg>
+</div></div>
+</div>
+  
+  
+  <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; margin-top: 6px; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;">
+  <div style="width: 215px; height: 28px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 8px;">
+    <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M3 6l5 5 5-5"></path></svg>
+    <span style="font-size: 11.5px; font-weight: 500; white-space: nowrap; color: #9aa0a9;">Recents</span>
+    <span class="mono" style="font-size: 10.5px; white-space: nowrap; color: #5f656e;">3</span>
+    
+    <span style="flex-grow: 1;"></span>
+    
+  </div>
+</div>
+</div>
+  
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; box-sizing: border-box; border-radius: 50%; border: 1px solid #5f656e;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Fix terminal output buffer</span>
+  
+  
+</div></div>
+</div>
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; box-sizing: border-box; border-radius: 50%; border: 1px solid #5f656e;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Fix remote subagent deletion</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #5f656e; padding: 0 4px; border: 1px solid #1f2226; border-radius: 4px;">horizon</span>
+  
+</div></div>
+</div>
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M9 1.5L3.5 9H8l-1 5.5L12.5 7H8z"></path></svg>
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Merge PR #24 after CI</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #5f656e;">done</span>
+  
+</div></div>
+</div>
+    
+  
+  <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; margin-top: 6px; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;">
+  <div style="width: 215px; height: 28px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 8px;">
+    <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M3 6l5 5 5-5"></path></svg>
+    <span style="font-size: 11.5px; font-weight: 500; white-space: nowrap; color: #9aa0a9;">Designs</span>
+    <span class="mono" style="font-size: 10.5px; white-space: nowrap; color: #5f656e;">2</span>
+    
+    <span style="flex-grow: 1;"></span>
+    
+  </div>
+</div>
+</div>
+  
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M8 1.5l4 5.5-4 7.5-4-7.5z"></path><path d="M8 9v5.5"></path><circle cx="8" cy="7.8" r="1.2"></circle></svg>
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Checkout funnel dashboard</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #5f656e;">4 boards</span>
+  
+</div></div>
+</div>
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M8 1.5l4 5.5-4 7.5-4-7.5z"></path><path d="M8 9v5.5"></path><circle cx="8" cy="7.8" r="1.2"></circle></svg>
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Settings redesign</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #5f656e;">6 boards</span>
+  
+</div></div>
+</div>
+  
+</div>
+</div><div style="display: flex; flex-direction: column; gap: 4px;"><code class="mono" style="font-size: 11px; line-height: 1.6; color: #e8e9ec;"><span style="color: #7ee0b5;">SidebarThreads</span>(state: nodone)</code><span style="font-size: 11.5px; line-height: 1.45; color: #5f656e;">Nothing finished and unseen, so Done is not drawn and takes no space.</span></div></div>
+        <div style="width: 247px; flex-shrink: 0; display: flex; flex-direction: column; gap: 10px;"><div style="padding: 16px; border: 1px solid #1f2226; border-radius: 8px; background: #0a0b0c; height: 640px; box-sizing: border-box; overflow: hidden;">
+
+<div style="width: 284px; height: 600px; box-sizing: border-box; display: flex; flex-direction: column; gap: 1px; overflow: hidden; background: #0a0b0c;">
+  <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; margin-top: 6px; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;">
+  <div style="width: 215px; height: 28px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 8px;">
+    <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="#f7c16e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M3 6l5 5 5-5"></path></svg>
+    <span style="font-size: 11.5px; font-weight: 500; white-space: nowrap; color: #f7c16e;">Needs you</span>
+    <span class="mono" style="font-size: 10.5px; white-space: nowrap; color: #f7c16e;">2</span>
+    
+    <span style="flex-grow: 1;"></span>
+    
+  </div>
+</div>
+</div>
+  <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#f7c16e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M1.5 3.5l4-1.5 5 1.5 4-1.5v10.5l-4 1.5-5-1.5-4 1.5z"></path><path d="M5.5 2v10.5M10.5 3.5V14"></path></svg>
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Checkout funnel events</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #f7c16e;">retention?</span>
+  
+</div></div>
+</div>
+  <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="glow" style="width: 6px; height: 6px; border-radius: 50%; background: #f2a93b; flex-shrink: 0;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Dock review pane</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #f7c16e;">approve plan</span>
+  
+</div></div>
+</div>
+  <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; margin-top: 6px; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;">
+  <div style="width: 215px; height: 28px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 8px;">
+    <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M3 6l5 5 5-5"></path></svg>
+    <span style="font-size: 11.5px; font-weight: 500; white-space: nowrap; color: #9aa0a9;">Working</span>
+    <span class="mono" style="font-size: 10.5px; white-space: nowrap; color: #5f656e;">3</span>
+    
+    <span style="flex-grow: 1;"></span>
+    
+  </div>
+</div>
+</div>
+  
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; border-radius: 50%; background: #7aa7ff; flex-shrink: 0;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Investigate SwiftUI live preview</span>
+  
+  <svg width="28" height="12" viewBox="0 0 36 12" fill="none" stroke="#7aa7ff" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round" style="flex-shrink: 0;"><path d="M0 9L4 7L8 8L12 4L16 6L20 2L24 7L28 5L32 6L36 3"></path></svg>
+</div></div>
+</div>
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; border-radius: 50%; background: #7aa7ff; flex-shrink: 0;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Plan shepherd extensions</span>
+  
+  <svg width="28" height="12" viewBox="0 0 36 12" fill="none" stroke="#7aa7ff" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round" style="flex-shrink: 0;"><path d="M0 9L4 7L8 8L12 4L16 6L20 2L24 7L28 5L32 6L36 3"></path></svg>
+</div></div>
+</div>
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; border-radius: 50%; background: #7aa7ff; flex-shrink: 0;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Add refund events</span>
+  
+  <svg width="28" height="12" viewBox="0 0 36 12" fill="none" stroke="#7aa7ff" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round" style="flex-shrink: 0;"><path d="M0 9L4 7L8 8L12 4L16 6L20 2L24 7L28 5L32 6L36 3"></path></svg>
+</div></div>
+</div>
+  
+  
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; margin-top: 6px; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;">
+  <div style="width: 215px; height: 28px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 8px;">
+    <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M3 6l5 5 5-5"></path></svg>
+    <span style="font-size: 11.5px; font-weight: 500; white-space: nowrap; color: #9aa0a9;">Done</span>
+    <span class="mono" style="font-size: 10.5px; white-space: nowrap; color: #5f656e;">2</span>
+    
+    <span style="flex-grow: 1;"></span>
+    <button style="height: 20px; padding: 0 6px; border: none; border-radius: 4px; background: rgba(255,255,255,0.06); font-size: 10.5px; color: #9aa0a9; white-space: nowrap;">Mark all seen</button>
+  </div>
+</div>
+</div>
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px; background: rgba(255,255,255,0.08);">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; border-radius: 50%; background: #46c37b; flex-shrink: 0;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600;">Fix pay button jump</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #5f656e;">2m ago</span>
+  
+</div></div>
+</div>
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; border-radius: 50%; background: #46c37b; flex-shrink: 0;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Payments metrics and dashboards</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #5f656e;">14m ago</span>
+  
+</div></div>
+</div>
+  
+  <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; margin-top: 6px; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;">
+  <div style="width: 215px; height: 28px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 8px;">
+    <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M3 6l5 5 5-5"></path></svg>
+    <span style="font-size: 11.5px; font-weight: 500; white-space: nowrap; color: #9aa0a9;">Recents</span>
+    <span class="mono" style="font-size: 10.5px; white-space: nowrap; color: #5f656e;">3</span>
+    
+    <span style="flex-grow: 1;"></span>
+    
+  </div>
+</div>
+</div>
+  
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; box-sizing: border-box; border-radius: 50%; border: 1px solid #5f656e;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Fix terminal output buffer</span>
+  
+  
+</div></div>
+</div>
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; box-sizing: border-box; border-radius: 50%; border: 1px solid #5f656e;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Fix remote subagent deletion</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #5f656e; padding: 0 4px; border: 1px solid #1f2226; border-radius: 4px;">horizon</span>
+  
+</div></div>
+</div>
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M9 1.5L3.5 9H8l-1 5.5L12.5 7H8z"></path></svg>
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Merge PR #24 after CI</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #5f656e;">done</span>
+  
+</div></div>
+</div>
+    
+  
+  <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; margin-top: 6px; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;">
+  <div style="width: 215px; height: 28px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 8px;">
+    <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M3 6l5 5 5-5"></path></svg>
+    <span style="font-size: 11.5px; font-weight: 500; white-space: nowrap; color: #9aa0a9;">Designs</span>
+    <span class="mono" style="font-size: 10.5px; white-space: nowrap; color: #5f656e;">2</span>
+    
+    <span style="flex-grow: 1;"></span>
+    
+  </div>
+</div>
+</div>
+  
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M8 1.5l4 5.5-4 7.5-4-7.5z"></path><path d="M8 9v5.5"></path><circle cx="8" cy="7.8" r="1.2"></circle></svg>
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Checkout funnel dashboard</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #5f656e;">4 boards</span>
+  
+</div></div>
+</div>
+    <div style="height: 28px; display: flex; align-items: center; flex-shrink: 0; overflow: hidden;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M8 1.5l4 5.5-4 7.5-4-7.5z"></path><path d="M8 9v5.5"></path><circle cx="8" cy="7.8" r="1.2"></circle></svg>
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Settings redesign</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #5f656e;">6 boards</span>
+  
+</div></div>
+</div>
+  
+</div>
+</div><div style="display: flex; flex-direction: column; gap: 4px;"><code class="mono" style="font-size: 11px; line-height: 1.6; color: #e8e9ec;"><span style="color: #7ee0b5;">SidebarThreads</span>(selected: done)</code><span style="font-size: 11.5px; line-height: 1.45; color: #5f656e;">Reading a Done thread. It stays in Done until you open another thread.</span></div></div>
+        <div style="width: 247px; flex-shrink: 0; display: flex; flex-direction: column; gap: 10px;"><div style="display: flex; flex-direction: column; gap: 14px; padding: 16px; border: 1px solid #1f2226; border-radius: 8px; background: #0a0b0c;">
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;">
+  <div style="width: 215px; height: 28px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 8px;">
+    <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M3 6l5 5 5-5"></path></svg>
+    <span style="font-size: 11.5px; font-weight: 500; white-space: nowrap; color: #9aa0a9;">Done</span>
+    <span class="mono" style="font-size: 10.5px; white-space: nowrap; color: #5f656e;">2</span>
+    
+    <span style="flex-grow: 1;"></span>
+    <button style="height: 20px; padding: 0 6px; border: none; border-radius: 4px; background: rgba(255,255,255,0.06); font-size: 10.5px; color: #9aa0a9; white-space: nowrap;">Mark all seen</button>
+  </div>
+</div>
+
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;">
+  <div style="width: 215px; height: 28px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 8px;">
+    <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="#f7c16e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M3 6l5 5 5-5"></path></svg>
+    <span style="font-size: 11.5px; font-weight: 500; white-space: nowrap; color: #f7c16e;">Needs you</span>
+    <span class="mono" style="font-size: 10.5px; white-space: nowrap; color: #f7c16e;">2</span>
+    
+    <span style="flex-grow: 1;"></span>
+    
+  </div>
+</div>
+
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;">
+  <div style="width: 215px; height: 28px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 8px;">
+    <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="#5f656e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M6 3l5 5-5 5"></path></svg>
+    <span style="font-size: 11.5px; font-weight: 500; white-space: nowrap; color: #9aa0a9;">Working</span>
+    <span class="mono" style="font-size: 10.5px; white-space: nowrap; color: #5f656e;">3</span>
+    <span class="glow" style="width: 5px; height: 5px; border-radius: 50%; background: #7aa7ff; flex-shrink: 0;"></span>
+    <span style="flex-grow: 1;"></span>
+    
+  </div>
+</div>
+
+
+<div style="width: 215px; height: 40px; box-sizing: border-box; display: flex; align-items: center; background: #0a0b0c;"><div class="row" style="display: flex; align-items: center; gap: 9px; width: 215px; height: 28px; box-sizing: border-box; padding: 0 8px; border-radius: 8px; font-size: 12.5px;">
+  <span style="width: 14px; display: flex; justify-content: center; flex-shrink: 0;">
+    <span class="" style="width: 6px; height: 6px; border-radius: 50%; background: #46c37b; flex-shrink: 0;"></span>
+    
+  </span>
+  <span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Fix pay button jump</span>
+  <span class="mono" style="font-size: 10px; white-space: nowrap; color: #5f656e;">2m ago</span>
+  
+</div></div>
+</div><div style="display: flex; flex-direction: column; gap: 4px;"><code class="mono" style="font-size: 11px; line-height: 1.6; color: #e8e9ec;"><span style="color: #7ee0b5;">SidebarSectionHeader</span>(label, count, tone, open, pulse, action)</code><span style="font-size: 11.5px; line-height: 1.45; color: #5f656e;">Amber for Needs you, quiet for the rest. Folded shows a right chevron. Row dots: green is done, blue is running, amber needs you.</span></div></div>
+      </div>
+    </section><section style="display: flex; flex-direction: column; gap: 14px;">
+      <div style="display: flex; align-items: baseline; gap: 12px; padding-bottom: 8px; border-bottom: 1px solid #1f2226;"><span class="mono" style="font-size: 11px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: #9aa0a9;">Toolbar &amp; pane headers</span><span style="font-size: 12.5px; color: #9aa0a9;">NWThreadToolbar (44pt, unified with the title bar). Pane toggles light up in lantern tint while their pane is open.</span></div>
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px;">
+        <div style="display: flex; flex-direction: column; gap: 10px; align-items: stretch; justify-content: center; padding: 16px; border: 1px solid #1f2226; border-radius: 8px; background: #0d0e10;"><div style="height: 44px; box-sizing: border-box; display: flex; align-items: center; gap: 10px; padding: 0 8px 0 14px; border: 1px solid #1f2226; border-radius: 8px; background: #0d0e10; width: 100%;"><span style="font-size: 13px; font-weight: 600; white-space: nowrap;">Investigate SwiftUI live preview</span><span style="display: inline-flex; align-items: center; gap: 6px; height: 20px; box-sizing: border-box; padding: 0 7px 0 6px; border-radius: 4px; background: rgba(122,167,255,0.13);  color: #7aa7ff; font-size: 11.5px; font-weight: 500; white-space: nowrap;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #7aa7ff; flex-shrink: 0;"></span>Running · 0:31</span><span style="margin-left: auto; display: flex; align-items: center; gap: 2px;"><button aria-label="subagents" style="width: 28px; height: 28px; border: none; border-radius: 50%; background: transparent; display: inline-flex; align-items: center; justify-content: center; padding: 0;"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#9aa0a9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M4 2v5a2 2 0 0 0 2 2h4a2 2 0 0 1 2 2v3"></path><circle cx="4" cy="2.5" r="1.3"></circle><circle cx="12" cy="13.5" r="1.3"></circle></svg></button><button aria-label="review" style="width: 28px; height: 28px; border: none; border-radius: 50%; background: transparent; display: inline-flex; align-items: center; justify-content: center; padding: 0;"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#9aa0a9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M4 2.5v5M1.5 5h5M9.5 13.5h5M13 2L3 14"></path></svg></button><button aria-label="more" style="width: 28px; height: 28px; border: none; border-radius: 50%; background: transparent; display: inline-flex; align-items: center; justify-content: center; padding: 0;"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#9aa0a9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><circle cx="3.5" cy="8" r="1.1" fill="currentColor"></circle><circle cx="8" cy="8" r="1.1" fill="currentColor"></circle><circle cx="12.5" cy="8" r="1.1" fill="currentColor"></circle></svg></button></span></div><div style="height: 44px; box-sizing: border-box; display: flex; align-items: center; gap: 10px; padding: 0 8px 0 14px; border: 1px solid #1f2226; border-radius: 8px; background: #0d0e10; width: 100%;"><span style="font-size: 13px; font-weight: 600; white-space: nowrap;">Dock review pane</span><span style="display: inline-flex; align-items: center; gap: 6px; height: 20px; box-sizing: border-box; padding: 0 7px 0 6px; border-radius: 4px; background: rgba(242,169,59,0.13);  color: #f7c16e; font-size: 11.5px; font-weight: 500; white-space: nowrap;"><span class="glow" style="width: 6px; height: 6px; border-radius: 50%; background: #f2a93b; flex-shrink: 0;"></span>Needs you</span><span style="margin-left: auto; display: flex; align-items: center; gap: 2px;"><span style="width: 8px;"></span><button aria-label="subagents" style="width: 28px; height: 28px; border: none; border-radius: 50%; background: transparent; display: inline-flex; align-items: center; justify-content: center; padding: 0;"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#9aa0a9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M4 2v5a2 2 0 0 0 2 2h4a2 2 0 0 1 2 2v3"></path><circle cx="4" cy="2.5" r="1.3"></circle><circle cx="12" cy="13.5" r="1.3"></circle></svg></button><button aria-label="review" style="width: 28px; height: 28px; border: none; border-radius: 50%; background: transparent; display: inline-flex; align-items: center; justify-content: center; padding: 0;"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#9aa0a9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M4 2.5v5M1.5 5h5M9.5 13.5h5M13 2L3 14"></path></svg></button><button aria-label="more" style="width: 28px; height: 28px; border: none; border-radius: 50%; background: transparent; display: inline-flex; align-items: center; justify-content: center; padding: 0;"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#9aa0a9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><circle cx="3.5" cy="8" r="1.1" fill="currentColor"></circle><circle cx="8" cy="8" r="1.1" fill="currentColor"></circle><circle cx="12.5" cy="8" r="1.1" fill="currentColor"></circle></svg></button></span></div><div style="height: 44px; box-sizing: border-box; display: flex; align-items: center; gap: 10px; padding: 0 8px 0 14px; border: 1px solid #1f2226; border-radius: 8px; background: #0d0e10; width: 100%;"><span style="font-size: 13px; font-weight: 600; white-space: nowrap;">Fix remote subagent deletion</span><span style="display: inline-flex; align-items: center; gap: 6px; height: 20px; box-sizing: border-box; padding: 0 7px 0 6px; border-radius: 4px; background: transparent; border: 1px solid #2c3035; color: #9aa0a9; font-size: 11.5px; font-weight: 500; white-space: nowrap;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #5f656e; flex-shrink: 0;"></span>Idle</span><span style="margin-left: auto; display: flex; align-items: center; gap: 2px;"><button aria-label="subagents" style="width: 28px; height: 28px; border: none; border-radius: 50%; background: transparent; display: inline-flex; align-items: center; justify-content: center; padding: 0;"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#9aa0a9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M4 2v5a2 2 0 0 0 2 2h4a2 2 0 0 1 2 2v3"></path><circle cx="4" cy="2.5" r="1.3"></circle><circle cx="12" cy="13.5" r="1.3"></circle></svg></button><button aria-label="review" style="width: 28px; height: 28px; border: none; border-radius: 50%; background: transparent; display: inline-flex; align-items: center; justify-content: center; padding: 0;"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#9aa0a9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M4 2.5v5M1.5 5h5M9.5 13.5h5M13 2L3 14"></path></svg></button><button aria-label="more" style="width: 28px; height: 28px; border: none; border-radius: 50%; background: transparent; display: inline-flex; align-items: center; justify-content: center; padding: 0;"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#9aa0a9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><circle cx="3.5" cy="8" r="1.1" fill="currentColor"></circle><circle cx="8" cy="8" r="1.1" fill="currentColor"></circle><circle cx="12.5" cy="8" r="1.1" fill="currentColor"></circle></svg></button></span></div></div>
+        <div style="display: flex; flex-direction: column; gap: 4px;"><code class="mono" style="display: block; font-size: 11px; line-height: 1.6; color: #e8e9ec; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">.toolbar { <span style="color: #7ee0b5;">NWThreadToolbar</span>(thread) }</code></div>
+      </div>
+        <div style="display: flex; gap: 16px; align-items: flex-start;"><div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px;">
+        <div style="display: flex; flex-direction: column; gap: 10px; align-items: stretch; justify-content: center; padding: 16px; border: 1px solid #1f2226; border-radius: 8px; background: #0d0e10;"><div style="height: 44px; box-sizing: border-box; display: flex; align-items: center; gap: 10px; padding: 0 8px 0 14px; border: 1px solid #1f2226; border-radius: 8px; background: #0d0e10; width: 100%;"><button aria-label="sidebar" style="width: 28px; height: 28px; border: none; border-radius: 50%; background: transparent; display: inline-flex; align-items: center; justify-content: center; padding: 0;"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#9aa0a9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><rect x="1.5" y="2.5" width="13" height="11" rx="2"></rect><path d="M6 2.5v11"></path></svg></button><span style="font-size: 13px; font-weight: 600; white-space: nowrap;">Investigate SwiftUI live preview</span><span style="display: inline-flex; align-items: center; gap: 6px; height: 20px; box-sizing: border-box; padding: 0 7px 0 6px; border-radius: 4px; background: rgba(122,167,255,0.13);  color: #7aa7ff; font-size: 11.5px; font-weight: 500; white-space: nowrap;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #7aa7ff; flex-shrink: 0;"></span>Running · 0:31</span><span style="margin-left: auto; display: flex; align-items: center; gap: 2px;"><span style="width: 8px;"></span><button aria-label="subagents" style="width: 28px; height: 28px; border: none; border-radius: 50%; background: transparent; display: inline-flex; align-items: center; justify-content: center; padding: 0;"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#9aa0a9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M4 2v5a2 2 0 0 0 2 2h4a2 2 0 0 1 2 2v3"></path><circle cx="4" cy="2.5" r="1.3"></circle><circle cx="12" cy="13.5" r="1.3"></circle></svg></button><button aria-label="review" style="width: 28px; height: 28px; border: none; border-radius: 50%; background: rgba(242,169,59,0.13); display: inline-flex; align-items: center; justify-content: center; padding: 0;"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#f7c16e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M4 2.5v5M1.5 5h5M9.5 13.5h5M13 2L3 14"></path></svg></button><button aria-label="more" style="width: 28px; height: 28px; border: none; border-radius: 50%; background: transparent; display: inline-flex; align-items: center; justify-content: center; padding: 0;"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#9aa0a9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><circle cx="3.5" cy="8" r="1.1" fill="currentColor"></circle><circle cx="8" cy="8" r="1.1" fill="currentColor"></circle><circle cx="12.5" cy="8" r="1.1" fill="currentColor"></circle></svg></button></span></div></div>
+        <div style="display: flex; flex-direction: column; gap: 4px;"><code class="mono" style="display: block; font-size: 11px; line-height: 1.6; color: #e8e9ec; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"><span style="color: #7ee0b5;">NWThreadToolbar</span>(thread, openPane: .review)</code><span style="font-size: 11.5px; line-height: 1.45; color: #5f656e;">with review pane open, sidebar compact</span></div>
+      </div><div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px;">
+        <div style="display: flex; flex-direction: column; gap: 10px; align-items: stretch; justify-content: center; padding: 16px; border: 1px solid #1f2226; border-radius: 8px; background: #0d0e10;"><div style="height: 44px; box-sizing: border-box; display: flex; align-items: center; gap: 8px; padding: 0 6px 0 12px; border: 1px solid #1f2226; border-radius: 8px; width: 100%;"><div style="display: flex; flex-direction: column; gap: 1px;"><span style="font-size: 13px; font-weight: 600;">Review</span><span class="mono" style="font-size: 10.5px; color: #5f656e;">4 files · <span style="color: #46c37b;">+67</span> <span style="color: #f0625e;">−58</span></span></div><span style="margin-left: auto;"><div role="group" style="display: inline-flex; gap: 2px; padding: 2px; border: 1px solid #1f2226; border-radius: 6px; background: #111316;"><button style="height: 20px; padding: 0 10px; border: none; border-radius: 4px; background: rgba(255,255,255,0.08); color: #e8e9ec; font-size: 12px; font-weight: 600; box-shadow: 0 0 0 1px #2c3035;">Local</button><button style="height: 20px; padding: 0 10px; border: none; border-radius: 4px; background: transparent; color: #9aa0a9; font-size: 12px; font-weight: 500; ">PR #24</button></div></span><button aria-label="more" style="width: 28px; height: 28px; border: none; border-radius: 50%; background: transparent; display: inline-flex; align-items: center; justify-content: center; padding: 0;"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#9aa0a9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><circle cx="3.5" cy="8" r="1.1" fill="currentColor"></circle><circle cx="8" cy="8" r="1.1" fill="currentColor"></circle><circle cx="12.5" cy="8" r="1.1" fill="currentColor"></circle></svg></button><button aria-label="close" style="width: 28px; height: 28px; border: none; border-radius: 50%; background: transparent; display: inline-flex; align-items: center; justify-content: center; padding: 0;"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#9aa0a9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M4 4l8 8M12 4l-8 8"></path></svg></button></div></div>
+        <div style="display: flex; flex-direction: column; gap: 4px;"><code class="mono" style="display: block; font-size: 11px; line-height: 1.6; color: #e8e9ec; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"><span style="color: #7ee0b5;">NWPaneHeader</span>(<span style="color: #e8c07a;">"Review"</span>, subtitle: stats) { … }</code><span style="font-size: 11.5px; line-height: 1.45; color: #5f656e;">Title + mono subtitle, controls right, close last.</span></div>
+      </div></div>
+      </div>
+    </section><section style="display: flex; flex-direction: column; gap: 14px;">
+      <div style="display: flex; align-items: baseline; gap: 12px; padding-bottom: 8px; border-bottom: 1px solid #1f2226;"><span class="mono" style="font-size: 11px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: #9aa0a9;">Window layout</span><span style="font-size: 12.5px; color: #9aa0a9;">Minimum window 720 × 600, window controls at the standard macOS position. Below ~911pt the sidebar hides and can overlay; below 881pt of main column the right pane overlays the agent’s layout instead of docking. It always sits at the window’s trailing edge beside the whole layout: a terminal split beside the thread narrows with it, and never halves the width the rule measures; the palette’s height is capped by the window. Thread column max 820pt (prose 640, bubbles 600); right panes 480–50% width, 600 default, drag handle on their left edge.</span></div>
+      <div style="display: flex; flex-direction: column; gap: 14px;">
+        <div style="display: flex; border: 1px solid #2c3035; border-radius: 8px; overflow: hidden; height: 180px;"><div style="width: 232px; height: 180px; flex-shrink: 0; box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between; padding: 8px 10px; background: #0a0b0c; border-right: 1px solid #1f2226;"><span class="mono" style="font-size: 10.5px; color: #9aa0a9;">sidebar</span><span class="mono" style="font-size: 10px; color: #5f656e;">232, kept when a pane opens<br>overlays below a 911 window</span></div><div style="flex-grow: 1; display: flex; flex-direction: column; background: #0d0e10;"><div style="height: 30px; border-bottom: 1px solid #1f2226; padding: 0 10px; display: flex; align-items: center;" class="mono"><span style="font-size: 10.5px; color: #9aa0a9;">toolbar 44</span></div><div style="flex-grow: 1; display: flex; justify-content: center; padding: 10px;"><div style="width: 62%; border: 1px dashed #2c3035; border-radius: 6px; display: flex; align-items: center; justify-content: center;" class="mono"><span style="font-size: 10.5px; color: #9aa0a9;">thread column · max 820 · prose 640 · bubbles 600</span></div></div><div style="height: 40px; margin: 0 auto 10px auto; width: 62%; border: 1px solid #2c3035; border-radius: 6px; display: flex; align-items: center; justify-content: center;" class="mono"><span style="font-size: 10.5px; color: #9aa0a9;">composer · same width as column</span></div></div><div style="width: 300px; height: 180px; flex-shrink: 0; box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between; padding: 8px 10px; background: #0d0e10; border-right: 1px solid #1f2226;"><span class="mono" style="font-size: 10.5px; color: #9aa0a9;">right pane</span><span class="mono" style="font-size: 10px; color: #5f656e;">600 default · 480 min<br>overlays below an 881 column</span></div></div>
+      </div>
+    </section></div></div>
+</body></html>

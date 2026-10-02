@@ -438,6 +438,7 @@ struct ExtensionSocketTests {
     func agentPeerRequestsRoute(delivery: AgentMessageDelivery) async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
+        h.server.setAgentMessagePolicy(.always)
         let peer = AgentPeerInfo(id: AgentID(rawValue: "a2"), name: "worker", status: "working", cwd: "/tmp", isSelf: false)
         let seen = Locked<[AgentPeerRequest]>([])
         h.server.onAgentPeerRequest = { request, respond in

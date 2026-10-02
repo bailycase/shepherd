@@ -67,16 +67,26 @@ final class DesignReferenceChips {
     private(set) var pinned: [String: DesignReferenceFreshness] = [:]
     private(set) var lookedAt: [String: DesignReferenceLookedAt] = [:]
     private(set) var catalog: DesignMentionCatalog?
+    /// What the @ picker says while it has no rows: reading, or why it couldn't (`DesignMentionLoad`).
+    private(set) var catalogStage: DesignMentionLoad.Stage = .loading
     /// Moves when a design changes: chips on screen read again.
     private(set) var generation = 0
     /// Moves when a picture a picker row draws lands.
     private(set) var picturesVersion = 0
     @ObservationIgnored let io: IO
     @ObservationIgnored private var loading: Set<String> = []
+    @ObservationIgnored private var catalogLoad = DesignMentionLoad()
+    /// How long a read of this Mac's designs may take before the picker gives up on it.
+    @ObservationIgnored let catalogTimeout: Duration
 
-    init(agentID: AgentID, io: IO) {
+    /// A read of the catalog that takes longer than this is a failure with a Retry, never a
+    /// spinner that doesn't end.
+    nonisolated static let defaultCatalogTimeout: Duration = .seconds(15)
+
+    init(agentID: AgentID, io: IO, catalogTimeout: Duration = DesignReferenceChips.defaultCatalogTimeout) {
         self.agentID = agentID
         self.io = io
+        self.catalogTimeout = catalogTimeout
     }
 
     /// A design changed or went: every chip reads how it stands again.
@@ -128,10 +138,67 @@ final class DesignReferenceChips {
         if let found = await io.lookedAt(ref, Set(aspects)) { lookedAt[key] = found }
     }
 
-    /// Reads this Mac's designs for the @ picker (again each time it opens).
+    /// Reads this Mac's designs for the @ picker (again each time it opens). The picker says
+    /// "Loading designs…" until the first read comes back and "Couldn't load designs." when one
+    /// takes longer than `catalogTimeout`; a catalog it already has keeps its rows through a later
+    /// read. An answer to a read a newer one has replaced is dropped.
     func loadCatalog() async {
-        let next = await io.catalog()
-        if catalog != next { catalog = next }
+        await startCatalogRead().value
+    }
+
+    /// Starts a read now (the picker says "Loading designs…" from this call on, never a failure
+    /// left over from the last opening) and answers the task that reads it.
+    @discardableResult
+    func startCatalogRead() -> Task<Void, Never> {
+        let request = catalogLoad.begin()
+        publishCatalogStage()
+        return Task { await readCatalog(request) }
+    }
+
+    private func readCatalog(_ request: Int) async {
+        let io = io
+        let next = await Self.within(catalogTimeout) { await io.catalog() }
+        if let next {
+            guard catalogLoad.finish(request) else { return }
+            if catalog != next { catalog = next }
+        } else {
+            guard catalogLoad.fail(request, reason: "Reading this Mac’s designs took too long.") else { return }
+        }
+        publishCatalogStage()
+    }
+
+    private func publishCatalogStage() {
+        if catalogStage != catalogLoad.stage { catalogStage = catalogLoad.stage }
+    }
+
+    /// `work`'s answer, or nil once `limit` has passed without one. The work is not waited for
+    /// after that, so a read that never answers cannot hold the picker: it finishes, or hangs,
+    /// on its own.
+    nonisolated static func within<T: Sendable>(_ limit: Duration, _ work: @escaping @Sendable () async -> T) async -> T? {
+        await withCheckedContinuation { (continuation: CheckedContinuation<T?, Never>) in
+            let gate = OnceGate(continuation)
+            Task { gate.resume(await work()) }
+            Task {
+                try? await Task.sleep(for: limit)
+                gate.resume(nil)
+            }
+        }
+    }
+
+    /// Resumes a continuation the first time it is asked to, and never again.
+    private final class OnceGate<T: Sendable>: @unchecked Sendable {
+        private let lock = NSLock()
+        private var continuation: CheckedContinuation<T?, Never>?
+
+        init(_ continuation: CheckedContinuation<T?, Never>) { self.continuation = continuation }
+
+        func resume(_ value: T?) {
+            let held = lock.withLock { () -> CheckedContinuation<T?, Never>? in
+                defer { continuation = nil }
+                return continuation
+            }
+            held?.resume(returning: value)
+        }
     }
 
     /// Previews: what the host would answer.
@@ -140,7 +207,11 @@ final class DesignReferenceChips {
         self.sent.merge(sent) { $1 }
         self.pinned.merge(pinned) { $1 }
         self.lookedAt.merge(lookedAt) { $1 }
-        if let catalog { self.catalog = catalog }
+        if let catalog {
+            self.catalog = catalog
+            catalogLoad.finish(catalogLoad.begin())
+            publishCatalogStage()
+        }
     }
 
     /// A picker row's picture, while one is at hand. An element's is its own cut, the same for

@@ -9,6 +9,8 @@ can use, kept in `~/.config/mcp/mcp.json` (the file other MCP clients share; `SH
 moves it). Shepherd's own fields sit under each entry's `shepherd` key, which other tools ignore;
 a secret is a `${keychain:<server>/<NAME>}` reference, and OAuth tokens live only in the Keychain.
 It sits between Skills and Remote in the nav, with `server.rack`. Stage 1 serves This Mac only.
+pi 1.0's own MCP support (its `mcp.json`, `/mcp`, `codemode`) is turned off in Shepherd's pi, so
+this page's file is the only one agents read and no server starts twice (docs/pi-engine.md › pi 1.0).
 
 - **Header:** "MCP servers" and its explanation, with Import… (a menu: From a JSON file…, Paste
   JSON…) and the primary Add server trailing. Both disable while mcp.json doesn't parse, and the

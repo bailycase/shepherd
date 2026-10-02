@@ -174,7 +174,9 @@ Each is one line here; the full rule is in [docs/rules.md](docs/rules.md) under 
   last terminal closes the panel. (Agents drive their own terminals)
 - Browser tools act only on their own thread's page; page text is untrusted; the user's click takes
   the page over. (Browser tools act only on their own thread's page)
-- Agents never delete each other on their own: `agent_delete` opens `PeerDeleteDialog`.
+- Agents act on other threads only as the user allows (Settings ▸ Pi ▸ Agent-to-agent messages,
+  default Ask me), enforced by the server, never the extension; agents never delete each other on
+  their own: `agent_delete` opens `PeerDeleteDialog`. (Agents act on other threads only as the user allows)
 - Shepherd does not nest agents: subagents are display state, never persisted, with no sidebar rows.
   A subagent never asks the user: its question goes to its parent, which answers it or asks the user
   in its own thread, so a child's question marks no row and posts no notification.
