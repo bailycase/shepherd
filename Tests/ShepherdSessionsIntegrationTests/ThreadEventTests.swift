@@ -628,7 +628,25 @@ struct ThreadEventTests {
         let s = try await t.snapshot()
         #expect(s.provisional.count == RPCThreadState.pageSize)
         #expect(s.provisional.first?.toolCallID == "call_5")
-        #expect(s.clipped)
+        #expect(s.clips == NativeThreadClips(live: 5) && s.clipped, "five rows of the running turn left out, and nothing else")
+    }
+
+    /// The rows `trimLive` left out are in pi's history, so the history that lands says nothing of them.
+    @Test func theRowsLeftOutOfATurnAreNoLongerClippedOnceItsHistoryLands() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        _ = try await t.ready()
+        for i in 0..<(RPCThreadState.pageSize + 5) {
+            try await t.feed(#"{"type":"tool_execution_start","toolCallId":"call_\#(i)","toolName":"bash"}"#)
+        }
+        let clipped = try await t.snapshot()
+        #expect(clipped.clips == NativeThreadClips(live: 5))
+        await withCheckedContinuation { continuation in
+            t.queue.async { t.state.refreshMessages { _ in continuation.resume() } }
+        }
+        let landed = try await t.snapshot()
+        #expect(!landed.clipped && landed.clips == nil)
+        #expect(landed.revision > clipped.revision, "clients see the notice go")
     }
 
     /// Active output is bounded before history fills the rest of the snapshot budget.
@@ -641,7 +659,7 @@ struct ThreadEventTests {
             try await t.feed(#"{"type":"tool_execution_update","toolCallId":"call_\#(i)","toolName":"bash","partialResult":{"content":[{"type":"text","text":"\#(big)"}]}}"#)
         }
         let s = try await t.snapshot()
-        #expect(s.clipped)
+        #expect(s.clips == NativeThreadClips(live: 12 - s.provisional.count) && s.clipped)
         #expect(s.provisional.count < 12)
         #expect(s.provisional.last?.toolCallID == "call_11", "the newest output is what stays")
         #expect(try JSONEncoder().encode(s).count <= RPCThreadState.snapshotLimit)
@@ -682,7 +700,7 @@ struct ThreadEventTests {
         try await t.feed(#"{"type":"extension_ui_request","id":"big","method":"editor","title":"Edit","prefill":"\#(huge)"}"#)
         let shown = try await t.snapshot()
         #expect(shown.dialogs == [NativeThreadDialog(id: "big", kind: .editor, title: "Dialog too large for native thread", unavailable: "payload-limit")])
-        #expect(shown.clipped)
+        #expect(!shown.clipped && shown.clips == nil, "the dock says a question is too large; the thread says nothing")
 
         let answer = NativeThreadRequest.answer(expectedSessionID: s.piSessionID, generation: s.generation, operationID: UUID(),
                                                 dialogID: "big", answer: .editor(value: "x"))

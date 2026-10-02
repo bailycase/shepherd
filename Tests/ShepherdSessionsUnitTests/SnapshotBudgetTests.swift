@@ -63,10 +63,10 @@ struct SnapshotBudgetTests {
 
     static func sized<T: Encodable>(_ value: T) -> RPCThreadState.Sized<T> { RPCThreadState.Sized(value: value, bytes: RPCThreadState.bytes(value)) }
 
-    static func budget(_ base: NativeThreadSnapshot, active: [NativeThreadMessage] = [], history: [NativeThreadMessage])
-        -> (snapshot: NativeThreadSnapshot, bytes: Int) {
+    static func budget(_ base: NativeThreadSnapshot, active: [NativeThreadMessage] = [], dialogs: [NativeThreadDialog] = [],
+                       history: [NativeThreadMessage]) -> (snapshot: NativeThreadSnapshot, bytes: Int) {
         let history = history.map { sized($0) }
-        return RPCThreadState.budget(base, baseBytes: RPCThreadState.bytes(base), active: active.map { sized($0) }, dialogs: [],
+        return RPCThreadState.budget(base, baseBytes: RPCThreadState.bytes(base), active: active.map { sized($0) }, dialogs: dialogs.map { sized($0) },
                                      historyEnd: history.count, history: { history[$0] })
     }
 
@@ -89,7 +89,8 @@ struct SnapshotBudgetTests {
 
         #expect(snapshot.messages.map(\.entryID) == history.suffix(snapshot.messages.count).map(\.entryID), "the newest messages, in order")
         #expect(snapshot.messages.count >= 20, "\(snapshot.messages.count) messages")
-        #expect(snapshot.olderCursor == snapshot.messages.first?.entryID && snapshot.clipped, "the older ones are a page away")
+        #expect(snapshot.olderCursor == snapshot.messages.first?.entryID, "the older ones are a page away")
+        #expect(!snapshot.clipped && snapshot.clips == nil, "older pages are not clipped")
         #expect(bytes == RPCThreadState.bytes(snapshot))
     }
 
@@ -117,7 +118,40 @@ struct SnapshotBudgetTests {
         #expect(live.count(where: { $0.role != "user" }) >= RPCThreadState.activeReserve / 10_500 - 1, "\(live.count) live rows")
         #expect(live.last?.entryID == "provisional:tool:c29", "the newest rows stay")
         #expect(snapshot.messages.count == 10, "short history all fits beside them")
+        #expect(snapshot.clips == NativeThreadClips(live: active.count - live.count) && snapshot.clipped, "the rows left out of the turn are counted, and nothing else is")
         #expect(bytes == RPCThreadState.bytes(snapshot))
+    }
+
+    /// The questions that would not fit are counted too, after the turn's rows, and they alone are not
+    /// the history: its page is as full as it was.
+    @Test func questionsThatDoNotFitAreCountedAndTheirThreadsHistoryStaysWhole() {
+        var base = Self.heavyBase(runs: [], turns: [])
+        base.commands = []
+        let dialogs = (0..<6).map { NativeThreadDialog(id: "d\($0)", kind: .editor, title: "Edit", message: String(repeating: "q", count: 30_000)) }
+        let history = (0..<80).map { Self.message($0, bytes: 3000) }
+
+        let (snapshot, bytes) = Self.budget(base, dialogs: dialogs, history: history)
+
+        let left = dialogs.count - snapshot.dialogs.count
+        #expect(left > 0 && snapshot.dialogs.map(\.id) == dialogs.prefix(snapshot.dialogs.count).map(\.id), "the newest questions are the ones left out")
+        #expect(snapshot.clips == NativeThreadClips(questions: left) && snapshot.clipped)
+        #expect(snapshot.messages.count >= 20 && snapshot.messages.last?.entryID == "m:79")
+        #expect(bytes == RPCThreadState.bytes(snapshot))
+    }
+
+    @Test func factsTheHostAlreadyHeldJoinTheOnesThisSnapshotAdds() {
+        var base = Self.heavyBase(runs: Self.heavyRuns, turns: Self.heavyTurns)
+        base.clips = NativeThreadClips(history: true, live: 2)
+        base.clipped = true
+        let active = [Self.message(0, bytes: 100, role: "user")]
+            + (1..<30).map { NativeThreadMessage(entryID: "provisional:tool:c\($0)", role: "toolResult",
+                                                  blocks: [NativeThreadBlock(kind: .text, text: String(repeating: "x", count: 10_000))],
+                                                  toolName: "bash", toolCallID: "c\($0)", status: "running") }
+
+        let (snapshot, bytes) = Self.budget(base, active: active, history: (0..<10).map { Self.message($0 + 100, bytes: 1000) })
+
+        #expect(snapshot.clips == NativeThreadClips(history: true, live: 2 + active.count - snapshot.provisional.count) && snapshot.clipped)
+        #expect(bytes == RPCThreadState.bytes(snapshot), "the clips are counted in the size, whichever fact they came from")
     }
 
     /// The Goal card's data is a field of the snapshot beside the cards and turns (not a widget, so
