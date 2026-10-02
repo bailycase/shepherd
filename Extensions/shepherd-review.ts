@@ -112,6 +112,17 @@ export default function shepherdReview(pi: ExtensionAPI) {
     return { content: [{ type: "text" as const, text: body }] };
   }
 
+  // Deferred (docs/context-budget.md): with SHEPHERD_DEFER_TOOLS=1 pi leaves the tool out of every request until the model loads it
+  // with tool_search, and the status extension keeps tool_search reachable and says in the prompt that it exists. A deferred tool
+  // has no promptSnippet: that line would only repeat the search result, and loading the tool would send the whole tool list again.
+  const DEFER = process.env.SHEPHERD_DEFER_TOOLS === "1";
+  // The description is the clause of the one prompt line that says the tool exists; the instructions are words tool_search matches.
+  const NAMESPACE = {
+    name: "shepherd_review",
+    description: "a diff review of the changes, readied in the Changes tab",
+    instructions: "Ready a review of the git diff for the user in Shepherd's Changes tab.",
+  };
+
   pi.registerTool({
     name: "review_diff",
     label: "Review Diff",
@@ -122,7 +133,8 @@ export default function shepherdReview(pi: ExtensionAPI) {
       "Use cwd to review another repository or worktree without changing the agent's directory. " +
       "Reuses the agent's review and reloads it. " +
       "Changing cwd discards the previous review comments and summary. Use before finalizing substantial changes.",
-    promptSnippet: "Ready a native diff review in Shepherd's Changes tab; pass cwd to target another repository or worktree",
+    promptSnippet: DEFER ? undefined : "Ready a native diff review in Shepherd's Changes tab; pass cwd to target another repository or worktree",
+    ...(DEFER ? { exposure: "deferred" as const, namespace: NAMESPACE } : {}),
     parameters: Type.Object({
       reference: Type.Optional(
         Type.String({

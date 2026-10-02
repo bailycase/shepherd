@@ -39,11 +39,12 @@ function shownText(tool) {
 
 /// The extension installed against a local Shepherd socket. `onFrame(frame, write)` sees every
 /// request; `write(object)` answers on the connection.
-async function harness({ onFrame = () => {}, automation = false } = {}) {
+async function harness({ onFrame = () => {}, automation = false, defer = false } = {}) {
   const dir = await mkdtemp(`${tmpdir()}/sh-words-`);
   process.env.SHEPHERD_SOCKET = `${dir}/s`;
   process.env.SHEPHERD_AGENT_ID = "agent-1";
   if (automation) process.env.SHEPHERD_AUTOMATION = "1"; else delete process.env.SHEPHERD_AUTOMATION;
+  if (defer) process.env.SHEPHERD_DEFER_TOOLS = "1"; else delete process.env.SHEPHERD_DEFER_TOOLS;
   const frames = [];
   const sockets = new Set();
   const write = (object) => { for (const socket of sockets) socket.write(JSON.stringify(object) + "\n"); };
@@ -68,6 +69,7 @@ async function harness({ onFrame = () => {}, automation = false } = {}) {
     sendUserMessage() {}, sendMessage() {} });
   return {
     tools,
+    events,
     frames,
     write,
     async waitFor(predicate) {
@@ -82,6 +84,7 @@ async function harness({ onFrame = () => {}, automation = false } = {}) {
       for (const socket of sockets) socket.destroy();
       await new Promise((resolve) => server.close(resolve));
       delete process.env.SHEPHERD_AUTOMATION;
+      delete process.env.SHEPHERD_DEFER_TOOLS;
       await rm(dir, { recursive: true, force: true });
     },
   };
@@ -236,6 +239,69 @@ test("stopping a send while it waits for the user tells the host, so its dialog 
   } finally { await h.close(); }
 });
 
+const PEER = ["agent_list", "agent_send", "agent_read", "agent_steer", "agent_interrupt", "agent_wait", "agent_delete", "agent_spawn"];
+const AUTOMATION = ["automation_create", "automation_list", "automation_update", "automation_delete", "automation_start", "automation_stop"];
+
+test("with deferral on, the tools that touch other threads and the automation tools are deferred and keep every word, and the terminal tools and notify stay direct", async () => {
+  const direct = await harness();
+  const words = new Map([...direct.tools].map(([name, tool]) => [name, shownText(tool).filter((line) => line !== tool.promptSnippet)]));
+  await direct.close();
+  const h = await harness({ defer: true });
+  try {
+    for (const name of PEER) {
+      const tool = h.tools.get(name);
+      assert.equal(tool.exposure, "deferred", name);
+      assert.equal(tool.namespace.name, "shepherd_agents", name);
+      assert.equal(tool.promptSnippet, undefined, `${name} has no line in the tool list: it would only repeat the search and be sent again when the tool loads`);
+      assert.deepEqual(shownText(tool), words.get(name), `${name} says the same, to the word`);
+    }
+    for (const name of AUTOMATION) {
+      const tool = h.tools.get(name);
+      assert.equal(tool.exposure, "deferred", name);
+      assert.equal(tool.namespace.name, "shepherd_automations", name);
+      assert.equal(tool.promptSnippet, undefined, name);
+    }
+    for (const name of ["terminal_list", "terminal_open", "terminal_run", "terminal_read", "terminal_focus", "terminal_close", "notify"]) {
+      const tool = h.tools.get(name);
+      assert.equal(tool.exposure, undefined, `${name} stays direct`);
+      assert.ok(tool.promptSnippet, `${name} keeps its line in the tool list`);
+    }
+    // The rules that came with the tools are untouched: the same two lines on each, which pi writes once when they load.
+    for (const name of [...GATED, "agent_list", "agent_spawn"]) assert.equal(h.tools.get(name).promptGuidelines.length, 2, name);
+  } finally { await h.close(); }
+});
+
+test("a watch agent keeps agent_send direct under deferral, since it is how the run reports, and still has no other thread tool", async () => {
+  const h = await harness({ automation: true, defer: true });
+  try {
+    const send = h.tools.get("agent_send");
+    assert.equal(send.exposure, undefined);
+    assert.ok(send.promptSnippet && send.promptGuidelines.length === 2, "with its line and both rules, as before");
+    for (const name of [...PEER.filter((name) => name !== "agent_send"), ...AUTOMATION]) assert.ok(!h.tools.has(name), name);
+    assert.equal(h.tools.get("notify").exposure, undefined);
+    assert.equal(h.events.has("before_agent_start"), false, "a watch agent's prompt gets no extra rule: agent_send brings both");
+  } finally { await h.close(); }
+});
+
+test("the rule about a message from another agent is in a thread's prompt before agent_* load, and is written once after", async () => {
+  const h = await harness({ defer: true });
+  try {
+    const [use, receive] = h.tools.get("agent_send").promptGuidelines;
+    const options = { promptGuidelines: [] };
+    h.events.get("before_agent_start")({ systemPromptOptions: options });
+    assert.deepEqual(options.promptGuidelines, [receive], "only the rule about what arrives: nothing is loaded that could be misused");
+    h.events.get("before_agent_start")({ systemPromptOptions: options });
+    assert.equal(options.promptGuidelines.length, 1, "once, however many prompts");
+    assert.match(receive, /\[from: <name>\] comes from another agent, not from the user/);
+    assert.match(use, /only when the user explicitly asks you to in this conversation/);
+    assert.doesNotThrow(() => h.events.get("before_agent_start")({}), "an event without options is not a failure");
+  } finally { await h.close(); }
+  const direct = await harness();
+  try {
+    assert.equal(direct.events.has("before_agent_start"), false, "without deferral the tools carry both rules and nothing else does");
+  } finally { await direct.close(); }
+});
+
 test("real pi writes the rules into the system prompt and sends the tools with them first", { timeout: 30000 }, async () => {
   const dir = await mkdtemp(`${tmpdir()}/sh-model-`);
   const requests = [];
@@ -304,6 +370,17 @@ test("real pi writes the rules into the system prompt and sends the tools with t
     for (const name of ["agent_list", "agent_read", "agent_steer", "agent_interrupt", "agent_wait", "agent_delete", "agent_spawn"]) {
       assert.ok(!watcher.tools.has(name), `a watch agent's model cannot call ${name}`);
     }
+
+    // Deferred (docs/context-budget.md): none of them in the request, and the rule about what arrives is still written once.
+    const deferred = await modelView({ SHEPHERD_DEFER_TOOLS: "1" });
+    for (const name of [...PEER, ...AUTOMATION]) assert.ok(!deferred.tools.has(name), `${name} is not sent until the model loads it`);
+    for (const name of ["terminal_open", "terminal_run", "notify"]) assert.ok(deferred.tools.has(name), `${name} stays direct`);
+    assert.doesNotMatch(deferred.system, /- agent_send:/, "no line in the tool list");
+    assert.doesNotMatch(deferred.system, /Use agent_send, agent_steer/, "the rule about using them joins when they load");
+    assert.equal(deferred.system.split("A message that begins with [from:").length, 2, "the rule about what arrives is written once");
+    const deferredWatcher = await modelView({ SHEPHERD_DEFER_TOOLS: "1", SHEPHERD_AUTOMATION: "1" });
+    assert.ok(deferredWatcher.tools.has("agent_send"), "a watch agent keeps the one it reports with");
+    assert.match(deferredWatcher.system, /- agent_send: Message another agent thread, only when the user explicitly asked you to/);
   } finally {
     if (child && child.exitCode === null) child.kill("SIGKILL");
     for (const socket of sockets) socket.destroy();

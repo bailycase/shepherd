@@ -25,10 +25,16 @@ const SHORT_REASON = {
     "Optional: what you need from the user in 1-3 words, shown beside this thread in Shepherd's sidebar while it waits (e.g. \"retention?\", \"approve plan\").",
 };
 
+// Shepherd's rarely used tools (the panes, review and browser extensions') are deferred while SHEPHERD_DEFER_TOOLS=1: each is
+// registered `deferred` under a `shepherd_*` namespace, and pi sends none of them until the model loads it with tool_search
+// (docs/context-budget.md). What keeps them reachable is here, since this extension is in every agent's launch.
+const SHEPHERD_NAMESPACE = /^shepherd_/;
+
 export default function shepherdStatus(pi: ExtensionAPI) {
   const agentID = process.env.SHEPHERD_AGENT_ID ?? "";
   const socketPath = process.env.SHEPHERD_SOCKET ?? "";
   if (!agentID || !socketPath) return;
+  const deferTools = process.env.SHEPHERD_DEFER_TOOLS === "1";
 
   let socket: net.Socket | undefined;
   let connected = false;
@@ -64,6 +70,61 @@ export default function shepherdStatus(pi: ExtensionAPI) {
     } catch {
       // Swallow; the sidebar falls back to the question itself.
     }
+  }
+
+  const deferredTools = () =>
+    pi.getAllTools().filter((tool) => tool.exposure === "deferred" && SHEPHERD_NAMESPACE.test(tool.namespace?.name ?? ""));
+
+  // pi's MCP activates tool_search only for a server on Search, so without this a thread with none could not load a tool. A launch
+  // without tool_search at all declares the deferred tools like any other rather than leave them unreachable. And the tools a search
+  // loaded stay loaded across a restart: pi 1.0 restores them in some modes and not in the RPC one Shepherd runs (measured), where a
+  // thread that opened the browser would lose it at every relaunch. The transcript says what was loaded: the tools that system
+  // messages after the first one added (the first is the launch's own set, so a thread from before deferral starts deferred).
+  function keepDeferredToolsReachable(ctx?: { sessionManager?: { getBranch?: () => any[] } }) {
+    if (!deferTools) return;
+    try {
+      const deferred = deferredTools();
+      if (deferred.length === 0) return;
+      let active = pi.getActiveTools();
+      if (pi.getAllTools().some((tool) => tool.name === "tool_search")) {
+        if (!active.includes("tool_search")) pi.setActiveTools((active = [...active, "tool_search"]));
+      } else {
+        pi.setActiveTools([...new Set([...active, ...deferred.map((tool) => tool.name)])]);
+        return;
+      }
+      const loaded = new Set<string>();
+      let later = false;
+      for (const entry of ctx?.sessionManager?.getBranch?.() ?? []) {
+        const message = entry?.type === "message" ? entry.message : undefined;
+        if (message?.role !== "system") continue;
+        if (!later) { later = true; continue; }
+        for (const tool of message.toolsRemoved ?? []) loaded.delete(tool?.name);
+        for (const tool of message.toolsAdded ?? []) loaded.add(tool?.name);
+      }
+      const back = deferred.map((tool) => tool.name).filter((name) => loaded.has(name) && !active.includes(name));
+      if (back.length > 0) pi.setActiveTools([...active, ...back]);
+    } catch {
+      // The tools stay deferred; the model can still work without them.
+    }
+  }
+
+  // One rule line says which of them exist: a deferred tool is in no request, so the model could not otherwise know to look.
+  // Without tool_search there is nothing to load them with, and keepDeferredToolsReachable declared them instead.
+  function deferredToolsLine(): string | undefined {
+    if (!pi.getAllTools().some((tool) => tool.name === "tool_search")) return undefined;
+    const families = new Map<string, { names: string[]; description: string }>();
+    for (const tool of deferredTools()) {
+      const family = families.get(tool.namespace.name) ?? { names: [], description: tool.namespace.description ?? "" };
+      family.names.push(tool.name);
+      families.set(tool.namespace.name, family);
+    }
+    if (families.size === 0) return undefined;
+    const label = (names: string[]) => {
+      const prefix = names[0].split("_")[0];
+      return names.length > 1 && names.every((name) => name.startsWith(`${prefix}_`)) ? `${prefix}_*` : names.join(", ");
+    };
+    const parts = [...families.values()].map((family) => `${label(family.names)} (${family.description})`);
+    return `Shepherd tools you load with tool_search when you need them: ${parts.join("; ")}.`;
   }
 
   function flush() {
@@ -193,6 +254,7 @@ export default function shepherdStatus(pi: ExtensionAPI) {
     connect();
     send("idle");
     offerShortReason();
+    keepDeferredToolsReachable(ctx);
     // Fires for startup, /new, /resume, and /reload, so this covers every way
     // the current session can change.
     try {
@@ -202,8 +264,44 @@ export default function shepherdStatus(pi: ExtensionAPI) {
     }
   });
 
-  pi.on("before_agent_start", () => {
+  pi.on("before_agent_start", (event) => {
     offerShortReason();
+    if (!deferTools) return;
+    try {
+      const rules = event?.systemPromptOptions?.promptGuidelines;
+      const line = deferredToolsLine();
+      if (Array.isArray(rules) && line && !rules.includes(line)) rules.push(line);
+    } catch {
+      // The line is never worth a failed turn.
+    }
+  });
+
+  // A search whose best match is a tool of one of these families loads the whole family: the browser's thirteen tools are used
+  // together and tool_search loads eight at most, and each load is a change to the request that the provider's prompt cache can
+  // notice, so one is better than two. Only the best match counts (the loaded list is in rank order): a search for an MCP tool also
+  // loads the weaker matches, such as automation_create for "create an issue", and those do not bring their families.
+  if (deferTools) pi.on("tool_result", (event) => {
+    if (event.toolName !== "tool_search") return undefined;
+    try {
+      const loaded: string[] = Array.isArray(event.details?.loaded) ? event.details.loaded : [];
+      const all = pi.getAllTools();
+      const family = all.find((tool) => tool.name === loaded[0])?.namespace?.name ?? "";
+      if (!SHEPHERD_NAMESPACE.test(family)) return undefined;
+      const active = new Set(pi.getActiveTools());
+      const more = all.filter((tool) => tool.exposure === "deferred" && tool.namespace?.name === family && !active.has(tool.name)).map((tool) => tool.name);
+      if (more.length === 0) return undefined;
+      pi.setActiveTools([...active, ...more]);
+      // The answer says so too, and keeps its first line, "Loaded N tools.", true: Shepherd's thread reads the count from it.
+      const first = event.content?.[0];
+      if (first?.type !== "text" || typeof first.text !== "string") return undefined;
+      const count = /^Loaded (\d+) tools?\./.exec(first.text);
+      if (!count) return undefined;
+      const total = Number(count[1]) + more.length;
+      const text = first.text.replace(count[0], `Loaded ${total} tools.`) + `\nLoaded with them, from the same set: ${more.join(", ")}.`;
+      return { content: [{ ...first, text }, ...event.content.slice(1)], details: { ...event.details, loaded: [...loaded, ...more] } };
+    } catch {
+      return undefined;
+    }
   });
 
   pi.on("tool_call", (event) => {

@@ -384,6 +384,31 @@ export default function shepherdPanes(pi: ExtensionAPI) {
   // watchers. Automation agents get the terminal tools + notify but no automation_* tools.
   const isAutomationAgent = process.env.SHEPHERD_AUTOMATION === "1";
 
+  // Deferred tools (docs/context-budget.md): with SHEPHERD_DEFER_TOOLS=1 pi leaves a deferred tool out of every request until
+  // the model loads it with tool_search, and the status extension keeps tool_search reachable and says in the prompt that
+  // these exist. A deferred tool has no promptSnippet: that line would only repeat the search result, and loading the tool
+  // would send the whole tool list again. A watch agent's agent_send stays direct: it is how the run reports.
+  const DEFER = process.env.SHEPHERD_DEFER_TOOLS === "1";
+  const deferPeers = DEFER && !isAutomationAgent;
+  // The description is the clause of the one prompt line that says these tools exist; the instructions are words tool_search matches.
+  const PEERS = {
+    name: "shepherd_agents",
+    description: "other agent threads, only when the user explicitly asks you to",
+    instructions:
+      "Other agent threads in Shepherd: list the threads, send a message to, steer, interrupt, read, wait for, " +
+      "start or delete another thread.",
+  };
+  const AUTOMATIONS = {
+    name: "shepherd_automations",
+    description: "Shepherd automations, the saved watch tasks",
+    instructions:
+      "Shepherd automations: saved watch tasks that monitor something and notify the user. " +
+      "Create, list, update, delete, start or stop an automation.",
+  };
+  const later = (on: boolean, namespace: { name: string; description: string; instructions: string }) =>
+    on ? { exposure: "deferred" as const, namespace } : {};
+  const line = (on: boolean, snippet: string) => (on ? undefined : snippet);
+
   // ---- peer threads --------------------------------------------------------
   // Every tool here that touches another thread is for what the user asked for in this
   // conversation, and Shepherd can ask the user to approve each call (Settings ▸ Pi ▸ Agent-to-agent
@@ -414,7 +439,8 @@ export default function shepherdPanes(pi: ExtensionAPI) {
       "List the other agent threads in Shepherd: id, name, status (working/blocked/idle/done), and working " +
       "directory. Use it to find a thread the user named. It only reads: it is not a reason to message, " +
       "steer, read or start any thread, which you may do only when the user explicitly asks you to.",
-    promptSnippet: "List the other agent threads, only to find one the user named",
+    promptSnippet: line(deferPeers, "List the other agent threads, only to find one the user named"),
+    ...later(deferPeers, PEERS),
     promptGuidelines: PEER_GUIDELINES,
     parameters: Type.Object({}),
     async execute() {
@@ -440,7 +466,8 @@ export default function shepherdPanes(pi: ExtensionAPI) {
       "an idle agent or queues a follow-up while busy. delivery report is hidden context only, and " +
       "never starts or queues a turn. The other thread sees an agent's message, not the user's. " +
       APPROVAL + " Dispatch is not confirmation of acceptance or consumption.",
-    promptSnippet: "Message another agent thread, only when the user explicitly asked you to",
+    promptSnippet: line(deferPeers, "Message another agent thread, only when the user explicitly asked you to"),
+    ...later(deferPeers, PEERS),
     promptGuidelines: PEER_GUIDELINES,
     parameters: Type.Object({
       agentID: Type.String({ description: "Target agent id from agent_list" }),
@@ -468,6 +495,7 @@ export default function shepherdPanes(pi: ExtensionAPI) {
       "Per-entry text is capped at 4000 characters, total at 48 KiB. A cursor from another branch is an " +
       "error. " + APPROVAL,
     promptGuidelines: PEER_GUIDELINES,
+    ...later(deferPeers, PEERS),
     parameters: Type.Object({
       agentID: Type.String(),
       after: Type.Optional(Type.String({ description: "Entry ID cursor from this branch, exclusive" })),
@@ -490,6 +518,7 @@ export default function shepherdPanes(pi: ExtensionAPI) {
       "its next step, or starts an idle one. Reports requested, not accepted or consumed. Cannot target " +
       "yourself. " + APPROVAL,
     promptGuidelines: PEER_GUIDELINES,
+    ...later(deferPeers, PEERS),
     parameters: Type.Object({ agentID: Type.String(), text: Type.String({ minLength: 1, maxLength: 32768 }) }),
     async execute(_id, params, signal) {
       const reply = await request({ type: "coordinateAgent", targetAgentID: params.agentID,
@@ -508,6 +537,7 @@ export default function shepherdPanes(pi: ExtensionAPI) {
       "it stopped; tools must cooperate. Also cancels a pending retry or compaction; messages already " +
       "queued stay queued. Cannot target yourself. " + APPROVAL,
     promptGuidelines: PEER_GUIDELINES,
+    ...later(deferPeers, PEERS),
     parameters: Type.Object({ agentID: Type.String() }),
     async execute(_id, params, signal) {
       const reply = await request({ type: "coordinateAgent", targetAgentID: params.agentID,
@@ -524,6 +554,7 @@ export default function shepherdPanes(pi: ExtensionAPI) {
       "never to keep watch over threads on your own. Polls another live agent until ctx.isIdle and no pending " +
       "messages. Only current activity has settled, not proof a sent task succeeded or was consumed. Times " +
       "out or fails on disconnection/session change. Cancellable; cannot wait for yourself.",
+    ...later(deferPeers, PEERS),
     parameters: Type.Object({ agentID: Type.String(),
       timeoutSeconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 120 })) }),
     async execute(_id, params, signal) {
@@ -562,6 +593,7 @@ export default function shepherdPanes(pi: ExtensionAPI) {
       "never to tidy up. Asks the real user in Shepherd's native confirmation to delete another agent and " +
       "terminate all its auxiliary processes. No agent-supplied approval is accepted. Cancel or a 120-second " +
       "confirmation timeout keeps it intact. Keeps worktrees and branches. Cannot delete yourself.",
+    ...later(deferPeers, PEERS),
     parameters: Type.Object({ agentID: Type.String() }),
     async execute(_id, params, signal) {
       const reply = await request({ type: "coordinateAgent", targetAgentID: params.agentID,
@@ -580,7 +612,8 @@ export default function shepherdPanes(pi: ExtensionAPI) {
       "in ~/src/api and have it fix the build\". Starts a new top-level agent thread in Shepherd with an " +
       "opening prompt, visible in the sidebar like any user-created agent. Returns the new agent's id. " +
       APPROVAL,
-    promptSnippet: "Start a new agent thread, only when the user explicitly asked you to",
+    promptSnippet: line(deferPeers, "Start a new agent thread, only when the user explicitly asked you to"),
+    ...later(deferPeers, PEERS),
     promptGuidelines: PEER_GUIDELINES,
     parameters: Type.Object({
       cwd: Type.String({ description: "Absolute working directory for the new thread" }),
@@ -608,7 +641,8 @@ export default function shepherdPanes(pi: ExtensionAPI) {
       "the result back in this thread: the watch agent then sends it to your thread with agent_send " +
       "(delivery report), which works only while the user allows agent messages from automations; " +
       "otherwise it just notifies.",
-    promptSnippet: "Create a Shepherd automation (a saved watch task)",
+    promptSnippet: line(DEFER, "Create a Shepherd automation (a saved watch task)"),
+    ...later(DEFER, AUTOMATIONS),
     parameters: Type.Object({
       name: Type.String({ description: "Short sidebar title, e.g. 'pr-watch #4821'" }),
       prompt: Type.String({ description: "Full instructions for the watch agent" }),
@@ -642,7 +676,8 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     description:
       "List the user's Shepherd automations: id, name, cwd, enabled, and run state " +
       "(the watch agent's status, or stopped).",
-    promptSnippet: "List Shepherd automations",
+    promptSnippet: line(DEFER, "List Shepherd automations"),
+    ...later(DEFER, AUTOMATIONS),
     parameters: Type.Object({}),
     async execute() {
       const reply = await request({ type: "listAutomations" });
@@ -660,7 +695,8 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     description:
       "Update a Shepherd automation's name, prompt, cwd, or enabled flag. Omitted fields " +
       "keep their value. A running watch keeps its old prompt until restarted.",
-    promptSnippet: "Update a Shepherd automation",
+    promptSnippet: line(DEFER, "Update a Shepherd automation"),
+    ...later(DEFER, AUTOMATIONS),
     parameters: Type.Object({
       automationID: Type.String({ description: "Automation id from automation_list" }),
       name: Type.Optional(Type.String()),
@@ -686,7 +722,8 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     label: "Delete Automation",
     description:
       "Delete a Shepherd automation and stop its watch agent if running.",
-    promptSnippet: "Delete a Shepherd automation",
+    promptSnippet: line(DEFER, "Delete a Shepherd automation"),
+    ...later(DEFER, AUTOMATIONS),
     parameters: Type.Object({
       automationID: Type.String({ description: "Automation id from automation_list" }),
     }),
@@ -701,7 +738,8 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     label: "Start Automation",
     description:
       "Start a Shepherd automation's run. A finished run is replaced by the new one; a run still working or waiting on the user is refused.",
-    promptSnippet: "Start a Shepherd automation",
+    promptSnippet: line(DEFER, "Start a Shepherd automation"),
+    ...later(DEFER, AUTOMATIONS),
     parameters: Type.Object({
       automationID: Type.String({ description: "Automation id from automation_list" }),
     }),
@@ -716,7 +754,8 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     label: "Stop Automation",
     description:
       "Stop a running Shepherd automation's watch agent. The automation stays saved.",
-    promptSnippet: "Stop a Shepherd automation",
+    promptSnippet: line(DEFER, "Stop a Shepherd automation"),
+    ...later(DEFER, AUTOMATIONS),
     parameters: Type.Object({
       automationID: Type.String({ description: "Automation id from automation_list" }),
     }),
@@ -746,6 +785,19 @@ export default function shepherdPanes(pi: ExtensionAPI) {
       return text(`notified: ${params.title}`);
     },
   });
+
+  // What to do with a message from another agent holds for every thread, loaded agent_* tools or not: they bring the
+  // rule with them (pi writes a repeated rule once), and until they load this does.
+  if (deferPeers) {
+    pi.on("before_agent_start", (event) => {
+      try {
+        const rules = event?.systemPromptOptions?.promptGuidelines;
+        if (Array.isArray(rules) && !rules.includes(PEER_GUIDELINES[1])) rules.push(PEER_GUIDELINES[1]);
+      } catch {
+        // The rule is never worth a failed turn.
+      }
+    });
+  }
 
   // Connect eagerly so pushes can reach this agent before it ever uses a
   // Shepherd tool. Failures are fine — request() reconnects on demand.
