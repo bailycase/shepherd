@@ -33,8 +33,10 @@ function fixture(t, config = base) {
   if (config !== null) write(config);
   const handlers = new Map(), registrations = [], refreshes = [];
   let idle = true, selected;
+  let selectForRecovery = () => assert.fail("An already selected model must not append transcript records");
   const ctx = { isIdle: () => idle, sessionManager: { getBranch: () => [] }, get model() { return selected; }, modelRegistry: {
     refresh: async (options) => { refreshes.push(options); return { aborted: false, errors: new Map() }; },
+    find: (provider, id) => registrations.at(-1)?.getModels().find((model) => model.provider === provider && model.id === id),
   } };
   const saved = process.env.SHEPHERD_CLIPROXYAPI_CONFIG;
   process.env.SHEPHERD_CLIPROXYAPI_CONFIG = configPath;
@@ -46,7 +48,7 @@ function fixture(t, config = base) {
         // AgentSession's registration hook refreshes the current model without setModel.
         selected = provider.getModels().find((model) => model.id === selected?.id) ?? selected;
       },
-      setModel: () => assert.fail("Registration already refreshes the selected model; don't append transcript records"),
+      setModel: (model) => selectForRecovery(model),
     }), undefined, "factory is synchronous");
   } finally {
     if (saved === undefined) delete process.env.SHEPHERD_CLIPROXYAPI_CONFIG;
@@ -58,6 +60,7 @@ function fixture(t, config = base) {
     get models() { return this.provider?.getModels() ?? []; },
     get selected() { return selected; },
     select(model) { selected = model; },
+    recoverWith(select) { selectForRecovery = select; },
     idle(value) { idle = value; },
     emit(event) { return handlers.get(event)?.({}, ctx); },
   };
@@ -413,6 +416,26 @@ test("restoring a missing managed model never sends its conversation to an authe
       assert.equal(requests, 0, `${name}: summaries must not reach fallback`);
       assert.ok(notices.some((message) => message.includes("CLIProxyAPI model is unavailable")));
       assert.deepEqual(errors, []);
+      if (name === "removed") {
+        // The proxy stays unchanged; its exact model becomes available in the local catalog.
+        fs.writeFileSync(configPath, JSON.stringify({ ...base, models: [{ id: "saved-model" }], updatedAt: 2 }));
+        const sent = [];
+        const fetch = t.mock.method(globalThis, "fetch", async (url, init) => {
+          sent.push({ url: String(url), body: JSON.parse(init.body) });
+          return new Response('data: {"choices":[{"index":0,"delta":{"role":"assistant","content":"Recovered"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+            { headers: { "content-type": "text/event-stream" } });
+        });
+        try { await session.prompt("Send only to the recovered exact model"); }
+        finally { fetch.mock.restore(); }
+        assert.equal(session.model.provider, "cliproxyapi");
+        assert.equal(session.model.id, "saved-model");
+        assert.equal(requests, 0, "recovery never sends to the fallback");
+        assert.equal(sent.length, 1, "the original prompt is sent once, never replayed");
+        assert.equal(sent[0].url, base.baseURL + "/chat/completions");
+        assert.equal(sent[0].body.model, "saved-model");
+        assert.equal(session.getLastAssistantText(), "Recovered");
+        assert.deepEqual(errors, []);
+      }
       // Even selecting the already-active fallback is an explicit, persisted consent.
       await session.setModel(fallback);
       await session.prompt("Now I explicitly consent to fallback");
@@ -422,6 +445,123 @@ test("restoring a missing managed model never sends its conversation to an authe
       session.dispose();
     }
   }
+});
+
+test("an idle restored session recovers only its exact saved model on input, not at startup", async (t) => {
+  const f = fixture(t);
+  const branch = [{ type: "message", message: { role: "assistant", provider: "cliproxyapi", model: "openai/gpt-5.5" } }];
+  f.ctx.sessionManager.getBranch = () => branch;
+  f.select({ provider: "other-provider", id: "openai/gpt-5.5" });
+  const selected = [];
+  f.recoverWith(async (model) => {
+    selected.push(`${model.provider}/${model.id}`);
+    f.select(model);
+    branch.push({ type: "model_change", provider: model.provider, modelId: model.id });
+    return true;
+  });
+  await f.emit("session_start");
+  assert.deepEqual(selected, [], "a restart never resumes recovery or model work");
+  assert.equal(await f.emit("input"), undefined);
+  assert.deepEqual(selected, ["cliproxyapi/openai/gpt-5.5"]);
+  assert.equal(f.refreshes.length, 1);
+  assert.equal(f.refreshes[0].allowNetwork, false);
+  assert.deepEqual(f.refreshes[0].providers, ["cliproxyapi"]);
+  assert.ok(f.refreshes[0].signal instanceof AbortSignal);
+  assert.equal(await f.emit("input"), undefined);
+  assert.equal(selected.length, 1, "subsequent inputs need no extra selection or transcript entry");
+});
+
+test("a missing exact model never recovers to a similarly named model or another provider", async (t) => {
+  const f = fixture(t, { ...base, models: [{ id: "gpt-5.5", owned_by: "openai" }] });
+  f.ctx.sessionManager.getBranch = () => [{ type: "model_change", provider: "cliproxyapi", modelId: "openai/gpt-5.5" }];
+  f.select({ provider: "other-provider", id: "openai/gpt-5.5" });
+  assert.deepEqual(await f.emit("input"), { action: "handled" });
+  assert.equal(f.refreshes.length, 0);
+});
+
+test("failed recovery tries selection only once and does not leak the registry error", async (t) => {
+  for (const failure of ["refresh", "aborted", "selection"]) {
+    const f = fixture(t);
+    f.ctx.sessionManager.getBranch = () => [{ type: "model_change", provider: "cliproxyapi", modelId: "openai/gpt-5.5" }];
+    f.select({ provider: "other-provider", id: "fallback" });
+    const notices = [];
+    f.ctx.hasUI = true;
+    f.ctx.ui = { notify: (message) => notices.push(message) };
+    let selections = 0;
+    f.recoverWith(async () => { selections++; throw Error("secret-credential"); });
+    if (failure === "refresh") f.ctx.modelRegistry.refresh = async () => { throw Error("secret-credential"); };
+    if (failure === "aborted") f.ctx.modelRegistry.refresh = async () => ({ aborted: true, errors: new Map() });
+    assert.deepEqual(await f.emit("input"), { action: "handled" });
+    assert.equal(selections, failure === "selection" ? 1 : 0);
+    assert.equal(f.selected.provider, "other-provider");
+    assert.equal(notices.length, 1);
+    assert.equal(notices[0].includes("secret-credential"), false);
+  }
+});
+
+test("a stalled local registry reaches the recovery abort bound without selecting a model", async (t) => {
+  const f = fixture(t);
+  f.ctx.sessionManager.getBranch = () => [{ type: "model_change", provider: "cliproxyapi", modelId: "openai/gpt-5.5" }];
+  f.select({ provider: "other-provider", id: "fallback" });
+  let selections = 0;
+  f.recoverWith(async () => { selections++; return true; });
+  // AbortSignal.timeout is unref'd. Keep this test alive until its real deadline fires.
+  const keepAlive = setTimeout(() => {}, 7000);
+  t.after(() => clearTimeout(keepAlive));
+  let signal;
+  f.ctx.modelRegistry.refresh = (options) => new Promise((resolve) => {
+    signal = options.signal;
+    signal.addEventListener("abort", () => resolve({ aborted: true, errors: new Map() }), { once: true });
+  });
+  assert.deepEqual(await f.emit("input"), { action: "handled" });
+  assert.equal(signal.aborted, true);
+  assert.equal(signal.reason.name, "TimeoutError");
+  assert.equal(selections, 0);
+});
+
+test("recovery never changes a running turn or overrides a selection made during refresh", async (t) => {
+  const f = fixture(t);
+  const branch = [{ type: "model_change", provider: "cliproxyapi", modelId: "openai/gpt-5.5" }];
+  f.ctx.sessionManager.getBranch = () => branch;
+  f.select({ provider: "other-provider", id: "fallback" });
+  f.idle(false);
+  assert.deepEqual(await f.emit("input"), { action: "handled" });
+  assert.equal(f.refreshes.length, 0);
+  f.idle(true);
+  f.ctx.modelRegistry.refresh = async () => {
+    branch.push({ type: "model_change", provider: "user-choice", modelId: "chosen" });
+    f.select({ provider: "user-choice", id: "chosen" });
+    return { aborted: false, errors: new Map() };
+  };
+  assert.equal(await f.emit("input"), undefined);
+  assert.equal(f.selected.provider, "user-choice");
+});
+
+test("a turn starting or a session changing during recovery cancels the selection", async (t) => {
+  for (const event of ["agent_start", "session_start", "session_shutdown"]) {
+    const f = fixture(t);
+    f.ctx.sessionManager.getBranch = () => [{ type: "model_change", provider: "cliproxyapi", modelId: "openai/gpt-5.5" }];
+    f.select({ provider: "other-provider", id: "fallback" });
+    let selections = 0;
+    f.recoverWith(async () => { selections++; return true; });
+    f.ctx.modelRegistry.refresh = async () => {
+      await f.emit(event);
+      return { aborted: false, errors: new Map() };
+    };
+    assert.deepEqual(await f.emit("input"), { action: "handled" }, event);
+    assert.equal(selections, 0, event);
+  }
+});
+
+test("an explicit launch identity wins over older model entries during recovery", async (t) => {
+  const argv = process.argv;
+  process.argv = [argv[0], argv[1], "--model", "cliproxyapi/openai/gpt-5.5"];
+  let f;
+  try { f = fixture(t); } finally { process.argv = argv; }
+  f.ctx.sessionManager.getBranch = () => [{ type: "model_change", provider: "cliproxyapi", modelId: "old-model" }];
+  f.select(f.models[0]);
+  assert.equal(await f.emit("input"), undefined, "the explicitly requested exact model is already selected");
+  assert.equal(f.refreshes.length, 0);
 });
 
 test("a fresh explicit managed model cannot silently fall back before session startup", async (t) => {
