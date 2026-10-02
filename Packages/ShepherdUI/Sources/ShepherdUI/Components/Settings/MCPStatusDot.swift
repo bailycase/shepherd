@@ -50,8 +50,8 @@ public enum NWMCPMetrics {
     public static let sheetStepNoteSize: CGFloat = 12
 }
 
-/// A server's state as its dot: green connected, blue starting, hollow when it connects on first
-/// use, amber when it needs you, red when it failed, a faint ring when it's off.
+/// A server's state as its dot: green connected, blue starting, hollow before pi has
+/// reported on it, amber when it needs you, red when it failed, a faint ring when it's off.
 public enum MCPDotState: String, Sendable, Hashable, CaseIterable {
     case connected, starting, idle, needsYou, error, off
 
@@ -59,7 +59,7 @@ public enum MCPDotState: String, Sendable, Hashable, CaseIterable {
         switch self {
         case .connected: "Connected"
         case .starting: "Starting"
-        case .idle: "Connects when used"
+        case .idle: "Not checked yet"
         case .needsYou: "Needs you"
         case .error: "Failed"
         case .off: "Off"
