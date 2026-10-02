@@ -1,0 +1,2 @@
+# Preserve the supplied design export byte-for-byte, including its whitespace.
+NWNavigation.html -whitespace
