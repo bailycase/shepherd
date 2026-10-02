@@ -65,7 +65,6 @@ struct AddMCPServerSheet: View {
     @State private var signIn: SignIn = .oauth
     @State private var headerName = "Authorization"
     @State private var headerValue = ""
-    @State private var start: MCPStartMode = .whenUsed
     @State private var advanced = false
     @State private var clientID = ""
     @State private var clientSecret = ""
@@ -174,7 +173,7 @@ struct AddMCPServerSheet: View {
 
     private var footnote: String {
         switch kind {
-        case .local: "Start: \(start.title.lowercased()) · stops after \(MCPShepherdSettings.defaultIdleMinutes) min idle"
+        case .local: "Runs on this Mac, from each thread that starts."
         case .remote, .json: "Saved to \(store.configPath)."
         }
     }
@@ -226,12 +225,6 @@ struct AddMCPServerSheet: View {
                 }
             }
         }
-        field("Start") {
-            HStack(spacing: NW.Space.l) {
-                NWSegmentedPicker("Start", selection: $start, options: MCPStartMode.allCases.map { ($0, $0.title) }).fixedSize()
-                Text(startNote).font(.nwSans(AppLayout.mcpNoteSize)).foregroundStyle(Color.nw.textTertiary).lineLimit(1)
-            }
-        }
         DisclosureGroup(isExpanded: $advanced) {
             VStack(alignment: .leading, spacing: NW.Space.l) {
                 HStack(alignment: .top, spacing: NW.Space.m) {
@@ -257,14 +250,6 @@ struct AddMCPServerSheet: View {
         return false
     }
 
-    private var startNote: String {
-        switch start {
-        case .whenUsed: "When used is cheapest; nothing runs until the agent needs it."
-        case .withSession: "Connects as each thread starts, and stays until it ends."
-        case .alwaysOn: "Connects as each thread starts, and reconnects when it drops."
-        }
-    }
-
     @ViewBuilder private var checkCard: some View {
         let nw = Color.nw
         switch check {
@@ -287,7 +272,7 @@ struct AddMCPServerSheet: View {
             VStack(alignment: .leading, spacing: NW.Space.m) {
                 answered(serverName, transport: .streamableHTTP)
                 line("lock", registers
-                     ? "It uses sign-in with \(provider) (OAuth). Shepherd registers itself with \(provider), then opens the sign-in page."
+                     ? "It uses sign-in with \(provider) (OAuth). pi registers itself as Shepherd with \(provider), then opens the sign-in page."
                      : "It uses sign-in with \(provider) (OAuth), but \(provider) doesn’t allow registration: add a client ID under Advanced.")
             }
             .modifier(MCPCheckCard())
@@ -402,7 +387,7 @@ struct AddMCPServerSheet: View {
 
     private var nameNote: String {
         let prefix = MCPServerName.toolPrefix(name.isEmpty ? "name" : name)
-        return nameProblem ?? "The agent sees its tools as \(prefix)_…"
+        return nameProblem ?? "The agent sees its tools as \(prefix)__…"
     }
 
     private var nameProblem: String? {
@@ -511,7 +496,6 @@ struct AddMCPServerSheet: View {
         name = entry.name
         nameEdited = true
         let settings = entry.settings
-        start = settings.start
         timeout = settings.timeoutSeconds
         clientID = settings.oauth.clientID ?? ""
         clientSecret = settings.oauth.clientSecret ?? ""
@@ -565,15 +549,8 @@ struct AddMCPServerSheet: View {
         case .answered(let serverName, let transport):
             check = .answered(name: serverName, transport: transport)
             if !isEditing, signIn == .oauth { signIn = .none }
-        case .needsSignIn(let challenge):
-            let service = MCPOAuthService(http: store.dependencies.http)
-            if let discovery = try? await service.discover(server: parsed, challenge: MCPAuthChallenge.bearer(in: challenge)) {
-                let host = URL(string: discovery.metadata.authorizationEndpoint)?.host ?? parsed.host
-                check = .oauth(name: discovery.resourceMetadata?.resourceName, provider: MCPSignInFlow.providerName(server: name, host: host),
-                               registers: discovery.metadata.registrationEndpoint != nil || !clientID.isEmpty)
-            } else {
-                check = .oauth(name: nil, provider: MCPSignInFlow.providerName(server: name, host: parsed.host), registers: true)
-            }
+        case .needsSignIn:
+            check = .oauth(name: nil, provider: MCPSignInFlow.providerName(server: name, host: parsed.host), registers: true)
             if !isEditing { signIn = .oauth }
         case .failed(let message):
             check = .failed(message)
@@ -609,7 +586,7 @@ struct AddMCPServerSheet: View {
                 let entry = try build(secrets: &secrets)
                 try store.save(entry, secrets: secrets, replacing: editing?.name)
                 close()
-                if kind == .remote, signIn == .oauth, store.token(entry.name) == nil { store.beginSignIn(entry.name) }
+                if kind == .remote, signIn == .oauth, case .oauth = check { store.beginSignIn(entry.name) }
             }
         } catch {
             problem = "\(error)"
@@ -661,7 +638,6 @@ struct AddMCPServerSheet: View {
             break
         }
         var settings = entry.settings
-        settings.start = start
         settings.timeoutSeconds = timeout
         settings.oauth.clientID = clientID.isEmpty ? nil : clientID
         settings.oauth.clientSecret = clientSecret.isEmpty ? nil : clientSecret

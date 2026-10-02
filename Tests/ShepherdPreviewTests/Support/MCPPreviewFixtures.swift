@@ -6,85 +6,99 @@ import ShepherdSessions
 import ShepherdTestSupport
 @testable import ShepherdApp
 
-/// Settings ▸ MCP servers as SettingsMCP draws it: the seven board servers in every row state,
-/// from a scratch mcp.json, secrets in memory, and no network or node.
+/// Settings ▸ MCP servers as SettingsMCP draws it: the seven board servers in every row state, from
+/// a scratch mcp.json and secrets in memory, with what `pi mcp list --json` printed for them handed
+/// to the real store (the page reads nothing else), and no network or pi.
 @MainActor
 enum MCPPreviewFixtures {
-    private struct NoProbe: MCPProbeRunner {
-        func run(input: Data, timeout: TimeInterval) async -> Data { Data() }
+    /// `pi mcp list --json` for the board: linear connected, sentry and notion waiting for a sign-in,
+    /// github and postgres connected, playwright not connected, grafana failed to start.
+    private struct BoardCLI: MCPCLI {
+        func run(_ arguments: [String], environment: [String: String], timeout: TimeInterval,
+                 onLine: (@Sendable (String) -> Void)?) async -> MCPCLIResult {
+            func names(_ first: [String], total: Int) -> [String] { first + (first.count..<total).map { "tool_\($0 + 1)" } }
+            let servers: [[String: Any]] = [
+                ["name": "linear", "state": "connected", "tools": names(["list_issues", "create_issue", "update_issue", "get_issue"], total: 21)],
+                ["name": "sentry", "state": "needs-auth", "tools": [String]()],
+                ["name": "notion", "state": "needs-auth", "tools": [String]()],
+                ["name": "github", "state": "connected", "tools": names(["search_code"], total: 41)],
+                ["name": "postgres", "state": "connected", "tools": names(["query", "list_schemas"], total: 9)],
+                ["name": "playwright", "state": "disconnected", "tools": [String]()],
+                ["name": "grafana", "state": "failed", "tools": [String](), "error": "spawn mcp-grafana ENOENT"],
+            ].map { var server = $0; server["enabled"] = true; server["exposure"] = "deferred"; server["transport"] = "x"; server["scope"] = "global"; return server }
+            let data = (try? JSONSerialization.data(withJSONObject: ["servers": servers, "errors": [String]()])) ?? Data()
+            return MCPCLIResult(status: 1, stdout: String(decoding: data, as: UTF8.self), stderr: "")
+        }
     }
 
-    /// A token endpoint that turns every refresh down, so sentry reads Expired.
-    private struct RefusingTokens: MCPHTTP {
-        func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-            (Data(#"{"error":"invalid_grant"}"#.utf8), HTTPURLResponse(url: request.url!, statusCode: 400, httpVersion: nil, headerFields: [:])!)
+    /// The edges: a server set to Direct with chosen tools, one pi can't run (legacy SSE), a long name and a long error, and one switched off.
+    static let edgeConfig = """
+    { "mcpServers": {
+      "github": { "type": "http", "url": "https://api.githubcopilot.com/mcp/", "headers": { "Authorization": "Bearer ${keychain:github/Authorization}" },
+                  "shepherd": { "exposure": "direct", "tools": ["search_code", "get_file_contents", "list_pull_requests"] } },
+      "legacy-events": { "type": "sse", "url": "https://events.example.com/sse" },
+      "a-server-with-a-name-long-enough-to-need-truncating-somewhere-near-the-edge": { "command": "uvx", "args": ["some-quite-long-package-name", "--with-many-flags", "--and-more=1"] },
+      "slow": { "command": "node", "args": ["slow.js"] },
+      "quiet": { "command": "quiet", "shepherd": { "enabled": false } }
+    }}
+    """
+
+    private struct EdgeCLI: MCPCLI {
+        func run(_ arguments: [String], environment: [String: String], timeout: TimeInterval,
+                 onLine: (@Sendable (String) -> Void)?) async -> MCPCLIResult {
+            let servers: [[String: Any]] = [
+                ["name": "github", "state": "connected", "tools": ["search_code", "get_file_contents", "list_pull_requests", "create_issue", "get_issue", "list_issues"]],
+                ["name": "a-server-with-a-name-long-enough-to-need-truncating-somewhere-near-the-edge", "state": "failed", "tools": [String](),
+                 "error": "MCP error -32000: Connection closed because the server printed an unusually long message about what it could not find on this machine"],
+                ["name": "slow", "state": "connected", "tools": ["wait"]],
+                ["name": "quiet", "state": "disabled", "tools": [String]()],
+            ].map { var server = $0; server["enabled"] = server["state"] as? String != "disabled"; server["exposure"] = "deferred"; server["transport"] = "x"; server["scope"] = "global"; return server }
+            let data = (try? JSONSerialization.data(withJSONObject: ["servers": servers, "errors": [String]()])) ?? Data()
+            return MCPCLIResult(status: 1, stdout: String(decoding: data, as: UTF8.self), stderr: "")
         }
+    }
+
+    /// The edges above, after the page asked pi once.
+    static func edgeStore() async throws -> MCPStore {
+        let directory = try makeScratchDirectory()
+        let config = directory.appendingPathComponent("mcp.json")
+        try Data(edgeConfig.utf8).write(to: config)
+        let store = MCPStore(dependencies: dependencies(config: config, secrets: InMemorySecretStore(["secret/github/Authorization": "t"]), cli: EdgeCLI()))
+        store.refresh()
+        await store.settle()
+        return store
+    }
+
+    private struct NoHTTP: MCPHTTP {
+        func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) { throw URLError(.notConnectedToInternet) }
     }
 
     static let now = Date(timeIntervalSince1970: 1_790_000_000)
 
-    static func tools(_ first: [String], total: Int) -> [MCPToolInfo] {
-        let names = first + (first.count..<total).map { "tool_\($0 + 1)" }
-        return names.map {
-            MCPToolInfo(name: $0, description: "Does \($0.replacingOccurrences(of: "_", with: " ")) with the service’s API.",
-                        inputSchema: .object(["type": .string("object"), "properties": .object(["id": .object(["type": .string("string")])])]))
-        }
-    }
-
-    private static func token(resource: String, scopes: [String], expiresIn: Int64 = 3_600_000) -> String {
-        let nowMs = MCPStore.ms(now)
-        let token = MCPOAuthToken(issuer: "https://auth", tokenEndpoint: "https://auth/token", clientID: "c",
-                                  redirectURI: "http://127.0.0.1:1/callback", resource: resource, accessToken: "a",
-                                  refreshToken: "r", expiresAtMs: nowMs + expiresIn, scopes: scopes, account: "baily@acme.dev",
-                                  refreshedAtMs: nowMs - 2 * 3_600_000)
-        return String(decoding: (try? JSONEncoder().encode(token)) ?? Data(), as: UTF8.self)
+    private static func dependencies(config: URL, secrets: InMemorySecretStore, cli: MCPCLI, auth: Data? = nil) -> MCPStore.Dependencies {
+        MCPStore.Dependencies(file: MCPConfigFile(url: config), secrets: secrets, http: NoHTTP(), cli: cli, preparePi: { nil },
+                              authData: { auth }, openURL: { _ in }, copy: { _ in }, now: { now })
     }
 
     /// An empty store on a scratch file, for the sheets.
     static func emptyStore() throws -> MCPStore {
         let directory = try makeScratchDirectory()
-        return MCPStore(dependencies: .init(
-            file: MCPConfigFile(url: directory.appendingPathComponent("mcp.json")), cacheURL: directory.appendingPathComponent("tools.json"),
-            secrets: InMemorySecretStore(), http: RefusingTokens(), probe: MCPProbe(runner: NoProbe()),
-            openURL: { _ in }, copy: { _ in }, now: { now }))
+        return MCPStore(dependencies: dependencies(config: directory.appendingPathComponent("mcp.json"), secrets: InMemorySecretStore(), cli: BoardCLI()))
     }
 
-    /// The board: linear connected, sentry expired, notion waiting for a sign-in, github idle,
-    /// postgres connected, playwright idle, grafana failed.
+    /// The board, after the page asked pi once: linear is signed in, and the rest are as `BoardCLI` says.
     static func boardStore() async throws -> MCPStore {
         let directory = try makeScratchDirectory()
         let config = directory.appendingPathComponent("mcp.json")
         try Data(MCPBoardConfig.json.utf8).write(to: config)
         let secrets = InMemorySecretStore([
-            "oauth/linear": token(resource: "https://mcp.linear.app/mcp", scopes: ["read", "write", "issues:create"]),
-            "oauth/sentry": token(resource: "https://mcp.sentry.dev/mcp", scopes: ["read"]),
             "secret/postgres/DATABASE_URI": "postgres://db",
             "secret/grafana/GRAFANA_SERVICE_ACCOUNT_TOKEN": "glsa",
         ])
-        let store = MCPStore(dependencies: .init(
-            file: MCPConfigFile(url: config), cacheURL: directory.appendingPathComponent("tools.json"), secrets: secrets,
-            http: RefusingTokens(), probe: MCPProbe(runner: NoProbe()), openURL: { _ in }, copy: { _ in }, now: { now }))
-        let counts: [String: ([String], Int)] = [
-            "linear": (["list_issues", "create_issue", "update_issue", "get_issue"], 21), "sentry": (["search_issues"], 16),
-            "github": (["search_code"], 41), "postgres": (["query", "list_schemas"], 9), "playwright": (["browser_navigate"], 22),
-            "grafana": (["query_prometheus"], 34),
-        ]
-        for (name, (first, total)) in counts {
-            guard let entry = store.entry(name) else { continue }
-            store.finishProbe(name, entry: entry,
-                              result: .connected(transport: entry.transport, serverName: name, tools: tools(first, total: total)))
-        }
-        let notion = try #require(store.entry("notion"))
-        store.finishProbe("notion", entry: notion, result: .failed(MCPServerStatus(state: .needsSignIn), challenge: nil))
-        _ = await store.credentials(for: MCPRequest(agentID: AgentID(), server: "sentry", reason: .unauthorized))
+        let auth = Data(#"{"mcp__linear|https://mcp.linear.app/mcp": {"serverUrl": "https://mcp.linear.app/mcp"}}"#.utf8)
+        let store = MCPStore(dependencies: dependencies(config: config, secrets: secrets, cli: BoardCLI(), auth: auth))
+        store.refresh()
+        await store.settle()
         return store
-    }
-
-    /// What a live agent reports: linear and postgres connected, grafana failed to start.
-    static func report(to store: MCPStore, from agent: AgentID) {
-        store.receive(MCPServerReport(server: "linear", status: MCPServerStatus(state: .connected), transport: .streamableHTTP), from: agent)
-        store.receive(MCPServerReport(server: "postgres", status: MCPServerStatus(state: .connected), transport: .stdio), from: agent)
-        store.receive(MCPServerReport(server: "grafana", status: MCPServerStatus(
-            state: .error, message: "Couldn’t start: mcp-grafana isn’t installed")), from: agent)
     }
 }

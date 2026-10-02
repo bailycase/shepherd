@@ -6,24 +6,13 @@ import ShepherdProtocol
 // it doesn't know, other tools' entries and their plaintext values, and never over a file that
 // doesn't parse. Shepherd's own fields sit under each entry's `shepherd` key.
 
-/// How a server starts (`shepherd.start`).
-enum MCPStartMode: String, CaseIterable, Sendable {
-    case whenUsed, withSession, alwaysOn
-
-    var title: String {
-        switch self {
-        case .whenUsed: "When used"
-        case .withSession: "With each session"
-        case .alwaysOn: "Always on"
-        }
-    }
-}
-
-/// How the agent reaches a server's tools (`shepherd.exposure`).
+/// How the agent reaches a server's tools (`shepherd.exposure`): pi's `deferred` or `direct`
+/// (docs/mcp.md). The stored word for Search stays `proxy`, which files written before pi's MCP
+/// hold.
 enum MCPExposure: String, Sendable {
-    /// Through the one `mcp` tool.
+    /// Searched with `tool_search` when the agent needs one: nothing of the tools is in a prompt.
     case proxy
-    /// Each tool on its own, named `<server>_<tool>`.
+    /// Every tool declared in every prompt, named `mcp__<server>__<tool>`.
     case direct
 }
 
@@ -38,12 +27,10 @@ struct MCPOAuthSettings: Equatable, Sendable {
 
 /// Shepherd's own fields for one server. Each default applies when its key is missing.
 struct MCPShepherdSettings: Equatable, Sendable {
-    static let defaultIdleMinutes = 10
-    static let defaultTimeoutSeconds = 30
+    /// pi's own default request timeout, in seconds.
+    static let defaultTimeoutSeconds = 60
 
     var enabled = true
-    var start: MCPStartMode = .whenUsed
-    var idleMinutes = defaultIdleMinutes
     var exposure: MCPExposure = .proxy
     /// "Choose which tools…": nil means all.
     var tools: [String]?
@@ -141,11 +128,6 @@ struct MCPServerEntry: Equatable, Sendable, Identifiable {
             let s = json["shepherd"]
             var settings = MCPShepherdSettings()
             if let enabled = s?["enabled"]?.boolValue { settings.enabled = enabled }
-            if let start = s?["start"]?.stringValue.flatMap(MCPStartMode.init(rawValue:)) { settings.start = start }
-            // Node timers accept at most 2^31 - 1 milliseconds; larger delays fire immediately.
-            if let idle = s?["idleMinutes"]?.doubleValue, (1...35_791).contains(idle), let minutes = Int(exactly: idle) {
-                settings.idleMinutes = minutes
-            }
             if let exposure = s?["exposure"]?.stringValue.flatMap(MCPExposure.init(rawValue:)) { settings.exposure = exposure }
             settings.tools = s?["tools"]?.arrayValue?.compactMap(\.stringValue)
             if let timeout = s?["timeoutSeconds"]?.doubleValue, (1...300).contains(timeout), let seconds = Int(exactly: timeout) {
@@ -170,8 +152,6 @@ struct MCPServerEntry: Equatable, Sendable, Identifiable {
                 object[key] = value
             }
             put("enabled", .bool(newValue.enabled), isDefault: newValue.enabled == defaults.enabled)
-            put("start", .string(newValue.start.rawValue), isDefault: newValue.start == defaults.start)
-            put("idleMinutes", .number(Double(newValue.idleMinutes)), isDefault: newValue.idleMinutes == defaults.idleMinutes)
             put("exposure", .string(newValue.exposure.rawValue), isDefault: newValue.exposure == defaults.exposure)
             if let tools = newValue.tools {
                 object["tools"] = .array(tools.map(JSONValue.string))

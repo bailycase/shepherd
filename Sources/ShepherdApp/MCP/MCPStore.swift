@@ -5,20 +5,25 @@ import ShepherdProtocol
 import ShepherdSessions
 import ShepherdUI
 
-/// Settings ▸ MCP servers' one store. The extension inside each pi owns the connections; the app
-/// owns the config file, the Keychain, OAuth and refresh, the tools cache, and what each row
-/// says. A row's status comes from, in order: the entry's switch, the app's own OAuth state, any
-/// live agent reporting it connected, a recent probe or report that failed, one starting, else
-/// idle.
+/// Settings ▸ MCP servers' one store (docs/mcp.md). pi's own MCP runs the servers; the app owns
+/// the file the user edits, the Keychain, pi's derived `mcp.json` (`MCPPiConfig`) and what each row
+/// says. A row's state comes from `pi mcp list --json`, run in pi's home with the environment an
+/// agent's pi would have, once when the page opens and after an edit, a sign-in or Reconnect;
+/// the page shows what is known, never guesses a server is connected.
 @MainActor
 @Observable
 final class MCPStore {
     struct Dependencies {
         var file: MCPConfigFile
-        var cacheURL: URL
         var secrets: MCPSecretStore
         var http: MCPHTTP
-        var probe: MCPProbe
+        /// pi's `mcp` subcommands.
+        var cli: MCPCLI
+        /// Readies pi's home (`PiSetup.prepare`, off the main thread): why not, or nil. Nothing of
+        /// Shepherd's is written into a home that fails its guards.
+        var preparePi: () async -> String?
+        /// `<home>/mcp-auth.json`, which holds pi's sign-ins.
+        var authData: () -> Data?
         var openURL: @MainActor (URL) -> Void
         var copy: @MainActor (String) -> Void
         var now: @MainActor () -> Date
@@ -27,23 +32,19 @@ final class MCPStore {
         /// Writes pi's `mcp.json` (`MCPPiConfig`), in pi's home.
         var writePiConfig: (Data) throws -> Void = { _ in }
 
-        /// The app's: the real file and Keychain, `engine`'s node for probes (`home` for its
-        /// keychain CA fallback), the browser and pasteboard, and pi's home for its `mcp.json`.
-        static func app(engine: PiEngine, home: PiHome, clientPath: @escaping @Sendable () -> URL?,
-                        openURL: @escaping @MainActor (URL) -> Void, copy: @escaping @MainActor (String) -> Void) -> Dependencies {
-            Dependencies(file: MCPConfigFile(url: ShepherdPaths.mcpConfigURL()), cacheURL: ShepherdPaths.mcpToolsCacheURL(),
-                         secrets: MCPSecrets.forApp(), http: URLSessionHTTP(),
-                         probe: MCPProbe(runner: NodeProbeRunner(engine: engine, home: home, clientPath: clientPath)),
-                         openURL: openURL, copy: copy, now: { Date() }, userHome: home.userHome,
-                         writePiConfig: { try home.installMCPConfig($0) })
+        /// The app's: the real file and Keychain, pi's home and its `mcp` subcommands, the browser
+        /// and the pasteboard.
+        static func app(pi: PiSetup, openURL: @escaping @MainActor (URL) -> Void,
+                        copy: @escaping @MainActor (String) -> Void) -> Dependencies {
+            let home = pi.files
+            let authFile = home.directory.appendingPathComponent("mcp-auth.json")
+            return Dependencies(file: MCPConfigFile(url: ShepherdPaths.mcpConfigURL()), secrets: MCPSecrets.forApp(),
+                                http: URLSessionHTTP(), cli: PiMCPCLI(home: home),
+                                preparePi: { await Task.detached(priority: .userInitiated) { pi.prepare()?.message }.value },
+                                authData: { try? Data(contentsOf: authFile) },
+                                openURL: openURL, copy: copy, now: { Date() }, userHome: home.userHome,
+                                writePiConfig: { try home.installMCPConfig($0) })
         }
-    }
-
-    /// The app's own OAuth state for a server, which wins over what agents report.
-    enum OAuthFlag: Equatable {
-        case needsSignIn
-        case expired
-        case needsScopes([String])
     }
 
     enum Filter: Hashable { case all, connected, needsYou }
@@ -54,18 +55,24 @@ final class MCPStore {
         var note: String
     }
 
-    /// A tools cache entry: `{entry, listedAtMs, tools}`.
-    struct CachedTools: Codable, Equatable {
-        var entry: [String: JSONValue]
-        var listedAtMs: Int64
-        var tools: [MCPToolInfo]
+    /// Where the last `pi mcp list` stands.
+    enum Listing: Equatable {
+        case never
+        case running
+        case done(Date)
     }
 
-    private struct Seen {
-        var status: MCPServerStatus
-        var at: Date
-        var transport: MCPTransportKind?
-        var serverName: String?
+    /// What one server is, for its row.
+    private enum State: Equatable {
+        case off
+        /// pi's MCP can't run it, and why.
+        case cannotRun(String)
+        case checking
+        case notChecked
+        case connected
+        case needsSignIn
+        case failed(String)
+        case idle
     }
 
     // MARK: Observed
@@ -77,6 +84,7 @@ final class MCPStore {
     private(set) var details: [String: MCPServerDetailModel] = [:]
     private(set) var budget = Budget(tokens: "~0 tokens", fraction: 0, note: "")
     private(set) var connectedCount = 0
+    private(set) var listing = Listing.never
     var problem: String?
     /// The sign-in sheet, while one runs.
     var signIn: MCPSignInFlow?
@@ -84,28 +92,23 @@ final class MCPStore {
     // MARK: Bookkeeping
 
     @ObservationIgnored let dependencies: Dependencies
-    @ObservationIgnored private var reports: [AgentID: [String: Seen]] = [:]
-    @ObservationIgnored private var probes: [String: Seen] = [:]
-    @ObservationIgnored private var probing: Set<String> = []
-    @ObservationIgnored private(set) var cache: [String: CachedTools] = [:]
-    @ObservationIgnored private var flags: [String: OAuthFlag] = [:]
-    @ObservationIgnored private var usesOAuth: Set<String> = []
-    @ObservationIgnored private var challenges: [String: String] = [:]
-    @ObservationIgnored private var tokens: [String: MCPOAuthToken?] = [:]
-    @ObservationIgnored private var refreshes: [String: Task<MCPOAuthToken, Error>] = [:]
-    @ObservationIgnored private var credentialGenerations: [String: UUID] = [:]
+    @ObservationIgnored private var report: MCPPiReport?
+    @ObservationIgnored private var reportedFor: Data?
+    @ObservationIgnored private var refreshedAt: Date?
+    @ObservationIgnored private var refreshTask: Task<Void, Never>?
+    @ObservationIgnored private var refreshAgain = false
+    @ObservationIgnored private var authData: Data?
     @ObservationIgnored private var fileStamp: Data?
     @ObservationIgnored private var derivedConfig: (document: MCPConfigDocument, derived: MCPPiConfig.Derived)?
     @ObservationIgnored private var secretCache: [String: String] = [:]
-    /// A needs-sign-in answer opens the sheet by itself ("Open sign-in pages by itself").
-    @ObservationIgnored var onNeedsSignIn: ((String) -> Void)?
 
-    /// Reports and probes older than this no longer count as an error.
-    static let errorWindow: TimeInterval = 10 * 60
+    /// A list older than this is asked for again when the page opens.
+    static let staleAfter: TimeInterval = 5 * 60
+    /// How long `pi mcp list` may take: it connects every enabled server, and pi waits on each one's own timeout.
+    static let listTimeout: TimeInterval = 45
 
     init(dependencies: Dependencies) {
         self.dependencies = dependencies
-        cache = Self.readCache(dependencies.cacheURL)
         reload()
     }
 
@@ -135,17 +138,17 @@ final class MCPStore {
         try dependencies.writePiConfig(piConfig.json)
     }
 
-    /// The environment an agent's pi starts with for its MCP servers: each Keychain value the
-    /// derived file refers to, under its `SHEPHERD_MCP_SECRET_*` name, and the list of those names
+    /// The environment pi starts with for its MCP servers: each Keychain value the derived file
+    /// refers to, under its `SHEPHERD_MCP_SECRET_*` name, and the list of those names
     /// (`restore-env.sh` unsets them for the model's shell commands). Reads the file again first,
-    /// so an agent launched after an edit made elsewhere gets it, and writes pi's `mcp.json`.
+    /// so what starts after an edit made elsewhere has it, and writes pi's `mcp.json`.
     func launchEnvironment() -> [String: String] {
         reload()
         do {
             try syncPiConfig()
-            if problem != nil, problem?.hasPrefix("Couldn’t write pi’s MCP") == true { problem = nil }
+            if problem?.hasPrefix(Self.writeProblem) == true { problem = nil }
         } catch {
-            problem = "Couldn’t write pi’s MCP config: \(error)"
+            problem = "\(Self.writeProblem) \(error)"
         }
         var environment: [String: String] = [:]
         let secrets = piConfig.secrets
@@ -155,6 +158,8 @@ final class MCPStore {
         if !secrets.isEmpty { environment[PiHome.mcpSecretNamesKey] = secrets.map(\.variable).joined(separator: " ") }
         return environment
     }
+
+    private static let writeProblem = "Couldn’t write pi’s MCP config:"
 
     private func secretValue(_ account: String) -> String? {
         if let cached = secretCache[account] { return cached }
@@ -170,10 +175,10 @@ final class MCPStore {
         let data = try? Data(contentsOf: dependencies.file.url)
         guard data != fileStamp || rows.isEmpty && document.root.isEmpty else { return }
         fileStamp = data
+        secretCache.removeAll()
         switch MCPConfigFile.parse(data ?? Data()) {
         case .document(let parsed):
             invalidLine = nil
-            invalidateChangedCredentials(in: parsed)
             if document != parsed { document = parsed }
         case .invalid(let line):
             if invalidLine != line { invalidLine = line }
@@ -183,10 +188,9 @@ final class MCPStore {
 
     func entry(_ name: String) -> MCPServerEntry? { document.server(name) }
 
-    /// Tools as the app last saw them, only while the entry is unchanged.
-    func tools(of entry: MCPServerEntry) -> [MCPToolInfo]? {
-        guard let cached = cache[entry.name], cached.entry == entry.withoutShepherd else { return nil }
-        return cached.tools
+    /// A server's tool names as pi last listed them.
+    func toolNames(of entry: MCPServerEntry) -> [String]? {
+        report?.server(entry.name).flatMap { $0.state == "connected" ? $0.tools : nil }
     }
 
     func count(_ filter: Filter) -> Int {
@@ -211,42 +215,17 @@ final class MCPStore {
 
     // MARK: Status
 
-    /// A server's state, in the contract's order.
-    func status(of entry: MCPServerEntry) -> MCPServerStatus {
-        if !entry.settings.enabled { return MCPServerStatus(state: .off) }
-        switch flags[entry.name] {
-        case .needsSignIn: return MCPServerStatus(state: .needsSignIn)
-        case .expired: return MCPServerStatus(state: .expired)
-        case .needsScopes(let scopes): return MCPServerStatus(state: .needsScopes, scopes: scopes)
-        case nil: break
-        }
-        if usesOAuth(entry), token(for: entry) == nil { return MCPServerStatus(state: .needsSignIn) }
-        let seen = reports.values.compactMap { $0[entry.name] }
-        if seen.contains(where: { $0.status.state == .connected }) { return MCPServerStatus(state: .connected) }
-        let now = dependencies.now()
-        let recent = (seen + [probes[entry.name]].compactMap { $0 })
-            .filter { now.timeIntervalSince($0.at) < Self.errorWindow }
-            .sorted { $0.at > $1.at }
-        if let latest = recent.first, [.error, .needsSignIn, .expired, .needsScopes].contains(latest.status.state) {
-            return latest.status
-        }
-        if probing.contains(entry.name) || seen.contains(where: { $0.status.state == .starting }) {
-            return MCPServerStatus(state: .starting)
-        }
-        return MCPServerStatus(state: .idle)
-    }
-
-    /// The `${keychain:…}` values that aren't in Keychain, by variable name.
+    /// The Keychain items an entry refers to that aren't there, by name.
     func missingSecrets(_ entry: MCPServerEntry) -> [String] {
         Self.secretReferences(entry)
             .filter { dependencies.secrets.value(for: MCPSecretReference.account(server: $0.server, name: $0.name)) == nil }
             .map(\.name)
     }
 
-    /// Every `${keychain:…}` an entry holds, wherever the extension expands it, once each.
+    /// Every `${keychain:…}` an entry holds, wherever pi's MCP expands it, once each.
     static func secretReferences(_ entry: MCPServerEntry) -> [(server: String, name: String)] {
         let values = [entry.command ?? ""] + entry.args + entry.env.keys.sorted().compactMap { entry.env[$0] } + [entry.url ?? ""]
-            + entry.headers.keys.sorted().compactMap { entry.headers[$0] }
+            + entry.headers.keys.sorted().compactMap { entry.headers[$0] } + [entry.settings.oauth.clientSecret ?? ""]
         var seen: Set<String> = []
         return values.flatMap(MCPSecretReference.references(in:)).filter { seen.insert("\($0.server)/\($0.name)").inserted }
     }
@@ -255,39 +234,34 @@ final class MCPStore {
         entry.headers.keys.contains { $0.caseInsensitiveCompare("Authorization") == .orderedSame }
     }
 
-    /// Whether the app signs this server in: a remote server with no Authorization header that
-    /// has a token, asked for one, or has OAuth settings.
+    /// Whether pi signs this server in: a remote server with no Authorization header.
+    func signsInWithOAuth(_ entry: MCPServerEntry) -> Bool {
+        entry.kind == .remote && !hasAuthHeader(entry)
+    }
+
+    /// Whether the entry signs in with OAuth: pi says it needs a sign-in or holds one, or Add's
+    /// Advanced gave it a client.
     func usesOAuth(_ entry: MCPServerEntry) -> Bool {
-        guard entry.kind == .remote, !hasAuthHeader(entry) else { return false }
-        return usesOAuth.contains(entry.name) || token(entry.name) != nil || !entry.settings.oauth.isEmpty
+        guard signsInWithOAuth(entry) else { return false }
+        return state(of: entry) == .needsSignIn || isSignedIn(entry) || !entry.settings.oauth.isEmpty
     }
 
-    func token(_ server: String) -> MCPOAuthToken? {
-        if let cached = tokens[server] { return cached }
-        let token = dependencies.secrets.value(for: MCPSecretReference.oauthAccount(server: server))
-            .flatMap { try? JSONDecoder().decode(MCPOAuthToken.self, from: Data($0.utf8)) }
-        tokens[server] = token
-        return token
+    /// Whether pi holds a sign-in for the entry's URL.
+    private func isSignedIn(_ entry: MCPServerEntry) -> Bool {
+        entry.url.map { MCPPiAuth.hasCredentials(server: entry.name, url: $0, in: authData) } ?? false
     }
 
-    /// The saved token, only while it belongs to the entry's server: an entry whose URL moved to
-    /// another origin must sign in again rather than hand the old server's token to the new one.
-    func token(for entry: MCPServerEntry) -> MCPOAuthToken? {
-        guard let token = token(entry.name), let url = entry.url.flatMap(URL.init(string:)),
-              let resource = URL(string: token.resource),
-              MCPOAuthService.origin(of: url) == MCPOAuthService.origin(of: resource) else { return nil }
-        return token
-    }
-
-    private func saveToken(_ token: MCPOAuthToken?, for server: String) throws {
-        let account = MCPSecretReference.oauthAccount(server: server)
-        if let token {
-            let data = try JSONEncoder().encode(token)
-            try dependencies.secrets.set(String(decoding: data, as: UTF8.self), for: account)
-        } else {
-            dependencies.secrets.remove(account)
+    private func state(of entry: MCPServerEntry) -> State {
+        if !entry.settings.enabled { return .off }
+        if let reason = piConfig.problems[entry.name] ?? report?.configProblems[entry.name] { return .cannotRun(reason) }
+        guard let live = report?.server(entry.name) else { return listing == .running ? .checking : .notChecked }
+        switch live.state {
+        case "connected": return .connected
+        case "needs-auth": return .needsSignIn
+        case "failed": return .failed(live.error ?? "Couldn’t connect.")
+        case "disabled": return .off
+        default: return .idle
         }
-        tokens[server] = token
     }
 
     // MARK: Rows
@@ -297,33 +271,21 @@ final class MCPStore {
         let entries = document.servers
         var rows: [MCPServerRowModel] = []
         var details: [String: MCPServerDetailModel] = [:]
-        var budgetInput: [(exposure: MCPExposure, tools: [MCPToolInfo], chosen: [String]?)] = []
-        var proxyTools = 0
-        var directNames: [String] = []
+        var budgetInput: [MCPBudgetEstimate.Server] = []
         for entry in entries {
-            let status = status(of: entry)
+            let state = state(of: entry)
             let missing = missingSecrets(entry)
-            let tools = tools(of: entry)
+            let names = toolNames(of: entry)
             let settings = entry.settings
-            rows.append(row(entry, status: status, missing: missing, tools: tools))
-            details[entry.name] = detail(entry, status: status, missing: missing, tools: tools)
-            if settings.enabled {
-                budgetInput.append((settings.exposure, tools ?? [], settings.tools))
-                let visible = MCPBudgetEstimate.visible(tools ?? [], chosen: settings.tools).count
-                if settings.exposure == .proxy { proxyTools += visible } else { directNames.append(entry.name) }
+            rows.append(row(entry, state: state, missing: missing, tools: names))
+            details[entry.name] = detail(entry, state: state, missing: missing, tools: names)
+            if settings.enabled, !isCannotRun(state) {
+                budgetInput.append(MCPBudgetEstimate.Server(name: entry.name, direct: settings.exposure == .direct,
+                                                           toolCount: MCPBudgetEstimate.visible(names ?? [], chosen: settings.tools).count))
             }
         }
-        let total = MCPBudgetEstimate.total(budgetInput)
-        let note: String
-        if budgetInput.isEmpty {
-            note = "No servers yet. Each one you add costs nothing until the agent needs it."
-        } else if directNames.isEmpty {
-            note = "One mcp tool finds and calls any of the \(proxyTools) tools. Servers set to “Each tool” add their tools here."
-        } else {
-            note = "One mcp tool finds and calls any of the \(proxyTools) tools; \(directNames.formatted(.list(type: .and))) "
-                + (directNames.count == 1 ? "adds its" : "add their") + " tools here."
-        }
-        let budget = Budget(tokens: MCPBudgetEstimate.longLabel(total), fraction: Double(total) / 8000, note: note)
+        let estimate = MCPBudgetEstimate.estimate(budgetInput)
+        let budget = Budget(tokens: MCPBudgetEstimate.longLabel(estimate.tokens), fraction: Double(estimate.tokens) / 8000, note: estimate.note)
         let connected = rows.filter { $0.status == .connected }.count
         if self.rows != rows { self.rows = rows }
         if self.details != details { self.details = details }
@@ -331,31 +293,37 @@ final class MCPStore {
         if connectedCount != connected { connectedCount = connected }
     }
 
-    private static func dot(_ status: MCPServerStatus, missing: Bool) -> MCPDotState {
-        switch status.state {
+    private func isCannotRun(_ state: State) -> Bool {
+        if case .cannotRun = state { return true }
+        return false
+    }
+
+    private static func dot(_ state: State, missing: Bool) -> MCPDotState {
+        switch state {
         case .off: return .off
-        case .needsSignIn, .expired, .needsScopes: return .needsYou
-        case .error: return .error
+        case .needsSignIn: return .needsYou
+        case .cannotRun, .failed: return .error
         case _ where missing: return .needsYou
         case .connected: return .connected
-        case .starting: return .starting
-        case .idle: return .idle
+        case .checking: return .starting
+        case .notChecked, .idle: return .idle
         }
     }
 
-    private func row(_ entry: MCPServerEntry, status: MCPServerStatus, missing: [String], tools: [MCPToolInfo]?) -> MCPServerRowModel {
-        let note: MCPServerRowModel.Note? = switch status.state {
-        case .starting: .starting("Starting on This Mac…")
-        case .error: .error(status.message ?? "Couldn’t start.")
+    private func row(_ entry: MCPServerEntry, state: State, missing: [String], tools: [String]?) -> MCPServerRowModel {
+        let note: MCPServerRowModel.Note? = switch state {
+        case .checking: .starting("Checking on This Mac…")
+        case .cannotRun(let reason): .error(reason)
+        case .failed(let message): .error(Self.firstLine(message))
         default: nil
         }
         return MCPServerRowModel(
             name: entry.name, kind: entry.kind == .remote ? .remote : .local, endpoint: entry.endpoint,
-            status: Self.dot(status, missing: !missing.isEmpty), note: note, signIn: signInCell(entry, status: status, missing: missing),
+            status: Self.dot(state, missing: !missing.isEmpty), note: note, signIn: signInCell(entry, state: state, missing: missing),
             tools: tools.map { MCPBudgetEstimate.visible($0, chosen: entry.settings.tools).count }, enabled: entry.settings.enabled)
     }
 
-    private func signInCell(_ entry: MCPServerEntry, status: MCPServerStatus, missing: [String]) -> MCPServerRowModel.SignIn {
+    private func signInCell(_ entry: MCPServerEntry, state: State, missing: [String]) -> MCPServerRowModel.SignIn {
         if let first = missing.first { return .missingSecret(first) }
         if entry.kind == .remote {
             if let auth = entry.headers.first(where: { $0.key.caseInsensitiveCompare("Authorization") == .orderedSame })
@@ -364,13 +332,8 @@ final class MCPStore {
                 if let reference = MCPSecretReference.references(in: auth.value).first { return .secret(reference.name) }
                 return .secret(auth.key)
             }
-            guard usesOAuth(entry) else { return .none }
-            switch status.state {
-            case .needsScopes: return .moreAccess(status.scopes)
-            case .expired: return .expired
-            case .needsSignIn: return .signIn
-            default: return token(for: entry).map { .account($0.account ?? "Signed in") } ?? .signIn
-            }
+            if state == .needsSignIn { return .signIn }
+            return isSignedIn(entry) ? .account("Signed in") : .none
         }
         let keys = entry.env.keys.sorted()
         switch keys.count {
@@ -380,7 +343,7 @@ final class MCPStore {
         }
     }
 
-    private func detail(_ entry: MCPServerEntry, status: MCPServerStatus, missing: [String], tools: [MCPToolInfo]?) -> MCPServerDetailModel {
+    private func detail(_ entry: MCPServerEntry, state: State, missing: [String], tools: [String]?) -> MCPServerDetailModel {
         let settings = entry.settings
         let signIn: MCPServerDetailModel.SignIn
         if entry.kind == .remote, let auth = entry.headers.sorted(by: { $0.key < $1.key }).first(where: {
@@ -388,20 +351,13 @@ final class MCPStore {
             let variable = MCPSecretReference.variable(in: auth.value).map { "$" + $0 }
                 ?? MCPSecretReference.references(in: auth.value).first.map { "\($0.name) (Keychain)" } ?? "a value in mcp.json"
             signIn = .header(name: auth.key, variable: variable)
-        } else if usesOAuth(entry) {
-            let token = token(for: entry)
-            switch status.state {
-            case .needsScopes:
-                signIn = .needsSignIn(title: "Needs " + status.scopes.joined(separator: ", "),
-                                      note: "The server asked for more access. Sign in again to grant it.", again: true)
-            case .expired:
-                signIn = .needsSignIn(title: "Expired", note: "The sign-in couldn’t be refreshed.", again: true)
-            case _ where token == nil:
-                signIn = .needsSignIn(title: "Not signed in", note: "It uses OAuth: sign in once and Shepherd keeps the token fresh.",
-                                      again: false)
-            default:
-                let refreshed = token.map { Self.ago(Date(timeIntervalSince1970: TimeInterval($0.refreshedAtMs) / 1000), now: dependencies.now()) } ?? ""
-                signIn = .signedIn(account: token?.account, scopes: token?.scopes ?? [], note: "OAuth · refreshed \(refreshed)")
+        } else if signsInWithOAuth(entry) {
+            if state == .needsSignIn {
+                signIn = .needsSignIn(title: "Not signed in", note: "It uses OAuth: sign in once and pi keeps the token fresh.", again: false)
+            } else if isSignedIn(entry) {
+                signIn = .signedIn(account: nil, scopes: [], note: "OAuth · kept fresh by pi")
+            } else {
+                signIn = .none
             }
         } else if entry.kind == .local, !entry.env.isEmpty {
             signIn = .secrets(names: entry.env.keys.sorted(), missing: missing)
@@ -410,28 +366,32 @@ final class MCPStore {
         }
         let all = tools ?? []
         let visible = MCPBudgetEstimate.visible(all, chosen: settings.tools)
-        let transport = (reports.values.compactMap { $0[entry.name]?.transport }.first ?? probes[entry.name]?.transport) ?? entry.transport
-        let hostDetail: (String, MCPServerDetailModel.Host.Mark) = switch status.state {
+        let hostDetail: (String, MCPServerDetailModel.Host.Mark) = switch state {
         case .connected: ("connected", .done)
-        case .starting: ("starting", .working)
-        case .error: ("failed", .failed)
+        case .checking: ("checking", .working)
+        case .failed: ("failed", .failed)
+        case .cannotRun: ("can’t run", .failed)
         case .off: ("off", .none)
-        case .needsSignIn, .expired, .needsScopes: ("needs you", .none)
-        case .idle: (settings.start == .whenUsed ? "connects when used" : "idle", .offline)
+        case .needsSignIn: ("needs sign-in", .none)
+        case .notChecked: ("not checked yet", .offline)
+        case .idle: ("not connected", .offline)
+        }
+        let message: String? = switch state {
+        case .failed(let text): text
+        case .cannotRun(let reason): reason
+        default: nil
         }
         return MCPServerDetailModel(
             signIn: signIn,
-            toolNames: all.map(\.name),
+            toolNames: all,
             toolCount: tools.map { _ in all.count },
             direct: settings.exposure == .direct,
-            proxyCost: MCPBudgetEstimate.shortLabel(MCPBudgetEstimate.proxyTokens),
-            directCost: tools == nil ? "—" : MCPBudgetEstimate.shortLabel(MCPBudgetEstimate.directTokens(all, chosen: settings.tools)),
+            searchCost: MCPBudgetEstimate.shortLabel(MCPBudgetEstimate.searchServerTokens),
+            directCost: tools == nil ? "—" : MCPBudgetEstimate.shortLabel(MCPBudgetEstimate.directTokens(count: visible.count)),
             chosenNote: settings.tools == nil ? nil : "\(visible.count) of \(all.count) chosen",
-            transport: Self.transportName(transport),
-            startOptions: MCPStartMode.allCases.map(\.title),
-            start: MCPStartMode.allCases.firstIndex(of: settings.start) ?? 0,
+            transport: Self.transportName(entry.transport),
             hosts: [.init(name: "This Mac", detail: hostDetail.0, mark: hostDetail.1)],
-            message: status.state == .error ? status.message : nil)
+            message: message)
     }
 
     static func transportName(_ transport: MCPTransportKind) -> String {
@@ -442,12 +402,9 @@ final class MCPStore {
         }
     }
 
-    static func ago(_ date: Date, now: Date = Date()) -> String {
-        let seconds = max(0, now.timeIntervalSince(date))
-        if seconds < 60 { return "just now" }
-        if seconds < 3600 { return "\(Int(seconds / 60))m ago" }
-        if seconds < 86_400 { return "\(Int(seconds / 3600))h ago" }
-        return "\(Int(seconds / 86_400))d ago"
+    /// A failure's first line, for a row: pi adds the server's stderr under it.
+    private static func firstLine(_ text: String) -> String {
+        String(text.split(whereSeparator: \.isNewline).first ?? "Couldn’t connect.")
     }
 
     // MARK: Editing
@@ -457,7 +414,6 @@ final class MCPStore {
         let written = try dependencies.file.update(change)
         fileStamp = try? Data(contentsOf: dependencies.file.url)
         invalidLine = nil
-        invalidateChangedCredentials(in: written)
         if document != written { document = written }
         rebuild()
     }
@@ -491,14 +447,13 @@ final class MCPStore {
             if let replacing, replacing != entry.name { document.remove(replacing) }
             document.upsert(entry)
         }
-        invalidateCredentials(entry.name)
-        flags[entry.name] = nil
-        rebuild()
-        probe(entry.name)
+        if let replacing, replacing != entry.name { forget(replacing) }
+        refresh()
     }
 
     func setEnabled(_ name: String, _ enabled: Bool) {
         update(name) { $0.enabled = enabled }
+        if enabled { refresh() }
     }
 
     func setExposure(_ name: String, _ exposure: MCPExposure) {
@@ -507,10 +462,6 @@ final class MCPStore {
 
     func setTools(_ name: String, _ tools: [String]?) {
         update(name) { $0.tools = tools }
-    }
-
-    func setStart(_ name: String, _ start: MCPStartMode) {
-        update(name) { $0.start = start }
     }
 
     private func update(_ name: String, _ change: (inout MCPShepherdSettings) -> Void) {
@@ -523,29 +474,19 @@ final class MCPStore {
         }
     }
 
-    private func invalidateCredentials(_ name: String) {
-        credentialGenerations[name] = UUID()
-        refreshes.removeValue(forKey: name)?.cancel()
-        if signIn?.server == name { signIn?.cancel() }
-    }
-
-    private func invalidateChangedCredentials(in next: MCPConfigDocument) {
-        for entry in document.servers where next.server(entry.name) != entry {
-            invalidateCredentials(entry.name)
-        }
-    }
-
-    /// Deletes the entry and its Keychain items.
+    /// Deletes the entry, its Keychain items and pi's sign-in.
     func remove(_ name: String) {
         guard perform({ $0.remove(name) }) else { return }
         dependencies.secrets.removeAll(forServer: name)
         secretCache.removeAll()
-        tokens[name] = nil
-        flags[name] = nil
-        usesOAuth.remove(name)
-        probes[name] = nil
-        cache[name] = nil
-        writeCache()
+        forget(name)
+        Task { [weak self] in _ = await self?.runCLI(["logout", name], timeout: 15, onLine: nil) }
+    }
+
+    private func forget(_ name: String) {
+        if let report, report.server(name) != nil {
+            self.report = MCPPiReport(servers: report.servers.filter { $0.name != name }, errors: report.errors)
+        }
         rebuild()
     }
 
@@ -582,301 +523,128 @@ final class MCPStore {
         try edit { document in
             for entry in added { document.upsert(entry) }
         }
-        for entry in added { invalidateCredentials(entry.name); probe(entry.name) }
+        refresh()
         return added.count
     }
 
-    // MARK: Reports and probes
+    // MARK: Asking pi
 
-    func receive(_ report: MCPServerReport, from agentID: AgentID) {
-        reports[agentID, default: [:]][report.server] = Seen(status: report.status, at: dependencies.now(),
-                                                             transport: report.transport, serverName: report.serverName)
-        if let tools = report.tools, let entry = document.server(report.server) { remember(tools, for: entry) }
-        rebuild()
+    /// Asks pi for every server's state when it hasn't been asked since the file changed, or not
+    /// for a while (the page appearing).
+    func refreshIfStale() {
+        guard !stale else { return }
+        refresh()
     }
 
-    /// Reports of agents that are gone no longer count.
-    func retainReports(of live: Set<AgentID>) {
-        let gone = reports.keys.filter { !live.contains($0) }
-        guard !gone.isEmpty else { return }
-        for id in gone { reports[id] = nil }
-        rebuild()
+    private var stale: Bool {
+        guard report != nil, reportedFor == piConfig.json, let refreshedAt else { return false }
+        return dependencies.now().timeIntervalSince(refreshedAt) < Self.staleAfter
     }
 
-    private func remember(_ tools: [MCPToolInfo], for entry: MCPServerEntry) {
-        let cached = CachedTools(entry: entry.withoutShepherd, listedAtMs: Self.ms(dependencies.now()), tools: tools)
-        guard cache[entry.name]?.entry != cached.entry || cache[entry.name]?.tools != cached.tools else { return }
-        cache[entry.name] = cached
-        writeCache()
-    }
-
-    /// Probes every enabled server the cache doesn't know (the page appearing).
-    func probeUnknown() {
-        for entry in document.servers where entry.settings.enabled && tools(of: entry) == nil && probes[entry.name] == nil {
-            probe(entry.name)
+    /// Runs `pi mcp list --json`, which connects every enabled server: one at a time, and a request
+    /// that arrives meanwhile runs again once it ends.
+    func refresh() {
+        guard refreshTask == nil else {
+            refreshAgain = true
+            return
         }
-    }
-
-    /// At launch: the always-on servers.
-    func probeAlwaysOn() {
-        for entry in document.servers where entry.settings.enabled && entry.settings.start == .alwaysOn {
-            probe(entry.name)
+        guard document.servers.contains(where: { $0.settings.enabled }) else {
+            report = MCPPiReport(servers: [], errors: [])
+            reportedFor = piConfig.json
+            refreshedAt = dependencies.now()
+            listing = .done(dependencies.now())
+            rebuild()
+            return
         }
-    }
-
-    func probe(_ name: String) {
-        guard let entry = document.server(name), entry.settings.enabled, !probing.contains(name) else { return }
-        guard missingSecrets(entry).isEmpty else { rebuild(); return }
-        if usesOAuth(entry), token(for: entry) == nil { rebuild(); return }
-        probing.insert(name)
+        listing = .running
         rebuild()
-        Task { [weak self] in
+        refreshTask = Task { [weak self] in
+            await self?.list()
             guard let self else { return }
-            let resolved = await self.resolvedForProbe(entry)
-            let result = await self.dependencies.probe.probe(name: name, entry: resolved,
-                                                             timeoutSeconds: entry.settings.timeoutSeconds)
-            self.finishProbe(name, entry: entry, result: result)
-        }
-    }
-
-    @discardableResult
-    func finishProbe(_ name: String, entry: MCPServerEntry, result: MCPProbeResult) -> MCPProbeResult {
-        probing.remove(name)
-        let now = dependencies.now()
-        switch result {
-        case .connected(let transport, let serverName, let tools):
-            probes[name] = Seen(status: MCPServerStatus(state: .connected), at: now, transport: transport, serverName: serverName)
-            remember(tools, for: entry)
-        case .failed(let status, let challenge):
-            probes[name] = Seen(status: status, at: now)
-            if status.state == .needsSignIn, entry.kind == .remote {
-                usesOAuth.insert(name)
-                if let challenge { challenges[name] = challenge }
+            self.refreshTask = nil
+            if self.refreshAgain {
+                self.refreshAgain = false
+                self.refresh()
             }
         }
-        rebuild()
-        return result
     }
 
-    /// The entry the probe runs: `${keychain:…}` values filled in, and the bearer as a header.
-    private func resolvedForProbe(_ entry: MCPServerEntry) async -> [String: JSONValue] {
-        var resolved = entry
-        resolved.command = entry.command.map(resolveKeychain)
-        resolved.args = entry.args.map(resolveKeychain)
-        resolved.env = entry.env.mapValues(resolveKeychain)
-        resolved.url = entry.url.map(resolveKeychain)
-        resolved.headers = entry.headers.mapValues(resolveKeychain)
-        if usesOAuth(entry), token(for: entry) != nil, let token = try? await currentToken(entry.name) {
-            var headers = resolved.headers
-            headers["Authorization"] = "Bearer \(token.accessToken)"
-            resolved.headers = headers
-        }
-        return resolved.withoutShepherd
+    /// Waits until no `pi mcp list` is running or queued.
+    func settle() async {
+        while let task = refreshTask { await task.value }
     }
 
-    private func resolveKeychain(_ value: String) -> String {
-        var out = value
-        for reference in MCPSecretReference.references(in: value) {
-            let secret = dependencies.secrets.value(for: MCPSecretReference.account(server: reference.server, name: reference.name)) ?? ""
-            out = out.replacingOccurrences(of: MCPSecretReference.reference(server: reference.server, name: reference.name), with: secret)
+    private func list() async {
+        let sent = piConfig.json
+        // Nil: pi's home isn't safe to use, and `runCLI` has put the reason on the page.
+        guard let result = await runCLI(["list", "--json"], timeout: Self.listTimeout, onLine: nil) else {
+            finishList(nil, failure: nil)
+            return
         }
-        return out
-    }
-
-    // MARK: Credentials for agents
-
-    /// Answers the extension's `mcpCredentials` request.
-    func credentials(for request: MCPRequest) async -> MCPOutcome {
-        reload()
-        let name = request.server
-        guard let entry = document.server(name) else {
-            return .failure(code: MCPFailureCode.noSuchServer, message: "\(name) isn’t in Settings ▸ MCP servers.")
-        }
-        guard entry.settings.enabled else {
-            return .failure(code: MCPFailureCode.noSuchServer, message: "\(name) is off in Settings ▸ MCP servers.")
-        }
-        // Secrets go by the reference's NAME (and by "<server>/<NAME>" for another server's
-        // item), and the extension puts each wherever its reference appears (CONTRACT §9).
-        var credentials = MCPCredentials()
-        for reference in Self.secretReferences(entry) {
-            guard let secret = dependencies.secrets.value(for: MCPSecretReference.account(server: reference.server, name: reference.name))
-            else { continue }
-            credentials.env[reference.server == name ? reference.name : "\(reference.server)/\(reference.name)"] = secret
-        }
-        if let missing = missingSecrets(entry).first {
-            rebuild()
-            return .failure(code: MCPFailureCode.missingSecret,
-                            message: "\(name)’s \(missing) isn’t set: add it in Settings ▸ MCP servers.")
-        }
-        guard entry.kind == .remote, !hasAuthHeader(entry) else {
-            if request.reason != .connect, hasAuthHeader(entry) {
-                return .failure(code: MCPFailureCode.expired,
-                                message: "\(name) turned down its Authorization header: check it in Settings ▸ MCP servers.")
-            }
-            return .credentials(credentials)
-        }
-        if request.reason != .connect {
-            usesOAuth.insert(name)
-            if let challenge = request.challenge { challenges[name] = challenge }
-        }
-        guard usesOAuth(entry) else { return .credentials(credentials) }
-        let nowMs = Self.ms(dependencies.now())
-        if request.reason == .forbidden {
-            let challenge = MCPAuthChallenge.bearer(in: request.challenge)
-            let have = Set(token(name)?.scopes ?? [])
-            let missing = (challenge?.scopes ?? []).filter { !have.contains($0) }
-            flags[name] = .needsScopes(missing)
-            rebuild()
-            let what = missing.isEmpty ? "" : " (\(missing.joined(separator: ", ")))"
-            return .failure(code: MCPFailureCode.needsScopes,
-                            message: "\(name) needs more access\(what): sign in again in Settings ▸ MCP servers.")
-        }
-        guard var token = token(for: entry) else {
-            return needsSignIn(name)
-        }
-        let stale = request.reason == .unauthorized || token.needsRefresh(nowMs: nowMs)
-        if stale {
-            // A 401 right after a refresh means the token itself is refused.
-            if request.reason == .unauthorized, nowMs - token.refreshedAtMs < 10_000 {
-                return expired(name)
-            }
-            let generation = credentialGenerations[name]
-            do {
-                token = try await refreshed(name)
-                guard credentialGenerations[name] == generation else { throw MCPOAuthError.cancelled }
-            } catch MCPOAuthError.expired {
-                return expired(name)
-            } catch {
-                return .failure(code: MCPFailureCode.unavailable, message: "Couldn’t refresh \(name)’s sign-in: \(error)")
-            }
-        }
-        credentials.bearer = token.accessToken
-        credentials.expiresAtMs = token.expiresAtMs
-        return .credentials(credentials)
-    }
-
-    private func needsSignIn(_ name: String) -> MCPOutcome {
-        flags[name] = .needsSignIn
-        rebuild()
-        onNeedsSignIn?(name)
-        return .failure(code: MCPFailureCode.needsSignIn, message: "\(name) needs you to sign in: Settings ▸ MCP servers.")
-    }
-
-    private func expired(_ name: String) -> MCPOutcome {
-        flags[name] = .expired
-        rebuild()
-        onNeedsSignIn?(name)
-        return .failure(code: MCPFailureCode.expired, message: "\(name)’s sign-in expired: sign in again in Settings ▸ MCP servers.")
-    }
-
-    /// The token, refreshed first when it's about to expire.
-    func currentToken(_ name: String) async throws -> MCPOAuthToken? {
-        guard let token = token(name) else { return nil }
-        guard token.needsRefresh(nowMs: Self.ms(dependencies.now())) else { return token }
-        let generation = credentialGenerations[name]
-        let next = try await refreshed(name)
-        guard credentialGenerations[name] == generation else { throw MCPOAuthError.cancelled }
-        return next
-    }
-
-    /// One refresh per server; other requests wait for it.
-    func refreshed(_ name: String) async throws -> MCPOAuthToken {
-        let generation = credentialGenerations[name]
-        let task: Task<MCPOAuthToken, Error>
-        if let running = refreshes[name] {
-            task = running
+        guard !Task.isCancelled else { return }
+        if let parsed = MCPPiReport.parse(result.stdout) {
+            reportedFor = sent
+            finishList(parsed, failure: nil)
         } else {
-            guard let entry = document.server(name), let token = token(for: entry) else { throw MCPOAuthError.expired }
-            let service = MCPOAuthService(http: dependencies.http)
-            let nowMs = Self.ms(dependencies.now())
-            task = Task {
-                defer { if credentialGenerations[name] == generation { refreshes[name] = nil } }
-                let next = try await service.refresh(token, nowMs: nowMs)
-                try Task.checkCancellation()
-                reload()
-                guard credentialGenerations[name] == generation, document.server(name) == entry else {
-                    throw MCPOAuthError.cancelled
-                }
-                try saveToken(next, for: name)
-                rebuild()
-                return next
-            }
-            refreshes[name] = task
+            let reason = result.timedOut ? "pi didn’t answer in \(Int(Self.listTimeout)) seconds."
+                : (result.stderr.isEmpty ? "pi printed nothing (exit \(result.status))." : String(result.stderr.suffix(300)))
+            finishList(nil, failure: reason)
         }
-        // Every waiter checks again: sign-out may run after the shared task saved its result.
-        let result = await task.result
-        reload()
-        guard credentialGenerations[name] == generation else { throw MCPOAuthError.cancelled }
-        return try result.get()
+    }
+
+    /// Runs `pi mcp <arguments>` in pi's home, after readying it and writing the derived `mcp.json`,
+    /// with the environment pi would start with. Nil, with the reason on the page, when the home
+    /// isn't safe to use.
+    func runCLI(_ arguments: [String], timeout: TimeInterval, onLine: (@Sendable (String) -> Void)?) async -> MCPCLIResult? {
+        if let reason = await dependencies.preparePi() {
+            problem = reason
+            return nil
+        }
+        let environment = launchEnvironment()
+        return await dependencies.cli.run(arguments, environment: environment, timeout: timeout, onLine: onLine)
+    }
+
+    private func finishList(_ parsed: MCPPiReport?, failure: String?) {
+        authData = dependencies.authData()
+        refreshedAt = dependencies.now()
+        listing = .done(dependencies.now())
+        if let parsed {
+            report = parsed
+            if problem?.hasPrefix("Couldn’t check") == true { problem = nil }
+        } else if let failure {
+            report = nil
+            problem = "Couldn’t check the servers: \(failure)"
+        }
+        rebuild()
     }
 
     // MARK: Sign-in
 
-    /// Opens the sign-in sheet for a server and starts it.
+    /// Opens the sign-in sheet for a server and starts it: pi's own `mcp login`.
     func beginSignIn(_ name: String) {
         guard let entry = document.server(name), let url = entry.url.flatMap(URL.init(string:)) else { return }
         closeSignIn()
-        invalidateCredentials(name)
-        let generation = credentialGenerations[name]
-        let missing: [String] = if case .needsScopes(let scopes) = flags[name] { scopes } else { [] }
-        var oauth = entry.settings.oauth
-        oauth.clientSecret = oauth.clientSecret.map(resolveKeychain)
         let flow = MCPSignInFlow(
-            server: name, url: url, oauth: oauth, challenge: challenges[name], previous: token(name),
-            missingScopes: missing, service: MCPOAuthService(http: dependencies.http), dependencies: dependencies,
-            complete: { [weak self] token in
-                guard let self else { return nil }
-                try Task.checkCancellation()
-                self.reload()
-                guard self.credentialGenerations[name] == generation, self.document.server(name) == entry else {
-                    throw MCPOAuthError.cancelled
-                }
-                try self.saveToken(token, for: name)
-                self.flags[name] = nil
-                self.usesOAuth.insert(name)
-                self.rebuild()
-                guard let entry = self.document.server(name) else { return nil }
-                self.probing.insert(name)
-                defer { self.probing.remove(name) }
-                let resolved = await self.resolvedForProbe(entry)
-                guard self.credentialGenerations[name] == generation else { throw MCPOAuthError.cancelled }
-                let result = await self.dependencies.probe.probe(name: name, entry: resolved, timeoutSeconds: entry.settings.timeoutSeconds)
-                guard self.credentialGenerations[name] == generation else { throw MCPOAuthError.cancelled }
-                return self.finishProbe(name, entry: entry, result: result)
-            })
+            server: name, url: url,
+            run: { [weak self] arguments, onLine in await self?.runCLI(arguments, timeout: MCPSignInFlow.timeout + 10, onLine: onLine) },
+            openURL: dependencies.openURL, copy: dependencies.copy,
+            finished: { [weak self] in self?.refresh() })
         signIn = flow
         flow.start()
     }
 
     func signOut(_ name: String) {
-        invalidateCredentials(name)
-        try? saveToken(nil, for: name)
-        flags[name] = nil
-        rebuild()
+        Task { [weak self] in
+            guard let self else { return }
+            _ = await self.runCLI(["logout", name], timeout: 15, onLine: nil)
+            self.authData = self.dependencies.authData()
+            self.refresh()
+        }
     }
 
     func closeSignIn() {
-        if let signIn { invalidateCredentials(signIn.server) }
+        signIn?.cancel()
         signIn = nil
-    }
-
-    // MARK: Cache
-
-    static func readCache(_ url: URL) -> [String: CachedTools] {
-        guard let data = try? Data(contentsOf: url) else { return [:] }
-        return (try? JSONDecoder().decode([String: CachedTools].self, from: data)) ?? [:]
-    }
-
-    private func writeCache() {
-        let url = dependencies.cacheURL
-        let snapshot = cache
-        Task.detached(priority: .utility) {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-            guard let data = try? encoder.encode(snapshot) else { return }
-            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try? data.write(to: url, options: .atomic)
-        }
     }
 
     static func ms(_ date: Date) -> Int64 { Int64((date.timeIntervalSince1970 * 1000).rounded()) }

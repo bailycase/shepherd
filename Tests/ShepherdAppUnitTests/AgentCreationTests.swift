@@ -426,27 +426,20 @@ struct AgentLaunchCommandTests {
         #expect(ShellIntegration.command(shell: ["/bin/zsh"]).env["SHEPHERD_EXT_BROWSER"] == "")
     }
 
-    private struct NoProbe: MCPProbeRunner {
-        func run(input: Data, timeout: TimeInterval) async -> Data { Data() }
-    }
-
     /// One setting decides a repo's .mcp.json (Settings ▸ MCP servers), and Settings ▸ Pi ▸ MCP
     /// servers decides whether pi's MCP loads at all. What an agent launches with reads the
     /// store: pi's `mcp.json` is written and each Keychain value the file refers to is handed over.
     @Test @MainActor func mcpLaunchFollowsTheSettingsAndTheStore() throws {
         let settings = AppSettings(store: ScratchDefaults())
-        let file = try makeScratchDirectory().appendingPathComponent("mcp.json")
-        try Data(#"{"mcpServers": {"gh": {"url": "https://api.example.com/mcp", "headers": {"Authorization": "Bearer ${keychain:gh/Authorization}"}}}}"#.utf8).write(to: file)
-        var written: [Data] = []
-        let store = MCPStore(dependencies: .init(
-            file: MCPConfigFile(url: file), cacheURL: file.deletingLastPathComponent().appendingPathComponent("tools.json"),
-            secrets: InMemorySecretStore(["secret/gh/Authorization": "tok-123"]), http: URLSessionHTTP(), probe: MCPProbe(runner: NoProbe()),
-            openURL: { _ in }, copy: { _ in }, now: { Date() }, userHome: "/Users/test", writePiConfig: { written.append($0) }))
+        let harness = try MCPFixtures.harness(
+            #"{"mcpServers": {"gh": {"url": "https://api.example.com/mcp", "headers": {"Authorization": "Bearer ${keychain:gh/Authorization}"}}}}"#,
+            secrets: InMemorySecretStore(["secret/gh/Authorization": "tok-123"]))
+        let store = harness.store
         let install = { "/tmp/support/shepherd-mcp-project.ts" }
         let launch = try #require(MCPLaunch.forAgents(settings: settings, store: store, install: install))
         #expect(launch.extensions == ["builtin:mcp", "builtin:tool-search"])
         #expect(launch.environment == ["SHEPHERD_MCP_SECRET_GH_AUTHORIZATION": "tok-123", "SHEPHERD_MCP_SECRETS": "SHEPHERD_MCP_SECRET_GH_AUTHORIZATION"])
-        let text = String(decoding: try #require(written.last), as: UTF8.self)
+        let text = String(decoding: try #require(harness.written.last), as: UTF8.self)
         #expect(text.contains("${SHEPHERD_MCP_SECRET_GH_AUTHORIZATION}"))
         #expect(!text.contains("tok-123"), "no value is ever written to pi's file")
         settings.mcpProjectConfig = true
