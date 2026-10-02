@@ -24,7 +24,7 @@ struct HostSettingsMappingTests {
         #expect(settings.defaultThinking == .high)
         #expect(settings.worktreeBase == .head)
         #expect(settings.mergePRAutomatically && settings.mergeMethod == .rebase)
-        #expect(settings.bundledExtensions.map(\.id) == ["namer", "panes", "review", "nativeSubagents", "subagents", "mcp", "browser"])
+        #expect(settings.bundledExtensions.map(\.id) == ["namer", "panes", "review", "nativeSubagents", "subagents", "mcp", "browser", "context"])
         #expect(settings.bundledExtensions.first { $0.id == "review" }?.on == false)
         #expect(settings.bundledExtensions.first { $0.id == "review" }?.name == "Diff review tool")
         // The extension keeps its stored id; it reads as terminals to the user.
@@ -52,6 +52,15 @@ struct HostSettingsMappingTests {
                 #expect(!text.lowercased().contains("pane"), "\(text)")
             }
         }
+    }
+
+    /// Trimming old tool output is Settings ▸ Agents on the Mac and one more switch in a client's list.
+    @Test func aClientCanSwitchOldToolOutputTrimmingOffAndOn() {
+        let app = AppSettings(store: Fixture.defaults())
+        #expect(HostSettingsMapping.settings(from: app, shepherdVersion: nil, piVersion: nil).bundledExtensions.first { $0.id == "context" }?.on == true)
+        HostSettingsMapping.apply(.bundledExtension(id: "context", on: false), to: app)
+        #expect(!app.trimToolOutput)
+        #expect(HostSettingsMapping.settings(from: app, shepherdVersion: nil, piVersion: nil).bundledExtensions.first { $0.id == "context" }?.on == false)
     }
 
     @Test func aClientsChangeLandsInTheMacsSettings() {
@@ -82,7 +91,7 @@ struct HostSettingsMappingTests {
     @Test(arguments: [
         HostSettingChange.defaultThinking(.low), .fetchBeforeCreating(false), .commitRemainingWork(false),
         .generatePRDescriptions(false), .deleteLocalBranch(false), .mergePRAutomatically(true),
-        .bundledExtension(id: "review", on: false), .bundledExtension(id: "nativeSubagents", on: false),
+        .bundledExtension(id: "review", on: false), .bundledExtension(id: "nativeSubagents", on: false), .bundledExtension(id: "context", on: false),
     ])
     func aChangeReadsBackAsTheProtocolAppliesIt(_ change: HostSettingChange) {
         let app = AppSettings(store: Fixture.defaults())

@@ -573,6 +573,16 @@ draw no context meter.
   `SettingsManager.setCompactionEnabled`, which writes `compaction.enabled` into the user's global
   `settings.json` (Shepherd's pi home's). Shepherd writes only its own keys there, so
   there is no Compact automatically switch (the user's call, 2026-09-25).
+- **Compact at** (Settings ▸ Agents ▸ Context): a share of the window (60, 70, 80 or 90%, else pi's
+  own default) written as pi's per-model `compaction.modelOverrides[provider/id].reserveTokens`,
+  for every model of the catalog, in Shepherd's pi home under pi's lock (`PiCompactionThreshold`;
+  what it wrote is remembered in `shepherd-compaction.json` so pi's default takes back exactly
+  that, and a reserve the user set for a model stays theirs). The reserve is the rest of the
+  window, never below pi's 16,384, so a share never makes pi compact later than its default.
+  The view model writes it when the setting changes and at launch (a model added since). pi reads
+  its settings as a session starts: a new agent follows a change, a running one at its next
+  launch, and its card keeps the mark it read (`settingsFor`, per model). `compaction.enabled`
+  stays untouched (above).
 - **Clients** derive the ring and its details once per change in ShepherdRemote
   (`NativeContextMeter`, `NativeContextDetails`, `NativeCompactionRow`), so the Mac and the iOS
   client draw the same states from the same snapshot; a host without `native.context.v1` sends no

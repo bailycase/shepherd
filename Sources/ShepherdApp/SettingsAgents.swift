@@ -9,7 +9,7 @@ import ShepherdProtocol
 struct AgentSettings: View {
     /// This Mac's pi: its catalog and settings.json give the model choices and pi's default.
     let pi: PiSetup
-    @Bindable private var settings = AppSettings.shared
+    @Bindable var settings: AppSettings
     private var keys: KeybindingsStore { .shared }
     @State private var modelOptions: [String] = []
     /// pi's own default from its settings.json, read with the catalog (never in `body`).
@@ -49,6 +49,21 @@ struct AgentSettings: View {
                                       options: [(NativeQueueMode.oneAtATime, "One per turn"), (.all, "All at once")])
                 }
             }
+            SettingsGroup(title: "Context") {
+                SettingsRow(title: "Compact at",
+                            subtitle: "How full an agent lets its context get before it compacts on its own, as a share of the model’s window. "
+                                + "pi’s default leaves 16k tokens free, about 94% of a 272k window. New agents follow a change; running ones at their next launch.") {
+                    NWSegmentedPicker("Compact at", selection: Binding(get: { settings.compactAtPercent ?? 0 },
+                                                                       set: { settings.compactAtPercent = $0 == 0 ? nil : $0 }),
+                                      options: [(0, Self.compactAtTitle(nil))] + PiCompactionThreshold.choices.map { ($0, Self.compactAtTitle($0)) })
+                }
+                SettingsRow(title: "Trim old tool output from the model’s context",
+                            subtitle: "Clips one huge tool result in what the model is sent and, as the context fills, replaces the oldest tool output, "
+                                + "file contents, reasoning and screenshots with a line saying what they were. The thread keeps all of it. "
+                                + "New agents follow a change; running ones at their next launch.") {
+                    SettingsSwitch(label: "Trim old tool output from the model’s context", isOn: $settings.trimToolOutput)
+                }
+            }
         }
         .task {
             let pi = pi
@@ -58,6 +73,11 @@ struct AgentSettings: View {
             modelOptions = ids
             if let fallback { piDefaultModel = fallback }
         }
+    }
+
+    /// "pi’s default", or "80%": the popup's label for a Compact at choice.
+    static func compactAtTitle(_ percent: Int?) -> String {
+        percent.map { "\($0)%" } ?? "pi’s default"
     }
 
     /// Names New Agent's chord as it is bound now, so a rebind never leaves the copy wrong.

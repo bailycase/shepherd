@@ -187,6 +187,24 @@ settings." The chord is read from `KeybindingsStore`, so a rebind never leaves t
   - When a turn ends, send the queue, "All at once arrives as one turn, in the order you queued
     it.": One per turn · All at once, default All at once. It is the
     host's default for its agents; Up next's ••• menu sets one agent's own.
+- **Context** (no board draws it; the user's decision, 2026-10-01, with the Context card's parts
+  list; docs/context-budget.md). Both rows apply to agents started after a change; a running agent
+  keeps what it started with and follows at its next launch.
+  - Compact at, "How full an agent lets its context get before it compacts on its own, as a share
+    of the model’s window. pi’s default leaves 16k tokens free, about 94% of a 272k window. New
+    agents follow a change; running ones at their next launch.": a segmented control, pi’s
+    default · 60% · 70% · 80% · 90%, default pi’s default. It is written into Shepherd's pi home as
+    pi's per-model `compaction.modelOverrides` (`PiCompactionThreshold`), never `reserveTokens`
+    for every model, since a share of one model's window is not a share of another's; a share never
+    leaves less room than pi's own 16,384 tokens, and a reserve the user set for a model is left
+    alone. The Context card's auto-compact mark reads the same file, so a share moves the mark.
+    On the iPhone and iPad it is not offered (a host's Context card shows its mark).
+  - Trim old tool output from the model’s context, "Clips one huge tool result in what the model is
+    sent and, as the context fills, replaces the oldest tool output, file contents, reasoning and
+    screenshots with a line saying what they were. The thread keeps all of it. New agents follow a
+    change; running ones at their next launch.": a switch, default on (`AppSettings.trimToolOutput`).
+    A client lists it among a host's Bundled extensions (`HostSettings.bundledExtensions` id
+    `context`, changed with `bundledExtension`), so it is remote-changeable like the Pi switches.
 
 ## Worktrees (SettingsWorktrees)
 
