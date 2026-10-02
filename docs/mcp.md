@@ -119,6 +119,12 @@ config errors; it exits 1 when something is not connected. Tool names only: no d
 `pi mcp login|logout|add|remove` work without a session and load no extension. **A subcommand must be pi's
 first argument:** `pi -e x mcp list` is not a subcommand, which the launcher's own `-e` would cause.
 
+**A tool a search loaded does not survive a restart of pi.** Checked on pi 1.0.0 with a stand-in server: pi starts
+again on a session in the RPC mode Shepherd runs (`--session-id`), the transcript records the load, and the first
+request declares only the launch's tools, so the model searches again. (pi's docs and changelog say a load survives
+`/tree`, resume and fork; `/tree` does.) Shepherd restores its own deferred tools from the transcript
+(the status extension), not an MCP server's, which connect after pi starts.
+
 **In a session.** `/mcp` over RPC answers (`disposition: handled`) with a notice listing this thread's
 servers: `name: connected, 9 tools (deferred)`, a failure with its stderr tail, `disabled`. `/mcp reconnect
 <server>` works the same way. pi reads `mcp.json` once, at `session_start`; editing the file under a running
@@ -176,7 +182,10 @@ once when the page opens (and after any edit, Reconnect, or sign-in): `connected
 `needs-auth` as Needs sign-in, `failed` with pi's error, `disabled` as Off. Nothing is cached on disk.
 
 **Which agents get it.** An agent Shepherd starts (a thread, an automation) gets `-e builtin:mcp -e
-builtin:tool-search` while Settings ▸ Pi ▸ Bundled extensions ▸ MCP servers is on. A design's agent, a
+builtin:tool-search` while Settings ▸ Pi ▸ Bundled extensions ▸ MCP servers is on. `tool_search` also loads
+Shepherd's own deferred tools (the browser, other-thread, automation and review tools, docs/context-budget.md ›
+Deferred tools), so with Settings ▸ Agents ▸ Defer rarely used tools on a thread's or an automation's launch has
+`-e builtin:tool-search` even with MCP off (it wins over the home's `-builtin:tool-search`, like MCP's). A design's agent, a
 native subagent, a draft and the model catalog do not (`--no-extensions` or no flag). `codemode` stays off:
 a trusted project's own `.pi/mcp.json` server with pi's default exposure is then unreachable, so a
 project that wants one sets `exposure` to `deferred` or `direct` in that file.

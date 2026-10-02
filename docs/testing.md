@@ -396,7 +396,12 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
   the session file and `get_messages` keep everything, off is byte-identical, a restart, `/new`,
   a branch and a compaction decide the same way, a long run never compacts; `context-mcp.test.mjs`:
   an MCP result is cleared like any other, and a tool a cleared `tool_search` loaded is still
-  declared and called); the card's estimate
+  declared and called); deferred tools against a real pi and a fake provider (`defer-tools.test.mjs`:
+  no deferred tool or tool-list line in a thread's first request, one rule line saying they exist, each
+  family found by its obvious query, loaded whole and called, a cleared search result not unloading it, a
+  restart keeping what was loaded, the switch off or no `tool_search` sending every tool, a watch agent, a
+  design's agent, a design reference and a subagent each getting their own set, and the status extension
+  alone); the card's estimate
   (`ContextEstimateTests`: the baseline from the first call's usage, reasoning, images and Other),
   its presentation and wire (`ContextPresentationTests`, `NativeThreadWireTests`), and the
   Compact at setting (`PiCompactionThresholdTests`, `CompactionThresholdFlowTests`).
