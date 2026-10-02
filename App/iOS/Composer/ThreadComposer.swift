@@ -38,6 +38,7 @@ struct ThreadComposer: View {
         let host = hosts.host(ref.host)
         let live = store.isLive && host?.phase.isConnected == true
         let wide = sizeClass == .regular
+        let goalSize: NWGoalSize = wide && !navigator.padSidebarOverlays ? .desktop : .touch
         VStack(alignment: .leading, spacing: MobileLayout.composerSpacing) {
             if let notice = store.notice {
                 banner(notice)
@@ -47,6 +48,30 @@ struct ThreadComposer: View {
             }
             ForEach(store.widgets) { widget in
                 ComposerWidget(title: widget.title, text: widget.text)
+            }
+            if store.hasGoal || store.dialogs.isEmpty {
+                if store.hasGoal || store.tray != nil {
+                    NWDockStack(size: store.hasGoal && goalSize == .desktop ? .pointer : wide ? .pad : .phone, showsTray: true, showsQueue: !state.rows.isEmpty) {
+                        VStack(spacing: 0) {
+                            if store.hasGoal {
+                                ThreadGoalCard(store: store, active: live,
+                                               size: goalSize, framed: false)
+                            }
+                            if let tray = store.tray {
+                                SubagentTraySection(ref: ref, tray: tray, store: store, state: state,
+                                                    size: wide ? .pad : .phone, enabled: live)
+                                    .overlay(alignment: .top) {
+                                        if store.hasGoal { NWHairline(color: Color.nw.lineStrong) }
+                                    }
+                            }
+                        }
+                    } queue: {
+                        QueueSection(store: store, state: state, presentation: presentation, enabled: live, framed: false)
+                    }
+                    .nwTransition(.list)
+                } else {
+                    QueueSection(store: store, state: state, presentation: presentation, enabled: live)
+                }
             }
             if let dialog = store.dialogs.first, let session = store.session {
                 let key = session.key + ":" + dialog.id
@@ -74,16 +99,6 @@ struct ThreadComposer: View {
                     .nwTransition(.content)
                 }
             } else {
-                if let tray = store.tray {
-                    NWDockStack(size: wide ? .pad : .phone, showsTray: true, showsQueue: !state.rows.isEmpty) {
-                        SubagentTraySection(ref: ref, tray: tray, store: store, state: state, size: wide ? .pad : .phone, enabled: live)
-                    } queue: {
-                        QueueSection(store: store, state: state, presentation: presentation, enabled: live, framed: false)
-                    }
-                    .nwTransition(.list)
-                } else {
-                    QueueSection(store: store, state: state, presentation: presentation, enabled: live)
-                }
                 if let matches = state.matches {
                     NWTouchCommandList(commands: matches.commands.map(Self.command), total: matches.total, query: matches.query,
                                        wide: wide) { chosen in
@@ -105,10 +120,12 @@ struct ThreadComposer: View {
         .background(Color.nw.bgWindow)
         .nwAnimation(.content, value: store.dialogs.isEmpty)
         .nwAnimation(.list, value: store.tray == nil)
+        .nwAnimation(.list, value: store.goalID)
         .onChange(of: store.sentCount) { _, _ in focused = false }
         .onChange(of: focused) { _, focused in
             if focused { navigator.focusedComposer = ref } else if navigator.focusedComposer == ref { navigator.focusedComposer = nil }
         }
+        .task { GoalNotifications.shared.watch(store, hosts: hosts, ref: ref) }
         .task {
             guard navigator.refocusComposer == ref else { return }
             navigator.refocusComposer = nil

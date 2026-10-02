@@ -252,6 +252,8 @@ struct AgentTurn: View, Equatable {
                     NWSubagentRecordLine(title: line.title, meta: line.meta, action: openFirstRun)
                 }
             }
+        case .goalRecord(_, let text):
+            GoalRecordLine(text: text)
         case .note(_, let text):
             Text(text).font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
                 .lineLimit(3).truncationMode(.tail).help(text).textSelection(.enabled)
