@@ -717,7 +717,13 @@ output grows.
   caught up (`catchUp`, with `threadVersion` and `chromeVersion`, none of them observed), in the
   same update: what it brought back lands without motion (`CatchUpGate`), and what arrives
   after moves as usual. `stop` is the teardown (an error, a pruned agent, a view that went
-  away): nothing is ready or running until it polls again.
+  away): nothing is ready or running until it polls again. A hidden store is still `ready` but
+  has no host to ask (`isLive` false), so an action on it dispatches nothing and says so in
+  `notice`; what acts on a thread that may be hidden (Implement in a thread…) goes through the
+  server. An action in flight when the thread is hidden or shown again is settled by the host's
+  answer, not by the store's restart: a message the host accepted has gone (it leaves the
+  composer, the suspension's "outcome unknown" goes, and the thread's next pull shows it), and a
+  refusal is said in the host's words.
 - **Starting:** `native_starting` sets `starting`, never `loadError`. `awaitingPi` (starting,
   previewing, or no snapshot yet, without an error) is what the composer watches: only after it
   has held for `AppLayout.startingIndicatorDelay` (two seconds, past a normal start of about

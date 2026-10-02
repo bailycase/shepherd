@@ -1599,6 +1599,151 @@ struct NativeThreadStoreTests {
         await store.refresh()
         #expect(host.requests.count == 1 && !store.supports("send"))
     }
+
+    // MARK: A send answered after the thread's layout changed
+
+    enum LayoutChange: CaseIterable, Sendable { case hidden, shownAgain }
+
+    private var piece: DesignReference { DesignReference(string: "shepherd-design-ref://local/d1/A.dc.html#2:0/1@4")! }
+
+    private func supportingReferences() -> FakeHost {
+        FakeHost(F.snapshot(actions: ["send", "designReferences"], messages: [hi]))
+    }
+
+    /// Runs `send` against a thread on screen whose host holds its answer to the send while the
+    /// layout changes (hidden, or shown again, which runs the store anew), then lets the host's
+    /// answer through.
+    private func send(whileTheLayoutIs change: LayoutChange, host: FakeHost, store: NativeThreadStore,
+                      _ send: @escaping @MainActor (NativeThreadStore) async -> Bool) async -> Bool {
+        let gate = Gate()
+        let first = Task {
+            await store.run { request in
+                let result = Result { try host.handle(request) }
+                if case .send = request { await gate.hold() }
+                return try result.get()
+            }
+        }
+        await until { store.ready }
+        let sending = Task { await send(store) }
+        await until { gate.held }
+        var again: Task<Void, Never>?
+        switch change {
+        case .hidden: store.suspend()
+        case .shownAgain: again = await start(store, host)
+        }
+        gate.release()
+        let sent = await sending.value
+        first.cancel()
+        again?.cancel()
+        return sent
+    }
+
+    /// A thread shown once and hidden since keeps what it showed (`ready`) but has no host to ask:
+    /// a send says nothing was done and dispatches nothing, rather than failing without a word.
+    @Test func aSendToAThreadHiddenSinceItWasShownSaysNothingWasDone() async {
+        let (store, host, task) = await started(F.snapshot(actions: ["send", "designReferences"], messages: [hi]))
+        defer { task.cancel() }
+        host.acceptAll()
+        store.suspend()
+        #expect(store.ready && !store.isLive)
+
+        let sent = await store.send(text: "Build it", references: [NativeAttachedReference(reference: piece, label: "x")])
+
+        #expect(!sent && host.actions.isEmpty)
+        #expect(store.notice?.contains("isn't connected right now") == true)
+    }
+
+    /// The host takes a message, and before its answer arrives the thread is hidden or shown
+    /// again: the answer is the outcome, so the send succeeded, and the suspension's "outcome
+    /// unknown" for it goes.
+    @Test(arguments: LayoutChange.allCases)
+    func aSendTheHostTookSucceedsWhateverTheLayoutDidMeanwhile(_ change: LayoutChange) async {
+        let host = supportingReferences()
+        host.acceptAll()
+        let store = manualStore()
+
+        let sent = await send(whileTheLayoutIs: change, host: host, store: store) {
+            await $0.send(text: "Build it", references: [NativeAttachedReference(reference: piece, label: "x")])
+        }
+
+        #expect(sent)
+        #expect(store.notice == nil, "nothing is left saying the outcome is unknown")
+        #expect(host.actions.count == 1, "sent once")
+    }
+
+    /// The composer's send takes the same answer: what was sent leaves the composer, so there is
+    /// nothing to send twice.
+    @Test(arguments: LayoutChange.allCases)
+    func aDraftTheHostTookLeavesTheComposerWhateverTheLayoutDidMeanwhile(_ change: LayoutChange) async {
+        let host = supportingReferences()
+        host.acceptAll()
+        let store = manualStore()
+        store.draft = "Build it"
+
+        let sent = await send(whileTheLayoutIs: change, host: host, store: store) { await $0.send(delivery: .followUp) }
+
+        #expect(sent && store.draft.isEmpty && store.notice == nil)
+        let again = await store.send(delivery: .followUp)
+        #expect(!again && host.actions.count == 1, "the same words are not sent a second time")
+    }
+
+    /// A refusal that arrives after the layout changed is said in the host's words, in place of
+    /// the suspension's "outcome unknown", and the draft stays.
+    @Test(arguments: LayoutChange.allCases)
+    func aSendTheHostRefusedSaysWhyWhateverTheLayoutDidMeanwhile(_ change: LayoutChange) async {
+        let host = supportingReferences()
+        host.action = { _ in .failure(code: "stale_session", message: "The thread moved to another session.") }
+        let store = manualStore()
+        store.draft = "Build it"
+
+        let sent = await send(whileTheLayoutIs: change, host: host, store: store) { await $0.send(delivery: .followUp) }
+
+        #expect(!sent && store.draft == "Build it")
+        #expect(store.notice == "The thread moved to another session.")
+    }
+
+    /// An answer with no answer to give (the connection dropped) stays "outcome unknown": the
+    /// store can't tell, and says to check before sending again.
+    @Test func aSendThatNeverGotItsAnswerStaysUnknownWhenTheLayoutChanged() async {
+        let host = supportingReferences()
+        host.action = { _ in throw RemoteHostClientError.outcomeUnknown(message: "lost") }
+        let store = manualStore()
+        store.draft = "Build it"
+
+        let sent = await send(whileTheLayoutIs: .hidden, host: host, store: store) { await $0.send(delivery: .followUp) }
+
+        #expect(!sent && store.draft == "Build it")
+        #expect(store.notice?.hasPrefix("Action outcome unknown.") == true)
+    }
+
+    /// A pull that lands while the action is in flight moves the thread to another session: the
+    /// host's acceptance is for the old one, and the notice says to check the thread.
+    @Test func aSendAcceptedForASessionTheThreadLeftSaysToCheckTheThread() async {
+        let host = supportingReferences()
+        host.acceptAll()
+        let store = manualStore()
+        store.draft = "Build it"
+        let gate = Gate()
+        let task = Task {
+            await store.run { request in
+                let result = Result { try host.handle(request) }
+                if case .send = request { await gate.hold() }
+                return try result.get()
+            }
+        }
+        defer { task.cancel() }
+        await until { store.ready }
+        let sending = Task { await store.send(delivery: .followUp) }
+        await until { gate.held }
+        host.snapshot = F.snapshot(session: "s2", actions: ["send", "designReferences"], messages: [hi])
+        await store.refresh()
+        gate.release()
+
+        let sent = await sending.value
+
+        #expect(!sent && store.draft == "Build it")
+        #expect(store.notice == "The session changed while the action was pending. Check the thread before trying again.")
+    }
 }
 
 /// Names collected from observations' change handlers.
