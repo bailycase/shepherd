@@ -78,6 +78,12 @@
     (`HostSettingChange`), applied as the Mac's own Settings would. The additive
     `goalCrossProviderEvaluation` consent is false when missing/null; its change applies to
     newly started or restarted agents, not a live process. Both clients disclose that scope
+  - `projects` (`projects.v1`): host-owned project history, project-file inventory, reads and
+    conflict-checked saves. Only allowlisted files in the selected project are writable,
+    never host-global configuration. The Mac Projects page checks this capability and the
+    connected host identity before requests. Older hosts show update-required rows.
+    Both Mac and iOS decode the additive messages through `ShepherdRemote`; only the Mac
+    exposes a Projects editor in this change. See [Projects](projects.md).
   - `skills` (`skills.v1`): Settings ▸ Skills on the host (fetch, look up a repository, install
     from one or from files, on or off, how it's used, remove and restore, check for updates,
     Update automatically), answered with the host's skills or the repository's, and beside them

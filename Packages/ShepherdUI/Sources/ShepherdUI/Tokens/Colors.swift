@@ -20,6 +20,10 @@ public final class NWPalette: Sendable {
     public let bgBubble: Color
     public let bgHover: Color
     public let bgSelected: Color
+    /// SettingsProjects' selected navigation row; custom themes keep their selection role.
+    public let settingsNavSelected: Color
+    /// Muted Settings metadata in SettingsProjects; custom themes keep textTertiary.
+    public let settingsMuted: Color
     // Lines and text
     public let lineSubtle: Color
     public let lineStrong: Color
@@ -109,11 +113,13 @@ public final class NWPalette: Sendable {
         bgBubble = role(\.bgBubble)
         bgHover = role(\.bgHover)
         bgSelected = role(\.bgSelected)
+        settingsNavSelected = theme.id == "night-watch" ? Color(light: l.bgSelected, dark: "#23272c") : bgSelected
         lineSubtle = role(\.lineSubtle)
         lineStrong = role(\.lineStrong)
         textPrimary = role(\.textPrimary)
         textSecondary = role(\.textSecondary)
         textTertiary = role(\.textTertiary)
+        settingsMuted = theme.id == "night-watch" ? Color(light: l.textTertiary, dark: "#767c85") : textTertiary
         textOnLantern = role(\.textOnLantern)
         lantern = role(\.lantern)
         lanternText = role(\.lanternText)

@@ -430,6 +430,7 @@ final class ShepherdViewModel {
     /// Last Settings category visited. View-model state survives closing the
     /// overlay but naturally resets when Shepherd restarts.
     var settingsSection: SettingsSection = .appearance
+    @ObservationIgnored var madeProjects: ProjectsModel?
     /// Debug builds: the component gallery over the workspace.
     var showComponentGallery = false
     /// ⌘K command palette visibility.

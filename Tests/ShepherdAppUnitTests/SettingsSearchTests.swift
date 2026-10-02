@@ -7,7 +7,7 @@ import Testing
 struct SettingsSearchTests {
     @Test func theNavListsEveryPageInDesignOrder() {
         #expect(SettingsSection.allCases.map(\.title) == [
-            "Appearance", "Terminal", "Agents", "Worktrees", "Pi", "Sign-in", "From your pi", "Slash commands", "Instructions", "Skills",
+            "Appearance", "Terminal", "Agents", "Subagents", "Worktrees", "Projects", "Pi", "Sign-in", "From your pi", "Slash commands", "Instructions", "Skills",
             "MCP servers", "Remote", "Keyboard", "Advanced", "Experiments",
         ])
         #expect(SettingsSection.allCases.filter(\.isSubpage) == [.piSignIn, .piFromYourPi, .piSlashCommands], "Pi's three pages sit under it")

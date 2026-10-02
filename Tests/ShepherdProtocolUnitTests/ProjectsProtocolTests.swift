@@ -1,0 +1,25 @@
+import Foundation
+import Testing
+import ShepherdProtocol
+
+@Suite("Project settings protocol")
+struct ProjectsProtocolTests {
+    @Test(arguments: [RemoteProjectsRequest.list(), .list(offset: 64), .files(directory: "/host/repo"),
+                      .read(directory: "/host/repo", file: ".pi/settings.json"),
+                      .save(directory: "/host/repo", file: "AGENTS.md", text: "new", expected: nil),
+                      .save(directory: "/host/repo", file: "AGENTS.md", text: "new", expected: "old")])
+    func eachRequestRoundTrips(_ request: RemoteProjectsRequest) throws {
+        let value = RemoteRequest.projects(id: 7, request: request)
+        #expect(try NDJSON.decode(RemoteRequest.self, from: NDJSON.encode(value)) == value)
+    }
+
+    @Test(arguments: [RemoteProjectsResult.listing(ProjectListing(projects: [], nextOffset: 64)),
+                      .listing(ProjectListing(projects: [ProjectSummary(directory: "/a", name: "a", displayPath: "~/a", summary: "AGENTS.md only", minimal: true)])),
+                      .files([ProjectFile(path: "AGENTS.md", category: .instructions, exists: false)]),
+                      .text(ProjectFileText(file: ProjectFile(path: "AGENTS.md", category: .instructions, exists: false), text: nil)),
+                      .text(ProjectFileText(file: ProjectFile(path: "AGENTS.md", category: .instructions, exists: true), text: ""))])
+    func eachResultRoundTrips(_ result: RemoteProjectsResult) throws {
+        let value = RemoteReply.projects(id: 9, result: result)
+        #expect(try NDJSON.decode(RemoteReply.self, from: NDJSON.encode(value)) == value)
+    }
+}

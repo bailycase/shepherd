@@ -8,11 +8,13 @@ struct PiSettings: View {
     let pi: PiSetup
     /// The view model's settings, so a preview's own settings draw the page.
     @Bindable var settings: AppSettings
+    var subagentsOnly = false
     @State private var modelOptions: [String] = []
 
     var body: some View {
-        SettingsPage(title: "Pi",
-                     explanation: "Shepherd's own pi, the extensions Shepherd bundles into it, and defaults for native subagents.") {
+        SettingsPage(title: subagentsOnly ? "Subagents" : "Pi",
+                     explanation: subagentsOnly ? "Native helpers, their display and defaults for new child runs." : "Shepherd's own pi and the extensions Shepherd bundles into it.") {
+            if !subagentsOnly {
             SettingsGroup(title: "Shepherd's pi",
                           footnote: "Shepherd runs its own copy of pi, with its own sign-ins, settings and conversations. The pi in your terminal is yours: Shepherd never runs it or changes its files.") {
                 PathRow(title: pi.engine.version.map { "pi \($0)" } ?? "pi",
@@ -41,14 +43,6 @@ struct PiSettings: View {
                 SettingsRow(title: "Diff review tool", subtitle: "Let agents open the review pane with `review_diff`.") {
                     SettingsSwitch(label: "Diff review tool", isOn: $settings.piReviewExtension)
                 }
-                SettingsRow(title: "Native subagents",
-                            subtitle: "Shepherd helpers, agent files and scripted workflows. Needs pi 0.85.1+. Children stop with their parent.") {
-                    SettingsSwitch(label: "Native subagents", isOn: $settings.piNativeSubagents)
-                }
-                SettingsRow(title: "Subagent display",
-                            subtitle: "Show subagent runs in their agent's thread, the inspector and the palette. Off doesn't stop them running.") {
-                    SettingsSwitch(label: "Subagent display", isOn: $settings.piSubagentsExtension)
-                }
                 SettingsRow(title: "MCP servers",
                             subtitle: "Let agents use the servers in Settings ▸ MCP servers, through pi's own MCP and tool search.") {
                     SettingsSwitch(label: "MCP servers", isOn: $settings.piMCPExtension)
@@ -65,7 +59,20 @@ struct PiSettings: View {
                 }
             }
 
-            if settings.piNativeSubagents {
+            }
+            if subagentsOnly {
+                SettingsGroup(title: "Native subagents") {
+                    SettingsRow(title: "Native subagents",
+                                subtitle: "Shepherd helpers, agent files and scripted workflows. Needs pi 0.85.1+. Children stop with their parent.") {
+                        SettingsSwitch(label: "Native subagents", isOn: $settings.piNativeSubagents)
+                    }
+                    SettingsRow(title: "Subagent display",
+                                subtitle: "Show subagent runs in their agent's thread, the inspector and the palette. Off doesn't stop them running.") {
+                        SettingsSwitch(label: "Subagent display", isOn: $settings.piSubagentsExtension)
+                    }
+                }
+            }
+            if subagentsOnly && settings.piNativeSubagents {
                 SettingsGroup(title: "Native subagent defaults",
                               footnote: "Precedence: explicit call → agent file → these defaults → parent. Child tools run with your account's access.") {
                     SettingsRow(title: "Concurrency", subtitle: "Child process limit per parent, including workflows.") {
