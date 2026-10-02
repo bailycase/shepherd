@@ -1,6 +1,6 @@
 {
   "_about": "What `python3 scripts/context_budget.py` measured for an ordinary thread when someone last decided the numbers were right (tokens, characters / 4). `--check` fails when a row grows past its margin; `--update` rewrites this file. docs/context-budget.md.",
-  "pi": "0.87.1",
+  "pi": "1.0.0",
   "api": "openai-responses",
   "margin": {
     "percent": 5,
@@ -9,12 +9,12 @@
     "totalFloor": 150
   },
   "tokens": {
-    "pi.prompt": 675,
+    "pi.prompt": 766,
     "pi.builtin_tools": 696,
-    "shepherd.prompt": 803,
+    "shepherd.prompt": 946,
     "tools.terminal": 590,
-    "tools.agent": 1011,
-    "tools.automation": 861,
+    "tools.agent": 1692,
+    "tools.automation": 904,
     "tools.review": 245,
     "tools.children": 1547,
     "tools.browser": 2178,
@@ -24,6 +24,6 @@
     "ctx.append_system": 88,
     "ctx.global_agents": 891
   },
-  "total": 11520,
+  "total": 12478,
   "toolCount": 58
 }
