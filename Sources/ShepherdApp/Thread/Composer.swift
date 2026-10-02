@@ -189,9 +189,10 @@ struct Composer: View {
     /// @ picks design pieces here: a local thread (not a design's chat) whose host takes references.
     private var mentionsAvailable: Bool { references != nil && !designChat && store.supportedActions.contains("designReferences") }
 
-    /// The @ picker is up: a mention is being typed and the catalog is read.
+    /// The @ picker is up: a mention is being typed. It opens at once, saying "Loading designs…"
+    /// until the catalog is read (MentionPickerState).
     private var mentionShown: Bool {
-        mentions.isOpen && commandQuery == nil && loginQuery == nil && references?.catalog != nil
+        mentions.isOpen && commandQuery == nil && loginQuery == nil && references != nil
     }
 
     private var openMenu: OpenMenu {
@@ -425,6 +426,7 @@ struct Composer: View {
         // A pasted reference becomes a chip; a mention opens the @ picker.
         .onChange(of: store.draft, initial: true) { old, new in draftChanged(from: old, to: new) }
         .onChange(of: references?.catalog) { _, _ in updateMentions() }
+        .onChange(of: references?.catalogStage) { _, _ in updateMentions() }
         .onChange(of: mentionsAvailable) { _, _ in updateMentions() }
         .onChange(of: references?.picturesVersion) { _, _ in if mentions.isOpen { updateMentions() } }
         .onChange(of: mentionShown) { _, shown in if shown { menu = nil } }
@@ -503,6 +505,7 @@ struct Composer: View {
                 NWMentionPicker(sections: content.sections, crumbs: content.crumbs, empty: content.empty, highlighted: mentions.highlighted,
                                 maxHeight: room, choose: { chooseMention($0) }, drill: { chooseMention($0) },
                                 back: { mentionBack() }, hover: { mentions.highlighted = $0 }, startDesign: references?.io.startDesign,
+                                retry: { references?.startCatalogRead() },
                                 appear: { id in
                                     // An element's row on screen: its picture is cut now, not before.
                                     if let item = mentions.content.items[id] { references?.rowAppeared(item) }
@@ -641,27 +644,31 @@ struct Composer: View {
             .tint(Color.nw.lantern)
             .focused($composing)
             .onKeyPress(.return, phases: .down) { press in
-                if press.modifiers.contains(.shift) { return .ignored }
-                if let login = loginQuery {
-                    let matches = loginMatches
-                    openLogin(SlashLogin.Command(verb: login.verb,
-                                                 provider: matches.indices.contains(commandIndex) ? matches[commandIndex].id : nil))
+                // ⌘↩ reaches here when a key press brings it; the key monitor usually takes it first.
+                switch ComposerReturnKey.action(modifiers: press.modifiers, alternate: KeybindingsStore.shared.chord(for: .alternateSend),
+                                                menuOpen: loginQuery != nil || commandQuery != nil || mentionShown,
+                                                composing: NWReturnKey.isComposing) {
+                case .system:
+                    return .ignored
+                case .lineBreak:
+                    return NWReturnKey.insertLineBreak() ? .handled : .ignored
+                case .choose:
+                    if let login = loginQuery {
+                        let matches = loginMatches
+                        openLogin(SlashLogin.Command(verb: login.verb,
+                                                     provider: matches.indices.contains(commandIndex) ? matches[commandIndex].id : nil))
+                    } else if commandQuery != nil {
+                        let matches = commandMatches
+                        if matches.indices.contains(commandIndex) { choose(matches[commandIndex]) }
+                    } else if let row = mentions.highlightedRow {
+                        chooseMention(row)
+                    }
+                    return .handled
+                case .send(let key):
+                    guard canSend, !store.busy else { return .handled }
+                    sendDraft(key)
                     return .handled
                 }
-                if commandQuery != nil {
-                    let matches = commandMatches
-                    if matches.indices.contains(commandIndex) { choose(matches[commandIndex]) }
-                    return .handled
-                }
-                if mentionShown {
-                    if let row = mentions.highlightedRow { chooseMention(row) }
-                    return .handled
-                }
-                guard canSend, !store.busy else { return .handled }
-                // ⌘↩ when a key press brings it here; the key monitor usually takes it first.
-                let alternate = KeybindingsStore.shared.chord(for: .alternateSend).matches(press)
-                sendDraft(alternate ? .alternate : .primary)
-                return .handled
             }
             .onKeyPress(.tab) {
                 if let login = loginQuery {
@@ -954,10 +961,12 @@ struct Composer: View {
     private func updateMentions() {
         guard mentionsAvailable, let references else { return }
         let wasOpen = mentions.isOpen, scope = mentions.scope
-        mentions.update(draft: store.draft, catalog: references.catalog) { references.rowPicture($0) }
+        // Opening reads the designs afresh: from this call the picker says it is loading, not what
+        // the last opening ended with.
+        if mentions.opens(for: store.draft) { references.startCatalogRead() }
+        mentions.update(draft: store.draft, catalog: references.catalog, stage: references.catalogStage) { references.rowPicture($0) }
         if mentions.isOpen, !wasOpen {
             referenceError = nil
-            Task { await references.loadCatalog() }
             references.io.wantPictures(mentions.scope)
         } else if mentions.isOpen, mentions.scope != scope {
             references.io.wantPictures(mentions.scope)

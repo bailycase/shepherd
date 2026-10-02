@@ -8,7 +8,7 @@ import Testing
 @Suite("Shepherd's pi home")
 struct PiHomeTests {
     static let engine = PiEngine(command: ["/Apps/Shepherd.app/Contents/Helpers/node", "/Apps/Shepherd.app/Contents/Resources/pi-engine/dist/bundle/cli.js"],
-                                 packageDirectory: "/Apps/Shepherd.app/Contents/Resources/pi-engine", version: "0.87.1",
+                                 packageDirectory: "/Apps/Shepherd.app/Contents/Resources/pi-engine", version: "1.0.0",
                                  node: .executable("/Apps/Shepherd.app/Contents/Helpers/node"))
     static let home = PiHome(directory: URL(fileURLWithPath: "/Users/me/Library/Application Support/Shepherd/pi"), engine: engine)
 
@@ -33,6 +33,44 @@ struct PiHomeTests {
         #expect(kept.count == 4)
         #expect(kept.compactMap { $0 as? String } == ["/x/skills", "!**/draft-*", "!/Users/me/.agents/skills/**"])
         #expect(PiHome.excludingUserSkills(nil, home: "/Users/me").compactMap { $0 as? String } == ["!/Users/me/.agents/skills/**"])
+    }
+
+    // MARK: pi's built-in extensions
+
+    private static let off = ["-builtin:mcp", "-builtin:codemode", "-builtin:tool-search"]
+
+    /// pi 1.0 loads MCP, codemode and tool search itself; Shepherd's pi turns them off with
+    /// `-builtin:<name>` in `extensions`, after whatever else the list holds, and never twice. A
+    /// built-in an entry already names, in any form, is theirs: `+builtin:mcp` turns one on.
+    @Test(arguments: [
+        (nil, off),
+        ([], off),
+        (["/h/a.ts", "/h/b.ts"], ["/h/a.ts", "/h/b.ts"] + off),
+        (["-builtin:mcp", "/h/a.ts"], ["-builtin:mcp", "/h/a.ts", "-builtin:codemode", "-builtin:tool-search"]),
+        (["+builtin:mcp"], ["+builtin:mcp", "-builtin:codemode", "-builtin:tool-search"]),
+        (["+builtin:codemode", "+builtin:tool-search", "+builtin:mcp"], ["+builtin:codemode", "+builtin:tool-search", "+builtin:mcp"]),
+        (["builtin:codemode", " -builtin:tool-search "], ["builtin:codemode", " -builtin:tool-search ", "-builtin:mcp"]),
+        (["-builtin:llama.cpp"], ["-builtin:llama.cpp"] + off),
+        (off, off),
+    ] as [([String]?, [String])])
+    func piBuiltInExtensionsAreSwitchedOffUnlessTheListNamesThem(_ entries: [String]?, _ expected: [String]) {
+        let result = PiHome.disablingBuiltIns(entries)
+        #expect(result.compactMap { $0 as? String } == expected)
+        #expect(PiHome.disablingBuiltIns(result).compactMap { $0 as? String } == expected, "a second pass changes nothing")
+    }
+
+    /// A list entry that isn't a string is kept where it is.
+    @Test func anEntryThatIsNotAStringStaysInPlace() {
+        let result = PiHome.disablingBuiltIns(["/h/a.ts", 3, ["x": 1]] as [Any])
+        #expect(result.count == 6 && result[0] as? String == "/h/a.ts" && result[1] as? Int == 3)
+    }
+
+    @Test(arguments: [
+        ("builtin:mcp", true), ("-builtin:codemode", true), ("+builtin:tool-search", true), (" -builtin:llama.cpp ", true),
+        ("/Users/me/builtin:mcp.ts", false), ("builtin.ts", false), ("npm:@x/builtin:y", false), ("", false),
+    ])
+    func anEntryNamesABuiltInExtensionOrAFile(_ entry: String, _ names: Bool) {
+        #expect(PiHome.namesBuiltIn(entry) == names)
     }
 
     /// The stash's prefix survives the children extension's filter, which drops `SHEPHERD_*`.

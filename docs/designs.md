@@ -1412,6 +1412,28 @@ by each word of the query, in the catalog's order. The composer keeps the result
 holds a word of the query (the path places each; RefAtSearch), so a design named for the query
 doesn't list every board and element in it.
 
+The read is asked once per opening of the picker, and the picker says where it stands before it has
+rows (`DesignMentionLoad`, `DesignReferenceChips.startCatalogRead`): "Loading designs…" until the
+first answer, "Couldn't load designs." with Retry after 15 seconds
+(`DesignReferenceChips.defaultCatalogTimeout`), and "No designs yet" or "Nothing matches" only after
+an answer. Each read has a number and an answer to a read a newer opening replaced is dropped; a
+catalog already read keeps its rows through a later read and its failure.
+
+### The New thread page
+
+A thread can start from design pieces (docs/design/pages.md › New thread page › Design references).
+`NewThreadState` keeps the chips (`references`, pinned by `prepareDesignReference` as the picker
+picks, at most five, each piece once: `[NativeAttachedReference].attach`), and the page's own
+`DesignReferenceChips` (`ShepherdViewModel.makeNewThreadReferenceChips`) reads the catalog and
+draws the chips and pictures for no thread. Send starts the agent without an opening prompt
+(`NewAgentConfig.initialName` names it from the words or the first piece, provisional) and
+`deliverOpeningDesignReferences` sends its first message through the host once pi serves, the way
+Implement's new thread does (`sendDirectly`, 90 seconds' wait), carrying the prompt and the images
+as the message's words: the same `nativeThread` send a thread's composer makes, so the record is
+fenced, the copy kept, the agent granted it, and the thread draws the chip. The opening prompt's
+own path (`OpeningPrompt`, the pending row) is not used, because it cannot capture a copy. A
+project on another host takes none: Send is refused with the reason, and the picker opens on a note.
+
 ### design_get
 
 `shepherd-design-refs.ts` gives an ordinary thread `design_get(ref, what)`, read only, and

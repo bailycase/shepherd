@@ -7,7 +7,7 @@ import ShepherdRemote
 import ShepherdTestSupport
 
 /// The queue the host holds while pi works (`RPCThreadState+Queue`), against the stub's model of
-/// pi 0.87.1's queues: a "tools:N" run makes N tool calls, each waiting for `finishTool(k)`,
+/// pi 1.0.0's queues: a "tools:N" run makes N tool calls, each waiting for `finishTool(k)`,
 /// takes steering after each batch and follow-ups when it would stop. Queued texts carry
 /// "tools:0" so the run they open is the stub's pi-like one.
 @Suite("Queue and steer", .integrationTimeLimit)

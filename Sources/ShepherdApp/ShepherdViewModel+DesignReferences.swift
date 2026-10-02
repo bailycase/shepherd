@@ -71,7 +71,7 @@ extension ShepherdViewModel {
     /// Implement in a thread…: sends `text` with `references` to `agentID`'s thread now, without
     /// touching its draft; while pi works it waits in the queue. The host keeps each piece's copy
     /// at the version it was pinned at and lets the thread's agent read it.
-    func sendDesignReferences(_ references: [DesignReference], text: String, to agentID: AgentID) async throws {
+    func sendDesignReferences(_ references: [DesignReference], text: String, images: [NativeImage] = [], to agentID: AgentID) async throws {
         guard !references.isEmpty else { return }
         guard references.count <= DesignReferenceRecord.maxPerMessage else {
             throw DesignReferenceFailure("A message carries at most \(DesignReferenceRecord.maxPerMessage) design references.")
@@ -87,8 +87,8 @@ extension ShepherdViewModel {
         // through the host, once its pi serves: one just started for the sheet, one never shown, and
         // one shown and hidden since (the thread the user left for the canvas), whose store keeps
         // what it showed (`ready`) but polls no more and has no host to ask (`isLive`).
-        guard store.isLive, store.ready else {
-            try await sendDirectly(prepared, text: text, to: agentID)
+        guard store.isLive, store.ready, images.isEmpty else {
+            try await sendDirectly(prepared, text: text, images: images, to: agentID)
             return
         }
         guard await store.send(text: text, references: prepared) else {
@@ -102,7 +102,7 @@ extension ShepherdViewModel {
     /// Sends a message carrying `references` to a thread nothing on screen is showing: asks the
     /// host for the thread's session (waiting while its pi starts), then sends at it. While pi
     /// works it waits in the host's queue, as any follow-up does.
-    private func sendDirectly(_ references: [NativeAttachedReference], text: String, to agentID: AgentID) async throws {
+    private func sendDirectly(_ references: [NativeAttachedReference], text: String, images: [NativeImage] = [], to agentID: AgentID) async throws {
         let server = server
         let deadline = ContinuousClock.now + Self.referenceSendWait
         while true {
@@ -111,7 +111,7 @@ extension ShepherdViewModel {
                 let message = NativeAttachedFile.message(text, files: [], references: references.count)
                 let reply = try await server.nativeThread(agentID: agentID, request: .send(
                     expectedSessionID: snapshot.piSessionID, generation: snapshot.generation, operationID: UUID(), text: message,
-                    delivery: .followUp, designReferences: references.map(\.record)))
+                    delivery: .followUp, images: images.isEmpty ? nil : images, designReferences: references.map(\.record)))
                 if case .failure(_, let why) = reply { throw DesignReferenceFailure(why) }
                 return
             case .failure(let code, let why) where code != NativeThreadCode.starting:
@@ -121,6 +121,31 @@ extension ShepherdViewModel {
                     throw DesignReferenceFailure("The thread's pi didn't start in time. Nothing was sent.")
                 }
                 try await Task.sleep(for: .milliseconds(200))
+            }
+        }
+    }
+
+    /// A thread just started from the New thread page with design pieces in its opening message:
+    /// sends it once the thread's pi serves, the way a send in an existing thread does (the pieces
+    /// pinned, their copies kept, the record fenced for pi), with the prompt and the images as its
+    /// words. It goes through the host, never the thread's store, which may not be connected yet.
+    /// A failure says so, and the prompt comes back into the thread's composer, so nothing typed is lost.
+    @discardableResult
+    func deliverOpeningDesignReferences(_ references: [NativeAttachedReference], text: String, images: [NativeImage],
+                                        to agentID: AgentID) -> Task<Void, Never> {
+        Task {
+            do {
+                let pinned = references.map(\.reference)
+                guard pinned.count <= DesignReferenceRecord.maxPerMessage else {
+                    throw DesignReferenceFailure("A message carries at most \(DesignReferenceRecord.maxPerMessage) design references.")
+                }
+                try requireReferenceThread(agentID)
+                try await sendDirectly(references, text: text, images: images, to: agentID)
+            } catch {
+                let reason = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+                remoteActionError = "The thread started, but its design didn't go: \(reason)"
+                let store = threadStores.store(for: agentID)
+                if store.draft.isEmpty, !text.isEmpty { store.draft = text }
             }
         }
     }

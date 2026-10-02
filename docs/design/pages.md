@@ -62,6 +62,20 @@ one. The New agent sheet (⇧⌘T) stays for its directory and base fields.
   start a thread with images.", which would otherwise drop them; nothing is created. Images too
   big for one remote request fail the send the same way ("Images exceed the remote payload
   limit. Send fewer or smaller images.").
+- **Design references** (the user's report, 2026-10-01; no board draws them), while Settings ▸
+  Experiments ▸ Design tool is on: "@" opens a thread's picker (design-tool-references.md › The @
+  picker) under the card, in the page's own menus' place, and a pasted `shepherd-design-ref://`
+  reference becomes a chip. Chips sit first among the attachments (a 20pt Remove, ⌫ with the caret at
+  the start of the words), at most five, each pinned at the revision it was picked at. A design
+  alone is enough to press Send, as in a thread's composer ("Describe the task first." says it
+  needs neither). Send starts the agent as always, named for the words or the first piece
+  (provisional, so pi's namer settles it), and the host sends its opening message once pi serves:
+  the fenced record, the copy kept, the prompt and any images as its words
+  (`ShepherdViewModel.deliverOpeningDesignReferences`, through the host like Implement's new
+  thread, not the thread's store). If that send fails the thread stays, a dialog says why, and the
+  words come back into its composer. They are this Mac's designs and reach this Mac's projects
+  only: for a project on another host the picker says "Design references go to projects on this
+  Mac." and, with a chip attached, Send says the same under the card and in its tooltip.
 - **Workplace chip** (`NWPlaceChipLabel`): a 12pt `textSecondary` folder glyph and the project in
   mono ("shepherd"), a `textTertiary` "·", a display glyph and the host in mono ("This Mac"), and a
   10pt `textTertiary` chevron, as a 26pt chip in 12 `textSecondary`. It picks where the thread runs,
