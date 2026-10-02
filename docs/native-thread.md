@@ -153,7 +153,10 @@ events come out on stdout, one record per LF.
   answers `get_state` first, and a thread served before a long history arrives would show a
   resumed agent as a new, empty one. pi reads stdin only once it has started, so a pi slower
   than the 10 s request deadline answers requests already given up on; when `get_state` times
-  out, the bootstrap asks again.
+  out, the bootstrap asks again, and only the retry's `get_messages` ends the wait (the earlier
+  attempt's timeout declares nothing, or the thread would be served with an empty, clipped
+  history while the retry's is on its way). `clipped` from a failed history fetch clears when
+  the next one lands whole.
 - **Events** update the projection in place. The run pi is streaming is one ordered list of
   live rows (`provisional`), in the order pi produced them:
   - `message_start`, `message_update`, and `message_end` stream the current assistant message
