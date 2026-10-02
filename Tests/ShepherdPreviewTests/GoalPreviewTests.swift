@@ -41,8 +41,8 @@ struct GoalPreviewTests {
     func everyPublishedGoalStateRendersInBothAppearances(_ size: NWGoalSize) async throws {
         let goals = try Self.runtime().goals
         let touch = size == .touch
-        try await Preview.render(touch ? "goal-states-touch" : "goal-states-desktop",
-                                 size: CGSize(width: touch ? 398 : 720, height: touch ? 720 : 650)) {
+        try await Preview.renderMatrix(touch ? "goal-states-touch" : "goal-states-desktop",
+                                       size: CGSize(width: touch ? 398 : 720, height: touch ? 1000 : 850)) {
             VStack(alignment: .leading, spacing: NW.Space.l) {
                 ForEach(goals, id: \.state) { goal in
                     NWGoalCard(state: goal.cardState, time: goal.timeLabel, meta: goal.metaLabel, text: goal.text,
@@ -53,7 +53,7 @@ struct GoalPreviewTests {
                 Spacer(minLength: 0)
             }
             .padding(NW.Space.l)
-            .frame(width: touch ? 398 : 720, height: touch ? 720 : 650, alignment: .top)
+            .frame(width: touch ? 398 : 720, height: touch ? 1000 : 850, alignment: .top)
             .background(Color.nw.bgWindow)
         }
     }
@@ -62,8 +62,8 @@ struct GoalPreviewTests {
     func confirmationCheckerAndUserAttestationGrowTheCard(_ size: NWGoalSize) async throws {
         let runtime = try Self.runtime()
         let touch = size == .touch
-        try await Preview.render(touch ? "goal-confirmation-touch" : "goal-confirmation-desktop",
-                                 size: CGSize(width: touch ? 398 : 720, height: touch ? 500 : 430)) {
+        try await Preview.renderMatrix(touch ? "goal-confirmation-touch" : "goal-confirmation-desktop",
+                                       size: CGSize(width: touch ? 398 : 720, height: touch ? 650 : 550)) {
             VStack(spacing: NW.Space.l) {
                 ForEach([true, false], id: \.self) { enabled in
                     let goal = runtime.confirmationGoal
@@ -79,14 +79,14 @@ struct GoalPreviewTests {
                 Spacer(minLength: 0)
             }
             .padding(NW.Space.l)
-            .frame(width: touch ? 398 : 720, height: touch ? 500 : 430, alignment: .top)
+            .frame(width: touch ? 398 : 720, height: touch ? 650 : 550, alignment: .top)
             .background(Color.nw.bgWindow)
         }
     }
 
     @Test func editedAndLiftedLimitsUseTheExistingInlineEditorFields() async throws {
         let goal = try Self.runtime().editorGoal
-        try await Preview.render("goal-edit-limits", size: CGSize(width: 720, height: 600)) {
+        try await Preview.renderMatrix("goal-edit-limits", size: CGSize(width: 720, height: 720)) {
             VStack(alignment: .leading, spacing: NW.Space.l) {
                 ForEach([true, false], id: \.self) { capped in
                     VStack(alignment: .leading, spacing: NW.Space.s) {
@@ -112,7 +112,7 @@ struct GoalPreviewTests {
                 Spacer(minLength: 0)
             }
             .padding(NW.Space.l)
-            .frame(width: 720, height: 600, alignment: .top)
+            .frame(width: 720, height: 720, alignment: .top)
             .background(Color.nw.bgWindow)
         }
     }
@@ -137,10 +137,10 @@ struct GoalPreviewTests {
                 #expect(shown.evidence?.contains(error) == true, "fixture diagnostics remain under Details")
             }
         }
-        try await Preview.render("goal-thread-records", size: CGSize(width: 720, height: 560)) {
+        try await Preview.renderMatrix("goal-thread-records", size: CGSize(width: 720, height: 720)) {
             AgentTurn(presentation: presentation, live: false, footer: false)
                 .padding(NW.Space.xl)
-                .frame(width: 720, height: 560, alignment: .top)
+                .frame(width: 720, height: 720, alignment: .top)
                 .background(Color.nw.bgWindow)
         }
     }
@@ -192,6 +192,21 @@ struct GoalPreviewTests {
         defer { fixture.store.stop() }
         try await Preview.render("goal-header-\(state.rawValue)", size: CGSize(width: 1000, height: 620), ready: {
             fixture.store.ready && fixture.store.goal?.state == state
+        }) {
+            fixture.thread(title: "Fix the ledger")
+        }
+    }
+
+    @Test func aConversationWithoutAGoalShowsNoGoalChrome() async throws {
+        var snapshot = Threads.question
+        snapshot.goal = nil
+        snapshot.dialogs = []
+        snapshot.running = false
+        snapshot.supportedActions.append("goal")
+        let fixture = ThreadFixture(snapshot)
+        defer { fixture.store.stop() }
+        try await Preview.renderMatrix("goal-empty", size: CGSize(width: 1000, height: 620), ready: {
+            fixture.store.ready && !fixture.store.hasGoal
         }) {
             fixture.thread(title: "Fix the ledger")
         }

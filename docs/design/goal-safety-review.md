@@ -3,7 +3,7 @@
 > Read when changing goal controls, evidence confirmation, model disclosure or limit editing.
 
 PR #189's second user review amends the Goal card, MobileGoal and iPadGoal boards. The supplied
-revision-301 board is saved as [goal-states-r301.png](references/goal-states-r301.png). The user's
+revision-301 board is saved as [GoalStates.png](boards/GoalStates.png). The user's
 review words take precedence over that image where the new controls or disclosures differ.
 
 ## Requested UI behavior
@@ -37,7 +37,9 @@ values. No new dependency, color or animation is needed.
 
 Offscreen accessibility presses exercise actual controls without taking focus or posting input
 against the running app. Preview renders cover both appearances, confirmation, attribution,
-limits, long text and shared docks. Mac AX results do not establish iOS sheet/context-menu
+limits, long text, empty goals and shared docks, including the 1.3 matrix and retained 1.5 stress
+renders. Representative [light/dark review assets](reviews/goal-safety) are separate from the
+saved board. The full local set is `/tmp/shepherd-goal-safety-merged-previews`. Mac AX results do not establish iOS sheet/context-menu
 interaction or connected-iPhone notification delivery. PR #189 remains draft for those checks
 and the retained Departures. [Conversation goals](../goals.md) defines runtime behavior;
 [the card spec](thread.md#goal-card) defines the resulting UI.

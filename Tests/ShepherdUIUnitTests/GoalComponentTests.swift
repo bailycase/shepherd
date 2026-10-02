@@ -66,6 +66,42 @@ struct GoalComponentTests {
         #expect(NWGoalSize.touch.hitTarget == 44)
     }
 
+    @Test(arguments: [(0.0, "0m 0s"), (9, "0m 9s"), (400, "6m 40s"), (3600, "1h 0m"), (3661, "1h 1m")])
+    func localClocksKeepTheNativeGoalTimeFormat(seconds: Double, expected: String) {
+        #expect(NWGoalTime.text(seconds) == expected)
+    }
+
+    @Test func limitFieldsAcceptPositiveFiniteValuesAndBlankRemovesCaps() {
+        for seconds in [0.1, 128.78, 1.2345678901234567, 1800] {
+            #expect(NWGoalLimits(seconds: seconds, tokens: nil).seconds == seconds, "untouched limits remain exactly unchanged")
+        }
+        var limits = NWGoalLimits(seconds: 1800, tokens: 200_000)
+        #expect(limits.seconds == 1800 && limits.tokenLimit == 200_000 && limits.isValid)
+        for invalid in ["0", "-1", "nan", "inf", "1e309", "text"] {
+            limits.minutes = invalid
+            #expect(!limits.isValid)
+        }
+        limits.minutes = "12.5"
+        #expect(limits.seconds == 750 && limits.isValid)
+        for invalid in ["0", "-1", "1.5", "99999999999999999999999", "nan"] {
+            limits.tokens = invalid
+            #expect(!limits.isValid)
+        }
+        limits.tokens = "100000"
+        #expect(limits.tokenLimit == 100_000 && limits.isValid)
+        limits.minutes = " "
+        limits.tokens = ""
+        #expect(limits.isValid && limits.clearsTime && limits.clearsTokens)
+        #expect(limits.seconds == nil && limits.tokenLimit == nil)
+    }
+
+    @MainActor @Test func confirmationAndAttributionAreExplicitOptionalCardInputs() {
+        let card = NWGoalCard(state: .needsYou, time: "6m 40s", meta: "confirm", text: "Tests pass",
+                              confirmationRequired: true, checkedBy: "provider/model", confirmedByUser: false,
+                              pause: {}, resume: {}, edit: {}, clear: {})
+        #expect(card.confirmationRequired && card.checkedBy == "provider/model" && !card.confirmedByUser)
+    }
+
     @MainActor @Test func aGoalDefaultsToAFramedDesktopCardAndCanJoinTheSharedDock() {
         let desktop = NWGoalCard(state: .working, time: "6m", meta: "71k tokens", text: "Tests pass",
                                  pause: {}, resume: {}, edit: {}, clear: {})
