@@ -1,10 +1,10 @@
 # Navigation sidebar checklist
 
 Reference: [NWNavigation.png](NWNavigation.png), revision 420, with its [HTML](NWNavigation.html).
-User clarification: Pinned is first and keeps every pinned thread, regardless of status.
+User clarification: Done is first when nonempty. Pinned follows it and keeps every pinned thread, regardless of status.
 
 - Keep the 44pt top bar, Search and Hide sidebar, fixed destinations, and user footer.
-- Draw nonempty groups in order: Pinned, Needs you, Working, Done, Recents, Designs.
+- Draw nonempty groups in order: Done, Pinned, Needs you, Working, Recents, Designs.
 - Each group has a 9pt outline chevron, down when open and right when closed, with a 6pt gap.
 - Header titles use Geist 11.5 medium; counts immediately follow in Geist Mono 10.5.
 - Needs you uses attention text; the other headers use secondary text and tertiary counts.
