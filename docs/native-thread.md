@@ -581,6 +581,11 @@ draw no context meter.
   preview from pi's session file too). After a compaction pi's list starts at what it kept; the
   host keeps the history it had shown before it, above the compaction, for as long as this pi
   runs (`keepingSummarized`). After a relaunch the thread starts at the latest compaction.
+- **A compaction ends a design comment's card.** A reply is one row until the next user message,
+  but the reply to a design comment (a design agent's chat) is drawn inside the comment's card
+  only up to its first compaction: `NativeThreadStore.endingCommentAnswers` splits the reply
+  there, so the compaction's line and the work after it are an ordinary reply (`.../after-compaction`)
+  with no card (docs/designs.md › Comments). No other reply splits.
 - **Compact now** (`compact`, with optional `instructions`, up to 16 KiB): pi's `compact` with
   `customInstructions`. pi aborts a running turn to compact, so the host takes it only while pi is
   idle and no prompt of its own is on its way (`busy` otherwise, or while a compaction runs). The
