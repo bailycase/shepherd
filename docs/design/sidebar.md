@@ -102,6 +102,9 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
     with the source); a pin change redraws the moved row and both groups' count headers. A status
     report on a pinned thread redraws only its row (`ListPerformanceTests`).
 - **Working**: unpinned running threads and live automation runs, most recently active first.
+  A Working or Checking goal keeps its thread here between pi turns, on this Mac and connected
+  hosts. An open question still puts it in Needs you; pinned threads remain Pinned. Paused,
+  Met and cleared goals follow ordinary turn status.
   A local thread created with an opening message appears here immediately, including while pi
   starts, rather than briefly appearing in Recents. Its dot and accessibility label say running.
   Empty threads still enter Recents. Startup failures retain their existing Needs you or
