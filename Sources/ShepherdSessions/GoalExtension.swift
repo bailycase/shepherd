@@ -382,7 +382,7 @@ public enum GoalExtension {
           pi.on("context", (event) => {
             const messages = event.messages.map((message) => {
               if (message.customType !== "shepherd.goal.check") return message;
-              const strip = (text) => text.replace(/\n?Untrusted checker note[^\r\n]*/g, "");
+              const strip = (text) => text.split(/\n\n(?:Details|Evidence):\n/)[0].replace(/\n?Untrusted checker note[^\r\n]*/g, "");
               return { ...message, content: typeof message.content === "string" ? strip(message.content)
                 : message.content.map((part) => part.type === "text" ? { ...part, text: strip(part.text) } : part) };
             });
