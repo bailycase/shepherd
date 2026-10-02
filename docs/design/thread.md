@@ -50,7 +50,12 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   above its tail with the bottom marker out of view, waits for the layout to be quiet (160ms at
   most, for a thread drawing nothing), and lands on the tail again; when that is not enough it
   walks the scroll view back toward the rows and then down a page at a time until the marker is
-  in view. A reader's scroll, or one that just ended, is never moved, and a thread that is not
+  in view. A repair is not over until the thread has been seen resting on its tail: the follower
+  stands aside while the guard walks, so a thread that grew meanwhile (the "Thinking…" line of a
+  send) came to rest above its tail with the marker back in view from under the composer, and
+  the guard takes it the rest of the way by scrolling to the end of the scroll view itself
+  (`ThreadTailGuardTests`; one steer-now send in sixteen ended 38pt short for good). A reader's
+  scroll, or one that just ended, is never moved, and a thread that is not
   stranded is never touched (`ThreadTailFlowTests`). While a
   gesture is live, layout changes never move the view either: a drag up measures the rows it
   reveals, and landing on the tail then would pull the thread out from under the finger. "↓ Jump to latest"

@@ -26,6 +26,13 @@ import SwiftUI
 /// even one is in view (a viewport, two, four… at a time), then down a page at a time until the
 /// marker is realized, which is where the stack's guesses meet its rows.
 ///
+/// The follower stands aside while this walks the scroll view (`repairing`), so a thread that grew
+/// meanwhile (a "Thinking…" line, a streamed chunk) is not followed, and a thread whose marker is
+/// back in view looks done to SwiftUI while it rests a few points above its tail with the last row
+/// under the composer. A repair is therefore not over until the thread has been seen resting on its
+/// tail: the next check measures the scroll view itself, and a shortfall of up to the composer's
+/// height is closed by scrolling to the end of the document (`unsettled`, `shortfall`).
+///
 /// A workaround for the stack, not a feature: `ThreadTailFlowTests` keeps the case it stands on
 /// (with it switched off) as a known issue, so the test says when SwiftUI no longer needs it.
 @MainActor
@@ -50,6 +57,8 @@ final class ThreadTailGuard {
     var scrollView: () -> NSScrollView? = { nil }
     private var check: Task<Void, Never>?
     private var settling = false
+    /// A repair has begun and the thread has not been seen resting on its tail since.
+    private var unsettled = false
     private var attempts = 0
     private var changed = ContinuousClock.now
     private var readerUntil = ContinuousClock.now
@@ -60,6 +69,8 @@ final class ThreadTailGuard {
     /// how long a step waits for rows to be realized; how many steps a walk takes at most; and how
     /// many times in a row the thread is put back before it is left as it is.
     nonisolated static let band = NativeScrollFollower.threshold
+    /// How far short of its tail a repaired thread may rest: the follower's own tolerance.
+    nonisolated static let slack = NativeScrollFollower.repinSlack
     nonisolated static let quiet: Duration = .milliseconds(80)
     nonisolated static let blankBusy: Duration = .milliseconds(160)
     nonisolated static let busy: Duration = .milliseconds(600)
@@ -94,8 +105,34 @@ final class ThreadTailGuard {
 
     private var tailInView: Bool { visible.contains(bottomID) }
 
-    /// Nothing in view, or the tail missing from it while the thread follows it from afar.
-    private var strayed: Bool { visible.isEmpty || (following && !tailInView && distance > Self.band) }
+    /// Nothing in view, the tail missing from it while the thread follows it from afar, or a thread
+    /// that was just repaired resting short of its end.
+    private var strayed: Bool { visible.isEmpty || (following && !tailInView && distance > Self.band) || shortOfTheTail }
+
+    /// A repaired, following thread whose marker is in view and that rests short of the end of its
+    /// document (`shortfall`).
+    private var shortOfTheTail: Bool {
+        guard unsettled, following, tailInView, let scroll = scrollView() else { return false }
+        return shortfall(of: scroll) != nil
+    }
+
+    /// How far the visible bottom sits above the end of the document, by AppKit: what SwiftUI's
+    /// reading (`distance`) says once the layout has settled.
+    private func endDistance(of scroll: NSScrollView) -> Double? {
+        guard let document = scroll.documentView else { return nil }
+        let clip = scroll.contentView
+        return Double(document.bounds.height - (clip.bounds.origin.y + clip.bounds.height - scroll.contentInsets.bottom))
+    }
+
+    /// How far a view whose marker is in view rests above the end of its document, when that is the
+    /// last row under the composer: more than `slack`, and no more than the composer's inset, which
+    /// is as far above its end as the marker stays in view. Farther than that the marker is out of
+    /// view and the guard's walk is the cure; and past the end of the rows the stack placed the
+    /// document's end is not where the rows end, so it is not a place to scroll to.
+    private func shortfall(of scroll: NSScrollView) -> Double? {
+        guard let gap = endDistance(of: scroll), gap > Self.slack, gap <= Double(scroll.contentInsets.bottom) else { return nil }
+        return gap
+    }
 
     /// A reading that might leave the thread strayed (the geometry changed, rows arrived, the
     /// visible rows changed): look again when things are quiet if it is.
@@ -104,6 +141,7 @@ final class ThreadTailGuard {
         guard enabled, hasRows, active, !settling else { return }
         guard strayed else {
             attempts = 0
+            unsettled = false
             stop()
             return
         }
@@ -128,6 +166,7 @@ final class ThreadTailGuard {
     private func settle() async {
         guard enabled, hasRows, active, !userScrolling, strayed else { return }
         settling = true
+        unsettled = true
         attempts += 1
         defer {
             settling = false
@@ -135,9 +174,25 @@ final class ThreadTailGuard {
         }
         NWRenderProbe.tick("thread.tailRepair")
         if visible.isEmpty { await walk(by: -1, until: { !self.visible.isEmpty }, doubling: true) }
-        guard following, !tailInView else { return }
+        guard following else { return }
+        guard !tailInView else {
+            reachTheEnd()
+            return
+        }
         if attempts > 1 || visible.isEmpty { await walk(by: 1, until: { self.tailInView }, doubling: false) }
         if following, !userScrolling, active { land() }
+    }
+
+    /// Scrolls the rest of the way to the end of the document, from where the marker is already in
+    /// view. `land` would aim at the end the stack believes in, and undo a landing that was exact.
+    private func reachTheEnd() {
+        guard !userScrolling, active, ContinuousClock.now >= readerUntil, let scroll = scrollView(),
+              let gap = shortfall(of: scroll) else { return }
+        let clip = scroll.contentView
+        var bounds = clip.bounds
+        bounds.origin.y += gap
+        clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
+        scroll.reflectScrolledClipView(clip)
     }
 
     /// Scrolls a page at a time (`direction` -1 is toward the top) until `done`, a reader moves, or
