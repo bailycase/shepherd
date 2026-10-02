@@ -83,15 +83,16 @@ extension ShepherdViewModel {
             prepared.append(NativeAttachedReference(reference: pinned, label: pinned.label ?? pinned.string))
         }
         let store = threadStores.store(for: agentID)
-        // A thread on screen sends through its store (its echo shows at once); one that isn't (a
-        // thread picked from the sheet, or one just started for it) through the host, once its pi
-        // serves.
-        guard store.ready, images.isEmpty else {
+        // A thread on screen sends through its store (its echo shows at once). Any other goes
+        // through the host, once its pi serves: one just started for the sheet, one never shown, and
+        // one shown and hidden since (the thread the user left for the canvas), whose store keeps
+        // what it showed (`ready`) but polls no more and has no host to ask (`isLive`).
+        guard store.isLive, store.ready, images.isEmpty else {
             try await sendDirectly(prepared, text: text, images: images, to: agentID)
             return
         }
         guard await store.send(text: text, references: prepared) else {
-            throw DesignReferenceFailure(store.notice ?? "The thread didn't take the message. Check it before sending again.")
+            throw DesignReferenceFailure(store.notice ?? "The thread isn't taking messages right now. Nothing was sent. Try again in a moment.")
         }
     }
 
