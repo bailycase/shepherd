@@ -11,19 +11,16 @@
   "tokens": {
     "pi.prompt": 771,
     "pi.builtin_tools": 696,
-    "shepherd.prompt": 949,
+    "shepherd.prompt": 351,
     "tools.terminal": 590,
-    "tools.agent": 1692,
-    "tools.automation": 904,
-    "tools.review": 245,
+    "tools.automation": 105,
     "tools.children": 1547,
-    "tools.browser": 2178,
     "tools.mcp": 206,
     "tools.mcp_direct": 1326,
     "skills": 441,
     "ctx.append_system": 88,
     "ctx.global_agents": 891
   },
-  "total": 12524,
-  "toolCount": 58
+  "total": 7012,
+  "toolCount": 30
 }
