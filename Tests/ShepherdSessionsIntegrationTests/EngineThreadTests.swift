@@ -135,6 +135,38 @@ struct EngineThreadTests {
         #expect((run.tokensBefore ?? 0) > 0, "pi reports what the context held before: \(run)")
         #expect(compacted.context?.summaryEntryID == summary.entryID, "the context points at the summary: \(String(describing: compacted.context))")
     }
+
+    /// What pi writes to the session file reads back as the thread the app showed: the preview a
+    /// resumed agent draws before its pi serves (`PiSessionPreview`), over a turn, a tool call and
+    /// a reasoning block, and then over a compaction (which, as in pi's own context, leaves what
+    /// follows the cut and the summary), from the file the real pi appended to.
+    @Test func theSessionFilePiWritesReadsBackAsTheThreadTheAppShowed() async throws {
+        let engine = try #require(EngineSmoke.engine)
+        let pi = try await RealPi.launch(engine: engine)
+        defer { pi.stop() }
+        var latest = try await pi.ready()
+        for text in ["hello", "tool please", "think about it"] {
+            _ = try await pi.send(text, from: latest)
+            latest = try await pi.settled("the reply to \(text)") { s in
+                s.messages.contains { $0.blocks.first?.text == text } && s.messages.last?.role == "assistant"
+            }
+        }
+        func summary(_ messages: [NativeThreadMessage]) -> [String] {
+            messages.map { "\($0.role):\($0.toolName ?? ""):\($0.blocks.map(\.text).joined(separator: "|"))" }
+        }
+        let before = try #require(PiSessionPreview.snapshot(file: pi.sessionFile, sessionID: pi.sessionID), "the file reads")
+        #expect(summary(before.messages) == summary(latest.messages), "the preview and the live thread agree row by row")
+        #expect(before.messages.contains { $0.toolName == "bash" && $0.blocks.first?.text == "hi\n" })
+        #expect(before.model == "fixture/fixture", "the model pi recorded: \(String(describing: before.model))")
+
+        _ = try await pi.request(.compact(expectedSessionID: latest.piSessionID, generation: latest.generation, operationID: UUID()))
+        _ = try await pi.snapshot("the compaction") { s in !s.running && s.messages.contains { $0.role == "compactionSummary" } }
+        let after = try #require(PiSessionPreview.snapshot(file: pi.sessionFile, sessionID: pi.sessionID))
+        let row = try #require(after.messages.last { $0.role == "compactionSummary" }, "\(summary(after.messages))")
+        #expect(row.compaction?.summary?.contains("the conversation so far") == true, "\(String(describing: row.compaction))")
+        #expect(after.messages.last?.role == "compactionSummary" && after.messages.contains { $0.blocks.contains { $0.text == "thought about it" } },
+                "the kept reply and the summary: \(summary(after.messages))")
+    }
 }
 
 /// A real pi, started the way the app starts an agent's (`PiLaunch.agent`, through the launcher in
@@ -142,12 +174,17 @@ struct EngineThreadTests {
 final class RealPi: @unchecked Sendable {
     let host: ScratchServer
     let agent: PiAgent
+    /// The session file the app seeds and pi appends to, and the id pi resumes it by.
+    let sessionFile: URL
+    let sessionID: String
     private let provider: Process
     private let providerInput: Pipe
 
-    private init(host: ScratchServer, agent: PiAgent, provider: Process, providerInput: Pipe) {
+    private init(host: ScratchServer, agent: PiAgent, sessionFile: URL, sessionID: String, provider: Process, providerInput: Pipe) {
         self.host = host
         self.agent = agent
+        self.sessionFile = sessionFile
+        self.sessionID = sessionID
         self.provider = provider
         self.providerInput = providerInput
     }
@@ -213,8 +250,8 @@ final class RealPi: @unchecked Sendable {
             try files.createDirectory(at: folder, withIntermediateDirectories: true)
             let header: [String: Any] = ["type": "session", "version": 3, "id": sessionID, "timestamp": "2026-10-01T00:00:00.000Z",
                                          "cwd": PiHome.canonical(project.path)]
-            try (JSONSerialization.data(withJSONObject: header, options: [.sortedKeys]) + Data("\n".utf8))
-                .write(to: folder.appendingPathComponent("2026-10-01T00-00-00-000Z_\(sessionID).jsonl"))
+            let sessionFile = folder.appendingPathComponent("2026-10-01T00-00-00-000Z_\(sessionID).jsonl")
+            try (JSONSerialization.data(withJSONObject: header, options: [.sortedKeys]) + Data("\n".utf8)).write(to: sessionFile)
             let line = try PiLaunch.agent(home: home, cwd: project.path, sessionID: sessionID, model: "fixture/fixture", thinking: nil,
                                           extensions: [fixture.path])
             let session = try await host.server.createSession(params: CreateSessionParams(
@@ -227,7 +264,7 @@ final class RealPi: @unchecked Sendable {
             let agent = Agent(name: "rpc", spaceID: space.id, tabID: tab.id, paneID: pane.id)
             try await host.server.addAgent(agent, withTab: tab)
             return RealPi(host: host, agent: PiAgent(host: host, agent: agent, sessionID: session.id, log: host.dir.appendingPathComponent("unused.log")),
-                          provider: provider, providerInput: input)
+                          sessionFile: sessionFile, sessionID: sessionID, provider: provider, providerInput: input)
         } catch {
             host.stop()
             throw error
