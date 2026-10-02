@@ -45,9 +45,11 @@ What exists today is data, not UI:
 - `Extensions/shepherd-missions.ts` keeps mission records for native subagents and workflows
   (`shepherd_mission`; [docs/native-subagents.md](../native-subagents.md) › Missions): a title,
   objective, status, runs and attachments per project. Nothing draws them, and none of the map's
-  ideas (lanes, stations, the contract, the train) map onto them.
-- pi's `/missions` command (native subagents) prints those records as text, and Settings ▸ Pi's
-  Native subagents subtitle mentions "durable missions". Nothing else in the app says mission.
+  ideas (lanes, stations, the contract, the train) map onto them. They are off: the model is given
+  no mission tool or parameter, and no record is written for a run, unless `SHEPHERD_MISSIONS=1`
+  (docs/context-budget.md).
+- pi's `/missions` command (native subagents) prints those records as text, and nothing else in
+  the app says mission.
 - Parts a mission reuses are built: a station's transcript and steer field are the subagent
   inspector's (Side pane), its worktree is `GitWorktree`'s, a merge builds on Finalize
   ([docs/worktrees.md](../worktrees.md)), and the review gate is drawn with the review pane's

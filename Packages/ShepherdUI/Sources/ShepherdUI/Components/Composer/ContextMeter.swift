@@ -24,6 +24,8 @@ public enum NWContextMetrics {
     public static let barDash: CGFloat = 4
     public static let barDashGap: CGFloat = 3
     public static let rowHeight: CGFloat = 26
+    /// A line under a part, naming what it is made of.
+    public static let childRowHeight: CGFloat = 18
     public static let swatch: CGFloat = 8
     public static let largestHeaderHeight: CGFloat = 22
     public static let largestInset: CGFloat = 6
@@ -171,7 +173,7 @@ public struct NWContextDetailsModel: Equatable, Sendable {
         case compacted
     }
 
-    public enum Part: Equatable, Sendable { case system, instructions, messages, toolResults }
+    public enum Part: Equatable, Sendable { case system, instructions, messages, toolResults, toolCalls, reasoning, images, other }
 
     public struct Segment: Equatable, Sendable {
         public var part: Part?
@@ -183,8 +185,19 @@ public struct NWContextDetailsModel: Equatable, Sendable {
         public var part: Part
         public var label: String
         public var value: String
+        /// What the part is made of, quietly under it.
+        public var children: [Child]
         public var id: String { label }
-        public init(part: Part, label: String, value: String) { self.part = part; self.label = label; self.value = value }
+        public init(part: Part, label: String, value: String, children: [Child] = []) {
+            self.part = part; self.label = label; self.value = value; self.children = children
+        }
+    }
+
+    public struct Child: Equatable, Sendable, Identifiable {
+        public var label: String
+        public var value: String
+        public var id: String { label }
+        public init(label: String, value: String) { self.label = label; self.value = value }
     }
 
     public enum ItemKind: Equatable, Sendable { case file, command, tool }
@@ -433,6 +446,19 @@ public struct NWContextDetails: View {
                 }
                 .frame(minHeight: NWContextMetrics.rowHeight)
                 .padding(.horizontal, NWContextMetrics.side)
+                // What the part is made of, in the part's own column and quietly: nothing here is pressed.
+                ForEach(row.children) { child in
+                    HStack(spacing: NW.Space.m) {
+                        Text(child.label).font(.nw(.micro, weight: .regular)).foregroundStyle(nw.textTertiary).lineLimit(1).truncationMode(.middle)
+                        Spacer(minLength: NW.Space.m)
+                        Text(child.value).font(.nw(.micro, weight: .regular)).foregroundStyle(nw.textTertiary)
+                    }
+                    .frame(minHeight: NWContextMetrics.childRowHeight)
+                    .padding(.leading, NWContextMetrics.side + NWContextMetrics.swatch + 9)
+                    .padding(.trailing, NWContextMetrics.side)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("\(child.label), \(child.value) tokens")
+                }
             }
             if let free = model.free {
                 HStack(spacing: 9) {
@@ -590,6 +616,10 @@ public struct NWContextDetails: View {
         case .instructions?: nw.contextInstructions
         case .messages?: nw.contextMessages
         case .toolResults?: nw.contextToolResults
+        case .toolCalls?: nw.contextToolCalls
+        case .reasoning?: nw.contextReasoning
+        case .images?: nw.contextImages
+        case .other?: nw.contextOther
         case nil: nw.textTertiary
         }
     }

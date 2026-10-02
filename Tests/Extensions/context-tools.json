@@ -1,0 +1,272 @@
+{
+  "about": "Every tool Shepherd registers, where, and the verdict (docs/context-budget.md). keep: sent in every request of the context; defer: still sent today, to move behind pi 1.0's tool_search in Phase B; drop: not registered there any more, with why. Tests/Extensions/context-budget.test.mjs launches each context on a real pi and fails when a tool it registers has no row, or a dropped one is back. The groups are what the Context card's system-prompt breakdown calls them (ContextToolGroups).",
+  "contexts": [
+    "thread",
+    "automation",
+    "design",
+    "child"
+  ],
+  "groups": {
+    "pi": "pi tools",
+    "terminal": "terminal tools",
+    "agent": "agent tools",
+    "automation": "automation tools",
+    "review": "review tool",
+    "subagents": "subagent tools",
+    "browser": "browser tools",
+    "mcp": "MCP",
+    "design": "design tools",
+    "instructions": "instruction suggestions",
+    "other": "other tools"
+  },
+  "families": [
+    {
+      "tools": [
+        "read",
+        "bash",
+        "edit",
+        "write"
+      ],
+      "group": "pi",
+      "extension": "pi",
+      "verdicts": {
+        "thread": "keep",
+        "automation": "keep",
+        "design": "keep",
+        "child": "keep"
+      },
+      "reason": "pi's own: what an agent does with a repository."
+    },
+    {
+      "tools": [
+        "terminal_list",
+        "terminal_open",
+        "terminal_run",
+        "terminal_read",
+        "terminal_focus",
+        "terminal_close"
+      ],
+      "group": "terminal",
+      "extension": "shepherd-panes.ts",
+      "verdicts": {
+        "thread": "keep",
+        "automation": "keep"
+      },
+      "reason": "The thread's terminal tabs (command-J) are how an agent runs a dev server or a watcher; six small tools, 590 tokens together."
+    },
+    {
+      "tools": [
+        "agent_list",
+        "agent_read",
+        "agent_steer",
+        "agent_interrupt",
+        "agent_wait",
+        "agent_delete",
+        "agent_spawn"
+      ],
+      "group": "agent",
+      "extension": "shepherd-panes.ts",
+      "verdicts": {
+        "thread": "defer"
+      },
+      "reason": "Reaching other threads is something the user asks for, and each description now says so first (agent-to-agent messages); 1.4k tokens in every thread for a rare use. Defer behind tool_search in Phase B."
+    },
+    {
+      "tools": [
+        "agent_send"
+      ],
+      "group": "agent",
+      "extension": "shepherd-panes.ts",
+      "verdicts": {
+        "thread": "defer",
+        "automation": "keep"
+      },
+      "reason": "Messaging another thread is the user's call in a thread (defer in Phase B). An automation's run reports completion to the thread that made it with it, the only agent tool a run gets."
+    },
+    {
+      "tools": [
+        "automation_create",
+        "automation_list",
+        "automation_update",
+        "automation_delete",
+        "automation_start",
+        "automation_stop"
+      ],
+      "group": "automation",
+      "extension": "shepherd-panes.ts",
+      "verdicts": {
+        "thread": "defer"
+      },
+      "reason": "Managing automations is rare; 0.8k tokens. A run's own agent never gets them (an automation cannot start automations). Defer in Phase B."
+    },
+    {
+      "tools": [
+        "notify"
+      ],
+      "group": "automation",
+      "extension": "shepherd-panes.ts",
+      "verdicts": {
+        "thread": "keep",
+        "automation": "keep"
+      },
+      "reason": "One small tool an unattended run needs to say it finished."
+    },
+    {
+      "tools": [
+        "review_diff"
+      ],
+      "group": "review",
+      "extension": "shepherd-review.ts",
+      "verdicts": {
+        "thread": "defer",
+        "automation": "defer",
+        "design": "drop"
+      },
+      "reason": "Readies the side pane's Changes tab. A design's screen has no Changes tab and its folder is no repository, so a design's agent no longer gets it (dropped now). Defer for threads in Phase B."
+    },
+    {
+      "tools": [
+        "shepherd_child_agents",
+        "shepherd_child_start",
+        "shepherd_child_message",
+        "shepherd_child_result",
+        "shepherd_child_wait",
+        "shepherd_child_cancel",
+        "shepherd_child_resume"
+      ],
+      "group": "subagents",
+      "extension": "shepherd-children.ts",
+      "verdicts": {
+        "thread": "defer",
+        "automation": "defer",
+        "design": "defer"
+      },
+      "reason": "Delegating to a helper is a choice the model makes now and then; 1.6k tokens. Defer behind tool_search in Phase B (a design's agent relays its tools through them)."
+    },
+    {
+      "tools": [
+        "shepherd_workflow"
+      ],
+      "group": "subagents",
+      "extension": "shepherd-children.ts",
+      "verdicts": {
+        "thread": "defer",
+        "automation": "defer",
+        "design": "defer"
+      },
+      "reason": "A scripted run of helpers: one of the heaviest single descriptions (about 390 tokens) for the rarest use. Defer in Phase B."
+    },
+    {
+      "tools": [
+        "shepherd_mission"
+      ],
+      "group": "subagents",
+      "extension": "shepherd-children.ts",
+      "verdicts": {
+        "thread": "drop",
+        "automation": "drop",
+        "design": "drop"
+      },
+      "reason": "Missions are deferred and no screen shows them, so the model gets no mission tool or parameter and no record is written for a run (dropped now; SHEPHERD_MISSIONS=1 brings it back)."
+    },
+    {
+      "tools": [
+        "browser_open",
+        "browser_read",
+        "browser_click",
+        "browser_type",
+        "browser_press",
+        "browser_scroll",
+        "browser_wait",
+        "browser_screenshot",
+        "browser_console",
+        "browser_eval",
+        "browser_back",
+        "browser_forward",
+        "browser_reload"
+      ],
+      "group": "browser",
+      "extension": "shepherd-browser.ts",
+      "verdicts": {
+        "thread": "defer",
+        "automation": "defer"
+      },
+      "reason": "The thread's own Browser page: 13 tools and 5 prompt rules, 2.2k tokens in every thread, and most threads never open a page. Registered where it works (a design's agent has no Browser); the first Phase B candidate."
+    },
+    {
+      "tools": [
+        "mcp"
+      ],
+      "group": "mcp",
+      "extension": "shepherd-mcp.ts",
+      "verdicts": {
+        "thread": "keep",
+        "automation": "keep",
+        "design": "keep"
+      },
+      "reason": "One proxy tool (about 180 tokens) for every server set to the default exposure; present only while a server is configured."
+    },
+    {
+      "tools": [
+        "design_get",
+        "design_note"
+      ],
+      "group": "design",
+      "extension": "shepherd-design-refs.ts",
+      "verdicts": {
+        "thread": "keep"
+      },
+      "reason": "Registered only once the thread holds a design reference."
+    },
+    {
+      "tools": [
+        "suggest_instruction"
+      ],
+      "group": "instructions",
+      "extension": "shepherd-instructions.ts",
+      "verdicts": {
+        "thread": "keep",
+        "automation": "keep"
+      },
+      "reason": "Registered only while Settings > Experiments > Suggested instructions is on for the kind of agent."
+    },
+    {
+      "tools": [
+        "design_read",
+        "board_write",
+        "board_edit",
+        "boards_edit",
+        "board_search",
+        "board_render",
+        "board_extract",
+        "canvas_update",
+        "design_check",
+        "comment_list",
+        "comment_reply",
+        "system_read",
+        "system_write",
+        "checkpoint_create",
+        "checkpoint_list",
+        "checkpoint_restore",
+        "markup_propose"
+      ],
+      "group": "design",
+      "extension": "shepherd-design.ts",
+      "verdicts": {
+        "design": "keep"
+      },
+      "reason": "What a design's agent draws and edits with; no other agent gets them."
+    },
+    {
+      "tools": [
+        "shepherd_parent_message"
+      ],
+      "group": "subagents",
+      "extension": "shepherd-children.ts",
+      "verdicts": {
+        "child": "keep"
+      },
+      "reason": "A native subagent's only way to ask its parent; registered in a child's own pi."
+    }
+  ]
+}

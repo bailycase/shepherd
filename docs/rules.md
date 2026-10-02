@@ -14,9 +14,9 @@ the same change.
 - A new `SessionServer` mutation needs an integration test.
 - New persisted fields decode with defaults, so older `state.json` files keep loading.
 
-**Embedded extensions have one canonical copy.** The twenty-one files in `Extensions/` are canonical,
+**Embedded extensions have one canonical copy.** The twenty-two files in `Extensions/` are canonical,
 and so is the design skill in `Extensions/design-skill/`.
-pi loads the copies that the twelve `Sources/ShepherdApp/*Extension.swift` files write to the
+pi loads the copies that the thirteen `Sources/ShepherdApp/*Extension.swift` files write to the
 support directory from embedded string literals. `installedPath()` rewrites an installed copy
 whenever its content differs, so drift ships bugs. `ChildrenExtension.swift` carries children,
 children-config, children-ui, workflow, and missions, and installs `InspectExtension`'s
@@ -45,7 +45,7 @@ which the host keeps current and pi reads on every provider request (docs/servic
 support table is `ServiceTierSupport`'s, and the two are tested against one JSON table.
 
 - Edit a `.ts`/`.mjs` file (or a design skill file) and its literal in the same change, with
-  `scripts/sync-embedded-extension.py`. A unit test enforces byte identity for all twenty-one pairs
+  `scripts/sync-embedded-extension.py`. A unit test enforces byte identity for all twenty-two pairs
   and the skill's two files.
 - Extensions stay dependency-free and inert without their environment variables.
 - They must never throw into pi or keep the process alive (unref'd sockets and timers).
