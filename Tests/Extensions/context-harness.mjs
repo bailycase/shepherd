@@ -22,13 +22,14 @@ const fixtures = path.join(here, "fixtures", "context-budget");
 const extension = (name) => path.join(root, "Extensions", name);
 
 // The agent's extensions in the order the app loads them (PiLaunch.agent, after the launcher's own
-// shepherd-cliproxyapi.ts), each with the settings switch that turns it off.
+// shepherd-cliproxyapi.ts), each with the settings switch that turns it off. "mcp" is no file: an agent's launch
+// passes `-e builtin:mcp -e builtin:tool-search` (docs/mcp.md), which switches pi's own MCP on.
 export const THREAD_EXTENSIONS = [
   ["cliproxyapi", "shepherd-cliproxyapi.ts"], ["status", "shepherd-status.ts"], ["service-tier", "shepherd-service-tier.ts"],
   ["instructions", "shepherd-instructions.ts"], ["panes", "shepherd-panes.ts"], ["review", "shepherd-review.ts"],
   ["subagents", "shepherd-subagents.ts"], ["children", "shepherd-children.ts"], ["goal", "shepherd-goal.ts"], ["namer", "shepherd-namer.ts"],
-  ["design", "shepherd-design.ts"], ["design-refs", "shepherd-design-refs.ts"], ["mcp", "shepherd-mcp.ts"],
-  ["browser", "shepherd-browser.ts"], ["context", "shepherd-context.ts"],
+  ["design", "shepherd-design.ts"], ["design-refs", "shepherd-design-refs.ts"],
+  ["browser", "shepherd-browser.ts"], ["mcp", null], ["context", "shepherd-context.ts"],
 ];
 
 // Skills as a user's pi home might hold: a name and a one-sentence description each.
@@ -41,7 +42,7 @@ const SKILLS = [
   ["modernize-tests", "Modernize test suites to use modern Swift Testing features or migrate from XCTest."],
 ];
 
-// A GitHub-shaped MCP server's tools, the way a server describes them: what "Each tool on its own" puts in the prompt.
+// A GitHub-shaped MCP server's tools, the way a server describes them: what a server on Direct puts in the prompt.
 const MCP_TOOLS = [
   ["create_issue", "Create a new issue in a GitHub repository", { owner: "Repository owner", repo: "Repository name", title: "Issue title", body: "Issue body", labels: "Labels to apply", assignees: "Usernames to assign" }],
   ["get_issue", "Get the contents of an issue within a repository", { owner: "Repository owner", repo: "Repository name", issue_number: "Issue number" }],
@@ -55,23 +56,23 @@ const MCP_TOOLS = [
   ["push_files", "Push multiple files to a GitHub repository in a single commit", { owner: "Repository owner", repo: "Repository name", branch: "Branch to push to", files: "Array of files to push", message: "Commit message" }],
 ];
 
-function mcpFixture(dir) {
-  const stdio = (name) => ({ command: "node", args: [path.join(dir, `${name}.mjs`)] });
-  const entries = {
-    docs: { ...stdio("docs") },
-    notes: { ...stdio("notes") },
-    github: { ...stdio("github"), shepherd: { exposure: "direct" } },
-  };
-  const bare = (entry) => { const { shepherd: _shepherd, ...rest } = entry; return rest; };
-  const tools = MCP_TOOLS.map(([name, description, props]) => ({
+// Three stdio stand-ins (fixtures/fake-mcp-stdio.mjs) in the file the app derives into the pi home (`<home>/mcp.json`, pi's
+// format): two on Search (pi's `deferred`) and one on Direct serving the tools above, so the budget measures pi's own
+// `tool_search`, its `<mcp_servers>` section and the tools of a Direct server on a real pi.
+export const MCP_SERVERS = ["docs", "notes", "github"];
+function mcpFixture(dir, home) {
+  const stdio = path.join(here, "fixtures", "fake-mcp-stdio.mjs");
+  const catalog = path.join(dir, "github-tools.json");
+  fs.writeFileSync(catalog, JSON.stringify(MCP_TOOLS.map(([name, description, props]) => ({
     name, description,
     inputSchema: { type: "object", properties: Object.fromEntries(Object.entries(props).map(([key, text]) => [key, { type: "string", description: text }])), required: Object.keys(props).slice(0, 2) },
-  }));
-  const config = path.join(dir, "mcp.json");
-  fs.writeFileSync(config, JSON.stringify({ mcpServers: entries }));
-  const cache = path.join(dir, "tools.json");
-  fs.writeFileSync(cache, JSON.stringify({ github: { entry: bare(entries.github), tools } }));
-  return { config, cache };
+  }))));
+  const server = (extra) => ({ command: process.execPath, args: [stdio], ...extra });
+  fs.writeFileSync(path.join(home, "mcp.json"), JSON.stringify({ mcpServers: {
+    docs: server({ exposure: "deferred" }),
+    notes: server({ exposure: "deferred" }),
+    github: server({ exposure: "direct", env: { FAKE_MCP_CATALOG_FILE: catalog } }),
+  } }));
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -155,7 +156,10 @@ export async function startThread(options = {}) {
   for (const [name, file] of THREAD_EXTENSIONS) {
     if (!wants(name)) continue;
     if (name === "design-refs" && !options.designRefs) continue;
-    if (name === "mcp" && options.mcp === false) continue;
+    if (name === "mcp") {
+      if (options.mcp !== false) args.push("-e", "builtin:mcp", "-e", "builtin:tool-search");
+      continue;
+    }
     if (name === "context" && options.trim === false) continue;
     if (!fs.existsSync(extension(file))) continue;
     args.push("-e", extension(file));
@@ -176,10 +180,7 @@ export async function startThread(options = {}) {
     const tier = path.join(dir, "tier.json");
     fs.writeFileSync(tier, JSON.stringify({ tier: "standard" }));
     env.SHEPHERD_EXT_SERVICE_TIER = tier;
-    if (options.mcp !== false) {
-      const mcp = mcpFixture(support);
-      Object.assign(env, { SHEPHERD_EXT_MCP: extension("shepherd-mcp.ts"), SHEPHERD_EXT_MCP_CLIENT: extension("shepherd-mcp-client.mjs"), SHEPHERD_EXT_MCP_CONFIG: mcp.config, SHEPHERD_EXT_MCP_CACHE: mcp.cache });
-    }
+    if (wants("mcp") && options.mcp !== false) mcpFixture(support, config);
     // trim: false is the switch off (the app passes no -e and no variable); "inert" loads the file without its variable.
     if (wants("context") && options.trim !== false && options.trim !== "inert") env.SHEPHERD_EXT_CONTEXT = extension("shepherd-context.ts");
   }
@@ -216,6 +217,20 @@ export async function startThread(options = {}) {
       await until("the turn to settle", () => thread.settled() === before + 1, timeout);
     },
     async messages() { return (await thread.request({ type: "get_messages" })).data.messages; },
+    // pi connects its MCP servers in the background after it starts, and a first request waits only for a server on
+    // Direct: the prompt lists a server on Search once it is connected, so a measurement waits for all of them (`/mcp`
+    // is answered by pi itself and reaches no model).
+    async waitForMcpServers(timeout = 30000) {
+      const end = Date.now() + timeout;
+      for (;;) {
+        const mark = events.length;
+        await thread.request({ type: "prompt", message: "/mcp" });
+        await sleep(40);
+        const notice = events.slice(mark).filter((e) => e.type === "extension_ui_request" && e.method === "notify").map((e) => e.message).join("\n");
+        if (MCP_SERVERS.every((name) => new RegExp(`^${name}: connected`, "m").test(notice))) return;
+        if (Date.now() > end) throw Error(`the MCP servers never connected: ${notice}`);
+      }
+    },
     // The requests the thread's own model calls made, not the namer's side request.
     mainRequests() { return fake.requests.filter((r) => (r.body?.tools ?? r.body?.messages) && !isNamer(r)); },
     tools() { try { return JSON.parse(fs.readFileSync(probeOut, "utf8")); } catch { return { all: [], active: [] }; } },
@@ -233,6 +248,7 @@ export async function startThread(options = {}) {
       fs.rmSync(dir, { recursive: true, force: true });
     },
   };
+  if (wants("mcp") && options.mcp !== false && names.length > 0) await thread.waitForMcpServers();
   return thread;
 }
 

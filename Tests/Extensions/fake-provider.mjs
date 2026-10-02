@@ -14,15 +14,22 @@ import { pathToFileURL } from "node:url";
 
 const sse = (events) => events.map(([name, data]) => `${name ? `event: ${name}\n` : ""}data: ${typeof data === "string" ? data : JSON.stringify(data)}\n\n`).join("");
 
-// `call` makes the reply a bash tool call instead of text. `used` is { input, output } in tokens: a million each
-// way by default, so a test reads the price pi worked out from the model's rates. `serial` makes the ids unique
-// to this reply (call_N, fc_N, rs_N, msg_N; without it every reply uses call_1, fc_1 and msg_1), and `reasoning`
-// puts a reasoning item with that many characters of encrypted content ahead of the reply, as a reasoning model's.
+// `call` makes the reply a bash tool call instead of text; `tool` ({ name, arguments }) makes it a call to any tool.
+function toolCall({ call, tool }) {
+  if (tool) return { name: tool.name, arguments: JSON.stringify(tool.arguments ?? {}) };
+  return call ? { name: "bash", arguments: JSON.stringify({ command: call }) } : undefined;
+}
+
+// `used` is { input, output } in tokens: a million each way by default, so a test reads the price pi worked out from
+// the model's rates. `serial` makes the ids unique to this reply (call_N, fc_N, rs_N, msg_N; without it every reply
+// uses call_1, fc_1 and msg_1), and `reasoning` puts a reasoning item with that many characters of encrypted content
+// ahead of the reply, as a reasoning model's.
 const MILLION = { input: 1_000_000, output: 1_000_000 };
-function responses(model, tier, call, used = MILLION, serial, reasoning = 0) {
+function responses(model, tier, decision, used = MILLION, serial, reasoning = 0) {
   const n = serial ?? 1;
   const message = { type: "message", id: `msg_${n}`, status: "completed", role: "assistant", content: [{ type: "output_text", text: "ok", annotations: [] }] };
-  const fn = call && { type: "function_call", id: `fc_${n}`, call_id: `call_${n}`, name: "bash", arguments: JSON.stringify({ command: call }), status: "completed" };
+  const wanted = toolCall(decision);
+  const fn = wanted && { type: "function_call", id: `fc_${n}`, call_id: `call_${n}`, name: wanted.name, arguments: wanted.arguments, status: "completed" };
   const thought = reasoning > 0 && { type: "reasoning", id: `rs_${n}`, summary: [], encrypted_content: "e".repeat(reasoning) };
   const item = fn ?? message;
   const outputs = thought ? [thought, item] : [item];
@@ -48,12 +55,13 @@ function responses(model, tier, call, used = MILLION, serial, reasoning = 0) {
   return sse(events);
 }
 
-function completions(model, tier, call, used = MILLION) {
+function completions(model, tier, decision, used = MILLION) {
   const chunk = (delta, finish, extra = {}) => ({ id: "c1", object: "chat.completion.chunk", created: 1, model, ...(tier ? { service_tier: tier } : {}),
     choices: [{ index: 0, delta, finish_reason: finish ?? null }], ...extra });
   const usage = { prompt_tokens: used.input, completion_tokens: used.output, total_tokens: used.input + used.output };
-  if (call) {
-    return sse([[null, chunk({ tool_calls: [{ index: 0, id: "call_1", type: "function", function: { name: "bash", arguments: JSON.stringify({ command: call }) } }] })],
+  const wanted = toolCall(decision);
+  if (wanted) {
+    return sse([[null, chunk({ tool_calls: [{ index: 0, id: "call_1", type: "function", function: { name: wanted.name, arguments: wanted.arguments } }] })],
       [null, chunk({}, "tool_calls", { usage })], [null, "[DONE]"]]);
   }
   return sse([[null, chunk({ content: "ok" })], [null, chunk({}, "stop", { usage })], [null, "[DONE]"]]);
@@ -71,9 +79,10 @@ function anthropic(model) {
 }
 
 // `onRequest({ index, path, body })` runs before the reply and may return { call: "shell command" } to make it a
-// tool call, or { status, text } to fail the request; `reasoning: N` adds a reasoning item of N characters to a Responses
-// reply. `usage(entry)` says how many tokens the reply reports ({ input, output }); without it a million each way.
-// `uniqueIds` gives every Responses reply ids of its own (see `responses`).
+// bash tool call, { tool: { name, arguments } } to make it a call to any tool, or { status, text } to fail the
+// request; `reasoning: N` adds a reasoning item of N characters to a Responses reply. `usage(entry)` says how many
+// tokens the reply reports ({ input, output }); without it a million each way. `uniqueIds` gives every Responses
+// reply ids of its own (see `responses`).
 export async function startProvider({ onRequest, usage, uniqueIds = false } = {}) {
   const requests = [];
   const server = http.createServer(async (req, res) => {
@@ -95,9 +104,9 @@ export async function startProvider({ onRequest, usage, uniqueIds = false } = {}
     const path = String(req.url).split("?")[0];
     const tier = body?.service_tier;
     const used = usage?.(entry);
-    if (path.endsWith("/chat/completions")) res.end(completions(body?.model, tier, decision.call, used));
+    if (path.endsWith("/chat/completions")) res.end(completions(body?.model, tier, decision, used));
     else if (path.endsWith("/messages")) res.end(anthropic(body?.model));
-    else res.end(responses(body?.model, tier, decision.call, used, uniqueIds ? entry.index + 1 : undefined, decision.reasoning));
+    else res.end(responses(body?.model, tier, decision, used, uniqueIds ? entry.index + 1 : undefined, decision.reasoning));
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   return {

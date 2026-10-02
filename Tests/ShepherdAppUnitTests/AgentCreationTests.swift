@@ -378,29 +378,30 @@ struct AgentLaunchCommandTests {
         #expect(command(enabled: [0, 1, 2, 3, 4]).env["SHEPHERD_DESIGN_REFS"] == nil)
     }
 
-    /// Settings ▸ Pi ▸ MCP servers: the extension loads with the config, cache and client it reads,
-    /// and a repo's .mcp.json only when Settings ▸ MCP servers allows it; off, none of it.
+    /// Settings ▸ Pi ▸ MCP servers: pi's own MCP and tool search are switched on by name, the
+    /// secrets travel in the environment, and the repo's .mcp.json extension follows its setting;
+    /// an agent launched without MCP has none of it.
     @Test(arguments: [false, true])
-    func mcpServersBringTheirExtensionAndPaths(useRepoConfig: Bool) {
+    func mcpServersBringPisBuiltInsTheirSecretsAndTheRepoExtension(useRepoConfig: Bool) {
         let launch = try! StatusExtension.command(
             home: Self.home, cwd: "/tmp/project",
             agentID: AgentID(rawValue: "agent-id"), piSessionID: "current-session",
             socketPath: "/tmp/shepherd.sock", extensionPath: "/tmp/status.ts",
             panesExtensionPath: "/tmp/panes.ts", reviewExtensionPath: nil, subagentsExtensionPath: nil,
-            mcp: MCPLaunch(extensionPath: "/tmp/shepherd-mcp.ts", clientPath: "/tmp/shepherd-mcp-client.mjs",
-                           configPath: "/Users/me/.config/mcp/mcp.json", cachePath: "/tmp/support/mcp/tools.json",
-                           useRepoConfig: useRepoConfig),
+            mcp: MCPLaunch(extensions: MCPLaunch.builtIns + (useRepoConfig ? ["/tmp/shepherd-mcp-project.ts"] : []),
+                           environment: ["SHEPHERD_MCP_SECRET_GH_TOKEN": "t", "SHEPHERD_MCP_SECRETS": "SHEPHERD_MCP_SECRET_GH_TOKEN"]
+                               .merging(useRepoConfig ? ["SHEPHERD_EXT_MCP_PROJECT": "1"] : [:]) { $1 }),
             model: nil, thinking: nil
         )
-        #expect(launch.argv[3].hasSuffix(" -e '/tmp/panes.ts' -e '/tmp/support/pi/shepherd-goal.ts' -e '/tmp/shepherd-mcp.ts'"))
-        #expect(launch.env["SHEPHERD_EXT_MCP"] == "/tmp/shepherd-mcp.ts")
-        #expect(launch.env["SHEPHERD_EXT_MCP_CLIENT"] == "/tmp/shepherd-mcp-client.mjs")
-        #expect(launch.env["SHEPHERD_EXT_MCP_CONFIG"] == "/Users/me/.config/mcp/mcp.json")
-        #expect(launch.env["SHEPHERD_EXT_MCP_CACHE"] == "/tmp/support/mcp/tools.json")
+        #expect(launch.argv[3].contains(" -e '/tmp/panes.ts' -e '/tmp/support/pi/shepherd-goal.ts' -e 'builtin:mcp' -e 'builtin:tool-search'"))
+        #expect(launch.argv[3].hasSuffix(useRepoConfig ? " -e '/tmp/shepherd-mcp-project.ts'" : " -e 'builtin:tool-search'"))
+        #expect(launch.env["SHEPHERD_MCP_SECRET_GH_TOKEN"] == "t")
+        #expect(launch.env["SHEPHERD_MCP_SECRETS"] == "SHEPHERD_MCP_SECRET_GH_TOKEN")
         #expect(launch.env["SHEPHERD_EXT_MCP_PROJECT"] == (useRepoConfig ? "1" : nil))
+        #expect(!launch.env.keys.contains { $0.hasPrefix("SHEPHERD_EXT_MCP_") && $0 != "SHEPHERD_EXT_MCP_PROJECT" }, "the old extension's variables are gone")
         let plain = command(enabled: [0, 1, 2, 3, 4])
-        #expect(!plain.argv[3].contains("mcp"))
-        #expect(!plain.env.keys.contains { $0.hasPrefix("SHEPHERD_EXT_MCP") })
+        #expect(!plain.argv[3].contains("mcp") && !plain.argv[3].contains("tool-search"))
+        #expect(!plain.env.keys.contains { $0.hasPrefix("SHEPHERD_EXT_MCP") || $0.hasPrefix("SHEPHERD_MCP") })
     }
 
     /// Settings ▸ Pi ▸ Browser tools: the extension loads with `SHEPHERD_EXT_BROWSER` naming it,
@@ -461,18 +462,27 @@ struct AgentLaunchCommandTests {
     }
 
     /// One setting decides a repo's .mcp.json (Settings ▸ MCP servers), and Settings ▸ Pi ▸ MCP
-    /// servers decides whether the extension loads at all.
-    @Test @MainActor func mcpLaunchFollowsTheSettings() {
+    /// servers decides whether pi's MCP loads at all. What an agent launches with reads the
+    /// store: pi's `mcp.json` is written and each Keychain value the file refers to is handed over.
+    @Test @MainActor func mcpLaunchFollowsTheSettingsAndTheStore() throws {
         let settings = AppSettings(store: ScratchDefaults())
-        let environment = ["SHEPHERD_MCP_CONFIG": "/tmp/scratch/mcp.json", "SHEPHERD_SUPPORT_DIR": "/tmp/support"]
-        let install = { (extensionPath: "/tmp/support/shepherd-mcp.ts", clientPath: "/tmp/support/shepherd-mcp-client.mjs") }
-        #expect(MCPLaunch.forAgents(settings: settings, environment: environment, install: install) == MCPLaunch(
-            extensionPath: "/tmp/support/shepherd-mcp.ts", clientPath: "/tmp/support/shepherd-mcp-client.mjs",
-            configPath: "/tmp/scratch/mcp.json", cachePath: "/tmp/support/mcp/tools.json", useRepoConfig: false))
+        let harness = try MCPFixtures.harness(
+            #"{"mcpServers": {"gh": {"url": "https://api.example.com/mcp", "headers": {"Authorization": "Bearer ${keychain:gh/Authorization}"}}}}"#,
+            secrets: InMemorySecretStore(["secret/gh/Authorization": "tok-123"]))
+        let store = harness.store
+        let install = { "/tmp/support/shepherd-mcp-project.ts" }
+        let launch = try #require(MCPLaunch.forAgents(settings: settings, store: store, install: install))
+        #expect(launch.extensions == ["builtin:mcp", "builtin:tool-search"])
+        #expect(launch.environment == ["SHEPHERD_MCP_SECRET_GH_AUTHORIZATION": "tok-123", "SHEPHERD_MCP_SECRETS": "SHEPHERD_MCP_SECRET_GH_AUTHORIZATION"])
+        let text = String(decoding: try #require(harness.written.last), as: UTF8.self)
+        #expect(text.contains("${SHEPHERD_MCP_SECRET_GH_AUTHORIZATION}"))
+        #expect(!text.contains("tok-123"), "no value is ever written to pi's file")
         settings.mcpProjectConfig = true
-        #expect(MCPLaunch.forAgents(settings: settings, environment: environment, install: install)?.useRepoConfig == true)
+        let withRepo = try #require(MCPLaunch.forAgents(settings: settings, store: store, install: install))
+        #expect(withRepo.extensions == ["builtin:mcp", "builtin:tool-search", "/tmp/support/shepherd-mcp-project.ts"])
+        #expect(withRepo.environment["SHEPHERD_EXT_MCP_PROJECT"] == "1")
         settings.piMCPExtension = false
-        #expect(MCPLaunch.forAgents(settings: settings, environment: environment, install: install) == nil)
+        #expect(MCPLaunch.forAgents(settings: settings, store: store, install: install) == nil)
     }
 
     /// Watchers must never create watchers.

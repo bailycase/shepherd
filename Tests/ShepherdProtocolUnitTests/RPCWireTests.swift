@@ -233,6 +233,14 @@ struct RPCWireTests {
          .toolExecutionStart(toolCallId: "c1", toolName: "bash", args: .object(["command": .string("ls -la")]))),
         (#"{"type":"tool_execution_end","toolCallId":"c1","toolName":"bash"}"#,
          .toolExecutionEnd(toolCallId: "c1", toolName: "bash", result: nil, isError: false)),
+        (#"{"type":"tool_execution_start","toolCallId":"call_1/2","parentToolCallId":"call_1","toolName":"mcp__fake__echo","args":{}}"#,
+         .toolExecutionStart(toolCallId: "call_1/2", toolName: "mcp__fake__echo", args: .object([:]), parentToolCallId: "call_1")),
+        (#"{"type":"tool_execution_end","toolCallId":"call_1/2","parentToolCallId":"call_1","toolName":"read","isError":true}"#,
+         .toolExecutionEnd(toolCallId: "call_1/2", toolName: "read", result: nil, isError: true, parentToolCallId: "call_1")),
+        (#"{"type":"tool_execution_start","toolCallId":"c1","parentToolCallId":7,"toolName":"bash"}"#,
+         .toolExecutionStart(toolCallId: "c1", toolName: "bash", args: nil)),
+        (#"{"type":"tool_execution_end","toolCallId":"c1","parentToolCallId":"","toolName":"bash"}"#,
+         .toolExecutionEnd(toolCallId: "c1", toolName: "bash", result: nil, isError: false)),
         (#"{"type":"extension_error","extensionPath":"/x.ts","event":"tool_call","error":"boom"}"#,
          .extensionError(extensionPath: "/x.ts", event: "tool_call", error: "boom")),
         (#"{"type":"compaction_start","reason":"threshold"}"#, .compactionStart(reason: "threshold")),
@@ -286,13 +294,13 @@ struct RPCWireTests {
     }
 
     @Test func toolResultsCarryContentAndDetails() throws {
-        guard case .toolExecutionUpdate(_, _, _, let partial) = try Self.event(
+        guard case .toolExecutionUpdate(_, _, _, let partial, _) = try Self.event(
             #"{"type":"tool_execution_update","toolCallId":"c","toolName":"bash","partialResult":{"content":[{"type":"text","text":"so far"}],"details":{"truncation":null}}}"#
         ) else { Issue.record("expected update"); return }
         #expect(partial?.content == [.text("so far")])
         #expect(partial?.details?["truncation"] == .null)
 
-        guard case .toolExecutionEnd(_, _, let result, let isError) = try Self.event(
+        guard case .toolExecutionEnd(_, _, let result, let isError, _) = try Self.event(
             #"{"type":"tool_execution_end","toolCallId":"c","toolName":"bash","result":{"details":{}},"isError":true}"#
         ) else { Issue.record("expected end"); return }
         #expect(result?.content == [] && isError)

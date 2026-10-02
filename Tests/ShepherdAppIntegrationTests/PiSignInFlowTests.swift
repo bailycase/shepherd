@@ -11,7 +11,7 @@ import Testing
 /// SDK) against a scratch Shepherd home, with the stub engine refusing to start an agent until the
 /// home holds a login. An agent waiting on "not signed in" starts again, with no click, the moment
 /// a sign-in lands, and the sheet counts it; signing out removes only Shepherd's credential.
-@Suite("Signing in from the app", .mainActorExclusive, .enabled(if: MCPAgentHarness.node != nil, "needs node 22.6 or later"))
+@Suite("Signing in from the app", .mainActorExclusive, .enabled(if: TestNode.url != nil, "needs node 22.6 or later"))
 @MainActor
 struct PiSignInFlowTests {
     struct Setup {
@@ -31,7 +31,7 @@ struct PiSignInFlowTests {
 
         /// The store the app uses, on the fake SDK.
         @MainActor func store(sdk: String = FakePiSDK.path) throws -> PiAuthStore {
-            let node = try #require(MCPAgentHarness.node)
+            let node = try #require(TestNode.url)
             let script = try PiSignInScript.install(in: dir)
             var environment = ProcessInfo.processInfo.environment
             environment["FAKE_PI_CONTROL"] = control.path

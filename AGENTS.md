@@ -243,7 +243,7 @@ Each is one line here; the full rule is in [docs/rules.md](docs/rules.md) under 
 | Branching, committing, releasing, signing | [docs/releases.md](docs/releases.md) |
 | Conversation goals | [docs/goals.md](docs/goals.md) |
 | Threads, the queue, subagents, agent tools | [native-thread](docs/native-thread.md), [native-subagents](docs/native-subagents.md), [agent-coordination](docs/agent-coordination.md) |
-| The Changes pane, worktrees, the Browser, skills, designs | [changes](docs/changes.md), [worktrees](docs/worktrees.md), [browser](docs/browser.md), [skills](docs/skills.md), [designs](docs/designs.md) |
+| The Changes pane, worktrees, the Browser, skills, designs, MCP servers | [changes](docs/changes.md), [worktrees](docs/worktrees.md), [browser](docs/browser.md), [skills](docs/skills.md), [designs](docs/designs.md), [mcp](docs/mcp.md) |
 | Adding a tool, a prompt line or an instruction; a thread that compacts too often | [docs/context-budget.md](docs/context-budget.md) |
 | Hitting something odd (sockets, replay, quitting, pi's folders) | [docs/gotchas.md](docs/gotchas.md) |
 | The iPhone or iPad client | [docs/ios/README.md](docs/ios/README.md) |

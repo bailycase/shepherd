@@ -194,6 +194,9 @@ final class TerminalSessionStore {
     /// The in-process server. Owned by the app (one per process).
     let server: SessionServer
     var reserveCheckoutForLaunch: ((String) throws -> (() -> Void))?
+    /// What an agent's pi gets for MCP when it starts (`MCPLaunch.forAgents`); the app sets it,
+    /// and an agent launched without it has no MCP.
+    var mcpLaunch: () throws -> MCPLaunch? = { nil }
     private var sessions: [PaneID: PaneSession] = [:]
     private var paneBySession: [SessionID: PaneID] = [:]
     private typealias PendingExit = SessionExit
@@ -645,7 +648,7 @@ final class TerminalSessionStore {
             let command = try problem.map(Self.refusedCommand)
                 ?? Self.rpcAgentCommand(for: agent, cwd: cwd, pi: server.pi, sessionIsFresh: fresh, isAutomation: isAutomation,
                                         suggestFiles: suggestionFiles(isAutomation: isAutomation),
-                                        modelOverride: modelOverrides.removeValue(forKey: agent.id))
+                                        modelOverride: modelOverrides.removeValue(forKey: agent.id), mcp: mcpLaunch)
             // A forked transcript resumes: pi not finding it is a start problem, never a new session.
             let resuming = fresh ? nil : agent.effectivePiSessionID
             guard ownsPane(session, pane: pane, tabID: tab.id, expectedAgentID: agent.id),
@@ -895,7 +898,7 @@ final class TerminalSessionStore {
                 command = try problem.map(Self.refusedCommand)
                     ?? Self.rpcAgentCommand(for: agent, cwd: cwd, pi: server.pi, sessionIsFresh: fresh,
                                             suggestFiles: suggestionFiles(isAutomation: false),
-                                            modelOverride: modelOverrides.removeValue(forKey: agent.id))
+                                            modelOverride: modelOverrides.removeValue(forKey: agent.id), mcp: mcpLaunch)
                 if checksResume, !fresh { resuming = agent.effectivePiSessionID }
             } else {
                 command = ShellIntegration.command(shell: AppSettings.shared.shellCommand)
@@ -1060,7 +1063,8 @@ final class TerminalSessionStore {
     /// and namer extensions; an agent that draws a design gets the design tools instead of panes. Model and
     /// thinking flags go only to a fresh session.
     private static func rpcAgentCommand(for agent: Agent, cwd: String, pi: PiSetup, sessionIsFresh: Bool, isAutomation: Bool = false,
-                                        suggestFiles: [InstructionFile] = [], modelOverride: String? = nil) throws -> SessionCommand {
+                                        suggestFiles: [InstructionFile] = [], modelOverride: String? = nil,
+                                        mcp: () throws -> MCPLaunch?) throws -> SessionCommand {
         let settings = AppSettings.shared
         return try StatusExtension.command(
             home: pi.files,
@@ -1085,7 +1089,7 @@ final class TerminalSessionStore {
             designReferences: Self.wantsDesignReferences(for: agent, enabled: settings.piDesignReferences,
                                                          designTool: settings.designToolEnabled)
                 ? (try DesignReferencesExtension.installedPath(), !agent.designGrants.isEmpty) : nil,
-            mcp: try MCPLaunch.forAgents(settings: settings),
+            mcp: try mcp(),
             browserExtensionPath: Self.wantsBrowser(for: agent, enabled: settings.piBrowserExtension) ? try BrowserExtension.installedPath() : nil,
             contextExtensionPath: settings.trimToolOutput ? try ContextExtension.installedPath() : nil,
             userHome: pi.userHome,

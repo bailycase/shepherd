@@ -59,7 +59,8 @@ struct SettingsSearchTests {
         (".pi", .skills, ["Installed skills"]),
         ("copied", .skills, ["Installed skills"]),
         ("agent skills", .skills, ["Installed skills"]),
-        ("oauth", .mcp, ["Open sign-in pages by itself"]),
+        ("oauth", .mcp, ["How the agent uses them"]),
+        ("exposure", .mcp, ["How the agent uses them"]),
         // Settings ▸ Pi ▸ Sign-in, and what comes from your pi.
         ("auth.json", .piSignIn, ["Subscriptions", "API keys"]),
         ("subscription", .piSignIn, ["Subscriptions"]),

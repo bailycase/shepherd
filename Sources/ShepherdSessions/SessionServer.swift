@@ -294,11 +294,6 @@ public final class SessionServer: @unchecked Sendable {
     /// A thread left or the user removed a note on a design (`DesignThreadNote`): the canvas reads
     /// the design's notes again. Delivered on the main actor; a hint, not state.
     public var onDesignThreadNotesChanged: ((DesignID) -> Void)?
-    /// An agent's MCP extension asked for a server's credentials. The app owns the Keychain and
-    /// OAuth, so the request is handed to it like a pane request. Delivered on the main actor;
-    /// the completion may be called from any thread. With no handler the answer is
-    /// `mcp_unavailable`.
-    public var onMCPRequest: ((MCPRequest, @escaping (MCPOutcome) -> Void) -> Void)?
     /// An agent's browser extension asked for its thread's Browser page (docs/browser.md). The
     /// request is served only on the connection registered as that agent (`helloBrowser`) and only
     /// for a thread, never a design's agent. The app owns the page; delivered on the main actor,
@@ -327,9 +322,6 @@ public final class SessionServer: @unchecked Sendable {
     /// has none; only `http` and `https` ever reach the viewer). Called on the main actor; the claim
     /// is answered with it.
     public var onBrowserPageURL: ((AgentID) -> String?)?
-    /// A server's state or tool list, from one agent's MCP extension (Settings ▸ MCP servers).
-    /// Delivered on the main actor in the order the reports arrived.
-    public var onMCPReport: ((AgentID, MCPServerReport) -> Void)?
     public var onRemotePaneRequest: ((PaneRequest, @escaping (PaneOutcome) -> Void) -> Void)?
     /// A remote client asked to create an agent. Spawning pi (extension
     /// flags, session-file seeding, pane binding) is the GUI's flow, so the
@@ -2726,12 +2718,6 @@ public final class SessionServer: @unchecked Sendable {
             routeBrowserRequest(request, agentID: agentID, requestID: id, client: client)
         case .notify(let agentID, let title, let body):
             hopToMain { [weak self] in self?.onNotify?(agentID, title, body) }
-        case .mcpCredentials(let id, let agentID, let server, let reason, let challenge):
-            routeMCPRequest(MCPRequest(agentID: agentID, server: server, reason: reason, challenge: challenge),
-                            requestID: id, client: client)
-        case .mcpReport(let agentID, let report):
-            guard store.state.agents.contains(where: { $0.id == agentID }) else { return }
-            hopToMain { [weak self] in self?.onMCPReport?(agentID, report) }
         case .helloAgent(let agentID):
             client.agentID = agentID
         case .coordinateAgent(let id, let agentID, let targetAgentID, let request):
@@ -3531,26 +3517,6 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    /// Hand an MCP credentials request to the GUI and write its reply back to the client. Only a
-    /// live agent may ask: the answer can carry secrets.
-    private func routeMCPRequest(_ request: MCPRequest, requestID: Int, client: ExtensionConnection) {
-        guard store.state.agents.contains(where: { $0.id == request.agentID }) else {
-            reply(.error(id: requestID, code: "no_such_agent", message: "no such agent"), to: client)
-            return
-        }
-        guard let handler = onMCPRequest else {
-            reply(.error(id: requestID, code: "mcp_unavailable",
-                         message: "Shepherd can't hand over \(request.server)'s credentials here."), to: client)
-            return
-        }
-        hopToMain { [weak self, weak client] in
-            handler(request) { outcome in
-                guard let self, let client else { return }
-                self.queue.async { self.reply(outcome.withID(requestID), to: client) }
-            }
-        }
-    }
-
     /// Hand a browser request to the app and write its reply back to the client. The agent is the
     /// connection's, never the request's: a request naming anyone else is refused whoever sends
     /// it, so a tool acts only on its own thread's page.
@@ -3855,7 +3821,6 @@ public final class SessionServer: @unchecked Sendable {
              .designProposals(let id, _),
              .designReference(let id, _),
              .designNote(let id, _),
-             .mcpCredentials(let id, _),
              .browserResult(let id, _, _):
             return id
         }

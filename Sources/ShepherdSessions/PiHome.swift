@@ -61,6 +61,19 @@ public struct PiHome: Equatable, Sendable {
     /// launcher refuses them, because Shepherd's pi changes only through Shepherd.
     public static let refusedSubcommands = ["install", "remove", "uninstall", "update", "config"]
 
+    /// `pi mcp add` and `pi mcp remove` write `<home>/mcp.json`, which Shepherd derives from
+    /// Settings ▸ MCP servers' file and rewrites whenever it differs, so they are refused too.
+    /// `list`, `login` and `logout` are what Settings runs (`PiLaunch.mcp`).
+    public static let refusedMCPSubcommands = ["add", "remove"]
+
+    /// pi's own MCP servers, derived from the user's file: `<home>/mcp.json` (docs/mcp.md).
+    public var mcpConfig: URL { directory.appendingPathComponent("mcp.json") }
+
+    /// The variable listing the names of the secret variables in an agent's pi environment
+    /// (`SHEPHERD_MCP_SECRET_*`), space separated, so `restore-env.sh` can unset them without a fork.
+    public static let mcpSecretNamesKey = "SHEPHERD_MCP_SECRETS"
+    public static let mcpSecretPrefix = "SHEPHERD_MCP_SECRET_"
+
     /// The variables the launcher pins, after setting aside every `PI_*`, `JITI_*`, `NODE_*` and
     /// `OPENSSL_CONF` it was started with.
     public var pins: [(String, String)] {
@@ -115,6 +128,12 @@ public struct PiHome: Equatable, Sendable {
               (\(Self.refusedSubcommands.joined(separator: "|")))
                 print -r -u2 -- "pi $1: Shepherd's pi changes only through Shepherd (Settings ▸ Pi). The pi in your terminal is unaffected."
                 exit 2 ;;
+              (mcp)
+                case ${2-} in
+                  (\(Self.refusedMCPSubcommands.joined(separator: "|")))
+                    print -r -u2 -- "pi mcp $2: Shepherd's MCP servers change only in Settings ▸ MCP servers. The pi in your terminal is unaffected."
+                    exit 2 ;;
+                esac ;;
             esac
 
             """
@@ -124,6 +143,8 @@ public struct PiHome: Equatable, Sendable {
         script += "if [[ \(checks.joined(separator: " || ")) ]]; then\n"
         script += "  print -r -u2 -- \(q("pi: Shepherd's pi engine is missing: \(engine.command.joined(separator: " ")). Reinstall Shepherd."))\n"
         script += "  exit 127\nfi\n"
+        // A subcommand is pi's only when it is the first argument, so `pi mcp list` gets no `-e` before it.
+        script += "if [[ ${1-} == mcp ]]; then exec \(engine.command.map(q).joined(separator: " ")) \"$@\"; fi\n"
         script += "exec \(engine.command.map(q).joined(separator: " ")) -e \(q(directory.appendingPathComponent("shepherd-cliproxyapi.ts").path)) \"$@\"\n"
         return script
     }
@@ -131,7 +152,8 @@ public struct PiHome: Equatable, Sendable {
     /// `restore-env.sh`, sourced by the bash tool's shell (bash, or zsh) before each command:
     /// unsets the pins (and `NODE_EXTRA_CA_CERTS`, which the launcher may have set to
     /// `keychainCertificatesFile` and isn't one of the pins) and exports each variable the
-    /// launcher set aside, as it was.
+    /// launcher set aside, as it was. It also unsets the MCP secrets Shepherd handed pi in its
+    /// environment (`mcpSecretNamesKey` lists them), which only pi's MCP servers are to read.
     public var restoreEnvScript: String {
         """
         # Shepherd's pi: gives an agent's shell commands back the pi, jiti and Node variables its
@@ -141,7 +163,11 @@ public struct PiHome: Equatable, Sendable {
           case $_shepherd_name in (''|*[!A-Za-z0-9_]*) continue ;; esac
           eval "export $_shepherd_name=\\"\\${\(Self.stashPrefix)$_shepherd_name}\\""
         done
-        unset _shepherd_name
+        for _shepherd_name in $(printf '%s\\n' "${\(Self.mcpSecretNamesKey)-}"); do
+          case $_shepherd_name in (''|*[!A-Za-z0-9_]*) continue ;; esac
+          unset "$_shepherd_name"
+        done
+        unset _shepherd_name \(Self.mcpSecretNamesKey)
 
         """
     }
@@ -194,6 +220,13 @@ public struct PiHome: Equatable, Sendable {
             settings["extensions"] = Self.disablingBuiltIns(settings["extensions"])
             return notes
         }
+    }
+
+    /// Writes pi's `mcp.json` (docs/mcp.md): by temp file and rename, so pi never reads half of it
+    /// and a link left in its place is replaced, not followed; 0600, and only when it differs.
+    public func installMCPConfig(_ data: Data) throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        try Self.write(data, to: mcpConfig, mode: 0o600)
     }
 
     // MARK: pi's built-in extensions

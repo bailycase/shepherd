@@ -1350,12 +1350,15 @@ struct ListPerformanceTests {
 
     // MARK: MCP servers
 
-    private struct NoProbe: MCPProbeRunner {
-        func run(input: Data, timeout: TimeInterval) async -> Data { Data() }
+    private struct NoCLI: MCPCLI {
+        func run(_ arguments: [String], environment: [String: String], timeout: TimeInterval,
+                 onLine: (@Sendable (String) -> Void)?) async -> MCPCLIResult {
+            MCPCLIResult(status: 1, stdout: "", stderr: "")
+        }
     }
 
     /// Settings ▸ MCP servers over 200 servers: opening builds the rows on screen and some ahead
-    /// of them, never the whole list, and one server's report redraws its row alone.
+    /// of them, never the whole list, and one server changing redraws its row alone.
     @Test func oneServerChangingRedrawsOnlyItsRow() async throws {
         let app = try AppHarness()
         defer { app.stop() }
@@ -1365,8 +1368,8 @@ struct ListPerformanceTests {
         let servers = (0..<200).map { #""server-\#($0 + 100)": {"command": "npx", "args": ["server-\#($0)"]}"# }
         try Data("{\"mcpServers\": {\(servers.joined(separator: ","))}}".utf8).write(to: config)
         let store = MCPStore(dependencies: .init(
-            file: MCPConfigFile(url: config), cacheURL: directory.appendingPathComponent("tools.json"), secrets: InMemorySecretStore(),
-            http: URLSessionHTTP(), probe: MCPProbe(runner: NoProbe()), openURL: { _ in }, copy: { _ in }, now: { Date() }))
+            file: MCPConfigFile(url: config), secrets: InMemorySecretStore(), http: URLSessionHTTP(), cli: NoCLI(),
+            preparePi: { nil }, authData: { nil }, openURL: { _ in }, copy: { _ in }, now: { Date() }))
         #expect(store.rows.count == 200)
         let size = CGSize(width: 1200, height: 800)
         var window: OffscreenWindow!
@@ -1381,7 +1384,7 @@ struct ListPerformanceTests {
 
         let changed = ListPerf.counting {
             ListPerf.time(window) {
-                store.receive(MCPServerReport(server: "server-100", status: MCPServerStatus(state: .connected)), from: AgentID())
+                store.setEnabled("server-100", false)
             }
         }
         #expect(changed["mcp.row", default: 0] > 0, "\(changed)")

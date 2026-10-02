@@ -28,11 +28,11 @@ for (const family of registry.families) for (const name of family.tools) rows.se
 const CONDITIONAL = new Set(["design_get", "design_note", "suggest_instruction"]);
 
 // The tools a launch sends the model that Shepherd's extensions registered: not pi's other built-ins (inactive, never sent), and
-// not an MCP server's direct tools, which are the user's (`<server>_<tool>`).
+// not an MCP server's direct tools, which are the user's (`mcp__<server>__<tool>`, pi's own MCP).
 function sent(captured) {
   const body = captured.body;
   const names = (body.tools ?? []).map((tool) => tool.name ?? tool.function?.name);
-  return names.filter((name) => !(captured.toolSources[name] ?? "").endsWith("shepherd-mcp.ts") || name === "mcp");
+  return names.filter((name) => !name.startsWith("mcp__"));
 }
 
 const LAUNCHES = [

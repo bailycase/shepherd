@@ -69,8 +69,8 @@ public enum ShepherdPaths {
     public static let mcpConfigEnvKey = "SHEPHERD_MCP_CONFIG"
 
     /// The MCP servers every agent on this host can use: `~/.config/mcp/mcp.json`, the file other
-    /// MCP clients share (`{"mcpServers": …}`). Only the app writes it; each agent's MCP extension
-    /// reads it.
+    /// MCP clients share (`{"mcpServers": …}`). Only the app writes it; pi's own MCP reads the
+    /// copy the app derives from it into Shepherd's pi home (docs/mcp.md).
     public static func mcpConfigURL(
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> URL {
@@ -82,16 +82,6 @@ public enum ShepherdPaths {
             .appendingPathComponent(".config", isDirectory: true)
             .appendingPathComponent("mcp", isDirectory: true)
             .appendingPathComponent("mcp.json")
-    }
-
-    /// Each MCP server's tools as last listed, written by the app, so an agent registers direct
-    /// tools without starting the server. It holds no secrets.
-    public static func mcpToolsCacheURL(
-        environment: [String: String] = ProcessInfo.processInfo.environment
-    ) -> URL {
-        supportDirectory(environment: environment)
-            .appendingPathComponent("mcp", isDirectory: true)
-            .appendingPathComponent("tools.json")
     }
 
     /// The user's home folder. iOS has no `homeDirectoryForCurrentUser`; its app home stands in.

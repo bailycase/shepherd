@@ -21,10 +21,9 @@ private let rows: [MCPServerRowModel] = [
 private let noActions = MCPServerRow.Actions(toggle: { _ in }, open: {}, signIn: {})
 
 private let linearDetail = MCPServerDetailModel(
-    signIn: .signedIn(account: "baily@acme.dev", scopes: ["read", "write", "issues:create"], note: "OAuth · refreshed 2h ago"),
+    signIn: .signedIn(account: nil, scopes: [], note: "OAuth · kept fresh by pi"),
     toolNames: ["list_issues", "create_issue", "update_issue", "get_issue", "list_teams"], toolCount: 21, direct: false,
-    proxyCost: "~200 tok", directCost: "~3,900 tok", transport: "Streamable HTTP",
-    startOptions: ["When used", "With each session", "Always on"], start: 0,
+    searchCost: "~20 tok", directCost: "~4,200 tok", transport: "Streamable HTTP",
     hosts: [.init(name: "This Mac", detail: "connected", mark: .done)])
 
 private let signInSteps: [MCPSignInSheetModel.Step] = [
@@ -59,7 +58,7 @@ private let signInSteps: [MCPSignInSheetModel.Step] = [
     NWPreviewBoth {
         VStack(alignment: .leading, spacing: NW.Space.l) {
             MCPBudget(tokens: "~200 tokens", fraction: 0.03,
-                      note: "One mcp tool finds and calls any of the 143 tools. Servers set to “Each tool” add their tools here.")
+                      note: "Tools stay out of the prompt until the agent searches for one; a search then adds the best eight for the rest of the thread.")
                 .frame(width: 280)
             HStack(spacing: NW.Space.l) {
                 ForEach(MCPDotState.allCases, id: \.self) { MCPStatusDot($0) }

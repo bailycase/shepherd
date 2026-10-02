@@ -50,7 +50,7 @@ struct PiSettings: View {
                     SettingsSwitch(label: "Subagent display", isOn: $settings.piSubagentsExtension)
                 }
                 SettingsRow(title: "MCP servers",
-                            subtitle: "Let agents use the servers in Settings ▸ MCP servers through one `mcp` tool.") {
+                            subtitle: "Let agents use the servers in Settings ▸ MCP servers, through pi's own MCP and tool search.") {
                     SettingsSwitch(label: "MCP servers", isOn: $settings.piMCPExtension)
                 }
                 SettingsRow(title: "Browser tools",

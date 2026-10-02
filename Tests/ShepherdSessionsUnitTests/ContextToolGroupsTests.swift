@@ -39,9 +39,16 @@ struct ContextToolGroupsTests {
         #expect(ContextToolGroups.labels == (try Self.registry()).groups)
     }
 
-    /// A tool no row lists (an MCP server's own tools, one of the user's extensions) is "other tools".
-    @Test(arguments: ["github_search_code", "linear_create_issue", "my_extension_tool", ""])
+    /// A tool no row lists (one of the user's extensions) is "other tools".
+    @Test(arguments: ["github_search_code", "linear_create_issue", "my_extension_tool", "mcp", "xmcp__a__b", ""])
     func aToolNoRowListsIsOther(_ name: String) {
         #expect(ContextToolGroups.label(forTool: name) == "other tools")
+    }
+
+    /// pi's own MCP: its search and resource tools, and the tools of a server set to Direct, are "MCP".
+    @Test(arguments: ["tool_search", "list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource", "mcp__github__search_code", "mcp__a__b"])
+    func piMCPToolsAreMCP(_ name: String) {
+        #expect(ContextToolGroups.id(forTool: name) == "mcp")
+        #expect(ContextToolGroups.label(forTool: name) == "MCP")
     }
 }
