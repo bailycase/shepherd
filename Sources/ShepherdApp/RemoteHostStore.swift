@@ -112,6 +112,7 @@ final class RemoteHostStore {
         var supportsInstructions: Bool { client?.capabilities.contains(RemoteProtocol.instructionsCapability) == true }
         /// The host serves Settings ▸ Skills (`skills.v1`).
         var supportsSkills: Bool { client?.capabilities.contains(RemoteProtocol.skillsCapability) == true }
+        var supportsProjects: Bool { client?.capabilities.contains(RemoteProtocol.projectsCapability) == true }
         /// What Settings ▸ Skills reads and changes the host's skills through, while it's connected.
         var skillsClient: (any SkillsClient)? { phase == .connected ? client : nil }
         /// The host takes every level pi has in `createAgent` (older hosts: Off to High).
@@ -447,6 +448,19 @@ final class RemoteHostStore {
             throw RemoteHostClientError.disconnected
         }
         return try await client.instructions(request)
+    }
+
+    func projects(hostID: UUID, endpointID: UUID?, request: RemoteProjectsRequest) async throws -> RemoteProjectsResult {
+        guard let connection = connections.first(where: { $0.id == hostID }),
+              connection.phase == .connected, let client = connection.client else { throw RemoteHostClientError.disconnected }
+        guard endpointID == connection.endpointID else {
+            throw RemoteHostClientError.rejected(code: "host_changed", message: "Host changed. Reopen this project before editing it.")
+        }
+        let result = try await client.projects(request)
+        guard connection.client === client, endpointID == connection.endpointID else {
+            throw RemoteHostClientError.outcomeUnknown(message: "Host changed after the request was sent. Check the original project before retrying.")
+        }
+        return result
     }
 
     func creationOptions(hostID: UUID, spaceID: SpaceID, cwd: String?, fetchFirst: Bool?) async throws -> RemoteCreationOptions {

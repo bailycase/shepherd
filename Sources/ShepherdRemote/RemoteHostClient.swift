@@ -737,6 +737,19 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
     }
 
+    /// Project-only configuration. Capability check happens before anything is sent to an old host.
+    public func projects(_ request: RemoteProjectsRequest) async throws -> RemoteProjectsResult {
+        guard capabilities.contains(RemoteProtocol.projectsCapability) else {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to edit its projects from here.")
+        }
+        let reply = try await self.request { .projects(id: $0, request: request) }
+        switch reply {
+        case .projects(_, let result): return result
+        case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)
+        default: throw RemoteHostClientError.rejected(code: "protocol", message: "Unexpected project settings reply.")
+        }
+    }
+
     /// Reads or changes the host's designs (`designsCapability`, served while the host's Design
     /// tool is on). A host without it throws `update_required` before anything is sent: an older
     /// Shepherd, or the experiment off there.
@@ -993,7 +1006,7 @@ public final class RemoteHostClient: @unchecked Sendable {
              .state(let id, _), .attached(let id, _),
              .dirListing(let id, _, _, _), .models(let id, _, _, _, _, _, _),
              .spaceAdded(let id, _), .agentCreated(let id, _), .automationResult(let id, _), .instructions(let id, _),
-             .suggestions(let id, _), .hostSettings(let id, _), .skills(let id, _), .design(let id, _),
+             .suggestions(let id, _), .hostSettings(let id, _), .skills(let id, _), .projects(let id, _), .design(let id, _),
              .browserClaimed(let id, _):
             resumePending(id: id, with: reply)
         case .error(let id, _, _):

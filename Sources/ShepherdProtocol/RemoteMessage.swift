@@ -79,6 +79,8 @@ public enum RemoteProtocol {
     /// The host serves `RemoteRequest.hostSettings`: what its Settings ▸ Agents, Worktrees and Pi
     /// set, its Shepherd and pi versions, and one change at a time. Older hosts show none.
     public static let hostSettingsCapability = "hostSettings.v1"
+    /// Host-owned project history and allowlisted project-only files.
+    public static let projectsCapability = "projects.v1"
     /// The host serves `RemoteRequest.skills`: the agent skills its pi reads (on, off,
     /// how each is used, updates), installs from a repository or a copied folder, and removal
     /// with undo (Settings ▸ Skills). Older hosts have none to show.
@@ -112,7 +114,7 @@ public enum RemoteProtocol {
     public static let goalExperimentCapability = "experiments.goals.v1"
     /// The creation page may choose a tier before the opening prompt reaches pi.
     public static let createAgentServiceTierCapability = "agent.create.serviceTier.v1"
-    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, skillsCapability, piSkillsCapability, createAgentImagesCapability, terminalControlCapability, designContextCapability, designsCapability, designMarkupCapability, designDeleteCapability, nativeRetryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability]
+    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, projectsCapability, skillsCapability, piSkillsCapability, createAgentImagesCapability, terminalControlCapability, designContextCapability, designsCapability, designMarkupCapability, designDeleteCapability, nativeRetryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -505,6 +507,8 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     case hostSettings(id: Int, request: RemoteHostSettingsRequest)
     /// Read or change the host's agent skills (`RemoteProtocol.skillsCapability`).
     case skills(id: Int, request: RemoteSkillsRequest)
+    /// Project-only files, never the host's global settings (`projectsCapability`).
+    case projects(id: Int, request: RemoteProjectsRequest)
     /// Read or change the host's designs (`RemoteProtocol.designsCapability`).
     case design(id: Int, request: RemoteDesignRequest)
     /// One message of a Browser tunnel (`RemoteProtocol.browserTunnelCapability`). Nothing answers it
@@ -538,7 +542,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case openPane, closePane, resizePaneSplit
         case listDir, listModels, addSpace, createAgent, agentAction, agentQuery, upload, creationOptions
         case automation
-        case instructions, suggestions, hostSettings, skills
+        case instructions, suggestions, hostSettings, skills, projects
         case design
         case tunnel
         case browserClaim, browserRelease, browserAnswer
@@ -572,6 +576,8 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case .hostSettings:
             self = .hostSettings(id: try c.decode(Int.self, forKey: .id),
                                  request: try c.decode(RemoteHostSettingsRequest.self, forKey: .request))
+        case .projects:
+            self = .projects(id: try c.decode(Int.self, forKey: .id), request: try c.decode(RemoteProjectsRequest.self, forKey: .request))
         case .skills:
             self = .skills(id: try c.decode(Int.self, forKey: .id),
                            request: try c.decode(RemoteSkillsRequest.self, forKey: .request))
@@ -730,6 +736,10 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encode(Kind.hostSettings, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(request, forKey: .request)
+        case .projects(let id, let request):
+            try c.encode(Kind.projects, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(request, forKey: .request)
         case .skills(let id, let request):
             try c.encode(Kind.skills, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -870,6 +880,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     case hostSettings(id: Int, settings: HostSettings)
     /// A skills request's answer (`RemoteRequest.skills`).
     case skills(id: Int, result: RemoteSkillsResult)
+    case projects(id: Int, result: RemoteProjectsResult)
     /// A design request's answer (`RemoteRequest.design`).
     case design(id: Int, result: RemoteDesignResult)
     /// Pushed to a client watching the design (`RemoteDesignRequest.watch`) after each change to
@@ -904,7 +915,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case agentResult, helloOk, ok, paneOpened, error, state, stateChanged, attached, output, sessionExited
         case dirListing, models, spaceAdded, agentCreated, uploadResult, creationOptions
         case automationResult
-        case instructions, suggestions, hostSettings, skills
+        case instructions, suggestions, hostSettings, skills, projects
         case design, designChanged, capabilitiesChanged
         case tunnel
         case browserClaimed, browserDrive
@@ -954,6 +965,8 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case .hostSettings:
             self = .hostSettings(id: try c.decode(Int.self, forKey: .id),
                                  settings: try c.decode(HostSettings.self, forKey: .settings))
+        case .projects:
+            self = .projects(id: try c.decode(Int.self, forKey: .id), result: try c.decode(RemoteProjectsResult.self, forKey: .result))
         case .skills:
             self = .skills(id: try c.decode(Int.self, forKey: .id),
                            result: try c.decode(RemoteSkillsResult.self, forKey: .result))
@@ -1071,6 +1084,10 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             try c.encode(Kind.hostSettings, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(settings, forKey: .settings)
+        case .projects(let id, let result):
+            try c.encode(Kind.projects, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(result, forKey: .result)
         case .skills(let id, let result):
             try c.encode(Kind.skills, forKey: .type)
             try c.encode(id, forKey: .id)

@@ -6,7 +6,7 @@ Settings replaces the window content in place (`SettingsView.swift`; the boards 
 through SettingsExperiments). ⌘, toggles it, and "Back to Shepherd" or Esc returns; the swap
 cross-fades on the `sheet` motion, and a page picked in the nav cross-fades on `content`. Every row
 is wired: a row exists only if changing it changes the app, and a change applies at once, with no
-Save or Apply (the one exception is Instructions, which edits files and saves with ⌘S).
+Save or Apply. Instructions and [Projects](settings-projects.md) edit files with an explicit Save.
 
 - **Navigation** (the same on every Settings board): a 232pt column on `bgBase` with a `lineSubtle`
   hairline (`NWHairline`) on its trailing edge, its contents 10pt in from either side
@@ -19,8 +19,9 @@ Save or Apply (the one exception is Instructions, which edits files and saves wi
     under Back and `NW.Space.l` above the pages; it takes focus when Settings opens, so typing
     filters at once
   - the pages, one `NWSettingsNavRow` each, `NW.Space.xxs` apart, in this order: Appearance
-    (`circle.lefthalf.filled`) · Terminal (`terminal`) · Agents (`person.2`) · Worktrees
-    (`arrow.branch`) · Pi (`pi`), with its three pages under it, Sign-in, From your pi and Slash commands (SettingsPi:
+    (`circle.lefthalf.filled`) · Terminal (`terminal`) · Agents (`person.2`) · Subagents
+    (`arrow.turn.down.right`) · Worktrees (`arrow.branch`) · Projects (`folder`) · Pi (`pi`),
+    with its three pages under it while a Pi page is selected, Sign-in, From your pi and Slash commands (SettingsPi:
     rows 28pt × density, 35pt in, Geist 12.5 `textSecondary`, the selected one `textPrimary` at 500
     on `bgSelected`; Sign-in carries a 6pt `lantern` dot trailing while a provider an agent of
     this Mac needs isn't signed in or a sign-in expired) · Instructions (`doc.text`) · Skills (`graduationcap`) · MCP servers
@@ -37,7 +38,9 @@ Save or Apply (the one exception is Instructions, which edits files and saves wi
   (`caption`, `textSecondary`, indented past the icon); clicking one opens its page. When the page
   on screen has no match, the first page that does opens at once (no cross-fade per keystroke). With
   nothing matching, the nav says "No matching settings" in `caption`/`textTertiary`.
-- **Content** (every page but Instructions, Skills, MCP servers and Experiments): the page on `bgWindow`, a 720pt column
+- **Projects** uses the [SettingsProjects spec](settings-projects.md), an 860pt column, and
+  a project-only editor. Subagents reuses the existing native-subagent settings, moved out of Pi.
+- **Content** (every page but Projects, Instructions, Skills, MCP servers and Experiments): the page on `bgWindow`, a 720pt column
   centered in it, 44pt from the top, 48pt from the sides and the bottom; the page scrolls, and the
   strip at its top still drags the window. Top to bottom:
   - the header: the page's name in Geist 22/600, tracked −1% (`Font.nwSans(22, .semibold)`,

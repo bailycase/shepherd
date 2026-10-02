@@ -10,6 +10,8 @@ public struct NWButtonStyle: ButtonStyle {
         case primary
         /// Raised, bordered: everything else.
         case secondary
+        /// A bordered button on the raised fill, including SettingsProjects' Add project.
+        case raised
         /// Borderless: Cancel, low-emphasis actions.
         case ghost
         /// Bordered with failed text: Stop, Revert.
@@ -75,7 +77,7 @@ private struct NWStyledButton: View {
             .padding(.horizontal, padding)
             .frame(minHeight: height)
             .background(background(nw), in: shape)
-            .nwBorder(kind == .secondary || kind == .danger ? nw.lineStrong : .clear, radius: radius)
+            .nwBorder(kind == .secondary || kind == .raised || kind == .danger ? nw.lineStrong : .clear, radius: radius)
             .offset(y: configuration.isPressed ? 0.5 : 0)
             .nwEnabledOpacity(enabled)
             .contentShape(shape)
@@ -90,7 +92,7 @@ private struct NWStyledButton: View {
     private func foreground(_ nw: NWPalette) -> Color {
         switch kind {
         case .primary: nw.textOnLantern
-        case .secondary: tint ?? nw.textPrimary
+        case .secondary, .raised: tint ?? nw.textPrimary
         case .ghost: tint ?? (hovering && enabled && !configuration.isPressed ? nw.textPrimary : nw.textSecondary)
         case .danger: nw.failed
         case .dangerFill: nw.textOnFailed
@@ -109,6 +111,8 @@ private struct NWStyledButton: View {
         case .secondary:
             // The Settings boards' buttons rest on the page's own fill.
             return AnyShapeStyle(active ? nw.bgSelected : scale == .settings ? nw.bgWindow : nw.bgRaised)
+        case .raised:
+            return AnyShapeStyle(active ? nw.bgSelected : nw.bgRaised)
         case .ghost:
             return AnyShapeStyle(enabled && configuration.isPressed ? nw.bgSelected : hovering && enabled ? nw.bgHover : Color.clear)
         case .danger:

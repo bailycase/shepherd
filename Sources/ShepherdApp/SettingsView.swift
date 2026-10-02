@@ -19,7 +19,7 @@ struct SettingsView: View {
     private var query: String { searchText.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     private var matchingSections: [SettingsSection] {
-        guard !query.isEmpty else { return Array(SettingsSection.allCases) }
+        guard !query.isEmpty else { return SettingsSection.allCases.filter { !$0.isSubpage || vm.settingsSection.isPi } }
         return SettingsSection.allCases.filter { !matches($0).isEmpty || $0.title.localizedCaseInsensitiveContains(query) }
     }
 
@@ -81,12 +81,6 @@ struct SettingsView: View {
                 .padding(.horizontal, NWSettingsNavMetrics.sidePadding)
                 .padding(.top, AppLayout.settingsSearchTop)
                 .padding(.bottom, NW.Space.l)
-                .task {
-                    // Typing filters immediately after opening; delayed a beat because focusing
-                    // while SwiftUI installs the key-view loop silently loses the request.
-                    try? await Task.sleep(for: .milliseconds(150))
-                    searchFocused = true
-                }
 
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: AppLayout.settingsNavRowSpacing) {
@@ -127,7 +121,7 @@ struct SettingsView: View {
             Text(versions)
                 .font(.nw(.micro))
                 .foregroundStyle(Color.nw.textTertiary)
-                .lineLimit(1)
+                .lineLimit(2)
                 // Aligned with the rows' icons.
                 .padding(.horizontal, NWSettingsNavMetrics.sidePadding + NWSettingsNavMetrics.rowPadding)
                 .padding(.bottom, NW.Space.l)
@@ -167,6 +161,8 @@ struct SettingsView: View {
         case .appearance: AppearanceSettings(vm: vm)
         case .terminal: TerminalSettings(vm: vm)
         case .agents: AgentSettings(pi: vm.server.pi, settings: vm.settings)
+        case .subagents: PiSettings(pi: vm.server.pi, settings: vm.settings, subagentsOnly: true)
+        case .projects: ProjectsSettings(vm: vm, model: vm.projects)
         case .pi: PiSettings(pi: vm.server.pi, settings: vm.settings)
         case .piSignIn: PiSignInSettings(yourPi: vm.yourPi, auth: vm.piAuth)
         case .piFromYourPi: FromYourPiSettings(model: vm.yourPi, openSkills: { vm.settingsSection = .skills })
@@ -197,7 +193,7 @@ struct SettingsView: View {
                 ScrollView(.vertical) {
                     Group { page }
                         .nwTransition(.content)
-                        .frame(maxWidth: AppLayout.settingsContentWidth, alignment: .leading)
+                        .frame(maxWidth: vm.settingsSection == .projects ? AppLayout.projectsWidth : AppLayout.settingsContentWidth, alignment: .leading)
                         .padding(.top, AppLayout.settingsTop)
                         .padding(.bottom, AppLayout.settingsBottom)
                         .padding(.horizontal, AppLayout.settingsGutter)
@@ -240,7 +236,7 @@ private struct SettingsSearchHit: View {
 }
 
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case appearance, terminal, agents, worktrees, pi, piSignIn, piFromYourPi, piSlashCommands, instructions, skills, mcp, remote, keyboard, advanced, experiments
+    case appearance, terminal, agents, subagents, worktrees, projects, pi, piSignIn, piFromYourPi, piSlashCommands, instructions, skills, mcp, remote, keyboard, advanced, experiments
 
     /// A page listed under another in the nav: Pi's Sign-in, From your pi and Slash commands.
     var isSubpage: Bool { self == .piSignIn || self == .piFromYourPi || self == .piSlashCommands }
@@ -255,6 +251,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .appearance: return "Appearance"
         case .terminal: return "Terminal"
         case .agents: return "Agents"
+        case .subagents: return "Subagents"
+        case .projects: return "Projects"
         case .worktrees: return "Worktrees"
         case .pi: return "Pi"
         case .piSignIn: return "Sign-in"
@@ -279,8 +277,9 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .agents: ["Default model", "Default thinking level", "Speed for new threads",
                        "When a turn ends, send the queue", "Compact at", "Trim old tool output from the model’s context", "Defer rarely used tools"]
         case .worktrees: ["Base branch", "Fetch before creating", "Commit remaining work", "Generate PR descriptions", "Delete local branch", "Merge PR automatically"]
-        case .pi: ["Shepherd's pi", "Name agents automatically", "Terminals and agent tools", "Agent-to-agent messages", "Diff review tool", "Native subagents",
-                   "Subagent display", "MCP servers", "Browser tools", "Concurrency"]
+        case .subagents: ["Native subagents", "Subagent display", "Concurrency", "Model", "Thinking", "Context", "Agent discovery"]
+        case .projects: ["Filter projects", "All hosts", "Add project…", "Instructions", "Pi settings", "Skills", "Extensions", "MCP servers"]
+        case .pi: ["Shepherd's pi", "Name agents automatically", "Terminals and agent tools", "Agent-to-agent messages", "Diff review tool", "MCP servers", "Browser tools"]
         case .piSignIn: ["Re-import from your pi", "Subscriptions", "Anthropic", "OpenAI Codex", "GitHub Copilot", "xAI", "Kimi", "Radius",
                          "API keys", "Add an API key", "CLIProxyAPI", "Custom providers"]
         case .piFromYourPi: ["Source", "Last brought over", "Re-import all", "Logins", "Custom providers", "Default model", "Trusted folders",
@@ -314,7 +313,9 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                                                                      "screenshots", "cache"],
                        "Defer rarely used tools": ["tool search", "tool_search", "deferred", "tokens"]]
         case .worktrees: ["Base branch": ["git", "origin"], "Merge PR automatically": ["github", "pull request"]]
-        case .pi: ["Native subagents": ["children", "workflows"], "Shepherd's pi": ["version", "engine", "home", "folder"],
+        case .subagents: ["Native subagents": ["children", "workflows", "helpers"], "Agent discovery": ["profiles", "project trust"]]
+        case .projects: ["Filter projects": ["folders", "directory", "project settings"], "Instructions": ["AGENTS.md", "APPEND_SYSTEM.md"], "Pi settings": [".pi", "settings.json"]]
+        case .pi: ["Shepherd's pi": ["version", "engine", "home", "folder"],
                    "Agent-to-agent messages": ["agent_send", "agent_spawn", "message", "steer", "peer", "threads", "approve", "allow",
                                                "ask", "permission", "never", "dialog"]]
         case .piSignIn: ["Subscriptions": ["login", "log in", "sign in", "oauth", "subscription", "auth.json", "claude", "chatgpt", "copilot",
@@ -372,6 +373,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .appearance: return "circle.lefthalf.filled"
         case .terminal: return "terminal"
         case .agents: return "person.2"
+        case .subagents: return "arrow.turn.down.right"
+        case .projects: return "folder"
         case .worktrees: return "arrow.branch"
         case .pi: return "pi"
         case .piSignIn: return "key"
@@ -379,10 +382,10 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .piSlashCommands: return "slash.circle"
         case .instructions: return "doc.text"
         case .skills: return "graduationcap"
-        case .mcp: return "server.rack"
-        case .remote: return "dot.radiowaves.left.and.right"
+        case .mcp: return "cable.connector.horizontal"
+        case .remote: return "antenna.radiowaves.left.and.right"
         case .keyboard: return "keyboard"
-        case .advanced: return "gearshape"
+        case .advanced: return "slider.horizontal.3"
         case .experiments: return "flask"
         }
     }

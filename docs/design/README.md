@@ -80,6 +80,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | SettingsAppearance | [settings](settings.md), [foundations](foundations.md) | Settings › Appearance; Density and row settings | Built |
 | SettingsAgents | [settings](settings.md) | Settings › Agents | Built |
 | SettingsWorktrees | [settings](settings.md) | Settings › Worktrees | Built |
+| SettingsProjects | [settings-projects](settings-projects.md) | Settings > Projects | Built |
 | SettingsPi | [settings-pi](settings-pi.md) | Settings › Pi | Built |
 | SettingsPiSignIn | [settings-pi](settings-pi.md) | Settings › Pi ▸ Sign-in | Built (departures) |
 | SettingsPiSignInKeys | [settings-pi](settings-pi.md) | Settings › Pi ▸ Sign-in (API keys, custom providers, the provider menu) | Built |
