@@ -8,7 +8,7 @@ import Testing
 @Suite("Shepherd's pi home")
 struct PiHomeTests {
     static let engine = PiEngine(command: ["/Apps/Shepherd.app/Contents/Helpers/node", "/Apps/Shepherd.app/Contents/Resources/pi-engine/dist/bundle/cli.js"],
-                                 packageDirectory: "/Apps/Shepherd.app/Contents/Resources/pi-engine", version: "0.87.1",
+                                 packageDirectory: "/Apps/Shepherd.app/Contents/Resources/pi-engine", version: "1.0.0",
                                  node: .executable("/Apps/Shepherd.app/Contents/Helpers/node"))
     static let home = PiHome(directory: URL(fileURLWithPath: "/Users/me/Library/Application Support/Shepherd/pi"), engine: engine)
 

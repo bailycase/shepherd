@@ -22,7 +22,7 @@ struct PiLauncherTests {
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: engine.path)
         }
         let home = PiHome(directory: dir.appendingPathComponent("support/pi", isDirectory: true),
-                          engine: PiEngine(command: [engine.path], packageDirectory: "/engine/package", version: "0.87.1", node: .onPath("node")))
+                          engine: PiEngine(command: [engine.path], packageDirectory: "/engine/package", version: "1.0.0", node: .onPath("node")))
         try home.install()
         return home
     }
