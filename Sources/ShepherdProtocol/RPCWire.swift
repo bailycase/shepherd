@@ -457,6 +457,8 @@ public struct RPCMessage: Codable, Hashable, Sendable {
     /// `custom` messages: extensions mark model-only payloads `display: false`.
     public var customType: String?
     public var display: Bool?
+    /// Display-only goal diagnostics. pi omits custom-message details from model context.
+    public var details: JSONValue?
     /// `compactionSummary` and `branchSummary` messages: what pi summarized, and (compaction)
     /// the context it replaced.
     public var summary: String?
@@ -478,7 +480,7 @@ public struct RPCMessage: Codable, Hashable, Sendable {
         isError: Bool? = nil, stopReason: String? = nil, errorMessage: String? = nil, timestamp: Double? = nil,
         customType: String? = nil, display: Bool? = nil, summary: String? = nil, tokensBefore: Double? = nil,
         sections: [String: String?]? = nil, toolsAdded: [JSONValue]? = nil, toolsRemoved: [JSONValue]? = nil,
-        provider: String? = nil, model: String? = nil, usage: RPCUsage? = nil
+        provider: String? = nil, model: String? = nil, details: JSONValue? = nil, usage: RPCUsage? = nil
     ) {
         self.role = role
         self.content = content
@@ -490,6 +492,7 @@ public struct RPCMessage: Codable, Hashable, Sendable {
         self.timestamp = timestamp
         self.customType = customType
         self.display = display
+        self.details = details
         self.summary = summary
         self.tokensBefore = tokensBefore
         self.sections = sections
@@ -502,7 +505,7 @@ public struct RPCMessage: Codable, Hashable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case role, content, toolName, toolCallId, isError, stopReason, errorMessage, timestamp, customType, display
-        case summary, tokensBefore, sections, toolsAdded, toolsRemoved, provider, model, usage
+        case summary, tokensBefore, sections, toolsAdded, toolsRemoved, provider, model, usage, details
     }
 
     public init(from decoder: Decoder) throws {
@@ -523,6 +526,9 @@ public struct RPCMessage: Codable, Hashable, Sendable {
         timestamp = try c.decodeIfPresent(Double.self, forKey: .timestamp)
         customType = try c.decodeIfPresent(String.self, forKey: .customType)
         display = try c.decodeIfPresent(Bool.self, forKey: .display)
+        if role == "custom", customType == "shepherd.goal.check" {
+            details = try? c.decodeIfPresent(JSONValue.self, forKey: .details)
+        }
         // Only the roles that carry them: a long history's decode stays as it was.
         switch role {
         case "compactionSummary", "branchSummary":

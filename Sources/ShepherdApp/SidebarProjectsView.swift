@@ -155,7 +155,7 @@ private struct SidebarTreeItemView: View, Equatable {
                 projectRow(project)
             case .row(let row):
                 NWSidebarRow(row.title, leading: row.leading, selected: row.selected, dimmed: row.offline,
-                             accessory: row.accessory, nested: true)
+                             accessory: row.accessory, hasGoal: row.hasGoal, nested: true)
                     .help(row.help)
                     .sidebarTapRow { vm.selectSidebarRow(row.id) }
                     .accessibilityLabel(row.accessibilityLabel)

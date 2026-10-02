@@ -279,7 +279,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .agents: ["Default model", "Default thinking level", "Speed for new threads",
                        "When a turn ends, send the queue", "Compact at", "Trim old tool output from the model’s context"]
         case .worktrees: ["Base branch", "Fetch before creating", "Commit remaining work", "Generate PR descriptions", "Delete local branch", "Merge PR automatically"]
-        case .pi: ["Shepherd's pi", "Name agents automatically", "Terminals and agent tools", "Diff review tool", "Native subagents",
+        case .pi: ["Shepherd's pi", "Name agents automatically", "Terminals and agent tools", "Agent-to-agent messages", "Diff review tool", "Native subagents",
                    "Subagent display", "MCP servers", "Browser tools", "Concurrency"]
         case .piSignIn: ["Re-import from your pi", "Subscriptions", "Anthropic", "OpenAI Codex", "GitHub Copilot", "xAI", "Kimi", "Radius",
                          "API keys", "Add an API key", "CLIProxyAPI", "Custom providers"]
@@ -294,7 +294,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .remote: ["Hosts", "Add host", "Listener", "Token"]
         case .keyboard: ["Shortcuts", "Reset all shortcuts"]
         case .advanced: ["Workspace state", "Extension socket", "Update channel", "Check for updates", "Reset settings"]
-        case .experiments: ["Suggested instructions", "Learn from", "Can suggest for", "Waiting for you", "Added from suggestions",
+        case .experiments: ["Goals", "Suggested instructions", "Learn from", "Can suggest for", "Waiting for you", "Added from suggestions",
                             "Design tool"]
         }
     }
@@ -313,7 +313,9 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                        "Trim old tool output from the model’s context": ["tool results", "clear", "clipping", "context", "tokens", "compaction",
                                                                      "screenshots", "cache"]]
         case .worktrees: ["Base branch": ["git", "origin"], "Merge PR automatically": ["github", "pull request"]]
-        case .pi: ["Native subagents": ["children", "workflows"], "Shepherd's pi": ["version", "engine", "home", "folder"]]
+        case .pi: ["Native subagents": ["children", "workflows"], "Shepherd's pi": ["version", "engine", "home", "folder"],
+                   "Agent-to-agent messages": ["agent_send", "agent_spawn", "message", "steer", "peer", "threads", "approve", "allow",
+                                               "ask", "permission", "never", "dialog"]]
         case .piSignIn: ["Subscriptions": ["login", "log in", "sign in", "oauth", "subscription", "auth.json", "claude", "chatgpt", "copilot",
                                            "sign out", "expired"],
                          "API keys": ["api key", "key", "environment", "variable", "auth.json", "sign out"],

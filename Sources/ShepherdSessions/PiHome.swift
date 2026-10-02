@@ -169,6 +169,7 @@ public struct PiHome: Equatable, Sendable {
         }
         _ = try CLIProxyAPIExtension.install(in: self)
         try ServiceTierExtension.install(in: self)
+        try GoalExtension.install(in: self)
         try Self.write(Data(Self.markerText.utf8), to: marker, mode: 0o644)
         try Self.write(Data(restoreEnvScript.utf8), to: restoreEnv, mode: 0o644)
         try Self.write(Data(launcherScript.utf8), to: launcher, mode: 0o755)
@@ -190,8 +191,41 @@ public struct PiHome: Equatable, Sendable {
             if settings.removeValue(forKey: "packages") != nil {
                 notes.append("Removed `packages` from Shepherd's pi settings: Shepherd's pi loads no pi packages.")
             }
+            settings["extensions"] = Self.disablingBuiltIns(settings["extensions"])
             return notes
         }
+    }
+
+    // MARK: pi's built-in extensions
+
+    /// The built-in extensions pi 1.0 loads in every session that Shepherd's pi leaves off: its own
+    /// MCP support (it would read `<home>/mcp.json`, and the `.pi/mcp.json` of any trusted
+    /// project, start those servers beside Settings ▸ MCP servers' and add `/mcp`, `codemode` and
+    /// an `mcp_servers` section to every prompt), and the codemode and tool-search extensions
+    /// that MCP switches on. Shepherd's own MCP extension manages the servers (docs/pi-engine.md ›
+    /// pi 1.0). pi's switch is `-builtin:<name>` in the `extensions` setting
+    /// (docs/settings.md › Resources). `llama.cpp`, the fourth built-in, is a provider pi has
+    /// always shipped, and stays.
+    public static let disabledBuiltIns = ["mcp", "codemode", "tool-search"]
+
+    /// `entries` (the `extensions` list pi reads, as settings.json holds it) with `-builtin:<name>`
+    /// for each of `disabledBuiltIns` that no entry already names: an entry naming one, in any
+    /// form (`+builtin:mcp` is how a person turns one back on), is theirs and stays as it is.
+    /// Every other entry stays, in order.
+    static func disablingBuiltIns(_ entries: Any?) -> [Any] {
+        var kept = entries as? [Any] ?? []
+        let named = Set(kept.compactMap { ($0 as? String)?.trimmingCharacters(in: .whitespaces) })
+        for name in disabledBuiltIns where !["builtin:", "+builtin:", "-builtin:"].contains(where: { named.contains($0 + name) }) {
+            kept.append("-builtin:\(name)")
+        }
+        return kept
+    }
+
+    /// Whether an `extensions` entry names one of pi's built-in extensions (`builtin:mcp`, with a
+    /// leading `+` or `-`) rather than a file, so it is not an extension someone installed.
+    public static func namesBuiltIn(_ entry: String) -> Bool {
+        let text = entry.trimmingCharacters(in: .whitespaces)
+        return ["builtin:", "+builtin:", "-builtin:"].contains { text.hasPrefix($0) }
     }
 
     // MARK: ~/.agents/skills

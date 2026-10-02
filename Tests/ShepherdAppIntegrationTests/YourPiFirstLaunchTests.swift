@@ -317,13 +317,20 @@ struct YourPiFirstLaunchTests {
         await vm.yourPi.refresh()
         let row = try #require(vm.yourPi.survey?.extensions.first { $0.copy.destination == copy.destination })
         #expect(row.on && row.failure == "your extension must never load")
+        // settings.json's `extensions` also holds Shepherd's switches for pi's own built-in
+        // extensions (`-builtin:mcp`, written by every launch's `PiHome.install`): not the user's.
+        func yours(_ settings: [String: Any]) -> [String] {
+            (settings["extensions"] as? [String] ?? []).filter { !PiHome.namesBuiltIn($0) }
+        }
         let settings = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: setup.pi.files.settings)) as? [String: Any])
-        #expect(settings["extensions"] == nil)
+        #expect(yours(settings).isEmpty, "the extension that threw is left out: \(String(describing: settings["extensions"]))")
+        #expect(PiHome.disabledBuiltIns.allSatisfy { (settings["extensions"] as? [String] ?? []).contains("-builtin:\($0)") }, "and the switches stay")
 
         // Try again: it is back in the next launch's settings.
         await vm.yourPi.setExtension(copy.destination, on: true)
         let again = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: setup.pi.files.settings)) as? [String: Any])
-        #expect(again["extensions"] as? [String] == [entry])
+        #expect(yours(again) == [entry])
+        #expect(PiHome.disabledBuiltIns.allSatisfy { (again["extensions"] as? [String] ?? []).contains("-builtin:\($0)") })
         #expect(try YourPiFixture.tree(setup.yours) == before, "your pi is byte-identical")
     }
 }

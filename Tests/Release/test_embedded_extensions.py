@@ -68,7 +68,7 @@ class EmbeddedExtensionTests(unittest.TestCase):
         )
 
     def test_the_canonical_files_are_the_twenty_three_the_app_embeds(self):
-        self.assertEqual(len(canonical_files()), 23, "a new canonical file needs an embedded copy and a row in EmbeddedExtensionTests")
+        self.assertEqual(len(canonical_files()), 24, "a new canonical file needs an embedded copy and a row in EmbeddedExtensionTests")
 
 
 if __name__ == "__main__":

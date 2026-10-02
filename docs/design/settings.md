@@ -206,6 +206,13 @@ settings." The chord is read from `KeybindingsStore`, so a rebind never leaves t
     A client lists it among a host's Bundled extensions (`HostSettings.bundledExtensions` id
     `context`, changed with `bundledExtension`), so it is remote-changeable like the Pi switches.
 
+- **Goal checks:**
+  - Allow cross-provider goal checks, off by default. Off uses the thread's exact model and
+    provider. On may send conversation, tool output and written code to another provider,
+    preferring Haiku, Codex Mini or Gemini Flash when available. The footnote says this applies
+    when agents start or restart; running agents keep their policy until restarted. The iOS
+    host-settings page exposes the same consent and scope.
+
 ## Worktrees (SettingsWorktrees)
 
 "How new worktrees are created, and what Finalize does when an agent's work is done." Every

@@ -23,6 +23,47 @@ struct ThreadProjectionTests {
         #expect(!row.truncated)
     }
 
+    @Test func runtimeGoalFeedbackAndErrorsSurviveNativeProjectionAsDisclosedContent() throws {
+        struct Fixture: Decodable {
+            struct Record: Decodable { let customType: String; let content: String; let details: JSONValue? }
+            let records: [Record]
+        }
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let fixture = try JSONDecoder().decode(Fixture.self, from: Data(contentsOf: root.appendingPathComponent("Tests/Extensions/goal-runtime-fixtures.json")))
+        let stops = fixture.records.filter { $0.details?["verdict"]?["reason"]?.stringValue?.contains("Choose staging or production") == true || $0.details?["error"]?.stringValue?.contains("No authenticated goal evaluator") == true }
+        #expect(stops.count == 2)
+        for stop in stops {
+            let message = RPCMessage(role: "custom", content: [.text(stop.content)], customType: stop.customType, display: true, details: stop.details)
+            let row = RPCThreadState.project(entryID: "goal-stop", message: message)
+            #expect(row.customType == "shepherd.goal.check")
+            let diagnostic = try #require(stop.details?["verdict"]?["reason"]?.stringValue ?? stop.details?["error"]?.stringValue)
+            #expect(row.blocks.map(\.text).joined().contains(diagnostic))
+            #expect(!stop.content.contains(diagnostic), "raw diagnostic is not repeated into worker context")
+            #expect(!row.truncated)
+        }
+    }
+
+    @Test func goalDiagnosticsAreDisplayOnlyButReachTheNativeDetailsDisclosure() throws {
+        let raw = #"{"role":"custom","customType":"shepherd.goal.check","display":true,"content":"Goal needs you · looks met, evidence incomplete, confirm\n\nDetails:\nChecker assessment stored in Details.","details":{"checkedBy":"fixture/worker","verdict":{"reason":"The deployment requirement has no verification result.","evidence":[{"entryId":"proof-id","quote":"The acceptance result passed all 41 tests."}]},"missingEvidence":["r2: verify deployment"],"error":"Provider diagnostic"}}"#
+        let message: RPCMessage = try decode(raw)
+        #expect(message.details?["verdict"]?["reason"]?.stringValue != nil)
+        #expect(!message.content.contains { if case .text(let text) = $0 { text.contains("verification result") } else { false } })
+        let row = RPCThreadState.project(entryID: "goal-stop", message: message)
+        let content = row.blocks.map(\.text).joined()
+        let parts = content.components(separatedBy: "\n\nDetails:\n")
+        #expect(parts.count == 2)
+        #expect(parts[0].contains("Checked by fixture/worker"))
+        #expect(!parts[0].contains("proof-id"))
+        #expect(parts[1].contains("The deployment requirement has no verification result."))
+        #expect(parts[1].contains("r2: verify deployment") && parts[1].contains("proof-id: The acceptance result"))
+        #expect(parts[1].contains("Provider diagnostic"))
+        #expect(!row.truncated)
+        var other: RPCMessage = try decode(raw.replacingOccurrences(of: "shepherd.goal.check", with: "some-other-extension"))
+        #expect(other.details == nil, "ordinary custom payloads do not expand decoding")
+        other.customType = "shepherd.goal.check"
+        #expect(RPCThreadState.project(entryID: "legacy", message: other).blocks.map(\.text) == other.content.compactMap { if case .text(let text) = $0 { text } else { nil } })
+    }
+
     @Test func toolCallBlocksAreNotRenderedAsProse() throws {
         let message: RPCMessage = try decode(#"""
         {"role":"assistant","content":[{"type":"text","text":"Listing."},
