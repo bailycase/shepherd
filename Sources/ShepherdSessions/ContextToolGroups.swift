@@ -4,8 +4,9 @@ import Foundation
 /// "terminal tools", "MCP". The host knows a tool by name only (pi lists the definitions in its
 /// system messages and says no more), so the group is read off the name, by the table
 /// `Tests/Extensions/context-tools.json` holds for every tool Shepherd registers
-/// (`ContextToolGroupsTests` checks the two agree). A name no row lists, such as an MCP server's
-/// tool set to Each tool on its own or a tool one of the user's extensions registers, is "other tools".
+/// (`ContextToolGroupsTests` checks the two agree). pi's own MCP is "MCP": its `tool_search` and
+/// resource tools, and a server's tools set to Direct (`mcp__<server>__<tool>`). A name no row lists,
+/// such as a tool one of the user's extensions registers, is "other tools".
 enum ContextToolGroups {
     static let labels: [String: String] = [
         "pi": "pi tools", "terminal": "terminal tools", "agent": "agent tools", "automation": "automation tools",
@@ -14,6 +15,7 @@ enum ContextToolGroups {
     ]
 
     private static let piTools: Set<String> = ["read", "bash", "edit", "write", "grep", "find", "ls", "powershell"]
+    private static let mcpResourceTools: Set<String> = ["list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"]
     private static let designTools: Set<String> = [
         "design_get", "design_note", "design_read", "board_write", "board_edit", "boards_edit", "board_search", "board_render", "board_extract",
         "canvas_update", "design_check", "comment_list", "comment_reply", "system_read", "system_write", "checkpoint_create",
@@ -29,7 +31,7 @@ enum ContextToolGroups {
         if name == "review_diff" { return "review" }
         if name.hasPrefix("shepherd_child_") || name == "shepherd_workflow" || name == "shepherd_mission" || name == "shepherd_parent_message" { return "subagents" }
         if name.hasPrefix("browser_") { return "browser" }
-        if name == "mcp" { return "mcp" }
+        if name == "tool_search" || name.hasPrefix("mcp__") || Self.mcpResourceTools.contains(name) { return "mcp" }
         if designTools.contains(name) { return "design" }
         if name == "suggest_instruction" { return "instructions" }
         return "other"

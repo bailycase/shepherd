@@ -94,6 +94,8 @@ and pi's four default tools, no other extension. Characters of tool declarations
 | pi `deferred`, after one search (8 loaded) | 13 | 13,103 | 3,276 | +1,793 |
 | pi `direct` | 30 | 24,565 | 6,141 | +4,658 |
 
+The context budget guard (`scripts/context-budget.json`, docs/context-budget.md) keeps measuring this on a real pi with three stand-in servers: `tool_search` with its server list is 206 tokens and a Direct server's ten GitHub-shaped tools 1,326.
+
 So Search costs what the old `mcp` tool cost; what it saves is the old "Each tool on its own" (and the
 same choice made Direct). A direct tool is about 211 tokens here and grows with the schema.
 

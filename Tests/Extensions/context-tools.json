@@ -195,16 +195,16 @@
     },
     {
       "tools": [
-        "mcp"
+        "tool_search"
       ],
       "group": "mcp",
-      "extension": "shepherd-mcp.ts",
+      "extension": "builtin:tool-search",
       "verdicts": {
         "thread": "keep",
         "automation": "keep",
         "design": "keep"
       },
-      "reason": "One proxy tool (about 180 tokens) for every server set to the default exposure; present only while a server is configured."
+      "reason": "pi 1.0's own tool search, which loads the tools of the MCP servers left on Search (docs/mcp.md): about 190 tokens with the server list in the prompt, present only while a server is on Search. A server set to Direct declares its own mcp__<server>__<tool> tools instead: the user's, not listed here."
     },
     {
       "tools": [

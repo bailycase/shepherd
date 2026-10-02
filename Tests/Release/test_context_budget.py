@@ -84,14 +84,21 @@ class CountingTests(unittest.TestCase):
 
     def test_tools_are_grouped_by_the_extension_that_registered_them(self):
         names = {"read": "<builtin:read>", "terminal_open": "Extensions/shepherd-panes.ts", "agent_send": "Extensions/shepherd-panes.ts",
-                 "notify": "Extensions/shepherd-panes.ts", "browser_open": "Extensions/shepherd-browser.ts", "mcp": "Extensions/shepherd-mcp.ts",
-                 "github_get_issue": "Extensions/shepherd-mcp.ts", "shepherd_child_start": "Extensions/shepherd-children.ts",
+                 "notify": "Extensions/shepherd-panes.ts", "browser_open": "Extensions/shepherd-browser.ts", "tool_search": "<builtin:tool-search>",
+                 "mcp__github__get_issue": "<builtin:mcp>", "shepherd_child_start": "Extensions/shepherd-children.ts",
                  "review_diff": "Extensions/shepherd-review.ts", "design_get": "Extensions/shepherd-design-refs.ts", "mine": "/elsewhere/own.ts"}
         counted = cb.count_scenario(capture(system_prompt(), [tool(n) for n in names], names), BARE)
         groups = {t["name"]: t["group"] for t in counted["tools"]}
         self.assertEqual(groups, {"read": "pi.builtin_tools", "terminal_open": "tools.terminal", "agent_send": "tools.agent", "notify": "tools.automation",
-                                  "browser_open": "tools.browser", "mcp": "tools.mcp", "github_get_issue": "tools.mcp_direct",
+                                  "browser_open": "tools.browser", "tool_search": "tools.mcp", "mcp__github__get_issue": "tools.mcp_direct",
                                   "shepherd_child_start": "tools.children", "review_diff": "tools.review", "design_get": "tools.design", "mine": "tools.other"})
+
+    def test_pis_mcp_section_of_the_prompt_is_the_mcp_row_with_tool_search(self):
+        servers = "- mcp__docs (tool_search): Product documentation\n- mcp__notes (tool_search)"
+        counted = cb.count_scenario(capture(system_prompt(extra={"mcp_servers": servers}), [tool("tool_search")], {"tool_search": "<builtin:tool-search>"}), BARE)
+        search = len(json.dumps(tool("tool_search"), separators=(",", ":")))
+        self.assertEqual(counted["chars"]["tools.mcp"], search + len(f"<mcp_servers>\n{servers}\n</mcp_servers>"))
+        self.assertNotIn("other.mcp_servers", counted["chars"])
 
     def test_a_tool_costs_its_definition_as_the_provider_received_it(self):
         counted = cb.count_scenario(capture(system_prompt(), [tool("terminal_open", "d" * 80, cwd="x")], {"terminal_open": "Extensions/shepherd-panes.ts"}), BARE)
