@@ -183,7 +183,11 @@ project that wants one sets `exposure` to `deferred` or `direct` in that file.
 the switch on, `shepherd-mcp-project.ts` registers the servers of the `.mcp.json` found at the agent's
 folder or the nearest ancestor holding `.git`, through `pi.registerMcpServer`, as `deferred`, minus
 names the user's file defines. It reads nothing of the Keychain and never writes the repo. It is the one
-piece of MCP that runs in the agent's pi.
+piece of MCP that runs in the agent's pi. The repo's file is not trusted with the app's values: pi starts a
+stdio server with its own whole environment, which carries the `SHEPHERD_MCP_SECRET_*` values, so the
+extension blanks each of them in the server's `env`, and it expands a `${SHEPHERD_*}` reference in the file to
+its default or nothing (checked against the version without both: the server read the token). A repo's file
+can still start any command as the user, which is why the switch is off by default.
 
 ## Not covered
 
