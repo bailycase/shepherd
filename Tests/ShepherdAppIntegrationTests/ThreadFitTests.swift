@@ -113,16 +113,49 @@ struct OpenedActivityFitTests {
     func aLineOpenedToItsCallsFitsItsColumn(_ row: LongThreads.Row, _ column: CGFloat) async throws {
         let bursts = Self.bursts(row)
         let calls = Set(bursts.flatMap(\.calls).map(\.id))
+        let marks = try await ColumnFit.pixelsPastTheColumn(column: column) {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(bursts) { burst in ActivityLineView(burst: burst, expanded: true, expandedCalls: calls) }
+            }
+        }
+        #expect(marks == 0, "\(row): \(marks) pixels past the \(column)pt column")
+    }
+}
+
+/// A subagent's transcript in the inspector, which draws the thread's turns in the side pane's
+/// narrowest column (the pane's minimum less the inspector's padding): the same rows, the same fit.
+@Suite("A subagent's transcript fits the inspector", .serialized, .mainActorExclusive)
+@MainActor
+struct InspectorFitTests {
+    nonisolated static let column: CGFloat = AppLayout.paneMinWidth - 2 * AppLayout.inspectorPadding
+
+    @Test(arguments: LongThreads.rows)
+    func aTranscriptsTurnsFitTheInspectorsColumn(_ row: LongThreads.Row) async throws {
+        let marks = try await ColumnFit.pixelsPastTheColumn(column: Self.column) {
+            VStack(alignment: .leading, spacing: AppLayout.inspectorTurnSpacing) {
+                // The turns as the inspector draws them: the task, then the agent's turn.
+                UserTurn(messages: Array(row.messages.prefix(1)))
+                AgentTurn(messages: Array(row.messages.dropFirst()), live: false)
+            }
+            .environment(\.nwProseSize, .small)
+        }
+        #expect(marks == 0, "\(row): \(marks) pixels past the inspector's \(Self.column)pt column")
+    }
+}
+
+/// A view in a column of `column` points in a window that goes on past it: how many pixels past
+/// the column hold anything but the window's background, which is a view that outgrew its column.
+@MainActor
+enum ColumnFit {
+    static func pixelsPastTheColumn<V: View>(column: CGFloat, @ViewBuilder _ content: () -> V) async throws -> Int {
         let margin: CGFloat = 200
         let window = OffscreenWindow(size: CGSize(width: column + margin, height: 900), dark: false)
         defer { window.close() }
         window.show(
-            VStack(alignment: .leading, spacing: 6) {
-                ForEach(bursts) { burst in ActivityLineView(burst: burst, expanded: true, expandedCalls: calls) }
-            }
-            .frame(width: column)
-            .frame(width: column + margin, height: 900, alignment: .topLeading)
-            .background(Color.nw.bgWindow))
+            content()
+                .frame(width: column)
+                .frame(width: column + margin, height: 900, alignment: .topLeading)
+                .background(Color.nw.bgWindow))
         ListPerf.settle(window)
         let host = window.host
         let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
@@ -137,7 +170,7 @@ struct OpenedActivityFitTests {
                     || abs(color.blueComponent - background.blueComponent) > 0.02 { marks += 1 }
             }
         }
-        #expect(marks == 0, "\(row): \(marks) pixels past the \(column)pt column")
+        return marks
     }
 }
 
