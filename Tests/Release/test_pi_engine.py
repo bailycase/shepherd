@@ -30,7 +30,7 @@ sys.modules["pi_engine"] = pi_engine
 _spec.loader.exec_module(pi_engine)
 
 NODE_VERSION = "24.21.0"
-PI_VERSION = "0.87.1"
+PI_VERSION = "1.0.0"
 
 
 def read(*parts):
@@ -91,9 +91,11 @@ class Fixture:
                  shrinkwrap_jiti="2.7.0"):
         shrinkwrap = {"packages": {
             "": {"name": "@earendil-works/pi-coding-agent"},
-            "node_modules/@earendil-works/chord": {"version": "0.87.1", "license": "MIT"},
+            # Compiled into dist/bundle (and so listed in the notices), not loaded from node_modules.
+            "node_modules/@earendil-works/chord": {"version": "1.0.0", "license": "MIT"},
             "node_modules/jiti": {"version": shrinkwrap_jiti, "license": "MIT"},
             "node_modules/@silvia-odwyer/photon-node": {"version": "0.3.4", "license": "Apache-2.0"},
+            "node_modules/quickjs-wasi": {"version": "3.6.2", "license": "MIT"},
             "node_modules/esbuild": {"version": "0.28.2", "license": "MIT"},
             "node_modules/@esbuild/darwin-arm64": {"version": "0.28.2", "license": "MIT"},
             "node_modules/undici": {"version": "8.10.2", "license": "MIT"},
@@ -114,16 +116,18 @@ class Fixture:
         }
         self.archives = {
             "pi": targz(self.pi_files, extra=pi_extra),
-            "@earendil-works/chord": targz({
-                "package.json": json.dumps({"name": "@earendil-works/chord", "version": "0.87.1",
-                                            "license": "MIT", "author": "Chord Author"}).encode(),
-                "README.md": b"chord", "dist/context/index.js": b"export {}", "dist/index.js": b"import 'esbuild'",
-                "src/index.ts": b"src"}),
             "jiti": targz({"package.json": json.dumps({"name": "jiti", "version": "2.7.0"}).encode(),
                            "LICENSE": b"MIT License\n\nCopyright (c) jiti", "lib/jiti.cjs": b"cjs"}),
             "@silvia-odwyer/photon-node": targz({
                 "package.json": json.dumps({"name": "@silvia-odwyer/photon-node", "version": "0.3.4"}).encode(),
                 "LICENSE.md": b"Apache License", "photon_rs_bg.wasm": b"\0asm"}),
+            # The codemode extension resolves only quickjs.wasm; the library is bundled, and the
+            # extensions/*.so files are WebAssembly pi never loads, named like native code.
+            "quickjs-wasi": targz({
+                "package.json": json.dumps({"name": "quickjs-wasi", "version": "3.6.2",
+                                            "exports": {"./quickjs.wasm": "./quickjs.wasm"}}).encode(),
+                "LICENSE": b"MIT License\n\nCopyright (c) quickjs-wasi", "quickjs.wasm": b"\0asm",
+                "dist/index.js": b"export {}", "extensions/url/url.so": b"\0asm", "README.md": b"readme"}),
         }
         folder = f"node-v{node_version}-darwin-arm64/"
         self.node = tarxz({folder + "bin/node": thin_macho("arm64", node_version),
@@ -138,7 +142,7 @@ class Fixture:
                    "integrity": sri(self.archives["pi"])},
             "modules": {},
         }
-        versions = {"@earendil-works/chord": "0.87.1", "jiti": "2.7.0", "@silvia-odwyer/photon-node": "0.3.4"}
+        versions = {"jiti": "2.7.0", "@silvia-odwyer/photon-node": "0.3.4", "quickjs-wasi": "3.6.2"}
         for name, version in versions.items():
             base = name.split("/")[-1]
             self.pin["modules"][name] = {"version": version,
@@ -184,12 +188,12 @@ class PinTests(unittest.TestCase):
     def test_the_checked_in_pin_is_usable(self):
         self.assertEqual(pi_engine.pin_problems(pi_engine.load_pin()), [])
 
-    def test_it_pins_node_24_lts_for_arm64_only_and_pi_0_87_1(self):
+    def test_it_pins_node_24_lts_for_arm64_only_and_pi_1_0_0(self):
         pin = pi_engine.load_pin()
         self.assertEqual(pin["node"]["version"].split(".")[0], "24")
         self.assertEqual(list(pin["node"]["archives"]), ["arm64"])
-        self.assertEqual((pin["pi"]["name"], pin["pi"]["version"]), ("@earendil-works/pi-coding-agent", "0.87.1"))
-        self.assertEqual(sorted(pin["modules"]), ["@earendil-works/chord", "@silvia-odwyer/photon-node", "jiti"])
+        self.assertEqual((pin["pi"]["name"], pin["pi"]["version"]), ("@earendil-works/pi-coding-agent", "1.0.0"))
+        self.assertEqual(sorted(pin["modules"]), ["@silvia-odwyer/photon-node", "jiti", "quickjs-wasi"])
 
     def test_a_pin_that_could_not_be_verified_or_would_not_run_is_refused(self):
         good = pi_engine.load_pin()
@@ -264,12 +268,11 @@ class StageTests(unittest.TestCase):
                     "dist/modes/interactive/assets/logo.png", "dist/core/export-html/template.html",
                     "dist/core/export-html/template.css", "dist/core/export-html/template.js",
                     "dist/core/export-html/vendor/marked.min.js",
-                    "node_modules/@earendil-works/chord/package.json", "node_modules/@earendil-works/chord/README.md",
-                    "node_modules/@earendil-works/chord/dist/context/index.js",
                     "node_modules/jiti/package.json", "node_modules/jiti/LICENSE", "node_modules/jiti/lib/jiti.cjs",
                     "node_modules/@silvia-odwyer/photon-node/package.json",
                     "node_modules/@silvia-odwyer/photon-node/LICENSE.md",
                     "node_modules/@silvia-odwyer/photon-node/photon_rs_bg.wasm",
+                    "node_modules/quickjs-wasi/package.json", "node_modules/quickjs-wasi/quickjs.wasm",
                     "LICENSE", "NODE-LICENSE", "THIRD-PARTY-NOTICES")),
             ]))
             self.assertEqual(set(pi_engine.slices(os.path.join(out, "Helpers/node"))), {"arm64"})
@@ -307,7 +310,8 @@ class StageTests(unittest.TestCase):
             self.assertNotIn("esbuild", notices.split("not shipped.")[1])
             self.assertIn("Copyright (c) jiti", notices)
             self.assertIn("Apache License", notices)
-            self.assertIn("Copyright (c) Chord Author", notices)
+            self.assertIn("Copyright (c) quickjs-wasi", notices)
+            self.assertIn("@earendil-works/chord 1.0.0  MIT", notices, "what the bundle compiles in is listed too")
 
     def test_the_file_lists_declare_every_file_the_xcode_phase_reads_and_every_path_it_writes(self):
         fixture = Fixture()
@@ -324,7 +328,7 @@ class StageTests(unittest.TestCase):
                 if path != "pin.json":
                     self.assertIn(contents + path, outputs)
             for folder in ("Helpers", "Resources/pi-engine", "Resources/pi-engine/dist/bundle/chunks",
-                           "Resources/pi-engine/node_modules/@earendil-works"):
+                           "Resources/pi-engine/node_modules/@silvia-odwyer"):
                 self.assertIn(contents + folder, outputs)
             self.assertNotIn(contents + "Resources", outputs, "the phase never creates Resources/")
 
@@ -408,6 +412,30 @@ class VerifyTests(unittest.TestCase):
     def test_a_module_the_bundle_does_not_load_does_not_ship(self):
         self.write("node_modules/undici/package.json", json.dumps({"name": "undici", "version": "8.10.2"}).encode())
         self.assertOneProblem("node_modules/undici")
+
+    def test_chord_compiled_into_the_bundle_does_not_ship_beside_it(self):
+        self.write("node_modules/@earendil-works/chord/package.json",
+                   json.dumps({"name": "@earendil-works/chord", "version": "1.0.0"}).encode())
+        self.assertOneProblem("node_modules/@earendil-works/chord")
+
+    def test_the_files_the_bundle_resolves_by_name_must_be_there(self):
+        # pi's codemode finds quickjs-wasi/quickjs.wasm with require.resolve, and a script fails
+        # with "Cannot find module" without it (observed against the real engine).
+        for relative in ("node_modules/quickjs-wasi/quickjs.wasm", "node_modules/@silvia-odwyer/photon-node/photon_rs_bg.wasm"):
+            with self.subTest(relative):
+                path = os.path.join(self.engine, relative)
+                with open(path, "rb") as f:
+                    saved = f.read()
+                os.remove(path)
+                self.assertOneProblem(f"{relative.removeprefix('node_modules/')} is missing")
+                with open(path, "wb") as f:
+                    f.write(saved)
+
+    def test_quickjs_wasi_ships_its_wasm_and_never_its_side_modules(self):
+        # extensions/*.so are WebAssembly that pi never loads; named like native code, they would
+        # also fail the native-code check.
+        self.write("node_modules/quickjs-wasi/extensions/url/url.so", b"\0asm")
+        self.assertOneProblem("url.so")
 
     def test_node_is_arm64_only_at_the_pinned_version(self):
         node = os.path.join(self.out, "Helpers", "node")

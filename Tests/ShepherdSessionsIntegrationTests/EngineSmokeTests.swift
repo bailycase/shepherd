@@ -46,6 +46,34 @@ struct EngineSmokeTests {
         try await EngineSmoke.runInYourHome(engine: engine)
     }
 
+    /// pi 1.0 loads its own MCP support (and codemode and tool search) in every session. In
+    /// Shepherd's home it is off: the servers in the home's `mcp.json` (where pi reads user
+    /// servers) are never started and `/mcp` is not offered, while llama.cpp, the built-in that
+    /// stays, is. `+builtin:mcp` in the home's settings, the one switch pi documents, turns it on:
+    /// the same file then starts the server and lists `/mcp`.
+    @Test func piBuiltInMCPIsOffInShepherdsHomeUnlessSwitchedOn() async throws {
+        let engine = try #require(EngineSmoke.engine)
+        try await EngineSmoke.runBuiltIns(engine: engine)
+    }
+
+    /// What the bundle resolves from the engine's `node_modules`, with the engine's own node: the
+    /// modules the keep-list ships, and codemode's QuickJS binary, which pi finds by name when a
+    /// script runs (staged without it, a script fails with "Cannot find module").
+    @Test func theBundleResolvesTheModulesTheEngineShips() throws {
+        let engine = try #require(EngineSmoke.engine)
+        let script = """
+            const { createRequire } = require("node:module");
+            const resolve = createRequire(process.argv[1]).resolve;
+            for (const name of ["jiti", "@silvia-odwyer/photon-node", "quickjs-wasi/quickjs.wasm"]) console.log(resolve(name));
+            """
+        let result = try EngineSmoke.runTool(engine.node.path, ["-e", script, engine.entry.path], environment: [:])
+        #expect(result.status == 0, "\(result.output)")
+        let resolved = result.output.split(separator: "\n").map(String.init)
+        let modules = PiHome.canonical(engine.packageDirectory.appendingPathComponent("node_modules").path) + "/"
+        #expect(resolved.count == 3 && resolved.allSatisfy { $0.hasPrefix(modules) }, "each resolves inside the engine's node_modules: \(resolved)")
+        #expect(resolved.last?.hasSuffix("/quickjs-wasi/quickjs.wasm") == true)
+    }
+
     /// Skills come only from Shepherd's home: pi's own discovery of `$HOME/.agents/skills` is off
     /// (Shepherd's settings filter it out), so a skill there never reaches an agent, while one in
     /// the home's `skills/` does, and so do the ones copied from the user's pi and that folder.
@@ -416,6 +444,48 @@ enum EngineSmoke {
         #expect(try tree(yourPi) == before, "your pi is byte-identical")
         let settings = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: home.settings)) as? [String: Any])
         #expect(settings["packages"] == nil, "Shepherd's settings name no packages")
+    }
+
+    static func runBuiltIns(engine: BundledPiEngine) async throws {
+        let scratch = try makeScratchDirectory("engine-builtins")
+        let files = FileManager.default
+        let userHome = scratch.appendingPathComponent("home", isDirectory: true)
+        let temporary = scratch.appendingPathComponent("tmp", isDirectory: true)
+        let project = scratch.appendingPathComponent("project", isDirectory: true)
+        for folder in [userHome, temporary, project] { try files.createDirectory(at: folder, withIntermediateDirectories: true) }
+        let home = PiHome(directory: scratch.appendingPathComponent("support/pi", isDirectory: true), engine: .bundled(engine),
+                          userHome: userHome.path)
+        try home.install()
+        try models.write(to: home.directory.appendingPathComponent("models.json"), atomically: true, encoding: .utf8)
+        // A server in pi's own MCP file: starting it touches the marker.
+        let marker = scratch.appendingPathComponent("mcp-server-started")
+        let servers = ["mcpServers": ["probe": ["command": "/usr/bin/touch", "args": [marker.path]]]]
+        try JSONSerialization.data(withJSONObject: servers).write(to: home.directory.appendingPathComponent("mcp.json"))
+        let environment = ["HOME": userHome.path, "TMPDIR": temporary.path + "/", "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"]
+
+        func commandNames(_ pi: RPCProcess) async throws -> [String] {
+            let listing = try await pi.request(["type": "get_commands"])
+            #expect(listing["success"] as? Bool == true, "get_commands: \(listing) \(pi.errors)")
+            let commands = ((listing["data"] as? [String: Any])?["commands"] as? [[String: Any]]) ?? []
+            return commands.compactMap { $0["name"] as? String }
+        }
+
+        let off = try RPCProcess(executable: home.launcher.path, arguments: ["--mode", "rpc", "--no-session"], directory: project, environment: environment)
+        defer { off.stop() }
+        let offered = try await commandNames(off)
+        #expect(offered.contains("llama") && !offered.contains("mcp"), "pi's MCP is off, llama.cpp is not: \(offered)")
+        #expect(try await off.finish() == 0, "\(off.errors)")
+        #expect(!files.fileExists(atPath: marker.path), "the server in the home's mcp.json was never started")
+
+        try Data(#"{"extensions":["+builtin:mcp"]}"#.utf8).write(to: home.settings)
+        try home.install()
+        let settings = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: home.settings)) as? [String: Any])
+        #expect((settings["extensions"] as? [String])?.first == "+builtin:mcp", "a switch someone set is kept: \(settings)")
+        let on = try RPCProcess(executable: home.launcher.path, arguments: ["--mode", "rpc", "--no-session"], directory: project, environment: environment)
+        defer { on.stop() }
+        #expect(try await commandNames(on).contains("mcp"))
+        try await eventually("pi's MCP to start the server in the home's mcp.json") { files.fileExists(atPath: marker.path) }
+        #expect(try await on.finish() == 0, "\(on.errors)")
     }
 
     static func runSkills(engine: BundledPiEngine) async throws {

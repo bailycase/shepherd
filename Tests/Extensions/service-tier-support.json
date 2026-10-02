@@ -3,6 +3,7 @@
   "rows": [
     { "provider": "openai", "api": "openai-responses", "id": "gpt-5.5", "ownedBy": null, "tiers": ["standard", "fast"], "fast": "priority", "why": "OpenAI Responses" },
     { "provider": "openai", "api": "openai-responses", "id": "gpt-6-luna", "ownedBy": null, "tiers": ["standard", "fast"], "fast": "priority" },
+    { "provider": "openai", "api": "openai-responses", "id": "gpt-6.1-sol", "ownedBy": null, "tiers": ["standard", "fast"], "fast": "priority", "why": "new in pi 0.99.1, by the same rule as gpt-6-sol" },
     { "provider": "openai", "api": "openai-responses", "id": "o3", "ownedBy": null, "tiers": ["standard", "fast"], "fast": "priority" },
     { "provider": "openai", "api": "openai-responses", "id": "gpt-4.1", "ownedBy": null, "tiers": ["standard", "fast"], "fast": "priority" },
     { "provider": "openai", "api": "openai-completions", "id": "gpt-4o", "ownedBy": null, "tiers": ["standard", "fast"], "fast": "priority", "why": "Chat Completions takes the field too" },
@@ -13,6 +14,7 @@
     { "provider": "openai", "api": "anthropic-messages", "id": "gpt-5.5", "ownedBy": null, "tiers": [], "fast": null, "why": "an API the provider does not list" },
 
     { "provider": "openai-codex", "api": "openai-codex-responses", "id": "gpt-6-sol", "ownedBy": null, "tiers": ["standard", "fast"], "fast": "priority", "why": "the ChatGPT backend's Responses API" },
+    { "provider": "openai-codex", "api": "openai-codex-responses", "id": "gpt-6.1-sol", "ownedBy": null, "tiers": ["standard", "fast"], "fast": "priority", "why": "pi 1.0's default model on this backend" },
     { "provider": "openai-codex", "api": "openai-codex-responses", "id": "gpt-5.3-codex-spark", "ownedBy": null, "tiers": ["standard", "fast"], "fast": "priority" },
     { "provider": "openai-codex", "api": "openai-responses", "id": "gpt-6-sol", "ownedBy": null, "tiers": [], "fast": null, "why": "wrong API for the provider" },
 
