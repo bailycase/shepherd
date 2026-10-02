@@ -422,7 +422,7 @@ final class RPCThreadState {
             ShepherdLog.info("rpc session \(self.session.id) has not started within \(timeout)s; asking again")
             self.bootstrap(timeout: timeout)
         }
-        refreshMessages(timeout: timeout) { [weak self] _ in
+        refreshMessages(timeout: timeout, bootstrapAttempt: attempt) { [weak self] _ in
             // Loaded or not (a history over the record cap never arrives), the thread serves now;
             // an attempt the bootstrap has since repeated waits for the repeat.
             guard let self, attempt == self.bootstrapAttempts, generation == self.generation else { return }
@@ -1022,25 +1022,33 @@ final class RPCThreadState {
         }
     }
 
-    func refreshMessages(timeout: TimeInterval = 10, done: ((Result<RPCResponse, RPCError>) -> Void)? = nil) {
+    /// `bootstrapAttempt` is the bootstrap's attempt this fetch belongs to. A pi slower than the
+    /// request deadline answers an earlier attempt's fetch only after the deadline gave up on it:
+    /// that one declares nothing, because the retry's history is still on its way, and serving the
+    /// thread before it lands shows a long history as an empty one.
+    func refreshMessages(timeout: TimeInterval = 10, bootstrapAttempt: Int? = nil,
+                         done: ((Result<RPCResponse, RPCError>) -> Void)? = nil) {
         let generation = generation
         session.request(.getMessages, timeout: timeout) { [weak self] result in
             defer { done?(result) }
             guard let self, generation == self.generation else { return }
+            let superseded = bootstrapAttempt.map { $0 != self.bootstrapAttempts } ?? false
             // A failed history fetch must not lock out snapshots, Send, or Stop forever.
             // Reset already discarded the old session; serve the new one as incomplete, as
             // bootstrap does, and let a later refresh recover its history.
             defer {
-                self.historyPending = false
+                if !superseded { self.historyPending = false }
                 self.commit()
                 self.announceIfServable()
                 self.drainIfReady()
             }
             guard case .success(let response) = result, response.success,
                   let messages = response.messages else {
-                self.projectionClipped = true
+                if !superseded { self.projectionClipped = true }
                 return
             }
+            // The whole history is here again: nothing is left out of it.
+            self.projectionClipped = false
             let history = Self.projectHistory(self.markingStopped(messages),
                                               sentReferences: self.origins.compactMapValues(\.references)) { value, message in
                 if message.role == "compactionSummary", let summary = message.summary,
