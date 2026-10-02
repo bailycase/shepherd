@@ -69,7 +69,8 @@ The rules that follow:
   work in progress, links and keyboard focus.
 - **The sidebar is the primary navigation**; the command palette is a secondary way to jump.
   Done is the first activity group when it has unseen completions. A new local thread with an
-  opening message enters Working without flashing in Recents.
+  opening message enters Working without flashing in Recents. Active goals stay in Working
+  between turns unless the thread needs an answer.
 - **One primary action per surface.** A destructive action is never the ⏎ default.
 - **Native controls, Night Watch styles.** A control is a Night Watch style on a native `Button`,
   `Toggle`, `Picker` or `TextField`; context menus are native `.contextMenu`. Shared views are

@@ -13,6 +13,7 @@ User clarification: Done is first when nonempty. Pinned follows it and keeps eve
 - Done has a separate "Mark all seen" button, available while open or folded.
 - List rows retain the real title, state dot or outline automation bolt, host tag, question reason, and context menu.
 - Working has blue dots and an activity sparkline; Done has green dots and completion age.
+- Working and Checking goals stay in Working between pi turns, retaining the existing goal glyph. Questions still move unpinned threads to Needs you.
 - Recents has idle or seen threads. Designs have the outline nib and real board count, never a Recents row.
 - Pinned rows never move on a status change. Their status and attention reason remain visible.
 - A finished thread stays in Done while read, including after a page opens; opening another thread marks that completion seen.
