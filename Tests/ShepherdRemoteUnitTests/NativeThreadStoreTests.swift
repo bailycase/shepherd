@@ -40,7 +40,7 @@ final class FakeHost {
             switch request {
             case .send(_, _, let id, _, _, _, _, _, _), .abort(_, _, let id), .answer(_, _, let id, _, _),
                  .setModel(_, _, let id, _), .setThinking(_, _, let id, _), .setServiceTier(_, _, let id, _), .subagentCommand(_, _, let id, _, _, _, _),
-                 .queue(_, _, let id, _):
+                 .queue(_, _, let id, _), .goal(_, _, let id, _, _, _, _):
                 return .accepted(operationID: id)
             default:
                 return .failure(code: "x", message: "unexpected")

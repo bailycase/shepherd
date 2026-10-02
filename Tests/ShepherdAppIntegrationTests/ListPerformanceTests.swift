@@ -30,10 +30,8 @@ struct ListPerformanceTests {
     /// The fleet in an off-screen sidebar, settled.
     private func openSidebar(_ app: AppHarness) async throws -> (ShepherdViewModel, OffscreenWindow) {
         var fleet = ListFixtures.fleet(in: app.dir)
-        // Keep Recents visible rather than below 43 Needs you rows.
-        for index in fleet.agents.indices where fleet.agents[index].status == .blocked {
-            fleet.agents[index].status = .idle
-        }
+        // These Recents-focused measurements need idle rows on screen, not below status groups.
+        for index in fleet.agents.indices { fleet.agents[index].status = .idle }
         let vm = try await app.start(with: fleet)
         let window = OffscreenWindow(size: Self.sidebarSize, dark: true, SidebarView(vm: vm))
         ListPerf.settle(window)
@@ -77,8 +75,8 @@ struct ListPerformanceTests {
         #expect(rows["sidebar.lists", default: 0] == 0, "scrolling derives nothing: \(rows)")
     }
 
-    /// A status report redraws the row it changed; the order holds (only a turn starting or
-    /// ending moves a row), the destinations never redraw, and the lists derive once.
+    /// A status change moves its row to the matching group and updates both counts, without
+    /// redrawing its neighbors or the destinations. Activity order still follows the stamp.
     @Test func aStatusReportRedrawsOnlyItsRow() async throws {
         let app = try AppHarness()
         defer { app.stop() }
@@ -87,7 +85,7 @@ struct ListPerformanceTests {
         let shown = recentsOnScreen(vm).prefix(6)
         try #require(!shown.isEmpty)
         let indices = try shown.map { row in try #require(vm.state.agents.firstIndex { $0.id == row.id.agentID }) }
-        let order = vm.sidebarLists.recents.map(\.id)
+        let order = vm.sidebarLists.activity.map(\.id)
 
         let rows = ListPerf.counting {
             for index in indices {
@@ -97,8 +95,9 @@ struct ListPerformanceTests {
             }
         }
         #expect(rows["sidebar.row", default: 0] > 0, "\(rows)")
-        #expect(vm.sidebarLists.recents.map(\.id) == order)
+        #expect(vm.sidebarLists.activity.map(\.id) == order)
         #expect(rows["sidebar.row", default: 0] <= shown.count * 2, "\(rows)")
+        #expect(rows["sidebar.header", default: 0] <= shown.count * 2, "only the source and destination counts: \(rows)")
         #expect(rows["sidebar.destination", default: 0] == 0, "\(rows)")
         #expect(rows["sidebar.lists", default: 0] <= shown.count, "\(rows)")
     }
@@ -147,9 +146,7 @@ struct ListPerformanceTests {
     /// pinned threads are the fleet's middle and last, so none of them starts out on top.
     private func openPinnedSidebar(_ app: AppHarness, pinned count: Int) async throws -> (ShepherdViewModel, OffscreenWindow) {
         var fleet = ListFixtures.fleet(in: app.dir)
-        for index in fleet.agents.indices where fleet.agents[index].status == .blocked {
-            fleet.agents[index].status = .idle
-        }
+        for index in fleet.agents.indices { fleet.agents[index].status = .idle }
         let vm = try await app.start(with: fleet)
         let recents = vm.sidebarLists.recents
         for row in recents[(recents.count / 2)...].prefix(count) { vm.pinThread(row.id) }
@@ -162,9 +159,7 @@ struct ListPerformanceTests {
         let app = try AppHarness()
         defer { app.stop() }
         var fleet = ListFixtures.fleet(in: app.dir)
-        for index in fleet.agents.indices where fleet.agents[index].status == .blocked {
-            fleet.agents[index].status = .idle
-        }
+        for index in fleet.agents.indices { fleet.agents[index].status = .idle }
         let vm = try await app.start(with: fleet)
         let recents = vm.sidebarLists.recents
         for row in recents[(recents.count / 2)...].prefix(12) { vm.pinThread(row.id) }
@@ -183,7 +178,7 @@ struct ListPerformanceTests {
     }
 
     /// Pinning redraws the row that moves and the headers that change, not the rows it shifts:
-    /// the first pin brings the Pinned header in, a later one only its row.
+    /// the first pin brings Pinned in; every pin updates Pinned and Recents' counts.
     @Test func pinningAThreadRedrawsOnlyTheRowThatMovesAndTheHeaders() async throws {
         let app = try AppHarness()
         defer { app.stop() }
@@ -202,7 +197,7 @@ struct ListPerformanceTests {
         let second = ListPerf.counting { ListPerf.time(window) { vm.pinThread(shown[3].id) } }
         #expect(vm.sidebarLists.pinned.count == 2)
         #expect(second["sidebar.row", default: 0] <= 4, "\(second)")
-        #expect(second["sidebar.header", default: 0] == 0, "no header changed: \(second)")
+        #expect(second["sidebar.header", default: 0] == 2, "Pinned and Recents counts change: \(second)")
         #expect(second["sidebar.lists", default: 0] <= 1, "\(second)")
     }
 
@@ -217,7 +212,7 @@ struct ListPerformanceTests {
         let one = ListPerf.counting { ListPerf.time(window) { vm.unpinThread(pinned[0].id) } }
         #expect(vm.sidebarLists.pinned.map(\.id) == [pinned[1].id])
         #expect(one["sidebar.row", default: 0] <= 4, "\(one)")
-        #expect(one["sidebar.header", default: 0] == 0, "\(one)")
+        #expect(one["sidebar.header", default: 0] == 2, "Pinned and Recents counts change: \(one)")
         #expect(one["sidebar.lists", default: 0] <= 1, "\(one)")
 
         let last = ListPerf.counting { ListPerf.time(window) { vm.unpinThread(pinned[1].id) } }
@@ -733,6 +728,68 @@ struct ListPerformanceTests {
         for key in ["composer.body", "composer.chips", "thread.view", "thread.rowBuilder"] {
             #expect(rows[key, default: 0] == 0, "\(key): \(rows)")
         }
+    }
+
+    @Test func fiveGoalAccountingSnapshotsRedrawNoComposerQueueOrThreadRows() async throws {
+        var snapshot = ThreadFixture.snapshot(ThreadFixture.history(120), running: false)
+        snapshot.goal = NativeGoal(id: "00000000-0000-0000-0000-0000000000AA", text: "Tests pass", state: .working,
+                                   elapsedSeconds: 400, tokensUsed: 71_000, runningSince: Date().timeIntervalSince1970 * 1000)
+        snapshot.queue = NativeQueue(items: QueueFixture.messages(["Then run lint", "Open the PR"]), mode: .all)
+        snapshot.supportedActions += ["goal", "queue"]
+        let thread = FakeThread(snapshot, header: true)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        try await eventuallyOnMain("goal and queue chrome to settle") {
+            ListPerf.settle(thread.window)
+            return thread.store.hasGoal && thread.store.queue.count == 2
+        }
+        // Two unchanged serve passes drain the initial catch-up before recording a mutation.
+        await thread.serve(snapshot)
+        ListPerf.settle(thread.window)
+        let rows = try await counting(thread.window) {
+            for index in 1...5 {
+                var next = snapshot
+                next.revision += UInt64(index)
+                next.goal?.elapsedSeconds += Double(index)
+                next.goal?.runningSince? += Double(index)
+                next.goal?.tokensUsed += index * 1000
+                await thread.serve(next)
+                ListPerf.settle(thread.window)
+            }
+        }
+        #expect(rows["goal.card", default: 0] >= 5, "the five accounting updates were drawn: \(rows)")
+        for key in ["composer.body", "composer.chips", "queue.body", "queue.row", "thread.view", "thread.rowBuilder", "thread.agentTurn", "thread.userTurn"] {
+            #expect(rows[key, default: 0] == 0, "\(key): \(rows)")
+        }
+    }
+
+    @Test func clientGoalClockTicksRedrawOnlyPills() async throws {
+        var snapshot = ThreadFixture.snapshot(ThreadFixture.history(120), running: false)
+        snapshot.goal = NativeGoal(id: "00000000-0000-0000-0000-0000000000AA", text: "Tests pass", state: .working,
+                                   elapsedSeconds: 400, tokensUsed: 71_000, runningSince: Date().timeIntervalSince1970 * 1000)
+        snapshot.queue = NativeQueue(items: QueueFixture.messages(["Then run lint"]), mode: .all)
+        snapshot.supportedActions += ["goal", "queue"]
+        let thread = FakeThread(snapshot, header: true)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        ListPerf.settle(thread.window)
+        NWRenderProbe.start()
+        let rows: [String: Int]
+        do {
+            try await eventuallyOnMain("two local card and header clock ticks", timeout: .seconds(10)) {
+                ListPerf.settle(thread.window)
+                let counts = NWRenderProbe.counts
+                return counts["goal.clock", default: 0] >= 2 && counts["goal.headerClock", default: 0] >= 2
+            }
+            rows = NWRenderProbe.stop()
+        } catch {
+            _ = NWRenderProbe.stop()
+            throw error
+        }
+        for key in ["goal.card", "composer.body", "composer.chips", "queue.body", "queue.row", "thread.view", "thread.rowBuilder", "thread.agentTurn", "thread.userTurn"] {
+            #expect(rows[key, default: 0] == 0, "\(key): \(rows)")
+        }
+        #expect(thread.snapshot.revision == snapshot.revision, "client ticks need no server snapshot")
     }
 
     /// A question arriving takes the composer's place, and answering it gives the place back:

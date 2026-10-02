@@ -21,6 +21,8 @@ public enum NWMentionMetrics {
     public static let emptyTitleSize: CGFloat = 13
     public static let emptyLineSize: CGFloat = 12
     public static let noDesignsSize: CGFloat = 12.5
+    /// The spinner of "Loading designs…", as the model picker's "Loading models…" draws its own.
+    public static let statusSpinner: CGFloat = 12
     /// At most this many rows show; a longer list scrolls.
     public static let maxRows = 8
 }
@@ -94,6 +96,15 @@ public enum NWMentionEmpty: Equatable, Sendable {
     case nothingMatches(query: String, searched: String)
     /// No designs yet: "No designs yet. Start a design and its boards show up here."
     case noDesigns
+    /// The designs are being read: "Loading designs…" with a spinner, until the rows (or one of
+    /// the lines below) replace it. It chooses nothing.
+    case loading
+    /// The read failed or took too long: "Couldn't load designs." and Retry. `reason` is what
+    /// says why, for the tooltip and VoiceOver.
+    case failed(reason: String)
+    /// Designs can't be attached here, and why ("Design references go to projects on this Mac."):
+    /// a quiet note, choosing nothing.
+    case unavailable(String)
 }
 
 /// The @ picker (MentionPicker): 6pt inside the popover's surface, section labels, and 48pt rows
@@ -112,6 +123,8 @@ public struct NWMentionPicker: View {
     let back: () -> Void
     let hover: (String) -> Void
     let startDesign: (() -> Void)?
+    /// Retry in "Couldn't load designs."; nil draws the line without it.
+    let retry: (() -> Void)?
     /// A row came on screen (the list builds only those): its picture can be made now.
     let appear: (String) -> Void
     /// The row the pointer just highlighted, until the highlight's change is seen.
@@ -120,7 +133,7 @@ public struct NWMentionPicker: View {
     public init(sections: [NWMentionSection], crumbs: [String]? = nil, empty: NWMentionEmpty? = nil, highlighted: String?,
                 maxHeight: CGFloat? = nil, choose: @escaping (NWMentionRow) -> Void, drill: @escaping (NWMentionRow) -> Void,
                 back: @escaping () -> Void = {}, hover: @escaping (String) -> Void = { _ in }, startDesign: (() -> Void)? = nil,
-                appear: @escaping (String) -> Void = { _ in }) {
+                retry: (() -> Void)? = nil, appear: @escaping (String) -> Void = { _ in }) {
         self.sections = sections
         self.crumbs = crumbs
         self.empty = empty
@@ -131,6 +144,7 @@ public struct NWMentionPicker: View {
         self.back = back
         self.hover = hover
         self.startDesign = startDesign
+        self.retry = retry
         self.appear = appear
     }
 
@@ -183,13 +197,44 @@ public struct NWMentionPicker: View {
                 .padding(.horizontal, NW.Space.xl)
             case .noDesigns:
                 NWMenuHeader("Designs", inset: M.rowPaddingHorizontal)
-                HStack(spacing: M.rowSpacing) {
+                statusLine {
                     Image(systemName: "pencil.tip").font(.system(size: M.pickSize)).foregroundStyle(Color.nw.textTertiary)
                     noDesignsLine
                 }
-                .padding(.horizontal, M.rowPaddingHorizontal)
-                .padding(.top, NW.Space.m)
-                .padding(.bottom, NW.Space.l)
+            case .loading:
+                // One quiet line that chooses nothing: ↩ over it leaves the message alone.
+                NWMenuHeader("Designs", inset: M.rowPaddingHorizontal)
+                statusLine {
+                    ProgressView().progressViewStyle(.nwSpinner(size: M.statusSpinner, color: Color.nw.textTertiary))
+                    Text("Loading designs…").font(.nwSans(M.noDesignsSize)).foregroundStyle(Color.nw.textSecondary)
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Loading designs")
+            case .failed(let reason):
+                NWMenuHeader("Designs", inset: M.rowPaddingHorizontal)
+                statusLine {
+                    Image(systemName: "exclamationmark.triangle").font(.system(size: M.pickSize)).foregroundStyle(AgentState.failed.color)
+                        .accessibilityHidden(true)
+                    Text("Couldn’t load designs.").font(.nwSans(M.noDesignsSize)).foregroundStyle(Color.nw.textSecondary)
+                    Spacer(minLength: 0)
+                    if let retry {
+                        Button("Retry", action: retry)
+                            .buttonStyle(.nw(.ghost, size: .s))
+                            .help("Read this Mac’s designs again")
+                    }
+                }
+                .help(reason)
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("Couldn’t load designs")
+                .accessibilityHint(reason)
+            case .unavailable(let note):
+                statusLine {
+                    Image(systemName: "info.circle").font(.system(size: M.pickSize)).foregroundStyle(Color.nw.textTertiary)
+                        .accessibilityHidden(true)
+                    Text(note).font(.nwSans(M.noDesignsSize)).foregroundStyle(Color.nw.textSecondary).lineLimit(1)
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(note)
             case nil:
                 EmptyView()
             }
@@ -198,6 +243,15 @@ public struct NWMentionPicker: View {
         .modifier(NWMenuSurface(width: nil))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Mention")
+    }
+
+    /// One line under a header, with its glyph (or spinner) first: the stages that list no rows.
+    private func statusLine<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        HStack(spacing: NWMentionMetrics.rowSpacing) { content() }
+            .padding(.horizontal, NWMentionMetrics.rowPaddingHorizontal)
+            .padding(.top, NW.Space.m)
+            .padding(.bottom, NW.Space.l)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder private var noDesignsLine: some View {

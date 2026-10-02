@@ -1,6 +1,6 @@
 {
  "version": 1,
- "about": "Seconds each test suite took on a CI runner, from scripts/ci_shards.py record. The shards and the fast lane's shard count are balanced from it (docs/testing.md).",
+ "about": "Seconds each test suite took in CI or local goal validation, from scripts/ci_shards.py record. The shards and the fast lane's shard count are balanced from it (docs/testing.md).",
  "suites": {
   "DesignSurfaceKitIntegrationTests.DesignBoardExportTests": 4.93,
   "DesignSurfaceKitIntegrationTests.DesignBoardViewTests": 7.57,
@@ -52,6 +52,8 @@
   "ShepherdAppIntegrationTests.FinalizeWorktreeTests": 9.9,
   "ShepherdAppIntegrationTests.GitDiffRevertTests": 6.66,
   "ShepherdAppIntegrationTests.GitWorktreeTests": 23.39,
+  "ShepherdAppIntegrationTests.GoalCheckSettingsTests": 1.13,
+  "ShepherdAppIntegrationTests.GoalControlsTests": 1.95,
   "ShepherdAppIntegrationTests.HiddenAgentsReport": 0.1,
   "ShepherdAppIntegrationTests.IdleCostReport": 0.1,
   "ShepherdAppIntegrationTests.IdleCostTests": 12.69,
@@ -246,6 +248,7 @@
   "ShepherdPreviewTests.AgentsPreviewTests": 0.1,
   "ShepherdPreviewTests.ChangesPreviewTests": 0.1,
   "ShepherdPreviewTests.DesignPreviewTests": 0.1,
+  "ShepherdPreviewTests.GoalPreviewTests": 18.48,
   "ShepherdPreviewTests.LiveModelUseCaseTests": 0.1,
   "ShepherdPreviewTests.PreviewTests": 0.1,
   "ShepherdPreviewTests.ReviewPreviewTests": 0.1,
@@ -297,6 +300,7 @@
   "ShepherdProtocolUnitTests.FramingTests": 0.01,
   "ShepherdProtocolUnitTests.JSONValueTests": 0.01,
   "ShepherdProtocolUnitTests.LineBufferTests": 0.07,
+  "ShepherdProtocolUnitTests.NativeGoalTests": 0.01,
   "ShepherdProtocolUnitTests.NativeImageLimitTests": 0.01,
   "ShepherdProtocolUnitTests.NativeThreadWireTests": 0.05,
   "ShepherdProtocolUnitTests.RPCWireTests": 0.02,
@@ -333,6 +337,8 @@
   "ShepherdRemoteUnitTests.DiffStatTests": 0.01,
   "ShepherdRemoteUnitTests.FleetOverviewTests": 0.01,
   "ShepherdRemoteUnitTests.FleetTests": 0.01,
+  "ShepherdRemoteUnitTests.GoalRecordTests": 0.01,
+  "ShepherdRemoteUnitTests.GoalStoreTests": 0.01,
   "ShepherdRemoteUnitTests.HistoryPagingTests": 0.01,
   "ShepherdRemoteUnitTests.HostLastSeenTests": 0.01,
   "ShepherdRemoteUnitTests.HostSettingsPresentationTests": 0.01,
@@ -434,6 +440,10 @@
   "ShepherdSessionsIntegrationTests.ExtensionIdentityTests": 2.36,
   "ShepherdSessionsIntegrationTests.ExtensionSocketTests": 5.56,
   "ShepherdSessionsIntegrationTests.ForkSafetyTests": 2.1,
+  "ShepherdSessionsIntegrationTests.GoalExperimentTests": 0.74,
+  "ShepherdSessionsIntegrationTests.GoalPolicyBackpressureTests": 0.81,
+  "ShepherdSessionsIntegrationTests.GoalProjectionTests": 0.66,
+  "ShepherdSessionsIntegrationTests.GoalServerTests": 0.83,
   "ShepherdSessionsIntegrationTests.InterruptStoreTests": 0.64,
   "ShepherdSessionsIntegrationTests.InterruptTests": 6.91,
   "ShepherdSessionsIntegrationTests.LargeHistoryTests": 0.81,
@@ -483,6 +493,7 @@
   "ShepherdSessionsUnitTests.CommandMenuTests": 0.01,
   "ShepherdSessionsUnitTests.CommandNoticeProjectionTests": 0.01,
   "ShepherdSessionsUnitTests.ContextEstimateTests": 0.02,
+  "ShepherdSessionsUnitTests.GoalExtensionTests": 0.01,
   "ShepherdSessionsUnitTests.InstructionsStoreTests": 0.08,
   "ShepherdSessionsUnitTests.InterruptPlanTests": 0.01,
   "ShepherdSessionsUnitTests.ModelListingTests": 0.01,
@@ -520,6 +531,7 @@
   "ShepherdUIUnitTests.BrowserAgentComponentTests": 0.01,
   "ShepherdUIUnitTests.ComposerSizeTests": 0.01,
   "ShepherdUIUnitTests.DesignToolComponentTests": 0.01,
+  "ShepherdUIUnitTests.GoalComponentTests": 0.02,
   "ShepherdUIUnitTests.HexColorTests": 0.01,
   "ShepherdUIUnitTests.MarkupTextTests": 0.01,
   "ShepherdUIUnitTests.MenuComponentTests": 0.01,
@@ -540,5 +552,5 @@
   "TerminalSurfaceKitUnitTests.TerminalLinkTests": 0.01,
   "TerminalSurfaceKitUnitTests.TerminalSurfaceConfigTests": 0.02
  },
- "measured": "blended from full runs of 2026-10-01: 36886813268, 36889650156, 36891292623 (before the shards), then 36898150519, 36913297279, 36915616700, 36917295445 and 36919268023"
+ "measured": "blended from full runs of 2026-10-01: 36886813268, 36889650156, 36891292623 (before the shards), then 36898150519, 36913297279, 36915616700, 36917295445 and 36919268023; goal suites recorded from isolated local validation on 2026-10-02"
 }

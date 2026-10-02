@@ -504,16 +504,16 @@ struct DesignToolTests {
         return (SidebarSource(local: state, designs: designs), drawer, design)
     }
 
-    @Test func aDesignIsARecentsRowWithTheNibAndItsBoardCountAndItsAgentIsNot() {
+    @Test func aDesignHasItsOwnSectionWithTheNibAndBoardCountAndItsAgentIsNot() {
         let (source, drawer, design) = sidebar(designs: true)
         let lists = SidebarDerivation.lists(source)
-        let row = try? #require(lists.recents.first { $0.id == .design(design.id) })
+        let row = try? #require(lists.designs.first { $0.id == .design(design.id) })
         #expect(row?.leading == .glyph("pencil.tip", attention: false))
         #expect(row?.accessory == .text("4 boards"))
         #expect(row?.accessibilityLabel == "Checkout funnel dashboard, design, 4 boards")
         #expect(!lists.all.contains { $0.id == .local(drawer.id) })
-        // By the design's own last change, among the threads.
-        #expect(lists.recents.firstIndex { $0.id == .design(design.id) } == 5)
+        #expect(lists.designs.map(\.id) == [.design(design.id)])
+        #expect(!lists.recents.contains { $0.id == .design(design.id) })
     }
 
     @Test func withTheToolOffDesignsHaveNoRowsAndTheirAgentsStillDont() {
@@ -530,7 +530,7 @@ struct DesignToolTests {
         #expect(lists.shortcutRows.count == 10)
         #expect(!lists.shortcutRows.contains { $0.id == .design(design.id) })
         let presented = lists.presented(selected: .design(design.id), shortcuts: true)
-        let designRow = presented.recents.first { $0.id == .design(design.id) }
+        let designRow = presented.designs.first { $0.id == .design(design.id) }
         #expect(designRow?.selected == true)
         #expect(designRow?.accessory == .text("4 boards"))
         #expect(presented.recents.compactMap { if case .shortcut(let key) = $0.accessory { key } else { nil } }

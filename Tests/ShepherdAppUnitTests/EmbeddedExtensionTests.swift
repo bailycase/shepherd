@@ -16,6 +16,7 @@ struct EmbeddedExtensionTests {
     private static let embedded: [String: String] = [
         "shepherd-cliproxyapi.ts": CLIProxyAPIExtension.source,
         "shepherd-service-tier.ts": ServiceTierExtension.extensionSource,
+        "shepherd-goal.ts": GoalExtension.extensionSource,
         "shepherd-status.ts": StatusExtension.extensionSource,
         "shepherd-namer.ts": NamerExtension.extensionSource,
         "shepherd-panes.ts": PanesExtension.extensionSource,

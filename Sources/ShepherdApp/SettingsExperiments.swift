@@ -4,14 +4,13 @@ import ShepherdProtocol
 import ShepherdRemote
 
 /// Settings ▸ Experiments (SettingsExperiments): features still being tried, each off until the
-/// user turns it on. Its one experiment is Suggested instructions: agents draft a line for the
-/// root instructions after learning something the hard way, and the user adds it, edits it
-/// first, or dismisses it. A wide page: the experiment and what waits for the user, beside a
+/// user turns it on. Suggested instructions, the Design tool and conversation Goals each
+/// keep their own switch. A wide page: the experiment and what waits for the user, beside a
 /// 320pt side column (how it works, what was added, and a note about experiments).
 struct ExperimentsSettings: View {
     var model: SuggestionsModel
     var instructions: InstructionsModel
-    /// The Design tool's switch.
+    /// This Mac's experiment switches.
     var settings: AppSettings
     /// Opens Settings ▸ Instructions (where the lines go).
     let openInstructions: () -> Void
@@ -28,6 +27,7 @@ struct ExperimentsSettings: View {
                         VStack(alignment: .leading, spacing: AppLayout.experimentsBlockSpacing) {
                             SuggestedInstructionsCard(model: model, instructions: instructions, openInstructions: openInstructions)
                             DesignToolCard(settings: settings)
+                            GoalExperimentCard(settings: settings)
                             if model.settings.enabled || !model.snapshot.waiting.isEmpty {
                                 WaitingSuggestions(model: model, instructions: instructions, now: context.date)
                                     .nwTransition(.disclosure)
@@ -87,6 +87,37 @@ private struct DesignToolCard: View {
             }
             Spacer(minLength: NW.Space.xxl)
             SettingsSwitch(label: "Design tool", isOn: $settings.designToolEnabled)
+        }
+        .padding(.vertical, NW.Space.l + NW.Space.xxs)
+        .padding(.horizontal, NW.Space.xl)
+        .nwCard(fill: nw.bgWindow, line: nw.lineStrong)
+    }
+}
+
+/// Goals uses the existing two-ring mark and experiment card, with no budget options.
+private struct GoalExperimentCard: View {
+    @Bindable var settings: AppSettings
+
+    var body: some View {
+        let nw = Color.nw
+        HStack(alignment: .top, spacing: NW.Space.l + NW.Space.xxs) {
+            RoundedRectangle(cornerRadius: NW.Radius.m)
+                .fill(nw.lanternTint)
+                .frame(width: AppLayout.experimentTileSize, height: AppLayout.experimentTileSize)
+                .overlay { NWGoalGlyph().foregroundStyle(nw.lanternText) }
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+                Text("Goals")
+                    .font(.nwSans(AppLayout.experimentNameSize, .semibold))
+                    .foregroundStyle(nw.textPrimary)
+                Text("Keep a conversation working toward a condition you set with /goal. No time or token budgets. Turning this off pauses active goals without clearing them.")
+                    .nwText(size: AppLayout.experimentDescriptionSize, lineHeight: AppLayout.experimentDescriptionLineHeight)
+                    .foregroundStyle(nw.textSecondary)
+                    .frame(maxWidth: AppLayout.experimentDescriptionWidth, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: NW.Space.xxl)
+            SettingsSwitch(label: "Goals", isOn: $settings.goalsEnabled)
         }
         .padding(.vertical, NW.Space.l + NW.Space.xxs)
         .padding(.horizontal, NW.Space.xl)

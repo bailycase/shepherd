@@ -47,6 +47,18 @@ struct DefaultsScreen: View {
                 }
             }
             .task(id: host.id) { models = await Self.models(of: store.mobileHost(host.id)) }
+            if store.mobileHost(host.id)?.supports(RemoteProtocol.nativeGoalCapability) == true {
+                SettingsSection("Goal checks") {
+                    NWListCard {
+                        SettingsSwitchRow("Allow cross-provider goal checks",
+                                          note: "Off uses the thread’s exact model and provider. On may send conversation, tool output and written code to another provider, preferring Haiku, Codex Mini or Gemini Flash when available.",
+                                          isOn: settings.goalCrossProviderEvaluation) {
+                            store.hostSettings.post(.goalCrossProviderEvaluation($0), on: host)
+                        }
+                    }
+                    SettingsFootnote("Applies when agents start or restart on this host. Running agents keep their current policy until restarted.")
+                }
+            }
         }
     }
 

@@ -18,6 +18,8 @@ struct ExtensionIdentityTests {
         let peers = Locked<[AgentID]>([])
         let notifies = Locked<[String]>([])
         let automations = Locked<Int>(0)
+        /// Approval dialogs the app was asked to open for an agent's call on another thread.
+        let approvals = Locked<Int>(0)
         /// Reviews and children reports.
         let others = Locked<[String]>([])
 
@@ -30,6 +32,7 @@ struct ExtensionIdentityTests {
                 peers.withValue { $0.append(request.agentID) }
                 respond(.agents([]))
             }
+            server.onAgentApprovalRequest = { [approvals] _ in approvals.withValue { $0 += 1 } }
             server.onNotify = { [notifies] agent, title, _ in notifies.withValue { $0.append("\(agent.rawValue)|\(title)") } }
             server.onAutomationRequest = { [automations] _, respond in
                 automations.withValue { $0 += 1 }
@@ -228,6 +231,7 @@ struct ExtensionIdentityTests {
         #expect(h.server.state.agents.first { $0.id == victim } == before, "nothing about the agent changed")
         #expect(seen.panes.current.isEmpty && seen.peers.current.isEmpty && seen.notifies.current.isEmpty)
         #expect(seen.others.current.isEmpty && seen.automations.current == 0)
+        #expect(seen.approvals.current == 0, "no dialog opened for a call another process made as the agent")
         #expect(!h.server.pushMessage(toAgent: victim, text: "anyone?"), "no panes connection registered for the agent")
         #expect((try await b.request(.snapshot()).snapshotValue?.subagents ?? []).isEmpty, "the children it published were dropped")
 

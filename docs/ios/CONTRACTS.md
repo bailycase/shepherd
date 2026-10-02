@@ -202,6 +202,33 @@ them except the navigator, which is each window's own ([Windows](#windows-ipad))
   folder and reaches it without touching `MobileApp` (a `static let shared`, or one per
   `AgentRef` kept in the store itself).
 
+## Conversation goals
+
+Thread/composer owns `Composer/GoalCard.swift` and `GoalNotifications.swift`. Shared
+`NativeGoal` and `NativeThreadRequest.goal` require `native.goal.v1`; older hosts keep chat and
+hide goal controls. The dock order is Goal, Subagents, Up next. The iPhone keeps the ordinary
+status beside its active goal clock; wide-iPad cards keep 44pt targets. Card actions capture
+its displayed ID/revision/state, never silently act on a newer check. Resume and Confirm stay
+unavailable while an actual user question remains open. Confirm attests to missing evidence;
+it does not claim independent verification. Edit remains a condition-only sheet. Goals have
+no time/token limits or budgets; token and elapsed-time fields report usage only.
+Settings > Experiments offers a default-off Goals switch per connected host with
+`experiments.goals.v1`. Turning it off applies live, pauses active goals, cancels Checking and
+hides goal controls. Turning it back on preserves Paused goals and never resumes work.
+
+`NativeThreadStore.hasGoal`/`goalID` are narrow dock dependencies. `runningSince` is epoch
+milliseconds for the current active interval; clients derive elapsed time locally inside the
+pill only. No per-second server publication redraws the composer or transcript. The card and
+records disclose `Checked by <model>` and user-confirmed outcomes explicitly.
+
+The host Settings consent `goalCrossProviderEvaluation` defaults false and applies when an
+agent starts/restarts. Goal checks use the thread's exact provider/model unless that host
+opted in. Evaluators receive goal-start transcript text, tool output and written code with
+best-effort obvious-secret redaction. Connected, observing iPhones may post local notifications
+with permission. Payloads use short safe metadata, never conditions, tool quotes or raw checker
+feedback. There is no APNs/background delivery guarantee. Stop and Steer now pause/cancel the
+controller before the host interrupts work.
+
 ## Hooks
 
 | Hook | Lives in (filled by) | Called by | Signature |
