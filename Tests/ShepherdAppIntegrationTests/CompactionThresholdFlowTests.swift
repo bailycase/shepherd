@@ -10,6 +10,17 @@ import Testing
 @Suite("Compact at, written for pi", .mainActorExclusive, .integrationTimeLimit)
 @MainActor
 struct CompactionThresholdFlowTests {
+    /// A pi home of its own: the process-wide scratch home is shared with every harness that starts a view model,
+    /// and each of those puts pi's default back at launch when no share is chosen.
+    private static func privateSetup() throws -> (dir: URL, pi: PiSetup) {
+        let dir = try makeScratchDirectory("compact")
+        let user = dir.appendingPathComponent("user", isDirectory: true)
+        try FileManager.default.createDirectory(at: user, withIntermediateDirectories: true)
+        let pi = PiSetup(engine: PiSetup.app.engine, home: dir.appendingPathComponent("support/pi", isDirectory: true),
+                         yourPi: YourPiLocator(.fixed(nil)), userHome: user.path)
+        return (dir, pi)
+    }
+
     private static func reserve(_ model: String, in home: PiHome) -> Int? {
         guard let data = try? Data(contentsOf: home.settings),
               let settings = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -20,7 +31,9 @@ struct CompactionThresholdFlowTests {
     /// The stub's catalog has a 200k window (anthropic/claude-opus-4-5) and a 400k one (openai/gpt-5).
     @Test func aShareReachesPisSettingsForEveryModelAndPisDefaultTakesItBack() async throws {
         try StubPi.installAsEngine()
-        let app = try AppHarness()
+        let (dir, pi) = try Self.privateSetup()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let app = try AppHarness(pi: pi)
         defer { app.stop() }
         try await app.start()
         let home = app.server.pi.files
@@ -46,7 +59,9 @@ struct CompactionThresholdFlowTests {
     /// A launch with a share chosen covers a model added since: the view model writes it again at start.
     @Test func aShareChosenEarlierIsWrittenAgainAtStart() async throws {
         try StubPi.installAsEngine()
-        let app = try AppHarness()
+        let (dir, pi) = try Self.privateSetup()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let app = try AppHarness(pi: pi)
         defer { app.stop() }
         app.settings.compactAtPercent = 90
         try await app.start()
