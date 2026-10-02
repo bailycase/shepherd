@@ -49,7 +49,12 @@ extension ShepherdViewModel {
         if selectedSpaceID == id {
             selectedSpaceID = visibleSpaces.first?.id
             if selectedAgentID == nil {
-                selectedAgentID = state.agents.first { $0.spaceID == selectedSpaceID }?.id
+                if let next = state.agents.first(where: { $0.spaceID == selectedSpaceID }) {
+                    if destination == nil, selectedRemoteAgent == nil {
+                        willOpenSidebarThread(design(drawnBy: next).map { .design($0.id) } ?? .local(next.id))
+                    }
+                    selectedAgentID = next.id
+                }
             }
         }
         sessions.stateDidChange(state)

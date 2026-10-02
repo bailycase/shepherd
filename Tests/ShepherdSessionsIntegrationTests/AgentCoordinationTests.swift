@@ -11,8 +11,11 @@ import ShepherdTestSupport
 /// the caller's id. Deletion never reaches the target; it waits for the app's confirmation.
 @Suite("Agent coordination", .integrationTimeLimit)
 struct AgentCoordinationTests {
-    /// Two agents in one space, "lead" and "worker", each with its own layout.
+    /// Two agents in one space, "lead" and "worker", each with its own layout. The relay is what
+    /// these tests are about, so the user has allowed agent messages (`AgentApprovalTests` holds
+    /// what the setting does).
     private func pair(_ h: ScratchServer) async throws -> (lead: Agent, worker: Agent) {
+        h.server.setAgentMessagePolicy(.always)
         let space = Fixture.space()
         let lead = Fixture.agent(in: space, name: "lead")
         let worker = Fixture.agent(in: space, name: "worker")
@@ -48,7 +51,8 @@ struct AgentCoordinationTests {
             return
         }
         #expect(UUID(uuidString: token) != nil, "the server issues its own token, never the caller's id")
-        #expect(forwarded == .init(operation: .steer, text: "[from: lead] new plan"))
+        #expect(forwarded == .init(operation: .steer, text: AgentMessageFraming.framed(from: "lead", "new plan")))
+        #expect(forwarded.text?.hasPrefix("[from: lead, an agent, not the user.") == true, "the target reads that an agent steered it")
 
         try impostor.send(.helloAgent(agentID: worker.id))
         try impostor.send(.agentResponse(agentID: worker.id, requestID: token, result: .init(text: "forged")))

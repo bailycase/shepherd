@@ -56,8 +56,10 @@ The rules that follow:
   borrow it (`.nwFloatShadow`) only while they float. No vibrancy, translucency or gradients.
 - **Honest affordances.** Never draw a control that does nothing, a shortcut that isn't wired, or
   sample data in place of real data. Hide what is unsupported, or say why.
-- **No permission model.** Never invent approval UI. A question from pi or an extension is a
-  question, with the answers the asker offered.
+- **No permission model.** Never invent approval UI for what an agent runs. A question from pi or
+  an extension is a question, with the answers the asker offered. The one approval Shepherd asks
+  is for an agent acting on another thread (`PeerApprovalDialog`, and `PeerDeleteDialog` to
+  delete one): the user's decision, in Departures.
 - **Status is a dot or glyph plus a word.** `AgentState` colors every status surface; color is
   never the only signal.
 - **Lantern means you.** Amber marks the primary action and what needs you. Running blue marks
@@ -154,8 +156,9 @@ that scales row heights, not controls. Text size scales type only.
 - A rebound chord must include ⌘ and avoid ⌘1–9, ⌘, and the plain system chords. A chord the app
   chrome uses must be in `appOwnedChords` so a focused Ghostty surface does not eat it.
 - Keycaps (`NWKeycap`) put modifiers in Apple's order, ⌃⌥⇧⌘, one cap per key.
-- ⏎ confirms and ⎋ cancels in a sheet; Esc closes a menu, then the command list, then stops pi
-  while it works, and never stops pi while a question waits.
+- ⏎ confirms and ⎋ cancels in a sheet (a destructive button, and every button of
+  `PeerApprovalDialog`, is never the ⏎ default); Esc closes a menu, then the command list, then
+  stops pi while it works, and never stops pi while a question waits.
 - Status events are banners inside the pane they concern, never a modal alert.
 
 ## Accessibility

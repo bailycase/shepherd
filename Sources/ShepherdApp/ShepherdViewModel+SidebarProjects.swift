@@ -52,12 +52,14 @@ extension ShepherdViewModel {
     /// The rows ⌘↑/↓ walk, in the style on screen: Needs you then Recents, or the open projects'
     /// threads in order.
     var sidebarWalkRows: [SidebarListRow] {
-        sidebarStyle == .projects ? sidebarTree.visibleRows(collapsed: collapsedProjects) : sidebarLists.all
+        sidebarStyle == .projects ? sidebarTree.visibleRows(collapsed: collapsedProjects)
+            : sidebarLists.visibleRows(collapsed: collapsedActivitySections)
     }
 
     /// The rows ⌘1–9 reach, in the style on screen.
     var sidebarShortcutRows: [SidebarListRow] {
-        sidebarStyle == .projects ? sidebarTree.visibleRows(collapsed: collapsedProjects) : sidebarLists.shortcutRows
+        sidebarStyle == .projects ? sidebarTree.visibleRows(collapsed: collapsedProjects)
+            : sidebarLists.shortcutRows(collapsed: collapsedActivitySections)
     }
 
     // MARK: Disclosure

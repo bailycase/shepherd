@@ -111,6 +111,14 @@ public struct NWDesignReferenceSpecimens: View {
                             picker([], empty: .noDesigns, startDesign: {})
                         }
                     }
+                    // Before and instead of the rows: the read under way, one that failed, and a target with no designs.
+                    HStack(alignment: .top, spacing: NW.Space.xl) {
+                        VStack(alignment: .leading, spacing: NW.Space.l) {
+                            picker([], empty: .loading)
+                            picker([], empty: .unavailable("Design references go to projects on this Mac."))
+                        }
+                        picker([], empty: .failed(reason: "Reading this Mac’s designs took too long."), retry: {})
+                    }
                 }
             }
             section("From the canvas") {
@@ -193,9 +201,9 @@ public struct NWDesignReferenceSpecimens: View {
     }
 
     private func picker(_ sections: [NWMentionSection], crumbs: [String]? = nil, empty: NWMentionEmpty? = nil, highlighted: String? = "d1",
-                        startDesign: (() -> Void)? = nil) -> some View {
+                        startDesign: (() -> Void)? = nil, retry: (() -> Void)? = nil) -> some View {
         NWMentionPicker(sections: sections, crumbs: crumbs, empty: empty, highlighted: highlighted, choose: { _ in }, drill: { _ in },
-                        startDesign: startDesign)
+                        startDesign: startDesign, retry: retry)
             .frame(width: 528)
     }
 

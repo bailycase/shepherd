@@ -107,7 +107,8 @@ class LaneTests(unittest.TestCase):
                      "Sources/ShepherdRemote/RemoteHostClient.swift", "Sources/ShepherdSessions/SessionServer.swift",
                      "Package.swift", "Package.resolved", "Shepherd.xcodeproj/project.pbxproj",
                      "Tests/ShepherdTestSupport/ScratchServer.swift", ".github/workflows/ci.yml",
-                     ".github/actions/swift-build/action.yml", "scripts/ci_impact.py", "Tests/ci-suite-times.json"):
+                     ".github/actions/swift-build/action.yml", "scripts/ci_impact.py", "Tests/ci-suite-times.json",
+                     "scripts/pi-engine-pin.json"):
             plan = pr([path])
             self.assertEqual((plan.swift, plan.scope, plan.shards), (True, "all", ci_impact.FULL_SHARDS), path)
             self.assertEqual(plan.lane, "full", "a run that runs everything is the full lane")

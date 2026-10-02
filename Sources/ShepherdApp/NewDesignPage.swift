@@ -105,7 +105,7 @@ struct NewDesignPage: View {
             .focused($composing)
             .frame(minHeight: AppLayout.newDesignFieldMinHeight, alignment: .topLeading)
             .onKeyPress(.return, phases: .down) { press in
-                if press.modifiers.contains(.shift) { return .ignored }
+                if let result = NWReturnKey.lineBreak(for: press) { return result }
                 draft.send(vm)
                 return .handled
             }

@@ -9,12 +9,19 @@ import ShepherdSessions
 @MainActor
 extension ShepherdViewModel {
     func installAgentPeerControl() {
+        // The server enforces Settings ▸ Pi ▸ Agent-to-agent messages; it asks until it is told.
+        server.setAgentMessagePolicy(settings.agentMessages)
+        settings.onAgentMessagesChange = { [weak server] policy in server?.setAgentMessagePolicy(policy) }
         server.onAgentPeerCancellation = { [weak self] token in
             MainActor.assumeIsolated {
                 if self?.peerDeleteConfirmation?.requestID == token {
                     self?.peerDeleteConfirmation = nil
                 }
+                self?.peerApprovals.removeAll { $0.requestID == token }
             }
+        }
+        server.onAgentApprovalRequest = { [weak self] prompt in
+            MainActor.assumeIsolated { self?.peerApprovals.append(prompt) }
         }
         server.onAgentPeerRequest = { [weak self] request, respond in
             MainActor.assumeIsolated {
@@ -57,7 +64,7 @@ extension ShepherdViewModel {
                 return
             }
             // The target's panes extension adds report-only context or sends a user task.
-            let framed = "[from: \(sender.name)] \(text)"
+            let framed = AgentMessageFraming.framed(from: sender.name, text)
             if server.pushMessage(toAgent: target.id, text: framed, delivery: delivery) {
                 respond(.ok)
             } else {
@@ -136,6 +143,21 @@ extension ShepherdViewModel {
                 isSelf: agent.id == sender
             )
         }
+    }
+
+    /// The approval dialog's buttons, and nothing else: the answer goes to the server, which does the
+    /// call (or refuses it) when it claims the token, so a call that already lapsed is never done.
+    /// "Allow for this thread" also takes what the same agent has waiting off the queue: the server
+    /// does those calls too and tells the app (`onAgentPeerCancellation`).
+    func answerPeerApproval(_ requestID: String, _ decision: AgentApprovalDecision) {
+        guard peerApprovals.contains(where: { $0.requestID == requestID }) else { return }
+        peerApprovals.removeAll { $0.requestID == requestID }
+        Task { _ = await server.resolveAgentApproval(requestID, decision) }
+    }
+
+    /// What `PeerApprovalDialog` shows for `prompt`, from the names and folders held now.
+    func peerApprovalPresentation(_ prompt: AgentApprovalPrompt) -> PeerApprovalPresentation {
+        PeerApprovalPresentation.make(prompt, in: state, waiting: max(0, peerApprovals.count - 1))
     }
 
     func cancelPeerDeletion(requestID: String) {
