@@ -32,6 +32,7 @@ python3 scripts/context_budget.py --scenario thread --tools   # one scenario, ev
 python3 scripts/context_budget.py --check               # what CI runs: fail when a section grew
 python3 scripts/context_budget.py --update              # after a growth someone decided is right
 python3 scripts/context_budget.py --simulate --turns 40 # a long thread, with and without clearing
+python3 scripts/context_budget.py --simulate-defer --turns 40   # the same with every tool direct, deferred, and one load
 ```
 
 - **Tokens are characters divided by four, rounded up**: pi's own estimate (`estimateTokens`) and
