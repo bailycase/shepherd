@@ -27,6 +27,8 @@ final class FakeThread {
         let header: Bool
         let commands: ThreadCommandCenter
         let reduceMotion: Bool?
+        /// A design's chat: its comment cards, as the design screen draws it.
+        let designCards: DesignCommentCards?
 
         var body: some View {
             VStack(spacing: 0) {
@@ -36,7 +38,9 @@ final class FakeThread {
                                  togglePane: {}, showChanges: {}, rename: {})
                 }
                 ThreadView(store: store, active: visibility.active, isFocused: visibility.focused, request: request, commandKey: "fake",
-                           listModels: { .empty })
+                           listModels: { .empty }, designChat: designCards != nil)
+                    .environment(\.designCommentCards, designCards)
+                    .nwComposerSize(designCards == nil ? .regular : .compact)
             }
             // As the workspace hides a layout it keeps mounted.
             .opacity(visibility.active ? 1 : 0)
@@ -64,7 +68,7 @@ final class FakeThread {
     /// setting (CI's VM has it on).
     init(_ snapshot: NativeThreadSnapshot, history: [NativeThreadMessage]? = nil, starting: Bool = false,
          store: NativeThreadStore = NativeThreadStore(), size: CGSize = CGSize(width: 900, height: 800), dark: Bool = true,
-         header: Bool = false, focused: Bool = false, reduceMotion: Bool? = nil) {
+         header: Bool = false, focused: Bool = false, reduceMotion: Bool? = nil, designCards: DesignCommentCards? = nil) {
         self.snapshot = snapshot
         self.history = history
         self.starting = starting
@@ -93,7 +97,7 @@ final class FakeThread {
             }
         }
         window.show(Hosted(visibility: visibility, store: store, request: request, header: header, commands: commands,
-                           reduceMotion: reduceMotion))
+                           reduceMotion: reduceMotion, designCards: designCards))
     }
 
     /// Serves `next` and has the store pull it now, outside any animation.

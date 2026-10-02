@@ -463,7 +463,7 @@ public final class NativeThreadStore {
         for message in displayed where message.role == "user" {
             if let operation = message.operationID, aliases[message.entryID] == nil { aliases[message.entryID] = "pending:\(operation.uuidString)" }
         }
-        let turns = nativeTurns(displayed, aliases: aliases)
+        let turns = Self.endingCommentAnswers(nativeTurns(displayed, aliases: aliases))
         if turns != self.turns { self.turns = turns }
         let runs = snapshot?.subagents ?? []
         if runs != subagents { subagents = runs }
@@ -488,6 +488,7 @@ public final class NativeThreadStore {
                 var row = NativeThreadRow(turn: turn, presentation: nil, live: false, promptText: nil, startedAt: nil)
                 row.designComment = Self.designComment(turn)
                 row.commentAnswered = row.designComment != nil && turns.indices.contains(index + 1) && !turns[index + 1].isUser
+                    && !Self.opensWithCompaction(turns[index + 1])
                 row.designMarkup = Self.designMarkup(turn)
                 rows.append(row)
                 continue
@@ -513,7 +514,7 @@ public final class NativeThreadStore {
             let card = isLive ? nil : nativeChangesCard(turn: recordedTurn, changes: presentation.changes)
             var row = NativeThreadRow(turn: turn, presentation: presentation, live: isLive, promptText: prompt,
                                       startedAt: startedAt, recordedTurn: recordedTurn, changes: card)
-            row.designComment = opener.flatMap(Self.designComment)
+            row.designComment = Self.opensWithCompaction(turn) ? nil : opener.flatMap(Self.designComment)
             row.markupProposals = NativeMarkupProposals(turn)
             if index == turns.count - 1, !isLive, let opener { row.retryEntryID = Self.retryEntryID(opener) }
             rows.append(row)
@@ -529,6 +530,32 @@ public final class NativeThreadStore {
         opener.messages.last {
             $0.role == "user" && $0.status == nil && !$0.entryID.hasPrefix("pending:") && !$0.entryID.hasPrefix("provisional:")
         }?.entryID
+    }
+
+    /// A comment's card holds the agent's answer to it, up to the first compaction in the reply:
+    /// from there the agent works from its summary, so what it does next is its own work, not
+    /// more of the answer. The rest of the reply becomes a reply of its own, `.../after-compaction`,
+    /// which no card holds (docs/designs.md › Comments). A reply that opens with its compaction
+    /// has no answer before it (`opensWithCompaction`) and is left whole.
+    static func endingCommentAnswers(_ turns: [NativeTurn]) -> [NativeTurn] {
+        guard turns.contains(where: { $0.messages.contains { $0.compaction != nil } }) else { return turns }
+        var result: [NativeTurn] = []
+        result.reserveCapacity(turns.count + 1)
+        for (index, turn) in turns.enumerated() {
+            guard !turn.isUser, index > 0, designComment(turns[index - 1]) != nil,
+                  let compaction = turn.messages.firstIndex(where: { $0.compaction != nil }), compaction > 0 else {
+                result.append(turn)
+                continue
+            }
+            result.append(NativeTurn(id: turn.id, isUser: false, messages: Array(turn.messages[..<compaction])))
+            result.append(NativeTurn(id: turn.id + "/after-compaction", isUser: false, messages: Array(turn.messages[compaction...])))
+        }
+        return result
+    }
+
+    /// The reply's first message is a compaction.
+    static func opensWithCompaction(_ turn: NativeTurn) -> Bool {
+        !turn.isUser && turn.messages.first?.compaction != nil
     }
 
     /// The comment a user turn carried: its one message's origin.

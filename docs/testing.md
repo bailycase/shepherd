@@ -326,7 +326,9 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
   no row), New design and opening a design, the visibility flip, one pushed revision per write,
   and only the changed board reloading. Comments: finding a comment's element again after a
   rewrite (by path and words, else detached), their fence, a comment waiting in the host queue
-  while the agent works, and the agent's reply attaching under its pin. Tweak: the style splice
+  while the agent works, the agent's reply attaching under its pin, and a comment's card ending
+  at the first compaction in its reply (the store, and through the server and the stub pi's
+  overflow recovery; `NativeThreadStoreTests`, `DesignCommentChatTests`). Tweak: the style splice
   round-tripping on the real fixture boards (only style attributes change, every tid and path
   kept), token snapping, the data-props values in canvas.json, one write per gesture, the
   stale-revision retry, Reset and Undo, and each board's kept versions. Board actions: a drag
@@ -401,6 +403,12 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
   literal font size, a status color tinted by an opacity, a raw color and a registered glyph named
   as a string (`NWGlyph`), with a table pinning each pattern and `DesignRuleAllowlist` for what
   predates them. The allowlist only shrinks; never add an entry for new code.
+- **Thread layout:** every kind of row in `LongThreads` (a paragraph with a path and a link that
+  cannot break, a table, activity lines whose label names boards or a page, calls with long
+  arguments, a compaction, a question, a steer) fits the thread's column, in a design's chat
+  (420pt), the narrowest thread column (400pt) and a phone's, at text scales 1 and 1.3, and an
+  opened activity line fits too (`ThreadFitTests`: nothing is drawn in the thread's right gutter).
+  A row that cannot shrink widens the stack every row shares and runs the whole thread off its pane.
 - **App logic:** keybindings (defaults, validation, stored overrides for removed actions
   ignored), palette and settings search, workspace selection and parking, sidebar ordering and
   reveal, pinned threads (their order, persistence and pruning, Needs you winning, the digits),

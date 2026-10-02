@@ -147,6 +147,54 @@ struct NativeThreadStoreTests {
         #expect(unanswered.rows.last?.designComment == id && unanswered.rows.last?.commentAnswered == false)
     }
 
+    static func compaction(_ id: String, reason: NativeCompactionReason = .threshold) -> NativeThreadMessage {
+        NativeThreadMessage(entryID: id, role: "compactionSummary", blocks: [],
+                            compaction: NativeCompaction(phase: .done, reason: reason, tokensBefore: 263_000, tokensAfter: 50_000, summary: "## Goal\nTabs."))
+    }
+
+    /// A comment's card holds the agent's answer up to the first compaction. Afterwards the agent
+    /// works from its summary, so what it does next is its own work: an ordinary reply under the
+    /// card, with its own footer, never more of the card (docs/designs.md › Comments).
+    @Test func aDesignCommentsCardEndsAtTheFirstCompactionInItsReply() async {
+        let id = UUID()
+        var comment = F.user("Show the counts", id: "u1")
+        comment.origin = .designComment(id: id)
+        let messages = [comment, F.assistant("Changing A.", id: "a1"), F.tool("board_edit", output: "edited", id: "t1"), Self.compaction("c1"),
+                        F.assistant("Checking the phone board.", id: "a2"), Self.compaction("c2"), F.assistant("Done.", id: "a3")]
+        let (store, _, task) = await started(F.snapshot(messages: messages))
+        defer { task.cancel() }
+        #expect(store.rows.map(\.isUser) == [true, false, false])
+        #expect(store.rows.map(\.designComment) == [id, id, nil], "the work after the compaction is not the comment's answer")
+        #expect(store.rows.map(\.commentAnswered) == [true, false, false])
+        #expect(store.rows[1].turn.messages.map(\.entryID) == ["a1", "t1"])
+        #expect(store.rows[2].turn.messages.map(\.entryID) == ["c1", "a2", "c2", "a3"], "the compaction opens the ordinary reply, and a later one stays in it")
+    }
+
+    /// A reply that opens with its compaction has no answer before it: it is no part of the card,
+    /// which then holds nothing.
+    @Test func aCompactionThatOpensTheReplyLeavesTheCardWithoutAnAnswer() async {
+        let id = UUID()
+        var comment = F.user("Show the counts", id: "u1")
+        comment.origin = .designComment(id: id)
+        let (store, _, task) = await started(F.snapshot(messages: [comment, Self.compaction("c1"), F.assistant("Changing A.", id: "a1")]))
+        defer { task.cancel() }
+        #expect(store.rows.map(\.designComment) == [id, nil])
+        #expect(store.rows.map(\.commentAnswered) == [false, false])
+    }
+
+    /// A reply with no compaction is one answer, as it always was; so is one whose comment came
+    /// after the compaction.
+    @Test func aReplyWithoutACompactionIsTheWholeAnswerInTheCard() async {
+        let id = UUID()
+        var comment = F.user("Show the counts", id: "u1")
+        comment.origin = .designComment(id: id)
+        let (store, _, task) = await started(F.snapshot(messages: [F.assistant("Earlier.", id: "a0"), Self.compaction("c0"), comment,
+                                                                 F.assistant("Changing A.", id: "a1"), F.tool("board_edit", output: "edited", id: "t1")]))
+        defer { task.cancel() }
+        #expect(store.rows.map(\.designComment) == [nil, id, id])
+        #expect(store.rows.map(\.commentAnswered) == [false, true, false])
+    }
+
     /// A message carrying Pencil markup names its counts on its row, and the reply that proposed
     /// comments from it names them, so a design's chat draws the line and the proposals card.
     @Test func markupRowsNameTheirCountsAndTheReplyItsProposals() async {
