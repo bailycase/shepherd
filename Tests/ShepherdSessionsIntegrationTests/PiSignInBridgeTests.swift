@@ -8,7 +8,7 @@ import Testing
 /// browser's callback, a pasted code (and one the provider refuses), a device code, a port in
 /// use, a key with its check, cancel, and sign-out. A scratch "your pi" beside it stays
 /// byte-identical, and no reply carries a credential.
-@Suite("Sign-in bridge", .serialized, .integrationTimeLimit, .enabled(if: MCPAgentHarness.node != nil, "needs node 22.6 or later"))
+@Suite("Sign-in bridge", .serialized, .integrationTimeLimit, .enabled(if: TestNode.url != nil, "needs node 22.6 or later"))
 struct PiSignInBridgeTests {
     /// A scratch home, a scratch "your pi" with a login of its own, and the control folder.
     struct Setup {
@@ -28,7 +28,7 @@ struct PiSignInBridgeTests {
         }
 
         func bridge() throws -> Replies {
-            let node = try #require(MCPAgentHarness.node)
+            let node = try #require(TestNode.url)
             let script = try PiSignInScript.install(in: dir)
             let piHome = PiHome(directory: home, engine: PiEngine(command: ["/usr/bin/false"], packageDirectory: nil, version: nil,
                                                                   node: .executable(node.path)))

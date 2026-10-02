@@ -17,7 +17,7 @@ import { startFakeMcpHttp } from "./fixtures/fake-mcp-http.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const stdio = path.join(root, "Tests/Extensions/fixtures/fake-mcp-stdio.mjs");
-const oauthServer = path.join(root, "Tests/ShepherdTestSupport/Resources/fake-mcp-oauth.py");
+const oauthServer = path.join(root, "Tests/Extensions/fixtures/fake-mcp-oauth.py");
 
 // What Shepherd's home carries (PiHome.disabledBuiltIns), and the explicit flags an agent's launch adds.
 const OFF = ["-builtin:mcp", "-builtin:codemode", "-builtin:tool-search"];

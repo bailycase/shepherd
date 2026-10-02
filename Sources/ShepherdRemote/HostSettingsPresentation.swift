@@ -44,7 +44,7 @@ public enum HostSettingsPresentation {
         case "review": "Lets agents open the review pane with `review_diff`."
         case "nativeSubagents": "Helpers, agent files, workflows and missions. Needs agent 0.85.1 or later."
         case "subagents": "Shows subagent runs in their thread. Off doesn't stop them running."
-        case "mcp": "Lets agents use the host's MCP servers through one `mcp` tool."
+        case "mcp": "Lets agents use the host's MCP servers, through pi's own MCP and tool search."
         case "browser": "Lets agents open, read, click through and photograph pages in their thread's Browser on the host."
         default: nil
         }

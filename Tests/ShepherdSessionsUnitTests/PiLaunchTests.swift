@@ -72,15 +72,6 @@ struct PiLaunchTests {
         Row(name: "pi's own MCP sign-in, for a server whose name needs quoting",
             line: PiLaunch.mcp(home: home, arguments: ["login", "it's", "--timeout", "300"]),
             script: "cd -- '/Users/me/Library/Application Support/Shepherd/pi' && exec \(launcher) mcp 'login' 'it'\"'\"'s' '--timeout' '300'"),
-        Row(name: "the MCP probe, on the engine's node",
-            line: PiLaunch.mcpProbe(engine: engine, home: home, client: "/Users/me/Library/Application Support/Shepherd/shepherd-mcp-client.mjs"),
-            script: clearing + #"exec '/Applications/Shepherd.app/Contents/Helpers/node' "$0" probe"#,
-            positional: ["/Users/me/Library/Application Support/Shepherd/shepherd-mcp-client.mjs"]),
-        Row(name: "the MCP probe on the tests' node",
-            line: PiLaunch.mcpProbe(engine: PiEngine(command: ["/scratch/pi-engine"], packageDirectory: nil, version: nil, node: .onPath("node")),
-                                    home: home, client: "/c.mjs"),
-            script: clearing + #"exec node "$0" probe"#,
-            positional: ["/c.mjs"]),
     ]
 
     @Test(arguments: rows)

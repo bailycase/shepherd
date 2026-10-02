@@ -26,16 +26,16 @@
     `PI_OFFLINE=1`, `PI_SKIP_VERSION_CHECK=1`, `PI_TELEMETRY=0`, `PI_SUBAGENTS_TEMP_ROOT`, and,
     when the user set no `NODE_EXTRA_CA_CERTS` of their own and the home's keychain export
     (`PiHome.keychainCertificatesFile`, private CAs the Mac's keychain trusts — an internal proxy
-    or MCP server's root) isn't empty, `NODE_EXTRA_CA_CERTS` pointing at it (the MCP probe and the
-    sign-in bridge, which run the engine's node directly, fall back the same way).
+    or MCP server's root) isn't empty, `NODE_EXTRA_CA_CERTS` pointing at it (the sign-in bridge,
+    which runs the engine's node directly, falls back the same way).
   - With the matching extension on: `SHEPHERD_EXT_PANES`, `SHEPHERD_EXT_BROWSER` (the installed
     `shepherd-browser.ts`, for Settings ▸ Pi ▸ Browser tools; never in a design's agent),
     `SHEPHERD_NATIVE_CHILDREN`,
-    `SHEPHERD_EXT_CHILDREN`, and `SHEPHERD_CHILD_*`; for Settings ▸ Pi ▸ MCP servers,
-    `SHEPHERD_EXT_MCP` (the installed `shepherd-mcp.ts`), `SHEPHERD_EXT_MCP_CLIENT` (the installed
-    `shepherd-mcp-client.mjs`), `SHEPHERD_EXT_MCP_CONFIG` (the config path the app resolved),
-    `SHEPHERD_EXT_MCP_CACHE` (`<support>/mcp/tools.json`), and `SHEPHERD_EXT_MCP_PROJECT=1` while
-    Settings ▸ MCP servers ▸ Also use a repo's .mcp.json is on.
+    `SHEPHERD_EXT_CHILDREN`, and `SHEPHERD_CHILD_*`; for Settings ▸ Pi ▸ MCP servers, pi's own MCP
+    (`-e builtin:mcp`, no variable) and `SHEPHERD_MCP_SECRET_<SERVER>_<NAME>`, one per Keychain
+    secret the derived `mcp.json` refers to (docs/mcp.md; the launcher keeps them from the model's
+    shell and the servers that don't name them), and `SHEPHERD_EXT_MCP_PROJECT=1` (the installed
+    `shepherd-mcp-project.ts`) while Settings ▸ MCP servers ▸ Also use a repo's .mcp.json is on.
   - Per agent: `SHEPHERD_NEEDS_NAME`, `SHEPHERD_AUTOMATION`, `SHEPHERD_MODEL`,
     `SHEPHERD_SUGGEST_FILES` (the files its `suggest_instruction` may draft a line for, while
     Settings ▸ Experiments ▸ Suggested instructions is on for its kind of agent), and, for an

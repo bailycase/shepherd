@@ -71,7 +71,7 @@ AREAS: dict[str, list[str]] = {
     ],
     "browser": [
         APP + r"(Browser|RemoteBrowser)",
-        SES + r"(Browser|MCPRelay)",
+        SES + r"Browser",
     ],
     "design": [
         APP + r"(Design|RemoteDesignFlow)",
@@ -170,7 +170,6 @@ RULES: list[tuple[str, object, str]] = [
     ("Sources/ShepherdSessions/Design*.swift", area("design"), "design storage"),
     ("Sources/ShepherdSessions/RemoteDesigns.swift", area("design"), "remote designs"),
     ("Sources/ShepherdSessions/BrowserTunnelHost.swift", area("browser"), "the browser tunnel host"),
-    ("Sources/ShepherdSessions/MCPRequest.swift", area("settings"), "MCP requests"),
     ("Sources/ShepherdSessions/Skills*.swift", area("settings"), "skills"),
     ("Sources/ShepherdSessions/Suggestions*.swift", area("settings"), "suggested instructions"),
     ("Sources/ShepherdSessions/Instructions*.swift", area("settings"), "instructions"),
@@ -195,7 +194,6 @@ RULES: list[tuple[str, object, str]] = [
      "shared UI (tokens, controls, containers): every app suite draws it"),
     # ShepherdApp, by feature; what no feature claims runs the app's whole integration tier
     # (the other modules' integration tests cannot depend on it).
-    ("Sources/ShepherdApp/MCPExtension.swift", area("settings"), "the embedded MCP client (MCPEndToEndTests runs it)"),
     ("Sources/ShepherdApp/*Extension.swift", UNIT, "an embedded extension (the byte-identity unit test)"),
     ("Sources/ShepherdApp/Thread/**", area("thread"), "the thread and composer"),
     ("Sources/ShepherdApp/ThreadHeader.swift", area("thread"), "the thread header"),

@@ -392,9 +392,9 @@ struct PiLauncherTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: theirs.path).isEmpty)
     }
 
-    /// The MCP probe runs Shepherd's node after a login shell: the startup files' pi, jiti and
+    /// The sign-in bridge runs Shepherd's node after a login shell: the startup files' pi, jiti and
     /// Node settings (the test isolation's decoys) never reach it, and corporate CAs do.
-    @Test func theMCPProbeDropsTheStartupFilesPiAndNodeSettings() throws {
+    @Test func theSignInBridgeDropsTheStartupFilesPiAndNodeSettings() throws {
         let dir = try makeScratchDirectory("probe-env")
         defer { try? FileManager.default.removeItem(at: dir) }
         let home = try Self.home(in: dir)
@@ -406,22 +406,22 @@ struct PiLauncherTests {
 
             """.write(to: node, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: node.path)
-        let engine = PiEngine(command: ["/nonexistent/pi"], packageDirectory: nil, version: nil, node: .executable(node.path))
         var environment = ProcessInfo.processInfo.environment
         environment["NODE_EXTRA_CA_CERTS"] = "/their/ca.pem"
         environment["OPENSSL_CONF"] = "/their/openssl.cnf"
 
-        let line = PiLaunch.mcpProbe(engine: engine, home: home, client: "/c.mjs")
+        let line = PiLaunch.signInBridge(node: .executable(node.path), script: "/c.mjs", sdk: "/sdk.js", home: home)
         let run = try Self.run(line.argv[0], Array(line.argv.dropFirst()), environment: environment)
 
         #expect(run.status == 0, "\(run.err)")
-        #expect(run.out == ["arg=/c.mjs", "arg=probe", "NODE_EXTRA_CA_CERTS=/their/ca.pem"])
+        #expect(run.out == ["arg=/c.mjs", "arg=/sdk.js", "arg=\(home.directory.path)", "NODE_EXTRA_CA_CERTS=/their/ca.pem",
+                            "PI_CODING_AGENT_DIR=\(home.directory.path)", "PI_OFFLINE=1", "PI_SKIP_VERSION_CHECK=1", "PI_TELEMETRY=0"])
     }
 
     /// Same fallback the launcher uses (below): with no user CA and a non-empty keychain export
-    /// in the home, the MCP probe sees `NODE_EXTRA_CA_CERTS` set to it; the user's own wins when
+    /// in the home, the sign-in bridge sees `NODE_EXTRA_CA_CERTS` set to it; the user's own wins when
     /// they set one, and an empty or missing file sets nothing.
-    @Test func theMCPProbeFallsBackToTheHomesKeychainExport() throws {
+    @Test func theSignInBridgeFallsBackToTheHomesKeychainExport() throws {
         let dir = try makeScratchDirectory("probe-ca")
         defer { try? FileManager.default.removeItem(at: dir) }
         let home = try Self.home(in: dir)
@@ -433,9 +433,7 @@ struct PiLauncherTests {
 
             """.write(to: node, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: node.path)
-        let engine = PiEngine(command: ["/nonexistent/pi"], packageDirectory: nil, version: nil, node: .executable(node.path))
-
-        let line = PiLaunch.mcpProbe(engine: engine, home: home, client: "/c.mjs")
+        let line = PiLaunch.signInBridge(node: .executable(node.path), script: "/c.mjs", sdk: "/sdk.js", home: home)
         var withoutUserCA = ProcessInfo.processInfo.environment
         withoutUserCA["NODE_EXTRA_CA_CERTS"] = nil
         let fallback = try Self.run(line.argv[0], Array(line.argv.dropFirst()), environment: withoutUserCA)

@@ -87,16 +87,6 @@ public enum PiLaunch {
     public static let refusalPrefix = "Shepherd won't start pi: "
     public static let refusedExitCode: Int32 = 78
 
-    /// Settings ▸ MCP servers' probe: the agents' MCP client, run by the engine's node with
-    /// `probe`, in a login shell, so the servers it starts find what an agent's would. Like the
-    /// launcher, it drops the startup files' pi, jiti and Node settings first (keeping the user's
-    /// own `NODE_EXTRA_CA_CERTS`, else falling back to `home`'s keychain export): an agent's
-    /// client never sees them, and a `NODE_OPTIONS` hook of the user's must not load into
-    /// Shepherd's node.
-    public static func mcpProbe(engine: PiEngine, home: PiHome, client: String) -> Line {
-        Line(script: clearedEnvironment(home: home) + "exec \(word(engine.node)) \"$0\" probe", positional: [client])
-    }
-
     /// Shell words that unset every `PI_*`, `JITI_*`, `NODE_*` and `OPENSSL_CONF` but
     /// `NODE_EXTRA_CA_CERTS`, for a line that runs Shepherd's own node after a login shell: keeps
     /// the user's own value, else falls back to `home`'s keychain export

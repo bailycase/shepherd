@@ -6,6 +6,12 @@ import ShepherdProtocol
 // it doesn't know, other tools' entries and their plaintext values, and never over a file that
 // doesn't parse. Shepherd's own fields sit under each entry's `shepherd` key.
 
+/// How a server's entry talks to it: stdio, or the Streamable HTTP (and legacy SSE, which pi's MCP
+/// doesn't run) the entry's URL names.
+enum MCPTransportKind: String, Sendable {
+    case stdio, streamableHTTP, sse
+}
+
 /// How the agent reaches a server's tools (`shepherd.exposure`): pi's `deferred` or `direct`
 /// (docs/mcp.md). The stored word for Search stays `proxy`, which files written before pi's MCP
 /// hold.

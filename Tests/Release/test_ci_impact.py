@@ -159,9 +159,10 @@ class LaneTests(unittest.TestCase):
         self.assertTrue(plan.swift)
         self.assertEqual(plan.selection["regexes"], [])
 
-    def test_the_embedded_mcp_client_runs_the_settings_suites_that_run_it(self):
-        plan = pr(["Sources/ShepherdApp/MCPExtension.swift"])
-        self.assertIn("ShepherdAppIntegrationTests.MCPEndToEndTests", selected(plan))
+    def test_the_repo_mcp_extension_literal_runs_the_unit_tier_for_its_identity_test(self):
+        plan = pr(["Sources/ShepherdApp/MCPProjectExtension.swift", "Extensions/shepherd-mcp-project.ts"])
+        self.assertTrue(plan.swift)
+        self.assertEqual(plan.selection["regexes"], [])
 
     def test_the_cli_runs_only_its_unit_tests(self):
         plan = pr(["Sources/shepherd-cli/main.swift"])

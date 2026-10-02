@@ -14,15 +14,15 @@ the same change.
 - A new `SessionServer` mutation needs an integration test.
 - New persisted fields decode with defaults, so older `state.json` files keep loading.
 
-**Embedded extensions have one canonical copy.** The twenty files in `Extensions/` are canonical,
+**Embedded extensions have one canonical copy.** The nineteen files in `Extensions/` are canonical,
 and so is the design skill in `Extensions/design-skill/`.
 pi loads the copies that the twelve `Sources/ShepherdApp/*Extension.swift` files write to the
 support directory from embedded string literals. `installedPath()` rewrites an installed copy
 whenever its content differs, so drift ships bugs. `ChildrenExtension.swift` carries children,
 children-config, children-ui, workflow, and missions, and installs `InspectExtension`'s
 `shepherd-inspect.mjs`. `DesignExtension.swift` also writes the design skill's `SKILL.md` and
-`format.md` to the support directory's `design-skill/`. `MCPExtension.swift` carries
-`shepherd-mcp.ts` and `shepherd-mcp-client.mjs`, installed side by side. `BrowserExtension.swift`
+`format.md` to the support directory's `design-skill/`. `MCPProjectExtension.swift` carries
+`shepherd-mcp-project.ts` (a repo's `.mcp.json` on pi's MCP; docs/mcp.md). `BrowserExtension.swift`
 carries `shepherd-browser.ts` (docs/browser.md). The sign-in bridge,
 `shepherd-sign-in.mjs`, isn't an extension: `PiSignInScript` (ShepherdSessions' `PiSignIn.swift`)
 carries it and installs it beside them, and the app runs it on the engine's node.
@@ -39,7 +39,7 @@ which the host keeps current and pi reads on every provider request (docs/servic
 support table is `ServiceTierSupport`'s, and the two are tested against one JSON table.
 
 - Edit a `.ts`/`.mjs` file (or a design skill file) and its literal in the same change, with
-  `scripts/sync-embedded-extension.py`. A unit test enforces byte identity for all twenty pairs
+  `scripts/sync-embedded-extension.py`. A unit test enforces byte identity for all nineteen pairs
   and the skill's two files.
 - Extensions stay dependency-free and inert without their environment variables.
 - They must never throw into pi or keep the process alive (unref'd sockets and timers).
