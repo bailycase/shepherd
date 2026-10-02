@@ -1085,6 +1085,7 @@ final class TerminalSessionStore {
                 ? (try DesignReferencesExtension.installedPath(), !agent.designGrants.isEmpty) : nil,
             mcp: try MCPLaunch.forAgents(settings: settings),
             browserExtensionPath: Self.wantsBrowser(for: agent, enabled: settings.piBrowserExtension) ? try BrowserExtension.installedPath() : nil,
+            contextExtensionPath: settings.trimToolOutput ? try ContextExtension.installedPath() : nil,
             userHome: pi.userHome,
             // Use another model (an agent not signed in): its next start takes the model picked.
             model: modelOverride ?? (sessionIsFresh ? agent.model : nil),

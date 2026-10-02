@@ -105,6 +105,8 @@ Sources/
                        PaneRequest (terminal/review/automation requests + outcomes), RemoteFileUpload,
                        PiEngine (which pi runs; BundledPiEngine, the one the app ships),
                        PiHome (Shepherd's pi home: the launcher, restore-env.sh, its settings),
+                       PiCompactionThreshold (Settings ▸ Agents ▸ Compact at, as pi's per-model
+                       `compaction.modelOverrides`),
                        YourPi (the user's own pi, read only; YourPiLocator, PiSessionFolder),
                        YourPiFiles (its auth.json, models.json, settings, trust and extensions,
                        parsed as plain files; PiProviders), YourPiImport (the first launch's
@@ -307,6 +309,10 @@ Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free)
   shepherd-service-tier.ts  adds service_tier to the agent's own provider requests while its thread
                           is on Fast (the Speed control), from the agent's tier file; see
                           docs/service-tier.md
+  shepherd-context.ts     keeps the old, bulky parts of a long run (tool output, the contents of
+                          written files, reasoning payloads, screenshots) out of what the model is
+                          sent, and clips any one huge tool result; the thread keeps everything;
+                          see docs/context-budget.md
 Tests/
   <Module>UnitTests/, *IntegrationTests/, ShepherdPreviewTests/   the tiers above
   ShepherdTestIsolation/  C, run when a test bundle loads: scratch root, PATH, ZDOTDIR
