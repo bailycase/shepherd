@@ -192,8 +192,9 @@ the caret, replacing selected text and leaving the caret after it, and never sen
 same holds in New thread, New design, subagent replies, queued-message editing, inline review
 comments and a design comment's reply. The key handler inserts the line itself
 (`NWReturnKey`, through the field editor's own `insertNewlineIgnoringFieldEditor:`, so the draft,
-the caret and undo follow): a SwiftUI multi-line field on the Mac answers ↩ and ⇧↩ with no line at
-all, only ⌥↩, so returning `.ignored` for ⇧↩ left the system nothing to insert. An input
+the caret and undo follow): on macOS 27 a SwiftUI multi-line field's editor answers `insertNewline:`,
+the command ↩ and ⇧↩ both resolve to, by ending the edit with no line added, and only ⌥↩'s command
+adds one, so returning `.ignored` for ⇧↩ left the system nothing to insert. An input
 method that is composing (marked text) keeps ↩, and a ⇧ or ⌥ chord that also holds ⌘ or ⌃ is the
 system's. With a menu open ⇧↩ still adds the line, which closes the menu; ↩ chooses its row.
 `ComposerReturnKey` decides it, apart from the field. While pi is idle ↩ and ⌘↩ both send.
