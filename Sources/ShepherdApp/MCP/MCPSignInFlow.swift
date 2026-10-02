@@ -2,49 +2,49 @@ import Foundation
 import Observation
 import ShepherdUI
 
-/// One OAuth sign-in, as the sign-in sheet shows it: find the sign-in server, register Shepherd
-/// (or use the client ID from Advanced), wait for the user in the browser on a one-shot
-/// loopback redirect, exchange the code, save the token, and probe the server.
+/// One OAuth sign-in, as the sign-in sheet shows it. pi does the work (`pi mcp login <server>`:
+/// it finds the sign-in server, registers itself as Shepherd, opens the browser, waits on a loopback
+/// redirect and keeps the tokens in its home); this runs that and tells its output as the three
+/// steps the sheet draws. Nothing about the sign-in is kept here: the credentials are pi's.
 @MainActor
 @Observable
 final class MCPSignInFlow: Identifiable {
+    /// How long pi waits for the browser, in seconds (`pi mcp login --timeout`).
+    nonisolated static let timeout: TimeInterval = 300
+
     let id = UUID()
     let server: String
     private(set) var model: MCPSignInSheetModel
     /// Finished and signed in: the sheet closes a moment later.
     private(set) var succeeded = false
+    /// The page pi opened, as it printed it: Open browser again and Copy link use it.
+    @ObservationIgnored private(set) var authorizationURL: URL?
+
+    /// Runs `pi mcp <arguments>`, handing each line of its output over; nil when pi's home isn't ready.
+    typealias Run = @MainActor ([String], @escaping @Sendable (String) -> Void) async -> MCPCLIResult?
 
     @ObservationIgnored private let url: URL
-    @ObservationIgnored private let oauth: MCPOAuthSettings
-    @ObservationIgnored private let challenge: String?
-    @ObservationIgnored private let previous: MCPOAuthToken?
-    @ObservationIgnored private let missingScopes: [String]
-    @ObservationIgnored private let service: MCPOAuthService
-    @ObservationIgnored private let dependencies: MCPStore.Dependencies
-    @ObservationIgnored private let complete: (MCPOAuthToken) async throws -> MCPProbeResult?
+    @ObservationIgnored private let run: Run
+    @ObservationIgnored private let openURL: @MainActor (URL) -> Void
+    @ObservationIgnored private let copy: @MainActor (String) -> Void
+    @ObservationIgnored private let finished: @MainActor () -> Void
     @ObservationIgnored private var task: Task<Void, Never>?
-    @ObservationIgnored private var listener: MCPLoopbackListener?
-    @ObservationIgnored private(set) var authorizationURL: URL?
     @ObservationIgnored private var provider: String
     @ObservationIgnored private var domain: String
 
-    init(server: String, url: URL, oauth: MCPOAuthSettings, challenge: String?, previous: MCPOAuthToken?, missingScopes: [String],
-         service: MCPOAuthService, dependencies: MCPStore.Dependencies,
-         complete: @escaping (MCPOAuthToken) async throws -> MCPProbeResult?) {
+    init(server: String, url: URL, run: @escaping Run, openURL: @escaping @MainActor (URL) -> Void,
+         copy: @escaping @MainActor (String) -> Void, finished: @escaping @MainActor () -> Void) {
         self.server = server
         self.url = url
-        self.oauth = oauth
-        self.challenge = challenge
-        self.previous = previous
-        self.missingScopes = missingScopes
-        self.service = service
-        self.dependencies = dependencies
-        self.complete = complete
+        self.run = run
+        self.openURL = openURL
+        self.copy = copy
+        self.finished = finished
         provider = Self.providerName(server: server, host: url.host)
         domain = Self.domain(url.host) ?? url.host ?? server
         model = MCPSignInSheetModel(title: "Sign in to \(provider)", subtitle: "Finish signing in on \(domain).", steps: [],
                                     phase: .waiting)
-        model.steps = Self.steps(provider: provider, domain: domain, registration: nil)
+        model.steps = Self.steps(provider: provider, domain: domain)
     }
 
     /// "Notion" from mcp.notion.com, else the server's own name capitalized.
@@ -64,10 +64,10 @@ final class MCPSignInFlow: Identifiable {
         return labels.count <= 2 ? host : labels.suffix(2).joined(separator: ".")
     }
 
-    private static func steps(provider: String, domain: String, registration: String?) -> [MCPSignInSheetModel.Step] {
+    private static func steps(provider: String, domain: String) -> [MCPSignInSheetModel.Step] {
         [
             .init(id: "found", title: "Finding \(provider)’s sign-in server", state: .live),
-            .init(id: "registered", title: "Registering Shepherd with \(provider)", note: registration, state: .pending),
+            .init(id: "registered", title: "Registering Shepherd with \(provider)", state: .pending),
             .init(id: "browser", title: "Waiting for you in the browser",
                   note: "Approve access on \(domain); this closes by itself.", state: .pending),
         ]
@@ -76,24 +76,25 @@ final class MCPSignInFlow: Identifiable {
     func start() {
         task?.cancel()
         succeeded = false
+        authorizationURL = nil
         model = MCPSignInSheetModel(title: "Sign in to \(provider)", subtitle: "Finish signing in on \(domain).",
-                                    steps: Self.steps(provider: provider, domain: domain, registration: nil), phase: .waiting)
-        task = Task { [weak self] in await self?.run() }
+                                    steps: Self.steps(provider: provider, domain: domain), phase: .waiting)
+        task = Task { [weak self] in await self?.signIn() }
     }
 
     func tryAgain() { start() }
 
+    /// Ends the sign-in: pi's process is stopped and nothing is saved.
     func cancel() {
         task?.cancel()
-        listener?.cancel()
     }
 
     func openBrowserAgain() {
-        if let authorizationURL { dependencies.openURL(authorizationURL) }
+        if let authorizationURL { openURL(authorizationURL) }
     }
 
     func copyLink() {
-        if let authorizationURL { dependencies.copy(authorizationURL.absoluteString) }
+        if let authorizationURL { copy(authorizationURL.absoluteString) }
     }
 
     private func set(_ id: String, _ state: MCPSignInSheetModel.Step.State, title: String? = nil, note: String?? = nil) {
@@ -105,103 +106,63 @@ final class MCPSignInFlow: Identifiable {
 
     private var live: String? { model.steps.first { $0.state == .live }?.id }
 
-    private func run() async {
-        do {
-            // 1. Where to sign in.
-            let discovery = try await service.discover(server: url, challenge: MCPAuthChallenge.bearer(in: challenge))
-            let authHost = URL(string: discovery.metadata.authorizationEndpoint)?.host
-            provider = Self.providerName(server: server, host: authHost ?? url.host)
-            domain = Self.domain(authHost) ?? domain
-            model.title = "Sign in to \(provider)"
-            model.subtitle = "Finish signing in on \(domain)."
-            set("found", .done, title: "Found \(provider)’s sign-in server",
-                note: .some("\((discovery.resourceMetadataURL ?? url).host ?? domain) pointed the way"))
-            set("registered", .live, title: "Registering Shepherd with \(provider)")
-            set("browser", .pending, note: .some("Approve access on \(domain); this closes by itself."))
-            try Task.checkCancellation()
+    /// pi prints the address once, on a line of its own; everything before it is it working out where to sign in.
+    private func hear(_ line: String) {
+        let text = line.trimmingCharacters(in: .whitespaces)
+        guard authorizationURL == nil, text.hasPrefix("http"), let address = URL(string: text), let host = address.host else { return }
+        authorizationURL = address
+        provider = Self.providerName(server: server, host: host)
+        domain = Self.domain(host) ?? domain
+        model.title = "Sign in to \(provider)"
+        model.subtitle = "Finish signing in on \(domain)."
+        set("found", .done, title: "Found \(provider)’s sign-in server", note: .some(nil))
+        set("registered", .done, title: "Registered Shepherd with \(provider)", note: .some(nil))
+        set("browser", .live, note: .some("pi opened the page; approve access on \(domain) and this closes by itself."))
+    }
 
-            // 2. A client, and the redirect it answers on.
-            let state = MCPPKCE.randomString()
-            let reuse = previous.flatMap { $0.issuer == discovery.issuer ? $0 : nil }
-            let preferred = reuse.flatMap { URL(string: $0.redirectURI)?.port }.map(UInt16.init) ?? 0
-            let listener = MCPLoopbackListener(state: state, preferredPort: preferred)
-            self.listener = listener
-            try await listener.start()
-            let client: MCPOAuthClient
-            let registration: String
-            if let clientID = oauth.clientID, !clientID.isEmpty {
-                client = MCPOAuthClient(clientID: clientID, clientSecret: oauth.clientSecret, authMethod: nil,
-                                        redirectURI: listener.redirectURI, registeredDynamically: false)
-                registration = "Client ID from Advanced"
-            } else if let reuse, reuse.redirectURI == listener.redirectURI {
-                client = MCPOAuthClient(clientID: reuse.clientID, clientSecret: reuse.clientSecret, authMethod: reuse.authMethod,
-                                        redirectURI: reuse.redirectURI, registeredDynamically: true)
-                registration = "Dynamic client registration"
-            } else {
-                client = try await service.register(discovery.metadata, redirectURI: listener.redirectURI, provider: provider)
-                registration = "Dynamic client registration"
-            }
-            set("registered", .done, title: "Registered Shepherd with \(provider)", note: .some(registration))
-            set("browser", .live)
-            try Task.checkCancellation()
-
-            // 3. The browser.
-            let verifier = MCPPKCE.verifier()
-            let wanted = MCPScopes.union(discovery.scopes(configured: oauth.scopes).isEmpty ? previous?.scopes ?? []
-                                            : discovery.scopes(configured: oauth.scopes), missingScopes)
-            guard let authorize = MCPOAuthService.authorizationURL(discovery, client: client, scopes: wanted, state: state,
-                                                                   challenge: MCPPKCE.challenge(for: verifier)) else {
-                throw MCPOAuthError.badResponse("The sign-in server’s authorize address isn’t valid.")
-            }
-            authorizationURL = authorize
-            dependencies.openURL(authorize)
-            let outcome = try await listener.wait()
-            let code: String
-            switch outcome {
-            case .code(let value): code = value
-            case .denied(let error, let description): throw MCPOAuthError.denied(error: error, description: description)
-            }
-
-            // 4. The token.
-            let token = try await service.exchange(code: code, verifier: verifier, discovery: discovery, client: client,
-                                                   requestedScopes: wanted, nowMs: MCPStore.ms(dependencies.now()))
-            set("browser", .done, title: token.account.map { "Signed in as \($0)" } ?? "Signed in",
-                note: .some(token.scopes.isEmpty ? nil : "Access: " + token.scopes.joined(separator: ", ")))
-            model.subtitle = "Checking \(server)…"
-            let result = try await complete(token)
-            switch result {
-            case .connected(_, _, let tools)?:
-                model.subtitle = "\(server) is connected: \(tools.count) tool\(tools.count == 1 ? "" : "s")."
-            default:
-                model.subtitle = "Signed in. \(server) connects when an agent uses it."
-            }
+    private func signIn() async {
+        let result = await run(["login", server, "--timeout", String(Int(Self.timeout))]) { [weak self] line in
+            Task { @MainActor in self?.hear(line) }
+        }
+        guard !Task.isCancelled else { return }
+        guard let result else {
+            fail(result: MCPCLIResult(status: 1, stdout: "", stderr: "Shepherd’s pi isn’t ready: see the problem on the page."))
+            return
+        }
+        if result.status == 0 {
+            set("found", .done)
+            set("registered", .done)
+            set("browser", .done, title: "Signed in", note: .some(nil))
+            let tools = result.stdout.split(whereSeparator: \.isNewline).last.flatMap { Self.toolCount(in: String($0)) }
+            model.subtitle = tools.map { "\(server) is connected: \($0) tool\($0 == 1 ? "" : "s")." } ?? "Signed in to \(server)."
             model.phase = .done
             succeeded = true
-        } catch is CancellationError {
-            return
-        } catch MCPOAuthError.cancelled {
-            return
-        } catch {
-            fail(error)
+            finished()
+        } else {
+            fail(result: result)
         }
     }
 
-    private func fail(_ error: Error) {
+    /// "(8 tools)" in pi's last line.
+    nonisolated static func toolCount(in line: String) -> Int? {
+        guard let open = line.range(of: "(", options: .backwards), let close = line.range(of: " tool", range: open.upperBound..<line.endIndex) else { return nil }
+        return Int(line[open.upperBound..<close.lowerBound])
+    }
+
+    private func fail(result: MCPCLIResult) {
         let failing = live ?? "browser"
-        let text = (error as? MCPOAuthError)?.description ?? error.localizedDescription
-        switch (failing, error as? MCPOAuthError) {
-        case (_, .denied(let code, let description)?):
-            set(failing, .failed, title: "\(provider) didn’t allow access",
-                note: .some("\(code): \(description ?? "you chose Cancel on \(domain).")"))
-        case ("found", _):
-            set(failing, .failed, title: "Couldn’t find \(provider)’s sign-in server", note: .some(text))
-        case ("registered", _):
-            set(failing, .failed, title: "Couldn’t register Shepherd with \(provider)", note: .some(text))
+        let said = [result.stderr, result.stdout.split(whereSeparator: \.isNewline).last.map(String.init) ?? ""]
+            .first { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ?? "pi stopped with status \(result.status)."
+        let note = said.split(whereSeparator: \.isNewline).last.map(String.init) ?? said
+        switch failing {
+        case "found", "registered":
+            set(failing, .failed, title: "Couldn’t sign in to \(provider)", note: .some(note))
         default:
-            set(failing, .failed, title: "Signing in didn’t finish", note: .some(text))
+            set(failing, .failed, title: result.timedOut || note.contains("not completed") ? "Signing in didn’t finish" : "\(provider) didn’t sign Shepherd in",
+                note: .some(note))
         }
         model.subtitle = "Nothing was saved."
-        model.details = String(describing: error)
+        model.details = [result.stdout, result.stderr].filter { !$0.isEmpty }.joined(separator: "\n")
         model.phase = .failed
     }
 }

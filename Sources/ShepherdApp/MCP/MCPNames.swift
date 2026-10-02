@@ -2,13 +2,14 @@ import Foundation
 
 /// Server names: what a tool prefix looks like, and a suggestion from a URL or a command.
 enum MCPServerName {
+    /// pi's rule for a server name: ASCII letters, digits, `-` and `_`.
     static func isValid(_ name: String) -> Bool {
-        !name.isEmpty && name.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" || $0 == "." }
+        MCPPiConfig.isPiName(name)
     }
 
-    /// The server name as its direct tools' prefix: lowercased, anything but a–z 0–9 _ as `_`.
+    /// What pi prefixes a server's tools with: `mcp__github`, and `mcp__my_server` for `my-server`.
     static func toolPrefix(_ name: String) -> String {
-        String(name.lowercased().map { ("a"..."z").contains($0) || ("0"..."9").contains($0) || $0 == "_" ? $0 : "_" })
+        "mcp__" + name.replacingOccurrences(of: "-", with: "_")
     }
 
     /// notion from mcp.notion.com, linear from mcp.linear.app, github from api.githubcopilot.com.

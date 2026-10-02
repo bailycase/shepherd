@@ -46,7 +46,7 @@ struct MCPConfigFileTests {
         #expect(linear.json["disabled"] == .bool(false))
         #expect(linear.json["shepherd"]?["note"] == .string("kept"))
         #expect(linear.json["shepherd"]?["enabled"] == .bool(false))
-        #expect(linear.settings.start == .whenUsed)
+        #expect(linear.json["shepherd"]?["start"] == .string("whenUsed"), "a key from before pi's MCP stays, though nothing reads it")
         // Another tool's entry and its plaintext value stay exactly as written.
         let other = try #require(document.server("cursor-only"))
         #expect(other.env == ["API_KEY": "plaintext-by-cursor"])
@@ -164,17 +164,14 @@ struct MCPConfigFileTests {
     }
 
     @Test(arguments: [
-        ("1e100", 10, 30), ("-1", 10, 30), ("0", 10, 30), ("1.5", 10, 30),
-        ("1", 1, 1), ("300", 300, 300), ("301", 301, 30),
-        ("35791", 35791, 30), ("35792", 10, 30),
+        ("1e100", 60), ("-1", 60), ("0", 60), ("1.5", 60), ("1", 1), ("300", 300), ("301", 60),
     ])
-    func externalNumbersUseOnlySupportedWholeDelays(number: String, idle: Int, timeout: Int) throws {
-        let json = "{\"mcpServers\":{\"fixture\":{\"command\":\"fixture\",\"shepherd\":{\"idleMinutes\":\(number),\"timeoutSeconds\":\(number)}}}}"
+    func externalNumbersUseOnlySupportedWholeTimeouts(number: String, timeout: Int) throws {
+        let json = "{\"mcpServers\":{\"fixture\":{\"command\":\"fixture\",\"shepherd\":{\"timeoutSeconds\":\(number)}}}}"
         guard case .document(let document) = MCPConfigFile.parse(Data(json.utf8)) else {
             Issue.record("valid JSON number did not parse"); return
         }
         let settings = try #require(document.server("fixture")).settings
-        #expect(settings.idleMinutes == idle)
         #expect(settings.timeoutSeconds == timeout)
     }
 

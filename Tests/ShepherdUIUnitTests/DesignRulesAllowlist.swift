@@ -88,7 +88,6 @@ enum DesignRuleAllowlist {
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Review/FileStrip.swift", 3, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Review/InlineComment.swift", 3, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Review/ReviewComposer.swift", 1, font),
-        .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Settings/MCPServerDetail.swift", 1, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Settings/MCPSignInSheet.swift", 2, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Status/Feedback.swift", 6, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Status/StateIndicators.swift", 1, font),

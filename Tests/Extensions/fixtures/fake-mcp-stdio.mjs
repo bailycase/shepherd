@@ -15,6 +15,8 @@ if (process.env.FAKE_MCP_DESCENDANT) {
 }
 
 if (process.env.FAKE_MCP_PIDFILE) fs.writeFileSync(process.env.FAKE_MCP_PIDFILE, String(process.pid));
+// FAKE_MCP_ENVFILE gets the environment it was started with, as JSON.
+if (process.env.FAKE_MCP_ENVFILE) fs.writeFileSync(process.env.FAKE_MCP_ENVFILE, JSON.stringify(process.env));
 // FAKE_MCP_ARGVFILE gets what it was started with: its arguments and working directory.
 if (process.env.FAKE_MCP_ARGVFILE) fs.writeFileSync(process.env.FAKE_MCP_ARGVFILE, JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd() }));
 if (process.env.FAKE_MCP_CRASH) {
