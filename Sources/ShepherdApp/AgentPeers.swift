@@ -17,7 +17,11 @@ extension ShepherdViewModel {
                 if self?.peerDeleteConfirmation?.requestID == token {
                     self?.peerDeleteConfirmation = nil
                 }
+                self?.peerApprovals.removeAll { $0.requestID == token }
             }
+        }
+        server.onAgentApprovalRequest = { [weak self] prompt in
+            MainActor.assumeIsolated { self?.peerApprovals.append(prompt) }
         }
         server.onAgentPeerRequest = { [weak self] request, respond in
             MainActor.assumeIsolated {
@@ -139,6 +143,21 @@ extension ShepherdViewModel {
                 isSelf: agent.id == sender
             )
         }
+    }
+
+    /// The approval dialog's buttons, and nothing else: the answer goes to the server, which does the
+    /// call (or refuses it) when it claims the token, so a call that already lapsed is never done.
+    /// "Allow for this thread" also takes what the same agent has waiting off the queue: the server
+    /// does those calls too and tells the app (`onAgentPeerCancellation`).
+    func answerPeerApproval(_ requestID: String, _ decision: AgentApprovalDecision) {
+        guard peerApprovals.contains(where: { $0.requestID == requestID }) else { return }
+        peerApprovals.removeAll { $0.requestID == requestID }
+        Task { _ = await server.resolveAgentApproval(requestID, decision) }
+    }
+
+    /// What `PeerApprovalDialog` shows for `prompt`, from the names and folders held now.
+    func peerApprovalPresentation(_ prompt: AgentApprovalPrompt) -> PeerApprovalPresentation {
+        PeerApprovalPresentation.make(prompt, in: state, waiting: max(0, peerApprovals.count - 1))
     }
 
     func cancelPeerDeletion(requestID: String) {

@@ -10,8 +10,10 @@ every request from or to it with `not_a_thread` ([designs.md](designs.md) › De
 ordinary threads).
 
 Code: `Extensions/shepherd-panes.ts` (the tools and the recipient side), `SessionServer`
-(relaying, tokens, timeouts), `AgentPeers.swift` (list, send, spawn, and the deletion dialog's
-decisions), `PeerDeleteDialog` in `AppDialogs.swift`, and `ShepherdViewModel+Review.swift`.
+(relaying, tokens, timeouts, and the approval gate), `AgentApprovals.swift` (what the setting
+decides, "Allow for this thread"), `AgentPeers.swift` (list, send, spawn, the approval queue and
+the deletion dialog's decisions), `PeerApprovalDialog` and `PeerApproval.swift` (the approval
+dialog and its words), `PeerDeleteDialog` in `AppDialogs.swift`, and `ShepherdViewModel+Review.swift`.
 
 ## The tools
 
@@ -263,9 +265,12 @@ older-host row is the only place a client meets one.
 
 `automation_create(replyToCreator: true, …)` appends instructions to the saved watch prompt
 asking it to call `agent_send` with `delivery: "report"` and the creating agent's exact ID when it succeeds, fails, or
-is blocked, as well as `notify`. Automation agents already have `agent_send`; they cannot
-create further automations. The default remains notification-only unless the prompt asks
-otherwise.
+is blocked, as well as `notify`. Automation agents have `agent_send` and no other `agent_*` tool;
+they cannot create further automations. The default remains notification-only unless the prompt
+asks otherwise, and the model is told to set `replyToCreator` only when the user asked to hear the
+result in that thread. **The report is an agent message, so it needs Settings ▸ Pi ▸ Agent-to-agent
+messages set to Always allow**: an automation run cannot be asked, and under Ask me or Never the
+host refuses it (`not_allowed`), leaving the watcher's `notify` as the report.
 
 This is an instruction to the watch agent, not a guaranteed completion callback. Dispatch
 adds context without waking the creator; while busy it waits for pi's safe boundary, not a
@@ -284,4 +289,6 @@ PI_PACKAGE_DIR="$(npm root -g)/@earendil-works/pi-coding-agent" \
 swift test --filter 'ExtensionMessageTests|ExtensionReplyTests|ExtensionSocketTests' # wire shapes and peer routing
 swift test --filter AgentCoordinationTests                   # server relaying and tokens
 swift test --filter 'AgentPeerDeletionTests|ReviewFlowTests' # the dialog and review_diff
+swift test --filter 'AgentApprovalRulesTests|AgentApprovalTests'  # the gate: every setting, every gated call, every way a wait ends
+swift test --filter 'PeerApprovalPresentationTests|PeerApprovalFlowTests' # the dialog's words, and its buttons pressed (ControlPress)
 ```

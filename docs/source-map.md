@@ -12,8 +12,8 @@ Sources/
   ShepherdCore/        Models (Space, Tab, Agent, Automation, Design, ShepherdState), typed IDs, PaneNode
                        (binary layout tree: the thread with its terminals beside it; LeafPane carries
                        sessionID/cwd/agentID), AgentStatus +
-                       canTransition, ThinkingLevel, SessionRuntime, StateValidation, Reorder.
-                       No deps.
+                       canTransition, ThinkingLevel, SessionRuntime, AgentMessagePolicy (Settings ▸ Pi ▸ Agent-to-agent
+                       messages), StateValidation, Reorder. No deps.
   ShepherdProtocol/    ExtensionMessage/ExtensionReply (+ ChildRun, PaneInfo, …; and
                        ExtensionMessage+Speaker: whose voice each message is), RemoteMessage
                        (RemoteRequest/RemoteReply, RemoteProtocol version + capabilities),
@@ -102,7 +102,8 @@ Sources/
                        client; the drive's claims and routing are in SessionServer: a viewer that
                        owns an agent's browser is handed its requests), AutomationRunLog (each automation's runs), PTYSession,
                        SessionScreen (SwiftTerm), StateStore,
-                       PaneRequest (terminal/review/automation requests + outcomes), RemoteFileUpload,
+                       PaneRequest (terminal/review/automation requests + outcomes), AgentApprovals (the gate's
+                       rules, "Allow for this thread"), AgentMessageFraming (the header a recipient reads), RemoteFileUpload,
                        PiEngine (which pi runs; BundledPiEngine, the one the app ships),
                        PiHome (Shepherd's pi home: the launcher, restore-env.sh, its settings),
                        YourPi (the user's own pi, read only; YourPiLocator, PiSessionFolder),
@@ -237,7 +238,8 @@ Sources/
       lists, their rows and switches),
       Thread/SlashLogin (/login and /logout), Thread/ThreadAuthNotice (waiting, not signed in)
     Themes (ThemeManager, ShepherdTheme), ShepherdThemeMarker, ShellIntegration, ComponentGallery
-    RemoteHostStore, AgentPeers, AgentNotifications, ChildRuns, PiSessionFile (+ adoption from
+    RemoteHostStore, AgentPeers (+ the approval queue), PeerApproval and PeerApprovalDialog (an agent's call
+      on another thread, waiting for the user), AgentNotifications, ChildRuns, PiSessionFile (+ adoption from
       your pi), AppUpdater (Sparkle: UpdateChannel, UpdateChannelStore, ChannelDelegate),
       NightlyMovedNotice
     Status/Namer/Panes/Review/Subagents/Children/Inspect/Instructions/Design/MCPExtension.swift
