@@ -69,11 +69,12 @@ struct YourPiResourcesTests {
         // Themes: `.json` files.
         (.themes, ["agent/themes/harbor.json": "{}", "agent/themes/readme.md": "not a theme"], nil, ["themes/harbor.json"], 0),
         // Extensions: a file, a folder with an index, a folder without one (not an extension), a
-        // settings path, and a package; one their pi never installed is passed over.
+        // settings path, and a package; one their pi never installed is passed over. pi 1.0's
+        // switches for its built-in extensions (`-builtin:mcp`) name no file and are not reported.
         (.extensions, ["agent/extensions/gate.ts": "g", "agent/extensions/notify/index.ts": "n", "agent/extensions/notes/readme.md": "x",
                        "tools/tool.ts": "t", "agent/npm/node_modules/web/package.json": #"{"pi": {"extensions": ["./src/main.ts"]}}"#,
                        "agent/npm/node_modules/web/src/main.ts": "w"],
-         #"{"extensions": ["../tools/tool.ts"], "packages": ["npm:web", "npm:missing@2"]}"#,
+         #"{"extensions": ["../tools/tool.ts", "-builtin:mcp", "builtin:codemode", "+builtin:tool-search"], "packages": ["npm:web", "npm:missing@2"]}"#,
          ["your-extensions/files/gate.ts", "your-extensions/files/notify", "your-extensions/paths/tool.ts",
           "your-extensions/npm/node_modules/web"], 1),
     ])
