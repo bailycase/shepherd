@@ -56,8 +56,10 @@ The rules that follow:
   borrow it (`.nwFloatShadow`) only while they float. No vibrancy, translucency or gradients.
 - **Honest affordances.** Never draw a control that does nothing, a shortcut that isn't wired, or
   sample data in place of real data. Hide what is unsupported, or say why.
-- **No permission model.** Never invent approval UI. A question from pi or an extension is a
-  question, with the answers the asker offered.
+- **No permission model.** Never invent approval UI for what an agent runs. A question from pi or
+  an extension is a question, with the answers the asker offered. The one approval Shepherd asks
+  is for an agent acting on another thread (`PeerApprovalDialog`, and `PeerDeleteDialog` to
+  delete one): the user's decision, in Departures.
 - **Status is a dot or glyph plus a word.** `AgentState` colors every status surface; color is
   never the only signal.
 - **Lantern means you.** Amber marks the primary action and what needs you. Running blue marks

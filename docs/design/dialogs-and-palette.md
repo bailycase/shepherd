@@ -176,6 +176,38 @@ dialog. There is no `.alert`, `confirmationDialog`, or `NSAlert` in the app:
   worktree and branch are kept), Cancel (⎋) and a destructive Delete agent. Only that button
   approves. The dialog closes by itself when the request lapses (cancelled, the asking agent gone,
   or two minutes without an answer).
+- An agent's call on another thread, waiting for the user (`PeerApprovalDialog`, built from
+  `PeerApprovalPresentation`; opened while Settings ▸ Pi ▸ Agent-to-agent messages is Ask me; no
+  board draws it, and the user asked for it on 2026-10-01, see Departures): the delete dialog's
+  anatomy, 460pt.
+  - **Title and sentence** by call: "Message another thread" (`“<asker>” wants to message
+    “<target>”.`, or "wants to send “<target>” a report" for a hidden-context report), "Steer
+    another thread" ("wants to steer"), "Interrupt another thread" ("wants to stop what
+    “<target>” is doing"), "Read another thread" ("wants to read “<target>”'s conversation") and
+    "Start a new thread" ("wants to start a new thread"), then "If you don't answer within two
+    minutes, it is denied."
+  - **Rows** (`SheetRow`): To (the target's name), Branch (else Directory, mono: a thread of the
+    same name is told apart as the delete dialog tells it), Space, and Delivery ("Starts or
+    queues a turn", "Context only, starts no turn", or for a steer "Lands at its next step, or
+    starts an idle thread"); a new thread has Folder (mono) instead. Then Asked by, then **Message**
+    (**Prompt** for a new thread): the text as the agent wrote it, selectable, as tall as it is up
+    to 140pt (`AppLayout.peerApprovalTextMaxHeight`) and then scrolling, cut at 4,000 characters
+    with "… N more characters". An interrupt and a read carry no text.
+  - **Under the rows**, when calls queue behind this one, "N more waiting" (caption `textSecondary`;
+    not the footer's status, which three buttons leave no room at the large text size), and the
+    note (caption `textTertiary`): "Allow for this thread lets “<asker>” message, steer, interrupt,
+    read and start threads until you quit Shepherd or its pi restarts."
+  - **Footer**: Deny (ghost, ⎋), Allow for this thread and Allow once (secondary). **No button is
+    the ⏎ default** (Departures), and none is destructive. Only the buttons close it: the sheet
+    has no other dismissal, so a button's answer is never taken for the next call's.
+  - **When it shows**: one at a time, the oldest call first (up to eight per agent wait; a ninth is
+    refused), never over the Delete agent dialog, which goes first. Names and folders are read
+    when it is drawn. It closes by itself when the call lapses (the agent's Stop, its connection
+    closing, the setting turning to Never, or two minutes without an answer: Deny), and answers
+    for what the same agent has waiting when Allow for this thread is pressed.
+  - **Answers** reach the server (`SessionServer.resolveAgentApproval`), which does the call once or
+    refuses it; the agent hears "The user did not approve. Don't message other agents unless the
+    user asks you to." (docs/agent-coordination.md › Approving what agents do to other threads).
 - Stop all (`StopAllDialog`): "Stop the agent and every running subagent?", a live count ("2
   subagents are still running."), Cancel, Stop only the agent, and a destructive Stop all
 - The review's Revert (`RevertFileDialog`): "Discard the changes to <path>?", then "The new file

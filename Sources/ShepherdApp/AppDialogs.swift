@@ -110,6 +110,11 @@ struct AppDialogs: ViewModifier {
                     cancel: { vm.cancelPeerDeletion(requestID: confirmation.requestID) }
                 )
             }
+            .sheet(item: $vm.peerApprovalItem) { prompt in
+                PeerApprovalDialog(presentation: vm.peerApprovalPresentation(prompt)) { vm.answerPeerApproval(prompt.requestID, $0) }
+                    .dialogSheetFrame()
+                    .interactiveDismissDisabled()
+            }
             .sheet(item: $vm.designDeleteRequest) { request in
                 DeleteDesignDialog(words: request.words, delete: { vm.confirmDesignDelete(request) },
                                    cancel: { vm.designDeleteRequest = nil })
