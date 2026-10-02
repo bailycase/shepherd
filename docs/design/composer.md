@@ -530,24 +530,44 @@ none, and the row has no ring.
     with "of 200k" (12.5 `textSecondary`) and the percentage trailing in mono 12.
   - An 8pt bar of the window on `lineSubtle`: each part's share, 1.5pt apart — the system prompt
     and tools in `textTertiary`, instructions in the syntax keyword color, messages in the
-    function color, tool results in the type color (`contextSystem`, `contextInstructions`,
-    `contextMessages`, `contextToolResults`: swatches only, never text) — and the auto-compact mark,
-    a 1.5×14pt `textSecondary` tick where pi compacts on its own, labeled under the bar in mono 10
-    `textTertiary` ("auto-compact · 184k ↑"; no mark while auto-compaction is off).
-  - **The split** (`ContextDetails(.split)`): 26pt rows of an 8pt swatch, the part ("System prompt
-    and tools", "Instructions · AGENTS.md", "Messages", "Tool results") and its size in mono 11.5
-    ("6.8k"), then "Free" in `textTertiary`. **Largest** (a mono 10 uppercase label, "click to find
-    in thread" trailing): the three largest tool results, each a file or terminal glyph, the file's
-    name or the command's first line in mono 11.5 `textSecondary`, and its size; `bgHover` under
-    the pointer, and a click scrolls the thread to the turn holding it (loading older pages as
-    needed). The footnote in 11 `textTertiary`: "The total is the agent’s. The split is Shepherd’s
-    estimate from the messages." Then a `lineSubtle` rule and **Compact now…**, a 30pt full-width
+    function color, tool results in the type color, the agent's written files in the string
+    color, reasoning in the terminal's cyan, images in the variable color, and Other in
+    `lineStrong` (`contextSystem`, `contextInstructions`, `contextMessages`, `contextToolResults`,
+    `contextToolCalls`, `contextReasoning`, `contextImages`, `contextOther`: swatches only, never
+    text) — and the auto-compact mark, a 1.5×14pt `textSecondary` tick where pi compacts on its own,
+    labeled under the bar in mono 10 `textTertiary` ("auto-compact · 184k ↑"; no mark while
+    auto-compaction is off). The mark is where the thread compacts: pi's default, or the Compact at
+    percentage the user chose in Settings ▸ Agents ▸ Context.
+  - **The split** (`ContextDetails(.split)`; the user's call, 2026-10-01): 26pt rows of an 8pt
+    swatch, the part and its size in mono 11.5 ("6.8k"), then "Free" in `textTertiary`. The first
+    four rows are always there: "System prompt and tools", "Instructions", "Messages", "Tool
+    results". Under the first two, quietly, what each is made of, largest first and four at most
+    (18pt lines in mono 10.5 `textTertiary`, indented to the label): the system prompt's groups
+    ("browser tools 3.4k", "skills 850", "pi · system prompt 1.4k"; the tools by the group the
+    audit in docs/context-budget.md gives them) and the instruction files by where they are
+    ("Shepherd/AGENTS.md 4.8k", "APPEND_SYSTEM.md 225"). Nothing in those lines is pressed. A
+    host from before them names the first instruction file in the row's label ("Instructions ·
+    AGENTS.md +1") and draws no lines. Then, only when each is at least 500 tokens, a row of its
+    own: "Tool call contents" (the files the agent wrote or edited, carried in its calls),
+    "Reasoning" (the provider re-sends it with every call), "Images", and "Other". **Other is what
+    the provider's total holds that Shepherd cannot itemize** (the provider's own tokenization
+    against Shepherd's four characters a token, cache bookkeeping): it is never added to another
+    row, so nothing but the system prompt and the tools is ever called "System prompt and tools".
+    The fixed part, the system prompt, the tools and the instruction files, is anchored to the
+    provider's count of the thread's first call after it started or compacted. **Largest** (a mono
+    10 uppercase label, "click to find in thread" trailing): the three largest tool results, each
+    a file or terminal glyph, the file's name or the command's first line in mono 11.5
+    `textSecondary`, and its size; `bgHover` under the pointer, and a click scrolls the thread to
+    the turn holding it (loading older pages as needed). The footnote in 11 `textTertiary`: "The
+    total is the agent’s. The split is Shepherd’s estimate from the messages." and, with an Other
+    row, "…; Other is what it cannot itemize." Then a `lineSubtle` rule and **Compact now…**, a 30pt full-width
     button on `bgWindow` with a `lineStrong` line; it opens the field for what to keep (below) and
     **Compact now** in `lantern`. With no split to show (`.simple`), the total, the bar in
     `textTertiary`, the mark, and Compact now….
   - **Almost full** (ContextFull, past 85%): the title "Context almost full" and the total and
     percentage in `failed`; the bar; then the problem in 12.5 `textSecondary`: the biggest part
-    ("Tool results are 138k of it."), what pi will do ("The agent will compact on its own at 184k,
+    ("Tool results are 138k of it.", or "Reasoning is 100k of it.", "Tool call contents are 90k of
+    it.", "Images are…"), what pi will do ("The agent will compact on its own at 184k,
     before its next reply.", or "The agent will not compact on its own." when auto-compaction is
     off), and "Compact now to say what the summary should keep."; a field for what to keep (at
     least 52pt, `bgWindow`, a `lineStrong` line that turns `textTertiary` while focused, radius 8,
