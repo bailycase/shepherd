@@ -334,7 +334,8 @@ Tests/
   ShepherdTestSupport/    ScratchServer, StubPi (+ Resources/stub-pi.py), ExtensionClient,
                           QueueFixture (a host's queue without pi), eventually, recordingErrors,
                           ControlPress (press a control by accessibility label, measure hit
-                          areas), the time-limit and timing-sensitive traits
+                          areas), LongThreads (every kind of thread row with its longest words,
+                          for the layout tests and previews), the time-limit and timing-sensitive traits
   Extensions/             node tests for the bundled extensions (+ native-thread-wire.json);
                           context-harness.mjs (a real pi on a fake provider, launched as the app
                           launches an agent) with context-tools.json (the audit of every tool)

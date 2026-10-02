@@ -134,6 +134,21 @@ extension NWTurnError.Content {
     }
 }
 
+/// A label wider than the line truncates (and drops its meta) instead of widening the thread.
+#Preview("Activity lines, long labels") {
+    NWPreviewBoth {
+        VStack(alignment: .leading, spacing: NW.Space.s) {
+            NWActivityLine(kind: .edit, label: "Updated withdrawals-mobile-approve, withdrawals-desktop-approve and withdrawals-claims-details",
+                           meta: "edited") {}
+            NWActivityLine(kind: .browser, label: "Opened localhost:5173/checkout/withdrawals/mobile/approve/review/summary in Browser", meta: "1.2s") {}
+            NWActivityLine(kind: .other, label: "Used shepherd_child_message", meta: #"{"id":"native-48c1466f-3255-4d0a-9c1e-5b7f1e2a6b10","delivered":true}"#) {}
+            NWActivityLine(kind: .explore, label: "Search failed", meta: "menuOpen|has-next-page|width:390px|<table|summary-row · invalid regular expression",
+                           status: .failed) {}
+        }
+        .frame(width: 388)
+    }
+}
+
 #Preview("Changes card") {
     NWPreviewBoth {
         NWChangesCard(title: "2 files changed", added: 70, removed: 45, files: [
