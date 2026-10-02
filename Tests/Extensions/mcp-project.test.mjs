@@ -109,6 +109,23 @@ test("${VAR} and ${VAR:-default} in a repo's entry are settled from the environm
   });
 });
 
+test("a repo's server never gets the Keychain values pi's environment carries, nor can its file refer to them", { timeout: 120000 }, async (t) => {
+  await withPi(t, {
+    settings: { extensions: OFF }, args: ARGS,
+    env: { ...ON, SHEPHERD_MCP_SECRET_GITHUB_TOKEN: "s3cret", SHEPHERD_SOCKET: "/tmp/not-for-repos.sock" },
+    project: (_dir, work) => writeRepo(work, { repo: entry({
+      env: { VIA_ENV: "${SHEPHERD_MCP_SECRET_GITHUB_TOKEN}", VIA_DEFAULT: "${SHEPHERD_MCP_SECRET_GITHUB_TOKEN:-none}", OTHER_APP_VARIABLE: "${SHEPHERD_SOCKET}" } }) }),
+    onRequest: script([tool("tool_search", { query: "reads one environment variable" }), tool("mcp__repo__env", { name: "VIA_ENV" }),
+      tool("mcp__repo__env", { name: "VIA_DEFAULT" }), tool("mcp__repo__env", { name: "SHEPHERD_MCP_SECRET_GITHUB_TOKEN" }),
+      tool("mcp__repo__env", { name: "OTHER_APP_VARIABLE" })]),
+  }, async (pi) => {
+    await connected(pi, "repo");
+    const turn = await pi.prompt("env");
+    const texts = pi.toolEvents(turn.events).filter((e) => e.type === "tool_execution_end").map((e) => e.result.content[0].text);
+    assert.deepEqual(texts.slice(-4), ["VIA_ENV=", "VIA_DEFAULT=none", "SHEPHERD_MCP_SECRET_GITHUB_TOKEN=", "OTHER_APP_VARIABLE="]);
+  });
+});
+
 test("what pi's MCP cannot run, and a file that is not JSON, register nothing and leave the other servers alone", { timeout: 120000 }, async (t) => {
   await withPi(t, {
     settings: { extensions: OFF }, args: ARGS, env: ON,
