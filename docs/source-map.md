@@ -69,8 +69,9 @@ Sources/
                        parser: tables, lists, images, details, footnotes), NativeActivity
                        (activity lines, the changes card), NativeQueueRules (the queue's rules,
                        host and client), NativeContextPresentation (the context ring, its
-                       details, compaction lines), NativeQuestionDock (a question's kind, what
-                       its asker takes, the answer and the dock's keys),
+                       details, compaction lines), NativeClipNotice (what a thread says it
+                       was shortened: one line per fact the host reported), NativeQuestionDock
+                       (a question's kind, what its asker takes, the answer and the dock's keys),
                        TerminalPanel (a layout's terminal tabs, the key row's bytes, the panel's
                        height, RemoteTerminalLink), AutomationPresentation (automation rows, runs
                        and what a client may do), AgentBranchPresentation (the header's branch
@@ -335,7 +336,8 @@ Tests/
   ShepherdTestSupport/    ScratchServer, StubPi (+ Resources/stub-pi.py), ExtensionClient,
                           QueueFixture (a host's queue without pi), eventually, recordingErrors,
                           ControlPress (press a control by accessibility label, measure hit
-                          areas), the time-limit and timing-sensitive traits
+                          areas), LongThreads (every kind of thread row with its longest words,
+                          for the layout tests and previews), the time-limit and timing-sensitive traits
   Extensions/             node tests for the bundled extensions (+ native-thread-wire.json);
                           context-harness.mjs (a real pi on a fake provider, launched as the app
                           launches an agent) with context-tools.json (the audit of every tool)

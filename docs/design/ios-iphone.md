@@ -335,7 +335,8 @@ follows the Mac's rules (Thread) with the phone's measures below.
   8pt above the composer.
 - **Banners** at the top of the thread, 12 `textTertiary`: "<host> is offline · showing the last
   known thread", "This agent is no longer on <host>.", "Update Shepherd on <host> to open threads
-  here.", "Some output is clipped · the full thread is on <host>". A pi that can't start on the
+  here.", then one line for each thing the host reported shortening (Thread › Notices: what was left out and when it
+  returns, nothing for older history or a long message). A pi that can't start on the
   host (Thread › Can't start) reads as its banner's title and advice on one line ("pi can't reach
   a model. Sign in to a provider for Shepherd's pi (Settings ▸ Pi), then Retry on <host>."), with
   no spinner, Send disabled,
