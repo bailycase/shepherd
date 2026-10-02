@@ -542,16 +542,44 @@ draw no context meter.
   model and never written. `autoCompact` is `get_state`'s `autoCompactionEnabled`; `keepRecent` is
   `keepRecentTokens` (20,000 by default).
 - **The split and the largest items are the host's estimate** (`RPCThreadState.estimate`), taken
-  from `get_messages` with each history refresh: four characters a token, as pi estimates. pi
-  0.87's structured system prompt rides the message list as `system` messages (sections, a null
-  removing one, and the tools added or removed); the host folds them, counts the
-  `project_context` section as instructions (naming its `<project_instructions path>` files) and
-  the rest, with the tools' definitions, as the system prompt; user and assistant messages, the
-  agent's calls, and summaries as messages; and tool results as tool results. Every part is
-  scaled to pi's total. `largest` is the three largest tool results, named by the file they read
-  or wrote or the command they ran (the same name's results add up, found at the largest), each
-  with its thread entry (`t:<call id>`) so a client can find it. System messages never become
-  thread rows.
+  from `get_messages` with each history refresh: four characters a token, as pi estimates (a
+  check against o200k found that 1 to 12% high, never low), a screenshot at 2,100 tokens, and a
+  reasoning payload at the provider's own count (`usage.reasoning` on the call that made it,
+  else the text kept). pi 0.87's structured system prompt rides the message list as `system`
+  messages (sections, a null removing one, and the tools added or removed); the host folds them,
+  counts the `project_context` and `addendum` sections as instructions (each
+  `<project_instructions path>` file and APPEND_SYSTEM.md by its own size, `instructionParts`) and
+  the rest, with the tools' definitions, as the system prompt (`systemParts`: the prompt's
+  sections, the skills list, and the tools by the group `ContextToolGroups` reads off their names,
+  which `Tests/Extensions/context-tools.json` and `ContextToolGroupsTests` keep in step);
+  user and assistant messages and summaries as messages; the arguments of the agent's tool calls
+  (the files a `write` or an `edit` carried) as `toolCalls`; thinking as `reasoning`; images as
+  `images`; and tool results as tool results.
+- **The parts are held against pi's total, not scaled to it.** The fixed part (system prompt,
+  tools, instruction files) is anchored to the provider's count of the first assistant call since
+  the start or the latest compaction (`usage.input + cacheRead + cacheWrite`, less what the host
+  sizes of the conversation that call carried), when that lands within half to twice the sizing;
+  every other part stands as sized; and what the total holds beyond them is `other`. When the
+  parts add up to more than the total (a result the context extension cleared or clipped before
+  it was sent is still whole in the messages pi holds), the difference comes off tool results
+  first, then the agent's calls, reasoning, images and messages, never the fixed part. Scaling
+  every part to the total, as this once did, made a thread's reasoning and screenshots read as
+  "System prompt and tools" and "Instructions". The wire is additive (`NativeContextSplit`'s
+  `toolCalls`, `reasoning`, `images`, `other`, `systemParts`, `instructionParts` decode with
+  defaults and are encoded only when set, so an older client reads the four parts it always did).
+  `largest` is the three largest tool results, named by the file they read or wrote or the
+  command they ran (the same name's results add up, found at the largest), each with its thread
+  entry (`t:<call id>`) so a client can find it. System messages never become thread rows.
+- **What the model is sent is shorter than what the thread holds** while Settings ▸ Agents ▸
+  Context ▸ "Trim old tool output from the model’s context" is on: the bundled context extension
+  (`shepherd-context.ts`) edits the request pi sends in its `context` event and nothing else. The
+  session file, `get_messages`, the thread and the Changes pane keep everything. It clips one
+  result to about 6k tokens; and, in batches, once the context passes 55% of the window, clears
+  the oldest tool results, images, written-file arguments, hidden notices and reasoning payloads
+  (OpenAI Responses APIs only) down to about 33%, never touching the last eight calls and at most
+  one batch in 20 calls. A batch is recorded as a `shepherd.context` custom entry in pi's session,
+  so a restart, `/new`, a resume or a branch decides the same way. docs/context-budget.md has the
+  design, the numbers and the caching cost.
 - **A compaction** (`compaction_start` › `compaction_end`): `context.compacting` holds its reason
   and start, and a live row (role `compaction`, `NativeCompaction` phase `running`) sits at the
   tail. When it ends, a success refreshes history, state and stats, and the live row goes with the

@@ -203,6 +203,25 @@ struct NativeThreadWireTests {
         #expect((try Wire.object(empty)["context"] as? [String: Any])?.isEmpty == true)
     }
 
+    /// The split's newer parts (the agent's written files, reasoning, images, what no part explains, and the
+    /// prompt's and instruction files' own sizes) round trip, an older host's split decodes with none of them, and a
+    /// split with none of them sends nothing more than an older client reads.
+    @Test func theSplitsNewerPartsRoundTripAndStayOffTheWireWhenEmpty() throws {
+        let split = NativeContextSplit(
+            system: 6_800, instructions: 1_400, messages: 9_100, toolResults: 24_800, instructionFiles: ["AGENTS.md"],
+            toolCalls: 3_100, reasoning: 12_000, images: 2_100, other: 4_000,
+            systemParts: [NativeContextPart(label: "browser tools", tokens: 2_300), NativeContextPart(label: "pi · system prompt", tokens: 1_900)],
+            instructionParts: [NativeContextPart(label: "instructions/AGENTS.md", tokens: 1_200)])
+        let context = NativeThreadContext(tokens: 70_000, window: 200_000, split: split)
+        #expect(try Wire.roundTrip(context) == context)
+        #expect(split.total == 6_800 + 1_400 + 9_100 + 24_800 + 3_100 + 12_000 + 2_100 + 4_000)
+        let older = try Wire.decode(NativeContextSplit.self, #"{"system":1,"instructions":2,"messages":3,"toolResults":4,"instructionFiles":["AGENTS.md"]}"#)
+        #expect(older == NativeContextSplit(system: 1, instructions: 2, messages: 3, toolResults: 4, instructionFiles: ["AGENTS.md"]))
+        #expect(Set(try Wire.object(older).keys) == ["system", "instructions", "messages", "toolResults", "instructionFiles"])
+        #expect(Set(try Wire.object(split).keys).isSuperset(of: ["toolCalls", "reasoning", "images", "other", "systemParts", "instructionParts"]))
+        #expect(NativeContextSplit(system: .max, instructions: .max, messages: 1, toolResults: 0).total == .max, "a count from a provider can be any size")
+    }
+
     /// An older host sends no tier: the client draws no Speed control. A host that does sends the
     /// agent's tier and what its model offers; none offered is an empty list, not an absent one.
     @Test func anOlderSnapshotHasNoServiceTierAndAnEmptyOfferStaysOnTheWire() throws {
