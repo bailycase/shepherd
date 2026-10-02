@@ -50,7 +50,12 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   above its tail with the bottom marker out of view, waits for the layout to be quiet (160ms at
   most, for a thread drawing nothing), and lands on the tail again; when that is not enough it
   walks the scroll view back toward the rows and then down a page at a time until the marker is
-  in view. A reader's scroll, or one that just ended, is never moved, and a thread that is not
+  in view. A repair is not over until the thread has been seen resting on its tail: the follower
+  stands aside while the guard walks, so a thread that grew meanwhile (the "Thinking…" line of a
+  send) came to rest above its tail with the marker back in view from under the composer, and
+  the guard takes it the rest of the way by scrolling to the end of the scroll view itself
+  (`ThreadTailGuardTests`; one steer-now send in sixteen ended 38pt short for good). A reader's
+  scroll, or one that just ended, is never moved, and a thread that is not
   stranded is never touched (`ThreadTailFlowTests`). While a
   gesture is live, layout changes never move the view either: a drag up measures the rows it
   reveals, and landing on the tail then would pull the thread out from under the finger. "↓ Jump to latest"
@@ -84,7 +89,14 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   or polling; a changed cursor or session permits another fetch.
 - **Notices** above the thread explain degraded states in caption tertiary: "Last known thread ·
   refreshing before enabling actions", "This host's agent cannot answer questions here · update
-  Shepherd on the host", "Some earlier output is clipped".
+  Shepherd on the host", and one line for each thing the host reported shortening
+  (`NativeClipNotice`; docs/native-thread.md › RPCThreadState › Clipped): "Some messages couldn't be
+  read from pi · they appear after the agent's next reply", "Part of this turn's output is hidden
+  while it runs · it shows when the turn ends" (only while the thread runs), "A question from the
+  agent is too large to show here" (or "N questions from the agent are too large to show here"),
+  and, from a host that names no cause, "Some output is clipped". Each goes with its cause, none
+  has an action, and older pages to scroll up to or a long message (its row says "Output
+  truncated") draw no notice. They sit above the first turn, like the others.
 - **Starting:** while pi boots (a new agent, or one resuming after a relaunch) the thread is
   ready to use and quiet, never an error: it draws what it knows at once (a new agent's empty
   state, or its opening prompt as a message pi has not read yet, at 70%; a resuming agent's
@@ -382,7 +394,11 @@ tools merge only with the same tool. Consecutive lines form one part of the turn
   `textSecondary`, the meta in mono 11 tertiary, and a 10pt tertiary chevron (pointing right,
   turning down) when it expands, 8pt apart, with 4pt leading and 8pt trailing padding. It hugs
   its content and sits 4pt left of the column, so its glyph lines up with the prose. The label
-  never truncates; the meta truncates at its tail. It is a real button with a radius-6 `bgHover`
+  takes the room it needs, and the meta takes what is left and truncates at its tail (it leaves
+  when under four characters would show). A label wider than the line alone (the boards a design
+  agent updated by name, a page the Browser opened) truncates at its tail, so a row never
+  widens the thread: one that cannot shrink to its column widens the stack every row shares, and
+  the whole thread runs off its pane (`ThreadFitTests`). It is a real button with a radius-6 `bgHover`
   fill on hover; a line with nothing behind it draws no chevron (its place stays) and is not a
   button: no hover, no press, no focus, and VoiceOver hears only its words.
 
@@ -393,6 +409,17 @@ tools merge only with the same tool. Consecutive lines form one part of the turn
   | Run (bash) | `terminal` | "Ran tests and a build" · "17 passed · build ok · 1m 02s"; "Committed" · "3 files changed" (Running); "Committed and pushed"; "Ran 2 commands" | "Running tests", "Building", "Committing", "Pushing", "Running" |
   | Subagents (spawns without a card) | `arrow.triangle.branch` | "Started 2 subagents" · "reviewer · tests" | "Starting a subagent" |
   | Other | `wrench.adjustable` | "Used <tool>" or "Used <tool> n times" | "Running <tool>" |
+  | MCP (a server's tool, `mcp__<server>__<tool>`, `NativeMCPActivity`) | `wrench.adjustable` | "Called search_issues" · "github · label:bug"; "Called search_issues 3 times" · "github" | "Calling search_issues" · "github · label:bug" |
+  | Tool search (`tool_search`, which loads deferred MCP tools) | `wrench.adjustable` | "Searched tools" · "“issues” · “pull requests”" | "Searching tools" |
+
+  An MCP call names pi's own tool and server (characters outside letters, digits and `_` are already
+  `_`); the meta adds what it was asked, the first of `query`, `q`, `url`, `path`, `pattern`, `name`,
+  `title`, `text` or `command`, cut to its first line. Failed it reads "<tool> failed" (a tool pi
+  never loaded: "Tool mcp__x__y not found"), "Tool search failed", and stopped "<tool> stopped",
+  "Tool search stopped". Expanded, a search's rows say "search", its query and "8 loaded", and its output
+  lists the tools it loaded. A call nested in another (a script's calls to tools, pi's
+  `parentToolCallId`) has no line of its own: its parent's line stands for it. Not on a board;
+  drawn from the Other line's rules.
 
   Shell commands are classified by what they run (`nativeCommandClasses`: tests, build, commit,
   push), with setup and pipes (`cd`, `| tail`) ignored and test counts parsed from the output
@@ -425,7 +452,8 @@ tools merge only with the same tool. Consecutive lines form one part of the turn
     the call runs, the line leaves and nothing stays behind.
 - **Calls** (expanded, `NWActivityCalls`): an indented list on the rail, 22pt rows in mono 11
   with no gap between them and 10pt between a row's columns: the kind in `textTertiary` in a
-  32pt column that widens for a longer name ("read", "edit", "bash", "spawn"), the path
+  32pt column that widens for a longer name ("read", "edit", "bash", "spawn"; at most 22
+  characters wide, a longer name truncates), the path
   (truncated at the head) or command (at the tail) in `textSecondary`, and a stat in
   `textTertiary` ("+58 −41", "160 lines", "3 matches", "17 passed", "exit 1"; in `failed` on
   a failed call). A row has a radius-4 hover fill and the full path or command as its tooltip.

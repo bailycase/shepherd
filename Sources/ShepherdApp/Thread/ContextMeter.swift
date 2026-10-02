@@ -70,6 +70,10 @@ extension NWContextDetailsModel {
             case .instructions?: .instructions
             case .messages?: .messages
             case .toolResults?: .toolResults
+            case .toolCalls?: .toolCalls
+            case .reasoning?: .reasoning
+            case .images?: .images
+            case .other?: .other
             case nil: nil
             }
         }
@@ -77,7 +81,10 @@ extension NWContextDetailsModel {
             variant: variant, title: details.title, meta: details.meta, total: details.total, ofWindow: details.ofWindow,
             trailing: details.trailing, segments: details.segments.map { Segment(part: part($0.part), fraction: $0.fraction) },
             mark: details.mark, markLabel: details.markLabel,
-            rows: details.rows.map { Row(part: part($0.part) ?? .system, label: $0.label, value: $0.value) },
+            rows: details.rows.map { row in
+                Row(part: part(row.part) ?? .system, label: row.label, value: row.value,
+                    children: row.children.map { Child(label: $0.label, value: $0.value) })
+            },
             free: details.free,
             items: details.largest.map { item in
                 Item(id: item.entryID, kind: ItemKind(item.kind), label: item.label, value: item.value)

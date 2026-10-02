@@ -427,22 +427,28 @@ struct ThreadProjectionTests {
         var value = fixture.base()
         value.provisional = fixture.active
         value.dialogs = fixture.dialogs
-        while bytes(value) > RPCThreadState.activeLimit, let first = value.provisional.firstIndex(where: { $0.role != "user" }) {
-            value.provisional.remove(at: first)
+        // What is left out of the live run or the questions is what `clips` says; older history is not.
+        func clip(_ edit: (inout NativeThreadClips) -> Void) {
+            var clips = value.clips ?? NativeThreadClips()
+            edit(&clips)
+            value.clips = clips
             value.clipped = true
         }
-        while bytes(value) > RPCThreadState.activeLimit, !value.dialogs.isEmpty {
+        let activeCap = max(RPCThreadState.activeLimit, bytes(fixture.base()) + RPCThreadState.activeReserve)
+        while bytes(value) > activeCap, let first = value.provisional.firstIndex(where: { $0.role != "user" }) {
+            value.provisional.remove(at: first)
+            clip { $0.live += 1 }
+        }
+        while bytes(value) > activeCap, !value.dialogs.isEmpty {
             value.dialogs.removeLast()
-            value.clipped = true
+            clip { $0.questions += 1 }
         }
         var size = bytes(value)
+        let limit = max(RPCThreadState.snapshotLimit, size + RPCThreadState.historyReserve)
         var index = fixture.history.count - 1
         while index >= 0 {
             size += bytes(fixture.history[index]) + 1
-            if size > RPCThreadState.snapshotLimit {
-                value.clipped = true
-                break
-            }
+            if size > limit { break }
             value.messages.insert(fixture.history[index], at: 0)
             index -= 1
             if value.messages.count == RPCThreadState.pageSize { break }

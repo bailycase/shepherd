@@ -16,13 +16,13 @@ the same change.
 
 **Embedded extensions have one canonical copy.** The twenty-one files in `Extensions/` are canonical,
 and so is the design skill in `Extensions/design-skill/`.
-pi loads the copies that the twelve `Sources/ShepherdApp/*Extension.swift` files write to the
+pi loads the copies that the thirteen `Sources/ShepherdApp/*Extension.swift` files write to the
 support directory from embedded string literals. `installedPath()` rewrites an installed copy
 whenever its content differs, so drift ships bugs. `ChildrenExtension.swift` carries children,
 children-config, children-ui, workflow, and missions, and installs `InspectExtension`'s
 `shepherd-inspect.mjs`. `DesignExtension.swift` also writes the design skill's `SKILL.md` and
-`format.md` to the support directory's `design-skill/`. `MCPExtension.swift` carries
-`shepherd-mcp.ts` and `shepherd-mcp-client.mjs`, installed side by side. `BrowserExtension.swift`
+`format.md` to the support directory's `design-skill/`. `MCPProjectExtension.swift` carries
+`shepherd-mcp-project.ts` (a repo's `.mcp.json` on pi's MCP; docs/mcp.md). `BrowserExtension.swift`
 carries `shepherd-browser.ts` (docs/browser.md). The sign-in bridge,
 `shepherd-sign-in.mjs`, isn't an extension: `PiSignInScript` (ShepherdSessions' `PiSignIn.swift`)
 carries it and installs it beside them, and the app runs it on the engine's node.

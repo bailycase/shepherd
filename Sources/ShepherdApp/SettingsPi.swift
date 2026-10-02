@@ -42,7 +42,7 @@ struct PiSettings: View {
                     SettingsSwitch(label: "Diff review tool", isOn: $settings.piReviewExtension)
                 }
                 SettingsRow(title: "Native subagents",
-                            subtitle: "Shepherd helpers, agent files, scripted workflows and durable missions. Needs pi 0.85.1+. Children stop with their parent.") {
+                            subtitle: "Shepherd helpers, agent files and scripted workflows. Needs pi 0.85.1+. Children stop with their parent.") {
                     SettingsSwitch(label: "Native subagents", isOn: $settings.piNativeSubagents)
                 }
                 SettingsRow(title: "Subagent display",
@@ -50,7 +50,7 @@ struct PiSettings: View {
                     SettingsSwitch(label: "Subagent display", isOn: $settings.piSubagentsExtension)
                 }
                 SettingsRow(title: "MCP servers",
-                            subtitle: "Let agents use the servers in Settings ▸ MCP servers through one `mcp` tool.") {
+                            subtitle: "Let agents use the servers in Settings ▸ MCP servers, through pi's own MCP and tool search.") {
                     SettingsSwitch(label: "MCP servers", isOn: $settings.piMCPExtension)
                 }
                 SettingsRow(title: "Browser tools",

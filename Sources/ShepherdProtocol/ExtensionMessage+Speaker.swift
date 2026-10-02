@@ -29,7 +29,6 @@ extension ExtensionMessage {
              .designCommentReply(_, let agentID, _, _, _), .designSystemRead(_, let agentID, _, _),
              .designSystemWrite(_, let agentID, _, _), .designProposeComments(_, let agentID, _, _, _),
              .designGet(_, let agentID, _, _), .designNote(_, let agentID, _, _),
-             .mcpCredentials(_, let agentID, _, _, _), .mcpReport(let agentID, _),
              .helloBrowser(let agentID), .browser(_, let agentID, _):
             return agentID
         case .childCommandResult,
@@ -40,8 +39,7 @@ extension ExtensionMessage {
 
     /// The `id` an `ExtensionReply` to this message carries, for the messages that are answered:
     /// what a refusal is addressed to. `nil` for the fire-and-forget ones (status, name, session,
-    /// children, notify, MCP reports, the hellos, an agent's answer to a relayed request, and a
-    /// cancellation).
+    /// children, notify, the hellos, an agent's answer to a relayed request, and a cancellation).
     public var replyID: Int? {
         switch self {
         case .listPanes(let id, _), .openPane(let id, _, _, _, _, _), .closePane(let id, _, _),
@@ -59,10 +57,10 @@ extension ExtensionMessage {
              .designCommentReply(let id, _, _, _, _), .designSystemRead(let id, _, _, _),
              .designSystemWrite(let id, _, _, _), .designProposeComments(let id, _, _, _, _),
              .designGet(let id, _, _, _), .designNote(let id, _, _, _),
-             .mcpCredentials(let id, _, _, _, _), .browser(let id, _, _):
+             .browser(let id, _, _):
             return id
         case .setAgentStatus, .setAgentName, .setAgentSession, .setAgentChildren, .notify, .helloAgent, .helloChildren,
-             .childCommandResult, .agentResponse, .cancelAgentRequest, .mcpReport, .helloBrowser:
+             .childCommandResult, .agentResponse, .cancelAgentRequest, .helloBrowser:
             return nil
         }
     }

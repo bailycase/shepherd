@@ -56,6 +56,17 @@ struct EngineSmokeTests {
         try await EngineSmoke.runBuiltIns(engine: engine)
     }
 
+    /// pi's MCP the way Shepherd runs it (docs/mcp.md), through the real launcher: an agent's
+    /// `-e builtin:mcp -e builtin:tool-search` start the servers in the home's derived `mcp.json` over
+    /// the home's own `-builtin:` switches, which keep a launch without them from starting any;
+    /// `pi mcp list --json` is a subcommand through the launcher (no `-e` before it); and a stdio server
+    /// started behind the `zsh` wrapper gets what its own `env` asked for, and none of the secrets
+    /// pi was handed for other servers.
+    @Test func piRunsTheDerivedMCPFileOnlyWhenAnAgentsLaunchSwitchesItOn() async throws {
+        let engine = try #require(EngineSmoke.engine)
+        try await EngineSmoke.runMCP(engine: engine)
+    }
+
     /// What the bundle resolves from the engine's `node_modules`, with the engine's own node: the
     /// modules the keep-list ships, and codemode's QuickJS binary, which pi finds by name when a
     /// script runs (staged without it, a script fails with "Cannot find module").
@@ -486,6 +497,66 @@ enum EngineSmoke {
         #expect(try await commandNames(on).contains("mcp"))
         try await eventually("pi's MCP to start the server in the home's mcp.json") { files.fileExists(atPath: marker.path) }
         #expect(try await on.finish() == 0, "\(on.errors)")
+    }
+
+    static func runMCP(engine: BundledPiEngine) async throws {
+        let scratch = try makeScratchDirectory("engine-mcp")
+        let files = FileManager.default
+        let userHome = scratch.appendingPathComponent("home", isDirectory: true)
+        let temporary = scratch.appendingPathComponent("tmp", isDirectory: true)
+        let project = scratch.appendingPathComponent("project", isDirectory: true)
+        for folder in [userHome, temporary, project] { try files.createDirectory(at: folder, withIntermediateDirectories: true) }
+        let home = PiHome(directory: scratch.appendingPathComponent("support/pi", isDirectory: true), engine: .bundled(engine),
+                          userHome: userHome.path)
+        try home.install()
+        try models.write(to: home.directory.appendingPathComponent("models.json"), atomically: true, encoding: .utf8)
+        // What `MCPPiConfig` derives for one stdio server with a Keychain secret: behind the wrapper, its
+        // own `env` naming the variable pi is handed, and a tool search for its tools.
+        let fixture = repository.appendingPathComponent("Tests/Extensions/fixtures/fake-mcp-stdio.mjs").path
+        let started = scratch.appendingPathComponent("server-env.json")
+        let derived: [String: Any] = ["mcpServers": ["fake": [
+            "command": "/bin/zsh",
+            "args": ["-f", "-c", "unset -m 'SHEPHERD_MCP_SECRET_*'; exec \"$@\"", "shepherd-mcp", engine.node.path, fixture],
+            "env": ["OWN": "${SHEPHERD_MCP_SECRET_FAKE_TOKEN}", "FAKE_MCP_ENVFILE": started.path],
+            "exposure": "deferred",
+        ]]]
+        try home.installMCPConfig(try JSONSerialization.data(withJSONObject: derived))
+        let environment = ["HOME": userHome.path, "TMPDIR": temporary.path + "/", "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                           "SHEPHERD_MCP_SECRET_FAKE_TOKEN": "s3cret", "SHEPHERD_MCP_SECRET_OTHER_TOKEN": "someone-elses",
+                           PiHome.mcpSecretNamesKey: "SHEPHERD_MCP_SECRET_FAKE_TOKEN SHEPHERD_MCP_SECRET_OTHER_TOKEN"]
+
+        // A launch with no `-e`: the home's switches keep pi's MCP off, so nothing starts.
+        let plain = try RPCProcess(executable: home.launcher.path, arguments: ["--mode", "rpc", "--no-session"], directory: project, environment: environment)
+        defer { plain.stop() }
+        let listing = try await plain.request(["type": "get_commands"])
+        let plainCommands = (((listing["data"] as? [String: Any])?["commands"] as? [[String: Any]]) ?? []).compactMap { $0["name"] as? String }
+        #expect(!plainCommands.contains("mcp"), "\(plainCommands)")
+        #expect(try await plain.finish() == 0, "\(plain.errors)")
+        #expect(!files.fileExists(atPath: started.path), "no server started without the launch's flags")
+
+        // An agent's launch: the flags switch the built-ins on, and the server starts.
+        let agent = try RPCProcess(executable: home.launcher.path,
+                                   arguments: ["--mode", "rpc", "--no-session", "-e", "builtin:mcp", "-e", "builtin:tool-search"],
+                                   directory: project, environment: environment)
+        defer { agent.stop() }
+        let commands = try await agent.request(["type": "get_commands"])
+        let names = (((commands["data"] as? [String: Any])?["commands"] as? [[String: Any]]) ?? []).compactMap { $0["name"] as? String }
+        #expect(names.contains("mcp"), "\(names)")
+        try await eventually("the server behind the wrapper to start") { files.fileExists(atPath: started.path) }
+        let seen = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: started)) as? [String: String])
+        #expect(seen["OWN"] == "s3cret", "it gets what its own env asked for")
+        #expect(!seen.keys.contains { $0.hasPrefix("SHEPHERD_MCP_SECRET_") }, "and none of the secrets pi holds: \(seen.keys.sorted())")
+        #expect(try await agent.finish() == 0, "\(agent.errors)")
+
+        // `pi mcp list --json` through the launcher: a subcommand, with the secret in its environment.
+        try? files.removeItem(at: started)
+        let list = try runTool(home.launcher.path, ["mcp", "list", "--json"], environment: environment)
+        let report = try #require(try JSONSerialization.jsonObject(with: Data(list.output.utf8)) as? [String: Any], "\(list.output)")
+        let server = try #require((report["servers"] as? [[String: Any]])?.first)
+        #expect(server["name"] as? String == "fake" && server["state"] as? String == "connected", "\(server)")
+        #expect((server["tools"] as? [String])?.contains("echo") == true)
+        let refused = try runTool(home.launcher.path, ["mcp", "add", "x", "--", "true"], environment: environment)
+        #expect(refused.status == 2 && refused.output.contains("Settings ▸ MCP servers"), "\(refused.output)")
     }
 
     static func runSkills(engine: BundledPiEngine) async throws {

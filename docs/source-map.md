@@ -69,8 +69,9 @@ Sources/
                        parser: tables, lists, images, details, footnotes), NativeActivity
                        (activity lines, the changes card), NativeQueueRules (the queue's rules,
                        host and client), NativeContextPresentation (the context ring, its
-                       details, compaction lines), NativeQuestionDock (a question's kind, what
-                       its asker takes, the answer and the dock's keys),
+                       details, compaction lines), NativeClipNotice (what a thread says it
+                       was shortened: one line per fact the host reported), NativeQuestionDock
+                       (a question's kind, what its asker takes, the answer and the dock's keys),
                        TerminalPanel (a layout's terminal tabs, the key row's bytes, the panel's
                        height, RemoteTerminalLink), AutomationPresentation (automation rows, runs
                        and what a client may do), AgentBranchPresentation (the header's branch
@@ -98,7 +99,9 @@ Sources/
   ShepherdSessions/    SessionServer (state, sessions, extension socket, remote listener),
                        GoalExtension (embedded shepherd-goal.ts; session-persisted bounded continuation
                        and a separate same-model evaluator), RPCSession, RPCThreadState (+Queue: the queue of messages sent while pi
-                       works; +Context: what fills the context, compactions), ThreadOriginStore (where delivered messages came from, kept per pi
+                       works; +Context: what fills the context, compactions; +SnapshotLists: the
+                       cards, recorded turns and widgets a snapshot carries, each within its own
+                       budget), ThreadOriginStore (where delivered messages came from, kept per pi
                        session), StreamingToolArguments (the fields a tool call being written
                        names, read from pi's argument fragments), BrowserTunnelHost (the host's side
                        of Browser tunnels: loopback connects, caps, idle, one session per remote
@@ -109,6 +112,9 @@ Sources/
                        rules, "Allow for this thread"), AgentMessageFraming (the header a recipient reads), RemoteFileUpload,
                        PiEngine (which pi runs; BundledPiEngine, the one the app ships),
                        PiHome (Shepherd's pi home: the launcher, restore-env.sh, its settings),
+                       PiCompactionThreshold (Settings ▸ Agents ▸ Compact at, as pi's per-model
+                       `compaction.modelOverrides`), ContextToolGroups (what the Context card
+                       calls each tool's group; Tests/Extensions/context-tools.json is its audit),
                        YourPi (the user's own pi, read only; YourPiLocator, PiSessionFolder),
                        YourPiFiles (its auth.json, models.json, settings, trust and extensions,
                        parsed as plain files; PiProviders), YourPiImport (the first launch's
@@ -247,11 +253,15 @@ Sources/
       on another thread, waiting for the user), AgentNotifications, ChildRuns, PiSessionFile (+ adoption from
       your pi), AppUpdater (Sparkle: UpdateChannel, UpdateChannelStore, ChannelDelegate),
       NightlyMovedNotice
-    Status/Namer/Panes/Review/Subagents/Children/Inspect/Instructions/Design/MCPExtension.swift
-      embedded extensions (DesignExtension also carries the design skill; MCPExtension the client)
-    MCP/ (MCPStore, MCPConfigFile, MCPSecretStore, MCPOAuth, MCPProbe, sheets),
-      SettingsMCP, ShepherdViewModel+MCP   Settings ▸ MCP servers: the config file, Keychain,
-      OAuth, and what agents report; answers the extension's credential requests
+    Status/Namer/Panes/Review/Subagents/Children/Inspect/Instructions/Design/MCPProjectExtension.swift
+      embedded extensions (DesignExtension also carries the design skill; MCPProjectExtension a
+      repo's .mcp.json)
+    MCP/ (MCPStore, MCPConfigFile, MCPPiConfig, MCPPiCLI, MCPSecretStore, MCPSignInFlow, MCPURLCheck,
+      MCPNames, MCPBudgetEstimate, MCPImport, sheets), SettingsMCP, ShepherdViewModel+MCP
+                       Settings ▸ MCP servers over pi's own MCP (docs/mcp.md): the user's mcp.json,
+                       the pi-format file derived from it, the Keychain values put in pi's
+                       environment, and each server's state and sign-in read from and run through
+                       `pi mcp`
   shepherd-cli/        `shepherd --import herdr` (writes state.json while Shepherd is not running).
 Packages/
   ShepherdUI/          Night Watch, its own local package (module ShepherdUI; macOS 26, iOS 27;
@@ -284,14 +294,18 @@ Packages/
                        Diagnostics/  NWRenderProbe (row-body counts for tests; debug only)
                        Its unit tests live in the root package (Tests/ShepherdUIUnitTests).
 Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free):
-  shepherd-status.ts      status + active pi session, Retry (/shepherd-retry; docs/native-thread.md › Retry)
+  shepherd-status.ts      status + active pi session, Retry (/shepherd-retry; docs/native-thread.md › Retry);
+                          with SHEPHERD_DEFER_TOOLS=1 keeps the deferred tools reachable: tool_search active,
+                          the one prompt line that names them, a family loaded whole, loads restored on a
+                          restart (docs/context-budget.md › Deferred tools)
   shepherd-goal.ts        /goal and typed controls, bounded continuation and a separate authenticated
                          evaluator; loaded after children; canonical state in pi session entries
   shepherd-namer.ts       agent titles
   shepherd-panes.ts       terminal_* (open/list/run/read/focus/close), agent_*
                           (list/send/spawn/read/steer/interrupt/wait/delete),
-                          automation_*, notify; see docs/agent-coordination.md
-  shepherd-review.ts      review_diff (readies the side pane's Changes tab)
+                          automation_*, notify; see docs/agent-coordination.md (agent_* and automation_*
+                          are registered `deferred` in a thread)
+  shepherd-review.ts      review_diff (readies the side pane's Changes tab; `deferred` in a thread)
   shepherd-subagents.ts   setAgentChildren (native + pi-subagents runs)
   shepherd-children.ts (+ -config, -ui, shepherd-workflow, shepherd-missions, shepherd-inspect.mjs)
                           native subagent runtime; see docs/native-subagents.md
@@ -306,17 +320,19 @@ Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free)
                           native helpers through the children extension; see docs/designs.md
   shepherd-design-refs.ts an ordinary thread's design_get and design_note, registered only once the
                           thread holds a design reference; see docs/designs.md › Design references
-  shepherd-mcp.ts         the mcp tool (search, describe, call) and direct <server>_<tool> tools
-                          over the servers in Settings ▸ MCP servers; credentials from the app
-  shepherd-mcp-client.mjs the dependency-free MCP client (stdio, Streamable HTTP, legacy SSE),
-                          also run by the app as `node shepherd-mcp-client.mjs probe`
+  shepherd-mcp-project.ts a repo's .mcp.json registered on pi's MCP (`pi.registerMcpServer`), while
+                          Settings ▸ MCP servers ▸ Also use a repo's .mcp.json is on; docs/mcp.md
   shepherd-browser.ts     browser_open, browser_read, browser_click, browser_type, browser_press,
                           browser_scroll, browser_wait, browser_screenshot, browser_console,
                           browser_eval, browser_back, browser_forward and browser_reload, on the
-                          thread's own Browser page only; see docs/browser.md
+                          thread's own Browser page only, `deferred` in a thread; see docs/browser.md
   shepherd-service-tier.ts  adds service_tier to the agent's own provider requests while its thread
                           is on Fast (the Speed control), from the agent's tier file; see
                           docs/service-tier.md
+  shepherd-context.ts     keeps the old, bulky parts of a long run (tool output, the contents of
+                          written files, reasoning payloads, screenshots) out of what the model is
+                          sent, and clips any one huge tool result; the thread keeps everything;
+                          see docs/context-budget.md
 Tests/
   <Module>UnitTests/, *IntegrationTests/, ShepherdPreviewTests/   the tiers above
   ShepherdTestIsolation/  C, run when a test bundle loads: scratch root, PATH, ZDOTDIR
@@ -324,8 +340,11 @@ Tests/
   ShepherdTestSupport/    ScratchServer, StubPi (+ Resources/stub-pi.py), ExtensionClient,
                           QueueFixture (a host's queue without pi), eventually, recordingErrors,
                           ControlPress (press a control by accessibility label, measure hit
-                          areas), the time-limit and timing-sensitive traits
-  Extensions/             node tests for the bundled extensions (+ native-thread-wire.json)
+                          areas), LongThreads (every kind of thread row with its longest words,
+                          for the layout tests and previews), the time-limit and timing-sensitive traits
+  Extensions/             node tests for the bundled extensions (+ native-thread-wire.json);
+                          context-harness.mjs (a real pi on a fake provider, launched as the app
+                          launches an agent) with context-tools.json (the audit of every tool)
   Designs/                design fixtures: real and synthetic boards, the Shepherd canvas.json,
                           and element-ids.json (WebKit's numbering of each board's elements)
   DesignSurfaceKitIntegrationTests/Fixtures/  a small design (loops, conditionals, an import)
@@ -333,7 +352,9 @@ Tests/
   ci-suite-times.json     each suite's seconds on a CI runner, which the shards are cut from
   ShepherdIOSChecks/      the iOS client's scripts
 scripts/               release.py (the release workflow's rules), sign-app.sh (release
-                       signing), sync-embedded-extension.py, ci_mtimes.py (CI's incremental builds),
+                       signing), sync-embedded-extension.py, context_budget.py (what a thread's
+                       first request carries, and its ceilings in context-budget.json),
+                       ci_mtimes.py (CI's incremental builds),
                        ci_impact.py (the lane and the fast lane's suites), ci_shards.py (equal
                        shards from Tests/ci-suite-times.json), ci_run_tests.py (a shard under a
                        watchdog, failed tests retried once), ci_testlog.py (test output reader),

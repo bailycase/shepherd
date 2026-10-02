@@ -42,10 +42,12 @@ public enum HostSettingsPresentation {
         case "namer": "Titles each new thread from its first prompt. A name you type is always final."
         case "panes": "Lets agents open and drive terminals, message or spawn agents, manage automations and notify."
         case "review": "Lets agents open the review pane with `review_diff`."
-        case "nativeSubagents": "Helpers, agent files, workflows and missions. Needs agent 0.85.1 or later."
+        case "nativeSubagents": "Helpers, agent files and workflows. Needs agent 0.85.1 or later."
         case "subagents": "Shows subagent runs in their thread. Off doesn't stop them running."
-        case "mcp": "Lets agents use the host's MCP servers through one `mcp` tool."
+        case "mcp": "Lets agents use the host's MCP servers, through pi's own MCP and tool search."
         case "browser": "Lets agents open, read, click through and photograph pages in their thread's Browser on the host."
+        case "context": "Clips one huge tool result and, as the context fills, replaces the oldest tool output, file contents, reasoning and screenshots with a line saying what they were. The thread keeps all of it."
+        case "deferTools": "Keeps the browser, other-thread, automation and review tools out of every request until the model asks for one with a tool search."
         default: nil
         }
     }

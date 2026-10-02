@@ -66,15 +66,12 @@ struct PiLaunchTests {
         Row(name: "a start Shepherd refuses",
             line: PiLaunch.refused(PiHomeProblem("the homes overlap")),
             script: #"print -r -u2 -- 'Shepherd won'"'"'t start pi: the homes overlap'; exit 78"#),
-        Row(name: "the MCP probe, on the engine's node",
-            line: PiLaunch.mcpProbe(engine: engine, home: home, client: "/Users/me/Library/Application Support/Shepherd/shepherd-mcp-client.mjs"),
-            script: clearing + #"exec '/Applications/Shepherd.app/Contents/Helpers/node' "$0" probe"#,
-            positional: ["/Users/me/Library/Application Support/Shepherd/shepherd-mcp-client.mjs"]),
-        Row(name: "the MCP probe on the tests' node",
-            line: PiLaunch.mcpProbe(engine: PiEngine(command: ["/scratch/pi-engine"], packageDirectory: nil, version: nil, node: .onPath("node")),
-                                    home: home, client: "/c.mjs"),
-            script: clearing + #"exec node "$0" probe"#,
-            positional: ["/c.mjs"]),
+        Row(name: "pi's own MCP status and tool list, from inside the home",
+            line: PiLaunch.mcp(home: home, arguments: ["list", "--json"]),
+            script: "cd -- '/Users/me/Library/Application Support/Shepherd/pi' && exec \(launcher) mcp 'list' '--json'"),
+        Row(name: "pi's own MCP sign-in, for a server whose name needs quoting",
+            line: PiLaunch.mcp(home: home, arguments: ["login", "it's", "--timeout", "300"]),
+            script: "cd -- '/Users/me/Library/Application Support/Shepherd/pi' && exec \(launcher) mcp 'login' 'it'\"'\"'s' '--timeout' '300'"),
     ]
 
     @Test(arguments: rows)

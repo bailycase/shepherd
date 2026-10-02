@@ -1,0 +1,272 @@
+{
+  "about": "Every tool Shepherd registers, where, and the verdict (docs/context-budget.md). keep: sent in every request of the context; defer: registered `deferred` (SHEPHERD_DEFER_TOOLS=1, which the app sets while Settings > Agents > Context > Defer rarely used tools is on), so pi sends none of it until the model loads it with tool_search; drop: not registered there at all, with why. Tests/Extensions/context-budget.test.mjs launches each context on a real pi and fails when a tool it registers has no row, a kept tool is not sent, a deferred one is sent or not registered, or a dropped one is back. The groups are what the Context card's system-prompt breakdown calls them (ContextToolGroups).",
+  "contexts": [
+    "thread",
+    "automation",
+    "design",
+    "child"
+  ],
+  "groups": {
+    "pi": "pi tools",
+    "terminal": "terminal tools",
+    "agent": "agent tools",
+    "automation": "automation tools",
+    "review": "review tool",
+    "subagents": "subagent tools",
+    "browser": "browser tools",
+    "mcp": "MCP",
+    "design": "design tools",
+    "instructions": "instruction suggestions",
+    "other": "other tools"
+  },
+  "families": [
+    {
+      "tools": [
+        "read",
+        "bash",
+        "edit",
+        "write"
+      ],
+      "group": "pi",
+      "extension": "pi",
+      "verdicts": {
+        "thread": "keep",
+        "automation": "keep",
+        "design": "keep",
+        "child": "keep"
+      },
+      "reason": "pi's own: what an agent does with a repository."
+    },
+    {
+      "tools": [
+        "terminal_list",
+        "terminal_open",
+        "terminal_run",
+        "terminal_read",
+        "terminal_focus",
+        "terminal_close"
+      ],
+      "group": "terminal",
+      "extension": "shepherd-panes.ts",
+      "verdicts": {
+        "thread": "keep",
+        "automation": "keep"
+      },
+      "reason": "The thread's terminal tabs (command-J) are how an agent runs a dev server or a watcher; six small tools, 590 tokens together."
+    },
+    {
+      "tools": [
+        "agent_list",
+        "agent_read",
+        "agent_steer",
+        "agent_interrupt",
+        "agent_wait",
+        "agent_delete",
+        "agent_spawn"
+      ],
+      "group": "agent",
+      "extension": "shepherd-panes.ts",
+      "verdicts": {
+        "thread": "defer"
+      },
+      "reason": "Reaching other threads is something the user asks for, and each description says so first (agent-to-agent messages). Deferred: 1.4k tokens of definitions and 65 of tool-list lines out of every request. The prompt names agent_* and says it is only when the user explicitly asks, and the rule about a message that arrives from another agent stays in it whether or not they are loaded."
+    },
+    {
+      "tools": [
+        "agent_send"
+      ],
+      "group": "agent",
+      "extension": "shepherd-panes.ts",
+      "verdicts": {
+        "thread": "defer",
+        "automation": "keep"
+      },
+      "reason": "Messaging another thread is the user's call in a thread (deferred with the rest of agent_*). An automation's run reports completion to the thread that made it with it, the only agent tool a run gets, so it stays direct there."
+    },
+    {
+      "tools": [
+        "automation_create",
+        "automation_list",
+        "automation_update",
+        "automation_delete",
+        "automation_start",
+        "automation_stop"
+      ],
+      "group": "automation",
+      "extension": "shepherd-panes.ts",
+      "verdicts": {
+        "thread": "defer"
+      },
+      "reason": "Managing automations is rare: 0.8k tokens of definitions and 85 of tool-list lines. A run's own agent never gets them (an automation cannot start automations)."
+    },
+    {
+      "tools": [
+        "notify"
+      ],
+      "group": "automation",
+      "extension": "shepherd-panes.ts",
+      "verdicts": {
+        "thread": "keep",
+        "automation": "keep"
+      },
+      "reason": "One small tool (105 tokens) an unattended run needs to say it finished, so it stays direct; deferring it would save a thread 118 tokens and cost a search in every run."
+    },
+    {
+      "tools": [
+        "review_diff"
+      ],
+      "group": "review",
+      "extension": "shepherd-review.ts",
+      "verdicts": {
+        "thread": "defer",
+        "automation": "defer",
+        "design": "drop"
+      },
+      "reason": "Readies the side pane's Changes tab: 245 tokens and a tool-list line for something a thread does now and then. Deferred in a thread and an automation; a design's agent never gets it (its screen has no Changes tab and its folder is no repository)."
+    },
+    {
+      "tools": [
+        "shepherd_child_agents",
+        "shepherd_child_start",
+        "shepherd_child_message",
+        "shepherd_child_result",
+        "shepherd_child_wait",
+        "shepherd_child_cancel",
+        "shepherd_child_resume"
+      ],
+      "group": "subagents",
+      "extension": "shepherd-children.ts",
+      "verdicts": {
+        "thread": "keep",
+        "automation": "keep",
+        "design": "keep"
+      },
+      "reason": "Delegating to a helper is how a thread keeps a big search out of its own context (docs/context-budget.md, For agents), so the helper tools stay direct (1.2k tokens); a design's agent relays its tools through them."
+    },
+    {
+      "tools": [
+        "shepherd_workflow"
+      ],
+      "group": "subagents",
+      "extension": "shepherd-children.ts",
+      "verdicts": {
+        "thread": "keep",
+        "automation": "keep",
+        "design": "keep"
+      },
+      "reason": "A scripted run of helpers: 385 tokens, the heaviest single description, for the rarest use. Kept direct with the other native subagent tools; the first to defer if the budget needs it."
+    },
+    {
+      "tools": [
+        "shepherd_mission"
+      ],
+      "group": "subagents",
+      "extension": "shepherd-children.ts",
+      "verdicts": {
+        "thread": "drop",
+        "automation": "drop",
+        "design": "drop"
+      },
+      "reason": "Missions are deferred and no screen shows them, so the model gets no mission tool or parameter and no record is written for a run (dropped now; SHEPHERD_MISSIONS=1 brings it back)."
+    },
+    {
+      "tools": [
+        "browser_open",
+        "browser_read",
+        "browser_click",
+        "browser_type",
+        "browser_press",
+        "browser_scroll",
+        "browser_wait",
+        "browser_screenshot",
+        "browser_console",
+        "browser_eval",
+        "browser_back",
+        "browser_forward",
+        "browser_reload"
+      ],
+      "group": "browser",
+      "extension": "shepherd-browser.ts",
+      "verdicts": {
+        "thread": "defer",
+        "automation": "defer"
+      },
+      "reason": "The thread's own Browser page: 13 tools, 2.2k tokens and 233 of tool-list lines, and most threads never open a page. Deferred in a thread and an automation; a design's agent has no Browser."
+    },
+    {
+      "tools": [
+        "tool_search"
+      ],
+      "group": "mcp",
+      "extension": "builtin:tool-search",
+      "verdicts": {
+        "thread": "keep",
+        "automation": "keep",
+        "design": "keep"
+      },
+      "reason": "pi 1.0's own tool search: it loads the tools of the MCP servers left on Search (docs/mcp.md) and Shepherd's deferred tools (docs/context-budget.md, Deferred tools). 159 tokens, and the server list adds a few more while a server is on Search. Active in a thread and an automation while Defer rarely used tools is on, or an MCP server is on Search. A server set to Direct declares its own mcp__<server>__<tool> tools instead: the user's, not listed here."
+    },
+    {
+      "tools": [
+        "design_get",
+        "design_note"
+      ],
+      "group": "design",
+      "extension": "shepherd-design-refs.ts",
+      "verdicts": {
+        "thread": "keep"
+      },
+      "reason": "Registered only once the thread holds a design reference."
+    },
+    {
+      "tools": [
+        "suggest_instruction"
+      ],
+      "group": "instructions",
+      "extension": "shepherd-instructions.ts",
+      "verdicts": {
+        "thread": "keep",
+        "automation": "keep"
+      },
+      "reason": "Registered only while Settings > Experiments > Suggested instructions is on for the kind of agent."
+    },
+    {
+      "tools": [
+        "design_read",
+        "board_write",
+        "board_edit",
+        "boards_edit",
+        "board_search",
+        "board_render",
+        "board_extract",
+        "canvas_update",
+        "design_check",
+        "comment_list",
+        "comment_reply",
+        "system_read",
+        "system_write",
+        "checkpoint_create",
+        "checkpoint_list",
+        "checkpoint_restore",
+        "markup_propose"
+      ],
+      "group": "design",
+      "extension": "shepherd-design.ts",
+      "verdicts": {
+        "design": "keep"
+      },
+      "reason": "What a design's agent draws and edits with; no other agent gets them."
+    },
+    {
+      "tools": [
+        "shepherd_parent_message"
+      ],
+      "group": "subagents",
+      "extension": "shepherd-children.ts",
+      "verdicts": {
+        "child": "keep"
+      },
+      "reason": "A native subagent's only way to ask its parent; registered in a child's own pi."
+    }
+  ]
+}

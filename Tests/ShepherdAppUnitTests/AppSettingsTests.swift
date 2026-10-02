@@ -32,7 +32,37 @@ struct AppSettingsTests {
         #expect(settings.childConcurrency == 4 && settings.childContext == "fresh" && settings.childScope == "both")
         #expect(settings.childModel.isEmpty && settings.childThinking.isEmpty)
         #expect(settings.queueDelivery == .all, "the queue arrives as one turn")
+        #expect(settings.trimToolOutput, "old tool output is trimmed from the model's context until switched off")
+        #expect(settings.deferTools, "rarely used tools are deferred behind tool search until switched off")
+        #expect(settings.compactAtPercent == nil, "compaction is pi's own until a share is chosen")
         #expect(settings.agentMessages == .ask, "an agent asks before it acts on another thread")
+    }
+
+    /// Settings ▸ Agents ▸ Context: Compact at is a share from the list or pi's default, only a
+    /// change reaches the pi home, a stored value that is not a choice reads as pi's default, and
+    /// Reset settings takes it back; the trim switch persists and resets with it.
+    @Test func theContextSettingsPersistResetAndTheShareReachesThePiHome() {
+        let store = Fixture.defaults()
+        let settings = AppSettings(store: store)
+        var written: [Int?] = []
+        settings.onCompactAtChange = { written.append($0) }
+        settings.compactAtPercent = 80
+        settings.compactAtPercent = 80
+        settings.trimToolOutput = false
+        settings.deferTools = false
+
+        let reloaded = AppSettings(store: store)
+        #expect(reloaded.compactAtPercent == 80 && !reloaded.trimToolOutput && !reloaded.deferTools)
+        #expect(written == [80], "only a change is handed on")
+
+        store.set(75, forKey: AppSettings.Key.compactAtPercent)
+        #expect(AppSettings(store: store).compactAtPercent == nil, "75% is not one of the choices")
+
+        settings.resetToDefaults()
+        #expect(settings.compactAtPercent == nil && settings.trimToolOutput && settings.deferTools)
+        #expect(written == [80, nil])
+        #expect(store.object(forKey: AppSettings.Key.compactAtPercent) == nil && store.object(forKey: AppSettings.Key.trimToolOutput) == nil)
+        #expect(store.object(forKey: AppSettings.Key.deferTools) == nil)
     }
 
     /// Settings ▸ Pi ▸ Agent-to-agent messages: Ask me until the user chooses, kept across launches,

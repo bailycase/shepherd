@@ -36,6 +36,8 @@ public enum NWMCPMetrics {
     public static let hostNameWidth: CGFloat = 70
     public static let hostRowHeight: CGFloat = 26
     public static let visibleToolChips = 4
+    /// What a Tool exposure choice's hit area extends past its 17pt label, above and below, for a 24pt pointer target.
+    public static let optionHitPadding: CGFloat = 4
     public static let budgetHeight: CGFloat = 4
     public static let cardRadius: CGFloat = 10
     public static let sheetStepIcon: CGFloat = 16
@@ -48,8 +50,8 @@ public enum NWMCPMetrics {
     public static let sheetStepNoteSize: CGFloat = 12
 }
 
-/// A server's state as its dot: green connected, blue starting, hollow when it connects on first
-/// use, amber when it needs you, red when it failed, a faint ring when it's off.
+/// A server's state as its dot: green connected, blue starting, hollow before pi has
+/// reported on it, amber when it needs you, red when it failed, a faint ring when it's off.
 public enum MCPDotState: String, Sendable, Hashable, CaseIterable {
     case connected, starting, idle, needsYou, error, off
 
@@ -57,7 +59,7 @@ public enum MCPDotState: String, Sendable, Hashable, CaseIterable {
         switch self {
         case .connected: "Connected"
         case .starting: "Starting"
-        case .idle: "Connects when used"
+        case .idle: "Not checked yet"
         case .needsYou: "Needs you"
         case .error: "Failed"
         case .off: "Off"

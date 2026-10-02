@@ -166,7 +166,7 @@ struct SettingsView: View {
         switch vm.settingsSection {
         case .appearance: AppearanceSettings(vm: vm)
         case .terminal: TerminalSettings(vm: vm)
-        case .agents: AgentSettings(pi: vm.server.pi)
+        case .agents: AgentSettings(pi: vm.server.pi, settings: vm.settings)
         case .pi: PiSettings(pi: vm.server.pi, settings: vm.settings)
         case .piSignIn: PiSignInSettings(yourPi: vm.yourPi, auth: vm.piAuth)
         case .piFromYourPi: FromYourPiSettings(model: vm.yourPi, openSkills: { vm.settingsSection = .skills })
@@ -277,7 +277,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                            "Sidebar width"]
         case .terminal: ["Font family", "Font size", "Shell"]
         case .agents: ["Default model", "Default thinking level", "Speed for new threads",
-                       "When a turn ends, send the queue"]
+                       "When a turn ends, send the queue", "Compact at", "Trim old tool output from the model’s context", "Defer rarely used tools"]
         case .worktrees: ["Base branch", "Fetch before creating", "Commit remaining work", "Generate PR descriptions", "Delete local branch", "Merge PR automatically"]
         case .pi: ["Shepherd's pi", "Name agents automatically", "Terminals and agent tools", "Agent-to-agent messages", "Diff review tool", "Native subagents",
                    "Subagent display", "MCP servers", "Browser tools", "Concurrency"]
@@ -290,7 +290,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .skills: ["Installed skills", "Browse skills.sh", "Add from repo",
                        "Skills in the / menu", "Same skills on every host", "Update automatically"]
         case .mcp: ["Servers", "Add server", "Import…", "How the agent uses them", "Same servers on every host",
-                    "Open sign-in pages by itself", "Also use a repo’s .mcp.json", "Hosts"]
+                    "Also use a repo’s .mcp.json", "Hosts"]
         case .remote: ["Hosts", "Add host", "Listener", "Token"]
         case .keyboard: ["Shortcuts", "Reset all shortcuts"]
         case .advanced: ["Workspace state", "Extension socket", "Update channel", "Check for updates", "Reset settings"]
@@ -308,7 +308,11 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .terminal: ["Font family": ["ghostty", "monospace"], "Shell": ["zsh", "bash", "fish"]]
         case .agents: ["Default model": ["claude", "gpt", "provider"], "Default thinking level": ["reasoning", "effort"],
                        "Speed for new threads": ["fast", "fast mode", "priority", "service tier", "codex", "openai", "standard"],
-                       "When a turn ends, send the queue": ["queue", "follow-up", "one per turn", "all at once"]]
+                       "When a turn ends, send the queue": ["queue", "follow-up", "one per turn", "all at once"],
+                       "Compact at": ["compaction", "compacting", "context window", "percent", "full", "tokens", "auto-compact"],
+                       "Trim old tool output from the model’s context": ["tool results", "clear", "clipping", "context", "tokens", "compaction",
+                                                                     "screenshots", "cache"],
+                       "Defer rarely used tools": ["tool search", "tool_search", "deferred", "tokens"]]
         case .worktrees: ["Base branch": ["git", "origin"], "Merge PR automatically": ["github", "pull request"]]
         case .pi: ["Native subagents": ["children", "workflows"], "Shepherd's pi": ["version", "engine", "home", "folder"],
                    "Agent-to-agent messages": ["agent_send", "agent_spawn", "message", "steer", "peer", "threads", "approve", "allow",
@@ -341,8 +345,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .mcp: ["Servers": ["mcp", "model context protocol", "tools", "connectors", "mcp.json"],
                     "Add server": ["remote", "local", "url", "command", "stdio", "http", "sse"],
                     "Import…": ["claude desktop", "cursor", "vs code", "paste json", "mcpServers"],
-                    "How the agent uses them": ["tokens", "prompt", "budget", "proxy"],
-                    "Open sign-in pages by itself": ["oauth", "sign in", "login", "browser"],
+                    "How the agent uses them": ["tokens", "prompt", "budget", "search", "direct", "tool search", "exposure", "oauth", "sign in", "login"],
                     "Also use a repo’s .mcp.json": ["project", "repository", ".mcp.json"]]
         case .remote: ["Hosts": ["vpn", "tailscale", "ssh"], "Listener": ["port", "serve"]]
         case .keyboard: ["Shortcuts": ["hotkey", "keybinding", "chord", "steer", "queue"]]
