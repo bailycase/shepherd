@@ -205,8 +205,12 @@ test("a ${…} in a url is no URL: that server fails and the others run", { time
 });
 
 test("a stdio server inherits pi's whole environment, and a shell wrapper keeps the other servers' secrets from it", { timeout: 120000 }, async (t) => {
+  // The app's wrapper is `/bin/zsh -f -c 'unset -m "SHEPHERD_MCP_SECRET_*"; exec "$@"'` (MCPStdioWrapperTests runs the real
+  // one). This pins pi's side of it, so it uses what every runner has: CI is Linux, which has no /bin/zsh, so a zsh
+  // wrapper never started the server there and its tools came back "not found".
+  const unsetSecrets = String.raw`for v in $(env | sed -n 's/^\(SHEPHERD_MCP_SECRET_[A-Za-z0-9_]*\)=.*/\1/p'); do unset "$v"; done; exec "$@"`;
   const wrapped = (own) => ({
-    command: "/bin/zsh", args: ["-f", "-c", "unset -m 'SHEPHERD_MCP_SECRET_*'; exec \"$@\"", "shepherd-mcp", process.execPath, stdio],
+    command: "/bin/sh", args: ["-c", unsetSecrets, "shepherd-mcp", process.execPath, stdio],
     env: { OWN: own }, exposure: "direct",
   });
   await withPi(t, {

@@ -56,11 +56,17 @@ export function runPiCli(home, args, { env = {}, cwd = home, timeout = 60000 } =
   });
 }
 
-/** A directory holding an `open` that follows the URL it is given, as a browser would, and records it in `opened.txt`. */
+/**
+ * A directory holding the page opener that follows the URL it is given, as a browser would, and records it in
+ * `opened.txt`. pi runs `open` on macOS and `xdg-open` elsewhere (dist/utils/open-browser.js), so both are here:
+ * CI runs these tests on Linux, where a lone `open` is never called and the sign-in waits for a page nobody opens.
+ */
 export function fakeBrowserBin(dir) {
   const bin = path.join(dir, "bin");
   fs.mkdirSync(bin, { recursive: true });
-  fs.writeFileSync(path.join(bin, "open"), `#!/bin/sh\necho "$1" >> "${dir}/opened.txt"\n(curl -s -L -o /dev/null "$1" &)\n`, { mode: 0o755 });
+  for (const opener of ["open", "xdg-open"]) {
+    fs.writeFileSync(path.join(bin, opener), `#!/bin/sh\necho "$1" >> "${dir}/opened.txt"\n(curl -s -L -o /dev/null "$1" &)\n`, { mode: 0o755 });
+  }
   return bin;
 }
 
