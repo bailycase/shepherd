@@ -230,6 +230,11 @@ extension ShepherdViewModel {
         let cwd = (config.workingDirectory as NSString).expandingTildeInPath
         let name = config.initialName ?? Self.provisionalName(for: config.initialPrompt)
         let agentID = AgentID()
+        let opening = OpeningPrompt(config.initialPrompt, images: config.initialImages, agentID: agentID)
+        if opening != nil || config.openingReferencesPending {
+            sidebarPreparingOpeningTurns.insert(agentID)
+            sidebarOpeningTurns.insert(agentID)
+        }
         // A new agent is exactly its thread. Terminals are the agent's to
         // open (see the panes extension) or the user's via ⌘D or ⌘J — starting
         // with one put an idle shell in front of every new agent.
@@ -258,7 +263,7 @@ extension ShepherdViewModel {
             worktreeBranch: config.worktreeBranch,
             worktreeBase: config.worktreeBase,
             worktreePath: config.worktreePath,
-            // A new agent leads Recents.
+            // A new agent leads its activity group.
             lastActiveAt: SessionServer.nowMilliseconds(),
             designID: config.designID,
             serviceTier: config.serviceTier ?? settings.defaultServiceTier
@@ -272,6 +277,8 @@ extension ShepherdViewModel {
             try await server.addAgent(agent, withTab: tab)
         } catch {
             sessions.unreserveAgentPane(primary.id)
+            sidebarPreparingOpeningTurns.remove(agentID)
+            sidebarOpeningTurns.remove(agentID)
             throw AgentStartFailure(message: "server rejected agent: \(error)")
         }
 
@@ -285,7 +292,6 @@ extension ShepherdViewModel {
         // A new agent's thread is known to be empty: it draws at once, ready to type into, while
         // pi boots behind it. A resumed session (a forked transcript) is read from its file.
         // Its opening prompt shows at once too, as the row the host's first snapshot will carry.
-        let opening = OpeningPrompt(config.initialPrompt, images: config.initialImages, agentID: agentID)
         if config.piSessionID == nil {
             let empty = PiSessionPreview.empty(
                 sessionID: agent.effectivePiSessionID,
@@ -310,7 +316,13 @@ extension ShepherdViewModel {
         do {
             try await sessions.createAgentSession(pane: primary, tab: tab, agent: agent, openingPrompt: opening, isAutomation: config.isAutomation)
         } catch {
+            sidebarPreparingOpeningTurns.remove(agentID)
+            sidebarOpeningTurns.remove(agentID)
             throw AgentStartFailure(message: "session failed: \(error)")
+        }
+        if !config.openingReferencesPending {
+            sidebarPreparingOpeningTurns.remove(agentID)
+            reconcileSidebarOpeningTurn(agentID)
         }
         return agentID
     }

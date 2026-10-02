@@ -68,6 +68,7 @@ The rules that follow:
 - **Lantern means you.** Amber marks the primary action and what needs you. Running blue marks
   work in progress, links and keyboard focus.
 - **The sidebar is the primary navigation**; the command palette is a secondary way to jump.
+  A new local thread with an opening message enters Working without flashing in Recents.
 - **One primary action per surface.** A destructive action is never the ⏎ default.
 - **Native controls, Night Watch styles.** A control is a Night Watch style on a native `Button`,
   `Toggle`, `Picker` or `TextField`; context menus are native `.contextMenu`. Shared views are
