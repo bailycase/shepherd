@@ -160,7 +160,13 @@ It also starts the engine through the real launcher in a scratch Shepherd home, 
 that `NODE_OPTIONS` back (`restore-env.sh`).
 It also runs a scratch copy signed with the hardened runtime (`scripts/sign-engine.sh`), so the
 engine's entitlements are checked too. It never reaches
-a model: the home's one provider points at a closed port and no prompt is sent.
+a model: the home's one provider points at a closed port and no prompt is sent. The same engine
+also runs when the pin changes through the real `SessionServer` and the thread's projection
+(`EngineThreadTests`, same switch): a scripted provider on the loopback
+(`Tests/Extensions/engine-provider.mjs`) drives a turn, a tool call, a reasoning block, Stop with a
+queued message, an extension's question, a command's notice, a prompt template, a skill and
+Compact, so what the stub pi models is checked against the real thing. Run both, and the
+extension tests, on every bump (docs/pi-engine.md › Bumping the pin).
 
 **Long lists** (docs/design/performance.md › Performance) are measured, not guessed:
 
