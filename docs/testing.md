@@ -55,6 +55,15 @@ Tests come in tiers, and the switch is `--filter` on target names.
   for a host's dev server in tunnel tests (HTTP GET and a POST of any size with its SHA-256, a
   WebSocket echo, an echo, a firehose, one that never reads), IPv4 or IPv6, or on a chosen address
   or port. Every tunnel and forwarder test uses it, never the network.
+- `ScrollTrace` (`ShepherdAppIntegrationTests/Support`): a thread's scroll view recorded as it
+  changes (offset, content height, insets, stamped with the test's step), with the states a display
+  could draw (one per run-loop turn) kept apart from every change in between. Read a scroll rule
+  from it, not from where the view ended: a retreat (the offset fell and the view ended farther
+  from its tail), the time spent away from the tail, where it came to rest. The lazy stack's total
+  height takes values thousands of points off inside one layout pass. `ThreadSendScrollTests` and
+  `ThreadScrollAuditTests` judge a thread that way over `FlowHost`'s fake host, and
+  `ThreadSendHostTests` over `RealThreadRig` (a real server and the stub pi, whose
+  `tools:N` prompt makes N tool calls that wait for `tool-<k>` files).
 - `eventually("what", …)` and `eventuallyOnMain`: named 10 ms polls that throw `WaitTimeout`
   saying what never happened. Never sleep a fixed amount; wait on a callback or `eventually`.
   Keep timeouts generous (they default to 30 s), but make the happy path fast.
