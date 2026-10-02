@@ -8,7 +8,7 @@ skills list, and the definition of every tool the agent has. Each tool call afte
 result, and the results stay until a compaction. This page says how that is measured, what the
 numbers are, what keeps the start from growing, and what keeps a long run from filling the window.
 
-The start is about 16k tokens, 6% of a 272k window. It is not what makes a thread compact. A long run
+The start is about 17k tokens, 6% of a 272k window. It is not what makes a thread compact. A long run
 is: one user message can start a hundred tool calls, and each call's output, the files it wrote, the
 reasoning the provider asks to have sent back and the screenshots it took ride in every later
 request. So there are two halves, a guard on the start (below) and clearing for the run (Clearing).
@@ -46,18 +46,18 @@ python3 scripts/context_budget.py --simulate --turns 40 # a long thread, with an
 
 ## What an agent starts with
 
-pi 0.87.1, an ordinary thread, `openai-responses`, the fixtures above (a thread's own skills, MCP
-servers and instruction files are the user's, and are usually bigger). Before is the tree before this
-change; after has no mission tool or parameters (Missions) and the rule line in `AGENTS.md`:
+pi 1.0.0 (the pin), an ordinary thread, `openai-responses`, the fixtures above (a thread's own skills,
+MCP servers and instruction files are the user's, and are usually bigger). Before is `nightly` as this
+change found it; after has no mission tool or parameters (Missions) and the rule line in `AGENTS.md`:
 
 | Section | Before | After | Share of a 272k window |
 | --- | ---: | ---: | ---: |
-| pi: system prompt (preamble, tool list, rules, docs, cwd) | 675 | 675 | 0.2% |
+| pi: system prompt (preamble, tool list, rules, docs, cwd) | 766 | 766 | 0.3% |
 | pi: built-in tool definitions (read, bash, edit, write) | 696 | 696 | 0.3% |
-| Shepherd: tool snippets and rules added to the prompt | 803 | 803 | 0.3% |
+| Shepherd: tool snippets and rules added to the prompt | 946 | 946 | 0.3% |
 | Shepherd tools: terminal_* (panes) | 590 | 590 | 0.2% |
-| Shepherd tools: agent_* (panes) | 1,011 | 1,011 | 0.4% |
-| Shepherd tools: automation_*, notify (panes) | 861 | 861 | 0.3% |
+| Shepherd tools: agent_* (panes) | 1,692 | 1,692 | 0.6% |
+| Shepherd tools: automation_*, notify (panes) | 904 | 904 | 0.3% |
 | Shepherd tools: review_diff | 245 | 245 | 0.1% |
 | Shepherd tools: native subagents (shepherd_child_*, workflow) | 2,015 | 1,547 | 0.6% |
 | Shepherd tools: browser_* | 2,178 | 2,178 | 0.8% |
@@ -66,8 +66,15 @@ change; after has no mission tool or parameters (Missions) and the rule line in 
 | Skills list | 441 | 441 | 0.2% |
 | Instructions: APPEND_SYSTEM.md | 88 | 88 | 0.0% |
 | Instructions: Settings ▸ Instructions' AGENTS.md | 891 | 891 | 0.3% |
-| Instructions: the project's AGENTS.md | 4,372 | 4,480 | 1.6% |
-| **Total before any work** | **16,360** | **16,000** | **5.9%** |
+| Instructions: the project's AGENTS.md | 4,439 | 4,548 | 1.7% |
+| **Total before any work** | **17,384** | **17,026** | **6.3%** |
+
+Two things the table shows besides this change. The agent-to-agent message wording that landed
+before it (each tool that reaches another thread now says first that it is only for what the user
+asked) put 681 tokens into `agent_*`, 143 into the snippets and 43 into the automation tools, which
+this guard first caught as a rise of 867 on the last merge: the ceilings in `context-budget.json` were
+raised for it, and those tools are the Phase B candidates below. And the rule line in `AGENTS.md`
+(next to Read more) costs 109 tokens in every thread.
 
 A design's agent no longer gets `review_diff` either (a further 245 tokens there), and the table
 for every scenario is in the pull request that landed this. What sits beyond the table, in the
@@ -85,14 +92,15 @@ tool it registers has no row, when a row names a tool nothing registers, and whe
 back; a Phase B registry can be this file, read instead of written.
 
 Tokens are the tool definitions' own (the prompt rules some add are in the snippets row above).
-Of an ordinary thread's tool definitions, 2.1k are kept and 5.7k deferrable.
+Of an ordinary thread's tool definitions, 2.1k are kept and 6.5k deferrable.
 
 | Tools | Tokens | Thread | Automation | Design | Why |
 | --- | ---: | :-: | :-: | :-: | --- |
 | `read` … `write` (4) | 698 | keep | keep | keep | pi's own: what an agent does with a repository. |
 | `terminal_list` … `terminal_close` (6) | 592 | keep | keep | · | The thread's terminal tabs (⌘J) are how an agent runs a dev server or a watcher; six small tools. |
-| `agent_list` … `agent_spawn` (8) | 1,013 | defer | defer | · | Reaching other threads is something the user asks for; 1.0k tokens in every thread for a rare use. |
-| `automation_create` … `automation_stop` (6) | 757 | defer | · | · | Managing automations is rare. A run's own agent never gets them (an automation cannot start automations). |
+| `agent_list` … `agent_spawn` (7) | 1,363 | defer | · | · | Reaching other threads is something the user asks for, and each description now says so first (agent-to-agent messages): 1.4k tokens in every thread for a rare use. |
+| `agent_send` | 331 | defer | keep | · | The same, in a thread. An automation's run reports completion to the thread that made it with it, the only agent tool a run gets. |
+| `automation_create` … `automation_stop` (6) | 800 | defer | · | · | Managing automations is rare. A run's own agent never gets them (an automation cannot start automations). |
 | `notify` | 105 | keep | keep | · | One small tool an unattended run needs to say it finished. |
 | `review_diff` | 245 | defer | defer | **drop** | Readies the side pane's Changes tab. A design's screen has no Changes tab and its folder is no repository, so a design's agent no longer gets it. |
 | `shepherd_child_agents` … `shepherd_child_resume` (7) | 1,164 | defer | defer | defer | Delegating to a helper is a choice the model makes now and then (a design's agent relays its tools through them). |
@@ -182,22 +190,22 @@ growth shows; pi would compact past 255k of the 272k window.
 
 | Turn | Without clearing | With clearing |
 | ---: | ---: | ---: |
-| 1 | 32,229 | 25,518 |
-| 3 | 64,642 | 44,509 |
-| 6 | 113,268 | 73,002 |
-| 9 | 161,893 | 101,494 |
-| 12 | 211,286 | 130,195 |
-| 15 | 260,679 (compacts) | 95,008 |
-| 18 | 310,071 (compacts) | 123,708 |
-| 24 | 408,857 (compacts) | 110,880 |
-| 30 | 507,655 (compacts) | 103,926 |
-| 40 | 672,322 (compacts) | 132,055 |
+| 1 | 33,364 | 26,653 |
+| 3 | 65,778 | 45,645 |
+| 6 | 114,403 | 74,137 |
+| 9 | 163,029 | 102,630 |
+| 12 | 212,421 | 131,330 |
+| 15 | 261,814 (compacts) | 90,158 |
+| 18 | 311,206 (compacts) | 118,858 |
+| 24 | 409,992 (compacts) | 112,015 |
+| 30 | 508,790 (compacts) | 101,865 |
+| 40 | 673,457 (compacts) | 133,191 |
 
 | | Without clearing | With clearing |
 | --- | ---: | ---: |
 | Requests | 160 | 160 |
-| Input tokens sent, all requests | 55,428,825 | 16,100,304 |
-| Same, a cached token counted at a tenth | 6,147,853 | 2,164,506 |
+| Input tokens sent, all requests | 55,610,465 | 16,024,855 |
+| Same, a cached token counted at a tenth | 6,167,039 | 2,149,387 |
 | Share of a request the next one repeats: mean | 100% | 98% |
 | Lowest, and requests below 100% | 100%, 0 | 12%, 4 |
 | First turn past the auto-compact mark | 15 | none |
