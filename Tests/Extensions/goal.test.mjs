@@ -1092,6 +1092,22 @@ test("an assistant 529 error attempt stays active until successful settlement an
   } finally { await f.close(); }
 });
 
+test("a pre-check auth or worker failure never attributes that record to an older checker", async () => {
+  const f = fixture();
+  try {
+    await f.start(); await f.work(); const check = f.check();
+    f.calls[0].resolve(response()); await check;
+    assert.equal(f.goal.checkedBy, "fixture/worker");
+    f.ctx.modelRegistry.hasConfiguredAuth = () => false;
+    const failed = await f.check();
+    assert.equal(failed.entries[0].details.checkedBy, undefined);
+    assert.equal(f.goal.checkedBy, "fixture/worker", "the card retains only its last actual checker");
+    await f.action({ action: "resume" });
+    const workerFailure = await f.check({ outcome: "error" });
+    assert.equal(workerFailure.entries[0].details.checkedBy, undefined);
+  } finally { await f.close(); }
+});
+
 test("runtime snapshots generate the five board states from actual publications", async (t) => {
   t.mock.method(performance, "now", () => 0);
   t.mock.method(Date, "now", () => 1700000000000);
