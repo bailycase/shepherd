@@ -222,6 +222,8 @@ private struct SubagentTurnItem: View {
             }
         case .subagents:
             EmptyView()
+        case .goalRecord(_, let text):
+            GoalRecordLine(text: text)
         case .note(_, let text):
             Text(text).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary).lineLimit(3)
         case .error(_, let error, _, let folded):

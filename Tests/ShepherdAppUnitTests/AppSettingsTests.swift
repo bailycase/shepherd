@@ -17,6 +17,8 @@ struct AppSettingsTests {
         #expect(settings.defaultThinking == .medium)
         #expect(settings.defaultServiceTier == .standard, "new threads start on Standard")
         #expect(settings.autoNameAgents)
+        #expect(!settings.goalCrossProviderEvaluation, "cross-provider goal checks require consent")
+        #expect(!settings.goalsEnabled, "Goals is an opt-in experiment")
         #expect(settings.piPanesExtension && settings.piReviewExtension && settings.piDesignReferences)
         #expect(settings.piSubagentsExtension && settings.piNativeSubagents)
         #expect(settings.piBrowserExtension, "Browser tools are on by default")
@@ -30,6 +32,72 @@ struct AppSettingsTests {
         #expect(settings.childConcurrency == 4 && settings.childContext == "fresh" && settings.childScope == "both")
         #expect(settings.childModel.isEmpty && settings.childThinking.isEmpty)
         #expect(settings.queueDelivery == .all, "the queue arrives as one turn")
+        #expect(settings.agentMessages == .ask, "an agent asks before it acts on another thread")
+    }
+
+    /// Settings ▸ Pi ▸ Agent-to-agent messages: Ask me until the user chooses, kept across launches,
+    /// put back by Reset settings, and only a change reaches the server.
+    @Test func theAgentMessagesChoicePersistsResetsAndReachesTheServer() {
+        let store = Fixture.defaults()
+        let settings = AppSettings(store: store)
+        var handed: [AgentMessagePolicy] = []
+        settings.onAgentMessagesChange = { handed.append($0) }
+        settings.agentMessages = .ask
+        settings.agentMessages = .always
+        settings.agentMessages = .always
+        settings.agentMessages = .never
+
+        #expect(handed == [.always, .never], "only a change is handed on")
+        #expect(AppSettings(store: store).agentMessages == .never, "and it is read back on the next launch")
+        #expect(store.string(forKey: AppSettings.Key.agentMessages) == "never")
+
+        settings.resetToDefaults()
+        #expect(settings.agentMessages == .ask)
+        #expect(handed == [.always, .never, .ask], "the server hears it is asking again")
+        #expect(store.object(forKey: AppSettings.Key.agentMessages) == nil)
+    }
+
+    /// A value from a newer or hand-edited build means nothing here: the agent asks.
+    @Test(arguments: ["", "sometimes", "ALWAYS", "true"])
+    func aStoredAgentMessagesChoiceThatMeansNothingFallsBackToAsk(stored: String) {
+        let store = Fixture.defaults()
+        store.set(stored, forKey: AppSettings.Key.agentMessages)
+        #expect(AppSettings(store: store).agentMessages == .ask)
+    }
+
+    @Test func theChoicesAreWordedAsTheDesignSays() {
+        #expect(AgentMessagePolicy.allCases.map(\.title) == ["Ask me", "Always allow", "Never"])
+    }
+
+    @Test func theGoalsExperimentPersistsAndResetPausesItThroughTheLiveCallback() {
+        let store = Fixture.defaults()
+        let settings = AppSettings(store: store)
+        var changes: [Bool] = []
+        settings.onGoalsChange = { changes.append($0) }
+        settings.goalsEnabled = true
+        settings.goalsEnabled = true
+        #expect(AppSettings(store: store).goalsEnabled)
+        settings.goalsEnabled = false
+        #expect(!AppSettings(store: store).goalsEnabled)
+        settings.goalsEnabled = true
+        settings.resetToDefaults()
+        #expect(changes == [true, false, true, false])
+        #expect(!settings.goalsEnabled && !AppSettings(store: store).goalsEnabled)
+        #expect(store.object(forKey: AppSettings.Key.goalsEnabled) == nil)
+    }
+
+    @Test func crossProviderConsentPersistsOptOutAndReset() {
+        let store = Fixture.defaults()
+        let settings = AppSettings(store: store)
+        settings.goalCrossProviderEvaluation = true
+        #expect(AppSettings(store: store).goalCrossProviderEvaluation)
+        settings.goalCrossProviderEvaluation = false
+        #expect(!AppSettings(store: store).goalCrossProviderEvaluation)
+        settings.goalCrossProviderEvaluation = true
+        settings.resetToDefaults()
+        #expect(!settings.goalCrossProviderEvaluation)
+        #expect(!AppSettings(store: store).goalCrossProviderEvaluation)
+        #expect(store.object(forKey: AppSettings.Key.goalCrossProviderEvaluation) == nil)
     }
 
     /// While pi works: how the queue goes persists, resets, and a new delivery default reaches
@@ -115,6 +183,7 @@ struct AppSettingsTests {
         settings.defaultThinking = .high
         settings.defaultServiceTier = .fast
         settings.autoNameAgents = false
+        settings.agentMessages = .never
         settings.piPanesExtension = false
         settings.piReviewExtension = false
         settings.piDesignReferences = false
@@ -140,6 +209,7 @@ struct AppSettingsTests {
         #expect(reloaded.defaultModel == "anthropic/claude-sonnet-4" && reloaded.defaultThinking == .high)
         #expect(reloaded.defaultServiceTier == .fast)
         #expect(!reloaded.autoNameAgents)
+        #expect(reloaded.agentMessages == .never)
         #expect(!reloaded.piPanesExtension && !reloaded.piReviewExtension && !reloaded.piDesignReferences)
         #expect(!reloaded.piSubagentsExtension && !reloaded.piNativeSubagents)
         #expect(!reloaded.piBrowserExtension)

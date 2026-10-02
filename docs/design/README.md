@@ -60,6 +60,9 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | --- | --- | --- | --- |
 | Main | [thread](thread.md), [composer](composer.md), [window-and-toolbar](window-and-toolbar.md) | Thread; Composer, questions, and menus; Toolbar (breadcrumb, branch chip, side-pane button) | Built |
 | Running | [thread](thread.md), [composer](composer.md) | Thread (A turn while pi works); Composer, questions, and menus | Built |
+| Goal card | [thread](thread.md) | Goal card | Partial (long-condition truncation and edit surfaces await user decisions in PR #189) |
+| MobileGoal | [thread](thread.md) | Goal card | Partial (same pending decisions) |
+| iPadGoal | [thread](thread.md) | Goal card | Partial (same pending decisions) |
 | SlashMenu | [composer](composer.md) | Composer, questions, and menus › Slash menu | Built |
 | ModelPicker | [composer](composer.md) | Composer, questions, and menus › Model picker | Built |
 | ComposerSpeed | [composer](composer.md), [dialogs-and-palette](dialogs-and-palette.md), [settings](settings.md) | Composer, questions, and menus › The control row, Model settings (its Speed control); Command palette; Settings › Agents | Built (its separate Speed chip and menu are replaced by the Composer & menus board's one popover) |
@@ -291,6 +294,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | [components](components.md) | Read when you build a control or a status piece: the shared component inventory and how a status reads. |
 | [composer](composer.md) | Read when you change the composer, its model-settings popover, slash menu, context meter, a question, or the send path. |
 | [departures](departures.md) | Read when a board and the app disagree. Each row is a decision the user made; a new departure is the user's call, never an agent's. |
+| [goal safety review](goal-safety-review.md) | Read when changing goals after PR #189's user review: model disclosure, confirmation, experiment enablement and narrow clock observation. |
 | [design-tool-references](design-tool-references.md) | Read when you work on design references, Tweak, design systems, export, deletion and import, or the Design tool on iOS. |
 | [design-tool](design-tool.md) | Read when you work on the Design tool (Settings ▸ Experiments ▸ Design tool): designs, canvas, comments. |
 | [dialogs-and-palette](dialogs-and-palette.md) | Read when you change the command palette, a dialog or a sheet. |

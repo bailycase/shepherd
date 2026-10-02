@@ -174,7 +174,9 @@ Each is one line here; the full rule is in [docs/rules.md](docs/rules.md) under 
   last terminal closes the panel. (Agents drive their own terminals)
 - Browser tools act only on their own thread's page; page text is untrusted; the user's click takes
   the page over. (Browser tools act only on their own thread's page)
-- Agents never delete each other on their own: `agent_delete` opens `PeerDeleteDialog`.
+- Agents act on other threads only as the user allows (Settings ▸ Pi ▸ Agent-to-agent messages,
+  default Ask me), enforced by the server, never the extension; agents never delete each other on
+  their own: `agent_delete` opens `PeerDeleteDialog`. (Agents act on other threads only as the user allows)
 - Shepherd does not nest agents: subagents are display state, never persisted, with no sidebar rows.
   A subagent never asks the user: its question goes to its parent, which answers it or asks the user
   in its own thread, so a child's question marks no row and posts no notification.
@@ -236,6 +238,7 @@ Each is one line here; the full rule is in [docs/rules.md](docs/rules.md) under 
 | Changing the remote listener or protocol | [docs/remote-protocol.md](docs/remote-protocol.md), [docs/ios/CONTRACTS.md](docs/ios/CONTRACTS.md) |
 | Touching contracts, extensions, concurrency, terminals, browser, layouts | [docs/rules.md](docs/rules.md) |
 | Branching, committing, releasing, signing | [docs/releases.md](docs/releases.md) |
+| Conversation goals | [docs/goals.md](docs/goals.md) |
 | Threads, the queue, subagents, agent tools | [native-thread](docs/native-thread.md), [native-subagents](docs/native-subagents.md), [agent-coordination](docs/agent-coordination.md) |
 | The Changes pane, worktrees, the Browser, skills, designs, MCP servers | [changes](docs/changes.md), [worktrees](docs/worktrees.md), [browser](docs/browser.md), [skills](docs/skills.md), [designs](docs/designs.md), [mcp](docs/mcp.md) |
 | Hitting something odd (sockets, replay, quitting, pi's folders) | [docs/gotchas.md](docs/gotchas.md) |

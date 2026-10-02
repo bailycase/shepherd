@@ -31,10 +31,20 @@
   - With the matching extension on: `SHEPHERD_EXT_PANES`, `SHEPHERD_EXT_BROWSER` (the installed
     `shepherd-browser.ts`, for Settings ▸ Pi ▸ Browser tools; never in a design's agent),
     `SHEPHERD_NATIVE_CHILDREN`,
-    `SHEPHERD_EXT_CHILDREN`, and `SHEPHERD_CHILD_*`; for Settings ▸ Pi ▸ MCP servers, pi's own MCP
+    `SHEPHERD_EXT_CHILDREN`, and `SHEPHERD_CHILD_*`; `SHEPHERD_EXT_GOAL=1` loads the
+    conversation-goal controller after the child controller, even while the experiment is off
+    so it can switch live. `SHEPHERD_GOALS_ENABLED` is explicitly `0` by default, `1` only while
+    Settings > Experiments > Goals is on. The host's internal configure command updates running
+    controllers without restarting pi; off pauses/cancels goal work without aborting tools.
+    `SHEPHERD_GOAL_MODELS` is explicitly empty by default, so checks use the thread's exact
+    provider/model. Settings > Agents > Allow cross-provider goal checks supplies the
+    Haiku/Codex Mini/Gemini Flash preference list only after opt-in. Shepherd overrides an
+    inherited value even when consent is off. Policy is captured when an agent starts or
+    restarts; changing Settings does not revoke a running process's policy. See [goals](goals.md)
+    for evaluator disclosure and redaction. For Settings ▸ Pi ▸ MCP servers, pi's own MCP
     (`-e builtin:mcp`, no variable) and `SHEPHERD_MCP_SECRET_<SERVER>_<NAME>`, one per Keychain
-    secret the derived `mcp.json` refers to (docs/mcp.md; the launcher keeps them from the model's
-    shell and the servers that don't name them), and `SHEPHERD_EXT_MCP_PROJECT=1` (the installed
+    secret the derived `mcp.json` refers to, with `SHEPHERD_MCP_SECRETS` naming them (docs/mcp.md;
+    the launcher keeps them from the model's shell and the servers that don't name them), and `SHEPHERD_EXT_MCP_PROJECT=1` (the installed
     `shepherd-mcp-project.ts`) while Settings ▸ MCP servers ▸ Also use a repo's .mcp.json is on.
   - Per agent: `SHEPHERD_NEEDS_NAME`, `SHEPHERD_AUTOMATION`, `SHEPHERD_MODEL`,
     `SHEPHERD_SUGGEST_FILES` (the files its `suggest_instruction` may draft a line for, while

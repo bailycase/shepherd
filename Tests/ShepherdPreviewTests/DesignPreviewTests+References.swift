@@ -62,7 +62,7 @@ extension DesignPreviewTests {
     /// preview, the @ picker's stages, the board actions, the sheets, the toasts, the agent's line
     /// and the thread's pin.
     @Test func designReferenceStates() async throws {
-        try await Preview.render("design-reference-states", size: CGSize(width: 1260, height: 2180)) {
+        try await Preview.render("design-reference-states", size: CGSize(width: 1260, height: 2320)) {
             NWDesignReferenceSpecimens()
                 .padding(NW.Space.xxl)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

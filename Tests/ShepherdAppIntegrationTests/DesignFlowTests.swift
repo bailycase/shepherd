@@ -62,7 +62,7 @@ struct DesignFlowTests {
         #expect(agent.model == app.settings.agentDefaults.model, "the default model")
         #expect(vm.shownDestination == nil)
         #expect(vm.selectedSidebarRow == .design(design.id))
-        #expect(vm.sidebarLists.recents.map(\.id) == [.design(design.id)], "the design is the row; its agent has none")
+        #expect(vm.sidebarLists.designs.map(\.id) == [.design(design.id)], "the design is the row; its agent has none")
         #expect(draft.brief.isEmpty)
 
         // The brief is the agent's first message.

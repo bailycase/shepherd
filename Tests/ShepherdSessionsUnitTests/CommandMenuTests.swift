@@ -21,6 +21,15 @@ struct CommandMenuTests {
         #expect(RPCThreadState.projectCommands(value).map(\.description) == ["Mine", nil])
     }
 
+    @Test func theGoalRowShowsItsConditionButNotTheInternalController() throws {
+        let value: JSONValue = try JSONDecoder().decode(JSONValue.self, from: Data(#"""
+        [{"name":"goal","description":"Work toward a condition","source":"extension"},
+         {"name":"shepherd-goal","description":"Internal goal control","source":"extension"}]
+        """#.utf8))
+        #expect(RPCThreadState.projectCommands(value) == [NativeCommand(name: "goal", description: "Work toward a condition",
+                                                                      source: "extension", arguments: "<condition>")])
+    }
+
     /// pi's own `/mcp` (built-in MCP, which Shepherd's pi turns off: `PiHome.disabledBuiltIns`) is
     /// listed as pi lists it when someone turns it on: it works in RPC mode, answering with the
     /// servers' state, so the menu keeps it.

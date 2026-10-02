@@ -331,7 +331,10 @@ speaks for**, below; [SECURITY.md](SECURITY.md)).
 - **`shepherd-panes.ts`:**
   - `terminal_*` tools (open, list, run, read, focus, close), answered by `PaneControl.swift`
     through `onPaneRequest`
-  - peer tools: `agent_list`, `agent_send`, and `agent_spawn` through `onAgentPeerRequest`
+  - peer tools: `agent_list`, `agent_send`, and `agent_spawn` through `onAgentPeerRequest`. A call
+    that acts on another thread (these two, `agent_steer`, `agent_interrupt`, `agent_read`) first
+    passes `SessionServer.gateAgentAction`, which applies Settings ▸ Pi ▸ Agent-to-agent messages
+    (`onAgentApprovalRequest` opens `PeerApprovalDialog`; the app answers `resolveAgentApproval`)
   - live coordination (`agent_read`, `agent_steer`, `agent_interrupt`, `agent_wait`): the server
     relays `coordinateAgent` to the target's own panes connection as `agentRequest` under a
     token of its own, and returns the target's `agentResponse` to the caller as `agentResult`

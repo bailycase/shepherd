@@ -70,7 +70,8 @@ struct ThreadScreen: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    ThreadTitle(name: agent?.name ?? "Thread", status: status, branch: branch, wide: sizeClass == .regular)
+                    ThreadTitle(name: agent?.name ?? "Thread", status: status, branch: branch, wide: sizeClass == .regular,
+                                goalStore: store)
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     if agent != nil {
@@ -367,6 +368,8 @@ struct ThreadTitle: View {
     var branch: AgentBranchLabel?
     /// iPad: the name, the chip and a pill on one line.
     var wide = false
+    var goalTime: String? = nil
+    var goalStore: NativeThreadStore? = nil
 
     var body: some View {
         Group {
@@ -389,6 +392,7 @@ struct ThreadTitle: View {
             HStack(spacing: NW.Space.s) {
                 NWStatusDot(status.state)
                 Text(status.label).fontWeight(.medium).foregroundStyle(status.state.textColor).fixedSize()
+                ThreadGoalHeader(store: goalStore, time: goalTime)
                 // A worktree names its branch; your own checkout says so in lantern (MobileQuestion).
                 if let branch {
                     let checkout = branch.kind == .checkout
@@ -422,6 +426,23 @@ struct ThreadTitle: View {
             }
             NWStatusPill(status.state, label: meta.elapsed.map { "\(status.label) · \($0)" } ?? status.label)
                 .fixedSize()
+            ThreadGoalHeader(store: goalStore, time: goalTime)
+        }
+    }
+}
+
+/// Goal updates invalidate this child, not the screen or the header's other controls.
+private struct ThreadGoalHeader: View {
+    let store: NativeThreadStore?
+    let time: String?
+
+    var body: some View {
+        if let store {
+            if let goal = store.goal, goal.isActive {
+                NWGoalHeaderPill(time: goal.timeLabel, clockStart: goal.clockStart)
+            }
+        } else if let time {
+            NWGoalHeaderPill(time: time)
         }
     }
 }

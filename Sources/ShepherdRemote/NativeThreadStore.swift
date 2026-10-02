@@ -157,6 +157,15 @@ public final class NativeThreadStore {
     public private(set) var dialogsSupported = true { didSet { threadVersion &+= 1 } }
     /// Extension widgets of the kinds this client draws.
     public private(set) var widgets: [NativeThreadWidget] = [] { didSet { chromeVersion &+= 1 } }
+    public private(set) var goal: NativeGoal? {
+        didSet {
+            hasGoal = goal != nil
+            goalID = goal?.id
+            chromeVersion &+= 1
+        }
+    }
+    public private(set) var hasGoal = false
+    public private(set) var goalID: String?
     public private(set) var commands: [NativeCommand] = [] { didSet { chromeVersion &+= 1 } }
     public private(set) var model: String? { didSet { chromeVersion &+= 1 } }
     public private(set) var thinking: String? { didSet { chromeVersion &+= 1 } }
@@ -553,6 +562,8 @@ public final class NativeThreadStore {
         if dialogs != self.dialogs { self.dialogs = dialogs }
         let dialogsSupported = value?.dialogsSupported ?? true
         if dialogsSupported != self.dialogsSupported { self.dialogsSupported = dialogsSupported }
+        let goal = value?.goal.flatMap { $0.isValid ? $0 : nil }
+        if goal != self.goal { self.goal = goal }
         let widgets = (value?.widgets ?? []).filter { $0.kind != .unknown }
         if widgets != self.widgets { self.widgets = widgets }
         let commands = value?.commands ?? []
@@ -1340,8 +1351,25 @@ public final class NativeThreadStore {
         supportedActions.contains("setServiceTier") && serviceTiers.count > 1
     }
 
-    /// Standard or Fast, from the agent's next model call on, running or not. Gated by
-    /// `setServiceTier` in `supportedActions`, and the model must offer the tier.
+    /// Goal controls remain available during a turn and its separate evaluation.
+    @discardableResult
+    public func goalAction(_ action: NativeGoalAction, displayedGoal: NativeGoal? = nil) async -> Bool {
+        guard ready, !busy, loadError == nil, supportedActions.contains("goal"), action.isValid, let current = snapshot,
+              action != .resume && action != .confirm || dialogs.isEmpty else { return false }
+        let displayed = displayedGoal ?? goal
+        if action == .pause || action == .resume || action == .confirm {
+            guard let displayed, displayed.id == goal?.id, displayed.revision == goal?.revision, displayed.state == goal?.state else { return false }
+            guard action != .pause || displayed.isActive,
+                  action != .resume || displayed.state == .paused || displayed.state == .needsYou,
+                  action != .confirm || displayed.state == .needsYou && displayed.confirmationRequired == true else { return false }
+        }
+        let operation = UUID()
+        return await perform(.goal(expectedSessionID: current.piSessionID, generation: current.generation, operationID: operation,
+                                   action: action, expectedGoalID: displayed?.id, expectedGoalRevision: displayed?.revision, expectedGoalState: displayed?.state),
+                             operation: operation, current: current)
+    }
+
+    /// Standard or Fast, from the agent's next model call on, running or not.
     public func setServiceTier(_ tier: ServiceTier) async {
         guard supports("setServiceTier"), serviceTiers.contains(tier), let current = snapshot, serviceTier != tier else { return }
         let operation = UUID()

@@ -41,14 +41,13 @@ struct SidebarRecentsTests {
         #expect(lists.recents.map(\.title) == ["third", "second", "first"])
     }
 
-    /// A status report or a streamed token changes a row, never the order: only `lastActiveAt`
-    /// orders.
-    @Test func aStatusChangeAloneKeepsTheOrder() {
+    /// Activity order stays stable while the displayed status section changes.
+    @Test func aStatusChangeAloneKeepsTheActivityOrder() {
         let a = agent("a", at: 20), b = agent("b", at: 10)
         var working = b
         working.status = .working
-        let before = SidebarDerivation.lists(source([a, b])).recents.map(\.id)
-        let after = SidebarDerivation.lists(source([a, working])).recents.map(\.id)
+        let before = SidebarDerivation.lists(source([a, b])).activity.map(\.id)
+        let after = SidebarDerivation.lists(source([a, working])).activity.map(\.id)
         #expect(before == after)
     }
 
@@ -73,7 +72,7 @@ struct SidebarRecentsTests {
             failedTurns: [failed.id], statusSince: [running.id: since],
             hosts: [SidebarSource.Host(id: host, name: "horizon",
                                        state: ShepherdState(spaces: [space], agents: [agent("remote", status: .working, at: 1)]))]))
-        let rows = Dictionary(uniqueKeysWithValues: lists.recents.map { ($0.title, $0) })
+        let rows = Dictionary(uniqueKeysWithValues: lists.all.map { ($0.title, $0) })
         #expect(rows["failed"]?.leading == .dot(.failed))
         #expect(rows["failed"]?.accessory == NWSidebarRow.Accessory.none)
         #expect(rows["running"]?.leading == .dot(.running))
@@ -84,6 +83,26 @@ struct SidebarRecentsTests {
         #expect(rows["remote"]?.leading == .dot(.running))
         #expect(rows["remote"]?.accessory == .tag("horizon"))
         #expect(rows["remote"]?.accessibilityLabel == "remote, running, on horizon")
+    }
+
+    @Test func goalsSupplementTheAskElapsedAndHostAccessories() {
+        let since = Date(timeIntervalSince1970: 100)
+        var working = agent("working", status: .working)
+        working.goalState = "working"
+        var asking = agent("asking", status: .blocked, waiting: "Retention?")
+        asking.goalState = "needsYou"
+        var remote = agent("remote", status: .working)
+        remote.goalState = "checking"
+        let lists = SidebarDerivation.lists(SidebarSource(
+            local: ShepherdState(spaces: [space], agents: [working, asking]), statusSince: [working.id: since],
+            hosts: [SidebarSource.Host(id: host, name: "horizon", state: ShepherdState(spaces: [space], agents: [remote]))]))
+        let rows = Dictionary(uniqueKeysWithValues: (lists.working + lists.recents + lists.needsYou).map { ($0.title, $0) })
+        #expect(rows["working"]?.hasGoal == true)
+        #expect(rows["working"]?.accessory == .elapsed(since: since))
+        #expect(rows["asking"]?.hasGoal == true)
+        #expect(rows["asking"]?.accessory == .reason("Retention?"))
+        #expect(rows["remote"]?.hasGoal == true)
+        #expect(rows["remote"]?.accessory == .tag("horizon"))
     }
 
     /// An agent whose pi stopped before it served reads "can't start" in red, a thread's or a
@@ -136,17 +155,17 @@ struct SidebarRecentsTests {
         #expect(lists.recents.first?.accessibilityLabel == "asks, needs you, on horizon, host offline")
     }
 
-    /// An automation's run is in Recents with the bolt, and "done" once it settles.
-    @Test func automationRunsAreRecentsWithTheirBolt() {
+    /// A finished automation run is in Done with its bolt and completion age.
+    @Test func automationRunsAreDoneWithTheirBolt() {
         let run = agent("Nightly", status: .done, at: 1)
         let automation = Automation(name: "Nightly", prompt: "p", cwd: "/tmp", agentID: run.id)
         var state = ShepherdState(spaces: [space], agents: [run])
         state.automations = [automation]
         let settled = AutomationRun(startedAt: 0, settledAt: 1, result: .finished, agentID: run.id)
         let lists = SidebarDerivation.lists(SidebarSource(local: state, openRuns: [automation.id: settled]))
-        let row = lists.recents.first
+        let row = lists.done.first
         #expect(row?.leading == .glyph("bolt", attention: false))
-        #expect(row?.accessory == .text("done"))
+        #expect(row?.accessory == .age(since: Date(timeIntervalSince1970: 0.001)))
         #expect(row?.automation == automation.id)
         #expect(row?.automationLive == false)
         #expect(row?.accessibilityLabel == "Nightly, automation, done")

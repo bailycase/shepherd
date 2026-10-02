@@ -1,5 +1,6 @@
 import Foundation
 import ShepherdCore
+import ShepherdSessions
 
 /// A sheet item for a value that is not itself `Identifiable` (a remote agent, an error).
 struct SheetItem<Value: Hashable>: Identifiable {
@@ -61,6 +62,15 @@ extension ShepherdViewModel {
             guard newValue == nil, let pending = peerDeleteConfirmation else { return }
             cancelPeerDeletion(requestID: pending.requestID)
         }
+    }
+
+    /// The call the approval dialog shows: the oldest waiting, once the Delete agent dialog is not
+    /// up (one sheet at a time). Only the dialog's buttons answer, and its ⎋ is Deny, so a dismissal
+    /// the sheet reports changes nothing: with several waiting, the queue's next call must not be
+    /// denied for the one just answered. A call nobody answers is denied by the server's timeout.
+    var peerApprovalItem: AgentApprovalPrompt? {
+        get { peerDeleteConfirmation == nil ? peerApprovals.first : nil }
+        set {}
     }
 
     var actionErrorItem: SheetItem<String>? {
