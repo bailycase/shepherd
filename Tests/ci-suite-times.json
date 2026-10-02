@@ -19,6 +19,7 @@
   "ShepherdAppIntegrationTests.AgentLaunchTests": 2.96,
   "ShepherdAppIntegrationTests.AgentLifecycleTests": 2.79,
   "ShepherdAppIntegrationTests.AgentPeerDeletionTests": 7.26,
+  "ShepherdAppIntegrationTests.AgentSettingsContextTests": 0.39,
   "ShepherdAppIntegrationTests.AgentStartProblemTests": 2.83,
   "ShepherdAppIntegrationTests.AgentStartupTests": 10.93,
   "ShepherdAppIntegrationTests.AutomationsPageActionTests": 0.41,
@@ -28,6 +29,7 @@
   "ShepherdAppIntegrationTests.BrowserWebViewTests": 2.24,
   "ShepherdAppIntegrationTests.ChangesScrollFrameReport": 0.1,
   "ShepherdAppIntegrationTests.CheckoutMonitorTests": 0.88,
+  "ShepherdAppIntegrationTests.CompactionThresholdFlowTests": 0.72,
   "ShepherdAppIntegrationTests.ComposerAttachmentSendTests": 1.63,
   "ShepherdAppIntegrationTests.ComposerCaretTests": 3.11,
   "ShepherdAppIntegrationTests.ComposerMenuBenchmarkTests": 0.1,
@@ -498,10 +500,12 @@
   "ShepherdSessionsUnitTests.CommandMenuTests": 0.01,
   "ShepherdSessionsUnitTests.CommandNoticeProjectionTests": 0.01,
   "ShepherdSessionsUnitTests.ContextEstimateTests": 0.02,
+  "ShepherdSessionsUnitTests.ContextToolGroupsTests": 0.01,
   "ShepherdSessionsUnitTests.GoalExtensionTests": 0.01,
   "ShepherdSessionsUnitTests.InstructionsStoreTests": 0.08,
   "ShepherdSessionsUnitTests.InterruptPlanTests": 0.01,
   "ShepherdSessionsUnitTests.ModelListingTests": 0.01,
+  "ShepherdSessionsUnitTests.PiCompactionThresholdTests": 0.01,
   "ShepherdSessionsUnitTests.PiConfigTests": 0.01,
   "ShepherdSessionsUnitTests.PiEngineTests": 0.01,
   "ShepherdSessionsUnitTests.PiHomeTests": 0.03,
@@ -557,5 +561,5 @@
   "TerminalSurfaceKitUnitTests.TerminalLinkTests": 0.01,
   "TerminalSurfaceKitUnitTests.TerminalSurfaceConfigTests": 0.02
  },
- "measured": "blended from full runs of 2026-10-01: 36886813268, 36889650156, 36891292623 (before the shards), then 36898150519, 36913297279, 36915616700, 36917295445 and 36919268023; goal suites recorded from isolated local validation on 2026-10-02"
+ "measured": "blended from full runs of 2026-10-01: 36886813268, 36889650156, 36891292623 (before the shards), then 36898150519, 36913297279, 36915616700, 36917295445 and 36919268023; goal suites recorded from isolated local validation on 2026-10-02; the context suites from a local run on 2026-10-02"
 }

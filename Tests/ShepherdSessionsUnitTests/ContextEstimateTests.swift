@@ -219,6 +219,23 @@ struct ContextEstimateTests {
         #expect(unscaled.system == off.system && unscaled.instructions == off.instructions)
     }
 
+    /// pi's `Usage` as `get_messages` writes it (pi 1.0, checked on a real one): the prompt is the new and the cached
+    /// input, reasoning is part of the output and only there when the provider says, and a missing or empty usage
+    /// is no count. The message's other fields (api, provider, cost, response id) are ignored.
+    @Test(arguments: [
+        (#"{"input":5000,"output":40,"cacheRead":2000,"cacheWrite":300,"reasoning":12,"totalTokens":7352,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}"#, 7_300 as Int?, 12 as Int?),
+        (#"{"input":5000,"output":40,"cacheRead":0,"cacheWrite":0,"reasoning":0,"totalTokens":5040}"#, 5_000, nil),
+        (#"{"input":5000,"output":40}"#, 5_000, nil),
+        (#"{"input":0,"output":0,"cacheRead":0,"cacheWrite":0}"#, nil, nil),
+        (#"{}"#, nil, nil),
+        (#"null"#, nil, nil),
+    ] as [(String, Int?, Int?)])
+    func usageIsDecodedAsPiWritesIt(_ usage: String, prompt: Int?, reasoning: Int?) throws {
+        let json = #"{"role":"assistant","content":[{"type":"text","text":"ok"}],"api":"openai-responses","provider":"p","model":"m","usage":\#(usage),"stopReason":"stop","timestamp":1,"responseId":"r","rawStopReason":"stop","thinkingLevel":"off"}"#
+        let message = try JSONDecoder().decode(RPCMessage.self, from: Data(json.utf8))
+        #expect(message.usage?.prompt == prompt && message.usage?.reasoningTokens == reasoning)
+    }
+
     /// An aborted or failed call counts nothing, and a compaction starts a new baseline: the calls before it
     /// carried a context that no longer exists.
     @Test func theBaselineIsTheFirstCountedCallSinceTheLatestCompaction() {
