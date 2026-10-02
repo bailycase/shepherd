@@ -440,7 +440,7 @@ struct ThreadView: View {
                 quiet("Last known thread · refreshing before enabling actions")
             }
             if !store.dialogsSupported { quiet("This host's agent cannot answer questions here · update Shepherd on the host") }
-            if store.clipped { quiet("Some earlier output is clipped") }
+            if let notice = store.clipNotice { ForEach(notice.lines, id: \.self) { quiet($0) } }
         }
     }
 

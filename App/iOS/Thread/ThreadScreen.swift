@@ -109,7 +109,7 @@ struct ThreadScreen: View {
         if !supported { return "Update Shepherd on \(host.name) to open threads here." }
         if let error = store.loadError { return error }
         if let problem = store.startProblem { return "\(problem.title) \(problem.advice(host: host.name))" }
-        if store.clipped { return "Some output is clipped · the full thread is on \(host.name)" }
+        if let notice = store.clipNotice { return notice.text }
         return nil
     }
 }
