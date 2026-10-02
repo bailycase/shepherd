@@ -40,6 +40,9 @@ struct PiConfigTests {
     @Test(arguments: [
         (#"{"packages":["npm:@example/pi-tools@1.0.0",{"source":"git:github.com/example/checks@v1","skills":[]},{"skills":[]},7],"extensions":["~/pi/local.ts",""]}"#,
          ["npm:@example/pi-tools@1.0.0", "git:github.com/example/checks@v1", "~/pi/local.ts"]),
+        // The switches for pi's built-in extensions are not extensions anyone installed.
+        (#"{"extensions":["-builtin:mcp","/home/me/checks.ts","+builtin:codemode","builtin:tool-search","-builtin:codemode"]}"#,
+         ["/home/me/checks.ts"]),
         (#"{"defaultModel":"gpt-6"}"#, []),
         ("not json", []),
     ] as [(String, [String])])

@@ -94,7 +94,7 @@ rest. Shepherd writes, whenever they differ (`PiHome.install`):
 | `bin/pi` | The launcher: every pi Shepherd starts, and every `pi` an agent types, runs through it |
 | `restore-env.sh` | Gives an agent's shell commands back what the launcher set aside |
 | `.shepherd-pi-home` | The marker that names the folder as Shepherd's |
-| `settings.json` | Shepherd's keys only: `shellCommandPrefix` (sourcing `restore-env.sh`), the `skills` filter that turns off `~/.agents/skills` (below), the user's switched-on extensions under `extensions`, and `packages` removed |
+| `settings.json` | Shepherd's keys only: `shellCommandPrefix` (sourcing `restore-env.sh`), the `skills` filter that turns off `~/.agents/skills` (below), the user's switched-on extensions under `extensions` beside `-builtin:mcp`, `-builtin:codemode` and `-builtin:tool-search` (pi 1.0's own MCP, codemode and tool search, which Shepherd's pi leaves off: [pi-engine.md](pi-engine.md#pi-10)), and `packages` removed |
 | `keychain-certificates.pem` | Every certificate the Mac's keychain trusts (a private CA for an internal proxy or MCP server), PEM, so Node — which otherwise trusts only its own bundled CAs — can trust it too. Missing, or empty, when the keychain holds none |
 
 pi writes `settings.json` too (the TUI's `/settings`, the first `/login`), so Shepherd changes it
@@ -103,6 +103,17 @@ after 10 s as pi's is), by temp file and rename, and only when its keys differ. 
 removed at every launch, with a note in the log: a user-scope package missing from `<home>/npm`
 makes pi load the user's global npm install, even offline. A `bin/` that links out of the home is
 refused rather than written through, and the agent waits on the reason.
+
+**pi's built-in extensions.** pi 1.0 loads MCP, codemode, tool search and llama.cpp as built-in
+extensions in every session, named `builtin:<name>` in the `extensions` setting. Shepherd's MCP
+manages the servers, so `PiHome.install` appends `-builtin:mcp`, `-builtin:codemode` and
+`-builtin:tool-search` unless an entry already names that built-in in any form: `+builtin:<name>`
+in this `settings.json` turns one back on. Otherwise pi would also read `<home>/mcp.json` and a
+trusted project's `.pi/mcp.json`, start those servers and offer `codemode` (evidence and the
+details: [pi-engine.md](pi-engine.md#pi-10)). llama.cpp, a provider pi has always shipped, stays.
+Those entries are not extensions anyone installed: Settings ▸ Pi and a host's `hostSettings`
+leave them out of the installed list, and the copy from "your pi" never reads them as files.
+A launch that passes `--no-extensions` (drafts, native children) loads no built-in at all.
 
 **Only its own home.** pi reads skills from `$HOME/.agents/skills` besides its agent folder, for
 every session (pi: `core/package-manager.js`, `addAutoDiscoveredResources`: `join(getHomeDir(),
@@ -422,6 +433,14 @@ refuses pi's own package commands, and the pins turn off pi's update check and i
   app launching through the stub engine despite the decoy startup files, adopting a restored
   agent's conversation while "your pi" stays byte-identical with no lock taken
   (`PiHomeLaunchTests`).
+- Built-in extensions: the list's rules (`PiHomeTests`: each of the three added once, an entry
+  naming one kept, other entries kept in order), the entries written and left alone on a second
+  install (`PiLauncherTests`), not shown as installed extensions or copied as files
+  (`PiConfigTests`, `YourPiResourcesTests`), and, against real pi, a server in `<home>/mcp.json`
+  never started with `/mcp` not offered, started with `+builtin:mcp`, a trusted project's
+  `.pi/mcp.json` the same, and `--no-extensions` loading no built-in
+  (`Tests/Extensions/builtin-extensions.test.mjs`, in CI; and, through the shipped engine,
+  `EngineSmokeTests.piBuiltInMCPIsOffInShepherdsHomeUnlessSwitchedOn`).
 - Engine smoke (opt-in, `SHEPHERD_ENGINE_SMOKE`): through the real launcher, an RPC `bash`
   command finds `pi` at the launcher and gets back a `NODE_OPTIONS` pi never saw; an agent in
   the user's home folder, whose pi names packages and extensions, loads none of their code, runs

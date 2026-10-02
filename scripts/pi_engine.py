@@ -7,9 +7,9 @@ download against the pin, and writes the tree the app carries:
   Helpers/node                      Node's darwin-arm64 binary as published: Shepherd runs on
                                     Apple silicon only
   Resources/pi-engine/              pi's package.json, dist/bundle, its assets, docs and examples,
-                                    and a node_modules holding only chord's context entry, jiti
-                                    and photon-node, plus LICENSE, NODE-LICENSE and
-                                    THIRD-PARTY-NOTICES
+                                    and a node_modules holding only jiti, photon-node and
+                                    quickjs-wasi's WebAssembly binary, plus LICENSE, NODE-LICENSE
+                                    and THIRD-PARTY-NOTICES
   pin.json                          a copy of the pin it was staged from (the Xcode phase's stamp)
   inputs.xcfilelist, outputs.xcfilelist
                                     every file the Xcode phase reads and every file and folder it
@@ -82,12 +82,25 @@ PI_KEEP = (
     "dist/core/export-html/vendor/*.js",
 )
 
-# The only modules the bundle loads from node_modules. chord's context entry imports nothing
-# else, so its esbuild dependency (and esbuild's 26 platform packages) never ship.
+# The only modules the bundle loads from node_modules. Everything else pi depends on (its own
+# packages, the MCP and codemode runtimes, chord, undici) is compiled into dist/bundle, so
+# esbuild (chord's dependency) and its 26 platform packages never ship. quickjs-wasi's JavaScript is
+# bundled too: the codemode extension resolves only its `quickjs.wasm` (WebAssembly, not native
+# code) from node_modules, so that file and the package.json its exports map needs are kept and
+# its `extensions/*.so` side modules (WebAssembly that pi never loads, named like native code)
+# are not.
 MODULE_KEEP = {
-    "@earendil-works/chord": ("package.json", "README.md", "dist/context/index.js"),
     "jiti": ("**",),
     "@silvia-odwyer/photon-node": ("**",),
+    "quickjs-wasi": ("package.json", "quickjs.wasm"),
+}
+
+# What the bundle resolves inside a module by name at runtime, so the module is useless without
+# it: pi finds the QuickJS binary with `require.resolve("quickjs-wasi/quickjs.wasm")` when a
+# codemode script runs, and the image worker finds photon's WebAssembly beside its JavaScript.
+MODULE_REQUIRED = {
+    "@silvia-odwyer/photon-node": ("photon_rs_bg.wasm",),
+    "quickjs-wasi": ("quickjs.wasm",),
 }
 
 # Never inside the engine: native code (Node is the only Mach-O, and it lives in Helpers/),
@@ -496,8 +509,8 @@ def _slice_mentions(path: str, offset: int, size: int, needle: bytes) -> bool:
 def verify(root: str, pin: dict | None = None) -> list[str]:
     """Problems with the engine under `root`: an app bundle, its Contents/, or a staged tree.
     Empty when node is arm64 only, at the pinned version, pi and its three modules
-    are the pinned ones, nothing else is in node_modules, nothing native or esbuild is in the
-    engine, and the licences are there."""
+    are the pinned ones (each with the file the bundle resolves in it), nothing else is in
+    node_modules, nothing native or esbuild is in the engine, and the licences are there."""
     pin = pin or load_pin()
     if os.path.isdir(os.path.join(root, "Contents")):
         root = os.path.join(root, "Contents")
@@ -541,6 +554,9 @@ def verify(root: str, pin: dict | None = None) -> list[str]:
             problems.append(f"node_modules/{name} is missing")
         else:
             problems += _package_version(os.path.join(modules, name), name, module["version"], f"node_modules/{name}")
+            for required in MODULE_REQUIRED.get(name, ()):
+                if not os.path.isfile(os.path.join(modules, name, required)):
+                    problems.append(f"node_modules/{name}/{required} is missing")
     for directory, dirs, files in os.walk(engine):
         for entry in dirs + files:
             if any(fnmatch.fnmatchcase(entry, pattern) for pattern in FORBIDDEN_NAMES):

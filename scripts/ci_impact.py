@@ -143,6 +143,7 @@ RULES: list[tuple[str, object, str]] = [
     ("Tests/Extensions/**", NONE, "node extension tests"),
     ("Tests/Release/**", NONE, "release rules"),
     ("scripts/ci_*.py", FULL, "the CI helpers themselves"),
+    ("scripts/pi-engine-pin.json", FULL, "the pinned pi engine (everything that talks to pi)"),
     ("scripts/**", NONE, "release and engine scripts (Tests/Release)"),
     # Everything the CI and the tests share.
     (".github/**", FULL, "CI itself"),
