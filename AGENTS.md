@@ -90,7 +90,7 @@ report what it finds. Each of these is required:
 - Edit an embedded extension in `Extensions/` and its Swift literal together.
 - Keep tool output small: `| head`, `-n`, `--stat`, a file by range, a command that prints a summary.
   Hand a broad search or a long log to a helper (`shepherd_child_start`) instead of reading it here.
-  A new tool, prompt line or instruction costs tokens in every thread: docs/context-budget.md.
+  A new tool, prompt line or instruction costs tokens in every thread (a rare tool is registered `deferred`): docs/context-budget.md.
 - Fill the PR template: the `pr-body` check fails UI changes without Departures, Rendered and
   Controls used, and an autonomous feature without Bounds, Data, Restart and stop and Decisions.
 
