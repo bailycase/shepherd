@@ -189,6 +189,17 @@ extension blanks each of them in the server's `env`, and it expands a `${SHEPHER
 its default or nothing (checked against the version without both: the server read the token). A repo's file
 can still start any command as the user, which is why the switch is off by default.
 
+## In the thread
+
+A server's tool is an ordinary tool call, so it reads as an activity line (`NativeMCPActivity`, shared with
+the iOS client): "Called search_issues" with "github · label:bug" (the server, then the first of the call's
+`query`, `q`, `url`, `path`, `pattern`, `name`, `title`, `text` or `command`), "Calling …" while it runs, "…
+failed" with pi's reason. The server and tool come from the call's name (`mcp__<server>__<tool>`, pi's
+sanitized spelling), because the projection keeps no result `details`. `tool_search` is "Searched tools" with
+the query, and "8 loaded" on its expanded row. A call nested in another (`parentToolCallId`, which pi's
+codemode sets and Shepherd leaves off) gets no row: `RPCThreadState` skips it, so the parent's line stands
+for it and a malformed field never costs the event.
+
 ## Not covered
 
 Servers whose only transport is legacy SSE; `${…}` in a URL; `shepherd.start` (a server starts with each
