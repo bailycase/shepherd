@@ -56,6 +56,8 @@ enum HostSettingsMapping {
             defaultModel: app.defaultModel.isEmpty ? nil : app.defaultModel,
             defaultThinking: app.defaultThinking,
             queueDelivery: app.queueDelivery,
+            goalCrossProviderEvaluation: app.goalCrossProviderEvaluation,
+            goalsEnabled: app.goalsEnabled,
             worktreeBase: app.worktreeBaseMode == .head ? .head : .fresh,
             fetchBeforeCreating: app.worktreeFetchBeforeCreate,
             commitRemainingWork: app.worktreeAutoCommit,
@@ -75,6 +77,8 @@ enum HostSettingsMapping {
         case .defaultModel(let model): app.defaultModel = model?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         case .defaultThinking(let level): app.defaultThinking = level
         case .queueDelivery(let mode): app.queueDelivery = mode
+        case .goalCrossProviderEvaluation(let on): app.goalCrossProviderEvaluation = on
+        case .goalsEnabled(let on): app.goalsEnabled = on
         case .worktreeBase(let base): app.worktreeBaseMode = base == .head ? .head : .fresh
         case .fetchBeforeCreating(let on): app.worktreeFetchBeforeCreate = on
         case .commitRemainingWork(let on): app.worktreeAutoCommit = on

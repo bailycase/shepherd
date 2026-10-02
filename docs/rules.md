@@ -14,7 +14,7 @@ the same change.
 - A new `SessionServer` mutation needs an integration test.
 - New persisted fields decode with defaults, so older `state.json` files keep loading.
 
-**Embedded extensions have one canonical copy.** The twenty-one files in `Extensions/` are canonical,
+**Embedded extensions have one canonical copy.** The twenty-two files in `Extensions/` are canonical,
 and so is the design skill in `Extensions/design-skill/`.
 pi loads the copies that the thirteen `Sources/ShepherdApp/*Extension.swift` files write to the
 support directory from embedded string literals. `installedPath()` rewrites an installed copy
@@ -32,6 +32,12 @@ children and drafts. It is inert until Settings ▸ Pi ▸ Sign-in connects a se
 private connection file is `shepherd-cliproxyapi.json`, named by `SHEPHERD_CLIPROXYAPI_CONFIG`.
 The managed provider is `cliproxyapi`, separate from imported `cpa` providers. No proxy process
 is installed or managed, and credentials never leave the host. See docs/pi-home.md.
+`GoalExtension` (ShepherdSessions) embeds `shepherd-goal.ts`, installed in the private pi home
+and enabled by `SHEPHERD_EXT_GOAL=1`. It runs after the native child controller so settlement
+checks cannot accept completion before child reports arrive. Goals persist in session entries,
+not fleet state. `NativeGoal` is their widget projection, and `native.goal.v1` gates remote
+controls. See [goals](goals.md) for evaluation, limits, queue yielding, and explicit resume on restore.
+
 `ServiceTierExtension` (ShepherdSessions) embeds `shepherd-service-tier.ts`, the Speed control's
 half in pi: `PiHome.install` writes it, and an agent's own pi (only) loads it with
 `SHEPHERD_EXT_SERVICE_TIER` naming the agent's tier file under the pi home's `service-tier/`,
@@ -39,7 +45,7 @@ which the host keeps current and pi reads on every provider request (docs/servic
 support table is `ServiceTierSupport`'s, and the two are tested against one JSON table.
 
 - Edit a `.ts`/`.mjs` file (or a design skill file) and its literal in the same change, with
-  `scripts/sync-embedded-extension.py`. A unit test enforces byte identity for all twenty-one pairs
+  `scripts/sync-embedded-extension.py`. A unit test enforces byte identity for all twenty-two pairs
   and the skill's two files.
 - Extensions stay dependency-free and inert without their environment variables.
 - They must never throw into pi or keep the process alive (unref'd sockets and timers).
@@ -231,6 +237,19 @@ clicks and keys are DOM events (`isTrusted` false), never `NSEvent`s; the user's
 in the page (trusted) takes the page over, and it comes back with the user's next message to the
 thread (`SessionServer.onUserMessage`), never a peer's `agent_send`. `browser_open` takes `http`,
 `https` and `about:blank` only.
+
+**Agents act on other threads only as the user allows** (Settings ▸ Pi ▸ Agent-to-agent
+messages, default Ask me). `SessionServer` enforces it before anything is sent, relayed or
+started: `agent_send`, `agent_steer`, `agent_interrupt`, `agent_spawn` and `agent_read` of another
+thread wait for the user (`PeerApprovalDialog`), go through (Always allow) or are refused with no
+dialog (Never, and an automation run under Ask, which cannot be asked). The extension only asks:
+it holds no authority, and no message on the socket answers a dialog. Only the app's buttons
+answer, by claiming the server's token (`resolveAgentApproval`), so a call is done at most once and
+never after it lapsed (the agent's Stop, its connection closing, Never, or 120 s: Deny). "Allow for
+this thread" lasts while that agent's pi session runs, is never written to disk, and a changed
+setting forgets it. What the user sends a thread, `/` commands and `agent_list`/`agent_wait` are
+never gated ([docs/agent-coordination.md](agent-coordination.md) › Approving what agents do to
+other threads).
 
 **Agents never delete each other on their own.** `agent_delete` opens `PeerDeleteDialog`; only
 its destructive button approves, by claiming the server's token (`claimAgentDeletion`) before

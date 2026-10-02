@@ -10,13 +10,16 @@ every request from or to it with `not_a_thread` ([designs.md](designs.md) › De
 ordinary threads).
 
 Code: `Extensions/shepherd-panes.ts` (the tools and the recipient side), `SessionServer`
-(relaying, tokens, timeouts), `AgentPeers.swift` (list, send, spawn, and the deletion dialog's
-decisions), `PeerDeleteDialog` in `AppDialogs.swift`, and `ShepherdViewModel+Review.swift`.
+(relaying, tokens, timeouts, and the approval gate), `AgentApprovals.swift` (what the setting
+decides, "Allow for this thread"), `AgentPeers.swift` (list, send, spawn, the approval queue and
+the deletion dialog's decisions), `PeerApprovalDialog` and `PeerApproval.swift` (the approval
+dialog and its words), `PeerDeleteDialog` in `AppDialogs.swift`, and `ShepherdViewModel+Review.swift`.
 
 ## The tools
 
 - **`agent_list`**: every top-level thread, with its status and directory.
-- **`agent_send`**: a message prefixed `[from: <sender name>]`, with optional `delivery`:
+- **`agent_send`**: a message under a `[from: <sender name>, an agent, not the user. …]` header
+  ([What the other thread reads](#what-the-other-thread-reads)), with optional `delivery`:
   - `task` (default, including older callers): a user follow-up (`deliverAs: "followUp"`).
     Starts an idle agent or queues another turn while busy. Use it to request work.
   - `report`: hidden custom context (`shepherd-peer-report`, `display: false`,
@@ -52,6 +55,89 @@ decisions), `PeerDeleteDialog` in `AppDialogs.swift`, and `ShepherdViewModel+Rev
 that the target accepted or acted on it. A missing connection, oversized message or failed
 socket dispatch is a failure, not a delivery claim. Pi's extension `sendMessage` API is
 fire-and-forget: a report's dispatch is not an acknowledgment that pi stored or read it.
+
+## What the model is told
+
+Agents used to message, steer or start unrelated threads on their own. What reached the model
+invited it: the system prompt listed `agent_send` and `agent_spawn` like any other capability, a
+description said "use delivery report for results or FYI" and "ask it to agent_send … when it should
+report", and none of the eight `agent_*` descriptions said when *not* to use it. The tools now say
+so first (`Tests/Extensions/agent-tool-words.test.mjs` reads them, and the system prompt, from a
+real pi):
+
+- **Every tool that touches another thread leads with the rule:** "Only when the user explicitly
+  asks you to, in this conversation. Never on your own initiative: not to report status, ask for
+  help, hand off work, share findings or coordinate. If unsure, don't.", then one wrong use and one
+  right use, and that Shepherd may ask the user to approve the call and a refusal is final.
+  `agent_wait` and `agent_delete` lead with their own version; `agent_list` says it only reads.
+- **The system prompt** carries the two rules once (pi writes a repeated `promptGuidelines` line
+  once): use these tools only when asked, and a message that begins `[from: <name>]` is another
+  agent's, to be answered with `agent_send` only when it asks for a reply. The tools' prompt lines
+  carry the condition too ("Message another agent thread, only when the user explicitly asked you
+  to").
+- **`agent_list`'s answer ends with a reminder** not to message, steer, interrupt, read or start
+  the threads it lists unless asked.
+- **`agent_spawn`'s `prompt` no longer tells the new thread to report back** ("how to report
+  back" is gone), and `automation_create`'s `replyToCreator` says to set it only when the user
+  asked to hear the result in this thread.
+- **A watch agent (an automation run) gets `agent_send` and no other `agent_*` tool**: it
+  reports to its creator and nothing more. A native subagent loads no Shepherd extension at all,
+  and a design's agent gets no panes extension.
+
+### What the other thread reads
+
+A message from `agent_send` or `agent_steer` arrives as a user message, so its header says who
+wrote it: `[from: <sender>, an agent, not the user. Reply with agent_send only if this asks for a
+reply.] <text>` (`AgentMessageFraming`). The sender's name is one short line without brackets, since
+an agent's name comes from its first prompt. A `report` is hidden context under the same header.
+
+## Approving what agents do to other threads
+
+Settings ▸ Pi ▸ Agent-to-agent messages (`AgentMessagePolicy`) decides what an agent's call on
+another thread does. **The host enforces it** (`SessionServer.gateAgentAction`, before anything is
+sent, relayed or started): the extension only asks, so a modified one cannot get around it, and
+every message that reaches the gate has already passed the identity rule (a connection speaks only
+for the agent whose pi opened it).
+
+| Call | Gated |
+| --- | --- |
+| `agent_send`, `agent_steer`, `agent_interrupt` | yes: they act on another thread |
+| `agent_spawn` | yes: it starts a thread, with a prompt, in a folder the agent chose |
+| `agent_read` of another thread | yes: its conversation enters the caller's context, and a thread's text is the user's to share. Reading your own thread is not |
+| `agent_list`, `agent_wait` | no: `agent_list` names threads, and `agent_wait` returns only whether one is idle |
+| `agent_delete` | its own dialog asks every time, whatever the setting; Never refuses it first |
+
+- **Ask me** (the default, also what a bare `SessionServer` does): the call parks on the server. The
+  app opens `PeerApprovalDialog` for it ([dialogs-and-palette](design/dialogs-and-palette.md)),
+  and the caller waits. **Allow once** does that call. **Allow for this thread** does it and every
+  later gated call from the same agent, to any thread, until the app quits or that agent's pi
+  restarts (an allowance is tied to the pi's session and is never written to disk), and it
+  allows what the agent already has waiting. **Deny** answers the caller `not_approved`: "The user
+  did not approve. Don't message other agents unless the user asks you to." Nothing is done.
+- **Always allow**: gated calls go through as they always did; no dialog.
+- **Never**: every gated call, and `agent_delete`, is refused `not_allowed` at once, without a
+  dialog ("The user has turned agent-to-agent messages off. …"). Switching to Never also refuses
+  what is waiting. Any change of the setting forgets every "Allow for this thread".
+- **An automation run** (a watch agent) cannot be asked, so under Ask it is refused
+  (`not_allowed`: "An automation run can't ask the user … unless the user set Agent-to-agent
+  messages to Always allow. Use notify instead."). Only Always allow lets it message. That includes
+  a `replyToCreator` report: its `agent_send` to the creator needs Always allow, and otherwise the
+  watcher's notification is the only report.
+- **A call that waits ends** when the user answers, the caller cancels it (Stop cancels the tool
+  call, and the dialog closes), the caller's connection closes, the setting becomes Never, or two
+  minutes pass (`not_approved`: "The user did not approve in time. …"). A late answer finds nothing
+  waiting and does nothing. An answer claims the call's token on the server queue, so a call is done
+  at most once.
+- **Several may wait**, one dialog each, shown one at a time: up to 8 per agent and 24 in all,
+  then `busy`. A duplicate request id is `busy`.
+- Calls that could not be done anyway (an unknown or own thread, a folder that is not one, a
+  target with no running pi, empty text) are refused as before, without asking.
+- **Remote.** The dialog opens on the host's own window, as the Delete agent dialog does; nothing
+  on the wire changes. A thread on a host nobody is sitting at gets no answer, so its call times
+  out after two minutes with `not_approved`. A host that serves threads to another Mac should set
+  Always allow or Never in its own Settings ▸ Pi.
+- **What the user sends is never gated**: a message typed in a thread (from any client), `/`
+  commands, a review sent back, an automation's own prompt.
 
 ## How a live request travels
 
@@ -179,9 +265,12 @@ older-host row is the only place a client meets one.
 
 `automation_create(replyToCreator: true, …)` appends instructions to the saved watch prompt
 asking it to call `agent_send` with `delivery: "report"` and the creating agent's exact ID when it succeeds, fails, or
-is blocked, as well as `notify`. Automation agents already have `agent_send`; they cannot
-create further automations. The default remains notification-only unless the prompt asks
-otherwise.
+is blocked, as well as `notify`. Automation agents have `agent_send` and no other `agent_*` tool;
+they cannot create further automations. The default remains notification-only unless the prompt
+asks otherwise, and the model is told to set `replyToCreator` only when the user asked to hear the
+result in that thread. **The report is an agent message, so it needs Settings ▸ Pi ▸ Agent-to-agent
+messages set to Always allow**: an automation run cannot be asked, and under Ask me or Never the
+host refuses it (`not_allowed`), leaving the watcher's `notify` as the report.
 
 This is an instruction to the watch agent, not a guaranteed completion callback. Dispatch
 adds context without waking the creator; while busy it waits for pi's safe boundary, not a
@@ -195,7 +284,11 @@ these instructions too, so retain them if completion reporting is still wanted.
 ```bash
 PI_PACKAGE_DIR="$(npm root -g)/@earendil-works/pi-coding-agent" \
   node --test Tests/Extensions/agent-coordination.test.mjs   # the recipient side and the tools
+PI_PACKAGE_DIR="$(npm root -g)/@earendil-works/pi-coding-agent" \
+  node --test Tests/Extensions/agent-tool-words.test.mjs     # what the model is told (a real pi's request)
 swift test --filter 'ExtensionMessageTests|ExtensionReplyTests|ExtensionSocketTests' # wire shapes and peer routing
 swift test --filter AgentCoordinationTests                   # server relaying and tokens
 swift test --filter 'AgentPeerDeletionTests|ReviewFlowTests' # the dialog and review_diff
+swift test --filter 'AgentApprovalRulesTests|AgentApprovalTests'  # the gate: every setting, every gated call, every way a wait ends
+swift test --filter 'PeerApprovalPresentationTests|PeerApprovalFlowTests' # the dialog's words, and its buttons pressed (ControlPress)
 ```

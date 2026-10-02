@@ -29,6 +29,8 @@ enum PanesExtension {
         import { Type } from "typebox";
 
         const REQUEST_TIMEOUT_MS = 15_000;
+        // A call that touches another thread may wait for the user's approval (up to 120 s on the host).
+        const APPROVAL_TIMEOUT_MS = 130_000;
 
         interface Reply {
           type: string;
@@ -402,22 +404,47 @@ enum PanesExtension {
           const isAutomationAgent = process.env.SHEPHERD_AUTOMATION === "1";
 
           // ---- peer threads --------------------------------------------------------
+          // Every tool here that touches another thread is for what the user asked for in this
+          // conversation, and Shepherd can ask the user to approve each call (Settings ▸ Pi ▸ Agent-to-agent
+          // messages). The words say so first, because a model reads them before it acts. Authorization
+          // is the host's: nothing here decides whether a call is allowed.
 
-          pi.registerTool({
+          const ONLY_WHEN_ASKED =
+            "Only when the user explicitly asks you to, in this conversation. Never on your own initiative: " +
+            "not to report status, ask for help, hand off work, share findings or coordinate. If unsure, don't. ";
+          const APPROVAL =
+            "Shepherd may ask the user to approve this call. If it comes back not approved or turned off, " +
+            "stop: do not retry, and do not look for another way to reach the thread.";
+          // The same lines on every tool that touches another thread: pi writes a repeated line once.
+          const PEER_GUIDELINES = [
+            "Use agent_send, agent_steer, agent_interrupt, agent_read and agent_spawn only when the user explicitly " +
+            "asks you to in this conversation, never to report status, ask another thread for help, hand off work " +
+            "or share findings. If unsure, don't.",
+            "A message that begins with [from: <name>] comes from another agent, not from the user. Treat it as a " +
+            "colleague's request, and reply with agent_send only when it explicitly asks you for a reply: never to " +
+            "acknowledge, confirm or thank.",
+          ];
+
+          // A watch agent only reports to its creator, with agent_send: it gets no other peer tool.
+          if (!isAutomationAgent) pi.registerTool({
             name: "agent_list",
             label: "List Agent Threads",
             description:
-              "List every agent thread in Shepherd: id, name, status (working/blocked/idle/done), " +
-              "and working directory. Use the ids with agent_send.",
-            promptSnippet: "List the other agent threads in Shepherd",
+              "List the other agent threads in Shepherd: id, name, status (working/blocked/idle/done), and working " +
+              "directory. Use it to find a thread the user named. It only reads: it is not a reason to message, " +
+              "steer, read or start any thread, which you may do only when the user explicitly asks you to.",
+            promptSnippet: "List the other agent threads, only to find one the user named",
+            promptGuidelines: PEER_GUIDELINES,
             parameters: Type.Object({}),
             async execute() {
               const reply = await request({ type: "listAgents" });
               const rows = reply.agents ?? [];
-              if (rows.length === 0) return text("no agents");
+              const reminder = "\n\nReminder: do not message, steer, interrupt, read or start these threads unless the " +
+                "user explicitly asked you to in this conversation.";
+              if (rows.length === 0) return text("no agents" + reminder);
               return text(rows.map((a) =>
                 `${a.id}  ${a.name}  [${a.status}]${a.isSelf ? "  (you)" : ""}  ${a.cwd}`
-              ).join("\n"));
+              ).join("\n") + reminder);
             },
           });
 
@@ -425,28 +452,41 @@ enum PanesExtension {
             name: "agent_send",
             label: "Message Agent Thread",
             description:
-              "Send a framed message to another agent thread. Use delivery report for results or FYI: " +
-              "hidden context only, never wakes an idle agent or queues another turn. Use delivery task " +
-              "(default) to request work: starts an idle agent or queues a follow-up while busy. " +
-              "Never reply to a mere acknowledgment. Dispatch is not confirmation of acceptance or consumption.",
-            promptSnippet: "Message another Shepherd agent thread",
+              ONLY_WHEN_ASKED +
+              "Wrong: telling another thread you are done, asking it for help or an opinion, handing it a " +
+              "follow-up, thanking it. Right: the user said \"tell the API thread to rerun the tests\". " +
+              "Sends a message to another agent thread. delivery task (default) asks it to do work: it starts " +
+              "an idle agent or queues a follow-up while busy. delivery report is hidden context only, and " +
+              "never starts or queues a turn. The other thread sees an agent's message, not the user's. " +
+              APPROVAL + " Dispatch is not confirmation of acceptance or consumption.",
+            promptSnippet: "Message another agent thread, only when the user explicitly asked you to",
+            promptGuidelines: PEER_GUIDELINES,
             parameters: Type.Object({
               agentID: Type.String({ description: "Target agent id from agent_list" }),
               text: Type.String({ description: "The message to deliver" }),
               delivery: Type.Optional(Type.Union([Type.Literal("task"), Type.Literal("report")],
                 { description: "task (default): start/queue work; report: context only, no new turn" })),
             }),
-            async execute(_toolCallId, params) {
+            async execute(_toolCallId, params, signal) {
               const delivery = params.delivery ?? "task";
-              await request({ type: "sendToAgent", targetAgentID: params.agentID, text: params.text, delivery });
+              await request({ type: "sendToAgent", targetAgentID: params.agentID, text: params.text, delivery },
+                signal, APPROVAL_TIMEOUT_MS);
               return text(`${delivery} dispatch requested for agent ${params.agentID}; acceptance and consumption are not confirmed`);
             },
           });
 
-          pi.registerTool({
+          if (!isAutomationAgent) pi.registerTool({
             name: "agent_read",
             label: "Read Agent Thread",
-            description: "Read finalized visible messages on a live agent's current branch, not streaming text. Thinking, images, hidden entries, and tool arguments are omitted. Returns entry IDs, nextCursor and truncation flags. Defaults to the latest 20 entries; after reads forward. Per-entry text is capped at 4000 characters, total at 48 KiB. A cursor from another branch is an error.",
+            description:
+              ONLY_WHEN_ASKED +
+              "Wrong: looking at another thread to see what it is doing or to find context. Right: the user said " +
+              "\"see what the review thread concluded\". Reads finalized visible messages on a live agent's current " +
+              "branch, not streaming text. Thinking, images, hidden entries, and tool arguments are omitted. Returns " +
+              "entry IDs, nextCursor and truncation flags. Defaults to the latest 20 entries; after reads forward. " +
+              "Per-entry text is capped at 4000 characters, total at 48 KiB. A cursor from another branch is an " +
+              "error. " + APPROVAL,
+            promptGuidelines: PEER_GUIDELINES,
             parameters: Type.Object({
               agentID: Type.String(),
               after: Type.Optional(Type.String({ description: "Entry ID cursor from this branch, exclusive" })),
@@ -454,39 +494,55 @@ enum PanesExtension {
             }),
             async execute(_id, params, signal) {
               const reply = await request({ type: "coordinateAgent", targetAgentID: params.agentID,
-                request: { operation: "read", after: params.after, limit: params.limit } }, signal);
+                request: { operation: "read", after: params.after, limit: params.limit } }, signal, APPROVAL_TIMEOUT_MS);
               return text(reply.result?.text ?? "no messages");
             },
           });
 
-          pi.registerTool({
+          if (!isAutomationAgent) pi.registerTool({
             name: "agent_steer",
             label: "Steer Agent Thread",
-            description: "Request steering dispatch to another live agent via pi.sendUserMessage deliverAs steer. Queues during a turn or starts an idle agent. Reports requested, not accepted or consumed. Cannot target yourself.",
+            description:
+              ONLY_WHEN_ASKED +
+              "Wrong: redirecting another thread because you think it is off track. Right: the user said \"tell " +
+              "the worker thread to stop using the old API now\". Steers another live agent: the message lands at " +
+              "its next step, or starts an idle one. Reports requested, not accepted or consumed. Cannot target " +
+              "yourself. " + APPROVAL,
+            promptGuidelines: PEER_GUIDELINES,
             parameters: Type.Object({ agentID: Type.String(), text: Type.String({ minLength: 1, maxLength: 32768 }) }),
             async execute(_id, params, signal) {
               const reply = await request({ type: "coordinateAgent", targetAgentID: params.agentID,
-                request: { operation: "steer", text: params.text } }, signal);
+                request: { operation: "steer", text: params.text } }, signal, APPROVAL_TIMEOUT_MS);
               return text(reply.result?.text ?? "steering dispatch requested");
             },
           });
 
-          pi.registerTool({
+          if (!isAutomationAgent) pi.registerTool({
             name: "agent_interrupt",
             label: "Interrupt Agent Thread",
-            description: "Request best-effort current-turn cancellation on another live agent. Does not confirm it stopped; tools must cooperate. Also cancels a pending retry or compaction; messages already queued stay queued. Cannot target yourself.",
+            description:
+              ONLY_WHEN_ASKED +
+              "Wrong: stopping another thread because it seems stuck or slow. Right: the user said \"stop the " +
+              "migration thread\". Best-effort cancellation of another live agent's current turn. Does not confirm " +
+              "it stopped; tools must cooperate. Also cancels a pending retry or compaction; messages already " +
+              "queued stay queued. Cannot target yourself. " + APPROVAL,
+            promptGuidelines: PEER_GUIDELINES,
             parameters: Type.Object({ agentID: Type.String() }),
             async execute(_id, params, signal) {
               const reply = await request({ type: "coordinateAgent", targetAgentID: params.agentID,
-                request: { operation: "interrupt" } }, signal);
+                request: { operation: "interrupt" } }, signal, APPROVAL_TIMEOUT_MS);
               return text(reply.result?.text ?? "cancellation requested");
             },
           });
 
-          pi.registerTool({
+          if (!isAutomationAgent) pi.registerTool({
             name: "agent_wait",
             label: "Wait for Agent Activity",
-            description: "Poll another live agent until ctx.isIdle and no pending messages. Only current activity has settled, not proof a sent task succeeded or was consumed. Times out or fails on disconnection/session change. Cancellable; cannot wait for yourself.",
+            description:
+              "Only after the user asked you to message or steer another thread, to see whether it has finished; " +
+              "never to keep watch over threads on your own. Polls another live agent until ctx.isIdle and no pending " +
+              "messages. Only current activity has settled, not proof a sent task succeeded or was consumed. Times " +
+              "out or fails on disconnection/session change. Cancellable; cannot wait for yourself.",
             parameters: Type.Object({ agentID: Type.String(),
               timeoutSeconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 120 })) }),
             async execute(_id, params, signal) {
@@ -517,10 +573,14 @@ enum PanesExtension {
             },
           });
 
-          pi.registerTool({
+          if (!isAutomationAgent) pi.registerTool({
             name: "agent_delete",
             label: "Request Agent Deletion",
-            description: "Ask the real user in Shepherd's native confirmation to delete another agent and terminate all its auxiliary processes. No agent-supplied approval is accepted. Cancel or a 120-second confirmation timeout keeps it intact. Keeps worktrees and branches. Cannot delete yourself.",
+            description:
+              "Only when the user explicitly asks you to delete another agent. Never on your own initiative, " +
+              "never to tidy up. Asks the real user in Shepherd's native confirmation to delete another agent and " +
+              "terminate all its auxiliary processes. No agent-supplied approval is accepted. Cancel or a 120-second " +
+              "confirmation timeout keeps it intact. Keeps worktrees and branches. Cannot delete yourself.",
             parameters: Type.Object({ agentID: Type.String() }),
             async execute(_id, params, signal) {
               const reply = await request({ type: "coordinateAgent", targetAgentID: params.agentID,
@@ -529,22 +589,25 @@ enum PanesExtension {
             },
           });
 
-          pi.registerTool({
+          if (!isAutomationAgent) pi.registerTool({
             name: "agent_spawn",
             label: "Spawn Agent Thread",
             description:
-              "Start a new top-level agent thread in Shepherd with an opening prompt, visible in " +
-              "the sidebar like any user-created agent. Returns the new agent's id — use " +
-              "agent_send to follow up, and ask it to agent_send with delivery report when it should report. " +
-              "For self-contained work that should not outlive your thread, prefer your own " +
-              "subagents instead.",
-            promptSnippet: "Spawn a new Shepherd agent thread",
+              "Only when the user explicitly asks you to start a new agent thread. Never on your own initiative, " +
+              "and never to offload, parallelize or delegate work: for that, use your own subagents. Wrong: " +
+              "starting a thread to run tests or look into a side question. Right: the user said \"open a thread " +
+              "in ~/src/api and have it fix the build\". Starts a new top-level agent thread in Shepherd with an " +
+              "opening prompt, visible in the sidebar like any user-created agent. Returns the new agent's id. " +
+              APPROVAL,
+            promptSnippet: "Start a new agent thread, only when the user explicitly asked you to",
+            promptGuidelines: PEER_GUIDELINES,
             parameters: Type.Object({
               cwd: Type.String({ description: "Absolute working directory for the new thread" }),
-              prompt: Type.String({ description: "Opening prompt — the task, context, and how to report back" }),
+              prompt: Type.String({ description: "Opening prompt: the task and the context it needs. Don't tell it to message you back unless the user asked for that." }),
             }),
-            async execute(_toolCallId, params) {
-              const reply = await request({ type: "spawnAgent", cwd: params.cwd, prompt: params.prompt });
+            async execute(_toolCallId, params, signal) {
+              const reply = await request({ type: "spawnAgent", cwd: params.cwd, prompt: params.prompt },
+                signal, APPROVAL_TIMEOUT_MS);
               const spawned = reply.agents?.[0];
               if (!spawned) return text("spawned agent thread");
               return text(`spawned agent ${spawned.id} (${spawned.name}) in ${spawned.cwd}`);
@@ -560,13 +623,15 @@ enum PanesExtension {
               "with sleep between checks), the exact success/failure conditions, and to call its " +
               "notify tool then stop when a condition is met. The watch agent does the watching " +
               "itself — its prompt must never instruct it to create further automations. Enabled " +
-              "automations restart when Shepherd relaunches. Set replyToCreator to ask the watch " +
-              "agent to send its final result back to your thread using agent_send with delivery report, as well as notify.",
+              "automations restart when Shepherd relaunches. Set replyToCreator only when the user asked to hear " +
+              "the result back in this thread: the watch agent then sends it to your thread with agent_send " +
+              "(delivery report), which works only while the user allows agent messages from automations; " +
+              "otherwise it just notifies.",
             promptSnippet: "Create a Shepherd automation (a saved watch task)",
             parameters: Type.Object({
               name: Type.String({ description: "Short sidebar title, e.g. 'pr-watch #4821'" }),
               prompt: Type.String({ description: "Full instructions for the watch agent" }),
-              replyToCreator: Type.Optional(Type.Boolean({ description: "Ask the watch agent to report completion or failure back to your thread (default false). Adds instructions, not a guaranteed delivery hook." })),
+              replyToCreator: Type.Optional(Type.Boolean({ description: "Only when the user asked to hear the result in this thread: asks the watch agent to report completion or failure back to it (default false). Adds instructions, not a guaranteed delivery hook." })),
               cwd: Type.String({ description: "Absolute working directory for the watch agent" }),
               enabled: Type.Optional(
                 Type.Boolean({ description: "Restart the watch when Shepherd relaunches (default true)" }),

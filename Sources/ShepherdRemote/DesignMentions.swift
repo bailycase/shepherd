@@ -73,6 +73,72 @@ public struct DesignMentionItem: Identifiable, Hashable, Sendable {
     }
 }
 
+/// Where the @ picker's read of this Mac's designs stands, so it can say what it is doing before
+/// there are rows to list (docs/design/design-tool-references.md › The @ picker): reading, read,
+/// or failed. Reading is asked once per opening, and an answer belongs to the opening that asked:
+/// one that comes after a newer opening began is dropped, so a slow first read never overwrites
+/// the second's. A catalog already read keeps its rows through a later read and through its failure
+/// (a Retry nobody needs is no failure); only a picker with no catalog says "Loading…" or "Couldn't".
+public struct DesignMentionLoad: Equatable, Sendable {
+    public enum Phase: Equatable, Sendable {
+        /// Nothing asked yet.
+        case idle
+        case loading
+        case loaded
+        case failed(reason: String)
+    }
+
+    /// What the picker draws.
+    public enum Stage: Equatable, Sendable {
+        /// The rows of the catalog read last (which may be none: "No designs yet").
+        case rows
+        case loading
+        case failed(reason: String)
+    }
+
+    public private(set) var phase: Phase = .idle
+    /// A catalog has been read: its rows show, whatever a later read is doing.
+    public private(set) var hasCatalog = false
+    private var request = 0
+
+    public init() {}
+
+    /// What the picker draws now: the rows once any were read; before that, the read under way
+    /// (an idle picker is about to ask) or why it failed.
+    public var stage: Stage {
+        if hasCatalog { return .rows }
+        if case .failed(let reason) = phase { return .failed(reason: reason) }
+        return .loading
+    }
+
+    /// A read starts; answer it with the returned number.
+    @discardableResult
+    public mutating func begin() -> Int {
+        request += 1
+        phase = .loading
+        return request
+    }
+
+    /// The read `request` came back with a catalog. False, and nothing changes, when a newer
+    /// read began since.
+    @discardableResult
+    public mutating func finish(_ request: Int) -> Bool {
+        guard request == self.request else { return false }
+        phase = .loaded
+        hasCatalog = true
+        return true
+    }
+
+    /// The read `request` failed (or gave up). A catalog read before keeps its rows. False, and
+    /// nothing changes, when a newer read began since.
+    @discardableResult
+    public mutating func fail(_ request: Int, reason: String) -> Bool {
+        guard request == self.request else { return false }
+        phase = hasCatalog ? .loaded : .failed(reason: reason)
+        return true
+    }
+}
+
 /// What the @ picker offers from this Mac: its designs (most recently active first), each
 /// design's boards in canvas order, and each board's elements. Derived off the main thread and
 /// off the server's queue (`SessionServer.designMentionCatalog`); the picker reads it and

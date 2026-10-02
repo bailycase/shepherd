@@ -160,7 +160,13 @@ It also starts the engine through the real launcher in a scratch Shepherd home, 
 that `NODE_OPTIONS` back (`restore-env.sh`).
 It also runs a scratch copy signed with the hardened runtime (`scripts/sign-engine.sh`), so the
 engine's entitlements are checked too. It never reaches
-a model: the home's one provider points at a closed port and no prompt is sent.
+a model: the home's one provider points at a closed port and no prompt is sent. The same engine
+also runs when the pin changes through the real `SessionServer` and the thread's projection
+(`EngineThreadTests`, same switch): a scripted provider on the loopback
+(`Tests/Extensions/engine-provider.mjs`) drives a turn, a tool call, a reasoning block, Stop with a
+queued message, an extension's question, a command's notice, a prompt template, a skill and
+Compact, so what the stub pi models is checked against the real thing. Run both, and the
+extension tests, on every bump (docs/pi-engine.md › Bumping the pin).
 
 **Long lists** (docs/design/performance.md › Performance) are measured, not guessed:
 
@@ -173,6 +179,9 @@ a model: the home's one provider points at a closed port and no prompt is sent.
   Counts hold on a slow or busy runner; timing budgets do not, so don't add those. Two thread
   budgets differ on macOS 26 (CI) and in Xcode 26 builds whatever the speed, so there they run
   as known issues.
+- Goal clock budgets assert that local card/header ticks redraw only their timeline content.
+  Five accounting snapshots must redraw no composer bodies/chips, queue bodies/rows or thread
+  bodies/row builders. Shared docks read cached goal presence/identity, not the full goal.
 - `DesignPerformanceTests` pins the design canvas the same way over a 172-board canvas: at most
   six web views open (five live, one rasterizing), panning recycles them, and one board changing
   redraws one frame (`design.board`) with one snapshot; a Tweak drag redraws no frame and its
@@ -191,6 +200,22 @@ JSON encodes a snapshot makes (`RPCThreadState.bytesHashedByLastCommit`,
 --filter DataPathBenchmarks` prints a history's decode, projection and release, a delta's cost
 beside many tool results, snapshot round trips, a status report's CPU, the server queue's
 latency while a long history reloads, and a relaunch of agents with long histories.
+
+**Goal safety regressions** use `GoalServerTests` for actual SessionServer widget/status/
+notification/queue/Stop/Steer boundaries, and `GoalControlsTests` for offscreen accessibility
+presses, condition editing, confirmation and stale controls. `GoalExperimentTests` and the
+Experiments ControlPress scenario cover default off, live on/off, late widget rejection and
+preserved Paused goals without process restarts, held tools/ordinary queues, rejected hidden-command
+queue edits and fenced slash text remaining ordinary content. `GoalPolicyBackpressureTests` fills stdin,
+then verifies a retained disable barrier before the final On policy with one write-drain retry and no
+ordinary-record loss or abort. `goal-runtime.test.mjs` runs the pinned pi RPC
+process against scratch homes and loopback fake providers: compaction, real truncated reads,
+auto-retry 529 recovery, uncapped accounting/legacy caps, ordinary work after Pause/disable,
+live experiment/Checking cancellation, busy Set/Edit/Resume cancellation, always-not-met 25 checks,
+queue yield/delete/steer recipes and manufactured-proof rejection. No external model calls or
+user credentials are needed. The runtime fixture preserves display-only details and feeds real
+RPC/native projection in previews. Device-level iOS interaction/notification delivery is a
+separate check, not a consequence of passing Mac AX tests.
 
 **Extension tests** (`Tests/Extensions/*.test.mjs`, Node's test runner) need `PI_PACKAGE_DIR`
 pointing at an installed pi package (the harnesses import pi's modular `dist/index.js` and its
@@ -322,6 +347,14 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
   bound to its thread speaks for the agent it was launched for; each message's `speaksFor` and `replyID`
   against its wire form (`ExtensionMessageTests`). Check the check has teeth by making it allow
   everything: these tests must fail.
+- **Agent-to-agent approvals:** `AgentApprovalTests` (the server, over the real socket) for each
+  setting (Ask parks, Always allow goes through, Never refuses with no dialog), each gated call
+  (send, spawn, read, steer, interrupt), every way a wait ends (allow once, allow for this thread,
+  deny, timeout, cancel, disconnect, Never) and that only an allow does the call, once; "Allow for
+  this thread" forgotten when the pi restarts or the setting changes; an automation run under Ask
+  refused; nothing a socket message sends answers a dialog (`ExtensionIdentityTests` also counts
+  the dialogs a process claiming another agent opened: none). `PeerApprovalFlowTests` presses each
+  button of the dialog and reads what reached the asking agent and the target.
 - **Changes:** every scope on a scratch repository, the proof that reading changes leaves the
   index, HEAD, refs, the stash, `.git` and every file alone, and Undo, Redo and the refusal on a
   turn the stub pi made.
@@ -330,7 +363,7 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
   review leaves, and split terminal layouts flattened into tabs (saved layouts with a split tab
   become one tab per terminal, each keeping its session, folder and title; layouts already made of
   single-terminal tabs are not rewritten; inspector tabs and layouts with no thread are untouched).
-- **Extensions:** embedded extensions byte-identical to `Extensions/*` (all twenty-one files, and
+- **Extensions:** embedded extensions byte-identical to `Extensions/*` (all twenty-two files, and
   the design skill's two files).
 - **Context budget** (docs/context-budget.md): what a thread's first request carries, measured on
   a real pi (`context-budget.test.mjs`: the guard against `scripts/context-budget.json`, and the

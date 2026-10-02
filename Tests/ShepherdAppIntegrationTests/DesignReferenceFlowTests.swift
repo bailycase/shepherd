@@ -57,8 +57,10 @@ struct DesignReferenceFlowTests {
         let drops: URL
     }
 
+    private func workspace() async throws -> Workspace { try await Self.workspace() }
+
     /// The Design tool on, a live thread (stub pi), a design's own agent, and Hero drawn in acme-web.
-    private func workspace() async throws -> Workspace {
+    private static func workspace() async throws -> Workspace {
         let app = try AppHarness()
         app.settings.designToolEnabled = true
         let space = Fixture.space(path: app.dir.path)
@@ -82,6 +84,10 @@ struct DesignReferenceFlowTests {
     }
 
     private func reference(_ w: Workspace, element: DesignElementID? = nil) throws -> DesignReference {
+        try Self.reference(w, element: element)
+    }
+
+    private static func reference(_ w: Workspace, element: DesignElementID? = nil) throws -> DesignReference {
         try #require(w.vm.designReference(w.design.id, board: try DesignPath.validate("Hero.dc.html"), element: element))
     }
 
@@ -295,7 +301,9 @@ struct DesignReferenceFlowTests {
     // MARK: From the canvas (RefImplementSheet, RefImplementBoard, RefSentStay, RefCopied)
 
     /// The pay button as the canvas picks it.
-    private func buttonPick() throws -> DesignElementPick {
+    private func buttonPick() throws -> DesignElementPick { try Self.buttonPick() }
+
+    private static func buttonPick() throws -> DesignElementPick {
         DesignElementPick(board: try DesignPath.validate("Hero.dc.html"), id: Self.button, rect: CGRect(x: 0, y: 44, width: 120, height: 40),
                           kind: .shape, label: "Pay now", tag: "button · Pay now")
     }
@@ -330,6 +338,218 @@ struct DesignReferenceFlowTests {
         #expect(DesignReferenceFence.parse(prompt)?.text == "Build the pay button\n\n1 design reference attached.")
         #expect(w.vm.selectedAgentID == id && w.vm.referenceToast == nil, "landed in the thread")
         #expect(w.vm.settings.implementOpensThread)
+    }
+
+    // MARK: Sends to a thread that isn't on screen
+
+    /// Holds a send's reply, after the host has taken the message, until the test lets it go: the
+    /// moment a thread's layout is hidden or shown again while a message is in flight.
+    @MainActor private final class ReplyGate {
+        private(set) var held = false
+        private var waiter: CheckedContinuation<Void, Never>?
+
+        func hold() async { await withCheckedContinuation { waiter = $0; held = true } }
+
+        func release() {
+            held = false
+            waiter?.resume()
+            waiter = nil
+        }
+    }
+
+    /// Opens Implement in a thread… for the pay button as the canvas does, the piece pinned, and
+    /// fills in the sheet.
+    private static func implementSheet(_ w: Workspace, message: String = "", opens: Bool = true) async throws -> ImplementSheetModel {
+        let screen = w.vm.designScreen(w.design.id)
+        await screen.refresh()
+        screen.setSelection([.init(board: try DesignPath.validate("Hero.dc.html"), element: try buttonPick())])
+        screen.implementSelection(designName: w.design.name)
+        let model = try #require(w.vm.implementSheet)
+        try await eventuallyOnMain("the piece to be pinned") { model.prepared != nil }
+        model.message = message
+        model.opensThread = opens
+        return model
+    }
+
+    /// How many messages carrying the design reference the host holds for the thread: waiting in
+    /// its queue, or already in the conversation.
+    private static func referenceMessages(_ w: Workspace, in id: AgentID) async throws -> Int {
+        guard case .snapshot(let snapshot) = try await w.app.server.nativeThread(agentID: id, request: .snapshot()) else {
+            Issue.record("no snapshot"); return -1
+        }
+        let queued = snapshot.queue?.items.filter { $0.text.contains("design reference attached.") }.count ?? 0
+        let said = snapshot.messages.filter { $0.role == "user" && $0.designReferences?.isEmpty == false }.count
+        return queued + said
+    }
+
+    /// The user was in the thread and went to the canvas: its layout stays mounted but hidden, and
+    /// its store keeps what it showed (still `ready`) while it polls no more (`suspend`).
+    private static func shownThenHidden(_ w: Workspace, running: Bool) async throws -> NativeThreadStore {
+        let id = w.thread.agent.id, server = w.app.server
+        let store = w.vm.threadStores.store(for: id)
+        let polling = Task { await store.run { try await server.nativeThread(agentID: id, request: $0) } }
+        try await eventuallyOnMain("the thread to connect") { store.ready }
+        if running {
+            // "slow" is a turn that pauses until the test says so: the thread is working.
+            store.draft = "slow"
+            await store.send()
+            try await eventuallyOnMain("pi to be working") { store.running }
+        }
+        store.suspend()
+        polling.cancel()
+        await polling.value
+        #expect(store.ready && !store.isLive, "kept what it showed, polling no more")
+        return store
+    }
+
+    /// The report: Implement in a thread… into a thread that was shown and then hidden (the
+    /// everyday case: it is the thread the user was working in before opening the canvas) failed
+    /// with "The thread didn't take the message" and sent nothing. While pi works the host queues
+    /// it, like any follow-up.
+    @Test(arguments: [true, false])
+    func implementingIntoARunningThreadThatWasShownThenHiddenQueuesTheSend(opens: Bool) async throws {
+        let w = try await workspace()
+        defer { w.app.stop() }
+        let id = w.thread.agent.id
+        _ = try await Self.shownThenHidden(w, running: true)
+        let model = try await Self.implementSheet(w, opens: opens)
+
+        w.vm.sendImplementSheet(model)
+        try await eventuallyOnMain("the send to finish", timeout: .seconds(60)) { w.vm.implementSheet == nil || model.error != nil }
+
+        #expect(model.error == nil, "the sheet reported: \(model.error ?? "")")
+        #expect(w.vm.implementSheet == nil)
+        let held = try await Self.referenceMessages(w, in: id)
+        #expect(held == 1, "the host holds the message once, not \(held) times")
+        #expect((w.vm.selectedAgentID == id) == opens)
+        #expect((w.vm.referenceToast != nil) == !opens)
+    }
+
+    @Test func implementingIntoAnIdleThreadThatWasShownThenHiddenSendsIt() async throws {
+        let w = try await workspace()
+        defer { w.app.stop() }
+        _ = try await Self.shownThenHidden(w, running: false)
+        let before = AppHarness.prompts(in: w.log).count
+
+        try await w.vm.sendDesignReferences([try reference(w, element: Self.button)], text: "Build the pay button", to: w.thread.agent.id)
+
+        try await eventuallyAsync("pi to get the message") { AppHarness.prompts(in: w.log).count > before }
+        let prompt = try #require(AppHarness.prompts(in: w.log).last)
+        #expect(DesignReferenceFence.parse(prompt)?.text == "Build the pay button\n\n1 design reference attached.")
+        #expect(AppHarness.prompts(in: w.log).count == before + 1, "once")
+    }
+
+    @Test func implementingIntoAThreadNobodyHasShownSendsItThroughTheHost() async throws {
+        let w = try await workspace()
+        defer { w.app.stop() }
+        let store = w.vm.threadStores.store(for: w.thread.agent.id)
+        #expect(!store.ready && !store.isLive)
+        let before = AppHarness.prompts(in: w.log).count
+
+        try await w.vm.sendDesignReferences([try reference(w)], text: "", to: w.thread.agent.id)
+
+        try await eventuallyAsync("pi to get the message") { AppHarness.prompts(in: w.log).count > before }
+        #expect(DesignReferenceFence.parse(try #require(AppHarness.prompts(in: w.log).last))?.text == "1 design reference attached.")
+        #expect(AppHarness.prompts(in: w.log).count == before + 1)
+    }
+
+    /// The host takes the message, and the thread's layout is hidden or shown again before its
+    /// answer arrives (the store's run ends, or restarts): the host's answer is what counts, so
+    /// the send is a success, once.
+    @Test(arguments: ["the layout is hidden", "the layout is shown again"])
+    func aSendTheHostTookIsASuccessWhateverTheLayoutDidMeanwhile(change: String) async throws {
+        let w = try await workspace()
+        defer { w.app.stop() }
+        let id = w.thread.agent.id, server = w.app.server
+        let store = w.vm.threadStores.store(for: id)
+        let gate = ReplyGate()
+        let polling = Task {
+            await store.run { request in
+                let result = try await server.nativeThread(agentID: id, request: request)
+                if case .send = request { await gate.hold() }
+                return result
+            }
+        }
+        var shownAgain: Task<Void, Never>?
+        defer { polling.cancel(); shownAgain?.cancel(); store.stop() }
+        try await eventuallyOnMain("the thread to connect") { store.ready }
+        let before = AppHarness.prompts(in: w.log).count
+
+        let piece = try reference(w)
+        let sending = Task { try await w.vm.sendDesignReferences([piece], text: "Build it", to: id) }
+        try await eventuallyOnMain("the host's answer to be held") { gate.held }
+        try await eventuallyAsync("pi to get the message") { AppHarness.prompts(in: w.log).count > before }
+        if change == "the layout is hidden" {
+            store.suspend()
+        } else {
+            shownAgain = Task { await store.run { try await server.nativeThread(agentID: id, request: $0) } }
+        }
+        gate.release()
+
+        do { try await sending.value } catch { Issue.record("a send the host took was reported as a failure: \(error)") }
+        #expect(store.notice == nil, "no stale warning for a message that went")
+        #expect(AppHarness.prompts(in: w.log).count == before + 1, "once")
+    }
+
+    /// The host refuses it: what failed, in the host's words, and nothing was sent.
+    @Test func aSendTheHostRefusesSaysWhyAndSendsNothing() async throws {
+        let w = try await workspace()
+        defer { w.app.stop() }
+        let id = w.thread.agent.id, server = w.app.server
+        let store = w.vm.threadStores.store(for: id)
+        let polling = Task {
+            await store.run { request in
+                if case .send = request { return .failure(code: "stale_session", message: "The thread moved to another session.") }
+                return try await server.nativeThread(agentID: id, request: request)
+            }
+        }
+        defer { polling.cancel(); store.stop() }
+        try await eventuallyOnMain("the thread to connect") { store.ready }
+        let before = AppHarness.prompts(in: w.log).count
+
+        do {
+            try await w.vm.sendDesignReferences([try reference(w)], text: "Build it", to: id)
+            Issue.record("a refused send succeeded")
+        } catch let failure as DesignReferenceFailure {
+            #expect(failure.message == "The thread moved to another session.")
+        }
+        #expect(AppHarness.prompts(in: w.log).count == before)
+    }
+
+    /// The sheet's own Send, pressed the way VoiceOver presses it (`ControlPress`; a process of its
+    /// own, as SwiftUI draws the accessibility tree only for one an assistive client is attached to),
+    /// for a running thread that was shown and hidden since: the message goes into the host's queue
+    /// and the sheet closes with no error.
+    @Test func theSheetsSendButtonQueuesTheMessageForARunningThreadThatWasShownThenHidden() async {
+        await #expect(processExitsWith: .success) {
+            await recordingErrors { try await Self.pressingSend() }
+        }
+    }
+
+    @MainActor
+    static func pressingSend() async throws {
+        AccessibilityNode.enable()
+        let w = try await workspace()
+        defer { w.app.stop() }
+        let id = w.thread.agent.id
+        _ = try await shownThenHidden(w, running: true)
+        let model = try await implementSheet(w, opens: false)
+        let window = OffscreenWindow(size: CGSize(width: 900, height: 760), dark: true, ImplementSheetView(vm: w.vm, model: model))
+        defer { window.close() }
+
+        let controls = window.controls()
+        let send = try #require(controls.first { $0.label == "Send" }, "Send is drawn once the piece is pinned: \(controls)")
+        #expect(send.isEnabled && ControlPress.undersized([send], minimum: .desktop).isEmpty, "enabled, with a desktop hit area: \(send)")
+        #expect(controls.contains { $0.label == "Cancel" })
+
+        try window.press("Send")
+        try await eventuallyOnMain("the send to finish", timeout: .seconds(60)) { w.vm.implementSheet == nil || model.error != nil }
+        #expect(model.error == nil, "the sheet reported: \(model.error ?? "")")
+        #expect(w.vm.implementSheet == nil, "the sheet closes")
+        let held = try await referenceMessages(w, in: id)
+        #expect(held == 1, "the host holds the message once, not \(held) times")
+        guard case .sent(let thread, _)? = w.vm.referenceToast?.kind else { Issue.record("no toast offering the thread"); return }
+        #expect(thread == id && w.vm.selectedAgentID != id, "the canvas stays, with a toast offering the thread")
     }
 
     /// Implement in a new thread: it starts in the project on a new worktree named for the piece,

@@ -31,6 +31,29 @@ extension ShepherdViewModel {
         return chips
     }
 
+    /// The New thread page's picker and chips (this Mac's designs, with no thread yet): the pieces
+    /// join the page's draft (`NewThreadState.attach`) instead of a thread's composer, and go with
+    /// the thread's opening message. The chips ask no thread for anything.
+    func makeNewThreadReferenceChips() -> DesignReferenceChips {
+        var io = referenceIO(AgentID(rawValue: "new-thread"))
+        let draft = newThread
+        io.attach = { [weak self] reference in
+            guard let self else { return }
+            try await draft.attach(reference: reference, vm: self)
+            // Its chip draws the piece's board once the board's picture is drawn.
+            self.wantMentionPictures(.design(reference.designID, name: ""))
+        }
+        io.sendLatest = { [weak self] reference in
+            guard let self else { return }
+            do {
+                try await draft.attach(reference: reference.unpinned, vm: self)
+            } catch {
+                self.remoteActionError = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+            }
+        }
+        return DesignReferenceChips(agentID: AgentID(rawValue: "new-thread"), io: io)
+    }
+
     private func referenceIO(_ agentID: AgentID) -> DesignReferenceChips.IO {
         let server = server
         return DesignReferenceChips.IO(
@@ -70,11 +93,13 @@ extension ShepherdViewModel {
         let live = Set(state.agents.map(\.id))
         referenceChips = referenceChips.filter { live.contains($0.key) }
         for chips in referenceChips.values { chips.designsChanged() }
+        newThread.referenceChips?.designsChanged()
     }
 
     /// A picture landed for a picker row or a composer chip.
     func referencePicturesLanded() {
         for chips in referenceChips.values { chips.picturesChanged() }
+        newThread.referenceChips?.picturesChanged()
     }
 
     /// A piece's picture before it is sent: its board as the canvas last drew it (cut to the

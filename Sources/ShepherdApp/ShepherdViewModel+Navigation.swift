@@ -65,10 +65,10 @@ extension ShepherdViewModel {
 
     // MARK: Sidebar lists
 
-    /// What Needs you, Pinned and Recents are derived from.
+    /// The activity groups' inputs, including remote hosts and completion generations.
     var sidebarSource: SidebarSource {
         SidebarSource(
-            local: state, failedTurns: failedTurns, cannotStart: cannotStart,
+            local: state, completions: sidebarCompletions.records, failedTurns: failedTurns, cannotStart: cannotStart,
             notSignedIn: Set(notSignedIn.keys), waiting: waitingForImport, statusSince: statusSince,
             openRuns: openAutomationRuns,
             hosts: remoteHosts.connections.map {
@@ -76,20 +76,22 @@ extension ShepherdViewModel {
             }, designs: designToolEnabled)
     }
 
-    /// Needs you, Pinned and Recents in order, derived again only when what they read changed.
+    /// Activity groups, derived again only when their inputs change.
     var sidebarLists: SidebarLists {
         let source = sidebarSource
         let pins = sidebarPins
-        if let cached = sidebarListsCache, cached.source == source, cached.pins == pins { return cached.lists }
-        let lists = SidebarDerivation.lists(source, pins: pins)
-        sidebarListsCache = (source, pins, lists)
+        let seen = sidebarSeenCompletions
+        if let cached = sidebarListsCache, cached.source == source, cached.pins == pins, cached.seen == seen { return cached.lists }
+        let lists = SidebarDerivation.lists(source, pins: pins, seen: seen)
+        sidebarListsCache = (source, pins, seen, lists)
         return lists
     }
 
     /// The lists as the sidebar draws them: the row on screen marked, and ⌘-digits while ⌘ is
     /// held.
     var presentedSidebarLists: SidebarLists {
-        sidebarLists.presented(selected: selectedSidebarRow, shortcuts: showAgentShortcutBadges)
+        sidebarLists.presented(selected: selectedSidebarRow, shortcuts: showAgentShortcutBadges,
+                               collapsed: collapsedActivitySections)
     }
 
     /// The row whose thread is on screen; none while a page is.
@@ -101,7 +103,7 @@ extension ShepherdViewModel {
         return selectedAgentID.map { .local($0) }
     }
 
-    /// This Mac's agents in the order the sidebar draws them (Needs you, Pinned, Recents): the
+    /// This Mac's agents in sidebar group order: the
     /// order their pi starts in, and the palette's.
     var localRecentsOrder: [AgentID] {
         sidebarLists.all.compactMap { row in
@@ -194,6 +196,7 @@ extension ShepherdViewModel {
         remoteInspectionRequest = UUID()
         remoteInspectingAgent = nil
         guard let agent = state.agents.first(where: { $0.id == id }) else { return }
+        willOpenSidebarThread(design(drawnBy: agent).map { .design($0.id) } ?? .local(id))
         selectedRemoteAgent = nil
         if destination != nil { destination = nil }
         selectionHistory.removeAll { $0 == id }
@@ -205,6 +208,7 @@ extension ShepherdViewModel {
         // A layout still waiting to mount mounts now, as the visible one, and stays mounted when
         // a page covers it next.
         if pendingMountTabIDs.contains(agent.tabID) { pendingMountTabIDs.remove(agent.tabID) }
+        openActivitySectionHoldingSelection()
         sidebarRevealRequest += 1
         checkouts?.refresh(id)
         focusedPaneID = restoredFocus(forTab: agent.tabID, fallback: agent.paneID)
@@ -242,6 +246,7 @@ extension ShepherdViewModel {
 
     /// A remote row shows that agent's thread, served by its host.
     func selectRemoteAgent(hostID: UUID, agentID: AgentID) {
+        willOpenSidebarThread(.remote(RemoteAgentRef(hostID: hostID, agentID: agentID)))
         remoteInspectionRequest = UUID()
         remoteInspectingAgent = nil
         if destination != nil { destination = nil }
@@ -253,6 +258,7 @@ extension ShepherdViewModel {
         } else {
             remoteFocusedPaneID = nil
         }
+        openActivitySectionHoldingSelection()
         sidebarRevealRequest += 1
     }
 
@@ -296,7 +302,7 @@ extension ShepherdViewModel {
         selectRemoteAgent(hostID: hostID, agentID: agentID)
     }
 
-    /// ⌘1–9: the first nine thread rows of Recents (a design takes no digit), or of the
+    /// ⌘1–9: the first nine visible eligible thread rows, or of the
     /// project tree's open projects.
     func selectAgentDigit(_ digit: Int) {
         let recents = sidebarShortcutRows
@@ -304,8 +310,7 @@ extension ShepherdViewModel {
         selectSidebarRow(recents[digit - 1].id)
     }
 
-    /// ⌘↑/↓: move through the sidebar's rows (Needs you, then Recents; or the open projects'
-    /// threads), wrapping at the ends.
+    /// ⌘↑/↓: walk visible activity rows or open projects' threads, wrapping at the ends.
     func selectAdjacentAgent(_ delta: Int) {
         let rows = sidebarWalkRows
         guard !rows.isEmpty else { return }

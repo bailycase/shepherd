@@ -49,7 +49,12 @@ it (the palette's New agent with options…, New space on <host>…, and "PR #24
   speed are absent. The full model id remains in the tooltip and VoiceOver label ("Model
   settings: <id>", with the level and Fast as its value). ModelSettingsSummary decides what the
   button says, for the thread's composer and the New thread page's alike.
-- Typing `/` opens commands. There is no commands button.
+- Typing `/` opens commands. There is no commands button. Typing `@` (at the start or after a
+  space, in a thread that takes design references) opens the design picker at once: "Loading
+  designs…" until this Mac's designs are read, then their rows, "No designs yet" or "Nothing
+  matches", and "Couldn't load designs." with Retry when the read takes too long. ↩ over it
+  chooses its highlighted row and never sends the message. Design tool › Design references ›
+  The @ picker has the rest.
 - After the spacer, the checkout menu sits in the composer instead of the Mac thread header.
   `NWComposerBranchLabel` is a 26pt ghost chip with a 13pt worktree or house glyph, the branch
   in mono 11.5 (`textSecondary`, as the model's name), and a nonzero changed-file count in mono
@@ -182,11 +187,18 @@ pi (an older Shepherd without `native.interrupt.v1`, a compaction in progress, a
 still on its way, or pi refusing the abort) Steer now is a plain steer, which is the only place a
 Steering row appears (Up next), and a steer pi would refuse (during a compaction) waits first in
 Up next instead; a message that begins with "/" never steers that way (pi runs a command only at
-the start of a message it starts), so it waits for the turn to end. ⇧↩ inserts a newline at the
-caret, replacing selected text and leaving the caret after it; this native editing behavior also
-applies to New thread, New design, subagent replies, queued-message editing and inline review
-comments. It never sends or saves. While pi is idle ↩ and ⌘↩ both send. Attachments ride along
-with a queued message.
+the start of a message it starts), so it waits for the turn to end. ⇧↩ and ⌥↩ insert a newline at
+the caret, replacing selected text and leaving the caret after it, and never send or save; the
+same holds in New thread, New design, subagent replies, queued-message editing, inline review
+comments and a design comment's reply. The key handler inserts the line itself
+(`NWReturnKey`, through the field editor's own `insertNewlineIgnoringFieldEditor:`, so the draft,
+the caret and undo follow): on macOS 27 a SwiftUI multi-line field's editor answers `insertNewline:`,
+the command ↩ and ⇧↩ both resolve to, by ending the edit with no line added, and only ⌥↩'s command
+adds one, so returning `.ignored` for ⇧↩ left the system nothing to insert. An input
+method that is composing (marked text) keeps ↩, and a ⇧ or ⌥ chord that also holds ⌘ or ⌃ is the
+system's. With a menu open ⇧↩ still adds the line, which closes the menu; ↩ chooses its row.
+`ComposerReturnKey` decides it, apart from the field. While pi is idle ↩ and ⌘↩ both send.
+Attachments ride along with a queued message.
 
 **Send menu** (`NWSendMenu`): right-clicking Send, or holding it for
 `AppLayout.sendHoldDelay` (500ms), while pi works with a draft, opens the choice at send time

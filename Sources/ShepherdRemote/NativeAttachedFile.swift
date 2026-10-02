@@ -69,3 +69,20 @@ public struct NativeAttachedReference: Identifiable, Hashable, Sendable {
         DesignReferenceRecord(reference)
     }
 }
+
+extension Array where Element == NativeAttachedReference {
+    /// Adds `reference` beside the others, once per piece (a later one, "Send vN" among them,
+    /// replaces it in place), at most `DesignReferenceRecord.maxPerMessage`. False, and nothing
+    /// added, when the list already holds that many other pieces. A thread's composer and the New
+    /// thread page keep their references by this rule.
+    @discardableResult
+    public mutating func attach(_ reference: NativeAttachedReference) -> Bool {
+        if let index = firstIndex(where: { $0.reference.isSamePiece(as: reference.reference) }) {
+            self[index] = reference
+            return true
+        }
+        guard count < DesignReferenceRecord.maxPerMessage else { return false }
+        append(reference)
+        return true
+    }
+}

@@ -35,6 +35,19 @@ struct SettingsPreviewTests {
         }
     }
 
+    @Test(arguments: [false, true])
+    func settingsAgentsGoalChecks(enabled: Bool) async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        workspace.settings.goalCrossProviderEvaluation = enabled
+        try await Preview.render("settings-agents-goal-checks-\(enabled ? "on" : "off")", size: CGSize(width: 1020, height: 950)) {
+            AgentSettings(pi: workspace.server.pi, settings: workspace.settings)
+                .padding(AppLayout.settingsGutter)
+                .frame(width: 1020, height: 950, alignment: .topLeading)
+                .background(Color.nw.bgWindow)
+        }
+    }
+
     /// Pi with the Design tool on: Bundled extensions add the Design references row.
     @Test func settingsPiWithTheDesignTool() async throws {
         let workspace = try PreviewWorkspace()
@@ -331,6 +344,18 @@ struct SettingsPreviewTests {
                       file: .agents, on: .local)
         workspace.vm.settingsSection = .instructions
         try await Preview.render("settings-instructions-edited", size: CGSize(width: 1440, height: 900)) {
+            SettingsView(vm: workspace.vm)
+        }
+    }
+
+    @Test(arguments: [false, true])
+    func settingsGoalsExperiment(_ enabled: Bool) async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        workspace.vm.settings.goalsEnabled = enabled
+        workspace.vm.settingsSection = .experiments
+        try await Preview.renderMatrix(enabled ? "settings-experiments-goals-on" : "settings-experiments-goals-off",
+                                       size: CGSize(width: 1440, height: 900)) {
             SettingsView(vm: workspace.vm)
         }
     }
@@ -696,6 +721,54 @@ struct SettingsPreviewTests {
         try await Preview.render("sheet-peer-delete-worktree", size: CGSize(width: NWDialogMetrics.width, height: 400)) {
             PeerDeleteDialog(requester: "Coordinate the release", agent: "Flaky integration tests",
                              space: "billing-service", branch: "fix/flaky-integration-tests", delete: {}, cancel: {})
+        }
+    }
+
+    /// An agent's call on another thread, waiting for the user (Settings ▸ Pi ▸ Agent-to-agent
+    /// messages is Ask me): each kind of call, drawn from the presentation the app builds from the
+    /// server's prompt and the workspace's names, in both appearances and at text scale 1.3. The
+    /// asking agent and a worktree target are told apart as the delete dialog tells agents apart.
+    @Test func peerApprovalDialog() async throws {
+        let space = Space(name: "billing-service", path: "/Users/me/Developer/billing-service")
+        func thread(_ name: String, order: Int, branch: String? = nil) -> (agent: Agent, tab: ShepherdCore.Tab) {
+            let id = AgentID()
+            let pane = LeafPane(cwd: space.path, agentID: id)
+            let tab = ShepherdCore.Tab(spaceID: space.id, order: order, layout: .leaf(pane))
+            return (Agent(id: id, name: name, spaceID: space.id, tabID: tab.id, paneID: pane.id, worktreeBranch: branch), tab)
+        }
+        let lead = thread("Coordinate the release", order: 0)
+        let worker = thread("Flaky integration tests", order: 1)
+        let worktree = thread("Flaky integration tests", order: 2, branch: "fix/flaky-integration-tests")
+        let state = ShepherdState(spaces: [space], tabs: [lead.tab, worker.tab, worktree.tab], agents: [lead.agent, worker.agent, worktree.agent])
+        func dialog(_ action: AgentGatedAction, waiting: Int = 0) -> PeerApprovalDialog {
+            let prompt = AgentApprovalPrompt(requestID: "token", senderID: lead.agent.id, action: action)
+            return PeerApprovalDialog(presentation: PeerApprovalPresentation.make(prompt, in: state, waiting: waiting), answer: { _ in })
+        }
+        let long = (1...40).map { "Step \($0): rerun the integration suite for the invoice service with -count=20 and report the flaky ones." }
+            .joined(separator: "\n")
+        let size = CGSize(width: NWDialogMetrics.width, height: 640)
+        let ready: @MainActor () -> Bool = { true }
+
+        try await Preview.renderMatrix("sheet-peer-approval-message", size: size, ready: ready) {
+            dialog(.send(targetAgentID: worker.agent.id, text: "Rerun the flaky test with -count=20 and tell me which ones fail.", delivery: .task))
+        }
+        try await Preview.renderMatrix("sheet-peer-approval-message-long", size: CGSize(width: size.width, height: 760), ready: ready) {
+            dialog(.send(targetAgentID: worktree.agent.id, text: long, delivery: .task), waiting: 2)
+        }
+        try await Preview.render("sheet-peer-approval-report", size: size) {
+            dialog(.send(targetAgentID: worker.agent.id, text: "CI is green on main.", delivery: .report))
+        }
+        try await Preview.render("sheet-peer-approval-steer", size: size) {
+            dialog(.steer(targetAgentID: worker.agent.id, text: "Stop using the old API; use v2 from now on."))
+        }
+        try await Preview.render("sheet-peer-approval-interrupt", size: size) {
+            dialog(.interrupt(targetAgentID: worker.agent.id))
+        }
+        try await Preview.render("sheet-peer-approval-read", size: size) {
+            dialog(.read(targetAgentID: worktree.agent.id))
+        }
+        try await Preview.render("sheet-peer-approval-spawn", size: size) {
+            dialog(.spawn(cwd: "/Users/me/Developer/billing-service", prompt: "Fix the failing build on main and open a pull request."))
         }
     }
 

@@ -494,7 +494,8 @@ def fat(*slices):
 
 def make_engine(contents):
     """The pinned engine's layout under `contents`, as small stand-ins: an arm64 node that names
-    the pinned version, and each package.json at its pinned version."""
+    the pinned version, each package.json at its pinned version, and the files the bundle resolves
+    inside a module by name."""
     pin = release.pi_engine.load_pin()
     files = {release.pi_engine.NODE: macho(ARM64, f"node v{pin['node']['version']}\0".encode())}
     engine = release.pi_engine.ENGINE
@@ -504,6 +505,9 @@ def make_engine(contents):
         files[f"{engine}/{folder}package.json"] = json.dumps({"name": name, "version": version}).encode()
     for name in (release.pi_engine.ENTRY,) + release.pi_engine.LICENSES:
         files[f"{engine}/{name}"] = b"x"
+    for module, required in release.pi_engine.MODULE_REQUIRED.items():
+        for name in required:
+            files[f"{engine}/node_modules/{module}/{name}"] = b"x"
     for relative, data in files.items():
         path = os.path.join(contents, relative)
         os.makedirs(os.path.dirname(path), exist_ok=True)
