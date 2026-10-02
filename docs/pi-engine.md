@@ -127,9 +127,11 @@ built-in, is a provider pi has always shipped and stays; `/llama` still does not
 the thread's command menu leaves it out. `PiConfig.installedExtensions` (Settings ▸ Pi, a host's
 `hostSettings`) and the first copy from "your pi" ignore these entries. A launch that passes
 `--no-extensions` (drafts, native children) loads none of pi's built-ins either, whatever the
-settings say. `EngineSmokeTests.piBuiltInMCPIsOffInShepherdsHomeUnlessSwitchedOn` runs both
-sides against the real engine: a server in `<home>/mcp.json` is never started and `/mcp` isn't
-offered, and with `+builtin:mcp` the same file starts it.
+settings say. `Tests/Extensions/builtin-extensions.test.mjs` (CI's extension job, real pi in RPC
+mode) pins pi's side of the switch, so a pi that renames it or loads the built-ins anyway fails
+before a release, and `EngineSmokeTests.piBuiltInMCPIsOffInShepherdsHomeUnlessSwitchedOn` runs it
+against the shipped engine through Shepherd's launcher: a server in `<home>/mcp.json` is never
+started and `/mcp` isn't offered, and with `+builtin:mcp` the same file starts it.
 
 **RPC.** What the thread reads is unchanged (`EngineThreadTests` runs a turn, a tool call, a
 reasoning block, Stop with a queued message, an extension's question, a command's notice, a
