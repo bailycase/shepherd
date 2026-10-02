@@ -140,7 +140,7 @@ private struct SidebarItemView: View, Equatable {
                                        markAllSeen: section == .done ? { vm.markAllSidebarDoneSeen() } : nil)
             case .row(let row):
                 NWSidebarRow(row.title, leading: row.leading, selected: row.selected, dimmed: row.offline,
-                             accessory: accessory(row))
+                             accessory: accessory(row), hasGoal: row.hasGoal)
                     .help(row.help)
                     .sidebarTapRow { vm.selectSidebarRow(row.id) }
                     .accessibilityLabel(row.accessibilityLabel)

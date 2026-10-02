@@ -42,6 +42,9 @@ public enum NativeThreadRequest: Codable, Hashable, Sendable {
     /// raw `ServiceTier` the snapshot's `serviceTiers` lists ("standard", "fast"). Gated by
     /// `setServiceTier` in `supportedActions` and, remotely, `native.serviceTier.v1`.
     case setServiceTier(expectedSessionID: String, generation: String, operationID: UUID, tier: String)
+    /// Goal controls execute even during work or evaluation; fenced by the displayed goal revision.
+    case goal(expectedSessionID: String, generation: String, operationID: UUID, action: NativeGoalAction,
+              expectedGoalID: String? = nil, expectedGoalRevision: Int? = nil, expectedGoalState: NativeGoalState? = nil)
 
     public var images: [NativeImage] {
         if case .send(_, _, _, _, _, let images, _, _, _) = self { return images ?? [] }
@@ -522,6 +525,8 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
     /// The tiers the current model offers, Standard first; empty when it offers none, and the
     /// composer then shows no Speed control. nil from older hosts.
     public var serviceTiers: [String]?
+    /// Absent from older hosts. The extension, not a turn's lifecycle status, owns completion.
+    public var goal: NativeGoal?
 
     public var isRPC: Bool { runtime == "rpc" }
 
@@ -532,7 +537,7 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
         provisional: [NativeThreadMessage], clipped: Bool, runtime: String? = nil, stats: NativeThreadStats? = nil,
         commands: [NativeCommand]? = nil, subagents: [NativeSubagent]? = nil, queue: NativeQueue? = nil,
         context: NativeThreadContext? = nil, turnChanges: [ChangesTurn]? = nil, retry: NativeThreadRetry? = nil,
-        startProblem: NativeStartProblem? = nil, serviceTier: String? = nil, serviceTiers: [String]? = nil
+        startProblem: NativeStartProblem? = nil, serviceTier: String? = nil, serviceTiers: [String]? = nil, goal: NativeGoal? = nil
     ) {
         self.piSessionID = piSessionID
         self.generation = generation
@@ -560,12 +565,15 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
         self.startProblem = startProblem
         self.serviceTier = serviceTier
         self.serviceTiers = serviceTiers
+        self.goal = goal
     }
 }
 
 public struct NativeThreadMessage: Codable, Hashable, Sendable {
     public var entryID: String
     public var role: String
+    /// Visible extension records retain their kind for native transcript rendering.
+    public var customType: String?
     public var blocks: [NativeThreadBlock]
     public var toolName: String?
     public var toolCallID: String?
@@ -611,10 +619,11 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
         argumentsText: String? = nil, status: String? = nil, isError: Bool? = nil, truncated: Bool = false, timestamp: Double? = nil,
         startedAt: Double? = nil, thinkingSeconds: Double? = nil, origin: NativeMessageOrigin? = nil, operationID: UUID? = nil,
         compaction: NativeCompaction? = nil, question: NativeQuestionRecord? = nil, provider: String? = nil, model: String? = nil,
-        designReferences: [DesignReferenceRecord]? = nil, browserElements: [BrowserElement]? = nil
+        designReferences: [DesignReferenceRecord]? = nil, browserElements: [BrowserElement]? = nil, customType: String? = nil
     ) {
         self.entryID = entryID
         self.role = role
+        self.customType = customType
         self.blocks = blocks
         self.toolName = toolName
         self.toolCallID = toolCallID

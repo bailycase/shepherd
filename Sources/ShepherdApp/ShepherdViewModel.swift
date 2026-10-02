@@ -698,6 +698,8 @@ final class ShepherdViewModel {
         // Queues go the way Settings ▸ Agents says, unless an agent's own ••• menu chose.
         server.setDefaultQueueMode(self.settings.queueDelivery)
         self.settings.onQueueDeliveryChange = { [weak server] mode in server?.setDefaultQueueMode(mode) }
+        server.setGoalsEnabled(self.settings.goalsEnabled)
+        self.settings.onGoalsChange = { [weak server] on in server?.setGoalsEnabled(on) }
         // The `/` menu of every thread leaves out what Settings ▸ Pi ▸ Slash commands turned off.
         server.setHiddenSlashCommands(self.settings.hiddenSlashCommands)
         self.settings.onHiddenSlashCommandsChange = { [weak server, weak model = self.slashCommands] names in

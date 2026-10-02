@@ -179,6 +179,9 @@ extension tests, on every bump (docs/pi-engine.md › Bumping the pin).
   Counts hold on a slow or busy runner; timing budgets do not, so don't add those. Two thread
   budgets differ on macOS 26 (CI) and in Xcode 26 builds whatever the speed, so there they run
   as known issues.
+- Goal clock budgets assert that local card/header ticks redraw only their timeline content.
+  Five accounting snapshots must redraw no composer bodies/chips, queue bodies/rows or thread
+  bodies/row builders. Shared docks read cached goal presence/identity, not the full goal.
 - `DesignPerformanceTests` pins the design canvas the same way over a 172-board canvas: at most
   six web views open (five live, one rasterizing), panning recycles them, and one board changing
   redraws one frame (`design.board`) with one snapshot; a Tweak drag redraws no frame and its
@@ -197,6 +200,22 @@ JSON encodes a snapshot makes (`RPCThreadState.bytesHashedByLastCommit`,
 --filter DataPathBenchmarks` prints a history's decode, projection and release, a delta's cost
 beside many tool results, snapshot round trips, a status report's CPU, the server queue's
 latency while a long history reloads, and a relaunch of agents with long histories.
+
+**Goal safety regressions** use `GoalServerTests` for actual SessionServer widget/status/
+notification/queue/Stop/Steer boundaries, and `GoalControlsTests` for offscreen accessibility
+presses, condition editing, confirmation and stale controls. `GoalExperimentTests` and the
+Experiments ControlPress scenario cover default off, live on/off, late widget rejection and
+preserved Paused goals without process restarts, held tools/ordinary queues, rejected hidden-command
+queue edits and fenced slash text remaining ordinary content. `GoalPolicyBackpressureTests` fills stdin,
+then verifies a retained disable barrier before the final On policy with one write-drain retry and no
+ordinary-record loss or abort. `goal-runtime.test.mjs` runs the pinned pi RPC
+process against scratch homes and loopback fake providers: compaction, real truncated reads,
+auto-retry 529 recovery, uncapped accounting/legacy caps, ordinary work after Pause/disable,
+live experiment/Checking cancellation, busy Set/Edit/Resume cancellation, always-not-met 25 checks,
+queue yield/delete/steer recipes and manufactured-proof rejection. No external model calls or
+user credentials are needed. The runtime fixture preserves display-only details and feeds real
+RPC/native projection in previews. Device-level iOS interaction/notification delivery is a
+separate check, not a consequence of passing Mac AX tests.
 
 **Extension tests** (`Tests/Extensions/*.test.mjs`, Node's test runner) need `PI_PACKAGE_DIR`
 pointing at an installed pi package (the harnesses import pi's modular `dist/index.js` and its
@@ -344,7 +363,7 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
   review leaves, and split terminal layouts flattened into tabs (saved layouts with a split tab
   become one tab per terminal, each keeping its session, folder and title; layouts already made of
   single-terminal tabs are not rewritten; inspector tabs and layouts with no thread are untouched).
-- **Extensions:** embedded extensions byte-identical to `Extensions/*` (all twenty files, and
+- **Extensions:** embedded extensions byte-identical to `Extensions/*` (all twenty-one files, and
   the design skill's two files).
 - **Themes:** every theme variant complete, and the WCAG contrast rules met.
 - **Design rules:** `DesignRulesTests` scans the Mac app, ShepherdUI and the iOS client for a
