@@ -354,6 +354,12 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
   `ThreadSnapshotBudgetTests` over a real server with recorded turns and finished cards,
   `ThreadHeavySnapshotTests` in the real workspace), and a pi slower than the request deadline is
   never served without its history (`SlowStartHistoryTests`).
+- **Clipped:** a snapshot says what it shortened and nothing else (`NativeThreadClips` on the
+  wire; `SnapshotBudgetTests`, `ThreadEventTests` and `SlowStartHistoryTests` for each cause and
+  for its clearing; `NativeClipNoticeTests` for the words, an older host's flag and the store;
+  `ThreadClipNoticeTests` in the real workspace over a real server: older pages and a long
+  reply raise no notice, a turn's hidden output does until it ends; `ThreadPreviewTests+Clips`
+  for each state in both appearances at text scale 1 and 1.3, wide and narrow).
 - **Extension identity:** the real check against stub pis (`ExtensionIdentityTests`, and
   `ExtensionIdentityFlowTests` through the app's own launch): a pi's own process is served for
   its agent, a process it starts is refused and displaces no connection, this process claiming

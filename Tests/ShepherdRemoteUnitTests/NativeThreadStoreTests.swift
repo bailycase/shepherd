@@ -1537,7 +1537,7 @@ struct NativeThreadStoreTests {
         ("session", { _ = $0.session }), ("dialogs", { _ = $0.dialogs }), ("dialogsSupported", { _ = $0.dialogsSupported }),
         ("widgets", { _ = $0.widgets }), ("commands", { _ = $0.commands }), ("model", { _ = $0.model }),
         ("thinking", { _ = $0.thinking }), ("stats", { _ = $0.stats }), ("supportedActions", { _ = $0.supportedActions }),
-        ("clipped", { _ = $0.clipped }), ("running", { _ = $0.running }), ("hostRunning", { _ = $0.hostRunning }),
+        ("clipNotice", { _ = $0.clipNotice }), ("running", { _ = $0.running }), ("hostRunning", { _ = $0.hostRunning }),
         ("showsThinking", { _ = $0.showsThinking }), ("userTurnCount", { _ = $0.userTurnCount }),
         ("hasSubagents", { _ = $0.hasSubagents }),
     ]
@@ -1580,7 +1580,7 @@ struct NativeThreadStoreTests {
             (["supportedActions"], { $0.supportedActions.append("sendImages") }),
             (["widgets"], { $0.widgets = [NativeThreadWidget(namespace: "x", key: "k", kind: .status, text: "on")] }),
             (["commands"], { $0.commands = [NativeCommand(name: "review")] }),
-            (["clipped"], { $0.clipped = true }),
+            (["clipNotice"], { $0.clips = NativeThreadClips(history: true); $0.clipped = true }),
             (["hasSubagents"], { $0.subagents = [F.run("r")] }),
             (["userTurnCount"], { $0.messages += [F.assistant("Done.", id: "a"), F.user("next", id: "u2")] }),
             (["dialogs", "showsThinking"], { $0.dialogs = [NativeThreadDialog(id: "d", kind: .confirm, title: "Go?")] }),

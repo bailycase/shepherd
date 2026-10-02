@@ -89,7 +89,14 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   or polling; a changed cursor or session permits another fetch.
 - **Notices** above the thread explain degraded states in caption tertiary: "Last known thread ·
   refreshing before enabling actions", "This host's agent cannot answer questions here · update
-  Shepherd on the host", "Some earlier output is clipped".
+  Shepherd on the host", and one line for each thing the host reported shortening
+  (`NativeClipNotice`; docs/native-thread.md › RPCThreadState › Clipped): "Some messages couldn't be
+  read from pi · they appear after the agent's next reply", "Part of this turn's output is hidden
+  while it runs · it shows when the turn ends" (only while the thread runs), "A question from the
+  agent is too large to show here" (or "N questions from the agent are too large to show here"),
+  and, from a host that names no cause, "Some output is clipped". Each goes with its cause, none
+  has an action, and older pages to scroll up to or a long message (its row says "Output
+  truncated") draw no notice. They sit above the first turn, like the others.
 - **Starting:** while pi boots (a new agent, or one resuming after a relaunch) the thread is
   ready to use and quiet, never an error: it draws what it knows at once (a new agent's empty
   state, or its opening prompt as a message pi has not read yet, at 70%; a resuming agent's
