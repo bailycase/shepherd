@@ -330,8 +330,19 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
   review leaves, and split terminal layouts flattened into tabs (saved layouts with a split tab
   become one tab per terminal, each keeping its session, folder and title; layouts already made of
   single-terminal tabs are not rewritten; inspector tabs and layouts with no thread are untouched).
-- **Extensions:** embedded extensions byte-identical to `Extensions/*` (all twenty files, and
+- **Extensions:** embedded extensions byte-identical to `Extensions/*` (all twenty-one files, and
   the design skill's two files).
+- **Context budget** (docs/context-budget.md): what a thread's first request carries, measured on
+  a real pi (`context-budget.test.mjs`: the guard against `scripts/context-budget.json`, and the
+  audit `Tests/Extensions/context-tools.json`, which names every tool a launch registers: a tool
+  no row lists fails it, and `ContextToolGroupsTests` holds the Context card's groups to the same
+  file); the counting, on synthetic captures (`Tests/Release/test_context_budget.py`); context
+  clearing against a real pi and a fake provider (`context-trim.test.mjs`: the request shrinks and
+  the session file and `get_messages` keep everything, off is byte-identical, a restart, `/new`,
+  a branch and a compaction decide the same way, a long run never compacts); the card's estimate
+  (`ContextEstimateTests`: the baseline from the first call's usage, reasoning, images and Other),
+  its presentation and wire (`ContextPresentationTests`, `NativeThreadWireTests`), and the
+  Compact at setting (`PiCompactionThresholdTests`, `CompactionThresholdFlowTests`).
 - **Themes:** every theme variant complete, and the WCAG contrast rules met.
 - **Design rules:** `DesignRulesTests` scans the Mac app, ShepherdUI and the iOS client for a
   literal font size, a status color tinted by an opacity, a raw color and a registered glyph named
