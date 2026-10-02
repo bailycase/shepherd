@@ -188,7 +188,7 @@ settings." The chord is read from `KeybindingsStore`, so a rebind never leaves t
     it.": One per turn · All at once, default All at once. It is the
     host's default for its agents; Up next's ••• menu sets one agent's own.
 - **Context** (no board draws it; the user's decision, 2026-10-01, with the Context card's parts
-  list; docs/context-budget.md). Both rows apply to agents started after a change; a running agent
+  list; docs/context-budget.md). Every row applies to agents started after a change; a running agent
   keeps what it started with and follows at its next launch.
   - Compact at, "How full an agent lets its context get before it compacts on its own, as a share
     of the model’s window. pi’s default leaves 16k tokens free, about 94% of a 272k window. New
@@ -205,6 +205,14 @@ settings." The chord is read from `KeybindingsStore`, so a rebind never leaves t
     change; running ones at their next launch.": a switch, default on (`AppSettings.trimToolOutput`).
     A client lists it among a host's Bundled extensions (`HostSettings.bundledExtensions` id
     `context`, changed with `bundledExtension`), so it is remote-changeable like the Pi switches.
+  - Defer rarely used tools, "Keeps the browser, other-thread, automation and review tools out of every
+    request until the model asks for one with a tool search, which leaves more of the window to the work.
+    Off sends them all. New agents follow a change; running ones at their next launch.": a switch, default
+    on (`AppSettings.deferTools`), under Trim with the same row anatomy. A client lists it among a host's
+    Bundled extensions (id `deferTools`, "Defer rarely used tools", with a note of its own), so it is
+    remote-changeable too. The user's decision, 2026-10-02 ("defer a lot of the tools that don't even work in
+    threads, and if we can just let the model tool search, that would be nice too with pi 1.0"); the switch,
+    its place and its words are the agent's proposal for the user to settle (docs/design/departures.md).
 
 - **Goal checks:**
   - Allow cross-provider goal checks, off by default. Off uses the thread's exact model and

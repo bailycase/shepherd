@@ -71,8 +71,8 @@ struct SettingsPreviewTests {
         }
     }
 
-    /// Agents ▸ Context, at the defaults (pi's own compaction, trimming on) and chosen (80%, trimming
-    /// off), each in light and dark at text scale 1 and 1.3, where the subtitles wrap.
+    /// Agents ▸ Context, at the defaults (pi's own compaction, trimming and deferring on) and chosen (80%,
+    /// both off), each in light and dark at text scale 1 and 1.3, where the subtitles wrap.
     @Test(arguments: [(false, "settings-agents-context"), (true, "settings-agents-context-chosen")])
     func settingsAgentsContext(chosen: Bool, surface: String) async throws {
         let workspace = try PreviewWorkspace()
@@ -81,8 +81,10 @@ struct SettingsPreviewTests {
         if chosen {
             workspace.settings.compactAtPercent = 80
             workspace.settings.trimToolOutput = false
+            workspace.settings.deferTools = false
         }
-        try await Preview.renderMatrix(surface, size: CGSize(width: 1280, height: 1100)) {
+        // Tall enough that the last row still shows at text scale 1.3, where the subtitles wrap to four lines.
+        try await Preview.renderMatrix(surface, size: CGSize(width: 1280, height: 1400)) {
             SettingsView(vm: workspace.vm)
         }
     }
