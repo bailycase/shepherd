@@ -317,6 +317,10 @@ public struct NWSidebarRow: View, Equatable {
         case reason(String)
         /// Live elapsed time since a moment ("4m"), in `textTertiary`.
         case elapsed(since: Date)
+        /// Completion age, using the same bounded minute/hour schedule as elapsed time.
+        case age(since: Date)
+        /// Measured activity, a 28 × 12 blue sparkline.
+        case activity([Double])
         /// A word in mono 10, `textTertiary` or its tone's color ("done", "failed").
         case text(String, tone: AgentState? = nil)
         /// A remote host's name as a tag: mono 10 `textTertiary` in a 1pt `lineSubtle` border.
@@ -330,6 +334,7 @@ public struct NWSidebarRow: View, Equatable {
     let selected: Bool
     let dimmed: Bool
     let accessory: Accessory
+    let hasGoal: Bool
     let nested: Bool
     @Environment(\.nwDensity) private var density
     @State private var hovering = false
@@ -337,24 +342,25 @@ public struct NWSidebarRow: View, Equatable {
     /// `nested` is a thread inside a project of the project tree: its leading slot sits under
     /// the project's folder (`NWDensity.treeChildLeading`).
     public init(_ title: String, leading: Leading, selected: Bool = false, dimmed: Bool = false, accessory: Accessory = .none,
-                nested: Bool = false) {
+                hasGoal: Bool = false, nested: Bool = false) {
         self.title = title
         self.leading = leading
         self.selected = selected
         self.dimmed = dimmed
         self.accessory = accessory
+        self.hasGoal = hasGoal
         self.nested = nested
     }
 
     /// A thread's row: its state dot.
     public init(_ title: String, state: AgentState, selected: Bool = false, dimmed: Bool = false, accessory: Accessory = .none,
-                nested: Bool = false) {
-        self.init(title, leading: .dot(state), selected: selected, dimmed: dimmed, accessory: accessory, nested: nested)
+                hasGoal: Bool = false, nested: Bool = false) {
+        self.init(title, leading: .dot(state), selected: selected, dimmed: dimmed, accessory: accessory, hasGoal: hasGoal, nested: nested)
     }
 
     public nonisolated static func == (a: NWSidebarRow, b: NWSidebarRow) -> Bool {
         a.title == b.title && a.leading == b.leading && a.selected == b.selected && a.dimmed == b.dimmed
-            && a.accessory == b.accessory && a.nested == b.nested
+            && a.accessory == b.accessory && a.hasGoal == b.hasGoal && a.nested == b.nested
     }
 
     public var body: some View {
@@ -373,6 +379,7 @@ public struct NWSidebarRow: View, Equatable {
                 .nwContentTransition(.crossFade)
                 .nwAnimation(.content, value: title)
             Spacer(minLength: NW.Space.xs)
+            if hasGoal { NWGoalGlyph().foregroundStyle(Color.nw.textTertiary) }
             NWSidebarAccessoryView(accessory: accessory)
                 .nwAnimation(.content, value: accessory)
         }
@@ -443,6 +450,16 @@ private struct NWSidebarAccessoryView: View {
             TimelineView(NWElapsedSchedule(start: since)) { context in
                 Text(NWDuration.text(context.date.timeIntervalSince(since)))
                     .font(.nwMono(10)).foregroundStyle(.nw.textTertiary).monospacedDigit().fixedSize()
+            }
+        case .activity(let samples):
+            NWSidebarActivityLine(samples: samples)
+                .stroke(Color.nw.running, style: StrokeStyle(lineWidth: 1.2, lineCap: .round, lineJoin: .round))
+                .frame(width: NWSidebarMetrics.activityWidth, height: NWSidebarMetrics.activityHeight)
+                .accessibilityHidden(true)
+        case .age(let since):
+            TimelineView(NWElapsedSchedule(start: since)) { context in
+                Text("\(NWDuration.text(max(0, context.date.timeIntervalSince(since)))) ago")
+                    .font(.nwMono(NWSidebarMetrics.accessoryFont)).foregroundStyle(.nw.textTertiary).monospacedDigit().fixedSize()
             }
         case .text(let text, let tone):
             Text(text).font(.nwMono(10)).foregroundStyle(color(tone)).lineLimit(1).fixedSize()

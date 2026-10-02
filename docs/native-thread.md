@@ -161,7 +161,7 @@ events come out on stdout, one record per LF.
   - `tool_execution_*` upserts running and finished tool calls, with start times for live
     durations.
   - **A call being written** is a tool row before it runs, so a thread whose reply has moved on
-    to a big `write` does not look idle. `message_update`'s `toolcall_start` (pi 0.87.1: `id`,
+    to a big `write` does not look idle. `message_update`'s `toolcall_start` (pi 1.0.0: `id`,
     `toolName`, `contentIndex`) creates the row `provisional:tool:<call id>` with status
     `streaming` and no output; the client draws it as a running call (`NativeActivityCall`
     reads `streaming` as `running`, as it has since native threads shipped, so an older client
@@ -175,7 +175,7 @@ events come out on stdout, one record per LF.
     start time (`startedAt`) is when the model named the call, one clock through its run and
     into history.
     - **Leaving:** a reply pi ends `aborted` or `error` (a Stop, a failed request) runs none of
-      its calls, though its `message_end` still carries the one it was writing (pi 0.87.1 ends
+      its calls, though its `message_end` still carries the one it was writing (pi 1.0.0 ends
       the call with what it parsed): the rows still `streaming` go with it. Any other end hands
       the calls to pi, whose executions continue the rows (`length` included: pi answers each
       with an error result). `agent_end`, `agent_settled` and a session switch drop any that
@@ -348,7 +348,7 @@ switching agents. Nothing in it has reached pi except a steering item. The snaps
 as `queue` (`NativeQueue`: items, mode, paused, notice); a snapshot without one comes from an
 older host, which sends every message straight to pi.
 
-pi 0.87.1's own queues are text-only lists with no edit, remove, or reorder
+pi 1.0.0's own queues are text-only lists with no edit, remove, or reorder
 (`clear_queue` empties both), and `set_steering_mode` / `set_follow_up_mode` write the user's
 pi `settings.json`, so Shepherd never sends them and keeps its own queue instead, handing pi
 one prompt at a time.
@@ -410,7 +410,8 @@ one prompt at a time.
   and the message lands where pi read it. Identical texts are matched one item at a time, so
   restoring two steers keeps each one's images rather than resending the first item's twice.
 - **Stop** (`abort`): the host pauses its queue immediately, before any asynchronous reply can
-  let a settling turn drain it. Then `clear_queue`, followed by `abort` (pi's recipe; `abort` alone delivers a
+  let a settling turn drain it. An active goal is paused first, cancelling its separate check
+  before pi is interrupted. Then `clear_queue`, followed by `abort` (pi's recipe; `abort` alone delivers a
   queued steer into the aborted turn and keeps follow-ups for a later run). Steering items pi
   still held return to the head, anything else pi had queued joins the queue, and the queue
   pauses. A turn that ends in a provider error pauses it too, and says so (`notice`); a
@@ -423,14 +424,15 @@ one prompt at a time.
   stops what it is doing, as Stop does, and the message goes at once as the next turn in the same
   session; the rest of the queue follows that turn. While pi is idle it is a plain send. While it
   works:
-  1. The message moves to the head of the queue (`interrupting` remembers it) and the answer to the
+  1. An active goal receives its controller `interrupt` first, which pauses continuation and
+     cancels Checking. The replacement ordinary turn does not resume it. The message moves to the head of the queue (`interrupting` remembers it) and the answer to the
      client is `accepted` at once, so a fresh message shows first in Up next. Questions pi waits on
      are refused, as Stop does, and `stopRequested` makes the run's ending read as stopped (the
      call it killed, the error reply pi ends a killed run with) and never as a failure that
      pauses the queue. Unlike Stop, the queue does not pause.
   2. `clear_queue` takes back the steers pi still holds; they return to the queue behind the
      interrupting messages, so the abort cannot deliver them into the run it ends.
-  3. `abort`. Checked against real pi 0.87.1: pi emits `agent_end` and `agent_settled`, and
+  3. `abort`. Checked against real pi 1.0.0: pi emits `agent_end` and `agent_settled`, and
      answers the abort only after them. A running `bash` is killed, a tool call that was still
      streaming in never starts, and the run's last reply is aborted (an empty error reply
      "This operation was aborted" after a killed tool call). The aborted reply stays in the
@@ -525,6 +527,21 @@ and persists `Agent.serviceTier` before it answers. Gated by `setServiceTier` in
 from an older host's snapshot and refuses the request there). `NativeThreadStore.offersServiceTier`
 is the client's rule for drawing the control: the action and more than one tier.
 
+## Goals
+
+The snapshot's optional `goal` is the live projection of a session-persisted conversation goal.
+The `goal` action changes it during work or checking, fenced by the session and displayed goal
+revision and state. Pause/Resume/Confirm require the displayed ID/revision/state; controller
+transitions increment revision but accounting snapshots do not. Set/Edit change the condition;
+goals have no time/token caps. Legacy budget fields are ignored. Optional model/confirmation/check-count/interval fields decode
+on older sessions. Full redacted checker feedback stays in display-only custom-message details;
+`RPCMessage` decodes those for goal checks only and projection adds the transcript disclosure.
+Remotely it requires `native.goal.v1`. It is absent on older hosts. The dedicated
+machine widget never renders as ordinary widget text. See [Conversation goals](goals.md) for
+completion checking, experiment enablement, controls, restore behavior, and the queue's yield boundary.
+Settings > Experiments > Goals is default off. The host hides the slash command, rejects goal
+controls and cancels/pauses live controllers while off; re-enabling never resumes automatically.
+
 ## Context and compaction
 
 What fills the model's context window rides the snapshot as `context` (`NativeThreadContext`,
@@ -569,7 +586,7 @@ draw no context meter.
   idle and no prompt of its own is on its way (`busy` otherwise, or while a compaction runs). The
   answer is the dispatch: pi answers `compact` only once the summary is written, and reports the
   compaction as events meanwhile.
-- **Never `set_auto_compaction`:** pi 0.87.1 handles it with
+- **Never `set_auto_compaction`:** pi 1.0.0 handles it with
   `SettingsManager.setCompactionEnabled`, which writes `compaction.enabled` into the user's global
   `settings.json` (Shepherd's pi home's). Shepherd writes only its own keys there, so
   there is no Compact automatically switch (the user's call, 2026-09-25).
@@ -700,7 +717,13 @@ output grows.
   caught up (`catchUp`, with `threadVersion` and `chromeVersion`, none of them observed), in the
   same update: what it brought back lands without motion (`CatchUpGate`), and what arrives
   after moves as usual. `stop` is the teardown (an error, a pruned agent, a view that went
-  away): nothing is ready or running until it polls again.
+  away): nothing is ready or running until it polls again. A hidden store is still `ready` but
+  has no host to ask (`isLive` false), so an action on it dispatches nothing and says so in
+  `notice`; what acts on a thread that may be hidden (Implement in a thread…) goes through the
+  server. An action in flight when the thread is hidden or shown again is settled by the host's
+  answer, not by the store's restart: a message the host accepted has gone (it leaves the
+  composer, the suspension's "outcome unknown" goes, and the thread's next pull shows it), and a
+  refusal is said in the host's words.
 - **Starting:** `native_starting` sets `starting`, never `loadError`. `awaitingPi` (starting,
   previewing, or no snapshot yet, without an error) is what the composer watches: only after it
   has held for `AppLayout.startingIndicatorDelay` (two seconds, past a normal start of about
@@ -845,7 +868,7 @@ requests sent to its host.
   "question-timeout" with a 150 ms timeout, and "select-newsession", a question left open
   while pi moves to another session; `QuestionRecordTests`).
   For example, `LargeHistoryTests` loads a 6 MiB history. A "tools:N" prompt runs a pi-like
-  agent loop with pi 0.87.1's queues (steering read after each tool batch, follow-ups when the
+  agent loop with pi 1.0.0's queues (steering read after each tool batch, follow-ups when the
   run would stop, `queue_update`, `clear_queue`, abort keeping follow-ups, and a stranded steer
   with "hold-settle", and a compaction after the last reply with "compact-hold", during which it
   refuses prompts as pi does); `QueueTests` and `InterruptTests` (Steer now, its fallbacks and
@@ -854,7 +877,7 @@ requests sent to its host.
   (`STUB_PI_STARTUP_DELAY`, `_GATE`, `_EXIT`, or `stub-pi-startup.json` in its cwd for a pi the
   app launches) hold or fail pi's boot, as `ThreadStartupTests` and `AgentStartupTests` do.
 - **Real pi (`node --test Tests/Extensions/*.test.mjs`, with `PI_PACKAGE_DIR` set):**
-  `steer-interrupt.test.mjs` proves the recipe Steer now relies on against pi 0.87.1 itself,
+  `steer-interrupt.test.mjs` proves the recipe Steer now relies on against pi 1.0.0 itself,
   with a local fake provider: a steer lands after the tool batch and before the next model call
   (several land one at a time), `clear_queue` then `abort` then a plain `prompt` yields the new
   message exactly once, `agent_settled` comes before the abort's answer, a killed `bash` is gone,

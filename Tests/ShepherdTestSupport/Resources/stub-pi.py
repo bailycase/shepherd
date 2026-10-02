@@ -18,7 +18,7 @@
            streaming) and `continue-3` (the call running) appear in the cwd. An abort at any
            pause ends it as pi ends a stopped request: toolcall_end with the arguments parsed so
            far, an `aborted` message_end that still carries the call, no tool_execution_start,
-           then agent_end and agent_settled. Its events are the shapes pi 0.87.1 sends
+           then agent_end and agent_settled. Its events are the shapes pi 1.0.0 sends
            (Tests/Extensions/tool-call-stream.test.mjs pins them against the real thing).
   "browser-peer <agentID> <socket>" the browser extension's registration, from this process and
            from a process it starts (as an agent's bash tool would), in one turn: this process says
@@ -88,7 +88,7 @@ kept after the summary, and stats' contextUsage tokens and percent null until th
 With "hold" in the instructions it waits for the file `compact-done` first. A session of fewer
 than three messages fails ("Nothing to compact (session too small)").
 
-pi's queues, as pi 0.87.1 behaves (docs/rpc-commands.md, and transcripts of the real thing):
+pi's queues, as pi 1.0.0 behaves (docs/rpc-commands.md, and transcripts of the real thing):
   - While a run streams, `prompt` needs `streamingBehavior`, else pi refuses it ("Agent is
     already processing..."). `steer` / `followUp` append to that queue, stamped when queued,
     then pi emits `queue_update` with both queues' text, then answers the prompt.
@@ -98,6 +98,7 @@ pi's queues, as pi 0.87.1 behaves (docs/rpc-commands.md, and transcripts of the 
     Steering is taken one at a time: at the start of the run and after each tool batch or
     reply. A message leaves the queue (`queue_update`) just before its user message_start.
     Follow-ups are taken one at a time once the run would stop, within the same run.
+    "hold-start" holds the first user message until the file `start` appears.
     "hold-settle" in the first prompt holds the run between its last look at the queues and
     agent_end until the file `settle` appears (a steer sent then is stranded, as in pi).
   - `abort` during a "tools:N" run fails the running call ("Command aborted"), delivers the
@@ -509,6 +510,8 @@ def agent_run(first):
         new.append(message)
 
     emit({"type": "agent_start"})
+    if "hold-start" in first[0]:
+        gate("start")
     emit({"type": "turn_start"})
     deliver(first)
     pending = take(steering)
@@ -863,6 +866,40 @@ def ui(method, **fields):
     emit({"type": "extension_ui_request", "id": f"ui-{method}", "method": method, **fields})
 
 
+# Opt-in goal-controller boundary fixture: real widget events and immediate commands, no
+# evaluator or automatic worker turns. Runtime behavior is tested against pinned pi separately.
+goal_file = os.environ.get("STUB_PI_GOAL_FILE")
+goal = None
+goals_enabled = os.environ.get("SHEPHERD_GOALS_ENABLED", "1" if goal_file else "0") == "1"
+
+
+def publish_goal():
+    ui("setWidget", widgetKey="shepherd.goal",
+       widgetLines=["SHEPHERD_GOAL:" + json.dumps(goal)] if goals_enabled else None)
+
+
+def watch_goal():
+    global goal
+    previous = None
+    while True:
+        try:
+            with open(goal_file) as f:
+                text = f.read()
+            if text != previous:
+                value = json.loads(text)
+                previous = text
+                goal = value
+                publish_goal()
+        except (OSError, ValueError):
+            pass
+        time.sleep(0.02)
+
+
+if goal_file:
+    COMMANDS.extend({"name": name, "source": "extension"} for name in ("goal", "shepherd-goal"))
+    threading.Thread(target=watch_goal, daemon=True).start()
+
+
 def record_launch():
     # The engine wrapper StubPi installs names the file: argv, cwd and environment, one line.
     path = os.environ.get("STUB_PI_LAUNCH_LOG")
@@ -1096,6 +1133,21 @@ for raw in sys.stdin.buffer:
             respond(cmd, t, success=False,
                     error="Cannot submit a prompt while compaction is in progress. Wait for compaction to finish and retry.")
             continue
+        if (goal_file or os.environ.get("SHEPHERD_EXT_GOAL") == "1") and message.startswith("/shepherd-goal "):
+            control = json.loads(message[len("/shepherd-goal "):])
+            action = control["action"]
+            if action == "configure":
+                goals_enabled = control["enabled"]
+                if not goals_enabled and goal and goal["state"] in ("working", "checking"):
+                    goal = dict(goal, state="paused", revision=goal.get("revision", 1) + 1)
+                publish_goal()
+            if goal and action in ("pause", "interrupt") and goal["state"] in ("working", "checking"):
+                goal = dict(goal, state="paused", revision=goal.get("revision", 1) + 1)
+                publish_goal()
+            if action == "status":
+                publish_goal()
+            respond(cmd, t)
+            continue
         if message.startswith("/session-name"):
             # An extension command, as pi runs one: at once, even while streaming, with no turn and no
             # message of its own. Its first word says what it answers with (see the header).
@@ -1295,6 +1347,9 @@ for raw in sys.stdin.buffer:
                 fail_switched_history = True
             if message in ("resume-stale-history", "resume-history-failure"):
                 stale_history = list(MESSAGES)
+            if goal_file:
+                goal = None
+                publish_goal()
             STATE["sessionId"] = "stub-session-2"
             del MESSAGES[:]
             if message != "newsession":

@@ -475,6 +475,7 @@ struct TurnPresentationTests {
             case .activity(_, let bursts): "lines:" + bursts.map { "\($0.calls.count)" }.joined(separator: "+")
             case .subagents(_, let lines): "record:" + lines.map(\.title).joined(separator: "|")
             case .note: "note"
+            case .goalRecord: "goal"
             case .error(_, _, let final, let folded): final ? "error:final" : folded ? "error:folded" : "error"
             case .retrying: "retrying"
             case .steer(_, let text, _, _): "steer:" + text

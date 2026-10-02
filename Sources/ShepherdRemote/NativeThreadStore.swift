@@ -157,6 +157,15 @@ public final class NativeThreadStore {
     public private(set) var dialogsSupported = true { didSet { threadVersion &+= 1 } }
     /// Extension widgets of the kinds this client draws.
     public private(set) var widgets: [NativeThreadWidget] = [] { didSet { chromeVersion &+= 1 } }
+    public private(set) var goal: NativeGoal? {
+        didSet {
+            hasGoal = goal != nil
+            goalID = goal?.id
+            chromeVersion &+= 1
+        }
+    }
+    public private(set) var hasGoal = false
+    public private(set) var goalID: String?
     public private(set) var commands: [NativeCommand] = [] { didSet { chromeVersion &+= 1 } }
     public private(set) var model: String? { didSet { chromeVersion &+= 1 } }
     public private(set) var thinking: String? { didSet { chromeVersion &+= 1 } }
@@ -270,6 +279,12 @@ public final class NativeThreadStore {
     @ObservationIgnored private var startWaiters: [CheckedContinuation<Bool, Never>] = []
     @ObservationIgnored private var settleTask: Task<Void, Never>?
     @ObservationIgnored private var epoch = UUID()
+    /// Actions (their operation ids) the host has not answered yet, and those of them a suspension
+    /// reported as "outcome unknown" meanwhile: the host's answer, when it comes, settles that
+    /// notice (`perform`).
+    @ObservationIgnored private var inFlight: Set<UUID> = []
+    @ObservationIgnored private var reportedUnknown: Set<UUID> = []
+    private static let outcomeUnknown = "Action outcome unknown. Refresh and check the thread before trying again. Nothing will be resent automatically."
     @ObservationIgnored private var recentRequest = UUID()
     @ObservationIgnored private var historyEpoch = UUID()
     /// Saved user entries → the echo they replaced, so the turn keeps its identity.
@@ -553,6 +568,8 @@ public final class NativeThreadStore {
         if dialogs != self.dialogs { self.dialogs = dialogs }
         let dialogsSupported = value?.dialogsSupported ?? true
         if dialogsSupported != self.dialogsSupported { self.dialogsSupported = dialogsSupported }
+        let goal = value?.goal.flatMap { $0.isValid ? $0 : nil }
+        if goal != self.goal { self.goal = goal }
         let widgets = (value?.widgets ?? []).filter { $0.kind != .unknown }
         if widgets != self.widgets { self.widgets = widgets }
         let commands = value?.commands ?? []
@@ -755,7 +772,8 @@ public final class NativeThreadStore {
     public func suspend() {
         // A send still waiting for pi to start was never dispatched: its draft stays as it is.
         if busy, startWaiters.isEmpty {
-            notice = "Action outcome unknown. Refresh and check the thread before trying again. Nothing will be resent automatically."
+            notice = Self.outcomeUnknown
+            reportedUnknown.formUnion(inFlight)
         }
         resumeStartWaiters(false)
         epoch = UUID()
@@ -1169,7 +1187,8 @@ public final class NativeThreadStore {
     /// Send `text` with design references (and the files drawn for them) as a new user message,
     /// without touching the draft: a design's "Implement in a thread…". While pi works it waits in
     /// the queue. A host that doesn't take references says so in `notice`, and nothing goes.
-    /// True once the host accepted it.
+    /// True once the host accepted it, whatever the thread's layout did while it answered; a
+    /// false with a `notice` says why, and a false with none means nothing was dispatched.
     @discardableResult
     public func send(text: String, references: [NativeAttachedReference], delivery: NativeThreadDelivery = .followUp) async -> Bool {
         guard !references.isEmpty || !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, await readyToAct(),
@@ -1178,14 +1197,12 @@ public final class NativeThreadStore {
             notice = "This thread's host doesn't take design references."
             return false
         }
-        let sent = sentCount
         let message = NativeAttachedFile.message(text, files: [], references: references.count)
         let operation = UUID()
-        await perform(.send(expectedSessionID: current.piSessionID, generation: current.generation, operationID: operation,
-                            text: message, delivery: delivery,
-                            designReferences: references.isEmpty ? nil : references.map(\.record)),
-                      operation: operation, current: current, sentText: message, delivery: delivery)
-        return sentCount > sent
+        return await perform(.send(expectedSessionID: current.piSessionID, generation: current.generation, operationID: operation,
+                                   text: message, delivery: delivery,
+                                   designReferences: references.isEmpty ? nil : references.map(\.record)),
+                             operation: operation, current: current, sentText: message, delivery: delivery)
     }
 
     // MARK: Queue
@@ -1340,8 +1357,25 @@ public final class NativeThreadStore {
         supportedActions.contains("setServiceTier") && serviceTiers.count > 1
     }
 
-    /// Standard or Fast, from the agent's next model call on, running or not. Gated by
-    /// `setServiceTier` in `supportedActions`, and the model must offer the tier.
+    /// Goal controls remain available during a turn and its separate evaluation.
+    @discardableResult
+    public func goalAction(_ action: NativeGoalAction, displayedGoal: NativeGoal? = nil) async -> Bool {
+        guard ready, !busy, loadError == nil, supportedActions.contains("goal"), action.isValid, let current = snapshot,
+              action != .resume && action != .confirm || dialogs.isEmpty else { return false }
+        let displayed = displayedGoal ?? goal
+        if action == .pause || action == .resume || action == .confirm {
+            guard let displayed, displayed.id == goal?.id, displayed.revision == goal?.revision, displayed.state == goal?.state else { return false }
+            guard action != .pause || displayed.isActive,
+                  action != .resume || displayed.state == .paused || displayed.state == .needsYou,
+                  action != .confirm || displayed.state == .needsYou && displayed.confirmationRequired == true else { return false }
+        }
+        let operation = UUID()
+        return await perform(.goal(expectedSessionID: current.piSessionID, generation: current.generation, operationID: operation,
+                                   action: action, expectedGoalID: displayed?.id, expectedGoalRevision: displayed?.revision, expectedGoalState: displayed?.state),
+                             operation: operation, current: current)
+    }
+
+    /// Standard or Fast, from the agent's next model call on, running or not.
     public func setServiceTier(_ tier: ServiceTier) async {
         guard supports("setServiceTier"), serviceTiers.contains(tier), let current = snapshot, serviceTier != tier else { return }
         let operation = UUID()
@@ -1437,7 +1471,11 @@ public final class NativeThreadStore {
                          typed: String? = nil, files: [NativeAttachedFile] = [], references: [NativeAttachedReference] = [],
                          elements: [NativeAttachedElement] = [],
                          delivery: NativeThreadDelivery = .followUp, images: [NativeImage] = []) async -> Bool {
-        guard let request else { return false }
+        guard let request else {
+            // A thread shown once and hidden since keeps what it showed (`ready`) but has no host to ask.
+            notice = "This thread isn't connected right now, so nothing was done. Open it and try again."
+            return false
+        }
         let run = epoch
         var wasAccepted = false
         // A follow-up sent while a turn runs waits in the queue until the turn ends.
@@ -1445,9 +1483,17 @@ public final class NativeThreadStore {
         let hostQueues = current.queue != nil
         busy = true
         notice = nil
+        inFlight.insert(operation)
+        defer {
+            inFlight.remove(operation)
+            reportedUnknown.remove(operation)
+        }
         do {
             let result = try await request(action)
-            guard epoch == run else { return false }
+            guard epoch == run else {
+                return settledAfterRestart(result, operation: operation, sentText: sentText, typed: typed, files: files,
+                                           references: references, elements: elements)
+            }
             guard snapshot?.piSessionID == current.piSessionID, snapshot?.generation == current.generation else {
                 busy = false
                 notice = "The session changed while the action was pending. Check the thread before trying again."
@@ -1457,10 +1503,7 @@ public final class NativeThreadStore {
             case .accepted(let accepted) where accepted == operation:
                 wasAccepted = true
                 if let sentText {
-                    if draft == (typed ?? sentText) { draft = "" }
-                    if !files.isEmpty { attachedFiles.removeAll { file in files.contains { $0.id == file.id } } }
-                    if !references.isEmpty { attachedReferences.removeAll { sent in references.contains { $0.id == sent.id } } }
-                    if !elements.isEmpty { attachedElements.removeAll { sent in elements.contains { $0.id == sent.id } } }
+                    forgetSent(sentText, typed: typed, files: files, references: references, elements: elements)
                     lastSendQueued = queued
                     sentCount += 1
                     if hostQueues && current.running {
@@ -1496,12 +1539,12 @@ public final class NativeThreadStore {
                 notice = nil
             case .failure(_, let message): notice = message
             default:
-                notice = "Action outcome unknown. Refresh and check the thread before trying again. Nothing will be resent automatically."
+                notice = Self.outcomeUnknown
             }
         } catch {
             guard epoch == run else { return false }
             if case RemoteHostClientError.outcomeUnknown = error {
-                notice = "Action outcome unknown. Refresh and check the thread before trying again. Nothing will be resent automatically."
+                notice = Self.outcomeUnknown
             } else { notice = String(describing: error) }
         }
         guard epoch == run else { return wasAccepted }
@@ -1509,6 +1552,39 @@ public final class NativeThreadStore {
         ready = false
         await refresh(fresh: true)
         return wasAccepted
+    }
+
+    /// What a message the host took no longer waits for in the composer: the words (while the
+    /// draft is still as they were), the files, the references and the elements it carried.
+    private func forgetSent(_ sentText: String, typed: String?, files: [NativeAttachedFile], references: [NativeAttachedReference],
+                            elements: [NativeAttachedElement]) {
+        if draft == (typed ?? sentText) { draft = "" }
+        if !files.isEmpty { attachedFiles.removeAll { file in files.contains { $0.id == file.id } } }
+        if !references.isEmpty { attachedReferences.removeAll { sent in references.contains { $0.id == sent.id } } }
+        if !elements.isEmpty { attachedElements.removeAll { sent in elements.contains { $0.id == sent.id } } }
+    }
+
+    /// The host answered an action after the store was suspended, stopped or run again: the
+    /// thread went off screen or came back while it was in flight. The thread is the new run's,
+    /// which pulls what the host holds, so nothing is drawn for this one; but the host's answer is
+    /// still the action's outcome. A message it took has gone (it leaves the composer, so it is
+    /// not sent twice) and the "outcome unknown" the suspension raised for it goes; a refusal is
+    /// said in the host's words in its place.
+    private func settledAfterRestart(_ result: NativeThreadResult, operation: UUID, sentText: String?, typed: String?,
+                                     files: [NativeAttachedFile], references: [NativeAttachedReference],
+                                     elements: [NativeAttachedElement]) -> Bool {
+        let unsure = reportedUnknown.contains(operation) && notice == Self.outcomeUnknown
+        switch result {
+        case .accepted(let accepted) where accepted == operation:
+            if unsure { notice = nil }
+            if let sentText { forgetSent(sentText, typed: typed, files: files, references: references, elements: elements) }
+            return true
+        case .failure(_, let message):
+            if unsure || notice == nil { notice = message }
+            return false
+        default:
+            return false
+        }
     }
 }
 

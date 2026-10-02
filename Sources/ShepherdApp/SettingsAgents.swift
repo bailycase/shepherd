@@ -9,11 +9,17 @@ import ShepherdProtocol
 struct AgentSettings: View {
     /// This Mac's pi: its catalog and settings.json give the model choices and pi's default.
     let pi: PiSetup
-    @Bindable private var settings = AppSettings.shared
+    @Bindable private var settings: AppSettings
     private var keys: KeybindingsStore { .shared }
     @State private var modelOptions: [String] = []
     /// pi's own default from its settings.json, read with the catalog (never in `body`).
     @State private var piDefaultModel: String?
+
+    /// Tests and previews may supply isolated settings.
+    init(pi: PiSetup, settings: AppSettings? = nil) {
+        self.pi = pi
+        self.settings = settings ?? .shared
+    }
 
     /// "Use the agent’s default · gpt-6-astra", or without the model while it is unknown.
     private var agentDefault: String { "Use the agent’s default" + (piDefaultModel.map { " · \($0)" } ?? "") }
@@ -47,6 +53,13 @@ struct AgentSettings: View {
                 SettingsRow(title: "When a turn ends, send the queue", subtitle: "All at once arrives as one turn, in the order you queued it.") {
                     NWSegmentedPicker("When a turn ends, send the queue", selection: $settings.queueDelivery,
                                       options: [(NativeQueueMode.oneAtATime, "One per turn"), (.all, "All at once")])
+                }
+            }
+            SettingsGroup(title: "Goal checks",
+                          footnote: "Applies when agents start or restart. Running agents keep their current policy until restarted.") {
+                SettingsRow(title: "Allow cross-provider goal checks",
+                            subtitle: "Off uses the thread’s exact model and provider. On may send conversation, tool output and written code to another provider, preferring Haiku, Codex Mini or Gemini Flash when available.") {
+                    SettingsSwitch(label: "Allow cross-provider goal checks", isOn: $settings.goalCrossProviderEvaluation)
                 }
             }
         }

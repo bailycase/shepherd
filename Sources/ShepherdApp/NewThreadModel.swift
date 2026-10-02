@@ -78,6 +78,16 @@ enum NewThreadPlaces {
         section.id == "local" ? nil : UUID(uuidString: section.id)
     }
 
+    /// Why design references cannot go with a new thread there, or nil: they are this Mac's
+    /// designs, and reach this Mac's threads only (docs/designs.md › Design references). `host` is
+    /// nil for This Mac.
+    static func referencesRefusal(count: Int, host: UUID?) -> String? {
+        count > 0 && host != nil ? referencesNote + " Remove them, or choose a project on this Mac." : nil
+    }
+
+    /// What the @ picker says, and Send's tooltip, for a project on another host.
+    static let referencesNote = "Design references go to projects on this Mac."
+
     /// Why the attached images cannot go with a new thread there, or nil: a host from before
     /// `createAgentImagesCapability` would drop them, and one send takes only so much. `host` is
     /// nil for This Mac.
@@ -99,6 +109,15 @@ final class NewThreadState {
     var prompt = ""
     /// Go to pi with the opening prompt, as a thread's composer sends them.
     var attachments = ComposerAttachments()
+    /// Design pieces (this Mac's designs) that go with the opening message, each pinned at the
+    /// revision it was picked at: the @ picker's, and a pasted reference's. They reach this Mac's
+    /// projects only; with none typed, they alone start the thread, as a thread's composer sends
+    /// them alone.
+    private(set) var references: [NativeAttachedReference] = []
+    /// Why the last design couldn't join the message.
+    var referenceError: String?
+    /// The @ picker's and the chips' state, made as the page opens, while the Design tool is on.
+    var referenceChips: DesignReferenceChips?
     private(set) var place: NewThreadPlace?
     var worktree = false
     /// The model, thinking and speed the thread starts with; a blank model is the target's default.
@@ -136,7 +155,49 @@ final class NewThreadState {
         }
         let next = NewThreadPlaces.fallback(Self.hosts(vm), chosen: place, recent: recent)
         if next != place { place = next }
+        // The Design tool turned off since: its pieces don't go, and its picker isn't made.
+        if vm.designToolEnabled {
+            if referenceChips == nil { referenceChips = vm.makeNewThreadReferenceChips() }
+        } else {
+            referenceChips = nil
+            if !references.isEmpty { references = [] }
+            referenceError = nil
+        }
         loadDefaults(vm)
+    }
+
+    /// Pins `reference` and puts its chip beside the prompt, in place of the same piece; at most
+    /// `DesignReferenceRecord.maxPerMessage`. Throws why it can't (a design that is gone).
+    func attach(reference: DesignReference, vm: ShepherdViewModel) async throws {
+        let prepared = try await vm.prepareDesignReference(reference)
+        let attached = NativeAttachedReference(reference: prepared.reference, label: prepared.reference.label ?? prepared.piece,
+                                               outline: prepared.outline)
+        var next = references
+        guard next.attach(attached) else {
+            throw DesignReferenceFailure("A message carries at most \(DesignReferenceRecord.maxPerMessage) design references.")
+        }
+        references = next
+        referenceError = nil
+    }
+
+    func detach(reference id: UUID) {
+        references.removeAll { $0.id == id }
+    }
+
+    /// What a thread that starts from design pieces alone is called until its first turn names it:
+    /// the first piece, as its chip says it ("A · Funnel first").
+    static func pieceName(_ references: [NativeAttachedReference]) -> String {
+        references.first.flatMap { DesignReferenceChips.crumbs(label: $0.label).last } ?? "Design"
+    }
+
+    /// Why the pieces attached cannot go where the thread would start, or nil.
+    func referencesRefusal() -> String? {
+        NewThreadPlaces.referencesRefusal(count: references.count, host: place?.host)
+    }
+
+    /// Why no design can be picked where the thread would start, or nil: the note the @ picker says.
+    var referencesUnavailable: String? {
+        place?.host == nil ? nil : NewThreadPlaces.referencesNote
     }
 
     /// A project from the chip's menu.
@@ -174,7 +235,7 @@ final class NewThreadState {
     /// What the line under the card says: a failed start, an image left out, or why the images
     /// cannot go.
     func notice(_ vm: ShepherdViewModel) -> String? {
-        error ?? attachments.error ?? imagesRefusal(vm)
+        error ?? attachments.error ?? referenceError ?? referencesRefusal() ?? imagesRefusal(vm)
     }
 
     func setModel(_ id: String) {
@@ -307,8 +368,9 @@ final class NewThreadState {
             }
             if loadingDefaults { return "Loading \(connection.config.name)'s defaults…" }
         } else if loadingDefaults { return "Loading models…" }
-        if prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Describe the task first." }
-        return imagesRefusal(vm)
+        // A design piece alone starts a thread, as it sends from a thread's composer.
+        if prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, references.isEmpty { return "Describe the task first." }
+        return referencesRefusal() ?? imagesRefusal(vm)
     }
 
     /// Send: creates the agent with the prompt as its opening message, in a new worktree when
@@ -317,6 +379,7 @@ final class NewThreadState {
         guard blocker(vm) == nil, let place else { NSSound.beep(); return }
         let submittedPrompt = prompt
         let submittedImages = attachments.ids
+        let submittedReferences = references
         let submittedWorktree = worktree
         let text = submittedPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let chosenModel = model.trimmingCharacters(in: .whitespaces)
@@ -346,9 +409,17 @@ final class NewThreadState {
                     guard let space = vm.state.spaces.first(where: { $0.id == place.space }) else {
                         throw AgentStartFailure(message: "That project is gone.")
                     }
+                    // Design pieces go in the message the thread starts with, which the host sends once
+                    // pi serves (`deliverOpeningDesignReferences`); the prompt waits for it, with the images.
+                    let withPieces = !submittedReferences.isEmpty
                     var config = NewAgentConfig(spaceID: space.id, workingDirectory: space.path,
-                                                model: chosenModel.isEmpty ? nil : chosenModel, thinking: level, initialPrompt: text)
-                    config.initialImages = images
+                                                model: chosenModel.isEmpty ? nil : chosenModel, thinking: level,
+                                                initialPrompt: withPieces ? nil : text)
+                    if withPieces {
+                        config.initialName = ShepherdViewModel.provisionalName(for: text.isEmpty ? Self.pieceName(submittedReferences) : text)
+                    } else {
+                        config.initialImages = images
+                    }
                     config.serviceTier = tier
                     if useWorktree {
                         let repo = space.path
@@ -364,10 +435,13 @@ final class NewThreadState {
                         config.worktreeBase = base
                         config.worktreePath = path
                     }
-                    try await vm.startAgent(config, focusWindow: false)
+                    let agentID = try await vm.startAgent(config, focusWindow: false)
+                    if withPieces { vm.deliverOpeningDesignReferences(submittedReferences, text: text, images: images, to: agentID) }
                 }
                 if prompt == submittedPrompt { prompt = "" }
                 for id in submittedImages { attachments.remove(id) }
+                let sent = Set(submittedReferences.map(\.id))
+                references.removeAll { sent.contains($0.id) }
                 if worktree == submittedWorktree { worktree = false }
             } catch RemoteHostClientError.rejected(_, let message) {
                 self.error = message
