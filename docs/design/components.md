@@ -40,8 +40,8 @@ until its next turn starts. On iPhone and iPad the thread's header reads Failed 
 itself (`NativeThreadStore.lastTurnFailed`): a remote client hears no turn failure from the host.
 
 Agent events that need a sentence are banners inside the pane they concern (Components › Status
-and feedback), never a modal alert; the one modal an agent can raise is `PeerDeleteDialog`
-(Dialogs and sheets).
+and feedback), never a modal alert; the modals an agent can raise are `PeerDeleteDialog` and
+`PeerApprovalDialog` (Dialogs and sheets).
 
 **Outside the app** the same language holds. A notification's group follows the state
 (`attention` is Needs you, `failed` is Problems, `done` is Finished), and a Live Activity draws
@@ -85,8 +85,8 @@ Rules for every component:
   Disabled is 40% opacity (`nwEnabledOpacity`), fading on `hover`, while the label changes at
   once.
 - **Icon-only buttons** always carry an accessibility label.
-- **Banners** sit inside the pane they concern. Never a modal alert for an agent event (one
-  departure: `PeerDeleteDialog`).
+- **Banners** sit inside the pane they concern. Never a modal alert for an agent event (two
+  departures: `PeerDeleteDialog` and `PeerApprovalDialog`).
 
 ### Controls (NWControls, NWControlsLight)
 

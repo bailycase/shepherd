@@ -20,8 +20,10 @@ public enum PiSignInCatalog {
         public var site: String
         /// Its refresh tokens rotate, so signing in here and in the terminal's pi can sign one out.
         public var sharedLogin: Bool
-        /// pi's login for it listens on its callback port even for a pasted code (Anthropic's, in
-        /// pi 0.87.1, fails outright when the port is taken), so a taken port offers no paste.
+        /// pi's login for it listens on its callback port even for a pasted code and fails outright
+        /// when the port is taken (Anthropic's, in pi 0.87.1), so a taken port offers no paste. pi 1.0's
+        /// Anthropic login no longer fails: with the port taken it still asks for the code (checked
+        /// through the bridge against its SDK), so the sheet could offer paste there. It stays as drawn.
         public var pasteNeedsPort = false
     }
 

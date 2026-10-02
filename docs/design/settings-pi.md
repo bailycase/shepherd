@@ -24,6 +24,16 @@
   - Terminals and agent tools, "Let agents open and drive terminals, message or spawn agents,
     manage automations and send notifications." (the stored key `shepherd.pi.extension.panes`
     and the extension's id, `panes`, keep their names)
+  - Agent-to-agent messages (the user's request, 2026-10-01; no board draws it), a popup row under
+    Terminals and agent tools, not a switch: **Ask me** (the default), **Always allow**, **Never**.
+    "Whether an agent may message, steer, read or start another thread. Ask me opens a dialog each
+    time. Automations can't answer one, so they need Always allow." (`NWPopupMenu`, accessibility
+    label "Agent-to-agent messages", stored as `shepherd.pi.agentMessages`; Reset settings puts it
+    back to Ask me.) It is dimmed while Terminals and agent tools is off, since no agent has the
+    tools then. The host enforces it (docs/agent-coordination.md › Approving what agents do to other
+    threads); the dialog Ask me opens is `PeerApprovalDialog` (Dialogs and sheets). A change takes
+    effect for running agents at once, and forgets every "Allow for this thread". A remote client
+    does not set it: it is this Mac's own choice, like Remote's listener.
   - Diff review tool, "Let agents open the review pane with `review_diff`."
   - Native subagents, "Shepherd helpers, agent files, scripted workflows and durable missions. Needs
     pi 0.85.1+. Children stop with their parent." Turning it off hides the next group, which

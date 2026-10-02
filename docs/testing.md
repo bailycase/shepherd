@@ -160,7 +160,13 @@ It also starts the engine through the real launcher in a scratch Shepherd home, 
 that `NODE_OPTIONS` back (`restore-env.sh`).
 It also runs a scratch copy signed with the hardened runtime (`scripts/sign-engine.sh`), so the
 engine's entitlements are checked too. It never reaches
-a model: the home's one provider points at a closed port and no prompt is sent.
+a model: the home's one provider points at a closed port and no prompt is sent. The same engine
+also runs when the pin changes through the real `SessionServer` and the thread's projection
+(`EngineThreadTests`, same switch): a scripted provider on the loopback
+(`Tests/Extensions/engine-provider.mjs`) drives a turn, a tool call, a reasoning block, Stop with a
+queued message, an extension's question, a command's notice, a prompt template, a skill and
+Compact, so what the stub pi models is checked against the real thing. Run both, and the
+extension tests, on every bump (docs/pi-engine.md › Bumping the pin).
 
 **Long lists** (docs/design/performance.md › Performance) are measured, not guessed:
 
@@ -322,6 +328,14 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
   bound to its thread speaks for the agent it was launched for; each message's `speaksFor` and `replyID`
   against its wire form (`ExtensionMessageTests`). Check the check has teeth by making it allow
   everything: these tests must fail.
+- **Agent-to-agent approvals:** `AgentApprovalTests` (the server, over the real socket) for each
+  setting (Ask parks, Always allow goes through, Never refuses with no dialog), each gated call
+  (send, spawn, read, steer, interrupt), every way a wait ends (allow once, allow for this thread,
+  deny, timeout, cancel, disconnect, Never) and that only an allow does the call, once; "Allow for
+  this thread" forgotten when the pi restarts or the setting changes; an automation run under Ask
+  refused; nothing a socket message sends answers a dialog (`ExtensionIdentityTests` also counts
+  the dialogs a process claiming another agent opened: none). `PeerApprovalFlowTests` presses each
+  button of the dialog and reads what reached the asking agent and the target.
 - **Changes:** every scope on a scratch repository, the proof that reading changes leaves the
   index, HEAD, refs, the stash, `.git` and every file alone, and Undo, Redo and the refusal on a
   turn the stub pi made.
