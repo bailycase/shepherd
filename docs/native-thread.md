@@ -154,9 +154,9 @@ events come out on stdout, one record per LF.
   resumed agent as a new, empty one. pi reads stdin only once it has started, so a pi slower
   than the 10 s request deadline answers requests already given up on; when `get_state` times
   out, the bootstrap asks again, and only the retry's `get_messages` ends the wait (the earlier
-  attempt's timeout declares nothing, or the thread would be served with an empty, clipped
-  history while the retry's is on its way). `clipped` from a failed history fetch clears when
-  the next one lands whole.
+  attempt's timeout declares nothing, or the thread would be served with an empty history
+  while the retry's is on its way). A failed history fetch is `clips.history` (Clipped, below)
+  until the next one lands whole.
 - **Events** update the projection in place. The run pi is streaming is one ordered list of
   live rows (`provisional`), in the order pi produced them:
   - `message_start`, `message_update`, and `message_end` stream the current assistant message
@@ -290,9 +290,28 @@ events come out on stdout, one record per LF.
     - Whatever the rest weighs, history keeps room for 96 KiB (`historyReserve`: the newest 20
       messages at the sizes a thread's messages have) and live content for 48 KiB
       (`activeReserve`), so the snapshot can then pass 240 KiB, never by more than the
-      reserves. `clipped` still says only that messages were left out.
+      reserves. History that does not fit is a page away (`olderCursor`), never a clip.
   - One 16 KiB text budget per message, shared across its blocks and tool fields, and at most
-    128 blocks per message. Clipped content is flagged.
+    128 blocks per message. A message cut to it is `truncated`, which its row says ("Output
+    truncated"); the thread has nothing missing.
+  - **Clipped** (`clips`, and `clipped`): what the snapshot left out, in three facts that each
+    say what and when it returns. `clipped` is true exactly when `clips` is present (an older
+    client reads that alone), and it never means older pages: scrolling up for them is a
+    cursor, not a clip.
+    - `history`: the host could not read pi's history the last time it asked (a fetch failed
+      or timed out), so messages may be missing. A later fetch that lands whole clears it, and
+      so does a session switch (`historyUnread`).
+    - `live`: rows of the running turn left out, oldest first, because `trimLive` kept a page
+      or the live budget was spent. The finished turn's history brings them back and clears
+      the count (`liveLeftOut`).
+    - `questions`: questions that would not fit the live budget beside the others. A question
+      over `dialogBytes` is not one: it stays as a "too large" dock the user can see.
+    The budget adds to the facts the host already holds, so `bytes == encoded` still holds. The
+    client derives its notice from each snapshot (`NativeClipNotice`, in ShepherdRemote, shared
+    by the Mac and iOS), so a notice goes the moment its fact does and the live line only
+    shows while the thread runs. An older host sends `clipped` alone: the client says "Some
+    output is clipped" when there is nothing older to load, and nothing otherwise. None of the
+    lines offers an action; there is no other place to see more.
   - A monotonically increasing `revision`, the pi session ID, and a `generation`, so nothing
     from an old session can be acted on. Anything a snapshot shows moves it, the queue and
     where a message came from included, so a queue change is pushed like one of pi's events.
@@ -733,7 +752,7 @@ reply's subagent `placements`, and `lastPromptAt` (the current turn's start). Vi
 stored values, so a keystroke in the composer re-renders only the composer. What the chrome
 draws is cached the same way, one property each (`session`, `dialogs`, `widgets`, `commands`,
 `model`, `thinking`, `thinkingLevels`, `stats`, `contextMeter`, `contextDetails`,
-`supportedActions`, `clipped`, `running`, `showsThinking`, `userTurnCount`, …), assigned only
+`supportedActions`, `clipNotice`, `running`, `showsThinking`, `userTurnCount`, …), assigned only
 when it changes. The snapshot is one value that every streamed chunk replaces, so the composer
 and the toolbar never read it: a chunk redraws the thread and its live row, a poll that moves
 only the stats' context count redraws no chrome (the header has no counters), and one that moves
