@@ -47,6 +47,7 @@ enum HostSettingsMapping {
         ("browser", "Browser tools", \.piBrowserExtension),
         // Settings ▸ Agents ▸ Context on the Mac; a client lists it with the other switches.
         ("context", "Trim old tool output from the model’s context", \.trimToolOutput),
+        ("deferTools", "Defer rarely used tools", \.deferTools),
     ]
 
     static func settings(from app: AppSettings, shepherdVersion: String?, piVersion: String?) -> HostSettings {

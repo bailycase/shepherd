@@ -47,6 +47,7 @@ public enum HostSettingsPresentation {
         case "mcp": "Lets agents use the host's MCP servers, through pi's own MCP and tool search."
         case "browser": "Lets agents open, read, click through and photograph pages in their thread's Browser on the host."
         case "context": "Clips one huge tool result and, as the context fills, replaces the oldest tool output, file contents, reasoning and screenshots with a line saying what they were. The thread keeps all of it."
+        case "deferTools": "Keeps the browser, other-thread, automation and review tools out of every request until the model asks for one with a tool search."
         default: nil
         }
     }

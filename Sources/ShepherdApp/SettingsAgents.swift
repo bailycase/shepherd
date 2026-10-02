@@ -69,6 +69,12 @@ struct AgentSettings: View {
                                 + "New agents follow a change; running ones at their next launch.") {
                     SettingsSwitch(label: "Trim old tool output from the model’s context", isOn: $settings.trimToolOutput)
                 }
+                SettingsRow(title: "Defer rarely used tools",
+                            subtitle: "Keeps the browser, other-thread, automation and review tools out of every request until the model asks for one "
+                                + "with a tool search, which leaves more of the window to the work. Off sends them all. "
+                                + "New agents follow a change; running ones at their next launch.") {
+                    SettingsSwitch(label: "Defer rarely used tools", isOn: $settings.deferTools)
+                }
             }
             SettingsGroup(title: "Goal checks",
                           footnote: "Applies when agents start or restart. Running agents keep their current policy until restarted.") {

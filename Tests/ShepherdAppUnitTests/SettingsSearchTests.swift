@@ -48,6 +48,8 @@ struct SettingsSearchTests {
         ("compaction", .agents, ["Compact at", "Trim old tool output from the model’s context"]),
         ("auto-compact", .agents, ["Compact at"]),
         ("tool results", .agents, ["Trim old tool output from the model’s context"]),
+        ("tool search", .agents, ["Defer rarely used tools"]),
+        ("defer", .agents, ["Defer rarely used tools"]),
         ("system prompt", .instructions, ["AGENTS.md", "APPEND_SYSTEM.md"]),
         ("sync", .instructions, ["Same on every host"]),
         ("append", .instructions, ["APPEND_SYSTEM.md"]),
