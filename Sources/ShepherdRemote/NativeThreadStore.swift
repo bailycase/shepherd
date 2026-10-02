@@ -189,7 +189,9 @@ public final class NativeThreadStore {
     /// Which errors in the thread show their Details, and which folded ones were opened.
     public let errors = NativeTurnErrorExpansion()
     public private(set) var supportedActions: Set<String> = [] { didSet { bothVersions() } }
-    public private(set) var clipped = false { didSet { threadVersion &+= 1 } }
+    /// What the thread says about what its snapshot shortened or could not read; nil when nothing
+    /// (`NativeClipNotice`).
+    public private(set) var clipNotice: NativeClipNotice? { didSet { threadVersion &+= 1 } }
     /// The thread's own running state: `settledRunning` unless the connection is lost (a
     /// cached running snapshot is not running). The live "Thinking…" and Stop read it.
     public private(set) var running = false { didSet { bothVersions() } }
@@ -585,12 +587,12 @@ public final class NativeThreadStore {
         if value?.stats != stats { stats = value?.stats }
         let actions = Set(value?.supportedActions ?? [])
         if actions != supportedActions { supportedActions = actions }
-        let clipped = value?.clipped ?? false
-        if clipped != self.clipped { self.clipped = clipped }
         let hostRunning = value?.running ?? false
         if hostRunning != self.hostRunning { self.hostRunning = hostRunning }
         let running = loadError == nil && settledRunning
         if running != self.running { self.running = running }
+        let notice = NativeClipNotice(value, running: running)
+        if notice != clipNotice { clipNotice = notice }
         var failed = false
         if !running, case .error(_, _, true, _)? = rows.last?.presentation?.items.last { failed = true }
         if failed != lastTurnFailed { lastTurnFailed = failed }
