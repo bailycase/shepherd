@@ -96,7 +96,7 @@ struct SidebarRecentsTests {
         let lists = SidebarDerivation.lists(SidebarSource(
             local: ShepherdState(spaces: [space], agents: [working, asking]), statusSince: [working.id: since],
             hosts: [SidebarSource.Host(id: host, name: "horizon", state: ShepherdState(spaces: [space], agents: [remote]))]))
-        let rows = Dictionary(uniqueKeysWithValues: (lists.recents + lists.needsYou).map { ($0.title, $0) })
+        let rows = Dictionary(uniqueKeysWithValues: (lists.working + lists.recents + lists.needsYou).map { ($0.title, $0) })
         #expect(rows["working"]?.hasGoal == true)
         #expect(rows["working"]?.accessory == .elapsed(since: since))
         #expect(rows["asking"]?.hasGoal == true)
