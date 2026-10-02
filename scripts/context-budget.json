@@ -16,7 +16,7 @@
     "tools.agent": 1011,
     "tools.automation": 861,
     "tools.review": 245,
-    "tools.children": 2015,
+    "tools.children": 1547,
     "tools.browser": 2178,
     "tools.mcp": 183,
     "tools.mcp_direct": 1311,
@@ -24,6 +24,6 @@
     "ctx.append_system": 88,
     "ctx.global_agents": 891
   },
-  "total": 11988,
-  "toolCount": 59
+  "total": 11520,
+  "toolCount": 58
 }

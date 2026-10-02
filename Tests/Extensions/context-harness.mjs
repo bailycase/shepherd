@@ -96,9 +96,9 @@ export async function startThread(options = {}) {
   const pkg = options.pkg ?? process.env.PI_PACKAGE_DIR;
   if (!pkg) throw Error("Set PI_PACKAGE_DIR to the installed pi package");
   const api = options.api ?? "openai-responses";
-  // A design's agent has the design tools instead of panes, and never the browser or design references.
+  // A design's agent has the design tools instead of panes, and never the browser, a diff review or design references.
   const designAgent = !!options.design;
-  const notForDesign = ["panes", "browser", "design-refs"];
+  const notForDesign = ["panes", "review", "browser", "design-refs"];
   const names = options.extensions === "none" ? [] : (Array.isArray(options.extensions) ? options.extensions : THREAD_EXTENSIONS.map(([name]) => name))
     .filter((name) => (name === "design" ? designAgent : !(designAgent && notForDesign.includes(name))));
   const wants = (name) => names.includes(name);
