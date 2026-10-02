@@ -122,6 +122,8 @@
 | SettingsPiFromPi: "pi 0.86.4 in your terminal" | "The pi in your terminal, found through your login shell." | Shepherd never runs the user's pi, so it doesn't know its version |
 | PiAuthStates, PiImportProgress: "This agent was mid-turn when Shepherd quit." on the waiting line | "It picks up once your pi is brought over." alone | Statuses reset at launch (sessions die with the app), so Shepherd doesn't know a turn was cut short |
 | SlashLogin: /logout signs out | /logout opens Sign-in at the provider; Sign out stays a click there | A slash command never destroys a sign-in on its own |
+| NavNewThread: the composer takes words and images | Also this Mac's design pieces: "@" and a pasted reference put a chip beside the prompt (Design tool on), a design alone starts the thread, and a project on another host takes none | The user's report, 2026-10-01: "when starting a new thread, im not able to start the thread by attaching a design board". No board draws it; the picker and chips are the thread composer's (design-tool-references.md), and every choice under New thread page › Design references is the agent's proposal for the user to settle |
+| RefAtDesigns, RefAtElements, RefAtSearch (the @ picker): drawn only once its rows are read, or empty | Opens at once on "@": **Loading designs…** (a spinner and the words, nothing to choose) until the designs are read, **Couldn't load designs.** with Retry when the read takes over 15 seconds, and a note instead for a project on another host (New thread) | The user's decision, 2026-10-01: "when doing an @ it needs to show some kind of loading instead of just nothing". No board draws it, so its copy and layout are the agent's proposal for the user to settle |
 
 Additions the boards don't have:
 

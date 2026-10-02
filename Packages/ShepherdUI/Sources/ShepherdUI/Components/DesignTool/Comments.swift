@@ -124,7 +124,7 @@ public struct NWCommentThread: View {
                     .tint(nw.lantern)
                     .focused($replyFocused)
                     .onKeyPress(.return, phases: .down) { press in
-                        if press.modifiers.contains(.shift) { reply += "\n"; return .handled }
+                        if let result = NWReturnKey.lineBreak(for: press) { return result }
                         onReply()
                         return .handled
                     }

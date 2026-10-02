@@ -431,7 +431,7 @@ private struct SubagentRunInspector: View {
                     .focused($composing)
                     .padding(EdgeInsets(top: AppLayout.steerTopInset, leading: NW.Space.l, bottom: NW.Space.xxs, trailing: NW.Space.l))
                     .onKeyPress(.return, phases: .down) { press in
-                        if press.modifiers.contains(.shift) { return .ignored }
+                        if let result = NWReturnKey.lineBreak(for: press) { return result }
                         send()
                         return .handled
                     }

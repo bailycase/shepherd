@@ -609,7 +609,7 @@ public struct NWQueueEditor: View {
                     .autocorrectionDisabled()
                     .focused($focused)
                     .onKeyPress(.return, phases: .down) { press in
-                        if press.modifiers.contains(.shift) { return .ignored }
+                        if let result = NWReturnKey.lineBreak(for: press) { return result }
                         if canSave { onSave() }
                         return .handled
                     }
