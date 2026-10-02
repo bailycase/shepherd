@@ -248,6 +248,13 @@ test("a thread that holds a design reference keeps design_get and design_note di
   for (const name of DEFERRED) assert.ok(!sent.includes(name), `${name} is deferred`);
 });
 
+test("a native helper's pi is sent pi's four tools and the way to ask its parent, with no search and no line about deferred tools", { timeout: 120000 }, async () => {
+  const helper = await capture("subagent", { pkg });
+  assert.deepEqual(helper.body.tools.map((tool) => tool.name), ["read", "bash", "edit", "write", "shepherd_parent_message"]);
+  for (const name of DEFERRED) assert.ok(!helper.toolSources[name], `${name} is not registered for a helper`);
+  assert.ok(!JSON.stringify(helper.body.input).includes("tool_search"), "it has no tool search to name");
+});
+
 test("a native subagent and a design's agent never register the browser, with deferral on or off", async () => {
   const require = createRequire(path.join(pkg, "package.json"));
   const { createJiti } = require("jiti");
