@@ -4,7 +4,7 @@ import ShepherdUI
 
 /// Activity groups are view state, not part of the host's workspace or wire protocol.
 enum SidebarActivitySection: String, CaseIterable, Hashable {
-    case pinned, needsYou, working, done, recents, designs
+    case done, pinned, needsYou, working, recents, designs
 
     var title: String {
         switch self {
@@ -33,7 +33,7 @@ enum SidebarActivityItem: Identifiable, Equatable {
 
 extension SidebarLists {
     var sections: [(section: SidebarActivitySection, rows: [SidebarListRow])] {
-        [(.pinned, pinned), (.needsYou, needsYou), (.working, working), (.done, done), (.recents, recents), (.designs, designs)]
+        [(.done, done), (.pinned, pinned), (.needsYou, needsYou), (.working, working), (.recents, recents), (.designs, designs)]
     }
 
     func visibleRows(collapsed: Set<SidebarActivitySection>) -> [SidebarListRow] {
