@@ -44,7 +44,8 @@ struct CompactionThresholdFlowTests {
         #expect(Self.reserve("openai/gpt-5", in: home) == 80_000)
         #expect(PiConfig.compactionSettings(model: "openai/gpt-5", cwd: nil, in: home.directory).reserveTokens == 80_000,
                 "the Context card's mark reads what pi will use")
-        #expect(PiCompactionThreshold.written(in: home) == 80)
+        // The record of what was written follows the settings file, so wait for it.
+        try await eventuallyAsync("the record of the share") { PiCompactionThreshold.written(in: home) == 80 }
 
         app.settings.compactAtPercent = 60
         try await eventuallyAsync("the new share") { Self.reserve("openai/gpt-5", in: home) == 160_000 }
@@ -53,7 +54,7 @@ struct CompactionThresholdFlowTests {
         app.settings.compactAtPercent = nil
         try await eventuallyAsync("pi's default back") { Self.reserve("openai/gpt-5", in: home) == nil }
         #expect(Self.reserve("anthropic/claude-opus-4-5", in: home) == nil)
-        #expect(PiCompactionThreshold.written(in: home) == nil)
+        try await eventuallyAsync("the record gone with it") { PiCompactionThreshold.written(in: home) == nil }
     }
 
     /// A launch with a share chosen covers a model added since: the view model writes it again at start.
