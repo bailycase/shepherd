@@ -57,7 +57,7 @@ struct DesignLifecycleFlowTests {
         #expect(!vm.state.designs.contains { $0.id == design.id })
         #expect(!vm.state.agents.contains { $0.id == agent.id })
         #expect(!vm.designsPage.cards.contains { $0.id == design.id })
-        #expect(!vm.sidebarLists.recents.contains { $0.id == .design(design.id) })
+        #expect(!vm.sidebarLists.designs.contains { $0.id == .design(design.id) })
         let toast = try #require(vm.designToast)
         #expect(toast.name == design.name && !toast.isFailure)
         let server = app.server
@@ -69,7 +69,7 @@ struct DesignLifecycleFlowTests {
         #expect(vm.designToast == nil)
         #expect(vm.state.agents.contains { $0.id == agent.id && $0.designID == design.id }, "its agent and chat, back")
         #expect(vm.designsPage.cards.contains { $0.id == design.id })
-        #expect(vm.sidebarLists.recents.contains { $0.id == .design(design.id) })
+        #expect(vm.sidebarLists.designs.contains { $0.id == .design(design.id) })
         vm.openDesign(design.id)
         try await eventuallyOnMain("its agent on screen again") { vm.shownDesign?.id == design.id && vm.selectedAgentID == agent.id }
         let restored = try #require(vm.state.agents.first { $0.id == agent.id })

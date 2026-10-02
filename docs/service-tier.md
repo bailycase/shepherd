@@ -88,7 +88,7 @@ and terminals (which blank the variable) never see it.
 ## pi's `before_provider_request`
 
 The extension hooks pi's `before_provider_request` (not in pi's written docs; behavior captured in
-`Tests/Extensions/service-tier.test.mjs` against real pi 0.87.1):
+`Tests/Extensions/service-tier.test.mjs` against real pi 1.0.0):
 
 - Handlers run in extension load order; each receives `{ type: "before_provider_request", payload }`
   and a context whose `model` is the session's current model. Whatever a handler returns (when

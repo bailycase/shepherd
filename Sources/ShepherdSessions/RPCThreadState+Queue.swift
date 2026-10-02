@@ -4,7 +4,7 @@ import ShepherdProtocol
 import ShepherdRemote
 
 /// The queue: messages sent while pi works wait here, on the host, until pi settles, so every
-/// client sees and edits one queue and nothing reaches pi before its turn. pi 0.87.1's own
+/// client sees and edits one queue and nothing reaches pi before its turn. pi 1.0.0's own
 /// queues are text-only, cannot be edited or reordered, and `set_follow_up_mode` writes the
 /// user's pi settings, so Shepherd keeps its own and hands pi one prompt at a time:
 ///
