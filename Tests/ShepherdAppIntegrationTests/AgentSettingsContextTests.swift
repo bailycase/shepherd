@@ -18,6 +18,12 @@ struct AgentSettingsContextTests {
         }
     }
 
+    @Test func theDeferSwitchTurnsToolDeferralOffAndOnBesideTheTrimSwitch() async {
+        await #expect(processExitsWith: .success) {
+            await recordingErrors { try await Self.switchingDeferral() }
+        }
+    }
+
     @Test func compactAtOffersPisDefaultAndEachShareAndHandsTheChoiceOn() async {
         await #expect(processExitsWith: .success) {
             await recordingErrors { try await Self.choosingACompactionShare() }
@@ -27,6 +33,7 @@ struct AgentSettingsContextTests {
     // MARK: Scenarios
 
     private static let trim = "Trim old tool output from the model’s context"
+    private static let defers = "Defer rarely used tools"
 
     @MainActor
     private static func page(_ settings: AppSettings) -> OffscreenWindow {
@@ -48,6 +55,27 @@ struct AgentSettingsContextTests {
         #expect(control.isEnabled && control.frame.width >= 30 && control.frame.height >= 18, "the switch is as big as it is drawn: \(control)")
         try window.press(trim, role: ControlRole.checkBox)
         #expect(settings.trimToolOutput, "and the next press back on")
+    }
+
+    /// The second switch of the group, pressed the same way; each changes only its own setting, and a press reads back from the store.
+    @MainActor
+    static func switchingDeferral() async throws {
+        AccessibilityNode.enable()
+        let store = ScratchDefaults()
+        let settings = AppSettings(store: store)
+        let window = page(settings)
+        defer { window.close() }
+        #expect(settings.deferTools && settings.trimToolOutput, "both on until switched off")
+
+        let control = try window.press(defers, role: ControlRole.checkBox)
+        #expect(!settings.deferTools, "the press turned it off")
+        #expect(settings.trimToolOutput, "and left the trim switch alone")
+        #expect(control.isEnabled && control.frame.width >= 30 && control.frame.height >= 18, "the switch is as big as it is drawn: \(control)")
+        #expect(AppSettings(store: store).deferTools == false, "the choice is kept for the next launch")
+        try window.press(defers, role: ControlRole.checkBox)
+        #expect(settings.deferTools, "and the next press back on")
+        try window.press(trim, role: ControlRole.checkBox)
+        #expect(!settings.trimToolOutput && settings.deferTools, "the trim switch changes only itself")
     }
 
     @MainActor

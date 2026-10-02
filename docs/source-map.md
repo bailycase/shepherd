@@ -294,14 +294,18 @@ Packages/
                        Diagnostics/  NWRenderProbe (row-body counts for tests; debug only)
                        Its unit tests live in the root package (Tests/ShepherdUIUnitTests).
 Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free):
-  shepherd-status.ts      status + active pi session, Retry (/shepherd-retry; docs/native-thread.md › Retry)
+  shepherd-status.ts      status + active pi session, Retry (/shepherd-retry; docs/native-thread.md › Retry);
+                          with SHEPHERD_DEFER_TOOLS=1 keeps the deferred tools reachable: tool_search active,
+                          the one prompt line that names them, a family loaded whole, loads restored on a
+                          restart (docs/context-budget.md › Deferred tools)
   shepherd-goal.ts        /goal and typed controls, bounded continuation and a separate authenticated
                          evaluator; loaded after children; canonical state in pi session entries
   shepherd-namer.ts       agent titles
   shepherd-panes.ts       terminal_* (open/list/run/read/focus/close), agent_*
                           (list/send/spawn/read/steer/interrupt/wait/delete),
-                          automation_*, notify; see docs/agent-coordination.md
-  shepherd-review.ts      review_diff (readies the side pane's Changes tab)
+                          automation_*, notify; see docs/agent-coordination.md (agent_* and automation_*
+                          are registered `deferred` in a thread)
+  shepherd-review.ts      review_diff (readies the side pane's Changes tab; `deferred` in a thread)
   shepherd-subagents.ts   setAgentChildren (native + pi-subagents runs)
   shepherd-children.ts (+ -config, -ui, shepherd-workflow, shepherd-missions, shepherd-inspect.mjs)
                           native subagent runtime; see docs/native-subagents.md
@@ -321,7 +325,7 @@ Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free)
   shepherd-browser.ts     browser_open, browser_read, browser_click, browser_type, browser_press,
                           browser_scroll, browser_wait, browser_screenshot, browser_console,
                           browser_eval, browser_back, browser_forward and browser_reload, on the
-                          thread's own Browser page only; see docs/browser.md
+                          thread's own Browser page only, `deferred` in a thread; see docs/browser.md
   shepherd-service-tier.ts  adds service_tier to the agent's own provider requests while its thread
                           is on Fast (the Speed control), from the agent's tier file; see
                           docs/service-tier.md

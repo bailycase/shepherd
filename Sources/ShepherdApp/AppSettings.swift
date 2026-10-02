@@ -62,6 +62,7 @@ final class AppSettings {
         static let mcpSameEverywhere = "shepherd.mcp.sameEverywhere"
         static let queueDelivery = "shepherd.agent.queueDelivery"
         static let trimToolOutput = "shepherd.agent.trimToolOutput"
+        static let deferTools = "shepherd.agent.deferTools"
         static let compactAtPercent = "shepherd.agent.compactAtPercent"
         static let agentMessages = "shepherd.pi.agentMessages"
         static let piPanesExtension = "shepherd.pi.extension.panes"
@@ -99,7 +100,7 @@ final class AppSettings {
 
         static let all = [
             terminalFontFamily, terminalFontSize, defaultModel,
-            defaultThinking, defaultServiceTier, goalCrossProviderEvaluation, autoNameAgents, queueDelivery, trimToolOutput, compactAtPercent, shellPath,
+            defaultThinking, defaultServiceTier, goalCrossProviderEvaluation, autoNameAgents, queueDelivery, trimToolOutput, deferTools, compactAtPercent, shellPath,
             agentMessages, piPanesExtension, piReviewExtension, piSubagentsExtension, piNativeSubagents,
             piMCPExtension, piBrowserExtension, piDesignReferences,
             childConcurrency, childModel, childThinking, childContext, childScope,
@@ -231,6 +232,14 @@ final class AppSettings {
     /// Agents launched after a change follow it.
     var trimToolOutput: Bool {
         didSet { store.set(trimToolOutput, forKey: Key.trimToolOutput) }
+    }
+
+    /// Settings ▸ Agents ▸ Defer rarely used tools: agents get `SHEPHERD_DEFER_TOOLS=1` and pi's
+    /// `tool_search`, so the browser, other-thread, automation and review tools stay out of every
+    /// request until the model loads them with a search (docs/context-budget.md, Deferred tools).
+    /// Off sends them all, as before. Agents launched after a change follow it.
+    var deferTools: Bool {
+        didSet { store.set(deferTools, forKey: Key.deferTools) }
     }
 
     /// Settings ▸ Agents ▸ Compact at: the share of a model's window past which pi compacts on its
@@ -493,6 +502,7 @@ final class AppSettings {
         queueDelivery = store.string(forKey: Key.queueDelivery)
             .flatMap(NativeQueueMode.init(rawValue:)) ?? Defaults.queueDelivery
         trimToolOutput = store.object(forKey: Key.trimToolOutput) as? Bool ?? true
+        deferTools = store.object(forKey: Key.deferTools) as? Bool ?? true
         compactAtPercent = (store.object(forKey: Key.compactAtPercent) as? Int).flatMap { PiCompactionThreshold.choices.contains($0) ? $0 : nil }
         agentMessages = store.string(forKey: Key.agentMessages)
             .flatMap(AgentMessagePolicy.init(rawValue:)) ?? AgentMessagePolicy.default
@@ -590,6 +600,7 @@ final class AppSettings {
         mcpSameEverywhere = true
         queueDelivery = Defaults.queueDelivery
         trimToolOutput = true
+        deferTools = true
         compactAtPercent = nil
         uiDensity = 1
         uiTextScale = 1

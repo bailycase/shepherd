@@ -46,6 +46,10 @@
     secret the derived `mcp.json` refers to, with `SHEPHERD_MCP_SECRETS` naming them (docs/mcp.md;
     the launcher keeps them from the model's shell and the servers that don't name them), and `SHEPHERD_EXT_MCP_PROJECT=1` (the installed
     `shepherd-mcp-project.ts`) while Settings ▸ MCP servers ▸ Also use a repo's .mcp.json is on.
+  - For Settings ▸ Agents ▸ Context: `SHEPHERD_EXT_CONTEXT` (the installed `shepherd-context.ts`) while Trim old tool
+    output is on, and `SHEPHERD_DEFER_TOOLS=1` while Defer rarely used tools is on, for a thread's and an automation's
+    agent and never a design's (docs/context-budget.md). The extensions register the browser, other-thread,
+    automation and review tools `deferred` when they read it, and the launch adds `-e builtin:tool-search`.
   - Per agent: `SHEPHERD_NEEDS_NAME`, `SHEPHERD_AUTOMATION`, `SHEPHERD_MODEL`,
     `SHEPHERD_SUGGEST_FILES` (the files its `suggest_instruction` may draft a line for, while
     Settings ▸ Experiments ▸ Suggested instructions is on for its kind of agent), and, for an

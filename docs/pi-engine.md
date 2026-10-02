@@ -114,6 +114,11 @@ builtin:mcp -e builtin:tool-search`, which pi lets win over the home's switch (c
 Pi ▸ Bundled extensions ▸ MCP servers is on. `codemode` stays off: with it off, a server on pi's default
 exposure (`codemode`) is unreachable, which is why Shepherd's derived `mcp.json` always names an exposure.
 
+pi 1.0's tool exposure (`deferred`, a namespace) and `tool_search` also carry Shepherd's own rarely used tools: the
+extensions register the browser, other-thread, automation and review tools `deferred` while `SHEPHERD_DEFER_TOOLS=1`, and
+the launch passes `-e builtin:tool-search` even with MCP off ([context-budget.md](context-budget.md) › Deferred tools has
+what pi does with them, measured).
+
 What pi's MCP does with the files and the environment it is given is in [mcp.md](mcp.md); what it adds
 to a launch is `/mcp` (over RPC it answers with this thread's servers, `name: connected, 9 tools
 (deferred)`), a server section in the system prompt, `tool_search`, and `<home>/mcp-auth.json` for

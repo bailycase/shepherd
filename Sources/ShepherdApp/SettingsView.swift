@@ -277,7 +277,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                            "Sidebar width"]
         case .terminal: ["Font family", "Font size", "Shell"]
         case .agents: ["Default model", "Default thinking level", "Speed for new threads",
-                       "When a turn ends, send the queue", "Compact at", "Trim old tool output from the model’s context"]
+                       "When a turn ends, send the queue", "Compact at", "Trim old tool output from the model’s context", "Defer rarely used tools"]
         case .worktrees: ["Base branch", "Fetch before creating", "Commit remaining work", "Generate PR descriptions", "Delete local branch", "Merge PR automatically"]
         case .pi: ["Shepherd's pi", "Name agents automatically", "Terminals and agent tools", "Agent-to-agent messages", "Diff review tool", "Native subagents",
                    "Subagent display", "MCP servers", "Browser tools", "Concurrency"]
@@ -311,7 +311,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                        "When a turn ends, send the queue": ["queue", "follow-up", "one per turn", "all at once"],
                        "Compact at": ["compaction", "compacting", "context window", "percent", "full", "tokens", "auto-compact"],
                        "Trim old tool output from the model’s context": ["tool results", "clear", "clipping", "context", "tokens", "compaction",
-                                                                     "screenshots", "cache"]]
+                                                                     "screenshots", "cache"],
+                       "Defer rarely used tools": ["tool search", "tool_search", "deferred", "tokens"]]
         case .worktrees: ["Base branch": ["git", "origin"], "Merge PR automatically": ["github", "pull request"]]
         case .pi: ["Native subagents": ["children", "workflows"], "Shepherd's pi": ["version", "engine", "home", "folder"],
                    "Agent-to-agent messages": ["agent_send", "agent_spawn", "message", "steer", "peer", "threads", "approve", "allow",
