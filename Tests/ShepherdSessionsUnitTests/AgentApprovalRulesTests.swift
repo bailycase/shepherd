@@ -51,9 +51,10 @@ struct AgentApprovalRulesTests {
         #expect(AgentMessageGate.unattendedMessage.contains("Always allow") && AgentMessageGate.unattendedMessage.contains("notify"))
     }
 
-    @Test func anApprovalWaitsTwoMinutesAndAnAgentMayHaveEightWaiting() {
+    @Test func anApprovalWaitsTwoMinutesAndAnAgentMayHaveEightWaitingOfTwentyFour() {
         #expect(AgentMessageGate.approvalTimeout == 120)
         #expect(AgentMessageGate.pendingLimitPerAgent == 8)
+        #expect(AgentMessageGate.pendingLimit == 24)
     }
 
     // MARK: - Allow for this thread

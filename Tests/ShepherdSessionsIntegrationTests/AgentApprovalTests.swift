@@ -543,6 +543,65 @@ struct AgentApprovalTests {
         #expect(s.prompts.current.count == AgentMessageGate.pendingLimitPerAgent)
     }
 
+    /// Every agent together may leave 24 dialogs waiting, so a crowd of agents cannot bury the user either.
+    @Test func allAgentsTogetherMayHaveTwentyFourCallsWaiting() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let space = Fixture.space("crowd", path: h.dir.path)
+        let askers = (1...4).map { Fixture.agent(in: space, name: "asker \($0)") }
+        let target = Fixture.agent(in: space, name: "target")
+        try await h.seed(Fixture.workspace(askers + [target], space: space))
+        let asked = Locked<[AgentApprovalPrompt]>([])
+        h.server.onAgentApprovalRequest = { prompt in asked.withValue { $0.append(prompt) } }
+        let clients = try askers.map { _ in try ExtensionClient(path: h.socketPath) }
+        var id = 0
+        for (asker, client) in zip(askers.prefix(3), clients) {
+            for _ in 1...AgentMessageGate.pendingLimitPerAgent {
+                id += 1
+                try client.send(.sendToAgent(id: id, agentID: asker.agent.id, targetAgentID: target.agent.id, text: "hi"))
+            }
+        }
+        try await eventually("24 dialogs to wait") { asked.current.count == AgentMessageGate.pendingLimit }
+
+        try clients[3].send(.sendToAgent(id: 99, agentID: askers[3].agent.id, targetAgentID: target.agent.id, text: "hi"))
+
+        #expect(try await clients[3].reply() == .error(id: 99, code: "busy", message: AgentMessageGate.busyMessage))
+        #expect(asked.current.count == AgentMessageGate.pendingLimit)
+    }
+
+    /// An allowance is memory, not a setting: a relaunched server asks again.
+    @Test func whatWasAllowedForAThreadIsNotWrittenToDiskAndARelaunchAsksAgain() async throws {
+        let first = try ScratchServer.fresh()
+        let space = Fixture.space("relaunch", path: first.dir.path)
+        let lead = Fixture.agent(in: space, name: "lead")
+        let worker = Fixture.agent(in: space, name: "worker")
+        try await first.seed(Fixture.workspace([lead, worker], space: space))
+        let before = try first.persisted()
+        let asked = Locked<[AgentApprovalPrompt]>([])
+        first.server.onAgentApprovalRequest = { prompt in asked.withValue { $0.append(prompt) } }
+        first.server.onAgentPeerRequest = { _, respond in respond(.ok) }
+        let client = try ExtensionClient(path: first.socketPath)
+        try client.send(.sendToAgent(id: 1, agentID: lead.agent.id, targetAgentID: worker.agent.id, text: "hi"))
+        try await eventually("the dialog") { asked.current.count == 1 }
+        #expect(await first.server.resolveAgentApproval(try #require(asked.current.first).requestID, .allowForThread))
+        #expect(try await client.reply() == .ok(id: 1))
+        try client.send(.sendToAgent(id: 2, agentID: lead.agent.id, targetAgentID: worker.agent.id, text: "again"))
+        #expect(try await client.reply() == .ok(id: 2), "allowed for the thread while this server runs")
+        #expect(asked.current.count == 1)
+        #expect(try first.persisted() == before, "nothing about it reached state.json")
+        client.closeConnection()
+        first.stop(keepFiles: true)
+
+        let second = try ScratchServer(dir: first.dir)
+        defer { second.stop() }
+        let askedAgain = Locked<[AgentApprovalPrompt]>([])
+        second.server.onAgentApprovalRequest = { prompt in askedAgain.withValue { $0.append(prompt) } }
+        let again = try ExtensionClient(path: second.socketPath)
+        try again.send(.sendToAgent(id: 3, agentID: lead.agent.id, targetAgentID: worker.agent.id, text: "after a relaunch"))
+
+        try await eventually("the relaunched server to ask") { askedAgain.current.count == 1 }
+    }
+
     /// With no app to ask, an asked call is refused rather than done or left hanging.
     @Test func withNoAppToAskACallIsRefusedUnsupported() async throws {
         let h = try ScratchServer.fresh()

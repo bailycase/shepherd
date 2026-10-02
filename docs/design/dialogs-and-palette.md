@@ -200,8 +200,8 @@ dialog. There is no `.alert`, `confirmationDialog`, or `NSAlert` in the app:
   - **Footer**: Deny (ghost, ⎋), Allow for this thread and Allow once (secondary). **No button is
     the ⏎ default** (Departures), and none is destructive. Only the buttons close it: the sheet
     has no other dismissal, so a button's answer is never taken for the next call's.
-  - **When it shows**: one at a time, the oldest call first (up to eight per agent wait; a ninth is
-    refused), never over the Delete agent dialog, which goes first. Names and folders are read
+  - **When it shows**: one at a time, the oldest call first (up to eight per agent and 24 in all wait; the
+    next is refused), never over the Delete agent dialog, which goes first. Names and folders are read
     when it is drawn. It closes by itself when the call lapses (the agent's Stop, its connection
     closing, the setting turning to Never, or two minutes without an answer: Deny), and answers
     for what the same agent has waiting when Allow for this thread is pressed.
