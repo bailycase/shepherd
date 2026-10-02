@@ -67,8 +67,8 @@ class EmbeddedExtensionTests(unittest.TestCase):
             "scripts/sync-embedded-extension.py <swift-file> <static-name> <canonical-file>",
         )
 
-    def test_the_canonical_files_are_the_twenty_two_the_app_embeds(self):
-        self.assertEqual(len(canonical_files()), 22, "a new canonical file needs an embedded copy and a row in EmbeddedExtensionTests")
+    def test_the_canonical_files_are_the_twenty_three_the_app_embeds(self):
+        self.assertEqual(len(canonical_files()), 23, "a new canonical file needs an embedded copy and a row in EmbeddedExtensionTests")
 
 
 if __name__ == "__main__":
