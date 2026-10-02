@@ -156,8 +156,9 @@ that scales row heights, not controls. Text size scales type only.
 - A rebound chord must include ⌘ and avoid ⌘1–9, ⌘, and the plain system chords. A chord the app
   chrome uses must be in `appOwnedChords` so a focused Ghostty surface does not eat it.
 - Keycaps (`NWKeycap`) put modifiers in Apple's order, ⌃⌥⇧⌘, one cap per key.
-- ⏎ confirms and ⎋ cancels in a sheet; Esc closes a menu, then the command list, then stops pi
-  while it works, and never stops pi while a question waits.
+- ⏎ confirms and ⎋ cancels in a sheet (a destructive button, and every button of
+  `PeerApprovalDialog`, is never the ⏎ default); Esc closes a menu, then the command list, then
+  stops pi while it works, and never stops pi while a question waits.
 - Status events are banners inside the pane they concern, never a modal alert.
 
 ## Accessibility
