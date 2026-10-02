@@ -286,9 +286,18 @@ struct Composer: View {
                 }
                 .nwTransition(.list, edge: .bottom)
             } else if let notice = store.notice {
-                Text(notice).font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary).textSelection(.enabled)
-                    .padding(.horizontal, NW.Space.xs)
+                if store.modelUnavailable {
+                    NWBanner(.failed, title: "Message wasn't sent.", message: notice) {
+                        Button("Choose model", action: openModels)
+                            .buttonStyle(.nw(.secondary, size: .s))
+                            .disabled(!store.supports("setModel"))
+                    }
                     .nwTransition(.list, edge: .bottom)
+                } else {
+                    Text(notice).font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary).textSelection(.enabled)
+                        .padding(.horizontal, NW.Space.xs)
+                        .nwTransition(.list, edge: .bottom)
+                }
             }
             // The subagents and "Up next" grow upward from the card, which never moves.
             if store.hasGoal || showsTray || queueStack.isVisible {

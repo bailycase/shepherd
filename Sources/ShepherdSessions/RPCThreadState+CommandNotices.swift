@@ -1,3 +1,4 @@
+import CryptoKit
 import Dispatch
 import Foundation
 import ShepherdProtocol
@@ -41,6 +42,78 @@ extension RPCThreadState {
                 self?.commandWindows.remove(token)
             }
         }
+    }
+
+    /// Preflights are serialized because pi's input hooks have no RPC request ID. Control
+    /// commands and abort still bypass this lane. A timeout fences the lane until restart:
+    /// a late marker must never reject a newer input or make an uncertain send retryable.
+    func requestInput(id: UUID, prompt: String, images: [RPCImage], delivery: RPCStreamingBehavior,
+                      completion: @escaping (NativeThreadResult?) -> Void) {
+        guard !inputOutcomeUnknown else {
+            completion(.failure(code: "input_pending", message: "An earlier send's outcome is unknown. Restart the agent before sending again; this message was not sent."))
+            return
+        }
+        if inputActive {
+            waitingInputs.append { [weak self] send in
+                guard send, let self else {
+                    completion(.failure(code: "send_cancelled", message: "The send was cancelled before pi started it."))
+                    return
+                }
+                self.requestInput(id: id, prompt: prompt, images: images, delivery: delivery, completion: completion)
+            }
+            return
+        }
+        inputActive = true
+        let generation = generation
+        beginInput(id, prompt: prompt)
+        session.request(.prompt(message: prompt, images: images, streamingBehavior: delivery), timeout: Self.promptTimeout) { [weak self] result in
+            guard let self else { return }
+            if case .failure(.timeout) = result { self.inputOutcomeUnknown = true }
+            let failure = self.finishInput(id, result: result)
+            completion(self.generation == generation ? failure : .failure(code: "stale_session", message: "The session changed while the send was pending."))
+            self.inputActive = false
+            if self.inputOutcomeUnknown { self.cancelWaitingInputs() }
+            else if !self.waitingInputs.isEmpty { self.waitingInputs.removeFirst()(true) }
+        }
+    }
+
+    func cancelWaitingInputs() {
+        let waiting = waitingInputs
+        waitingInputs.removeAll()
+        for cancel in waiting { cancel(false) }
+    }
+
+    /// A managed guard identifies the input it refused. Keep it only until the RPC response.
+    func beginInput(_ id: UUID, prompt: String) {
+        inputPrompts[id] = SHA256.hash(data: Data(prompt.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    func recordBlockedInput(_ text: String) {
+        struct Blocked: Decodable { let version: Int; let promptSHA256: String; let modelId: String }
+        guard text.utf8.count <= Self.noticeBytes,
+              let blocked = try? JSONDecoder().decode(Blocked.self, from: Data(text.utf8)),
+              blocked.version == 1, !blocked.modelId.isEmpty, blocked.modelId.utf8.count <= 1024,
+              !blocked.modelId.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else { return }
+        // A prior input hook may have expanded a template or transformed the text. The
+        // serialized lane still has exactly one RPC preflight, so that refusal belongs to it.
+        for (id, digest) in inputPrompts where digest == blocked.promptSHA256 || inputActive && inputPrompts.count == 1 {
+            inputFailures[id] = Self.modelUnavailableMessage(blocked.modelId)
+        }
+    }
+
+    static func modelUnavailableMessage(_ modelID: String) -> String {
+        "Couldn't restore this conversation's model: CLIProxyAPI / \(modelID). Your message wasn't sent. Try again or choose a model."
+    }
+
+    func finishInput(_ id: UUID, result: Result<RPCResponse, RPCError>) -> NativeThreadResult? {
+        inputPrompts.removeValue(forKey: id)
+        let message = inputFailures.removeValue(forKey: id)
+        if let failure = Self.dispatchFailure(result) { return failure }
+        // A notification never turns a started/queued message into a retryable failure.
+        if case .success(let response) = result, response.data?["disposition"]?.stringValue == "handled", let message {
+            return .failure(code: "model_unavailable", message: message)
+        }
+        return nil
     }
 
     /// pi's `notify`: kept only while a command the user sent is in flight.
