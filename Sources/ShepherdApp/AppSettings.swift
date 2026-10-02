@@ -53,6 +53,7 @@ final class AppSettings {
         static let defaultModel = "shepherd.agent.defaultModel"
         static let defaultThinking = "shepherd.agent.defaultThinking"
         static let defaultServiceTier = "shepherd.agent.defaultServiceTier"
+        static let goalCrossProviderEvaluation = "shepherd.agent.goalCrossProviderEvaluation"
         static let autoNameAgents = "shepherd.agent.autoName"
         static let skillsInSlashMenu = "shepherd.skills.slashMenu"
         static let hiddenSlashCommands = "shepherd.pi.slashCommands.hidden"
@@ -60,6 +61,7 @@ final class AppSettings {
         static let mcpProjectConfig = "shepherd.mcp.projectConfig"
         static let mcpSameEverywhere = "shepherd.mcp.sameEverywhere"
         static let queueDelivery = "shepherd.agent.queueDelivery"
+        static let agentMessages = "shepherd.pi.agentMessages"
         static let piPanesExtension = "shepherd.pi.extension.panes"
         static let piReviewExtension = "shepherd.pi.extension.review"
         static let piSubagentsExtension = "shepherd.pi.extension.subagents"
@@ -89,13 +91,14 @@ final class AppSettings {
         static let worktreeDeleteLocalBranch = "shepherd.worktree.deleteLocalBranch"
         static let worktreeAutoMergePR = "shepherd.worktree.autoMergePR"
         static let worktreeMergeMethod = "shepherd.worktree.mergeMethod"
+        static let goalsEnabled = "shepherd.experiments.goals"
         static let designToolEnabled = "shepherd.experiments.designTool"
         static let implementOpensThread = "shepherd.designs.implementOpensThread"
 
         static let all = [
             terminalFontFamily, terminalFontSize, defaultModel,
-            defaultThinking, defaultServiceTier, autoNameAgents, queueDelivery, shellPath,
-            piPanesExtension, piReviewExtension, piSubagentsExtension, piNativeSubagents,
+            defaultThinking, defaultServiceTier, goalCrossProviderEvaluation, autoNameAgents, queueDelivery, shellPath,
+            agentMessages, piPanesExtension, piReviewExtension, piSubagentsExtension, piNativeSubagents,
             piMCPExtension, piBrowserExtension, piDesignReferences,
             childConcurrency, childModel, childThinking, childContext, childScope,
             uiDensity, uiTextScale, sidebarWidth, sidebarRowDensity,
@@ -106,7 +109,7 @@ final class AppSettings {
             worktreeDeleteLocalBranch, worktreeAutoMergePR,
             worktreeMergeMethod, skillsInSlashMenu, hiddenSlashCommands,
             mcpOpenSignInPages, mcpProjectConfig, mcpSameEverywhere,
-            designToolEnabled, implementOpensThread,
+            goalsEnabled, designToolEnabled, implementOpensThread,
         ]
 
         /// What Reset settings clears: everything but Remote's listener, which only its own
@@ -155,6 +158,12 @@ final class AppSettings {
     /// keeps its own after that, and one whose model offers no tier ignores it.
     var defaultServiceTier: ServiceTier {
         didSet { store.set(defaultServiceTier.rawValue, forKey: Key.defaultServiceTier) }
+    }
+
+    /// Explicit consent to send goal-check context to another provider. Applied at the next
+    /// agent start, including a restart; running agents keep their launch policy.
+    var goalCrossProviderEvaluation: Bool {
+        didSet { store.set(goalCrossProviderEvaluation, forKey: Key.goalCrossProviderEvaluation) }
     }
 
     /// Off means agents keep their provisional name (the truncated opening
@@ -218,6 +227,19 @@ final class AppSettings {
     func setSlashCommand(_ name: String, on: Bool) {
         if on { hiddenSlashCommands.remove(name) } else { hiddenSlashCommands.insert(name) }
     }
+
+    /// Settings ▸ Pi ▸ Agent-to-agent messages: what an agent's call to message, steer, interrupt,
+    /// read or start another thread does. Ask me until the user says otherwise. The server
+    /// enforces it, taking each choice through `onAgentMessagesChange`.
+    var agentMessages: AgentMessagePolicy {
+        didSet {
+            store.set(agentMessages.rawValue, forKey: Key.agentMessages)
+            if agentMessages != oldValue { onAgentMessagesChange?(agentMessages) }
+        }
+    }
+
+    /// Hands a new choice to the server (set by the view model).
+    @ObservationIgnored var onAgentMessagesChange: ((AgentMessagePolicy) -> Void)?
 
     var piPanesExtension: Bool {
         didSet { store.set(piPanesExtension, forKey: Key.piPanesExtension) }
@@ -395,6 +417,15 @@ final class AppSettings {
         didSet { store.set(worktreeMergeMethod.rawValue, forKey: Key.worktreeMergeMethod) }
     }
 
+    /// Settings ▸ Experiments ▸ Goals. Off pauses active goals without discarding them.
+    var goalsEnabled: Bool {
+        didSet {
+            store.set(goalsEnabled, forKey: Key.goalsEnabled)
+            if goalsEnabled != oldValue { onGoalsChange?(goalsEnabled) }
+        }
+    }
+    @ObservationIgnored var onGoalsChange: ((Bool) -> Void)?
+
     /// Settings ▸ Experiments ▸ Design tool: the Designs destination, design rows in Recents,
     /// and New thread's "Start a design". Off by default; designs made while it was on keep
     /// their files and agents while it is off.
@@ -428,6 +459,8 @@ final class AppSettings {
             .flatMap(ThinkingLevel.init(rawValue:)) ?? Defaults.thinking
         defaultServiceTier = store.string(forKey: Key.defaultServiceTier)
             .flatMap(ServiceTier.init(rawValue:)) ?? Defaults.serviceTier
+        goalsEnabled = store.object(forKey: Key.goalsEnabled) as? Bool ?? false
+        goalCrossProviderEvaluation = store.object(forKey: Key.goalCrossProviderEvaluation) as? Bool ?? false
         autoNameAgents = store.object(forKey: Key.autoNameAgents) as? Bool ?? Defaults.autoNameAgents
         skillsInSlashMenu = store.object(forKey: Key.skillsInSlashMenu) as? Bool ?? Defaults.skillsInSlashMenu
         hiddenSlashCommands = Set(store.stringArray(forKey: Key.hiddenSlashCommands) ?? [])
@@ -440,6 +473,8 @@ final class AppSettings {
         mcpSameEverywhere = store.object(forKey: Key.mcpSameEverywhere) as? Bool ?? true
         queueDelivery = store.string(forKey: Key.queueDelivery)
             .flatMap(NativeQueueMode.init(rawValue:)) ?? Defaults.queueDelivery
+        agentMessages = store.string(forKey: Key.agentMessages)
+            .flatMap(AgentMessagePolicy.init(rawValue:)) ?? AgentMessagePolicy.default
         piPanesExtension = store.object(forKey: Key.piPanesExtension) as? Bool ?? true
         piReviewExtension = store.object(forKey: Key.piReviewExtension) as? Bool ?? true
         piSubagentsExtension = store.object(forKey: Key.piSubagentsExtension) as? Bool ?? true
@@ -525,6 +560,8 @@ final class AppSettings {
         defaultModel = ""
         defaultThinking = Defaults.thinking
         defaultServiceTier = Defaults.serviceTier
+        goalsEnabled = false
+        goalCrossProviderEvaluation = false
         autoNameAgents = Defaults.autoNameAgents
         skillsInSlashMenu = Defaults.skillsInSlashMenu
         hiddenSlashCommands = []
@@ -539,6 +576,7 @@ final class AppSettings {
         sidebarStyle = Defaults.sidebarStyle
         sidebarGroupByHost = false
         sidebarKeepIdleDays = Defaults.sidebarKeepIdleDays
+        agentMessages = AgentMessagePolicy.default
         piPanesExtension = true
         piReviewExtension = true
         piSubagentsExtension = true
@@ -610,6 +648,17 @@ final class AppSettings {
         }
         var seen = Set<String>()
         return shells.filter { seen.insert($0).inserted }
+    }
+}
+
+extension AgentMessagePolicy {
+    /// The words Settings ▸ Pi shows for each choice.
+    var title: String {
+        switch self {
+        case .ask: "Ask me"
+        case .always: "Always allow"
+        case .never: "Never"
+        }
     }
 }
 

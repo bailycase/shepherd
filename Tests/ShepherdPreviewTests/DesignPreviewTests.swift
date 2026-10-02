@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 import ShepherdSessions
 import ShepherdTestSupport
 import ShepherdUI
@@ -475,6 +476,50 @@ struct DesignPreviewTests {
         let vm = workspace.vm
         vm.openNewThread()
         try await Preview.render("page-new-thread-design", size: Self.pageSize) {
+            NewThreadPage(vm: vm, chrome: PageHeaderChrome())
+        }
+    }
+
+    /// New thread from a design (docs/design/pages.md › New thread page): "@" lists this Mac's
+    /// designs under the card as a thread's composer does, a design picked is a chip beside the
+    /// prompt, a design alone is enough to send, and the picker says it is loading, or that it
+    /// couldn't. Light and dark, at text scale 1 and 1.3, over the real model and real designs.
+    @Test(arguments: ["picker", "chip", "chip-only", "loading", "failed"])
+    func newThreadFromADesign(state: String) async throws {
+        let (workspace, checkout, _) = try await designWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        await vm.loadDesignThumbnails()
+        vm.openNewThread()
+        let draft = vm.newThread
+        try await eventuallyOnMain("the model capabilities to load") { !draft.loadingDefaults }
+        var ready: @MainActor () -> Bool = { true }
+        switch state {
+        case "picker":
+            draft.prompt = "Match the funnel in @"
+            let chips = try #require(draft.referenceChips)
+            ready = { chips.catalog?.designs.isEmpty == false }
+        case "chip", "chip-only":
+            let chips = try #require(draft.referenceChips)
+            try await chips.io.attach(try #require(vm.designReference(checkout.id, board: DesignPath("A.dc.html"))))
+            draft.prompt = state == "chip" ? "Build this funnel in the checkout page" : ""
+            ready = { vm.referencePicture(draft.references[0].reference) != nil }
+        default:
+            // A read that doesn't answer: loading while it waits, failed once it gives up.
+            let chips = DesignReferenceChips(agentID: AgentID(rawValue: "preview"), io: DesignReferenceChips.IO(
+                catalog: {
+                    try? await Task.sleep(for: .seconds(3_600))
+                    return DesignMentionCatalog()
+                }, startDesign: {}), catalogTimeout: state == "loading" ? .seconds(60) : .milliseconds(150))
+            draft.referenceChips = chips
+            draft.prompt = "Match the funnel in @"
+            if state == "loading" {
+                ready = { chips.catalogStage == DesignMentionLoad.Stage.loading }
+            } else {
+                ready = { if case .failed = chips.catalogStage { true } else { false } }
+            }
+        }
+        try await Preview.renderMatrix("new-thread-design-\(state)", size: Self.pageSize, ready: ready) {
             NewThreadPage(vm: vm, chrome: PageHeaderChrome())
         }
     }

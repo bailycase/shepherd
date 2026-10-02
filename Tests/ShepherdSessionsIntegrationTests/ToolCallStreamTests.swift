@@ -7,7 +7,7 @@ import ShepherdTestSupport
 
 /// A tool call the model is still writing, as the thread shows it: a row from `toolcall_start`
 /// that `tool_execution_start` continues, and gone when nothing will run it. The events are the
-/// shapes pi 0.87.1 sends (Tests/Extensions/tool-call-stream.test.mjs pins them against the
+/// shapes pi 1.0.0 sends (Tests/Extensions/tool-call-stream.test.mjs pins them against the
 /// real thing): `toolcall_start` names the call, each `toolcall_delta` carries the next few
 /// characters of the arguments' JSON text (not the text so far), `toolcall_end` the call.
 @Suite("Tool calls being written", .integrationTimeLimit)

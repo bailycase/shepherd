@@ -32,6 +32,9 @@ public enum NWTouchQueueMetrics {
 public struct NWTouchQueueCard<Rows: View, Options: View>: View {
     let count: Int
     let framed: Bool
+    let afterGoalCheck: Bool
+    let collapsed: Bool
+    let onToggle: (() -> Void)?
     let paused: String?
     let resume: (() -> Void)?
     @ViewBuilder let rows: () -> Rows
@@ -40,10 +43,14 @@ public struct NWTouchQueueCard<Rows: View, Options: View>: View {
     /// `count` is every message in the queue, steering ones included. `paused` says why the
     /// queue waits (pi was stopped, or a turn failed), nil while it goes on its own; `resume`
     /// sends what it holds now, shown only while it is paused.
-    public init(count: Int, paused: String? = nil, resume: (() -> Void)? = nil, framed: Bool = true,
+    public init(count: Int, paused: String? = nil, resume: (() -> Void)? = nil, framed: Bool = true, afterGoalCheck: Bool = false,
+                collapsed: Bool = false, onToggle: (() -> Void)? = nil,
                 @ViewBuilder rows: @escaping () -> Rows, @ViewBuilder options: @escaping () -> Options) {
         self.count = count
         self.framed = framed
+        self.afterGoalCheck = afterGoalCheck
+        self.collapsed = collapsed
+        self.onToggle = onToggle
         self.paused = paused
         self.resume = resume
         self.rows = rows
@@ -56,8 +63,9 @@ public struct NWTouchQueueCard<Rows: View, Options: View>: View {
         let shape = UnevenRoundedRectangle(cornerRadii: RectangleCornerRadii(
             topLeading: framed ? radius : 0, bottomLeading: radius, bottomTrailing: radius, topTrailing: framed ? radius : 0))
         VStack(spacing: 0) {
-            NWTouchQueueHeader(count: count, paused: paused, resume: paused == nil ? nil : resume, options: options)
-            rows().overlay(alignment: .top) { NWHairline() }
+            NWTouchQueueHeader(count: count, paused: paused, resume: paused == nil ? nil : resume,
+                               afterGoalCheck: afterGoalCheck, collapsed: collapsed, onToggle: onToggle, options: options)
+            if !collapsed { rows().overlay(alignment: .top) { NWHairline() } }
         }
         .background(framed ? nw.bgRaised : .clear, in: shape)
         .clipShape(shape)
@@ -70,6 +78,9 @@ private struct NWTouchQueueHeader<Options: View>: View {
     let count: Int
     let paused: String?
     let resume: (() -> Void)?
+    let afterGoalCheck: Bool
+    let collapsed: Bool
+    let onToggle: (() -> Void)?
     @ViewBuilder let options: () -> Options
     @Environment(\.dynamicTypeSize) private var typeSize
 
@@ -96,6 +107,10 @@ private struct NWTouchQueueHeader<Options: View>: View {
                 .accessibilityHint(paused ?? "")
                 .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: NW.Space.m)
+                if afterGoalCheck {
+                    Text("after the goal check").font(.nw(.caption)).foregroundStyle(nw.textTertiary)
+                        .lineLimit(1).minimumScaleFactor(0.75)
+                }
                 if !stacked { sendNow }
                 Menu(content: options) {
                     Image(systemName: "ellipsis")
@@ -105,6 +120,15 @@ private struct NWTouchQueueHeader<Options: View>: View {
                         .contentShape(Rectangle())
                 }
                 .accessibilityLabel("Queue options")
+                if let onToggle {
+                    Button(action: onToggle) {
+                        Image(systemName: collapsed ? "chevron.up" : "chevron.down")
+                            .foregroundStyle(nw.textSecondary)
+                            .frame(width: NW.Height.touch, height: NW.Height.touch)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(collapsed ? "Expand the queue" : "Collapse the queue")
+                }
             }
             .frame(minHeight: NWTouchQueueMetrics.headerHeight)
             if stacked, resume != nil {

@@ -134,6 +134,23 @@ struct ClientSettingsTests {
 
     // MARK: Host settings
 
+    @Test func goalsCanBeToggledOnlyOnHostsThatAdvertiseTheExperiment() async {
+        let client = FakeSettingsClient()
+        let model = ClientHostSettings()
+        let old = Self.host("old", client)
+        await model.refresh(old)
+        #expect(model.post(.goalsEnabled(true), on: old) == nil)
+        #expect(model.settings(of: old)?.goalsEnabled == false)
+        #expect(client.requests == ["settings.fetch"])
+        let live = Self.host("new", client, capabilities: Self.all.union([RemoteProtocol.goalExperimentCapability]))
+        await model.refresh(live)
+        await model.change(.goalsEnabled(true), on: live)
+        #expect(model.settings(of: live)?.goalsEnabled == true)
+        await model.change(.goalsEnabled(false), on: live)
+        #expect(model.settings(of: live)?.goalsEnabled == false)
+        #expect(client.requests.count == 4, "two fetches and only the capable host's two changes")
+    }
+
     @Test func lateSettingsAndSuggestionReadsCannotRepopulateAForgottenHost() async {
         let client = FakeSettingsClient()
         let host = Self.host("gone", client)

@@ -4,7 +4,7 @@ import ShepherdProtocol
 import ShepherdRemote
 
 /// The queue: messages sent while pi works wait here, on the host, until pi settles, so every
-/// client sees and edits one queue and nothing reaches pi before its turn. pi 0.87.1's own
+/// client sees and edits one queue and nothing reaches pi before its turn. pi 1.0.0's own
 /// queues are text-only, cannot be edited or reordered, and `set_follow_up_mode` writes the
 /// user's pi settings, so Shepherd keeps its own and hands pi one prompt at a time:
 ///
@@ -110,6 +110,38 @@ extension RPCThreadState {
         NativeQueue(items: items.map(\.entry), mode: effectiveMode, paused: paused && !items.isEmpty, notice: items.isEmpty ? nil : queueNotice)
     }
 
+    /// A goal yields to host input, not to an empty queue. Keep that intent until the last
+    /// queued or pending row lands, including commands that never start a user message.
+    func yieldGoalToQueue() {
+        guard goal?.isActive == true, !stopRequested else { return }
+        let generation = generation
+        goalYieldGeneration = generation
+        session.request(.prompt(message: "/shepherd-goal {\"action\":\"yield\"}", streamingBehavior: .steer),
+                        timeout: Self.promptTimeout) { [weak self] result in
+            guard let self, self.generation == generation, !self.stopRequested else { return }
+            if let failure = Self.dispatchFailure(result), case .failure(_, let message) = failure {
+                self.queueNotice = message
+                self.commit()
+            }
+            self.unyieldGoalIfQueueEmpty()
+        }
+    }
+
+    private func unyieldGoalIfQueueEmpty() {
+        guard goalYieldGeneration == generation, goal?.isActive == true, !stopRequested, !paused,
+              isServable, session.isAlive, items.isEmpty, dispatches.isEmpty, preparingPrompts.isEmpty,
+              steersInFlight == 0, interrupting == nil, !interruptAbortPending, settleCapture == nil else { return }
+        goalYieldGeneration = nil
+        session.send(.prompt(message: "/shepherd-goal {\"action\":\"unyield\"}", streamingBehavior: .steer))
+    }
+
+    private func interruptGoal() {
+        goalYieldGeneration = nil
+        guard goal?.isActive == true else { return }
+        // The controller owns a separate checking call that pi's stream abort cannot cancel.
+        session.send(.prompt(message: "/shepherd-goal {\"action\":\"interrupt\"}", streamingBehavior: .steer))
+    }
+
     // MARK: - Sending
 
     /// A new message: to pi now when it is idle, else into the queue (or steered in). `alone`
@@ -120,7 +152,18 @@ extension RPCThreadState {
               completion: @escaping (NativeThreadResult) -> Void) {
         // From here the copies are pi's (a prompt) or wait in the queue, which withholds them.
         sendingDesignPayloads.subtract(designPayloads)
+        if let failure = goalCommandFailure(text, context: context) { completion(failure); return }
+        if images.isEmpty, context == nil, text == "/goal" || text.hasPrefix("/goal "),
+           commands?.contains(where: { $0.name == "goal" }) == true {
+            let commandDone = beginCommandWindow(for: text)
+            session.request(.prompt(message: text, streamingBehavior: .steer), timeout: Self.promptTimeout) { result in
+                commandDone?()
+                completion(Self.dispatchFailure(result) ?? .accepted(operationID: id))
+            }
+            return
+        }
         guard piBusy else {
+            if delivery == .interrupt { interruptGoal() }
             // A new message resumes a paused queue: it drains after this turn.
             paused = false
             queueNotice = nil
@@ -134,7 +177,9 @@ extension RPCThreadState {
             images: images, goesAlone: alone, context: context, designPayloads: designPayloads)
         item.direct = delivery == .interrupt
         guard admitsQueue(items + [item]) else { completion(queueFull); return }
+        if delivery == .interrupt { interruptGoal() }
         items.append(item)
+        if delivery != .interrupt { yieldGoalToQueue() }
         if delivery == .interrupt {
             // It is first in the queue for as long as pi takes to stop; the plan says how.
             interrupt([id], operationID: id, completion: completion)
@@ -160,8 +205,12 @@ extension RPCThreadState {
         commit()
         steerDispatch(id) { [weak self] failure in
             // pi refused it: the message was never queued, and the draft stays with the client.
-            if failure != nil { self?.items.removeAll { $0.entry.id == id } }
+            if failure != nil {
+                self?.items.removeAll { $0.entry.id == id }
+                self?.commit()
+            }
             completion(failure ?? .accepted(operationID: id))
+            self?.unyieldGoalIfQueueEmpty()
         }
     }
 
@@ -174,6 +223,8 @@ extension RPCThreadState {
                 completion(.failure(code: "invalid", message: "A queued message needs text up to 16 KiB."))
                 return
             }
+            guard let item = items.first(where: { $0.entry.id == id && $0.entry.state == .queued }) else { completion(missing); return }
+            if let failure = goalCommandFailure(text, context: item.context) { completion(failure); return }
             var candidate = items
             guard NativeQueueRules.edit(id, text: text, in: &candidate) else { completion(missing); return }
             guard admitsQueue(candidate) else { completion(queueFull); return }
@@ -186,9 +237,11 @@ extension RPCThreadState {
             guard !removed.isEmpty else { completion(missing); return }
             remember(removed)
             completion(accepted)
+            unyieldGoalIfQueueEmpty()
         case .clear:
             remember(NativeQueueRules.remove(items.filter { $0.entry.state == .queued }.map(\.entry.id), from: &items))
             completion(accepted)
+            unyieldGoalIfQueueEmpty()
         case .restore(let ids, let index):
             var seen = Set<UUID>()
             let restoring = ids.filter { seen.insert($0).inserted }.compactMap { id in deleted.first { $0.item.entry.id == id }?.item }
@@ -199,6 +252,7 @@ extension RPCThreadState {
             guard admitsQueue(candidate) else { completion(queueFull); return }
             items = candidate
             deleted.removeAll { entry in ids.contains(entry.item.entry.id) }
+            yieldGoalToQueue()
             completion(accepted)
             drainIfReady()
         case .move(let id, let index):
@@ -248,6 +302,7 @@ extension RPCThreadState {
         case .sendNow(let ids):
             sendQueuedNow(ids, operationID: operationID, completion: completion)
         case .interrupt(let ids):
+            if items.contains(where: { ids.contains($0.entry.id) && $0.entry.state == .queued }) { interruptGoal() }
             interrupt(ids, operationID: operationID, completion: completion)
         }
     }
@@ -345,7 +400,7 @@ extension RPCThreadState {
         }
         let queued = items.filter { $0.entry.state == .queued }
         let count = NativeQueueRules.batchCount(queued, mode: effectiveMode)
-        guard count > 0 else { return }
+        guard count > 0 else { unyieldGoalIfQueueEmpty(); return }
         deliver(count: count)
     }
 
@@ -385,6 +440,7 @@ extension RPCThreadState {
     func dispatch(id: UUID, text: String, context: String? = nil, images: [NativeImage], parts: [NativeQueuePart]?, items batch: [QueueItem],
                   designPayloads: [UUID] = [], completion: @escaping (NativeThreadResult) -> Void) {
         let prompt = Self.prompt(text, context: context)
+        if let failure = goalCommandFailure(prompt) { completion(failure); return }
         stopRequested = false
         let expectsMessage = !isExtensionCommand(prompt)
         dispatches.append(Dispatch(id: id, text: prompt, parts: parts, items: batch, expectsMessage: expectsMessage,
@@ -425,6 +481,7 @@ extension RPCThreadState {
                 }
                 self.commit()
                 completion(failure ?? .accepted(operationID: id))
+                self.unyieldGoalIfQueueEmpty()
             }
         }
         if expectsMessage, let beforePrompt { beforePrompt(send) } else { send() }
@@ -460,6 +517,16 @@ extension RPCThreadState {
         return context + text
     }
 
+    /// Validate the effective prompt at admission and delivery; fenced content is never a command.
+    private func goalCommandFailure(_ text: String, context: String? = nil) -> NativeThreadResult? {
+        let prompt = Self.prompt(text, context: context)
+        guard prompt.hasPrefix("/") else { return nil }
+        let name = prompt.dropFirst().prefix { !$0.isWhitespace }
+        if name == "shepherd-goal" { return .failure(code: "invalid", message: "This is a host control command. Use /goal.") }
+        if name == "goal", !goalsEnabled { return .failure(code: "unsupported", message: "Enable Goals in Settings > Experiments.") }
+        return nil
+    }
+
     func isExtensionCommand(_ text: String) -> Bool {
         guard text.hasPrefix("/") else { return false }
         let name = text.dropFirst().prefix { !$0.isWhitespace }
@@ -473,6 +540,7 @@ extension RPCThreadState {
     /// command, which leaves nothing to land), else the failure.
     func steerDispatch(_ id: UUID, done: @escaping (NativeThreadResult?) -> Void) {
         guard let item = items.first(where: { $0.entry.id == id }) else { done(nil); return }
+        if let failure = goalCommandFailure(item.promptText) { done(failure); return }
         unboundSteers.append(id)
         steersInFlight += 1
         let rpcImages = item.images.map { RPCImage(data: $0.data.base64EncodedString(), mimeType: $0.mimeType) }
@@ -493,6 +561,7 @@ extension RPCThreadState {
             // It may yet be queued when pi did not answer in time; settling sorts out one that
             // never lands.
             done(failure)
+            self.unyieldGoalIfQueueEmpty()
             if self.steersInFlight == 0, self.settleAwaitingSteers, !self.running {
                 self.settleAwaitingSteers = false
                 self.settled()
@@ -610,6 +679,12 @@ extension RPCThreadState {
     }
 
     func stop(_ done: @escaping (Result<RPCResponse, RPCError>) -> Void) {
+        goalYieldGeneration = nil
+        // pi's abort signal does not reach a nested pre-settlement model call. Cancel the
+        // controller first; stdin preserves this command before clear_queue and abort.
+        if goal?.isActive == true {
+            session.send(.prompt(message: "/shepherd-goal {\"action\":\"pause\"}", streamingBehavior: .steer))
+        }
         stopRequested = true
         // Stop wins over an interrupt under way: its messages stay queued, and the queue waits.
         interrupting = nil
@@ -690,6 +765,7 @@ extension RPCThreadState {
         if let sentReferences { recordReferences(sentReferences, entryID: id) }
         if let origin { recordOrigin(origin, entryID: id) }
         if let operationID { operationsByEntry[id] = operationID }
+        unyieldGoalIfQueueEmpty()
     }
 
     /// The copies a user message's references fence names, when the host kept every one of them
@@ -715,6 +791,7 @@ extension RPCThreadState {
 
     /// A new pi session: its queue is new, so steering items wait in the queue again.
     func resetQueueForNewSession() {
+        goalYieldGeneration = nil
         cancelPreparingPrompts()
         interrupting = nil
         settleCapture = nil

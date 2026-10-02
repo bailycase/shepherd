@@ -112,7 +112,7 @@ public struct NWCommentEditor: View {
                 .tint(nw.lantern)
                 .focused(isFocused)
                 .onKeyPress(.return, phases: .down) { press in
-                    if press.modifiers.contains(.shift) { return .ignored }
+                    if let result = NWReturnKey.lineBreak(for: press) { return result }
                     onSave()
                     return .handled
                 }
