@@ -14,6 +14,7 @@ final class FakeMCPCLI: MCPCLI, @unchecked Sendable {
     struct Call: Equatable {
         var arguments: [String]
         var environment: [String: String]
+        var timeout: TimeInterval = 0
     }
 
     private let lock = NSLock()
@@ -25,7 +26,7 @@ final class FakeMCPCLI: MCPCLI, @unchecked Sendable {
 
     func run(_ arguments: [String], environment: [String: String], timeout: TimeInterval,
              onLine: (@Sendable (String) -> Void)?) async -> MCPCLIResult {
-        lock.withLock { recorded.append(Call(arguments: arguments, environment: environment)) }
+        lock.withLock { recorded.append(Call(arguments: arguments, environment: environment, timeout: timeout)) }
         let answer = reply(arguments)
         for line in answer.lines { onLine?(line) }
         if blocksLogin, arguments.first == "login" {
@@ -252,6 +253,17 @@ struct MCPStoreTests {
         harness.store.refresh()
         await harness.store.settle()
         #expect(harness.store.problem == nil, "a good answer clears it")
+    }
+
+    @Test func aListPiDoesNotAnswerInTimeIsAskedWithItsBoundAndShownAsSuch() async throws {
+        let cli = FakeMCPCLI()
+        cli.reply = { _ in ([], MCPCLIResult(status: 143, stdout: "", stderr: "", timedOut: true)) }
+        let harness = try MCPFixtures.harness(cli: cli)
+        harness.store.refresh()
+        await harness.store.settle()
+        #expect(cli.calls.map(\.timeout) == [MCPStore.listTimeout] && MCPStore.listTimeout == 45)
+        #expect(harness.store.problem == "Couldn’t check the servers: pi didn’t answer in 45 seconds.")
+        #expect(try row(harness.store, "linear").status == .idle, "the rows stay as they were, not failed")
     }
 
     @Test func serversPiCannotRunSayWhyOnTheirRowsAndAreNotCounted() async throws {
