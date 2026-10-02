@@ -211,7 +211,9 @@ struct NWActivityWords: Layout {
         guard subviews.count > 1 else { return (label, label, 0) }
         let metaSize = subviews[1].sizeThatFits(ProposedViewSize(width: width.map { max(0, $0 - label.width - NW.Space.m) }, height: nil))
         let room = width.map { $0 - label.width - NW.Space.m }
-        let meta = room.map { $0 >= metaMinimum ? min(metaSize.width, $0) : 0 } ?? metaSize.width
+        // All of it when it fits; else what is left, unless that is too little to read.
+        // All of it when it fits; else what is left, unless that is too little to read.
+        let meta = room.map { metaSize.width <= $0 + 0.01 || $0 >= metaMinimum ? min(metaSize.width, $0) : 0 } ?? metaSize.width
         guard meta > 0 else { return (label, label, 0) }
         return (CGSize(width: label.width + NW.Space.m + meta, height: max(label.height, metaSize.height)), label, meta)
     }

@@ -16,6 +16,7 @@
   "DesignSurfaceKitUnitTests.DesignRenderLimitsTests": 0.01,
   "DesignSurfaceKitUnitTests.DesignRouteTests": 0.01,
   "DesignSurfaceKitUnitTests.DesignRuntimeTests": 0.01,
+  "ShepherdAppIntegrationTests.ActivityLineWordsTests": 0.5,
   "ShepherdAppIntegrationTests.AgentLaunchTests": 2.96,
   "ShepherdAppIntegrationTests.AgentLifecycleTests": 2.79,
   "ShepherdAppIntegrationTests.AgentPeerDeletionTests": 7.26,
