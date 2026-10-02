@@ -55,6 +55,15 @@ public enum PiLaunch {
              + " --mode rpc --no-session --no-tools --no-skills --no-prompt-templates --no-themes --no-context-files --no-approve")
     }
 
+    /// `pi mcp <arguments>` from inside the home, so no project's `.pi` applies: what Settings ▸
+    /// MCP servers runs for a server's state and tools (`list --json`) and for signing in and out
+    /// (`login <server>`, `logout <server>`). pi's own MCP does the work; the launcher passes
+    /// `mcp` to the engine as its first argument (a `-e` before it would hide the subcommand).
+    public static func mcp(home: PiHome, arguments: [String]) -> Line {
+        Line(script: "cd -- \(quoted(home.directory.path)) && exec \(quoted(home.launcher.path)) mcp"
+             + arguments.map { " " + quoted($0) }.joined())
+    }
+
     /// Whether `cwd` is the user's home folder, which no agent's pi trusts as a project.
     public static func isHomeFolder(_ cwd: String, userHome: String) -> Bool {
         PiHome.canonical(cwd) == PiHome.canonical(userHome)

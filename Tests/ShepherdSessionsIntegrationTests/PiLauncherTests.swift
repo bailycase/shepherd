@@ -158,6 +158,73 @@ struct PiLauncherTests {
         #expect(result.err.contains("Settings ▸ Pi"))
     }
 
+    /// `mcp` is a subcommand of pi's only as its first argument, so the launcher's own `-e` goes
+    /// before every other launch and never before this one; adding or removing a server through
+    /// pi would write the file Shepherd derives, so those two are refused.
+    @Test(arguments: [["mcp", "list", "--json"], ["mcp", "login", "acme", "--timeout", "30"], ["mcp", "logout", "acme"]])
+    func theLauncherPassesPisMCPSubcommandsOnWithNoExtensionBeforeThem(_ arguments: [String]) throws {
+        let dir = try makeScratchDirectory("mcp-sub")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let home = try Self.home(in: dir)
+        let result = try Self.run(home.launcher.path, arguments, environment: ["PATH": "/usr/bin:/bin"])
+        #expect(result.status == 0, "\(result.err)")
+        #expect(result.out.prefix(arguments.count) == ArraySlice(arguments.map { "arg=" + $0 }))
+        #expect(!result.out.contains("arg=-e"))
+        #expect(result.out.contains("PI_CODING_AGENT_DIR=\(home.directory.path)"), "the pins still apply")
+    }
+
+    @Test(arguments: PiHome.refusedMCPSubcommands)
+    func theLauncherRefusesToChangeTheDerivedMCPFile(_ subcommand: String) throws {
+        let dir = try makeScratchDirectory("mcp-refuse")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let home = try Self.home(in: dir)
+        let result = try Self.run(home.launcher.path, ["mcp", subcommand, "x", "--url", "https://x.example.com/mcp"], environment: ["PATH": "/usr/bin:/bin"])
+        #expect(result.status == 2)
+        #expect(result.out.isEmpty, "the engine never ran")
+        #expect(result.err.contains("Settings ▸ MCP servers"))
+    }
+
+    /// The MCP secrets in an agent's pi environment are for its MCP servers: the model's shell
+    /// commands get none of them back, in bash and zsh, and the list of their names goes too.
+    @Test(arguments: ["/bin/bash", "/bin/zsh"])
+    func anAgentsShellCommandsNeverSeeTheMCPSecrets(shell: String) throws {
+        let dir = try makeScratchDirectory("mcp-secrets")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let home = try Self.home(in: dir)
+        let environment = [
+            "PATH": "/usr/bin:/bin", "HOME": NSHomeDirectory(), PiHome.mcpSecretNamesKey: "SHEPHERD_MCP_SECRET_A SHEPHERD_MCP_SECRET_B",
+            "SHEPHERD_MCP_SECRET_A": "one", "SHEPHERD_MCP_SECRET_B": "two words", "SHEPHERD_AGENT_ID": "kept",
+        ]
+        let command = home.shellCommandPrefix + "\n" + #"printf '%s|%s|%s|%s\n' "${SHEPHERD_MCP_SECRET_A-unset}" "${SHEPHERD_MCP_SECRET_B-unset}" "${SHEPHERD_MCP_SECRETS-unset}" "${SHEPHERD_AGENT_ID-unset}""#
+        let result = try Self.run(shell, ["-c", command], environment: environment)
+        #expect(result.status == 0, "\(result.err)")
+        #expect(result.out == ["unset|unset|unset|kept"])
+        let all = try Self.run(shell, ["-c", home.shellCommandPrefix + "\nenv | grep -c SHEPHERD_MCP || true"], environment: environment)
+        #expect(all.out == ["0"])
+    }
+
+    /// pi's `mcp.json` is Shepherd's, derived: written private and only when it differs.
+    @Test func installingTheMCPConfigWritesItPrivatelyOnceAndReplacesALink() throws {
+        let dir = try makeScratchDirectory("mcp-config")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let home = try Self.home(in: dir)
+        let files = FileManager.default
+        try home.installMCPConfig(Data("{\"mcpServers\":{}}\n".utf8))
+        #expect(try files.attributesOfItem(atPath: home.mcpConfig.path)[.posixPermissions] as? Int == 0o600)
+        let written = try files.attributesOfItem(atPath: home.mcpConfig.path)[.modificationDate] as? Date
+        try home.installMCPConfig(Data("{\"mcpServers\":{}}\n".utf8))
+        #expect(try files.attributesOfItem(atPath: home.mcpConfig.path)[.modificationDate] as? Date == written, "unchanged: not rewritten")
+        // A link in its place (to the user's own file, say) is replaced, never written through.
+        let theirs = dir.appendingPathComponent("theirs.json")
+        try Data("theirs".utf8).write(to: theirs)
+        try files.removeItem(at: home.mcpConfig)
+        try files.createSymbolicLink(at: home.mcpConfig, withDestinationURL: theirs)
+        try home.installMCPConfig(Data("{\"mcpServers\":{\"a\":{}}}\n".utf8))
+        #expect(try String(contentsOf: theirs, encoding: .utf8) == "theirs")
+        #expect(try String(contentsOf: home.mcpConfig, encoding: .utf8).contains("\"a\""))
+        #expect((try? files.destinationOfSymbolicLink(atPath: home.mcpConfig.path)) == nil)
+    }
+
     /// A missing engine is a missing command (127), which the agent's start names.
     @Test func aMissingEngineExitsAsAMissingCommand() throws {
         let dir = try makeScratchDirectory("missing")
