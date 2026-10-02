@@ -113,7 +113,7 @@ trusted project's `.pi/mcp.json`, start those servers and offer `codemode` (evid
 details: [pi-engine.md](pi-engine.md#pi-10)). llama.cpp, a provider pi has always shipped, stays.
 Those entries are not extensions anyone installed: Settings ▸ Pi and a host's `hostSettings`
 leave them out of the installed list, and the copy from "your pi" never reads them as files.
-The launcher's `--no-extensions` callers (drafts, native children) get no built-ins at all.
+A launch that passes `--no-extensions` (drafts, native children) loads no built-in at all.
 
 **Only its own home.** pi reads skills from `$HOME/.agents/skills` besides its agent folder, for
 every session (pi: `core/package-manager.js`, `addAutoDiscoveredResources`: `join(getHomeDir(),
