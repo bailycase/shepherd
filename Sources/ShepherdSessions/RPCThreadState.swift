@@ -286,6 +286,50 @@ final class RPCThreadState {
     }
     /// What a snapshot carries of `widgets`, within their budget.
     private var snapshotWidgets: [NativeThreadWidget] = []
+    private(set) var goal: NativeGoal?
+    private var goalsAvailable = false
+    /// SessionServer supplies the host experiment policy before the thread starts.
+    private(set) var goalsEnabled = true
+    private var pendingGoalPolicy: Bool?
+    /// Off must reach pi even if On supersedes it before stdin has room.
+    private var pendingGoalDisable = false
+    var goalYieldGeneration: String?
+    private var goalCommand: UUID?
+    private var goalCommandFailure: String?
+    var onGoalChanged: ((NativeGoal?) -> Void)?
+
+    func setGoalsEnabled(_ enabled: Bool, notifyController: Bool = true) {
+        let changed = goalsEnabled != enabled
+        goalsEnabled = enabled
+        if !enabled {
+            goalYieldGeneration = nil
+            goalsAvailable = false
+            if goal != nil { goal = nil; onGoalChanged?(nil) }
+        }
+        if changed { rebuildCommands(); commit() }
+        if notifyController, session.hasGoalController {
+            pendingGoalPolicy = enabled
+            pendingGoalDisable = pendingGoalDisable || !enabled
+            flushGoalPolicy()
+        }
+    }
+
+    private func flushGoalPolicy() {
+        // At most two tiny records: a disable barrier, then the latest policy.
+        while let enabled = pendingGoalPolicy {
+            let next = pendingGoalDisable ? false : enabled
+            guard session.send(.prompt(message: "/shepherd-goal {\"action\":\"configure\",\"enabled\":\(next)}", streamingBehavior: .steer)) else {
+                if session.pendingInputBytes > 0, session.onInputDrained == nil {
+                    session.onInputDrained = { [weak self] in self?.flushGoalPolicy() }
+                }
+                return
+            }
+            pendingGoalDisable = false
+            if next == enabled { pendingGoalPolicy = nil }
+        }
+        session.onInputDrained = nil
+    }
+
     private var operations: [(id: String, operation: Operation)] = []
     var projectionClipped = false
     /// The last assistant message of the current run ended in a provider error.
@@ -414,6 +458,7 @@ final class RPCThreadState {
     /// started, so a pi slower than `timeout` answers requests that already timed out (and are
     /// dropped): ask again.
     func bootstrap(timeout: TimeInterval = 10) {
+        if session.hasGoalController { setGoalsEnabled(goalsEnabled) }
         bootstrapAttempts += 1
         let attempt = bootstrapAttempts
         let generation = generation
@@ -456,7 +501,10 @@ final class RPCThreadState {
             stopRequested = false
             settleAwaitingSteers = false
             doneHeld = false
-            if !items.isEmpty { onUserInputWhileRunning?() }
+            if !items.isEmpty {
+                yieldGoalToQueue()
+                onUserInputWhileRunning?()
+            }
         case .agentEnd:
             dropStreamingCalls()
             refreshMessages()
@@ -566,6 +614,7 @@ final class RPCThreadState {
         case .extensionError(let path, let event, let error):
             ShepherdLog.warning("rpc session \(session.id) extension error in \(path ?? "?") (\(event ?? "?")): \(error)")
             recordCommandFailure(path: path, event: event, error: error)
+            if goalCommand != nil, event == "command", path == "command:shepherd-goal" { goalCommandFailure = error }
         case .compactionStart(let reason):
             compactionStarted(reason: NativeCompactionReason(pi: reason))
         case .compactionEnd(let reason, let result, let aborted, let willRetry, let error):
@@ -641,7 +690,8 @@ final class RPCThreadState {
              .queue(let expectedSessionID, let generation, let operationID, _),
              .compact(let expectedSessionID, let generation, let operationID, _),
              .retry(let expectedSessionID, let generation, let operationID, _),
-             .setServiceTier(let expectedSessionID, let generation, let operationID, _):
+             .setServiceTier(let expectedSessionID, let generation, let operationID, _),
+             .goal(let expectedSessionID, let generation, let operationID, _, _, _, _):
             guard expectedSessionID == piSessionID, generation == self.generation else {
                 completion(.failure(code: "stale_session", message: "Refresh the thread before acting."))
                 return
@@ -770,6 +820,43 @@ final class RPCThreadState {
             session.request(.setThinkingLevel(level: level)) { [weak self] result in
                 settle(result)
                 self?.refreshState()
+            }
+        case .goal(_, _, _, let action, let expectedID, let expectedRevision, let expectedState):
+            guard goalsEnabled && goalsAvailable else { completion(.failure(code: "unsupported", message: "Enable Goals in Settings > Experiments.")); return }
+            guard action.isValid else { completion(.failure(code: "invalid", message: "A goal needs text up to 32768 characters.")); return }
+            if action == .pause || action == .resume || action == .confirm {
+                guard let goal, expectedID == goal.id, expectedRevision == goal.revision, expectedState == goal.state else {
+                    completion(.failure(code: "stale_goal", message: "Use the displayed goal state and revision.")); return
+                }
+            }
+            guard expectedID == nil || expectedID == goal?.id,
+                  expectedRevision == nil || expectedRevision == goal?.revision,
+                  expectedState == nil || expectedState == goal?.state else {
+                completion(.failure(code: "stale_goal", message: "The goal changed. Refresh it before acting.")); return
+            }
+            var command = action.command
+            if expectedID != nil || expectedRevision != nil || expectedState != nil,
+               var object = try? JSONSerialization.jsonObject(with: Data(command.dropFirst("/shepherd-goal ".count).utf8)) as? [String: Any] {
+                if let expectedID { object["expectedGoalID"] = expectedID }
+                if let expectedRevision { object["expectedGoalRevision"] = expectedRevision }
+                if let expectedState { object["expectedGoalState"] = expectedState.rawValue }
+                if let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]) {
+                    command = "/shepherd-goal " + String(decoding: data, as: UTF8.self)
+                }
+            }
+            guard goalCommand == nil else { completion(.failure(code: "busy", message: "Another goal command is pending.")); return }
+            goalCommand = operationID
+            goalCommandFailure = nil
+            let generation = generation
+            session.request(.prompt(message: command, streamingBehavior: .steer), timeout: Self.promptTimeout) { [weak self] result in
+                guard let self, self.generation == generation else {
+                    completion(.failure(code: "stale_session", message: "The session changed while the goal command was pending.")); return
+                }
+                let error = self.goalCommandFailure
+                self.goalCommand = nil
+                self.goalCommandFailure = nil
+                if let error { completion(.failure(code: "goal_rejected", message: error)) }
+                else { settle(result) }
             }
         case .setServiceTier(_, _, _, let raw):
             guard let tier = ServiceTier(rawValue: raw) else {
@@ -956,10 +1043,17 @@ final class RPCThreadState {
             guard let self, case .success(let response) = result, response.success, let data = response.data else { return }
             if let id = data["sessionId"]?.stringValue, id != self.piSessionID {
                 let switched = self.piSessionID != nil
+                let goalController = self.goalsAvailable
                 if switched { self.resetForNewSession() }
                 self.piSessionID = id
                 self.loadOrigins(sessionID: id)
-                if switched { self.refreshMessages(timeout: timeout) }
+                if switched {
+                    self.refreshMessages(timeout: timeout)
+                    // session_start's restored widget can precede this get_state response.
+                    if goalController {
+                        self.session.request(.prompt(message: "/shepherd-goal {\"action\":\"status\"}", streamingBehavior: .steer)) { _ in }
+                    }
+                }
             }
             if let m = data["model"], let provider = m["provider"]?.stringValue, let id = m["id"]?.stringValue {
                 self.model = "\(provider)/\(id)"
@@ -1149,7 +1243,7 @@ final class RPCThreadState {
 
     /// `commands` from `allCommands`: nothing hidden lists everything, else the rest in pi's order.
     private func rebuildCommands() {
-        let visible = hiddenCommands.isEmpty ? allCommands : allCommands?.filter { !hiddenCommands.contains($0.name) }
+        let visible = allCommands?.filter { !hiddenCommands.contains($0.name) && (goalsEnabled || $0.name != "goal") }
         if visible != commands { commands = visible }
     }
 
@@ -1162,14 +1256,14 @@ final class RPCThreadState {
         var result: [NativeCommand] = []
         for item in items {
             guard let name = item["name"]?.stringValue, !name.isEmpty, name.utf8.count <= NativeCommand.maxNameBytes,
-                  name != retryCommand else { continue }
+                  name != retryCommand, name != "shepherd-goal" else { continue }
             if terminalOnlyBuiltIns.contains(name), isBuiltInExtension(path: item["sourceInfo"]?["path"]?.stringValue) { continue }
             var description = item["description"]?.stringValue
             if let text = description, text.utf8.count > NativeCommand.maxDescriptionBytes {
                 description = String(decoding: Array(text.utf8.prefix(NativeCommand.maxDescriptionBytes)), as: UTF8.self)
             }
             result.append(NativeCommand(name: name, description: description, source: item["source"]?.stringValue,
-                                        arguments: argumentHint(item["argumentHint"]?.stringValue)))
+                                        arguments: argumentHint(item["argumentHint"]?.stringValue) ?? (name == "goal" ? "<condition>" : nil)))
             if result.count == NativeCommand.maxCount { break }
         }
         return result
@@ -1260,6 +1354,11 @@ final class RPCThreadState {
         stoppedCalls.removeAll()
         stoppedReplies.removeAll()
         widgets.removeAll()
+        goal = nil
+        goalsAvailable = false
+        goalCommand = nil
+        goalCommandFailure = nil
+        onGoalChanged?(nil)
         history.removeAll()
         historyVersion += 1
         currentAssistant = nil
@@ -1552,6 +1651,27 @@ final class RPCThreadState {
         case "setWidget":
             guard let key = request.widgetKey else { return }
             let text = request.widgetLines.map { $0.map(Self.stripANSI).joined(separator: "\n") }
+            if key == "shepherd.goal" {
+                guard goalsEnabled else { return }
+                guard let text else {
+                    goalsAvailable = false
+                    if goal != nil { goal = nil; onGoalChanged?(nil) }
+                    return
+                }
+                guard text.hasPrefix("SHEPHERD_GOAL:") else { return }
+                let next = NativeGoal.readWidget(text)
+                guard next != nil || text == "SHEPHERD_GOAL:null" else { return }
+                goalsAvailable = true
+                if next != goal {
+                    let prior = goal
+                    goal = next
+                    // Fleet/sidebar state does not carry a live clock or token counter.
+                    if prior?.id != next?.id || prior?.state != next?.state || prior?.reason != next?.reason {
+                        onGoalChanged?(next)
+                    }
+                }
+                return
+            }
             // Some extensions publish machine payloads for their own TUI component
             // (pi-subagents: "PI_SUBAGENT_ASYNC_JSON:{…}"). Those are not for people.
             if let text, Self.isMachineWidget(text) { setWidget(nil, key: key); return }
@@ -1628,6 +1748,8 @@ final class RPCThreadState {
         for item in live { hasher.combine(item.hash) }
         hasher.combine(dialogsHash)
         hasher.combine(widgetsHash)
+        hasher.combine(goal)
+        hasher.combine(goalsAvailable)
         hasher.combine(running)
         hasher.combine(model)
         hasher.combine(thinking)
@@ -1700,12 +1822,12 @@ final class RPCThreadState {
         let dialogs = Array(self.dialogs.prefix(Self.dialogLimit))
         var base = NativeThreadSnapshot(
             piSessionID: piSessionID ?? "", generation: generation, revision: revision, running: running,
-            model: model, thinking: thinking, thinkingLevels: thinkingLevels, supportedActions: Self.supportedActions, dialogsSupported: true,
+            model: model, thinking: thinking, thinkingLevels: thinkingLevels, supportedActions: Self.supportedActions + (goalsAvailable ? ["goal"] : []), dialogsSupported: true,
             dialogs: [], widgets: snapshotWidgets, messages: [], provisional: [],
             clipped: projectionClipped || dialogs.contains { $0.unavailable == "payload-limit" },
             runtime: "rpc", stats: stats, commands: commands, subagents: snapshotSubagents, context: context,
             turnChanges: snapshotTurnChanges, retry: retry,
-            serviceTier: serviceTier.rawValue, serviceTiers: serviceTiers.map(\.rawValue)
+            serviceTier: serviceTier.rawValue, serviceTiers: serviceTiers.map(\.rawValue), goal: goal
         )
         // The rest encodes without the queue, which adds `,"queue":` and its cached size.
         let queue = queueValue
@@ -1991,12 +2113,13 @@ final class RPCThreadState {
             remaining = 0
             return text
         }
-        var result = NativeThreadMessage(entryID: entryID, role: message.role.isEmpty ? "custom" : message.role, blocks: [])
+        var result = NativeThreadMessage(entryID: entryID, role: message.role.isEmpty ? "custom" : message.role, blocks: [], customType: message.customType)
         if let toolName = message.toolName { result.toolName = clip(toolName) }
         if let toolCallID = message.toolCallId { result.toolCallID = clip(toolCallID) }
         if let args { result.argumentsText = clip(json(args)) }
         // A design view record the viewer's message carried is pi's to read, not the thread's.
         var fenced = message.role == "user"
+        var goalDetailsAdded = false
         for block in message.content {
             if result.blocks.count >= 128 || remaining == 0 {
                 truncated = true
@@ -2013,6 +2136,27 @@ final class RPCThreadState {
                     result.origin = .designMarkup(strokes: markup.markup.strokes.count, notes: markup.markup.noteCount)
                 }
                 var shown = fenced ? DesignViewRecord.strippingFence(from: text, references: false, elements: false) : text
+                if !goalDetailsAdded, message.role == "custom", message.customType == "shepherd.goal.check", let details = message.details {
+                    goalDetailsAdded = true
+                    if let model = details["checkedBy"]?.stringValue {
+                        let label = "Checked by " + String(model.prefix(256)).replacingOccurrences(of: #"[\p{Cc}\p{Zl}\p{Zp}]"#, with: " ", options: .regularExpression)
+                        if let marker = shown.range(of: "\n\nDetails:\n") { shown.insert(contentsOf: "\n" + label, at: marker.lowerBound) }
+                        else { shown += "\n" + label }
+                    }
+                    var diagnostic: [String] = []
+                    if let feedback = details["verdict"]?["reason"]?.stringValue { diagnostic.append("Evaluator feedback:\n" + feedback) }
+                    if let error = details["error"]?.stringValue { diagnostic.append(error) }
+                    let missing = details["missingEvidence"]?.arrayValue?.compactMap(\.stringValue) ?? []
+                    if !missing.isEmpty { diagnostic.append("Missing evidence:\n" + missing.joined(separator: "\n")) }
+                    let proof = details["verdict"]?["evidence"]?.arrayValue?.compactMap { row -> String? in
+                        guard let quote = row["quote"]?.stringValue else { return nil }
+                        return (row["entryId"]?.stringValue.map { $0 + ": " } ?? "") + quote
+                    } ?? []
+                    if !proof.isEmpty { diagnostic.append("Tool evidence:\n" + proof.joined(separator: "\n")) }
+                    if !diagnostic.isEmpty {
+                        shown += (shown.contains("\n\nDetails:\n") ? "\n\n" : "\n\nDetails:\n") + diagnostic.joined(separator: "\n\n")
+                    }
+                }
                 if fenced, let sentReferences, let parsed = DesignReferenceFence.parse(text),
                    let ids = DesignReferenceFence.payloadIDs(parsed.records), Set(ids).isSubset(of: sentReferences) {
                     shown = String(parsed.text)

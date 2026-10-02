@@ -64,23 +64,34 @@ struct SubagentTrayView: View {
     let state: SubagentTrayState
     let runs: [ChildRun]
     let actions: SubagentActions
+    var goalPresent = false
 
     var body: some View {
         let values = SubagentPresentation.tray(tray)
         let items = SubagentTrayLayout.items(values.rows, expanded: state.expanded)
         let byID = Dictionary(runs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        NWSubagentTray(values.summary, collapsed: state.collapsed,
-                       onToggle: { withNWAnimation(.disclosure) { state.collapsed.toggle() } }) {
-            if state.expanded, values.rows.count > AppLayout.trayExpandedMaxRows {
-                // A workflow of hundreds of runs scrolls inside, building only the rows on screen.
-                ScrollView {
-                    LazyVStack(spacing: 0) { list(items.dropLast(), byID) }
+        VStack(spacing: 0) {
+            NWSubagentTray(values.summary, collapsed: state.collapsed,
+                           onToggle: { withNWAnimation(.disclosure) { state.collapsed.toggle() } }) {
+                if state.expanded, values.rows.count > AppLayout.trayExpandedMaxRows {
+                    // A workflow of hundreds of runs scrolls inside, building only the rows on screen.
+                    ScrollView {
+                        LazyVStack(spacing: 0) { list(items.dropLast(), byID) }
+                    }
+                    .frame(height: CGFloat(AppLayout.trayExpandedMaxRows) * NWSubagentTrayMetrics.pointer.rowHeight)
+                    if let last = items.last { item(last, byID) }
+                } else {
+                    VStack(spacing: 0) { list(items[...], byID) }
                 }
-                .frame(height: CGFloat(AppLayout.trayExpandedMaxRows) * NWSubagentTrayMetrics.pointer.rowHeight)
-                if let last = items.last { item(last, byID) }
-            } else {
-                VStack(spacing: 0) { list(items[...], byID) }
             }
+            // A goal folds the busywork, but keeps a child's question to its parent visible.
+            if goalPresent && state.collapsed {
+                let waiting = values.rows.filter { if case .asked = $0.line { true } else { false } }.map(SubagentTrayLayout.Item.run)
+                list(waiting[...], byID)
+            }
+        }
+        .onChange(of: goalPresent, initial: true) { _, present in
+            if present { state.collapsed = true }
         }
     }
 
@@ -160,12 +171,25 @@ struct ComposerDock<Queue: View>: View {
     let runs: [ChildRun]
     let actions: SubagentActions?
     let showsQueue: Bool
+    var goalStore: NativeThreadStore? = nil
+    var goalActive = true
     @ViewBuilder let queue: () -> Queue
 
     var body: some View {
-        if let tray, let actions {
+        if goalStore?.hasGoal == true || (tray != nil && actions != nil) {
             NWDockStack(showsTray: true, showsQueue: showsQueue) {
-                SubagentTrayView(tray: tray, state: trayState, runs: runs, actions: actions)
+                VStack(spacing: 0) {
+                    if let goalStore, goalStore.hasGoal {
+                        ThreadGoalCard(store: goalStore, active: goalActive, framed: false)
+                    }
+                    if let tray, let actions {
+                        SubagentTrayView(tray: tray, state: trayState, runs: runs, actions: actions,
+                                         goalPresent: goalStore?.hasGoal == true)
+                            .overlay(alignment: .top) {
+                                if goalStore?.hasGoal == true { NWHairline(color: Color.nw.lineStrong) }
+                            }
+                    }
+                }
             } queue: {
                 queue()
             }

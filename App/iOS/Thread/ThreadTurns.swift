@@ -135,6 +135,8 @@ struct AgentTurnView<Proposals: View>: View, Equatable {
                     NWSubagentRecordLine(title: line.title, meta: line.meta, action: actions.subagents)
                 }
             }
+        case .goalRecord(_, let text):
+            GoalRecordLine(text: text)
         case .note(_, let text):
             Text(text).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
                 .lineLimit(3).truncationMode(.tail).textSelection(.enabled)

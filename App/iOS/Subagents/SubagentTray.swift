@@ -25,29 +25,44 @@ struct SubagentTraySection: View {
         let shown = NativeSubagentTray.shownRows
         let long = values.rows.count > shown
         let rows = long && !state.trayExpanded ? Array(values.rows.prefix(shown)) : values.rows
+        let waiting = values.rows.filter { if case .asked = $0.line { true } else { false } }
         let byID = Dictionary(store.subagents.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let commands = SubagentCommands(store: store, enabled: enabled && store.takesSubagentCommands)
         let selected = SubagentInspection.of(navigator).selected(in: ref)
-        NWSubagentTray(values.summary, size: size, collapsed: state.trayCollapsed,
-                       onToggle: { withNWAnimation(.disclosure) { state.trayCollapsed.toggle() } }) {
-            VStack(spacing: 0) {
-                LazyVStack(spacing: 0) {
-                    ForEach(rows) { value in
-                        // One view per element: a container whatever the run is.
-                        VStack(spacing: 0) {
-                            if let run = byID[value.id] {
-                                row(value, run: run, selected: selected == run.runID, commands: commands)
+        VStack(spacing: 0) {
+            NWSubagentTray(values.summary, size: size, collapsed: state.trayCollapsed,
+                           onToggle: { withNWAnimation(.disclosure) { state.trayCollapsed.toggle() } }) {
+                VStack(spacing: 0) {
+                    LazyVStack(spacing: 0) {
+                        ForEach(rows) { value in
+                            // One view per element: a container whatever the run is.
+                            VStack(spacing: 0) {
+                                if let run = byID[value.id] {
+                                    row(value, run: run, selected: selected == run.runID, commands: commands)
+                                }
                             }
                         }
                     }
-                }
-                .fittedScroll(maxHeight: min(rowsMaxHeight, composerMaxHeight * MobileLayout.trayShare))
-                if long {
-                    NWSubagentTrayMoreRow(hidden: values.rows.count - shown, expanded: state.trayExpanded) {
-                        withNWAnimation(.disclosure) { state.trayExpanded.toggle() }
+                    .fittedScroll(maxHeight: min(rowsMaxHeight, composerMaxHeight * MobileLayout.trayShare))
+                    if long {
+                        NWSubagentTrayMoreRow(hidden: values.rows.count - shown, expanded: state.trayExpanded) {
+                            withNWAnimation(.disclosure) { state.trayExpanded.toggle() }
+                        }
                     }
                 }
             }
+            if store.hasGoal && state.trayCollapsed {
+                ForEach(waiting) { value in
+                    VStack(spacing: 0) {
+                        if let run = byID[value.id] {
+                            row(value, run: run, selected: selected == run.runID, commands: commands)
+                        }
+                    }
+                }
+            }
+        }
+        .onChange(of: store.goalID, initial: true) { _, id in
+            if id != nil { state.trayCollapsed = true }
         }
     }
 

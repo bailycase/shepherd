@@ -238,6 +238,7 @@ Each is one line here; the full rule is in [docs/rules.md](docs/rules.md) under 
 | Changing the remote listener or protocol | [docs/remote-protocol.md](docs/remote-protocol.md), [docs/ios/CONTRACTS.md](docs/ios/CONTRACTS.md) |
 | Touching contracts, extensions, concurrency, terminals, browser, layouts | [docs/rules.md](docs/rules.md) |
 | Branching, committing, releasing, signing | [docs/releases.md](docs/releases.md) |
+| Conversation goals | [docs/goals.md](docs/goals.md) |
 | Threads, the queue, subagents, agent tools | [native-thread](docs/native-thread.md), [native-subagents](docs/native-subagents.md), [agent-coordination](docs/agent-coordination.md) |
 | The Changes pane, worktrees, the Browser, skills, designs | [changes](docs/changes.md), [worktrees](docs/worktrees.md), [browser](docs/browser.md), [skills](docs/skills.md), [designs](docs/designs.md) |
 | Hitting something odd (sockets, replay, quitting, pi's folders) | [docs/gotchas.md](docs/gotchas.md) |
