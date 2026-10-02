@@ -43,7 +43,7 @@ const SKILLS = [
 ];
 
 // A GitHub-shaped MCP server's tools, the way a server describes them: what a server on Direct puts in the prompt.
-const MCP_TOOLS = [
+export const MCP_TOOLS = [
   ["create_issue", "Create a new issue in a GitHub repository", { owner: "Repository owner", repo: "Repository name", title: "Issue title", body: "Issue body", labels: "Labels to apply", assignees: "Usernames to assign" }],
   ["get_issue", "Get the contents of an issue within a repository", { owner: "Repository owner", repo: "Repository name", issue_number: "Issue number" }],
   ["list_issues", "List issues in a GitHub repository with filtering and pagination", { owner: "Repository owner", repo: "Repository name", state: "open, closed or all", labels: "Labels to filter by", sort: "created, updated or comments", direction: "asc or desc", since: "ISO 8601 timestamp", page: "Page number", per_page: "Results per page" }],
@@ -89,6 +89,14 @@ async function until(what, fn, timeout = 60000) {
  * - `project`: the project's AGENTS.md text (default: the repository's own), or false for none.
  * - `skills`, `mcp`: the fixtures above, on by default for a thread.
  * - `designRefs`: SHEPHERD_DESIGN_REFS ("on" or "granted"); `automation`: SHEPHERD_AUTOMATION=1.
+ * - `defer`: Settings ▸ Agents ▸ Context ▸ Defer rarely used tools (on for a thread and an automation, never for a design's agent):
+ *   SHEPHERD_DEFER_TOOLS=1, and pi's tool_search in the launch even when MCP is off. `defer: false` is every tool direct.
+ * - `helper`: a native subagent's pi, launched as childLaunch (shepherd-children.ts) does: no extension but the bridge, a tool allowlist
+ *   (pi's four and shepherd_parent_message), the project's context files, none of the app's variables.
+ * - `toolSearch: false`: no pi tool_search in the launch (the Defer switch on with MCP off is the only way the app starts one without MCP).
+ * - `dir`, `keepDir`: the temporary folder to use, and not to remove it on stop: a second launch in it resumes the first's session.
+ * - `compat`: the fake model's `compat` (pi's per-model switches, such as `supportsAdditionalTools`).
+ * - `onFrame(frame, reply)`: the app's side of the extension socket, which answers a tool's request (`thread.frames` keeps them all).
  * - `trim`: the context-trimming extension's switch (SHEPHERD_EXT_CONTEXT): on, `false` (off: not loaded), or "inert"
  *   (loaded without its variable).
  * - `settings`: keys for the pi home's settings.json; `env`: extra environment; `onRequest`/`usage`: the provider's hooks.
@@ -99,11 +107,13 @@ export async function startThread(options = {}) {
   const api = options.api ?? "openai-responses";
   // A design's agent has the design tools instead of panes, and never the browser, a diff review or design references.
   const designAgent = !!options.design;
+  const helper = !!options.helper;
+  const deferOn = options.defer ?? !(designAgent || helper);
   const notForDesign = ["panes", "review", "browser", "design-refs"];
-  const names = options.extensions === "none" ? [] : (Array.isArray(options.extensions) ? options.extensions : THREAD_EXTENSIONS.map(([name]) => name))
+  const names = helper ? ["children"] : options.extensions === "none" ? [] : (Array.isArray(options.extensions) ? options.extensions : THREAD_EXTENSIONS.map(([name]) => name))
     .filter((name) => (name === "design" ? designAgent : !(designAgent && notForDesign.includes(name))));
   const wants = (name) => names.includes(name);
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sh-ctx-"));
+  const dir = options.dir ?? fs.mkdtempSync(path.join(os.tmpdir(), "sh-ctx-"));
   const config = path.join(dir, "pi");
   const support = path.join(dir, "support");
   const project = path.join(dir, "project");
@@ -126,14 +136,31 @@ export async function startThread(options = {}) {
 
   const fake = await startProvider({ onRequest: options.onRequest, usage: options.usage, uniqueIds: true });
   const model = { id: "gpt-6-sol", name: "gpt-6-sol", reasoning: false, input: ["text"], contextWindow: options.contextWindow ?? 272000, maxTokens: 8192,
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, ...(options.compat ? { compat: options.compat } : {}) };
   const baseUrl = `http://127.0.0.1:${fake.port}${api === "anthropic-messages" ? "" : "/v1"}`;
   fs.writeFileSync(path.join(config, "models.json"), JSON.stringify({ providers: { openai: { baseUrl, apiKey: "fixture-not-secret", api, models: [model] } } }));
 
-  // The app's extension socket: connections are accepted and never answered.
+  // The app's extension socket: connections are accepted and, unless `onFrame` answers, never answered. `frames` is every
+  // frame the extensions sent, in order.
   const socketPath = path.join(dir, "s");
   const sockets = new Set();
-  const app = net.createServer((socket) => { sockets.add(socket); socket.on("data", () => {}); socket.on("error", () => {}); socket.on("close", () => sockets.delete(socket)); });
+  const frames = [];
+  const app = net.createServer((socket) => {
+    sockets.add(socket);
+    let buffered = "";
+    socket.on("data", (chunk) => {
+      buffered += chunk;
+      for (let nl; (nl = buffered.indexOf("\n")) >= 0; buffered = buffered.slice(nl + 1)) {
+        try {
+          const frame = JSON.parse(buffered.slice(0, nl));
+          frames.push(frame);
+          options.onFrame?.(frame, (reply) => socket.write(JSON.stringify(reply) + "\n"));
+        } catch {}
+      }
+    });
+    socket.on("error", () => {});
+    socket.on("close", () => sockets.delete(socket));
+  });
   await new Promise((resolve) => app.listen(socketPath, resolve));
 
   // What every extension registered, and where from: written once before the first request.
@@ -153,18 +180,24 @@ export async function startThread(options = {}) {
   args.push("-ne");
   if (names.length === 0) args.push("-ns", "-np", "--no-context-files");
   if (options.skills === false && names.length > 0) args.push("-ns");
+  const HELPER_TOOLS = ["read", "bash", "edit", "write", "shepherd_parent_message"];
+  if (helper) args.push("-ns", "-np", "--no-themes", "--no-approve", "--tools", HELPER_TOOLS.join(","));
   for (const [name, file] of THREAD_EXTENSIONS) {
     if (!wants(name)) continue;
     if (name === "design-refs" && !options.designRefs) continue;
     if (name === "mcp") {
-      if (options.mcp !== false) args.push("-e", "builtin:mcp", "-e", "builtin:tool-search");
+      const toolSearch = options.toolSearch !== false;
+      if (options.mcp !== false) args.push("-e", "builtin:mcp", ...(toolSearch ? ["-e", "builtin:tool-search"] : []));
+      else if (deferOn && toolSearch) args.push("-e", "builtin:tool-search");
       continue;
     }
     if (name === "context" && options.trim === false) continue;
     if (!fs.existsSync(extension(file))) continue;
     args.push("-e", extension(file));
   }
-  if (names.length > 0) {
+  if (helper) {
+    Object.assign(env, { SHEPHERD_CHILD: "1", SHEPHERD_CHILD_TOOLS: JSON.stringify(HELPER_TOOLS) });
+  } else if (names.length > 0) {
     Object.assign(env, { SHEPHERD_AGENT_ID: "agent-fixture", SHEPHERD_SOCKET: socketPath, SHEPHERD_EXT_STATUS: extension("shepherd-status.ts") });
     if (wants("panes")) env.SHEPHERD_EXT_PANES = extension("shepherd-panes.ts");
     if (wants("browser")) env.SHEPHERD_EXT_BROWSER = extension("shepherd-browser.ts");
@@ -176,6 +209,7 @@ export async function startThread(options = {}) {
     if (wants("goal")) Object.assign(env, { SHEPHERD_EXT_GOAL: "1", SHEPHERD_GOALS_ENABLED: "0", SHEPHERD_GOAL_MODELS: "" });
     if (options.needsName !== false) env.SHEPHERD_NEEDS_NAME = "1";
     if (options.automation) env.SHEPHERD_AUTOMATION = "1";
+    if (deferOn) env.SHEPHERD_DEFER_TOOLS = "1";
     if (options.designRefs) env.SHEPHERD_DESIGN_REFS = options.designRefs === "granted" ? "granted" : "on";
     const tier = path.join(dir, "tier.json");
     fs.writeFileSync(tier, JSON.stringify({ tier: "standard" }));
@@ -200,7 +234,7 @@ export async function startThread(options = {}) {
   const exited = new Promise((resolve) => child.once("exit", resolve));
 
   const thread = {
-    dir, project, config, fake, events, env, extensionsLoaded: names,
+    dir, project, config, fake, events, env, frames, extensionsLoaded: names,
     get stderr() { return err; },
     settled: () => events.filter((e) => e.type === "agent_settled").length,
     async request(command) {
@@ -245,7 +279,7 @@ export async function startThread(options = {}) {
       for (const socket of sockets) socket.destroy();
       app.close();
       await fake.stop();
-      fs.rmSync(dir, { recursive: true, force: true });
+      if (!options.keepDir) fs.rmSync(dir, { recursive: true, force: true });
     },
   };
   if (wants("mcp") && options.mcp !== false && names.length > 0) await thread.waitForMcpServers();
@@ -283,16 +317,20 @@ export async function capture(scenario, options = {}) {
 export const SCENARIOS = {
   bare: { extensions: "none", instructions: false, skills: false, mcp: false, project: false },
   thread: {},
+  "thread-defer-off": { defer: false },
   "thread-without-mcp-or-skills": { mcp: false, skills: false },
   "thread-with-design-reference": { designRefs: "granted" },
   automation: { automation: true },
+  "automation-defer-off": { automation: true, defer: false },
   design: { design: true },
+  subagent: { helper: true, instructions: false, skills: false, mcp: false },
 };
 
 /**
  * A fake provider's script for a Responses-API thread: in the turn the user's Nth message opens (counting from
  * zero), the model makes the tool calls `plan[N]` lists, one command each in order (a string, or `{ command,
- * reasoning }` with that many characters of reasoning payload before the call), then answers with text.
+ * reasoning }` with that many characters of reasoning payload before the call, or `{ tool: { name, arguments } }`
+ * for a call to any other tool), then answers with text.
  * Only the thread's own requests call tools: a compaction's summary request and the namer's carry no bash.
  */
 export function scriptedBashCalls(plan) {
@@ -308,7 +346,8 @@ export function scriptedBashCalls(plan) {
     const step = steps[issued];
     if (step === undefined) return {};
     issued++;
-    return typeof step === "string" ? { call: step } : { call: step.command, reasoning: step.reasoning };
+    if (typeof step === "string") return { call: step };
+    return step.tool ? { tool: step.tool, reasoning: step.reasoning } : { call: step.command, reasoning: step.reasoning };
   };
 }
 
@@ -318,12 +357,13 @@ const chars4 = (value) => Math.ceil(JSON.stringify(value).length / 4);
  * A long thread, as numbers: each turn the model reads a big search result (about 11,600 tokens, pi's bash tool
  * returns up to 50 KB), a file (about 3,000) and runs a small command, then answers. Returns, for every turn, the
  * tokens of the last request it sent, and how much of each request repeated the one before it (what a provider's
- * prompt cache can reuse). `trim` is the context-trimming switch.
+ * prompt cache can reuse). `trim` is the context-trimming switch; `extraSteps(turn)` are tool calls a turn makes first
+ * (a search that loads a deferred tool, and a call to it), and the rest of `options` goes to `startThread`.
  */
-export async function simulate({ turns = 24, trim = true, pkg, ...options } = {}) {
+export async function simulate({ turns = 24, trim = true, pkg, extraSteps, ...options } = {}) {
   const row = (turn, call, count, width) =>
     `awk 'BEGIN{for(i=1;i<=${count};i++) printf "%d.${call}.%d ${"x".repeat(width)} %d\\n", ${turn}, i, i}'`;
-  const plan = (turn) => [row(turn + 1, 1, 800, 50), row(turn + 1, 2, 220, 45), "git status --short | head -5"];
+  const plan = (turn) => [...(extraSteps?.(turn + 1) ?? []), row(turn + 1, 1, 800, 50), row(turn + 1, 2, 220, 45), "git status --short | head -5"];
   const thread = await startThread({ pkg, trim, needsName: false, onRequest: scriptedBashCalls(plan), usage: (entry) => ({ input: chars4(entry.body), output: 40 }), ...options });
   try {
     const perTurn = [];
@@ -360,12 +400,39 @@ export async function simulate({ turns = 24, trim = true, pkg, ...options } = {}
   }
 }
 
+/**
+ * The same long thread with Shepherd's rarely used tools direct, and deferred: never loaded, and loaded by a search in
+ * the turn `loadAt` (the model searches for the browser and opens a page), on a model whose provider cannot take a tool
+ * in mid-conversation (pi sends the new tool list from the top of the request) and on one that can (`compat`, as the
+ * newest OpenAI and Claude models do). Each is `simulate`'s result: what a request repeats from the one before it is what
+ * a provider's prompt cache can reuse.
+ */
+export async function simulateDeferral({ turns = 24, loadAt = 6, pkg } = {}) {
+  const load = (turn) => turn === loadAt
+    ? [{ tool: { name: "tool_search", arguments: { query: "open a web page" } } }, { tool: { name: "browser_open", arguments: { url: "https://example.com/" } } }]
+    : [];
+  const onFrame = (frame, reply) => { if (frame.type === "browser") reply({ type: "browserResult", id: frame.id, text: "Page: Example" }); };
+  const anchored = { supportsAdditionalTools: true, supportsMidConvoSystemMessages: true };
+  return {
+    turns, loadAt,
+    direct: await simulate({ turns, pkg, defer: false, extraSteps: load, onFrame }),
+    deferred: await simulate({ turns, pkg, onFrame }),
+    loaded: await simulate({ turns, pkg, extraSteps: load, onFrame }),
+    loadedAnchored: await simulate({ turns, pkg, extraSteps: load, onFrame, compat: anchored }),
+    directAnchored: await simulate({ turns, pkg, defer: false, extraSteps: load, onFrame, compat: anchored }),
+  };
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const flag = (name, fallback) => { const i = process.argv.indexOf(`--${name}`); return i >= 0 ? process.argv[i + 1] : fallback; };
   const pkg = flag("pi", process.env.PI_PACKAGE_DIR);
   const api = flag("api", "openai-responses");
   const piVersion = JSON.parse(fs.readFileSync(path.join(pkg, "package.json"), "utf8")).version;
-  if (process.argv.includes("--simulate")) {
+  if (process.argv.includes("--simulate-defer")) {
+    const turns = Number(flag("turns", "24"));
+    const result = { piVersion, ...(await simulateDeferral({ turns, loadAt: Number(flag("load-at", "6")), pkg })) };
+    process.stdout.write(JSON.stringify(result) + "\n", () => process.exit(0));
+  } else if (process.argv.includes("--simulate")) {
     const turns = Number(flag("turns", "24"));
     const result = { piVersion, turns, without: await simulate({ turns, trim: false, pkg }), with: await simulate({ turns, trim: true, pkg }) };
     process.stdout.write(JSON.stringify(result) + "\n", () => process.exit(0));

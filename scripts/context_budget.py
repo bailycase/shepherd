@@ -4,6 +4,7 @@
     context_budget.py [--pi DIR] [--api openai-responses] [--markdown | --json] [--tools]
     context_budget.py --check      # fail when a section grew past its committed ceiling
     context_budget.py --update     # write what was measured as the new ceilings
+    context_budget.py --simulate-defer --turns 40   # a long thread with every tool direct, and with them deferred
 
 It runs Tests/Extensions/context-harness.mjs: a real `pi --mode rpc` launched the way Shepherd launches
 an agent's (the extensions in PiLaunch's order with the app's environment, Settings ▸ Instructions' files,
@@ -355,6 +356,36 @@ def simulation_table(result: dict) -> str:
     return "\n".join(lines)
 
 
+def run_deferral_simulation(pi: str, turns: int, load_at: int) -> dict:
+    proc = subprocess.run(["node", HARNESS, "--pi", pi, "--simulate-defer", "--turns", str(turns), "--load-at", str(load_at)],
+                          capture_output=True, text=True, timeout=1800)
+    if proc.returncode != 0:
+        sys.stderr.write(proc.stderr[-4000:])
+        raise SystemExit(f"context_budget: the simulation failed (exit {proc.returncode})")
+    return json.loads(proc.stdout.strip().splitlines()[-1])
+
+
+def deferral_table(result: dict) -> str:
+    """The same long thread with every tool direct, with the rarely used tools deferred and never loaded, and with the
+    browser loaded by one search in turn `loadAt`: what a prompt cache could reuse, and what the first and last request carried."""
+    columns = [("Every tool direct", result["direct"]), ("Deferred, none loaded", result["deferred"]),
+               (f"Deferred, the browser loaded in turn {result['loadAt']}", result["loaded"])]
+    lines = [f"A {result['turns']}-turn thread on pi {result['piVersion']} (the one --simulate runs; clearing on), pi's tool_search loading the browser "
+             f"in turn {result['loadAt']} in the last column.", "",
+             "| | " + " | ".join(name for name, _ in columns) + " |", "| --- | " + " | ".join("---:" for _ in columns) + " |"]
+    rows = [
+        ("Requests", lambda r: f"{r['requests']}"),
+        ("Input tokens sent, all requests", lambda r: f"{r['sentTokens']:,}"),
+        ("Same, a cached token counted at a tenth", lambda r: f"{r['billedTokens']:,}"),
+        ("Share of a request the next one repeats: mean", lambda r: f"{r['reuse']['mean'] * 100:.0f}%"),
+        ("Lowest, and requests below 100%", lambda r: f"{r['reuse']['min'] * 100:.0f}%, {r['reuse']['below']}"),
+        ("Tokens in the first request, and in the last", lambda r: f"{r['perTurn'][0]['tokens']:,}, {r['perTurn'][-1]['tokens']:,}"),
+    ]
+    for label, cell in rows:
+        lines.append(f"| {label} | " + " | ".join(cell(r) for _, r in columns) + " |")
+    return "\n".join(lines)
+
+
 def ceilings_document(measured: dict) -> dict:
     rows = measured["scenarios"]["thread"]["rows"]
     return {
@@ -408,11 +439,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--update", action="store_true", help="write what was measured as the new ceilings")
     parser.add_argument("--ceilings", default=CEILINGS, help="the ceilings file (default: scripts/context-budget.json)")
     parser.add_argument("--simulate", action="store_true", help="run a long thread with and without context clearing and print the table")
-    parser.add_argument("--turns", type=int, default=24, help="turns for --simulate")
+    parser.add_argument("--turns", type=int, default=24, help="turns for --simulate and --simulate-defer")
+    parser.add_argument("--simulate-defer", action="store_true", help="run a long thread with every tool direct and with the rarely used tools deferred, and print the table")
+    parser.add_argument("--load-at", type=int, default=6, help="the turn --simulate-defer's last column loads the browser in")
     args = parser.parse_args(argv)
 
     if args.simulate:
         print(simulation_table(run_simulation(find_pi(args.pi), args.turns)))
+        return 0
+    if args.simulate_defer:
+        print(deferral_table(run_deferral_simulation(find_pi(args.pi), args.turns, args.load_at)))
         return 0
 
     if args.capture:
