@@ -416,6 +416,7 @@ final class NewThreadState {
                                                 model: chosenModel.isEmpty ? nil : chosenModel, thinking: level,
                                                 initialPrompt: withPieces ? nil : text)
                     if withPieces {
+                        config.openingReferencesPending = true
                         config.initialName = ShepherdViewModel.provisionalName(for: text.isEmpty ? Self.pieceName(submittedReferences) : text)
                     } else {
                         config.initialImages = images

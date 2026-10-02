@@ -126,6 +126,7 @@ struct SidebarSource: Equatable {
     }
 
     var local: ShepherdState
+    var openingTurns: Set<AgentID> = []
     var completions: [SidebarRowID: SidebarCompletions.Record] = [:]
     /// This Mac's agents whose last turn ended in an error.
     var failedTurns: Set<AgentID> = []
@@ -195,7 +196,8 @@ enum SidebarDerivation {
             let run = automation.flatMap { source.openRuns[$0.id] }.flatMap { $0.agentID == agent.id ? $0 : nil }
             let row = localRow(agent, automation: automation, run: run, needsYou: needsYou,
                                failed: source.failedTurns.contains(agent.id), cannotStart: source.cannotStart.contains(agent.id),
-                               notSignedIn: notSignedIn, waiting: source.waiting.contains(agent.id), since: source.statusSince[agent.id])
+                               notSignedIn: notSignedIn, waiting: source.waiting.contains(agent.id),
+                               opening: source.openingTurns.contains(agent.id), since: source.statusSince[agent.id])
             entries.append(entry(row, automation == nil ? .local(agent.id) : nil, needsYou: needsYou,
                                  key: agent.lastActiveAt ?? -1, host: 0, index: index))
         }
@@ -272,7 +274,9 @@ enum SidebarDerivation {
 
     static func localRow(_ agent: Agent, automation: Automation?, run: AutomationRun?,
                          needsYou: Bool, failed: Bool, cannotStart: Bool = false, notSignedIn: Bool = false, waiting: Bool = false,
-                         since: Date?) -> SidebarListRow {
+                         opening: Bool = false, since: Date?) -> SidebarListRow {
+        var agent = agent
+        if opening, agent.status == .idle { agent.status = .working }
         let failed = failed && agent.status == .done
         let live = automation != nil && AutomationRow.isLive(agent, run: run)
         let leading: NWSidebarRow.Leading

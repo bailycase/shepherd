@@ -101,6 +101,12 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
     with the source); a pin change redraws the moved row and both groups' count headers. A status
     report on a pinned thread redraws only its row (`ListPerformanceTests`).
 - **Working**: unpinned running threads and live automation runs, most recently active first.
+  A local thread created with an opening message appears here immediately, including while pi
+  starts, rather than briefly appearing in Recents. Its dot and accessibility label say running.
+  Empty threads still enter Recents. Startup failures retain their existing Needs you or
+  can't-start presentation. A command that starts no turn returns to Recents when no message
+  remains pending. This startup presentation is local view state, not a changed agent status
+  or a remote protocol field.
   Local rows draw a 28 × 12 blue sparkline from their last ten measured tool-completion rates.
   Before the first tool event it is flat, never a decorative waveform. Remote rows retain their
   host tag because the remote protocol carries no tool-activity samples.

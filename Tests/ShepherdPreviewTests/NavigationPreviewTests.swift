@@ -112,6 +112,24 @@ extension PreviewTests {
         }
     }
 
+    @Test func sidebarOpeningThread() async throws {
+        try StubPi.installAsEngine()
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        try Data(#"{"gate":"release-pi"}"#.utf8)
+            .write(to: workspace.dir.appendingPathComponent("stub-pi-startup.json"))
+        let space = Space(name: "Shepherd", path: workspace.dir.path)
+        try await workspace.seed(ShepherdState(spaces: [space]))
+        let config = NewAgentConfig(spaceID: space.id, workingDirectory: space.path,
+                                    thinking: .medium, initialPrompt: "Fix the sidebar startup jump")
+        let id = try await workspace.vm.startAgent(config, focusWindow: false)
+        #expect(workspace.vm.sidebarLists.working.map(\.id) == [.local(id)])
+        #expect(workspace.vm.sidebarLists.recents.isEmpty)
+        try await Preview.renderMatrix("sidebar-opening-thread", size: CGSize(width: 232, height: 820)) {
+            SidebarView(vm: workspace.vm).nwDensity(.standard)
+        }
+    }
+
     /// Needs you's reasons (NWNavigation, Main): the agent's own word or two when its asking tool
     /// gave one ("retention?", "approve plan"), the question cut short when it gave none, and an
     /// asking subagent's own reason ("token names?") beside one that gave none (its name).

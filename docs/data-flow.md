@@ -39,7 +39,11 @@
 - The opening prompt is the first native `send`, not a positional argument. The host holds it
   (`SessionServer.sendOpeningPrompt`) and sends it the moment pi serves, so every client's first
   snapshot shows it; the client that created the agent draws the same pending row meanwhile
-  (`OpeningPrompt`, named after the agent).
+  (`OpeningPrompt`, named after the agent). The local sidebar places that new thread in Working
+  before its first broadcast, while leaving its reported status unchanged. The temporary marker
+  clears on a turn status, a failed start, deletion, or a native-thread revision showing no
+  running turn or pending message. Revision subscriptions cover these opening threads even
+  when their views are not mounted; no timer or extra polling loop runs.
 - A new agent's pi spawns with its creation. At launch every restored agent's pi starts from
   the first adoption of the workspace, not when its layout mounts, in `AgentStartQueue`'s
   order: the agent on screen first (and any agent selected while it waits), then the rest a

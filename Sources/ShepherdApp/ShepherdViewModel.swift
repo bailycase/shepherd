@@ -18,6 +18,8 @@ struct NewAgentConfig {
     var initialPrompt: String?
     /// Go to pi with the opening prompt (the New thread page's attachments).
     var initialImages: [NativeImage] = []
+    /// Design references send their opening message after the session starts.
+    var openingReferencesPending = false
     /// A caller-chosen starting name (worktree agents wear their branch
     /// leaf). Provisional like a prompt-derived name: pi's namer retitles it
     /// from the agent's first prompt when auto-naming is on.
@@ -68,6 +70,15 @@ final class ShepherdViewModel {
     /// Activity groups, cached on their source, pins and seen completion generations.
     @ObservationIgnored var sidebarListsCache: (source: SidebarSource, pins: SidebarPins, seen: [SidebarRowID: Int], lists: SidebarLists)?
     var sidebarCompletions = SidebarCompletions()
+    /// Prompted creations belong in Working before pi reports its first turn.
+    var sidebarOpeningTurns: Set<AgentID> = [] {
+        didSet {
+            if oldValue != sidebarOpeningTurns {
+                sessions.watchThreadRevisions(of: threadStores.live.union(sidebarOpeningTurns))
+            }
+        }
+    }
+    @ObservationIgnored var sidebarPreparingOpeningTurns: Set<AgentID> = []
     /// Last ten measured tool-completion rates, not a decorative waveform.
     var sidebarActivitySamples: [AgentID: [Double]] = [:]
     @ObservationIgnored var sidebarActivityLast: [AgentID: Date] = [:]
@@ -589,15 +600,18 @@ final class ShepherdViewModel {
         // A thread on screen shows pi's history the moment pi serves it, not at its next poll.
         sessions.onThreadServable = { [weak self] agentID in
             self?.threadStores.existing(for: agentID)?.revisionAvailable()
+            self?.reconcileSidebarOpeningTurn(agentID)
         }
         // And each revision pi reaches after, within a frame: the server pushes the threads on
         // screen (those whose poll loop runs), and the store pulls at most every
         // `NativeThreadStore.pushedPullSpacing`. The polls stay as the fallback.
         threadStores.onLiveChange = { [weak self] live in
-            self?.sessions.watchThreadRevisions(of: live)
+            guard let self else { return }
+            sessions.watchThreadRevisions(of: live.union(sidebarOpeningTurns))
         }
         sessions.onThreadRevision = { [weak self] agentID in
             self?.threadStores.existing(for: agentID)?.revisionAvailable()
+            self?.reconcileSidebarOpeningTurn(agentID)
         }
         // A design on screen pulls what changed as the agent draws.
         server.onDesignRevision = { [weak self] designID in
@@ -656,6 +670,7 @@ final class ShepherdViewModel {
         }
         sessions.onAgentStopped = { [weak self] agentID, problem, stopped in
             guard let self else { return }
+            if stopped { sidebarOpeningTurns.remove(agentID) }
             let waiting = stopped && problem != nil
             if waiting != cannotStart.contains(agentID) {
                 if waiting { cannotStart.insert(agentID) } else { cannotStart.remove(agentID) }
@@ -1023,6 +1038,11 @@ final class ShepherdViewModel {
     /// Adopt a server snapshot wholesale, keeping selection when IDs persist.
     func adopt(_ serverState: ShepherdState) {
         let shownBefore = shownDesign?.id
+        if !sidebarOpeningTurns.isEmpty {
+            let removed = Set(state.agents.map(\.id)).subtracting(serverState.agents.map(\.id))
+            sidebarOpeningTurns.subtract(removed)
+            sidebarOpeningTurns.subtract(serverState.agents.filter { $0.status != .idle }.map(\.id))
+        }
         state = serverState
         let runs = server.openAutomationRuns
         if runs != openAutomationRuns { openAutomationRuns = runs }
@@ -1096,6 +1116,7 @@ final class ShepherdViewModel {
             let old = state.agents[index].status
             // A repeated report must not invalidate every view that reads the workspace.
             if old != status { state.agents[index].status = status }
+            if status != .idle { sidebarOpeningTurns.remove(id) }
             if old != status || statusSince[id] == nil { statusSince[id] = Date() }
             if old != status, old != .blocked, status == .working {
                 sidebarActivitySamples.removeValue(forKey: id)
