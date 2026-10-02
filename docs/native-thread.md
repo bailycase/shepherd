@@ -875,8 +875,10 @@ requests sent to its host.
   For example, `LargeHistoryTests` loads a 6 MiB history. A "tools:N" prompt runs a pi-like
   agent loop with pi 1.0.0's queues (steering read after each tool batch, follow-ups when the
   run would stop, `queue_update`, `clear_queue`, abort keeping follow-ups, and a stranded steer
-  with "hold-settle", and a compaction after the last reply with "compact-hold", during which it
-  refuses prompts as pi does); `QueueTests` and `InterruptTests` (Steer now, its fallbacks and
+  with "hold-settle", a compaction after the last reply with "compact-hold", during which it
+  refuses prompts as pi does, and pi's overflow recovery with "compact-retry": the run ends, pi
+  compacts (waiting for the file `compact-go`, as its summary takes a model call) and a new run
+  goes on, as `DesignCommentChatTests` draws it); `QueueTests` and `InterruptTests` (Steer now, its fallbacks and
   its races: the files `refuse-abort`, and `clear-gate` with `clear-go`, hold or refuse the
   abort and the `clear_queue` answer) drive the host's queue against it. Its startup options
   (`STUB_PI_STARTUP_DELAY`, `_GATE`, `_EXIT`, or `stub-pi-startup.json` in its cwd for a pi the
