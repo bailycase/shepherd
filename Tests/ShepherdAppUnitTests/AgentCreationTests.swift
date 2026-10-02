@@ -461,6 +461,32 @@ struct AgentLaunchCommandTests {
         #expect(ShellIntegration.command(shell: ["/bin/zsh"]).env["SHEPHERD_EXT_CONTEXT"] == "")
     }
 
+    /// Settings ▸ Agents ▸ Defer rarely used tools: the agent is told so with one variable, and its pi gets tool search by name
+    /// (with MCP on it already has it, once); a design's agent, whose tools are all its own, is never told, and a terminal
+    /// blanks the variable.
+    @Test(arguments: [(deferTools: true, mcp: false), (true, true), (false, false), (false, true)])
+    func deferredToolsBringTheVariableAndToolSearchOnlyWhenOnAndOnlyOnce(deferTools: Bool, mcp: Bool) throws {
+        func launch(design: DesignID? = nil) throws -> SessionCommand {
+            try StatusExtension.command(
+                home: Self.home, cwd: "/tmp/project", agentID: AgentID(rawValue: "agent-id"), piSessionID: "s",
+                socketPath: "/tmp/shepherd.sock", extensionPath: "/tmp/status.ts", panesExtensionPath: "/tmp/panes.ts", reviewExtensionPath: nil,
+                subagentsExtensionPath: nil, design: design.map { (extensionPath: "/tmp/design.ts", designID: $0, skillDirectory: "/tmp/skill") },
+                mcp: mcp ? MCPLaunch(extensions: MCPLaunch.builtIns, environment: [:]) : nil,
+                contextExtensionPath: "/tmp/context.ts", deferTools: deferTools, model: nil, thinking: nil)
+        }
+        let agent = try launch()
+        #expect(agent.env["SHEPHERD_DEFER_TOOLS"] == (deferTools ? "1" : nil))
+        let searches = agent.argv[3].components(separatedBy: " -e 'builtin:tool-search'").count - 1
+        #expect(searches == (deferTools || mcp ? 1 : 0), "pi's tool search, once, when something can need it")
+        #expect(agent.argv[3].contains("-e 'builtin:mcp'") == mcp, "and pi's MCP only when its own setting asks")
+        #expect(agent.argv[3].hasSuffix(" -e '/tmp/context.ts'"), "the clearing extension still loads last")
+        let drawing = try launch(design: DesignID())
+        #expect(drawing.env["SHEPHERD_DEFER_TOOLS"] == nil, "a design's agent works from all of its tools")
+        #expect(drawing.argv[3].components(separatedBy: " -e 'builtin:tool-search'").count - 1 == (mcp ? 1 : 0))
+        #expect(ShellIntegration.command(shell: ["/bin/zsh"]).env["SHEPHERD_DEFER_TOOLS"] == "")
+        #expect(command().env["SHEPHERD_DEFER_TOOLS"] == nil, "no variable unless the setting asked")
+    }
+
     /// One setting decides a repo's .mcp.json (Settings ▸ MCP servers), and Settings ▸ Pi ▸ MCP
     /// servers decides whether pi's MCP loads at all. What an agent launches with reads the
     /// store: pi's `mcp.json` is written and each Keychain value the file refers to is handed over.

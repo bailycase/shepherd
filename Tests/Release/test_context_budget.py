@@ -167,7 +167,29 @@ class CeilingTests(unittest.TestCase):
             ceilings = json.load(f)
         self.assertEqual(sorted(set(ceilings["tokens"]) - set(cb.LABELS)), [])
         self.assertEqual(ceilings["total"], sum(ceilings["tokens"].values()), "the total is the sum of the guarded rows")
-        self.assertGreater(ceilings["toolCount"], 30)
+        # A thread with its rarely used tools deferred still has pi's four, the terminals, notify, the helpers, tool_search and a server's tools.
+        self.assertGreater(ceilings["toolCount"], 25)
+
+
+class DeferralTableTests(unittest.TestCase):
+    @staticmethod
+    def run_of(first, last, sent, billed, mean):
+        return {"requests": 160, "sentTokens": sent, "billedTokens": billed, "perTurn": [{"turn": 1, "tokens": first}, {"turn": 40, "tokens": last}],
+                "reuse": {"mean": mean, "min": 0.12, "below": 4, "of": 159}}
+
+    def test_the_three_runs_are_columns_with_the_numbers_a_cache_and_a_window_care_about(self):
+        result = {"piVersion": "1.0.0", "turns": 40, "loadAt": 6,
+                  "direct": self.run_of(26579, 133222, 16156729, 2162698, 0.979),
+                  "deferred": self.run_of(21182, 121720, 15843275, 2146741, 0.978),
+                  "loaded": self.run_of(21182, 133345, 15957144, 2201175, 0.973)}
+        lines = cb.deferral_table(result).splitlines()
+        self.assertIn("40-turn thread on pi 1.0.0", lines[0])
+        self.assertEqual(lines[2], "| | Every tool direct | Deferred, none loaded | Deferred, the browser loaded in turn 6 |")
+        self.assertEqual(lines[3], "| --- | ---: | ---: | ---: |")
+        self.assertIn("| Input tokens sent, all requests | 16,156,729 | 15,843,275 | 15,957,144 |", lines)
+        self.assertIn("| Same, a cached token counted at a tenth | 2,162,698 | 2,146,741 | 2,201,175 |", lines)
+        self.assertIn("| Share of a request the next one repeats: mean | 98% | 98% | 97% |", lines)
+        self.assertIn("| Tokens in the first request, and in the last | 26,579, 133,222 | 21,182, 121,720 | 21,182, 133,345 |", lines)
 
 
 class CommandLineTests(unittest.TestCase):

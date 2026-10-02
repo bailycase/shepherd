@@ -27,7 +27,7 @@ struct HostSettingsMappingTests {
         #expect(settings.goalCrossProviderEvaluation && settings.goalsEnabled)
         #expect(settings.worktreeBase == .head)
         #expect(settings.mergePRAutomatically && settings.mergeMethod == .rebase)
-        #expect(settings.bundledExtensions.map(\.id) == ["namer", "panes", "review", "nativeSubagents", "subagents", "mcp", "browser", "context"])
+        #expect(settings.bundledExtensions.map(\.id) == ["namer", "panes", "review", "nativeSubagents", "subagents", "mcp", "browser", "context", "deferTools"])
         #expect(settings.bundledExtensions.first { $0.id == "review" }?.on == false)
         #expect(settings.bundledExtensions.first { $0.id == "review" }?.name == "Diff review tool")
         // The extension keeps its stored id; it reads as terminals to the user.
@@ -64,6 +64,20 @@ struct HostSettingsMappingTests {
         HostSettingsMapping.apply(.bundledExtension(id: "context", on: false), to: app)
         #expect(!app.trimToolOutput)
         #expect(HostSettingsMapping.settings(from: app, shepherdVersion: nil, piVersion: nil).bundledExtensions.first { $0.id == "context" }?.on == false)
+    }
+
+    /// Deferring rarely used tools is Settings ▸ Agents on the Mac and one more switch in a client's list, on until switched off.
+    @Test func aClientCanSwitchToolDeferralOffAndOn() {
+        let app = AppSettings(store: Fixture.defaults())
+        func on() -> Bool? {
+            HostSettingsMapping.settings(from: app, shepherdVersion: nil, piVersion: nil).bundledExtensions.first { $0.id == "deferTools" }?.on
+        }
+        #expect(on() == true)
+        HostSettingsMapping.apply(.bundledExtension(id: "deferTools", on: false), to: app)
+        #expect(!app.deferTools && on() == false)
+        HostSettingsMapping.apply(.bundledExtension(id: "deferTools", on: true), to: app)
+        #expect(app.deferTools && on() == true)
+        #expect(HostSettingsMapping.bundled.map(\.id).suffix(2) == ["context", "deferTools"], "listed beside the other Context switch")
     }
 
     @Test func aClientsChangeLandsInTheMacsSettings() {

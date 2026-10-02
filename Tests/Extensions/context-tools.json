@@ -1,5 +1,5 @@
 {
-  "about": "Every tool Shepherd registers, where, and the verdict (docs/context-budget.md). keep: sent in every request of the context; defer: still sent today, to move behind pi 1.0's tool_search in Phase B; drop: not registered there any more, with why. Tests/Extensions/context-budget.test.mjs launches each context on a real pi and fails when a tool it registers has no row, or a dropped one is back. The groups are what the Context card's system-prompt breakdown calls them (ContextToolGroups).",
+  "about": "Every tool Shepherd registers, where, and the verdict (docs/context-budget.md). keep: sent in every request of the context; defer: registered `deferred` (SHEPHERD_DEFER_TOOLS=1, which the app sets while Settings > Agents > Context > Defer rarely used tools is on), so pi sends none of it until the model loads it with tool_search; drop: not registered there at all, with why. Tests/Extensions/context-budget.test.mjs launches each context on a real pi and fails when a tool it registers has no row, a kept tool is not sent, a deferred one is sent or not registered, or a dropped one is back. The groups are what the Context card's system-prompt breakdown calls them (ContextToolGroups).",
   "contexts": [
     "thread",
     "automation",
@@ -69,7 +69,7 @@
       "verdicts": {
         "thread": "defer"
       },
-      "reason": "Reaching other threads is something the user asks for, and each description now says so first (agent-to-agent messages); 1.4k tokens in every thread for a rare use. Defer behind tool_search in Phase B."
+      "reason": "Reaching other threads is something the user asks for, and each description says so first (agent-to-agent messages). Deferred: 1.4k tokens of definitions and 65 of tool-list lines out of every request. The prompt names agent_* and says it is only when the user explicitly asks, and the rule about a message that arrives from another agent stays in it whether or not they are loaded."
     },
     {
       "tools": [
@@ -81,7 +81,7 @@
         "thread": "defer",
         "automation": "keep"
       },
-      "reason": "Messaging another thread is the user's call in a thread (defer in Phase B). An automation's run reports completion to the thread that made it with it, the only agent tool a run gets."
+      "reason": "Messaging another thread is the user's call in a thread (deferred with the rest of agent_*). An automation's run reports completion to the thread that made it with it, the only agent tool a run gets, so it stays direct there."
     },
     {
       "tools": [
@@ -97,7 +97,7 @@
       "verdicts": {
         "thread": "defer"
       },
-      "reason": "Managing automations is rare; 0.8k tokens. A run's own agent never gets them (an automation cannot start automations). Defer in Phase B."
+      "reason": "Managing automations is rare: 0.8k tokens of definitions and 85 of tool-list lines. A run's own agent never gets them (an automation cannot start automations)."
     },
     {
       "tools": [
@@ -109,7 +109,7 @@
         "thread": "keep",
         "automation": "keep"
       },
-      "reason": "One small tool an unattended run needs to say it finished."
+      "reason": "One small tool (105 tokens) an unattended run needs to say it finished, so it stays direct; deferring it would save a thread 118 tokens and cost a search in every run."
     },
     {
       "tools": [
@@ -122,7 +122,7 @@
         "automation": "defer",
         "design": "drop"
       },
-      "reason": "Readies the side pane's Changes tab. A design's screen has no Changes tab and its folder is no repository, so a design's agent no longer gets it (dropped now). Defer for threads in Phase B."
+      "reason": "Readies the side pane's Changes tab: 245 tokens and a tool-list line for something a thread does now and then. Deferred in a thread and an automation; a design's agent never gets it (its screen has no Changes tab and its folder is no repository)."
     },
     {
       "tools": [
@@ -137,11 +137,11 @@
       "group": "subagents",
       "extension": "shepherd-children.ts",
       "verdicts": {
-        "thread": "defer",
-        "automation": "defer",
-        "design": "defer"
+        "thread": "keep",
+        "automation": "keep",
+        "design": "keep"
       },
-      "reason": "Delegating to a helper is a choice the model makes now and then; 1.6k tokens. Defer behind tool_search in Phase B (a design's agent relays its tools through them)."
+      "reason": "Delegating to a helper is how a thread keeps a big search out of its own context (docs/context-budget.md, For agents), so the helper tools stay direct (1.2k tokens); a design's agent relays its tools through them."
     },
     {
       "tools": [
@@ -150,11 +150,11 @@
       "group": "subagents",
       "extension": "shepherd-children.ts",
       "verdicts": {
-        "thread": "defer",
-        "automation": "defer",
-        "design": "defer"
+        "thread": "keep",
+        "automation": "keep",
+        "design": "keep"
       },
-      "reason": "A scripted run of helpers: one of the heaviest single descriptions (about 390 tokens) for the rarest use. Defer in Phase B."
+      "reason": "A scripted run of helpers: 385 tokens, the heaviest single description, for the rarest use. Kept direct with the other native subagent tools; the first to defer if the budget needs it."
     },
     {
       "tools": [
@@ -191,7 +191,7 @@
         "thread": "defer",
         "automation": "defer"
       },
-      "reason": "The thread's own Browser page: 13 tools and 5 prompt rules, 2.2k tokens in every thread, and most threads never open a page. Registered where it works (a design's agent has no Browser); the first Phase B candidate."
+      "reason": "The thread's own Browser page: 13 tools, 2.2k tokens and 233 of tool-list lines, and most threads never open a page. Deferred in a thread and an automation; a design's agent has no Browser."
     },
     {
       "tools": [
@@ -204,7 +204,7 @@
         "automation": "keep",
         "design": "keep"
       },
-      "reason": "pi 1.0's own tool search, which loads the tools of the MCP servers left on Search (docs/mcp.md): about 190 tokens with the server list in the prompt, present only while a server is on Search. A server set to Direct declares its own mcp__<server>__<tool> tools instead: the user's, not listed here."
+      "reason": "pi 1.0's own tool search: it loads the tools of the MCP servers left on Search (docs/mcp.md) and Shepherd's deferred tools (docs/context-budget.md, Deferred tools). 159 tokens, and the server list adds a few more while a server is on Search. Active in a thread and an automation while Defer rarely used tools is on, or an MCP server is on Search. A server set to Direct declares its own mcp__<server>__<tool> tools instead: the user's, not listed here."
     },
     {
       "tools": [
