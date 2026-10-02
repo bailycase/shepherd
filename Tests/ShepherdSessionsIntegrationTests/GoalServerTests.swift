@@ -92,7 +92,8 @@ struct GoalServerTests {
             _ = try await publish(next, to: pi)
             try await eventually("the \(state) fleet state") {
                 let agent = host.server.state.agents.first
-                return agent?.goalState == state.rawValue && agent?.status == .done && agent?.waitingOn == nil
+                return agent?.goalState == state.rawValue && agent?.status == (next.isActive ? .working : .done)
+                    && agent?.waitingOn == nil
             }
         }
         try await eventually("the goal met notification") { notices.current.count == 2 }
@@ -101,6 +102,32 @@ struct GoalServerTests {
         _ = try await publish(nil, to: pi)
         #expect(host.server.state.agents.first?.goalState == nil)
         #expect(host.server.state.agents.first?.waitingOn == nil)
+    }
+
+    @Test(arguments: [NativeGoalState.working, .checking])
+    func activeGoalsKeepTheThreadWorkingBetweenTurns(state: NativeGoalState) async throws {
+        let host = try ScratchServer.fresh()
+        defer { host.stop() }
+        let callbacks = Callbacks(host.server)
+        let pi = try await launch(host)
+        let client = try ExtensionClient(path: host.socketPath)
+        defer { client.closeConnection() }
+        let snapshot = try await publish(goal(state), to: pi)
+        #expect(!snapshot.running, "the goal is active without a pi turn")
+        #expect(host.server.state.agents.first?.status == .working)
+        await drainMainQueue()
+        for (reported, expected) in [(AgentStatus.done, AgentStatus.working), (.idle, .working), (.blocked, .blocked), (.working, .working)] {
+            let seen = callbacks.statuses.current.count
+            try client.send(.setAgentStatus(agentID: pi.agent.id, status: reported))
+            try await eventually("the \(reported) report during \(state)") { callbacks.statuses.current.count > seen }
+            #expect(callbacks.statuses.current.last?.1 == expected)
+            #expect(host.server.state.agents.first?.status == expected)
+        }
+        _ = try await publish(nil, to: pi)
+        try client.send(.setAgentStatus(agentID: pi.agent.id, status: .idle))
+        try await eventually("clearing the goal restores ordinary idle status") {
+            host.server.state.agents.first?.status == .idle
+        }
     }
 
     @Test(arguments: [false, true])
@@ -131,16 +158,28 @@ struct GoalServerTests {
     @Test func aGoalChangeKeepsAnOpenQuestionsTitleAndShortReason() async throws {
         let host = try ScratchServer.fresh()
         defer { host.stop() }
+        let callbacks = Callbacks(host.server)
         let pi = try await launch(host)
+        let client = try ExtensionClient(path: host.socketPath)
+        defer { client.closeConnection() }
         _ = try await publish(goal(.working), to: pi)
         _ = try await pi.send("ask-short", from: try await pi.ready())
         let question = try await pi.snapshot("the open question") { !$0.dialogs.isEmpty }
         try await eventually("the question's short reason") { host.server.state.agents.first?.waitingReason == "retention?" }
-        for state in [NativeGoalState.needsYou, .paused] {
+        for state in [NativeGoalState.working, .checking, .needsYou, .paused] {
             _ = try await publish(goal(state, reason: "decision needed"), to: pi)
             #expect(host.server.state.agents.first?.waitingOn == question.dialogs.first?.title)
             #expect(host.server.state.agents.first?.waitingReason == "retention?")
             #expect(host.server.state.agents.first?.status == .blocked)
+            if state == .working || state == .checking {
+                await drainMainQueue()
+                let seen = callbacks.statuses.current.count
+                try client.send(.setAgentStatus(agentID: pi.agent.id, status: .done))
+                try await eventually("a settled report cannot hide the open goal question") {
+                    callbacks.statuses.current.count > seen
+                }
+                #expect(callbacks.statuses.current.last?.1 == .blocked)
+            }
         }
         _ = try await pi.request(.answer(expectedSessionID: question.piSessionID, generation: question.generation,
                                          operationID: UUID(), dialogID: question.dialogs[0].id, answer: .select(value: "30 days")))

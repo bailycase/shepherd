@@ -4,7 +4,7 @@ import ShepherdUI
 
 /// Activity groups are view state, not part of the host's workspace or wire protocol.
 enum SidebarActivitySection: String, CaseIterable, Hashable {
-    case pinned, needsYou, working, done, recents, designs
+    case done, pinned, needsYou, working, recents, designs
 
     var title: String {
         switch self {
@@ -33,7 +33,7 @@ enum SidebarActivityItem: Identifiable, Equatable {
 
 extension SidebarLists {
     var sections: [(section: SidebarActivitySection, rows: [SidebarListRow])] {
-        [(.pinned, pinned), (.needsYou, needsYou), (.working, working), (.done, done), (.recents, recents), (.designs, designs)]
+        [(.done, done), (.pinned, pinned), (.needsYou, needsYou), (.working, working), (.recents, recents), (.designs, designs)]
     }
 
     func visibleRows(collapsed: Set<SidebarActivitySection>) -> [SidebarListRow] {
@@ -68,6 +68,18 @@ extension ShepherdViewModel {
         guard sidebarStyle == .activity, let selected = selectedSidebarRow,
               let section = sidebarLists.sections.first(where: { $0.rows.contains { $0.id == selected } })?.section else { return }
         collapsedActivitySections.remove(section)
+    }
+
+    /// A command or rejected opening send may never report a turn. Drop the startup marker
+    /// once the host has no pending message, using revision pushes rather than a polling loop.
+    func reconcileSidebarOpeningTurn(_ id: AgentID) {
+        guard sidebarOpeningTurns.contains(id), !sidebarPreparingOpeningTurns.contains(id) else { return }
+        Task {
+            guard case .snapshot(let snapshot) = try? await server.nativeThread(agentID: id, request: .snapshot()),
+                  !snapshot.piSessionID.isEmpty, !snapshot.running,
+                  !snapshot.messages.contains(where: { $0.status == "pending" }) else { return }
+            sidebarOpeningTurns.remove(id)
+        }
     }
 
     func recordSidebarActivity(_ id: AgentID, at now: Date = Date()) {

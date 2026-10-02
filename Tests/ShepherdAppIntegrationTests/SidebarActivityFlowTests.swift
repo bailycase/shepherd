@@ -166,13 +166,15 @@ struct SidebarActivityFlowTests {
         defer { app.stop() }
         let space = Fixture.space("workspace", path: app.dir.path)
         let fixtures = [Fixture.agent("pinned", in: space), Fixture.agent("asking", in: space, order: 1, status: .blocked),
-                        Fixture.agent("working", in: space, order: 2, status: .working),
+                        Fixture.agent("working", in: space, order: 2),
                         Fixture.agent("finished", in: space, order: 3, status: .done), Fixture.agent("idle", in: space, order: 4)]
         var state = Fixture.state(spaces: [space], agents: fixtures)
         state.designs = [Design(name: "Dashboard", createdAt: 1, lastActiveAt: 2, boardCount: 4)]
         let vm = try await app.start(with: state)
         vm.settings.designToolEnabled = true
         vm.pinThread(.local(fixtures[0].agent.id))
+        vm.sidebarOpeningTurns.insert(fixtures[2].agent.id)
+        #expect(vm.sidebarActivityItems.first == .header(.done, count: 1, collapsed: false))
         let window = OffscreenWindow(size: CGSize(width: 232, height: 650), dark: true, SidebarView(vm: vm).nwDensity(density))
         defer { window.close() }
         for section in SidebarActivitySection.allCases {
@@ -185,6 +187,12 @@ struct SidebarActivityFlowTests {
             try window.press(label)
             #expect(!vm.collapsedActivitySections.contains(section))
         }
+        let startingRow = try window.press("working, running")
+        withKnownIssue("Compact sidebar rows are 22pt, below the 24pt desktop hit area") {
+            #expect(startingRow.frame.height >= HitArea.desktop.minimum)
+        } when: { density == .compact }
+        #expect(vm.selectedAgentID == fixtures[2].agent.id)
+        #expect(vm.sidebarLists.working.map(\.id) == [.local(fixtures[2].agent.id)])
         try window.press("finished, done")
         #expect(vm.selectedAgentID == fixtures[3].agent.id)
         #expect(vm.sidebarLists.done.count == 1, "opening Done does not mark it seen")
@@ -193,6 +201,7 @@ struct SidebarActivityFlowTests {
         #expect(vm.sidebarLists.done.isEmpty)
         #expect(vm.selectedAgentID == fixtures[3].agent.id, "Mark all seen does not change selection")
         #expect(!vm.collapsedActivitySections.contains(.done))
+        #expect(vm.sidebarActivityItems.first == .header(.pinned, count: 1, collapsed: false))
         var next = vm.state
         let index = try #require(next.agents.firstIndex { $0.id == fixtures[3].agent.id })
         next.agents[index].status = .working
@@ -200,6 +209,7 @@ struct SidebarActivityFlowTests {
         next.agents[index].status = .done
         vm.adopt(next)
         #expect(vm.sidebarLists.done.count == 1, "a new completion returns to Done")
+        #expect(vm.sidebarActivityItems.first == .header(.done, count: 1, collapsed: false))
         vm.toggleActivitySection(.done)
         try await eventuallyOnMain("folded Done still has Mark all seen") { window.layout(); return window.controls().contains { $0.label == "Mark all seen" } }
         let button = try window.press("Mark all seen")

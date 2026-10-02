@@ -1,10 +1,10 @@
 # Navigation sidebar checklist
 
 Reference: [NWNavigation.png](NWNavigation.png), revision 420, with its [HTML](NWNavigation.html).
-User clarification: Pinned is first and keeps every pinned thread, regardless of status.
+User clarification: Done is first when nonempty. Pinned follows it and keeps every pinned thread, regardless of status.
 
 - Keep the 44pt top bar, Search and Hide sidebar, fixed destinations, and user footer.
-- Draw nonempty groups in order: Pinned, Needs you, Working, Done, Recents, Designs.
+- Draw nonempty groups in order: Done, Pinned, Needs you, Working, Recents, Designs.
 - Each group has a 9pt outline chevron, down when open and right when closed, with a 6pt gap.
 - Header titles use Geist 11.5 medium; counts immediately follow in Geist Mono 10.5.
 - Needs you uses attention text; the other headers use secondary text and tertiary counts.
@@ -13,6 +13,7 @@ User clarification: Pinned is first and keeps every pinned thread, regardless of
 - Done has a separate "Mark all seen" button, available while open or folded.
 - List rows retain the real title, state dot or outline automation bolt, host tag, question reason, and context menu.
 - Working has blue dots and an activity sparkline; Done has green dots and completion age.
+- Working and Checking goals stay in Working between pi turns, retaining the existing goal glyph. Questions still move unpinned threads to Needs you.
 - Recents has idle or seen threads. Designs have the outline nib and real board count, never a Recents row.
 - Pinned rows never move on a status change. Their status and attention reason remain visible.
 - A finished thread stays in Done while read, including after a page opens; opening another thread marks that completion seen.

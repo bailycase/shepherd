@@ -123,6 +123,9 @@ struct AgentStartProblemTests {
 
         try await eventuallyOnMain("the thread to say why pi stopped", timeout: .seconds(20)) { store.startProblem?.kind == .notSignedIn }
         #expect(vm.state.agents.contains { $0.id == id })
+        #expect(!vm.sidebarOpeningTurns.contains(id))
+        #expect(vm.sidebarLists.working.isEmpty)
+        #expect(vm.sidebarLists.needsYou.map(\.id) == [.local(id)])
 
         try Self.healPi(in: app.dir)
         vm.retryAgentStart(id)

@@ -53,6 +53,8 @@ struct AgentStartupTests {
 
         try await eventuallyOnMain("the thread to show pi starting") { store.starting }
         #expect(store.loadError == nil && !store.ready)
+        #expect(vm.sidebarLists.working.isEmpty)
+        #expect(vm.sidebarLists.recents.map(\.id) == [.local(id)], "an empty thread is not working")
         #expect(store.pollInterval == .milliseconds(200))
         #expect(try await creating.value == id)
         // Known to be empty from the start: the new agent's thread draws before pi answers.
@@ -110,6 +112,10 @@ struct AgentStartupTests {
         }
 
         #expect(store.previewing && !store.ready)
+        #expect(vm.sidebarLists.recents.isEmpty)
+        let startingRow = try #require(vm.sidebarLists.working.first)
+        #expect(startingRow.id == .local(id) && startingRow.leading == .dot(.running))
+        #expect(startingRow.accessibilityLabel.hasSuffix(", running"))
         let shown = try #require(promptRows().first, "the prompt shows while pi starts")
         #expect(promptRows().count == 1 && store.rows.count == 1)
 
@@ -120,6 +126,15 @@ struct AgentStartupTests {
         try await eventuallyOnMain("the thread to show pi starting") { store.starting }
         #expect(try await creating.value == id)
         #expect(promptRows().map(\.id) == [shown.id], "the prompt still shows while pi is starting")
+        let reporter = try ExtensionClient(path: app.scratch.socketPath)
+        try reporter.send(.setAgentStatus(agentID: id, status: .idle))
+        try await eventuallyOnMain("the startup idle report to arrive") { vm.statusSince[id] != nil }
+        #expect(vm.sidebarLists.working.map(\.id) == [.local(id)], "startup idle must not move the pending prompt")
+        try reporter.send(.setAgentStatus(agentID: id, status: .working))
+        try await eventuallyOnMain("the first turn to replace the startup marker") {
+            vm.state.agents.first?.status == .working && !vm.sidebarOpeningTurns.contains(id)
+        }
+        #expect(vm.sidebarLists.working.map(\.id) == [.local(id)])
 
         Self.releasePi(in: app.dir)
         var most = 0
@@ -131,6 +146,33 @@ struct AgentStartupTests {
         #expect(promptRows().map(\.id) == [shown.id], "the row kept its identity from preview to pi's message")
         let landed = store.displayedMessages.filter { $0.role == "user" && $0.blocks.first?.text == prompt }
         #expect(landed.count == 1 && landed.first?.status != "pending", "pi's own message, once")
+        try reporter.send(.setAgentStatus(agentID: id, status: .done))
+        try await eventuallyOnMain("the completed opening turn to enter Done") {
+            vm.sidebarLists.done.map(\.id) == [.local(id)]
+        }
+    }
+
+    @Test func anOpeningCommandThatStartsNoTurnReturnsToRecents() async throws {
+        try StubPi.installAsEngine()
+        let app = try AppHarness()
+        defer { app.stop() }
+        try Self.holdPi(in: app.dir)
+        let space = Fixture.space(path: app.dir.path)
+        let vm = try await app.start(with: ShepherdState(spaces: [space]))
+        var config = ShepherdViewModel.quickAgentConfig(for: space, defaults: app.settings.agentDefaults)
+        config.initialPrompt = "/session-name report Opening command finished"
+        let id = try await vm.startAgent(config, selectAfter: false)
+        #expect(vm.sidebarLists.working.map(\.id) == [.local(id)])
+        Self.releasePi(in: app.dir)
+        let server = app.server
+        try await eventuallyAsync("the opening command to run without starting a turn") {
+            guard case .snapshot(let snapshot) = try await server.nativeThread(agentID: id, request: .snapshot()) else { return false }
+            return snapshot.messages.contains { $0.blocks.contains { $0.text == "Opening command finished" } }
+        }
+        try await eventuallyOnMain("the command-only opening to leave Working without a mounted thread") {
+            vm.sidebarLists.recents.map(\.id) == [.local(id)] && vm.sidebarOpeningTurns.isEmpty
+        }
+        #expect(vm.state.agents.first?.status == .idle)
     }
 
     /// A relaunch: every restored pane still names the previous run's pi, and every agent's pi

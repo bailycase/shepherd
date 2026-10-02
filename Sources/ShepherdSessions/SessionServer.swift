@@ -3888,9 +3888,18 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     private func applyAgentStatus(agentID: AgentID, status: AgentStatus) {
-        let status: AgentStatus = rpcThread(forAgent: agentID)?.goal?.state == .needsYou && status != .working ? .blocked : status
+        let thread = rpcThread(forAgent: agentID)
+        let goal = thread?.goal
+        let status: AgentStatus = if goal?.state == .needsYou && status != .working {
+            .blocked
+        } else if goal?.isActive == true && (status == .idle || status == .done) {
+            // pi can settle between goal turns and while the goal checks its evidence.
+            RPCThreadState.question(in: thread?.dialogs ?? []) == nil ? .working : .blocked
+        } else {
+            status
+        }
         var failure: TurnFailure?
-        if status == .done, let thread = rpcThread(forAgent: agentID) {
+        if status == .done, let thread {
             // Between queued turns pi settles for a moment; the agent is not done (and must not
             // post "Agent finished") while its queue goes next. And the extension's report can
             // arrive before pi's own settle on stdout, which says how the turn ended: wait for it.

@@ -137,11 +137,16 @@ struct NewThreadDesignTests {
         draft.prompt = typed
         #expect(draft.blocker(w.vm) == nil, "a design alone is a message, as it is in a thread's composer")
         #expect(draft.notice(w.vm) == nil)
+        try Data(#"{"gate":"release-opening"}"#.utf8)
+            .write(to: w.app.dir.appendingPathComponent("stub-pi-startup.json"))
 
         draft.send(w.vm)
         try await eventuallyOnMain("the new agent to be selected") { w.vm.selectedAgentID != nil && !draft.starting }
         let id = try #require(w.vm.selectedAgentID)
         #expect(draft.prompt.isEmpty && draft.references.isEmpty, "the draft went with the thread")
+        #expect(w.vm.sidebarLists.working.contains { $0.id == .local(id) })
+        #expect(!w.vm.sidebarLists.recents.contains { $0.id == .local(id) })
+        FileManager.default.createFile(atPath: w.app.dir.appendingPathComponent("release-opening").path, contents: nil)
 
         // The agent's name is provisional, so pi's namer settles it on its first turn as usual.
         let agent = try #require(w.vm.state.agents.first { $0.id == id })

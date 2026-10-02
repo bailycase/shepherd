@@ -177,7 +177,9 @@ canvas hold a web view per board.
 starting a new turn). The server applies extension reports unconditionally and logs table
 violations; keep it that way, because real process lifecycles are messier than the table.
 `SessionServer.start()` resets every persisted status to `idle`, because sessions died with the
-previous run.
+previous run. Goal lifecycle state also contributes: Working and Checking keep idle/done reports
+Working unless a question is open; Needs you keeps non-working reports Blocked. Paused, Met and
+cleared goals leave ordinary turn status alone.
 
 **Startup reconciliation** (`SessionServer.start()`) drops the global-shell and space-shell tabs
 of older state files (`shellTabIDs`: no space, or no agent owns the tab). It also purges
