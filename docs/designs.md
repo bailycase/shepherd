@@ -963,7 +963,12 @@ was on keep their files and agents either way.
   anywhere on the canvas closes it.
 - **The chat.** A message carrying a comment draws as the comment's card (`NWCommentCard`: the
   small pin, "on A · Checkout funnel", "You · 2m", the words), and the agent's reply to it sits
-  inside the card under a hairline, without the turn's footer.
+  inside the card under a hairline, without the turn's footer. The card holds the reply **up to
+  its first compaction**: after one the agent works from its summary, so what it does next is its
+  own work. The compaction's line opens an ordinary reply under the card (its own footer, no
+  card), and the store derives it that way once, for the Mac and the iPad alike
+  (`NativeThreadStore.endingCommentAnswers`; a reply that opens with its compaction has no answer
+  before it and is no part of the card).
 - **The Comments tab** lists the open comments' cards, oldest first (a lazy list, one row per
   card), and its label counts them with the notes threads left on the design (Notes back,
   RefNoteBack's "Comments 2" over a comment and a note; `DesignScreenModel.commentsTabCount`). The
