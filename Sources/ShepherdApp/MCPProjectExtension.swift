@@ -24,7 +24,9 @@ enum MCPProjectExtension {
         // file Claude Code, Cursor and VS Code share). With the switch on, this registers that file's servers for the
         // session with pi.registerMcpServer, reached through tool_search like the page's own; a server of the same name in
         // the user's file wins. It runs no server, speaks no MCP, reads nothing of the Keychain and writes nothing: pi's MCP
-        // connects what is registered here, and the values it expands from the environment stay in memory.
+        // connects what is registered here, and the values it expands from the environment stay in memory. A repo's file is
+        // not trusted with the app's own variables: it cannot refer to a SHEPHERD_* one, and a server it names starts
+        // without the Keychain values (SHEPHERD_MCP_SECRET_*) that pi's environment carries for the user's own servers.
         //
         // Inert unless SHEPHERD_EXT_MCP_PROJECT=1. Nothing throws into pi.
         import * as fs from "node:fs";
@@ -49,10 +51,14 @@ enum MCPProjectExtension {
         }
 
         const REFERENCE = /\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}/g;
+        const SECRET_PREFIX = "SHEPHERD_MCP_SECRET_";
+
+        /** The app's own variables (its socket, the agent's id, the Keychain values) are never something a repo's file can read. */
+        const readable = (name: string) => !name.startsWith("SHEPHERD_");
 
         /** `${VAR}` and `${VAR:-default}` from the environment; a variable that is not set stays as written when it has no default. */
         export function expand(text: string, env: Record<string, string | undefined> = process.env): string {
-          return text.replace(REFERENCE, (whole, name, fallback) => env[name] ?? fallback ?? whole);
+          return text.replace(REFERENCE, (whole, name, fallback) => (readable(name) ? env[name] ?? fallback ?? whole : fallback ?? ""));
         }
 
         /** A value of `env` or `headers`: pi expands `${VAR}` itself, but not a default, so only defaults are settled here. */
@@ -60,7 +66,9 @@ enum MCPProjectExtension {
           if (!isObject(map)) return undefined;
           const out: Record<string, string> = {};
           for (const [key, value] of Object.entries(map)) {
-            if (typeof value === "string") out[key] = value.replace(REFERENCE, (whole, name, fallback) => (fallback !== undefined ? env[name] ?? fallback : whole));
+            if (typeof value === "string") {
+              out[key] = value.replace(REFERENCE, (whole, name, fallback) => (!readable(name) ? fallback ?? "" : fallback !== undefined ? env[name] ?? fallback : whole));
+            }
           }
           return out;
         }
@@ -74,8 +82,10 @@ enum MCPProjectExtension {
           if (typeof entry.command === "string" && typeof entry.url !== "string") {
             config.command = expand(entry.command, env);
             if (Array.isArray(entry.args)) config.args = entry.args.filter((a) => typeof a === "string").map((a) => expand(a, env));
-            const settled = settleDefaults(entry.env, env);
-            if (settled) config.env = settled;
+            // pi starts a stdio server with its own environment plus this one, so a blank overrides what it would inherit.
+            const settled = settleDefaults(entry.env, env) ?? {};
+            for (const key of Object.keys(env)) if (key.startsWith(SECRET_PREFIX) && !(key in settled)) settled[key] = "";
+            if (Object.keys(settled).length > 0) config.env = settled;
             if (typeof entry.cwd === "string") config.cwd = expand(entry.cwd, env);
           } else if (typeof entry.url === "string") {
             config.url = expand(entry.url, env);
