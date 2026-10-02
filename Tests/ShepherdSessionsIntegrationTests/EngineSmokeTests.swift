@@ -69,7 +69,7 @@ struct EngineSmokeTests {
         let result = try EngineSmoke.runTool(engine.node.path, ["-e", script, engine.entry.path], environment: [:])
         #expect(result.status == 0, "\(result.output)")
         let resolved = result.output.split(separator: "\n").map(String.init)
-        let modules = engine.packageDirectory.appendingPathComponent("node_modules").standardizedFileURL.resolvingSymlinksInPath().path + "/"
+        let modules = PiHome.canonical(engine.packageDirectory.appendingPathComponent("node_modules").path) + "/"
         #expect(resolved.count == 3 && resolved.allSatisfy { $0.hasPrefix(modules) }, "each resolves inside the engine's node_modules: \(resolved)")
         #expect(resolved.last?.hasSuffix("/quickjs-wasi/quickjs.wasm") == true)
     }
