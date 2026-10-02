@@ -434,7 +434,7 @@ authenticate with the token and never reach this path.
 
 | Messages | From | Refused as |
 | --- | --- | --- |
-| `setAgentStatus`, `setAgentSession`, `setAgentName`, `setAgentChildren`, `notify`, `mcpReport`, `agentResponse`, `cancelAgentRequest` | status, namer, subagents, panes, mcp | dropped |
+| `setAgentStatus`, `setAgentSession`, `setAgentName`, `setAgentChildren`, `notify`, `agentResponse`, `cancelAgentRequest` | status, namer, subagents, panes | dropped |
 | `helloAgent`, `helloChildren`, `helloBrowser` | panes, children, browser | dropped; registers nothing, displaces no one |
 | `listPanes`, `openPane`, `closePane`, `focusPane`, `sendPaneInput`, `readPane` | panes | `wrong_process` |
 | `listAgents`, `sendToAgent`, `spawnAgent`, `coordinateAgent` (read, steer, interrupt, status, delete) | panes | `wrong_process` |
@@ -442,7 +442,6 @@ authenticate with the token and never reach this path.
 | `suggestInstruction` | instructions | `wrong_process` |
 | `designRead`, `designWriteBoard`, `designEditBoard`, `designUpdateIndex`, `designComments`, `designCommentReply`, `designSystemRead`, `designSystemWrite`, `designProposeComments` | design | `wrong_process` |
 | `designGet`, `designNote` | design-refs | `wrong_process` |
-| `mcpCredentials` | mcp | `wrong_process` (it answers with secrets) |
 | `browser` | browser | `not_registered` |
 | `createAutomation`, `listAutomations`, `updateAutomation`, `deleteAutomation`, `startAutomation`, `stopAutomation` | panes (`automation_*`) | **not covered**: they name no agent (any pi session may send them), so any process that reaches the socket is served |
 | `childCommandResult` | children | not covered, and not needed: accepted only from the connection the command went to |

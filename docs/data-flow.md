@@ -21,9 +21,9 @@
   `PI_*`, `JITI_*`, `NODE_*` and `OPENSSL_CONF`, pins Shepherd's (home, package, offline, no
   version check or telemetry), refuses `install`/`remove`/`uninstall`/`update`/`config`, and
   execs the engine the app ships (`SHEPHERD_PI_ENGINE` in a Debug build). Every other launch of
-  pi (the catalog, drafts) goes through it too, and the node beside it (the MCP probe, the
-  sign-in bridge) is the engine's; `PiLaunch` builds them all and nothing
-  else names either. Nothing ever runs the user's own `pi` or `npm`.
+  pi (the catalog, drafts, `pi mcp list/login/logout` for Settings ▸ MCP servers) goes through it
+  too, and the node beside it (the sign-in bridge) is the engine's; `PiLaunch` builds them all and
+  nothing else names either. Nothing ever runs the user's own `pi` or `npm`.
 - Before each launch, `PiSetup.prepare` checks the startup guards (the home and "your pi" never
   overlap, by `realpath`, and "your pi" holds no Shepherd marker) and writes the launcher,
   `restore-env.sh` and Shepherd's keys in the home's `settings.json` (`shellCommandPrefix`, and
@@ -35,7 +35,10 @@
   copies the agent's conversation in from "your pi" if Shepherd's home has none (plain reads,
   bytes not links); then `PiSessionFile` seeds a session header if pi has none yet.
 - `--model`/`--thinking` go only to a fresh session.
-- Extensions follow Settings ▸ Pi ▸ Bundled extensions.
+- Extensions follow Settings ▸ Pi ▸ Bundled extensions. A thread's or an automation's launch (never a design's
+  agent's) carries `SHEPHERD_DEFER_TOOLS=1` and `-e builtin:tool-search` while Settings ▸ Agents ▸ Context ▸ Defer
+  rarely used tools is on, so the rarely used tools register `deferred` and load by a search
+  ([context-budget.md](context-budget.md) › Deferred tools).
 - The opening prompt is the first native `send`, not a positional argument. The host holds it
   (`SessionServer.sendOpeningPrompt`) and sends it the moment pi serves, so every client's first
   snapshot shows it; the client that created the agent draws the same pending row meanwhile

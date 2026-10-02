@@ -9,27 +9,30 @@ struct SessionCommand {
     var env: [String: String]
 }
 
-/// What an agent's MCP extension is launched with (Settings ▸ Pi ▸ Bundled extensions ▸ MCP servers).
+/// What an agent's pi is launched with for MCP (Settings ▸ Pi ▸ Bundled extensions ▸ MCP servers;
+/// docs/mcp.md): pi's own MCP and tool search switched on over the home's `-builtin:` switches, the
+/// secrets the servers' entries refer to in its environment, and, while Settings ▸ MCP servers ▸
+/// Also use a repo's .mcp.json is on, the extension that registers the repo's servers.
 struct MCPLaunch: Equatable {
-    var extensionPath: String
-    var clientPath: String
-    /// The config file the app resolved (`ShepherdPaths.mcpConfigURL`).
-    var configPath: String
-    var cachePath: String
-    /// Settings ▸ MCP servers ▸ Also use a repo's .mcp.json.
-    var useRepoConfig: Bool
+    /// `-e` arguments: pi's built-ins by name, then the repo extension's file.
+    var extensions: [String]
+    var environment: [String: String]
+
+    static let builtIns = ["builtin:mcp", "builtin:tool-search"]
 
     /// What an agent launches with under these settings: nil while Settings ▸ Pi ▸ MCP servers
-    /// is off. `install` writes the extension and its client and returns both paths.
+    /// is off. `install` writes the repo extension and returns its path.
     @MainActor
-    static func forAgents(settings: AppSettings, environment: [String: String] = ProcessInfo.processInfo.environment,
-                          install: () throws -> (extensionPath: String, clientPath: String) = MCPExtension.install) rethrows -> MCPLaunch? {
+    static func forAgents(settings: AppSettings, store: MCPStore,
+                          install: () throws -> String = MCPProjectExtension.installedPath) rethrows -> MCPLaunch? {
         guard settings.piMCPExtension else { return nil }
-        let installed = try install()
-        return MCPLaunch(extensionPath: installed.extensionPath, clientPath: installed.clientPath,
-                         configPath: ShepherdPaths.mcpConfigURL(environment: environment).path,
-                         cachePath: ShepherdPaths.mcpToolsCacheURL(environment: environment).path,
-                         useRepoConfig: settings.mcpProjectConfig)
+        var extensions = builtIns
+        var environment = store.launchEnvironment()
+        if settings.mcpProjectConfig {
+            extensions.append(try install())
+            environment["SHEPHERD_EXT_MCP_PROJECT"] = "1"
+        }
+        return MCPLaunch(extensions: extensions, environment: environment)
     }
 }
 
@@ -79,6 +82,8 @@ enum StatusExtension {
         designReferences: (extensionPath: String, granted: Bool)? = nil,
         mcp: MCPLaunch? = nil,
         browserExtensionPath: String? = nil,
+        contextExtensionPath: String? = nil,
+        deferTools: Bool = false,
         userHome: String = NSHomeDirectory(),
         model: String?,
         thinking: ThinkingLevel?
@@ -87,10 +92,14 @@ enum StatusExtension {
         let designReferences = design == nil ? designReferences : nil
         // Nor does it get the browser: that is a thread's own page.
         let browserExtensionPath = design == nil ? browserExtensionPath : nil
+        // Nor are its tools deferred: it works from all of them (docs/context-budget.md, Deferred tools).
+        let deferTools = deferTools && design == nil
+        // Deferred tools are loaded with pi's tool_search. With MCP on the launch already has it; without, it is the one built-in to add.
+        let toolSearch = deferTools && mcp == nil ? ["builtin:tool-search"] : []
         // Child result delivery must run before the goal's final-settlement evaluator.
         let extensions = [extensionPath, ServiceTierExtension.path(in: home), instructions?.extensionPath, panesExtensionPath, reviewExtensionPath, subagentsExtensionPath,
                           childrenExtensionPath, GoalExtension.path(in: home), namerExtensionPath, design?.extensionPath, designReferences?.extensionPath,
-                          mcp?.extensionPath, browserExtensionPath].compactMap { $0 }
+                          browserExtensionPath].compactMap { $0 } + (mcp?.extensions ?? toolSearch) + [contextExtensionPath].compactMap { $0 }
         let line = try PiLaunch.agent(home: home, cwd: cwd, sessionID: piSessionID, model: model, thinking: thinking?.rawValue,
                                       extensions: extensions, untrustedProject: PiLaunch.isHomeFolder(cwd, userHome: userHome))
         var env = [
@@ -119,14 +128,12 @@ enum StatusExtension {
         }
         // A thread's design references: design_get registers itself once it holds one.
         if let designReferences { env["SHEPHERD_DESIGN_REFS"] = designReferences.granted ? "granted" : "on" }
-        // Settings ▸ MCP servers: the extension reads the config and the tools cache the app keeps.
-        if let mcp {
-            env["SHEPHERD_EXT_MCP"] = mcp.extensionPath
-            env["SHEPHERD_EXT_MCP_CLIENT"] = mcp.clientPath
-            env["SHEPHERD_EXT_MCP_CONFIG"] = mcp.configPath
-            env["SHEPHERD_EXT_MCP_CACHE"] = mcp.cachePath
-            if mcp.useRepoConfig { env["SHEPHERD_EXT_MCP_PROJECT"] = "1" }
-        }
+        // Settings ▸ MCP servers: the Keychain values pi's MCP expands into its servers' env and headers.
+        if let mcp { env.merge(mcp.environment) { _, value in value } }
+        // Settings ▸ Agents ▸ Trim old tool output: what the model is sent, never the thread (docs/context-budget.md).
+        if let contextExtensionPath { env["SHEPHERD_EXT_CONTEXT"] = contextExtensionPath }
+        // Settings ▸ Agents ▸ Defer rarely used tools: the browser, other-thread, automation and review tools are loaded by a search.
+        if deferTools { env["SHEPHERD_DEFER_TOOLS"] = "1" }
         // Fast or Standard is the agent's own (the host keeps its file), so every agent gets this.
         env.merge(ServiceTierExtension.environment(for: agentID, in: home)) { _, value in value }
         // Keep the controller loaded so the experiment can change without restarting pi.
@@ -169,10 +176,16 @@ enum StatusExtension {
             "Optional: what you need from the user in 1-3 words, shown beside this thread in Shepherd's sidebar while it waits (e.g. \"retention?\", \"approve plan\").",
         };
 
+        // Shepherd's rarely used tools (the panes, review and browser extensions') are deferred while SHEPHERD_DEFER_TOOLS=1: each is
+        // registered `deferred` under a `shepherd_*` namespace, and pi sends none of them until the model loads it with tool_search
+        // (docs/context-budget.md). What keeps them reachable is here, since this extension is in every agent's launch.
+        const SHEPHERD_NAMESPACE = /^shepherd_/;
+
         export default function shepherdStatus(pi: ExtensionAPI) {
           const agentID = process.env.SHEPHERD_AGENT_ID ?? "";
           const socketPath = process.env.SHEPHERD_SOCKET ?? "";
           if (!agentID || !socketPath) return;
+          const deferTools = process.env.SHEPHERD_DEFER_TOOLS === "1";
 
           let socket: net.Socket | undefined;
           let connected = false;
@@ -208,6 +221,61 @@ enum StatusExtension {
             } catch {
               // Swallow; the sidebar falls back to the question itself.
             }
+          }
+
+          const deferredTools = () =>
+            pi.getAllTools().filter((tool) => tool.exposure === "deferred" && SHEPHERD_NAMESPACE.test(tool.namespace?.name ?? ""));
+
+          // pi's MCP activates tool_search only for a server on Search, so without this a thread with none could not load a tool. A launch
+          // without tool_search at all declares the deferred tools like any other rather than leave them unreachable. And the tools a search
+          // loaded stay loaded across a restart: pi 1.0 restores them in some modes and not in the RPC one Shepherd runs (measured), where a
+          // thread that opened the browser would lose it at every relaunch. The transcript says what was loaded: the tools that system
+          // messages after the first one added (the first is the launch's own set, so a thread from before deferral starts deferred).
+          function keepDeferredToolsReachable(ctx?: { sessionManager?: { getBranch?: () => any[] } }) {
+            if (!deferTools) return;
+            try {
+              const deferred = deferredTools();
+              if (deferred.length === 0) return;
+              let active = pi.getActiveTools();
+              if (pi.getAllTools().some((tool) => tool.name === "tool_search")) {
+                if (!active.includes("tool_search")) pi.setActiveTools((active = [...active, "tool_search"]));
+              } else {
+                pi.setActiveTools([...new Set([...active, ...deferred.map((tool) => tool.name)])]);
+                return;
+              }
+              const loaded = new Set<string>();
+              let later = false;
+              for (const entry of ctx?.sessionManager?.getBranch?.() ?? []) {
+                const message = entry?.type === "message" ? entry.message : undefined;
+                if (message?.role !== "system") continue;
+                if (!later) { later = true; continue; }
+                for (const tool of message.toolsRemoved ?? []) loaded.delete(tool?.name);
+                for (const tool of message.toolsAdded ?? []) loaded.add(tool?.name);
+              }
+              const back = deferred.map((tool) => tool.name).filter((name) => loaded.has(name) && !active.includes(name));
+              if (back.length > 0) pi.setActiveTools([...active, ...back]);
+            } catch {
+              // The tools stay deferred; the model can still work without them.
+            }
+          }
+
+          // One rule line says which of them exist: a deferred tool is in no request, so the model could not otherwise know to look.
+          // Without tool_search there is nothing to load them with, and keepDeferredToolsReachable declared them instead.
+          function deferredToolsLine(): string | undefined {
+            if (!pi.getAllTools().some((tool) => tool.name === "tool_search")) return undefined;
+            const families = new Map<string, { names: string[]; description: string }>();
+            for (const tool of deferredTools()) {
+              const family = families.get(tool.namespace.name) ?? { names: [], description: tool.namespace.description ?? "" };
+              family.names.push(tool.name);
+              families.set(tool.namespace.name, family);
+            }
+            if (families.size === 0) return undefined;
+            const label = (names: string[]) => {
+              const prefix = names[0].split("_")[0];
+              return names.length > 1 && names.every((name) => name.startsWith(`${prefix}_`)) ? `${prefix}_*` : names.join(", ");
+            };
+            const parts = [...families.values()].map((family) => `${label(family.names)} (${family.description})`);
+            return `Shepherd tools you load with tool_search when you need them: ${parts.join("; ")}.`;
           }
 
           function flush() {
@@ -337,6 +405,7 @@ enum StatusExtension {
             connect();
             send("idle");
             offerShortReason();
+            keepDeferredToolsReachable(ctx);
             // Fires for startup, /new, /resume, and /reload, so this covers every way
             // the current session can change.
             try {
@@ -346,8 +415,44 @@ enum StatusExtension {
             }
           });
 
-          pi.on("before_agent_start", () => {
+          pi.on("before_agent_start", (event) => {
             offerShortReason();
+            if (!deferTools) return;
+            try {
+              const rules = event?.systemPromptOptions?.promptGuidelines;
+              const line = deferredToolsLine();
+              if (Array.isArray(rules) && line && !rules.includes(line)) rules.push(line);
+            } catch {
+              // The line is never worth a failed turn.
+            }
+          });
+
+          // A search whose best match is a tool of one of these families loads the whole family: the browser's thirteen tools are used
+          // together and tool_search loads eight at most, and each load is a change to the request that the provider's prompt cache can
+          // notice, so one is better than two. Only the best match counts (the loaded list is in rank order): a search for an MCP tool also
+          // loads the weaker matches, such as automation_create for "create an issue", and those do not bring their families.
+          if (deferTools) pi.on("tool_result", (event) => {
+            if (event.toolName !== "tool_search") return undefined;
+            try {
+              const loaded: string[] = Array.isArray(event.details?.loaded) ? event.details.loaded : [];
+              const all = pi.getAllTools();
+              const family = all.find((tool) => tool.name === loaded[0])?.namespace?.name ?? "";
+              if (!SHEPHERD_NAMESPACE.test(family)) return undefined;
+              const active = new Set(pi.getActiveTools());
+              const more = all.filter((tool) => tool.exposure === "deferred" && tool.namespace?.name === family && !active.has(tool.name)).map((tool) => tool.name);
+              if (more.length === 0) return undefined;
+              pi.setActiveTools([...active, ...more]);
+              // The answer says so too, and keeps its first line, "Loaded N tools.", true: Shepherd's thread reads the count from it.
+              const first = event.content?.[0];
+              if (first?.type !== "text" || typeof first.text !== "string") return undefined;
+              const count = /^Loaded (\d+) tools?\./.exec(first.text);
+              if (!count) return undefined;
+              const total = Number(count[1]) + more.length;
+              const text = first.text.replace(count[0], `Loaded ${total} tools.`) + `\nLoaded with them, from the same set: ${more.join(", ")}.`;
+              return { content: [{ ...first, text }, ...event.content.slice(1)], details: { ...event.details, loaded: [...loaded, ...more] } };
+            } catch {
+              return undefined;
+            }
           });
 
           pi.on("tool_call", (event) => {

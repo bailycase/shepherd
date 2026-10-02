@@ -125,8 +125,7 @@ let package = Package(
             name: "ShepherdTestSupport",
             dependencies: ["ShepherdCore", "ShepherdProtocol", "ShepherdRemote", "ShepherdSessions", "ShepherdTestKit"],
             path: "Tests/ShepherdTestSupport",
-            resources: [.copy("Resources/stub-pi.py"), .copy("Resources/fake-mcp-oauth.py"), .copy("Resources/mcp-agent.mjs"),
-                        .copy("Resources/fake-pi-sdk.mjs")]
+            resources: [.copy("Resources/stub-pi.py"), .copy("Resources/fake-pi-sdk.mjs")]
         ),
         .testTarget(name: "ShepherdSessionsIntegrationTests", dependencies: ["ShepherdSessions", "ShepherdTestSupport"]),
         .testTarget(

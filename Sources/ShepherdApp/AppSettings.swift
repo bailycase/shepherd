@@ -5,6 +5,7 @@ import ShepherdUI
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSessions
 
 /// What a new worktree branches from (Settings ▸ Worktrees).
 enum WorktreeBaseMode: String, CaseIterable {
@@ -57,10 +58,12 @@ final class AppSettings {
         static let autoNameAgents = "shepherd.agent.autoName"
         static let skillsInSlashMenu = "shepherd.skills.slashMenu"
         static let hiddenSlashCommands = "shepherd.pi.slashCommands.hidden"
-        static let mcpOpenSignInPages = "shepherd.mcp.openSignInPages"
         static let mcpProjectConfig = "shepherd.mcp.projectConfig"
         static let mcpSameEverywhere = "shepherd.mcp.sameEverywhere"
         static let queueDelivery = "shepherd.agent.queueDelivery"
+        static let trimToolOutput = "shepherd.agent.trimToolOutput"
+        static let deferTools = "shepherd.agent.deferTools"
+        static let compactAtPercent = "shepherd.agent.compactAtPercent"
         static let agentMessages = "shepherd.pi.agentMessages"
         static let piPanesExtension = "shepherd.pi.extension.panes"
         static let piReviewExtension = "shepherd.pi.extension.review"
@@ -97,7 +100,7 @@ final class AppSettings {
 
         static let all = [
             terminalFontFamily, terminalFontSize, defaultModel,
-            defaultThinking, defaultServiceTier, goalCrossProviderEvaluation, autoNameAgents, queueDelivery, shellPath,
+            defaultThinking, defaultServiceTier, goalCrossProviderEvaluation, autoNameAgents, queueDelivery, trimToolOutput, deferTools, compactAtPercent, shellPath,
             agentMessages, piPanesExtension, piReviewExtension, piSubagentsExtension, piNativeSubagents,
             piMCPExtension, piBrowserExtension, piDesignReferences,
             childConcurrency, childModel, childThinking, childContext, childScope,
@@ -108,7 +111,7 @@ final class AppSettings {
             worktreeAutoCommit, worktreeGeneratePRDescription,
             worktreeDeleteLocalBranch, worktreeAutoMergePR,
             worktreeMergeMethod, skillsInSlashMenu, hiddenSlashCommands,
-            mcpOpenSignInPages, mcpProjectConfig, mcpSameEverywhere,
+            mcpProjectConfig, mcpSameEverywhere,
             goalsEnabled, designToolEnabled, implementOpensThread,
         ]
 
@@ -178,12 +181,6 @@ final class AppSettings {
         didSet { store.set(skillsInSlashMenu, forKey: Key.skillsInSlashMenu) }
     }
 
-    /// Settings ▸ MCP servers ▸ Open sign-in pages by itself: an agent reaching a server that
-    /// needs sign-in opens the sign-in sheet and the browser. Off, only the row changes.
-    var mcpOpenSignInPages: Bool {
-        didSet { store.set(mcpOpenSignInPages, forKey: Key.mcpOpenSignInPages) }
-    }
-
     /// Settings ▸ MCP servers ▸ Also use a repo's .mcp.json (`SHEPHERD_EXT_MCP_PROJECT`). Off,
     /// agents get only the servers on that page. Agents launched after a change follow it.
     var mcpProjectConfig: Bool {
@@ -227,6 +224,36 @@ final class AppSettings {
     func setSlashCommand(_ name: String, on: Bool) {
         if on { hiddenSlashCommands.remove(name) } else { hiddenSlashCommands.insert(name) }
     }
+
+    /// Settings ▸ Agents ▸ Trim old tool output from the model's context: agents get
+    /// `shepherd-context.ts` (`SHEPHERD_EXT_CONTEXT`), which clips any one tool result in what the
+    /// model is sent and, as the context fills, clears the oldest tool output, file contents,
+    /// reasoning payloads and screenshots (docs/context-budget.md). The thread keeps all of it.
+    /// Agents launched after a change follow it.
+    var trimToolOutput: Bool {
+        didSet { store.set(trimToolOutput, forKey: Key.trimToolOutput) }
+    }
+
+    /// Settings ▸ Agents ▸ Defer rarely used tools: agents get `SHEPHERD_DEFER_TOOLS=1` and pi's
+    /// `tool_search`, so the browser, other-thread, automation and review tools stay out of every
+    /// request until the model loads them with a search (docs/context-budget.md, Deferred tools).
+    /// Off sends them all, as before. Agents launched after a change follow it.
+    var deferTools: Bool {
+        didSet { store.set(deferTools, forKey: Key.deferTools) }
+    }
+
+    /// Settings ▸ Agents ▸ Compact at: the share of a model's window past which pi compacts on its
+    /// own (`PiCompactionThreshold.choices`); nil is pi's own default. Written into Shepherd's pi
+    /// home through `onCompactAtChange`, which a new agent reads at its start.
+    var compactAtPercent: Int? {
+        didSet {
+            if let compactAtPercent { store.set(compactAtPercent, forKey: Key.compactAtPercent) } else { store.removeObject(forKey: Key.compactAtPercent) }
+            if compactAtPercent != oldValue { onCompactAtChange?(compactAtPercent) }
+        }
+    }
+
+    /// Writes a new compaction share into the pi home (set by the view model).
+    @ObservationIgnored var onCompactAtChange: ((Int?) -> Void)?
 
     /// Settings ▸ Pi ▸ Agent-to-agent messages: what an agent's call to message, steer, interrupt,
     /// read or start another thread does. Ask me until the user says otherwise. The server
@@ -468,11 +495,15 @@ final class AppSettings {
         store.removeObject(forKey: "shepherd.skills.directoryKey")
         // ↩ always queues while pi works now; the setting that chose between that and steering is gone.
         store.removeObject(forKey: "shepherd.agent.returnWhileWorking")
-        mcpOpenSignInPages = store.object(forKey: Key.mcpOpenSignInPages) as? Bool ?? false
+        // pi reports nothing an agent could open a sign-in page from: Settings ▸ MCP servers shows what needs you.
+        store.removeObject(forKey: "shepherd.mcp.openSignInPages")
         mcpProjectConfig = store.object(forKey: Key.mcpProjectConfig) as? Bool ?? false
         mcpSameEverywhere = store.object(forKey: Key.mcpSameEverywhere) as? Bool ?? true
         queueDelivery = store.string(forKey: Key.queueDelivery)
             .flatMap(NativeQueueMode.init(rawValue:)) ?? Defaults.queueDelivery
+        trimToolOutput = store.object(forKey: Key.trimToolOutput) as? Bool ?? true
+        deferTools = store.object(forKey: Key.deferTools) as? Bool ?? true
+        compactAtPercent = (store.object(forKey: Key.compactAtPercent) as? Int).flatMap { PiCompactionThreshold.choices.contains($0) ? $0 : nil }
         agentMessages = store.string(forKey: Key.agentMessages)
             .flatMap(AgentMessagePolicy.init(rawValue:)) ?? AgentMessagePolicy.default
         piPanesExtension = store.object(forKey: Key.piPanesExtension) as? Bool ?? true
@@ -565,10 +596,12 @@ final class AppSettings {
         autoNameAgents = Defaults.autoNameAgents
         skillsInSlashMenu = Defaults.skillsInSlashMenu
         hiddenSlashCommands = []
-        mcpOpenSignInPages = false
         mcpProjectConfig = false
         mcpSameEverywhere = true
         queueDelivery = Defaults.queueDelivery
+        trimToolOutput = true
+        deferTools = true
+        compactAtPercent = nil
         uiDensity = 1
         uiTextScale = 1
         sidebarWidth = Self.defaultSidebarWidth

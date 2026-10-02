@@ -409,6 +409,38 @@ public enum RPCContentBlock: Codable, Hashable, Sendable {
     }
 }
 
+/// An assistant message's usage as the provider reported it for that call (pi's `Usage`): what the call's
+/// prompt carried (`input`, and the cached share of it), what it wrote, and how much of that was reasoning.
+public struct RPCUsage: Codable, Hashable, Sendable {
+    public var input: Double?
+    public var output: Double?
+    public var cacheRead: Double?
+    public var cacheWrite: Double?
+    /// Reasoning tokens, already part of `output`.
+    public var reasoning: Double?
+
+    public init(input: Double? = nil, output: Double? = nil, cacheRead: Double? = nil, cacheWrite: Double? = nil, reasoning: Double? = nil) {
+        self.input = input
+        self.output = output
+        self.cacheRead = cacheRead
+        self.cacheWrite = cacheWrite
+        self.reasoning = reasoning
+    }
+
+    /// The prompt of that call, new and cached: what the context held when it was made. nil when
+    /// the provider reported none (a zero count is none).
+    public var prompt: Int? {
+        let total = (input ?? 0) + (cacheRead ?? 0) + (cacheWrite ?? 0)
+        return total > 0 && total < Double(Int.max) ? Int(total) : nil
+    }
+
+    /// Tokens the model spent reasoning in that call, when the provider said.
+    public var reasoningTokens: Int? {
+        guard let reasoning, reasoning > 0, reasoning < Double(Int.max) else { return nil }
+        return Int(reasoning)
+    }
+}
+
 /// Lenient `AgentMessage`: user, assistant, toolResult, bashExecution, or
 /// anything pi adds later. A string `content` (user messages) decodes as one
 /// text block.
@@ -440,13 +472,15 @@ public struct RPCMessage: Codable, Hashable, Sendable {
     /// request went to. Decoded only for those, so a long history's decode stays as it was.
     public var provider: String?
     public var model: String?
+    /// Assistant messages: what the provider reported for the call (decoded only for that role).
+    public var usage: RPCUsage?
 
     public init(
         role: String, content: [RPCContentBlock], toolName: String? = nil, toolCallId: String? = nil,
         isError: Bool? = nil, stopReason: String? = nil, errorMessage: String? = nil, timestamp: Double? = nil,
         customType: String? = nil, display: Bool? = nil, summary: String? = nil, tokensBefore: Double? = nil,
         sections: [String: String?]? = nil, toolsAdded: [JSONValue]? = nil, toolsRemoved: [JSONValue]? = nil,
-        provider: String? = nil, model: String? = nil, details: JSONValue? = nil
+        provider: String? = nil, model: String? = nil, details: JSONValue? = nil, usage: RPCUsage? = nil
     ) {
         self.role = role
         self.content = content
@@ -466,11 +500,12 @@ public struct RPCMessage: Codable, Hashable, Sendable {
         self.toolsRemoved = toolsRemoved
         self.provider = provider
         self.model = model
+        self.usage = usage
     }
 
     enum CodingKeys: String, CodingKey {
         case role, content, toolName, toolCallId, isError, stopReason, errorMessage, timestamp, customType, display
-        case summary, tokensBefore, sections, toolsAdded, toolsRemoved, provider, model, details
+        case summary, tokensBefore, sections, toolsAdded, toolsRemoved, provider, model, usage, details
     }
 
     public init(from decoder: Decoder) throws {
@@ -503,9 +538,12 @@ public struct RPCMessage: Codable, Hashable, Sendable {
             sections = try? c.decodeIfPresent([String: String?].self, forKey: .sections)
             toolsAdded = try? c.decodeIfPresent([JSONValue].self, forKey: .toolsAdded)
             toolsRemoved = try? c.decodeIfPresent([JSONValue].self, forKey: .toolsRemoved)
-        case "assistant" where stopReason == "error":
-            provider = try? c.decodeIfPresent(String.self, forKey: .provider)
-            model = try? c.decodeIfPresent(String.self, forKey: .model)
+        case "assistant":
+            usage = try? c.decodeIfPresent(RPCUsage.self, forKey: .usage)
+            if stopReason == "error" {
+                provider = try? c.decodeIfPresent(String.self, forKey: .provider)
+                model = try? c.decodeIfPresent(String.self, forKey: .model)
+            }
         default:
             break
         }
@@ -631,9 +669,11 @@ public enum RPCEvent: Decodable, Hashable, Sendable {
     /// decode, so it is left in the record.
     case messageUpdate(delta: RPCAssistantDelta)
     case messageEnd(message: RPCMessage)
-    case toolExecutionStart(toolCallId: String, toolName: String, args: JSONValue?)
-    case toolExecutionUpdate(toolCallId: String, toolName: String, args: JSONValue?, partialResult: RPCToolResult?)
-    case toolExecutionEnd(toolCallId: String, toolName: String, result: RPCToolResult?, isError: Bool)
+    /// `parentToolCallId` names the call a nested one runs inside (a codemode script's calls to
+    /// other tools); a top-level call has none.
+    case toolExecutionStart(toolCallId: String, toolName: String, args: JSONValue?, parentToolCallId: String? = nil)
+    case toolExecutionUpdate(toolCallId: String, toolName: String, args: JSONValue?, partialResult: RPCToolResult?, parentToolCallId: String? = nil)
+    case toolExecutionEnd(toolCallId: String, toolName: String, result: RPCToolResult?, isError: Bool, parentToolCallId: String? = nil)
     case queueUpdate(steering: [String], followUp: [String])
     case extensionUIRequest(RPCExtensionUIRequest)
     case extensionError(extensionPath: String?, event: String?, error: String)
@@ -651,9 +691,16 @@ public enum RPCEvent: Decodable, Hashable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case type, messages, willRetry, message, toolResults, assistantMessageEvent
-        case toolCallId, toolName, args, partialResult, result, isError, steering, followUp
+        case toolCallId, parentToolCallId, toolName, args, partialResult, result, isError, steering, followUp
         case extensionPath, event, error, reason, aborted, errorMessage
         case attempt, maxAttempts, delayMs, success
+    }
+
+    /// A nested call's parent id. A value that is not a non-empty string is no parent: a malformed
+    /// field must not cost the event.
+    private static func parent(_ c: KeyedDecodingContainer<CodingKeys>) -> String? {
+        guard let id = (try? c.decodeIfPresent(String.self, forKey: .parentToolCallId)) ?? nil, !id.isEmpty else { return nil }
+        return id
     }
 
     public init(from decoder: Decoder) throws {
@@ -686,21 +733,24 @@ public enum RPCEvent: Decodable, Hashable, Sendable {
             self = .toolExecutionStart(
                 toolCallId: try c.decodeIfPresent(String.self, forKey: .toolCallId) ?? "",
                 toolName: try c.decodeIfPresent(String.self, forKey: .toolName) ?? "",
-                args: try c.decodeIfPresent(JSONValue.self, forKey: .args)
+                args: try c.decodeIfPresent(JSONValue.self, forKey: .args),
+                parentToolCallId: Self.parent(c)
             )
         case "tool_execution_update":
             self = .toolExecutionUpdate(
                 toolCallId: try c.decodeIfPresent(String.self, forKey: .toolCallId) ?? "",
                 toolName: try c.decodeIfPresent(String.self, forKey: .toolName) ?? "",
                 args: try c.decodeIfPresent(JSONValue.self, forKey: .args),
-                partialResult: try c.decodeIfPresent(RPCToolResult.self, forKey: .partialResult)
+                partialResult: try c.decodeIfPresent(RPCToolResult.self, forKey: .partialResult),
+                parentToolCallId: Self.parent(c)
             )
         case "tool_execution_end":
             self = .toolExecutionEnd(
                 toolCallId: try c.decodeIfPresent(String.self, forKey: .toolCallId) ?? "",
                 toolName: try c.decodeIfPresent(String.self, forKey: .toolName) ?? "",
                 result: try c.decodeIfPresent(RPCToolResult.self, forKey: .result),
-                isError: try c.decodeIfPresent(Bool.self, forKey: .isError) ?? false
+                isError: try c.decodeIfPresent(Bool.self, forKey: .isError) ?? false,
+                parentToolCallId: Self.parent(c)
             )
         case "queue_update":
             self = .queueUpdate(

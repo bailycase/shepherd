@@ -75,6 +75,16 @@ real pi):
   agent's, to be answered with `agent_send` only when it asks for a reply. The tools' prompt lines
   carry the condition too ("Message another agent thread, only when the user explicitly asked you
   to").
+- **In a thread the tools are deferred** (Settings ▸ Agents ▸ Defer rarely used tools, on by default;
+  docs/context-budget.md › Deferred tools): `agent_*` and `automation_*` are in no request until the model
+  loads them with `tool_search`, one prompt line says they exist ("agent_* (other agent threads, only when the
+  user explicitly asks you to)"), and a search that finds one loads all eight. The rule about a message from another
+  agent is in every thread's prompt whether or not they are loaded, since a thread receives one without loading
+  anything; the rule about using the tools joins when they load, and every description leads with the same
+  "Only when the user explicitly asks you to" the search result shows. Calls, the approval gate and the recipient
+  side (reading, steering, interrupting a live thread) are not exposure's business: they work the same, and a
+  thread that loaded nothing still receives and answers `agent_read`, `agent_steer` and the like. A watch agent's
+  `agent_send` stays direct.
 - **`agent_list`'s answer ends with a reminder** not to message, steer, interrupt, read or start
   the threads it lists unless asked.
 - **`agent_spawn`'s `prompt` no longer tells the new thread to report back** ("how to report

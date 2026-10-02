@@ -368,7 +368,9 @@ Comments), as below, with these choices the boards leave open:
 - A new comment is written in the review's comment editor (`NWCommentEditor`: "Comment for the
   design agent", "on A · Checkout funnel", Cancel and Add comment) where its thread will open: no
   board draws a comment being written. The board action (Comment) waits for the board actions bar.
-- In the chat, the agent's reply inside the card has no turn footer.
+- In the chat, the agent's reply inside the card has no turn footer, and the card ends at the
+  first compaction in that reply: the compaction's line and everything after it are an ordinary
+  reply under the card, with its own footer.
 - A resolved comment leaves the canvas and the Comments tab (the chat keeps its card); nothing
   lists resolved comments yet. The Comments tab's count is the open comments' and the notes
   threads left (RefNoteBack), and it shows no count at zero; with none it is blank.

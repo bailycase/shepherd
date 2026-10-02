@@ -1,10 +1,12 @@
 #!/usr/bin/env node
-// A scripted MCP server on stdio for Tests/Extensions/mcp.test.mjs: newline-delimited JSON-RPC,
+// A scripted MCP server on stdio for the extension tests: newline-delimited JSON-RPC,
 // tools/list in pages of two, and tools that echo, fail, wait, read the environment, and change
 // the tool list. FAKE_MCP_CRASH makes it die at start with a message on stderr; FAKE_MCP_PIDFILE
-// gets its pid; FAKE_MCP_LOG gets every message it received.
+// gets its pid; FAKE_MCP_LOG gets every message it received; FAKE_MCP_TOOLS=<n> adds n tools shaped
+// like a real server's catalog (fake-mcp-catalog.mjs); FAKE_MCP_CATALOG_FILE serves a catalog of its own.
 import * as fs from "node:fs";
 import { spawn } from "node:child_process";
+import * as catalog from "./fake-mcp-catalog.mjs";
 
 if (process.env.FAKE_MCP_IGNORE_TERM) process.on("SIGTERM", () => {});
 if (process.env.FAKE_MCP_DESCENDANT) {
@@ -13,18 +15,18 @@ if (process.env.FAKE_MCP_DESCENDANT) {
 }
 
 if (process.env.FAKE_MCP_PIDFILE) fs.writeFileSync(process.env.FAKE_MCP_PIDFILE, String(process.pid));
+// FAKE_MCP_ENVFILE gets the environment it was started with, as JSON.
+if (process.env.FAKE_MCP_ENVFILE) fs.writeFileSync(process.env.FAKE_MCP_ENVFILE, JSON.stringify(process.env));
+// FAKE_MCP_ARGVFILE gets what it was started with: its arguments and working directory.
+if (process.env.FAKE_MCP_ARGVFILE) fs.writeFileSync(process.env.FAKE_MCP_ARGVFILE, JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd() }));
 if (process.env.FAKE_MCP_CRASH) {
   process.stderr.write("fake-mcp: can't read its config\n");
   process.exit(3);
 }
-const tools = [
-  { name: "echo", title: "Echo", description: "Echo the text back. Handy for tests.", inputSchema: { $schema: "http://json-schema.org/draft-07/schema#", type: "object", properties: { text: { type: "string" } }, required: ["text"] } },
-  { name: "add", description: "Add two numbers.", inputSchema: { type: "object", properties: { a: { type: "number" }, b: { type: "number" } } } },
-  { name: "fail", description: "Always fails with an error result.", inputSchema: { type: "object" } },
-  { name: "slow", description: "Waits before answering.", inputSchema: { type: "object", properties: { ms: { type: "number" } } } },
-  { name: "env", description: "Reads one environment variable.", inputSchema: { type: "object", properties: { name: { type: "string" } } } },
-  { name: "grow", description: "Adds a tool and says the list changed.", inputSchema: { type: "object" } },
-];
+// FAKE_MCP_CATALOG_FILE names a JSON array of tools ({name, description, inputSchema}) served instead of the built-in ones.
+const tools = process.env.FAKE_MCP_CATALOG_FILE
+  ? JSON.parse(fs.readFileSync(process.env.FAKE_MCP_CATALOG_FILE, "utf8"))
+  : [...catalog.base(), ...catalog.forge(Number(process.env.FAKE_MCP_TOOLS ?? 0))];
 const pendingSlow = new Map();
 
 function send(message) {
@@ -35,9 +37,7 @@ function result(id, value) {
   send({ jsonrpc: "2.0", id, result: value });
 }
 
-function text(value) {
-  return { content: [{ type: "text", text: value }] };
-}
+const text = catalog.text;
 
 function handle(message) {
   if (process.env.FAKE_MCP_LOG) fs.appendFileSync(process.env.FAKE_MCP_LOG, JSON.stringify(message) + "\n");
@@ -65,22 +65,20 @@ function handle(message) {
   }
   if (method === "tools/call") {
     const args = params.arguments ?? {};
+    if (!tools.some((tool) => tool.name === params.name) && params.name !== "grown") {
+      return send({ jsonrpc: "2.0", id, error: { code: -32602, message: `Unknown tool: ${params.name}` } });
+    }
     switch (params.name) {
-      case "echo": return result(id, text(`echo: ${args.text}`));
-      case "add": return result(id, { content: [], structuredContent: { sum: args.a + args.b } });
-      case "fail": return result(id, { isError: true, content: [{ type: "text", text: "the database is down" }] });
       case "slow": {
         pendingSlow.set(id, setTimeout(() => { pendingSlow.delete(id); result(id, text("finally")); }, args.ms ?? 10_000));
         return;
       }
-      case "env": return result(id, text(`${args.name}=${process.env[args.name] ?? ""}`));
       case "grow": {
         if (!tools.some((tool) => tool.name === "grown")) tools.push({ name: "grown", description: "Appeared later.", inputSchema: { type: "object" } });
         result(id, text("grew"));
         return send({ jsonrpc: "2.0", method: "notifications/tools/list_changed" });
       }
-      case "grown": return result(id, text("hello from grown"));
-      default: return send({ jsonrpc: "2.0", id, error: { code: -32602, message: `Unknown tool: ${params.name}` } });
+      default: return result(id, catalog.call(params.name, args));
     }
   }
   send({ jsonrpc: "2.0", id, error: { code: -32601, message: `Method not found: ${method}` } });

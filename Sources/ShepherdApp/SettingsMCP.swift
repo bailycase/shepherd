@@ -62,7 +62,7 @@ struct MCPSettings: View {
         .nwAnimation(.disclosure, value: store.problem)
         .onAppear {
             store.reload()
-            store.probeUnknown()
+            store.refreshIfStale()
             if expanded == nil { expanded = initiallyExpanded }
         }
         .sheet(item: $sheet) { sheet in
@@ -152,7 +152,7 @@ struct MCPSettings: View {
     private var emptyMessage: String {
         if !query.trimmingCharacters(in: .whitespaces).isEmpty { return "No server matches “\(query)”." }
         switch filter {
-        case .connected: return "No server is connected right now. Servers connect when an agent uses them."
+        case .connected: return "No server is connected right now."
         case .needsYou: return "Nothing needs you."
         case .all: return "No MCP servers yet. Add one, or import them from Claude Desktop, Cursor or VS Code."
         }
@@ -275,9 +275,8 @@ private struct MCPServerList: View {
             signOut: { store.signOut(name) },
             setDirect: { store.setExposure(name, $0 ? .direct : .proxy) },
             chooseTools: { chooseTools(name) },
-            setStart: { store.setStart(name, MCPStartMode.allCases[$0]) },
             edit: { edit(name) },
-            reconnect: { store.probe(name) },
+            reconnect: { store.refresh() },
             copyJSON: {
                 store.copyJSON(name)
                 copied(name)
@@ -302,8 +301,9 @@ private struct MCPRail: View {
         VStack(alignment: .leading, spacing: AppLayout.mcpRailSpacing) {
             VStack(alignment: .leading, spacing: NW.Space.m) {
                 NWSectionHeader("How the agent uses them", style: .settings).padding(.horizontal, NW.Space.xxs)
-                Text("Servers start when the agent first needs one and stop when idle. Remote servers that use OAuth need you to "
-                    + "sign in once; Shepherd keeps the token fresh.")
+                Text("Servers start with each thread and stop with it, and a running thread keeps the ones it started with. Their tools "
+                    + "wait behind a search until the agent needs one; a server set to Direct declares them all up front. Remote servers "
+                    + "that use OAuth need you to sign in once; pi keeps the token fresh.")
                     .nwText(size: AppLayout.mcpRailTextSize, lineHeight: AppLayout.mcpRailLineHeight)
                     .foregroundStyle(nw.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -315,9 +315,6 @@ private struct MCPRail: View {
                 NWSectionHeader("Options", style: .settings).padding(.horizontal, NW.Space.xxs).padding(.bottom, NW.Space.m)
                 option("Same servers on every host", note: "Adds, edits and removals go to all hosts. For now, only this Mac.",
                        isOn: $settings.mcpSameEverywhere)
-                option("Open sign-in pages by itself",
-                       note: "Off: when an agent reaches a server that needs sign-in, its row here asks you to sign in.",
-                       isOn: $settings.mcpOpenSignInPages)
                 option("Also use a repo’s .mcp.json", note: "Off: only the servers on this page, in every repo.",
                        isOn: $settings.mcpProjectConfig)
             }
@@ -391,14 +388,14 @@ struct MCPChooseToolsSheet: View {
 
     var body: some View {
         let entry = store.entry(name)
-        let tools = entry.flatMap(store.tools(of:)) ?? []
+        let tools = entry.flatMap(store.toolNames(of:)) ?? []
         DialogSheet(title: "Choose \(name)’s tools",
-                    subtitle: "The agent sees and calls only the tools you tick, through the mcp tool or on their own.",
+                    subtitle: "The agent sees and calls only the tools you tick, searched or declared as the server’s tool exposure says.",
                     width: AppLayout.mcpToolsSheetWidth,
                     actions: [
                         DialogAction("Cancel", kind: .cancel, action: close),
                         DialogAction("Save", kind: .prominent, isEnabled: all || !chosen.isEmpty) {
-                            store.setTools(name, all ? nil : tools.map(\.name).filter(chosen.contains))
+                            store.setTools(name, all ? nil : tools.filter(chosen.contains))
                             close()
                         },
                     ]) {
@@ -406,17 +403,12 @@ struct MCPChooseToolsSheet: View {
                 Toggle("All tools, including ones it adds later", isOn: $all).toggleStyle(.nwCheckbox)
                 ScrollView(.vertical) {
                     LazyVStack(alignment: .leading, spacing: NW.Space.s) {
-                        ForEach(tools, id: \.name) { tool in
-                            Toggle(isOn: Binding(get: { all || chosen.contains(tool.name) }, set: { on in
+                        ForEach(tools, id: \.self) { tool in
+                            Toggle(isOn: Binding(get: { all || chosen.contains(tool) }, set: { on in
                                 all = false
-                                if on { chosen.insert(tool.name) } else { chosen.remove(tool.name) }
+                                if on { chosen.insert(tool) } else { chosen.remove(tool) }
                             })) {
-                                VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                                    Text(tool.name).font(.nwMono(AppLayout.mcpNoteSize)).foregroundStyle(Color.nw.textPrimary)
-                                    if !tool.description.isEmpty {
-                                        Text(tool.description).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary).lineLimit(2)
-                                    }
-                                }
+                                Text(tool).font(.nwMono(AppLayout.mcpNoteSize)).foregroundStyle(Color.nw.textPrimary)
                             }
                             .toggleStyle(.nwCheckbox)
                         }
@@ -428,7 +420,7 @@ struct MCPChooseToolsSheet: View {
         .onAppear {
             let current = entry?.settings.tools
             all = current == nil
-            chosen = Set(current ?? tools.map(\.name))
+            chosen = Set(current ?? tools)
         }
     }
 }

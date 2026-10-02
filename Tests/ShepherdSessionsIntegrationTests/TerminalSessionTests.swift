@@ -10,9 +10,16 @@ import ShepherdTestSupport
 /// process-group kill rules that keep nothing alive after its pane or the app is gone.
 @Suite("Terminal sessions", .integrationTimeLimit)
 struct TerminalSessionTests {
+    private struct NoPid: Error {}
+
+    /// The pid a shell wrote into `file`. A file a shell is writing exists before it holds anything (`echo $! > file`
+    /// opens it, then writes), so a wait for the file alone can read an empty one: wait on `hasPid`.
     private func pid(in file: URL) throws -> pid_t {
-        pid_t(try String(contentsOf: file, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines))!
+        guard let pid = pid_t(try String(contentsOf: file, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)) else { throw NoPid() }
+        return pid
     }
+
+    private func hasPid(_ file: URL) -> Bool { (try? pid(in: file)) != nil }
 
     private func isRunning(_ pid: pid_t) -> Bool { kill(pid, 0) == 0 }
 
@@ -302,7 +309,7 @@ struct TerminalSessionTests {
         let callbacks = Callbacks(h.server)
         let pidFile = h.dir.appendingPathComponent("child.pid")
         let info = try await h.shell("sleep 100 & echo $! > \(pidFile.path); wait")
-        try await eventually("the descendant to start") { FileManager.default.fileExists(atPath: pidFile.path) }
+        try await eventually("the descendant to start") { hasPid(pidFile) }
         let child = try pid(in: pidFile)
 
         h.server.killSession(info.id)
@@ -316,7 +323,7 @@ struct TerminalSessionTests {
         defer { h.stop() }
         let pidFile = h.dir.appendingPathComponent("child.pid")
         _ = try await h.shell("trap '' HUP TERM; (trap '' HUP TERM; sleep 100) & echo $! > \(pidFile.path); wait")
-        try await eventually("the descendant to start") { FileManager.default.fileExists(atPath: pidFile.path) }
+        try await eventually("the descendant to start") { hasPid(pidFile) }
         let child = try pid(in: pidFile)
 
         h.server.stop()
@@ -350,9 +357,7 @@ struct TerminalSessionTests {
         let callbacks = Callbacks(h.server)
         let info = try await h.shell("set -m; trap '' HUP TERM; python3 job.py bg.pid & python3 job.py fg.pid; wait")
         let foreground = h.dir.appendingPathComponent("fg.pid"), background = h.dir.appendingPathComponent("bg.pid")
-        try await eventually("both resistant jobs to start") {
-            FileManager.default.fileExists(atPath: foreground.path) && FileManager.default.fileExists(atPath: background.path)
-        }
+        try await eventually("both resistant jobs to start") { hasPid(foreground) && hasPid(background) }
         let jobs = try [pid(in: foreground), pid(in: background)]
         let groups = jobs.map { getpgid($0) }
         #expect(Set(groups).count == 2 && groups.allSatisfy { $0 > 0 })
@@ -376,7 +381,7 @@ struct TerminalSessionTests {
         let callbacks = Callbacks(h.server)
         let pidFile = h.dir.appendingPathComponent("child.pid")
         let info = try await h.shell("trap '' HUP TERM; sleep 100 & echo $! > \(pidFile.path); exit 0")
-        try await eventually("the descendant to start") { FileManager.default.fileExists(atPath: pidFile.path) }
+        try await eventually("the descendant to start") { hasPid(pidFile) }
         let child = try pid(in: pidFile)
 
         try await eventually("the leader's exit") { callbacks.exited(info.id) }

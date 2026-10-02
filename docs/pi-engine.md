@@ -2,8 +2,8 @@
 
 Shepherd ships its own pi: the official Node binary plus pi's bundle, inside the Mac app. Every
 pi Shepherd starts runs it (agents, the model catalog, PR descriptions, children), through the
-launcher in Shepherd's own pi home ([pi-home.md](pi-home.md)); the MCP probe and the sign-in
-bridge (pi's own login, imported from the bundle's `index.js`) run on its node. Nothing runs the `pi` on the user's PATH.
+launcher in Shepherd's own pi home ([pi-home.md](pi-home.md)); the sign-in bridge (pi's own login,
+imported from the bundle's `index.js`) runs on its node. Nothing runs the `pi` on the user's PATH.
 
 ## What ships
 
@@ -103,35 +103,33 @@ sandbox) and tool search as built-in extensions, and drops chord from the bundle
 `extensions/*.so` are WebAssembly side modules pi never loads, named like native code). The staged
 engine is 135 MB, from 134 MB.
 
-**MCP, codemode and tool search are off in Shepherd's pi.** Settings ▸ MCP servers and
-`shepherd-mcp.ts` manage the servers (docs/design/settings-mcp-experiments.md). Left on, pi's own
-MCP, run against a scratch home and a fake provider, does the following:
+**MCP and tool search are Shepherd's MCP; codemode is off.** Agents use pi's own MCP, with Settings ▸
+MCP servers on top of it ([mcp.md](mcp.md) has the evidence, measured on this engine, and the layering).
+The home's `settings.json` still carries `-builtin:mcp`, `-builtin:codemode` and `-builtin:tool-search`
+(`PiHome.install`, under pi's lock, never replacing an entry that already names one in any form), so
+anything that starts pi without saying otherwise loads none of them: the model catalog, drafts, native
+children (`--no-extensions`) and a `pi` an agent types. **An agent's launch switches MCP on** with `-e
+builtin:mcp -e builtin:tool-search`, which pi lets win over the home's switch (checked:
+`Tests/Extensions/pi-mcp.test.mjs`, and through the real launcher in `EngineSmokeTests`), while Settings ▸
+Pi ▸ Bundled extensions ▸ MCP servers is on. `codemode` stays off: with it off, a server on pi's default
+exposure (`codemode`) is unreachable, which is why Shepherd's derived `mcp.json` always names an exposure.
 
-- It reads `<home>/mcp.json` and the `.pi/mcp.json` of a trusted project (the user's trust
-  decisions are copied into the home, so a trusted repository counts), starts those servers
-  beside Shepherd's, turns `codemode` on as a fifth tool the model is offered, and adds an
-  `mcp_servers` section to every system prompt (349 characters more with one server).
-- With no server it adds only `/mcp`, whose answer over RPC is "No MCP servers configured. Add
-  them to <home>/mcp.json or .pi/mcp.json", files Shepherd doesn't read.
-- Codemode's nested tool calls arrive as `tool_execution_*` events with ids like `call_1/1` and a
-  `parentToolCallId`. The thread reads neither, so each would be a separate top-level tool row.
+pi 1.0's tool exposure (`deferred`, a namespace) and `tool_search` also carry Shepherd's own rarely used tools: the
+extensions register the browser, other-thread, automation and review tools `deferred` while `SHEPHERD_DEFER_TOOLS=1`, and
+the launch passes `-e builtin:tool-search` even with MCP off ([context-budget.md](context-budget.md) › Deferred tools has
+what pi does with them, measured).
 
-`PiHome.install` therefore writes `-builtin:mcp`, `-builtin:codemode` and `-builtin:tool-search`
-into settings.json's `extensions` (pi's own switch, docs/settings.md › Resources), under pi's
-lock, with the home's other keys. It never replaces an entry that already names one of them in
-any form: **`+builtin:<name>` in `<home>/settings.json` turns one back on** (the one documented
-setting; codemode's nested calls then draw as above), and a project's `.pi/settings.json` can do
-the same for itself, but only once the project is trusted (checked: untrusted, its `+builtin:mcp`
-and `.pi/mcp.json` are ignored), as a trusted project may load its own extensions. `llama.cpp`, the fourth
-built-in, is a provider pi has always shipped and stays; `/llama` still does nothing over RPC and
+What pi's MCP does with the files and the environment it is given is in [mcp.md](mcp.md); what it adds
+to a launch is `/mcp` (over RPC it answers with this thread's servers, `name: connected, 9 tools
+(deferred)`), a server section in the system prompt, `tool_search`, and `<home>/mcp-auth.json` for
+sign-ins. A trusted project's `.pi/mcp.json` is read too, as pi's trust model says. `llama.cpp`, the
+fourth built-in, is a provider pi has always shipped and stays; `/llama` still does nothing over RPC and
 the thread's command menu leaves it out. `PiConfig.installedExtensions` (Settings ▸ Pi, a host's
-`hostSettings`) and the first copy from "your pi" ignore these entries. A launch that passes
-`--no-extensions` (drafts, native children) loads none of pi's built-ins either, whatever the
-settings say. `Tests/Extensions/builtin-extensions.test.mjs` (CI's extension job, real pi in RPC
-mode) pins pi's side of the switch, so a pi that renames it or loads the built-ins anyway fails
-before a release, and `EngineSmokeTests.piBuiltInMCPIsOffInShepherdsHomeUnlessSwitchedOn` runs it
-against the shipped engine through Shepherd's launcher: a server in `<home>/mcp.json` is never
-started and `/mcp` isn't offered, and with `+builtin:mcp` the same file starts it.
+`hostSettings`) and the first copy from "your pi" ignore the `builtin:` entries.
+`Tests/Extensions/builtin-extensions.test.mjs` pins pi's side of the home's switch, so a pi that renames
+it or loads the built-ins anyway fails before a release, and
+`EngineSmokeTests.piRunsTheDerivedMCPFileOnlyWhenAnAgentsLaunchSwitchesItOn` runs the whole thing against
+the shipped engine through Shepherd's launcher.
 
 **RPC.** What the thread reads is unchanged (`EngineThreadTests` runs a turn, a tool call, a
 reasoning block, Stop with a queued message, an extension's question, a command's notice, a

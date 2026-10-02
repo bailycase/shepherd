@@ -378,29 +378,30 @@ struct AgentLaunchCommandTests {
         #expect(command(enabled: [0, 1, 2, 3, 4]).env["SHEPHERD_DESIGN_REFS"] == nil)
     }
 
-    /// Settings ▸ Pi ▸ MCP servers: the extension loads with the config, cache and client it reads,
-    /// and a repo's .mcp.json only when Settings ▸ MCP servers allows it; off, none of it.
+    /// Settings ▸ Pi ▸ MCP servers: pi's own MCP and tool search are switched on by name, the
+    /// secrets travel in the environment, and the repo's .mcp.json extension follows its setting;
+    /// an agent launched without MCP has none of it.
     @Test(arguments: [false, true])
-    func mcpServersBringTheirExtensionAndPaths(useRepoConfig: Bool) {
+    func mcpServersBringPisBuiltInsTheirSecretsAndTheRepoExtension(useRepoConfig: Bool) {
         let launch = try! StatusExtension.command(
             home: Self.home, cwd: "/tmp/project",
             agentID: AgentID(rawValue: "agent-id"), piSessionID: "current-session",
             socketPath: "/tmp/shepherd.sock", extensionPath: "/tmp/status.ts",
             panesExtensionPath: "/tmp/panes.ts", reviewExtensionPath: nil, subagentsExtensionPath: nil,
-            mcp: MCPLaunch(extensionPath: "/tmp/shepherd-mcp.ts", clientPath: "/tmp/shepherd-mcp-client.mjs",
-                           configPath: "/Users/me/.config/mcp/mcp.json", cachePath: "/tmp/support/mcp/tools.json",
-                           useRepoConfig: useRepoConfig),
+            mcp: MCPLaunch(extensions: MCPLaunch.builtIns + (useRepoConfig ? ["/tmp/shepherd-mcp-project.ts"] : []),
+                           environment: ["SHEPHERD_MCP_SECRET_GH_TOKEN": "t", "SHEPHERD_MCP_SECRETS": "SHEPHERD_MCP_SECRET_GH_TOKEN"]
+                               .merging(useRepoConfig ? ["SHEPHERD_EXT_MCP_PROJECT": "1"] : [:]) { $1 }),
             model: nil, thinking: nil
         )
-        #expect(launch.argv[3].hasSuffix(" -e '/tmp/panes.ts' -e '/tmp/support/pi/shepherd-goal.ts' -e '/tmp/shepherd-mcp.ts'"))
-        #expect(launch.env["SHEPHERD_EXT_MCP"] == "/tmp/shepherd-mcp.ts")
-        #expect(launch.env["SHEPHERD_EXT_MCP_CLIENT"] == "/tmp/shepherd-mcp-client.mjs")
-        #expect(launch.env["SHEPHERD_EXT_MCP_CONFIG"] == "/Users/me/.config/mcp/mcp.json")
-        #expect(launch.env["SHEPHERD_EXT_MCP_CACHE"] == "/tmp/support/mcp/tools.json")
+        #expect(launch.argv[3].contains(" -e '/tmp/panes.ts' -e '/tmp/support/pi/shepherd-goal.ts' -e 'builtin:mcp' -e 'builtin:tool-search'"))
+        #expect(launch.argv[3].hasSuffix(useRepoConfig ? " -e '/tmp/shepherd-mcp-project.ts'" : " -e 'builtin:tool-search'"))
+        #expect(launch.env["SHEPHERD_MCP_SECRET_GH_TOKEN"] == "t")
+        #expect(launch.env["SHEPHERD_MCP_SECRETS"] == "SHEPHERD_MCP_SECRET_GH_TOKEN")
         #expect(launch.env["SHEPHERD_EXT_MCP_PROJECT"] == (useRepoConfig ? "1" : nil))
+        #expect(!launch.env.keys.contains { $0.hasPrefix("SHEPHERD_EXT_MCP_") && $0 != "SHEPHERD_EXT_MCP_PROJECT" }, "the old extension's variables are gone")
         let plain = command(enabled: [0, 1, 2, 3, 4])
-        #expect(!plain.argv[3].contains("mcp"))
-        #expect(!plain.env.keys.contains { $0.hasPrefix("SHEPHERD_EXT_MCP") })
+        #expect(!plain.argv[3].contains("mcp") && !plain.argv[3].contains("tool-search"))
+        #expect(!plain.env.keys.contains { $0.hasPrefix("SHEPHERD_EXT_MCP") || $0.hasPrefix("SHEPHERD_MCP") })
     }
 
     /// Settings ▸ Pi ▸ Browser tools: the extension loads with `SHEPHERD_EXT_BROWSER` naming it,
@@ -446,19 +447,68 @@ struct AgentLaunchCommandTests {
         #expect(ShellIntegration.command(shell: ["/bin/zsh"]).env["SHEPHERD_EXT_BROWSER"] == "")
     }
 
+    /// Settings ▸ Agents ▸ Trim old tool output: the extension loads last, with its own variable, and an
+    /// agent started without it has neither; a terminal blanks the variable like every agent-only one.
+    @Test func theContextExtensionLoadsLastWithItsOwnVariableOnlyWhenGiven() throws {
+        #expect(command().env["SHEPHERD_EXT_CONTEXT"] == nil)
+        #expect(!command().argv[3].contains("context.ts"))
+        let launch = try StatusExtension.command(
+            home: Self.home, cwd: "/tmp/project", agentID: AgentID(rawValue: "agent-id"), piSessionID: "s",
+            socketPath: "/tmp/shepherd.sock", extensionPath: "/tmp/status.ts", panesExtensionPath: "/tmp/panes.ts", reviewExtensionPath: nil,
+            subagentsExtensionPath: nil, browserExtensionPath: "/tmp/browser.ts", contextExtensionPath: "/tmp/context.ts", model: nil, thinking: nil)
+        #expect(launch.env["SHEPHERD_EXT_CONTEXT"] == "/tmp/context.ts")
+        #expect(launch.argv[3].hasSuffix(" -e '/tmp/browser.ts' -e '/tmp/context.ts'"), "after every other extension: its handler runs on what theirs left")
+        #expect(ShellIntegration.command(shell: ["/bin/zsh"]).env["SHEPHERD_EXT_CONTEXT"] == "")
+    }
+
+    /// Settings ▸ Agents ▸ Defer rarely used tools: the agent is told so with one variable, and its pi gets tool search by name
+    /// (with MCP on it already has it, once); a design's agent, whose tools are all its own, is never told, and a terminal
+    /// blanks the variable.
+    @Test(arguments: [(deferTools: true, mcp: false), (true, true), (false, false), (false, true)])
+    func deferredToolsBringTheVariableAndToolSearchOnlyWhenOnAndOnlyOnce(deferTools: Bool, mcp: Bool) throws {
+        func launch(design: DesignID? = nil) throws -> SessionCommand {
+            try StatusExtension.command(
+                home: Self.home, cwd: "/tmp/project", agentID: AgentID(rawValue: "agent-id"), piSessionID: "s",
+                socketPath: "/tmp/shepherd.sock", extensionPath: "/tmp/status.ts", panesExtensionPath: "/tmp/panes.ts", reviewExtensionPath: nil,
+                subagentsExtensionPath: nil, design: design.map { (extensionPath: "/tmp/design.ts", designID: $0, skillDirectory: "/tmp/skill") },
+                mcp: mcp ? MCPLaunch(extensions: MCPLaunch.builtIns, environment: [:]) : nil,
+                contextExtensionPath: "/tmp/context.ts", deferTools: deferTools, model: nil, thinking: nil)
+        }
+        let agent = try launch()
+        #expect(agent.env["SHEPHERD_DEFER_TOOLS"] == (deferTools ? "1" : nil))
+        let searches = agent.argv[3].components(separatedBy: " -e 'builtin:tool-search'").count - 1
+        #expect(searches == (deferTools || mcp ? 1 : 0), "pi's tool search, once, when something can need it")
+        #expect(agent.argv[3].contains("-e 'builtin:mcp'") == mcp, "and pi's MCP only when its own setting asks")
+        #expect(agent.argv[3].hasSuffix(" -e '/tmp/context.ts'"), "the clearing extension still loads last")
+        let drawing = try launch(design: DesignID())
+        #expect(drawing.env["SHEPHERD_DEFER_TOOLS"] == nil, "a design's agent works from all of its tools")
+        #expect(drawing.argv[3].components(separatedBy: " -e 'builtin:tool-search'").count - 1 == (mcp ? 1 : 0))
+        #expect(ShellIntegration.command(shell: ["/bin/zsh"]).env["SHEPHERD_DEFER_TOOLS"] == "")
+        #expect(command().env["SHEPHERD_DEFER_TOOLS"] == nil, "no variable unless the setting asked")
+    }
+
     /// One setting decides a repo's .mcp.json (Settings ▸ MCP servers), and Settings ▸ Pi ▸ MCP
-    /// servers decides whether the extension loads at all.
-    @Test @MainActor func mcpLaunchFollowsTheSettings() {
+    /// servers decides whether pi's MCP loads at all. What an agent launches with reads the
+    /// store: pi's `mcp.json` is written and each Keychain value the file refers to is handed over.
+    @Test @MainActor func mcpLaunchFollowsTheSettingsAndTheStore() throws {
         let settings = AppSettings(store: ScratchDefaults())
-        let environment = ["SHEPHERD_MCP_CONFIG": "/tmp/scratch/mcp.json", "SHEPHERD_SUPPORT_DIR": "/tmp/support"]
-        let install = { (extensionPath: "/tmp/support/shepherd-mcp.ts", clientPath: "/tmp/support/shepherd-mcp-client.mjs") }
-        #expect(MCPLaunch.forAgents(settings: settings, environment: environment, install: install) == MCPLaunch(
-            extensionPath: "/tmp/support/shepherd-mcp.ts", clientPath: "/tmp/support/shepherd-mcp-client.mjs",
-            configPath: "/tmp/scratch/mcp.json", cachePath: "/tmp/support/mcp/tools.json", useRepoConfig: false))
+        let harness = try MCPFixtures.harness(
+            #"{"mcpServers": {"gh": {"url": "https://api.example.com/mcp", "headers": {"Authorization": "Bearer ${keychain:gh/Authorization}"}}}}"#,
+            secrets: InMemorySecretStore(["secret/gh/Authorization": "tok-123"]))
+        let store = harness.store
+        let install = { "/tmp/support/shepherd-mcp-project.ts" }
+        let launch = try #require(MCPLaunch.forAgents(settings: settings, store: store, install: install))
+        #expect(launch.extensions == ["builtin:mcp", "builtin:tool-search"])
+        #expect(launch.environment == ["SHEPHERD_MCP_SECRET_GH_AUTHORIZATION": "tok-123", "SHEPHERD_MCP_SECRETS": "SHEPHERD_MCP_SECRET_GH_AUTHORIZATION"])
+        let text = String(decoding: try #require(harness.written.last), as: UTF8.self)
+        #expect(text.contains("${SHEPHERD_MCP_SECRET_GH_AUTHORIZATION}"))
+        #expect(!text.contains("tok-123"), "no value is ever written to pi's file")
         settings.mcpProjectConfig = true
-        #expect(MCPLaunch.forAgents(settings: settings, environment: environment, install: install)?.useRepoConfig == true)
+        let withRepo = try #require(MCPLaunch.forAgents(settings: settings, store: store, install: install))
+        #expect(withRepo.extensions == ["builtin:mcp", "builtin:tool-search", "/tmp/support/shepherd-mcp-project.ts"])
+        #expect(withRepo.environment["SHEPHERD_EXT_MCP_PROJECT"] == "1")
         settings.piMCPExtension = false
-        #expect(MCPLaunch.forAgents(settings: settings, environment: environment, install: install) == nil)
+        #expect(MCPLaunch.forAgents(settings: settings, store: store, install: install) == nil)
     }
 
     /// Watchers must never create watchers.

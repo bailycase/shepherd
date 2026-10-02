@@ -13,6 +13,14 @@ final class RPCThreadState {
     static let textLimit = 16 * 1024
     static let snapshotLimit = 240 * 1024
     static let activeLimit = 120 * 1024
+    /// What the snapshot's other lists may weigh (`fitting`), so a long thread's cards and recorded
+    /// turns never squeeze its history out, and the room history and the live run always keep
+    /// whatever the rest weighs (`budget`).
+    static let subagentsLimit = 64 * 1024
+    static let turnChangesLimit = 48 * 1024
+    static let widgetsLimit = 64 * 1024
+    static let historyReserve = 96 * 1024
+    static let activeReserve = 48 * 1024
     static let pageSize = 50
     static let dialogLimit = 8
     static let dialogBytes = 48 * 1024
@@ -159,7 +167,15 @@ final class RPCThreadState {
     /// Told each time pi lists its commands, so the server can keep the host's catalog.
     var onCommandsListed: (([NativeCommand]) -> Void)?
     /// Native child runs as last published by the children extension over the socket.
-    private(set) var subagents: [NativeSubagent] = [] { didSet { subagentsHash = subagents.hashValue } }
+    private(set) var subagents: [NativeSubagent] = [] {
+        didSet {
+            guard subagents != oldValue else { return }
+            subagentsHash = subagents.hashValue
+            snapshotSubagents = Self.fitting(subagents, limit: Self.subagentsLimit)
+        }
+    }
+    /// What a snapshot carries of `subagents`: the runs within their budget (`fitting`).
+    private(set) var snapshotSubagents: [NativeSubagent] = []
     private var commandsHash = Optional<[NativeCommand]>.none.hashValue
     private var subagentsHash = [NativeSubagent]().hashValue
     private var dialogsHash = [NativeThreadDialog]().hashValue
@@ -262,7 +278,14 @@ final class RPCThreadState {
         return line.isEmpty ? nil : String(line.prefix(shortReasonLimit))
     }
     private var dialogBytes: [Int]?
-    private var widgets: [(id: String, value: NativeThreadWidget)] = [] { didSet { widgetsHash = widgets.map(\.value).hashValue } }
+    private var widgets: [(id: String, value: NativeThreadWidget)] = [] {
+        didSet {
+            widgetsHash = widgets.map(\.value).hashValue
+            snapshotWidgets = Self.fitting(widgets.map(\.value), limit: Self.widgetsLimit)
+        }
+    }
+    /// What a snapshot carries of `widgets`, within their budget.
+    private var snapshotWidgets: [NativeThreadWidget] = []
     private(set) var goal: NativeGoal?
     private var goalsAvailable = false
     /// SessionServer supplies the host experiment policy before the thread starts.
@@ -308,7 +331,12 @@ final class RPCThreadState {
     }
 
     private var operations: [(id: String, operation: Operation)] = []
-    var projectionClipped = false
+    /// The host could not read pi's history the last time it asked (`refreshMessages`), so the thread
+    /// may be missing messages: the snapshot says so (`clips.history`) until a fetch lands whole.
+    var historyUnread = false
+    /// Rows of the running turn's output `trimLive` dropped since history was last read: the snapshot
+    /// says so (`clips.live`), and the finished turn's history brings them back.
+    private(set) var liveLeftOut = 0
     /// The last assistant message of the current run ended in a provider error.
     var runFailed = false
     /// That error's message, when pi gave one.
@@ -382,7 +410,14 @@ final class RPCThreadState {
     /// be queued behind the run it ends and never run).
     var interruptAbortPending = false
     /// The agent's recorded turns, as the server last set them (`setTurnChanges`).
-    private(set) var turnChanges: [ChangesTurn]? { didSet { turnChangesHash = turnChanges.hashValue } }
+    private(set) var turnChanges: [ChangesTurn]? {
+        didSet {
+            turnChangesHash = turnChanges.hashValue
+            snapshotTurnChanges = turnChanges.map { Self.fitting($0, limit: Self.turnChangesLimit) }
+        }
+    }
+    /// What a snapshot carries of `turnChanges`, within its budget.
+    private var snapshotTurnChanges: [ChangesTurn]?
     private var turnChangesHash = Optional<[ChangesTurn]>.none.hashValue
     /// Whether the server has set them since the thread started.
     private(set) var turnChangesSet = false
@@ -437,7 +472,7 @@ final class RPCThreadState {
             ShepherdLog.info("rpc session \(self.session.id) has not started within \(timeout)s; asking again")
             self.bootstrap(timeout: timeout)
         }
-        refreshMessages(timeout: timeout) { [weak self] _ in
+        refreshMessages(timeout: timeout, bootstrapAttempt: attempt) { [weak self] _ in
             // Loaded or not (a history over the record cap never arrives), the thread serves now;
             // an attempt the bootstrap has since repeated waits for the repeat.
             guard let self, attempt == self.bootstrapAttempts, generation == self.generation else { return }
@@ -562,20 +597,26 @@ final class RPCThreadState {
             }) : [])
             // The ring moves once per reply, never per token.
             refreshStats()
-        case .toolExecutionStart(let id, let name, let args):
+        case .toolExecutionStart(let id, let name, let args, let parent):
             if Self.asksUser(name) {
                 askingCalls.removeAll { $0.id == id }
                 askingCalls.append((id, Self.shortReason(in: args)))
             }
+            // A call nested in another (a script calling tools) is part of its parent's row: it has
+            // no row of its own, and no line of its own in the thread.
+            guard parent == nil else { return }
             streamingCalls[id] = nil
             upsertTool(id: id, name: name, args: args, content: [], isError: nil, status: "running")
-        case .toolExecutionUpdate(let id, let name, let args, let partial):
+        case .toolExecutionUpdate(let id, let name, let args, let partial, let parent):
+            guard parent == nil else { return }
             upsertTool(id: id, name: name, args: args, content: partial?.content ?? [], isError: nil, status: "running")
-        case .toolExecutionEnd(let id, let name, let result, let isError):
+        case .toolExecutionEnd(let id, let name, let result, let isError, let parent):
             let stopped = isError && stopRequested
-            if stopped { stoppedCalls.insert(id) }
             askingCalls.removeAll { $0.id == id }
-            upsertTool(id: id, name: name, args: nil, content: result?.content ?? [], isError: isError, status: stopped ? "aborted" : "complete")
+            if parent == nil {
+                if stopped { stoppedCalls.insert(id) }
+                upsertTool(id: id, name: name, args: nil, content: result?.content ?? [], isError: isError, status: stopped ? "aborted" : "complete")
+            }
             onToolFinished?(name)
         case .queueUpdate(let steering, let followUp):
             piQueueChanged(steering: steering, followUp: followUp)
@@ -1086,25 +1127,35 @@ final class RPCThreadState {
         }
     }
 
-    func refreshMessages(timeout: TimeInterval = 10, done: ((Result<RPCResponse, RPCError>) -> Void)? = nil) {
+    /// `bootstrapAttempt` is the bootstrap's attempt this fetch belongs to. A pi slower than the
+    /// request deadline answers an earlier attempt's fetch only after the deadline gave up on it:
+    /// that one declares nothing, because the retry's history is still on its way, and serving the
+    /// thread before it lands shows a long history as an empty one.
+    func refreshMessages(timeout: TimeInterval = 10, bootstrapAttempt: Int? = nil,
+                         done: ((Result<RPCResponse, RPCError>) -> Void)? = nil) {
         let generation = generation
         session.request(.getMessages, timeout: timeout) { [weak self] result in
             defer { done?(result) }
             guard let self, generation == self.generation else { return }
+            let superseded = bootstrapAttempt.map { $0 != self.bootstrapAttempts } ?? false
             // A failed history fetch must not lock out snapshots, Send, or Stop forever.
             // Reset already discarded the old session; serve the new one as incomplete, as
             // bootstrap does, and let a later refresh recover its history.
             defer {
-                self.historyPending = false
+                if !superseded { self.historyPending = false }
                 self.commit()
                 self.announceIfServable()
                 self.drainIfReady()
             }
             guard case .success(let response) = result, response.success,
                   let messages = response.messages else {
-                self.projectionClipped = true
+                if !superseded { self.historyUnread = true }
                 return
             }
+            // The whole history is here again: what it could not read, and the live rows `trimLive`
+            // dropped, are in it.
+            self.historyUnread = false
+            self.liveLeftOut = 0
             let history = Self.projectHistory(self.markingStopped(messages),
                                               sentReferences: self.origins.compactMapValues(\.references)) { value, message in
                 if message.role == "compactionSummary", let summary = message.summary,
@@ -1324,7 +1375,8 @@ final class RPCThreadState {
         history.removeAll()
         historyVersion += 1
         currentAssistant = nil
-        projectionClipped = false
+        historyUnread = false
+        liveLeftOut = 0
         operationsByEntry.removeAll()
         questions.removeAll()
         commandNotices.removeAll()
@@ -1425,7 +1477,7 @@ final class RPCThreadState {
         func trim(_ matches: (LiveItem.Kind) -> Bool) {
             guard live.count(where: { matches($0.kind) }) > Self.pageSize, let first = live.firstIndex(where: { matches($0.kind) }) else { return }
             live.remove(at: first)
-            projectionClipped = true
+            liveLeftOut += 1
         }
         trim { if case .assistant = $0 { true } else { false } }
         trim { if case .tool = $0 { true } else { false } }
@@ -1712,6 +1764,8 @@ final class RPCThreadState {
         hasher.combine(widgetsHash)
         hasher.combine(goal)
         hasher.combine(goalsAvailable)
+        hasher.combine(historyUnread)
+        hasher.combine(liveLeftOut)
         hasher.combine(running)
         hasher.combine(model)
         hasher.combine(thinking)
@@ -1782,14 +1836,18 @@ final class RPCThreadState {
         bytesEncodedSinceSnapshot = 0
         #endif
         let dialogs = Array(self.dialogs.prefix(Self.dialogLimit))
+        // What this snapshot shortens or could not read: older history is not one of them (it is
+        // `olderCursor`'s), and a too large question says so itself in the dock.
+        let clips = NativeThreadClips(history: historyUnread, live: liveLeftOut)
         var base = NativeThreadSnapshot(
             piSessionID: piSessionID ?? "", generation: generation, revision: revision, running: running,
             model: model, thinking: thinking, thinkingLevels: thinkingLevels, supportedActions: Self.supportedActions + (goalsAvailable ? ["goal"] : []), dialogsSupported: true,
-            dialogs: [], widgets: widgets.map(\.value), messages: [], provisional: [],
-            clipped: projectionClipped || dialogs.contains { $0.unavailable == "payload-limit" },
-            runtime: "rpc", stats: stats, commands: commands, subagents: subagents, context: context,
-            turnChanges: turnChanges, retry: retry,
-            serviceTier: serviceTier.rawValue, serviceTiers: serviceTiers.map(\.rawValue), goal: goal
+            dialogs: [], widgets: snapshotWidgets, messages: [], provisional: [],
+            clipped: !clips.isEmpty,
+            runtime: "rpc", stats: stats, commands: commands, subagents: snapshotSubagents, context: context,
+            turnChanges: snapshotTurnChanges, retry: retry,
+            serviceTier: serviceTier.rawValue, serviceTiers: serviceTiers.map(\.rawValue), goal: goal,
+            clips: clips.isEmpty ? nil : clips
         )
         // The rest encodes without the queue, which adds `,"queue":` and its cached size.
         let queue = queueValue
@@ -1817,10 +1875,8 @@ final class RPCThreadState {
         while index >= 0 {
             let message = history[index]
             size += bytes(message) + 1
-            if size > snapshotLimit {
-                value.clipped = true
-                break
-            }
+            // What does not fit is an older page (`olderCursor`), not clipped.
+            if size > snapshotLimit { break }
             value.messages.insert(message, at: 0)
             index -= 1
             if value.messages.count == pageSize { break }
@@ -1840,8 +1896,9 @@ final class RPCThreadState {
     /// byte. Active output is trimmed to `activeLimit` first (the oldest provisional rows that are
     /// not user rows, which open the turns the rest belong to; then the newest dialogs), then
     /// history fills the rest of `snapshotLimit` from `historyEnd` back, a
-    /// page at most. The decisions are the ones encoding the growing snapshot made; returns the
-    /// snapshot and its exact encoded size.
+    /// page at most. A base that weighs more than the snapshot may never leaves the live rows
+    /// less than `activeReserve` nor history less than `historyReserve`. The decisions are the
+    /// ones encoding the growing snapshot made; returns the snapshot and its exact encoded size.
     static func budget(
         _ base: NativeThreadSnapshot,
         baseBytes: Int,
@@ -1851,40 +1908,53 @@ final class RPCThreadState {
         history: (Int) -> Sized<NativeThreadMessage>
     ) -> (snapshot: NativeThreadSnapshot, bytes: Int) {
         func list(_ count: Int, _ sum: Int) -> Int { count == 0 ? 0 : sum + count - 1 }
-        var clipped = base.clipped
-        func flag() -> Int { clipped == base.clipped ? 0 : clipped ? -1 : 1 }
+        // What this snapshot leaves out of the live run or the questions joins `clips`; `clipped`
+        // and `clips` turn on together, and what they add to the encoded size is counted in `clipDelta`.
+        var clips = base.clips ?? NativeThreadClips()
+        let clipsField = ",\"clips\":".utf8.count
+        let baseClips = base.clips.map { Self.bytes($0) + clipsField } ?? 0
+        var clipDelta = 0
+        func clipped() {
+            let flag = (base.clipped || !clips.isEmpty) == base.clipped ? 0 : -1
+            clipDelta = (clips.isEmpty ? 0 : Self.bytes(clips) + clipsField) - baseClips + flag
+        }
         var dropped = Set<Int>()
         var activeSum = active.reduce(0) { $0 + $1.bytes }
         var dialogCount = dialogs.count
         var dialogSum = dialogs.reduce(0) { $0 + $1.bytes }
         func size() -> Int {
-            baseBytes + flag() + list(active.count - dropped.count, activeSum) + list(dialogCount, dialogSum)
+            baseBytes + clipDelta + list(active.count - dropped.count, activeSum) + list(dialogCount, dialogSum)
         }
+        // Live content may use up to `activeLimit` of the snapshot, but a heavy base never leaves it
+        // less than `activeReserve`, or a long thread's run would draw nothing while it streams.
+        let activeCap = max(activeLimit, baseBytes + activeReserve)
         var next = 0
-        while size() > activeLimit {
+        while size() > activeCap {
             while next < active.count, active[next].value.role == "user" { next += 1 }
             guard next < active.count else { break }
             activeSum -= active[next].bytes
             dropped.insert(next)
             next += 1
-            clipped = true
+            clips.live += 1
+            clipped()
         }
-        while size() > activeLimit, dialogCount > 0 {
+        while size() > activeCap, dialogCount > 0 {
             dialogCount -= 1
             dialogSum -= dialogs[dialogCount].bytes
-            clipped = true
+            clips.questions += 1
+            clipped()
         }
-        // Each message is counted with a comma, as when the growing snapshot was encoded.
+        // Each message is counted with a comma, as when the growing snapshot was encoded. History
+        // always has `historyReserve` to fill, whatever the rest of the snapshot weighs.
         var budgeted = size()
+        let limit = max(snapshotLimit, budgeted + historyReserve)
         var page: [Sized<NativeThreadMessage>] = []
         var index = historyEnd - 1
         while index >= 0 {
             let entry = history(index)
             budgeted += entry.bytes + 1
-            if budgeted > snapshotLimit {
-                clipped = true
-                break
-            }
+            // Older history that does not fit is a page away (`olderCursor`), not clipped.
+            if budgeted > limit { break }
             page.append(entry)
             index -= 1
             if page.count == pageSize { break }
@@ -1894,7 +1964,8 @@ final class RPCThreadState {
         value.provisional = active.indices.filter { !dropped.contains($0) }.map { active[$0].value }
         value.dialogs = dialogs[..<dialogCount].map(\.value)
         value.messages = page.map(\.value)
-        value.clipped = clipped
+        value.clips = clips.isEmpty ? nil : clips
+        value.clipped = base.clipped || !clips.isEmpty
         var bytes = size() + list(page.count, page.reduce(0) { $0 + $1.bytes })
         if index >= 0, let first = page.first {
             value.olderCursor = first.value.entryID

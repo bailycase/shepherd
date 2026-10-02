@@ -493,7 +493,14 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
     public var messages: [NativeThreadMessage]
     public var olderCursor: String?
     public var provisional: [NativeThreadMessage]
+    /// Something this snapshot shortens or could not read (`clips` says what): true exactly when
+    /// `clips` is present. It never means that older pages of history are left to load (that is
+    /// `olderCursor`). A host from before `clips` also set it when the page's budget stopped short of
+    /// older history, so a client that reads it without `clips` cannot tell the two apart.
     public var clipped: Bool
+    /// What was shortened or could not be read, as facts a thread can say in words. nil when nothing
+    /// was, and from older hosts, which send only `clipped`.
+    public var clips: NativeThreadClips?
     /// v2: "rpc" for every agent. "terminal" or nil came from the removed terminal-agent bridge;
     /// kept on the wire for older hosts.
     public var runtime: String?
@@ -537,7 +544,8 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
         provisional: [NativeThreadMessage], clipped: Bool, runtime: String? = nil, stats: NativeThreadStats? = nil,
         commands: [NativeCommand]? = nil, subagents: [NativeSubagent]? = nil, queue: NativeQueue? = nil,
         context: NativeThreadContext? = nil, turnChanges: [ChangesTurn]? = nil, retry: NativeThreadRetry? = nil,
-        startProblem: NativeStartProblem? = nil, serviceTier: String? = nil, serviceTiers: [String]? = nil, goal: NativeGoal? = nil
+        startProblem: NativeStartProblem? = nil, serviceTier: String? = nil, serviceTiers: [String]? = nil, goal: NativeGoal? = nil,
+        clips: NativeThreadClips? = nil
     ) {
         self.piSessionID = piSessionID
         self.generation = generation
@@ -566,6 +574,46 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
         self.serviceTier = serviceTier
         self.serviceTiers = serviceTiers
         self.goal = goal
+        self.clips = clips
+    }
+}
+
+/// What a snapshot shortens or could not read, each a bounded fact the thread says in words
+/// (`NativeClipNotice`). Older pages of history are not among them: they are always one scroll up
+/// (`olderCursor`), and a long message's own text is marked on its row (`truncated`).
+public struct NativeThreadClips: Codable, Hashable, Sendable {
+    /// The host could not read pi's history the last time it asked (a fetch failed or timed out), so
+    /// the thread may be missing messages until a later fetch lands whole.
+    public var history: Bool
+    /// Rows of the output of the turn still running that the snapshot left out, the oldest first. The
+    /// finished turn brings them back.
+    public var live: Int
+    /// Questions waiting on the user that the snapshot left out because they would not fit.
+    public var questions: Int
+
+    public init(history: Bool = false, live: Int = 0, questions: Int = 0) {
+        self.history = history
+        self.live = live
+        self.questions = questions
+    }
+
+    public var isEmpty: Bool { !history && live == 0 && questions == 0 }
+
+    private enum CodingKeys: String, CodingKey { case history, live, questions }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        history = (try? values.decode(Bool.self, forKey: .history)) ?? false
+        live = max(0, (try? values.decode(Int.self, forKey: .live)) ?? 0)
+        questions = max(0, (try? values.decode(Int.self, forKey: .questions)) ?? 0)
+    }
+
+    /// Only what is set, so a snapshot that clips one thing carries one small field.
+    public func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        if history { try values.encode(true, forKey: .history) }
+        if live > 0 { try values.encode(live, forKey: .live) }
+        if questions > 0 { try values.encode(questions, forKey: .questions) }
     }
 }
 

@@ -71,6 +71,24 @@ struct SettingsPreviewTests {
         }
     }
 
+    /// Agents ▸ Context, at the defaults (pi's own compaction, trimming and deferring on) and chosen (80%,
+    /// both off), each in light and dark at text scale 1 and 1.3, where the subtitles wrap.
+    @Test(arguments: [(false, "settings-agents-context"), (true, "settings-agents-context-chosen")])
+    func settingsAgentsContext(chosen: Bool, surface: String) async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        workspace.vm.settingsSection = .agents
+        if chosen {
+            workspace.settings.compactAtPercent = 80
+            workspace.settings.trimToolOutput = false
+            workspace.settings.deferTools = false
+        }
+        // Tall enough that the last row still shows at text scale 1.3, where the subtitles wrap to four lines.
+        try await Preview.renderMatrix(surface, size: CGSize(width: 1280, height: 1400)) {
+            SettingsView(vm: workspace.vm)
+        }
+    }
+
     /// Skills with a sourced skill waiting on an update, two used only through /skill (one off),
     /// and the page's rail: installed from a scratch repository on this Mac, no network.
     @Test func settingsSkillsInstalled() async throws {
@@ -156,15 +174,24 @@ struct SettingsPreviewTests {
         let store = try await MCPPreviewFixtures.boardStore()
         let workspace = try PreviewWorkspace(mcp: store)
         defer { workspace.stop() }
-        // Reports count only while their agent lives.
-        let space = Space(name: "acme-web", path: workspace.dir.path)
-        let (agent, tab) = try await workspace.agent("Triage the Sentry spike", in: space, order: 0)
-        try await workspace.seed(ShepherdState(spaces: [space], tabs: [tab], agents: [agent]))
-        MCPPreviewFixtures.report(to: store, from: agent.id)
         let vm = workspace.vm
         vm.mcpOpenServer = "linear"
         vm.settingsSection = .mcp
-        try await Preview.render("settings-mcp-servers", size: CGSize(width: 1440, height: 900)) {
+        try await Preview.renderMatrix("settings-mcp-servers", size: CGSize(width: 1440, height: 900)) {
+            SettingsView(vm: vm)
+        }
+    }
+
+    /// The edges of the same page: a server set to Direct with chosen tools open in place, one pi
+    /// can't run, a long name and a long error, and one switched off.
+    @Test func settingsMCPServersEdges() async throws {
+        let store = try await MCPPreviewFixtures.edgeStore()
+        let workspace = try PreviewWorkspace(mcp: store)
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        vm.mcpOpenServer = "github"
+        vm.settingsSection = .mcp
+        try await Preview.renderMatrix("settings-mcp-servers-edges", size: CGSize(width: 1440, height: 900)) {
             SettingsView(vm: vm)
         }
     }
@@ -198,7 +225,7 @@ struct SettingsPreviewTests {
             }
             """)
         }
-        try await Preview.render("mcp-add-\(kind)", size: CGSize(width: kind == "local" ? 760 : 720, height: 620)) {
+        try await Preview.renderMatrix("mcp-add-\(kind)", size: CGSize(width: kind == "local" ? 760 : 720, height: 620)) {
             AddMCPServerSheet(store: store, initialKind: sheetKind, editing: nil, draft: draft) {}
         }
     }
@@ -207,25 +234,25 @@ struct SettingsPreviewTests {
     @Test(arguments: ["waiting", "done", "failed"])
     func mcpSignIn(phase: String) async throws {
         var steps: [MCPSignInSheetModel.Step] = [
-            .init(id: "found", title: "Found Notion’s sign-in server", note: "mcp.notion.com pointed the way", state: .done),
-            .init(id: "registered", title: "Registered Shepherd with Notion", note: "Dynamic client registration", state: .done),
-            .init(id: "browser", title: "Waiting for you in the browser", note: "Approve access on notion.com; this closes by itself.",
-                  state: .live),
+            .init(id: "found", title: "Found Notion’s sign-in server", state: .done),
+            .init(id: "registered", title: "Registered Shepherd with Notion", state: .done),
+            .init(id: "browser", title: "Waiting for you in the browser",
+                  note: "pi opened the page; approve access on notion.com and this closes by itself.", state: .live),
         ]
         let model: MCPSignInSheetModel
         switch phase {
         case "done":
-            steps[2] = .init(id: "browser", title: "Signed in as baily@acme.dev", note: "Access: read, write", state: .done)
+            steps[2] = .init(id: "browser", title: "Signed in", state: .done)
             model = .init(title: "Sign in to Notion", subtitle: "notion is connected: 14 tools.", steps: steps, phase: .done)
         case "failed":
-            steps[2] = .init(id: "browser", title: "Notion didn’t allow access", note: "access_denied: you chose Cancel on notion.com.",
-                             state: .failed)
+            steps[2] = .init(id: "browser", title: "Signing in didn’t finish",
+                             note: "Sign-in to MCP server \"notion\" was cancelled or not completed within 300 seconds.", state: .failed)
             model = .init(title: "Sign in to Notion", subtitle: "Nothing was saved.", steps: steps, phase: .failed,
-                          details: "denied(error: \"access_denied\")")
+                          details: "Sign-in to MCP server \"notion\" was cancelled or not completed within 300 seconds.")
         default:
             model = .init(title: "Sign in to Notion", subtitle: "Finish signing in on notion.com.", steps: steps, phase: .waiting)
         }
-        try await Preview.render("mcp-signin-\(phase)", size: CGSize(width: NWMCPMetrics.sheetWidth, height: 380)) {
+        try await Preview.renderMatrix("mcp-signin-\(phase)", size: CGSize(width: NWMCPMetrics.sheetWidth, height: 380)) {
             MCPSignInSheet(model, actions: .none)
         }
     }
@@ -233,7 +260,7 @@ struct SettingsPreviewTests {
     /// Choose which tools…: a server's listed tools, all of them ticked.
     @Test func mcpChooseTools() async throws {
         let store = try await MCPPreviewFixtures.boardStore()
-        try await Preview.render("mcp-choose-tools", size: CGSize(width: AppLayout.mcpToolsSheetWidth, height: 520)) {
+        try await Preview.renderMatrix("mcp-choose-tools", size: CGSize(width: AppLayout.mcpToolsSheetWidth, height: 520)) {
             MCPChooseToolsSheet(store: store, name: "postgres") {}
         }
     }

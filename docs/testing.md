@@ -55,6 +55,15 @@ Tests come in tiers, and the switch is `--filter` on target names.
   for a host's dev server in tunnel tests (HTTP GET and a POST of any size with its SHA-256, a
   WebSocket echo, an echo, a firehose, one that never reads), IPv4 or IPv6, or on a chosen address
   or port. Every tunnel and forwarder test uses it, never the network.
+- `ScrollTrace` (`ShepherdAppIntegrationTests/Support`): a thread's scroll view recorded as it
+  changes (offset, content height, insets, stamped with the test's step), with the states a display
+  could draw (one per run-loop turn) kept apart from every change in between. Read a scroll rule
+  from it, not from where the view ended: a retreat (the offset fell and the view ended farther
+  from its tail), the time spent away from the tail, where it came to rest. The lazy stack's total
+  height takes values thousands of points off inside one layout pass. `ThreadSendScrollTests` and
+  `ThreadScrollAuditTests` judge a thread that way over `FlowHost`'s fake host, and
+  `ThreadSendHostTests` over `RealThreadRig` (a real server and the stub pi, whose
+  `tools:N` prompt makes N tool calls that wait for `tool-<k>` files).
 - `eventually("what", …)` and `eventuallyOnMain`: named 10 ms polls that throw `WaitTimeout`
   saying what never happened. Never sleep a fixed amount; wait on a callback or `eventually`.
   Keep timeouts generous (they default to 30 s), but make the happy path fast.
@@ -317,7 +326,9 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
   no row), New design and opening a design, the visibility flip, one pushed revision per write,
   and only the changed board reloading. Comments: finding a comment's element again after a
   rewrite (by path and words, else detached), their fence, a comment waiting in the host queue
-  while the agent works, and the agent's reply attaching under its pin. Tweak: the style splice
+  while the agent works, the agent's reply attaching under its pin, and a comment's card ending
+  at the first compaction in its reply (the store, and through the server and the stub pi's
+  overflow recovery; `NativeThreadStoreTests`, `DesignCommentChatTests`). Tweak: the style splice
   round-tripping on the real fixture boards (only style attributes change, every tid and path
   kept), token snapping, the data-props values in canvas.json, one write per gesture, the
   stale-revision retry, Reset and Undo, and each board's kept versions. Board actions: a drag
@@ -340,6 +351,17 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
   built-in; a ZIP's table of contents checked before unpacking (zip slip, links, sizes), a ZIP
   and a folder importing, every failure leaving nothing, and importing again making a copy.
 - **Server:** every `SessionServer` state mutation.
+- **Snapshot budget:** a long, edit-heavy thread keeps its newest messages whatever the other
+  lists weigh (`SnapshotBudgetTests` over `RPCThreadState.budget` and `fitting`,
+  `ThreadSnapshotBudgetTests` over a real server with recorded turns and finished cards,
+  `ThreadHeavySnapshotTests` in the real workspace), and a pi slower than the request deadline is
+  never served without its history (`SlowStartHistoryTests`).
+- **Clipped:** a snapshot says what it shortened and nothing else (`NativeThreadClips` on the
+  wire; `SnapshotBudgetTests`, `ThreadEventTests` and `SlowStartHistoryTests` for each cause and
+  for its clearing; `NativeClipNoticeTests` for the words, an older host's flag and the store;
+  `ThreadClipNoticeTests` in the real workspace over a real server: older pages and a long
+  reply raise no notice, a turn's hidden output does until it ends; `ThreadPreviewTests+Clips`
+  for each state in both appearances at text scale 1 and 1.3, wide and narrow).
 - **Extension identity:** the real check against stub pis (`ExtensionIdentityTests`, and
   `ExtensionIdentityFlowTests` through the app's own launch): a pi's own process is served for
   its agent, a process it starts is refused and displaces no connection, this process claiming
@@ -365,11 +387,35 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
   single-terminal tabs are not rewritten; inspector tabs and layouts with no thread are untouched).
 - **Extensions:** embedded extensions byte-identical to `Extensions/*` (all twenty-one files, and
   the design skill's two files).
+- **Context budget** (docs/context-budget.md): what a thread's first request carries, measured on
+  a real pi (`context-budget.test.mjs`: the guard against `scripts/context-budget.json`, and the
+  audit `Tests/Extensions/context-tools.json`, which names every tool a launch registers: a tool
+  no row lists fails it, and `ContextToolGroupsTests` holds the Context card's groups to the same
+  file); the counting, on synthetic captures (`Tests/Release/test_context_budget.py`); context
+  clearing against a real pi and a fake provider (`context-trim.test.mjs`: the request shrinks and
+  the session file and `get_messages` keep everything, off is byte-identical, a restart, `/new`,
+  a branch and a compaction decide the same way, a long run never compacts; `context-mcp.test.mjs`:
+  an MCP result is cleared like any other, and a tool a cleared `tool_search` loaded is still
+  declared and called); deferred tools against a real pi and a fake provider (`defer-tools.test.mjs`:
+  no deferred tool or tool-list line in a thread's first request, one rule line saying they exist, each
+  family found by its obvious query, loaded whole and called, a cleared search result not unloading it, a
+  restart keeping what was loaded, the switch off or no `tool_search` sending every tool, a watch agent, a
+  design's agent, a design reference and a subagent each getting their own set, and the status extension
+  alone); the card's estimate
+  (`ContextEstimateTests`: the baseline from the first call's usage, reasoning, images and Other),
+  its presentation and wire (`ContextPresentationTests`, `NativeThreadWireTests`), and the
+  Compact at setting (`PiCompactionThresholdTests`, `CompactionThresholdFlowTests`).
 - **Themes:** every theme variant complete, and the WCAG contrast rules met.
 - **Design rules:** `DesignRulesTests` scans the Mac app, ShepherdUI and the iOS client for a
   literal font size, a status color tinted by an opacity, a raw color and a registered glyph named
   as a string (`NWGlyph`), with a table pinning each pattern and `DesignRuleAllowlist` for what
   predates them. The allowlist only shrinks; never add an entry for new code.
+- **Thread layout:** every kind of row in `LongThreads` (a paragraph with a path and a link that
+  cannot break, a table, activity lines whose label names boards or a page, calls with long
+  arguments, a compaction, a question, a steer) fits the thread's column, in a design's chat
+  (420pt), the narrowest thread column (400pt) and a phone's, at text scales 1 and 1.3, and an
+  opened activity line fits too (`ThreadFitTests`: nothing is drawn in the thread's right gutter).
+  A row that cannot shrink widens the stack every row shares and runs the whole thread off its pane.
 - **App logic:** keybindings (defaults, validation, stored overrides for removed actions
   ignored), palette and settings search, workspace selection and parking, sidebar ordering and
   reveal, pinned threads (their order, persistence and pruning, Needs you winning, the digits),

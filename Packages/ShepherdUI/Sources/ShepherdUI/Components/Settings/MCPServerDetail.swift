@@ -32,30 +32,27 @@ public struct MCPServerDetailModel: Equatable, Sendable {
     public var toolNames: [String]
     /// nil until the tools are known.
     public var toolCount: Int?
+    /// Tool exposure: Direct declares every tool in every prompt, Search (the default) leaves them
+    /// out until the agent searches for one.
     public var direct: Bool
-    public var proxyCost: String
+    public var searchCost: String
     public var directCost: String
     /// "5 of 21 chosen" when only some tools are visible.
     public var chosenNote: String?
     public var transport: String
-    public var startOptions: [String]
-    public var start: Int
     public var hosts: [Host]
     public var message: String?
 
-    public init(signIn: SignIn, toolNames: [String], toolCount: Int?, direct: Bool, proxyCost: String, directCost: String,
-                chosenNote: String? = nil, transport: String, startOptions: [String], start: Int, hosts: [Host],
-                message: String? = nil) {
+    public init(signIn: SignIn, toolNames: [String], toolCount: Int?, direct: Bool, searchCost: String, directCost: String,
+                chosenNote: String? = nil, transport: String, hosts: [Host], message: String? = nil) {
         self.signIn = signIn
         self.toolNames = toolNames
         self.toolCount = toolCount
         self.direct = direct
-        self.proxyCost = proxyCost
+        self.searchCost = searchCost
         self.directCost = directCost
         self.chosenNote = chosenNote
         self.transport = transport
-        self.startOptions = startOptions
-        self.start = start
         self.hosts = hosts
         self.message = message
     }
@@ -67,27 +64,25 @@ public struct MCPServerDetail: View {
         public var signOut: () -> Void
         public var setDirect: (Bool) -> Void
         public var chooseTools: () -> Void
-        public var setStart: (Int) -> Void
         public var edit: () -> Void
         public var reconnect: () -> Void
         public var copyJSON: () -> Void
         public var remove: () -> Void
 
         public init(signIn: @escaping () -> Void, signOut: @escaping () -> Void, setDirect: @escaping (Bool) -> Void,
-                    chooseTools: @escaping () -> Void, setStart: @escaping (Int) -> Void, edit: @escaping () -> Void,
+                    chooseTools: @escaping () -> Void, edit: @escaping () -> Void,
                     reconnect: @escaping () -> Void, copyJSON: @escaping () -> Void, remove: @escaping () -> Void) {
             self.signIn = signIn
             self.signOut = signOut
             self.setDirect = setDirect
             self.chooseTools = chooseTools
-            self.setStart = setStart
             self.edit = edit
             self.reconnect = reconnect
             self.copyJSON = copyJSON
             self.remove = remove
         }
 
-        public static let none = Actions(signIn: {}, signOut: {}, setDirect: { _ in }, chooseTools: {}, setStart: { _ in },
+        public static let none = Actions(signIn: {}, signOut: {}, setDirect: { _ in }, chooseTools: {},
                                          edit: {}, reconnect: {}, copyJSON: {}, remove: {})
     }
 
@@ -197,8 +192,15 @@ public struct MCPServerDetail: View {
             MCPChipFlow(shown.map { MCPChip($0) }, more: more > 0 ? "+\(more)" : nil, moreAction: actions.chooseTools)
         }
         VStack(alignment: .leading, spacing: NW.Space.s) {
-            option("Through one mcp tool", cost: model.proxyCost, selected: !model.direct) { actions.setDirect(false) }
-            option("Each tool on its own", cost: model.directCost, selected: model.direct) { actions.setDirect(true) }
+            Text("Tool exposure").nwSettingsLabel(table: true)
+            option("Search", cost: model.searchCost, selected: !model.direct,
+                   help: "The agent searches this server’s tools when it needs one. Nothing of them is in a prompt until then.") {
+                actions.setDirect(false)
+            }
+            option("Direct", cost: model.directCost, selected: model.direct,
+                   help: "Every tool is declared in every prompt, so the agent sees them without searching.") {
+                actions.setDirect(true)
+            }
         }
         HStack(spacing: NW.Space.m) {
             Button("Choose which tools…", action: actions.chooseTools)
@@ -215,29 +217,7 @@ public struct MCPServerDetail: View {
         let nw = Color.nw
         let M = NWMCPMetrics.self
         Text(model.transport).font(.nwSans(M.detailOptionSize)).foregroundStyle(nw.textSecondary)
-        Menu {
-            ForEach(Array(model.startOptions.enumerated()), id: \.offset) { index, option in
-                Button(option) { actions.setStart(index) }
-            }
-        } label: {
-            HStack(spacing: NW.Space.m) {
-                Text("Start: \(Text(model.startOptions.indices.contains(model.start) ? model.startOptions[model.start] : "").foregroundStyle(nw.textPrimary))")
-                    .foregroundStyle(nw.textTertiary)
-                Image(systemName: "chevron.down").font(.nwSans(9, .semibold)).foregroundStyle(nw.textTertiary)
-            }
-            .font(.nwSans(M.cellSize))
-            .padding(.leading, NW.Space.m + NW.Space.xxs)
-            .padding(.trailing, NW.Space.m)
-            .frame(height: NW.Height.controlM)
-            .background(nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.s))
-            .nwBorder(nw.lineStrong, radius: NW.Radius.s)
-            .contentShape(Rectangle())
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .accessibilityLabel("Start")
+        noteText("Connects when a thread starts and stays until it ends.")
         VStack(alignment: .leading, spacing: 0) {
             ForEach(model.hosts, id: \.name) { host in
                 MCPHostRow(host)
@@ -245,7 +225,7 @@ public struct MCPServerDetail: View {
         }
     }
 
-    private func option(_ title: String, cost: String, selected: Bool, action: @escaping () -> Void) -> some View {
+    private func option(_ title: String, cost: String, selected: Bool, help: String, action: @escaping () -> Void) -> some View {
         let nw = Color.nw
         let M = NWMCPMetrics.self
         return Button(action: action) {
@@ -254,9 +234,14 @@ public struct MCPServerDetail: View {
                 Text(title).font(.nwSans(M.detailOptionSize)).foregroundStyle(selected ? nw.textPrimary : nw.textSecondary)
                 Text(cost).font(.nwMono(M.tagTextSize)).foregroundStyle(nw.textTertiary)
             }
+            // A pointer's 24pt, not the label's 17: the button is taller than its text, and the
+            // negative padding below hands that room back so the column doesn't grow.
+            .padding(.vertical, M.optionHitPadding)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .padding(.vertical, -M.optionHitPadding)
+        .help(help)
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 
