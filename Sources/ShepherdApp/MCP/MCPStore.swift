@@ -22,15 +22,20 @@ final class MCPStore {
         var openURL: @MainActor (URL) -> Void
         var copy: @MainActor (String) -> Void
         var now: @MainActor () -> Date
+        /// The user's home folder: what a `~/` in a server's command means to the shell that starts it.
+        var userHome: String = NSHomeDirectory()
+        /// Writes pi's `mcp.json` (`MCPPiConfig`), in pi's home.
+        var writePiConfig: (Data) throws -> Void = { _ in }
 
         /// The app's: the real file and Keychain, `engine`'s node for probes (`home` for its
-        /// keychain CA fallback), the browser and pasteboard.
+        /// keychain CA fallback), the browser and pasteboard, and pi's home for its `mcp.json`.
         static func app(engine: PiEngine, home: PiHome, clientPath: @escaping @Sendable () -> URL?,
                         openURL: @escaping @MainActor (URL) -> Void, copy: @escaping @MainActor (String) -> Void) -> Dependencies {
             Dependencies(file: MCPConfigFile(url: ShepherdPaths.mcpConfigURL()), cacheURL: ShepherdPaths.mcpToolsCacheURL(),
                          secrets: MCPSecrets.forApp(), http: URLSessionHTTP(),
                          probe: MCPProbe(runner: NodeProbeRunner(engine: engine, home: home, clientPath: clientPath)),
-                         openURL: openURL, copy: copy, now: { Date() })
+                         openURL: openURL, copy: copy, now: { Date() }, userHome: home.userHome,
+                         writePiConfig: { try home.installMCPConfig($0) })
         }
     }
 
@@ -90,6 +95,8 @@ final class MCPStore {
     @ObservationIgnored private var refreshes: [String: Task<MCPOAuthToken, Error>] = [:]
     @ObservationIgnored private var credentialGenerations: [String: UUID] = [:]
     @ObservationIgnored private var fileStamp: Data?
+    @ObservationIgnored private var derivedConfig: (document: MCPConfigDocument, derived: MCPPiConfig.Derived)?
+    @ObservationIgnored private var secretCache: [String: String] = [:]
     /// A needs-sign-in answer opens the sheet by itself ("Open sign-in pages by itself").
     @ObservationIgnored var onNeedsSignIn: ((String) -> Void)?
 
@@ -111,6 +118,50 @@ final class MCPStore {
     var isEditable: Bool { invalidLine == nil }
 
     var invalidMessage: String? { invalidLine.map { MCPConfigError.invalid(line: $0).description } }
+
+    // MARK: pi's MCP
+
+    /// What pi's MCP is told, derived from `document` (docs/mcp.md).
+    var piConfig: MCPPiConfig.Derived {
+        if let cached = derivedConfig, cached.document == document { return cached.derived }
+        let derived = MCPPiConfig.derive(document, home: dependencies.userHome)
+        derivedConfig = (document, derived)
+        return derived
+    }
+
+    /// Writes pi's `mcp.json` into its home when it differs. The home must be ready
+    /// (`PiSetup.prepare` passed): nothing of Shepherd's goes into a home that fails its guards.
+    func syncPiConfig() throws {
+        try dependencies.writePiConfig(piConfig.json)
+    }
+
+    /// The environment an agent's pi starts with for its MCP servers: each Keychain value the
+    /// derived file refers to, under its `SHEPHERD_MCP_SECRET_*` name, and the list of those names
+    /// (`restore-env.sh` unsets them for the model's shell commands). Reads the file again first,
+    /// so an agent launched after an edit made elsewhere gets it, and writes pi's `mcp.json`.
+    func launchEnvironment() -> [String: String] {
+        reload()
+        do {
+            try syncPiConfig()
+            if problem != nil, problem?.hasPrefix("Couldn’t write pi’s MCP") == true { problem = nil }
+        } catch {
+            problem = "Couldn’t write pi’s MCP config: \(error)"
+        }
+        var environment: [String: String] = [:]
+        let secrets = piConfig.secrets
+        for secret in secrets {
+            if let value = secretValue(secret.account) { environment[secret.variable] = value }
+        }
+        if !secrets.isEmpty { environment[PiHome.mcpSecretNamesKey] = secrets.map(\.variable).joined(separator: " ") }
+        return environment
+    }
+
+    private func secretValue(_ account: String) -> String? {
+        if let cached = secretCache[account] { return cached }
+        let value = dependencies.secrets.value(for: account)
+        if let value { secretCache[account] = value }
+        return value
+    }
 
     // MARK: Reading
 
@@ -431,6 +482,7 @@ final class MCPStore {
     /// env or header keys: they go to Keychain and the file gets references.
     func save(_ entry: MCPServerEntry, secrets: [String: String] = [:], replacing: String? = nil) throws {
         var entry = entry
+        secretCache.removeAll()
         for (key, value) in secrets {
             try dependencies.secrets.set(value, for: MCPSecretReference.account(server: entry.name, name: key))
         }
@@ -487,6 +539,7 @@ final class MCPStore {
     func remove(_ name: String) {
         guard perform({ $0.remove(name) }) else { return }
         dependencies.secrets.removeAll(forServer: name)
+        secretCache.removeAll()
         tokens[name] = nil
         flags[name] = nil
         usesOAuth.remove(name)
@@ -525,6 +578,7 @@ final class MCPStore {
             added.append(entry)
         }
         guard !added.isEmpty else { return 0 }
+        secretCache.removeAll()
         try edit { document in
             for entry in added { document.upsert(entry) }
         }

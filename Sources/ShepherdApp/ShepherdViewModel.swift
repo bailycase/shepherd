@@ -523,6 +523,9 @@ final class ShepherdViewModel {
                                                       copy: ShepherdViewModel.copyToPasteboard))
         self.installThemeMarker = themeInstaller
         self.sessions = TerminalSessionStore(server: server)
+        self.sessions.mcpLaunch = { [settings = self.settings, mcp = self.mcp] in
+            try MCPLaunch.forAgents(settings: settings, store: mcp)
+        }
         self.yourPi = yourPi ?? YourPiModel(pi: server.pi)
         self.piAuth = piAuth ?? PiAuthStore(pi: server.pi)
         self.selectedSpaceID = nil
