@@ -1394,7 +1394,7 @@ final class RPCThreadState {
     /// A tool call is a row from the moment the model names it, so the thread shows it ("Writing
     /// src/big.txt") while its arguments stream instead of a finished paragraph and nothing
     /// moving. The row carries only the fields an activity line names; `tool_execution_start`
-    /// makes the same row the running call, with its complete arguments. pi 0.87.1's events:
+    /// makes the same row the running call, with its complete arguments. pi 1.0.0's events:
     /// `toolcall_start` names the call (`id`, `toolName`), each `toolcall_delta` carries the next
     /// fragment of the arguments' JSON text (not the text so far), and `toolcall_end` the finished
     /// call. A provider that sends its calls whole ends up here too, in one step.

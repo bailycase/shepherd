@@ -9,7 +9,7 @@ import Testing
 struct PiLaunchTests {
     static let app = "/Applications/Shepherd.app/Contents"
     static let engine = PiEngine(command: ["\(app)/Helpers/node", "\(app)/Resources/pi-engine/dist/bundle/cli.js"],
-                                 packageDirectory: "\(app)/Resources/pi-engine", version: "0.87.1",
+                                 packageDirectory: "\(app)/Resources/pi-engine", version: "1.0.0",
                                  node: .executable("\(app)/Helpers/node"))
     /// Shepherd's pi home, in a support folder with a space in it.
     static let home = PiHome(directory: URL(fileURLWithPath: "/Users/me/Library/Application Support/Shepherd/pi", isDirectory: true),
