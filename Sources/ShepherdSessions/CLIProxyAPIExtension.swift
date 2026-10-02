@@ -12,6 +12,7 @@ enum CLIProxyAPIExtension {
     static let source = #"""
         // Swift owns discovery and settings. This provider only reads its published snapshot.
         import fs from "node:fs";
+        import { createHash } from "node:crypto";
         import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
         import {
           type Api, type Model, type Provider, type ProviderStreamOptions, type SimpleStreamOptions,
@@ -296,10 +297,15 @@ enum CLIProxyAPIExtension {
           pi.on("model_select", (event) => {
             if (event.source === "set" || event.source === "cycle") requested = undefined;
           });
-          pi.on("input", async (_event, ctx) => {
+          pi.on("input", async (event, ctx) => {
             await reload(ctx);
             const blocked = blockedModel(ctx);
             if (blocked && !await recoverModel(ctx, blocked)) {
+              // An RPC 'handled' response alone looks like acceptance. This machine-only widget
+              // identifies the blocked input without putting its text or credentials on the wire.
+              if (event.source === "rpc" && ctx.hasUI) ctx.ui.setWidget("shepherd.inputBlocked", [JSON.stringify({
+                version: 1, promptSHA256: createHash("sha256").update(event.text).digest("hex"), modelId: blocked,
+              })]);
               notifyBlocked(ctx);
               return { action: "handled" };
             }

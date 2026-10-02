@@ -468,10 +468,9 @@ extension RPCThreadState {
                 return
             }
             let commandDone = self.beginCommandWindow(for: prompt)
-            self.session.request(.prompt(message: prompt, images: rpcImages, streamingBehavior: .followUp), timeout: Self.promptTimeout) { [weak self] result in
+            self.requestInput(id: id, prompt: prompt, images: rpcImages, delivery: .followUp) { [weak self] failure in
                 commandDone?()
                 guard let self else { return }
-                let failure = Self.dispatchFailure(result)
                 if let failure, case .failure(let code, _) = failure, code != "outcome_unknown" {
                     self.dropDispatch(id)
                     self.discardPreparedTurn?()
@@ -545,12 +544,11 @@ extension RPCThreadState {
         steersInFlight += 1
         let rpcImages = item.images.map { RPCImage(data: $0.data.base64EncodedString(), mimeType: $0.mimeType) }
         let commandDone = beginCommandWindow(for: item.promptText)
-        session.request(.prompt(message: item.promptText, images: rpcImages, streamingBehavior: .steer), timeout: Self.promptTimeout) { [weak self] result in
+        requestInput(id: id, prompt: item.promptText, images: rpcImages, delivery: .steer) { [weak self] failure in
             commandDone?()
             guard let self else { return }
             self.unboundSteers.removeAll { $0 == id }
             self.steersInFlight -= 1
-            let failure = Self.dispatchFailure(result)
             if failure == nil, let index = self.items.firstIndex(where: { $0.entry.id == id && $0.entry.state == .steering }),
                self.items[index].piText == nil {
                 // pi answered without queueing anything: it ran the message at once (an
@@ -613,19 +611,35 @@ extension RPCThreadState {
 
     /// Everything `clear_queue` returned goes back to pi in order: this host's steering items
     /// are steered again, anything else pi had queued (an extension's) is re-sent as it was.
-    private func restorePiQueue(steering: [String], followUp: [String]) {
+    func restorePiQueue(steering: [String], followUp: [String]) {
+        func restoreUnowned(_ text: String, delivery: RPCStreamingBehavior) {
+            let id = UUID()
+            requestInput(id: id, prompt: text, images: [], delivery: delivery) { [weak self] failure in
+                guard let self, case .failure(let code, let message) = failure, code != "outcome_unknown" else { return }
+                self.items.append(QueueItem(entry: NativeQueuedMessage(id: id, text: text, sentAt: Date().timeIntervalSince1970 * 1000), images: []))
+                self.paused = true
+                self.queueNotice = message
+                self.commit()
+            }
+        }
         var remaining = items.filter { $0.entry.state == .steering }
         for text in steering {
             if let index = remaining.firstIndex(where: { ($0.piText ?? $0.promptText) == text }) {
                 // Equal text can carry different images; restore each item exactly once.
                 let id = remaining.remove(at: index).entry.id
                 if let index = items.firstIndex(where: { $0.entry.id == id }) { items[index].piText = nil }
-                steerDispatch(id) { _ in }
+                steerDispatch(id) { [weak self] failure in
+                    guard let self, case .failure(let code, let message) = failure, code != "outcome_unknown" else { return }
+                    NativeQueueRules.unsteer(id, in: &self.items)
+                    self.paused = true
+                    self.queueNotice = message
+                    self.commit()
+                }
             } else {
-                session.send(.prompt(message: text, streamingBehavior: .steer))
+                restoreUnowned(text, delivery: .steer)
             }
         }
-        for text in followUp { session.send(.prompt(message: text, streamingBehavior: .followUp)) }
+        for text in followUp { restoreUnowned(text, delivery: .followUp) }
     }
 
     /// `clear_queue`, answering with what pi had queued.
@@ -667,6 +681,7 @@ extension RPCThreadState {
     /// items return to the queue, and the queue pauses until the user resumes it.
     /// Stop/reset/exit must answer a send even while its filesystem preparation is still held.
     func cancelPreparingPrompts() {
+        cancelWaitingInputs()
         let pending = preparingPrompts
         preparingPrompts.removeAll()
         sendAfterCapture = nil

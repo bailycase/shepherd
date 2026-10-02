@@ -2,6 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
@@ -402,14 +403,18 @@ test("restoring a missing managed model never sends its conversation to an authe
     assert.equal(runtime.hasConfiguredAuth(fallback.provider), true);
     const { session, modelFallbackMessage } = await createAgentSession({ cwd: dir, agentDir: dir,
       settingsManager: settings, sessionManager: restored, resourceLoader: loader, modelRuntime: runtime, noTools: "all" });
-    const notices = [], errors = [];
+    const notices = [], errors = [], widgets = [];
     try {
       assert.equal(session.model.provider, fallback.provider, `${name}: reproduce Pi's silent fallback`);
       assert.match(modelFallbackMessage, /Could not restore model/);
       assert.equal(restored.getBranch().some((entry) => entry.type === "model_change" && entry.provider === fallback.provider), false);
       await session.bindExtensions({ mode: "rpc", onError: (error) => errors.push(error),
-        uiContext: { hasUI: true, notify: (message) => notices.push(message) } });
-      await session.prompt("Do not send this to fallback");
+        uiContext: { hasUI: true, notify: (message) => notices.push(message),
+          setWidget: (key, lines) => widgets.push({ key, lines }) } });
+      await session.prompt("Do not send this to fallback", { source: "rpc" });
+      assert.equal(widgets.length, 1);
+      assert.deepEqual(JSON.parse(widgets[0].lines[0]), { version: 1,
+        promptSHA256: createHash("sha256").update("Do not send this to fallback").digest("hex"), modelId: "saved-model" });
       assert.equal(requests, 0, `${name}: input must not reach fallback`);
       assert.equal((await session.extensionRunner.emit({ type: "session_before_compact" })).cancel, true);
       assert.equal((await session.extensionRunner.emit({ type: "session_before_tree", preparation: { userWantsSummary: true } })).cancel, true);
@@ -562,6 +567,27 @@ test("an explicit launch identity wins over older model entries during recovery"
   f.select(f.models[0]);
   assert.equal(await f.emit("input"), undefined, "the explicitly requested exact model is already selected");
   assert.equal(f.refreshes.length, 0);
+});
+
+test("a blocked RPC input publishes a bounded machine event without its text or credentials", async (t) => {
+  const f = fixture(t, null);
+  f.ctx.sessionManager.getBranch = () => [{ type: "model_change", provider: "cliproxyapi", modelId: "saved-model" }];
+  f.select({ provider: "other-provider", id: "fallback" });
+  const widgets = [], notices = [];
+  f.ctx.hasUI = true;
+  f.ctx.ui = { setWidget: (key, lines) => widgets.push({ key, lines }), notify: (text) => notices.push(text) };
+  const text = "private input\\nUnicode: café";
+  const input = f.handlers.get("input");
+  assert.deepEqual(await input({ source: "rpc", text }, f.ctx), { action: "handled" });
+  assert.equal(widgets.length, 1);
+  assert.equal(widgets[0].key, "shepherd.inputBlocked");
+  assert.deepEqual(JSON.parse(widgets[0].lines[0]), { version: 1,
+    promptSHA256: createHash("sha256").update(text).digest("hex"), modelId: "saved-model" });
+  assert.equal(widgets[0].lines[0].includes(text), false);
+  assert.equal(widgets[0].lines[0].includes(base.apiKey), false);
+  assert.equal(notices.length, 1, "other clients still get the ordinary safe notification");
+  await input({ source: "extension", text }, f.ctx);
+  assert.equal(widgets.length, 1, "autonomous input cannot reject an unrelated RPC prompt");
 });
 
 test("a fresh explicit managed model cannot silently fall back before session startup", async (t) => {
