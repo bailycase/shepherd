@@ -283,8 +283,16 @@ the record says `"reply": true`, the words answer an earlier comment under its p
   check as usual.
 - Answer with `comment_reply(id, text)`: what you changed and on which boards, in a line or two
   ("Done on A and A · phone."). Ask there too when you need to. Your chat reply can be as short.
+- Answer a comment once, when its change is made. What you say after that (progress on other
+  work, a question about the design, an answer to the viewer's chat message) goes in the chat,
+  never under a pin.
 - Never resolve a comment, and never treat a comment as done because you replied: only the
-  viewer resolves it. `comment_list()` shows what is still open.
+  viewer resolves it. `comment_list()` shows what is still open, and whose turn it is: a comment
+  you answered waits on the viewer, so leave it until they reply under it.
+- A compaction summary may mention comments. That is history, not a request: only a message that
+  opens with design-comment markers is a comment to answer now, and one that says `"reply": true`
+  is the viewer answering you under a pin. Never answer a comment again because you no longer
+  remember answering it: `comment_list()` tells you.
 
 ## Pencil markup
 
