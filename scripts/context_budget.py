@@ -59,8 +59,8 @@ PRESENTED = [
     ("tools.review", "Shepherd tools: review_diff", "shepherd"),
     ("tools.children", "Shepherd tools: native subagents (shepherd_child_*, workflow)", "shepherd"),
     ("tools.browser", "Shepherd tools: browser_*", "shepherd"),
-    ("tools.mcp", "Shepherd tools: mcp (one proxy tool)", "shepherd"),
-    ("tools.mcp_direct", "Shepherd tools: MCP servers set to Each tool on its own", "shepherd"),
+    ("tools.mcp", "pi's MCP: tool_search and its server list (servers on Search)", "shepherd"),
+    ("tools.mcp_direct", "pi's MCP: tools of servers set to Direct", "shepherd"),
     ("tools.design", "Shepherd tools: design_get, design_note", "shepherd"),
     ("tools.design_agent", "Shepherd tools: a design agent's (design_read, board_write, ...)", "shepherd"),
     ("tools.other", "Other tools", "shepherd"),
@@ -151,8 +151,17 @@ def context_files(section: str) -> list[tuple[str, str]]:
 BUILT_IN = ("read", "bash", "edit", "write", "grep", "find", "ls", "powershell")
 
 
+# pi's own MCP is a built-in extension (source `<builtin:mcp>`, `<builtin:tool-search>`), so its tools are told apart by name:
+# `tool_search` (and the resource tools) cost whenever a server is on Search, `mcp__<server>__<tool>` only for a server on Direct.
+MCP_TOOLS = {"tool_search", "list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"}
+
+
 def tool_group(name: str, source: str) -> str:
     base = os.path.basename(source)
+    if name in MCP_TOOLS:
+        return "tools.mcp"
+    if name.startswith("mcp__"):
+        return "tools.mcp_direct"
     if source.startswith("<builtin:") or (not source and name in BUILT_IN):
         return "pi.builtin_tools"
     if base == "shepherd-panes.ts":
@@ -161,8 +170,6 @@ def tool_group(name: str, source: str) -> str:
         if name.startswith("agent_"):
             return "tools.agent"
         return "tools.automation"
-    if base == "shepherd-mcp.ts":
-        return "tools.mcp" if name == "mcp" else "tools.mcp_direct"
     return {"shepherd-review.ts": "tools.review", "shepherd-children.ts": "tools.children", "shepherd-browser.ts": "tools.browser",
             "shepherd-design-refs.ts": "tools.design", "shepherd-design.ts": "tools.design_agent"}.get(base, "tools.other")
 
@@ -204,6 +211,9 @@ def count_scenario(captured: dict, bare: dict | None = None) -> dict:
             add("ctx.append_system", len(text))
         elif name == "skills":
             add("skills", len(text))
+        elif name == "mcp_servers":
+            # pi's own MCP lists each server on Search here, so that the model knows tool_search reaches it
+            add("tools.mcp", len(text))
         elif name == "project_context":
             files = context_files(text)
             inner = sum(len(content) for _, content in files)

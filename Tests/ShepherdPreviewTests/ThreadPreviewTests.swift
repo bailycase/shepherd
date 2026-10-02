@@ -360,6 +360,13 @@ struct ThreadPreviewTests {
         try await render("thread-activity-failed", ActivityThreads.failed)
     }
 
+    /// pi's MCP in a thread: the search that loads deferred tools ("Searched tools" · what was
+    /// searched), a server's tools ("Called search_issues" · "github · label:bug", merging when a
+    /// tool repeats), and a tool pi never loaded staying red with its reason.
+    @Test func threadActivityMCP() async throws {
+        try await render("thread-activity-mcp", ActivityThreads.mcp)
+    }
+
     /// A design agent's thread: reading the system, "Drew 4 boards · 3 directions + phone" (the
     /// nib), "Checked against acme-web · 0 off-system values" (the shield), then a revision that
     /// reads "Updated A and A · phone" under the edit glyph.
@@ -937,6 +944,27 @@ enum ActivityThreads {
                                 status: "error", timestamp: t0 + 40_000),
         ]
         return snapshot(messages)
+    }
+
+    /// An agent finding issues through pi's MCP: a search that loads tools, two calls of one tool, another
+    /// server's tool, a read of a file, and a tool that was never loaded.
+    static var mcp: NativeThreadSnapshot {
+        let t0 = now - 6 * 60_000
+        let loaded = "Loaded 8 tools. They are available from your next call:\n- mcp__github__search_issues: Search issues.\n- mcp__github__get_issue: Get one issue."
+        return snapshot([
+            user("u1", "Find the open checkout bugs and say which ones the new retry logic touches.", at: t0),
+            tool("s1", "tool_search", ["query": "search github issues"], output: loaded, start: t0 + 2_000, end: t0 + 2_300),
+            tool("m1", "mcp__github__search_issues", ["query": "label:bug is:open checkout"], output: "14 results",
+                 start: t0 + 3_000, end: t0 + 4_900),
+            tool("m2", "mcp__github__search_issues", ["query": "label:bug is:open retry"], output: "3 results",
+                 start: t0 + 5_000, end: t0 + 6_100),
+            tool("m3", "mcp__github__get_issue", ["owner": "acme", "repo": "shop", "number": 412], output: "#412 Retry doubles the charge",
+                 start: t0 + 7_000, end: t0 + 7_900),
+            tool("m4", "mcp__linear__get_issue", ["id": "SHP-88"], output: "Tool mcp__linear__get_issue not found", error: true,
+                 start: t0 + 8_000, end: t0 + 8_100),
+            tool("r1", "read", ["path": "internal/payments/retry.go"], output: "package payments", start: t0 + 9_000, end: t0 + 9_200),
+            assistant("a1", "Three open bugs mention retries. **#412** is the one the new logic touches: a retry after a timeout charges twice.", at: t0 + 12_000),
+        ])
     }
 
     /// The design agent drawing a brief, then revising two boards.

@@ -9,27 +9,30 @@ struct SessionCommand {
     var env: [String: String]
 }
 
-/// What an agent's MCP extension is launched with (Settings ▸ Pi ▸ Bundled extensions ▸ MCP servers).
+/// What an agent's pi is launched with for MCP (Settings ▸ Pi ▸ Bundled extensions ▸ MCP servers;
+/// docs/mcp.md): pi's own MCP and tool search switched on over the home's `-builtin:` switches, the
+/// secrets the servers' entries refer to in its environment, and, while Settings ▸ MCP servers ▸
+/// Also use a repo's .mcp.json is on, the extension that registers the repo's servers.
 struct MCPLaunch: Equatable {
-    var extensionPath: String
-    var clientPath: String
-    /// The config file the app resolved (`ShepherdPaths.mcpConfigURL`).
-    var configPath: String
-    var cachePath: String
-    /// Settings ▸ MCP servers ▸ Also use a repo's .mcp.json.
-    var useRepoConfig: Bool
+    /// `-e` arguments: pi's built-ins by name, then the repo extension's file.
+    var extensions: [String]
+    var environment: [String: String]
+
+    static let builtIns = ["builtin:mcp", "builtin:tool-search"]
 
     /// What an agent launches with under these settings: nil while Settings ▸ Pi ▸ MCP servers
-    /// is off. `install` writes the extension and its client and returns both paths.
+    /// is off. `install` writes the repo extension and returns its path.
     @MainActor
-    static func forAgents(settings: AppSettings, environment: [String: String] = ProcessInfo.processInfo.environment,
-                          install: () throws -> (extensionPath: String, clientPath: String) = MCPExtension.install) rethrows -> MCPLaunch? {
+    static func forAgents(settings: AppSettings, store: MCPStore,
+                          install: () throws -> String = MCPProjectExtension.installedPath) rethrows -> MCPLaunch? {
         guard settings.piMCPExtension else { return nil }
-        let installed = try install()
-        return MCPLaunch(extensionPath: installed.extensionPath, clientPath: installed.clientPath,
-                         configPath: ShepherdPaths.mcpConfigURL(environment: environment).path,
-                         cachePath: ShepherdPaths.mcpToolsCacheURL(environment: environment).path,
-                         useRepoConfig: settings.mcpProjectConfig)
+        var extensions = builtIns
+        var environment = store.launchEnvironment()
+        if settings.mcpProjectConfig {
+            extensions.append(try install())
+            environment["SHEPHERD_EXT_MCP_PROJECT"] = "1"
+        }
+        return MCPLaunch(extensions: extensions, environment: environment)
     }
 }
 
@@ -91,7 +94,7 @@ enum StatusExtension {
         // Child result delivery must run before the goal's final-settlement evaluator.
         let extensions = [extensionPath, ServiceTierExtension.path(in: home), instructions?.extensionPath, panesExtensionPath, reviewExtensionPath, subagentsExtensionPath,
                           childrenExtensionPath, GoalExtension.path(in: home), namerExtensionPath, design?.extensionPath, designReferences?.extensionPath,
-                          mcp?.extensionPath, browserExtensionPath, contextExtensionPath].compactMap { $0 }
+                          browserExtensionPath].compactMap { $0 } + (mcp?.extensions ?? []) + [contextExtensionPath].compactMap { $0 }
         let line = try PiLaunch.agent(home: home, cwd: cwd, sessionID: piSessionID, model: model, thinking: thinking?.rawValue,
                                       extensions: extensions, untrustedProject: PiLaunch.isHomeFolder(cwd, userHome: userHome))
         var env = [
@@ -120,14 +123,8 @@ enum StatusExtension {
         }
         // A thread's design references: design_get registers itself once it holds one.
         if let designReferences { env["SHEPHERD_DESIGN_REFS"] = designReferences.granted ? "granted" : "on" }
-        // Settings ▸ MCP servers: the extension reads the config and the tools cache the app keeps.
-        if let mcp {
-            env["SHEPHERD_EXT_MCP"] = mcp.extensionPath
-            env["SHEPHERD_EXT_MCP_CLIENT"] = mcp.clientPath
-            env["SHEPHERD_EXT_MCP_CONFIG"] = mcp.configPath
-            env["SHEPHERD_EXT_MCP_CACHE"] = mcp.cachePath
-            if mcp.useRepoConfig { env["SHEPHERD_EXT_MCP_PROJECT"] = "1" }
-        }
+        // Settings ▸ MCP servers: the Keychain values pi's MCP expands into its servers' env and headers.
+        if let mcp { env.merge(mcp.environment) { _, value in value } }
         // Settings ▸ Agents ▸ Trim old tool output: what the model is sent, never the thread (docs/context-budget.md).
         if let contextExtensionPath { env["SHEPHERD_EXT_CONTEXT"] = contextExtensionPath }
         // Fast or Standard is the agent's own (the host keeps its file), so every agent gets this.

@@ -94,7 +94,9 @@ rest. Shepherd writes, whenever they differ (`PiHome.install`):
 | `bin/pi` | The launcher: every pi Shepherd starts, and every `pi` an agent types, runs through it |
 | `restore-env.sh` | Gives an agent's shell commands back what the launcher set aside |
 | `.shepherd-pi-home` | The marker that names the folder as Shepherd's |
-| `settings.json` | Shepherd's keys only: `shellCommandPrefix` (sourcing `restore-env.sh`), the `skills` filter that turns off `~/.agents/skills` (below), the user's switched-on extensions under `extensions` beside `-builtin:mcp`, `-builtin:codemode` and `-builtin:tool-search` (pi 1.0's own MCP, codemode and tool search, which Shepherd's pi leaves off: [pi-engine.md](pi-engine.md#pi-10)), and `packages` removed |
+| `settings.json` | Shepherd's keys only: `shellCommandPrefix` (sourcing `restore-env.sh`), the `skills` filter that turns off `~/.agents/skills` (below), the user's switched-on extensions under `extensions` beside `-builtin:mcp`, `-builtin:codemode` and `-builtin:tool-search` (pi 1.0's own MCP, codemode and tool search, off for everything that starts pi without saying otherwise; an agent's launch turns MCP and tool search on: [pi-engine.md](pi-engine.md#pi-10)), and `packages` removed |
+| `mcp.json` | pi's MCP servers, derived from Settings ▸ MCP servers' file (`~/.config/mcp/mcp.json`) by `MCPPiConfig`, written whenever it differs by temp file and rename (0600), never holding a secret value; `bin/pi` refuses `pi mcp add` and `pi mcp remove` because they would write it ([mcp.md](mcp.md)) |
+| `mcp-auth.json` | pi's own MCP sign-ins (`pi mcp login`), 0600; pi writes it, Shepherd only reads whether a server has an entry |
 | `keychain-certificates.pem` | Every certificate the Mac's keychain trusts (a private CA for an internal proxy or MCP server), PEM, so Node — which otherwise trusts only its own bundled CAs — can trust it too. Missing, or empty, when the keychain holds none |
 
 pi writes `settings.json` too (the TUI's `/settings`, the first `/login`), so Shepherd changes it
@@ -105,15 +107,17 @@ makes pi load the user's global npm install, even offline. A `bin/` that links o
 refused rather than written through, and the agent waits on the reason.
 
 **pi's built-in extensions.** pi 1.0 loads MCP, codemode, tool search and llama.cpp as built-in
-extensions in every session, named `builtin:<name>` in the `extensions` setting. Shepherd's MCP
-manages the servers, so `PiHome.install` appends `-builtin:mcp`, `-builtin:codemode` and
-`-builtin:tool-search` unless an entry already names that built-in in any form: `+builtin:<name>`
-in this `settings.json` turns one back on. Otherwise pi would also read `<home>/mcp.json` and a
-trusted project's `.pi/mcp.json`, start those servers and offer `codemode` (evidence and the
-details: [pi-engine.md](pi-engine.md#pi-10)). llama.cpp, a provider pi has always shipped, stays.
-Those entries are not extensions anyone installed: Settings ▸ Pi and a host's `hostSettings`
-leave them out of the installed list, and the copy from "your pi" never reads them as files.
-A launch that passes `--no-extensions` (drafts, native children) loads no built-in at all.
+extensions in every session, named `builtin:<name>` in the `extensions` setting. `PiHome.install`
+appends `-builtin:mcp`, `-builtin:codemode` and `-builtin:tool-search` unless an entry already names
+that built-in in any form (`+builtin:<name>` in this `settings.json` turns one back on), so a launch
+that says nothing about them (the model catalog, a draft, a `pi` an agent types) loads none. **An
+agent's launch passes `-e builtin:mcp -e builtin:tool-search`**, which pi lets win over those
+switches, while Settings ▸ Pi ▸ Bundled extensions ▸ MCP servers is on, and the servers it starts
+are the ones in `<home>/mcp.json` ([mcp.md](mcp.md); evidence: [pi-engine.md](pi-engine.md#pi-10)).
+llama.cpp, a provider pi has always shipped, stays. Those entries are not extensions anyone
+installed: Settings ▸ Pi and a host's `hostSettings` leave them out of the installed list, and
+the copy from "your pi" never reads them as files. A launch that passes `--no-extensions` (drafts,
+native children) loads no built-in unless it names one.
 
 **Only its own home.** pi reads skills from `$HOME/.agents/skills` besides its agent folder, for
 every session (pi: `core/package-manager.js`, `addAutoDiscoveredResources`: `join(getHomeDir(),
@@ -160,8 +164,11 @@ environment, which would strip an agent's `npm test` of the user's `NODE_OPTIONS
 one of them) and exports each variable the launcher set aside, as it was — so a command sees
 `NODE_EXTRA_CA_CERTS` exactly as the user had it, never Shepherd's keychain export.
 
-The MCP probe and the sign-in bridge (`PiSignIn.swift`) run the engine's node directly, not
-through the launcher, so they carry the same fallback themselves (`PiLaunch.clearedEnvironment`).
+The sign-in bridge (`PiSignIn.swift`) runs the engine's node directly, not through the launcher,
+so it carries the same fallback itself (`PiLaunch.clearedEnvironment`). Settings ▸ MCP servers runs
+pi's own `mcp` subcommands through the launcher (`PiLaunch.mcp`: `list --json`, `login`, `logout`,
+from inside the home): the launcher passes `mcp` on as the engine's first argument, with no `-e` before
+it (pi finds a subcommand only there), after refusing `mcp add` and `mcp remove`.
 
 Every launch is built by `PiLaunch` (pinned in `PiLaunchTests`):
 
@@ -194,9 +201,6 @@ socket and design are the parent's alone). The one exception is the managed prov
 What Shepherd sets per agent through its own variables and extensions reaches no helper: a helper
 runs with pi's defaults for its model (a service tier Shepherd sets for an agent, for one, isn't
 applied to its helpers).
-The MCP probe runs on the engine's node too, in a login shell (so the servers it starts find what
-an agent's would), and drops the shell's `PI_*`, `JITI_*`, `NODE_*` and `OPENSSL_CONF` first, as
-the launcher does: a `NODE_OPTIONS` hook of the user's never loads into Shepherd's node.
 
 ## Your pi
 
@@ -429,7 +433,9 @@ refuses pi's own package commands, and the pins turn off pi's update check and i
   (`PiSessionAdoptionTests`), and no RPC command naming a session file (`RPCWireTests`).
 - Integration: the launcher run for real (`PiLauncherTests`: the pins and the stash, restoring
   in bash and zsh, refusals, a missing engine, a symlinked session folder or `bin/`, the marker,
-  startup files that name Shepherd's home as theirs, the MCP probe's environment), and the
+  startup files that name Shepherd's home as theirs, the sign-in bridge's environment, `pi mcp`
+  passed through without a `-e` and its `add`/`remove` refused, the MCP secrets unset for the
+  model's shell in bash and zsh, the derived `mcp.json` written 0600 and a link replaced), and the
   app launching through the stub engine despite the decoy startup files, adopting a restored
   agent's conversation while "your pi" stays byte-identical with no lock taken
   (`PiHomeLaunchTests`).
@@ -440,7 +446,10 @@ refuses pi's own package commands, and the pins turn off pi's update check and i
   never started with `/mcp` not offered, started with `+builtin:mcp`, a trusted project's
   `.pi/mcp.json` the same, and `--no-extensions` loading no built-in
   (`Tests/Extensions/builtin-extensions.test.mjs`, in CI; and, through the shipped engine,
-  `EngineSmokeTests.piBuiltInMCPIsOffInShepherdsHomeUnlessSwitchedOn`).
+  `EngineSmokeTests.piBuiltInMCPIsOffInShepherdsHomeUnlessSwitchedOn` and
+  `piRunsTheDerivedMCPFileOnlyWhenAnAgentsLaunchSwitchesItOn`: the launch's `-e` switches pi's MCP
+  on over the home's switches, a server behind the `zsh` wrapper gets its own secret and no other,
+  and `pi mcp list --json` works through the launcher).
 - Engine smoke (opt-in, `SHEPHERD_ENGINE_SMOKE`): through the real launcher, an RPC `bash`
   command finds `pi` at the launcher and gets back a `NODE_OPTIONS` pi never saw; an agent in
   the user's home folder, whose pi names packages and extensions, loads none of their code, runs

@@ -597,20 +597,26 @@ final class RPCThreadState {
             }) : [])
             // The ring moves once per reply, never per token.
             refreshStats()
-        case .toolExecutionStart(let id, let name, let args):
+        case .toolExecutionStart(let id, let name, let args, let parent):
             if Self.asksUser(name) {
                 askingCalls.removeAll { $0.id == id }
                 askingCalls.append((id, Self.shortReason(in: args)))
             }
+            // A call nested in another (a script calling tools) is part of its parent's row: it has
+            // no row of its own, and no line of its own in the thread.
+            guard parent == nil else { return }
             streamingCalls[id] = nil
             upsertTool(id: id, name: name, args: args, content: [], isError: nil, status: "running")
-        case .toolExecutionUpdate(let id, let name, let args, let partial):
+        case .toolExecutionUpdate(let id, let name, let args, let partial, let parent):
+            guard parent == nil else { return }
             upsertTool(id: id, name: name, args: args, content: partial?.content ?? [], isError: nil, status: "running")
-        case .toolExecutionEnd(let id, let name, let result, let isError):
+        case .toolExecutionEnd(let id, let name, let result, let isError, let parent):
             let stopped = isError && stopRequested
-            if stopped { stoppedCalls.insert(id) }
             askingCalls.removeAll { $0.id == id }
-            upsertTool(id: id, name: name, args: nil, content: result?.content ?? [], isError: isError, status: stopped ? "aborted" : "complete")
+            if parent == nil {
+                if stopped { stoppedCalls.insert(id) }
+                upsertTool(id: id, name: name, args: nil, content: result?.content ?? [], isError: isError, status: stopped ? "aborted" : "complete")
+            }
             onToolFinished?(name)
         case .queueUpdate(let steering, let followUp):
             piQueueChanged(steering: steering, followUp: followUp)

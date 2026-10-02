@@ -290,7 +290,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .skills: ["Installed skills", "Browse skills.sh", "Add from repo",
                        "Skills in the / menu", "Same skills on every host", "Update automatically"]
         case .mcp: ["Servers", "Add server", "Import…", "How the agent uses them", "Same servers on every host",
-                    "Open sign-in pages by itself", "Also use a repo’s .mcp.json", "Hosts"]
+                    "Also use a repo’s .mcp.json", "Hosts"]
         case .remote: ["Hosts", "Add host", "Listener", "Token"]
         case .keyboard: ["Shortcuts", "Reset all shortcuts"]
         case .advanced: ["Workspace state", "Extension socket", "Update channel", "Check for updates", "Reset settings"]
@@ -344,8 +344,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .mcp: ["Servers": ["mcp", "model context protocol", "tools", "connectors", "mcp.json"],
                     "Add server": ["remote", "local", "url", "command", "stdio", "http", "sse"],
                     "Import…": ["claude desktop", "cursor", "vs code", "paste json", "mcpServers"],
-                    "How the agent uses them": ["tokens", "prompt", "budget", "proxy"],
-                    "Open sign-in pages by itself": ["oauth", "sign in", "login", "browser"],
+                    "How the agent uses them": ["tokens", "prompt", "budget", "search", "direct", "tool search", "exposure", "oauth", "sign in", "login"],
                     "Also use a repo’s .mcp.json": ["project", "repository", ".mcp.json"]]
         case .remote: ["Hosts": ["vpn", "tailscale", "ssh"], "Listener": ["port", "serve"]]
         case .keyboard: ["Shortcuts": ["hotkey", "keybinding", "chord", "steer", "queue"]]

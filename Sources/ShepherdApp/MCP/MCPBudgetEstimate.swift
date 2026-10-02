@@ -1,33 +1,53 @@
 import Foundation
-import ShepherdProtocol
 
-/// What MCP servers cost in every prompt. Through the one `mcp` tool, all of them together cost
-/// about 200 tokens; a server set to "Each tool on its own" adds each tool's name, description
-/// and schema, at about four bytes a token.
+/// What MCP servers cost in every prompt (docs/mcp.md › What a prompt costs). pi lists only each
+/// tool's name, so these are measured figures per server, not a sum over the tools' schemas:
+/// a server that is searched adds a line to the system prompt (and the first of them pulls in the
+/// `tool_search` declaration), and a server set to Direct declares each of its tools.
 enum MCPBudgetEstimate {
-    static let proxyTokens = 200
-
-    static func tokens(for tool: MCPToolInfo) -> Int {
-        let schema = (try? Self.encoder.encode(tool.inputSchema)).map { $0.count } ?? 2
-        let bytes = tool.name.utf8.count + tool.description.utf8.count + schema
-        return (bytes + 3) / 4 + 10
+    struct Server: Equatable {
+        var name: String
+        var direct: Bool
+        /// Its tools the agent may use: all of them, or the ones chosen.
+        var toolCount: Int
     }
 
-    /// The server's tools on their own, limited to the chosen ones.
-    static func directTokens(_ tools: [MCPToolInfo], chosen: [String]?) -> Int {
-        visible(tools, chosen: chosen).reduce(0) { $0 + tokens(for: $1) }
+    /// `tool_search`'s declaration and the `mcp_servers` section's frame: 889 characters over a
+    /// prompt with no MCP, with one server, on pi 1.0.
+    static let searchBaseTokens = 200
+    /// One searched server's line in that section.
+    static let searchServerTokens = 15
+    /// One declared tool, its name, description and schema: 211 tokens on the stand-in catalog the
+    /// tests measure (845 characters), and real servers' tools run larger or smaller.
+    static let directToolTokens = 200
+
+    static func directTokens(count: Int) -> Int { count * directToolTokens }
+
+    /// The tokens every prompt carries, and a line saying why.
+    static func estimate(_ servers: [Server]) -> (tokens: Int, note: String) {
+        guard !servers.isEmpty else {
+            return (0, "No servers yet. A server you add costs almost nothing until the agent needs it.")
+        }
+        let searched = servers.filter { !$0.direct }
+        let direct = servers.filter(\.direct)
+        let search = searched.isEmpty ? 0 : searchBaseTokens + searched.count * searchServerTokens
+        let declared = direct.reduce(0) { $0 + directTokens(count: $1.toolCount) }
+        let note: String
+        if direct.isEmpty {
+            note = "Tools stay out of the prompt until the agent searches for one; a search then adds the best eight for the rest of the thread."
+        } else {
+            let names = direct.map(\.name).formatted(.list(type: .and))
+            let tools = direct.reduce(0) { $0 + $1.toolCount }
+            note = "\(names) \(direct.count == 1 ? "is" : "are") set to Direct, which declares \(tools) tool\(tools == 1 ? "" : "s") in every prompt."
+                + (searched.isEmpty ? "" : " The rest are searched.")
+        }
+        return (search + declared, note)
     }
 
-    /// The whole prompt: 200 when any server goes through the one tool, plus every direct tool.
-    static func total(_ servers: [(exposure: MCPExposure, tools: [MCPToolInfo], chosen: [String]?)]) -> Int {
-        let proxy = servers.contains { $0.exposure == .proxy } ? proxyTokens : 0
-        return servers.filter { $0.exposure == .direct }.reduce(proxy) { $0 + directTokens($1.tools, chosen: $1.chosen) }
-    }
-
-    static func visible(_ tools: [MCPToolInfo], chosen: [String]?) -> [MCPToolInfo] {
+    static func visible(_ tools: [String], chosen: [String]?) -> [String] {
         guard let chosen else { return tools }
         let set = Set(chosen)
-        return tools.filter { set.contains($0.name) }
+        return tools.filter { set.contains($0) }
     }
 
     /// Under 1,000 to the nearest 10, above it to the nearest 100.
@@ -45,10 +65,4 @@ enum MCPBudgetEstimate {
     static func longLabel(_ tokens: Int) -> String {
         "~\(rounded(tokens).formatted(.number.grouping(.automatic))) tokens"
     }
-
-    private static let encoder: JSONEncoder = {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        return encoder
-    }()
 }

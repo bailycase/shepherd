@@ -409,6 +409,17 @@ tools merge only with the same tool. Consecutive lines form one part of the turn
   | Run (bash) | `terminal` | "Ran tests and a build" · "17 passed · build ok · 1m 02s"; "Committed" · "3 files changed" (Running); "Committed and pushed"; "Ran 2 commands" | "Running tests", "Building", "Committing", "Pushing", "Running" |
   | Subagents (spawns without a card) | `arrow.triangle.branch` | "Started 2 subagents" · "reviewer · tests" | "Starting a subagent" |
   | Other | `wrench.adjustable` | "Used <tool>" or "Used <tool> n times" | "Running <tool>" |
+  | MCP (a server's tool, `mcp__<server>__<tool>`, `NativeMCPActivity`) | `wrench.adjustable` | "Called search_issues" · "github · label:bug"; "Called search_issues 3 times" · "github" | "Calling search_issues" · "github · label:bug" |
+  | Tool search (`tool_search`, which loads deferred MCP tools) | `wrench.adjustable` | "Searched tools" · "“issues” · “pull requests”" | "Searching tools" |
+
+  An MCP call names pi's own tool and server (characters outside letters, digits and `_` are already
+  `_`); the meta adds what it was asked, the first of `query`, `q`, `url`, `path`, `pattern`, `name`,
+  `title`, `text` or `command`, cut to its first line. Failed it reads "<tool> failed" (a tool pi
+  never loaded: "Tool mcp__x__y not found"), "Tool search failed", and stopped "<tool> stopped",
+  "Tool search stopped". Expanded, a search's rows say "search", its query and "8 loaded", and its output
+  lists the tools it loaded. A call nested in another (a script's calls to tools, pi's
+  `parentToolCallId`) has no line of its own: its parent's line stands for it. Not on a board;
+  drawn from the Other line's rules.
 
   Shell commands are classified by what they run (`nativeCommandClasses`: tests, build, commit,
   push), with setup and pipes (`cd`, `| tail`) ignored and test counts parsed from the output

@@ -44,7 +44,7 @@ Shepherd Nightly, or wherever `SHEPHERD_SUPPORT_DIR` points).
   the other end (the pid the kernel recorded when it connected) is the `pi` it started for that
   agent. A process an agent starts, such as its bash tool, can read `SHEPHERD_SOCKET` and the
   other agents' ids, and is refused for status, names, terminals, messages to peers, review,
-  design and MCP requests and the browser, and cannot displace the real connection.
+  design requests and the browser, and cannot displace the real connection.
 - **What is not covered.** The automation requests name no agent, so any process running as the
   same macOS user that can reach the socket can list, create, edit, start and stop automations.
   A same-user process that takes over an agent's own `pi` (a debugger, injection) is that agent.
@@ -131,6 +131,25 @@ above) and neither has a switch yet.
   secrets.
 - **iOS client (internal TestFlight; see [docs/ios](docs/ios/README.md)):** the host's name, address, and
   port go in UserDefaults. The token goes in the Keychain, device-only, available when unlocked.
+
+### MCP server secrets
+
+- **Where they live.** A header or environment value written as `${keychain:<server>/<NAME>}` in
+  Settings ▸ MCP servers' file is stored in the Keychain on the host, never in the file. At an
+  agent's launch the app puts the values the derived `mcp.json` refers to into pi's environment as
+  `SHEPHERD_MCP_SECRET_<SERVER>_<NAME>`; the derived file in Shepherd's pi home holds only the
+  names. OAuth tokens are pi's (`mcp-auth.json` in that home, mode `0600`).
+- **Who can read them.** The model's shell commands run with every `SHEPHERD_MCP_SECRET_*`
+  unset, and a local server is started so that it gets only the secrets its own entry names.
+  Another process of the same user can still read a running process's environment (`ps eww`), and a
+  server you point at a secret can do anything with it: this is the trust you gave the server.
+  Native subagents and drafts get none.
+- **A repo's own servers.** With Settings ▸ MCP servers ▸ Also use a repo's .mcp.json on (off by
+  default) a repo's file can start any command as you, so turn it on only for repos you trust.
+  Shepherd still keeps the app's values from it: its servers start with every Keychain value
+  blanked, and its `env`, `headers` and `command` cannot refer to a `SHEPHERD_*` variable
+  (`Tests/Extensions/mcp-project.test.mjs`). pi's trust prompt for a project's `.pi/mcp.json` is
+  pi's own ([docs/mcp.md](docs/mcp.md)).
 
 ### Everything else Shepherd writes
 

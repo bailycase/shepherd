@@ -532,11 +532,13 @@ final class ShepherdViewModel {
         self.skills = ClientSkills(defaults: sidebarDefaults)
         self.slashCommands = SlashCommandsModel(catalog: server.slashCommandCatalog, hidden: self.settings.hiddenSlashCommands)
         self.localSkills = LocalSkillsClient(store: server.skills)
-        self.mcp = mcp ?? MCPStore(dependencies: .app(engine: server.pi.engine, home: server.pi.files, clientPath: ShepherdViewModel.mcpClientPath,
-                                                      openURL: { NSWorkspace.shared.open($0) },
+        self.mcp = mcp ?? MCPStore(dependencies: .app(pi: server.pi, openURL: { NSWorkspace.shared.open($0) },
                                                       copy: ShepherdViewModel.copyToPasteboard))
         self.installThemeMarker = themeInstaller
         self.sessions = TerminalSessionStore(server: server)
+        self.sessions.mcpLaunch = { [settings = self.settings, mcp = self.mcp] in
+            try MCPLaunch.forAgents(settings: settings, store: mcp)
+        }
         self.yourPi = yourPi ?? YourPiModel(pi: server.pi)
         self.piAuth = piAuth ?? PiAuthStore(pi: server.pi)
         self.selectedSpaceID = nil
@@ -574,7 +576,6 @@ final class ShepherdViewModel {
         server.onSkillsChanged = { [weak skills = self.skills] snapshot in
             MainActor.assumeIsolated { skills?.hostChanged(ShepherdViewModel.thisMacSkills, snapshot) }
         }
-        wireMCP()
         server.onSuggestionsChanged = { [weak suggestions = self.suggestions] snapshot in
             MainActor.assumeIsolated { suggestions?.serverChanged(snapshot) }
         }
@@ -929,7 +930,6 @@ final class ShepherdViewModel {
         if didAdopt, !didAutoStartAutomations {
             didAutoStartAutomations = true
             autoStartAutomations()
-            if restoresAgentsAtLaunch { mcp.probeAlwaysOn() }
         }
     }
 
@@ -1030,7 +1030,6 @@ final class ShepherdViewModel {
         reconcileSidebarCompletions()
         threadStores.prune(live: Set(state.agents.map(\.id)))
         browsers.prune(live: Set(state.agents.map(\.id)))
-        mcp.retainReports(of: Set(state.agents.map(\.id)))
         notifyLocalQuestions()
         checkouts?.sync(agents: state.agents.map(\.id))
         pruneReviewSessions()
@@ -1054,7 +1053,6 @@ final class ShepherdViewModel {
         if !didAutoStartAutomations, !holdsForWelcome {
             didAutoStartAutomations = true
             autoStartAutomations()
-            if restoresAgentsAtLaunch { mcp.probeAlwaysOn() }
         }
         // A design on screen that went (deleted here, or by another device on this host): the
         // window goes back to Designs (DesignDeleted), not to another thread.

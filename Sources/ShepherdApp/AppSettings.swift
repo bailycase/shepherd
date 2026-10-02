@@ -58,7 +58,6 @@ final class AppSettings {
         static let autoNameAgents = "shepherd.agent.autoName"
         static let skillsInSlashMenu = "shepherd.skills.slashMenu"
         static let hiddenSlashCommands = "shepherd.pi.slashCommands.hidden"
-        static let mcpOpenSignInPages = "shepherd.mcp.openSignInPages"
         static let mcpProjectConfig = "shepherd.mcp.projectConfig"
         static let mcpSameEverywhere = "shepherd.mcp.sameEverywhere"
         static let queueDelivery = "shepherd.agent.queueDelivery"
@@ -111,7 +110,7 @@ final class AppSettings {
             worktreeAutoCommit, worktreeGeneratePRDescription,
             worktreeDeleteLocalBranch, worktreeAutoMergePR,
             worktreeMergeMethod, skillsInSlashMenu, hiddenSlashCommands,
-            mcpOpenSignInPages, mcpProjectConfig, mcpSameEverywhere,
+            mcpProjectConfig, mcpSameEverywhere,
             goalsEnabled, designToolEnabled, implementOpensThread,
         ]
 
@@ -179,12 +178,6 @@ final class AppSettings {
     /// Off, they are left out of the menu (typing one still works; pi takes it).
     var skillsInSlashMenu: Bool {
         didSet { store.set(skillsInSlashMenu, forKey: Key.skillsInSlashMenu) }
-    }
-
-    /// Settings ▸ MCP servers ▸ Open sign-in pages by itself: an agent reaching a server that
-    /// needs sign-in opens the sign-in sheet and the browser. Off, only the row changes.
-    var mcpOpenSignInPages: Bool {
-        didSet { store.set(mcpOpenSignInPages, forKey: Key.mcpOpenSignInPages) }
     }
 
     /// Settings ▸ MCP servers ▸ Also use a repo's .mcp.json (`SHEPHERD_EXT_MCP_PROJECT`). Off,
@@ -493,7 +486,8 @@ final class AppSettings {
         store.removeObject(forKey: "shepherd.skills.directoryKey")
         // ↩ always queues while pi works now; the setting that chose between that and steering is gone.
         store.removeObject(forKey: "shepherd.agent.returnWhileWorking")
-        mcpOpenSignInPages = store.object(forKey: Key.mcpOpenSignInPages) as? Bool ?? false
+        // pi reports nothing an agent could open a sign-in page from: Settings ▸ MCP servers shows what needs you.
+        store.removeObject(forKey: "shepherd.mcp.openSignInPages")
         mcpProjectConfig = store.object(forKey: Key.mcpProjectConfig) as? Bool ?? false
         mcpSameEverywhere = store.object(forKey: Key.mcpSameEverywhere) as? Bool ?? true
         queueDelivery = store.string(forKey: Key.queueDelivery)
@@ -592,7 +586,6 @@ final class AppSettings {
         autoNameAgents = Defaults.autoNameAgents
         skillsInSlashMenu = Defaults.skillsInSlashMenu
         hiddenSlashCommands = []
-        mcpOpenSignInPages = false
         mcpProjectConfig = false
         mcpSameEverywhere = true
         queueDelivery = Defaults.queueDelivery

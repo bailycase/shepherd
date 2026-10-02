@@ -55,6 +55,15 @@ public enum PiLaunch {
              + " --mode rpc --no-session --no-tools --no-skills --no-prompt-templates --no-themes --no-context-files --no-approve")
     }
 
+    /// `pi mcp <arguments>` from inside the home, so no project's `.pi` applies: what Settings ▸
+    /// MCP servers runs for a server's state and tools (`list --json`) and for signing in and out
+    /// (`login <server>`, `logout <server>`). pi's own MCP does the work; the launcher passes
+    /// `mcp` to the engine as its first argument (a `-e` before it would hide the subcommand).
+    public static func mcp(home: PiHome, arguments: [String]) -> Line {
+        Line(script: "cd -- \(quoted(home.directory.path)) && exec \(quoted(home.launcher.path)) mcp"
+             + arguments.map { " " + quoted($0) }.joined())
+    }
+
     /// Whether `cwd` is the user's home folder, which no agent's pi trusts as a project.
     public static func isHomeFolder(_ cwd: String, userHome: String) -> Bool {
         PiHome.canonical(cwd) == PiHome.canonical(userHome)
@@ -77,16 +86,6 @@ public enum PiLaunch {
     /// How a refused start begins its one line, and exits.
     public static let refusalPrefix = "Shepherd won't start pi: "
     public static let refusedExitCode: Int32 = 78
-
-    /// Settings ▸ MCP servers' probe: the agents' MCP client, run by the engine's node with
-    /// `probe`, in a login shell, so the servers it starts find what an agent's would. Like the
-    /// launcher, it drops the startup files' pi, jiti and Node settings first (keeping the user's
-    /// own `NODE_EXTRA_CA_CERTS`, else falling back to `home`'s keychain export): an agent's
-    /// client never sees them, and a `NODE_OPTIONS` hook of the user's must not load into
-    /// Shepherd's node.
-    public static func mcpProbe(engine: PiEngine, home: PiHome, client: String) -> Line {
-        Line(script: clearedEnvironment(home: home) + "exec \(word(engine.node)) \"$0\" probe", positional: [client])
-    }
 
     /// Shell words that unset every `PI_*`, `JITI_*`, `NODE_*` and `OPENSSL_CONF` but
     /// `NODE_EXTRA_CA_CERTS`, for a line that runs Shepherd's own node after a login shell: keeps

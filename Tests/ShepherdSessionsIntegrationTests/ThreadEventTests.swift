@@ -617,6 +617,24 @@ struct ThreadEventTests {
         #expect(ended.timestamp != nil)
     }
 
+    @Test func aCallNestedInAnotherIsPartOfItsParentsRowAndHasNoRowOfItsOwn() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        _ = try await t.ready()
+        try await t.feed(
+            #"{"type":"tool_execution_start","toolCallId":"call_1","toolName":"codemode","args":{"code":"await tools.mcp__fake__echo({})"}}"#,
+            #"{"type":"tool_execution_start","toolCallId":"call_1/1","parentToolCallId":"call_1","toolName":"mcp__fake__echo","args":{"text":"x"}}"#,
+            #"{"type":"tool_execution_update","toolCallId":"call_1/1","parentToolCallId":"call_1","toolName":"mcp__fake__echo","partialResult":{"content":[]}}"#,
+            #"{"type":"tool_execution_end","toolCallId":"call_1/1","parentToolCallId":"call_1","toolName":"mcp__fake__echo","result":{"content":[{"type":"text","text":"echo: x"}]},"isError":false}"#)
+        let running = try await t.snapshot().provisional
+        #expect(running.map(\.entryID) == ["provisional:tool:call_1"])
+        #expect(running.first?.status == "running", "the parent's own state is not the nested call's")
+
+        try await t.feed(#"{"type":"tool_execution_end","toolCallId":"call_1","toolName":"codemode","result":{"content":[{"type":"text","text":"done"}]},"isError":false}"#)
+        let ended = try await t.snapshot().provisional
+        #expect(ended.map(\.entryID) == ["provisional:tool:call_1"] && ended.first?.status == "complete")
+    }
+
     @Test func atMostAPageOfProvisionalRowsIsKept() async throws {
         let t = try Thread()
         defer { t.stop() }

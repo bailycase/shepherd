@@ -7,47 +7,103 @@ import ShepherdUI
 import ShepherdTestKit
 @testable import ShepherdApp
 
-/// A probe that never runs: tests hand results to `finishProbe` themselves.
-struct NoProbe: MCPProbeRunner {
-    func run(input: Data, timeout: TimeInterval) async -> Data { Data(#"{"ok":false,"status":{"state":"error","message":"no"}}"#.utf8) }
+/// pi's `mcp` subcommands, scripted: records what Settings ran and with which environment, and answers
+/// from `reply` (its lines are heard as they would be streamed). `blocks` makes `login` wait for its
+/// task to be cancelled, as pi waits for a browser.
+final class FakeMCPCLI: MCPCLI, @unchecked Sendable {
+    struct Call: Equatable {
+        var arguments: [String]
+        var environment: [String: String]
+        var timeout: TimeInterval = 0
+    }
+
+    private let lock = NSLock()
+    private var recorded: [Call] = []
+    var reply: @Sendable ([String]) -> (lines: [String], result: MCPCLIResult) = { _ in ([], MCPCLIResult(status: 0, stdout: "", stderr: "")) }
+    var blocksLogin = false
+
+    var calls: [Call] { lock.withLock { recorded } }
+
+    func run(_ arguments: [String], environment: [String: String], timeout: TimeInterval,
+             onLine: (@Sendable (String) -> Void)?) async -> MCPCLIResult {
+        lock.withLock { recorded.append(Call(arguments: arguments, environment: environment, timeout: timeout)) }
+        let answer = reply(arguments)
+        for line in answer.lines { onLine?(line) }
+        if blocksLogin, arguments.first == "login" {
+            while !Task.isCancelled { try? await Task.sleep(for: .milliseconds(5)) }
+            return MCPCLIResult(status: 143, stdout: answer.result.stdout, stderr: "")
+        }
+        return answer.result
+    }
+
+    /// `pi mcp list --json` printing `servers`, one `(name, state, tools, error)` each.
+    static func list(_ servers: [(name: String, state: String, tools: [String], error: String?)], errors: [String] = []) -> MCPCLIResult {
+        let items = servers.map { server -> [String: Any] in
+            var item: [String: Any] = ["name": server.name, "scope": "global", "enabled": server.state != "disabled", "exposure": "deferred",
+                                       "transport": "x", "state": server.state, "tools": server.tools]
+            if let error = server.error { item["error"] = error }
+            return item
+        }
+        let data = (try? JSONSerialization.data(withJSONObject: ["servers": items, "errors": errors])) ?? Data()
+        return MCPCLIResult(status: 0, stdout: String(decoding: data, as: UTF8.self), stderr: "")
+    }
 }
 
-/// Answers token requests from memory, the way an authorization server would.
-final class TokenEndpointStub: MCPHTTP, @unchecked Sendable {
-    let lock = NSLock()
-    var requests: [URLRequest] = []
-    var body: String
-    var status: Int
+/// What the store's dependencies read and write, which a test changes while the store runs.
+final class MCPHarnessState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _prepareProblem: String?
+    private var _auth: Data?
+    private var _written: [Data] = []
+    private var _opened: [URL] = []
 
-    init(body: String, status: Int = 200) {
-        self.body = body
-        self.status = status
+    var prepareProblem: String? {
+        get { lock.withLock { _prepareProblem } }
+        set { lock.withLock { _prepareProblem = newValue } }
     }
-
-    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-        lock.withLock { requests.append(request) }
-        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: [:])!
-        return (Data(body.utf8), response)
+    var auth: Data? {
+        get { lock.withLock { _auth } }
+        set { lock.withLock { _auth = newValue } }
     }
+    var written: [Data] { lock.withLock { _written } }
+    var opened: [URL] { lock.withLock { _opened } }
+    func write(_ data: Data) { lock.withLock { _written.append(data) } }
+    func open(_ url: URL) { lock.withLock { _opened.append(url) } }
 }
 
-/// Deliberately ignores cancellation, like a response already received by the transport.
-private actor GatedTokenEndpoint: MCPHTTP {
-    private var reply: CheckedContinuation<Void, Never>?
-    private var started: CheckedContinuation<Void, Never>?
+@MainActor
+final class MCPStoreHarness {
+    let store: MCPStore
+    let cli: FakeMCPCLI
+    let secrets: InMemorySecretStore
+    let state = MCPHarnessState()
 
-    func waitForRequest() async {
-        if reply != nil { return }
-        await withCheckedContinuation { started = $0 }
+    init(config: String?, secrets: InMemorySecretStore = InMemorySecretStore(), cli: FakeMCPCLI = FakeMCPCLI(), prepareProblem: String? = nil) throws {
+        let directory = try makeScratchDirectory()
+        let url = directory.appendingPathComponent("mcp.json")
+        if let config { try Data(config.utf8).write(to: url) }
+        self.cli = cli
+        self.secrets = secrets
+        let state = state
+        state.prepareProblem = prepareProblem
+        var dependencies = MCPStore.Dependencies(
+            file: MCPConfigFile(url: url), secrets: secrets, http: URLSessionHTTP(), cli: cli,
+            preparePi: { state.prepareProblem }, authData: { state.auth },
+            openURL: { state.open($0) }, copy: { _ in }, now: { MCPFixtures.now })
+        dependencies.userHome = "/Users/test"
+        dependencies.writePiConfig = { state.write($0) }
+        store = MCPStore(dependencies: dependencies)
     }
 
-    func finish() { reply?.resume(); reply = nil }
-
-    func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-        await withCheckedContinuation { reply = $0; started?.resume(); started = nil }
-        return (Data(#"{"access_token":"late-token","expires_in":3600}"#.utf8),
-                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+    var written: [Data] { state.written }
+    var opened: [URL] { state.opened }
+    var auth: Data? {
+        get { state.auth }
+        set { state.auth = newValue }
     }
+    var rows: [MCPServerRowModel] { store.rows }
+
+    func row(_ name: String) throws -> MCPServerRowModel { try #require(store.rows.first { $0.name == name }) }
 }
 
 @MainActor
@@ -55,9 +111,9 @@ enum MCPFixtures {
     /// The contract's seven board servers.
     static let boardConfig = """
     { "mcpServers": {
-      "linear":  { "type": "http", "url": "https://mcp.linear.app/mcp", "shepherd": { "start": "whenUsed", "exposure": "proxy" } },
+      "linear":  { "type": "http", "url": "https://mcp.linear.app/mcp", "shepherd": { "exposure": "proxy" } },
       "sentry":  { "type": "http", "url": "https://mcp.sentry.dev/mcp" },
-      "notion":  { "type": "http", "url": "https://mcp.notion.com/mcp", "shepherd": { "start": "whenUsed" } },
+      "notion":  { "type": "http", "url": "https://mcp.notion.com/mcp" },
       "github":  { "type": "http", "url": "https://api.githubcopilot.com/mcp/",
                    "headers": { "Authorization": "Bearer ${GITHUB_TOKEN}" } },
       "postgres": { "command": "uvx", "args": ["postgres-mcp", "--access-mode=restricted"],
@@ -65,37 +121,19 @@ enum MCPFixtures {
       "playwright": { "command": "npx", "args": ["@playwright/mcp@latest"] },
       "grafana": { "command": "mcp-grafana", "args": ["--disable-write"],
                    "env": { "GRAFANA_URL": "https://grafana.acme.internal",
-                            "GRAFANA_SERVICE_ACCOUNT_TOKEN": "${keychain:grafana/GRAFANA_SERVICE_ACCOUNT_TOKEN}" },
-                   "shepherd": { "start": "whenUsed", "idleMinutes": 10 } }
+                            "GRAFANA_SERVICE_ACCOUNT_TOKEN": "${keychain:grafana/GRAFANA_SERVICE_ACCOUNT_TOKEN}" } }
     }}
     """
 
     static let now = Date(timeIntervalSince1970: 1_790_000_000)
 
-    static func token(resource: String = "https://mcp.linear.app/mcp", account: String? = "baily@acme.dev", scopes: [String] = ["read", "write"], expiresIn: Int64? = 3600_000,
-                      refreshedAgo: Int64 = 2 * 3600_000, refresh: String? = "r1") -> MCPOAuthToken {
-        let nowMs = MCPStore.ms(now)
-        return MCPOAuthToken(issuer: "https://auth.x", tokenEndpoint: "https://auth.x/token", clientID: "c", redirectURI: "http://127.0.0.1:1/callback",
-                             resource: resource, accessToken: "access", refreshToken: refresh,
-                             expiresAtMs: expiresIn.map { nowMs + $0 }, scopes: scopes, account: account, refreshedAtMs: nowMs - refreshedAgo)
+    static func harness(_ config: String? = boardConfig, secrets: InMemorySecretStore = InMemorySecretStore(),
+                        cli: FakeMCPCLI = FakeMCPCLI(), prepareProblem: String? = nil) throws -> MCPStoreHarness {
+        try MCPStoreHarness(config: config, secrets: secrets, cli: cli, prepareProblem: prepareProblem)
     }
 
-    static func store(_ config: String? = boardConfig, secrets: InMemorySecretStore = InMemorySecretStore(),
-                      http: MCPHTTP = TokenEndpointStub(body: "{}"), now: Date = now) throws -> MCPStore {
-        let directory = try makeScratchDirectory()
-        let url = directory.appendingPathComponent("mcp.json")
-        if let config { try Data(config.utf8).write(to: url) }
-        return MCPStore(dependencies: MCPStore.Dependencies(
-            file: MCPConfigFile(url: url), cacheURL: directory.appendingPathComponent("tools.json"), secrets: secrets, http: http,
-            probe: MCPProbe(runner: NoProbe()), openURL: { _ in }, copy: { _ in }, now: { now }))
-    }
-
-    static func tokenJSON(_ token: MCPOAuthToken) -> String {
-        String(decoding: (try? JSONEncoder().encode(token)) ?? Data(), as: UTF8.self)
-    }
-
-    static func tools(_ names: [String]) -> [MCPToolInfo] {
-        names.map { MCPToolInfo(name: $0, description: "Does \($0).", inputSchema: .object(["type": .string("object")])) }
+    static func store(_ config: String? = boardConfig, secrets: InMemorySecretStore = InMemorySecretStore()) throws -> MCPStore {
+        try harness(config, secrets: secrets).store
     }
 }
 
@@ -117,185 +155,271 @@ struct MCPStoreTests {
         // grafana's token isn't in Keychain: the row asks for it before counting variables.
         #expect(try row(store, "grafana").signIn == .missingSecret("GRAFANA_SERVICE_ACCOUNT_TOKEN"))
         try secrets.set("t", for: "secret/grafana/GRAFANA_SERVICE_ACCOUNT_TOKEN")
+        store.reload()
         store.rebuild()
         #expect(try row(store, "grafana").signIn == .variables(2))
         #expect(try row(store, "postgres").endpoint == "uvx postgres-mcp --access-mode=restricted")
         #expect(try row(store, "linear").kind == .remote)
-        #expect(try row(store, "linear").tools == nil)
+        #expect(try row(store, "linear").tools == nil, "nothing is known until pi has been asked")
     }
 
-    @Test func oauthRowsFollowTheAppsOwnState() async throws {
-        let secrets = InMemorySecretStore(["oauth/linear": MCPFixtures.tokenJSON(MCPFixtures.token())])
-        let store = try MCPFixtures.store(secrets: secrets)
-        // Nothing known yet: a remote server without a header connects when used.
-        #expect(try row(store, "notion").signIn == .none)
-        #expect(try row(store, "notion").status == .idle)
-        // The server answered 401 to a probe: it uses OAuth and nobody signed in.
-        let notion = try #require(store.entry("notion"))
-        store.finishProbe("notion", entry: notion, result: .failed(MCPServerStatus(state: .needsSignIn), challenge: "Bearer"))
-        #expect(try row(store, "notion").signIn == .signIn)
-        #expect(try row(store, "notion").status == .needsYou)
-        // Signed in: the account shows, and a live agent's connection shows.
-        #expect(try row(store, "linear").signIn == .account("baily@acme.dev"))
-        #expect(try row(store, "linear").status == .idle)
-        store.receive(MCPServerReport(server: "linear", status: MCPServerStatus(state: .connected)), from: AgentID())
-        #expect(try row(store, "linear").signIn == .account("baily@acme.dev"))
+    // MARK: What pi reports
+
+    @Test func aRowShowsWhatPiListedForItsServer() async throws {
+        let cli = FakeMCPCLI()
+        cli.reply = { _ in ([], FakeMCPCLI.list([
+            (name: "linear", state: "connected", tools: ["list_issues", "create_issue", "get_issue"], error: nil),
+            (name: "sentry", state: "needs-auth", tools: [], error: nil),
+            (name: "notion", state: "failed", tools: [], error: "fetch failed\nconnect ECONNREFUSED"),
+            (name: "github", state: "connected", tools: ["search"], error: nil),
+            (name: "postgres", state: "disconnected", tools: [], error: nil),
+            (name: "playwright", state: "disabled", tools: [], error: nil),
+        ])) }
+        let secrets = InMemorySecretStore(["secret/postgres/DATABASE_URI": "x", "secret/grafana/GRAFANA_SERVICE_ACCOUNT_TOKEN": "y"])
+        let harness = try MCPFixtures.harness(secrets: secrets, cli: cli)
+        harness.store.refresh()
+        #expect(harness.rows.first?.status == .starting, "while pi is being asked, nothing is claimed")
+        await harness.store.settle()
+        let store = harness.store
         #expect(try row(store, "linear").status == .connected)
-        guard case .signedIn(let account, let scopes, let note) = store.details["linear"]?.signIn else {
-            Issue.record("linear isn't signed in")
-            return
-        }
-        #expect(account == "baily@acme.dev" && scopes == ["read", "write"] && note == "OAuth · refreshed 2h ago")
+        #expect(try row(store, "linear").tools == 3)
+        #expect(try row(store, "sentry").status == .needsYou)
+        #expect(try row(store, "sentry").signIn == .signIn)
+        #expect(try row(store, "notion").status == .error)
+        #expect(try row(store, "notion").note == .error("fetch failed"), "a row shows the first line; the detail has the rest")
+        #expect(store.details["notion"]?.message == "fetch failed\nconnect ECONNREFUSED")
+        #expect(try row(store, "github").status == .connected)
+        #expect(try row(store, "postgres").status == .idle)
+        #expect(try row(store, "grafana").status == .idle, "pi listed nothing for it")
+        #expect(store.connectedCount == 2)
+        #expect(store.count(.connected) == 2 && store.count(.needsYou) == 2)
+        #expect(store.details["linear"]?.toolNames == ["list_issues", "create_issue", "get_issue"])
+        #expect(store.details["linear"]?.hosts == [.init(name: "This Mac", detail: "connected", mark: .done)])
     }
 
-    /// The status table, in the contract's order: off, the app's OAuth state, a live connection,
-    /// a recent failure, starting, idle.
-    @Test func statusFollowsTheContractsOrder() throws {
-        let store = try MCPFixtures.store()
-        let agent = AgentID()
-        store.receive(MCPServerReport(server: "playwright", status: MCPServerStatus(state: .starting)), from: agent)
-        #expect(try row(store, "playwright").status == .starting)
-        #expect(try row(store, "playwright").note == .starting("Starting on This Mac…"))
-        store.receive(MCPServerReport(server: "playwright", status: MCPServerStatus(state: .error, message: "npx failed")), from: agent)
-        #expect(try row(store, "playwright").status == .error)
-        #expect(try row(store, "playwright").note == .error("npx failed"))
-        store.receive(MCPServerReport(server: "playwright", status: MCPServerStatus(state: .connected), tools: MCPFixtures.tools(["a", "b"])),
-                      from: AgentID())
-        #expect(try row(store, "playwright").status == .connected)
-        #expect(try row(store, "playwright").tools == 2)
-        #expect(store.count(.connected) == 1)
-        // The agent that connected goes away: its report no longer counts; the older error does.
-        store.retainReports(of: [agent])
-        #expect(try row(store, "playwright").status == .error)
-        store.retainReports(of: [])
-        #expect(try row(store, "playwright").status == .idle)
-        store.setEnabled("playwright", false)
-        #expect(try row(store, "playwright").status == .off)
-        #expect(try row(store, "playwright").enabled == false)
+    @Test func pisSignInShowsAsSignedInAndNeedsYouWhenItIsGone() async throws {
+        let cli = FakeMCPCLI()
+        cli.reply = { _ in ([], FakeMCPCLI.list([(name: "linear", state: "connected", tools: ["a"], error: nil)])) }
+        let harness = try MCPFixtures.harness(cli: cli)
+        harness.auth = Data(#"{"mcp__linear|https://mcp.linear.app/mcp": {"serverUrl": "https://mcp.linear.app/mcp"}}"#.utf8)
+        harness.store.refresh()
+        await harness.store.settle()
+        #expect(try row(harness.store, "linear").signIn == .account("Signed in"))
+        #expect(harness.store.details["linear"]?.signIn == .signedIn(account: nil, scopes: [], note: "OAuth · kept fresh by pi"))
+        // Another server of the same name and a different URL is not the same sign-in.
+        harness.auth = Data(#"{"mcp__linear|https://elsewhere/mcp": {}}"#.utf8)
+        harness.store.refresh()
+        await harness.store.settle()
+        #expect(try row(harness.store, "linear").signIn == .none)
     }
 
-    @Test func needsYouCountsSignInsErrorsAndMissingSecrets() throws {
-        let store = try MCPFixtures.store()
-        // postgres and grafana miss their Keychain values.
-        #expect(Set(store.rows(filter: .needsYou, query: "").map(\.name)) == ["postgres", "grafana"])
-        #expect(store.rows(filter: .all, query: "linear").map(\.name) == ["linear"])
-        #expect(store.rows(filter: .all, query: "npx").map(\.name) == ["playwright"])
-    }
-
-    @Test func credentialsResolveKeychainValuesAndRefuseWhatsMissing() async throws {
-        let secrets = InMemorySecretStore(["secret/postgres/DATABASE_URI": "postgres://db"])
-        let store = try MCPFixtures.store(secrets: secrets)
-        let agent = AgentID()
-        #expect(await store.credentials(for: MCPRequest(agentID: agent, server: "postgres", reason: .connect))
-            == .credentials(MCPCredentials(env: ["DATABASE_URI": "postgres://db"])))
-        #expect(await store.credentials(for: MCPRequest(agentID: agent, server: "grafana", reason: .connect))
-            == .failure(code: "missing_secret",
-                        message: "grafana’s GRAFANA_SERVICE_ACCOUNT_TOKEN isn’t set: add it in Settings ▸ MCP servers."))
-        #expect(await store.credentials(for: MCPRequest(agentID: agent, server: "nope", reason: .connect))
-            == .failure(code: "no_such_server", message: "nope isn’t in Settings ▸ MCP servers."))
-        store.setEnabled("postgres", false)
-        #expect(await store.credentials(for: MCPRequest(agentID: agent, server: "postgres", reason: .connect))
-            == .failure(code: "no_such_server", message: "postgres is off in Settings ▸ MCP servers."))
-    }
-
-    /// Secrets go by the reference's NAME, whatever key or text holds them, so the extension can put
-    /// each one wherever it appears: inside a longer value, in args, under another env key.
-    @Test func credentialsNameEachSecretByItsReference() async throws {
-        let config = #"""
-        { "mcpServers": { "db": { "command": "db-mcp", "args": ["--password=${keychain:db/PASSWORD}"],
-          "env": { "DSN": "postgres://app:${keychain:db/PASSWORD}@db/app", "SHARED": "${keychain:other/TOKEN}" } } } }
-        """#
-        let secrets = InMemorySecretStore(["secret/db/PASSWORD": "hunter2", "secret/other/TOKEN": "t"])
-        let store = try MCPFixtures.store(config, secrets: secrets)
-        #expect(await store.credentials(for: MCPRequest(agentID: AgentID(), server: "db", reason: .connect))
-            == .credentials(MCPCredentials(env: ["PASSWORD": "hunter2", "other/TOKEN": "t"])))
-    }
-
-    @Test func aFirst401MeansSignInAndA403MeansMoreAccess() async throws {
-        let secrets = InMemorySecretStore(["oauth/linear": MCPFixtures.tokenJSON(MCPFixtures.token(scopes: ["read"]))])
-        let store = try MCPFixtures.store(secrets: secrets)
-        var asked: [String] = []
-        store.onNeedsSignIn = { asked.append($0) }
-        let agent = AgentID()
-        #expect(await store.credentials(for: MCPRequest(agentID: agent, server: "notion", reason: .unauthorized, challenge: "Bearer"))
-            == .failure(code: "needs_sign_in", message: "notion needs you to sign in: Settings ▸ MCP servers."))
-        #expect(asked == ["notion"])
-        #expect(try row(store, "notion").signIn == .signIn)
-
-        let outcome = await store.credentials(for: MCPRequest(agentID: agent, server: "linear", reason: .forbidden,
-                                                               challenge: #"Bearer error="insufficient_scope", scope="read issues:write""#))
-        #expect(outcome == .failure(code: "needs_scopes",
-                                    message: "linear needs more access (issues:write): sign in again in Settings ▸ MCP servers."))
-        #expect(try row(store, "linear").signIn == .moreAccess(["issues:write"]))
-    }
-
-    @Test func aFreshTokenIsHandedOutAndAStaleOneRefreshedFirst() async throws {
-        let secrets = InMemorySecretStore([
-            "oauth/linear": MCPFixtures.tokenJSON(MCPFixtures.token()),
-            // Four minutes left: refreshed before it's handed out.
-            "oauth/sentry": MCPFixtures.tokenJSON(MCPFixtures.token(resource: "https://mcp.sentry.dev/mcp", expiresIn: 4 * 60_000)),
+    @Test func listRunsWithThePiFileWrittenAndTheSecretsInItsEnvironment() async throws {
+        let secrets = InMemorySecretStore(["secret/postgres/DATABASE_URI": "postgres://db", "secret/grafana/GRAFANA_SERVICE_ACCOUNT_TOKEN": "glsa"])
+        let cli = FakeMCPCLI()
+        cli.reply = { _ in ([], FakeMCPCLI.list([])) }
+        let harness = try MCPFixtures.harness(secrets: secrets, cli: cli)
+        harness.store.refresh()
+        await harness.store.settle()
+        let call = try #require(cli.calls.first)
+        #expect(call.arguments == ["list", "--json"])
+        #expect(call.environment["SHEPHERD_MCP_SECRET_POSTGRES_DATABASE_URI"] == "postgres://db")
+        #expect(call.environment["SHEPHERD_MCP_SECRET_GRAFANA_GRAFANA_SERVICE_ACCOUNT_TOKEN"] == "glsa")
+        #expect(Set((call.environment[PiHome.mcpSecretNamesKey] ?? "").split(separator: " ").map(String.init)) == [
+            "SHEPHERD_MCP_SECRET_POSTGRES_DATABASE_URI", "SHEPHERD_MCP_SECRET_GRAFANA_GRAFANA_SERVICE_ACCOUNT_TOKEN",
         ])
-        let http = TokenEndpointStub(body: #"{"access_token":"new","expires_in":3600,"refresh_token":"r2"}"#)
-        let store = try MCPFixtures.store(secrets: secrets, http: http)
-        let agent = AgentID()
-        let expires = MCPStore.ms(MCPFixtures.now) + 3600_000
-        #expect(await store.credentials(for: MCPRequest(agentID: agent, server: "linear", reason: .connect))
-            == .credentials(MCPCredentials(bearer: "access", expiresAtMs: expires)))
-        #expect(http.requests.isEmpty)
-
-        // sentry's is refreshed first, and the new token saved.
-        #expect(await store.credentials(for: MCPRequest(agentID: agent, server: "sentry", reason: .connect))
-            == .credentials(MCPCredentials(bearer: "new", expiresAtMs: expires)))
-        let request = try #require(http.requests.first)
-        #expect(http.requests.count == 1)
-        let form = String(decoding: request.httpBody ?? Data(), as: UTF8.self)
-        #expect(form.contains("grant_type=refresh_token") && form.contains("refresh_token=r1"))
-        #expect(store.token("sentry")?.refreshToken == "r2")
+        let file = String(decoding: try #require(harness.written.last), as: UTF8.self)
+        #expect(file.contains("\"linear\"") && file.contains("\"exposure\": \"deferred\""))
+        #expect(!file.contains("postgres://db") && !file.contains("glsa"), "no secret value reaches pi's file")
     }
 
-    @Test(arguments: ["signOut", "remove", "replace"])
-    func revokingCredentialsWhileRefreshWaitsNeverRestoresOrReturnsThem(action: String) async throws {
-        let secrets = InMemorySecretStore(["oauth/linear": MCPFixtures.tokenJSON(MCPFixtures.token(expiresIn: 1))])
-        let http = GatedTokenEndpoint()
-        let store = try MCPFixtures.store(secrets: secrets, http: http)
-        let waiting = Task { await store.credentials(for: MCPRequest(agentID: AgentID(), server: "linear", reason: .connect)) }
-        await http.waitForRequest()
-        switch action {
-        case "remove": store.remove("linear")
-        case "replace":
-            var entry = try #require(store.entry("linear"))
-            entry.url = "https://replacement.invalid/mcp"
-            try store.save(entry, replacing: "linear")
-        default: store.signOut("linear")
+    @Test func aHomeThatIsNotReadyRunsNothingAndSaysWhy() async throws {
+        let harness = try MCPFixtures.harness(prepareProblem: "Shepherd's pi home overlaps your pi.")
+        harness.store.refresh()
+        await harness.store.settle()
+        #expect(harness.cli.calls.isEmpty)
+        #expect(harness.written.isEmpty, "nothing of Shepherd's is written into a home that fails its guards")
+        #expect(harness.store.problem == "Shepherd's pi home overlaps your pi.")
+    }
+
+    @Test func aCommandThatFailsToRunIsShownOnThePageNotOnTheRows() async throws {
+        let cli = FakeMCPCLI()
+        cli.reply = { _ in ([], MCPCLIResult(status: 1, stdout: "", stderr: "Error: boom")) }
+        let harness = try MCPFixtures.harness(cli: cli)
+        harness.store.refresh()
+        await harness.store.settle()
+        #expect(harness.store.problem == "Couldn’t check the servers: Error: boom")
+        #expect(try row(harness.store, "linear").status == .idle)
+        cli.reply = { _ in ([], FakeMCPCLI.list([(name: "linear", state: "connected", tools: [], error: nil)])) }
+        harness.store.refresh()
+        await harness.store.settle()
+        #expect(harness.store.problem == nil, "a good answer clears it")
+    }
+
+    @Test func aListPiDoesNotAnswerInTimeIsAskedWithItsBoundAndShownAsSuch() async throws {
+        let cli = FakeMCPCLI()
+        cli.reply = { _ in ([], MCPCLIResult(status: 143, stdout: "", stderr: "", timedOut: true)) }
+        let harness = try MCPFixtures.harness(cli: cli)
+        harness.store.refresh()
+        await harness.store.settle()
+        #expect(cli.calls.map(\.timeout) == [MCPStore.listTimeout] && MCPStore.listTimeout == 45)
+        #expect(harness.store.problem == "Couldn’t check the servers: pi didn’t answer in 45 seconds.")
+        #expect(try row(harness.store, "linear").status == .idle, "the rows stay as they were, not failed")
+    }
+
+    @Test func serversPiCannotRunSayWhyOnTheirRowsAndAreNotCounted() async throws {
+        let config = #"{"mcpServers": {"old": {"type": "sse", "url": "https://x.example.com/sse"}, "fine": {"command": "x"}}}"#
+        let cli = FakeMCPCLI()
+        cli.reply = { _ in ([], FakeMCPCLI.list([(name: "fine", state: "connected", tools: ["a"], error: nil)])) }
+        let harness = try MCPFixtures.harness(config, cli: cli)
+        harness.store.refresh()
+        await harness.store.settle()
+        let old = try row(harness.store, "old")
+        #expect(old.status == .error)
+        if case .error(let text)? = old.note { #expect(text.contains("Streamable HTTP")) } else { Issue.record("no reason on the row") }
+        #expect(harness.store.details["old"]?.hosts.first?.detail == "can’t run")
+        #expect(harness.store.connectedCount == 1)
+        #expect(!String(decoding: try #require(harness.written.last), as: UTF8.self).contains("\"old\""))
+    }
+
+    @Test func askingAgainWhileOneRunsRunsOnceMoreAfterIt() async throws {
+        let cli = FakeMCPCLI()
+        cli.reply = { _ in ([], FakeMCPCLI.list([])) }
+        let harness = try MCPFixtures.harness(cli: cli)
+        harness.store.refresh()
+        harness.store.refresh()
+        harness.store.refresh()
+        await harness.store.settle()
+        #expect(cli.calls.count == 2, "three asks while one runs make one more run, not three")
+    }
+
+    @Test func aFreshListIsNotAskedForAgainUntilTheFileChangesOrItGrowsStale() async throws {
+        let cli = FakeMCPCLI()
+        cli.reply = { _ in ([], FakeMCPCLI.list([(name: "linear", state: "connected", tools: [], error: nil)])) }
+        let harness = try MCPFixtures.harness(cli: cli)
+        harness.store.refreshIfStale()
+        await harness.store.settle()
+        harness.store.refreshIfStale()
+        await harness.store.settle()
+        #expect(cli.calls.count == 1)
+        harness.store.setEnabled("sentry", false)
+        harness.store.refreshIfStale()
+        await harness.store.settle()
+        #expect(cli.calls.count == 2, "a changed file is asked about again")
+    }
+
+    @Test func switchingAServerOnAsksPiAndSwitchingItOffDoesNot() async throws {
+        let cli = FakeMCPCLI()
+        cli.reply = { _ in ([], FakeMCPCLI.list([])) }
+        let harness = try MCPFixtures.harness(cli: cli)
+        harness.store.setEnabled("linear", false)
+        await harness.store.settle()
+        #expect(cli.calls.isEmpty)
+        #expect(try row(harness.store, "linear").status == .off)
+        harness.store.setEnabled("linear", true)
+        await harness.store.settle()
+        #expect(cli.calls.count == 1)
+    }
+
+    // MARK: pi's file
+
+    @Test func theLaunchEnvironmentIsTheKeychainValuesTheFileRefersTo() throws {
+        let secrets = InMemorySecretStore(["secret/postgres/DATABASE_URI": "postgres://db"])
+        let harness = try MCPFixtures.harness(secrets: secrets)
+        let environment = harness.store.launchEnvironment()
+        #expect(environment["SHEPHERD_MCP_SECRET_POSTGRES_DATABASE_URI"] == "postgres://db")
+        #expect(environment["SHEPHERD_MCP_SECRET_GRAFANA_GRAFANA_SERVICE_ACCOUNT_TOKEN"] == nil, "a value that isn't in Keychain is not set")
+        #expect(Set((environment[PiHome.mcpSecretNamesKey] ?? "").split(separator: " ").map(String.init)) == [
+            "SHEPHERD_MCP_SECRET_POSTGRES_DATABASE_URI", "SHEPHERD_MCP_SECRET_GRAFANA_GRAFANA_SERVICE_ACCOUNT_TOKEN",
+        ], "a name is listed even while its value is missing, so the model's shell never sees it either")
+        #expect(!harness.written.isEmpty)
+    }
+
+    @Test func anEditReachesTheNextLaunch() throws {
+        let harness = try MCPFixtures.harness()
+        _ = harness.store.launchEnvironment()
+        harness.store.setExposure("linear", .direct)
+        _ = harness.store.launchEnvironment()
+        let text = String(decoding: try #require(harness.written.last), as: UTF8.self)
+        #expect(text.contains("\"direct\""))
+    }
+
+    // MARK: Sign-in
+
+    @Test func signingInRunsPisLoginAndTellsItsOutputAsTheSheetsSteps() async throws {
+        let cli = FakeMCPCLI()
+        cli.reply = { arguments in
+            if arguments.first == "login" {
+                return (["Sign in to MCP server \"notion\" in your browser:", "https://mcp.notion.com/authorize?x=1"],
+                        MCPCLIResult(status: 0, stdout: "Sign in to MCP server \"notion\" in your browser:\nhttps://mcp.notion.com/authorize?x=1\nSigned in to MCP server \"notion\" (14 tools).\n", stderr: ""))
+            }
+            return ([], FakeMCPCLI.list([(name: "notion", state: "connected", tools: Array(repeating: "t", count: 14), error: nil)]))
         }
-        let afterRevocation = secrets.value(for: "oauth/linear")
-        await http.finish()
-        let outcome = await waiting.value
-        #expect(secrets.value(for: "oauth/linear") == afterRevocation)
-        #expect(store.token("linear")?.accessToken != "late-token")
-        guard case .failure = outcome else { Issue.record("revoked bearer returned"); return }
+        let harness = try MCPFixtures.harness(cli: cli)
+        harness.store.beginSignIn("notion")
+        let flow = try #require(harness.store.signIn)
+        while !flow.succeeded { try await Task.sleep(for: .milliseconds(5)) }
+        #expect(cli.calls.first?.arguments == ["login", "notion", "--timeout", "300"])
+        #expect(flow.model.phase == .done)
+        #expect(flow.model.steps.map(\.state) == [.done, .done, .done])
+        #expect(flow.model.subtitle == "notion is connected: 14 tools.")
+        #expect(flow.authorizationURL?.absoluteString == "https://mcp.notion.com/authorize?x=1")
+        flow.openBrowserAgain()
+        #expect(harness.opened.map(\.absoluteString) == ["https://mcp.notion.com/authorize?x=1"])
+        await harness.store.settle()
+        #expect(cli.calls.map(\.arguments.first) == ["login", "list"], "the page asks pi again once signed in")
     }
 
-    @Test func aRefusedRefreshMeansExpired() async throws {
-        let secrets = InMemorySecretStore(["oauth/sentry": MCPFixtures.tokenJSON(MCPFixtures.token(resource: "https://mcp.sentry.dev/mcp"))])
-        let http = TokenEndpointStub(body: #"{"error":"invalid_grant"}"#, status: 400)
-        let store = try MCPFixtures.store(secrets: secrets, http: http)
-        #expect(await store.credentials(for: MCPRequest(agentID: AgentID(), server: "sentry", reason: .unauthorized))
-            == .failure(code: "expired", message: "sentry’s sign-in expired: sign in again in Settings ▸ MCP servers."))
-        #expect(try row(store, "sentry").signIn == .expired)
+    @Test func aSignInPiGivesUpOnShowsWhyAndSavesNothing() async throws {
+        let cli = FakeMCPCLI()
+        cli.reply = { _ in (["Sign in to MCP server \"notion\" in your browser:", "https://mcp.notion.com/authorize"],
+                            MCPCLIResult(status: 1, stdout: "", stderr: "Sign-in to MCP server \"notion\" was cancelled or not completed within 300 seconds.")) }
+        let harness = try MCPFixtures.harness(cli: cli)
+        harness.store.beginSignIn("notion")
+        let flow = try #require(harness.store.signIn)
+        while flow.model.phase == .waiting { try await Task.sleep(for: .milliseconds(5)) }
+        #expect(flow.model.phase == .failed)
+        #expect(flow.model.steps.map(\.state) == [.done, .done, .failed])
+        #expect(flow.model.steps.last?.title == "Signing in didn’t finish")
+        #expect(flow.model.subtitle == "Nothing was saved.")
+        #expect(flow.model.details?.contains("not completed within 300 seconds") == true)
+        #expect(!flow.succeeded)
     }
 
-    /// A token belongs to the server it was issued for: an entry moved to another origin signs
-    /// in again rather than hand the old server's token to the new one.
-    @Test func aTokenIsNeverHandedToAnotherServer() async throws {
-        let secrets = InMemorySecretStore(["oauth/linear": MCPFixtures.tokenJSON(MCPFixtures.token())])
-        let store = try MCPFixtures.store(secrets: secrets)
-        var linear = try #require(store.entry("linear"))
-        linear.url = "https://evil.example/mcp"
-        try store.save(linear, replacing: "linear")
-        #expect(await store.credentials(for: MCPRequest(agentID: AgentID(), server: "linear", reason: .connect))
-            == .failure(code: "needs_sign_in", message: "linear needs you to sign in: Settings ▸ MCP servers."))
-        #expect(try row(store, "linear").signIn == .signIn)
+    @Test func closingTheSheetEndsPisLoginAndClosingItTwiceIsFine() async throws {
+        let cli = FakeMCPCLI()
+        cli.blocksLogin = true
+        cli.reply = { _ in (["https://mcp.notion.com/authorize"], MCPCLIResult(status: 0, stdout: "", stderr: "")) }
+        let harness = try MCPFixtures.harness(cli: cli)
+        harness.store.beginSignIn("notion")
+        let flow = try #require(harness.store.signIn)
+        while flow.authorizationURL == nil { try await Task.sleep(for: .milliseconds(5)) }
+        harness.store.closeSignIn()
+        harness.store.closeSignIn()
+        #expect(harness.store.signIn == nil)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(!flow.succeeded, "a cancelled login never reads as signed in")
+    }
+
+    @Test func signingOutRunsPisLogoutAndAsksAgain() async throws {
+        let cli = FakeMCPCLI()
+        cli.reply = { _ in ([], FakeMCPCLI.list([(name: "linear", state: "needs-auth", tools: [], error: nil)])) }
+        let harness = try MCPFixtures.harness(cli: cli)
+        harness.store.signOut("linear")
+        while cli.calls.count < 2 { try await Task.sleep(for: .milliseconds(5)) }
+        await harness.store.settle()
+        #expect(cli.calls.map(\.arguments).prefix(2) == [["logout", "linear"], ["list", "--json"]])
+        #expect(try row(harness.store, "linear").signIn == .signIn)
+    }
+
+    @Test func pisOutputIsReadDefensively() {
+        #expect(MCPPiReport.parse("not json") == nil)
+        #expect(MCPPiReport.parse(#"{"servers": [{"name": "a"}, {"nope": 1}], "errors": ["x: server \"b\": legacy SSE"]}"#)
+            == MCPPiReport(servers: [.init(name: "a", enabled: true, state: "failed", tools: [], error: nil)], errors: ["x: server \"b\": legacy SSE"]))
+        let report = MCPPiReport(servers: [], errors: ["/h/mcp.json: server \"b\": legacy SSE transport is not supported", "plain error"])
+        #expect(report.configProblems == ["b": "legacy SSE transport is not supported"])
+        #expect(MCPPiAuth.hasCredentials(server: "my-server", url: "https://x/mcp", in: Data(#"{"mcp__my_server|https://x/mcp": {}}"#.utf8)))
+        #expect(!MCPPiAuth.hasCredentials(server: "a", url: "https://x/mcp", in: Data("[]".utf8)))
+        #expect(!MCPPiAuth.hasCredentials(server: "a", url: "https://x/mcp", in: nil))
     }
 
     // MARK: Editing
@@ -319,22 +443,22 @@ struct MCPStoreTests {
         #expect(store.json(for: "api")?.contains("${keychain:api/Authorization}") == true)
     }
 
-    @Test func removingAServerDeletesItsKeychainItems() throws {
+    @Test func removingAServerDeletesItsKeychainItemsAndPisSignIn() async throws {
         let secrets = InMemorySecretStore(["secret/postgres/DATABASE_URI": "x", "oauth/postgres": "{}", "secret/grafana/T": "y"])
-        let store = try MCPFixtures.store(secrets: secrets)
-        store.remove("postgres")
-        #expect(store.entry("postgres") == nil)
+        let harness = try MCPFixtures.harness(secrets: secrets)
+        harness.store.remove("postgres")
+        #expect(harness.store.entry("postgres") == nil)
         #expect(secrets.accounts(withPrefix: "") == ["secret/grafana/T"])
+        while !harness.cli.calls.contains(where: { $0.arguments == ["logout", "postgres"] }) { try await Task.sleep(for: .milliseconds(5)) }
     }
 
     @Test func settingsEditsReachTheFile() throws {
         let store = try MCPFixtures.store()
         store.setExposure("linear", .direct)
         store.setTools("linear", ["create_issue"])
-        store.setStart("linear", .alwaysOn)
         guard case .document(let document) = store.dependencies.file.read() else { Issue.record("unreadable"); return }
         let settings = try #require(document.server("linear")).settings
-        #expect(settings.exposure == .direct && settings.tools == ["create_issue"] && settings.start == .alwaysOn)
+        #expect(settings.exposure == .direct && settings.tools == ["create_issue"])
     }
 
     @Test func anInvalidFileDisablesEditing() throws {
@@ -374,22 +498,23 @@ struct MCPStoreTests {
 
     // MARK: Budget
 
-    @Test func aDirectToolCostsItsBytesOverFourPlusTen() {
-        let tool = MCPToolInfo(name: "query", description: "Run SQL.", inputSchema: .object(["type": .string("object")]))
-        // "query" 5 + "Run SQL." 8 + {"type":"object"} 17 = 30 bytes → 8 + 10.
-        #expect(MCPBudgetEstimate.tokens(for: tool) == 18)
-    }
-
     @Test(arguments: [(0, 0), (184, 180), (185, 190), (999, 1000), (3_870, 3_900), (12_349, 12_300)])
     func totalsRoundToTensThenHundreds(tokens: Int, rounded: Int) {
         #expect(MCPBudgetEstimate.rounded(tokens) == rounded)
     }
 
-    @Test func proxyServersCostTwoHundredTogether() throws {
-        let tools = MCPFixtures.tools(["a", "b", "c"])
-        #expect(MCPBudgetEstimate.total([(.proxy, tools, nil), (.proxy, tools, nil)]) == 200)
-        let direct = MCPBudgetEstimate.directTokens(tools, chosen: ["a"])
-        #expect(MCPBudgetEstimate.total([(.proxy, tools, nil), (.direct, tools, ["a"])]) == 200 + direct)
+    @Test func searchedServersShareOneToolSearchAndDirectOnesDeclareEachTool() {
+        typealias Server = MCPBudgetEstimate.Server
+        #expect(MCPBudgetEstimate.estimate([]).tokens == 0)
+        let one = MCPBudgetEstimate.estimate([Server(name: "a", direct: false, toolCount: 40)])
+        #expect(one.tokens == MCPBudgetEstimate.searchBaseTokens + MCPBudgetEstimate.searchServerTokens)
+        let two = MCPBudgetEstimate.estimate([Server(name: "a", direct: false, toolCount: 40), Server(name: "b", direct: false, toolCount: 9)])
+        #expect(two.tokens == one.tokens + MCPBudgetEstimate.searchServerTokens, "the declaration is paid once")
+        let mixed = MCPBudgetEstimate.estimate([Server(name: "a", direct: false, toolCount: 40), Server(name: "b", direct: true, toolCount: 9)])
+        #expect(mixed.tokens == one.tokens + 9 * MCPBudgetEstimate.directToolTokens)
+        #expect(mixed.note == "b is set to Direct, which declares 9 tools in every prompt. The rest are searched.")
+        let direct = MCPBudgetEstimate.estimate([Server(name: "b", direct: true, toolCount: 1)])
+        #expect(direct.tokens == MCPBudgetEstimate.directToolTokens, "no tool_search is declared when nothing is searched")
         #expect(MCPBudgetEstimate.shortLabel(3_870) == "~3,900 tok")
     }
 
@@ -415,6 +540,11 @@ struct MCPStoreTests {
         #expect(MCPCommandLine.split(#"node "/path with space/server.js" --flag='a b' x\ y"#)
             == ["node", "/path with space/server.js", "--flag=a b", "x y"])
         #expect(MCPCommandLine.join(["node", "/path with space/s.js"]) == "node '/path with space/s.js'")
-        #expect(MCPServerName.toolPrefix("My-Server.v2") == "my_server_v2")
+    }
+
+    @Test(arguments: [("my-server", "mcp__my_server", true), ("My_Server2", "mcp__My_Server2", true), ("a.b", "mcp__a.b", false), ("", "mcp__", false), ("é", "mcp__é", false)])
+    func aServerNameIsPisAndPrefixesItsTools(name: String, prefix: String, valid: Bool) {
+        #expect(MCPServerName.toolPrefix(name) == prefix)
+        #expect(MCPServerName.isValid(name) == valid)
     }
 }
