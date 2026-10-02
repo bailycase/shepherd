@@ -377,7 +377,9 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
   file); the counting, on synthetic captures (`Tests/Release/test_context_budget.py`); context
   clearing against a real pi and a fake provider (`context-trim.test.mjs`: the request shrinks and
   the session file and `get_messages` keep everything, off is byte-identical, a restart, `/new`,
-  a branch and a compaction decide the same way, a long run never compacts); the card's estimate
+  a branch and a compaction decide the same way, a long run never compacts; `context-mcp.test.mjs`:
+  an MCP result is cleared like any other, and a tool a cleared `tool_search` loaded is still
+  declared and called); the card's estimate
   (`ContextEstimateTests`: the baseline from the first call's usage, reasoning, images and Other),
   its presentation and wire (`ContextPresentationTests`, `NativeThreadWireTests`), and the
   Compact at setting (`PiCompactionThresholdTests`, `CompactionThresholdFlowTests`).
