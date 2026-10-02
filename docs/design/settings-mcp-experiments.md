@@ -7,10 +7,11 @@
 The page (`SettingsMCP.swift` over `MCPStore`) lists the MCP servers every agent Shepherd starts
 can use, kept in `~/.config/mcp/mcp.json` (the file other MCP clients share; `SHEPHERD_MCP_CONFIG`
 moves it). Shepherd's own fields sit under each entry's `shepherd` key, which other tools ignore;
-a secret is a `${keychain:<server>/<NAME>}` reference, and OAuth tokens live only in the Keychain.
-It sits between Skills and Remote in the nav, with `server.rack`. Stage 1 serves This Mac only.
-pi 1.0's own MCP support (its `mcp.json`, `/mcp`, `codemode`) is turned off in Shepherd's pi, so
-this page's file is the only one agents read and no server starts twice (docs/pi-engine.md › pi 1.0).
+a secret is a `${keychain:<server>/<NAME>}` reference. It sits between Skills and Remote in the
+nav, with `server.rack`. Stage 1 serves This Mac only.
+The servers run on pi 1.0's own MCP (docs/mcp.md): the app derives pi's `mcp.json` from this page's
+file, puts the Keychain values in pi's environment, reads each server's state from `pi mcp list`, and
+signs in through `pi mcp login`, whose tokens are pi's (`mcp-auth.json`). `codemode` stays off.
 
 - **Header:** "MCP servers" and its explanation, with Import… (a menu: From a JSON file…, Paste
   JSON…) and the primary Add server trailing. Both disable while mcp.json doesn't parse, and the
@@ -20,18 +21,22 @@ this page's file is the only one agents read and no server starts twice (docs/pi
   `MCPServerRow`s in the file's order: the on/off switch, a state dot (`MCPStatusDot`), the name
   in mono semibold with a Remote or Local badge, the URL or command line in mono under it (or the
   row's error in `failed`, or "Starting on This Mac…"), the Sign-in cell (an account, `$VAR`, a
-  secret's name, "2 variables", a lantern Sign in, Expired or Needs … with Sign in, or None), the
-  tool count, and a chevron. A row opens in place (`MCPServerDetail`): Sign-in (who, scopes, when
-  refreshed, Sign in again, Sign out), Tools with their count and first names, "Through one mcp
-  tool" or "Each tool on its own" with each one's token estimate, Choose which tools…, then
-  Connection (transport, Start: When used / With each session / Always on, and This Mac's
-  state); under a hairline, Edit…, Reconnect, Copy JSON (the entry without Shepherd's fields) and
-  Remove (confirmed; it deletes the entry's Keychain items too). One server's change redraws its
-  row alone (`ListPerformanceTests`).
+  secret's name, "2 variables", a lantern Sign in, Needs sign-in, or None), the tool count, and a
+  chevron. The state dot and tool count are what pi reports (`pi mcp list`), read when the page
+  opens and after an edit, Reconnect or sign-in, never cached on disk. A row opens in place
+  (`MCPServerDetail`): Sign-in (Sign in, or Sign in again and Sign out once pi holds a token),
+  Tools with their count and first names, **Tool exposure** as two radio rows, Search (the default:
+  the tools stay out of every prompt until the agent searches) and Direct (every tool declared up
+  front), each with its token estimate in mono (`MCPBudgetEstimate`, from the tool list), Choose
+  which tools…, then Connection (transport, "Connects when a thread starts and stays until it
+  ends", and This Mac's state); under a hairline, Edit…, Reconnect, Copy JSON (the entry without
+  Shepherd's fields) and Remove (confirmed; it deletes the entry's Keychain items and pi's token).
+  There is no Start setting: pi connects every enabled server with a session. One server's change
+  redraws its row alone (`ListPerformanceTests`).
 - **The rail** (280pt): How the agent uses them over `MCPBudget` ("In every prompt ~200 tokens",
-  a bar and what makes it up), Options (Same servers on every host, Open sign-in pages by itself,
-  Also use a repo's .mcp.json; the second opens the sign-in sheet and the browser when an agent
-  reaches a server that needs a sign-in), and Hosts with mcp.json's path and This Mac.
+  a bar and what makes it up: pi's own text for the servers, the search tool, and each Direct
+  server's tools), Options (Same servers on every host, Also use a repo's .mcp.json), and Hosts
+  with mcp.json's path and This Mac.
 - **Add server** (`AddMCPServerSheet`): Remote (a URL, checked as you paste it: the server's name,
   its transport, whether it signs in with OAuth; headers; Advanced for a client ID, secret and
   scopes), Local (a command line, env vars whose secret values go to the Keychain) and Paste JSON,
@@ -39,8 +44,8 @@ this page's file is the only one agents read and no server starts twice (docs/pi
   servers of the same name, and moves plaintext secrets to the Keychain.
 - **Sign in** (`MCPSignInSheet`): three steps (finding the sign-in server, registering Shepherd,
   waiting in the browser) with Open browser again and Copy link; done closes by itself, a failure
-  names the step and says nothing was saved. It runs OAuth 2.1 with PKCE (S256) on a one-shot
-  127.0.0.1 redirect, over https only (plain http only to this Mac).
+  names the step and says nothing was saved. pi runs the flow (`pi mcp login`, through the launcher);
+  the sheet follows what it prints, and the sign-in page opens from the sheet only, never by itself.
 
 ## Experiments (SettingsExperiments)
 
