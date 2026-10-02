@@ -54,6 +54,8 @@ struct MCPSettingsControlTests {
         var loginStatus: Int32 = 0
 
         var calls: [[String]] { lock.withLock { recorded } }
+        /// How many times the page asked pi for the servers' state.
+        var lists: Int { calls.filter { $0.first == "list" }.count }
 
         func run(_ arguments: [String], environment: [String: String], timeout: TimeInterval,
                  onLine: (@Sendable (String) -> Void)?) async -> MCPCLIResult {
@@ -170,25 +172,36 @@ struct MCPSettingsControlTests {
         let copied = try #require(pasteboard.copied.last)
         #expect(copied.contains("https://mcp.linear.app/mcp") && !copied.contains("shepherd"), "the entry as other tools read it")
         try window.press("Reconnect")
-        try await eventuallyOnMain("Reconnect to ask pi again") { cli.calls.filter { $0.first == "list" }.count == 2 }
+        try await eventuallyOnMain("Reconnect to ask pi again") { cli.lists >= 2 }
+        await store.settle()
+        #expect(cli.lists == 2, "Reconnect asks pi once")
 
         // Sign-in: out of linear, and into the first server that needs it.
         try window.press("Sign out")
-        try await eventuallyOnMain("Sign out to run pi's logout and ask again") { cli.calls.contains(["logout", "linear"]) && cli.calls.filter { $0.first == "list" }.count == 3 }
+        try await eventuallyOnMain("Sign out to run pi's logout and ask again") { cli.calls.contains(["logout", "linear"]) && cli.lists >= 3 }
+        await store.settle()
+        #expect(cli.lists == 3, "Sign out asks pi once more, after its logout")
         try window.press("Sign in", nth: 0)
         try await eventuallyOnMain("the sign-in to start") { store.signIn?.server == "sentry" }
         try await eventuallyOnMain("pi's login to run") { cli.calls.contains(["login", "sentry", "--timeout", "300"]) }
+        // A sign-in that succeeds asks pi again, and closing the sheet before it does would cancel that: so let it finish and
+        // settle before counting, or the count below depends on how fast this machine is.
+        try await eventuallyOnMain("the sign-in to finish") { store.signIn?.succeeded == true }
+        await store.settle()
         store.closeSignIn()
+        #expect(cli.lists == 4, "the sign-in asked pi once more")
 
         // The row's switch, off and on, which asks pi again only when it comes on.
-        let before = cli.calls.filter { $0.first == "list" }.count
+        let before = cli.lists
         try window.press("sentry", role: ControlRole.checkBox)
         try await eventuallyOnMain("the switch to reach the file") { (try? fileSettings(store, "sentry").enabled) == false }
         #expect(store.rows.first { $0.name == "sentry" }?.status == .off)
-        #expect(cli.calls.filter { $0.first == "list" }.count == before)
+        #expect(cli.lists == before)
         try window.press("sentry", role: ControlRole.checkBox)
         try await eventuallyOnMain("the switch to come back") { (try? fileSettings(store, "sentry").enabled) == true }
-        try await eventuallyOnMain("pi to be asked") { cli.calls.filter { $0.first == "list" }.count == before + 1 }
+        try await eventuallyOnMain("pi to be asked") { cli.lists >= before + 1 }
+        await store.settle()
+        #expect(cli.lists == before + 1, "switching a server on asks pi once")
 
         // The rail's switches.
         let repo = settings.mcpProjectConfig
