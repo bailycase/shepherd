@@ -153,7 +153,10 @@ events come out on stdout, one record per LF.
   answers `get_state` first, and a thread served before a long history arrives would show a
   resumed agent as a new, empty one. pi reads stdin only once it has started, so a pi slower
   than the 10 s request deadline answers requests already given up on; when `get_state` times
-  out, the bootstrap asks again.
+  out, the bootstrap asks again, and only the retry's `get_messages` ends the wait (the earlier
+  attempt's timeout declares nothing, or the thread would be served with an empty, clipped
+  history while the retry's is on its way). `clipped` from a failed history fetch clears when
+  the next one lands whole.
 - **Events** update the projection in place. The run pi is streaming is one ordered list of
   live rows (`provisional`), in the order pi produced them:
   - `message_start`, `message_update`, and `message_end` stream the current assistant message
@@ -272,6 +275,22 @@ events come out on stdout, one record per LF.
   - 240 KiB in total, of which live content (live rows, then dialogs) may use 120 KiB. A page
     each of live assistant messages and tool calls stays; user rows always stay, because they
     open the turns the rest belong to.
+  - **History is never squeezed out by the rest of the snapshot.** Beside its messages a snapshot
+    carries the subagents' cards, the recorded turns, the extensions' widgets, the slash
+    commands and the queue, and a long, edit-heavy thread's can weigh the whole 240 KiB by
+    themselves (twenty finished cards that each name thirty-two files by long worktree paths are
+    about 170 KiB). History once got only what they left, and with the newest message bigger than
+    that, nothing: a thread with no turns and its composer beside it. Now:
+    - The lists are bounded on their own, once per change (`RPCThreadState.fitting`). Subagent
+      cards: 64 KiB; a run still going or asking is never touched; finished runs, oldest first,
+      give up their lists of changed files (their `result` still counts them), then go. Recorded
+      turns: 48 KiB; the older ones keep their first five files (`fileCount` still says how many
+      they changed), then go, oldest first; the newest is never cut. Widgets: 64 KiB, in order,
+      the first always. Older clients read shorter lists as they always did.
+    - Whatever the rest weighs, history keeps room for 96 KiB (`historyReserve`: the newest 20
+      messages at the sizes a thread's messages have) and live content for 48 KiB
+      (`activeReserve`), so the snapshot can then pass 240 KiB, never by more than the
+      reserves. `clipped` still says only that messages were left out.
   - One 16 KiB text budget per message, shared across its blocks and tool fields, and at most
     128 blocks per message. Clipped content is flagged.
   - A monotonically increasing `revision`, the pi session ID, and a `generation`, so nothing
@@ -559,16 +578,44 @@ draw no context meter.
   model and never written. `autoCompact` is `get_state`'s `autoCompactionEnabled`; `keepRecent` is
   `keepRecentTokens` (20,000 by default).
 - **The split and the largest items are the host's estimate** (`RPCThreadState.estimate`), taken
-  from `get_messages` with each history refresh: four characters a token, as pi estimates. pi
-  0.87's structured system prompt rides the message list as `system` messages (sections, a null
-  removing one, and the tools added or removed); the host folds them, counts the
-  `project_context` section as instructions (naming its `<project_instructions path>` files) and
-  the rest, with the tools' definitions, as the system prompt; user and assistant messages, the
-  agent's calls, and summaries as messages; and tool results as tool results. Every part is
-  scaled to pi's total. `largest` is the three largest tool results, named by the file they read
-  or wrote or the command they ran (the same name's results add up, found at the largest), each
-  with its thread entry (`t:<call id>`) so a client can find it. System messages never become
-  thread rows.
+  from `get_messages` with each history refresh: four characters a token, as pi estimates (a
+  check against o200k found that 1 to 12% high, never low), a screenshot at 2,100 tokens, and a
+  reasoning payload at the provider's own count (`usage.reasoning` on the call that made it,
+  else the text kept). pi 0.87's structured system prompt rides the message list as `system`
+  messages (sections, a null removing one, and the tools added or removed); the host folds them,
+  counts the `project_context` and `addendum` sections as instructions (each
+  `<project_instructions path>` file and APPEND_SYSTEM.md by its own size, `instructionParts`) and
+  the rest, with the tools' definitions, as the system prompt (`systemParts`: the prompt's
+  sections, the skills list, and the tools by the group `ContextToolGroups` reads off their names,
+  which `Tests/Extensions/context-tools.json` and `ContextToolGroupsTests` keep in step);
+  user and assistant messages and summaries as messages; the arguments of the agent's tool calls
+  (the files a `write` or an `edit` carried) as `toolCalls`; thinking as `reasoning`; images as
+  `images`; and tool results as tool results.
+- **The parts are held against pi's total, not scaled to it.** The fixed part (system prompt,
+  tools, instruction files) is anchored to the provider's count of the first assistant call since
+  the start or the latest compaction (`usage.input + cacheRead + cacheWrite`, less what the host
+  sizes of the conversation that call carried), when that lands within half to twice the sizing;
+  every other part stands as sized; and what the total holds beyond them is `other`. When the
+  parts add up to more than the total (a result the context extension cleared or clipped before
+  it was sent is still whole in the messages pi holds), the difference comes off tool results
+  first, then the agent's calls, reasoning, images and messages, never the fixed part. Scaling
+  every part to the total, as this once did, made a thread's reasoning and screenshots read as
+  "System prompt and tools" and "Instructions". The wire is additive (`NativeContextSplit`'s
+  `toolCalls`, `reasoning`, `images`, `other`, `systemParts`, `instructionParts` decode with
+  defaults and are encoded only when set, so an older client reads the four parts it always did).
+  `largest` is the three largest tool results, named by the file they read or wrote or the
+  command they ran (the same name's results add up, found at the largest), each with its thread
+  entry (`t:<call id>`) so a client can find it. System messages never become thread rows.
+- **What the model is sent is shorter than what the thread holds** while Settings ▸ Agents ▸
+  Context ▸ "Trim old tool output from the model’s context" is on: the bundled context extension
+  (`shepherd-context.ts`) edits the request pi sends in its `context` event and nothing else. The
+  session file, `get_messages`, the thread and the Changes pane keep everything. It clips one
+  result to about 6k tokens; and, in batches, once the context passes 55% of the window, clears
+  the oldest tool results, images, written-file arguments, hidden notices and reasoning payloads
+  (OpenAI Responses APIs only) down to about 33%, never touching the last eight calls and at most
+  one batch in 20 calls. A batch is recorded as a `shepherd.context` custom entry in pi's session,
+  so a restart, `/new`, a resume or a branch decides the same way. docs/context-budget.md has the
+  design, the numbers and the caching cost.
 - **A compaction** (`compaction_start` › `compaction_end`): `context.compacting` holds its reason
   and start, and a live row (role `compaction`, `NativeCompaction` phase `running`) sits at the
   tail. When it ends, a success refreshes history, state and stats, and the live row goes with the
@@ -590,6 +637,16 @@ draw no context meter.
   `SettingsManager.setCompactionEnabled`, which writes `compaction.enabled` into the user's global
   `settings.json` (Shepherd's pi home's). Shepherd writes only its own keys there, so
   there is no Compact automatically switch (the user's call, 2026-09-25).
+- **Compact at** (Settings ▸ Agents ▸ Context): a share of the window (60, 70, 80 or 90%, else pi's
+  own default) written as pi's per-model `compaction.modelOverrides[provider/id].reserveTokens`,
+  for every model of the catalog, in Shepherd's pi home under pi's lock (`PiCompactionThreshold`;
+  what it wrote is remembered in `shepherd-compaction.json` so pi's default takes back exactly
+  that, and a reserve the user set for a model stays theirs). The reserve is the rest of the
+  window, never below pi's 16,384, so a share never makes pi compact later than its default.
+  The view model writes it when the setting changes and at launch (a model added since). pi reads
+  its settings as a session starts: a new agent follows a change, a running one at its next
+  launch, and its card keeps the mark it read (`settingsFor`, per model). `compaction.enabled`
+  stays untouched (above).
 - **Clients** derive the ring and its details once per change in ShepherdRemote
   (`NativeContextMeter`, `NativeContextDetails`, `NativeCompactionRow`), so the Mac and the iOS
   client draw the same states from the same snapshot; a host without `native.context.v1` sends no

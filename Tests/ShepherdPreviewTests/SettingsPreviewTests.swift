@@ -71,6 +71,22 @@ struct SettingsPreviewTests {
         }
     }
 
+    /// Agents ▸ Context, at the defaults (pi's own compaction, trimming on) and chosen (80%, trimming
+    /// off), each in light and dark at text scale 1 and 1.3, where the subtitles wrap.
+    @Test(arguments: [(false, "settings-agents-context"), (true, "settings-agents-context-chosen")])
+    func settingsAgentsContext(chosen: Bool, surface: String) async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        workspace.vm.settingsSection = .agents
+        if chosen {
+            workspace.settings.compactAtPercent = 80
+            workspace.settings.trimToolOutput = false
+        }
+        try await Preview.renderMatrix(surface, size: CGSize(width: 1280, height: 1100)) {
+            SettingsView(vm: workspace.vm)
+        }
+    }
+
     /// Skills with a sourced skill waiting on an update, two used only through /skill (one off),
     /// and the page's rail: installed from a scratch repository on this Mac, no network.
     @Test func settingsSkillsInstalled() async throws {

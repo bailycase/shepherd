@@ -123,7 +123,7 @@ settings produce diagnostics and are not imported. This is not full pi-subagents
 
 | Tool | Behavior |
 | --- | --- |
-| `shepherd_child_start` | Starts a background child and returns its run ID. `agent` selects a profile (`role` is an alias). `mission:false` opts out of the default mission record. |
+| `shepherd_child_start` | Starts a background child and returns its run ID. `agent` selects a profile (`role` is an alias). |
 | `shepherd_child_message` | Steering or follow-up input. Acceptance is not completion. |
 | `shepherd_child_wait` | Waits for any or all of up to 16 children, for up to 60 s (default 30 s). Cancelling a wait does not cancel the children. |
 | `shepherd_child_result` | Lists retained runs or reads one result: up to 16 KiB of text per child, 4 KiB inside a wait. `sessionFile` holds the full conversation. |
@@ -131,7 +131,7 @@ settings produce diagnostics and are not imported. This is not full pi-subagents
 | `shepherd_child_resume` | Continues an exited child with its saved profile, model, cwd, and transcript. Tools can only narrow across a resume. |
 | `shepherd_child_agents` | Lists profiles, where they came from, and diagnostics. |
 | `shepherd_workflow` | Runs a script (below). |
-| `shepherd_mission` | Manages mission records (below). |
+| `shepherd_mission` | Manages mission records (below). Not registered unless `SHEPHERD_MISSIONS=1`. |
 
 **Questions and results.** A subagent never reaches the user: it asks its parent, and the parent
 answers it or asks the user itself, in its own thread, then passes the answer down. Routine
@@ -318,6 +318,14 @@ restricted execution, **not an OS sandbox**: children still use their normal too
 user's permissions, and explicit extension files run with full permissions.
 
 ## Missions
+
+**Missions are off.** They are deferred (no screen shows them), and every request carried the
+mission tool and the `mission` and `missionId` parameters of `shepherd_child_start` and
+`shepherd_workflow`, about 470 tokens in every thread (docs/context-budget.md). Unless the
+environment sets `SHEPHERD_MISSIONS=1`, the runtime registers no `shepherd_mission`, offers none of
+those parameters, writes no mission record for a run, and says nothing of missions in a tool
+description; the app never sets it. The tests that cover missions set it. Everything below is how
+they behave when it is on.
 
 `shepherd_mission` supports create, list, show, update, close, attach-run, and attachment. Records
 live at `<support dir>/shepherd-native/missions/<sha256 of the parent cwd>/mission-<uuid>.json`
