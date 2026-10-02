@@ -582,8 +582,9 @@ export default function shepherdGoal(pi: ExtensionAPI) {
     if (!active(goal)) return;
     // ChildrenExtension must be loaded first: let its unread-result continuation run before checking.
     if (event.continue || childrenActive) return;
+    let attemptedChecker: string | undefined;
     const log = (content, details = {}) => ({ entries: [...event.entries, { type: "custom_message", customType: "shepherd.goal.check", display: true, content,
-      details: { goalID: goal?.id, checkedBy: goal?.checkedBy, ...details } }], continue: false });
+      details: { goalID: goal?.id, checkedBy: attemptedChecker, ...details } }], continue: false });
     if (event.outcome !== "completed") { transition("needsYou", ctx, "work stopped or failed"); return log(`Goal needs you · ${goal.reason}`, { outcome: event.outcome }); }
     if (checkLimits(ctx)) return log(goal.reason);
     if ((goal.checkCount ?? 0) >= MAX_CHECKS) { transition("needsYou", ctx, "hit the 25 check limit"); return log(goal.reason); }
@@ -611,6 +612,7 @@ export default function shepherdGoal(pi: ExtensionAPI) {
       goal.checkCount = (goal.checkCount ?? 0) + 1;
       transition("checking", ctx, checkingReason(evidence)); revision = goal.revision;
       if (checkLimits(ctx)) return log(goal.reason);
+      attemptedChecker = goal.checkedBy;
       const response = await Promise.race([ctx.modelRegistry.complete(model, {
         systemPrompt: SYSTEM,
         messages: [{ role: "user", timestamp: Date.now(), content: [{ type: "text", text: JSON.stringify({ objective: redact(goal.text), requirements: safeData(evidence.requirements), incomplete: evidence.incomplete, transcript: evidence.records }) }] }],
