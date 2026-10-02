@@ -128,8 +128,8 @@ for the agent whose pi opened it).
   minutes pass (`not_approved`: "The user did not approve in time. …"). A late answer finds nothing
   waiting and does nothing. An answer claims the call's token on the server queue, so a call is done
   at most once.
-- **Several may wait**, one dialog each, shown one at a time: up to 8 per agent, then `busy`. A
-  duplicate request id is `busy`.
+- **Several may wait**, one dialog each, shown one at a time: up to 8 per agent and 24 in all,
+  then `busy`. A duplicate request id is `busy`.
 - Calls that could not be done anyway (an unknown or own thread, a folder that is not one, a
   target with no running pi, empty text) are refused as before, without asking.
 - **Remote.** The dialog opens on the host's own window, as the Delete agent dialog does; nothing

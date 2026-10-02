@@ -3339,7 +3339,8 @@ public final class SessionServer: @unchecked Sendable {
                 fail("unsupported", "native approval unavailable")
                 return
             }
-            guard approvals.values.filter({ $0.senderID == senderID }).count < AgentMessageGate.pendingLimitPerAgent,
+            guard approvals.count < AgentMessageGate.pendingLimit,
+                  approvals.values.filter({ $0.senderID == senderID }).count < AgentMessageGate.pendingLimitPerAgent,
                   !approvals.values.contains(where: { $0.caller === client && $0.id == requestID }) else {
                 fail("busy", AgentMessageGate.busyMessage)
                 return

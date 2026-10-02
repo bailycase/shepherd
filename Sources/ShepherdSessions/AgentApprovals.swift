@@ -59,8 +59,10 @@ public enum AgentMessageGate {
 
     /// How long a dialog waits before the call is refused.
     public static let approvalTimeout: TimeInterval = 120
-    /// The most calls one agent may have waiting at once.
+    /// The most calls one agent may have waiting at once, and every agent together: the user's
+    /// dialogs, one after another, are the cost of each.
     public static let pendingLimitPerAgent = 8
+    public static let pendingLimit = 24
 
     public static let deniedMessage = "The user did not approve. Don't message other agents unless the user asks you to."
     public static let timedOutMessage = "The user did not approve in time. Don't message other agents unless the user asks you to."
