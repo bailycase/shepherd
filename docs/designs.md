@@ -224,8 +224,8 @@ that folder.
 | `checkpoint_create(name)`, `checkpoint_list()`, `checkpoint_restore(name)` | `designCheckpoint` | `designCheckpoints` | Named copies of every board and the canvas (Checkpoints, below) |
 | `canvas_update(changes, baseRevision?)` | `designUpdateIndex` | `designWritten` | `updateDesignIndex` with `changes` as the merge patch |
 | `design_check(path?, snap?)` | `designSystemRead` (`snap`: `designEditBoards` first) | `designSystems` | In the extension: every hex color (in style attributes, style and script blocks, `data-props`, SVG paint) and every px size in spacing, radius and type that the design's installed systems don't hold (their colors and dark values, spacing, radii and type sizes), else that no CSS custom property in its working folder declares, with the board and lines it is on and the nearest token. Its first line is "Checked against <system or project> · N off-system values" |
-| `comment_list(all?)` | `designComments` | `designComments` | The viewer's open comments (all of them with `all`), oldest first: id, number, state, element id and name, and each one's words and replies, fenced as data |
-| `comment_reply(id, text)` | `designCommentReply` | `designComment` | An answer under a comment's pin (`replyToDesignComment`, author `agent`). No message resolves a comment: only the viewer does |
+| `comment_list(all?)` | `designComments` | `designComments` | The viewer's open comments (all of them with `all`), oldest first: id, number, state and whose turn it is (one the agent answered "waits on the viewer"), element id and name, and each one's words and replies, fenced as data |
+| `comment_reply(id, text)` | `designCommentReply` | `designComment` | An answer under a comment's pin (`replyToDesignComment`, author `agent`). No message resolves a comment: only the viewer does. A second answer in a row, with no reply from the viewer between, is kept but its result says to take anything further to the chat |
 | `markup_propose(proposals)` | `designProposeComments` | `designProposals` | Comments proposed from the viewer's Pencil markup, one per mark: each element checked against its board's source (`invalid_markup` otherwise), named `<call id>#<n>`, its card's name the element's `data-el` name else its words, then kept as comments at once, all or none, sent nowhere. The result lists them for the agent and ends with their JSON between `markup-proposals` markers, all inside the data fence, for the chat (Pencil markup, below) |
 | `system_read()` | `designSystemRead` | `designSystems` | Every design system this host keeps and the ones the design installed (its own first), fenced as data |
 | `system_read(namespace)` | `designSystemRead` with `namespace` | `designSystem` | One system whole: its tokens with the file and line each came from, its components, files and README, fenced as data |
@@ -493,6 +493,12 @@ so an exported canvas carries none.
   kept and says why; it doesn't go later on its own.
 - **Answers and resolving.** The agent answers under the pin with `comment_reply` once the change
   is made. Only the viewer resolves (`resolveDesignComment`), and may open one again.
+- **Once, and after a compaction.** The pin holds the agent's one answer to its comment and the
+  viewer's replies, never its chat. The design agent's prompt, rebuilt for every run so a compaction
+  cannot summarize it away, says to answer a comment once, to say everything else in the chat, and
+  that a comment a compaction summary or `comment_list` mentions is history unless a message that
+  opens with the fence says `"reply": true`. `comment_list` says whose turn each open comment is,
+  so an agent that no longer remembers answering one finds it waiting on the viewer.
 - **Drift.** A rewrite renumbers a board's elements, so every write of a board finds its open
   comments' elements again (`DesignCommentAnchor`): the element at the same path with the same
   words; else one with the same words, nearest the old path; else the element at the same path
