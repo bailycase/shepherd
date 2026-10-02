@@ -2,6 +2,7 @@ import Foundation
 import Testing
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 @testable import ShepherdSessions
 import ShepherdTestSupport
 
@@ -245,5 +246,57 @@ struct DesignCommentIntegrationTests {
         let reread = DesignStore(directory: h.server.designs.directory)
         let comments = try await reread.comments(designID)
         #expect(comments.comments == [comment] && comments.revision == 1)
+    }
+}
+
+/// The chat of a design whose agent works on a comment while pi compacts: through the real server,
+/// the stub pi's overflow recovery (the run ends, pi compacts and goes on) and the thread store a
+/// client draws from, the comment's card holds the answer up to the compaction, and the work pi
+/// goes on with is an ordinary reply under it (docs/designs.md › Comments).
+@Suite("A design chat's comment card", .mainActorExclusive)
+@MainActor
+struct DesignCommentChatTests {
+    /// What pi keeps of the conversation: its last two messages (the comment summarized away, and
+    /// kept only by the host's history), or all of them (the comment still in pi's list).
+    @Test(arguments: ["compact-retry", "compact-retry-all"])
+    func aCommentsCardEndsAtTheCompactionPiRanInsideItsTurn(_ keyword: String) async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        let designID = DesignID()
+        _ = try await h.server.createDesign(Design(id: designID, name: "Checkout funnel", agentID: pi.agent.id, createdAt: 1_000))
+        _ = try await h.server.writeDesignBoard(designID, path: DesignCommentIntegrationTests.board,
+                                                source: DesignTests.board(root: DesignCommentIntegrationTests.card))
+        _ = try await h.server.updateDesignIndex(designID, patch: .object(["boards": .object([DesignCommentIntegrationTests.board.rawValue: .object([
+            "x": .number(0), "y": .number(0), "w": .number(390), "h": .number(844)])])]))
+        _ = try await pi.ready()
+
+        let store = NativeThreadStore()
+        let server = h.server, agentID = pi.agent.id
+        let task = Task { await store.run { try await server.nativeThread(agentID: agentID, request: $0) } }
+        defer { task.cancel(); store.stop() }
+
+        let comment = try await h.server.addDesignComment(designID, draft: DesignCommentIntegrationTests.draft(text: "tools:1 \(keyword) Show the counts.")).comment
+        try await eventuallyOnMain("the comment's first call to run") { store.rows.contains { $0.designComment == comment.id && !$0.isUser } && store.running }
+        pi.finishTool(1)
+        // pi's summary takes a model call: the thread has the whole answer before the compaction ends.
+        try await eventuallyOnMain("the answer to be in the thread") {
+            store.messages.contains { $0.blocks.contains { $0.text.hasPrefix("Reply to") } }
+        }
+        FileManager.default.createFile(atPath: h.dir.appendingPathComponent("compact-go").path, contents: nil)
+        try await eventuallyOnMain("the work after the compaction to land") {
+            !store.running && store.messages.contains { $0.blocks.contains { $0.text == "Continuing after the compaction." } }
+        }
+
+        // pi's first message of its own history, the comment, its answer, and the work after the compaction.
+        let rows = Array(store.rows.suffix(3))
+        #expect(rows.map(\.isUser) == [true, false, false], "the comment, its answer, and the work after the compaction")
+        #expect(rows.map(\.designComment) == [comment.id, comment.id, nil], "only the answer is in the card")
+        #expect(rows.map(\.commentAnswered) == [true, false, false])
+        let answer = rows[1].turn.messages, after = rows[2].turn.messages
+        #expect(answer.contains { $0.toolName == "bash" } && answer.allSatisfy { $0.compaction == nil })
+        #expect(after.first?.compaction?.reason == .overflow && after.first?.compaction?.phase == .done)
+        #expect(after.last?.blocks.map(\.text) == ["Continuing after the compaction."])
+        #expect(!answer.contains { $0.blocks.contains { $0.text == "Continuing after the compaction." } })
     }
 }

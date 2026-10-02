@@ -110,6 +110,11 @@ pi's queues, as pi 1.0.0 behaves (docs/rpc-commands.md, and transcripts of the r
     `clear-gate` exists in the cwd, the answer waits for the file `clear-go` (a `clear_queue` on
     its way while the run ends).
   - The file `refuse-abort` in the cwd makes `abort` fail ("refused by the stub").
+  - "compact-retry" in a "tools:N" run's first prompt makes pi recover from an overflow as it does: the run
+    ends (agent_end), pi compacts (compaction_start, compaction_end with willRetry; its list is then the
+    summary and the last two messages, or all of them with "compact-retry-all"), and a new run goes on
+    with "Continuing after the compaction." in the same turn. pi's summary takes a model call: the
+    compaction waits, after compaction_start, for the file `compact-go` in the cwd.
   - "compact-hold" in a "tools:N" run's first prompt makes the run compact after its last reply:
     compaction_start (threshold), then it waits for the file `compact-done` (or an abort), then
     compaction_end. As in pi, a prompt that is not a command is refused meanwhile ("Cannot submit
@@ -313,9 +318,14 @@ def streaming_turn(prompt, slow=False):
     emit({"type": "agent_settled"}, terminator=b"\r\n")
 
 
-def compaction(reason, instructions):
-    """pi's compaction: the summary replaces all but the last two messages."""
+def compaction(reason, instructions, will_retry=False, keep=2, gate=None):
+    """pi's compaction: the summary replaces all but the last `keep` messages. As in pi's list, the
+    summary comes first, then what it kept, with their own timestamps; `will_retry` is an overflow
+    compaction the run goes on after."""
     emit({"type": "compaction_start", "reason": reason})
+    if gate:
+        # The summary takes pi a model call: the host reads the history it has so far meanwhile.
+        wait_for_file(gate)
     if instructions and "hold" in instructions:
         wait_for_file("compact-done")
     conversation = [m for m in MESSAGES if m.get("role") != "system"]
@@ -328,14 +338,14 @@ def compaction(reason, instructions):
     if instructions:
         summary += "\n\nKept: " + instructions
     system = [m for m in MESSAGES if m.get("role") == "system"]
-    kept = conversation[-2:]
+    kept = conversation[-keep:]
     MESSAGES[:] = system + [{"role": "compactionSummary", "summary": summary, "tokensBefore": before,
                              "timestamp": now_ms()}] + kept
     STATE["messageCount"] = len(MESSAGES)
     STATS["contextUsage"] = {"tokens": None, "contextWindow": 200000, "percent": None}
     result = {"summary": summary, "firstKeptEntryId": "kept", "tokensBefore": before, "estimatedTokensAfter": 23000,
               "details": {}}
-    emit({"type": "compaction_end", "reason": reason, "result": result, "aborted": False, "willRetry": False})
+    emit({"type": "compaction_end", "reason": reason, "result": result, "aborted": False, "willRetry": will_retry})
     return result
 
 
@@ -495,6 +505,7 @@ def text_of(message):
 
 def agent_run(first):
     new = []
+    persisted = 0
     last = [None]
 
     def deliver(item):
@@ -571,6 +582,21 @@ def agent_run(first):
         if not pending:
             break
         emit({"type": "turn_start"})
+    if not aborted and "compact-retry" in text_of(new[0]):
+        # pi's overflow recovery: the run ends, pi compacts (its list keeps only the last two messages, or
+        # all of them with "compact-retry-all"), and a new run goes on with the summary.
+        MESSAGES.extend(new[persisted:])
+        STATE["messageCount"] = len(MESSAGES)
+        emit({"type": "agent_end", "messages": new[persisted:], "willRetry": True})
+        persisted = len(new)
+        compaction("overflow", None, will_retry=True, keep=len(MESSAGES) if "compact-retry-all" in text_of(new[0]) else 2,
+                   gate="compact-go")
+        emit({"type": "agent_start"})
+        emit({"type": "turn_start"})
+        time.sleep(0.05)  # the model call: the reply is stamped after the summary, as pi's is
+        say({"role": "assistant", "content": [{"type": "text", "text": "Continuing after the compaction."}],
+             "stopReason": "stop", "timestamp": now_ms()})
+        emit({"type": "turn_end", "message": new[-1], "toolResults": []})
     if not aborted and "compact-hold" in text_of(new[0]):
         emit({"type": "compaction_start", "reason": "threshold"})
         COMPACTING.set()
@@ -580,12 +606,12 @@ def agent_run(first):
               "errorMessage": None if RUN["abort"].is_set() else "Compaction failed: stub"})
     if not aborted and "hold-settle" in text_of(new[0]):
         gate("settle")
-    MESSAGES.extend(new)
+    MESSAGES.extend(new[persisted:])
     STATE["messageCount"] = len(MESSAGES)
     if messages_file:
         with open(messages_file, "w") as f:
             json.dump(MESSAGES, f)
-    emit({"type": "agent_end", "messages": new, "willRetry": False})
+    emit({"type": "agent_end", "messages": new[persisted:], "willRetry": False})
     RUN["active"] = False
     emit({"type": "agent_settled"})
 
