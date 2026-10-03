@@ -82,7 +82,7 @@ struct BrowserAgentFlowTests {
         page.close()
     }
 
-    @Test func twoThreadsEachDriveTheirOwnPageAndNeitherReachesTheOther() async throws {
+    @Test func projectThreadsShareLoginsButEachDrivesOnlyItsOwnPage() async throws {
         let app = try harness()
         defer { app.stop() }
         let web = try TinyWebServer(pages: BrowserAgentTests.pages)
@@ -91,15 +91,21 @@ struct BrowserAgentFlowTests {
         let space = Fixture.space(path: app.dir.path)
         let a = Fixture.agent("a", in: space, order: 0)
         let b = Fixture.agent("b", in: space, order: 1)
-        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [a, b]))
+        let otherProject = Fixture.space("other project", path: app.dir.appendingPathComponent("other").path)
+        let c = Fixture.agent("c", in: otherProject)
+        let vm = try await app.start(with: Fixture.state(spaces: [space, otherProject], agents: [a, b, c]))
         let first = try Connection(socketPath: app.scratch.socketPath, agent: a.agent.id)
         let second = try Connection(socketPath: app.scratch.socketPath, agent: b.agent.id)
+        let third = try Connection(socketPath: app.scratch.socketPath, agent: c.agent.id)
 
         _ = try await first.text(.open(url: web.url("/checkout").absoluteString, note: nil))
         _ = try await second.text(.open(url: web.url("/checkout").absoluteString, note: nil))
+        _ = try await third.text(.open(url: web.url("/checkout").absoluteString, note: nil))
         _ = try await first.text(.eval(expression: "document.cookie = 'cart=a; path=/'; localStorage.setItem('cart', 'from a'); 1", note: nil))
         let seenByB = try await second.text(.eval(expression: "[document.cookie, localStorage.getItem('cart')]", note: nil))
-        #expect(seenByB.contains("Result: [\"\",null]"), "\(seenByB)")
+        #expect(seenByB.contains("Result: [\"cart=a\",\"from a\"]"), "\(seenByB)")
+        let seenByC = try await third.text(.eval(expression: "[document.cookie, localStorage.getItem('cart')]", note: nil))
+        #expect(seenByC.contains("Result: [\"\",null]"), "another project shares no cookies or local storage")
         let seenByA = try await first.text(.eval(expression: "[document.cookie, localStorage.getItem('cart')]", note: nil))
         #expect(seenByA.contains("Result: [\"cart=a\",\"from a\"]"))
 
@@ -119,6 +125,7 @@ struct BrowserAgentFlowTests {
         #expect(vm.browsers.existing(a.agent.id) !== vm.browsers.existing(b.agent.id))
         vm.browsers.existing(a.agent.id)?.close()
         vm.browsers.existing(b.agent.id)?.close()
+        vm.browsers.existing(c.agent.id)?.close()
     }
 
     @Test func aTakeOverRefusesTheAgentUntilTheUserMessagesTheThread() async throws {

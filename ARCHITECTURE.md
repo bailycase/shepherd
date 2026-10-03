@@ -132,8 +132,10 @@ and hidden under it, as when switching agents.
 
 **Browser.** Each local thread's page is a `BrowserSession` (`BrowserHost.swift`), held by the
 view model's `BrowserSessions` and made the first time the thread opens something: a `WKWebView`
-in a `WKWebsiteDataStore(forIdentifier:)` keyed on the agent (in memory in tests), removed when
-the agent leaves the state. The session owns the view, and `BrowserPageView` only puts it in the
+in a `WKWebsiteDataStore(forIdentifier:)` shared by the project's threads and worktrees (in memory
+in ordinary tests). Its stable project ID keeps saved website data across app restarts and thread
+deletion; removing the project removes the store. Pages and agent controls stay thread-scoped.
+The session owns the view, and `BrowserPageView` only puts it in the
 pane, so the pane closing, a tab switch or a thread switch never reloads the page. Its scripts
 (`BrowserScripts.swift`): the picker and the network count in Shepherd's own `WKContentWorld`, and
 a console shim in the page's world that also answers the picker's React source question through a
@@ -145,7 +147,7 @@ goes alone), and projects it back onto the user message as chips. Start runs a d
 `PaneControl`'s terminal-open path and waits for its port before opening the page.
 
 A remote thread's page is a `BrowserSession` too, made by `BrowserSessions.session(for:hosts:)` for
-its `RemoteAgentRef`, in a store keyed on the host and the agent, with a `BrowserRemote` (its host, the
+its `RemoteAgentRef`, in a store keyed on the host and project, with a `BrowserRemote` (its host, the
 ports it forwards, the host's dev servers and Start). The page renders here and reaches the host's
 loopback through `BrowserPortForwarder` (a listener on this Mac's loopback at the same port, one
 owner per port, since WebKit sends loopback past every proxy) bridged to a tunnel over the host's

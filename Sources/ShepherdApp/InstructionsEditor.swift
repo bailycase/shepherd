@@ -13,6 +13,8 @@ struct InstructionsEditor: NSViewRepresentable {
     /// What is saved: lines that differ from it are tinted.
     let saved: String
     let accessibilityLabel: String
+    var project = false
+    var markdown = true
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -21,6 +23,7 @@ struct InstructionsEditor: NSViewRepresentable {
         textView.delegate = context.coordinator
         textView.isRichText = false
         textView.importsGraphics = false
+        textView.isEditable = context.environment.isEnabled
         textView.allowsUndo = true
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
@@ -29,9 +32,10 @@ struct InstructionsEditor: NSViewRepresentable {
         textView.isContinuousSpellCheckingEnabled = false
         textView.smartInsertDeleteEnabled = false
         textView.drawsBackground = true
-        textView.backgroundColor = NSColor(Color.nw.bgWindow)
+        textView.project = project
+        textView.backgroundColor = NSColor(project ? Color.nw.projectEditorBackground : Color.nw.bgWindow)
         textView.insertionPointColor = NSColor(Color.nw.lantern)
-        textView.textContainerInset = NSSize(width: 0, height: AppLayout.instructionsEditorInset)
+        textView.textContainerInset = NSSize(width: 0, height: project ? AppLayout.projectEditorInset : AppLayout.instructionsEditorInset)
         textView.textContainer?.lineFragmentPadding = 0
         textView.textContainer?.widthTracksTextView = false
         textView.isVerticallyResizable = true
@@ -56,6 +60,7 @@ struct InstructionsEditor: NSViewRepresentable {
         context.coordinator.parent = self
         guard let textView = scroll.documentView as? InstructionsTextView else { return }
         textView.setAccessibilityLabel(accessibilityLabel)
+        textView.isEditable = context.environment.isEnabled
         // Another file, a revert, or a save from elsewhere: the text changes under the editor.
         if textView.string != text {
             textView.string = text
@@ -88,15 +93,21 @@ struct InstructionsEditor: NSViewRepresentable {
             let scale = ThemeStore.shared.textScale
             if let styled, styled.text == text, styled.saved == saved, styled.scale == scale { return }
             styled = (text, saved, scale)
-            let styles = InstructionsEditorStyles(scale: scale)
+            let styles = InstructionsEditorStyles(scale: scale, project: parent.project)
             storage.beginEditing()
             storage.setAttributes(styles.base, range: NSRange(location: 0, length: storage.length))
             var location = 0
             for line in text.components(separatedBy: "\n") {
-                for span in InstructionsText.highlight(line: line) {
+                for span in parent.markdown ? InstructionsText.highlight(line: line) : [] {
                     let range = NSRange(location: location + span.range.lowerBound, length: span.range.count)
                     guard NSMaxRange(range) <= storage.length else { continue }
                     storage.addAttributes(styles.attributes(for: span.role), range: range)
+                }
+                if parent.project, parent.markdown,
+                   let pattern = try? NSRegularExpression(pattern: "\\*\\*[^*]+\\*\\*") {
+                    for match in pattern.matches(in: line, range: NSRange(location: 0, length: (line as NSString).length)) {
+                        storage.addAttributes(styles.heading, range: NSRange(location: location + match.range.location, length: match.range.length))
+                    }
                 }
                 location += (line as NSString).length + 1
             }
@@ -124,11 +135,11 @@ struct InstructionsEditorStyles {
 
     static var current: InstructionsEditorStyles { InstructionsEditorStyles(scale: ThemeStore.shared.textScale) }
 
-    init(scale: CGFloat) {
-        let size = AppLayout.instructionsEditorTextSize * scale
+    init(scale: CGFloat, project: Bool = false) {
+        let size = (project ? AppLayout.projectsHostSize : AppLayout.instructionsEditorTextSize) * scale
         let font = NSFont(name: "GeistMono-Regular", size: size) ?? .monospacedSystemFont(ofSize: size, weight: .regular)
         let bold = NSFont(name: "GeistMono-SemiBold", size: size) ?? .monospacedSystemFont(ofSize: size, weight: .semibold)
-        let lineHeight = AppLayout.instructionsEditorLineHeight * scale
+        let lineHeight = (project ? AppLayout.projectEditorLineHeight : AppLayout.instructionsEditorLineHeight) * scale
         let paragraph = NSMutableParagraphStyle()
         paragraph.minimumLineHeight = lineHeight
         paragraph.maximumLineHeight = lineHeight
@@ -136,15 +147,15 @@ struct InstructionsEditorStyles {
         let offset = max(0, (lineHeight - (font.ascender - font.descender)) / 2)
         base = [
             .font: font,
-            .foregroundColor: NSColor(Color.nw.textSecondary),
+            .foregroundColor: NSColor(project ? Color.nw.projectInstructionText : Color.nw.textSecondary),
             .paragraphStyle: paragraph,
             .baselineOffset: offset,
         ]
-        heading = [.font: bold, .foregroundColor: NSColor(Color.nw.textPrimary)]
-        headingMarker = [.foregroundColor: NSColor(Color.nw.textTertiary)]
-        bullet = [.foregroundColor: NSColor(Color.nw.lanternText)]
-        code = [.foregroundColor: NSColor(Color.nw.synString)]
-        let numberSize = AppLayout.instructionsNumberSize * scale
+        heading = [.font: project ? font : bold, .foregroundColor: NSColor(project ? Color.nw.projectMarkdownHeading : Color.nw.textPrimary)]
+        headingMarker = project ? heading : [.foregroundColor: NSColor(Color.nw.textTertiary)]
+        bullet = [.foregroundColor: NSColor(project ? Color.nw.settingsMuted : Color.nw.lanternText)]
+        code = [.foregroundColor: NSColor(project ? Color.nw.projectMarkdownCode : Color.nw.synString)]
+        let numberSize = (project ? AppLayout.projectsPathSize : AppLayout.instructionsNumberSize) * scale
         let right = NSMutableParagraphStyle()
         right.alignment = .right
         numbers = [
@@ -173,8 +184,9 @@ final class InstructionsTextView: NSTextView {
 
     /// Lines (from 0) changed since the last save.
     var changedLines: Set<Int> = []
-
-    private var leading: CGFloat { AppLayout.instructionsGutterWidth + AppLayout.instructionsGutterGap }
+    var project = false
+    private var gutter: CGFloat { project ? AppLayout.projectEditorGutter : AppLayout.instructionsGutterWidth }
+    private var leading: CGFloat { project ? gutter + AppLayout.projectEditorInset : gutter + AppLayout.instructionsGutterGap }
 
     override var textContainerOrigin: NSPoint {
         NSPoint(x: leading, y: textContainerInset.height)
@@ -191,7 +203,11 @@ final class InstructionsTextView: NSTextView {
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
         guard let layoutManager else { return }
-        let styles = InstructionsEditorStyles.current
+        let styles = InstructionsEditorStyles(scale: ThemeStore.shared.textScale, project: project)
+        if project {
+            NSColor(Color.nw.projectEditorBackground).setFill()
+            NSRect(x: 0, y: rect.minY, width: gutter, height: rect.height).fill()
+        }
         let origin = textContainerOrigin
         let text = string as NSString
         var index = 0
@@ -213,15 +229,15 @@ final class InstructionsTextView: NSTextView {
 
     /// The tint across a changed line, and its number in the gutter beside its first row.
     private func drawLine(_ index: Int, in lineRect: NSRect, styles: InstructionsEditorStyles) {
-        if changedLines.contains(index) {
+        if !project, changedLines.contains(index) {
             NSColor(Color.nw.lanternTint).setFill()
             NSRect(x: 0, y: lineRect.minY, width: bounds.width, height: lineRect.height).fill()
         }
         let numberHeight = (styles.numbers[.font] as? NSFont).map { $0.ascender - $0.descender } ?? 12
-        let row = min(lineRect.height, AppLayout.instructionsEditorLineHeight * ThemeStore.shared.textScale)
+        let row = min(lineRect.height, (project ? AppLayout.projectEditorLineHeight : AppLayout.instructionsEditorLineHeight) * ThemeStore.shared.textScale)
         ("\(index + 1)" as NSString).draw(
             in: NSRect(x: 0, y: lineRect.minY + (row - numberHeight) / 2,
-                       width: AppLayout.instructionsGutterWidth, height: numberHeight),
+                       width: gutter - (project ? AppLayout.projectEditorInset : 0), height: numberHeight),
             withAttributes: styles.numbers
         )
     }

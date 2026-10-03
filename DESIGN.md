@@ -41,6 +41,12 @@ survive "does this help a person supervise ten working agents at once?"
   budgets; elapsed time and token counts are reporting only. Off pauses active goals without
   clearing them, and re-enable never resumes work by itself.
 
+## Browser data
+
+Browser pages and agent controls belong to threads. Saved cookies, local storage and cache belong
+to projects and survive app restarts and thread deletion. Different projects and remote hosts
+remain isolated. The storage and cleanup rules are in [the Browser spec](docs/design/side-pane-browser.md).
+
 ## Principles, in priority order
 
 1. **Readable measure.** The thread column is at most 820pt and agent prose 640pt.
@@ -223,7 +229,7 @@ More: [docs/design/verifying.md](docs/design/verifying.md).
 | Conversation goals | [thread.md](docs/design/thread.md#goal-card), [goals.md](docs/goals.md) |
 | Thread, composer, queue, subagents | [thread.md](docs/design/thread.md), [composer.md](docs/design/composer.md), [queue.md](docs/design/queue.md), [subagents.md](docs/design/subagents.md) |
 | Side pane, terminal, palette, dialogs | [side-pane-changes.md](docs/design/side-pane-changes.md), [side-pane-browser.md](docs/design/side-pane-browser.md), [terminal.md](docs/design/terminal.md), [dialogs-and-palette.md](docs/design/dialogs-and-palette.md) |
-| Settings | [settings.md](docs/design/settings.md) and its `settings-*` files |
+| Settings | [settings.md](docs/design/settings.md) and its `settings-*` files, including [Projects](docs/design/settings-projects.md) |
 | Controls, status pieces, keyboard, accessibility | [components.md](docs/design/components.md), [keyboard-and-accessibility.md](docs/design/keyboard-and-accessibility.md) |
 | iPhone or iPad | `ios-*.md` in [docs/design/](docs/design/README.md), and [docs/ios](docs/ios/README.md) |
 | Notifications, Live Activities | [notifications.md](docs/design/notifications.md) |

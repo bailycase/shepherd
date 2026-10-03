@@ -9,15 +9,15 @@ import ShepherdUI
 
 // The Browser tab's web views, and the only app file that imports WebKit (as DesignHost is for
 // DesignSurfaceKit and TerminalHost for TerminalSurfaceKit). Each local thread has at most one
-// page (`BrowserSession`), made the first time it opens something, in a website data store of
-// its own keyed on the agent: it shares cookies, storage and caches with nothing else, and its
-// store is removed when the agent is deleted. The page lives as long as the thread: hiding the
-// pane, another tab, or another thread on screen only takes its view out of the window, so it
+// page (`BrowserSession`), made the first time it opens something. Threads in a project share
+// its persistent website data store; deleting a thread closes its page, not the project's
+// logins. The page lives as long as the thread: hiding the pane, another tab, or another thread
+// on screen only takes its view out of the window, so it
 // never reloads.
 
 // MARK: Stores
 
-/// Where each thread's website data lives: on disk per agent in the app, or in memory (tests).
+/// Where website data lives: on disk per project in the app, or in memory (tests).
 enum BrowserDataStores: Sendable {
     case persistent
     case ephemeral
@@ -39,6 +39,25 @@ enum BrowserDataStores: Sendable {
         uuid(from: "shepherd-browser-remote:\(ref.hostID.uuidString):\(ref.agentID.rawValue)")
     }
 
+    /// Project identity, not its name or checkout path: worktrees share their parent project's
+    /// logins, while local projects and projects on different remote hosts stay separate.
+    static func identifier(forProject project: SpaceID, hostID: UUID? = nil) -> UUID {
+        uuid(from: "shepherd-browser-project:\(hostID?.uuidString ?? "local"):\(project.rawValue)")
+    }
+
+    /// Reserved spaces are not projects. An automation uses the project holding its folder;
+    /// a thread with no project keeps its own store instead of sharing the reserved space's.
+    static func identifier(for agent: Agent, in state: ShepherdState, hostID: UUID? = nil) -> UUID {
+        let projects = state.spaces.filter { !$0.hidden }
+        let project = projects.first { $0.id == agent.spaceID }
+            ?? state.automations.first { $0.agentID == agent.id }.flatMap {
+                SidebarDerivation.space(holding: $0.cwd, in: projects, expandTilde: hostID == nil)
+            }
+        if let project { return identifier(forProject: project.id, hostID: hostID) }
+        return hostID.map { identifier(forRemote: RemoteAgentRef(hostID: $0, agentID: agent.id)) }
+            ?? identifier(for: agent.id)
+    }
+
     private static func uuid(from seed: String) -> UUID {
         var bytes = Array(Insecure.SHA1.hash(data: Data(seed.utf8)).prefix(16))
         bytes[6] = (bytes[6] & 0x0F) | 0x50
@@ -47,12 +66,10 @@ enum BrowserDataStores: Sendable {
                            bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]))
     }
 
-    /// `WKWebsiteDataStore(forIdentifier:)` crashed CI's macOS 26 test process (SIGSEGV), and
-    /// nobody has confirmed it's safe there in the app either, so `.persistent` falls back to a
-    /// non-persistent store per thread on macOS 26 and keeps identified, on-disk stores from
-    /// macOS 27. A pure function of the version so it can be unit-tested without the OS.
-    static func usesIdentifiedStores(osVersion: OperatingSystemVersion) -> Bool {
-        osVersion.majorVersion >= 27
+    /// Identified stores are supported on every macOS Shepherd runs on. CI observed a crash in
+    /// its bundle-less macOS 26 test runner, so limit the workaround to that context.
+    static func usesIdentifiedStores(osVersion: OperatingSystemVersion, bundleIdentifier: String?) -> Bool {
+        osVersion.majorVersion >= 27 || bundleIdentifier != nil
     }
 
     @MainActor
@@ -60,39 +77,31 @@ enum BrowserDataStores: Sendable {
         store(identifier: Self.identifier(for: agent))
     }
 
-    /// A remote thread's page has a store of its own too, apart from every local thread's.
+    /// A remote thread outside a project falls back to a host-and-thread store.
     @MainActor
     func store(forRemote ref: RemoteAgentRef) -> WKWebsiteDataStore {
         store(identifier: Self.identifier(forRemote: ref))
     }
 
     @MainActor
-    private func store(identifier: UUID) -> WKWebsiteDataStore {
+    func store(identifier: UUID) -> WKWebsiteDataStore {
         switch self {
         case .persistent:
-            Self.usesIdentifiedStores(osVersion: ProcessInfo.processInfo.operatingSystemVersion)
+            Self.usesIdentifiedStores(osVersion: ProcessInfo.processInfo.operatingSystemVersion,
+                                      bundleIdentifier: Bundle.main.bundleIdentifier)
                 ? WKWebsiteDataStore(forIdentifier: identifier)
                 : .nonPersistent()
         case .ephemeral: .nonPersistent()
         }
     }
 
-    /// Removes `agent`'s store from disk (nothing for ephemeral stores, or for `.persistent` on
-    /// macOS 26, where it never touched disk). WebKit refuses while a web view it made is still
-    /// going away, so a refusal tries again a few times.
+    /// Removes a store from disk, except in-memory test stores. WebKit refuses while a web view
+    /// it made is still going away, so a refusal tries again a few times.
     @MainActor
-    func remove(for agent: AgentID) {
-        remove(identifier: Self.identifier(for: agent))
-    }
-
-    @MainActor
-    func remove(forRemote ref: RemoteAgentRef) {
-        remove(identifier: Self.identifier(forRemote: ref))
-    }
-
-    @MainActor
-    private func remove(identifier: UUID) {
-        guard self == .persistent, Self.usesIdentifiedStores(osVersion: ProcessInfo.processInfo.operatingSystemVersion) else { return }
+    func remove(identifier: UUID) {
+        guard self == .persistent,
+              Self.usesIdentifiedStores(osVersion: ProcessInfo.processInfo.operatingSystemVersion,
+                                       bundleIdentifier: Bundle.main.bundleIdentifier) else { return }
         Self.remove(identifier, tries: 10)
     }
 
@@ -108,14 +117,25 @@ enum BrowserDataStores: Sendable {
     }
 }
 
+/// Settings receives only site names and counts, never cookie names or values.
+struct BrowserCookieSite: Equatable, Identifiable, Sendable {
+    let site: String
+    let count: Int
+    var id: String { site }
+}
+
 /// Every thread's page, made on demand: a local thread's, and a remote thread's, which renders here
 /// and reaches its host through the tunnel (`BrowserRemote`).
 @MainActor
 final class BrowserSessions {
     let dataStores: BrowserDataStores
     private var sessions: [AgentID: BrowserSession] = [:]
-    private var known: Set<AgentID> = []
+    private var localStoreIDs: [AgentID: UUID] = [:]
+    private var localProjects: Set<UUID> = []
     private var remoteSessions: [RemoteAgentRef: BrowserSession] = [:]
+    private var remoteStoreIDs: [RemoteAgentRef: UUID] = [:]
+    private var remoteProjects: Set<UUID> = []
+    private var stores: [UUID: WKWebsiteDataStore] = [:]
     /// The ports of remote hosts forwarded on this Mac (`BrowserPortForwarder`).
     let ports = BrowserPortForwarder()
     /// What an agent on a remote thread's host may take a page here to (`BrowserViewerPolicy`).
@@ -132,7 +152,14 @@ final class BrowserSessions {
         if let session = remoteSessions[ref] { return session }
         let remote = BrowserRemote(ref: ref, hosts: hosts, ports: ports, policy: viewerPolicy,
                                    claimant: BrowserDriveClaimant(grace: driveGrace))
-        let session = BrowserSession(agentID: ref.agentID, dataStores: dataStores, remote: remote)
+        let identifier = remoteStoreIDs[ref] ?? hosts?.connections.first { $0.id == ref.hostID }.flatMap { connection in
+            connection.state.agents.first { $0.id == ref.agentID }.map {
+                BrowserDataStores.identifier(for: $0, in: connection.state, hostID: ref.hostID)
+            }
+        } ?? BrowserDataStores.identifier(forRemote: ref)
+        remoteStoreIDs[ref] = identifier
+        let session = BrowserSession(agentID: ref.agentID, dataStores: dataStores, remote: remote,
+                                     websiteDataStore: store(identifier))
         remote.session = session
         remoteSessions[ref] = session
         return session
@@ -145,33 +172,91 @@ final class BrowserSessions {
         for session in remoteSessions.values { body(session) }
     }
 
-    /// Remote threads that are gone (deleted on their host, or their host removed here) take their
-    /// page, its forwarded ports and its website data with them. A host that is only away keeps its
-    /// last state, so its threads keep their pages.
-    func prune(liveRemote: Set<RemoteAgentRef>) {
-        for gone in remoteSessions.keys where !liveRemote.contains(gone) {
-            remoteSessions.removeValue(forKey: gone)?.close()
-            dataStores.remove(forRemote: gone)
+    /// A disconnected host keeps its last state and saved logins. Removing a thread releases
+    /// its page and ports; removing its project or host removes that project's website data.
+    func prune(liveRemote: Set<RemoteAgentRef>, hosts: RemoteHostStore) {
+        var identifiers: [RemoteAgentRef: UUID] = [:]
+        var projects: Set<UUID> = []
+        for connection in hosts.connections {
+            projects.formUnion(connection.state.spaces.filter { !$0.hidden }.map {
+                BrowserDataStores.identifier(forProject: $0.id, hostID: connection.id)
+            })
+            for agent in connection.state.agents where liveRemote.contains(RemoteAgentRef(hostID: connection.id, agentID: agent.id)) {
+                identifiers[RemoteAgentRef(hostID: connection.id, agentID: agent.id)] =
+                    BrowserDataStores.identifier(for: agent, in: connection.state, hostID: connection.id)
+            }
         }
+        for ref in remoteSessions.keys where !liveRemote.contains(ref) || remoteStoreIDs[ref] != identifiers[ref] {
+            remoteSessions.removeValue(forKey: ref)?.close()
+        }
+        removeStores(remoteProjects.union(remoteStoreIDs.values).subtracting(projects.union(identifiers.values)))
+        remoteStoreIDs = identifiers
+        remoteProjects = projects
     }
 
     func session(for agent: AgentID) -> BrowserSession {
         if let session = sessions[agent] { return session }
-        let session = BrowserSession(agentID: agent, dataStores: dataStores)
+        let identifier = localStoreIDs[agent] ?? BrowserDataStores.identifier(for: agent)
+        localStoreIDs[agent] = identifier
+        let session = BrowserSession(agentID: agent, dataStores: dataStores, websiteDataStore: store(identifier))
         sessions[agent] = session
         return session
     }
 
     func existing(_ agent: AgentID) -> BrowserSession? { sessions[agent] }
 
-    /// Agents that are gone take their page and their website data with them. The first state
-    /// only teaches it who is here: agents are deleted only while Shepherd runs.
-    func prune(live: Set<AgentID>) {
-        defer { known = live }
-        guard !known.isEmpty else { return }
-        for gone in known.subtracting(live) {
-            sessions.removeValue(forKey: gone)?.close()
-            dataStores.remove(for: gone)
+    /// Projects keep saved logins even with no threads. A thread that changes projects loses
+    /// its old page before it can use the new project's store.
+    func prune(state: ShepherdState) {
+        let identifiers = Dictionary(uniqueKeysWithValues: state.agents.map {
+            ($0.id, BrowserDataStores.identifier(for: $0, in: state))
+        })
+        let projects = Set(state.spaces.filter { !$0.hidden }.map { BrowserDataStores.identifier(forProject: $0.id) })
+        for agent in sessions.keys where localStoreIDs[agent] != identifiers[agent] {
+            sessions.removeValue(forKey: agent)?.close()
+        }
+        removeStores(localProjects.union(localStoreIDs.values).subtracting(projects.union(identifiers.values)))
+        localStoreIDs = identifiers
+        localProjects = projects
+    }
+
+    func cookieSites(projectID: SpaceID, hostID: UUID? = nil) async -> [BrowserCookieSite] {
+        let cookies = await store(BrowserDataStores.identifier(forProject: projectID, hostID: hostID))
+            .httpCookieStore.allCookies()
+        return Dictionary(grouping: cookies, by: { Self.cookieSite($0.domain) })
+            .map { BrowserCookieSite(site: $0.key, count: $0.value.count) }
+            .sorted { $0.count == $1.count ? $0.site < $1.site : $0.count > $1.count }
+    }
+
+    /// Deletes only cookies, not local storage or caches. Nil clears every site's cookies.
+    func clearCookies(projectID: SpaceID, hostID: UUID? = nil, site: String? = nil) async {
+        let store = store(BrowserDataStores.identifier(forProject: projectID, hostID: hostID))
+        guard let site else {
+            await store.removeData(ofTypes: [WKWebsiteDataTypeCookies], modifiedSince: .distantPast)
+            return
+        }
+        let cookies = store.httpCookieStore
+        let target = Self.cookieSite(site)
+        for cookie in await cookies.allCookies() where Self.cookieSite(cookie.domain) == target {
+            await cookies.delete(cookie)
+        }
+    }
+
+    private static func cookieSite(_ domain: String) -> String {
+        String(domain.drop(while: { $0 == "." })).lowercased()
+    }
+
+    private func store(_ identifier: UUID) -> WKWebsiteDataStore {
+        if let store = stores[identifier] { return store }
+        let store = dataStores.store(identifier: identifier)
+        stores[identifier] = store
+        return store
+    }
+
+    private func removeStores(_ identifiers: Set<UUID>) {
+        for identifier in identifiers {
+            stores.removeValue(forKey: identifier)
+            dataStores.remove(identifier: identifier)
         }
     }
 }
@@ -220,6 +305,7 @@ final class BrowserSession {
 
     let agentID: AgentID
     @ObservationIgnored let dataStores: BrowserDataStores
+    @ObservationIgnored private let websiteDataStore: WKWebsiteDataStore?
     /// A remote thread's page: which host it is on and how its ports are forwarded. Nil for a
     /// local thread's.
     @ObservationIgnored let remote: BrowserRemote?
@@ -320,10 +406,12 @@ final class BrowserSession {
     @ObservationIgnored private var parkWindow: BrowserParkWindow?
     @ObservationIgnored private(set) var paneSize = CGSize(width: 1024, height: 768)
 
-    init(agentID: AgentID, dataStores: BrowserDataStores, remote: BrowserRemote? = nil) {
+    init(agentID: AgentID, dataStores: BrowserDataStores, remote: BrowserRemote? = nil,
+         websiteDataStore: WKWebsiteDataStore? = nil) {
         self.agentID = agentID
         self.dataStores = dataStores
         self.remote = remote
+        self.websiteDataStore = websiteDataStore
     }
 
     var hasPage: Bool { url != nil }
@@ -755,7 +843,8 @@ final class BrowserSession {
 
     private func makeWebView() -> WKWebView {
         let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = remote.map { dataStores.store(forRemote: $0.ref) } ?? dataStores.store(for: agentID)
+        configuration.websiteDataStore = websiteDataStore
+            ?? remote.map { dataStores.store(forRemote: $0.ref) } ?? dataStores.store(for: agentID)
         let delegate = Delegate(session: self)
         self.delegate = delegate
         let content = configuration.userContentController
