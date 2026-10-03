@@ -3,6 +3,7 @@ import Foundation
 import ShepherdCore
 import ShepherdTestSupport
 import ShepherdUI
+import CoreText
 import SwiftUI
 import Testing
 import WebKit
@@ -25,6 +26,20 @@ struct ProjectBrowserControlTests {
         await #expect(processExitsWith: .success) {
             await recordingErrors { try await Self.pressControls() }
         }
+    }
+
+    @Test @MainActor func fractionalFontsKeepTheBoardsTextWidths() {
+        NWFonts.register()
+        let scale = ThemeStore.shared.textScale
+        defer { ThemeStore.shared.textScale = scale }
+        ThemeStore.shared.textScale = 1
+        let sample = "Browser tabs in all threads and worktrees for payments share cookies on this Mac. Other projects"
+        let font = CTFontCreateWithName("Geist-Regular" as CFString, 13.5, nil)
+        let line = CTLineCreateWithAttributedString(NSAttributedString(string: sample, attributes: [.font: font]))
+        let expected = CTLineGetTypographicBounds(line, nil, nil, nil)
+        let host = NSHostingView(rootView: Text(sample).font(.nwSans(13.5)).fixedSize())
+        #expect(abs(host.fittingSize.width - expected) <= 1)
+        #expect(expected < 610, "13.5pt Geist must not round up to 14pt")
     }
 
     @Test func projectBrowserKeepsTheBoardWidthInsideTheRealSettingsOverlay() async throws {
@@ -71,7 +86,7 @@ struct ProjectBrowserControlTests {
         #expect(abs(table.width - 860) <= 1, "the board's Browser table is 860pt wide")
         #expect(abs(table.minX - 406) <= 1, "the board centers the column after the 232pt Settings navigation")
         #expect(abs(table.height - 235) <= 1, "the empty table has a 32pt header, 200pt body and border insets")
-        #expect(abs(table.minY - 335) <= 1, "the Browser groups follow the board's vertical spacing")
+        #expect(abs(table.minY - 335) <= 1, "the Browser groups follow the board's vertical spacing: \(table)")
         let description = try frame("Browser tabs in all threads and worktrees for payments share cookies on this Mac. Other projects use separate cookies.")
         #expect(description.minX >= table.minX && description.maxX <= table.minX + 620,
                 "the rendered explanation stays within the board's 620pt text measure")
@@ -181,7 +196,7 @@ struct ProjectBrowserControlTests {
             for label in ["Cancel", "Clear cookies"] {
                 let node = try #require(visible.first { $0.label == label })
                 let local = window.host.convert(window.window.convertFromScreen(node.frame), from: nil)
-                #expect(local.minX >= 232 && local.maxX <= width && local.minY >= 0 && local.maxY <= 900,
+                #expect(local.minX >= 0 && local.maxX <= width && local.minY >= 0 && local.maxY <= 900,
                         "\(label) at \(local) must fit the \(width)pt Settings viewport")
             }
             try ControlPress.press("Cancel", under: window.host)

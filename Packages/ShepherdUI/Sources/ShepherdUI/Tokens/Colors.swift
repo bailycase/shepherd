@@ -28,6 +28,10 @@ public final class NWPalette: Sendable {
     public let projectDivider: Color
     public let projectRowDivider: Color
     public let projectCookieDanger: Color
+    public let projectCookieConfirm: Color
+    public let projectCookieConfirmHover: Color
+    public let projectCookieConfirmTextHover: Color
+    public let projectCookieShade: Color
     public let projectEditorBackground: Color
     public let projectEditorHeader: Color
     public let projectMarkdownHeading: Color
@@ -114,6 +118,16 @@ public final class NWPalette: Sendable {
         let (ls, ds) = (theme.light.syntax, theme.dark.syntax)
         func role(_ key: KeyPath<ThemeColors, String>) -> Color { Color(light: l[keyPath: key], dark: d[keyPath: key]) }
         func syn(_ key: KeyPath<SyntaxColors, String>) -> Color { Color(light: ls[keyPath: key], dark: ds[keyPath: key]) }
+        func mix(_ first: KeyPath<ThemeColors, String>, _ second: KeyPath<ThemeColors, String>, portion: Double, brightness: Double = 1) -> Color {
+            func value(_ colors: ThemeColors) -> HexColor {
+                let invalid = HexColor(red: 1, green: 0, blue: 1)
+                let a = HexColor(colors[keyPath: first]) ?? invalid, b = HexColor(colors[keyPath: second]) ?? invalid
+                return HexColor(red: (a.red * portion + b.red * (1 - portion)) * brightness,
+                                green: (a.green * portion + b.green * (1 - portion)) * brightness,
+                                blue: (a.blue * portion + b.blue * (1 - portion)) * brightness)
+            }
+            return Color(light: value(l), dark: value(d))
+        }
 
         bgBase = role(\.bgBase)
         bgWindow = role(\.bgWindow)
@@ -131,7 +145,14 @@ public final class NWPalette: Sendable {
         settingsMuted = theme.id == "night-watch" ? Color(light: l.textTertiary, dark: "#767c85") : textTertiary
         projectDivider = theme.id == "night-watch" ? Color(light: l.lineSubtle, dark: "#22262a") : lineSubtle
         projectRowDivider = theme.id == "night-watch" ? Color(light: l.lineSubtle, dark: "#1b1e21") : lineSubtle
-        projectCookieDanger = theme.id == "night-watch" ? Color(light: "#d9443f", dark: "#f26e6a") : role(\.failed)
+        projectCookieDanger = mix(\.failed, \.textPrimary, portion: 0.8)
+        projectCookieConfirm = mix(\.failed, \.textOnLantern, portion: 0.75)
+        projectCookieConfirmHover = mix(\.failed, \.textOnLantern, portion: 0.75, brightness: 0.94)
+        projectCookieConfirmTextHover = mix(\.textOnRunning, \.textOnRunning, portion: 1, brightness: 0.94)
+        let shadeLight = HexColor(l.bgBase) ?? HexColor(red: 1, green: 0, blue: 1)
+        let shadeDark = HexColor(d.bgBase) ?? HexColor(red: 1, green: 0, blue: 1)
+        projectCookieShade = Color(light: HexColor(red: shadeLight.red, green: shadeLight.green, blue: shadeLight.blue, alpha: 0.65),
+                                   dark: HexColor(red: shadeDark.red, green: shadeDark.green, blue: shadeDark.blue, alpha: 0.65))
         projectEditorBackground = theme.id == "night-watch" ? Color(light: l.bgSunken, dark: "#111316") : bgSunken
         projectEditorHeader = theme.id == "night-watch" ? Color(light: l.bgRaised, dark: "#15171a") : bgRaised
         projectMarkdownHeading = theme.id == "night-watch" ? Color(light: ls.type, dark: "#79aaff") : syn(\.type)

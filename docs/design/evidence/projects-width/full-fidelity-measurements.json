@@ -1,0 +1,111 @@
+{
+  "design_revision": 572,
+  "image_scale": 2,
+  "column_points": {
+    "x": 406,
+    "width": 860
+  },
+  "table_edges_in_points": {
+    "board": [
+      335.0,
+      336.0,
+      368.0,
+      369.0,
+      427.0,
+      428.0,
+      486.0,
+      487.0,
+      545.0,
+      546.0
+    ],
+    "app": [
+      335.0,
+      336.0,
+      368.0,
+      369.0,
+      427.0,
+      428.0,
+      486.0,
+      487.0,
+      545.0,
+      546.0
+    ]
+  },
+  "sampled_colors": {
+    "page": {
+      "board": [
+        13,
+        14,
+        16
+      ],
+      "app": [
+        13,
+        14,
+        16
+      ]
+    },
+    "sidebar": {
+      "board": [
+        10,
+        11,
+        12
+      ],
+      "app": [
+        10,
+        11,
+        12
+      ]
+    },
+    "selected_fill": {
+      "board": [
+        29,
+        30,
+        31
+      ],
+      "app": [
+        29,
+        30,
+        31
+      ]
+    },
+    "table_header": {
+      "board": [
+        17,
+        19,
+        22
+      ],
+      "app": [
+        17,
+        19,
+        22
+      ]
+    },
+    "table_border": {
+      "board": [
+        44,
+        48,
+        53
+      ],
+      "app": [
+        44,
+        48,
+        53
+      ]
+    },
+    "row_divider": {
+      "board": [
+        31,
+        34,
+        38
+      ],
+      "app": [
+        31,
+        34,
+        38
+      ]
+    }
+  },
+  "font_sizes_preserved": true,
+  "glyph_assets": "22 static drawing-only SVGs in ShepherdUI/Resources/Glyphs",
+  "data_source": "scratch SessionServer project files and shared WebKit store"
+}

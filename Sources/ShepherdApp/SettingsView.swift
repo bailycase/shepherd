@@ -15,7 +15,6 @@ struct SettingsView: View {
     @State private var searchText = ""
     @FocusState private var searchFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.displayScale) private var displayScale
 
     private var query: String { searchText.trimmingCharacters(in: .whitespacesAndNewlines) }
 
@@ -27,10 +26,16 @@ struct SettingsView: View {
     var body: some View {
         HStack(spacing: 0) {
             nav
-            NWHairline(.vertical)
+            NWHairline(.vertical, width: NWSettingsNavMetrics.borderWidth)
             detail
         }
         .background(Color.nw.bgWindow)
+        .overlay {
+            if vm.settingsSection == .projects, vm.projects.showingBrowser,
+               let project = vm.projects.selected, let removal = vm.projectCookies.pending {
+                ProjectBrowserSettings(model: vm.projectCookies, project: project, scope: vm.cookieScope(for: project)).confirmation(removal)
+            }
+        }
         .background { WindowChrome() }
         .preferredColorScheme(themes.mode.colorScheme)
         .ignoresSafeArea()
@@ -62,10 +67,7 @@ struct SettingsView: View {
                 else if !vm.projectCookies.clearing { vm.showSettings = false }
             } label: {
                 HStack(spacing: NW.Space.m) {
-                    Image(systemName: "chevron.left")
-                        .font(.nwSans(NWSettingsNavMetrics.textSize, .semibold))
-                        .imageScale(.small)
-                        .frame(width: AppLayout.settingsBackGlyphWidth)
+                    NWGlyph.Settings.back.image.frame(width: AppLayout.settingsBackGlyphWidth)
                         .accessibilityHidden(true)
                     Text("Back to Shepherd").font(.nwSans(NWSettingsNavMetrics.textSize))
                     Spacer(minLength: 0)
@@ -75,13 +77,12 @@ struct SettingsView: View {
                 .frame(minHeight: AppLayout.settingsBackRowHeight)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.nwRow())
+            .buttonStyle(.nwRow(focusColor: .nw.running))
             .keyboardShortcut(.escape, modifiers: [])
             .padding(.horizontal, NWSettingsNavMetrics.sidePadding)
 
-            NWSearchField("Search settings", text: $searchText, shortcut: "⌘F")
+            NWSettingsSearchField("Search settings", text: $searchText, placement: .navigation)
                 .focused($searchFocused)
-                .nwControlScale(.settings)
                 .padding(.horizontal, NWSettingsNavMetrics.sidePadding)
                 .padding(.top, AppLayout.settingsSearchTop)
                 .padding(.bottom, NW.Space.l)
@@ -95,7 +96,7 @@ struct SettingsView: View {
                                 vm.settingsSection = section
                             }
                         } else {
-                            NWSettingsNavRow(section.title, systemImage: section.symbol, selected: vm.settingsSection == section) {
+                            NWSettingsNavRow(section.title, glyph: section.artwork, selected: vm.settingsSection == section) {
                                 vm.settingsSection = section
                             }
                         }
@@ -123,7 +124,7 @@ struct SettingsView: View {
 
             Spacer(minLength: 0)
             Text(versions)
-                .font(.nw(.micro))
+                .font(.nwMono(NWTextStyle.micro.size))
                 .foregroundStyle(Color.nw.textTertiary)
                 .lineLimit(1).truncationMode(.tail)
                 // Aligned with the rows' icons.
@@ -132,7 +133,7 @@ struct SettingsView: View {
         }
         .disabled(vm.settingsSection == .projects && (vm.projectCookies.pending != nil || vm.projectCookies.clearing))
         .accessibilityHidden(vm.settingsSection == .projects && vm.projectCookies.pending != nil)
-        .frame(width: AppLayout.settingsNavWidth - NW.hairline(displayScale))
+        .frame(width: AppLayout.settingsNavWidth - NWSettingsNavMetrics.borderWidth)
         .background(Color.nw.bgBase.ignoresSafeArea())
     }
 
@@ -375,6 +376,25 @@ enum SettingsSection: String, CaseIterable, Identifiable {
             item.localizedCaseInsensitiveContains(query)
                 || (keywords[item] ?? []).contains { $0.localizedCaseInsensitiveContains(query) }
         } + rows.filter { $0.localizedCaseInsensitiveContains(query) }
+    }
+
+    var artwork: NWGlyph.Settings {
+        switch self {
+        case .appearance: .appearance
+        case .terminal: .terminal
+        case .agents: .agents
+        case .subagents: .subagents
+        case .projects: .projects
+        case .worktrees: .worktrees
+        case .pi, .piSignIn, .piFromYourPi, .piSlashCommands: .pi
+        case .instructions: .instructions
+        case .skills: .skills
+        case .mcp: .mcp
+        case .remote: .remoteConnection
+        case .keyboard: .keyboard
+        case .advanced: .advanced
+        case .experiments: .experiments
+        }
     }
 
     var symbol: String {

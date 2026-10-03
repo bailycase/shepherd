@@ -34,16 +34,27 @@ extension AppLayout {
     static let projectCookieBorderInset: CGFloat = 1
     static let projectCookieRowHeight: CGFloat = 58
     static let projectCookieIconSize: CGFloat = 28
-    static let projectCookieGlyphSize: CGFloat = 14
     static let projectCookieCountWidth: CGFloat = 100
     static let projectCookieActionsWidth: CGFloat = 136
     static let projectCookieEmptyHeight: CGFloat = 200
+    static let projectCookieEmptyCopyWidth: CGFloat = 430
+    static let projectCookieEmptyLineExtra: CGFloat = 2.15
+    static let projectCookieConfirmLineExtra: CGFloat = 3.6
     static let projectCookieConfirmWidth: CGFloat = 480
-    static let projectCookieActionHeight: CGFloat = 28
     static let projectCookieConfirmTitle: CGFloat = 17
-    static let projectCookieLineExtra: CGFloat = 4
-    static let projectCookieShadeOpacity = 0.65
-    static let projectBreadcrumbGlyph: CGFloat = 8
+    static let projectCookieLineExtra: CGFloat = 2.925
+    static let projectCookieParagraphInset: CGFloat = 0.4625
+    static let projectCookieFooterLineExtra: CGFloat = 1.825
+    static let projectCookieFooterInset: CGFloat = 0.9125
+    static let projectBrowserTitleLine: CGFloat = 21
+    static let projectNameTracking: CGFloat = -0.22
+    // Align native font line boxes with the supplied browser board's text baselines.
+    static let projectPathBaseline: CGFloat = -1.5
+    static let projectHostBaseline: CGFloat = -1
+    static let projectTabBaseline: CGFloat = 1.5
+    static let projectCookieTitleBaseline: CGFloat = -1
+    static let projectCookieTextBaseline: CGFloat = -1.5
+    static let projectCookieHeaderBaseline: CGFloat = -1.5
     static let projectFileGap: CGFloat = 10
     static let projectDividerHeight: CGFloat = 14
     static let projectSavePad: CGFloat = 14
@@ -56,7 +67,6 @@ extension AppLayout {
     static let projectPathHeight: CGFloat = 18
     // The board's 32pt content box has a 1pt border outside it.
     static let projectFolderSize: CGFloat = 34
-    static let projectFolderGlyph: CGFloat = 16
     static let projectPathInset: CGFloat = 44
     static let projectBodyWidth: CGFloat = 938
     static let projectEditorWidth: CGFloat = 668
@@ -64,6 +74,7 @@ extension AppLayout {
     static let projectSideWidth: CGFloat = 250
     static let projectColumnsGap: CGFloat = 20
     static let projectTabHeight: CGFloat = 34
+    static let projectTabRadius: CGFloat = 0
     static let projectTabSize: CGFloat = 13
     static let projectTabUnderline: CGFloat = 2
     static let projectFileHeight: CGFloat = 26
