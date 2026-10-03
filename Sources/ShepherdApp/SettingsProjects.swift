@@ -12,7 +12,17 @@ struct ProjectsSettings: View {
             if let project = model.selected {
                 ProjectSettingsDetail(model: model, project: project, cookies: vm.projectCookies, cookieScope: vm.cookieScope(for: project))
             } else {
-                index
+                GeometryReader { geometry in
+                    ScrollView([.horizontal, .vertical]) {
+                        index
+                            .frame(width: AppLayout.projectsWidth, alignment: .leading)
+                            .padding(.horizontal, AppLayout.settingsGutter)
+                            .padding(.top, AppLayout.settingsTop)
+                            .padding(.bottom, AppLayout.settingsBottom)
+                            .frame(minWidth: geometry.size.width, alignment: .top)
+                    }
+                    .scrollBounceBehavior(.basedOnSize)
+                }
             }
         }
         .nwControlScale(.settings)

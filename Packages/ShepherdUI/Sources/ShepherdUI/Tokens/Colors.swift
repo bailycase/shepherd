@@ -122,7 +122,7 @@ public final class NWPalette: Sendable {
         bgBubble = role(\.bgBubble)
         bgHover = role(\.bgHover)
         bgSelected = role(\.bgSelected)
-        settingsNavSelected = theme.id == "night-watch" ? Color(light: l.bgSelected, dark: "#23272c") : bgSelected
+        settingsNavSelected = bgSelected
         lineSubtle = role(\.lineSubtle)
         lineStrong = role(\.lineStrong)
         textPrimary = role(\.textPrimary)

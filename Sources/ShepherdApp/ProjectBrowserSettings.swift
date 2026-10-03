@@ -32,7 +32,6 @@ struct ProjectBrowserSettings: View {
             if model.scope == scope, model.pending != nil { return }
             await model.load(scope, force: true)
         }
-            .overlay { if let removal = model.pending { confirmation(removal) } }
     }
 
     private var intro: some View {
@@ -114,7 +113,8 @@ struct ProjectBrowserSettings: View {
                     }
                 }
             }
-        }.background(Color.nw.bgWindow)
+        }.padding(AppLayout.projectCookieBorderInset)
+            .background(Color.nw.bgWindow)
             .clipShape(RoundedRectangle(cornerRadius: NWCardRowMetrics.settingsCardRadius))
             .nwBorder(Color.nw.lineStrong, radius: NWCardRowMetrics.settingsCardRadius)
             .accessibilityElement(children: .contain).accessibilityLabel("Sites with cookies")
@@ -128,7 +128,7 @@ struct ProjectBrowserSettings: View {
                     .frame(width: AppLayout.projectCookieIconSize, height: AppLayout.projectCookieIconSize)
                     .background(Color.nw.bgSunken, in: RoundedRectangle(cornerRadius: NW.Radius.s)).accessibilityHidden(true)
                 Text(site.site).font(.nwMono(AppLayout.projectTabSize)).foregroundStyle(Color.nw.textPrimary)
-                    .lineLimit(1).truncationMode(.middle).help(site.site)
+                    .lineLimit(1).truncationMode(.tail).help(site.site)
             }.frame(maxWidth: .infinity, alignment: .leading)
             Text(site.count.formatted()).font(.nwMono(AppLayout.projectFileSize)).foregroundStyle(Color.nw.textSecondary)
                 .frame(width: AppLayout.projectCookieCountWidth, alignment: .trailing)
@@ -146,7 +146,7 @@ struct ProjectBrowserSettings: View {
             Text(scope == nil ? "Add this folder as a project to manage its browser cookies on this Mac." : model.error != nil ? "Reopen Browser to refresh this project's cookie store." : model.loading ? "Reading this project's browser store on this Mac." : model.sites.isEmpty ? "Sites will appear here after you use this project's Browser tabs." : "Try a different site name.")
                 .font(.nwSans(AppLayout.projectTabSize)).foregroundStyle(Color.nw.textSecondary)
                 .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
-        }.frame(maxWidth: .infinity, minHeight: AppLayout.projectCookieEmptyHeight).padding(NW.Space.xxxl)
+        }.padding(NW.Space.xxxl).frame(maxWidth: .infinity, minHeight: AppLayout.projectCookieEmptyHeight)
     }
 
     private var footer: some View {
@@ -166,7 +166,7 @@ struct ProjectBrowserSettings: View {
         }.buttonStyle(.plain).accessibilityLabel(label)
     }
 
-    private func confirmation(_ removal: ProjectCookiesModel.Removal) -> some View {
+    func confirmation(_ removal: ProjectCookiesModel.Removal) -> some View {
         ZStack {
             Color.nw.bgBase.opacity(AppLayout.projectCookieShadeOpacity)
             VStack(alignment: .leading, spacing: NW.Space.xl) {

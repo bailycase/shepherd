@@ -245,7 +245,7 @@ public struct NWSettingsNavRow: View {
                     .frame(width: NWSettingsNavMetrics.iconSize)
                     .accessibilityHidden(true)
                 Text(title)
-                    .font(.nwSans(NWSettingsNavMetrics.textSize, selected ? .medium : .regular))
+                    .font(.nwSans(NWSettingsNavMetrics.textSize, selected ? .semibold : .regular))
                     .foregroundStyle(nw.textPrimary)
                     .lineLimit(1)
                 Spacer(minLength: 0)

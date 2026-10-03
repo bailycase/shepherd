@@ -74,7 +74,7 @@ import SwiftUI
                 }
             }
             NWSettingsNavRow("Appearance", systemImage: "circle.lefthalf.filled", selected: true) {}
-            NWSettingsNavRow("Remote", systemImage: "dot.radiowaves.left.and.right", selected: false) {}
+            NWSettingsNavRow("Remote", systemImage: NWGlyph.remoteConnection.symbolName, selected: false) {}
         }
         .frame(width: 560)
         .padding(NW.Space.xl)

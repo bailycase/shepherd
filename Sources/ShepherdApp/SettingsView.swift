@@ -15,6 +15,7 @@ struct SettingsView: View {
     @State private var searchText = ""
     @FocusState private var searchFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.displayScale) private var displayScale
 
     private var query: String { searchText.trimmingCharacters(in: .whitespacesAndNewlines) }
 
@@ -124,14 +125,14 @@ struct SettingsView: View {
             Text(versions)
                 .font(.nw(.micro))
                 .foregroundStyle(Color.nw.textTertiary)
-                .lineLimit(2)
+                .lineLimit(1).truncationMode(.tail)
                 // Aligned with the rows' icons.
                 .padding(.horizontal, NWSettingsNavMetrics.sidePadding + NWSettingsNavMetrics.rowPadding)
                 .padding(.bottom, NW.Space.l)
         }
         .disabled(vm.settingsSection == .projects && (vm.projectCookies.pending != nil || vm.projectCookies.clearing))
         .accessibilityHidden(vm.settingsSection == .projects && vm.projectCookies.pending != nil)
-        .frame(width: AppLayout.settingsNavWidth)
+        .frame(width: AppLayout.settingsNavWidth - NW.hairline(displayScale))
         .background(Color.nw.bgBase.ignoresSafeArea())
     }
 
@@ -186,7 +187,7 @@ struct SettingsView: View {
 
     private var detail: some View {
         Group {
-            if vm.settingsSection == .projects, vm.projects.selected != nil {
+            if vm.settingsSection == .projects {
                 page
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if vm.settingsSection.isWide {
@@ -201,7 +202,7 @@ struct SettingsView: View {
                 ScrollView(.vertical) {
                     Group { page }
                         .nwTransition(.content)
-                        .frame(maxWidth: vm.settingsSection == .projects ? AppLayout.projectsWidth : AppLayout.settingsContentWidth, alignment: .leading)
+                        .frame(maxWidth: AppLayout.settingsContentWidth, alignment: .leading)
                         .padding(.top, AppLayout.settingsTop)
                         .padding(.bottom, AppLayout.settingsBottom)
                         .padding(.horizontal, AppLayout.settingsGutter)
@@ -391,7 +392,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .instructions: return "doc.text"
         case .skills: return "graduationcap"
         case .mcp: return "server.rack"
-        case .remote: return "antenna.radiowaves.left.and.right"
+        case .remote: return NWGlyph.remoteConnection.symbolName
         case .keyboard: return "keyboard"
         case .advanced: return "gearshape"
         case .experiments: return "flask"

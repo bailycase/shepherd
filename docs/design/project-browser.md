@@ -8,8 +8,11 @@ User board `ProjectBrowser.dc.html`, revision 572. Saved as
 ## Implementation checklist
 
 - Reuse the project header and Settings navigation. Add Browser after MCP servers. The active
-  Browser tab has a 2pt lantern underline. Body width 860pt, page top 36pt, header height 128pt,
-  body groups 24pt apart. There is no editor or right-hand context column in this tab.
+  Browser tab has a 2pt lantern underline. Body width stays 860pt, page top 36pt, header
+  height 128pt, body groups 24pt apart. The 232pt navigation includes its divider. At the
+  board's 1440pt window width, the centered column starts at x=406. Preserve the 860pt width
+  and 48pt minimum gutters in narrower windows with horizontal scrolling. There is no
+  editor or right-hand context column in this tab.
 - Heading "Browser cookies", 15pt semibold. Explanation 13.5pt with 1.55 line height, maximum
   620pt width. Real project name replaces the board's sample name. Exact explanation:
   "Browser tabs in all threads and worktrees for <name> share cookies on this Mac. Other
@@ -21,7 +24,8 @@ User board `ProjectBrowser.dc.html`, revision 572. Saved as
   10pt horizontal inset, 7pt radius, bgRaised, lineStrong border. Then actual total site/cookie
   count in 11.5pt secondary text. Trailing "Clear all cookies…" action, 28pt high, 10pt
   horizontal inset, 12.5pt medium text, destructive foreground, no resting fill.
-- Table: lineStrong border, 10pt corners. Header 32pt, bgSunken, lineSubtle bottom separator.
+- Table: lineStrong border, 10pt corners, 1pt border insets outside its content. Header 32pt,
+  bgSunken, lineSubtle bottom separator.
   Columns Site, Cookies, unnamed actions. Cookies column 100pt, actions column 136pt, 16pt
   column gaps and insets. Site grows. Counts right aligned, 12pt mono; domain 13pt mono,
   single line, complete domain in tooltip. Rows 58pt minimum and lineSubtle separators.
@@ -30,12 +34,15 @@ User board `ProjectBrowser.dc.html`, revision 572. Saved as
 - Footer: `lock` 14pt, 8pt gap, 11.5pt secondary text, 1.55 line height. Exact strings:
   "Cookies stay in Shepherd on this Mac, not in your repository. Cookie values are never shown
   here." and "Clearing cookies leaves local storage and cache unchanged."
-- Empty/no-match/loading/unavailable states keep the header and local scope. No cookie values
+- The empty table's 200pt body includes its padding. Empty/no-match/loading/unavailable
+  states keep the header and local scope. No cookie values
   or page contents enter error text. Remembered folders without a currently owned SpaceID
   cannot pick an unrelated or name-derived store. Show a safe unavailable state.
 - Clear one site and clear all first ask for confirmation. No deletion on the first action.
   Confirmation is 480pt, bgWindow, 24pt inset, 12pt corners, 17pt title, project/host scope,
-  Cancel and a destructive 32pt Clear cookies button. Cancel changes no cookie. Clear deletes
+  Cancel and a destructive 32pt Clear cookies button. Center it in the visible Settings
+  viewport, outside the horizontally scrolling column, so both controls stay visible at the
+  minimum window width. Cancel changes no cookie. Clear deletes
   cookies only, not localStorage or cache, and then reloads counts. Status stays on this page.
 - BrowserSessions owns WebKit calls in BrowserHost.swift. Use the same cached project store as
   thread pages, keyed by stable SpaceID and configured remote hostID. Cookie domain grouping
