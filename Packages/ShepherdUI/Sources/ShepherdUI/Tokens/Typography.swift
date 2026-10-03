@@ -163,7 +163,11 @@ public final class NWTypeRamp: Sendable {
             for style in NWTextStyle.allCases {
                 let size = (style.size - proseSize.step) * scale
                 let name = NWFonts.postScriptName(mono: style.isMonospaced, weight: style.weight)
+                #if os(macOS)
+                sizeFonts.append(.custom(name, fixedSize: size))
+                #else
                 sizeFonts.append(.custom(name, size: size, relativeTo: style.dynamicTypeStyle))
+                #endif
                 // Extra leading that takes the face's natural line height to the ramp's.
                 let ct = CTFontCreateWithName(name as CFString, size, nil)
                 let natural = CTFontGetAscent(ct) + CTFontGetDescent(ct) + CTFontGetLeading(ct)
@@ -202,7 +206,15 @@ extension Font {
     }
 
     @MainActor private static func nwFace(_ size: CGFloat, weight: Font.Weight, mono: Bool, relativeTo: Font.TextStyle) -> Font {
-        .custom(NWFonts.postScriptName(mono: mono, weight: weight), size: size * ThemeStore.shared.textScale, relativeTo: relativeTo)
+        let name = NWFonts.postScriptName(mono: mono, weight: weight)
+        let points = size * ThemeStore.shared.textScale
+        #if os(macOS)
+        // Our text scale already sets the size. Relative custom fonts round fractional
+        // points through the macOS body-text scaling path, changing layout and wrapping.
+        return .custom(name, fixedSize: points)
+        #else
+        return .custom(name, size: points, relativeTo: relativeTo)
+        #endif
     }
 }
 

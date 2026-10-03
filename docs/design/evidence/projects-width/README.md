@@ -52,8 +52,9 @@ Instructions stacks its context column when that column no longer fits. The 232p
 navigation includes its divider rather than adding the divider outside that width.
 
 The first geometry regression failed before the correction, when the column shrank at 1050pt.
-The final focused run passed 73 tests in 12 suites. It includes real list/detail navigation,
-filtering, cancellation, site and all-cookie deletion, isolation and empty-table geometry.
+The full-fidelity follow-up passed 113 tests in 13 suites. It includes real list/detail
+navigation, Settings search, filtering, cancellation, cookie deletion, isolation, board geometry,
+fractional font sizing, supplied glyph resources and both appearance preview matrices.
 Confirm and Cancel stay inside the visible viewport at 720 and 900pt with legacy native
 scrollbars enabled. Unit checks cover cookie errors/races and project presentation.
 
@@ -71,7 +72,8 @@ not available here.
 
 `app/` has 32 running-app images, captured from the bundled executable, a live scratch server,
 project-file IO and WebKit project cookies. `app/capture.txt` records the running application
-and fonts. Native view-cache capture keeps the complete window at its actual size. Windows
+and fonts. Native view-cache capture keeps the complete window at its actual size, saved at
+2x for comparison with the supplied PNG. Windows
 stay off-screen and no event or focus is posted. Widths are 1440, 1050 and 720pt, plus 1440pt
 at text scale 1.3, in light and dark.
 
@@ -86,12 +88,10 @@ editing/conflict/discard and every file category. The following images are repre
 
 ## Departures
 
-The width and narrow-window behavior now follow the board. Native SF Symbols have different
-contours from its SVGs, although their identities and fill variants agree. The native text
-renderer wraps the description one word earlier in the same 620pt box. Device-pixel dividers
-are thinner than the board's CSS separators. These remain visible in the comparison, and the
-render is not pixel-identical. They use the existing native symbols, fonts and divider tokens;
-this change does not substitute custom SVG or text rendering.
+The [full-fidelity follow-up](full-fidelity.md) removes the SF Symbol substitutions,
+fractional font rounding, changed wrapping and device-pixel divider mismatch. The sampled
+border coordinates and colors match in [the measurements](full-fidelity-measurements.json).
 
-Names, counts, paths and versions differ when the fixture data differs. They come from the
-actual producers rather than copied board values.
+Native and browser text rasterization differ. No deliberate glyph, size, color, spacing or
+control substitution remains on the supplied page. Names, counts, paths and versions come
+from actual producers rather than copied board examples.
