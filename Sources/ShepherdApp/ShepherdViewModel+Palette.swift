@@ -35,7 +35,7 @@ extension ShepherdViewModel {
             items.append(PaletteItem(id: "action.newRemoteSpace.\(connection.id.uuidString)",
                                      kind: .remoteSpace(hostID: connection.id), section: .commands,
                                      title: "New space on \(connection.config.name)…", subtitle: "remote",
-                                     icon: "dot.radiowaves.left.and.right"))
+                                     icon: NWGlyph.remoteConnection.symbolName))
         }
         items.append(PaletteItem(id: "action.toggleSidebar", kind: .action("toggleSidebar"), section: .commands,
                                  title: isSidebarVisible ? "Hide sidebar" : "Show sidebar",

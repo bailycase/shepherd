@@ -15,12 +15,15 @@ public enum NWGlyph: CaseIterable, Sendable {
     case fastBolt
     /// An automation: the outline bolt. The sidebar, Automations and the iOS home's bolt.
     case automation
+    /// A remote host: Settings and the command palette's outward radio waves.
+    case remoteConnection
 
     /// The SF Symbol that draws it, fill variant included.
     public var symbolName: String {
         switch self {
         case .fastBolt: "bolt.fill"
         case .automation: "bolt"
+        case .remoteConnection: "dot.radiowaves.left.and.right"
         }
     }
 

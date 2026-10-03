@@ -15,31 +15,40 @@ struct ProjectSettingsDetail: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let width = min(AppLayout.projectsWidth, geometry.size.width - AppLayout.projectDetailPad * 2)
-            let narrow = geometry.size.width - AppLayout.projectDetailPad * 2 < AppLayout.projectBodyWidth
-            VStack(alignment: .leading, spacing: model.showingBrowser ? NW.Space.xxl : AppLayout.projectDetailGap) {
-                header.frame(width: min(width, AppLayout.projectsWidth), alignment: .leading)
-                    .disabled(cookies.pending != nil || cookies.clearing).accessibilityHidden(cookies.pending != nil)
-                if model.showingBrowser {
-                    ProjectBrowserSettings(model: cookies, project: project, scope: cookieScope)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                } else if narrow {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: AppLayout.projectSideGap) {
-                            editorColumn.frame(height: AppLayout.projectNarrowEditorHeight)
-                            contextColumn
+            let leading = max(AppLayout.projectDetailPad, (geometry.size.width - AppLayout.projectsWidth) / 2)
+            let narrow = geometry.size.width - leading - AppLayout.projectDetailPad < AppLayout.projectBodyWidth
+            ScrollView(.horizontal) {
+                VStack(alignment: .leading, spacing: model.showingBrowser ? NW.Space.xxl : AppLayout.projectDetailGap) {
+                    header.frame(width: AppLayout.projectsWidth, alignment: .leading)
+                        .disabled(cookies.pending != nil || cookies.clearing).accessibilityHidden(cookies.pending != nil)
+                    if model.showingBrowser {
+                        ProjectBrowserSettings(model: cookies, project: project, scope: cookieScope)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    } else if narrow {
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: AppLayout.projectSideGap) {
+                                editorColumn.frame(height: AppLayout.projectNarrowEditorHeight)
+                                contextColumn
+                            }
                         }
+                    } else {
+                        HStack(alignment: .top, spacing: AppLayout.projectColumnsGap) {
+                            editorColumn.frame(width: AppLayout.projectEditorWidth)
+                            contextColumn.frame(width: AppLayout.projectSideWidth)
+                        }.frame(width: AppLayout.projectBodyWidth, alignment: .leading).frame(maxHeight: .infinity)
                     }
-                } else {
-                    HStack(alignment: .top, spacing: AppLayout.projectColumnsGap) {
-                        editorColumn.frame(width: AppLayout.projectEditorWidth)
-                        contextColumn.frame(width: AppLayout.projectSideWidth)
-                    }.frame(width: AppLayout.projectEditorWidth + AppLayout.projectSideWidth + AppLayout.projectColumnsGap,
-                            alignment: .leading).frame(maxHeight: .infinity)
-                }
-            }.frame(width: max(0, width), height: max(0, geometry.size.height - AppLayout.projectDetailTop), alignment: .topLeading)
-                .padding(.top, AppLayout.projectDetailTop)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                }.frame(width: AppLayout.projectsWidth, alignment: .topLeading)
+                    .frame(maxHeight: .infinity, alignment: .topLeading)
+                    .padding(.top, AppLayout.projectDetailTop)
+                    .padding(.horizontal, AppLayout.projectDetailPad)
+                    .frame(minWidth: geometry.size.width, maxHeight: .infinity, alignment: .top)
+            }
+            .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+        }
+        .overlay {
+            if model.showingBrowser, let removal = cookies.pending {
+                ProjectBrowserSettings(model: cookies, project: project, scope: cookieScope).confirmation(removal)
+            }
         }
     }
 

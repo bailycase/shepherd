@@ -31,6 +31,7 @@ extension AppLayout {
     static let projectBrowserDescriptionWidth: CGFloat = 620
     static let projectCookieFilterWidth: CGFloat = 260
     static let projectCookieHeaderHeight: CGFloat = 32
+    static let projectCookieBorderInset: CGFloat = 1
     static let projectCookieRowHeight: CGFloat = 58
     static let projectCookieIconSize: CGFloat = 28
     static let projectCookieGlyphSize: CGFloat = 14
@@ -40,7 +41,7 @@ extension AppLayout {
     static let projectCookieConfirmWidth: CGFloat = 480
     static let projectCookieActionHeight: CGFloat = 28
     static let projectCookieConfirmTitle: CGFloat = 17
-    static let projectCookieLineExtra: CGFloat = 5
+    static let projectCookieLineExtra: CGFloat = 4
     static let projectCookieShadeOpacity = 0.65
     static let projectBreadcrumbGlyph: CGFloat = 8
     static let projectFileGap: CGFloat = 10
@@ -53,7 +54,8 @@ extension AppLayout {
     static let projectBreadcrumbHeight: CGFloat = 22
     static let projectIdentityHeight: CGFloat = 46
     static let projectPathHeight: CGFloat = 18
-    static let projectFolderSize: CGFloat = 32
+    // The board's 32pt content box has a 1pt border outside it.
+    static let projectFolderSize: CGFloat = 34
     static let projectFolderGlyph: CGFloat = 16
     static let projectPathInset: CGFloat = 44
     static let projectBodyWidth: CGFloat = 938

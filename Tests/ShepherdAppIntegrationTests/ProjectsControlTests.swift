@@ -45,7 +45,7 @@ struct ProjectsControlTests {
             return try await vm.server.projects.request(request, state: vm.state)
         }
         vm.showSettings = true; vm.settingsSection = .projects
-        let window = OffscreenWindow(size: CGSize(width: 1440, height: 1100), dark: true, SettingsView(vm: vm))
+        let window = OffscreenWindow(size: CGSize(width: 1440, height: 1100), dark: true, RootView(vm: vm))
         defer { window.close() }
         let model = vm.projects
         try await eventuallyOnMain("the project row") { model.visible.count == 1 }

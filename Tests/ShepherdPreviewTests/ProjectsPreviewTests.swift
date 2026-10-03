@@ -39,7 +39,7 @@ struct ProjectsPreviewTests {
             await world.vm.projects.load(world.vm.projectsSources, force: true)
         }
         let size = CGSize(width: state == "narrow" ? 1050 : 1440, height: 900)
-        try await Preview.renderMatrix("projects-\(state)", size: size) { SettingsView(vm: world.vm) }
+        try await Preview.renderMatrix("projects-\(state)", size: size) { RootView(vm: world.vm) }
     }
 
     @Test(arguments: ProjectFile.Category.allCases)
@@ -64,7 +64,7 @@ struct ProjectsPreviewTests {
         let project = try #require(world.vm.projects.rows.first { $0.host.id == "local" && !$0.project.minimal })
         await world.vm.projects.open(project)
         try await Preview.renderMatrix("projects-detail-\(state)", size: CGSize(width: state == "narrow" ? 1050 : 1440, height: 900)) {
-            SettingsView(vm: world.vm)
+            RootView(vm: world.vm)
         }
     }
 
