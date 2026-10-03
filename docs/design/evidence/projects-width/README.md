@@ -75,7 +75,7 @@ and fonts. Native view-cache capture keeps the complete window at its actual siz
 stay off-screen and no event or focus is posted. Widths are 1440, 1050 and 720pt, plus 1440pt
 at text scale 1.3, in light and dark.
 
-`previews/` has 144 RootView renders in light/dark and text scales 1.0/1.3. The Browser set
+`previews/` has 136 RootView renders in light/dark and text scales 1.0/1.3. The Browser set
 covers populated, empty, filtered, long, one/all confirmations, success, unavailable and narrow.
 The Projects set covers local/remote/offline history, long names, empty/loading/error states,
 editing/conflict/discard and every file category. The following images are representative:
