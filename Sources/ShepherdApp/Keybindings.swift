@@ -33,6 +33,7 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
     /// (⌘L) and Select an element (⇧⌘C). The Browser and a design's canvas never share a screen,
     /// so ⇧⌘C here never meets the canvas's Copy reference.
     case focusAddressBar, selectElement
+    case saveProjectFile
 
     var id: String { rawValue }
 
@@ -65,6 +66,7 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .copyDesignReference: return "Copy Design Reference"
         case .focusAddressBar: return "Focus Address Bar"
         case .selectElement: return "Select an Element"
+        case .saveProjectFile: return "Save Project File"
         }
     }
 
@@ -136,6 +138,7 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         // PaneStates › Keyboard: ⌘L the address bar, ⇧⌘C select an element.
         case .focusAddressBar: return KeyChord(key: "l", command: true)
         case .selectElement: return KeyChord(key: "c", command: true, shift: true)
+        case .saveProjectFile: return KeyChord(key: "s", command: true)
         }
     }
 }

@@ -1808,6 +1808,10 @@ public final class SessionServer: @unchecked Sendable {
                 send(.error(id: id, code: "update_required", message: "Update Shepherd on the host to edit its projects from here."), to: client)
                 return
             }
+            guard !request.requiresDetails || offeredCapabilities.contains(RemoteProtocol.projectDetailsCapability) else {
+                send(.error(id: id, code: "update_required", message: "Update Shepherd on the host to read project context and open its editor."), to: client)
+                return
+            }
             let state = store.state, projects = projects
             Task { [weak self] in
                 let result: Result<RemoteProjectsResult, Error>

@@ -41,6 +41,12 @@ survive "does this help a person supervise ten working agents at once?"
   budgets; elapsed time and token counts are reporting only. Off pauses active goals without
   clearing them, and re-enable never resumes work by itself.
 
+## Browser data
+
+Browser pages and agent controls belong to threads. Saved cookies, local storage and cache belong
+to projects and survive app restarts and thread deletion. Different projects and remote hosts
+remain isolated. The storage and cleanup rules are in [the Browser spec](docs/design/side-pane-browser.md).
+
 ## Principles, in priority order
 
 1. **Readable measure.** The thread column is at most 820pt and agent prose 640pt.

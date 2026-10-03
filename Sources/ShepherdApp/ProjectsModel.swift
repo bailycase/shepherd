@@ -2,11 +2,13 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdSessions
+import ShepherdRemote
 
 struct ProjectsHost: Equatable, Identifiable {
     var id: String
     var name: String
     var endpointID: UUID?
+    var supportsDetails = true
     var unavailable: String?
     var known: [ProjectSummary]
 }
@@ -33,15 +35,28 @@ final class ProjectsModel {
     var selected: ProjectsRow?
     private(set) var files: [ProjectFile] = []
     var category: ProjectFile.Category = .instructions
+    var showingBrowser = false
     var selectedFile: ProjectFile?
-    var draft = ""
+    var draft = "" { didSet { tokenText = InstructionsText.sizeNote(draft) } }
+    private(set) var tokenText = "empty"
+    private(set) var modifiedAt: Double?
+    private(set) var context = ProjectContext()
+    struct ReadRow: Equatable, Identifiable {
+        var id: String; var label: String; var scope: String; var selected: Bool
+    }
+    private(set) var readRows: [ReadRow] = []
+    struct Peer: Equatable, Identifiable {
+        var id: String; var host: String; var note: String; var status: String; var tone: InstructionsChip.Tone
+    }
+    private(set) var peers: [Peer] = []
+    private(set) var openingEditor = false
     private(set) var saved: String?
     private(set) var fileLoaded = false
     private(set) var fileLoading = false
     private(set) var saving = false
     var fileError: String?
     var notice: String?
-    enum Pending: Equatable { case close, file(ProjectFile), category(ProjectFile.Category) }
+    enum Pending: Equatable { case close, file(ProjectFile), category(ProjectFile.Category), browser }
     var pending: Pending?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var loadGeneration = 0
@@ -50,7 +65,7 @@ final class ProjectsModel {
     init(request: @escaping Request) { self.request = request }
     var dirty: Bool { fileLoaded && draft != (saved ?? "") }
     var selectedFiles: [ProjectFile] {
-        files.filter { $0.category == category || category == .extensions && $0.path == ".pi/settings.json" }
+        files.filter { $0.category == category || (category == .extensions || category == .skills) && ($0.category == .skills || $0.category == .extensions) }
     }
     var hostOptions: [(String, String)] { [("all", "All hosts")] + hosts.map { ($0.id, $0.name) } }
     var addHost: ProjectsHost? { hosts.first { $0.id == (host == "all" ? "local" : host) } }
@@ -122,12 +137,16 @@ final class ProjectsModel {
         guard row.unavailable == nil else { error = row.unavailable; return }
         generation += 1
         let token = generation
+        showingBrowser = false
         selected = row; fileError = nil; notice = nil; fileLoading = true
         category = .instructions; files = []; selectedFile = nil; fileLoaded = false
+        context = ProjectContext(); readRows = []; peers = []
         do {
             guard case .files(let files) = try await request(row.host, .files(directory: row.project.directory)) else { throw ProjectFileError("protocol", "Unexpected project files reply.") }
             guard token == generation, selected?.id == row.id else { return }
             self.files = files
+            if case .context(let context) = try? await request(row.host, .context(directory: row.project.directory)), token == generation { self.context = context }
+            guard token == generation, selected?.id == row.id else { return }
             if let file = selectedFiles.first { await read(file) } else { fileLoading = false }
         } catch { if token == generation { fileError = String(describing: error); fileLoading = false } }
     }
@@ -147,11 +166,13 @@ final class ProjectsModel {
     private func apply(_ action: Pending) async {
         switch action {
         case .close:
-            generation += 1; selected = nil; selectedFile = nil; files = []; fileLoaded = false; fileError = nil
-        case .file(let file): await read(file)
+            showingBrowser = false; generation += 1; selected = nil; selectedFile = nil; files = []; fileLoaded = false; fileError = nil
+        case .file(let file): showingBrowser = false; await read(file)
         case .category(let category):
-            self.category = category; selectedFile = nil; fileLoaded = false; fileError = nil; notice = nil
+            showingBrowser = false; self.category = category; selectedFile = nil; fileLoaded = false; fileError = nil; notice = nil
             if let file = selectedFiles.first { await read(file) }
+        case .browser:
+            showingBrowser = true; draft = saved ?? ""
         }
     }
 
@@ -163,21 +184,89 @@ final class ProjectsModel {
         do {
             guard case .text(let value) = try await request(selected.host, .read(directory: selected.project.directory, file: file.path)) else { throw ProjectFileError("protocol", "Unexpected project file reply.") }
             guard token == generation else { return }
-            selectedFile = value.file; saved = value.text; draft = value.text ?? ""; fileLoaded = true
+            selectedFile = value.file; saved = value.text; draft = value.text ?? ""; modifiedAt = value.modifiedAt; fileLoaded = true
+            deriveReadRows()
+            await compareHosts(token: token, text: value.text, file: file, selected: selected)
         } catch { if token == generation { fileError = String(describing: error) } }
         if token == generation { fileLoading = false }
     }
 
+    func openInEditor() async {
+        guard !openingEditor, let selected, selected.host.supportsDetails, selected.unavailable == nil, let file = selectedFile, file.exists else { return }
+        openingEditor = true
+        defer { openingEditor = false }
+        do { _ = try await request(selected.host, .open(directory: selected.project.directory, file: file.path)) }
+        catch { fileError = String(describing: error) }
+    }
+
+    var language: String {
+        switch (selectedFile?.path as NSString?)?.pathExtension {
+        case "json": "JSON"
+        case "ts": "TypeScript"
+        case "js", "mjs", "cjs": "JavaScript"
+        default: "Markdown"
+        }
+    }
+
+    var editedLabel: String {
+        if dirty { return "Unsaved changes" }
+        guard let modifiedAt else { return "Not saved yet" }
+        let hours = Int(Date().timeIntervalSince1970 - modifiedAt) / 3_600
+        let days = hours / 24
+        return days > 0 ? "Edited by hand \(days) \(days == 1 ? "day" : "days") ago" : hours > 0 ? "Edited by hand \(hours) \(hours == 1 ? "hour" : "hours") ago" : "Edited by hand \(InstructionsPresentation.age(modifiedAt))"
+    }
+
+    var fileDisplayPath: String {
+        guard let selected, let selectedFile else { return "" }
+        return selected.project.displayPath + "/" + selectedFile.path
+    }
+
+    private func deriveReadRows() {
+        guard let selected else { readRows = []; return }
+        let folder = selected.project.directory + "/"
+        let selectedPath = selectedFile.map { folder + $0.path }
+        readRows = [ReadRow(id: "global", label: "Your instructions", scope: "all projects", selected: false)] + context.files.filter { $0.isGlobal != true }.map { file in
+            let current = file.path.hasPrefix(folder)
+            let label = current ? selected.project.name + "/" + URL(fileURLWithPath: file.path).lastPathComponent : file.displayPath
+            return ReadRow(id: file.path, label: label, scope: file.path == selectedPath ? "this file" : current ? "project" : "parent", selected: file.path == selectedPath)
+        }
+    }
+
+    private func compareHosts(token: Int, text: String?, file: ProjectFile, selected: ProjectsRow) async {
+        var peers: [Peer] = []
+        var seen = Set<String>()
+        for row in rows where row.host.id != selected.host.id && row.project.name == selected.project.name {
+            guard seen.count < 8, seen.insert(row.host.id).inserted else { continue }
+            var peer = Peer(id: row.id, host: row.host.name, note: "This is the copy on \(selected.host.name). \(row.host.name) has its own checkout of \(selected.project.name).", status: "Not compared", tone: .quiet)
+            if row.unavailable != nil { peer.status = "Host unavailable" }
+            else {
+                do {
+                    if case .text(let other) = try await request(row.host, .read(directory: row.project.directory, file: file.path)) {
+                        let name = URL(fileURLWithPath: file.path).lastPathComponent
+                        let matches = other.text == text && text != nil
+                        peer.note = "This is the copy on \(selected.host.name). \(row.host.name) has its own checkout of \(selected.project.name), and its \(name) \(matches ? "matches." : "differs.")"
+                        peer.status = matches ? "In sync" : "Differs"; peer.tone = matches ? .done : .attention
+                    }
+                } catch { peer.status = "Could not compare" }
+            }
+            guard token == generation else { return }
+            peers.append(peer)
+        }
+        if token == generation { self.peers = peers }
+    }
+
     func save() async {
-        guard dirty, !saving, let selected, selected.unavailable == nil, let file = selectedFile else { return }
+        guard fileLoaded, !saving, let selected, selected.unavailable == nil, let file = selectedFile else { return }
         saving = true; fileError = nil; notice = nil
         let token = generation, text = draft
         do {
             guard case .text(let value) = try await request(selected.host, .save(directory: selected.project.directory, file: file.path, text: text, expected: saved)) else { throw ProjectFileError("protocol", "Unexpected project save reply.") }
             guard token == generation else { saving = false; return }
-            saved = value.text; selectedFile = value.file
-            notice = "Saved on \(selected.host.name). Restart running agents to use the changes."
+            saved = value.text; selectedFile = value.file; modifiedAt = value.modifiedAt
+            notice = "Saved to the project folder. It takes effect in new turns."
             await load(hosts, force: true)
+            if case .context(let context) = try? await request(selected.host, .context(directory: selected.project.directory)), token == generation { self.context = context; deriveReadRows() }
+            await compareHosts(token: token, text: value.text, file: file, selected: selected)
         } catch { if token == generation { fileError = String(describing: error) } }
         saving = false
     }
@@ -196,7 +285,7 @@ extension ShepherdViewModel {
             let reason: String? = connection.phase == .connected
                 ? connection.supportsProjects ? nil : "Update Shepherd on this host to edit project settings."
                 : "Host offline. Reconnect in Settings > Remote to edit its projects."
-            return ProjectsHost(id: connection.id.uuidString, name: connection.config.name, endpointID: connection.endpointID, unavailable: reason, known: known(connection.state, reason: reason))
+            return ProjectsHost(id: connection.id.uuidString, name: connection.config.name, endpointID: connection.endpointID, supportsDetails: connection.supportsProjectDetails, unavailable: reason, known: known(connection.state, reason: reason))
         }
     }
 

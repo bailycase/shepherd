@@ -43,6 +43,8 @@ struct ProjectsModelTests {
             case .read: return .text(ProjectFileText(file: file, text: "old"))
             case .save(_, _, let text, _): return .text(ProjectFileText(file: file, text: text))
             case .list: return .listing(ProjectListing(projects: [project]))
+            case .context: return .context(ProjectContext())
+            case .open: return .opened
             }
         }
         await model.open(ProjectsRow(host: host, project: project))
@@ -77,6 +79,8 @@ struct ProjectsModelTests {
                 return .files([file])
             case .read: return .text(ProjectFileText(file: file, text: "original"))
             case .save: return .text(ProjectFileText(file: file, text: "saved"))
+            case .context: return .context(ProjectContext())
+            case .open: return .opened
             }
         }
         await model.load([ProjectsHost(id: "local", name: "This Mac", known: [])])
@@ -104,6 +108,8 @@ struct ProjectsModelTests {
             case .files: return .files([file])
             case .read: return .text(ProjectFileText(file: file, text: nil))
             case .save: saves += 1; return .text(ProjectFileText(file: file, text: "wrong host"))
+            case .context: return .context(ProjectContext())
+            case .open: return .opened
             }
         }
         await model.load([old])

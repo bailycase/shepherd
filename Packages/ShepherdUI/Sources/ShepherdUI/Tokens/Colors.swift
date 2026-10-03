@@ -24,6 +24,15 @@ public final class NWPalette: Sendable {
     public let settingsNavSelected: Color
     /// Muted Settings metadata in SettingsProjects; custom themes keep textTertiary.
     public let settingsMuted: Color
+    /// ProjectInstructions' divider and plain Markdown body.
+    public let projectDivider: Color
+    public let projectRowDivider: Color
+    public let projectCookieDanger: Color
+    public let projectEditorBackground: Color
+    public let projectEditorHeader: Color
+    public let projectMarkdownHeading: Color
+    public let projectMarkdownCode: Color
+    public let projectInstructionText: Color
     // Lines and text
     public let lineSubtle: Color
     public let lineStrong: Color
@@ -120,6 +129,14 @@ public final class NWPalette: Sendable {
         textSecondary = role(\.textSecondary)
         textTertiary = role(\.textTertiary)
         settingsMuted = theme.id == "night-watch" ? Color(light: l.textTertiary, dark: "#767c85") : textTertiary
+        projectDivider = theme.id == "night-watch" ? Color(light: l.lineSubtle, dark: "#22262a") : lineSubtle
+        projectRowDivider = theme.id == "night-watch" ? Color(light: l.lineSubtle, dark: "#1b1e21") : lineSubtle
+        projectCookieDanger = theme.id == "night-watch" ? Color(light: "#d9443f", dark: "#f26e6a") : role(\.failed)
+        projectEditorBackground = theme.id == "night-watch" ? Color(light: l.bgSunken, dark: "#111316") : bgSunken
+        projectEditorHeader = theme.id == "night-watch" ? Color(light: l.bgRaised, dark: "#15171a") : bgRaised
+        projectMarkdownHeading = theme.id == "night-watch" ? Color(light: ls.type, dark: "#79aaff") : syn(\.type)
+        projectMarkdownCode = theme.id == "night-watch" ? Color(light: ls.string, dark: "#efb550") : syn(\.string)
+        projectInstructionText = theme.id == "night-watch" ? Color(light: l.textPrimary, dark: "#b7bec7") : textSecondary
         textOnLantern = role(\.textOnLantern)
         lantern = role(\.lantern)
         lanternText = role(\.lanternText)

@@ -3,6 +3,8 @@ import Darwin
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import AppKit
+import CoreFoundation
 
 /// Projects keeps its directory history outside workspace state. All IO stays on this worker,
 /// never the server queue. The file API is restricted to project configuration, including on TCP.
@@ -15,13 +17,16 @@ public final class ProjectSettingsStore: @unchecked Sendable {
     private let sessions: URL
     private let systems: URL?
     private let globalDirectories: @Sendable () -> [URL]
+    private let openEditor: @MainActor @Sendable (URL) async throws -> Void
     private var history: [Entry] = []
     private var loaded = false
     private var importedSessions = false
     private struct Entry: Codable { var directory: String; var name: String }
 
     public init(historyURL: URL, home: URL, sessions: URL, systems: URL? = nil,
-                globalDirectories: @escaping @Sendable () -> [URL] = { [] }) {
+                globalDirectories: @escaping @Sendable () -> [URL] = { [] },
+                openEditor: (@MainActor @Sendable (URL) async throws -> Void)? = nil) {
+        self.openEditor = openEditor ?? ProjectSettingsStore.openEditor
         self.historyURL = historyURL; self.home = home; self.sessions = sessions; self.systems = systems
         self.globalDirectories = globalDirectories
     }
@@ -35,7 +40,16 @@ public final class ProjectSettingsStore: @unchecked Sendable {
     }
 
     public func request(_ request: RemoteProjectsRequest, state: ShepherdState) async throws -> RemoteProjectsResult {
-        try await withCheckedThrowingContinuation { continuation in
+        if case .open(let directory, let file) = request {
+            let value = try await self.request(.read(directory: directory, file: file), state: state)
+            guard case .text(let text) = value, text.file.exists else { throw ProjectFileError("missing", "Save the file before opening it in an editor.") }
+            let reference: URL = try await withCheckedThrowingContinuation { continuation in
+                queue.async { [self] in continuation.resume(with: Result { try editorReference(root: root(directory), file: file) }) }
+            }
+            try await openEditor(reference)
+            return .opened
+        }
+        return try await withCheckedThrowingContinuation { continuation in
             queue.async { [self] in
                 continuation.resume(with: Result {
                     try load()
@@ -46,14 +60,22 @@ public final class ProjectSettingsStore: @unchecked Sendable {
                         guard offset >= 0, offset <= history.count else { throw ProjectFileError("invalid", "Invalid project page.") }
                         let end = min(history.count, offset + Self.pageSize)
                         let designs = designSystemDirectories(state)
-                        return .listing(ProjectListing(projects: history[offset..<end].map { summary($0, designSystem: designs.contains($0.directory)) },
+                        return .listing(ProjectListing(projects: history[offset..<end].map { entry in
+                            var project = summary(entry, designSystem: designs.contains(entry.directory))
+                            project.projectID = state.spaces.first { absolute($0.path) == entry.directory }?.id
+                            return project
+                        },
                                                        nextOffset: end < history.count ? end : nil))
                     case .files(let directory):
                         return .files(try inventory(root: root(directory)))
+                    case .context(let directory):
+                        return .context(try context(root: root(directory)))
+                    case .open:
+                        preconditionFailure("Open is handled after allowlist validation above.")
                     case .read(let directory, let file):
                         let root = try root(directory)
                         let item = try allowed(file, root: root)
-                        return .text(ProjectFileText(file: item, text: try read(root: root, file: file)))
+                        return .text(ProjectFileText(file: item, text: try read(root: root, file: file), modifiedAt: modified(root: root, file: file)))
                     case .save(let directory, let file, let text, let expected):
                         let root = try root(directory)
                         _ = try allowed(file, root: root)
@@ -64,10 +86,10 @@ public final class ProjectSettingsStore: @unchecked Sendable {
                             }
                         }
                         guard try read(root: root, file: file) == expected else {
-                            throw ProjectFileError("conflict", "This file changed elsewhere. Revert to load it before saving.")
+                            throw ProjectFileError("conflict", "This file changed elsewhere. Select the file again and choose Discard to load it before saving.")
                         }
                         try replace(root: root, file: file, text: text, expected: expected)
-                        return .text(ProjectFileText(file: try allowed(file, root: root), text: text))
+                        return .text(ProjectFileText(file: try allowed(file, root: root), text: text, modifiedAt: modified(root: root, file: file)))
                     }
                 })
             }
@@ -161,7 +183,7 @@ public final class ProjectSettingsStore: @unchecked Sendable {
                               home.appendingPathComponent(".config")]
             + ["instructions", "pi", "skills", "designs", "design-systems"].map {
                 URL(fileURLWithPath: managed).appendingPathComponent($0)
-            } + globalDirectories()
+            } + globalDirectories() + [systems].compactMap { $0 }
         let protected = protectedRoots.flatMap { root in
             [root.standardizedFileURL.path, root.resolvingSymlinksInPath().path]
         }
@@ -173,7 +195,9 @@ public final class ProjectSettingsStore: @unchecked Sendable {
 
     private func inventory(root: URL) throws -> [ProjectFile] {
         var files = [ProjectFile(path: "AGENTS.md", category: .instructions, exists: false),
+                     ProjectFile(path: "AGENTS.override.md", category: .instructions, exists: false),
                      ProjectFile(path: ".pi/APPEND_SYSTEM.md", category: .instructions, exists: false),
+                     ProjectFile(path: ".pi/SYSTEM.md", category: .instructions, exists: false),
                      ProjectFile(path: ".pi/settings.json", category: .pi, exists: false),
                      ProjectFile(path: ".pi/mcp.json", category: .mcp, exists: false),
                      ProjectFile(path: ".mcp.json", category: .mcp, exists: false)]
@@ -199,6 +223,78 @@ public final class ProjectSettingsStore: @unchecked Sendable {
             file.exists = fm.fileExists(atPath: url.path)
             return file
         }
+    }
+
+    private func editorReference(root: URL, file: String) throws -> URL {
+        try withParent(root: root, file: file) { parent, name in
+            let fd = openat(parent, name, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
+            guard fd >= 0 else { throw ProjectFileError("invalid_file", "Cannot open this file safely.") }
+            defer { close(fd) }
+            var identity = stat(); guard fstat(fd, &identity) == 0 else { throw ProjectFileError("invalid_file", "Cannot identify this file safely.") }
+            let path = root.appendingPathComponent(file).path
+            guard let url = CFURLCreateWithFileSystemPath(nil, path as CFString, .cfurlposixPathStyle, false),
+                  let reference = CFURLCreateFileReferenceURL(nil, url, nil)?.takeRetainedValue(),
+                  let resolved = CFURLCreateFilePathURL(nil, reference, nil)?.takeRetainedValue(),
+                  let resolvedPath = CFURLCopyFileSystemPath(resolved, .cfurlposixPathStyle) else {
+                throw ProjectFileError("invalid_file", "The file moved before it could be opened.")
+            }
+            var observed = stat()
+            guard lstat(resolvedPath as String, &observed) == 0,
+                  identity.st_dev == observed.st_dev, identity.st_ino == observed.st_ino,
+                  let referenceURL = URL(string: CFURLGetString(reference)! as String) else {
+                throw ProjectFileError("invalid_file", "The file changed before it could be opened.")
+            }
+            // Keep the inode reference for the editor, rather than a replaceable pathname.
+            return referenceURL
+        }
+    }
+
+    @MainActor private static func openEditor(_ url: URL) async throws {
+        let workspace = NSWorkspace.shared
+        if let editor = workspace.urlForApplication(withBundleIdentifier: "com.apple.dt.Xcode")
+            ?? workspace.urlForApplication(withBundleIdentifier: "com.apple.TextEdit") {
+            _ = try await workspace.open([url], withApplicationAt: editor, configuration: NSWorkspace.OpenConfiguration())
+        } else { throw ProjectFileError("editor", "No text editor is available on this host.") }
+    }
+
+    private func modified(root: URL, file: String) -> Double? {
+        (try? root.appendingPathComponent(file).resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate?.timeIntervalSince1970
+    }
+
+    private func context(root: URL) throws -> ProjectContext {
+        let fm = FileManager.default
+        var contexts: [ProjectContext.File] = []
+        let globals = globalDirectories() + [home.appendingPathComponent(".pi/agent"), historyURL.deletingLastPathComponent().appendingPathComponent("instructions")]
+        for directory in globals {
+            if let file = YourPiFiles.contextFile(in: directory), !contexts.contains(where: { $0.path == file.path }) {
+                let display = file.path.hasPrefix(home.path + "/") ? "~" + file.path.dropFirst(home.path.count) : file.path
+                contexts.append(ProjectContext.File(path: file.path, displayPath: String(display), isGlobal: true))
+            }
+        }
+        var folder = root
+        for _ in 0..<128 {
+            if let file = YourPiFiles.contextFile(in: folder) {
+                let path = file.path
+                let display = path.hasPrefix(home.path + "/") ? "~" + path.dropFirst(home.path.count) : path
+                contexts.append(ProjectContext.File(path: path, displayPath: String(display)))
+            }
+            let parent = folder.deletingLastPathComponent()
+            if parent.path == folder.path { break }
+            folder = parent
+        }
+        let files = try inventory(root: root)
+        var resources = files.filter { $0.category == .skills || $0.category == .extensions }.count
+        if let text = try read(root: root, file: ".pi/settings.json"),
+           let settings = try? YourPiFiles.object(Data(text.utf8), file: ".pi/settings.json") {
+            resources += (settings["extensions"] as? [Any])?.count ?? 0
+            resources += (settings["packages"] as? [Any])?.count ?? 0
+        }
+        var servers = Set<String>()
+        for file in files where file.category == .mcp && file.exists {
+            if let text = try? read(root: root, file: file.path), let settings = try? YourPiFiles.object(Data(text.utf8), file: file.path),
+               let names = settings["mcpServers"] as? [String: Any] { servers.formUnion(names.keys) }
+        }
+        return ProjectContext(files: contexts, resources: resources, mcpServers: servers.count)
     }
 
     private func allowed(_ file: String, root: URL) throws -> ProjectFile {
@@ -322,7 +418,7 @@ public final class ProjectSettingsStore: @unchecked Sendable {
                 current = value
                 guard fchmod(fd, info.st_mode & 0o777) == 0 else { throw ProjectFileError("write_failed", "Could not preserve the project file's permissions.") }
             } else if errno != ENOENT { throw ProjectFileError("unsafe", "Could not safely read the project file before replacing it.") }
-            guard current == expected else { throw ProjectFileError("conflict", "This file changed elsewhere. Revert to load it before saving.") }
+            guard current == expected else { throw ProjectFileError("conflict", "This file changed elsewhere. Select the file again and choose Discard to load it before saving.") }
             guard renameat(parent, temporary, parent, name) == 0 else { throw ProjectFileError("write_failed", "Could not replace the project file.") }
         }
     }

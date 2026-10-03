@@ -57,7 +57,8 @@ struct ProjectSettingsSafetyTests {
         _ = try await store.request(.list(), state: ShepherdState(spaces: [one, two]))
         let reloaded = ProjectSettingsStore(historyURL: registry, home: scratch.dir, sessions: scratch.dir.appendingPathComponent("sessions"))
         guard case .listing(let listing) = try await reloaded.request(.list(), state: ShepherdState()) else { Issue.record("Missing listing"); return }
-        #expect(listing.projects.map(\.name) == ["one", "two"])
+        let names = listing.projects.map(\.name)
+        #expect(names == ["one", "two"])
     }
 
     @Test func projectAppendInstructionsAndCommentedPiSettingsUseTheLocationsPiReads() async throws {

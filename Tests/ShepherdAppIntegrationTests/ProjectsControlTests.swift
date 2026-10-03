@@ -39,6 +39,11 @@ struct ProjectsControlTests {
                                    themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .dark),
                                    remoteHosts: RemoteHostStore(defaults: defaults), sidebarDefaults: defaults, themeInstaller: { _ in },
                                    restoresAgentsAtLaunch: false, checkoutReader: nil)
+        var openedFile: String?
+        vm.madeProjects = ProjectsModel { _, request in
+            if case .open(_, let file) = request { openedFile = file; return .opened }
+            return try await vm.server.projects.request(request, state: vm.state)
+        }
         vm.showSettings = true; vm.settingsSection = .projects
         let window = OffscreenWindow(size: CGSize(width: 1440, height: 1100), dark: true, SettingsView(vm: vm))
         defer { window.close() }
@@ -48,15 +53,25 @@ struct ProjectsControlTests {
         let open = try ControlPress.press("Open dashboard on This Mac", under: window.host)
         #expect(ControlPress.undersized([open], minimum: .desktop).isEmpty)
         try await eventuallyOnMain("the first project file") { model.fileLoaded }
-        for category in ProjectFile.Category.allCases {
+        for (category, label) in [(ProjectFile.Category.instructions, "Instructions"), (.pi, "Settings"), (.skills, "Resources"), (.mcp, "MCP servers")] {
             window.layout()
-            let control = try ControlPress.press("Project category \(category.title)", under: window.host)
-            #expect(ControlPress.undersized([control], minimum: .desktop).isEmpty, "\(category.title) hit area is \(String(describing: control.frame))")
+            let control = try ControlPress.press("Project category \(label)", under: window.host)
+            #expect(ControlPress.undersized([control], minimum: .desktop).isEmpty, "\(label) hit area is \(String(describing: control.frame))")
             try await eventuallyOnMain("the category to load") { model.category == category && !model.fileLoading }
         }
         window.layout()
+        let browser = try ControlPress.press("Project category Browser", under: window.host)
+        #expect(ControlPress.undersized([browser], minimum: .desktop).isEmpty)
+        try await eventuallyOnMain("the project Browser page") { model.showingBrowser && vm.projectCookies.scope != nil && !vm.projectCookies.loading }
+        window.layout()
         try ControlPress.press("Project category Instructions", under: window.host)
         try await eventuallyOnMain("instructions to load") { model.category == .instructions && model.fileLoaded }
+        for path in ["AGENTS.override.md", ".pi/SYSTEM.md"] {
+            window.layout()
+            let file = try ControlPress.press(path, under: window.host)
+            #expect(ControlPress.undersized([file], minimum: .desktop).isEmpty)
+            try await eventuallyOnMain("\(path) to load") { model.selectedFile?.path == path && model.fileLoaded }
+        }
         window.layout()
         try ControlPress.press(".pi/APPEND_SYSTEM.md", under: window.host)
         try await eventuallyOnMain("the missing instruction file") { model.selectedFile?.path == ".pi/APPEND_SYSTEM.md" && model.fileLoaded }
@@ -64,6 +79,10 @@ struct ProjectsControlTests {
         window.layout()
         try ControlPress.press("AGENTS.md", under: window.host)
         try await eventuallyOnMain("AGENTS.md to load") { model.selectedFile?.path == "AGENTS.md" && model.fileLoaded }
+        window.layout()
+        try ControlPress.press("Open in editor", under: window.host)
+        try await eventuallyOnMain("the project editor open request") { openedFile == "AGENTS.md" }
+        window.layout()
         // The native editor's accessibility value is the text a screen reader edits.
         let editor = try #require(AccessibilityNode.all(under: window.host).first { $0.label == "Project file editor" })
         let setter = NSSelectorFromString("setAccessibilityValue:")
@@ -84,11 +103,12 @@ struct ProjectsControlTests {
         window.layout()
         try ControlPress.press("Keep editing", under: window.host)
         #expect(model.pending == nil && model.dirty)
-        try ControlPress.press("Revert", under: window.host)
-        try await eventuallyOnMain("the reverted file") { !model.dirty && model.fileLoaded }
-        window.layout()
         try ControlPress.press("Back to Projects", under: window.host)
+        try await eventuallyOnMain("the second discard confirmation") { model.pending != nil }
+        window.layout()
+        try ControlPress.press("Discard", under: window.host)
         try await eventuallyOnMain("the project list") { model.selected == nil }
+        #expect(try String(contentsOf: root.appendingPathComponent("AGENTS.md"), encoding: .utf8) == "# Changed instructions\n")
         window.layout()
         let host = try ControlPress.press("This Mac", role: ControlRole.radioButton, under: window.host)
         #expect(ControlPress.undersized([host], minimum: .desktop).isEmpty)
