@@ -123,6 +123,9 @@ struct FileCommands: Commands {
             }
         }
         CommandGroup(replacing: .saveItem) {
+            Button("Save Project File") { Task { await vm.projects.save() } }
+                .keyboardShortcut(keys.shortcut(.saveProjectFile))
+                .disabled(!vm.showSettings || vm.settingsSection != .projects || vm.projects.showingBrowser || !vm.projects.fileLoaded || vm.projects.saving || vm.projects.selected?.unavailable != nil)
             Button("Close Terminal") { later { vm.closeFocusedTerminal() } }
                 .keyboardShortcut(keys.shortcut(.closeTerminal))
         }

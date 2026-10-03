@@ -123,11 +123,12 @@ private struct NWFieldChrome: ViewModifier {
 
 private struct NWSearchGlyph: View {
     var size: CGFloat = 13
+    @Environment(\.nwControlScale) private var scale
 
     var body: some View {
         Image(systemName: "magnifyingglass")
             .font(.system(size: size - 1, weight: .medium))
-            .foregroundStyle(.nw.textTertiary)
+            .foregroundStyle(scale == .settings ? Color.nw.settingsMuted : Color.nw.textTertiary)
             .accessibilityHidden(true)
     }
 }
@@ -153,8 +154,9 @@ public struct NWSearchField: View {
         let settings = scale == .settings && !large
         let row = HStack(spacing: large || settings ? NW.Space.m : NW.Space.s) {
             NWSearchGlyph(size: large ? 16 : 13)
-            TextField(placeholder, text: $text)
+            TextField("", text: $text, prompt: Text(placeholder).foregroundStyle(settings ? Color.nw.settingsMuted : Color.nw.textTertiary))
                 .textFieldStyle(.plain)
+                .accessibilityLabel(placeholder)
                 .font(large ? .nwSans(16) : .nwSans(settings ? NWSettingsControlMetrics.textSize : 12.5))
                 .foregroundStyle(.nw.textPrimary)
                 .tint(.nw.lantern)
@@ -171,7 +173,7 @@ public struct NWSearchField: View {
             } else if !large {
                 Button { text = "" } label: {
                     Image(systemName: "xmark").font(.system(size: 9, weight: .semibold)).foregroundStyle(.nw.textTertiary)
-                        .frame(width: 16, height: 16)
+                        .frame(width: NW.Height.controlS, height: NW.Height.controlS)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)

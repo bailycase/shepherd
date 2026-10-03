@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import ShepherdCore
 import ShepherdProtocol
 import ShepherdTestKit
 import ShepherdUI
@@ -195,11 +196,48 @@ struct BrowserTests {
     // MARK: Data stores
 
     @Test(arguments: [
-        (26, 0, false), (26, 1, false), (26, 9, false), (27, 0, true), (27, 3, true), (28, 0, true),
-    ] as [(Int, Int, Bool)])
-    func identifiedStoresWaitForMacOS27(_ major: Int, _ minor: Int, _ identified: Bool) {
-        #expect(BrowserDataStores.usesIdentifiedStores(osVersion: OperatingSystemVersion(majorVersion: major, minorVersion: minor,
-                                                                                          patchVersion: 0)) == identified)
+        (26, nil, false), (26, "com.bailycase.shepherd", true), (26, "com.bailycase.shepherd.nightly", true),
+        (27, nil, true), (27, "com.bailycase.shepherd", true),
+    ] as [(Int, String?, Bool)])
+    func theBundledAppPersistsWebsiteDataOnEverySupportedOS(_ major: Int, _ bundleIdentifier: String?, _ identified: Bool) {
+        #expect(BrowserDataStores.usesIdentifiedStores(
+            osVersion: OperatingSystemVersion(majorVersion: major, minorVersion: 0, patchVersion: 0),
+            bundleIdentifier: bundleIdentifier) == identified)
+    }
+
+    @Test func savedDataFollowsTheProjectNotItsNameThreadOrWorktree() {
+        let project = Space(id: SpaceID(rawValue: "project"), name: "app", path: "/projects/app")
+        let other = Space(id: SpaceID(rawValue: "other"), name: "app", path: "/other/app")
+        let a = Agent(id: AgentID(rawValue: "a"), name: "a", spaceID: project.id, tabID: TabID(rawValue: "a"))
+        let b = Agent(id: AgentID(rawValue: "b"), name: "b", spaceID: project.id, tabID: TabID(rawValue: "b"), worktreePath: "/worktrees/b")
+        let c = Agent(id: AgentID(rawValue: "c"), name: "c", spaceID: other.id, tabID: TabID(rawValue: "c"))
+        var state = ShepherdState(spaces: [project, other], agents: [a, b, c])
+        let identifier = BrowserDataStores.identifier(for: a, in: state)
+        #expect(identifier == BrowserDataStores.identifier(for: b, in: state))
+        #expect(identifier != BrowserDataStores.identifier(for: c, in: state))
+        state.spaces[0].name = "renamed"
+        state.spaces[0].path = "/moved/app"
+        #expect(identifier == BrowserDataStores.identifier(for: a, in: state))
+        let host = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        let remote = BrowserDataStores.identifier(for: a, in: state, hostID: host)
+        #expect(remote == BrowserDataStores.identifier(for: b, in: state, hostID: host))
+        #expect(remote != identifier)
+        #expect(remote != BrowserDataStores.identifier(for: a, in: state,
+            hostID: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!))
+    }
+
+    @Test func automationRunsShareOnlyTheProjectHoldingTheirFolder() {
+        let project = Space(id: SpaceID(rawValue: "project"), name: "app", path: "/projects/app")
+        let reserved = Space(id: SpaceID(rawValue: "reserved"), name: "automations", path: "/", hidden: true)
+        let thread = Agent(id: AgentID(rawValue: "thread"), name: "thread", spaceID: project.id, tabID: TabID(rawValue: "thread"))
+        let run = Agent(id: AgentID(rawValue: "run"), name: "run", spaceID: reserved.id, tabID: TabID(rawValue: "run"))
+        let other = Agent(id: AgentID(rawValue: "outside"), name: "outside", spaceID: reserved.id, tabID: TabID(rawValue: "outside"))
+        let state = ShepherdState(spaces: [project, reserved], agents: [thread, run, other], automations: [
+            Automation(id: AutomationID(rawValue: "watch"), name: "watch", prompt: "", cwd: "/projects/app/subfolder", agentID: run.id),
+            Automation(id: AutomationID(rawValue: "outside"), name: "outside", prompt: "", cwd: "/projects/app-other", agentID: other.id),
+        ])
+        #expect(BrowserDataStores.identifier(for: run, in: state) == BrowserDataStores.identifier(for: thread, in: state))
+        #expect(BrowserDataStores.identifier(for: other, in: state) == BrowserDataStores.identifier(for: other.id))
     }
 
     // MARK: Nothing open

@@ -51,6 +51,10 @@
     thread you sent one to gets the tool.", shown only while Settings ▸ Experiments ▸ Design tool
     is on (not drawn; it follows the rows above). With the Design tool off no thread loads it,
     whatever the row says; a running agent follows either change at its next start.
+The Projects board adds a top-level **Subagents** page. Native subagents, Subagent display
+and the defaults below now live there. Pi keeps the engine, imported configuration and
+other bundled-extension controls.
+
 - **Native subagent defaults** (only while Native subagents is on; footnote "Precedence: explicit
   call → agent file → these defaults → parent. Child tools run with your account's access."):
   - Concurrency, "Child process limit per parent, including workflows.": a stepper, 1–16, default 4.

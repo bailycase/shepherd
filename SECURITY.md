@@ -101,9 +101,11 @@ above) and neither has a switch yet.
   them. What that lets a host (or anything that can make its agent say something, such as a page
   the agent reads) do to the client's Mac:
   - **It can** load the thread's host's own `localhost` ports (through the tunnel) and **public**
-    addresses, and act on those pages as a person at a browser would, including pages the user signed
-    in to in that tab. A public page it opens is an ordinary web page: it can send requests from the
-    client's Mac to the client's own network, as any website can (blind requests; it cannot read the
+    addresses, and act on those pages as a person at a browser would, including accounts signed
+    in to by any thread in that host's project on this viewer. Cookies and local storage persist
+    across app restarts and are shared within that project, not with local projects or other hosts.
+    Pages and agent controls remain thread-scoped. A public page it opens is an ordinary web page:
+    it can send requests from the client's Mac to the client's own network, as any website can (blind requests; it cannot read the
     answers of another origin), and this is not blocked.
   - **It cannot** make the client open, read or act on a private, link-local, carrier-grade NAT,
     unique-local or reserved address, the client's own loopback or interface addresses, a

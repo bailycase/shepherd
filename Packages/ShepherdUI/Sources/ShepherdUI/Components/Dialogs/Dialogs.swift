@@ -254,7 +254,7 @@ public struct NWSettingsNavRow: View {
             .frame(minHeight: NW.Height.scaled(NWSettingsNavMetrics.rowHeight))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.nwRow(selected: selected))
+        .buttonStyle(.nwRow(selected: selected, selectedFill: Color.nw.settingsNavSelected))
         .accessibilityLabel(title)
         .accessibilityAddTraits(selected ? [.isSelected] : [])
     }

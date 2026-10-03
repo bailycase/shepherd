@@ -77,10 +77,12 @@ A tool acts on **its own thread's page and nothing else**, and its arguments can
   `--no-extensions` and none of Shepherd's variables, the extension is inert in a child
   (`SHEPHERD_CHILD`) and in a design's agent (`SHEPHERD_DESIGN_ID`), and a design's agent is not
   launched with it (`TerminalSessionStore.wantsBrowser`).
-- Each thread's page is its own `WKWebView` in a website data store of its own (docs/design/side-pane-browser.md › Side
-  pane: Browser), so two threads can each have a page open at once and share no cookie, local or
-  session storage, or cache. `BrowserAgentTests.twoThreadsPagesShareNoCookieOrStorage` and
-  `BrowserAgentFlowTests` check it.
+- Each thread keeps its own `WKWebView`, navigation history, session storage and agent controls.
+  Threads in the same project share cookies, local storage and cache through one website data
+  store. Different projects stay isolated, including projects with the same name. Worktree threads
+  use their parent project. Remote projects use a host-and-project key, separate from local
+  projects and other hosts. `BrowserAgentFlowTests.projectThreadsShareLoginsButEachDrivesOnlyItsOwnPage`
+  and `RemoteBrowserTests.twoRemoteProjectPagesShareCookies` check the sharing and page boundaries.
 - The server answers a request the app does not answer in 120 s with `timeout`, and drops the
   answer of a request whose connection has gone (`BrowserRelayTests`).
 - On a remote thread the same rule holds across machines: a request is handed only to the viewer that
@@ -92,6 +94,37 @@ A tool acts on **its own thread's page and nothing else**, and its arguments can
   timeout), and requests the agent had queued behind a long one never run
   (`BrowserSession.abandonQueued`), so a click queued behind a 30-second wait does not fire after
   the user pressed Stop.
+
+## Saved browser data
+
+The app uses WebKit's identified persistent website data stores on every supported macOS version.
+Project IDs survive Shepherd restarts, so saved cookies and local storage survive too. Deleting a
+thread closes its page but keeps the project's data, even when it has no threads left. Removing the
+project or its configured remote host removes its store. Disconnecting a host does not clear it.
+Automation runs use the project containing their folder; a thread outside any project keeps an
+isolated store. Every agent in a project can use that project's logged-in accounts.
+
+Websites still control expiry and logout. A session-only cookie is not a saved cookie. The data is
+local to this app on this Mac, not shared with Safari or copied between a remote host and viewer.
+Older per-thread stores are not merged into project stores because they may contain conflicting
+accounts. They remain untouched; sign in once in the new project store.
+
+Settings can use `BrowserSessions.cookieSites(projectID:hostID:)` for site names and counts,
+sorted by count descending and site name ascending. Leading dots and domain case normalize
+for both counts and `clearCookies(projectID:hostID:site:)`. Nil site clears every site's cookies;
+a site clears just its cookies. Both use the same cached project store as the thread pages.
+Clearing cookies leaves local storage and caches alone. Only `BrowserCookieSite` reaches
+Settings, never cookie names or values; callers own confirmation and validate the live project.
+
+[Settings > Projects > Browser](design/project-browser.md) uses those APIs. It lists total sites
+and cookies, filters domains and asks before clearing one site or the project. The project
+identity, not its display name, selects the store. The model blocks stale or failed count data
+from authorizing a clear, and the confirmation hides and disables the page behind it.
+
+Only the bundle-less macOS 26 test runner keeps the temporary-store crash workaround. Ordinary
+tests use in-memory stores. `python3 scripts/test-browser-persistence.py` runs the disk tests in a
+scratch home on macOS 27+, including separate writer and reader processes to check restart
+persistence. The macOS 26 bundled-app path needs verification on a Mac running that version.
 
 ## The switch
 
@@ -318,7 +351,7 @@ header's side-pane button shows "Agent opened a page in Browser".
 
 A thread hosted on another Mac has a Browser tab too, when its host lists `browser.tunnel.v1` (an
 older host: no tab, as before). **The page renders in this Mac's own web view**, in a website data
-store of its own keyed on the host and the agent, and its URL stays `localhost:5173/checkout`. Its
+store shared by threads in its host's project, and its URL stays `localhost:5173/checkout`. Its
 traffic to `localhost:<port>` is carried to `127.0.0.1:<port>` on the thread's host over the
 authenticated remote connection: **a forwarded port on this Mac, bridged to a tunnel.** The picker,
 the console drawer, the viewport, Add to message and the composer chip work on that page as they do
@@ -447,7 +480,8 @@ What this does **not** stop, said plainly:
   holds it.
 - **The agent can click and type in the page you watch** (that is the feature, and the ring and the
   card say so; Take over stops it), and read what it shows, including a page you signed in to in this
-  tab: its website data is this Mac's, per thread and host, and empty until something signs in.
+  project: its website data is this Mac's, shared within the host's project, and empty until one
+  of its threads signs in.
 
 SECURITY.md has the same boundary in its own words.
 
@@ -472,8 +506,8 @@ WebSocket, every request logged by a CONNECT proxy on this Mac):
   at `localhost:5173` reaches, and it works for HTTP, subresources and WebSockets alike, because it
   bridges raw bytes and parses nothing. **This is the mechanism.**
 
-Not measured: macOS 26 (nothing in this environment runs it); the data-store rules there are the
-same (`BrowserDataStores`: an in-memory store per thread), and (b) does not depend on the data store
+Not measured: macOS 26 (nothing in this environment runs it); the app uses identified persistent
+project stores there too, and (b) does not depend on the data store
 at all, but (a)'s result is only established on 27.
 
 ### What (b) costs, said plainly
@@ -488,8 +522,8 @@ at all, but (a)'s result is only established on 27.
 - **The listener is this Mac's loopback port**, so any program or page on this Mac reaches the
   host's port through it while it is held, as with `ssh -L`. It reaches only that host, only for that
   thread, only through the authenticated connection: a port never forwards anywhere else, and a
-  page's navigation to a port another owner holds is refused before it goes. Each thread's cookies,
-  storage and cache stay in its own data store (`RemoteBrowserTests.twoRemotePagesShareNoCookies`).
+  page's navigation to a port another owner holds is refused before it goes. Cookies, local storage
+  and cache are shared only within the host's project (`RemoteBrowserTests.twoRemoteProjectPagesShareCookies`).
   **What it cannot do** is tell which page made a connection: a page of another thread that
   requests a held port itself from script (a hard-coded `localhost:5173`) reaches the holder's host,
   as any program here would, because on one shared loopback a port can be one thing.
@@ -598,9 +632,9 @@ mark the tab for `opened`. Nothing else needs a change; the host cannot tell the
   with an IPv4, IPv6 and wildcard listener, one owner, release, reclaim after use, no connection),
   and `RemoteBrowserTests` (ShepherdAppIntegrationTests: a real off-screen web view on a remote thread's
   session loads a page and fetches its subresource through the tunnel, two threads' pages share no
-  cookie, a port in use is refused and nothing loads, Start waits for the port, the tab appears only on
-  a host that lists the capability, and the page, its ports and its data store go with the thread or
-  its host). Previews: `browserRemoteEmpty`, `browserRemotePage`, `browserRemoteWaitingAndRefused`.
+  cookie within a project, a port in use is refused and nothing loads, Start waits for the port,
+  the tab appears only on a host that lists the capability, and the page and its ports go with the
+  thread while saved data stays until the project or host is removed). Previews: `browserRemoteEmpty`, `browserRemotePage`, `browserRemoteWaitingAndRefused`.
 - The agent driving a remote thread's page: `BrowserDriveTests` (ShepherdProtocolUnitTests: every push
   and outcome round-trips, what a viewer's answer may carry, which address a host offers, and the
   ownership rules: claim, supersede, release, disconnect, the cap), `RemoteMessageTests` (every new

@@ -430,6 +430,8 @@ final class ShepherdViewModel {
     /// Last Settings category visited. View-model state survives closing the
     /// overlay but naturally resets when Shepherd restarts.
     var settingsSection: SettingsSection = .appearance
+    @ObservationIgnored var madeProjects: ProjectsModel?
+    @ObservationIgnored var madeProjectCookies: ProjectCookiesModel?
     /// Debug builds: the component gallery over the workspace.
     var showComponentGallery = false
     /// ⌘K command palette visibility.
@@ -646,7 +648,7 @@ final class ShepherdViewModel {
                 connection.state.agents.map { RemoteAgentRef(hostID: connection.id, agentID: $0.id) }
             })
             self.remoteThreadStores.prune(live: liveRemote)
-            self.browsers.prune(liveRemote: liveRemote)
+            self.browsers.prune(liveRemote: liveRemote, hosts: self.remoteHosts)
             self.syncRemoteBrowserDrive()
             self.pruneRemoteDesigns()
             self.pruneSidebarPins()
@@ -1049,7 +1051,7 @@ final class ShepherdViewModel {
         if runs != openAutomationRuns { openAutomationRuns = runs }
         reconcileSidebarCompletions()
         threadStores.prune(live: Set(state.agents.map(\.id)))
-        browsers.prune(live: Set(state.agents.map(\.id)))
+        browsers.prune(state: state)
         notifyLocalQuestions()
         checkouts?.sync(agents: state.agents.map(\.id))
         pruneReviewSessions()

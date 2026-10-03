@@ -44,15 +44,17 @@ extension SettingsPage where Accessory == EmptyView {
 struct SettingsHeader: View {
     let title: String
     let explanation: String
+    var titleSize = AppLayout.settingsTitleSize
+    var explanationSize = NWTextStyle.body.size
 
     var body: some View {
         VStack(alignment: .leading, spacing: NW.Space.xs) {
             Text(title)
-                .font(.nwSans(AppLayout.settingsTitleSize, .semibold))
-                .tracking(AppLayout.settingsTitleSize * AppLayout.settingsTitleTracking)
+                .font(.nwSans(titleSize, .semibold))
+                .tracking(titleSize * AppLayout.settingsTitleTracking)
                 .foregroundStyle(Color.nw.textPrimary)
                 .accessibilityAddTraits(.isHeader)
-            NWMarkupText(explanation, size: NWTextStyle.body.size, codeSize: NWTextStyle.code.size,
+            NWMarkupText(explanation, size: explanationSize, codeSize: NWTextStyle.code.size,
                            lineHeight: AppLayout.settingsExplanationLineHeight)
                 .foregroundStyle(Color.nw.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)

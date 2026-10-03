@@ -345,6 +345,8 @@ public final class SessionServer: @unchecked Sendable {
     /// follows. Delivered on the main actor.
     public var onInstructionsChanged: ((InstructionsSnapshot) -> Void)?
 
+    /// Host-owned project history and project-only files, shared by local and remote Settings.
+    public let projects: ProjectSettingsStore
     /// Shepherd's root instructions for pi on this host (the support directory's
     /// `instructions/`): remote clients read and save them through the server, and the Mac's
     /// Settings page through this store directly.
@@ -722,6 +724,10 @@ public final class SessionServer: @unchecked Sendable {
         self.socketPath = socketPath
         self.store = StateStore(url: stateURL, readOnly: true)
         self.pi = pi
+        self.projects = ProjectSettingsStore(historyURL: stateURL.deletingLastPathComponent().appendingPathComponent("projects.json"),
+                                             home: URL(fileURLWithPath: pi.userHome, isDirectory: true), sessions: pi.sessionsRoot,
+                                             systems: stateURL.deletingLastPathComponent().appendingPathComponent("design-systems"),
+                                             globalDirectories: { [pi.home] + [pi.yourPi.resolve()?.agentDirectory].compactMap { $0 } })
         self.serviceTierOffers = ServiceTierOffers(home: pi.files)
         self.modelCatalog = modelCatalog ?? SessionServer.piModelCatalog(pi)
         self.originStore = ThreadOriginStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("thread-origins", isDirectory: true))
@@ -871,6 +877,7 @@ public final class SessionServer: @unchecked Sendable {
                 try acquireOwnershipOnQueue()
                 try bindOnQueue()
                 store.load()
+                projects.remember(store.state)
                 runLog.reload()
             }
             try finishStart()
@@ -1796,6 +1803,29 @@ public final class SessionServer: @unchecked Sendable {
             remoteSkills(id: id, request: request, client: client)
         case .design(let id, let request):
             remoteDesign(id: id, request: request, client: client)
+        case .projects(let id, let request):
+            guard offeredCapabilities.contains(RemoteProtocol.projectsCapability) else {
+                send(.error(id: id, code: "update_required", message: "Update Shepherd on the host to edit its projects from here."), to: client)
+                return
+            }
+            guard !request.requiresDetails || offeredCapabilities.contains(RemoteProtocol.projectDetailsCapability) else {
+                send(.error(id: id, code: "update_required", message: "Update Shepherd on the host to read project context and open its editor."), to: client)
+                return
+            }
+            let state = store.state, projects = projects
+            Task { [weak self] in
+                let result: Result<RemoteProjectsResult, Error>
+                do { result = .success(try await projects.request(request, state: state)) }
+                catch { result = .failure(error) }
+                self?.queue.async { [weak self] in
+                    guard let self, self.clients[client.fd] === client else { return }
+                    switch result {
+                    case .success(let value): self.send(.projects(id: id, result: value), to: client)
+                    case .failure(let error):
+                        self.send(.error(id: id, code: (error as? ProjectFileError)?.code ?? "project_failed", message: String(describing: error)), to: client)
+                    }
+                }
+            }
         case .hostSettings(let id, let request):
             guard let handler = onRemoteHostSettings else {
                 send(.error(id: id, code: "unavailable", message: "This host has no settings to share."), to: client)
@@ -4037,6 +4067,12 @@ public final class SessionServer: @unchecked Sendable {
             throw SessionServerError.persistFailed(String(describing: error))
         }
         let state = store.state
+        let oldProjects = ProjectSettingsStore.directories(in: before)
+        let newProjects = ProjectSettingsStore.directories(in: state)
+        if !oldProjects.elementsEqual(newProjects, by: { $0.0 == $1.0 && $0.1 == $1.1 }) {
+            projects.remember(before)
+            projects.remember(state)
+        }
         runLog.record(from: before, to: state)
         // An agent that goes takes the copies of design references it was sent, and its tier file.
         if before.agents.count != state.agents.count || before.agents.map(\.id) != state.agents.map(\.id) {
