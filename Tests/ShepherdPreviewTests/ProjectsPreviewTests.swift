@@ -44,12 +44,26 @@ struct ProjectsPreviewTests {
 
     @Test(arguments: ProjectFile.Category.allCases)
     func details(category: ProjectFile.Category) async throws {
-        let world = try await ProjectsPreviewWorld()
+        let world = try await ProjectsPreviewWorld(detail: true)
         defer { world.stop() }
-        let project = try #require(world.vm.projects.rows.first { $0.project.name == "dashboard" })
+        let project = try #require(world.vm.projects.rows.first { $0.project.name == "payments" && $0.host.id == "local" })
         await world.vm.projects.open(project)
         await world.vm.projects.navigate(.category(category))
+        if category == .extensions, let file = world.vm.projects.files.first(where: { $0.category == .extensions }) {
+            await world.vm.projects.navigate(.file(file))
+        }
         try await Preview.renderMatrix("projects-detail-\(category.rawValue)", size: CGSize(width: 1440, height: 900)) {
+            SettingsView(vm: world.vm)
+        }
+    }
+
+    @Test(arguments: ["narrow", "long"])
+    func detailEdges(state: String) async throws {
+        let world = try await ProjectsPreviewWorld(long: state == "long", detail: true)
+        defer { world.stop() }
+        let project = try #require(world.vm.projects.rows.first { $0.host.id == "local" && !$0.project.minimal })
+        await world.vm.projects.open(project)
+        try await Preview.renderMatrix("projects-detail-\(state)", size: CGSize(width: state == "narrow" ? 1050 : 1440, height: 900)) {
             SettingsView(vm: world.vm)
         }
     }
@@ -98,7 +112,7 @@ final class ProjectsPreviewWorld {
     let remote: ScratchServer
     let vm: ShepherdViewModel
 
-    init(empty: Bool = false, long: Bool = false, legacy: Bool = false) async throws {
+    init(empty: Bool = false, long: Bool = false, legacy: Bool = false, detail: Bool = false) async throws {
         let dir = try makeScratchDirectory("prv-projects")
         let home = dir.appendingPathComponent("home")
         let pi = PiSetup(engine: PiSetup.app.engine, home: dir.appendingPathComponent("pi"), userHome: home.path)
@@ -115,9 +129,9 @@ final class ProjectsPreviewWorld {
                                restoresAgentsAtLaunch: false, checkoutReader: nil)
         vm.showSettings = true; vm.settingsSection = .projects
         if !empty {
-            let names = [long ? "dashboard-with-a-very-long-name-and-an-equally-long-directory" : "dashboard", "mobile", "ops-scripts"]
-            let localSpaces = names.map { Space(name: $0, path: home.appendingPathComponent("Developer/" + $0).path) }
-            let remoteSpaces = ["api-service", "docs-site", "payments"].map { Space(name: $0, path: remoteHome.appendingPathComponent("work/" + $0).path) }
+            let names = [long ? "dashboard-with-a-very-long-name-and-an-equally-long-directory" : detail ? "payments" : "dashboard", "mobile", "ops-scripts"]
+            let localSpaces = names.map { Space(name: $0, path: home.appendingPathComponent((detail ? "code/" : "Developer/") + $0).path) }
+            let remoteSpaces = [detail ? "payments" : "api-service", "docs-site", "payments"].map { Space(name: $0, path: remoteHome.appendingPathComponent((detail ? "code/" : "work/") + $0).path) }
             for space in localSpaces + remoteSpaces { try FileManager.default.createDirectory(atPath: space.path, withIntermediateDirectories: true) }
             func file(_ space: Space, _ relative: String, _ text: String) throws {
                 let url = URL(fileURLWithPath: space.path).appendingPathComponent(relative)
@@ -127,10 +141,26 @@ final class ProjectsPreviewWorld {
             for space in [localSpaces[0], localSpaces[1], remoteSpaces[0], remoteSpaces[1]] {
                 try file(space, "AGENTS.md", "# Project instructions\n\n- Work only in this project.\n- Validate changes before a pull request.\n")
             }
-            for name in ["design-review", "useful-tests"] { try file(localSpaces[0], ".pi/skills/\(name)/SKILL.md", "---\nname: \(name)\ndescription: Project-only guidance\n---\n\n# \(name)\n\nRead the project's instructions.\n") }
+            if detail {
+                let paymentsGuidance = "# payments\n\nGo services for the ledger and the refund outbox.\n\n## Rules\n- Money is always integer minor units. Never floats.\n- Every ledger write goes through `ledger.Tx`.\n- Run `make test` before saying a change is done.\n\n## Layout\n- `ledger/` double-entry core, `ledger/outbox/` events\n\n\n"
+                try file(localSpaces[0], "AGENTS.md", paymentsGuidance)
+                try file(remoteSpaces[0], "AGENTS.md", paymentsGuidance)
+                try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-172_800)], ofItemAtPath: localSpaces[0].path + "/AGENTS.md")
+                let global = home.appendingPathComponent(".pi/agent/AGENTS.md")
+                try FileManager.default.createDirectory(at: global.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try Data("# Personal instructions\n".utf8).write(to: global)
+                let parent = home.appendingPathComponent("code/AGENTS.md")
+                try Data("# Parent guidance\n".utf8).write(to: parent)
+                try file(localSpaces[0], ".pi/skills/payments-tests/SKILL.md", "# Payments tests\nRun make test.\n")
+                try file(localSpaces[0], ".pi/skills/release/SKILL.md", "# Release checks\nRead the release docs.\n")
+                try file(localSpaces[0], ".pi/extensions/ledger.ts", "export default function ledger() {}\n")
+            }
+            for name in ["design-review", "useful-tests"] {
+                try file(localSpaces[0], ".pi/skills/\(name)/SKILL.md", "---\nname: \(name)\ndescription: Project-only guidance\n---\n\n# \(name)\n\nRead the project's instructions.\n")
+            }
             try file(localSpaces[1], ".pi/skills/mobile/SKILL.md", "# Mobile project\nUse the native client.\n")
             try file(localSpaces[0], ".pi/settings.json", "{\n  \"thinkingLevel\": \"high\"\n}\n")
-            try file(localSpaces[0], ".pi/mcp.json", "{\n  \"mcpServers\": {\"docs\": {\"url\": \"https://example.invalid/mcp\"}}\n}\n")
+            try file(localSpaces[0], ".pi/mcp.json", detail ? "{\"mcpServers\":{\"docs\":{},\"ledger\":{}}}" : "{\n  \"mcpServers\": {\"docs\": {\"url\": \"https://example.invalid/mcp\"}}\n}\n")
             try file(localSpaces[0], ".pi/extensions/project.ts", "// A project extension is edited, never executed, by this page.\nexport default function project() {}\n")
             try file(remoteSpaces[0], ".pi/settings.json", "{\"extensions\":[\"./one.ts\",\"./two.ts\",\"./three.ts\"]}")
             for space in [remoteSpaces[0], remoteSpaces[2]] { try file(space, ".pi/mcp.json", "{\"mcpServers\":{\"docs\":{},\"tools\":{}}}") }
@@ -145,7 +175,7 @@ final class ProjectsPreviewWorld {
         if legacy { remote.server.advertisedCapabilities = [] }
         let port = try remote.server.startRemoteListener(port: 0, tokenURL: tokenURL)
         let token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
-        hosts.addHost(name: "build-01", host: "127.0.0.1", port: port, token: token)
+        hosts.addHost(name: detail ? "Build-01" : "build-01", host: "127.0.0.1", port: port, token: token)
         try await eventuallyOnMain("the project host to connect") { hosts.connections.first?.phase == .connected && (empty || hosts.connections.first?.state.spaces.count == 3) }
         await vm.projects.load(vm.projectsSources)
     }

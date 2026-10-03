@@ -779,7 +779,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.nativeContextCapability,
             RemoteProtocol.createAgentImagesCapability,
             RemoteProtocol.instructionsCapability, RemoteProtocol.suggestionsCapability,
-            RemoteProtocol.hostSettingsCapability, RemoteProtocol.skillsCapability, RemoteProtocol.projectsCapability,
+            RemoteProtocol.hostSettingsCapability, RemoteProtocol.skillsCapability, RemoteProtocol.projectsCapability, RemoteProtocol.projectDetailsCapability,
             RemoteProtocol.piSkillsCapability,
             RemoteProtocol.terminalControlCapability,
             RemoteProtocol.designContextCapability,

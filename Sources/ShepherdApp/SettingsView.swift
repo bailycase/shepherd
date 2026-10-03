@@ -19,7 +19,7 @@ struct SettingsView: View {
     private var query: String { searchText.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     private var matchingSections: [SettingsSection] {
-        guard !query.isEmpty else { return SettingsSection.allCases.filter { !$0.isSubpage || vm.settingsSection.isPi } }
+        guard !query.isEmpty else { return SettingsSection.allCases.filter { !$0.isSubpage || vm.settingsSection.isPi || vm.settingsSection == .projects && vm.projects.selected != nil } }
         return SettingsSection.allCases.filter { !matches($0).isEmpty || $0.title.localizedCaseInsensitiveContains(query) }
     }
 
@@ -56,7 +56,10 @@ struct SettingsView: View {
                 .contentShape(Rectangle())
                 .gesture(WindowDragGesture())
 
-            Button { vm.showSettings = false } label: {
+            Button {
+                if vm.projectCookies.pending != nil { vm.projectCookies.pending = nil }
+                else if !vm.projectCookies.clearing { vm.showSettings = false }
+            } label: {
                 HStack(spacing: NW.Space.m) {
                     Image(systemName: "chevron.left")
                         .font(.nwSans(NWSettingsNavMetrics.textSize, .semibold))
@@ -126,6 +129,8 @@ struct SettingsView: View {
                 .padding(.horizontal, NWSettingsNavMetrics.sidePadding + NWSettingsNavMetrics.rowPadding)
                 .padding(.bottom, NW.Space.l)
         }
+        .disabled(vm.settingsSection == .projects && (vm.projectCookies.pending != nil || vm.projectCookies.clearing))
+        .accessibilityHidden(vm.settingsSection == .projects && vm.projectCookies.pending != nil)
         .frame(width: AppLayout.settingsNavWidth)
         .background(Color.nw.bgBase.ignoresSafeArea())
     }
@@ -181,7 +186,10 @@ struct SettingsView: View {
 
     private var detail: some View {
         Group {
-            if vm.settingsSection.isWide {
+            if vm.settingsSection == .projects, vm.projects.selected != nil {
+                page
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if vm.settingsSection.isWide {
                 // A wide page fills the area and scrolls inside itself (its editor, its side column).
                 Group { page }
                     .nwTransition(.content)
@@ -382,10 +390,10 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .piSlashCommands: return "slash.circle"
         case .instructions: return "doc.text"
         case .skills: return "graduationcap"
-        case .mcp: return "cable.connector.horizontal"
+        case .mcp: return "server.rack"
         case .remote: return "antenna.radiowaves.left.and.right"
         case .keyboard: return "keyboard"
-        case .advanced: return "slider.horizontal.3"
+        case .advanced: return "gearshape"
         case .experiments: return "flask"
         }
     }

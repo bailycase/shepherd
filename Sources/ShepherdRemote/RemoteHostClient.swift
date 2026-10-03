@@ -742,6 +742,9 @@ public final class RemoteHostClient: @unchecked Sendable {
         guard capabilities.contains(RemoteProtocol.projectsCapability) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to edit its projects from here.")
         }
+        guard !request.requiresDetails || capabilities.contains(RemoteProtocol.projectDetailsCapability) else {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to read project context and open its editor.")
+        }
         let reply = try await self.request { .projects(id: $0, request: request) }
         switch reply {
         case .projects(_, let result): return result

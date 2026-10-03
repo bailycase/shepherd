@@ -10,7 +10,7 @@ struct ProjectsSettings: View {
     var body: some View {
         Group {
             if let project = model.selected {
-                ProjectSettingsDetail(model: model, project: project)
+                ProjectSettingsDetail(model: model, project: project, cookies: vm.projectCookies, cookieScope: vm.cookieScope(for: project))
             } else {
                 index
             }
@@ -143,9 +143,12 @@ private struct ProjectSettingsRow: View {
         }
         .buttonStyle(.nwRow())
         .accessibilityLabel("Open \(row.project.name) on \(row.host.name)")
-        .accessibilityHint(row.unavailable ?? row.project.displayPath + ", " + row.project.summary)
-        .help(row.unavailable ?? row.project.directory + "\n" + row.project.summary)
+        .accessibilityHint(hint)
+        .help(tooltip)
     }
+
+    private var hint: String { row.unavailable ?? "\(row.project.displayPath), \(row.project.summary)" }
+    private var tooltip: String { row.unavailable ?? "\(row.project.directory)\n\(row.project.summary)" }
 
     private var identity: some View {
         VStack(alignment: .leading, spacing: NW.Space.xxs) {
@@ -155,91 +158,11 @@ private struct ProjectSettingsRow: View {
     }
 
     private var summary: some View {
-        Text(row.unavailable == nil ? row.project.summary : row.host.unavailable == nil ? "directory unavailable" : "host unavailable")
-            .font(.nwMono(AppLayout.projectsPathSize))
-            .foregroundStyle(row.project.minimal || row.unavailable != nil ? Color.nw.settingsMuted : Color.nw.textSecondary)
-            .lineLimit(1)
-    }
-}
-
-struct ProjectSettingsDetail: View {
-    @Bindable var model: ProjectsModel
-    let project: ProjectsRow
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: AppLayout.projectsSpacing) {
-            Button("Back to Projects") { Task { await model.navigate(.close) } }.buttonStyle(.nw(.ghost)).disabled(model.saving)
-            SettingsHeader(title: project.project.name, explanation: "Project settings on \(project.host.name). Changes apply only in this directory.")
-            Text(project.project.displayPath).font(.nwMono(AppLayout.projectsPathSize)).foregroundStyle(Color.nw.textTertiary)
-            ScrollView(.horizontal) {
-                HStack(spacing: NW.Space.xs) {
-                    ForEach(ProjectFile.Category.allCases, id: \.self) { category in
-                        Button { Task { await model.navigate(.category(category)) } } label: {
-                            Text(category.title).font(.nw(.body))
-                                .padding(.horizontal, NW.Space.l)
-                                .frame(minHeight: NW.Height.controlL)
-                        }
-                            .buttonStyle(.nwRow(selected: category == model.category, selectedFill: Color.nw.settingsNavSelected))
-                            .accessibilityLabel("Project category \(category.title)")
-                            .accessibilityAddTraits(category == model.category ? .isSelected : [])
-                            .disabled(model.saving || model.fileLoading)
-                    }
-                }
-            }.scrollIndicators(.hidden)
-            if let unavailable = project.unavailable { SettingsNote(text: unavailable) }
-            if let error = model.fileError { SettingsNote(text: error) }
-            if let notice = model.notice { SettingsNote(text: notice) }
-            if model.fileLoading {
-                Text("Loading project file…").font(.nw(.body)).foregroundStyle(Color.nw.textTertiary)
-            } else if model.selectedFiles.isEmpty {
-                SettingsNote(text: model.category == .skills ? "No project skills. Add a SKILL.md in .pi/skills or .agents/skills." : "No project files in this category.")
-            } else {
-                ScrollView(.horizontal) {
-                    HStack(spacing: NW.Space.m) {
-                        ForEach(model.selectedFiles) { file in
-                            Button { Task { await model.navigate(.file(file)) } } label: {
-                                Text(file.path).font(.nw(.body))
-                                    .padding(.horizontal, NW.Space.l)
-                                    .frame(minHeight: NW.Height.controlL)
-                            }
-                                .buttonStyle(.nwRow(selected: file.path == model.selectedFile?.path, selectedFill: Color.nw.settingsNavSelected))
-                                .disabled(model.saving)
-                        }
-                    }
-                }.scrollIndicators(.hidden)
-                editor
-            }
-            if model.pending != nil {
-                SettingsGroup(title: "Unsaved changes") {
-                    SettingsRow(title: "Discard unsaved changes?", subtitle: "The project file on disk has not been changed.") {
-                        HStack(spacing: NW.Space.m) {
-                            Button("Keep editing") { model.pending = nil }.buttonStyle(.nw())
-                            Button("Discard changes") { Task { await model.discard() } }.buttonStyle(.nw(.danger))
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private var editor: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: NW.Space.m) {
-                Text(model.selectedFile?.path ?? "").font(.nwMono(AppLayout.instructionsPathSize)).foregroundStyle(Color.nw.textSecondary)
-                Spacer(minLength: 0)
-                if model.dirty { Text("edited").font(.nwSans(AppLayout.instructionsEditedSize)).foregroundStyle(Color.nw.textSecondary) }
-                Button("Revert") { if let file = model.selectedFile { Task { await model.read(file) } } }.buttonStyle(.nw()).disabled(!model.fileLoaded || model.saving)
-                Button(model.saving ? "Saving…" : "Save") { Task { await model.save() } }.buttonStyle(.nw(.primary))
-                    .disabled(!model.dirty || model.saving || project.unavailable != nil)
-            }.padding(NW.Space.l)
-            NWHairline()
-            if model.fileLoaded {
-                InstructionsEditor(text: $model.draft, saved: model.saved ?? "", accessibilityLabel: "Project file editor")
-                    .frame(height: AppLayout.projectsEditorHeight)
-                    .disabled(model.saving || project.unavailable != nil)
-            }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: NWCardRowMetrics.settingsCardRadius))
-        .nwBorder(Color.nw.lineSubtle, radius: NWCardRowMetrics.settingsCardRadius)
+        let label: String
+        if row.unavailable == nil { label = row.project.summary }
+        else if row.host.unavailable == nil { label = "directory unavailable" }
+        else { label = "host unavailable" }
+        let color = row.project.minimal || row.unavailable != nil ? Color.nw.settingsMuted : Color.nw.textSecondary
+        return Text(label).font(.nwMono(AppLayout.projectsPathSize)).foregroundStyle(color).lineLimit(1)
     }
 }

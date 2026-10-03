@@ -108,10 +108,8 @@ struct RemoteBrowserTests {
         #expect(s.vm.browsers.ports.ports(of: try #require(session.remote).owner).isEmpty)
     }
 
-    /// Each thread's page has its own website data, this one's on another host's too: a cookie
-    /// the first page's dev server set is not sent by the second page, though both are at
-    /// `localhost`.
-    @Test func twoRemotePagesShareNoCookies() async throws {
+    /// Pages remain separate, but threads in the same remote project reuse its login.
+    @Test func twoRemoteProjectPagesShareCookies() async throws {
         let (s, refs) = try await setup(threads: 2)
         defer { s.stop() }
         let dev = try DevServerFixture()
@@ -125,9 +123,22 @@ struct RemoteBrowserTests {
         try await eventuallyAsync("its cookie to come back") { (try? await Self.bodyText(a)) == "sid=from-a" }
 
         b.load(try url(portB, "/cookie"))
-        try await eventuallyAsync("the second page's body") { (try? await Self.bodyText(b)) == "none" }
-        #expect(try await text(b) == "none", "the second thread's page is sent none of the first's cookies")
-        #expect(a.webView?.configuration.websiteDataStore !== b.webView?.configuration.websiteDataStore)
+        try await eventuallyAsync("the shared cookie to reach the second page") { (try? await Self.bodyText(b)) == "sid=from-a" }
+        #expect(try await text(b) == "sid=from-a")
+        #expect(a.webView !== b.webView)
+        #expect(a.webView?.configuration.websiteDataStore === b.webView?.configuration.websiteDataStore)
+        let projectID = try #require(s.connection.state.agents.first { $0.id == refs[0].agentID }).spaceID
+        #expect(await s.vm.browsers.cookieSites(projectID: projectID, hostID: s.connection.id)
+            == [BrowserCookieSite(site: "localhost", count: 1)])
+        #expect(await s.vm.browsers.cookieSites(projectID: projectID).isEmpty, "the local namespace stays separate")
+        #expect(await s.vm.browsers.cookieSites(projectID: projectID,
+            hostID: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!).isEmpty, "another remote host stays separate")
+        await s.vm.browsers.clearCookies(projectID: projectID, site: "localhost")
+        #expect(await s.vm.browsers.cookieSites(projectID: projectID, hostID: s.connection.id)
+            == [BrowserCookieSite(site: "localhost", count: 1)])
+        await s.vm.browsers.clearCookies(projectID: projectID, hostID: s.connection.id)
+        b.load(try url(portB, "/cookie"))
+        try await eventuallyAsync("clearing remote cookies reaches the thread page") { (try? await Self.bodyText(b)) == "none" }
     }
 
     @Test func aRemoteThreadHasItsOwnStoreApartFromEveryLocalOne() throws {
@@ -172,7 +183,7 @@ struct RemoteBrowserTests {
         #expect(b.notice?.message == "Port \(port) is already forwarded from build-01, for another thread’s page.")
         #expect(!b.hasPage)
         // Once the first thread's page is gone, the port is the second's.
-        s.vm.browsers.prune(liveRemote: [refs[1]])
+        s.vm.browsers.prune(liveRemote: [refs[1]], hosts: s.local.remoteHosts)
         b.load(try url(port, "/hello"))
         #expect(b.notice == nil && b.hasPage)
     }

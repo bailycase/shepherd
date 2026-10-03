@@ -4,8 +4,8 @@
 
 Source: `SettingsProjects.dc.html`, Shepherd chat UI revision 492. The user supplied this board.
 The reference image is `boards/SettingsProjects.png`. The list replaces the older implication
-that Projects only lives under Appearance. The detail screen reuses the existing instruction
-editor and settings controls; no detail board was supplied.
+that Projects only lives under Appearance. [ProjectInstructions](project-instructions.md),
+revision 562, defines the detail screen and replaces the first implementation.
 
 ## Implementation checklist
 
@@ -43,12 +43,12 @@ editor and settings controls; no detail board was supplied.
   lives on."
 - Additional states: loading, empty, no filter matches, missing directory, unreachable host,
   older host requiring an update, file loading/error, dirty editor, save conflict and invalid JSON.
-  Detail categories: Instructions, Pi settings, Skills, Extensions, MCP servers. Reads and saves
+  Detail tabs: Instructions, Pi settings, Resources, MCP servers. Reads and saves
   always name the selected project's host and directory. Save never overwrites another writer's
   changes. Closing/switching a dirty file asks before discarding.
 - Render normal, empty, filtered, long text, remote offline/update-required, detail and errors in
   light/dark and text scale 1.3. Press navigation, host segments, every row, Add project, detail
-  category/file selection, Save, Revert and discard controls through accessibility.
+  category/file selection, editor selection, Open in editor, Refresh, Save and discard controls through accessibility.
 
 ## Data and scope
 

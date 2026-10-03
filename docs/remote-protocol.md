@@ -78,6 +78,8 @@
     (`HostSettingChange`), applied as the Mac's own Settings would. The additive
     `goalCrossProviderEvaluation` consent is false when missing/null; its change applies to
     newly started or restarted agents, not a live process. Both clients disclose that scope
+  - `projects.details.v1`: adds host-local metadata/context and editor opening to projects.
+    Clients gate context/open requests separately; older `projects.v1` hosts still edit files.
   - `projects` (`projects.v1`): host-owned project history, project-file inventory, reads and
     conflict-checked saves. Only allowlisted files in the selected project are writable,
     never host-global configuration. The Mac Projects page checks this capability and the

@@ -9,16 +9,21 @@ a thread's own web page, beside it. The Browser tab (`globe`, ⌃2) follows Chan
 has it too, when its host carries Browser tunnels (Remote threads, below); an older host shows
 Changes alone.
 
-- **One page per thread:** a WebKit view made the first time the thread opens something, in a
-  website data store of its own keyed on the agent, so it shares cookies, storage and caches with
-  nothing else. On macOS 27 and later that store is identified (`WKWebsiteDataStore(forIdentifier:)`)
-  and keeps them across relaunches; deleting the agent closes the page and removes its store. On
-  macOS 26, where an identified store crashed CI's test process, it falls back to a non-persistent
-  store per thread instead, so cookies don't survive a relaunch there (`BrowserHost.swift`). The
-  view belongs to the thread, not the pane: hiding the pane, another tab, another thread on screen
-  or a parked layout only take it out of
-  the window (the visibility-flip rule), so the page never reloads. A remote thread's page is made
-  here too, in a store keyed on its host and agent, so it is never a local thread's.
+- **One page per thread, saved data per project:** a WebKit view made the first time the thread
+  opens something. Threads in the same project, including its worktrees, share an identified
+  persistent website data store (`WKWebsiteDataStore(forIdentifier:)`) for cookies, local storage
+  and cache. Each keeps its own page, history, session storage and agent controls. Project identity
+  is its stable space ID, not its name or checkout path. Saved data survives Shepherd restarts and
+  deletion of the project's last thread; removing the project removes its store. The bundled app
+  persists on macOS 26 too. Only macOS 26's bundle-less test runner retains the temporary-store
+  crash workaround (`BrowserHost.swift`). Older per-thread stores are not merged into the shared
+  store; sign in once per project. Websites still control cookie expiry and logout.
+  The view belongs to the thread, not the pane: hiding the pane, another tab, another thread on
+  screen or a parked layout only take it out of the window (the visibility-flip rule), so the page
+  never reloads. A remote thread's page is made here too, in a store keyed on its host and project,
+  separate from every local project and other host. A disconnect keeps its data; removing its
+  project or configured host removes it. Automation runs use the project holding their folder;
+  threads outside a project retain isolated data. Every agent in a project can use its logins.
 - **Toolbar** (`NWBrowserToolbar`), 44pt, 8pt side padding, a hairline beneath: Back, Forward and
   Reload (28pt `nwIcon`; one that can't act is at 40%; Reload is Stop loading, an ×, while the page
   loads), 6pt, the address field, 6pt, then Select an element, Viewport size and Open in your

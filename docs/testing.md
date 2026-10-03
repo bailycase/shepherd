@@ -5,6 +5,12 @@
 Swift Testing only (`import Testing`, `@Suite`, `@Test`, `#expect`, `#require`), never XCTest.
 Tests come in tiers, and the switch is `--filter` on target names.
 
+For the Browser's disk persistence checks, run `python3 scripts/test-browser-persistence.py`.
+It runs the app's Browser tests with a shared scratch home for WebKit, including two fresh processes
+that write and read a saved project cookie. Ordinary runs skip the disk checks so they never
+write website data under the user's home. The disk checks need macOS 27+ because identified
+stores crashed macOS 26's bundle-less test runner; the bundled app still uses persistent stores.
+
 | Tier | Targets | What belongs there |
 | --- | --- | --- |
 | Unit | `ShepherdCoreUnitTests`, `ShepherdProtocolUnitTests`, `ShepherdUIUnitTests`, `ShepherdRemoteUnitTests`, `ShepherdSessionsUnitTests`, `ShepherdAppUnitTests`, `ShepherdCLIUnitTests`, `TerminalSurfaceKitUnitTests`, `DesignSurfaceKitUnitTests` | Pure logic |

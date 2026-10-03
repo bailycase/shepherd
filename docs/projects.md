@@ -29,7 +29,8 @@ marker comes from Shepherd's existing `design-systems/*/system.json` metadata an
 Unknown pi settings stay in the file; the editor never rewrites a JSON object from a subset of
 fields.
 
-The file API allows only `AGENTS.md`, `.pi/APPEND_SYSTEM.md`, `.pi/settings.json`, `.pi/mcp.json`,
+The file API allows only `AGENTS.md`, `AGENTS.override.md`, `.pi/SYSTEM.md`,
+`.pi/APPEND_SYSTEM.md`, `.pi/settings.json`, `.pi/mcp.json`,
 `.mcp.json`, discovered `.pi/skills/*/SKILL.md`, `.agents/skills/*/SKILL.md` and discovered
 JavaScript/TypeScript files directly under `.pi/extensions`. It refuses unknown directories,
 traversal, symbolic links, devices, non-UTF-8 data and files over 64 KiB. Missing files differ
@@ -42,6 +43,11 @@ invalidates an open project's editor.
 Changing category/file or closing a dirty detail asks before discarding. Failed reads cannot
 be saved.
 
+`projects.details.v1` adds metadata/context and host-local editor opening to `projects.v1`.
+Older hosts retain file editing, disable editor opening and cannot supply context counts.
+Editor opening validates the allowlisted file through directory descriptors and pins its
+identity with a macOS file reference before asking that host's editor to open it.
+
 `projects.v1` carries list, files, read and save requests over the authenticated existing remote
 connection. The host validates every request and accesses only its own project files. An older
 host requires an update. The transport has no TLS; project contents travel over the same
@@ -50,8 +56,17 @@ logged.
 
 ## Design and checks
 
-The list follows [SettingsProjects](design/settings-projects.md), revision 492. The supplied
-board draws no project detail; that page reuses the existing Instructions editor and controls.
+The list follows [SettingsProjects](design/settings-projects.md), revision 492. The detail
+follows [ProjectInstructions](design/project-instructions.md), revision 562, with a line-numbered
+editor and host-scoped context cards. Context uses pi's actual context-file chooser, so a
+present `AGENTS.override.md` replaces `AGENTS.md` in the read order.
+
+[ProjectBrowser](design/project-browser.md), revision 572, defines the Browser tab. It manages
+the same project store as thread pages. Normal threads and worktrees share the SpaceID's
+persistent store. A remote project adds the configured connection UUID to that key; its
+cookies still remain on this Mac. The listing supplies the exact active project ID, even when
+the displayed directory has a standardized spelling. Clear actions require confirmation and
+remove only cookies. They leave local storage/cache and all other project stores unchanged.
 `ProjectSettingsTests` covers scoped/conflict-safe local and remote IO, retained history and
 rejected file paths. `ProjectsModelTests` covers host identity, filters and dirty navigation.
 `ProjectsControlTests` presses rendered controls through accessibility without focusing a
