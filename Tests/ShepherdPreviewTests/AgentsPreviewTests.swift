@@ -20,7 +20,7 @@ struct AgentsPreviewTests {
 
     private func renderThread(_ surface: String, _ fixture: ThreadFixture, size: CGSize, inspected: String? = nil) async throws {
         defer { fixture.store.stop() }
-        try await Preview.render(surface, size: size, ready: { fixture.store.ready && fixture.store.tray != nil }) {
+        try await Preview.renderMatrix(surface, size: size, ready: { fixture.store.ready && fixture.store.tray != nil }) {
             fixture.thread(inspected: inspected)
         }
     }

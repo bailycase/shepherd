@@ -21,8 +21,9 @@ import SwiftUI
 ///
 /// Neither shows in the scroll view's numbers. SwiftUI says which rows are in view, though
 /// (`onScrollTargetVisibilityChange`), and while the thread follows its tail the bottom marker is
-/// one of them. This waits for things to be quiet and the marker to be missing, lands on the tail
-/// again, and when that was not enough goes the way a reader would: back toward the rows if not
+/// one of them. That clear marker alone is not content: a thread with no visible row is blank even
+/// when its marker is in view. This waits for things to be quiet, lands on the tail again, and when
+/// that was not enough goes the way a reader would: back toward the rows if not
 /// even one is in view (a viewport, two, four… at a time), then down a page at a time until the
 /// marker is realized, which is where the stack's guesses meet its rows.
 ///
@@ -33,8 +34,9 @@ import SwiftUI
 /// tail: the next check measures the scroll view itself, and a shortfall of up to the composer's
 /// height is closed by scrolling to the end of the document (`unsettled`, `shortfall`).
 ///
-/// A workaround for the stack, not a feature: `ThreadTailFlowTests` keeps the case it stands on
-/// (with it switched off) as a known issue, so the test says when SwiftUI no longer needs it.
+/// `ThreadTailFlowTests` keeps the OS reproducer with recovery disabled as an intermittent known
+/// issue. Guard-enabled tests must always recover; a passing disabled run does not make recovery
+/// unnecessary.
 @MainActor
 final class ThreadTailGuard {
     /// The scroll targets in view, as SwiftUI last said.
@@ -104,10 +106,11 @@ final class ThreadTailGuard {
     }
 
     private var tailInView: Bool { visible.contains(bottomID) }
+    private var rowsInView: Bool { visible.contains { $0 != bottomID } }
 
-    /// Nothing in view, the tail missing from it while the thread follows it from afar, or a thread
-    /// that was just repaired resting short of its end.
-    private var strayed: Bool { visible.isEmpty || (following && !tailInView && distance > Self.band) || shortOfTheTail }
+    /// No content in view, the tail missing from it while the thread follows it from afar, or a
+    /// thread that was just repaired resting short of its end.
+    private var strayed: Bool { !rowsInView || (following && !tailInView && distance > Self.band) || shortOfTheTail }
 
     /// A repaired, following thread whose marker is in view and that rests short of the end of its
     /// document (`shortfall`).
@@ -152,7 +155,7 @@ final class ThreadTailGuard {
             // is not waited for as long as one that is still finding its tail. Never over a reader.
             while let self {
                 let now = ContinuousClock.now
-                let waitedLongEnough = now - started >= (self.visible.isEmpty ? Self.blankBusy : Self.busy)
+                let waitedLongEnough = now - started >= (self.rowsInView ? Self.busy : Self.blankBusy)
                 if now >= self.readerUntil, now - self.changed >= wait || waitedLongEnough { break }
                 try? await Task.sleep(for: .milliseconds(20))
                 if Task.isCancelled { return }
@@ -173,13 +176,13 @@ final class ThreadTailGuard {
             suspect(quiet: Self.recheck)
         }
         NWRenderProbe.tick("thread.tailRepair")
-        if visible.isEmpty { await walk(by: -1, until: { !self.visible.isEmpty }, doubling: true) }
+        if !rowsInView { await walk(by: -1, until: { self.rowsInView }, doubling: true) }
         guard following else { return }
         guard !tailInView else {
             reachTheEnd()
             return
         }
-        if attempts > 1 || visible.isEmpty { await walk(by: 1, until: { self.tailInView }, doubling: false) }
+        if attempts > 1 || !rowsInView { await walk(by: 1, until: { self.tailInView }, doubling: false) }
         if following, !userScrolling, active { land() }
     }
 
@@ -217,7 +220,7 @@ final class ThreadTailGuard {
             if abs(clip.bounds.origin.y - from) < 1 { return }
             try? await Task.sleep(for: Self.stepWait)
             // Past the last row there is nothing to realize: the walk down is over.
-            if direction > 0, visible.isEmpty { return }
+            if direction > 0, !rowsInView { return }
             if doubling { page *= 2 }
         }
     }

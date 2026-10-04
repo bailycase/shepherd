@@ -571,12 +571,12 @@ struct ThreadTailFlowTests {
         try await Self.aTurnWithATerminalPanelOpeningAndClosing(c)
     }
 
-    /// What `ThreadTailGuard` is for: the turn finishing with the panel open leaves the lazy stack's
-    /// scroll view past its last row, drawing nothing, and nothing moves it. A known issue of macOS
-    /// 27's stack (every run of it); when this one passes, the stack no longer needs the guard.
+    /// With recovery disabled, finishing a turn with the panel open can leave the lazy stack's
+    /// scroll view past its last row. This OS failure is intermittent: the same sequence also
+    /// settles correctly on macOS 27. A passing run does not establish that recovery is unnecessary.
     @Test func withoutTheGuardTheLazyStackStrandsTheThreadBlank() async throws {
         guard !Self.beforeMacOS27 else { return }
-        await withKnownIssue("a lazy stack's guesses leave the scroll view past its rows, drawing nothing") {
+        await withKnownIssue("a lazy stack's guesses leave the scroll view past its rows, drawing nothing", isIntermittent: true) {
             try await Self.aTurnWithATerminalPanelOpeningAndClosing(PanelCase(size: Self.short, panel: 260, native: false), guarding: false)
         }
     }
@@ -679,15 +679,59 @@ struct ThreadTailFlowTests {
         }
     }
 
+    /// A long live turn settles into the host's 50-message history window. Its prompt falls out
+    /// of that window, so the reply changes identity and height while the completed workers stay
+    /// above the composer.
+    @Test(arguments: sizes)
+    func aLongTurnSettlingIntoPagedHistoryWithFinishedWorkersKeepsTheTranscript(size: CGSize) async throws {
+        try await Self.withDeck(size: size) { deck in
+            deck.model.tray = true
+            try await deck.open()
+            let at = Fx.base + 40_000 * 60_000
+            var live = [Fx.user("long-u", "Review the changes with two workers.", at: at)]
+            let workers = (0..<2).map { i in
+                ChildRun(runID: "worker-\(i)", label: "Review changes", state: "running", startedAt: at + Double(i), role: "worker")
+            }
+            for step in 0..<4 {
+                for n in (step * 15)..<((step + 1) * 15) {
+                    live.append(Fx.reply("long-a\(n)", Fx.prose(3, n), at: at + Double(n) * 1000))
+                    live.append(Fx.tool("long-t\(n)", "read", ["path": "Sources/File\(n).swift"], output: "File contents", at: at + Double(n) * 1000))
+                }
+                await deck.publish(running: true, provisional: live) { $0.subagents = workers }
+                try await deck.expectTail("long turn streaming \(step)")
+            }
+            live.append(Fx.reply("long-final", "The review is complete. Both workers finished.", at: at + 70_000))
+            await deck.publish(running: false, provisional: []) {
+                $0.all += live
+                $0.subagents = workers.map { run in
+                    var done = run
+                    done.state = "complete"
+                    done.endedAt = at + 69_000
+                    done.summary = "Review complete."
+                    return done
+                }
+            }
+            try await eventuallyOnMain("the turn to settle") { !deck.store.running }
+            #expect(deck.store.rows.count == 1, "the history window no longer contains the prompt")
+            #expect(deck.store.tray != nil)
+            try await deck.expectTail("the long turn and workers finished")
+        }
+    }
+
     /// A finished subagent's tray over the composer, then gone.
     @Test(.timingSensitive, arguments: sizes)
     func aFinishedSubagentTrayCollapsingKeepsTheTail(size: CGSize) async throws {
-        try await Self.withDeck(size: size, configure: { $0.subagents = [ListFixtures.run(0, state: "complete")] }) { deck in
-            try await deck.open("with a subagent tray")
+        try await Self.withDeck(size: size) { deck in
+            deck.model.tray = true
+            try await deck.open()
             try await deck.runTurn(1)
+            var run = ListFixtures.run(0, state: "complete")
+            run.startedAt = try #require(deck.store.lastPromptAt)
+            await deck.publish { $0.subagents = [run] }
+            #expect(deck.store.tray != nil)
             try await deck.expectTail("a turn with the tray")
-            deck.host.subagents = []
-            await deck.publish()
+            await deck.publish { $0.subagents = [] }
+            #expect(deck.store.tray == nil)
             try await deck.expectTail("the tray gone")
         }
     }
