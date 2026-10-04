@@ -101,9 +101,15 @@ struct ProjectBrowserControlTests {
             }
             let narrowEditor = try column("ProjectEditorColumn"), narrowContext = try column("ProjectContextColumn")
             // Legacy scrollers reserve space. The editor fills the native clip view, not that space.
-            let viewport = try #require(nativeScrollViews(window.host).map {
+            let clips = nativeScrollViews(window.host).map {
                 window.host.convert($0.contentView.bounds, from: $0.contentView)
-            }.first { $0.insetBy(dx: -1, dy: -1).contains(narrowEditor) })
+            }
+            // The editor can extend below its vertical clip. Its top edge identifies that clip,
+            // excluding the separate file-tabs scroll view above it.
+            let viewport = try #require(clips.first {
+                $0.insetBy(dx: -1, dy: -1).contains(CGPoint(x: narrowEditor.minX, y: narrowEditor.minY))
+                    && $0.maxX >= narrowEditor.maxX - 1
+            }, "Editor \(narrowEditor) must have a containing horizontal clip: \(clips)")
             #expect(abs(narrowEditor.minX - 272) <= 1)
             #expect(abs(narrowEditor.width - viewport.width) <= 1 && narrowEditor.width <= 739,
                     "Narrow editor \(narrowEditor) fills viewport \(viewport) at text scale \(scale)")
