@@ -38,11 +38,11 @@ and the intended full-width Skills layout.
   Cancel and confirmation tests retain cookie isolation.
 - The Dev build succeeds with locked packages. Release/documentation checks pass, 421 tests.
   The final focused Swift run passes, 45 tests in 15 suites. A follow-up CI check exposed two
-  test assumptions. The narrow-editor check now enables legacy scrollbars and compares its
-  width with the native clip view, since visible scrollbars reserve space. The editor's top
-  edge identifies that clip; its vertically scrolling content can extend below it, and the
-  file-tabs clip above is separate. The history-retry test uses its own sessions directory so
-  other tests cannot add projects to its listing.
+  test assumptions. The narrow-editor check enables legacy scrollbars and compares the AX
+  group with the available width, with or without the measured native scrollbar reservation.
+  macOS 26 reports the outer group, while 27 reports the clipped children. Nine focused
+  follow-up checks pass with CI=true. The history-retry test uses its own sessions directory
+  so other tests cannot add projects to its listing.
 - `app/` contains 40 off-screen running-app captures at 2400 x 1100pt, in both appearances.
   The bundled Dev executable uses a live scratch SessionServer, real project files, skill
   data and WebKit storage. The temporary capture launcher is not shipped.

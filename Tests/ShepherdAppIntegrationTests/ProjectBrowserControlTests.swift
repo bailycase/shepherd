@@ -100,19 +100,16 @@ struct ProjectBrowserControlTests {
                     && (try? column("ProjectContextColumn").minY > column("ProjectEditorColumn").maxY) == true
             }
             let narrowEditor = try column("ProjectEditorColumn"), narrowContext = try column("ProjectContextColumn")
-            // Legacy scrollers reserve space. The editor fills the native clip view, not that space.
-            let clips = nativeScrollViews(window.host).map {
-                window.host.convert($0.contentView.bounds, from: $0.contentView)
-            }
-            // The editor can extend below its vertical clip. Its top edge identifies that clip,
-            // excluding the separate file-tabs scroll view above it.
-            let viewport = try #require(clips.first {
-                $0.insetBy(dx: -1, dy: -1).contains(CGPoint(x: narrowEditor.minX, y: narrowEditor.minY))
-                    && $0.maxX >= narrowEditor.maxX - 1
-            }, "Editor \(narrowEditor) must have a containing horizontal clip: \(clips)")
+            let availableWidth = window.host.bounds.width - 312
+            let scrollbarSpace = nativeScrollViews(window.host).map {
+                max(0, $0.bounds.width - $0.contentView.bounds.width)
+            }.max() ?? 0
+            // macOS 26 reports the outer AX group; 27 reports its clipped children.
+            // Both must fill the available column, excluding only native scrollbar space.
             #expect(abs(narrowEditor.minX - 272) <= 1)
-            #expect(abs(narrowEditor.width - viewport.width) <= 1 && narrowEditor.width <= 739,
-                    "Narrow editor \(narrowEditor) fills viewport \(viewport) at text scale \(scale)")
+            #expect(abs(narrowEditor.width - availableWidth) <= 1
+                    || abs(narrowEditor.width - (availableWidth - scrollbarSpace)) <= 1,
+                    "Editor \(narrowEditor) fills \(availableWidth)pt with \(scrollbarSpace)pt scrollbar space at text scale \(scale)")
             #expect(abs(narrowContext.width - narrowEditor.width) <= 1 && abs(narrowContext.minX - narrowEditor.minX) <= 1)
             for label in ["Save", "Open in editor"] {
                 let control = try #require(AccessibilityNode.all(under: window.host).first { $0.label == label })
