@@ -41,6 +41,14 @@ survive "does this help a person supervise ten working agents at once?"
   budgets; elapsed time and token counts are reporting only. Off pauses active goals without
   clearing them, and re-enable never resumes work by itself.
 
+## Projects settings
+
+The list and project details retain the supplied boards' 860pt column. Settings navigation
+and its divider occupy 232pt together. Narrow windows scroll the fixed column instead of
+shrinking it; destructive cookie confirmations center over the whole Settings viewport.
+ProjectBrowser uses the supplied static vector glyphs, exact Geist faces and fractional font
+sizes, and CSS-point borders. Do not substitute SF Symbols or generic form-control styling.
+
 ## Browser data
 
 Browser pages and agent controls belong to threads. Saved cookies, local storage and cache belong

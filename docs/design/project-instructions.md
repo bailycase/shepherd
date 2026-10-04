@@ -9,14 +9,19 @@ counts, paths, dates and host state come from `ProjectSettingsStore` and `Projec
 
 ## Checklist
 
-- Settings navigation stays 232pt wide and highlights Projects. Its Pi subpages are visible
+- Settings navigation, including its divider, stays 232pt wide and highlights Projects. Its Pi subpages are visible
   on this detail screen, matching the board.
 - The content starts 36pt from the top. Center its 860pt header in the remaining window width.
   The 938pt body extends from the same leading edge and has a 668pt editor,
-  20pt column gap and 250pt context column. Collapse the columns on a narrow window.
-- Breadcrumb `Projects`, an outline `chevron.right`, then the real project name. Pressing
+  20pt column gap and 250pt context column. Collapse the columns when this body does not fit
+  with the gutters. Preserve the 860pt header and 48pt minimum gutters, horizontally scrolling
+  on narrower windows; the stacked editor and its footer share the header's fixed width.
+- Breadcrumb `Projects`, the supplied outline chevron, `NWGlyph.Settings.next`, then the
+  real project name. Pressing
   Projects returns to the list, with discard confirmation for an unsaved draft.
-- Identity has an outline `folder` in a 32pt raised rounded square, a 22pt semibold project
+- Identity uses the supplied outline folder, `NWGlyph.Settings.folder`, in a 32pt raised
+  content square, 34pt including its 1pt border,
+  with rounded corners, a 22pt semibold project
   name, its monospaced display path, and the host name aligned right.
 - Underlined tabs are `Instructions`, `Settings`, `Resources`, `MCP servers` and `Browser`.
   The Browser tab follows [ProjectBrowser](project-browser.md), revision 572. Counts are

@@ -266,12 +266,14 @@ public struct NWRowButtonStyle: ButtonStyle {
     let radius: CGFloat
     let selectedFill: Color?
     let hoverFill: Color?
+    let focusColor: Color?
 
-    public init(selected: Bool = false, radius: CGFloat = NW.Radius.s, selectedFill: Color? = nil, hoverFill: Color? = nil) {
+    public init(selected: Bool = false, radius: CGFloat = NW.Radius.s, selectedFill: Color? = nil, hoverFill: Color? = nil, focusColor: Color? = nil) {
         self.selected = selected
         self.radius = radius
         self.selectedFill = selectedFill
         self.hoverFill = hoverFill
+        self.focusColor = focusColor
     }
 
     public func makeBody(configuration: Configuration) -> some View {
@@ -280,8 +282,8 @@ public struct NWRowButtonStyle: ButtonStyle {
 }
 
 extension ButtonStyle where Self == NWRowButtonStyle {
-    public static func nwRow(selected: Bool = false, radius: CGFloat = NW.Radius.s, selectedFill: Color? = nil, hoverFill: Color? = nil) -> NWRowButtonStyle {
-        NWRowButtonStyle(selected: selected, radius: radius, selectedFill: selectedFill, hoverFill: hoverFill)
+    public static func nwRow(selected: Bool = false, radius: CGFloat = NW.Radius.s, selectedFill: Color? = nil, hoverFill: Color? = nil, focusColor: Color? = nil) -> NWRowButtonStyle {
+        NWRowButtonStyle(selected: selected, radius: radius, selectedFill: selectedFill, hoverFill: hoverFill, focusColor: focusColor)
     }
 }
 
@@ -298,7 +300,7 @@ private struct NWRowButton: View {
             .onHover { hovering = $0 }
             // Keyed on the pointer only: a selection moved by the keyboard lands at once.
             .nwAnimation(.hover, value: hovering)
-            .nwFocusRing(radius: style.radius)
+            .nwFocusRing(radius: style.radius, color: style.focusColor)
     }
 
     /// Touch has no hover, so a row shows its hover fill while pressed instead.

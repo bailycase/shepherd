@@ -226,11 +226,22 @@ public struct NWSettingsNavRow: View {
     let selected: Bool
     let action: () -> Void
 
+    private let artwork: NWGlyph.Settings?
+
     public init(_ title: String, systemImage: String, selected: Bool, action: @escaping () -> Void) {
         self.title = title
         self.systemImage = systemImage
         self.selected = selected
         self.action = action
+        self.artwork = nil
+    }
+
+    public init(_ title: String, glyph: NWGlyph.Settings, selected: Bool, action: @escaping () -> Void) {
+        self.title = title
+        self.systemImage = ""
+        self.selected = selected
+        self.action = action
+        self.artwork = glyph
     }
 
     public var body: some View {
@@ -238,14 +249,14 @@ public struct NWSettingsNavRow: View {
         Button(action: action) {
             HStack(spacing: NWSettingsNavMetrics.iconGap) {
                 // Scales with the text size, like the name beside it.
-                Image(systemName: systemImage)
-                    .font(.nwSans(NWSettingsNavMetrics.glyphSize))
-                    .symbolRenderingMode(.monochrome)
-                    .foregroundStyle(selected ? nw.textPrimary : nw.textSecondary)
-                    .frame(width: NWSettingsNavMetrics.iconSize)
-                    .accessibilityHidden(true)
+                Group {
+                    if let artwork { artwork.image }
+                    else { Image(systemName: systemImage).font(.nwSans(NWSettingsNavMetrics.glyphSize)).symbolRenderingMode(.monochrome) }
+                }.foregroundStyle(selected ? nw.textPrimary : nw.textSecondary)
+                    .frame(width: NWSettingsNavMetrics.iconSize).accessibilityHidden(true)
                 Text(title)
                     .font(.nwSans(NWSettingsNavMetrics.textSize, selected ? .medium : .regular))
+                    .offset(y: artwork != nil ? NWSettingsNavMetrics.textBaseline * ThemeStore.shared.textScale : 0)
                     .foregroundStyle(nw.textPrimary)
                     .lineLimit(1)
                 Spacer(minLength: 0)
@@ -254,7 +265,7 @@ public struct NWSettingsNavRow: View {
             .frame(minHeight: NW.Height.scaled(NWSettingsNavMetrics.rowHeight))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.nwRow(selected: selected, selectedFill: Color.nw.settingsNavSelected))
+        .buttonStyle(.nwRow(selected: selected, selectedFill: Color.nw.settingsNavSelected, focusColor: artwork != nil ? .nw.running : nil))
         .accessibilityLabel(title)
         .accessibilityAddTraits(selected ? [.isSelected] : [])
     }
@@ -294,7 +305,7 @@ public struct NWSettingsNavSubRow: View {
             .frame(minHeight: NW.Height.scaled(NWSettingsNavMetrics.subRowHeight))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.nwRow(selected: selected))
+        .buttonStyle(.nwRow(selected: selected, focusColor: .nw.running))
         .accessibilityLabel(attention ? "\(title), needs you" : title)
         .accessibilityAddTraits(selected ? [.isSelected] : [])
     }
@@ -318,4 +329,8 @@ public enum NWSettingsNavMetrics {
     public static let subRowHeight: CGFloat = 28
     public static let subRowLeading: CGFloat = 35
     public static let subTextSize: CGFloat = 12.5
+    /// CSS points, not device pixels, in the supplied Settings boards.
+    public static let borderWidth: CGFloat = 1
+    public static let searchHeight: CGFloat = 34
+    public static let textBaseline: CGFloat = 1.5
 }

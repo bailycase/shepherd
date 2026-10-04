@@ -3,6 +3,7 @@ import Foundation
 import ShepherdCore
 import ShepherdTestSupport
 import ShepherdUI
+import CoreText
 import SwiftUI
 import Testing
 import WebKit
@@ -25,6 +26,92 @@ struct ProjectBrowserControlTests {
         await #expect(processExitsWith: .success) {
             await recordingErrors { try await Self.pressControls() }
         }
+    }
+
+    @Test @MainActor func fractionalFontsKeepTheBoardsTextWidths() {
+        NWFonts.register()
+        let scale = ThemeStore.shared.textScale
+        defer { ThemeStore.shared.textScale = scale }
+        ThemeStore.shared.textScale = 1
+        let sample = "Browser tabs in all threads and worktrees for payments share cookies on this Mac. Other projects"
+        let font = CTFontCreateWithName("Geist-Regular" as CFString, 13.5, nil)
+        let line = CTLineCreateWithAttributedString(NSAttributedString(string: sample, attributes: [.font: font]))
+        let expected = CTLineGetTypographicBounds(line, nil, nil, nil)
+        let host = NSHostingView(rootView: Text(sample).font(.nwSans(13.5)).fixedSize())
+        #expect(abs(host.fittingSize.width - expected) <= 1)
+        #expect(expected < 610, "13.5pt Geist must not round up to 14pt")
+    }
+
+    @Test func projectBrowserKeepsTheBoardWidthInsideTheRealSettingsOverlay() async throws {
+        await #expect(processExitsWith: .success) {
+            await recordingErrors { try await Self.checkLayout() }
+        }
+    }
+
+    private static func checkLayout() async throws {
+        try StubPi.installAsEngine()
+        AccessibilityNode.enable()
+        let app = try AppHarness()
+        defer { app.stop() }
+        let vm = try await app.start()
+        let directory = app.dir.appendingPathComponent("payments")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try "# Project instructions\n".write(to: directory.appendingPathComponent("AGENTS.md"), atomically: true, encoding: .utf8)
+        try await app.server.addSpace(Space(name: "payments", path: directory.path), first: false)
+        await vm.projects.load(vm.projectsSources)
+        let row = try #require(vm.projects.rows.first { $0.project.directory == directory.path })
+        vm.settingsSection = .projects; vm.showSettings = true
+        let window = OffscreenWindow(size: CGSize(width: 1440, height: 900), dark: true, RootView(vm: vm))
+        defer { window.close() }
+        try await eventuallyOnMain("Projects list in the Settings overlay") {
+            window.layout()
+            return AccessibilityNode.all(under: window.host).contains { $0.label == "Open payments on This Mac" }
+        }
+        let projectControl = try ControlPress.press("Open payments on This Mac", under: window.host)
+        #expect(abs(projectControl.frame.width - 860) <= 1)
+        try await eventuallyOnMain("project detail in the Settings overlay") {
+            window.layout()
+            return AccessibilityNode.all(under: window.host).contains { $0.label == "Project category Browser" }
+        }
+        try ControlPress.press("Project category Browser", under: window.host)
+        try await eventuallyOnMain("Browser table in the Settings overlay") {
+            window.layout()
+            return !vm.projectCookies.loading && AccessibilityNode.all(under: window.host).contains { $0.label == "Sites with cookies" }
+        }
+        func frame(_ label: String) throws -> CGRect {
+            let node = try #require(AccessibilityNode.all(under: window.host).first { $0.label == label || $0.value == label })
+            return window.host.convert(window.window.convertFromScreen(node.frame), from: nil)
+        }
+        let table = try frame("Sites with cookies")
+        #expect(abs(table.width - 860) <= 1, "the board's Browser table is 860pt wide")
+        #expect(abs(table.minX - 406) <= 1, "the board centers the column after the 232pt Settings navigation")
+        #expect(abs(table.height - 235) <= 1, "the empty table has a 32pt header, 200pt body and border insets")
+        #expect(abs(table.minY - 335) <= 1, "the Browser groups follow the board's vertical spacing: \(table)")
+        let description = try frame("Browser tabs in all threads and worktrees for payments share cookies on this Mac. Other projects use separate cookies.")
+        #expect(description.minX >= table.minX && description.maxX <= table.minX + 620,
+                "the rendered explanation stays within the board's 620pt text measure")
+        #expect(abs(try frame("Back to Projects").minX - table.minX) <= 1)
+        let textScale = ThemeStore.shared.textScale
+        defer { ThemeStore.shared.textScale = textScale }
+        for size in [CGSize(width: 1050, height: 900), CGSize(width: 1267, height: 900), CGSize(width: 1800, height: 1000), CGSize(width: 1440, height: 900)] {
+            window.window.setContentSize(size)
+            try await eventuallyOnMain("the Settings host to adopt its resized width") {
+                window.layout()
+                return abs(window.host.bounds.width - size.width) <= 1
+            }
+            let resizedTable = try frame("Sites with cookies")
+            #expect(abs(resizedTable.width - 860) <= 1, "the board's column must not shrink on a narrower window")
+            #expect(abs(resizedTable.minX - max(280, 232 + (size.width - 232 - 860) / 2)) <= 1)
+            #expect(abs(try frame("Back to Projects").minX - resizedTable.minX) <= 1)
+        }
+        ThemeStore.shared.textScale = 1.3
+        window.layout()
+        #expect(abs(try frame("Sites with cookies").width - 860) <= 1)
+        let back = try ControlPress.press("Back to Projects", under: window.host)
+        #expect(back.isEnabled)
+        try await eventuallyOnMain("return to the full-width Projects list") { vm.projects.selected == nil }
+        window.layout()
+        #expect(abs(try frame("Open payments on This Mac").width - 860) <= 1)
     }
 
     private static func pressControls() async throws {
@@ -57,7 +144,7 @@ struct ProjectBrowserControlTests {
         let scope = try #require(vm.cookieScope(for: row))
         await vm.projectCookies.load(scope)
         vm.showSettings = true; vm.settingsSection = .projects
-        let window = OffscreenWindow(size: CGSize(width: 1440, height: 900), dark: true, SettingsView(vm: vm))
+        let window = OffscreenWindow(size: CGSize(width: 1440, height: 900), dark: true, RootView(vm: vm))
         defer { window.close() }
         try await eventuallyOnMain("cookie controls") { window.layout(); return AccessibilityNode.all(under: window.host).contains { $0.label == "Clear cookies for one.test" } }
         let nodes = AccessibilityNode.all(under: window.host)
@@ -88,6 +175,34 @@ struct ProjectBrowserControlTests {
         #expect(!["private-name", "private-value", "secret-name", "secret-value"].contains { labels.contains($0) })
         try ControlPress.press("Cancel", under: window.host)
         #expect(await store.httpCookieStore.allCookies().count == 2)
+        func nativeScrollViews(_ view: NSView) -> [NSScrollView] {
+            (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap(nativeScrollViews)
+        }
+        for width in [900.0, 720.0] {
+            window.window.setContentSize(CGSize(width: width, height: 900))
+            try await eventuallyOnMain("the narrow Settings viewport") {
+                window.layout(); return abs(window.host.bounds.width - width) <= 1
+            }
+            let canvas = try #require(nativeScrollViews(window.host).first {
+                ($0.documentView?.bounds.width ?? 0) > $0.contentView.bounds.width + 1
+            })
+            canvas.scrollerStyle = .legacy
+            canvas.contentView.scroll(to: NSPoint(x: (canvas.documentView?.bounds.width ?? 0) - canvas.contentView.bounds.width, y: 0))
+            canvas.reflectScrolledClipView(canvas.contentView)
+            window.layout()
+            try ControlPress.press("Clear cookies for one.test", under: window.host)
+            window.layout()
+            let visible = AccessibilityNode.all(under: window.host)
+            for label in ["Cancel", "Clear cookies"] {
+                let node = try #require(visible.first { $0.label == label })
+                let local = window.host.convert(window.window.convertFromScreen(node.frame), from: nil)
+                #expect(local.minX >= 0 && local.maxX <= width && local.minY >= 0 && local.maxY <= 900,
+                        "\(label) at \(local) must fit the \(width)pt Settings viewport")
+            }
+            try ControlPress.press("Cancel", under: window.host)
+            #expect(await store.httpCookieStore.allCookies().count == 2)
+        }
+        window.window.setContentSize(CGSize(width: 1440, height: 900))
         window.layout()
         try ControlPress.press("Clear cookies for one.test", under: window.host)
         window.layout()
