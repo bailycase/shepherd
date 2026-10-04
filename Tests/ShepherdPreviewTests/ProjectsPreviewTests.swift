@@ -82,6 +82,17 @@ struct ProjectsPreviewTests {
         }
     }
 
+    @Test(arguments: [false, true])
+    func projectEditorFillsTheViewport(long: Bool) async throws {
+        let world = try await ProjectsPreviewWorld(long: long)
+        defer { world.stop() }
+        let project = try #require(world.vm.projects.rows.first { $0.host.id == "local" && $0.project.name.hasPrefix("dashboard") })
+        await world.vm.projects.open(project)
+        try await Preview.renderMatrix("projects-full-width-\(long ? "long" : "editor")", size: CGSize(width: 2400, height: 1100)) {
+            RootView(vm: world.vm)
+        }
+    }
+
     @Test(arguments: ["edited", "discard", "saved", "invalid-json", "missing-skill", "missing-file", "conflict", "unsafe-file"])
     func editing(state: String) async throws {
         let world = try await ProjectsPreviewWorld()

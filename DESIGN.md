@@ -41,11 +41,13 @@ survive "does this help a person supervise ten working agents at once?"
   budgets; elapsed time and token counts are reporting only. Off pauses active goals without
   clearing them, and re-enable never resumes work by itself.
 
-## Projects settings
+## Settings width
 
-The list and project details retain the supplied boards' 860pt column. Settings navigation
-and its divider occupy 232pt together. Narrow windows scroll the fixed column instead of
-shrinking it; destructive cookie confirmations center over the whole Settings viewport.
+Every Settings page fills the available width with the same 40pt side gutters as Skills and
+Instructions. This is the user's latest requirement and replaces the former 720pt standard-page
+and 860pt Projects caps. Navigation and its divider occupy 232pt together. Project editors
+expand beside their 250pt context rail; narrow windows stack the rail instead of horizontally
+scrolling a fixed page. Destructive cookie confirmations center over the whole Settings viewport.
 ProjectBrowser uses the supplied static vector glyphs, exact Geist faces and fractional font
 sizes, and CSS-point borders. Do not substitute SF Symbols or generic form-control styling.
 

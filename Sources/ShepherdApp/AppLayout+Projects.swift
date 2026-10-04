@@ -2,7 +2,6 @@ import SwiftUI
 import ShepherdUI
 
 extension AppLayout {
-    static let projectsWidth: CGFloat = 860
     static let projectsTextWidth: CGFloat = 700
     static let projectsTitleSize: CGFloat = 22
     static let projectsExplanationSize: CGFloat = 13.5
@@ -24,7 +23,6 @@ extension AppLayout {
     static let projectsChevronSize: CGFloat = 10
     static let projectsFooterLineHeight: CGFloat = 1.55
     static let projectDetailTop: CGFloat = 36
-    static let projectDetailPad: CGFloat = 48
     static let projectNarrowWidth: CGFloat = 720
     static let projectNarrowEditorHeight: CGFloat = 500
     static let projectBrowserTitleSize: CGFloat = 15
@@ -68,8 +66,7 @@ extension AppLayout {
     // The board's 32pt content box has a 1pt border outside it.
     static let projectFolderSize: CGFloat = 34
     static let projectPathInset: CGFloat = 44
-    static let projectBodyWidth: CGFloat = 938
-    static let projectEditorWidth: CGFloat = 668
+    static let projectColumnsMinimumWidth: CGFloat = 938
     static let projectMetadataRule: CGFloat = 1
     static let projectSideWidth: CGFloat = 250
     static let projectColumnsGap: CGFloat = 20

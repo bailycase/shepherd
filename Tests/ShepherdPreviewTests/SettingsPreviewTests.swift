@@ -35,6 +35,18 @@ struct SettingsPreviewTests {
         }
     }
 
+    /// The user's full-width Settings requirement, rendered through the real window root.
+    @Test(arguments: SettingsSection.allCases)
+    func settingsFullWidth(section: SettingsSection) async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        workspace.vm.settingsSection = section
+        workspace.vm.showSettings = true
+        try await Preview.renderMatrix("settings-full-width-\(section.rawValue)", size: CGSize(width: 2400, height: 1100)) {
+            RootView(vm: workspace.vm)
+        }
+    }
+
     @Test(arguments: [false, true])
     func settingsAgentsGoalChecks(enabled: Bool) async throws {
         let workspace = try PreviewWorkspace()
@@ -42,7 +54,7 @@ struct SettingsPreviewTests {
         workspace.settings.goalCrossProviderEvaluation = enabled
         try await Preview.render("settings-agents-goal-checks-\(enabled ? "on" : "off")", size: CGSize(width: 1020, height: 950)) {
             AgentSettings(pi: workspace.server.pi, settings: workspace.settings)
-                .padding(AppLayout.settingsGutter)
+                .padding(AppLayout.settingsWideSides)
                 .frame(width: 1020, height: 950, alignment: .topLeading)
                 .background(Color.nw.bgWindow)
         }
@@ -296,14 +308,14 @@ struct SettingsPreviewTests {
             connection.phase = .failed(RemoteHostFailure(error))
             return connection
         }
-        let size = CGSize(width: AppLayout.settingsContentWidth + 2 * AppLayout.settingsGutter, height: 360)
+        let size = CGSize(width: 1440, height: 360)
         try await Preview.render("settings-remote-host-failures", size: size) {
             SettingsGroup(title: "Hosts") {
                 ForEach(connections) { connection in
                     RemoteHostRow(connection: connection, remove: {}, reconnect: {}, edit: {})
                 }
             }
-            .padding(AppLayout.settingsGutter)
+            .padding(AppLayout.settingsWideSides)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(Color.nw.bgWindow)
         }
@@ -312,7 +324,7 @@ struct SettingsPreviewTests {
     /// The Add host form refusing a port it cannot use: the field's line turns failed and the
     /// reason sits under it (Controls › Text field, error).
     @Test func settingsRemotePortRefused() async throws {
-        let size = CGSize(width: AppLayout.settingsContentWidth + 2 * AppLayout.settingsGutter, height: 220)
+        let size = CGSize(width: 1440, height: 220)
         try await Preview.render("settings-remote-port-refused", size: size) {
             SettingsGroup(title: "Add host") {
                 SettingsRow(title: "Address", subtitle: "VPN-reachable IP or hostname.") {
@@ -323,7 +335,7 @@ struct SettingsPreviewTests {
                                       width: AppLayout.settingsPortFieldWidth, error: RemotePortField.problem("70000"))
                 }
             }
-            .padding(AppLayout.settingsGutter)
+            .padding(AppLayout.settingsWideSides)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(Color.nw.bgWindow)
         }
@@ -407,7 +419,7 @@ struct SettingsPreviewTests {
     /// Settings ▸ Advanced ▸ Updates as each app shows it. Sparkle only runs in a bundled app,
     /// so the Advanced page above renders without this group.
     @Test func updateChannelRows() async throws {
-        let size = CGSize(width: AppLayout.settingsContentWidth + 2 * AppLayout.settingsGutter, height: 300)
+        let size = CGSize(width: 1440, height: 300)
         try await Preview.render("settings-update-channel", size: size) {
             VStack(alignment: .leading, spacing: AppLayout.settingsGroupSpacing) {
                 SettingsGroup(title: "Shepherd") {
@@ -417,7 +429,7 @@ struct SettingsPreviewTests {
                     UpdateChannelRow(edition: .nightly, channel: .constant(.nightly))
                 }
             }
-            .padding(AppLayout.settingsGutter)
+            .padding(AppLayout.settingsWideSides)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(Color.nw.bgWindow)
         }
