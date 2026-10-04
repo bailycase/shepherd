@@ -201,6 +201,7 @@ A list is as fast with three hundred rows as with thirty. Count budgets in
 - Rows are plain `Equatable` values; closures stay out of `==`; highlight and selection arrive
   as a `Bool`; hover lives in the row. Stores derive rows once per change, never in `body`.
 - Hidden agents stay out of the visible one's updates (see AGENTS.md, switching is a flip).
+- Blank-thread recovery checks for visible content rows, not the invisible bottom scroll marker.
 - Motion no one sees costs nothing (`nwMotionPaused`); detail in
   [performance](docs/design/performance.md).
 
