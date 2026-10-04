@@ -88,6 +88,10 @@ struct ProjectBrowserControlTests {
         for scale in [1.0, 1.3] {
             ThemeStore.shared.textScale = scale
             window.window.setContentSize(CGSize(width: 1050, height: 900))
+            window.layout()
+            for scroll in nativeScrollViews(window.host) {
+                scroll.scrollerStyle = .legacy; scroll.autohidesScrollers = false
+            }
             try await eventuallyOnMain("the narrow project editor to stack its context") {
                 window.layout()
                 let nodes = AccessibilityNode.all(under: window.host)
@@ -96,7 +100,13 @@ struct ProjectBrowserControlTests {
                     && (try? column("ProjectContextColumn").minY > column("ProjectEditorColumn").maxY) == true
             }
             let narrowEditor = try column("ProjectEditorColumn"), narrowContext = try column("ProjectContextColumn")
-            #expect(abs(narrowEditor.minX - 272) <= 1 && abs(narrowEditor.width - 738) <= 1)
+            // Legacy scrollers reserve space. The editor fills the native clip view, not that space.
+            let viewport = try #require(nativeScrollViews(window.host).map {
+                window.host.convert($0.contentView.bounds, from: $0.contentView)
+            }.first { $0.insetBy(dx: -1, dy: -1).contains(narrowEditor) })
+            #expect(abs(narrowEditor.minX - 272) <= 1)
+            #expect(abs(narrowEditor.width - viewport.width) <= 1 && narrowEditor.width <= 739,
+                    "Narrow editor \(narrowEditor) fills viewport \(viewport) at text scale \(scale)")
             #expect(abs(narrowContext.width - narrowEditor.width) <= 1 && abs(narrowContext.minX - narrowEditor.minX) <= 1)
             for label in ["Save", "Open in editor"] {
                 let control = try #require(AccessibilityNode.all(under: window.host).first { $0.label == label })
@@ -162,6 +172,10 @@ struct ProjectBrowserControlTests {
         #expect(abs(try frame("Open payments on This Mac").width - 1128) <= 1)
     }
 
+    private static func nativeScrollViews(_ view: NSView) -> [NSScrollView] {
+        (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap(nativeScrollViews)
+    }
+
     private static func pressControls() async throws {
         try StubPi.installAsEngine()
         AccessibilityNode.enable()
@@ -223,9 +237,6 @@ struct ProjectBrowserControlTests {
         #expect(!["private-name", "private-value", "secret-name", "secret-value"].contains { labels.contains($0) })
         try ControlPress.press("Cancel", under: window.host)
         #expect(await store.httpCookieStore.allCookies().count == 2)
-        func nativeScrollViews(_ view: NSView) -> [NSScrollView] {
-            (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap(nativeScrollViews)
-        }
         for width in [900.0, 720.0] {
             window.window.setContentSize(CGSize(width: width, height: 900))
             try await eventuallyOnMain("the narrow Settings viewport") {
