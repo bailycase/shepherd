@@ -99,6 +99,7 @@
   "ShepherdAppIntegrationTests.RightPaneMotionTests": 5.36,
   "ShepherdAppIntegrationTests.ServerStartupRefusalTests": 0.13,
   "ShepherdAppIntegrationTests.ServiceTierFlowTests": 1.19,
+  "ShepherdAppIntegrationTests.SettingsFullWidthTests": 1.51,
   "ShepherdAppIntegrationTests.SettingsMotionTests": 0.1,
   "ShepherdAppIntegrationTests.SettingsResetTests": 0.3,
   "ShepherdAppIntegrationTests.ShellIntegrationTests": 0.26,
@@ -585,5 +586,5 @@
   "TerminalSurfaceKitUnitTests.TerminalLinkTests": 0.01,
   "TerminalSurfaceKitUnitTests.TerminalSurfaceConfigTests": 0.02
  },
- "measured": "Local macOS 27.0.1, project detail and Browser validation"
+ "measured": "Local native Swift Testing: full-width Settings navigation and resize, 1280/1440/2400pt; 2026-10-04."
 }

@@ -16,9 +16,9 @@ revision 562, defines the detail screen and replaces the first implementation.
   Existing page glyphs remain their registered settings symbols.
 - The existing 232pt navigation, 44pt top strip, 32pt nav rows, search and version footer.
   The footer comes from the app bundle and bundled pi, never the board's example versions.
-- Projects is a fixed, centered 860pt column, 48pt minimum gutters, 44pt top and 48pt bottom.
-  The list and detail own this layout; the generic Settings page wrapper must not shrink it.
-  Narrow windows scroll horizontally. Blocks are 22pt apart. Header title is Geist 22/600, tracking -1%; explanation is
+- Projects fills the available width with the same 40pt side gutters as Skills and Instructions,
+  44pt top and 48pt bottom. The user's latest full-width request supersedes the board's 860pt
+  cap. The list scrolls vertically, not a fixed-width column horizontally. Blocks are 22pt apart. Header title is Geist 22/600, tracking -1%; explanation is
   Geist 13.5 with 1.5 line height, at most 700pt wide.
 - Header 22pt; explanation 13.5pt. Exact header: "Projects". Exact explanation: "Every folder Shepherd has run an agent in.
   Open one to edit what applies only there: its instructions, pi settings, skills, extensions

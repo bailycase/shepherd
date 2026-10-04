@@ -11,11 +11,11 @@ counts, paths, dates and host state come from `ProjectSettingsStore` and `Projec
 
 - Settings navigation, including its divider, stays 232pt wide and highlights Projects. Its Pi subpages are visible
   on this detail screen, matching the board.
-- The content starts 36pt from the top. Center its 860pt header in the remaining window width.
-  The 938pt body extends from the same leading edge and has a 668pt editor,
-  20pt column gap and 250pt context column. Collapse the columns when this body does not fit
-  with the gutters. Preserve the 860pt header and 48pt minimum gutters, horizontally scrolling
-  on narrower windows; the stacked editor and its footer share the header's fixed width.
+- The content starts 36pt from the top and fills the remaining width with 40pt side gutters.
+  The user's full-width request supersedes the board's fixed header and editor widths.
+  The editor expands beside a 250pt context column with a 20pt gap. Stack the context below
+  the editor when the available content width is below 938pt. The page no longer scrolls
+  a fixed-width column horizontally.
 - Breadcrumb `Projects`, the supplied outline chevron, `NWGlyph.Settings.next`, then the
   real project name. Pressing
   Projects returns to the list, with discard confirmation for an unsaved draft.
