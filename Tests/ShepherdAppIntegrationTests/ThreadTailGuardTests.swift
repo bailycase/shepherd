@@ -70,8 +70,10 @@ struct ThreadTailGuardTests {
 
     /// A thread drawing nothing is walked back toward its rows, and the walk is the guard's own
     /// scrolling: a view it leaves a little above the end of the document (the marker is in view from
-    /// there, under the composer) is taken the rest of the way.
-    @Test func aRepairedThreadRestingUnderTheComposerIsTakenToTheEndOfItsDocument() async throws {
+    /// there, under the composer) is taken the rest of the way. Seeing only the clear bottom marker
+    /// is still a blank transcript, not a successful repair.
+    @Test(arguments: [[], ["thread-bottom"]])
+    func aRepairedThreadRestingUnderTheComposerIsTakenToTheEndOfItsDocument(visible: [String]) async throws {
         let rig = Rig()
         defer { rig.close() }
         rig.onFirstMove {
@@ -79,7 +81,7 @@ struct ThreadTailGuardTests {
             rig.document.setFrameSize(NSSize(width: 800, height: 5500))
             rig.guardian.targets(["row", "thread-bottom"])
         }
-        rig.guardian.targets([])
+        rig.guardian.targets(visible)
         try await eventuallyOnMain("the guard to walk the view and finish", timeout: .seconds(10)) { rig.guardian.visible.count == 2 && !rig.guardian.repairing }
         try await eventuallyOnMain("the view to rest on the end of its document", timeout: .seconds(5)) { rig.gap <= ThreadTailGuard.slack }
         #expect(rig.landings == 0, "the guard aimed at the end the stack believes in, which would undo an exact landing")
