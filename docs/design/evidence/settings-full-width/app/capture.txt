@@ -1,0 +1,4 @@
+NSApplication.isRunning: true
+Fonts available: true
+Bundled Dev app, RootView and live scratch SessionServer.
+Off-screen windows, no focus or posted input.
