@@ -46,9 +46,10 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   leave the scroll view at an offset its numbers call the tail but that lies past every row the
   stack placed. Nothing is realized there and nothing moves it, so the thread draws nothing, in
   a window of any height, and a view that keeps following lets the reader scroll no way out of
-  it. The guard notices that no row is in view, or that a following thread rests more than 80pt
-  above its tail with the bottom marker out of view, waits for the layout to be quiet (160ms at
-  most, for a thread drawing nothing), and lands on the tail again; when that is not enough it
+  it. The guard notices that no content row is in view, even when the invisible bottom marker
+  is still visible. That marker alone must not end recovery. It also notices a following thread
+  resting more than 80pt above its tail with the bottom marker out of view. It waits for quiet
+  layout, at most 160ms for a blank thread, and lands on the tail again; when that is not enough it
   walks the scroll view back toward the rows and then down a page at a time until the marker is
   in view. A repair is not over until the thread has been seen resting on its tail: the follower
   stands aside while the guard walks, so a thread that grew meanwhile (the "Thinking…" line of a
