@@ -195,6 +195,10 @@ struct SettingsView: View {
                 // A wide page fills the area and scrolls inside itself (its editor, its side column).
                 Group { page }
                     .nwTransition(.content)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .contentShape(Rectangle())
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("SettingsPageContent")
                     .padding(.top, AppLayout.settingsWideTop)
                     .padding(.horizontal, AppLayout.settingsWideSides)
                     .padding(.bottom, AppLayout.settingsWideBottom)
@@ -203,11 +207,14 @@ struct SettingsView: View {
                 ScrollView(.vertical) {
                     Group { page }
                         .nwTransition(.content)
-                        .frame(maxWidth: AppLayout.settingsContentWidth, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("SettingsPageContent")
                         .padding(.top, AppLayout.settingsTop)
                         .padding(.bottom, AppLayout.settingsBottom)
-                        .padding(.horizontal, AppLayout.settingsGutter)
-                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, AppLayout.settingsWideSides)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         // A page picked in the nav cross-fades in place; search switches pages at once.
                         .nwAnimation(.content, value: vm.settingsSection)
                 }

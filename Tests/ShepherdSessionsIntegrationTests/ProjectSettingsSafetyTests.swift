@@ -45,7 +45,8 @@ struct ProjectSettingsSafetyTests {
         let scratch = try ScratchServer()
         defer { scratch.stop() }
         let registry = scratch.dir.appendingPathComponent("projects.json")
-        let store = scratch.server.projects
+        let store = ProjectSettingsStore(historyURL: registry, home: scratch.dir,
+                                         sessions: scratch.dir.appendingPathComponent("sessions"))
         let one = Space(name: "one", path: scratch.dir.appendingPathComponent("one").path)
         let two = Space(name: "two", path: scratch.dir.appendingPathComponent("two").path)
         _ = try await store.request(.list(), state: ShepherdState(spaces: [one]))

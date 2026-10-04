@@ -16,41 +16,36 @@ struct ProjectSettingsDetail: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let leading = max(AppLayout.projectDetailPad, (geometry.size.width - AppLayout.projectsWidth) / 2)
-            let narrow = geometry.size.width - leading - AppLayout.projectDetailPad < AppLayout.projectBodyWidth
-            ScrollView(.horizontal) {
-                VStack(alignment: .leading, spacing: AppLayout.projectDetailGap) {
-                    if model.showingBrowser {
+            let narrow = geometry.size.width - AppLayout.settingsWideSides * 2 < AppLayout.projectColumnsMinimumWidth
+            VStack(alignment: .leading, spacing: AppLayout.projectDetailGap) {
+                if model.showingBrowser {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: NW.Space.xxl) {
+                            header.disabled(cookies.pending != nil || cookies.clearing).accessibilityHidden(cookies.pending != nil)
+                            ProjectBrowserSettings(model: cookies, project: project, scope: cookieScope)
+                        }.padding(.bottom, AppLayout.settingsBottom)
+                    }
+                } else {
+                    header.frame(maxWidth: .infinity, alignment: .leading).disabled(cookies.clearing)
+                    if narrow {
                         ScrollView {
-                            VStack(alignment: .leading, spacing: NW.Space.xxl) {
-                                header.disabled(cookies.pending != nil || cookies.clearing).accessibilityHidden(cookies.pending != nil)
-                                ProjectBrowserSettings(model: cookies, project: project, scope: cookieScope)
-                            }.padding(.bottom, AppLayout.settingsBottom)
+                            VStack(alignment: .leading, spacing: AppLayout.projectSideGap) {
+                                editorColumn.frame(height: AppLayout.projectNarrowEditorHeight)
+                                contextColumn
+                            }
                         }
                     } else {
-                        header.frame(width: AppLayout.projectsWidth, alignment: .leading)
-                            .disabled(cookies.clearing)
-                        if narrow {
-                            ScrollView {
-                                VStack(alignment: .leading, spacing: AppLayout.projectSideGap) {
-                                    editorColumn.frame(height: AppLayout.projectNarrowEditorHeight)
-                                    contextColumn
-                                }
-                            }
-                        } else {
-                            HStack(alignment: .top, spacing: AppLayout.projectColumnsGap) {
-                                editorColumn.frame(width: AppLayout.projectEditorWidth)
-                                contextColumn.frame(width: AppLayout.projectSideWidth)
-                            }.frame(width: AppLayout.projectBodyWidth, alignment: .leading).frame(maxHeight: .infinity)
-                        }
+                        HStack(alignment: .top, spacing: AppLayout.projectColumnsGap) {
+                            editorColumn
+                            contextColumn.frame(width: AppLayout.projectSideWidth)
+                        }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                     }
-                }.frame(width: AppLayout.projectsWidth, alignment: .topLeading)
-                    .frame(maxHeight: .infinity, alignment: .topLeading)
-                    .padding(.top, AppLayout.projectDetailTop)
-                    .padding(.horizontal, AppLayout.projectDetailPad)
-                    .frame(minWidth: geometry.size.width, maxHeight: .infinity, alignment: .top)
-            }
-            .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+                }
+            }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("SettingsPageContent")
+                .padding(.top, AppLayout.projectDetailTop)
+                .padding(.horizontal, AppLayout.settingsWideSides)
         }
     }
 
@@ -159,6 +154,8 @@ struct ProjectSettingsDetail: View {
             editor
             footer
         }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("ProjectEditorColumn")
     }
 
     private var editor: some View {
@@ -218,6 +215,8 @@ struct ProjectSettingsDetail: View {
                     .lineSpacing(AppLayout.projectSideLineExtra).fixedSize(horizontal: false, vertical: true)
             } else { hostsCard }
         }.padding(.top, AppLayout.projectContextTop).frame(maxHeight: .infinity, alignment: .top)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("ProjectContextColumn")
     }
 
     private var readingCard: some View {

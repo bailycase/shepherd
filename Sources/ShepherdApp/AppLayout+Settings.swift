@@ -16,11 +16,9 @@ extension AppLayout {
     /// Back to Shepherd to the search field: 10pt.
     static let settingsSearchTop: CGFloat = 10
     static let settingsNavRowSpacing: CGFloat = NW.Space.xxs
-    static let settingsContentWidth: CGFloat = 720
     static let settingsTop: CGFloat = 44
     static let settingsBottom: CGFloat = 48
     /// 48pt either side of the page's column.
-    static let settingsGutter: CGFloat = NW.Space.xxxl + NW.Space.xl
     /// The page title: Geist 22/600, tracked −1%.
     static let settingsTitleSize: CGFloat = 22
     static let settingsTitleTracking: CGFloat = -0.01

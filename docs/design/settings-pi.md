@@ -75,7 +75,8 @@ other bundled-extension controls.
 No board draws this page: it is the user's decision, 2026-10-01 (the PR lists it under Departures).
 A page under Pi in the nav, after From your pi: "The commands pi lists in the `/` menu of your
 agents, from its extensions, prompt templates and skills. Turn one off to hide it from the menu."
-(`SettingsSection.piSlashCommands`; a 720pt column; `SlashCommandsSettings`, its groups derived
+(`SettingsSection.piSlashCommands`; full available width with 40pt side gutters;
+`SlashCommandsSettings`, its groups derived
 once per change by `SlashCommandsModel`).
 
 - **Search commands:** a 280pt `NWSearchField` and, trailing in caption `textTertiary`, the count:

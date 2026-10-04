@@ -8,11 +8,11 @@ User board `ProjectBrowser.dc.html`, revision 572. Saved as
 ## Implementation checklist
 
 - Reuse the project header and Settings navigation. Add Browser after MCP servers. The active
-  Browser tab has a 2pt lantern underline. Body width stays 860pt, page top 36pt, header
-  height 128pt, body groups 24pt apart. The 232pt navigation includes its divider. At the
-  board's 1440pt window width, the centered column starts at x=406. Preserve the 860pt width
-  and 48pt minimum gutters in narrower windows with horizontal scrolling. There is no
-  editor or right-hand context column in this tab.
+  Browser tab has a 2pt lantern underline. Body fills the remaining width with 40pt side
+  gutters, page top 36pt, header height 128pt and body groups 24pt apart. The 232pt navigation
+  includes its divider. The user's full-width Settings request supersedes the board's 860pt
+  cap. At 1440pt, content starts at x=272 and spans 1128pt. There is no editor or right-hand
+  context column in this tab.
 - Heading "Browser cookies", 15pt semibold. Explanation 13.5pt with 1.55 line height, maximum
   620pt width. Real project name replaces the board's sample name. Exact explanation:
   "Browser tabs in all threads and worktrees for <name> share cookies on this Mac. Other

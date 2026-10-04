@@ -41,10 +41,12 @@ Save or Apply. Instructions and [Projects](settings-projects.md) edit files with
   (`caption`, `textSecondary`, indented past the icon); clicking one opens its page. When the page
   on screen has no match, the first page that does opens at once (no cross-fade per keystroke). With
   nothing matching, the nav says "No matching settings" in `caption`/`textTertiary`.
-- **Projects** uses the [SettingsProjects spec](settings-projects.md), an 860pt column, and
-  a project-only editor. Subagents reuses the existing native-subagent settings, moved out of Pi.
-- **Content** (every page but Projects, Instructions, Skills, MCP servers and Experiments): the page on `bgWindow`, a 720pt column
-  centered in it, 44pt from the top, 48pt from the sides and the bottom; the page scrolls, and the
+- **Projects** uses the [SettingsProjects spec](settings-projects.md) and a project-only editor.
+  It fills the available width, like every other Settings page. Subagents reuses the existing
+  native-subagent settings, moved out of Pi.
+- **Content** (every page but Projects, Instructions, Skills, MCP servers and Experiments): the page on `bgWindow`,
+  fills the available width, 44pt from the top, 40pt from the sides and 48pt from the bottom.
+  The user's full-width request replaces the old centered 720pt column. The page scrolls, and the
   strip at its top still drags the window. Top to bottom:
   - the header: the page's name in Geist 22/600, tracked −1% (`Font.nwSans(22, .semibold)`,
     `textPrimary`, a header for VoiceOver), and `NW.Space.xs` under it one line in
@@ -356,7 +358,9 @@ automated step of the worktree flows can be turned off here.
 
 ## Wide pages: Instructions, Skills, MCP servers and Experiments
 
-These four pages are wider than the 720pt column (`SettingsSection.isWide`): the page fills the detail area on `bgWindow`, 44pt from the top, 40pt at the sides, 32pt at
+These four pages manage their own scrolling (`SettingsSection.isWide`), rather than using the
+standard pages' outer vertical scroll view. Every page now shares their full-width layout and
+40pt side gutters. These pages fill the detail area on `bgWindow`, 44pt from the top, 32pt at
 the bottom, with its blocks 20pt apart (`AppLayout.settingsWide*`). It doesn't scroll as a whole:
 its editor and its side column scroll inside themselves, and the strip at its top still drags the
 window. Under the header (the same 22/600 title and `body` explanation, capped at 820pt) sits a main column

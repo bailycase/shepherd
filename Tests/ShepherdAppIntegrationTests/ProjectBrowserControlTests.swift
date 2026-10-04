@@ -42,7 +42,7 @@ struct ProjectBrowserControlTests {
         #expect(expected < 610, "13.5pt Geist must not round up to 14pt")
     }
 
-    @Test func projectBrowserKeepsTheBoardWidthInsideTheRealSettingsOverlay() async throws {
+    @Test func projectsAndBrowserFillTheSettingsWidthAfterNavigationAndResize() async throws {
         await #expect(processExitsWith: .success) {
             await recordingErrors { try await Self.checkLayout() }
         }
@@ -68,11 +68,74 @@ struct ProjectBrowserControlTests {
             return AccessibilityNode.all(under: window.host).contains { $0.label == "Open payments on This Mac" }
         }
         let projectControl = try ControlPress.press("Open payments on This Mac", under: window.host)
-        #expect(abs(projectControl.frame.width - 860) <= 1)
+        #expect(abs(projectControl.frame.width - 1128) <= 1)
         try await eventuallyOnMain("project detail in the Settings overlay") {
             window.layout()
             return AccessibilityNode.all(under: window.host).contains { $0.label == "Project category Browser" }
         }
+        func column(_ identifier: String) throws -> CGRect {
+            let selector = NSSelectorFromString("accessibilityIdentifier")
+            let node = try #require(AccessibilityNode.all(under: window.host).first {
+                $0.object.responds(to: selector) && $0.object.perform(selector)?.takeUnretainedValue() as? String == identifier
+            })
+            return window.host.convert(window.window.convertFromScreen(node.frame), from: nil)
+        }
+        let editor = try column("ProjectEditorColumn"), context = try column("ProjectContextColumn")
+        #expect(abs(editor.minX - 272) <= 1 && abs(editor.width - 858) <= 1)
+        #expect(abs(context.width - 250) <= 1 && abs(context.minX - editor.maxX - 20) <= 1)
+        let textScale = ThemeStore.shared.textScale
+        defer { ThemeStore.shared.textScale = textScale }
+        for scale in [1.0, 1.3] {
+            ThemeStore.shared.textScale = scale
+            window.window.setContentSize(CGSize(width: 1050, height: 900))
+            window.layout()
+            for scroll in nativeScrollViews(window.host) {
+                scroll.scrollerStyle = .legacy; scroll.autohidesScrollers = false
+            }
+            try await eventuallyOnMain("the narrow project editor to stack its context") {
+                window.layout()
+                let nodes = AccessibilityNode.all(under: window.host)
+                return abs(window.host.bounds.width - 1050) <= 1 && vm.projects.fileLoaded && !vm.projects.saving
+                    && nodes.contains { $0.label == "Save" } && nodes.contains { $0.label == "Open in editor" }
+                    && (try? column("ProjectContextColumn").minY > column("ProjectEditorColumn").maxY) == true
+            }
+            let narrowEditor = try column("ProjectEditorColumn"), narrowContext = try column("ProjectContextColumn")
+            let availableWidth = window.host.bounds.width - 312
+            let scrollbarSpace = nativeScrollViews(window.host).map {
+                max(0, $0.bounds.width - $0.contentView.bounds.width)
+            }.max() ?? 0
+            // macOS 26 reports the outer AX group; 27 reports its clipped children.
+            // Both must fill the available column, excluding only native scrollbar space.
+            #expect(abs(narrowEditor.minX - 272) <= 1)
+            #expect(abs(narrowEditor.width - availableWidth) <= 1
+                    || abs(narrowEditor.width - (availableWidth - scrollbarSpace)) <= 1,
+                    "Editor \(narrowEditor) fills \(availableWidth)pt with \(scrollbarSpace)pt scrollbar space at text scale \(scale)")
+            #expect(abs(narrowContext.width - narrowEditor.width) <= 1 && abs(narrowContext.minX - narrowEditor.minX) <= 1)
+            for label in ["Save", "Open in editor"] {
+                let control = try #require(AccessibilityNode.all(under: window.host).first { $0.label == label })
+                let frame = window.host.convert(window.window.convertFromScreen(control.frame), from: nil)
+                #expect(control.isEnabled && frame.width >= 24 && frame.height >= 24)
+                #expect(frame.minX >= 272 && frame.maxX <= 1010 && frame.minY >= 0 && frame.maxY <= 900,
+                        "\(label) stays in the narrow viewport at text scale \(scale)")
+            }
+            let savedText = vm.projects.draft + "# Saved at text scale \(scale)\n"
+            vm.projects.draft = savedText
+            window.layout()
+            let save = try ControlPress.press("Save", under: window.host)
+            #expect(save.isEnabled)
+            try await eventuallyOnMain("the narrow editor's save to finish") {
+                vm.projects.saved == savedText && !vm.projects.saving && vm.projects.fileLoaded && !vm.projects.dirty
+            }
+            #expect(try String(contentsOf: directory.appendingPathComponent("AGENTS.md"), encoding: .utf8) == savedText)
+        }
+        ThemeStore.shared.textScale = textScale
+        window.window.setContentSize(CGSize(width: 1440, height: 900))
+        try await eventuallyOnMain("the wide project editor to restore its context rail") {
+            window.layout()
+            return abs(window.host.bounds.width - 1440) <= 1 && (try? column("ProjectContextColumn").width) == 250
+                && !vm.projects.saving && AccessibilityNode.all(under: window.host).contains { $0.label == "Project category Browser" && $0.isEnabled }
+        }
+        #expect(!vm.projects.dirty)
         try ControlPress.press("Project category Browser", under: window.host)
         try await eventuallyOnMain("Browser table in the Settings overlay") {
             window.layout()
@@ -83,16 +146,14 @@ struct ProjectBrowserControlTests {
             return window.host.convert(window.window.convertFromScreen(node.frame), from: nil)
         }
         let table = try frame("Sites with cookies")
-        #expect(abs(table.width - 860) <= 1, "the board's Browser table is 860pt wide")
-        #expect(abs(table.minX - 406) <= 1, "the board centers the column after the 232pt Settings navigation")
+        #expect(abs(table.width - 1128) <= 1, "Browser fills the available Settings width")
+        #expect(abs(table.minX - 272) <= 1, "Browser uses the same 40pt gutter as Skills")
         #expect(abs(table.height - 235) <= 1, "the empty table has a 32pt header, 200pt body and border insets")
         #expect(abs(table.minY - 335) <= 1, "the Browser groups follow the board's vertical spacing: \(table)")
         let description = try frame("Browser tabs in all threads and worktrees for payments share cookies on this Mac. Other projects use separate cookies.")
         #expect(description.minX >= table.minX && description.maxX <= table.minX + 620,
                 "the rendered explanation stays within the board's 620pt text measure")
         #expect(abs(try frame("Back to Projects").minX - table.minX) <= 1)
-        let textScale = ThemeStore.shared.textScale
-        defer { ThemeStore.shared.textScale = textScale }
         for size in [CGSize(width: 1050, height: 900), CGSize(width: 1267, height: 900), CGSize(width: 1800, height: 1000), CGSize(width: 1440, height: 900)] {
             window.window.setContentSize(size)
             try await eventuallyOnMain("the Settings host to adopt its resized width") {
@@ -100,18 +161,22 @@ struct ProjectBrowserControlTests {
                 return abs(window.host.bounds.width - size.width) <= 1
             }
             let resizedTable = try frame("Sites with cookies")
-            #expect(abs(resizedTable.width - 860) <= 1, "the board's column must not shrink on a narrower window")
-            #expect(abs(resizedTable.minX - max(280, 232 + (size.width - 232 - 860) / 2)) <= 1)
+            #expect(abs(resizedTable.width - (size.width - 312)) <= 1, "Browser follows the available width after a resize")
+            #expect(abs(resizedTable.minX - 272) <= 1)
             #expect(abs(try frame("Back to Projects").minX - resizedTable.minX) <= 1)
         }
         ThemeStore.shared.textScale = 1.3
         window.layout()
-        #expect(abs(try frame("Sites with cookies").width - 860) <= 1)
+        #expect(abs(try frame("Sites with cookies").width - 1128) <= 1)
         let back = try ControlPress.press("Back to Projects", under: window.host)
         #expect(back.isEnabled)
         try await eventuallyOnMain("return to the full-width Projects list") { vm.projects.selected == nil }
         window.layout()
-        #expect(abs(try frame("Open payments on This Mac").width - 860) <= 1)
+        #expect(abs(try frame("Open payments on This Mac").width - 1128) <= 1)
+    }
+
+    private static func nativeScrollViews(_ view: NSView) -> [NSScrollView] {
+        (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap(nativeScrollViews)
     }
 
     private static func pressControls() async throws {
@@ -175,20 +240,15 @@ struct ProjectBrowserControlTests {
         #expect(!["private-name", "private-value", "secret-name", "secret-value"].contains { labels.contains($0) })
         try ControlPress.press("Cancel", under: window.host)
         #expect(await store.httpCookieStore.allCookies().count == 2)
-        func nativeScrollViews(_ view: NSView) -> [NSScrollView] {
-            (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap(nativeScrollViews)
-        }
         for width in [900.0, 720.0] {
             window.window.setContentSize(CGSize(width: width, height: 900))
             try await eventuallyOnMain("the narrow Settings viewport") {
                 window.layout(); return abs(window.host.bounds.width - width) <= 1
             }
-            let canvas = try #require(nativeScrollViews(window.host).first {
-                ($0.documentView?.bounds.width ?? 0) > $0.contentView.bounds.width + 1
-            })
-            canvas.scrollerStyle = .legacy
-            canvas.contentView.scroll(to: NSPoint(x: (canvas.documentView?.bounds.width ?? 0) - canvas.contentView.bounds.width, y: 0))
-            canvas.reflectScrolledClipView(canvas.contentView)
+            #expect(!nativeScrollViews(window.host).contains {
+                $0.hasHorizontalScroller && ($0.documentView?.bounds.width ?? 0) > $0.contentView.bounds.width + 1
+                    && $0.frame.width > 600
+            }, "the project page no longer scrolls a fixed-width column")
             window.layout()
             try ControlPress.press("Clear cookies for one.test", under: window.host)
             window.layout()
