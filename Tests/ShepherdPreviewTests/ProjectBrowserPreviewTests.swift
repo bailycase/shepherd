@@ -57,7 +57,7 @@ struct ProjectBrowserPreviewTests {
                     Task { await vm.projectCookies.confirm(scope) }
                 }
             }, untilGone: state == "cleared" ? "Clearing…" : nil,
-               showing: state == "cleared" ? "Cleared cookies for github.com" : nil) { SettingsView(vm: vm) }
+               showing: state == "cleared" ? "Cleared cookies for github.com" : nil) { RootView(vm: vm) }
             if state == "cleared" { #expect(vm.projectCookies.notice?.contains("github.com") == true) }
         }
     }

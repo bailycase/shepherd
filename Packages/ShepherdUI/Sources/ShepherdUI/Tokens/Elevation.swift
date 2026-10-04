@@ -45,37 +45,38 @@ extension View {
     /// The keyboard focus ring for custom controls: running blue, 2pt wide, 2pt outside the
     /// control. Shown only while the control has keyboard focus (`isFocused`), never on click.
     /// Native controls keep the system's ring.
-    public func nwFocusRing(radius: CGFloat = NW.Radius.s) -> some View {
-        modifier(NWFocusRingModifier(shape: RoundedRectangle(cornerRadius: radius)))
+    public func nwFocusRing(radius: CGFloat = NW.Radius.s, color: Color? = nil) -> some View {
+        modifier(NWFocusRingModifier(shape: RoundedRectangle(cornerRadius: radius), color: color))
     }
 
     /// The focus ring around a circular control.
     public func nwFocusRingCircle() -> some View {
-        modifier(NWFocusRingModifier(shape: Circle()))
+        modifier(NWFocusRingModifier(shape: Circle(), color: nil))
     }
 
     /// The same ring, shown while `visible`: for a field or card whose focus the caller tracks
     /// (a focused text field, the composer while typing, the inspected card).
-    public func nwFocusRing(_ visible: Bool, radius: CGFloat = NW.Radius.s) -> some View {
+    public func nwFocusRing(_ visible: Bool, radius: CGFloat = NW.Radius.s, color: Color? = nil) -> some View {
         overlay {
             if visible {
                 RoundedRectangle(cornerRadius: radius).inset(by: -4)
-                    .strokeBorder(Color.nw.focusRing, lineWidth: 2)
+                    .strokeBorder(color ?? Color.nw.focusRing, lineWidth: 2)
                     .allowsHitTesting(false)
             }
         }
     }
 
     /// A 1px (hairline) border inside the view's bounds. Every control, card, and pane border
-    /// draws through this or `nwBorder(_:in:dash:)`, never a 1pt stroke.
-    public func nwBorder(_ color: Color, radius: CGFloat = 0) -> some View {
-        nwBorder(color, in: RoundedRectangle(cornerRadius: radius))
+    /// draws through this or `nwBorder(_:in:dash:)`. `width` pins a board's CSS-point stroke
+    /// instead of the default device-pixel hairline.
+    public func nwBorder(_ color: Color, radius: CGFloat = 0, width: CGFloat? = nil) -> some View {
+        nwBorder(color, in: RoundedRectangle(cornerRadius: radius), width: width)
     }
 
     /// A 1px (hairline) border along `shape` (a capsule, a circle) inside the view's bounds;
     /// `dash` draws it dashed (a queued bubble, a framed empty state).
-    public func nwBorder<S: InsettableShape>(_ color: Color, in shape: S, dash: [CGFloat] = []) -> some View {
-        modifier(NWBorderModifier(color: color, shape: shape, dash: dash))
+    public func nwBorder<S: InsettableShape>(_ color: Color, in shape: S, dash: [CGFloat] = [], width: CGFloat? = nil) -> some View {
+        modifier(NWBorderModifier(color: color, shape: shape, dash: dash, width: width))
     }
 }
 
@@ -84,15 +85,17 @@ public struct NWHairline: View {
     public enum Axis: Sendable { case horizontal, vertical }
     let axis: Axis
     let color: Color?
+    let fixedWidth: CGFloat?
     @Environment(\.displayScale) private var displayScale
 
-    public init(_ axis: Axis = .horizontal, color: Color? = nil) {
+    public init(_ axis: Axis = .horizontal, color: Color? = nil, width: CGFloat? = nil) {
         self.axis = axis
         self.color = color
+        self.fixedWidth = width
     }
 
     public var body: some View {
-        let width = NW.hairline(displayScale)
+        let width = fixedWidth ?? NW.hairline(displayScale)
         Rectangle()
             .fill(color ?? .nw.lineSubtle)
             .frame(width: axis == .vertical ? width : nil, height: axis == .horizontal ? width : nil)
@@ -104,11 +107,12 @@ private struct NWBorderModifier<S: InsettableShape>: ViewModifier {
     let color: Color
     let shape: S
     let dash: [CGFloat]
+    let width: CGFloat?
     @Environment(\.displayScale) private var displayScale
 
     func body(content: Content) -> some View {
         content.overlay {
-            shape.strokeBorder(color, style: StrokeStyle(lineWidth: NW.hairline(displayScale), dash: dash))
+            shape.strokeBorder(color, style: StrokeStyle(lineWidth: width ?? NW.hairline(displayScale), dash: dash))
         }
     }
 }
@@ -148,6 +152,7 @@ private struct NWPopoverModifier: ViewModifier {
 
 private struct NWFocusRingModifier<S: InsettableShape>: ViewModifier {
     let shape: S
+    let color: Color?
     @Environment(\.isFocused) private var isFocused
 
     func body(content: Content) -> some View {
@@ -155,7 +160,7 @@ private struct NWFocusRingModifier<S: InsettableShape>: ViewModifier {
             .focusEffectDisabled()
             .overlay {
                 if isFocused {
-                    shape.inset(by: -4).strokeBorder(Color.nw.focusRing, lineWidth: 2)
+                    shape.inset(by: -4).strokeBorder(color ?? Color.nw.focusRing, lineWidth: 2)
                         .allowsHitTesting(false)
                 }
             }

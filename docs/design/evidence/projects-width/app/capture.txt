@@ -1,0 +1,4 @@
+NSApplication.isRunning: true
+Fonts available: true
+Off-screen bundled Dev app, RootView, real SessionServer/project files and WebKit store.
+No posted events or focus. Text scales 1.0 and 1.3.

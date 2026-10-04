@@ -77,7 +77,7 @@
   "ShepherdAppIntegrationTests.PaneLayoutTests": 0.42,
   "ShepherdAppIntegrationTests.PiHomeLaunchTests": 0.91,
   "ShepherdAppIntegrationTests.PiSignInFlowTests": 2.02,
-  "ShepherdAppIntegrationTests.ProjectBrowserControlTests": 2.69,
+  "ShepherdAppIntegrationTests.ProjectBrowserControlTests": 3.49,
   "ShepherdAppIntegrationTests.ProjectsControlTests": 1.56,
   "ShepherdAppIntegrationTests.ProjectsRemoteControlTests": 0.39,
   "ShepherdAppIntegrationTests.ProseImageIdentityTests": 0.15,

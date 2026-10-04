@@ -45,7 +45,7 @@ struct ProjectsControlTests {
             return try await vm.server.projects.request(request, state: vm.state)
         }
         vm.showSettings = true; vm.settingsSection = .projects
-        let window = OffscreenWindow(size: CGSize(width: 1440, height: 1100), dark: true, SettingsView(vm: vm))
+        let window = OffscreenWindow(size: CGSize(width: 1440, height: 1100), dark: true, RootView(vm: vm))
         defer { window.close() }
         let model = vm.projects
         try await eventuallyOnMain("the project row") { model.visible.count == 1 }
@@ -135,6 +135,23 @@ struct ProjectsControlTests {
         sheet.layoutSubtreeIfNeeded()
         try ControlPress.press("Cancel", under: sheet)
         try await eventuallyOnMain("the folder picker to close") { window.window.attachedSheet == nil }
+        window.layout()
+        let settingsSearch = try #require(AccessibilityNode.all(under: window.host).first { $0.label == "Search settings" && $0.role == "AXTextField" })
+        let settingsSetter = NSSelectorFromString("setAccessibilityValue:")
+        #expect(settingsSearch.object.responds(to: settingsSetter))
+        _ = settingsSearch.object.perform(settingsSetter, with: "Filter projects")
+        let settingsField = try #require(nativeTextField(under: window.host, label: "Search settings"))
+        settingsField.delegate?.controlTextDidChange?(Notification(name: NSControl.textDidChangeNotification, object: settingsField))
+        try await eventuallyOnMain("the Settings search to narrow navigation") {
+            window.layout()
+            return !AccessibilityNode.all(under: window.host).contains { $0.label == "Appearance" && $0.role == "AXButton" }
+        }
+        _ = settingsSearch.object.perform(settingsSetter, with: "")
+        settingsField.delegate?.controlTextDidChange?(Notification(name: NSControl.textDidChangeNotification, object: settingsField))
+        try await eventuallyOnMain("the Settings search to restore navigation") {
+            window.layout()
+            return AccessibilityNode.all(under: window.host).contains { $0.label == "Appearance" && $0.role == "AXButton" }
+        }
         try ControlPress.press("Back to Shepherd", under: window.host)
         #expect(!vm.showSettings)
     }

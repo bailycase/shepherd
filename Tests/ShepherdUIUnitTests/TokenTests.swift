@@ -72,6 +72,14 @@ struct TokenTests {
         #expect(close(resolved(store.palette.lantern, dark: true), HexColor("#ff0000")!))
     }
 
+    @Test func settingsGlyphsUseEverySuppliedVectorAsset() throws {
+        for glyph in NWGlyph.Settings.allCases {
+            let svg = try String(contentsOf: #require(glyph.resourceURL), encoding: .utf8)
+            #expect(svg.contains("<svg") && svg.contains("stroke="))
+            #expect(!svg.contains("<script") && !svg.contains("href="))
+        }
+    }
+
     @Test func theBundledFacesAreRegistered() {
         #expect(NWFonts.isAvailable)
         for name in ["Geist-Regular", "Geist-Medium", "Geist-SemiBold", "Geist-Bold", "Geist-Italic", "GeistMono-Regular", "GeistMono-Medium"] {
@@ -99,9 +107,15 @@ struct TokenTests {
     @Test func smallProseIsOneStepUnderTheThread() {
         let ramp = NWTypeRamp(scale: 1)
         #expect(NWProseSize.regular.step == 0 && NWProseSize.small.step == NWTextStyle.body.size - NWTextStyle.ui.size)
+        #if os(macOS)
+        #expect(ramp.font(.body) == Font.custom("Geist-Regular", fixedSize: 13.5))
+        #expect(ramp.font(.body, size: .small) == Font.custom("Geist-Regular", fixedSize: 12.5))
+        #expect(ramp.font(.headline, size: .small) == Font.custom("Geist-SemiBold", fixedSize: 12.5))
+        #else
         #expect(ramp.font(.body) == Font.custom("Geist-Regular", size: 13.5, relativeTo: .body))
         #expect(ramp.font(.body, size: .small) == Font.custom("Geist-Regular", size: 12.5, relativeTo: .body))
         #expect(ramp.font(.headline, size: .small) == Font.custom("Geist-SemiBold", size: 12.5, relativeTo: .headline))
+        #endif
         #expect(ramp.lineSpacing(.body, size: .small) > 0 && ramp.lineSpacing(.body, size: .small) <= ramp.lineSpacing(.body))
     }
 

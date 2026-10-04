@@ -30,7 +30,10 @@ Save or Apply. Instructions and [Projects](settings-projects.md) edit files with
     Experiments (`flask`). A row is 32pt × density (`NW.Height.scaled(32)`), radius `s`, 10pt in:
     a 13pt symbol in a 15pt box in `textSecondary` (`textPrimary` when selected), then, 10pt after
     it, the name in Geist 13 `textPrimary`. The selected page sits on `bgSelected` with its name at
-    medium (500) weight; hover is `bgHover` (`NWSettingsNavMetrics`).
+    medium (500) weight from ProjectBrowser revision 572; hover is `bgHover`
+    (`NWSettingsNavMetrics`). The selected fill uses `bgSelected` without a theme-specific
+    replacement. `NWGlyph.Settings` draws the supplied vector outlines rather than similar
+    SF Symbols. The board's 1pt strokes remain 1pt on Retina displays too.
   - "Shepherd x.y.z · agent x.y.z" pinned at the bottom in mono `micro`, `textTertiary`, aligned with
     the rows' icons: the app's own name, so "Shepherd Nightly …" there.
 - **Search:** typing narrows the nav to pages with a match (a row's title, or a keyword such as
