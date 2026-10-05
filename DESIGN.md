@@ -187,7 +187,8 @@ that scales row heights, not controls. Text size scales type only.
 
 - Every control is a real `Button`, `Toggle` or field, or carries button traits and an action.
   Icon-only buttons have an `accessibilityLabel`; a hover-only affordance is also reachable as a
-  button or a named action. Rows read as one element ("title, running").
+  button or a named action. Rows read as one element ("title, running"). Banner text reads as
+  one element, with action buttons separately reachable by label.
 - Color is always paired with a word or a glyph shape; contrast rules are in
   [theme](docs/design/theme.md#contrast-rules) and hold in both appearances.
 - Reduce Motion: see Motion. Mac type scales with Text size; iOS follows Dynamic Type and keeps
@@ -238,7 +239,7 @@ More: [docs/design/verifying.md](docs/design/verifying.md).
 | A list, scroll or hot path | [performance.md](docs/design/performance.md) |
 | Window, toolbar, sidebar, pages | [window-and-toolbar.md](docs/design/window-and-toolbar.md), [sidebar.md](docs/design/sidebar.md), [pages.md](docs/design/pages.md) |
 | Conversation goals | [thread.md](docs/design/thread.md#goal-card), [goals.md](docs/goals.md) |
-| Thread, composer, queue, subagents | [thread.md](docs/design/thread.md), [composer.md](docs/design/composer.md), [queue.md](docs/design/queue.md), [subagents.md](docs/design/subagents.md) |
+| Thread, composer, queue, subagents | [thread.md](docs/design/thread.md), [composer.md](docs/design/composer.md), [queue.md](docs/design/queue.md), [subagents.md](docs/design/subagents.md), [restored-model send failure](docs/design/boards/RestoredModelSend.md) |
 | Side pane, terminal, palette, dialogs | [side-pane-changes.md](docs/design/side-pane-changes.md), [side-pane-browser.md](docs/design/side-pane-browser.md), [terminal.md](docs/design/terminal.md), [dialogs-and-palette.md](docs/design/dialogs-and-palette.md) |
 | Settings | [settings.md](docs/design/settings.md) and its `settings-*` files, including [Projects](docs/design/settings-projects.md) |
 | Controls, status pieces, keyboard, accessibility | [components.md](docs/design/components.md), [keyboard-and-accessibility.md](docs/design/keyboard-and-accessibility.md) |

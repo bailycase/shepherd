@@ -445,17 +445,18 @@ struct QueueTests {
         #expect(prompts(pi).last == "tools:0 final")
     }
 
-    @Test func aDeliveryPiRefusesComesBackAndPausesTheQueue() async throws {
+    @Test(arguments: ["please refuse", "blocked-model"])
+    func aDeliveryPiRefusesComesBackAndPausesTheQueue(text: String) async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
         let pi = try await PiAgent.launch(on: h)
         let running = try await startRun(pi)
         let op = UUID()
-        _ = try await pi.send("please refuse", operationID: op, from: running)
+        _ = try await pi.send(text, operationID: op, from: running)
         pi.finishTool(1)
         let paused = try await pi.snapshot("the refusal") { $0.queue?.paused == true }
         #expect(paused.queue?.items.map(\.id) == [op])
-        #expect(paused.queue?.notice?.contains("refused by the stub") == true)
+        #expect(paused.queue?.notice?.contains(text == "blocked-model" ? "Your message wasn't sent" : "refused by the stub") == true)
         #expect(!paused.provisional.contains { $0.entryID == "pending:\(op.uuidString)" }, "no row is left for it")
     }
 

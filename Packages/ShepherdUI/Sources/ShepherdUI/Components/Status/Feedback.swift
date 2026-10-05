@@ -42,13 +42,14 @@ public struct NWBanner<Actions: View>: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
             HStack(spacing: NW.Space.s) { actions() }
         }
         .padding(.vertical, NW.Space.l)
         .padding(.horizontal, 14)
         .background(state.tint ?? nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.m))
         .nwBorder(nw.lineSubtle, radius: NW.Radius.m)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
     }
 
     static func defaultSymbol(_ state: AgentState) -> String {
