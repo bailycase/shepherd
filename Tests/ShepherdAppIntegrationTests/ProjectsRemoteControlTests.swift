@@ -29,6 +29,10 @@ struct ProjectsRemoteControlTests {
         try FileManager.default.createDirectory(at: remoteRoot, withIntermediateDirectories: true)
         try "Local instructions\n".write(to: localRoot.appendingPathComponent("AGENTS.md"), atomically: true, encoding: .utf8)
         try "Host instructions\n".write(to: remoteRoot.appendingPathComponent("AGENTS.md"), atomically: true, encoding: .utf8)
+        let remoteMCP = remoteRoot.appendingPathComponent(".pi/mcp.json")
+        try FileManager.default.createDirectory(at: remoteMCP.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try #"{"mcpServers":{"remote-tools":{"command":"remote-server","future":"keep"}}}"#
+            .write(to: remoteMCP, atomically: true, encoding: .utf8)
         try await local.server.addSpace(Space(name: "Local project", path: localRoot.path), first: false)
         try await remote.server.addSpace(Space(name: "Remote project", path: remoteRoot.path), first: false)
         let tokenURL = remote.dir.appendingPathComponent("token")
@@ -71,5 +75,21 @@ struct ProjectsRemoteControlTests {
         try await eventuallyOnMain("the host-only save") { !model.saving && !model.dirty && model.notice != nil }
         #expect(try String(contentsOf: remoteRoot.appendingPathComponent("AGENTS.md"), encoding: .utf8) == text)
         #expect(try String(contentsOf: localRoot.appendingPathComponent("AGENTS.md"), encoding: .utf8) == "Local instructions\n")
+        try window.press("Project category MCP servers")
+        try await eventuallyOnMain("remote project MCP cards") {
+            window.layout()
+            return model.fileLoaded && window.element("remote-tools, Not checked yet") != nil
+        }
+        try window.press("remote-tools", role: ControlRole.checkBox)
+        try await eventuallyOnMain("remote MCP save") { !model.saving && model.mcp.rows.first?.status == .off }
+        let result = ProjectMCPConfiguration(text: try String(contentsOf: remoteMCP, encoding: .utf8), path: ".pi/mcp.json")
+        #expect(result.entries.first?.json["enabled"] == .bool(false))
+        #expect(result.entries.first?.json["future"] == .string("keep"))
+        #expect(!FileManager.default.fileExists(atPath: localRoot.appendingPathComponent(".pi/mcp.json").path))
+        try window.press(".mcp.json")
+        try await eventuallyOnMain("missing shared project MCP file") { model.fileLoaded && model.selectedFile?.path == ".mcp.json" }
+        #expect(model.mcp.entries.isEmpty && !model.mcp.native)
+        try window.press(".pi/mcp.json")
+        try await eventuallyOnMain("native project MCP restored") { model.fileLoaded && model.mcp.entries.first?.name == "remote-tools" }
     }
 }

@@ -43,7 +43,8 @@ struct AddMCPServerSheet: View {
         var json = ""
     }
 
-    var store: MCPStore
+    private var store: MCPStore?
+    private var project: ProjectsModel?
     let initialKind: Kind?
     let editing: MCPServerEntry?
     var draft: Draft?
@@ -51,12 +52,24 @@ struct AddMCPServerSheet: View {
 
     init(store: MCPStore, initialKind: Kind?, editing: MCPServerEntry?, draft: Draft? = nil, close: @escaping () -> Void) {
         self.store = store
+        self.project = nil
         self.initialKind = initialKind
         self.editing = editing
         self.draft = draft
         self.close = close
     }
 
+    init(project: ProjectsModel, initialKind: Kind?, editing: MCPServerEntry?, draft: Draft? = nil, close: @escaping () -> Void) {
+        self.store = nil
+        self.project = project
+        self.initialKind = initialKind
+        self.editing = editing
+        self.draft = draft
+        self.close = close
+    }
+
+    @State private var submitting = false
+    @State private var stagedNames: Set<String> = []
     @State private var kind: Kind = .remote
     @State private var name = ""
     @State private var nameEdited = false
@@ -82,6 +95,15 @@ struct AddMCPServerSheet: View {
     @State private var checkedCommand: String?
 
     private var isEditing: Bool { editing != nil }
+    private var nativeOptions: Bool { project?.mcp.native != false }
+    private var hostName: String { project?.selected?.host.name ?? "This Mac" }
+    private var timeoutFraction: Double {
+        project == nil ? 0 : (editing?.json["timeout"]?.doubleValue ?? 0).truncatingRemainder(dividingBy: 1)
+    }
+    private var credentialNote: String {
+        project == nil ? "Secrets stay in Keychain, never in the JSON file."
+            : "Values are saved in this project file. Use ${VAR} to read a secret from the host's environment."
+    }
 
     var body: some View {
         let nw = Color.nw
@@ -91,6 +113,7 @@ struct AddMCPServerSheet: View {
                 NWSegmentedPicker("Kind", selection: $kind, options: [(.remote, "Remote"), (.local, "Local"), (.json, "Paste JSON")])
                     .padding(.horizontal, AppLayout.mcpSheetSides)
                     .fixedSize()
+                    .disabled(!stagedNames.isEmpty)
             }
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: NW.Space.xl) {
@@ -110,6 +133,8 @@ struct AddMCPServerSheet: View {
         .frame(width: kind == .local ? AppLayout.mcpSheetLocalWidth : AppLayout.mcpSheetWidth)
         .frame(minHeight: AppLayout.mcpSheetMinHeight)
         .background(nw.bgWindow)
+        .disabled(submitting)
+        .interactiveDismissDisabled(submitting)
         .onAppear(perform: load)
         .task(id: url) { await checkURL() }
         .task(id: command) { await resolveCommand() }
@@ -127,7 +152,8 @@ struct AddMCPServerSheet: View {
                     .font(.nwSans(AppLayout.mcpSheetTitleSize, .semibold))
                     .foregroundStyle(nw.textPrimary)
                     .accessibilityAddTraits(.isHeader)
-                Text("Remote servers need a URL. Local servers run a command on this Mac.")
+                Text(project == nil ? "Remote servers need a URL. Local servers run a command on this Mac."
+                     : "Remote servers need a URL. Local commands run on \(hostName).")
                     .font(.nwSans(AppLayout.mcpSheetTextSize))
                     .foregroundStyle(nw.textSecondary)
             }
@@ -172,14 +198,16 @@ struct AddMCPServerSheet: View {
     }
 
     private var footnote: String {
+        if let project { return "Saved to \(project.selectedFile?.path ?? "mcp.json") on \(hostName)." }
         switch kind {
-        case .local: "Runs on this Mac, from each thread that starts."
-        case .remote, .json: "Saved to \(store.configPath)."
+        case .local: return "Runs on this Mac, from each thread that starts."
+        case .remote, .json: return "Saved to \(store?.configPath ?? "mcp.json")."
         }
     }
 
     private var primaryTitle: String {
         if isEditing { return "Save" }
+        if project != nil, kind != .json { return "Add" }
         switch kind {
         case .remote: return signIn == .oauth ? "Add and sign in" : "Add"
         case .local: return "Add and start"
@@ -196,6 +224,7 @@ struct AddMCPServerSheet: View {
             HStack(spacing: NW.Space.m) {
                 Image(systemName: "globe").foregroundStyle(Color.nw.textTertiary).accessibilityHidden(true)
                 TextField("URL", text: $url, prompt: Text("https://mcp.example.com/mcp"))
+                    .accessibilityLabel("URL")
                     .textFieldStyle(.plain)
                     .font(.nwMono(AppLayout.mcpSheetTextSize))
             }
@@ -206,9 +235,9 @@ struct AddMCPServerSheet: View {
             field("Name", note: nameNote) { nameField }
                 .frame(maxWidth: .infinity, alignment: .leading)
             field("Sign-in") {
-                NWSegmentedPicker("Sign-in", selection: $signIn, options: [
+                NWSegmentedPicker("Sign-in", selection: $signIn, options: nativeOptions ? [
                     (.oauth, oauthFound ? "OAuth · found" : "OAuth"), (.header, "Header"), (.none, "None"),
-                ])
+                ] : [(.header, "Header"), (.none, "None")])
                 .fixedSize()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -216,30 +245,38 @@ struct AddMCPServerSheet: View {
         if signIn == .header {
             HStack(alignment: .top, spacing: NW.Space.m) {
                 field("Header") {
-                    TextField("Header", text: $headerName).textFieldStyle(.plain).font(.nwMono(AppLayout.mcpSheetTextSize))
+                    TextField("Header", text: $headerName).accessibilityLabel("Header").textFieldStyle(.plain).font(.nwMono(AppLayout.mcpSheetTextSize))
                         .modifier(MCPFieldChrome())
                 }
                 .frame(width: AppLayout.mcpSheetNameWidth)
-                field("Value", note: "Use ${GITHUB_TOKEN} to read it from your login shell; anything else is stored in Keychain.") {
+                field("Value", note: project == nil ? "Use ${GITHUB_TOKEN} to read it from your login shell; anything else is stored in Keychain." : credentialNote) {
                     SecureOrPlainField(value: $headerValue, prompt: "Bearer ${GITHUB_TOKEN}")
+                        .accessibilityLabel("Value")
                 }
             }
         }
         DisclosureGroup(isExpanded: $advanced) {
             VStack(alignment: .leading, spacing: NW.Space.l) {
-                HStack(alignment: .top, spacing: NW.Space.m) {
-                    field("Client ID") { plain($clientID, prompt: "Registered with the provider") }
-                    field("Client secret") { SecureOrPlainField(value: $clientSecret, prompt: "Optional") }
+                if nativeOptions {
+                    HStack(alignment: .top, spacing: NW.Space.m) {
+                        field("Client ID") { plain($clientID, prompt: "Registered with the provider") }
+                        field("Client secret", note: project == nil ? nil : credentialNote) {
+                            SecureOrPlainField(value: $clientSecret, prompt: "Optional").accessibilityLabel("Client secret")
+                        }
+                    }
+                    field("Scopes", note: "Separated by spaces. Empty asks for what the server suggests.") { plain($scopes, prompt: "read write") }
                 }
-                field("Scopes", note: "Separated by spaces. Empty asks for what the server suggests.") { plain($scopes, prompt: "read write") }
-                field("Extra headers") { variables($extraHeaders, addTitle: "Add header") }
-                field("Timeout") {
-                    NWStepper("Timeout", value: $timeout, in: 5...300, format: { "\($0) s" })
+                field("Extra headers", note: project == nil ? nil : credentialNote) { variables($extraHeaders, addTitle: "Add header") }
+                if nativeOptions {
+                    field("Timeout") {
+                        NWStepper("Timeout", value: $timeout, in: project == nil ? 5...300 : (timeoutFraction > 0 ? 0 : 1)...Int.max,
+                                  format: { timeoutFraction == 0 ? "\($0) s" : "\(Double($0) + timeoutFraction) s" })
+                    }
                 }
             }
             .padding(.top, NW.Space.m)
         } label: {
-            Text("Advanced: client ID, scopes, extra headers, timeout")
+            Text(nativeOptions ? "Advanced: client ID, scopes, extra headers, timeout" : "Advanced: extra headers")
                 .font(.nwSans(AppLayout.mcpSheetTextSize))
                 .foregroundStyle(Color.nw.textSecondary)
         }
@@ -310,21 +347,23 @@ struct AddMCPServerSheet: View {
     @ViewBuilder private var local: some View {
         HStack(alignment: .top, spacing: NW.Space.xl) {
             field("Name") { nameField }.frame(width: AppLayout.mcpSheetNameWidth)
-            field("Command", note: "Runs on this Mac, in your login shell’s PATH.") {
+            field("Command", note: project == nil ? "Runs on this Mac, in your login shell’s PATH." : "Runs on \(hostName), in the host's PATH.") {
                 HStack(spacing: NW.Space.m) {
                     Image(systemName: "terminal").foregroundStyle(Color.nw.textTertiary).accessibilityHidden(true)
                     TextField("Command", text: $command, prompt: Text("npx @playwright/mcp@latest"))
+                        .accessibilityLabel("Command")
                         .textFieldStyle(.plain)
                         .font(.nwMono(AppLayout.mcpSheetTextSize))
                 }
                 .modifier(MCPFieldChrome())
             }
         }
-        field("Environment", note: "Secrets stay in Keychain, never in the JSON file.") { variables($env, addTitle: "Add variable") }
+        field("Environment", note: credentialNote) { variables($env, addTitle: "Add variable") }
         field("Runs on") {
             HStack(spacing: NW.Space.m + NW.Space.xxs) {
-                Toggle("This Mac", isOn: .constant(true)).toggleStyle(.nwCheckbox).labelsHidden().allowsHitTesting(false)
-                Text("This Mac").font(.nwMono(AppLayout.mcpSheetTextSize)).frame(width: AppLayout.mcpSheetHostNameWidth, alignment: .leading)
+                Toggle(hostName, isOn: .constant(true)).toggleStyle(.nwCheckbox).labelsHidden()
+                    .allowsHitTesting(false).accessibilityHidden(true)
+                Text(hostName).font(.nwMono(AppLayout.mcpSheetTextSize)).frame(width: AppLayout.mcpSheetHostNameWidth, alignment: .leading)
                 pathNote
                 Spacer(minLength: 0)
             }
@@ -338,7 +377,9 @@ struct AddMCPServerSheet: View {
     @ViewBuilder private var pathNote: some View {
         let nw = Color.nw
         let program = MCPCommandLine.split(command).first ?? ""
-        if program.isEmpty {
+        if project != nil {
+            Text("Starts with a thread; not checked here.").font(.nwSans(AppLayout.mcpNoteSize)).foregroundStyle(nw.textTertiary)
+        } else if program.isEmpty {
             Text("Type a command").font(.nwSans(AppLayout.mcpNoteSize)).foregroundStyle(nw.textTertiary)
         } else if let resolvedPath {
             Text(resolvedPath).font(.nwMono(AppLayout.mcpPathSize)).foregroundStyle(nw.textTertiary).lineLimit(1).truncationMode(.middle)
@@ -366,11 +407,12 @@ struct AddMCPServerSheet: View {
     }
 
     private var pasteNote: String {
+        let note = project == nil ? "Tokens in it move to Keychain." : credentialNote
         guard !json.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return "An mcpServers block from Claude Desktop, Cursor or VS Code. Tokens in it move to Keychain."
+            return "An mcpServers block from Claude Desktop, Cursor or VS Code. \(note)"
         }
         switch MCPImport.parse(json) {
-        case .success(let entries): return "Found \(entries.map(\.name).formatted(.list(type: .and))). Tokens in it move to Keychain."
+        case .success(let entries): return "Found \(entries.map(\.name).formatted(.list(type: .and))). \(note)"
         case .failure(let failure): return failure.description
         }
     }
@@ -379,10 +421,11 @@ struct AddMCPServerSheet: View {
 
     private var nameField: some View {
         TextField("Name", text: Binding(get: { name }, set: { name = $0; nameEdited = true }), prompt: Text("notion"))
+            .accessibilityLabel("Name")
             .textFieldStyle(.plain)
             .font(.nwMono(AppLayout.mcpSheetTextSize))
             .modifier(MCPFieldChrome())
-            .disabled(isEditing)
+            .disabled(isEditing || !stagedNames.isEmpty)
     }
 
     private var nameNote: String {
@@ -394,7 +437,11 @@ struct AddMCPServerSheet: View {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         if trimmed.isEmpty { return nil }
         if !MCPServerName.isValid(trimmed) { return "Letters, digits, - and _ only." }
-        if !isEditing, store.entry(trimmed) != nil { return "\(trimmed) is already here." }
+        if !isEditing, !stagedNames.contains(trimmed) {
+            if store?.entry(trimmed) != nil || project?.mcp.entries.contains(where: {
+                $0.name.replacingOccurrences(of: "-", with: "_") == trimmed.replacingOccurrences(of: "-", with: "_")
+            }) == true { return "\(trimmed) is already here." }
+        }
         return nil
     }
 
@@ -411,6 +458,7 @@ struct AddMCPServerSheet: View {
             ForEach(rows) { $row in
                 HStack(spacing: NW.Space.l) {
                     TextField("Name", text: $row.key, prompt: Text("NAME"))
+                        .accessibilityLabel("Name")
                         .textFieldStyle(.plain)
                         .font(.nwMono(AppLayout.mcpNoteSize))
                         .foregroundStyle(nw.textSecondary)
@@ -427,22 +475,30 @@ struct AddMCPServerSheet: View {
                         }
                         .foregroundStyle(nw.textSecondary)
                     } else if row.secret {
-                        SecureField("Value", text: $row.value, prompt: Text("Stored in Keychain"))
+                        SecureField("Value", text: $row.value, prompt: Text(project == nil ? "Stored in Keychain" : "Saved in project file"))
+                            .accessibilityLabel("Value")
                             .textFieldStyle(.plain)
                             .font(.nwMono(AppLayout.mcpNoteSize))
                     } else {
                         TextField("Value", text: $row.value, prompt: Text("value or ${VAR}"))
+                            .accessibilityLabel("Value")
                             .textFieldStyle(.plain)
                             .font(.nwMono(AppLayout.mcpNoteSize))
                     }
                     Spacer(minLength: 0)
                     Button { row.secret.toggle(); row.stored = false } label: {
                         Image(systemName: row.secret ? "lock.fill" : "lock.open")
+                            .frame(width: NW.Height.controlS, height: NW.Height.controlS)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(row.secret ? nw.textSecondary : nw.textTertiary)
-                    .help(row.secret ? "Stored in Keychain" : "Store in Keychain")
-                    Button { rows.wrappedValue.removeAll { $0.id == row.id } } label: { Image(systemName: "xmark") }
+                    .help(project == nil ? (row.secret ? "Stored in Keychain" : "Store in Keychain") : (row.secret ? "Show value" : "Hide value"))
+                    .accessibilityLabel(project == nil ? (row.secret ? "Stored in Keychain" : "Store in Keychain") : (row.secret ? "Show value" : "Hide value"))
+                    Button { rows.wrappedValue.removeAll { $0.id == row.id } } label: {
+                        Image(systemName: "xmark").frame(width: NW.Height.controlS, height: NW.Height.controlS)
+                            .contentShape(Rectangle())
+                    }
                         .buttonStyle(.plain)
                         .foregroundStyle(nw.textTertiary)
                         .accessibilityLabel("Remove \(row.key)")
@@ -453,6 +509,7 @@ struct AddMCPServerSheet: View {
             }
             Button { rows.wrappedValue.append(Variable(key: "", value: "", secret: false)) } label: {
                 Label(addTitle, systemImage: "plus").font(.nwSans(AppLayout.mcpSheetTextSize))
+                    .frame(minHeight: NW.Height.controlS).contentShape(Rectangle())
             }
             .buttonStyle(.nwLink)
             .padding(.horizontal, NW.Space.m + NW.Space.xxs)
@@ -477,6 +534,7 @@ struct AddMCPServerSheet: View {
 
     private func load() {
         kind = initialKind ?? .remote
+        if project != nil { signIn = .none }
         if let draft {
             name = draft.name
             nameEdited = !draft.name.isEmpty
@@ -500,30 +558,38 @@ struct AddMCPServerSheet: View {
         clientID = settings.oauth.clientID ?? ""
         clientSecret = settings.oauth.clientSecret ?? ""
         scopes = settings.oauth.scopes.joined(separator: " ")
+        if project != nil {
+            timeout = entry.json["timeout"]?.doubleValue.flatMap { Int(exactly: $0.rounded(.down)) } ?? MCPShepherdSettings.defaultTimeoutSeconds
+            clientID = entry.json["oauth"]?["clientId"]?.stringValue ?? ""
+            clientSecret = entry.json["oauth"]?["clientSecret"]?.stringValue ?? ""
+            scopes = entry.json["oauth"]?["scope"]?.stringValue ?? ""
+        }
         url = entry.url ?? ""
-        command = MCPCommandLine.join([entry.command ?? ""] + entry.args)
-        env = entry.env.sorted { $0.key < $1.key }.map { Self.variable($0.key, $0.value) }
+        command = MCPCommandLine.join((entry.command.map { [$0] } ?? []) + entry.args)
+        env = entry.env.sorted { $0.key < $1.key }.map { variable($0.key, $0.value) }
         var headers = entry.headers
         if let auth = headers.keys.first(where: { $0.caseInsensitiveCompare("Authorization") == .orderedSame }) {
             signIn = .header
             headerName = auth
             headerValue = headers.removeValue(forKey: auth) ?? ""
         } else {
-            signIn = store.usesOAuth(entry) ? .oauth : .none
+            signIn = (store?.usesOAuth(entry) ?? (nativeOptions && entry.json["oauth"] != nil)) ? .oauth : .none
         }
-        extraHeaders = headers.sorted { $0.key < $1.key }.map { Self.variable($0.key, $0.value) }
+        extraHeaders = headers.sorted { $0.key < $1.key }.map { variable($0.key, $0.value) }
     }
 
-    private static func variable(_ key: String, _ value: String) -> Variable {
-        let reference = !MCPSecretReference.references(in: value).isEmpty
-        return Variable(key: key, value: reference ? "" : value, secret: reference, stored: reference)
+    private func variable(_ key: String, _ value: String) -> Variable {
+        let reference = project == nil && !MCPSecretReference.references(in: value).isEmpty
+        return Variable(key: key, value: reference ? "" : value,
+                        secret: reference || (project != nil && MCPSecretReference.looksSecret(key: key)), stored: reference)
     }
 
     private var canSubmit: Bool {
-        guard store.isEditable else { return false }
+        guard !submitting, project?.mcpEditable ?? store?.isEditable == true else { return false }
         switch kind {
         case .remote:
-            return nameProblem == nil && !name.isEmpty && URL(string: url.trimmingCharacters(in: .whitespaces))?.scheme?.hasPrefix("http") == true
+            let parsed = URL(string: url.trimmingCharacters(in: .whitespaces))
+            return nameProblem == nil && !name.isEmpty && ["http", "https"].contains(parsed?.scheme?.lowercased() ?? "") && parsed?.host != nil
         case .local:
             return nameProblem == nil && !name.isEmpty && !MCPCommandLine.split(command).isEmpty
         case .json:
@@ -540,6 +606,7 @@ struct AddMCPServerSheet: View {
             return
         }
         if !nameEdited { name = MCPServerName.suggested(for: parsed) }
+        guard let store else { return }
         try? await Task.sleep(for: .milliseconds(500))
         guard !Task.isCancelled else { return }
         check = .checking
@@ -563,6 +630,7 @@ struct AddMCPServerSheet: View {
         checkedCommand = nil
         guard kind == .local, !program.isEmpty else { return }
         if !nameEdited { name = MCPServerName.suggested(forCommand: MCPCommandLine.split(command)) }
+        guard project == nil else { return }
         try? await Task.sleep(for: .milliseconds(500))
         guard !Task.isCancelled else { return }
         let path = await MCPCommandLine.resolve(program)
@@ -572,24 +640,45 @@ struct AddMCPServerSheet: View {
     }
 
     private func submit() {
+        guard canSubmit else { return }
         problem = nil
-        do {
-            switch kind {
-            case .json:
-                if case .success(let entries) = MCPImport.parse(json) {
-                    try store.importEntries(entries, replace: false)
+        submitting = true
+        Task { @MainActor in
+            defer { submitting = false }
+            do {
+                switch kind {
+                case .json:
+                    let entries = try MCPImport.parse(json).get()
+                    if let project { try await saveProjectEntries(entries, in: project) }
+                    else if let store { try store.importEntries(entries, replace: false) }
+                    close()
+                case .remote, .local:
+                    var secrets: [String: String] = [:]
+                    let entry = try build(secrets: &secrets)
+                    if let project { try await saveProjectEntries([entry], in: project) }
+                    else if let store { try store.save(entry, secrets: secrets, replacing: editing?.name) }
+                    close()
+                    if kind == .remote, signIn == .oauth, case .oauth = check { store?.beginSignIn(entry.name) }
                 }
-                close()
-                return
-            case .remote, .local:
-                var secrets: [String: String] = [:]
-                let entry = try build(secrets: &secrets)
-                try store.save(entry, secrets: secrets, replacing: editing?.name)
-                close()
-                if kind == .remote, signIn == .oauth, case .oauth = check { store.beginSignIn(entry.name) }
+            } catch { problem = "\(error)" }
+        }
+    }
+
+    private func saveProjectEntries(_ entries: [MCPServerEntry], in project: ProjectsModel) async throws {
+        let before = project.draft
+        let entries = entries.map { entry -> MCPServerEntry in
+            var entry = entry
+            if stagedNames.contains(entry.name), entry.json["exposure"] == nil {
+                entry.json["exposure"] = project.mcp.entries.first { $0.name == entry.name }?.json["exposure"]
             }
-        } catch {
-            problem = "\(error)"
+            return entry
+        }
+        do { try await project.saveMCP(entries, replacing: editing.map { [$0.name] } ?? stagedNames) }
+        catch {
+            // A failed file write leaves this sheet's entries in the project draft. Retry them,
+            // but never turn a duplicate-name validation error into permission to replace it.
+            if project.draft != before { stagedNames = Set(entries.map(\.name)) }
+            throw error
         }
     }
 
@@ -604,7 +693,7 @@ struct AddMCPServerSheet: View {
                 let key = row.key.trimmingCharacters(in: .whitespaces)
                 if row.stored, let previous = old[key] {
                     out[key] = previous
-                } else if row.secret, !MCPSecretReference.isReference(row.value) {
+                } else if project == nil, row.secret, !MCPSecretReference.isReference(row.value) {
                     secrets[key] = row.value
                     out[key] = MCPSecretReference.reference(server: serverName, name: key)
                 } else {
@@ -618,7 +707,7 @@ struct AddMCPServerSheet: View {
             entry.url = url.trimmingCharacters(in: .whitespaces)
             var headers = collect(extraHeaders, keep: editing?.headers ?? [:])
             if signIn == .header, !headerName.isEmpty {
-                if MCPSecretReference.isReference(headerValue) || headerValue.isEmpty {
+                if project != nil || MCPSecretReference.isReference(headerValue) || headerValue.isEmpty {
                     headers[headerName] = headerValue.isEmpty ? editing?.headers[headerName] ?? "" : headerValue
                 } else {
                     let parts = headerValue.split(separator: " ", maxSplits: 1)
@@ -636,6 +725,21 @@ struct AddMCPServerSheet: View {
             entry.env = collect(env, keep: editing?.env ?? [:])
         case .json:
             break
+        }
+        if let project {
+            if project.mcp.native, kind == .remote {
+                let originalTimeout = editing?.json["timeout"]?.doubleValue ?? Double(MCPShepherdSettings.defaultTimeoutSeconds)
+                let seconds = Double(timeout) + timeoutFraction
+                if editing == nil || originalTimeout != seconds { entry.json["timeout"] = .number(seconds) }
+                var oauth: [String: JSONValue] = [:]
+                if case .object(let original) = entry.json["oauth"] { oauth = original }
+                oauth["clientId"] = clientID.isEmpty ? nil : .string(clientID)
+                oauth["clientSecret"] = clientSecret.isEmpty ? nil : .string(clientSecret)
+                oauth["scope"] = scopes.isEmpty ? nil : .string(scopes)
+                if !oauth.isEmpty || signIn == .oauth { entry.json["oauth"] = .object(oauth) }
+                else if entry.json["oauth"] != nil { entry.json["oauth"] = .object([:]) }
+            }
+            return entry
         }
         var settings = entry.settings
         settings.timeoutSeconds = timeout

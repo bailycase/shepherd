@@ -42,9 +42,9 @@ struct MCPSettings: View {
                         .nwTransition(.disclosure)
                     }
                     ScrollView(.vertical) {
-                        MCPServerList(store: store, rows: rows, expanded: $expanded, empty: emptyMessage,
-                                      edit: { sheet = .edit($0) }, chooseTools: { sheet = .tools($0) },
-                                      remove: { removing = $0 }, copied: { toast = NWToast(.done, message: "Copied \($0)’s JSON") })
+                        MCPServerList(rows: rows, details: store.details, editable: store.isEditable,
+                                      expanded: expanded, empty: emptyMessage,
+                                      rowActions: rowActions, detailActions: detailActions)
                     }
                     .scrollIndicators(.hidden)
                 }
@@ -128,9 +128,7 @@ struct MCPSettings: View {
                 .buttonStyle(.nw(.secondary))
                 .fixedSize()
                 .disabled(!store.isEditable)
-                Button { sheet = .add(.remote) } label: { Label("Add server", systemImage: "plus") }
-                    .buttonStyle(.nw(.primary))
-                    .disabled(!store.isEditable)
+                MCPAddServerButton(editable: store.isEditable) { sheet = .add(.remote) }
             }
             .fixedSize()
         }
@@ -170,6 +168,19 @@ struct MCPSettings: View {
         case .success(let entries): begin(importing: entries)
         case .failure(let failure): store.problem = "\(url.lastPathComponent): \(failure.description)"
         }
+    }
+
+    private func rowActions(_ name: String) -> MCPServerRow.Actions {
+        .init(toggle: { store.setEnabled(name, $0) },
+              open: { expanded = expanded == name ? nil : name }, signIn: { store.beginSignIn(name) })
+    }
+
+    private func detailActions(_ name: String) -> MCPServerDetail.Actions {
+        .init(signIn: { store.beginSignIn(name) }, signOut: { store.signOut(name) },
+              setDirect: { store.setExposure(name, $0 ? .direct : .proxy) }, chooseTools: { sheet = .tools(name) },
+              edit: { sheet = .edit(name) }, reconnect: { store.refresh() },
+              copyJSON: { store.copyJSON(name); toast = NWToast(.done, message: "Copied \(name)’s JSON") },
+              remove: { removing = name })
     }
 
     private func begin(importing entries: [MCPServerEntry]) {
@@ -218,19 +229,29 @@ private struct MCPImportBatch: Identifiable {
     var id: String { entries.map(\.name).joined(separator: ",") }
 }
 
+struct MCPAddServerButton: View {
+    let editable: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) { Label("Add server", systemImage: "plus") }
+            .buttonStyle(.nw(.primary))
+            .disabled(!editable)
+    }
+}
+
 // MARK: The list
 
 /// The servers: a header, then a row per server; the open one shows its detail below it. The
 /// lazy stack is the scroll view's own content, so the page builds only the rows in view.
-private struct MCPServerList: View {
-    var store: MCPStore
+struct MCPServerList: View {
     let rows: [MCPServerRowModel]
-    @Binding var expanded: String?
+    let details: [String: MCPServerDetailModel]
+    let editable: Bool
+    let expanded: String?
     let empty: String
-    let edit: (String) -> Void
-    let chooseTools: (String) -> Void
-    let remove: (String) -> Void
-    let copied: (String) -> Void
+    let rowActions: (String) -> MCPServerRow.Actions
+    let detailActions: (String) -> MCPServerDetail.Actions
 
     var body: some View {
         let nw = Color.nw
@@ -246,12 +267,12 @@ private struct MCPServerList: View {
             ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                 let open = expanded == row.id
                 VStack(spacing: 0) {
-                    MCPServerRow(row, open: open, first: index == 0, actions: actions(for: row.name))
+                    MCPServerRow(row, open: open, first: index == 0, actions: rowActions(row.name))
                         .equatable()
-                        .disabled(!store.isEditable)
-                    if open, let detail = store.details[row.name] {
-                        MCPServerDetail(detail, actions: detailActions(for: row.name))
-                            .disabled(!store.isEditable)
+                        .disabled(!editable)
+                    if open, let detail = details[row.name] {
+                        MCPServerDetail(detail, actions: detailActions(row.name))
+                            .disabled(!editable)
                             .nwTransition(.disclosure)
                     }
                 }
@@ -262,27 +283,6 @@ private struct MCPServerList: View {
         .nwBorder(nw.lineSubtle, radius: AppLayout.mcpCardRadius)
     }
 
-    private func actions(for name: String) -> MCPServerRow.Actions {
-        MCPServerRow.Actions(
-            toggle: { store.setEnabled(name, $0) },
-            open: { expanded = expanded == name ? nil : name },
-            signIn: { store.beginSignIn(name) })
-    }
-
-    private func detailActions(for name: String) -> MCPServerDetail.Actions {
-        MCPServerDetail.Actions(
-            signIn: { store.beginSignIn(name) },
-            signOut: { store.signOut(name) },
-            setDirect: { store.setExposure(name, $0 ? .direct : .proxy) },
-            chooseTools: { chooseTools(name) },
-            edit: { edit(name) },
-            reconnect: { store.refresh() },
-            copyJSON: {
-                store.copyJSON(name)
-                copied(name)
-            },
-            remove: { remove(name) })
-    }
 }
 
 // MARK: The rail

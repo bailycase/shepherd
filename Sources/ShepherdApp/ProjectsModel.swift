@@ -37,7 +37,15 @@ final class ProjectsModel {
     var category: ProjectFile.Category = .instructions
     var showingBrowser = false
     var selectedFile: ProjectFile?
-    var draft = "" { didSet { tokenText = InstructionsText.sizeNote(draft) } }
+    var draft = "" { didSet {
+        tokenText = InstructionsText.sizeNote(draft)
+        if category == .mcp { deriveMCP() }
+    } }
+    private(set) var mcp = ProjectMCPConfiguration()
+
+    private func deriveMCP() {
+        mcp = ProjectMCPConfiguration(text: draft, path: selectedFile?.path ?? ".pi/mcp.json", host: selected?.host.name ?? "This Mac")
+    }
     private(set) var tokenText = "empty"
     private(set) var modifiedAt: Double?
     private(set) var context = ProjectContext()
@@ -185,6 +193,7 @@ final class ProjectsModel {
             guard case .text(let value) = try await request(selected.host, .read(directory: selected.project.directory, file: file.path)) else { throw ProjectFileError("protocol", "Unexpected project file reply.") }
             guard token == generation else { return }
             selectedFile = value.file; saved = value.text; draft = value.text ?? ""; modifiedAt = value.modifiedAt; fileLoaded = true
+            if category == .mcp { deriveMCP() }
             deriveReadRows()
             await compareHosts(token: token, text: value.text, file: file, selected: selected)
         } catch { if token == generation { fileError = String(describing: error) } }
