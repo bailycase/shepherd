@@ -191,6 +191,7 @@ extension tests, on every bump (docs/pi-engine.md › Bumping the pin).
   and a sidebar section header's body (`sidebar.header`).
 - `ListPerformanceTests` pins each long list's budget as a count of rows built or redrawn
   (opening, scrolling, a highlight or a selection moving, one row changing, a reply streaming).
+  Visible-row budgets account for controls' minimum hit areas, not just their drawn glyphs.
   Counts hold on a slow or busy runner; timing budgets do not, so don't add those. Two thread
   budgets differ on macOS 26 (CI) and in Xcode 26 builds whatever the speed, so there they run
   as known issues.
