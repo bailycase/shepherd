@@ -119,6 +119,7 @@ Of an ordinary thread's tool definitions, 4.4k are kept and 4.9k deferred.
 | Tools | Tokens | Thread | Automation | Design | Why |
 | --- | ---: | :-: | :-: | :-: | --- |
 | `read` … `write` (4) | 698 | keep | keep | keep | pi's own: what an agent does with a repository. |
+| `codemode` | 269 | keep | keep | keep | Pi's native script executor, hosted by `shepherd-status.ts` while Codemode is on (the default). Its guidance brings the total first-request addition to 875 tokens (Native codemode). A native subagent does not load the status extension. |
 | `terminal_list` … `terminal_close` (6) | 592 | keep | keep | · | The thread's terminal tabs (⌘J) are how an agent runs a dev server or a watcher; six small tools. |
 | `agent_list` … `agent_spawn` (7) | 1,363 | defer | · | · | Reaching other threads is something the user asks for, and each description says so first (agent-to-agent messages): 1.4k tokens in every thread for a rare use. |
 | `agent_send` | 331 | defer | keep | · | The same, in a thread. An automation's run reports completion to the thread that made it with it, the only agent tool a run gets. |
