@@ -27,6 +27,8 @@ public final class NWPalette: Sendable {
     /// ProjectInstructions' divider and plain Markdown body.
     public let projectDivider: Color
     public let projectRowDivider: Color
+    public let subagentFailureTile: Color
+    public let subagentFailureBorder: Color
     public let projectCookieDanger: Color
     public let projectCookieConfirm: Color
     public let projectCookieConfirmHover: Color
@@ -145,6 +147,12 @@ public final class NWPalette: Sendable {
         settingsMuted = theme.id == "night-watch" ? Color(light: l.textTertiary, dark: "#767c85") : textTertiary
         projectDivider = theme.id == "night-watch" ? Color(light: l.lineSubtle, dark: "#22262a") : lineSubtle
         projectRowDivider = theme.id == "night-watch" ? Color(light: l.lineSubtle, dark: "#1b1e21") : lineSubtle
+        func failedTile(_ colors: ThemeColors) -> HexColor {
+            let color = HexColor(colors.failed) ?? HexColor(red: 1, green: 0, blue: 1)
+            return HexColor(red: color.red, green: color.green, blue: color.blue, alpha: 0.12)
+        }
+        subagentFailureTile = Color(light: failedTile(l), dark: failedTile(d))
+        subagentFailureBorder = theme.id == "night-watch" ? Color(light: l.failedTint, dark: "#5a2a2a") : mix(\.failed, \.bgWindow, portion: 0.34)
         projectCookieDanger = mix(\.failed, \.textPrimary, portion: 0.8)
         projectCookieConfirm = mix(\.failed, \.textOnLantern, portion: 0.75)
         projectCookieConfirmHover = mix(\.failed, \.textOnLantern, portion: 0.75, brightness: 0.94)
