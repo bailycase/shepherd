@@ -443,6 +443,11 @@ final class RPCThreadState {
     /// command leaves nothing in pi's session.
     var commandNotices: [CommandNotice] = []
     var commandWindows: Set<UUID> = []
+    var inputPrompts: [UUID: String] = [:]
+    var inputFailures: [UUID: String] = [:]
+    var inputActive = false
+    var inputOutcomeUnknown = false
+    var waitingInputs: [(Bool) -> Void] = []
     /// How long a command's toasts count as its own after pi answers it.
     var commandNoticeGrace: TimeInterval = 1.5
 
@@ -1377,6 +1382,9 @@ final class RPCThreadState {
         operationsByEntry.removeAll()
         questions.removeAll()
         commandNotices.removeAll()
+        cancelWaitingInputs()
+        inputPrompts.removeAll()
+        inputFailures.removeAll()
         // A question still open from the last session is not this one's to record.
         askedAt.removeAll()
         estimate = nil
@@ -1662,6 +1670,10 @@ final class RPCThreadState {
         case "setWidget":
             guard let key = request.widgetKey else { return }
             let text = request.widgetLines.map { $0.map(Self.stripANSI).joined(separator: "\n") }
+            if key == "shepherd.inputBlocked" {
+                if let text { recordBlockedInput(text) }
+                return
+            }
             if key == "shepherd.goal" {
                 guard goalsEnabled else { return }
                 guard let text else {

@@ -30,7 +30,14 @@ struct SettingsFullWidthTests {
             }
         }
         for section in SettingsSection.allCases {
-            if section.isSubpage { vm.settingsSection = .pi; window.layout() }
+            if section.isSubpage {
+                try ControlPress.press("Appearance", under: window.host)
+                window.layout()
+            }
+            for title in ["Sign-in", "From your pi", "Slash commands"] {
+                #expect(window.controls().contains { $0.label == title && $0.role == ControlRole.button },
+                        "\(title) stays in the navigation while \(vm.settingsSection.title) is selected")
+            }
             let nav = try ControlPress.press(section.title, under: window.host)
             #expect(nav.isEnabled && nav.frame.width >= 24 && nav.frame.height >= 24)
             try await eventuallyOnMain("\(section.title) Settings content") {

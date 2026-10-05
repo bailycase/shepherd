@@ -80,7 +80,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | SettingsAppearance | [settings](settings.md), [foundations](foundations.md) | Settings › Appearance; Density and row settings | Built |
 | SettingsAgents | [settings](settings.md), [codemode-settings](codemode-settings.md) | Settings › Agents | Built |
 | SettingsWorktrees | [settings](settings.md) | Settings › Worktrees | Built |
-| SettingsProjects | [settings-projects](settings-projects.md) | Settings > Projects | Built |
+| SettingsProjects | [settings-projects](settings-projects.md), [project-mcp](project-mcp.md) | Settings > Projects | Built |
 | ProjectInstructions | [project-instructions](project-instructions.md) | Settings > Projects > Instructions | Built |
 | ProjectBrowser | [project-browser](project-browser.md) | Settings > Projects > Browser | Built |
 | SettingsPi | [settings-pi](settings-pi.md) | Settings › Pi | Built |

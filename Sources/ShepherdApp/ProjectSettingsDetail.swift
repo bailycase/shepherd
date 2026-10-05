@@ -27,7 +27,9 @@ struct ProjectSettingsDetail: View {
                     }
                 } else {
                     header.frame(maxWidth: .infinity, alignment: .leading).disabled(cookies.clearing)
-                    if narrow {
+                    if model.category == .mcp {
+                        editorColumn
+                    } else if narrow {
                         ScrollView {
                             VStack(alignment: .leading, spacing: AppLayout.projectSideGap) {
                                 editorColumn.frame(height: AppLayout.projectNarrowEditorHeight)
@@ -162,7 +164,9 @@ struct ProjectSettingsDetail: View {
                     }
                 }
             }
-            editor
+            if model.category == .mcp, model.fileLoaded {
+                ProjectMCPSettings(model: model).id(model.selectedFile?.path)
+            } else { editor }
             footer
         }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .accessibilityElement(children: .contain)
@@ -212,7 +216,7 @@ struct ProjectSettingsDetail: View {
                     .frame(height: AppLayout.projectEditorButtonHeight)
                     .background(Color.nw.lantern, in: RoundedRectangle(cornerRadius: NW.Radius.m))
             }.buttonStyle(.plain)
-                .disabled(model.saving || !model.fileLoaded || project.unavailable != nil)
+                .disabled(model.saving || !model.fileLoaded || project.unavailable != nil || model.category == .mcp && model.mcp.problem != nil)
         }.foregroundStyle(Color.nw.textPrimary).frame(height: AppLayout.projectEditorFooterHeight)
     }
 

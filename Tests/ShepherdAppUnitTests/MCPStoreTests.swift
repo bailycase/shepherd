@@ -540,6 +540,8 @@ struct MCPStoreTests {
         #expect(MCPCommandLine.split(#"node "/path with space/server.js" --flag='a b' x\ y"#)
             == ["node", "/path with space/server.js", "--flag=a b", "x y"])
         #expect(MCPCommandLine.join(["node", "/path with space/s.js"]) == "node '/path with space/s.js'")
+        let arguments = ["server", "--password", "", "tab\tvalue", "a'b", "a\\b", "\"quoted\"", "${TOKEN}", "--read-only"]
+        #expect(MCPCommandLine.split(MCPCommandLine.join(arguments)) == arguments)
     }
 
     @Test(arguments: [("my-server", "mcp__my_server", true), ("My_Server2", "mcp__My_Server2", true), ("a.b", "mcp__a.b", false), ("", "mcp__", false), ("é", "mcp__é", false)])

@@ -21,7 +21,7 @@ Save or Apply. Instructions and [Projects](settings-projects.md) edit files with
   - the pages, one `NWSettingsNavRow` each, `NW.Space.xxs` apart, in this order: Appearance
     (`circle.lefthalf.filled`) · Terminal (`terminal`) · Agents (`person.2`) · Subagents
     (`arrow.turn.down.right`) · Worktrees (`arrow.branch`) · Projects (`folder`) · Pi (`pi`),
-    with its three pages under it while a Pi page is selected, Sign-in, From your pi and Slash commands (SettingsPi:
+    with its three pages always visible under it, Sign-in, From your pi and Slash commands (SettingsPi:
     rows 28pt × density, 35pt in, Geist 12.5 `textSecondary`, the selected one `textPrimary` at 500
     on `bgSelected`; Sign-in carries a 6pt `lantern` dot trailing while a provider an agent of
     this Mac needs isn't signed in or a sign-in expired) · Instructions (`doc.text`) · Skills (`graduationcap`) · MCP servers

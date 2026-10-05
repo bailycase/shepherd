@@ -19,7 +19,7 @@ struct SettingsView: View {
     private var query: String { searchText.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     private var matchingSections: [SettingsSection] {
-        guard !query.isEmpty else { return SettingsSection.allCases.filter { !$0.isSubpage || vm.settingsSection.isPi || vm.settingsSection == .projects && vm.projects.selected != nil } }
+        guard !query.isEmpty else { return SettingsSection.allCases }
         return SettingsSection.allCases.filter { !matches($0).isEmpty || $0.title.localizedCaseInsensitiveContains(query) }
     }
 

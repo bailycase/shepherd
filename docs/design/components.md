@@ -252,7 +252,8 @@ concern: 12pt vertical and 14pt side padding, radius 8, the state's tint (`bgRai
 and idle) with a 1px `lineSubtle` line. A 15pt icon in the state's color, 2pt down; 12pt after
 it the title in Geist 13 semibold (`lanternText` for attention, else `textPrimary`), and 4pt
 under that the message in 12.5 `textSecondary` at a 1.5 line height, both selectable. Actions
-trail, top-aligned, 6pt apart, as small (24pt) buttons. Default icons:
+trail, top-aligned, 6pt apart, as small (24pt) buttons. Accessibility groups the title and
+message as one text element and keeps each action a separately labelled button. Default icons:
 `exclamationmark.triangle` for attention, failed, and stuck; `checkmark` for done;
 `arrow.clockwise` for running; `info.circle` otherwise. The board's four:
 
