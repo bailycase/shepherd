@@ -1,9 +1,8 @@
 import SwiftUI
 
-/// The two native search fields drawn by the Settings boards. Their border boxes differ from
-/// the generic settings form field: 34pt navigation, 32pt project-site filter.
+/// The native search fields drawn by the Settings boards: 34pt navigation and 32pt filters.
 public struct NWSettingsSearchField: View {
-    public enum Placement { case navigation, sites }
+    public enum Placement { case navigation, sites, subagents }
     let placeholder: String
     @Binding var text: String
     let placement: Placement
@@ -17,7 +16,7 @@ public struct NWSettingsSearchField: View {
     }
 
     public var body: some View {
-        let glyph: NWGlyph.Settings = placement == .navigation ? .search : .browserSearch
+        let glyph: NWGlyph.Settings = placement == .sites ? .browserSearch : .search
         HStack(spacing: NW.Space.m) {
             glyph.image.foregroundStyle(Color.nw.textTertiary).accessibilityHidden(true)
             TextField("", text: $text, prompt: Text(placeholder).foregroundStyle(placement == .navigation ? Color.nw.textTertiary : Color.nw.textSecondary))

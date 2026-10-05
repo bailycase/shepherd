@@ -225,11 +225,11 @@ export function unknownAgentMessage(name, agents, matches = []) {
   if (matches.length > 1) {
     return `Ambiguous agent "${name}": it names ${matches.map((a) => `${a.name} (${a.source}${a.filePath ? `, ${a.filePath}` : ""})`).join(" and ")}. Pass one profile's full name.`;
   }
-  const roles = agents.filter((a) => a.source === "bundled").map((a) => a.name);
-  const profiles = agents.filter((a) => a.source !== "bundled").map((a) => a.name);
+  const roles = Object.keys(ROLES).filter((name) => agents.some((a) => a.name === name));
+  const profiles = agents.filter((a) => !Object.hasOwn(ROLES, a.name)).map((a) => a.name);
   const wanted = nameTokens(name);
   const close = agents.map((a) => a.name).filter((other) => { const tokens = nameTokens(other); return within(wanted, tokens) || within(tokens, wanted); }).slice(0, 3);
-  return `Unknown agent "${name}". Roles: ${roles.join(", ") || "none (Shepherd's bundled roles are disabled)"}. `
+  return `Unknown agent "${name}". Roles: ${roles.join(", ") || "none (the default files were removed)"}. `
     + `Profiles: ${profiles.join(", ") || "none discovered"}. `
     + (close.length ? `Did you mean ${close.join(" or ")}? ` : "")
     + "Pass one of them as agent (role is an alias); shepherd_child_agents lists each with its source.";
@@ -1056,7 +1056,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       if (!supported) throw new Error("Shepherd native children require Pi 0.85.1 or newer");
       signal?.throwIfAborted(); capacity();
       if (runs.size >= MAX_RUNS) throw new Error("64 retained children reached; start a new parent session");
-      if (params.agent && params.role) throw Error("Pass either an agent profile or a role, not both: agent and role name the same thing (role is an alias for agent). Use agent for a profile from shepherd_child_agents, or role for one of the bundled roles (scout, reviewer, planner, worker).");
+      if (params.agent && params.role) throw Error("Pass either an agent profile or a role, not both: agent and role name the same thing (role is an alias for agent). Use agent for a profile from shepherd_child_agents, or role for one of the default files (scout, reviewer, planner, worker).");
       const cwd = fs.realpathSync(path.resolve(ctx.cwd, params.cwd ?? "."));
       if (!fs.statSync(cwd).isDirectory()) throw new Error("Child cwd must be a directory");
       const targetContext = childTargetContext(ctx, cwd);
@@ -1101,7 +1101,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
         return await launch(run, params.task, signal);
       } catch (error) { if (!run.proc) { run.state = "failed"; run.endedAt = Date.now(); run.error = clip(error.message); save(run); } throw error; }
   }
-  pi.registerTool({ name: "shepherd_child_agents", label: "child agents", description: "List effective agent profiles, sources and unsupported-field diagnostics. Reads user files and trusted project files without changing them.",
+  pi.registerTool({ name: "shepherd_child_agents", label: "child agents", description: "List effective agent profiles, sources and unsupported-field diagnostics. Reads only Shepherd's pi/agents folder. Invalid files stay visible as diagnostics and cannot run.",
     parameters: Type.Object({}), async execute(_id, _p, _s, _u, ctx) { return result({ defaults, ...discoverChildAgents(ctx, defaults.scope) }); } });
   pi.registerTool({ name: "shepherd_child_start", label: "start child", parameters: startSchema,
     description: "Start an owned background Pi helper. Use shepherd_child_agents for discovered profiles. Explicit call overrides profile, then Shepherd defaults, then parent model/thinking. Fresh or fork context; tools intersect the parent allowlist. Cwd is not a sandbox. Progress stays in the child record. A child never reaches the user: when it is blocked it asks you (needsReply, in a notice and in wait/result with a questionID): answer it yourself if you can with shepherd_child_resume and that questionID, else ask the user in your own reply and pass their answer down. delivery:report stores completion without waking the parent, so the user can keep chatting; delivery:continue resumes dependent work; a question wakes you in either. Result/wait reads consume pending notices. " + (missionsOn ? "Default creates a mission; mission:false opts out. " : "") + "No nested delegation or automatic worktrees.",

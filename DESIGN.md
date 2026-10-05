@@ -243,7 +243,7 @@ More: [docs/design/verifying.md](docs/design/verifying.md).
 | Conversation goals | [thread.md](docs/design/thread.md#goal-card), [goals.md](docs/goals.md) |
 | Thread, composer, queue, subagents | [thread.md](docs/design/thread.md), [composer.md](docs/design/composer.md), [queue.md](docs/design/queue.md), [subagents.md](docs/design/subagents.md), [restored-model send failure](docs/design/boards/RestoredModelSend.md) |
 | Side pane, terminal, palette, dialogs | [side-pane-changes.md](docs/design/side-pane-changes.md), [side-pane-browser.md](docs/design/side-pane-browser.md), [terminal.md](docs/design/terminal.md), [dialogs-and-palette.md](docs/design/dialogs-and-palette.md) |
-| Settings | [settings.md](docs/design/settings.md) and its `settings-*` files, including [Projects](docs/design/settings-projects.md) and [Codemode settings](docs/design/codemode-settings.md) |
+| Settings | [settings.md](docs/design/settings.md) and its `settings-*` files, including [Projects](docs/design/settings-projects.md), [Subagents](docs/design/settings-subagents.md) and [Codemode settings](docs/design/codemode-settings.md) |
 | Controls, status pieces, keyboard, accessibility | [components.md](docs/design/components.md), [keyboard-and-accessibility.md](docs/design/keyboard-and-accessibility.md) |
 | iPhone or iPad | `ios-*.md` in [docs/design/](docs/design/README.md), and [docs/ios](docs/ios/README.md) |
 | Notifications, Live Activities | [notifications.md](docs/design/notifications.md) |
