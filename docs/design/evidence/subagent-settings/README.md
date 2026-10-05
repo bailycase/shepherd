@@ -76,6 +76,12 @@ build and refreshed capture checks are recorded in the pull request. Physical ma
 Mac and remote profile editing were not verified. The manager edits this viewer Mac's owned
 files; it does not synchronize another host's profiles.
 
+The first PR CI run passed every Swift shard but found a stale native slash-command assertion.
+It required `scout` to be the first profile. Owned files sort by filename, so `planner` precedes
+it. The assertion now requires the `scout · shepherd` row without relying on its position.
+The original failure reproduced locally, the updated check passed, and all 471 extension tests
+passed through the CI runner under Node 24 in isolated homes. No app behavior changed.
+
 One aborted capture attempt used incorrect isolation variables and started the Dev app against
 the stable Shepherd support directory. That process exited. No screenshots from that attempt
 are included, and user data was not inspected or reverted. The temporary capture entry point

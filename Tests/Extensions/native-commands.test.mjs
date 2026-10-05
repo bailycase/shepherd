@@ -93,7 +93,7 @@ test("real Pi RPC: every bundled command the menu lists answers in the thread, a
     const all = (await pi.request({ type: "get_messages" })).data.messages.map(textOf);
     assert(all.some((t) => t.startsWith("NATIVE SUBAGENTS") && !t.includes("/subagents-fleet") && !t.includes("/subagents-stop")), "doctor lists what exists");
     assert(all.some((t) => t.includes("Usage: /run")), "a command that fails says so in the thread");
-    assert(all.some((t) => t.startsWith("scout · ")), "the profile list names the agents /run takes");
+    assert(all.some((t) => t.split("\n").some((line) => line.startsWith("scout · shepherd · "))), "the profile list names the owned-file agents /run takes");
     assert(!pi.events.some((e) => e.type === "extension_error"));
   } catch (error) {
     error.message += `\npi stderr:\n${pi.stderr}`;
