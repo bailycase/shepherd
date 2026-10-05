@@ -168,7 +168,8 @@ that scales row heights, not controls. Text size scales type only.
 
 - Every control is a real `Button`, `Toggle` or field, or carries button traits and an action.
   Icon-only buttons have an `accessibilityLabel`; a hover-only affordance is also reachable as a
-  button or a named action. Rows read as one element ("title, running").
+  button or a named action. Rows read as one element ("title, running"). Banner text reads as
+  one element, with action buttons separately reachable by label.
 - Color is always paired with a word or a glyph shape; contrast rules are in
   [theme](docs/design/theme.md#contrast-rules) and hold in both appearances.
 - Reduce Motion: see Motion. Mac type scales with Text size; iOS follows Dynamic Type and keeps
