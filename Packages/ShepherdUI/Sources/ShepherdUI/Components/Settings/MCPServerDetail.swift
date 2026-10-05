@@ -12,6 +12,7 @@ public struct MCPServerDetailModel: Equatable, Sendable {
         case header(name: String, variable: String)
         /// Environment variables; `missing` are the Keychain ones that aren't set.
         case secrets(names: [String], missing: [String])
+        case unverified(String)
         case none
     }
 
@@ -32,9 +33,10 @@ public struct MCPServerDetailModel: Equatable, Sendable {
     public var toolNames: [String]
     /// nil until the tools are known.
     public var toolCount: Int?
+    public var toolsNote: String?
     /// Tool exposure: Direct declares every tool in every prompt, Search (the default) leaves them
     /// out until the agent searches for one.
-    public var direct: Bool
+    public var direct: Bool?
     public var searchCost: String
     public var directCost: String
     /// "5 of 21 chosen" when only some tools are visible.
@@ -43,11 +45,12 @@ public struct MCPServerDetailModel: Equatable, Sendable {
     public var hosts: [Host]
     public var message: String?
 
-    public init(signIn: SignIn, toolNames: [String], toolCount: Int?, direct: Bool, searchCost: String, directCost: String,
-                chosenNote: String? = nil, transport: String, hosts: [Host], message: String? = nil) {
+    public init(signIn: SignIn, toolNames: [String], toolCount: Int?, direct: Bool?, searchCost: String, directCost: String,
+                chosenNote: String? = nil, transport: String, hosts: [Host], message: String? = nil, toolsNote: String? = nil) {
         self.signIn = signIn
         self.toolNames = toolNames
         self.toolCount = toolCount
+        self.toolsNote = toolsNote
         self.direct = direct
         self.searchCost = searchCost
         self.directCost = directCost
@@ -62,16 +65,16 @@ public struct MCPServerDetail: View {
     public struct Actions {
         public var signIn: () -> Void
         public var signOut: () -> Void
-        public var setDirect: (Bool) -> Void
-        public var chooseTools: () -> Void
+        public var setDirect: ((Bool) -> Void)?
+        public var chooseTools: (() -> Void)?
         public var edit: () -> Void
-        public var reconnect: () -> Void
+        public var reconnect: (() -> Void)?
         public var copyJSON: () -> Void
         public var remove: () -> Void
 
-        public init(signIn: @escaping () -> Void, signOut: @escaping () -> Void, setDirect: @escaping (Bool) -> Void,
-                    chooseTools: @escaping () -> Void, edit: @escaping () -> Void,
-                    reconnect: @escaping () -> Void, copyJSON: @escaping () -> Void, remove: @escaping () -> Void) {
+        public init(signIn: @escaping () -> Void, signOut: @escaping () -> Void, setDirect: ((Bool) -> Void)?,
+                    chooseTools: (() -> Void)?, edit: @escaping () -> Void,
+                    reconnect: (() -> Void)?, copyJSON: @escaping () -> Void, remove: @escaping () -> Void) {
             self.signIn = signIn
             self.signOut = signOut
             self.setDirect = setDirect
@@ -113,8 +116,10 @@ public struct MCPServerDetail: View {
             HStack(spacing: NW.Space.s) {
                 Button(action: actions.edit) { Label("Edit…", systemImage: "pencil") }
                     .buttonStyle(.nw(.secondary, size: .s))
-                Button(action: actions.reconnect) { Label("Reconnect", systemImage: "arrow.clockwise") }
-                    .buttonStyle(.nw(.ghost, size: .s))
+                if let reconnect = actions.reconnect {
+                    Button(action: reconnect) { Label("Reconnect", systemImage: "arrow.clockwise") }
+                        .buttonStyle(.nw(.ghost, size: .s))
+                }
                 Button(action: actions.copyJSON) { Label("Copy JSON", systemImage: "doc.on.doc") }
                     .buttonStyle(.nw(.ghost, size: .s))
                     .help("Copies the entry as mcpServers JSON; secrets stay references.")
@@ -175,6 +180,8 @@ public struct MCPServerDetail: View {
                 }
             }
             noteText(missing.isEmpty ? "Values marked with a lock live in Keychain." : "Set it with Edit…, then Reconnect.")
+        case .unverified(let note):
+            noteText(note)
         case .none:
             Text("None").font(.nwSans(M.detailTextSize)).foregroundStyle(nw.textSecondary)
             noteText("This server needs no sign-in.")
@@ -185,28 +192,30 @@ public struct MCPServerDetail: View {
         let nw = Color.nw
         let M = NWMCPMetrics.self
         if model.toolNames.isEmpty {
-            noteText(model.toolCount == 0 ? "It lists no tools." : "Listed once it connects.")
+            noteText(model.toolsNote ?? (model.toolCount == 0 ? "It lists no tools." : "Listed once it connects."))
         } else {
             let shown = Array(model.toolNames.prefix(M.visibleToolChips))
             let more = max(0, (model.toolCount ?? model.toolNames.count) - shown.count)
-            MCPChipFlow(shown.map { MCPChip($0) }, more: more > 0 ? "+\(more)" : nil, moreAction: actions.chooseTools)
+            MCPChipFlow(shown.map { MCPChip($0) }, more: more > 0 ? "+\(more)" : nil, moreAction: { actions.chooseTools?() })
         }
         VStack(alignment: .leading, spacing: NW.Space.s) {
             Text("Tool exposure").nwSettingsLabel(table: true)
-            option("Search", cost: model.searchCost, selected: !model.direct,
+            option("Search", cost: model.searchCost, selected: model.direct == false,
                    help: "The agent searches this server’s tools when it needs one. Nothing of them is in a prompt until then.") {
-                actions.setDirect(false)
+                actions.setDirect?(false)
             }
-            option("Direct", cost: model.directCost, selected: model.direct,
+            option("Direct", cost: model.directCost, selected: model.direct == true,
                    help: "Every tool is declared in every prompt, so the agent sees them without searching.") {
-                actions.setDirect(true)
+                actions.setDirect?(true)
             }
-        }
+        }.disabled(actions.setDirect == nil)
         HStack(spacing: NW.Space.m) {
-            Button("Choose which tools…", action: actions.chooseTools)
-                .buttonStyle(.nwLink)
-                .font(.nwSans(M.detailNoteSize))
-                .disabled(model.toolNames.isEmpty)
+            if let chooseTools = actions.chooseTools {
+                Button("Choose which tools…", action: chooseTools)
+                    .buttonStyle(.nwLink)
+                    .font(.nwSans(M.detailNoteSize))
+                    .disabled(model.toolNames.isEmpty)
+            }
             if let chosen = model.chosenNote {
                 Text(chosen).font(.nwSans(M.detailNoteSize)).foregroundStyle(nw.textTertiary)
             }
@@ -292,7 +301,7 @@ public struct MCPHostRow: View {
                 .font(.nwMono(M.cellSize))
                 .foregroundStyle(nw.textPrimary)
                 .lineLimit(1)
-                .frame(width: M.hostNameWidth, alignment: .leading)
+                .frame(width: M.hostNameWidth * ThemeStore.shared.textScale, alignment: .leading)
             Text(host.detail)
                 .font(.nwSans(M.cellSize))
                 .foregroundStyle(host.mark == .failed ? nw.failed : nw.textTertiary)
