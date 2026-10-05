@@ -146,6 +146,24 @@ spent about 470 tokens a request on a tool and two parameters it could not use f
 sees. The tool descriptions drop their mission sentences, and a run writes no mission record. The
 code stays, with its tests, which set the variable.
 
+## Native codemode
+
+The default-on measurement uses the hosted native factory. With the same pinned Pi and fixtures,
+it adds 875 estimated tokens to the first request, using characters / 4: 11,517 off versus
+12,392 on including project instructions. The guarded total excluding the project's instructions
+is 7,826 tokens. There are 31 initial tools rather than 30. `scripts/context-budget.json` records
+this default; the existing margins are unchanged. This measures prompt cost, not any later savings
+from filtering tool output in a script.
+
+Settings ▸ Agents ▸ Context ▸ Codemode defaults on. Pi's native tool can discover and call tools in
+a JavaScript script, then return selected results instead of every intermediate result. Direct
+calls and Pi's native tool search remain available; tool deferral is independent. The project
+settings editor offers Use global default, On and Off. Changes apply when the agent starts or restarts.
+
+Shepherd uses the native factory with direct model APIs disabled, a five-minute deadline and a
+128-tool-call limit. This does not change `shepherd_workflow` or implicit child tool allowlists.
+[Implementation and settings behavior](pi-engine.md).
+
 ## Deferred tools
 
 Settings ▸ Agents ▸ Context ▸ **Defer rarely used tools** (on by default; a client lists it among a host's
@@ -396,7 +414,7 @@ grow by 5% or 60 tokens, the total by 2% or 150 tokens, and past that the check 
 grew and fails until the file is updated. That is the moment to say in the pull request what the
 tokens buy, or to defer or shorten the tool or text instead. A new pi gets 25% room on pi's own
 rows and none on Shepherd's. The project's own `AGENTS.md` is not guarded: it has a line cap
-(`Tests/Release/test_agent_docs.py`). The ceilings are the deferred set's (7,012 for the thread, from
+(`Tests/Release/test_agent_docs.py`). The ceilings are the default-on codemode deferred set's (7,826 for the thread, from
 12,524): the deferred families have no row, and a section the file does not list may hold 60 tokens at most, so
 a deferred tool that is sent again fails the check; `context-budget.test.mjs` fails it too, from the
 registry (a deferred tool must be registered and not sent, and a kept one sent).

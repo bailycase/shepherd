@@ -63,6 +63,7 @@ final class AppSettings {
         static let queueDelivery = "shepherd.agent.queueDelivery"
         static let trimToolOutput = "shepherd.agent.trimToolOutput"
         static let deferTools = "shepherd.agent.deferTools"
+        static let codemode = "shepherd.agent.codemode"
         static let compactAtPercent = "shepherd.agent.compactAtPercent"
         static let agentMessages = "shepherd.pi.agentMessages"
         static let piPanesExtension = "shepherd.pi.extension.panes"
@@ -100,7 +101,7 @@ final class AppSettings {
 
         static let all = [
             terminalFontFamily, terminalFontSize, defaultModel,
-            defaultThinking, defaultServiceTier, goalCrossProviderEvaluation, autoNameAgents, queueDelivery, trimToolOutput, deferTools, compactAtPercent, shellPath,
+            defaultThinking, defaultServiceTier, goalCrossProviderEvaluation, autoNameAgents, queueDelivery, trimToolOutput, deferTools, codemode, compactAtPercent, shellPath,
             agentMessages, piPanesExtension, piReviewExtension, piSubagentsExtension, piNativeSubagents,
             piMCPExtension, piBrowserExtension, piDesignReferences,
             childConcurrency, childModel, childThinking, childContext, childScope,
@@ -240,6 +241,12 @@ final class AppSettings {
     /// Off sends them all, as before. Agents launched after a change follow it.
     var deferTools: Bool {
         didSet { store.set(deferTools, forKey: Key.deferTools) }
+    }
+
+    /// Pi's native codemode is enabled by default. Project settings can override it.
+    /// A running agent keeps its choice until it starts again.
+    var codemode: Bool {
+        didSet { store.set(codemode, forKey: Key.codemode) }
     }
 
     /// Settings ▸ Agents ▸ Compact at: the share of a model's window past which pi compacts on its
@@ -503,6 +510,7 @@ final class AppSettings {
             .flatMap(NativeQueueMode.init(rawValue:)) ?? Defaults.queueDelivery
         trimToolOutput = store.object(forKey: Key.trimToolOutput) as? Bool ?? true
         deferTools = store.object(forKey: Key.deferTools) as? Bool ?? true
+        codemode = store.object(forKey: Key.codemode) as? Bool ?? true
         compactAtPercent = (store.object(forKey: Key.compactAtPercent) as? Int).flatMap { PiCompactionThreshold.choices.contains($0) ? $0 : nil }
         agentMessages = store.string(forKey: Key.agentMessages)
             .flatMap(AgentMessagePolicy.init(rawValue:)) ?? AgentMessagePolicy.default
@@ -601,6 +609,7 @@ final class AppSettings {
         queueDelivery = Defaults.queueDelivery
         trimToolOutput = true
         deferTools = true
+        codemode = true
         compactAtPercent = nil
         uiDensity = 1
         uiTextScale = 1

@@ -292,7 +292,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                            "Sidebar width"]
         case .terminal: ["Font family", "Font size", "Shell"]
         case .agents: ["Default model", "Default thinking level", "Speed for new threads",
-                       "When a turn ends, send the queue", "Compact at", "Trim old tool output from the model’s context", "Defer rarely used tools"]
+                       "When a turn ends, send the queue", "Compact at", "Trim old tool output from the model’s context", "Defer rarely used tools", "Codemode"]
         case .worktrees: ["Base branch", "Fetch before creating", "Commit remaining work", "Generate PR descriptions", "Delete local branch", "Merge PR automatically"]
         case .subagents: ["Native subagents", "Subagent display", "Concurrency", "Model", "Thinking", "Context", "Agent discovery"]
         case .projects: ["Filter projects", "All hosts", "Add project…", "Instructions", "Pi settings", "Skills", "Extensions", "MCP servers"]
@@ -328,7 +328,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                        "Compact at": ["compaction", "compacting", "context window", "percent", "full", "tokens", "auto-compact"],
                        "Trim old tool output from the model’s context": ["tool results", "clear", "clipping", "context", "tokens", "compaction",
                                                                      "screenshots", "cache"],
-                       "Defer rarely used tools": ["tool search", "tool_search", "deferred", "tokens"]]
+                       "Defer rarely used tools": ["tool search", "tool_search", "deferred", "tokens"],
+                       "Codemode": ["javascript", "script", "batch", "tools", "project"]]
         case .worktrees: ["Base branch": ["git", "origin"], "Merge PR automatically": ["github", "pull request"]]
         case .subagents: ["Native subagents": ["children", "workflows", "helpers"], "Agent discovery": ["profiles", "project trust"]]
         case .projects: ["Filter projects": ["folders", "directory", "project settings"], "Instructions": ["AGENTS.md", "APPEND_SYSTEM.md"], "Pi settings": [".pi", "settings.json"]]

@@ -270,6 +270,35 @@ struct ThreadProjectionTests {
         #expect(row.truncated)
     }
 
+    @Test func nestedCallsKeepInvocationOrderAndDoNotInheritTheirParentsSuccess() throws {
+        let message: RPCMessage = try decode(#"""
+        {"role":"toolResult","toolCallId":"s","toolName":"codemode","content":"done","isError":false,
+         "nestedCalls":{"complete":false,"calls":[
+          {"id":"s/1","name":"read","status":"ok","arguments":{"path":"file"}},
+          {"id":"s/2","name":"bash","status":"error","error":"failed"},
+          {"id":"s/3","name":"read","status":"unfinished","argumentsBytes":9000}]},
+         "details":{"calls":[{"id":"s/1","output":"a","outputTruncated":true},{"id":"s/3","status":"cancelled"}]}}
+        """#)
+        let rows = RPCThreadState.projectHistory([message])
+        #expect(rows.map(\.toolCallID) == ["s", "s/1", "s/2", "s/3"])
+        #expect(rows[0].isError == false && rows[2].isError == true)
+        #expect(rows[1].argumentsText == #"{"path":"file"}"#)
+        #expect(rows[1].blocks.first?.text.contains("Remaining output was not saved") == true)
+        #expect(rows[3].status == "aborted" && rows[3].argumentsText == nil)
+        #expect(rows[3].blocks.first?.text.contains("Pi omitted this call's arguments") == true)
+        #expect(rows[3].startedAt == nil && rows[3].timestamp == nil, "do not invent nested wall-clock times")
+    }
+
+    @Test func repeatedNestedIDsDoNotMakeDuplicateRowsOrReplaceTheScript() throws {
+        let message: RPCMessage = try decode(#"""
+        {"role":"toolResult","toolCallId":"s","content":"done","nestedCalls":{"calls":[
+          {"id":"s","name":"read","status":"ok"},
+          {"id":"s/1","name":"read","status":"ok"},
+          {"id":"s/1","name":"read","status":"error"}],"complete":true}}
+        """#)
+        #expect(RPCThreadState.projectHistory([message]).map(\.toolCallID) == ["s", "s/1"])
+    }
+
     // MARK: - projectHistory
 
     private static let history = #"""

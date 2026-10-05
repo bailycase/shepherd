@@ -132,7 +132,7 @@ export async function startThread(options = {}) {
       fs.writeFileSync(path.join(config, "skills", name, "SKILL.md"), `---\nname: ${name}\ndescription: ${description}\n---\n\n# ${name}\n\nSteps.\n`);
     }
   }
-  fs.writeFileSync(path.join(config, "settings.json"), JSON.stringify({ retry: { enabled: false }, compaction: { enabled: false }, transport: "sse", ...options.settings }));
+  fs.writeFileSync(path.join(config, "settings.json"), JSON.stringify({ retry: { enabled: false }, compaction: { enabled: false }, codemode: { enabled: options.codemode !== false }, transport: "sse", ...options.settings }));
 
   const fake = await startProvider({ onRequest: options.onRequest, usage: options.usage, uniqueIds: true });
   const model = { id: "gpt-6-sol", name: "gpt-6-sol", reasoning: false, input: ["text"], contextWindow: options.contextWindow ?? 272000, maxTokens: 8192,
