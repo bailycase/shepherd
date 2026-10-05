@@ -11,7 +11,8 @@ revision 562, defines the detail screen and replaces the first implementation.
 
 - Settings navigation in order: Appearance, Terminal, Agents, Subagents, Worktrees, Projects,
   Pi, Instructions, Skills, MCP servers, Remote, Keyboard, Advanced, Experiments.
-  Pi's existing subpages expand while a Pi page is selected or search finds them.
+  Pi's subpages, Sign-in, From your pi and Slash commands, stay visible from every page.
+  Search still filters them.
   Projects uses the outline `folder` glyph. Subagents uses outline `arrow.turn.down.right`.
   Existing page glyphs remain their registered settings symbols.
 - The existing 232pt navigation, 44pt top strip, 32pt nav rows, search and version footer.
@@ -44,7 +45,8 @@ revision 562, defines the detail screen and replaces the first implementation.
   lives on."
 - Additional states: loading, empty, no filter matches, missing directory, unreachable host,
   older host requiring an update, file loading/error, dirty editor, save conflict and invalid JSON.
-  Detail tabs: Instructions, Pi settings, Resources, MCP servers. Reads and saves
+  Detail tabs: Instructions, Pi settings, Resources, MCP servers. MCP uses the shared server
+  cards and forms, not a raw JSON editor. See [Project MCP](project-mcp.md). Reads and saves
   always name the selected project's host and directory. Save never overwrites another writer's
   changes. Closing/switching a dirty file asks before discarding.
 - Render normal, empty, filtered, long text, remote offline/update-required, detail and errors in

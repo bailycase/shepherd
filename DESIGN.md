@@ -203,6 +203,8 @@ A list is as fast with three hundred rows as with thirty. Count budgets in
 - Rows are plain `Equatable` values; closures stay out of `==`; highlight and selection arrive
   as a `Bool`; hover lives in the row. Stores derive rows once per change, never in `body`.
 - Hidden agents stay out of the visible one's updates (see AGENTS.md, switching is a flip).
+- Projects uses the shared MCP server cards and forms. Pi's three Settings subpages stay visible
+  from every page, except when filtered by search. Details: [Project MCP](docs/design/project-mcp.md).
 - Blank-thread recovery checks for visible content rows, not the invisible bottom scroll marker.
 - Motion no one sees costs nothing (`nwMotionPaused`); detail in
   [performance](docs/design/performance.md).
