@@ -13,6 +13,7 @@ public struct NWSegmentedPicker<Value: Hashable>: View {
     let options: [(value: Value, title: String)]
     let size: Size
     @Namespace private var pill
+    @State private var accessibilitySize: CGSize = .zero
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.isEnabled) private var enabled
     @Environment(\.nwControlScale) private var scale
@@ -79,11 +80,13 @@ public struct NWSegmentedPicker<Value: Hashable>: View {
         // A click, ⇥ in the palette, or the value changing elsewhere: the pill moves however the
         // value did, and what the value drives outside the picker is left alone.
         .nwComponentAnimation(.content, value: selection)
+        .onGeometryChange(for: CGSize.self, of: \.size) { accessibilitySize = $0 }
         .accessibilityRepresentation {
             Picker(label, selection: $selection) {
                 ForEach(options, id: \.value) { Text($0.title).tag($0.value) }
             }
             .pickerStyle(.segmented)
+            .frame(width: accessibilitySize.width, height: accessibilitySize.height)
         }
     }
 

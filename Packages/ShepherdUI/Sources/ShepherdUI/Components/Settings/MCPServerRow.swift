@@ -23,6 +23,7 @@ public struct MCPServerRowModel: Equatable, Identifiable, Sendable {
         case variables(Int)
         /// A `${keychain:…}` value isn't in Keychain.
         case missingSecret(String)
+        case unverified
         case none
     }
 
@@ -208,12 +209,14 @@ public struct MCPServerRow: View, Equatable {
         case .secret(let name):
             cell("lock", name, mono: true)
         case .variables(let count):
-            cell("lock", "\(count) variables")
+            cell("lock", count == 1 ? "1 variable" : "\(count) variables")
         case .missingSecret(let name):
             HStack(spacing: NW.Space.s + NW.Space.xxs) {
                 Image(systemName: "lock").font(.nwSans(M.cellSize - 1)).foregroundStyle(nw.lanternText).accessibilityHidden(true)
                 Text("\(name) isn’t set").font(.nwSans(M.cellSize)).foregroundStyle(nw.lanternText).lineLimit(1)
             }
+        case .unverified:
+            Text("Not checked").font(.nwSans(M.cellSize)).foregroundStyle(nw.textTertiary)
         case .none:
             Text("None").font(.nwSans(M.cellSize)).foregroundStyle(nw.textTertiary)
         }

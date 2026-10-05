@@ -42,6 +42,64 @@ struct ProjectsPreviewTests {
         try await Preview.renderMatrix("projects-\(state)", size: size) { RootView(vm: world.vm) }
     }
 
+    @Test func projectMCPMatchesTheSettingsCardsAndForms() async throws {
+        let fixture = try await ProjectsPreviewWorld(detail: true)
+        defer { fixture.stop() }
+        let model = fixture.vm.projects
+        await model.open(try #require(model.rows.first { $0.host.id == "local" }))
+        await model.navigate(.category(.mcp))
+        let entries = [
+            MCPServerEntry(name: "docs", json: ["url": .string("https://docs.example.invalid/mcp"), "exposure": .string("deferred"),
+                                               "headers": .object(["Authorization": .string("Bearer ${DOCS_TOKEN}")])]),
+            MCPServerEntry(name: "ledger-with-a-long-name-for-production-accounting-tools", json: ["command": .string("ledger-server"), "args": .array([.string("--read-only")]), "enabled": .bool(false),
+                                                                                               "env": .object(["SERVICE_TOKEN": .string("${LEDGER_TOKEN}")])]),
+        ]
+        try await model.saveMCP(entries, replacing: ["docs", "ledger"])
+        let size = CGSize(width: 1440, height: 900)
+        try await Preview.renderMatrix("projects-mcp", size: size) { SettingsView(vm: fixture.vm) }
+        try await Preview.renderMatrix("projects-mcp-narrow", size: CGSize(width: 1024, height: 800)) { SettingsView(vm: fixture.vm) }
+        model.selected?.host.unavailable = "Host offline"
+        try await Preview.renderMatrix("projects-mcp-offline", size: size) { SettingsView(vm: fixture.vm) }
+        model.selected?.host.unavailable = nil
+        try await Preview.renderMatrix("projects-mcp-detail", size: CGSize(width: 1040, height: 720)) {
+            ProjectMCPSettings(model: model, initiallyExpanded: "docs").padding(NW.Space.xxl)
+                .frame(width: 1040, height: 720).background(Color.nw.bgWindow)
+        }
+        try await Preview.renderMatrix("projects-mcp-filtered", size: CGSize(width: 1040, height: 720)) {
+            ProjectMCPSettings(model: model, initialQuery: "nothing-matches").padding(NW.Space.xxl)
+                .frame(width: 1040, height: 720).background(Color.nw.bgWindow)
+        }
+        try await Preview.renderMatrix("projects-mcp-edit", size: CGSize(width: 570, height: 780)) {
+            AddMCPServerSheet(project: model, initialKind: nil, editing: entries[0]) {}
+        }
+        try await Preview.renderMatrix("projects-mcp-local-edit", size: CGSize(width: 720, height: 780)) {
+            AddMCPServerSheet(project: model, initialKind: nil, editing: entries[1]) {}
+        }
+        try await Preview.renderMatrix("projects-mcp-add", size: CGSize(width: 720, height: 780)) {
+            AddMCPServerSheet(project: model, initialKind: .remote, editing: nil) {}
+        }
+        let native = try #require(model.selectedFile)
+        let project = try #require(model.selected)
+        try ((model.saved ?? "") + "\n").write(
+            to: URL(fileURLWithPath: project.project.directory).appendingPathComponent(native.path), atomically: true, encoding: .utf8)
+        await model.setMCPEnabled("docs", false)
+        #expect(model.fileError != nil && model.dirty)
+        try await Preview.renderMatrix("projects-mcp-conflict", size: size) { SettingsView(vm: fixture.vm) }
+        await model.navigate(.file(native)); await model.discard()
+        let shared = try #require(model.selectedFiles.first { $0.path == ".mcp.json" })
+        await model.navigate(.file(shared))
+        try await model.saveMCP([entries[0]])
+        try await Preview.renderMatrix("projects-mcp-shared", size: CGSize(width: 1040, height: 720)) {
+            ProjectMCPSettings(model: model, initiallyExpanded: "docs").padding(NW.Space.xxl)
+                .frame(width: 1040, height: 720).background(Color.nw.bgWindow)
+        }
+        await model.navigate(.file(native))
+        for name in model.mcp.entries.map(\.name) { try await model.removeMCP(name) }
+        try await Preview.renderMatrix("projects-mcp-empty", size: size) { SettingsView(vm: fixture.vm) }
+        model.draft = "{ invalid JSON"
+        try await Preview.renderMatrix("projects-mcp-invalid", size: size) { SettingsView(vm: fixture.vm) }
+    }
+
     @Test(arguments: ProjectFile.Category.allCases)
     func details(category: ProjectFile.Category) async throws {
         let world = try await ProjectsPreviewWorld(detail: true)
