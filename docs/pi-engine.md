@@ -103,7 +103,7 @@ sandbox) and tool search as built-in extensions, and drops chord from the bundle
 `extensions/*.so` are WebAssembly side modules pi never loads, named like native code). The staged
 engine is 135 MB, from 134 MB.
 
-**MCP and tool search are Shepherd's MCP; codemode is off.** Agents use pi's own MCP, with Settings ▸
+**MCP, tool search and codemode use Pi's implementations.** Agents use pi's own MCP, with Settings ▸
 MCP servers on top of it ([mcp.md](mcp.md) has the evidence, measured on this engine, and the layering).
 The home's `settings.json` still carries `-builtin:mcp`, `-builtin:codemode` and `-builtin:tool-search`
 (`PiHome.install`, under pi's lock, never replacing an entry that already names one in any form), so
@@ -111,8 +111,21 @@ anything that starts pi without saying otherwise loads none of them: the model c
 children (`--no-extensions`) and a `pi` an agent types. **An agent's launch switches MCP on** with `-e
 builtin:mcp -e builtin:tool-search`, which pi lets win over the home's switch (checked:
 `Tests/Extensions/pi-mcp.test.mjs`, and through the real launcher in `EngineSmokeTests`), while Settings ▸
-Pi ▸ Bundled extensions ▸ MCP servers is on. `codemode` stays off: with it off, a server on pi's default
-exposure (`codemode`) is unreachable, which is why Shepherd's derived `mcp.json` always names an exposure.
+Pi ▸ Bundled extensions ▸ MCP servers is on. Shepherd's derived `mcp.json` always names an exposure,
+so tools stay reachable through direct calls or tool search when codemode is off.
+
+Settings ▸ Agents ▸ Context ▸ Codemode defaults on. Before a primary agent launch, `PiHome.configureCodemode`
+writes `codemode.enabled` in the host's Pi home under Pi's settings lock. A trusted project's
+`.pi/settings.json` can override it. `shepherd-status.ts` uses Pi's `createCodemodeExtension` factory
+with `models: false` and `mode: "on"`. It caps each script at five minutes and 128 nested tool calls.
+Pi still owns the QuickJS executor, discovery, tool hooks, nested-call metadata and cancellation.
+Each nested tool has its own activity row. Pi's `nestedCalls` metadata restores its arguments and
+status; Shepherd saves text excerpts in the parent's display-only details, up to 8,192 characters per call
+and 32,768 per script. These excerpts do not enter model context. Missing and clipped data are disclosed.
+The bare `builtin:codemode` stays excluded because it has no default deadline and exposes direct
+classifier/image provider calls. Auxiliary launches and native children do not load the hosted tool.
+Changes apply at the next start or restart, never by restarting an existing agent. The project
+picker edits the existing JSON draft and requires Save. See [codemode settings](design/codemode-settings.md).
 
 pi 1.0's tool exposure (`deferred`, a namespace) and `tool_search` also carry Shepherd's own rarely used tools: the
 extensions register the browser, other-thread, automation and review tools `deferred` while `SHEPHERD_DEFER_TOOLS=1`, and

@@ -27,7 +27,7 @@ struct HostSettingsMappingTests {
         #expect(settings.goalCrossProviderEvaluation && settings.goalsEnabled)
         #expect(settings.worktreeBase == .head)
         #expect(settings.mergePRAutomatically && settings.mergeMethod == .rebase)
-        #expect(settings.bundledExtensions.map(\.id) == ["namer", "panes", "review", "nativeSubagents", "subagents", "mcp", "browser", "context", "deferTools"])
+        #expect(settings.bundledExtensions.map(\.id) == ["namer", "panes", "review", "nativeSubagents", "subagents", "mcp", "browser", "context", "deferTools", "codemode"])
         #expect(settings.bundledExtensions.first { $0.id == "review" }?.on == false)
         #expect(settings.bundledExtensions.first { $0.id == "review" }?.name == "Diff review tool")
         // The extension keeps its stored id; it reads as terminals to the user.
@@ -77,7 +77,16 @@ struct HostSettingsMappingTests {
         #expect(!app.deferTools && on() == false)
         HostSettingsMapping.apply(.bundledExtension(id: "deferTools", on: true), to: app)
         #expect(app.deferTools && on() == true)
-        #expect(HostSettingsMapping.bundled.map(\.id).suffix(2) == ["context", "deferTools"], "listed beside the other Context switch")
+        #expect(HostSettingsMapping.bundled.map(\.id).suffix(3) == ["context", "deferTools", "codemode"], "listed beside the other Context switches")
+    }
+
+    @Test func aClientCanSwitchCodemodeWithoutChangingToolDeferral() {
+        let app = AppSettings(store: Fixture.defaults())
+        #expect(HostSettingsMapping.settings(from: app, shepherdVersion: nil, piVersion: nil).bundledExtensions.first { $0.id == "codemode" }?.on == true)
+        HostSettingsMapping.apply(.bundledExtension(id: "codemode", on: false), to: app)
+        #expect(!app.codemode && app.deferTools)
+        HostSettingsMapping.apply(.bundledExtension(id: "codemode", on: true), to: app)
+        #expect(app.codemode)
     }
 
     @Test func aClientsChangeLandsInTheMacsSettings() {

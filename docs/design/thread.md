@@ -418,9 +418,12 @@ tools merge only with the same tool. Consecutive lines form one part of the turn
   `title`, `text` or `command`, cut to its first line. Failed it reads "<tool> failed" (a tool pi
   never loaded: "Tool mcp__x__y not found"), "Tool search failed", and stopped "<tool> stopped",
   "Tool search stopped". Expanded, a search's rows say "search", its query and "8 loaded", and its output
-  lists the tools it loaded. A call nested in another (a script's calls to tools, pi's
-  `parentToolCallId`) has no line of its own: its parent's line stands for it. Not on a board;
-  drawn from the Other line's rules.
+  lists the tools it loaded. A call nested in another, such as a script's call to a tool,
+  has its own ordinary activity row. Live `parentToolCallId` events show its output and state;
+  saved `nestedCalls` metadata restores its arguments, status and invocation order. Shepherd's
+  codemode retains text excerpts in the parent's display-only details, up to 8,192 characters per call and
+  32,768 per script. An excerpt names its limit; older native sessions say when output was not
+  saved. A failed call stays failed even if the script handles the error and succeeds.
 
   Shell commands are classified by what they run (`nativeCommandClasses`: tests, build, commit,
   push), with setup and pipes (`cd`, `| tail`) ignored and test counts parsed from the output
@@ -451,7 +454,7 @@ tools merge only with the same tool. Consecutive lines form one part of the turn
     rest of the arguments (a write's whole body) is never drawn or held by the thread. The line
     goes on as the running call, one clock, in place; if the request is stopped or fails before
     the call runs, the line leaves and nothing stays behind.
-- **Calls** (expanded, `NWActivityCalls`): an indented list on the rail, 22pt rows in mono 11
+- **Calls** (expanded, `NWActivityCalls`): an indented list on the rail, 24pt rows in mono 11
   with no gap between them and 10pt between a row's columns: the kind in `textTertiary` in a
   32pt column that widens for a longer name ("read", "edit", "bash", "spawn"; at most 22
   characters wide, a longer name truncates), the path

@@ -153,6 +153,17 @@ struct ProjectSettingsDetail: View {
                     Button("Discard") { Task { await model.discard() } }.buttonStyle(.nw())
                 }
             }
+            if model.selectedFile?.path == ".pi/settings.json", model.fileLoaded {
+                SettingsGroup(title: "Tools") {
+                    SettingsRow(title: "Codemode",
+                                subtitle: "Overrides this host's global setting for this project. Save the file, then start or restart the agent.",
+                                problem: model.codemodeProblem) {
+                        NWSegmentedPicker("Project codemode", selection: $model.projectCodemode,
+                                          options: [(ProjectsModel.CodemodeChoice.inherit, "Use global default"), (.on, "On"), (.off, "Off")])
+                            .disabled(model.codemodeProblem != nil || model.saving || model.selected?.unavailable != nil)
+                    }
+                }
+            }
             if model.category == .mcp, model.fileLoaded {
                 ProjectMCPSettings(model: model).id(model.selectedFile?.path)
             } else { editor }
@@ -190,9 +201,7 @@ struct ProjectSettingsDetail: View {
 
     private var footer: some View {
         HStack(spacing: AppLayout.projectFileGap) {
-            Text(model.dirty ? "Unsaved changes" : model.category == .mcp
-                 ? "Saved to the project folder. MCP changes apply to new threads."
-                 : "Saved to the project folder. It takes effect in new turns.")
+            Text(model.dirty ? "Unsaved changes" : model.savedNotice)
                 .font(.nwSans(AppLayout.projectFileSize)).foregroundStyle(Color.nw.settingsMuted).lineLimit(2)
             Spacer(minLength: 0)
             Button { Task { await model.openInEditor() } } label: {

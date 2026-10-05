@@ -16,7 +16,7 @@ public enum NWThreadMetrics {
     /// nothing on it takes a tap.
     public static let liveHeight: CGFloat = 26
     /// A call row in an expanded line.
-    public static let callRowHeight: CGFloat = touchable(22)
+    public static let callRowHeight: CGFloat = touchable(24)
     /// The calls list's kind column ("edit", "bash"), before it widens for longer names.
     public static let callLabelWidth: CGFloat = 32
     /// The most characters the kind column widens for ("shepherd_child_message"); a longer name

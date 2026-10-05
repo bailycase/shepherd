@@ -72,6 +72,30 @@ struct RPCWireTests {
         }
     }
 
+    @Test func nestedCallMetadataAndDisplayOnlyOutputRoundTrip() throws {
+        let json = #"""
+        {"role":"toolResult","toolName":"codemode","toolCallId":"s","content":"done",
+         "nestedCalls":{"complete":true,"calls":[{"id":"s/1","name":"read","status":"error","arguments":{"path":"a"},"durationMs":2,"error":"missing"}]},
+         "details":{"calls":[{"id":"s/1","output":"missing","outputTruncated":false}]}}
+        """#
+        let message = try JSONDecoder().decode(RPCMessage.self, from: Data(json.utf8))
+        #expect(message.nestedCalls?.calls.first?.arguments?["path"]?.stringValue == "a")
+        #expect(message.nestedCalls?.calls.first?.status == "error")
+        #expect(message.details?["calls"]?.arrayValue?.first?["output"]?.stringValue == "missing")
+        #expect(try JSONDecoder().decode(RPCMessage.self, from: JSONEncoder().encode(message)) == message)
+    }
+
+    @Test(arguments: ["null", "false", #"{"calls":[false,{"id":"c","name":"read","status":"ok"}],"complete":true}"#])
+    func malformedOptionalNestedMetadataDoesNotDiscardTheParent(_ nested: String) throws {
+        let json = #"{"role":"toolResult","content":"kept","nestedCalls":\#(nested)}"#
+        let message = try JSONDecoder().decode(RPCMessage.self, from: Data(json.utf8))
+        #expect(message.content == [.text("kept")])
+        if let log = message.nestedCalls {
+            #expect(log.calls.map(\.id) == ["c"])
+            #expect(!log.complete)
+        }
+    }
+
     // MARK: Responses
 
     @Test func aBareSuccessResponseDecodes() throws {

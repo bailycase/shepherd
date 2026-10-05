@@ -1039,8 +1039,11 @@ final class TerminalSessionStore {
     /// restored agent does this at once, and a project directory holds hundreds of session files.
     private static func prepareLaunch(for agent: Agent, cwd: String, pi: PiSetup) async -> (fresh: Bool, problem: PiHomeProblem?) {
         let sessionID = agent.effectivePiSessionID
+        let codemode = AppSettings.shared.codemode
         return await Task.detached(priority: .userInitiated) {
             if let problem = pi.prepare() { return (true, problem) }
+            do { try pi.files.configureCodemode(codemode) }
+            catch { return (true, PiHomeProblem("Shepherd couldn't configure codemode: \(error)")) }
             // Its conversation from before Shepherd ran its own pi, copied in before any seeding.
             _ = PiSessionFile.adopt(sessionID: sessionID, cwd: cwd, sessionsRoot: pi.sessionsRoot, yourPi: pi.yourPi.resolve())
             return (PiSessionFile.prepareForLaunch(sessionID: sessionID, cwd: cwd, sessionsRoot: pi.sessionsRoot), nil)

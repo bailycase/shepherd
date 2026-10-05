@@ -58,6 +58,21 @@ struct ProjectsControlTests {
             let control = try ControlPress.press("Project category \(label)", under: window.host)
             #expect(ControlPress.undersized([control], minimum: .desktop).isEmpty, "\(label) hit area is \(String(describing: control.frame))")
             try await eventuallyOnMain("the category to load") { model.category == category && !model.fileLoading }
+            if category == .pi {
+                #expect(model.projectCodemode == .inherit)
+                for (label, expected) in [("Off", false as Bool?), ("On", true as Bool?), ("Use global default", nil as Bool?)] {
+                    window.layout()
+                    let choice = try window.press(label, role: ControlRole.radioButton)
+                    #expect(ControlPress.undersized([choice], minimum: .desktop).isEmpty)
+                    #expect(model.dirty)
+                    window.layout()
+                    try window.press("Save")
+                    try await eventuallyOnMain("codemode saved") { !model.saving && !model.dirty }
+                    let contents = try Data(contentsOf: root.appendingPathComponent(".pi/settings.json"))
+                    let settings = try #require(JSONSerialization.jsonObject(with: contents) as? [String: Any])
+                    #expect(PiCodemode.projectOverride(in: settings) == expected)
+                }
+            }
         }
         window.layout()
         let browser = try ControlPress.press("Project category Browser", under: window.host)

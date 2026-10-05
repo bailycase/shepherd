@@ -94,6 +94,7 @@ struct SettingsPreviewTests {
             workspace.settings.compactAtPercent = 80
             workspace.settings.trimToolOutput = false
             workspace.settings.deferTools = false
+            workspace.settings.codemode = false
         }
         // Tall enough that the last row still shows at text scale 1.3, where the subtitles wrap to four lines.
         try await Preview.renderMatrix(surface, size: CGSize(width: 1280, height: 1400)) {

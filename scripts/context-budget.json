@@ -9,18 +9,19 @@
     "totalFloor": 150
   },
   "tokens": {
-    "pi.prompt": 771,
-    "pi.builtin_tools": 696,
-    "shepherd.prompt": 351,
-    "tools.terminal": 590,
-    "tools.automation": 105,
-    "tools.children": 1547,
+    "pi.prompt": 710,
+    "pi.builtin_tools": 767,
+    "shepherd.prompt": 426,
+    "tools.terminal": 684,
+    "tools.automation": 119,
+    "tools.children": 1687,
     "tools.mcp": 206,
-    "tools.mcp_direct": 1326,
+    "tools.mcp_direct": 1538,
+    "tools.other": 269,
     "skills": 441,
     "ctx.append_system": 88,
     "ctx.global_agents": 891
   },
-  "total": 7012,
-  "toolCount": 30
+  "total": 7826,
+  "toolCount": 31
 }

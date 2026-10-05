@@ -66,7 +66,7 @@ server unless something removes it first (below).
 
 | Exposure | Declared to the model | Reached by | Notes |
 | --- | --- | --- | --- |
-| `codemode` (default) | nothing | `codemode` scripts, or `tool_search` | With pi's codemode extension off (Shepherd's default) and no deferred server, nothing can call them, yet the system prompt still says to use codemode scripts. Shepherd never writes it |
+| `codemode` (default) | nothing | `codemode` scripts, or `tool_search` | Reachable through native codemode when enabled. With codemode off and no deferred server, nothing can call them. Shepherd never writes it |
 | `deferred` | nothing until `tool_search` loads a match | `tool_search`, then the tool by name | A search loads the best 8; they stay declared for the rest of the branch; an unloaded tool answers "Tool … not found" |
 | `direct` | every tool, like a built-in | by name | |
 | `hidden` | nothing | nothing | `toolExposure` can still expose chosen tools of a hidden server |
@@ -103,7 +103,7 @@ same choice made Direct). A direct tool is about 211 tokens here and grows with 
 arguments, `tool_execution_end` with `result.content`, `result.details` (`{server, tool}`) and `isError`;
 `structuredContent` comes back too. Text over 20 KB loses its middle; images are image blocks. A
 `codemode` script's calls are the same events with an id like `call_1/2` and a `parentToolCallId`, beside
-`tool_execution_update`s for the script itself (checked with codemode on; Shepherd leaves it off).
+`tool_execution_update`s for the script itself. Each nested call has its own activity row.
 
 **OAuth** is pi's: `pi mcp login <server>` registers pi as a client (`oauth.clientName` changes the name),
 prints the authorization URL on stdout (`Sign in to MCP server "x" in your browser:` then the URL), opens
@@ -186,9 +186,9 @@ builtin:tool-search` while Settings ▸ Pi ▸ Bundled extensions ▸ MCP server
 Shepherd's own deferred tools (the browser, other-thread, automation and review tools, docs/context-budget.md ›
 Deferred tools), so with Settings ▸ Agents ▸ Defer rarely used tools on a thread's or an automation's launch has
 `-e builtin:tool-search` even with MCP off (it wins over the home's `-builtin:tool-search`, like MCP's). A design's agent, a
-native subagent, a draft and the model catalog do not (`--no-extensions` or no flag). `codemode` stays off:
-a trusted project's own `.pi/mcp.json` server with pi's default exposure is then unreachable, so a
-project that wants one sets `exposure` to `deferred` or `direct` in that file.
+native subagent, a draft and the model catalog do not (`--no-extensions` or no flag). Native codemode
+defaults on for primary agents, with a global switch and trusted-project override. To keep a project's
+`.pi/mcp.json` server reachable when codemode is off, set its `exposure` to `deferred` or `direct`.
 
 **A repo's `.mcp.json`** (Settings ▸ MCP servers ▸ Also use a repo's .mcp.json, off by default): with
 the switch on, `shepherd-mcp-project.ts` registers the servers of the `.mcp.json` found at the agent's
@@ -207,9 +207,10 @@ the iOS client): "Called search_issues" with "github · label:bug" (the server, 
 `query`, `q`, `url`, `path`, `pattern`, `name`, `title`, `text` or `command`), "Calling …" while it runs, "…
 failed" with pi's reason. The server and tool come from the call's name (`mcp__<server>__<tool>`, pi's
 sanitized spelling), because the projection keeps no result `details`. `tool_search` is "Searched tools" with
-the query, and "8 loaded" on its expanded row. A call nested in another (`parentToolCallId`, which pi's
-codemode sets and Shepherd leaves off) gets no row: `RPCThreadState` skips it, so the parent's line stands
-for it and a malformed field never costs the event.
+the query, and "8 loaded" on its expanded row. Calls nested in a script have independent rows,
+including failures the script handles. Pi's saved `nestedCalls` restores call arguments and status;
+Shepherd retains bounded text excerpts in the parent's display-only details. Older native logs show
+when output was not saved. See [codemode settings](design/codemode-settings.md).
 
 ## Not covered
 

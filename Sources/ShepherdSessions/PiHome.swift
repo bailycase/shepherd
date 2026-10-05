@@ -409,7 +409,7 @@ struct PiSettingsFile {
 
     /// Applies `change`, and writes the file only when that changed it. A file that isn't a JSON
     /// object is left as it is. Returns `change`'s notes.
-    func update(_ change: (inout [String: Any]) -> [String]) throws -> [String] {
+    func update(_ change: (inout [String: Any]) throws -> [String]) throws -> [String] {
         try withLock {
             var settings: [String: Any] = [:]
             if let data = try? Data(contentsOf: url), !data.isEmpty {
@@ -419,7 +419,7 @@ struct PiSettingsFile {
                 settings = object
             }
             let before = NSDictionary(dictionary: settings)
-            let notes = change(&settings)
+            let notes = try change(&settings)
             guard !before.isEqual(to: settings) || !FileManager.default.fileExists(atPath: url.path) else { return notes }
             var data = try JSONSerialization.data(withJSONObject: settings, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
             data.append(UInt8(ascii: "\n"))

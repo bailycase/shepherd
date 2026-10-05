@@ -39,6 +39,19 @@
     },
     {
       "tools": [
+        "codemode"
+      ],
+      "group": "other",
+      "extension": "shepherd-status.ts",
+      "verdicts": {
+        "thread": "keep",
+        "automation": "keep",
+        "design": "keep"
+      },
+      "reason": "Pi's native script executor, hosted by the status extension while codemode is enabled (on by default). Its definition costs 269 tokens; with its prompt guidance the first request grows by 875 tokens. Direct model APIs are disabled, with a five-minute deadline and 128 tool calls per script. Native subagents do not load the status extension."
+    },
+    {
+      "tools": [
         "terminal_list",
         "terminal_open",
         "terminal_run",

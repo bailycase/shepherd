@@ -40,8 +40,7 @@ struct AgentSettingsContextTests {
         OffscreenWindow(size: CGSize(width: 900, height: 900), dark: true, AgentSettings(pi: PiSetup.app, settings: settings))
     }
 
-    /// The switch the page draws for every boolean: 30×18, the Controls board's size, which is under
-    /// the 24pt a pointer is asked for (docs/design/components.md); the press runs its action either way.
+    /// The switch keeps its 30×18 drawing and has a 24pt pointer hit target.
     @MainActor
     static func switchingTrimming() async throws {
         AccessibilityNode.enable()
@@ -76,6 +75,15 @@ struct AgentSettingsContextTests {
         #expect(settings.deferTools, "and the next press back on")
         try window.press(trim, role: ControlRole.checkBox)
         #expect(!settings.trimToolOutput && settings.deferTools, "the trim switch changes only itself")
+        #expect(settings.codemode)
+        window.layout()
+        let codemode = try window.press("Codemode", role: ControlRole.checkBox)
+        #expect(ControlPress.undersized([codemode], minimum: .desktop).isEmpty)
+        #expect(!settings.codemode && settings.deferTools)
+        #expect(!AppSettings(store: store).codemode)
+        window.layout()
+        try window.press("Codemode", role: ControlRole.checkBox)
+        #expect(settings.codemode && AppSettings(store: store).codemode)
     }
 
     @MainActor
