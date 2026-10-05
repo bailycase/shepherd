@@ -8,13 +8,10 @@ struct PiSettings: View {
     let pi: PiSetup
     /// The view model's settings, so a preview's own settings draw the page.
     @Bindable var settings: AppSettings
-    var subagentsOnly = false
     @State private var modelOptions: [String] = []
 
     var body: some View {
-        SettingsPage(title: subagentsOnly ? "Subagents" : "Pi",
-                     explanation: subagentsOnly ? "Native helpers, their display and defaults for new child runs." : "Shepherd's own pi and the extensions Shepherd bundles into it.") {
-            if !subagentsOnly {
+        SettingsPage(title: "Pi", explanation: "Shepherd's own pi and the extensions Shepherd bundles into it.") {
             SettingsGroup(title: "Shepherd's pi",
                           footnote: "Shepherd runs its own copy of pi, with its own sign-ins, settings and conversations. The pi in your terminal is yours: Shepherd never runs it or changes its files.") {
                 PathRow(title: pi.engine.version.map { "pi \($0)" } ?? "pi",
@@ -59,20 +56,17 @@ struct PiSettings: View {
                 }
             }
 
-            }
-            if subagentsOnly {
-                SettingsGroup(title: "Native subagents") {
-                    SettingsRow(title: "Native subagents",
-                                subtitle: "Shepherd helpers, agent files and scripted workflows. Needs pi 0.85.1+. Children stop with their parent.") {
-                        SettingsSwitch(label: "Native subagents", isOn: $settings.piNativeSubagents)
-                    }
-                    SettingsRow(title: "Subagent display",
-                                subtitle: "Show subagent runs in their agent's thread, the inspector and the palette. Off doesn't stop them running.") {
-                        SettingsSwitch(label: "Subagent display", isOn: $settings.piSubagentsExtension)
-                    }
+            SettingsGroup(title: "Native subagents") {
+                SettingsRow(title: "Native subagents",
+                            subtitle: "Shepherd helpers, agent files and scripted workflows. Needs pi 0.85.1+. Children stop with their parent.") {
+                    SettingsSwitch(label: "Native subagents", isOn: $settings.piNativeSubagents)
+                }
+                SettingsRow(title: "Subagent display",
+                            subtitle: "Show subagent runs in their agent's thread, the inspector and the palette. Off doesn't stop them running.") {
+                    SettingsSwitch(label: "Subagent display", isOn: $settings.piSubagentsExtension)
                 }
             }
-            if subagentsOnly && settings.piNativeSubagents {
+            if settings.piNativeSubagents {
                 SettingsGroup(title: "Native subagent defaults",
                               footnote: "Precedence: explicit call → agent file → these defaults → parent. Child tools run with your account's access.") {
                     SettingsRow(title: "Concurrency", subtitle: "Child process limit per parent, including workflows.") {
@@ -103,15 +97,6 @@ struct PiSettings: View {
                     SettingsRow(title: "Context", subtitle: "Start each child fresh, or fork the parent's conversation.") {
                         NWSegmentedPicker("Context", selection: $settings.childContext, options: [("fresh", "Fresh"), ("fork", "Fork")])
                     }
-                    SettingsRow(title: "Agent discovery", subtitle: "Project profiles require pi project trust. Files stay the source of truth.") {
-                        NWPopupMenu(Self.scopes.first { $0.0 == settings.childScope }?.1 ?? settings.childScope,
-                                    minWidth: AppLayout.settingsPopupWidth) {
-                            ForEach(Self.scopes, id: \.0) { scope in
-                                Button(scope.1) { settings.childScope = scope.0 }
-                            }
-                        }
-                        .accessibilityLabel("Agent discovery")
-                    }
                 }
                 .task {
                     // Shepherd's pi's catalog: its home's models.json names only custom providers.
@@ -131,6 +116,4 @@ struct PiSettings: View {
         guard !settings.childModel.isEmpty, !modelOptions.contains(settings.childModel) else { return modelOptions }
         return (modelOptions + [settings.childModel]).sorted()
     }
-
-    private static let scopes: [(String, String)] = [("both", "User + project"), ("user", "User"), ("project", "Project"), ("bundled", "Bundled only")]
 }

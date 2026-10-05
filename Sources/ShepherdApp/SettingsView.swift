@@ -64,7 +64,10 @@ struct SettingsView: View {
 
             Button {
                 if vm.projectCookies.pending != nil { vm.projectCookies.pending = nil }
-                else if !vm.projectCookies.clearing { vm.showSettings = false }
+                else if !vm.projectCookies.clearing {
+                    if vm.settingsSection == .subagents { vm.subagentDefinitions.leave { vm.showSettings = false } }
+                    else { vm.showSettings = false }
+                }
             } label: {
                 HStack(spacing: NW.Space.m) {
                     NWGlyph.Settings.back.image.frame(width: AppLayout.settingsBackGlyphWidth)
@@ -93,11 +96,11 @@ struct SettingsView: View {
                         if section.isSubpage {
                             NWSettingsNavSubRow(section.title, selected: vm.settingsSection == section,
                                                 attention: section == .piSignIn && vm.piSignInNeedsAttention) {
-                                vm.settingsSection = section
+                                navigate(to: section)
                             }
                         } else {
                             NWSettingsNavRow(section.title, glyph: section.artwork, selected: vm.settingsSection == section) {
-                                vm.settingsSection = section
+                                navigate(to: section)
                             }
                         }
                         if !query.isEmpty {
@@ -105,7 +108,7 @@ struct SettingsView: View {
                                 SettingsSearchHit(title: item, section: section.title) {
                                     // A server found by name opens with its row open.
                                     vm.mcpOpenServer = section == .mcp && vm.mcp.entry(item) != nil ? item : nil
-                                    vm.settingsSection = section
+                                    navigate(to: section)
                                 }
                             }
                         }
@@ -131,10 +134,17 @@ struct SettingsView: View {
                 .padding(.horizontal, NWSettingsNavMetrics.sidePadding + NWSettingsNavMetrics.rowPadding)
                 .padding(.bottom, NW.Space.l)
         }
-        .disabled(vm.settingsSection == .projects && (vm.projectCookies.pending != nil || vm.projectCookies.clearing))
-        .accessibilityHidden(vm.settingsSection == .projects && vm.projectCookies.pending != nil)
+        .disabled((vm.settingsSection == .projects && (vm.projectCookies.pending != nil || vm.projectCookies.clearing)) ||
+                  (vm.settingsSection == .subagents && ((vm.subagentDefinitions.busy && vm.subagentDefinitions.editing) || vm.subagentDefinitions.confirmation != nil)))
+        .accessibilityHidden((vm.settingsSection == .projects && vm.projectCookies.pending != nil) ||
+                             (vm.settingsSection == .subagents && vm.subagentDefinitions.confirmation != nil))
         .frame(width: AppLayout.settingsNavWidth - NWSettingsNavMetrics.borderWidth)
         .background(Color.nw.bgBase.ignoresSafeArea())
+    }
+
+    private func navigate(to section: SettingsSection) {
+        if vm.settingsSection == .subagents { vm.subagentDefinitions.leave { vm.settingsSection = section } }
+        else { vm.settingsSection = section }
     }
 
     /// A page's hits: its rows' titles, and for MCP servers its servers by name.
@@ -148,6 +158,7 @@ struct SettingsView: View {
         guard let first = sections.first, !sections.contains(vm.settingsSection) else { return }
         var instant = Transaction()
         instant.disablesAnimations = true
+        if vm.settingsSection == .subagents && vm.subagentDefinitions.dirty { return }
         withTransaction(instant) { vm.settingsSection = first }
     }
 
@@ -168,7 +179,7 @@ struct SettingsView: View {
         case .appearance: AppearanceSettings(vm: vm)
         case .terminal: TerminalSettings(vm: vm)
         case .agents: AgentSettings(pi: vm.server.pi, settings: vm.settings)
-        case .subagents: PiSettings(pi: vm.server.pi, settings: vm.settings, subagentsOnly: true)
+        case .subagents: SubagentsSettings(model: vm.subagentDefinitions)
         case .projects: ProjectsSettings(vm: vm, model: vm.projects)
         case .pi: PiSettings(pi: vm.server.pi, settings: vm.settings)
         case .piSignIn: PiSignInSettings(yourPi: vm.yourPi, auth: vm.piAuth)
@@ -294,9 +305,9 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .agents: ["Default model", "Default thinking level", "Speed for new threads",
                        "When a turn ends, send the queue", "Compact at", "Trim old tool output from the model’s context", "Defer rarely used tools", "Codemode"]
         case .worktrees: ["Base branch", "Fetch before creating", "Commit remaining work", "Generate PR descriptions", "Delete local branch", "Merge PR automatically"]
-        case .subagents: ["Native subagents", "Subagent display", "Concurrency", "Model", "Thinking", "Context", "Agent discovery"]
+        case .subagents: ["Filter subagents", "New subagent", "Restore defaults", "Show in Finder"]
         case .projects: ["Filter projects", "All hosts", "Add project…", "Instructions", "Pi settings", "Skills", "Extensions", "MCP servers"]
-        case .pi: ["Shepherd's pi", "Name agents automatically", "Terminals and agent tools", "Agent-to-agent messages", "Diff review tool", "MCP servers", "Browser tools"]
+        case .pi: ["Shepherd's pi", "Name agents automatically", "Terminals and agent tools", "Agent-to-agent messages", "Diff review tool", "MCP servers", "Browser tools", "Native subagents", "Subagent display", "Concurrency", "Model", "Thinking", "Context"]
         case .piSignIn: ["Re-import from your pi", "Subscriptions", "Anthropic", "OpenAI Codex", "GitHub Copilot", "xAI", "Kimi", "Radius",
                          "API keys", "Add an API key", "CLIProxyAPI", "Custom providers"]
         case .piFromYourPi: ["Source", "Last brought over", "Re-import all", "Logins", "Custom providers", "Default model", "Trusted folders",
@@ -331,7 +342,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                        "Defer rarely used tools": ["tool search", "tool_search", "deferred", "tokens"],
                        "Codemode": ["javascript", "script", "batch", "tools", "project"]]
         case .worktrees: ["Base branch": ["git", "origin"], "Merge PR automatically": ["github", "pull request"]]
-        case .subagents: ["Native subagents": ["children", "workflows", "helpers"], "Agent discovery": ["profiles", "project trust"]]
+        case .subagents: ["New subagent": ["children", "helpers", "profiles", "agents", "Markdown"], "Restore defaults": ["scout", "reviewer", "planner", "worker"]]
         case .projects: ["Filter projects": ["folders", "directory", "project settings"], "Instructions": ["AGENTS.md", "APPEND_SYSTEM.md"], "Pi settings": [".pi", "settings.json"]]
         case .pi: ["Shepherd's pi": ["version", "engine", "home", "folder"],
                    "Agent-to-agent messages": ["agent_send", "agent_spawn", "message", "steer", "peer", "threads", "approve", "allow",
