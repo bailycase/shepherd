@@ -275,10 +275,10 @@ test("managed CLIProxyAPI reaches native starts, resumes and workflow children w
       for (const name of ["SHEPHERD_AGENT_ID", "SHEPHERD_SOCKET", "SHEPHERD_NATIVE_CHILDREN", "SHEPHERD_EXT_CHILDREN"])
         if (process.env[name]) throw Error("parent control leaked: " + name);
     }`);
-    fs.mkdirSync(path.join(dir, ".pi", "agents"), { recursive: true });
-    fs.writeFileSync(path.join(dir, ".pi", "agents", "managed.md"),
+    fs.mkdirSync(path.join(process.env.PI_CODING_AGENT_DIR, "agents"), { recursive: true });
+    fs.writeFileSync(path.join(process.env.PI_CODING_AGENT_DIR, "agents", "managed.md"),
       `---\nname: managed\ndescription: managed child\ntools: read\nextensions: ${guard}\n---\nRead only.\n`);
-    fs.mkdirSync(path.join(dir, ".pi", "extensions"));
+    fs.mkdirSync(path.join(dir, ".pi", "extensions"), { recursive: true });
     fs.writeFileSync(path.join(dir, ".pi", "extensions", "poison.ts"), 'throw Error("ambient project extension loaded")');
     h = await harness(dir);
     h.ctx.model = { provider: "cliproxyapi", id: "managed-fixture" };
@@ -326,6 +326,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     baseUrl: `http://127.0.0.1:${server.address().port}/v1`, api: "openai-completions", apiKey: "local-fixture-not-secret",
     models: [{ id: "fixture", name: "fixture", reasoning: false, input: ["text"], contextWindow: 64000, maxTokens: 1024, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }],
   } } }));
+  process.env.SHEPHERD_CHILD_CONCURRENCY = "4"; // Exercise the default cap, not the parent agent's launch setting.
   // User extensions are inherited through Pi's filters; project extensions stay isolated.
   fs.mkdirSync(path.join(dir, ".pi", "extensions"), { recursive: true });
   fs.writeFileSync(path.join(dir, ".pi", "extensions", "poison.ts"), `throw new Error("project discovery escaped");`);
@@ -641,7 +642,8 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     assert.equal((await childCommand({ runID: cancelPaused.id, action: "cancel" })).error, undefined);
     assert.equal((await h.call("result", { id: cancelPaused.id })).state, "stopped");
 
-    const busy = await Promise.all(Array.from({ length: 4 }, (_, i) => h.call("start", { task: `SHELL:sleep 30 >/dev/null 2>&1 & echo $! > '${dir}/busy-${i}'`, role: "worker" })));
+    // Keep each fixture child executing through the capacity rejection checks.
+    const busy = await Promise.all(Array.from({ length: 4 }, (_, i) => h.call("start", { task: `SHELL:sleep 30 >/dev/null 2>&1 & echo $! > '${dir}/busy-${i}'; wait`, role: "worker" })));
     await until(() => fs.existsSync(path.join(dir, "busy-3")));
     await assert.rejects(h.call("start", { task: "over capacity" }), /Four children/);
     await assert.rejects(fleet.runtime.send(ask.id, "cap must reject", "steer"), /Four children are already active; wait or cancel first/);
@@ -758,8 +760,8 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
       assert(live(chatChild), "the parent can answer a new user while its child is still running");
       assert(requests.some((r) => JSON.stringify(r.messages.at(-1)).includes("USER_CHAT_WHILE_CHILD_RUNS")));
     } finally { actual.stdin.end(); await until(() => actual.exitCode !== null || actual.signalCode !== null).catch(() => actual.kill("SIGKILL")); }
-    fs.mkdirSync(path.join(dir, ".pi", "agents"), { recursive: true });
-    const profilePath = path.join(dir, ".pi", "agents", "minimal.md");
+    fs.mkdirSync(path.join(process.env.PI_CODING_AGENT_DIR, "agents"), { recursive: true });
+    const profilePath = path.join(process.env.PI_CODING_AGENT_DIR, "agents", "minimal.md");
     const explicitExtension = path.join(dir, "explicit-extension.ts");
     fs.writeFileSync(explicitExtension, "export default function() {}\n");
     fs.writeFileSync(profilePath, `---\nname: minimal\ndescription: minimal profile\nmodel: inherit\nextensions: ${explicitExtension}\n---\nPROFILE_MARKER\n`);

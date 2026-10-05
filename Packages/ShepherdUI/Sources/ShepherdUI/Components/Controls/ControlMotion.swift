@@ -4,7 +4,7 @@ extension View {
     /// A control's disabled look, 40% opacity, fading on the hover motion. Every `.disabled`
     /// flip in the app reaches a control through here (Send, Commit, Retry, Fork…). Only the
     /// opacity animates, so a label that changes along with it still lands at once.
-    func nwEnabledOpacity(_ enabled: Bool) -> some View {
+    public func nwEnabledOpacity(_ enabled: Bool) -> some View {
         modifier(NWEnabledOpacity(enabled: enabled))
     }
 

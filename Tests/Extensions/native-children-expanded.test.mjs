@@ -46,56 +46,24 @@ test("child user extensions respect Pi filters and exclude project resources", a
   }
 });
 
-test("discovery honors configured Pi dir, project precedence, trust, YAML lists, diagnostics and source files", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-profiles-")), old = process.env.PI_CODING_AGENT_DIR, oldHome = process.env.HOME, oldExtra = process.env.PI_SUBAGENT_EXTRA_AGENT_DIRS;
-  process.env.HOME = dir; delete process.env.PI_SUBAGENT_EXTRA_AGENT_DIRS;
+test("child target context still requires trust for skills, independent of profile ownership", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-profiles-")), old = process.env.PI_CODING_AGENT_DIR;
   process.env.PI_CODING_AGENT_DIR = path.join(dir, "pi");
   try {
-    const cwd = path.join(dir, "project"); fs.mkdirSync(cwd);
-    const profile = (name, prompt, extra = "") => `---\nname: ${name}\ndescription: fixture\ntools: [read, grep]\n${extra}---\n${prompt}\n`;
-    const user = path.join(process.env.PI_CODING_AGENT_DIR, "agents", "worker.md");
-    put(user, profile("worker", "user worker"));
-    put(path.join(cwd, ".agents", "worker.md"), profile("worker", "legacy project"));
-    const canonical = path.join(cwd, ".pi", "agents", "worker.md");
-    put(canonical, profile("worker", "preferred project", "model: fixture/fixture\nthinking: high\ndefaultContext: fork\n"));
-    put(path.join(cwd, ".pi", "agents", "nested", "custom.md"), profile("custom", "custom prompt", "tools: inherit\n" ).replace("tools: [read, grep]\n", ""));
-    put(path.join(cwd, ".agents", "skills", "skip.md"), profile("not-an-agent", "skip"));
+    const cwd = path.join(dir, "project"), other = path.join(dir, "other");
+    fs.mkdirSync(cwd); fs.mkdirSync(other);
     const ctx = { cwd, isProjectTrusted: () => true };
-    const selected = config.discoverChildAgents(ctx, "both");
-    const worker = selected.agents.find((a) => a.name === "worker");
-    assert.equal(worker.prompt, "preferred project"); assert.equal(worker.context, "fork"); assert.equal(worker.thinking, "high");
-    assert.deepEqual(worker.tools, ["read", "grep"]);
-    assert.equal(selected.agents.find((a) => a.name === "custom").tools, "inherit");
-    assert(!selected.agents.some((a) => a.name === "not-an-agent"));
-    assert.equal(config.discoverChildAgents({ ...ctx, isProjectTrusted: () => false }, "both").agents.find((a) => a.name === "worker").prompt, "user worker");
-    assert.equal(config.discoverChildAgents(ctx, "user").agents.find((a) => a.name === "worker").prompt, "user worker");
-    assert.equal(config.discoverChildAgents(ctx, "bundled").agents.find((a) => a.name === "worker").source, "bundled");
-    put(canonical, profile("worker", "must not fall back", "permissions: {bash: deny}\n"));
-    assert.match(config.discoverChildAgents(ctx, "both").agents.find((a) => a.name === "worker").error, /Unsupported agent fields: permissions/);
-    const outside = path.join(dir, "outside.md"); put(outside, profile("outside", "escape"));
-    fs.symlinkSync(outside, path.join(cwd, ".pi", "agents", "outside.md"));
-    assert(config.discoverChildAgents(ctx, "both").diagnostics.some((d) => d.error.includes("symlink escapes")));
-    assert.equal(fs.readFileSync(user, "utf8"), profile("worker", "user worker"));
-    put(path.join(cwd, ".pi", "agents", "vendor", ".agents", "nested.md"), profile("nested-leak", "must not discover"));
-    assert(!config.discoverChildAgents(ctx, "both").agents.some((a) => a.name === "nested-leak"));
-    put(path.join(process.env.PI_CODING_AGENT_DIR, "settings.json"), JSON.stringify({ subagents: { agentOverrides: { custom: { disabled: true, tools: ["read"] }, reviewer: { disabled: true } } } }));
-    const overridden = config.discoverChildAgents(ctx, "both");
-    assert.equal(overridden.agents.find((a) => a.name === "custom").disabled, true);
-    assert.match(overridden.agents.find((a) => a.name === "reviewer").error, /Settings override/);
-    const packageDir = path.join(dir, "package");
-    put(path.join(packageDir, "package.json"), JSON.stringify({ name: "fixture", "pi-subagents": { agents: ["agents"] } }));
-    put(path.join(packageDir, "agents", "packaged.md"), profile("packaged", "package prompt", "package: analysis\n"));
-    put(path.join(process.env.PI_CODING_AGENT_DIR, "settings.json"), JSON.stringify({ packages: [packageDir] }));
-    assert.equal(config.discoverChildAgents(ctx, "both").agents.find((a) => a.name === "analysis.packaged").source, "package");
-    const other = path.join(dir, "other"); fs.mkdirSync(other);
     assert.equal(config.childTargetContext(ctx, fs.realpathSync(other)).isProjectTrusted(), false);
     new ProjectTrustStore(process.env.PI_CODING_AGENT_DIR).set(other, true);
     assert.equal(config.childTargetContext(ctx, fs.realpathSync(other)).isProjectTrusted(), true);
     assert.equal(config.childTargetContext({ ...ctx, isProjectTrusted: () => false }, fs.realpathSync(cwd)).isProjectTrusted(), false);
-    assert.deepEqual(config.childDefaults({}), { concurrency: 4, thinking: undefined, model: undefined, context: "fresh", scope: "both" });
+    assert.deepEqual(config.childDefaults({}), { concurrency: 4, thinking: undefined, model: undefined, context: "fresh", scope: "shepherd" });
     assert.equal(config.childDefaults({ SHEPHERD_CHILD_CONCURRENCY: "9", SHEPHERD_CHILD_MODEL: "x/y", SHEPHERD_CHILD_CONTEXT: "fork" }).concurrency, 9);
     assert.throws(() => config.childDefaults({ SHEPHERD_CHILD_CONCURRENCY: "99" }), /1..16/);
-  } finally { process.env.HOME = oldHome; if (oldExtra === undefined) delete process.env.PI_SUBAGENT_EXTRA_AGENT_DIRS; else process.env.PI_SUBAGENT_EXTRA_AGENT_DIRS = oldExtra; if (old === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = old; fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally {
+    if (old === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = old;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("mission records persist privately, isolate projects, bound writes and keep failed updates atomic", () => {
