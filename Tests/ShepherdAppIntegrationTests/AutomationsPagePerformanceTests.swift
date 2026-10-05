@@ -17,9 +17,9 @@ struct AutomationsPagePerformanceTests {
     private static let size = CGSize(width: 1440 - AppLayout.sidebarDefaultWidth, height: 800)
 
     /// How many table rows fit under the header and the column labels (a row is at least a
-    /// switch tall plus its padding).
+    /// switch's minimum hit area tall plus its padding).
     private static var rowsOnScreen: Int {
-        let row = NWAutomationMetrics.switchSize.height + 2 * NWPageMetrics.rowVertical
+        let row = max(NWAutomationMetrics.switchSize.height, NW.Height.controlS) + 2 * NWPageMetrics.rowVertical
         return Int((size.height - NWPageMetrics.headerHeight) / row) + 1
     }
 
