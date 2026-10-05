@@ -63,8 +63,9 @@ enum MCPCommandLine {
     }
 
     static func join(_ words: [String]) -> String {
-        words.filter { !$0.isEmpty }.map { word in
-            word.contains(where: { " \"'\\$".contains($0) }) ? "'" + word.replacingOccurrences(of: "'", with: "'\\''") + "'" : word
+        words.map { word in
+            word.isEmpty || word.contains(where: { $0.isWhitespace || "\"'\\$".contains($0) })
+                ? "'" + word.replacingOccurrences(of: "'", with: "'\\''") + "'" : word
         }.joined(separator: " ")
     }
 

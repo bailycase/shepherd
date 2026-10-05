@@ -607,13 +607,15 @@ struct NativeThreadStoreTests {
 
     // MARK: Sending
 
-    @Test func aRejectedSendKeepsTheDraftAndShowsWhy() async throws {
+    @Test(arguments: ["busy", "model_unavailable"])
+    func aRejectedSendKeepsTheDraftAndShowsWhy(code: String) async throws {
         let (store, host, task) = await started()
         defer { task.cancel() }
-        host.action = { _ in .failure(code: "busy", message: "not yet") }
+        host.action = { _ in .failure(code: code, message: "not yet") }
         store.draft = "do the thing"
         await store.send()
         #expect(store.draft == "do the thing" && store.pending.isEmpty && store.notice == "not yet")
+        #expect(store.modelUnavailable == (code == "model_unavailable"))
         guard case .send(let session, let generation, _, let text, let delivery, let images, _, _, _) = try #require(host.actions.first) else {
             Issue.record("expected a send"); return
         }

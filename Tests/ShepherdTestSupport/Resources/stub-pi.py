@@ -162,6 +162,7 @@ sets the same.
 Every stdin line is appended to $STUB_PI_LOG when set, so tests can assert
 on what the client actually wrote.
 """
+import hashlib
 import json
 import os
 import re
@@ -1034,6 +1035,7 @@ stale_history = None
 held_history_request = None
 fail_switched_history = False
 
+blocked_model_inputs = 0
 for raw in sys.stdin.buffer:
     line = raw.rstrip(b"\n").rstrip(b"\r")
     if not line:
@@ -1152,6 +1154,18 @@ for raw in sys.stdin.buffer:
             emit({"type": "agent_settled"})
     elif t == "prompt":
         message = cmd.get("message", "")
+        if "blocked-model" in message:
+            blocked_model_inputs += 1
+            if message == "blocked-model-once" and blocked_model_inputs > 1:
+                respond(cmd, t, data={"disposition": "handled"})
+                continue
+            payload = json.dumps({"version": 1, "promptSHA256": hashlib.sha256(message.encode()).hexdigest(), "modelId": "saved-model"})
+            emit({"type": "extension_ui_request", "id": "blocked", "method": "setWidget",
+                  "widgetKey": "shepherd.inputBlocked", "widgetLines": [payload]})
+            emit({"type": "extension_ui_request", "id": "notice", "method": "notify",
+                  "message": "This conversation's CLIProxyAPI model is unavailable.", "notifyType": "error"})
+            respond(cmd, t, data={"disposition": "handled"})
+            continue
         if message == "hang":
             continue
         if message == "die":

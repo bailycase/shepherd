@@ -12,7 +12,15 @@ An unavailable host keeps its known rows, but cannot accept edits or new project
 
 Open a project to edit its existing files, or create the standard instruction, pi settings or MCP
 files when they are missing. The categories are Instructions, Pi settings, Skills, Extensions
-and MCP servers. The editor uses the existing Instructions editor. Extensions also includes
+and MCP servers. Text files use the existing Instructions editor. MCP uses the same server
+cards and add/edit forms as Settings > MCP servers, with file tabs for `.pi/mcp.json` and
+`.mcp.json`. Changes save through the selected host's file API, with conflict checks. Native
+project MCP uses `enabled`, `exposure`, `timeout` and `oauth`; shared `.mcp.json` uses `disabled`
+and keeps tools searchable. Unknown fields and other top-level sections stay intact.
+Project forms keep credentials and environment references in the project file, never the
+local global Keychain. They neither connect to servers nor report global runtime status as
+project status. Invalid files show an error and cannot be replaced by form edits. Open in editor
+remains available for repair and unsupported advanced fields. Extensions also includes
 `.pi/settings.json`, where pi's extension and package paths live. Saving does not execute a
 skill, extension or MCP server, change project trust, or restart an agent. Running agents must
 restart before they use the changes.
