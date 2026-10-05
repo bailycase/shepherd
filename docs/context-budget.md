@@ -119,6 +119,7 @@ Of an ordinary thread's tool definitions, 4.4k are kept and 4.9k deferred.
 | Tools | Tokens | Thread | Automation | Design | Why |
 | --- | ---: | :-: | :-: | :-: | --- |
 | `read` … `write` (4) | 698 | keep | keep | keep | pi's own: what an agent does with a repository. |
+| `codemode` | 269 | keep | keep | keep | Pi's native script executor, hosted by `shepherd-status.ts` while Codemode is on (the default). Its guidance brings the total first-request addition to 875 tokens (Native codemode). A native subagent does not load the status extension. |
 | `terminal_list` … `terminal_close` (6) | 592 | keep | keep | · | The thread's terminal tabs (⌘J) are how an agent runs a dev server or a watcher; six small tools. |
 | `agent_list` … `agent_spawn` (7) | 1,363 | defer | · | · | Reaching other threads is something the user asks for, and each description says so first (agent-to-agent messages): 1.4k tokens in every thread for a rare use. |
 | `agent_send` | 331 | defer | keep | · | The same, in a thread. An automation's run reports completion to the thread that made it with it, the only agent tool a run gets. |
@@ -145,6 +146,24 @@ app never does. Missions are planned (docs/design/missions.md), nothing draws a 
 spent about 470 tokens a request on a tool and two parameters it could not use for anything a user
 sees. The tool descriptions drop their mission sentences, and a run writes no mission record. The
 code stays, with its tests, which set the variable.
+
+## Native codemode
+
+The default-on measurement uses the hosted native factory. With the same pinned Pi and fixtures,
+it adds 875 estimated tokens to the first request, using characters / 4: 11,517 off versus
+12,392 on including project instructions. The guarded total excluding the project's instructions
+is 7,826 tokens. There are 31 initial tools rather than 30. `scripts/context-budget.json` records
+this default; the existing margins are unchanged. This measures prompt cost, not any later savings
+from filtering tool output in a script.
+
+Settings ▸ Agents ▸ Context ▸ Codemode defaults on. Pi's native tool can discover and call tools in
+a JavaScript script, then return selected results instead of every intermediate result. Direct
+calls and Pi's native tool search remain available; tool deferral is independent. The project
+settings editor offers Use global default, On and Off. Changes apply when the agent starts or restarts.
+
+Shepherd uses the native factory with direct model APIs disabled, a five-minute deadline and a
+128-tool-call limit. This does not change `shepherd_workflow` or implicit child tool allowlists.
+[Implementation and settings behavior](pi-engine.md).
 
 ## Deferred tools
 
@@ -396,7 +415,7 @@ grow by 5% or 60 tokens, the total by 2% or 150 tokens, and past that the check 
 grew and fails until the file is updated. That is the moment to say in the pull request what the
 tokens buy, or to defer or shorten the tool or text instead. A new pi gets 25% room on pi's own
 rows and none on Shepherd's. The project's own `AGENTS.md` is not guarded: it has a line cap
-(`Tests/Release/test_agent_docs.py`). The ceilings are the deferred set's (7,012 for the thread, from
+(`Tests/Release/test_agent_docs.py`). The ceilings are the default-on codemode deferred set's (7,826 for the thread, from
 12,524): the deferred families have no row, and a section the file does not list may hold 60 tokens at most, so
 a deferred tool that is sent again fails the check; `context-budget.test.mjs` fails it too, from the
 registry (a deferred tool must be registered and not sent, and a kept one sent).

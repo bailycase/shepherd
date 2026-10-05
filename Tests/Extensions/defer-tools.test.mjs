@@ -306,6 +306,7 @@ function fakePi(registered, { active = [] } = {}) {
   const handlers = {};
   const state = { active: [...active], sets: 0 };
   const pi = {
+    getSettings: () => ({}),
     on: (event, handler) => { (handlers[event] ??= []).push(handler); },
     registerCommand() {},
     getAllTools: () => registered,

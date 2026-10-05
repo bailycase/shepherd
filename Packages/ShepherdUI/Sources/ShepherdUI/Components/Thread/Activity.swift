@@ -433,11 +433,17 @@ private struct NWActivityCallRowView<Menu: View>: View {
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                     if row.moreLines > 0 {
-                        Button("… \(row.moreLines) more line\(row.moreLines == 1 ? "" : "s")") { onShowAll(row.id) }
-                            .buttonStyle(.nwLink(font: .nwMono(11)))
+                        Button { onShowAll(row.id) } label: {
+                            Text("… \(row.moreLines) more line\(row.moreLines == 1 ? "" : "s")")
+                                .frame(minHeight: NWThreadMetrics.callRowHeight, alignment: .leading)
+                        }
+                        .buttonStyle(.nwLink(font: .nwMono(11)))
                     } else if row.truncated {
-                        Button("Output truncated · open") { onShowAll(row.id) }
-                            .buttonStyle(.nwLink(font: .nwMono(11)))
+                        Button { onShowAll(row.id) } label: {
+                            Text("Output truncated · open")
+                                .frame(minHeight: NWThreadMetrics.callRowHeight, alignment: .leading)
+                        }
+                        .buttonStyle(.nwLink(font: .nwMono(11)))
                     }
                 }
                 .padding(.vertical, NW.Space.m)

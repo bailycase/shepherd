@@ -55,7 +55,7 @@ struct AgentSettings: View {
                                       options: [(NativeQueueMode.oneAtATime, "One per turn"), (.all, "All at once")])
                 }
             }
-            SettingsGroup(title: "Context") {
+            SettingsGroup(title: "Context", footnote: "Applies when agents start or restart. A running agent keeps its current settings.") {
                 SettingsRow(title: "Compact at",
                             subtitle: "How full an agent lets its context get before it compacts on its own, as a share of the model’s window. "
                                 + "pi’s default leaves 16k tokens free, about 94% of a 272k window. New agents follow a change; running ones at their next launch.") {
@@ -74,6 +74,10 @@ struct AgentSettings: View {
                                 + "with a tool search, which leaves more of the window to the work. Off sends them all. "
                                 + "New agents follow a change; running ones at their next launch.") {
                     SettingsSwitch(label: "Defer rarely used tools", isOn: $settings.deferTools)
+                }
+                SettingsRow(title: "Codemode",
+                            subtitle: "Lets the agent run JavaScript to batch tool calls and filter results, up to 128 calls and five minutes per script. Direct tool calls stay available. Scripts cannot call classifier or image models directly. Projects can override this default.") {
+                    SettingsSwitch(label: "Codemode", isOn: $settings.codemode)
                 }
             }
             SettingsGroup(title: "Goal checks",

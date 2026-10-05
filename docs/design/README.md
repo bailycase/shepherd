@@ -78,7 +78,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | SubagentsDone | [subagents](subagents.md), [ios-ipad-pages](ios-ipad-pages.md) | Subagents; Side pane › Subagent inspector | Built |
 | SubagentsQueue | [subagents](subagents.md), [queue](queue.md) | Subagents (One card with Up next); Up next (the queue) | Partial |
 | SettingsAppearance | [settings](settings.md), [foundations](foundations.md) | Settings › Appearance; Density and row settings | Built |
-| SettingsAgents | [settings](settings.md) | Settings › Agents | Built |
+| SettingsAgents | [settings](settings.md), [codemode-settings](codemode-settings.md) | Settings › Agents | Built |
 | SettingsWorktrees | [settings](settings.md) | Settings › Worktrees | Built |
 | SettingsProjects | [settings-projects](settings-projects.md), [project-mcp](project-mcp.md) | Settings > Projects | Built |
 | ProjectInstructions | [project-instructions](project-instructions.md) | Settings > Projects > Instructions | Built |
