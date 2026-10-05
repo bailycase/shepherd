@@ -222,6 +222,13 @@ settings." The chord is read from `KeybindingsStore`, so a rebind never leaves t
     threads, and if we can just let the model tool search, that would be nice too with pi 1.0"); the switch,
     its place and its words are the agent's proposal for the user to settle (docs/design/departures.md).
 
+  - Codemode, a switch after Defer rarely used tools, default on. Text: "Lets the agent run JavaScript
+    to batch tool calls and filter results, up to 128 calls and five minutes per script. Direct tool
+    calls stay available. Scripts cannot call classifier or image models directly. Projects can
+    override this default." The Context footnote is "Applies when agents start or restart. A running
+    agent keeps its current settings." A host's Bundled extensions lists the same `codemode` switch.
+    Project overrides and the user's requirement are in [codemode-settings.md](codemode-settings.md).
+
 - **Goal checks:**
   - Allow cross-provider goal checks, off by default. Off uses the thread's exact model and
     provider. On may send conversation, tool output and written code to another provider,

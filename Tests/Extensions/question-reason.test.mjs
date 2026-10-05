@@ -38,6 +38,8 @@ function fakePi(tools) {
   return {
     handlers,
     commands,
+    getSettings: () => ({}),
+    getActiveTools: () => [],
     on(event, handler) { handlers.set(event, [...(handlers.get(event) ?? []), handler]); return () => {}; },
     registerCommand(name, options) { commands.set(name, options); },
     getAllTools: () => tools.map(({ name, parameters }) => ({ name, parameters })),

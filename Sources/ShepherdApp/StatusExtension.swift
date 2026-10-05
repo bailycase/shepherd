@@ -151,10 +151,10 @@ enum StatusExtension {
     static let extensionSource = #"""
         // Shepherd status extension: reports pi lifecycle status for one agent to the
         // Shepherd extension socket as newline-delimited JSON setAgentStatus messages.
-        // Inert unless SHEPHERD_AGENT_ID and SHEPHERD_SOCKET are set; every failure is
-        // swallowed so this extension can never break or slow the pi session.
+        // Inert unless SHEPHERD_AGENT_ID and SHEPHERD_SOCKET are set. Status reporting
+        // is best-effort; native codemode failures remain visible as normal tool errors.
         import * as net from "node:net";
-        import type { ExtensionAPI, ExtensionCommandContext, SessionEntry } from "@earendil-works/pi-coding-agent";
+        import { createCodemodeExtension, type ExtensionAPI, type ExtensionCommandContext, type SessionEntry } from "@earendil-works/pi-coding-agent";
 
         type Status = "working" | "blocked" | "idle" | "done";
 
@@ -181,11 +181,78 @@ enum StatusExtension {
         // (docs/context-budget.md). What keeps them reachable is here, since this extension is in every agent's launch.
         const SHEPHERD_NAMESPACE = /^shepherd_/;
 
+        export function boundedCodemodeSource(code: string): string {
+          const newline = code.indexOf("\n");
+          const first = (newline < 0 ? code : code.slice(0, newline)).trimStart();
+          const hasOptions = first.startsWith("// @options:");
+          const options = hasOptions ? JSON.parse(first.slice("// @options:".length)) : {};
+          if (!options || typeof options !== "object" || Array.isArray(options)) throw Error("Codemode options must be an object");
+          const timeout = options.timeout_ms ?? 300_000;
+          if (!Number.isSafeInteger(timeout) || timeout <= 0) throw Error("Codemode timeout_ms must be a positive integer");
+          options.timeout_ms = Math.min(timeout, 300_000);
+          const source = hasOptions ? (newline < 0 ? "" : code.slice(newline + 1)) : code;
+          return `// @options: ${JSON.stringify(options)}\n${source}`;
+        }
+
         export default function shepherdStatus(pi: ExtensionAPI) {
           const agentID = process.env.SHEPHERD_AGENT_ID ?? "";
           const socketPath = process.env.SHEPHERD_SOCKET ?? "";
           if (!agentID || !socketPath) return;
           const deferTools = process.env.SHEPHERD_DEFER_TOOLS === "1";
+          let codemodeEnabled = false;
+
+          // Use Pi's executor, loadout and discovery unchanged. Its standalone defaults have no
+          // deadline and allow calls to other providers, which are not part of Shepherd's tool toggle.
+          pi.on("session_start", () => {
+            const settings = pi.getSettings().codemode as { enabled?: unknown } | undefined;
+            codemodeEnabled = settings?.enabled === true;
+            if (!codemodeEnabled) {
+              // A hand-edited project may still load the bare built-in. Off wins for this host.
+              const active = pi.getActiveTools();
+              if (active.includes("codemode")) pi.setActiveTools(active.filter((name) => name !== "codemode"));
+              return;
+            }
+            createCodemodeExtension({ models: false, mode: "on" })({
+              ...pi,
+              registerTool(tool) {
+                pi.registerTool({
+                  ...tool,
+                  promptGuidelines: [...(tool.promptGuidelines ?? []), "Shepherd limits each script to 5 minutes and 128 tool calls. Direct classifier and image-model APIs are disabled."],
+                  async execute(id, input, signal, update, ctx) {
+                    let calls = 0, remaining = 32 * 1024;
+                    const outputs = new Map<string, { output: string; outputTruncated: boolean; startedAt: number; timestamp: number }>();
+                    // The context's tools are non-enumerable getters; spreading it loses them.
+                    const boundedContext = Object.create(ctx, { executeTool: { async value(...args: Parameters<typeof ctx.executeTool>) {
+                      if (++calls > 128) throw Error("Shepherd codemode limit reached: 128 tool calls per script");
+                      const startedAt = Date.now();
+                      const outcome = await ctx.executeTool(...args);
+                      // Pi retains call metadata but not output. Save bounded text in display-only details,
+                      // never model content. Images and other non-text blocks are not copied.
+                      let output = "", outputTruncated = false;
+                      let budget = Math.min(8 * 1024, remaining);
+                      for (const block of outcome.result.content) {
+                        if (block.type !== "text") { outputTruncated = true; continue; }
+                        const text = (output ? "\n" : "") + block.text;
+                        const bytes = Buffer.from(text.slice(0, budget + 1));
+                        const head = new TextDecoder().decode(bytes.subarray(0, budget), { stream: true });
+                        output += head;
+                        const used = Buffer.byteLength(head);
+                        budget -= used; remaining -= used;
+                        outputTruncated ||= head.length < text.length;
+                      }
+                      outputs.set(outcome.toolCall.id, { output, outputTruncated, startedAt, timestamp: Date.now() });
+                      return outcome;
+                    } } });
+                    const result = await tool.execute(id, { ...input, code: boundedCodemodeSource(input.code) }, signal, update, boundedContext);
+                    return { ...result, details: { ...result.details,
+                      calls: result.details.calls.map((call) => ({ ...call, ...outputs.get(call.id) })),
+                    } };
+                  },
+                });
+              },
+            });
+            pi.setActiveTools([...new Set([...pi.getActiveTools(), "codemode"])]);
+          });
 
           let socket: net.Socket | undefined;
           let connected = false;
@@ -456,6 +523,7 @@ enum StatusExtension {
           });
 
           pi.on("tool_call", (event) => {
+            if (event.toolName === "codemode" && !codemodeEnabled) return { block: true, reason: "Codemode is disabled for this project." };
             try {
               if (shortTools.has(event.toolName) && event.input && typeof event.input === "object") {
                 delete (event.input as Record<string, unknown>).short;

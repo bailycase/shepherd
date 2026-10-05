@@ -597,26 +597,20 @@ final class RPCThreadState {
             }) : [])
             // The ring moves once per reply, never per token.
             refreshStats()
-        case .toolExecutionStart(let id, let name, let args, let parent):
+        case .toolExecutionStart(let id, let name, let args, _):
             if Self.asksUser(name) {
                 askingCalls.removeAll { $0.id == id }
                 askingCalls.append((id, Self.shortReason(in: args)))
             }
-            // A call nested in another (a script calling tools) is part of its parent's row: it has
-            // no row of its own, and no line of its own in the thread.
-            guard parent == nil else { return }
             streamingCalls[id] = nil
             upsertTool(id: id, name: name, args: args, content: [], isError: nil, status: "running")
-        case .toolExecutionUpdate(let id, let name, let args, let partial, let parent):
-            guard parent == nil else { return }
+        case .toolExecutionUpdate(let id, let name, let args, let partial, _):
             upsertTool(id: id, name: name, args: args, content: partial?.content ?? [], isError: nil, status: "running")
-        case .toolExecutionEnd(let id, let name, let result, let isError, let parent):
+        case .toolExecutionEnd(let id, let name, let result, let isError, _):
             let stopped = isError && stopRequested
             askingCalls.removeAll { $0.id == id }
-            if parent == nil {
-                if stopped { stoppedCalls.insert(id) }
-                upsertTool(id: id, name: name, args: nil, content: result?.content ?? [], isError: isError, status: stopped ? "aborted" : "complete")
-            }
+            if stopped { stoppedCalls.insert(id) }
+            upsertTool(id: id, name: name, args: nil, content: result?.content ?? [], isError: isError, status: stopped ? "aborted" : "complete")
             onToolFinished?(name)
         case .queueUpdate(let steering, let followUp):
             piQueueChanged(steering: steering, followUp: followUp)
@@ -968,9 +962,16 @@ final class RPCThreadState {
                 if let time = entry.message.timestamp { callTimes[id] = time }
             }
         }
-        var end = entries.count
+        let projected = entries.flatMap { entry -> [NativeThreadMessage] in
+            let args = entry.message.role == "toolResult" ? entry.message.toolCallId.flatMap { arguments[$0] } : nil
+            var value = project(entryID: "c:\(entry.id)", message: entry.message, args: args)
+            if entry.message.role == "toolResult" { value.startedAt = entry.message.toolCallId.flatMap { callTimes[$0] } }
+            if fromUser.contains(entry.id) { value.origin = .user }
+            return [value] + nestedRows(entry.message, parentEntryID: value.entryID)
+        }
+        var end = projected.count
         if let beforeEntryID {
-            guard let index = entries.firstIndex(where: { "c:\($0.id)" == beforeEntryID }) else {
+            guard let index = projected.firstIndex(where: { $0.entryID == beforeEntryID }) else {
                 return .failure(code: "stale_cursor", message: "History changed. Refresh the recent page.")
             }
             end = index
@@ -980,11 +981,7 @@ final class RPCThreadState {
         // Reserve the envelope and cursor before admitting rows, like the parent history page.
         var pageBytes = bytes(NativeSubagentTranscript(runID: runID, messages: [], olderCursor: nil, earlierCount: end)) + 1024
         while pageStart > 0, page.count < pageSize {
-            let entry = entries[pageStart - 1]
-            let args = entry.message.role == "toolResult" ? entry.message.toolCallId.flatMap { arguments[$0] } : nil
-            var value = project(entryID: "c:\(entry.id)", message: entry.message, args: args)
-            if entry.message.role == "toolResult" { value.startedAt = entry.message.toolCallId.flatMap { callTimes[$0] } }
-            if fromUser.contains(entry.id) { value.origin = .user }
+            let value = projected[pageStart - 1]
             let nextBytes = bytes(value) + 1 + jsonStringBytes(value.entryID)
             guard pageBytes + nextBytes <= snapshotLimit else {
                 if page.isEmpty {
@@ -2059,18 +2056,47 @@ final class RPCThreadState {
             }
         }
         var seen: [String: Int] = [:]
-        return chronological(messages).enumerated().compactMap { index, message in
+        return chronological(messages).enumerated().flatMap { index, message -> [NativeThreadMessage] in
             // pi's structured system prompt rides in the message list; the thread never shows it.
-            if message.role == "system" { return nil }
-            if message.role == "custom" && message.display != true { return nil }
-            if message.role == "custom" && message.customType == "shepherd-child" { return nil }
+            if message.role == "system" { return [] }
+            if message.role == "custom" && message.display != true { return [] }
+            if message.role == "custom" && message.customType == "shepherd-child" { return [] }
             let args = message.role == "toolResult" ? message.toolCallId.flatMap { arguments[$0] } : nil
             let entryID = historyEntryID(message, index: index, seen: &seen)
             var value = project(entryID: entryID, message: message, args: args, sentReferences: sentReferences[entryID])
             if let id = message.toolCallId, message.role == "toolResult" { value.startedAt = callTimes[id] }
             adjust(&value, message)
             if let origin = value.origin { value.origin = clipped(origin) }
-            return value
+            return [value] + nestedRows(message, parentEntryID: entryID, adjust: adjust)
+        }
+    }
+
+    /// Native metadata keeps invocation order and arguments; our display-only details keep
+    /// bounded output. Missing output in an older session is not an empty successful result.
+    private static func nestedRows(_ message: RPCMessage, parentEntryID: String,
+                                   adjust: (inout NativeThreadMessage, RPCMessage) -> Void = { _, _ in }) -> [NativeThreadMessage] {
+        guard message.role == "toolResult", let nested = message.nestedCalls else { return [] }
+        let details = message.details?["calls"]?.arrayValue ?? []
+        let saved = Dictionary(details.prefix(256).compactMap { value -> (String, JSONValue)? in
+            value["id"]?.stringValue.map { ($0, value) }
+        }, uniquingKeysWith: { first, _ in first })
+        var seen: Set<String> = []
+        return nested.calls.compactMap { call in
+            guard !call.id.isEmpty, !call.name.isEmpty, call.id != message.toolCallId, seen.insert(call.id).inserted else { return nil }
+            let detail = saved[call.id]
+            let stopped = call.status == "unfinished" || detail?["status"]?.stringValue == "cancelled"
+            var text = detail?["output"]?.stringValue ?? call.error ?? "Pi did not save this nested call's output."
+            if detail?["outputTruncated"]?.boolValue == true {
+                text += "\nOutput excerpt limited to 8,192 characters per call and 32,768 per script. Remaining output was not saved."
+            }
+            if call.argumentsBytes != nil { text += "\nPi omitted this call's arguments because they exceeded its metadata limit." }
+            let raw = RPCMessage(role: "toolResult", content: text.isEmpty ? [] : [.text(text)], toolName: call.name,
+                                 toolCallId: call.id, isError: call.status == "error", stopReason: stopped ? "aborted" : "complete",
+                                 timestamp: detail?["timestamp"]?.doubleValue)
+            var row = project(entryID: "\(parentEntryID):nested:\(call.id)", message: raw, args: call.arguments)
+            row.startedAt = detail?["startedAt"]?.doubleValue
+            adjust(&row, raw)
+            return row
         }
     }
 
@@ -2210,6 +2236,9 @@ final class RPCThreadState {
             case .unknown:
                 break
             }
+        }
+        if message.nestedCalls?.complete == false {
+            result.blocks.append(NativeThreadBlock(kind: .text, text: clip("Pi's nested call log is incomplete; some calls or arguments were not saved.")))
         }
         // A stopped run's "Request was aborted" says nothing its `aborted` status does not.
         if let error = message.errorMessage, !error.isEmpty, message.stopReason != "aborted" {

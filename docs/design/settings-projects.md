@@ -51,6 +51,14 @@ revision 562, defines the detail screen and replaces the first implementation.
   light/dark and text scale 1.3. Press navigation, host segments, every row, Add project, detail
   category/file selection, editor selection, Open in editor, Refresh, Save and discard controls through accessibility.
 
+## Codemode override
+
+The user requested global codemode on by default and a per-project override. Before the Pi settings
+editor, a Tools group has a Codemode row with Use global default, On and Off. It edits
+`codemode.enabled` in the JSON draft. Save uses the existing conflict checks and host-owned file
+service. Invalid JSON disables the picker without replacing the draft. Start or restart the agent
+to apply the saved value. [Checklist and decisions](codemode-settings.md).
+
 ## Data and scope
 
 The project service retains previously observed directories independently of workspace deletion.

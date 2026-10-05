@@ -441,6 +441,29 @@ public struct RPCUsage: Codable, Hashable, Sendable {
     }
 }
 
+/// Pi's bounded persisted log. Outputs are separate tool-result details, not native metadata.
+public struct RPCNestedCalls: Codable, Hashable, Sendable {
+    public var calls: [RPCNestedCall]
+    public var complete: Bool
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let values = (try? c.decode([JSONValue].self, forKey: .calls)) ?? []
+        calls = values.prefix(256).compactMap { try? $0.decode(RPCNestedCall.self) }
+        complete = (try? c.decode(Bool.self, forKey: .complete)) == true && calls.count == values.count
+    }
+}
+
+public struct RPCNestedCall: Codable, Hashable, Sendable {
+    public var id: String
+    public var name: String
+    public var status: String
+    public var arguments: JSONValue?
+    public var argumentsBytes: Int?
+    public var durationMs: Double?
+    public var error: String?
+}
+
 /// Lenient `AgentMessage`: user, assistant, toolResult, bashExecution, or
 /// anything pi adds later. A string `content` (user messages) decodes as one
 /// text block.
@@ -457,8 +480,9 @@ public struct RPCMessage: Codable, Hashable, Sendable {
     /// `custom` messages: extensions mark model-only payloads `display: false`.
     public var customType: String?
     public var display: Bool?
-    /// Display-only goal diagnostics. pi omits custom-message details from model context.
+    /// Display-only diagnostics and nested tool output. Pi omits details from model context.
     public var details: JSONValue?
+    public var nestedCalls: RPCNestedCalls?
     /// `compactionSummary` and `branchSummary` messages: what pi summarized, and (compaction)
     /// the context it replaced.
     public var summary: String?
@@ -480,7 +504,8 @@ public struct RPCMessage: Codable, Hashable, Sendable {
         isError: Bool? = nil, stopReason: String? = nil, errorMessage: String? = nil, timestamp: Double? = nil,
         customType: String? = nil, display: Bool? = nil, summary: String? = nil, tokensBefore: Double? = nil,
         sections: [String: String?]? = nil, toolsAdded: [JSONValue]? = nil, toolsRemoved: [JSONValue]? = nil,
-        provider: String? = nil, model: String? = nil, details: JSONValue? = nil, usage: RPCUsage? = nil
+        provider: String? = nil, model: String? = nil, details: JSONValue? = nil, usage: RPCUsage? = nil,
+        nestedCalls: RPCNestedCalls? = nil
     ) {
         self.role = role
         self.content = content
@@ -493,6 +518,7 @@ public struct RPCMessage: Codable, Hashable, Sendable {
         self.customType = customType
         self.display = display
         self.details = details
+        self.nestedCalls = nestedCalls
         self.summary = summary
         self.tokensBefore = tokensBefore
         self.sections = sections
@@ -505,7 +531,7 @@ public struct RPCMessage: Codable, Hashable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case role, content, toolName, toolCallId, isError, stopReason, errorMessage, timestamp, customType, display
-        case summary, tokensBefore, sections, toolsAdded, toolsRemoved, provider, model, usage, details
+        case summary, tokensBefore, sections, toolsAdded, toolsRemoved, provider, model, usage, details, nestedCalls
     }
 
     public init(from decoder: Decoder) throws {
@@ -531,6 +557,9 @@ public struct RPCMessage: Codable, Hashable, Sendable {
         }
         // Only the roles that carry them: a long history's decode stays as it was.
         switch role {
+        case "toolResult":
+            nestedCalls = try? c.decodeIfPresent(RPCNestedCalls.self, forKey: .nestedCalls)
+            if nestedCalls != nil { details = try? c.decodeIfPresent(JSONValue.self, forKey: .details) }
         case "compactionSummary", "branchSummary":
             summary = try? c.decodeIfPresent(String.self, forKey: .summary)
             tokensBefore = try? c.decodeIfPresent(Double.self, forKey: .tokensBefore)

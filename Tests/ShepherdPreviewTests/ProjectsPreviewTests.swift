@@ -57,6 +57,29 @@ struct ProjectsPreviewTests {
         }
     }
 
+    @Test(arguments: ["inherit", "on", "off", "missing", "invalid", "long"])
+    func codemode(state: String) async throws {
+        let world = try await ProjectsPreviewWorld(detail: true)
+        defer { world.stop() }
+        let model = world.vm.projects
+        let project = try #require(model.rows.first { $0.project.name == "payments" && $0.host.id == "local" })
+        let settings = URL(fileURLWithPath: project.project.directory).appendingPathComponent(".pi/settings.json")
+        if state == "missing" { try FileManager.default.removeItem(at: settings) }
+        else if state == "invalid" { try "{ broken".write(to: settings, atomically: true, encoding: .utf8) }
+        else {
+            var value: [String: Any] = ["thinkingLevel": "high"]
+            if state == "long" { value["note"] = String(repeating: "Long project settings remain editable. ", count: 30) }
+            value = try PiCodemode.setting(state == "inherit" || state == "long" ? nil : state == "on", in: value)
+            try JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted]).write(to: settings)
+        }
+        await model.open(project)
+        await model.navigate(.category(.pi))
+        #expect((model.codemodeProblem != nil) == (state == "invalid"))
+        try await Preview.renderMatrix("projects-codemode-\(state)", size: CGSize(width: 1440, height: 1100)) {
+            SettingsView(vm: world.vm)
+        }
+    }
+
     @Test(arguments: ["narrow", "long"])
     func detailEdges(state: String) async throws {
         let world = try await ProjectsPreviewWorld(long: state == "long", detail: true)

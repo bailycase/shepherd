@@ -35,7 +35,8 @@ private struct NWSwitch: View {
                             .frame(width: 14, height: 14)
                             .padding(2)
                     }
-                    .contentShape(Capsule())
+                    .frame(minHeight: NW.Height.controlS)
+                    .contentShape(Rectangle())
                     // The knob slides and the fill turns lantern however the value changed
                     // (a click, Space, a reset, another window).
                     .nwComponentAnimation(.content, value: on)

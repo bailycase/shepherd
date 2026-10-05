@@ -37,7 +37,51 @@ final class ProjectsModel {
     var category: ProjectFile.Category = .instructions
     var showingBrowser = false
     var selectedFile: ProjectFile?
-    var draft = "" { didSet { tokenText = InstructionsText.sizeNote(draft) } }
+    var savedNotice: String {
+        if selectedFile?.path == ".pi/settings.json" {
+            return selectedFile?.exists == true
+                ? "Saved to the project folder. Start or restart the agent to apply Pi settings."
+                : "Save project settings, then start or restart the agent to apply them."
+        }
+        return "Saved to the project folder. It takes effect in new turns."
+    }
+    var draft = "" { didSet { tokenText = InstructionsText.sizeNote(draft); deriveCodemode() } }
+    enum CodemodeChoice: String { case inherit, on, off }
+    private(set) var codemodeChoice: CodemodeChoice = .inherit
+    private(set) var codemodeProblem: String?
+    var projectCodemode: CodemodeChoice {
+        get { codemodeChoice }
+        set {
+            guard fileLoaded, selectedFile?.path == ".pi/settings.json", selected?.unavailable == nil, !saving else { return }
+            do {
+                let settings = try codemodeSettings()
+                let enabled: Bool? = newValue == .inherit ? nil : newValue == .on
+                let updated = try PiCodemode.setting(enabled, in: settings)
+                let data = try JSONSerialization.data(withJSONObject: updated, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+                draft = String(decoding: data, as: UTF8.self) + "\n"
+            } catch { codemodeProblem = String(describing: error) }
+        }
+    }
+
+    private func codemodeSettings() throws -> [String: Any] {
+        if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, selectedFile?.exists == false { return [:] }
+        guard let settings = try JSONSerialization.jsonObject(with: Data(draft.utf8)) as? [String: Any] else {
+            throw ProjectFileError("invalid_json", "Pi settings must be a JSON object.")
+        }
+        return settings
+    }
+
+    private func deriveCodemode() {
+        guard selectedFile?.path == ".pi/settings.json" else { codemodeChoice = .inherit; codemodeProblem = nil; return }
+        do {
+            let settings = try codemodeSettings()
+            _ = try PiCodemode.setting(nil, in: settings)
+            codemodeChoice = PiCodemode.projectOverride(in: settings).map { $0 ? .on : .off } ?? .inherit
+            codemodeProblem = nil
+        } catch {
+            codemodeProblem = "Fix the JSON and codemode settings below before using this control."
+        }
+    }
     private(set) var tokenText = "empty"
     private(set) var modifiedAt: Double?
     private(set) var context = ProjectContext()
@@ -263,7 +307,7 @@ final class ProjectsModel {
             guard case .text(let value) = try await request(selected.host, .save(directory: selected.project.directory, file: file.path, text: text, expected: saved)) else { throw ProjectFileError("protocol", "Unexpected project save reply.") }
             guard token == generation else { saving = false; return }
             saved = value.text; selectedFile = value.file; modifiedAt = value.modifiedAt
-            notice = "Saved to the project folder. It takes effect in new turns."
+            notice = savedNotice
             await load(hosts, force: true)
             if case .context(let context) = try? await request(selected.host, .context(directory: selected.project.directory)), token == generation { self.context = context; deriveReadRows() }
             await compareHosts(token: token, text: value.text, file: file, selected: selected)
