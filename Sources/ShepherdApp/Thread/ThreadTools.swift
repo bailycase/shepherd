@@ -32,6 +32,8 @@ struct ActivityLineView: View, Equatable {
     let burst: NativeActivityBurst
     /// Opens the review pane at a file an edit or write touched.
     var review: ((String) -> Void)?
+    private let inputRows: [String: NWActivityCallRow]
+    private let inputTexts: [String: String]
     @State private var expanded: Bool
     @State private var expandedCalls: Set<String>
     @State private var sheet: CallSheet?
@@ -41,8 +43,37 @@ struct ActivityLineView: View, Equatable {
     init(burst: NativeActivityBurst, review: ((String) -> Void)? = nil, expanded: Bool = false, expandedCalls: Set<String> = []) {
         self.burst = burst
         self.review = review
+        var inputs: [String: NWActivityCallRow] = [:]
+        var texts: [String: String] = [:]
+        var open = expandedCalls
+        for call in burst.calls {
+            guard let arguments = call.arguments, !arguments.isEmpty else { continue }
+            var script = false
+            let text: String
+            if call.name == "codemode",
+               let data = arguments.data(using: .utf8),
+               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let code = object["code"] as? String {
+                script = true
+                text = code
+            } else {
+                text = arguments
+            }
+            guard !text.isEmpty else { continue }
+            let id = "\(call.id):input"
+            let lines = text.components(separatedBy: "\n")
+            inputs[id] = NWActivityCallRow(
+                id: id, label: script ? "script" : "input", detail: script ? "JavaScript" : call.name,
+                output: Array(lines.prefix(NativeActivityCall.outputHeadLines)),
+                moreLines: max(0, lines.count - NativeActivityCall.outputHeadLines),
+                accessibilityLabel: "\(call.name) \(script ? "script" : "arguments")")
+            texts[id] = text
+            if script { open.insert(id) }
+        }
+        inputRows = inputs
+        inputTexts = texts
         _expanded = State(initialValue: expanded)
-        _expandedCalls = State(initialValue: expandedCalls)
+        _expandedCalls = State(initialValue: open)
     }
 
     static func == (lhs: ActivityLineView, rhs: ActivityLineView) -> Bool {
@@ -71,7 +102,13 @@ struct ActivityLineView: View, Equatable {
                            accessibilityLabel: burst.accessibilityLabel,
                            action: burst.expandable ? toggle : nil)
             if expanded {
-                NWActivityCalls(burst.calls.map(row), onSelect: select, onShowAll: showOutput) { row in
+                NWActivityCalls(burst.calls.flatMap { call -> [NWActivityCallRow] in
+                    if var input = inputRows["\(call.id):input"] {
+                        input.isExpanded = expandedCalls.contains(input.id)
+                        return [input, row(call)]
+                    }
+                    return [row(call)]
+                }, onSelect: select, onShowAll: showOutput) { row in
                     if let call = burst.calls.first(where: { $0.id == row.id }) { menu(call) }
                 }
                 .padding(.vertical, NW.Space.xxs)
@@ -108,7 +145,14 @@ struct ActivityLineView: View, Equatable {
     /// A click on this line: the whole thread eases around the calls as they open, so the
     /// change animates as one transaction rather than from a container.
     private func toggle() {
-        withAnimation(NW.Motion.disclosure.animation(reduceMotion: reduceMotion)) { expanded.toggle() }
+        withAnimation(NW.Motion.disclosure.animation(reduceMotion: reduceMotion)) {
+            if !expanded {
+                for input in inputRows.values where input.label == "script" {
+                    expandedCalls.insert(input.id)
+                }
+            }
+            expanded.toggle()
+        }
     }
 
     private func row(_ call: NativeActivityCall) -> NWActivityCallRow {
@@ -121,6 +165,12 @@ struct ActivityLineView: View, Equatable {
     }
 
     private func select(_ id: String) {
+        if inputTexts[id] != nil {
+            withAnimation(NW.Motion.disclosure.animation(reduceMotion: reduceMotion)) {
+                if expandedCalls.remove(id) == nil { expandedCalls.insert(id) }
+            }
+            return
+        }
         guard let call = burst.calls.first(where: { $0.id == id }) else { return }
         if NSEvent.modifierFlags.contains(.option), let arguments = call.arguments {
             sheet = CallSheet(title: "\(call.name) · call", text: arguments, truncated: false)
@@ -136,6 +186,10 @@ struct ActivityLineView: View, Equatable {
     }
 
     private func showOutput(_ id: String) {
+        if let text = inputTexts[id], let input = inputRows[id] {
+            sheet = CallSheet(title: input.accessibilityLabel, text: text, truncated: false)
+            return
+        }
         guard let call = burst.calls.first(where: { $0.id == id }) else { return }
         sheet = CallSheet(title: "\(call.name) · \(call.detail)", text: call.output, truncated: call.truncated)
     }

@@ -30,7 +30,15 @@ struct CodemodePreviewTests {
         case "older": message.details = nil
         default: break
         }
-        let rows = RPCThreadState.projectHistory([message])
+        var history: [RPCMessage] = []
+        if state != "older" {
+            let code = state == "empty" ? "" : state == "long"
+                ? String(repeating: "console.log('A long script line that should remain readable when expanded.');\n", count: 30)
+                : "const result = await tools.read({ path: 'example.txt' });\ntext(result);"
+            history.append(RPCMessage(role: "assistant", content: [
+                .toolCall(id: "script", name: "codemode", arguments: .object(["code": .string(code)]))]))
+        }
+        let rows = RPCThreadState.projectHistory(history + [message]).filter { $0.role == "toolResult" }
         let bursts = nativeActivityBursts(rows.map(NativeActivityCall.init))
         let expanded = Set(rows.compactMap(\.toolCallID))
         try await Preview.renderMatrix("codemode-\(state)", size: CGSize(width: 760, height: 720)) {
