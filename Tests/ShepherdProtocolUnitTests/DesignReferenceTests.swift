@@ -53,6 +53,40 @@ struct DesignReferenceTests {
         #expect(DesignReference(string: text) == Self.reference(.local, "d1", "flows/Cart.dc.html", "12:0/1", 7))
     }
 
+    @Test func aPageRoundTripsAndIsDistinctFromTheDesignAndOtherPages() throws {
+        let page = try #require(DesignReference(designID: DesignID(rawValue: "d1"), page: "Flows_1", revision: 26))
+        #expect(page.string == "shepherd-design-ref://local/d1?page=Flows_1@26")
+        #expect(page.kind == .page && page.board == nil && page.element == nil)
+        #expect(DesignReference(string: page.string) == page)
+        #expect(try JSONDecoder().decode(DesignReference.self, from: JSONEncoder().encode(page)) == page)
+        #expect(page.isSamePiece(as: page.unpinned))
+        #expect(!page.isSamePiece(as: DesignReference(designID: page.designID)!))
+        #expect(!page.isSamePiece(as: DesignReference(designID: page.designID, page: "other")!))
+        #expect(DesignReference(designID: page.designID, board: DesignPath("A.dc.html"), page: "Flows_1") == nil)
+        #expect(DesignReference(designID: page.designID, page: "Flows_1", element: DesignElementID("A.dc.html#0:0")) == nil)
+        #expect(DesignReference.label(design: "Checkout", board: nil, element: nil, page: "Flows") == "Checkout › Page · Flows")
+    }
+
+    @Test(arguments: ["", "bad.id", "../flows", "a b", String(repeating: "p", count: 41)])
+    func anInvalidPageIDIsNotAReference(_ page: String) {
+        #expect(DesignReference(designID: DesignID(rawValue: "d1"), page: page) == nil)
+    }
+
+    @Test(arguments: [
+        "shepherd-design-ref://local/d1/A.dc.html?page=flows",
+        "shepherd-design-ref://local/d1?page=flows#0:0",
+        "shepherd-design-ref://local/d1?page=flows&board=A.dc.html",
+        "shepherd-design-ref://local/d1?page=flows&page=other",
+        "shepherd-design-ref://local/d1?page=",
+        "shepherd-design-ref://local/d1?page=flows?extra=x",
+        "shepherd-design-ref://local/d1?garbage=flows",
+        "shepherd-design-ref://local/d1?page=%2Fflows",
+        "shepherd-design-ref://local/d1?page=flows@1@2",
+    ])
+    func aMixedOrGarbagePageQueryIsNoReference(_ text: String) {
+        #expect(DesignReference(string: text) == nil)
+    }
+
     @Test func aHostIDInAnyCaseIsTheSameHost() {
         let upper = "shepherd-design-ref://\(Self.host.uuidString)/d1/A.dc.html"
         #expect(DesignReference(string: upper)?.host == .remote(Self.host))

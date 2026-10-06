@@ -18,6 +18,11 @@ public enum DesignReferencePresentation {
             return "Sends " + list(["a picture", "its HTML"] + counts) + from + "."
         case .board:
             return "Sends " + list(["a picture", "the board’s HTML"] + counts) + from + "."
+        case .page:
+            let boards = count(outline.boards ?? 0, "board")
+            let contents = (outline.boards ?? 0) == 0 ? ["all 0 boards on this page"]
+                : ["a picture and the HTML of all \(boards) on this page"]
+            return "Sends " + list(contents + counts) + from + "."
         case .design:
             let held = outline.boards ?? 0, total = outline.boardCount ?? held
             let boards = total > held ? "its first \(held) of \(total) boards" : "its \(count(held, "board"))"
@@ -28,7 +33,11 @@ public enum DesignReferencePresentation {
     /// The preview's "The agent gets" row: picture, html, 11 styles, 8 tokens (none of a kind it
     /// has none of).
     public static func gets(_ outline: DesignReferenceOutline) -> [String] {
-        ["picture", "html"] + counts(outline)
+        if outline.kind == .page {
+            let boards = count(outline.boards ?? 0, "board")
+            return ["all \(boards)"] + ((outline.boards ?? 0) > 0 ? ["picture", "html"] : []) + counts(outline)
+        }
+        return ["picture", "html"] + counts(outline)
     }
 
     static func counts(_ outline: DesignReferenceOutline) -> [String] {
@@ -70,10 +79,11 @@ public enum DesignReferencePresentation {
 
     /// The piece a menu or toast names: the element's name and words, else the board's title,
     /// else the design's name.
-    public static func piece(_ prepared: (kind: DesignReference.Kind, design: String, board: String?, element: String?)) -> String {
+    public static func piece(_ prepared: (kind: DesignReference.Kind, design: String, board: String?, element: String?), page: String? = nil) -> String {
         switch prepared.kind {
         case .element: prepared.element ?? prepared.board ?? prepared.design
         case .board: prepared.board ?? prepared.design
+        case .page: page ?? prepared.design
         case .design: prepared.design
         }
     }

@@ -2953,7 +2953,7 @@ public final class SessionServer: @unchecked Sendable {
         }
         guard reference.host == .local else { return refuse(.remote) }
         guard agent.designGrant(designID: reference.designID, board: reference.board?.rawValue,
-                                element: reference.element?.description, revision: reference.revision) != nil else {
+                                element: reference.element?.description, revision: reference.revision, page: reference.page) != nil else {
             return refuse(.notGranted)
         }
         answerOffQueue(id: id, client: client) { server in
@@ -2976,10 +2976,10 @@ public final class SessionServer: @unchecked Sendable {
         guard let reference = DesignReference(string: raw) else { return refuse(.invalid(raw)) }
         guard reference.host == .local else { return refuse(.remote) }
         guard let board = reference.board else {
-            return refuse(DesignReferenceError("no_piece", "A note goes on a board or an element, not a whole design."))
+            return refuse(DesignReferenceError("no_piece", "A note goes on a board or an element, not a whole page or design."))
         }
         guard let grant = agent.designGrant(designID: reference.designID, board: board.rawValue,
-                                            element: reference.element?.description, revision: reference.revision) else {
+                                            element: reference.element?.description, revision: reference.revision, page: reference.page) else {
             return refuse(.notGranted)
         }
         guard state.designs.contains(where: { $0.id == reference.designID }) else {
@@ -3148,7 +3148,7 @@ public final class SessionServer: @unchecked Sendable {
         guard let reference = DesignReference(string: ref),
               let agent = state.agents.first(where: { $0.id == agentID }),
               let grant = agent.designGrant(designID: reference.designID, board: reference.board?.rawValue,
-                                            element: reference.element?.description, revision: reference.revision),
+                                            element: reference.element?.description, revision: reference.revision, page: reference.page),
               let payloadID = grant.payload,
               let payload = await designReferencePayloads.load(agentID: agentID, payload: payloadID) else { return nil }
         return DesignReferenceLookedAt.make(payload, aspects: aspects)

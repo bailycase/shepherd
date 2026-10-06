@@ -1,7 +1,7 @@
 import SwiftUI
 
 // The composer's @ picker (MentionPicker; RefAtDesigns, RefAtElements, RefAtSearch): designs
-// first with their pictures, then a design's boards and a board's elements behind a breadcrumb,
+// first with their pictures, then a design's pages and boards, and a board's elements behind a breadcrumb,
 // and a search across every level. It sits over the thread above the card, as the slash menu
 // does; the field keeps the keyboard and drives the highlight.
 
@@ -31,7 +31,7 @@ public enum NWMentionMetrics {
 /// file. Compared by what it draws, so a highlight moving redraws the two rows it moves between.
 public struct NWMentionRow: Identifiable, Equatable, Sendable {
     public enum Kind: Sendable {
-        case design, board, element, file
+        case design, page, board, element, file
     }
 
     public enum Trailing: Sendable {
@@ -343,7 +343,13 @@ struct NWMentionRowView: View, Equatable {
         NWMenuRow(highlighted: highlighted, spacing: M.rowSpacing,
                   padding: EdgeInsets(top: 0, leading: M.rowPaddingHorizontal, bottom: 0, trailing: M.rowPaddingHorizontal),
                   height: M.rowHeight, action: { row.trailing == .drill ? drill(row) : choose(row) }, onHover: hover) {
-            if row.kind == .file {
+            if row.kind == .page {
+                Image(systemName: "rectangle.stack")
+                    .font(.system(size: M.titleSize))
+                    .foregroundStyle(nw.textSecondary)
+                    .frame(width: NWReferenceMetrics.thumbnail.width, height: NWReferenceMetrics.thumbnail.height)
+                    .accessibilityHidden(true)
+            } else if row.kind == .file {
                 Image(systemName: "doc")
                     .font(.system(size: M.pickSize))
                     .foregroundStyle(nw.textTertiary)

@@ -239,6 +239,7 @@ final class DesignReferenceChips {
     /// design › board › element, from what the host kept.
     static func crumbs(_ payload: DesignReferencePayload) -> [String] {
         var crumbs = [payload.design]
+        if let page = payload.reference.page { crumbs.append("Page · " + (payload.pageTitle ?? page)) }
         if let board = payload.reference.board { crumbs.append(payload.boardTitle ?? board.stem) }
         if payload.reference.element != nil {
             crumbs.append(DesignReferenceReading.elementTitle(name: payload.elementName, label: payload.elementLabel))
@@ -249,6 +250,7 @@ final class DesignReferenceChips {
     /// design › board › element, from what a message's record says.
     static func crumbs(_ record: DesignReferenceRecord) -> [String] {
         var crumbs = [record.design ?? "Design"]
+        if let page = record.page { crumbs.append("Page · " + (record.pageTitle ?? page)) }
         if let board = record.board { crumbs.append(record.boardTitle ?? DesignPath(board)?.stem ?? board) }
         if record.element != nil { crumbs.append(record.elementLabel.map { "“\($0)”" } ?? "element") }
         return crumbs
