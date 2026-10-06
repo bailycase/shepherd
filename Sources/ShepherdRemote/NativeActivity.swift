@@ -497,8 +497,7 @@ extension NativeActivityCall {
                     stat = nativeCount(filesChanged, "file") + " changed"
                 }
             }
-        case "subagent" where string("agent") != nil || string("task") != nil,
-             "shepherd_child_start":
+        case "shepherd_child_start":
             kind = .subagents
             label = "spawn"
             let task = string("task").flatMap { $0.split(whereSeparator: \.isNewline).first.map(String.init) }

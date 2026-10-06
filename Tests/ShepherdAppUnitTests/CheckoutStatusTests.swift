@@ -28,7 +28,7 @@ struct CheckoutStatusTests {
     }
 
     @Test(arguments: [("read", false), ("grep", false), ("find", false), ("ls", false),
-                      ("edit", true), ("write", true), ("bash", true), ("subagent", true)])
+                      ("edit", true), ("write", true), ("bash", true), ("shepherd_child_start", true)])
     func onlyCallsThatMayWriteFilesReadTheCheckoutAgain(tool: String, touches: Bool) {
         #expect(CheckoutMonitor.touchesFiles(tool: tool) == touches)
     }

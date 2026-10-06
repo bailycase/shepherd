@@ -237,7 +237,7 @@ struct ActivityTests {
     }
 
     @Test func spawnsWithoutCardsReadAsStartedSubagents() {
-        let burst = nativeActivityBurst([call("subagent", ["agent": "reviewer", "task": "check"]), call("subagent", ["agent": "tests", "task": "run"])])
+        let burst = nativeActivityBurst([call("shepherd_child_start", ["agent": "reviewer", "task": "check"]), call("shepherd_child_start", ["agent": "tests", "task": "run"])])
         #expect(burst.kind == .subagents && burst.label == "Started 2 subagents" && burst.meta == "reviewer · tests")
     }
 
