@@ -978,7 +978,12 @@ was on keep their files and agents either way.
 - **The Comments tab** lists the open comments' cards, oldest first (a lazy list, one row per
   card), and its label counts them with the notes threads left on the design (Notes back,
   RefNoteBack's "Comments 2" over a comment and a note; `DesignScreenModel.commentsTabCount`). The
-  chat's thread stays mounted under it.
+  chat's thread stays mounted under it. On Mac, clicking a card selects and centers its board,
+  switches to its page, exits Present, and opens its thread. A canvas pin still opens in place.
+  Hovering a card reveals Resolve at its header's trailing edge; keyboard focus and VoiceOver
+  reveal it too, and the named Resolve accessibility action works at rest. It uses the existing
+  revision-fenced local or remote host action. Success removes the card, count, pin, and open
+  thread; failure keeps the comment and reports the error. The chat keeps its historical card.
 - **Failures** (a comment kept but not delivered, a refused one) go to the app's error dialog.
 
 ### Board actions (DZCanvas)

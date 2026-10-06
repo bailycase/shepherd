@@ -83,6 +83,17 @@ struct RemoteDesignFlowTests {
         #expect(kept.comments.map(\.text) == ["Tighten the header."])
         try await eventuallyOnMain("the comment on the canvas") { screen.comments.map(\.id) == kept.comments.map(\.id) }
 
+        // The shared Comments list reveals the board and resolves through this host, too.
+        let comment = try #require(kept.comments.first)
+        screen.resized(CGSize(width: 900, height: 800))
+        screen.viewport = NWCanvasViewport(offset: CGPoint(x: -10_000, y: -10_000), zoom: 1)
+        screen.revealComment(comment.id)
+        #expect(screen.selectedWhole == [board] && screen.visibleBoards.contains(board))
+        #expect(screen.openThread?.id == comment.id)
+        await screen.resolve(comment.id)?.value
+        #expect(try await hostServer.designComments(design.id).comments.first?.isOpen == false)
+        #expect(screen.openCards.isEmpty && screen.openThread == nil)
+
         // Off screen, the host stops pushing its changes.
         vm.remoteDesignVisibility(ref, visible: false)
         #expect(vm.visibleRemoteDesigns.isEmpty)
