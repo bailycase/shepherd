@@ -1,4 +1,5 @@
 import Foundation
+import ShepherdSessions
 import ShepherdProtocol
 import ShepherdUI
 
@@ -11,7 +12,7 @@ struct ProjectMCPConfiguration: Equatable {
     var problem: String?
     var native = true
 
-    init(text: String = "", path: String = ".pi/mcp.json", host: String = "This Mac") {
+    init(text: String = "", path: String = ".pi/mcp.json", host: String = "This Mac", signedIn: Set<String> = [], canSignIn: Bool = false) {
         native = path == ".pi/mcp.json"
         switch MCPConfigFile.parse(Data(text.utf8)) {
         case .invalid(let line):
@@ -63,20 +64,32 @@ struct ProjectMCPConfiguration: Equatable {
             let variables = entry.env.count + entry.headers.count
             return MCPServerRowModel(name: entry.name, kind: entry.kind == .local ? .local : .remote,
                                      endpoint: entry.endpoint, status: enabled ? .idle : .off,
-                                     signIn: variables > 0 ? .variables(variables) : .unverified,
+                                     signIn: canSignIn && Self.usesOAuth(entry) ? (signedIn.contains(entry.name) ? .account("Signed in") : .signIn)
+                                         : variables > 0 ? .variables(variables) : .unverified,
                                      tools: nil, enabled: enabled)
         }
         details = Dictionary(uniqueKeysWithValues: entries.map { entry in
             let exposure = native ? entry.json["exposure"]?.stringValue ?? "codemode" : "deferred"
             let direct: Bool? = exposure == "direct" ? true : exposure == "deferred" ? false : nil
             let note = native ? (direct == nil ? "Current mode: \(exposure)." : nil) : "Shared .mcp.json uses Search."
+            let signIn: MCPServerDetailModel.SignIn = if canSignIn && Self.usesOAuth(entry) {
+                signedIn.contains(entry.name)
+                    ? .signedIn(account: nil, scopes: [], note: "OAuth · kept fresh by the agent on \(host)")
+                    : .needsSignIn(title: "Not signed in", note: "Sign in once on \(host); the agent keeps the token fresh.", again: false)
+            } else {
+                .unverified(canSignIn ? "Environment references are read on \(host)." : "Update Shepherd on \(host) to sign in here. Environment references are read on that host.")
+            }
             let detail = MCPServerDetailModel(
-                signIn: .unverified("Credentials and sign-in belong to threads on \(host). Environment references are read on that host."),
+                signIn: signIn,
                 toolNames: [], toolCount: nil, direct: direct, searchCost: "", directCost: "", chosenNote: note,
                 transport: entry.kind == .local ? "stdio" : entry.transport == .sse ? "Legacy SSE" : "Streamable HTTP",
                 hosts: [.init(name: host, detail: "Not checked yet", mark: .none)], toolsNote: "Not checked on this page.")
             return (entry.name, detail)
         })
+    }
+
+    static func usesOAuth(_ entry: MCPServerEntry) -> Bool {
+        entry.kind == .remote && entry.transport != .sse && !entry.headers.keys.contains { $0.lowercased() == "authorization" }
     }
 
     mutating func upsert(_ entry: MCPServerEntry) {

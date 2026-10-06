@@ -13,6 +13,7 @@ public final class ProjectSettingsStore: @unchecked Sendable {
     public static let pageSize = 64
     private let queue = DispatchQueue(label: "shepherd.project-settings", qos: .userInitiated)
     private let historyURL: URL
+    private let mcp: ProjectMCPService?
     private let home: URL
     private let sessions: URL
     private let systems: URL?
@@ -25,7 +26,8 @@ public final class ProjectSettingsStore: @unchecked Sendable {
 
     public init(historyURL: URL, home: URL, sessions: URL, systems: URL? = nil,
                 globalDirectories: @escaping @Sendable () -> [URL] = { [] },
-                openEditor: (@MainActor @Sendable (URL) async throws -> Void)? = nil) {
+                openEditor: (@MainActor @Sendable (URL) async throws -> Void)? = nil, pi: PiSetup? = nil) {
+        self.mcp = pi.map { ProjectMCPService(pi: $0) }
         self.openEditor = openEditor ?? ProjectSettingsStore.openEditor
         self.historyURL = historyURL; self.home = home; self.sessions = sessions; self.systems = systems
         self.globalDirectories = globalDirectories
@@ -39,7 +41,26 @@ public final class ProjectSettingsStore: @unchecked Sendable {
         }
     }
 
-    public func request(_ request: RemoteProjectsRequest, state: ShepherdState) async throws -> RemoteProjectsResult {
+    public func cancelMCP(owner: UUID) async { await mcp?.cancel(owner: owner) }
+    public func stopMCP() async { await mcp?.cancelAll() }
+
+    public func request(_ request: RemoteProjectsRequest, state: ShepherdState, owner: UUID? = nil) async throws -> RemoteProjectsResult {
+        if case .mcp(let directory, let file, let action) = request {
+            guard file == ".pi/mcp.json" || file == ".mcp.json", let mcp else {
+                throw ProjectFileError("unsupported", "Project MCP sign-in is unavailable on this host.")
+            }
+            switch action {
+            case .poll, .complete, .cancel:
+                // File edits/deletion must not prevent cancelling a run that already owns this path.
+                return .mcp(try await mcp.request(directory: directory, file: file, text: "", action: action, owner: owner))
+            default: break
+            }
+            let value = try await self.request(.read(directory: directory, file: file), state: state)
+            guard case .text(let text) = value, let contents = text.text else {
+                throw ProjectFileError("missing", "Save the server before signing in.")
+            }
+            return .mcp(try await mcp.request(directory: directory, file: file, text: contents, action: action, owner: owner))
+        }
         if case .open(let directory, let file) = request {
             let value = try await self.request(.read(directory: directory, file: file), state: state)
             guard case .text(let text) = value, text.file.exists else { throw ProjectFileError("missing", "Save the file before opening it in an editor.") }
@@ -70,6 +91,8 @@ public final class ProjectSettingsStore: @unchecked Sendable {
                         return .files(try inventory(root: root(directory)))
                     case .context(let directory):
                         return .context(try context(root: root(directory)))
+                    case .mcp:
+                        preconditionFailure("MCP is handled after file validation above.")
                     case .open:
                         preconditionFailure("Open is handled after allowlist validation above.")
                     case .read(let directory, let file):

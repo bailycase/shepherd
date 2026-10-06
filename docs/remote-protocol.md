@@ -78,6 +78,13 @@
     (`HostSettingChange`), applied as the Mac's own Settings would. The additive
     `goalCrossProviderEvaluation` consent is false when missing/null; its change applies to
     newly started or restarted agents, not a live process. Both clients disclose that scope
+  - `projects.mcp.v1`: adds credential status, login/logout, poll, callback completion and
+    cancellation to project requests. The host resolves the allowlisted project entry and
+    owns the bounded OAuth bridge. A run UUID is scoped to the connection, directory and file;
+    only status, signed-in server names and the pending authorization URL reach the viewer.
+    The callback URL returns over the existing connection, never access/refresh tokens.
+    Disconnect cancels pending requests and runs; reconnect never resumes them. Both clients
+    share the codec/capability gate; the Mac Projects page offers the sign-in sheet.
   - `projects.details.v1`: adds host-local metadata/context and editor opening to projects.
     Clients gate context/open requests separately; older `projects.v1` hosts still edit files.
   - `projects` (`projects.v1`): host-owned project history, project-file inventory, reads and

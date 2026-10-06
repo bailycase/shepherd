@@ -50,8 +50,8 @@ struct ProjectMCPSettings: View {
                 .scrollIndicators(.hidden)
             }
             Text(model.mcp.native
-                 ? "Only trusted projects load .pi/mcp.json. Live status and sign-in are available from threads on the project's host."
-                 : "This file is used when Also use a repo’s .mcp.json is on in MCP settings. Its tools use Search. Live status belongs to threads on the project's host.")
+                 ? "Only trusted projects load .pi/mcp.json. Sign-in credentials stay on the project's host; live status belongs to its threads."
+                 : "This file is used when Also use a repo’s .mcp.json is on in MCP settings. Its tools use Search. Sign-in credentials stay on the project's host.")
                 .font(.nwSans(AppLayout.mcpNoteSize)).foregroundStyle(Color.nw.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -59,6 +59,10 @@ struct ProjectMCPSettings: View {
         .onAppear(perform: filter)
         .onChange(of: model.mcp.rows) { _, _ in filter() }
         .onChange(of: query) { _, _ in filter() }
+        .onDisappear { model.closeMCPSignIn() }
+        .sheet(item: Binding(get: { model.mcpSignIn }, set: { if $0 == nil { model.closeMCPSignIn() } })) { flow in
+            MCPSignInSheetHost(flow: flow) { model.closeMCPSignIn() }
+        }
         .sheet(item: $sheet) { selection in
             switch selection {
             case .add(let kind): AddMCPServerSheet(project: model, initialKind: kind, editing: nil) { sheet = nil }
@@ -95,11 +99,11 @@ struct ProjectMCPSettings: View {
 
     private func rowActions(_ name: String) -> MCPServerRow.Actions {
         .init(toggle: { enabled in Task { await model.setMCPEnabled(name, enabled) } },
-              open: { expanded = expanded == name ? nil : name }, signIn: {})
+              open: { expanded = expanded == name ? nil : name }, signIn: { model.beginMCPSignIn(name) })
     }
 
     private func detailActions(_ name: String) -> MCPServerDetail.Actions {
-        .init(signIn: {}, signOut: {},
+        .init(signIn: { model.beginMCPSignIn(name) }, signOut: { model.signOutMCP(name) },
               setDirect: model.mcp.native ? { direct in Task { await model.setMCPDirect(name, direct) } } : nil,
               chooseTools: nil, edit: { sheet = .edit(name) }, reconnect: nil,
               copyJSON: {

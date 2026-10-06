@@ -739,6 +739,9 @@ public final class RemoteHostClient: @unchecked Sendable {
 
     /// Project-only configuration. Capability check happens before anything is sent to an old host.
     public func projects(_ request: RemoteProjectsRequest) async throws -> RemoteProjectsResult {
+        guard !request.requiresMCP || capabilities.contains(RemoteProtocol.projectMCPCapability) else {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to sign in to project MCP servers.")
+        }
         guard capabilities.contains(RemoteProtocol.projectsCapability) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to edit its projects from here.")
         }
