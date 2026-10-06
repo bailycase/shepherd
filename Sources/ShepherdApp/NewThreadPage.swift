@@ -134,6 +134,9 @@ struct NewThreadPage: View {
             .autocorrectionDisabled()
             .tint(Color.nw.lantern)
             .focused($composing)
+            .modifier(CycleThinkingShortcut(focused: composing && !draft.starting && !draft.loadingDefaults,
+                                          current: draft.thinkingLevel(vm).rawValue, levels: draft.thinkingLevels(vm).map(\.rawValue),
+                                          choose: { id in if let level = ThinkingLevel(rawValue: id) { draft.setThinking(level) } }))
             .onKeyPress(.return, phases: .down) { press in
                 if let result = NWReturnKey.lineBreak(for: press) { return result }
                 // ↩ over the @ picker chooses its row, and never starts the thread.

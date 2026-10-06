@@ -121,8 +121,9 @@ are `@MainActor @Observable` classes, owned with `@State` and bound with `@Binda
 **Keybindings resolve through the store.** Menus, palette keycaps, Settings ▸ Keyboard, and the
 Ghostty unbind list all read `KeybindingsStore`, and hardcoding a chord in a view is a bug.
 
-- A rebound chord must include ⌘. ⌘1–9 (the first nine rows of Pinned, then Recents), ⌘,, and the
-  plain ⌘ system and terminal chords are reserved.
+- A rebound chord must include ⌘, except ⇧⇥ for Cycle thinking level in a focused composer.
+  Composer-only shortcuts are not terminal unbinds. ⌘1–9 (the first nine rows of Pinned, then
+  Recents), ⌘,, and the plain ⌘ system and terminal chords are reserved.
 - A focused Ghostty surface eats any key equivalent it has a binding for, so every chord the app
   chrome uses must be unbound in `appOwnedChords` (`TerminalSurfaceModel.swift`). Rebindable
   chords flow in through the store; the fixed ones are listed there. Leave Ghostty's copy and

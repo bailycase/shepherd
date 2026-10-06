@@ -103,6 +103,10 @@ struct NewDesignPage: View {
             .foregroundStyle(Color.nw.textPrimary)
             .tint(Color.nw.lantern)
             .focused($composing)
+            .modifier(CycleThinkingShortcut(focused: composing && !draft.starting,
+                                          current: draft.thinking.clamped(to: draft.thinkingLevels()).rawValue,
+                                          levels: draft.thinkingLevels().map(\.rawValue),
+                                          choose: { id in if let level = ThinkingLevel(rawValue: id) { draft.setThinking(level) } }))
             .frame(minHeight: AppLayout.newDesignFieldMinHeight, alignment: .topLeading)
             .onKeyPress(.return, phases: .down) { press in
                 if let result = NWReturnKey.lineBreak(for: press) { return result }

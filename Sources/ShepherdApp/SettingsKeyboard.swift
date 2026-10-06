@@ -17,7 +17,7 @@ struct KeyboardSettings: View {
 
     private static let groups: [(title: String, actions: [ShortcutAction])] = [
         ("Agents", [.newAgent, .newAgentOptions, .newSpace, .renameAgent, .nextAgent, .previousAgent, .deleteAgent, .commandPalette]),
-        ("Thread", [.stopAgent, .modelPicker, .previousTurn, .nextTurn, .inspectSubagent]),
+        ("Thread", [.stopAgent, .modelPicker, .cycleThinkingLevel, .previousTurn, .nextTurn, .inspectSubagent]),
         ("Window", [.toggleSidebar, .toggleRightPane]),
         ("Terminal", [.newTerminal, .closeTerminal, .nextTerminal, .previousTerminal,
                       .toggleTerminal, .maximizeTerminal]),
@@ -26,7 +26,7 @@ struct KeyboardSettings: View {
     ]
 
     var body: some View {
-        SettingsPage(title: "Keyboard", explanation: "Click a shortcut to record a new one. Shortcuts must include ⌘.") {
+        SettingsPage(title: "Keyboard", explanation: "Click a shortcut to record a new one. Shortcuts must include ⌘, except ⇧⇥ for cycling thinking levels.") {
             ForEach(Self.groups, id: \.title) { group in
                 SettingsGroup(title: group.title) {
                     ForEach(group.actions, id: \.self) { action in
@@ -86,7 +86,7 @@ struct KeyboardSettings: View {
         SettingsRow(title: title, problem: errorAction == action ? errorText : nil) {
             HStack(spacing: NW.Space.xs) {
                 if !keys.isDefault(action) {
-                    Button("Reset") {
+                    Button {
                         if let error = keys.reset(action) {
                             errorAction = action
                             errorText = "\(action.defaultChord.display): \(error)"
@@ -94,6 +94,9 @@ struct KeyboardSettings: View {
                             vm.rebuildSurfaces()
                             clearError()
                         }
+                    } label: {
+                        Text("Reset")
+                            .frame(minHeight: NW.Height.controlS)
                     }
                     // SettingsKeyboard: Geist 12, 6pt either side, just before the caps.
                     .buttonStyle(.nwLink(font: .nwSans(AppLayout.shortcutResetSize)))
@@ -155,6 +158,7 @@ private struct ShortcutRecorder: View {
                     NWKeycap(chordText)
                 }
             }
+            .frame(minHeight: NW.Height.controlS)
             .contentShape(Rectangle())
             .nwFocusRing(radius: NW.Radius.xs)
         }

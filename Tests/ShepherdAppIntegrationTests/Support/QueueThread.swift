@@ -122,7 +122,8 @@ final class QueueThread {
     /// events directly).
     var keyMonitor: ComposerKeyMonitor? {
         func find(_ view: NSView) -> ComposerWindowReader.Reader? {
-            if let reader = view as? ComposerWindowReader.Reader { return reader }
+            if let reader = view as? ComposerWindowReader.Reader,
+               reader.monitor?.chord() == KeybindingsStore.shared.chord(for: .alternateSend) { return reader }
             return view.subviews.lazy.compactMap(find).first
         }
         return find(window.host)?.monitor
