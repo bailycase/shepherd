@@ -1,9 +1,10 @@
 # Native subagents
 
-Shepherd bundles a subagent runtime as pi extensions. A parent agent can start child
-`pi --mode rpc` processes, steer them, wait for them, and script them into workflows. Shepherd
-itself does not run subagents. The parent's extension owns every child process, and the app
-installs the extension modules and displays what they report. There is no daemon, scheduler,
+Shepherd owns the subagent runtime, profiles, workflows, control channel, and display publisher.
+It bundles the runtime as pi extensions and has no third-party subagent dependency. A parent
+agent can start child `pi --mode rpc` processes, steer them, wait for them, and script them into
+workflows. The parent's Shepherd extension owns every child process. The app installs the
+extension modules and displays what they report. There is no daemon, scheduler,
 watchdog, automatic goal loop, nested delegation, or automatic worktree management. No mission
 or workflow grants permission to commit, merge, deploy, or otherwise mutate a repository.
 
@@ -18,10 +19,9 @@ both apply when an agent next launches.
   `shepherd-children-config.ts`, `shepherd-children-ui.ts`, `shepherd-workflow.ts`,
   `shepherd-missions.ts`, and the `shepherd-inspect.mjs` view helpers. It sets
   `SHEPHERD_NATIVE_CHILDREN=1` and the `SHEPHERD_CHILD_*` defaults below. Turning it off stops
-  Shepherd loading the runtime; it does not install anything else. If you have installed the
-  pi-subagents package yourself, it keeps working as before.
+  Shepherd loading the runtime; it does not install anything else.
 - **Subagent display** loads `shepherd-subagents.ts`, the only publisher of `setAgentChildren`.
-  It merges native children with pi-subagents reports into the runs behind the subagent tray
+  It publishes only Shepherd-owned children into the runs behind the subagent tray
   above the composer, the thread's record lines, the inspector and the palette's Subagents
   section. With display off, children still run but none of that UI appears, and tray commands
   fail because the server only accepts runs that were published.
@@ -65,7 +65,7 @@ Settings > Subagents manages the same Markdown definitions. Both use the exporte
 
 Only `<Shepherd support>/pi/agents` supplies definitions. Pi's `getAgentDir()` is pinned by
 Shepherd's launcher. Project `.pi/agents`, project `.agents`, the user's `~/.agents`, package
-agent directories, `PI_SUBAGENT_EXTRA_AGENT_DIRS`, and settings overrides are not read. The
+agent directories, extra-directory environment variables, and settings overrides are not read. The
 retired discovery preference is ignored. This replaces the former multi-source discovery
 policy. There is no automatic import or migration from those folders.
 
@@ -121,8 +121,8 @@ Edits apply to new children. Existing runs and their continuations keep their ca
   each prompt, and disallowed calls are blocked. Nested delegation tools stay forbidden.
   `shepherd_parent_message` is always available.
 
-`subagents.agentOverrides` and `disableBuiltins` no longer affect native definitions. Edit or
-delete the owned files instead. This is not full pi-subagents parity.
+Agent files are the source of profile configuration. Edit or delete the Shepherd-owned files
+in Settings instead. Third-party settings do not affect native definitions.
 
 ## Child tools
 
@@ -222,8 +222,8 @@ leaves out in-flight tool calls and never branches the parent's live session.
 **Child processes.** A child runs the parent's own engine: `process.execPath` (the engine's node)
 with the package's `dist/bundle/cli.js`, never a `pi` from PATH; a parent not running on node, or
 with no bundle, can't start one and the run fails saying so. Children inherit the launcher's
-pins from the parent's pi, and run with `PI_OFFLINE=1` and with `SHEPHERD_*`, `PI_SUBAGENT*`, and
-session and model variables stripped, except the managed provider's config path above. A startup
+pins from the parent's pi, and run with `PI_OFFLINE=1`. They strip `SHEPHERD_*`, session, and
+model variables, except the managed provider's config path above. A startup
 exit returns its exit diagnostic to pending commands rather than only "Child exited". They get
 `--no-skills --no-prompt-templates --no-themes --no-approve`, plus `--no-context-files` when the
 profile doesn't inherit project context. [pi-home.md](pi-home.md#the-launcher) lists what a child
@@ -334,7 +334,7 @@ they behave when it is on.
 
 `shepherd_mission` supports create, list, show, update, close, attach-run, and attachment. Records
 live at `<support dir>/shepherd-native/missions/<sha256 of the parent cwd>/mission-<uuid>.json`
-and never touch pi-subagents' mission data.
+and belong only to Shepherd.
 
 - **Contents:** a title, objective, status (planned, active, waiting, needs_decision, complete,
   or cancelled), summary, run links, descriptive attachments, and bounded JSON state.
@@ -389,8 +389,7 @@ appear only when the same extension runs in pi's interactive TUI.
 (`listedCommandNames`). Anywhere else the extension registers all eight, as before. A command that
 fails reports `error · …` the same way, so none of them is silent.
 
-If a command name is already taken, or the pi-subagents `subagent` tool is registered, the whole
-family registers with a `shepherd-` prefix instead (`/shepherd-run`, `/shepherd-missions`, …); a
+If a command name is already taken, the whole family registers with a `shepherd-` prefix instead (`/shepherd-run`, `/shepherd-missions`, …); a
 name taken only by a command Shepherd leaves out changes nothing. `/subagents-doctor` lists the
 actual names.
 
@@ -399,9 +398,9 @@ actual names.
 **Control path.**
 
 - **Publishing:** the children extension publishes up to 20 children, active and needs-reply
-  first. `shepherd-subagents.ts` merges them with any pi-subagents reports (also capped at 20)
-  and sends `setAgentChildren`. The rows ride the thread snapshot as `subagents` (see
-  [native-thread.md](native-thread.md)). Older retained runs drop out of the UI.
+  first. `shepherd-subagents.ts` accepts only the owning parent's `shepherd:children:v1` reports
+  and sends `setAgentChildren`, capped at 20 rows. The rows ride the thread snapshot as
+  `subagents` (see [native-thread.md](native-thread.md)). Older retained runs drop out of the UI.
 - **Commands:** card buttons and the inspector's composer send `subagentCommand` through the
   server to the children extension's `helloChildren` control connection on the Shepherd socket.
   The extension answers `childCommandResult` after calling the same functions the tools use:

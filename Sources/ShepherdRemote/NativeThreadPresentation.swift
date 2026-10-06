@@ -146,17 +146,6 @@ public extension NativeToolRow {
             // The child's message to its parent, not the JSON receipt.
             preview = string("message") ?? firstLine
             if args?["needsReply"] as? Bool == true { results.append(Result("asked", tone: .muted)) }
-        case "subagent":
-            // pi-subagents: the output is launch boilerplate ("Run fan-out: 0/32 used…"); the
-            // agent and its task say what the call did.
-            let task = string("task").flatMap { $0.split(whereSeparator: \.isNewline).first.map(String.init) }
-            if let agent = string("agent") {
-                preview = task.map { "\(agent) · \($0)" } ?? agent
-            } else if args?["workflowScript"] != nil {
-                preview = "workflow"
-            } else {
-                preview = string("action") ?? firstLine
-            }
         default:
             // Unknown tools prefer an obvious action field (a URL beats "<html>") and fall back
             // to the first output line, capped at 120 chars.

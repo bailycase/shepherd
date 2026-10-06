@@ -190,7 +190,7 @@ export function childLaunch({ run, bridge, inherited = [], parentEnv = process.e
   const env = { ...parentEnv };
   // A helper is cut off from the host: none of the parent's SHEPHERD_* reaches it (its agent id,
   // socket and design are the parent's alone), nor the parent's session or model variables.
-  for (const key of Object.keys(env)) if (key.startsWith("SHEPHERD_") || key.startsWith("PI_SUBAGENT") || ["PI_SESSION_ID", "PI_SESSION_FILE", "PI_PROVIDER", "PI_MODEL", "PI_REASONING_LEVEL"].includes(key)) delete env[key];
+  for (const key of Object.keys(env)) if (key.startsWith("SHEPHERD_") || ["PI_SESSION_ID", "PI_SESSION_FILE", "PI_PROVIDER", "PI_MODEL", "PI_REASONING_LEVEL"].includes(key)) delete env[key];
   env.SHEPHERD_CHILD = "1"; env.PI_OFFLINE = "1";
   env.SHEPHERD_CHILD_TOOLS = JSON.stringify([...run.tools, "shepherd_parent_message"]);
   if (relay.length) env.SHEPHERD_CHILD_RELAY = JSON.stringify(relay);
@@ -1388,7 +1388,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
   }
 
   // session_start runs after every extension factory, so load order cannot
-  // produce numeric /run collisions with pi-subagents' factory registrations.
+  // produce command collisions with other extension factories.
   const registerCommands = () => registerNativeCommands(pi, {
     defaults, catalog: (ctx) => discoverChildAgents(ctx, defaults.scope), resolveModel,
     list: () => [...runs.values()].map(summary), get: (id) => summary(get(id)),

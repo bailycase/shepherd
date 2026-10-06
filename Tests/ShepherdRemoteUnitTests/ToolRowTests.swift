@@ -104,14 +104,6 @@ struct ToolRowTests {
         #expect(row("shepherd_parent_message", #"{"message":"FYI"}"#).results.isEmpty)
     }
 
-    @Test func subagentCallsNameTheAgentNotTheLaunchBoilerplate() {
-        let boiler = "Run fan-out: 0/32 used, 32 remaining\nAsync workflow [x]"
-        #expect(row("subagent", #"{"agent":"delegate","task":"Say hello\nmore"}"#, output: boiler).preview == "delegate · Say hello")
-        #expect(row("subagent", #"{"agent":"delegate"}"#, output: boiler).preview == "delegate")
-        #expect(row("subagent", #"{"workflowScript":"return 1"}"#, output: boiler).preview == "workflow")
-        #expect(row("subagent", #"{"action":"status"}"#, output: boiler).preview == "status")
-    }
-
     @Test func unknownToolsPreferAnActionFieldThenTheFirstOutputLine() {
         #expect(row("web_fetch", #"{"url":"https://example.com"}"#, output: "<html>").preview == "https://example.com")
         #expect(row("custom", output: "\n  \nfirst useful line\nsecond").preview == "first useful line")

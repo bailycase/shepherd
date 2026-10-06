@@ -58,31 +58,20 @@ bundle runtime files (`MODULE_KEEP`, `MODULE_REQUIRED`). Run the SDK check again
 engine, not an npm install, then the extension tests, `EngineSmokeTests` and `EngineThreadTests`
 (docs/testing.md › Engine smoke). Compare the real engine's RPC replies and events with the last pin's.
 
-## Background extension runners
+## Extension SDK
 
-A detached `pi-subagents` runner imports the host SDK outside Pi's bundled extension loader.
-Shipping only `dist/bundle` left `package.json` pointing at a missing `dist/index.js` and omitted
-its peer packages. The parent loaded normally, but background children failed before producing
-a transcript. Shepherd now keeps the modular SDK and its locked dependencies alongside the CLI
-bundle. The launcher is unchanged.
-
-Pi 1.0 removed `@earendil-works/pi-agent-core/node`. `pi-subagents` 0.73.1 requires that export;
-update the extension before testing this fix. Version 0.76.1 treats it as optional and passes the
-two-child test below. That version also uses `workflow: "./script.js"` instead of `workflowScript`.
-Shepherd does not patch installed extensions or fabricate removed Pi exports.
+Shepherd ships the modular SDK and its locked dependencies alongside the CLI bundle. Native
+child extensions and isolated extension tests import these modules without relying on an
+external subagent package. The launcher is unchanged.
 
 ```bash
 SHEPHERD_ENGINE_SMOKE=.build/pi-engine \
   python3 -m unittest discover -s Tests/Release -p test_pi_engine_sdk.py
-SHEPHERD_ENGINE_SMOKE=.build/pi-engine PI_SUBAGENTS_PACKAGE_DIR=/path/to/isolated/pi-subagents \
-  python3 -m unittest discover -s Tests/Release -p test_pi_engine_subagents.py
 ```
 
-The first check imports the host peers and creates/disposes a session. CI runs it after staging;
-release runs it against the signed app before notarization. The second uses an isolated 0.76.1
-installation and a loopback provider to run two background children, checking process exit,
-output and persisted transcripts. It makes no external model calls. An old bundle-only engine
-fails the first check with `ERR_MODULE_NOT_FOUND`.
+This check imports the host peers and creates/disposes a session. CI runs it after staging;
+release runs it against the signed app before notarization. An old bundle-only engine fails
+with `ERR_MODULE_NOT_FOUND`.
 
 ## The Xcode phase
 

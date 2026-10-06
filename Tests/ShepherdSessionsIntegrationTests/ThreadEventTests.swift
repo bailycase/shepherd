@@ -761,7 +761,7 @@ struct ThreadEventTests {
             #"{"type":"extension_ui_request","id":"1","method":"setStatus","statusKey":"build","statusText":"ok"}"#,
             #"{"type":"extension_ui_request","id":"2","method":"notify","message":"loaded","notifyType":"info"}"#,
             #"{"type":"extension_ui_request","id":"3","method":"setTitle","title":"pi"}"#,
-            #"{"type":"extension_ui_request","id":"4","method":"setWidget","widgetKey":"m","widgetLines":["PI_SUBAGENT_ASYNC_JSON:{\"kind\":\"snapshot\"}"]}"#
+            #"{"type":"extension_ui_request","id":"4","method":"setWidget","widgetKey":"m","widgetLines":["MACHINE_SNAPSHOT:{\"kind\":\"snapshot\"}"]}"#
         )
         #expect(try await t.snapshot().widgets == [])
     }

@@ -20,7 +20,7 @@ struct AppSettingsTests {
         #expect(!settings.goalCrossProviderEvaluation, "cross-provider goal checks require consent")
         #expect(!settings.goalsEnabled, "Goals is an opt-in experiment")
         #expect(settings.piPanesExtension && settings.piReviewExtension && settings.piDesignReferences)
-        #expect(settings.piSubagentsExtension && settings.piNativeSubagents)
+        #expect(settings.subagentDisplay && settings.piNativeSubagents)
         #expect(settings.piBrowserExtension, "Browser tools are on by default")
         #expect(settings.uiDensity == 1 && settings.uiTextScale == 1)
         #expect(settings.sidebarWidth == AppSettings.defaultSidebarWidth)
@@ -220,7 +220,7 @@ struct AppSettingsTests {
         settings.piReviewExtension = false
         settings.piDesignReferences = false
         settings.piBrowserExtension = false
-        settings.piSubagentsExtension = false
+        settings.subagentDisplay = false
         settings.piNativeSubagents = false
         settings.shellPath = "/bin/bash"
         settings.uiDensity = 1.2
@@ -243,7 +243,7 @@ struct AppSettingsTests {
         #expect(!reloaded.autoNameAgents)
         #expect(reloaded.agentMessages == .never)
         #expect(!reloaded.piPanesExtension && !reloaded.piReviewExtension && !reloaded.piDesignReferences)
-        #expect(!reloaded.piSubagentsExtension && !reloaded.piNativeSubagents)
+        #expect(!reloaded.subagentDisplay && !reloaded.piNativeSubagents)
         #expect(!reloaded.piBrowserExtension)
         #expect(reloaded.shellPath == "/bin/bash")
         #expect(reloaded.uiDensity == 1.2 && reloaded.uiTextScale == 1.1 && reloaded.sidebarWidth == 275)
