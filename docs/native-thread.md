@@ -63,9 +63,8 @@ stand-in), never a `pi` looked up on PATH ([pi-home.md](pi-home.md)).
   refreshes its model catalogs in the background, so offline mode buys little of its boot, and
   it would cost the agent for its whole life: no catalog refresh (a model published since the
   last one could not be picked, though Shepherd's picker lists it), no install of a package
-  newly added to pi's settings, and a `PI_OFFLINE` that every extension and subagent inherits
-  (pi-subagents then stops finding agents and skills in the global npm root). A slow boot is
-  covered instead by the thread drawing at once (below).
+  newly added to pi's settings, and a `PI_OFFLINE` that every extension and subagent inherits.
+  A slow boot is covered instead by the thread drawing at once (below).
 - **The opening prompt** is the first native `send`. It is not a positional argument, because RPC
   mode ignores positional messages. The app hands it to the host with the new pi
   (`SessionServer.sendOpeningPrompt`), which holds it until the thread serves and sends it in

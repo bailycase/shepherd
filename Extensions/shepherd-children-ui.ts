@@ -9,10 +9,9 @@ const coveredByShepherd = ["subagents-fleet", "subagents-stop"];
 export function listedCommandNames(env = process.env) {
   return env.SHEPHERD_AGENT_ID ? commandNames.filter((name) => !coveredByShepherd.includes(name)) : commandNames;
 }
-export function nativeCommandNames(commands, tools, listed = commandNames) {
+export function nativeCommandNames(commands, listed = commandNames) {
   const occupied = new Set(commands.map((c) => c.name.split(":")[0]));
-  const legacy = tools.some((t) => t.name === "subagent" || /(?:^|[/:])pi-subagents(?:[@/]|$)/.test(t.sourceInfo?.source ?? ""));
-  const collisions = legacy || listed.some((name) => occupied.has(name));
+  const collisions = listed.some((name) => occupied.has(name));
   return Object.fromEntries(commandNames.map((name) => {
     let chosen = collisions ? `shepherd-${name}` : name;
     while (occupied.has(chosen)) chosen = `shepherd-${chosen}`;
@@ -199,7 +198,7 @@ export class FleetView {
 
 export function registerNativeCommands(pi, runtime, env = process.env) {
   const listed = listedCommandNames(env);
-  const names = nativeCommandNames(pi.getCommands(), pi.getAllTools(), listed);
+  const names = nativeCommandNames(pi.getCommands(), listed);
   const aliasNote = names.run !== "run" ? `command collision detected · native commands use /${names.run} and /${names.workflows}; existing commands are unchanged` : "native command names available without aliases";
   pi.registerEntryRenderer("shepherd-native-report", (entry) => new Text(cleanText(entry.data.text), 0, 0));
   // The TUI draws the entry. RPC mode (Shepherd's) has no toast: a notify there never reaches the

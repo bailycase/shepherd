@@ -19,12 +19,10 @@ const put = (file,text) => {fs.mkdirSync(path.dirname(file),{recursive:true});fs
 function fixture(run) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(),'sh-owned-agents-'));
   const old = process.env.PI_CODING_AGENT_DIR;
-  const extra = process.env.PI_SUBAGENT_EXTRA_AGENT_DIRS;
   process.env.PI_CODING_AGENT_DIR = path.join(dir,'pi');
   try {run(dir, path.join(dir,'pi/agents'));}
   finally {
     if(old === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = old;
-    if(extra === undefined) delete process.env.PI_SUBAGENT_EXTRA_AGENT_DIRS; else process.env.PI_SUBAGENT_EXTRA_AGENT_DIRS = extra;
     fs.rmSync(dir,{recursive:true,force:true});
   }
 }
@@ -34,7 +32,6 @@ test('only owned files load and deleting defaults survives discovery', () => fix
   put(path.join(cwd,'.pi/agents/scout.md'),profile('scout','runner: forbidden\n'));
   put(path.join(cwd,'.agents/outside.md'),profile('outside'));
   put(path.join(dir,'extra/extra.md'),profile('extra'));
-  process.env.PI_SUBAGENT_EXTRA_AGENT_DIRS = path.join(dir,'extra');
   let catalog = config.discoverChildAgents({cwd,isProjectTrusted:()=>true},'both');
   assert.deepEqual(catalog.agents.map(a=>a.name).sort(),['planner','reviewer','scout','worker']);
   assert(catalog.agents.every(a=>a.source==='shepherd' && a.filePath.startsWith(owned + path.sep)));

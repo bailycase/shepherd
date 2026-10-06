@@ -23,7 +23,7 @@
     and `OPENSSL_CONF` it was started with under `_SHEPHERD_STASH_<name>` (listed in
     `_SHEPHERD_STASH_NAMES`, and put back for pi's shell commands by `restore-env.sh`):
     `PI_CODING_AGENT_DIR` (Shepherd's home), `PI_PACKAGE_DIR` (the engine's package),
-    `PI_OFFLINE=1`, `PI_SKIP_VERSION_CHECK=1`, `PI_TELEMETRY=0`, `PI_SUBAGENTS_TEMP_ROOT`, and,
+    `PI_OFFLINE=1`, `PI_SKIP_VERSION_CHECK=1`, `PI_TELEMETRY=0`, and,
     when the user set no `NODE_EXTRA_CA_CERTS` of their own and the home's keychain export
     (`PiHome.keychainCertificatesFile`, private CAs the Mac's keychain trusts — an internal proxy
     or MCP server's root) isn't empty, `NODE_EXTRA_CA_CERTS` pointing at it (the sign-in bridge,
@@ -92,5 +92,5 @@
   shell inherits one): its home is always `<support>/pi`. It is how "your pi" is found: a login
   shell with the app's own value removed prints the one the user's startup files set
   (`YourPiLocator`), else `~/.pi/agent`. Terminals blank it, with
-  `PI_CODING_AGENT_SESSION_DIR`, `PI_PACKAGE_DIR`, `PI_OFFLINE` and `PI_SUBAGENTS_TEMP_ROOT`, so a
+  `PI_CODING_AGENT_SESSION_DIR`, `PI_PACKAGE_DIR` and `PI_OFFLINE`, so a
   terminal's pi takes them from the user's startup files only.

@@ -177,8 +177,8 @@ test("card helpers: tool preview follows the desktop rule and edit diffs cancel 
   assert.equal(long.length, 240); assert(long.endsWith("…"));
 });
 
-test("merged projection prioritizes active native and legacy runs before terminal attention and history", async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-merge-"));
+test("publisher accepts only owned Shepherd children and clears rows at session boundaries", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-publisher-"));
   const saved = { ...process.env }, reports = [], handlers = new Map(), bus = new Map();
   const server = net.createServer((socket) => socket.on("data", mod.jsonLines((data) => reports.push(data.children), assert.fail)));
   process.env.SHEPHERD_AGENT_ID = "fixture"; process.env.SHEPHERD_SOCKET = path.join(dir, "s.sock");
@@ -189,28 +189,32 @@ test("merged projection prioritizes active native and legacy runs before termina
     const emit = (name, data) => bus.get(name)?.(data);
     publisher.default({ on: (name, fn) => handlers.set(name, fn), events: { on: (name, fn) => bus.set(name, fn), emit } });
     handlers.get("session_start")({}, { hasUI: true, sessionManager: { getSessionId: () => "owner" } });
-    emit("shepherd:children:v1", { owner: "owner", children: Array.from({ length: 20 }, (_, i) => ({ runID: `native-${i}`, state: "complete", needsAttention: i !== 0 })) });
-    for (let i = 0; i < 20; i++) {
-      emit("subagent:async-started", { id: `history-${i}` });
-      emit("subagent:async-complete", { id: `history-${i}` });
-    }
-    emit("subagent:async-started", { id: "legacy-running" });
-    await until(() => reports.at(-1)?.some((c) => c.runID === "legacy-running"));
+    assert.deepEqual([...bus.keys()], ["shepherd:children:v1"]);
+    emit("shepherd:children:v1", { owner: "another-parent", children: [{ runID: "wrong-owner", state: "running" }] });
+    const children = [
+      ...Array.from({ length: 20 }, (_, i) => ({ runID: `native-history-${i}`, state: "complete" })),
+      { runID: "native-attention", state: "failed", needsAttention: true },
+      { runID: "native-running", state: "running" },
+      { runID: "native-queued", state: "queued" },
+    ];
+    emit("shepherd:children:v1", { owner: "owner", children });
+    await until(() => reports.at(-1)?.some((c) => c.runID === "native-running"));
     assert.equal(reports.at(-1).length, 20);
-    assert.equal(reports.at(-1)[0].runID, "legacy-running");
-    assert(reports.at(-1).slice(1).every((c) => c.needsAttention));
-    bus.set("subagents:rpc:v1:request", (request) => emit(`subagents:rpc:v1:reply:${request.requestId}`, {
-      success: true, data: { asyncSnapshot: { kind: "pi-subagents.async-status-snapshot", version: 1, runs: [
-        ...Array.from({ length: 20 }, (_, i) => ({ id: `snapshot-history-${i}`, state: "complete" })),
-        { id: "workflow", kind: "workflow", children: [{ state: "running" }, { state: "queued" }] },
-      ] } },
-    }));
-    emit("subagents:rpc:v1:ready");
-    handlers.get("tool_execution_end")({ toolName: "subagent" });
-    await until(() => reports.at(-1)?.some((c) => c.runID === "workflow"));
-    assert.deepEqual(reports.at(-1).slice(0, 2).map((c) => c.state), ["running", "queued"]);
-    assert.equal(reports.at(-1).length, 20);
-    assert(reports.at(-1).slice(2).every((c) => c.needsAttention));
+    assert.deepEqual(reports.at(-1).slice(0, 3).map((c) => c.runID), ["native-running", "native-queued", "native-attention"]);
+    assert(!reports.at(-1).some((c) => c.runID === "wrong-owner"));
+    handlers.get("session_start")({}, { hasUI: true, sessionManager: { getSessionId: () => "new-owner" } });
+    await until(() => reports.at(-1)?.length === 0);
+    emit("shepherd:children:v1", { owner: "owner", children });
+    emit("shepherd:children:v1", { owner: "new-owner", children: [{ runID: "new-child", state: "running" }] });
+    await until(() => reports.at(-1)?.[0]?.runID === "new-child");
+    assert.equal(reports.at(-1).length, 1);
+    handlers.get("session_shutdown")();
+    await until(() => reports.at(-1)?.length === 0);
+    process.env.SHEPHERD_CHILD = "1";
+    handlers.get("session_start")({}, { hasUI: true, sessionManager: { getSessionId: () => "child-owner" } });
+    emit("shepherd:children:v1", { owner: "child-owner", children });
+    await sleep(600); // A child must not publish after the debounce boundary either.
+    assert.equal(reports.at(-1).length, 0);
   } finally {
     handlers.get("session_shutdown")?.();
     await new Promise((r) => server.close(r));
@@ -219,7 +223,7 @@ test("merged projection prioritizes active native and legacy runs before termina
   }
 });
 
-test("an unchanged native children list is not republished", async () => {
+test("unchanged children are deduplicated but heartbeat until the list clears", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-dedupe-"));
   const saved = { ...process.env }, reports = [], handlers = new Map(), bus = new Map();
   const server = net.createServer((socket) => socket.on("data", mod.jsonLines((data) => reports.push(data.children), assert.fail)));
@@ -241,6 +245,14 @@ test("an unchanged native children list is not republished", async () => {
     emit("shepherd:children:v1", { owner: "owner", children: [{ ...row, state: "complete" }] });
     await until(() => reports.length >= 2);
     assert.equal(reports.at(-1)[0].state, "complete");
+    const beforeHeartbeat = reports.length;
+    await until(() => reports.length > beforeHeartbeat, 6_000);
+    assert.equal(reports.at(-1)[0].state, "complete");
+    emit("shepherd:children:v1", { owner: "owner", children: [] });
+    await until(() => reports.at(-1)?.length === 0);
+    const afterClear = reports.length;
+    await sleep(5_200); // Clearing the list cancels the five-second heartbeat.
+    assert.equal(reports.length, afterClear);
   } finally {
     handlers.get("session_shutdown")?.();
     await new Promise((r) => server.close(r));
@@ -256,7 +268,7 @@ test("managed CLIProxyAPI reaches native starts, resumes and workflow children w
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   let h;
   try {
-    process.env.HOME = dir; delete process.env.PI_SUBAGENT_EXTRA_AGENT_DIRS;
+    process.env.HOME = dir;
     process.env.PI_CODING_AGENT_DIR = path.join(dir, "pi");
     process.env.PI_OFFLINE = "1";
     process.env.SHEPHERD_NATIVE_CHILDREN = "1"; process.env.SHEPHERD_AGENT_ID = "fixture";
@@ -315,7 +327,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
   const { server, requests } = fixtureServer();
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   const saved = { ...process.env };
-  process.env.HOME = dir; delete process.env.PI_SUBAGENT_EXTRA_AGENT_DIRS;
+  process.env.HOME = dir;
   delete process.env.SHEPHERD_CLIPROXYAPI_CONFIG;
   process.env.PI_CODING_AGENT_DIR = path.join(dir, "config");
   process.env.PI_OFFLINE = "1";
@@ -917,7 +929,7 @@ test("the global instructions copied into Shepherd's pi home reach a child that 
   const saved = { ...process.env };
   let h;
   try {
-    process.env.HOME = dir; delete process.env.PI_SUBAGENT_EXTRA_AGENT_DIRS;
+    process.env.HOME = dir;
     process.env.PI_CODING_AGENT_DIR = path.join(dir, "config");
     delete process.env.SHEPHERD_CLIPROXYAPI_CONFIG;
     process.env.PI_OFFLINE = "1";

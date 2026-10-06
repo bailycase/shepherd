@@ -19,8 +19,8 @@ struct ShellIntegrationTests {
         #!/bin/sh
         printf '<%s>\\n' "$@" > "$CAPTURE"
         printf 'identity=%s socket=%s startup=%s\\n' "$SHEPHERD_AGENT_ID" "$SHEPHERD_SOCKET" "$STARTUP" >> "$CAPTURE"
-        printf 'home=%s sessions=%s package=%s offline=%s subagents=%s engine=%s\\n' "$PI_CODING_AGENT_DIR" \\
-          "$PI_CODING_AGENT_SESSION_DIR" "$PI_PACKAGE_DIR" "$PI_OFFLINE" "$PI_SUBAGENTS_TEMP_ROOT" "$SHEPHERD_PI_EXECUTABLE" >> "$CAPTURE"
+        printf 'home=%s sessions=%s package=%s offline=%s engine=%s\\n' "$PI_CODING_AGENT_DIR" \\
+          "$PI_CODING_AGENT_SESSION_DIR" "$PI_PACKAGE_DIR" "$PI_OFFLINE" "$SHEPHERD_PI_EXECUTABLE" >> "$CAPTURE"
         exit 17
         """.write(to: pi, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: pi.path)
@@ -36,7 +36,7 @@ struct ShellIntegrationTests {
                    "CAPTURE": capture.path, "SHEPHERD_AGENT_ID": "parent", "SHEPHERD_SOCKET": "parent",
                    // What a Shepherd started from an agent's shell would hand its panes.
                    "PI_CODING_AGENT_DIR": "/parent/pi", "PI_CODING_AGENT_SESSION_DIR": "/parent/pi/sessions",
-                   "PI_PACKAGE_DIR": "/parent/engine", "PI_OFFLINE": "1", "PI_SUBAGENTS_TEMP_ROOT": "/parent/tmp",
+                   "PI_PACKAGE_DIR": "/parent/engine", "PI_OFFLINE": "1",
                    "SHEPHERD_PI_EXECUTABLE": "/parent/pi-engine"]
         env.merge(command.env) { _, new in new }
         let process = Process()
@@ -54,7 +54,7 @@ struct ShellIntegrationTests {
         try await eventually("the login shell to exit") { !process.isRunning }
         #expect(process.terminationStatus == 17)
         #expect(try String(contentsOf: capture, encoding: .utf8) == "<--model>\n<provider/model>\n<-e>\n<user ext.ts>\n<-->\n<two words>\n<>\nidentity= socket= startup=ready\n"
-                + "home= sessions= package= offline= subagents= engine=\n")
+                + "home= sessions= package= offline= engine=\n")
         #expect(!FileManager.default.fileExists(atPath: home.appendingPathComponent(".pi").path))
     }
 }

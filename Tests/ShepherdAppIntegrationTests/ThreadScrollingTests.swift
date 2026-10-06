@@ -318,8 +318,8 @@ struct ThreadScrollingTests {
         #expect(thread.store.sentCount == 1)
         var running = ThreadHarness.snapshot(count: 12, running: true, revision: 2)
         running.provisional = [
-            NativeThreadMessage(entryID: "provisional:tool:c1", role: "toolResult", blocks: [NativeThreadBlock(kind: .text, text: "Run fan-out: 0/32 used")],
-                                toolName: "subagent", toolCallID: "c1", argumentsText: "{\"agent\":\"delegate\"}", status: "complete", truncated: false),
+            NativeThreadMessage(entryID: "provisional:tool:c1", role: "toolResult", blocks: [NativeThreadBlock(kind: .text, text: "Started child native-1")],
+                                toolName: "shepherd_child_start", toolCallID: "c1", argumentsText: "{\"agent\":\"delegate\"}", status: "complete", truncated: false),
         ]
         await thread.publish(running)
 
