@@ -46,7 +46,7 @@ struct SlashCommandSwitchFlowTests {
         #expect(app.server.slashCommandCatalog.map(\.name) == ["fix-tests", "session-name"], "the host still lists it")
         let row = try #require(vm.slashCommands.presentation.groups.flatMap(\.rows).first { $0.name == "fix-tests" })
         #expect(!row.isOn && !row.unlisted, "so the page can switch it back on")
-        #expect(vm.slashCommands.presentation.summary == "2 commands · 1 hidden")
+        #expect(vm.slashCommands.presentation.summary == "2 commands · 1 disabled")
 
         app.settings.setSlashCommand("fix-tests", on: true)
         try await eventuallyOnMain("the menu with it again") { names(store) == ["session-name", "fix-tests"] }

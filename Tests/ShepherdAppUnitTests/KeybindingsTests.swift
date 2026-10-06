@@ -180,13 +180,11 @@ struct KeybindingsTests {
     /// leaves the copy naming the old chord.
     @Test func settingsCopyNamesChordsAsTheyAreBound() {
         let keys = KeybindingsStore(store: Fixture.defaults())
-        #expect(AgentSettings.explanation(keys).contains("⌘N"))
         #expect(TerminalSettings.shellSubtitle(keys).contains("⌘D"))
 
         #expect(keys.assign(KeyChord(key: "j", command: true, option: true), to: .newAgent) == nil)
         #expect(keys.assign(KeyChord(key: "e", command: true, option: true), to: .newTerminal) == nil)
-        let agents = AgentSettings.explanation(keys), shell = TerminalSettings.shellSubtitle(keys)
-        #expect(agents.contains(keys.display(.newAgent)) && !agents.contains("⌘N"))
+        let shell = TerminalSettings.shellSubtitle(keys)
         #expect(shell.contains(keys.display(.newTerminal)) && !shell.contains("⌘D"))
 
         let before = keys.display(.alternateSend)

@@ -29,7 +29,7 @@ struct WorktreeSettings: View {
                 }
             }
             SettingsGroup(title: "Finalize",
-                          footnote: "The remote branch is never deleted by Shepherd — merging the PR cleans it up on GitHub. Per-repo GitHub settings live in the Finalize sheet.") {
+                          footnote: "The remote branch is never deleted by Shepherd. Merging the PR cleans it up on GitHub. Per-repo GitHub settings live in the Finalize sheet.") {
                 SettingsRow(title: "Commit remaining work",
                             subtitle: "Commits anything left in the worktree using the PR title. Off stops Finalize on a dirty worktree.") {
                     SettingsSwitch(label: "Commit remaining work", isOn: $settings.worktreeAutoCommit)

@@ -21,6 +21,8 @@ extension AppLayout {
     /// 48pt either side of the page's column.
     /// The page title: Geist 22/600, tracked −1%.
     static let settingsTitleSize: CGFloat = 22
+    /// A second heading inside a page (Pi's From pi): Geist 17/600, the title ramp + 2.
+    static let settingsSectionTitleSize: CGFloat = NWTextStyle.title.size + NW.Space.xxs
     static let settingsTitleTracking: CGFloat = -0.01
     /// A group's footnote: Geist 12/1.5.
     static let settingsFootnoteSize: CGFloat = 12

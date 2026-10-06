@@ -229,7 +229,7 @@ struct ClientSettingsTests {
         await model.refresh(hosts)
         #expect(model.reference(in: hosts)?.name == "build-01")
         #expect(model.text(.agents, in: hosts) == "- a\n")
-        #expect(model.saveTitle(in: hosts) == "Save to 3 hosts")
+        #expect(model.saveTitle(in: hosts) == "Save to all hosts")
         #expect(model.chip(for: hosts[1], file: .agents, in: hosts) == InstructionsChip(.attention, "differs · 2 lines"))
 
         model.setText("- a\n- b\n", file: .agents, in: hosts)

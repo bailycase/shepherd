@@ -149,8 +149,9 @@ struct InstructionsPresentationTests {
     }
 
     @Test func aFilesNoteSaysWhatItIsForAndItsSize() {
-        #expect(InstructionsPresentation.fileNote(.agents, text: String(repeating: "word ", count: 20)) == "how you work · ~25 tokens")
-        #expect(InstructionsPresentation.fileNote(.appendSystem, text: "", sentence: true) == "Rules that win · empty")
+        #expect(InstructionsPresentation.fileNote(.agents, text: String(repeating: "word ", count: 20)) == "how you work · 100 characters")
+        #expect(InstructionsPresentation.fileNote(.agents, text: "a") == "how you work · 1 character")
+        #expect(InstructionsPresentation.fileNote(.appendSystem, text: "", sentence: true) == "Overrides everything · 0 characters")
     }
 
     @Test func theSyncLineNamesEachHostsState() {

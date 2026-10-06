@@ -56,6 +56,7 @@ final class AppSettings {
         static let defaultServiceTier = "shepherd.agent.defaultServiceTier"
         static let goalCrossProviderEvaluation = "shepherd.agent.goalCrossProviderEvaluation"
         static let autoNameAgents = "shepherd.agent.autoName"
+        static let namingModel = "shepherd.agent.namingModel"
         static let skillsInSlashMenu = "shepherd.skills.slashMenu"
         static let hiddenSlashCommands = "shepherd.pi.slashCommands.hidden"
         static let mcpProjectConfig = "shepherd.mcp.projectConfig"
@@ -100,7 +101,7 @@ final class AppSettings {
 
         static let all = [
             terminalFontFamily, terminalFontSize, defaultModel,
-            defaultThinking, defaultServiceTier, goalCrossProviderEvaluation, autoNameAgents, queueDelivery, trimToolOutput, deferTools, codemode, compactAtPercent, shellPath,
+            defaultThinking, defaultServiceTier, goalCrossProviderEvaluation, autoNameAgents, namingModel, queueDelivery, trimToolOutput, deferTools, codemode, compactAtPercent, shellPath,
             agentMessages, piPanesExtension, piReviewExtension, subagentDisplay, piNativeSubagents,
             piMCPExtension, piBrowserExtension, piDesignReferences,
             childConcurrency, childModel, childThinking, childContext,
@@ -173,6 +174,12 @@ final class AppSettings {
     /// prompt) and the namer extension is never passed to pi.
     var autoNameAgents: Bool {
         didSet { store.set(autoNameAgents, forKey: Key.autoNameAgents) }
+    }
+
+    /// Settings ▸ Agents ▸ Session naming model: "provider/id" the namer tries first, or "" for
+    /// Automatic (its own cheapest-first list). Either way it falls back to the agent's own model.
+    var namingModel: String {
+        didSet { store.set(namingModel, forKey: Key.namingModel) }
     }
 
     /// Settings ▸ Skills ▸ Skills in the / menu: the composer lists pi's `/skill:name` commands.
@@ -490,6 +497,7 @@ final class AppSettings {
         goalsEnabled = store.object(forKey: Key.goalsEnabled) as? Bool ?? false
         goalCrossProviderEvaluation = store.object(forKey: Key.goalCrossProviderEvaluation) as? Bool ?? false
         autoNameAgents = store.object(forKey: Key.autoNameAgents) as? Bool ?? Defaults.autoNameAgents
+        namingModel = store.string(forKey: Key.namingModel) ?? ""
         skillsInSlashMenu = store.object(forKey: Key.skillsInSlashMenu) as? Bool ?? Defaults.skillsInSlashMenu
         hiddenSlashCommands = Set(store.stringArray(forKey: Key.hiddenSlashCommands) ?? [])
         // The directory now uses Shepherd's public API; discard the retired credential.
@@ -594,6 +602,7 @@ final class AppSettings {
         goalsEnabled = false
         goalCrossProviderEvaluation = false
         autoNameAgents = Defaults.autoNameAgents
+        namingModel = ""
         skillsInSlashMenu = Defaults.skillsInSlashMenu
         hiddenSlashCommands = []
         mcpProjectConfig = false

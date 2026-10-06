@@ -3,59 +3,26 @@ import ShepherdCore
 import ShepherdUI
 import ShepherdSessions
 
+/// Settings ▸ Pi (SettingsPi, SettingsPiFromPi, SettingsPiExtensions): Shepherd's own pi, then
+/// From pi, what came over from the user's pi. The bundled extensions are on Settings ▸ Extensions.
 struct PiSettings: View {
     /// Shepherd's pi on this Mac, whose catalog names the subagent model choices.
     let pi: PiSetup
     /// The view model's settings, so a preview's own settings draw the page.
     @Bindable var settings: AppSettings
+    /// The user's own pi, for From pi; nil leaves the section out (a test of the switches alone).
+    var yourPi: YourPiModel? = nil
+    var openExtensions: () -> Void = {}
     @State private var modelOptions: [String] = []
 
     var body: some View {
-        SettingsPage(title: "Pi", explanation: "Shepherd's own pi and the extensions Shepherd bundles into it.") {
+        SettingsPage(title: "Pi", explanation: "Shepherd's own copy of pi.") {
             SettingsGroup(title: "Shepherd's pi",
                           footnote: "Shepherd runs its own copy of pi, with its own sign-ins, settings and conversations. The pi in your terminal is yours: Shepherd never runs it or changes its files.") {
                 PathRow(title: pi.engine.version.map { "pi \($0)" } ?? "pi",
                         subtitle: "Included with Shepherd, and updated with it. Its home:", url: pi.home)
             }
-            SettingsGroup(title: "Bundled extensions",
-                          footnote: "Applies to agents launched on this Mac, including automations and remote agents. Running agents keep their extensions until restarted. Status and session tracking are always on.") {
-                SettingsRow(title: "Name agents automatically",
-                            subtitle: "Titles each new agent from its first prompt using the cheapest authed model. A rename you type is always final.") {
-                    SettingsSwitch(label: "Name agents automatically", isOn: $settings.autoNameAgents)
-                }
-                SettingsRow(title: "Terminals and agent tools",
-                            subtitle: "Let agents open and drive terminals, message or spawn agents, manage automations and send notifications.") {
-                    SettingsSwitch(label: "Terminals and agent tools", isOn: $settings.piPanesExtension)
-                }
-                SettingsRow(title: "Agent-to-agent messages",
-                            subtitle: "Whether an agent may message, steer, read or start another thread. Ask me opens a dialog each time. Automations can't answer one, so they need Always allow.") {
-                    NWPopupMenu(settings.agentMessages.title, minWidth: AppLayout.settingsPopupWidth) {
-                        ForEach(AgentMessagePolicy.allCases, id: \.self) { choice in
-                            Button(choice.title) { settings.agentMessages = choice }
-                        }
-                    }
-                    .accessibilityLabel("Agent-to-agent messages")
-                    .disabled(!settings.piPanesExtension)
-                }
-                SettingsRow(title: "Diff review tool", subtitle: "Let agents open the review pane with `review_diff`.") {
-                    SettingsSwitch(label: "Diff review tool", isOn: $settings.piReviewExtension)
-                }
-                SettingsRow(title: "MCP servers",
-                            subtitle: "Let agents use the servers in Settings ▸ MCP servers, through pi's own MCP and tool search.") {
-                    SettingsSwitch(label: "MCP servers", isOn: $settings.piMCPExtension)
-                }
-                SettingsRow(title: "Browser tools",
-                            subtitle: "Let agents open pages in their thread's Browser, read and click through them, and take screenshots.") {
-                    SettingsSwitch(label: "Browser tools", isOn: $settings.piBrowserExtension)
-                }
-                if settings.designToolEnabled {
-                    SettingsRow(title: "Design references",
-                                subtitle: "Let a thread read the design pieces you hand it with `design_get`. Only a thread you sent one to gets the tool.") {
-                        SettingsSwitch(label: "Design references", isOn: $settings.piDesignReferences)
-                    }
-                }
-            }
-
+            if let yourPi { FromYourPiSettings(model: yourPi, openExtensions: openExtensions) }
             SettingsGroup(title: "Native subagents") {
                 SettingsRow(title: "Native subagents",
                             subtitle: "Shepherd helpers, agent files and scripted workflows. Needs pi 0.85.1+. Children stop with their parent.") {

@@ -18,24 +18,24 @@ Save or Apply. Instructions and [Projects](settings-projects.md) edit files with
     "Search settings", a plain mono 11 "⌘F" in `textTertiary` trailing while it is empty), 10pt
     under Back and `NW.Space.l` above the pages; it takes focus when Settings opens, so typing
     filters at once
-  - the pages, one `NWSettingsNavRow` each, `NW.Space.xxs` apart, in this order: Appearance
-    (`circle.lefthalf.filled`) · Terminal (`terminal`) · Agents (`person.2`) · Subagents
-    (`arrow.turn.down.right`) · Worktrees (`arrow.branch`) · Projects (`folder`) · Pi (`pi`),
-    with its three pages always visible under it, Sign-in, From your pi and Slash commands (SettingsPi:
-    rows 28pt × density, 35pt in, Geist 12.5 `textSecondary`, the selected one `textPrimary` at 500
-    on `bgSelected`; Sign-in carries a 6pt `lantern` dot trailing while a provider an agent of
-    this Mac needs isn't signed in or a sign-in expired) · Instructions (`doc.text`) · Skills (`graduationcap`) · MCP servers
-    (`server.rack`) · Remote
-    (`dot.radiowaves.left.and.right`) · Keyboard (`keyboard`) · Advanced (`gearshape`) ·
-    Experiments (`flask`). A row is 32pt × density (`NW.Height.scaled(32)`), radius `s`, 10pt in:
-    a 13pt symbol in a 15pt box in `textSecondary` (`textPrimary` when selected), then, 10pt after
-    it, the name in Geist 13 `textPrimary`. The selected page sits on `bgSelected` with its name at
-    medium (500) weight from ProjectBrowser revision 572; hover is `bgHover`
-    (`NWSettingsNavMetrics`). The selected fill uses `bgSelected` without a theme-specific
-    replacement. `NWGlyph.Settings` draws the supplied vector outlines rather than similar
-    SF Symbols. The board's 1pt strokes remain 1pt on Retina displays too.
+  - the pages, one `NWSettingsNavRow` each, `NW.Space.xxs` apart, one flat list in the macOS
+    Settings boards' order (revision 1083): Appearance (`circle.lefthalf.filled`) · Terminal
+    (`terminal`) · Agents (`person.2`) · Subagents (`arrow.turn.down.right`) · Worktrees
+    (`arrow.branch`) · Projects (`folder`) · Sign-in (`lock`; a 6pt `lantern` dot trailing while
+    a provider an agent of this Mac needs isn't signed in or a sign-in expired) · Pi (`pi`) ·
+    Instructions (`doc.text`) · Skills (`graduationcap`) · Extensions (the board's filled puzzle
+    outline) · Slash commands (the board's filled `</>` outline) · MCP servers (`server.rack`) ·
+    Remote (`dot.radiowaves.left.and.right`) · Keyboard (`keyboard`) · Advanced (`gearshape`) ·
+    Experiments (`flask`). No row is nested under another. A row is 32pt × density
+    (`NW.Height.scaled(32)`), radius `s`, 10pt in: the glyph in a 15pt box in `textSecondary`
+    (`textPrimary` when selected), then, 10pt after it, the name in Geist 13 `textPrimary`. The
+    selected page sits on `bgSelected` with its name at medium (500); hover is `bgHover`
+    (`NWSettingsNavMetrics`). `NWGlyph.Settings` draws the boards' vector outlines rather than
+    similar SF Symbols; Extensions and Slash commands are the boards' filled outlines, cropped to
+    their ink and drawn at the boards' 42.86pt scale.
   - "Shepherd x.y.z · agent x.y.z" pinned at the bottom in mono `micro`, `textTertiary`, aligned with
-    the rows' icons: the app's own name, so "Shepherd Nightly …" there.
+    the rows' icons: the app's own name, so "Shepherd Nightly …" there. On Pi it names the
+    program: "· pi x.y.z".
 - **Search:** typing narrows the nav to pages with a match (a row's title, or a keyword such as
   "dark" for Mode or "tailscale" for Hosts) and lists the matching rows as buttons under their page
   (`caption`, `textSecondary`, indented past the icon); clicking one opens its page. When the page
@@ -150,34 +150,34 @@ The pages, in nav order. Each names its board; the strings in quotes are the boa
 - **Layout** (see Density and row settings):
   - Sidebar rows, "Compact 22 · Standard 28 · Comfortable 36 pt, for the sidebar and menus.":
     Compact · Standard · Comfortable.
-  - Density, "Row heights across the sidebar and chrome. Lower fits more agents.": a slider, 80–150%
-    in 5% steps, neutral 100%.
-  - Text size, "App chrome only.": a slider, 85–130% in 5% steps, neutral 100%.
-  - Sidebar width, no description: a slider in points ("239 pt"), 190–340, neutral 232. Dragging the
-    sidebar's edge moves it too.
+  - Density, "Row heights across the sidebar and chrome. Lower fits more agents.": a slider, 80–150
+    in steps of 5, neutral 100. The value is drawn bare, as the board draws it ("100"); VoiceOver
+    reads "100 percent".
+  - Text size, "App chrome only.": a slider, 85–130 in steps of 5, neutral 100, drawn bare.
+  - Sidebar width, no description: a slider, 190–340, neutral 232, drawn bare ("232"; VoiceOver
+    reads "points"). Dragging the sidebar's edge moves it too.
 
-## Terminal
+## Terminal (SettingsTerminal)
 
-No board draws this page; the nav lists it. "Terminals under a thread: their font and which
+ "Terminals under a thread: their font and which
 shell they run."
 
 - **Font** (footnote "Font changes apply to open terminals in place; running processes are
   untouched."): Font family, "Fixed-pitch families installed on this Mac. Ghostty falls back if a
   family can't be loaded.", a popup with System font, a divider, then the installed families (a
-  configured family that is missing stays listed); Font size, a slider in points ("12.5 pt"), 9–24
-  in 0.5pt steps; Preview, "Updates as you change the family and size.", a 320pt card on `bgWindow`
+  configured family that is missing stays listed); Font size, a slider, 9–24 in 0.5pt steps, drawn
+  bare ("12.5") as the board draws it; Preview, "Updates as you change the family and size.", a 320pt card on `bgWindow`
   (radius `s`) with four shell lines in the chosen font and the theme's terminal colors.
 - **Shell** (footnote "A new shell applies to terminals opened afterwards."): Shell, "Used by ⌘D
   and the terminals an agent opens." (the chord read from `KeybindingsStore`), a popup of known shells
   by path, in mono.
 
-## Agents (SettingsAgents, with QueueStates' settings card)
+## Agents (SettingsAgents, SettingsAgentsDeferred, with QueueStates' settings card)
 
-"Defaults for agents you create with ⌘N or the New Agent sheet. Existing agents keep their
-settings." The chord is read from `KeybindingsStore`, so a rebind never leaves the copy wrong.
+"Defaults and behavior for your agents. Existing agents keep their model, thinking level and speed."
 
 - **New agents:**
-  - Default model, "Preselected in the New Agent sheet. “Use the agent’s default” passes no `--model` at
+  - Default model, "Preselected in the New Agent sheet. "Use the agent's default" passes no `--model` at
     all.": a popup whose first item is "Use the agent’s default · <pi's own default model>", then a divider
     and the catalog's model ids. The catalog and pi's default load in a task, never in `body`.
   - Default thinking level, "Can be changed per agent from the composer.": Off · Minimal · Low ·
@@ -186,6 +186,14 @@ settings." The chord is read from `KeybindingsStore`, so a rebind never leaves t
     that.": Standard · Fast, default Standard (ComposerSpeed, the same row and segmented control as
     the thinking level). A thread whose model offers no service tier ignores it; a thread a remote
     client or an automation starts on this Mac takes it too.
+- **Session naming:**
+  - Session naming model, "Sessions are named automatically from their first prompt. Your manual
+    renames are never overwritten. Automatic prefers a low-cost model you’re signed in to.": a popup,
+    Automatic (default) · Claude Haiku 4.5 · Anthropic · Codex Mini · OpenAI · Gemini 2.5 Flash ·
+    Google (`AppSettings.namingModel`, "" for Automatic). A chosen model reaches the namer as
+    `SHEPHERD_NAMER_MODELS`, tried first; the namer still falls back to the agent's own model.
+    Automatic is the namer's own cheapest-first list. The on/off switch for naming is a host
+    setting remote clients change ("namer"); this Mac's page has no switch, as the board draws none.
 - **While the agent is working** (the queue's setting; QueueStates' Settings card still draws the
   retired Return row beside it):
   - There is no Return setting any more (the user's call, 2026-09-30): ↩ always queues and ⌘↩ is
@@ -199,15 +207,15 @@ settings." The chord is read from `KeybindingsStore`, so a rebind never leaves t
   list; docs/context-budget.md). Every row applies to agents started after a change; a running agent
   keeps what it started with and follows at its next launch.
   - Compact at, "How full an agent lets its context get before it compacts on its own, as a share
-    of the model’s window. pi’s default leaves 16k tokens free, about 94% of a 272k window. New
-    agents follow a change; running ones at their next launch.": a segmented control, pi’s
-    default · 60% · 70% · 80% · 90%, default pi’s default. It is written into Shepherd's pi home as
+    of the model's window. The default leaves 16k tokens free, about 94% of a 272k window. New
+    agents follow a change; running ones at their next launch.": a segmented control, Default ·
+    60% · 70% · 80% · 90%, default Default (pi's own reserve). It is written into Shepherd's pi home as
     pi's per-model `compaction.modelOverrides` (`PiCompactionThreshold`), never `reserveTokens`
     for every model, since a share of one model's window is not a share of another's; a share never
     leaves less room than pi's own 16,384 tokens, and a reserve the user set for a model is left
     alone. The Context card's auto-compact mark reads the same file, so a share moves the mark.
     On the iPhone and iPad it is not offered (a host's Context card shows its mark).
-  - Trim old tool output from the model’s context, "Clips one huge tool result in what the model is
+  - Trim old tool output from the model's context, "Clips one huge tool result in what the model is
     sent and, as the context fills, replaces the oldest tool output, file contents, reasoning and
     screenshots with a line saying what they were. The thread keeps all of it. New agents follow a
     change; running ones at their next launch.": a switch, default on (`AppSettings.trimToolOutput`).
@@ -225,8 +233,8 @@ settings." The chord is read from `KeybindingsStore`, so a rebind never leaves t
   - Codemode, a switch after Defer rarely used tools, default on. Text: "Lets the agent run JavaScript
     to batch tool calls and filter results, up to 128 calls and five minutes per script. Direct tool
     calls stay available. Scripts cannot call classifier or image models directly. Projects can
-    override this default." The Context footnote is "Applies when agents start or restart. A running
-    agent keeps its current settings." A host's Bundled extensions lists the same `codemode` switch.
+    override this default." No board draws it (a departure kept from codemode-settings.md). The
+    Context group has no footnote, as the board draws none. A host's Bundled extensions lists the same `codemode` switch.
     Project overrides and the user's requirement are in [codemode-settings.md](codemode-settings.md).
 
 - **Goal checks:**
@@ -308,7 +316,7 @@ automated step of the worktree flows can be turned off here.
 
 ## Keyboard (SettingsKeyboard)
 
-"Click a shortcut to record a new one. Shortcuts must include ⌘, except ⇧⇥ for cycling thinking levels."
+"Click a shortcut to record a new one. Shortcuts must include ⌘."
 
 - **A shortcut row:** the action's name as its title, in sentence case with "…" when it opens a
   sheet ("New agent with options…"), and its keycaps trailing. Clicking the keycaps records: they
@@ -317,8 +325,9 @@ automated step of the worktree flows can be turned off here.
   reason as the row's problem. A changed shortcut shows Reset (`.nwLink`, Geist 12, 6pt either
   side) just before its keycaps, `NW.Space.xs` away. A change reaches every menu, keycap, and
   terminal surface at once. The recorder's hit area is at least `NW.Height.controlS`, while its
-  keycaps keep the existing Settings tokens. The added thinking-level row follows the user's
-  [Cycle thinking requirement](boards/CycleThinking.md).
+  keycaps keep the existing Settings tokens. Cycle thinking level (⇧⇥ in the composer,
+  [Cycle thinking requirement](boards/CycleThinking.md)) still works and stays in `KeybindingsStore`,
+  but the page no longer lists it: the SettingsKeyboard board (revision 1083) draws no such row.
 - **Groups on the board:**
   - Agents: New agent in current checkout ⌘N · New agent with options… ⇧⌘T · New space… ⇧⌘N · Rename
     agent… ⌘R · Next agent · Previous agent · Command palette. The board shows Next agent, Previous

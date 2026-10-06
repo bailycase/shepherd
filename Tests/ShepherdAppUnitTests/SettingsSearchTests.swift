@@ -7,10 +7,9 @@ import Testing
 struct SettingsSearchTests {
     @Test func theNavListsEveryPageInDesignOrder() {
         #expect(SettingsSection.allCases.map(\.title) == [
-            "Appearance", "Terminal", "Agents", "Subagents", "Worktrees", "Projects", "Pi", "Sign-in", "From your pi", "Slash commands", "Instructions", "Skills",
-            "MCP servers", "Remote", "Keyboard", "Advanced", "Experiments",
+            "Appearance", "Terminal", "Agents", "Subagents", "Worktrees", "Projects", "Sign-in", "Pi", "Instructions", "Skills",
+            "Extensions", "Slash commands", "MCP servers", "Remote", "Keyboard", "Advanced", "Experiments",
         ])
-        #expect(SettingsSection.allCases.filter(\.isSubpage) == [.piSignIn, .piFromYourPi, .piSlashCommands], "Pi's three pages sit under it")
     }
 
     /// Instructions, Skills, MCP servers and Experiments fill the detail area; every other page
@@ -45,9 +44,9 @@ struct SettingsSearchTests {
         ("queue", .agents, ["When a turn ends, send the queue"]),
         ("steer", .keyboard, ["Shortcuts"]),
         ("all at once", .agents, ["When a turn ends, send the queue"]),
-        ("compaction", .agents, ["Compact at", "Trim old tool output from the model’s context"]),
+        ("compaction", .agents, ["Compact at", "Trim old tool output from the model's context"]),
         ("auto-compact", .agents, ["Compact at"]),
-        ("tool results", .agents, ["Trim old tool output from the model’s context"]),
+        ("tool results", .agents, ["Trim old tool output from the model's context"]),
         ("tool search", .agents, ["Defer rarely used tools"]),
         ("defer", .agents, ["Defer rarely used tools"]),
         ("system prompt", .instructions, ["AGENTS.md", "APPEND_SYSTEM.md"]),
@@ -70,27 +69,28 @@ struct SettingsSearchTests {
         ("anthropic", .piSignIn, ["Anthropic"]),
         ("groq", .piSignIn, ["Add an API key"]),
         ("models.json", .piSignIn, ["Custom providers"]),
-        ("models.json", .piFromYourPi, ["Custom providers"]),
-        ("trust.json", .piFromYourPi, ["Trusted folders"]),
-        ("re-import", .piFromYourPi, ["Re-import all", "Logins", "Custom providers", "Default model", "Trusted folders", "Instructions",
-                                      "Skills", "Prompts", "Themes"]),
-        ("CLAUDE.md", .piFromYourPi, ["Instructions"]),
-        ("full access", .piFromYourPi, ["Extensions"]),
-        // Settings ▸ Pi ▸ Slash commands.
+        ("models.json", .pi, ["Custom providers"]),
+        ("trust.json", .pi, ["Trusted folders"]),
+        ("re-import", .pi, ["Re-import all", "Logins", "Custom providers", "Default model", "Trusted folders", "Instructions",
+                            "Skills", "Prompts", "Themes"]),
+        ("CLAUDE.md", .pi, ["Instructions"]),
+        ("full access", .pi, ["Imported extensions"]),
+        // Settings ▸ Slash commands.
         ("hide", .piSlashCommands, ["Search commands"]),
         ("registerCommand", .piSlashCommands, ["Extensions"]),
         ("argument-hint", .piSlashCommands, ["Prompt templates"]),
-        ("turned off", .piSlashCommands, ["Hidden commands"]),
+        ("turned off", .piSlashCommands, ["Disabled commands"]),
         ("engine", .pi, ["Shepherd's pi"]),
-        ("browser", .pi, ["Browser tools"]),
+        ("browser", .extensions, ["Browser tools"]),
+        ("session naming", .agents, ["Session naming model"]),
         ("native subagents", .pi, ["Native subagents"]),
         ("filter subagents", .subagents, ["Filter subagents"]),
         ("profiles", .subagents, ["New subagent"]),
         ("restore defaults", .subagents, ["Restore defaults"]),
-        ("agent-to-agent", .pi, ["Agent-to-agent messages"]),
-        ("agent_send", .pi, ["Agent-to-agent messages"]),
-        ("approve", .pi, ["Agent-to-agent messages"]),
-        ("spawn", .pi, ["Agent-to-agent messages"]),
+        ("agent-to-agent", .extensions, ["Agent-to-agent messages"]),
+        ("agent_send", .extensions, ["Agent-to-agent messages"]),
+        ("approve", .extensions, ["Agent-to-agent messages"]),
+        ("spawn", .extensions, ["Agent-to-agent messages"]),
         ("claude desktop", .mcp, ["Import…"]),
         (".mcp.json", .mcp, ["Also use a repo’s .mcp.json"]),
     ] as [(String, SettingsSection, [String])])
@@ -126,8 +126,7 @@ struct SettingsSearchTests {
 
     /// "theme" finds only the themes copied from your pi, never a theme-sync switch.
     @Test func piThemeSyncIsNotASetting() {
-        #expect(SettingsSection.piFromYourPi.matches(for: "theme") == ["Themes"])
-        #expect(SettingsSection.pi.matches(for: "theme").isEmpty)
+        #expect(SettingsSection.pi.matches(for: "theme") == ["Themes"])
         #expect(!SettingsSection.pi.items.contains("Sync pi theme"))
     }
 

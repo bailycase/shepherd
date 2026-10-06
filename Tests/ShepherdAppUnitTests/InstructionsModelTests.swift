@@ -123,8 +123,9 @@ struct InstructionsModelTests {
         defer { hosts.removeHost(id: hostID) }
         let model = await makeModel(hosts)
         // An offline host still takes the save later, so it counts.
-        #expect(model.saveTitle == "Save to 2 hosts")
+        #expect(model.saveTitle == "Save to all hosts")
         model.sameEverywhere = false
+        #expect(model.saveTitle == "Save to This Mac")
         model.machine = .remote(hostID)
         #expect(model.saveTitle == "Save to horizon")
     }

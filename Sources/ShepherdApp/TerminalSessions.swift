@@ -1085,6 +1085,7 @@ final class TerminalSessionStore {
             goalsEnabled: settings.goalsEnabled,
             namerExtensionPath: settings.autoNameAgents ? try NamerExtension.installedPath() : nil,
             needsName: Self.wantsNamer(for: agent, autoName: settings.autoNameAgents),
+            namingModel: settings.namingModel,
             isAutomation: isAutomation,
             instructions: (try InstructionsExtension.installedPath(), ShepherdPaths.instructionsDirectory().path),
             suggestFiles: suggestFiles.map(\.fileName),

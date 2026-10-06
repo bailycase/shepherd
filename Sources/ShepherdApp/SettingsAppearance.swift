@@ -53,18 +53,18 @@ struct AppearanceSettings: View {
                                       options: NWDensity.allCases.map { ($0, $0.title) })
                 }
                 SettingsRow(title: "Density", subtitle: "Row heights across the sidebar and chrome. Lower fits more agents.") {
-                    NWValueSlider("Density", value: $settings.uiDensity, in: AppSettings.uiDensityRange, step: 0.05, neutral: 1) {
-                        "\(Int(($0 * 100).rounded()))%"
+                    NWValueSlider("Density", value: $settings.uiDensity, in: AppSettings.uiDensityRange, step: 0.05, neutral: 1, unit: "percent") {
+                        "\(Int(($0 * 100).rounded()))"
                     }
                 }
                 SettingsRow(title: "Text size", subtitle: "App chrome only.") {
-                    NWValueSlider("Text size", value: $settings.uiTextScale, in: AppSettings.uiTextScaleRange, step: 0.05, neutral: 1) {
-                        "\(Int(($0 * 100).rounded()))%"
+                    NWValueSlider("Text size", value: $settings.uiTextScale, in: AppSettings.uiTextScaleRange, step: 0.05, neutral: 1, unit: "percent") {
+                        "\(Int(($0 * 100).rounded()))"
                     }
                 }
                 SettingsRow(title: "Sidebar width") {
                     NWValueSlider("Sidebar width", value: $settings.sidebarWidth, in: AppSettings.sidebarWidthRange, step: 1,
-                                neutral: Double(AppLayout.sidebarDefaultWidth)) { "\(Int($0)) pt" }
+                                neutral: Double(AppLayout.sidebarDefaultWidth), unit: "points") { "\(Int($0))" }
                 }
             }
         }
