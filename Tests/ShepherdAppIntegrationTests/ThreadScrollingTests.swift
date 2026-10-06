@@ -11,15 +11,17 @@ import Vision
 
 /// A real `ThreadView` in an off-screen window, fed snapshots the test controls. Nothing here
 /// sends mouse or keyboard events: "the user moved" is the ⌥⌘↑/↓ turn commands (the same
-/// path the menu takes) or a programmatic scroll of the clip view.
+/// path the menu takes) or a clip-view scroll with the real input handler's wheel intent.
 @MainActor
 private final class ThreadHarness {
     let store = NativeThreadStore()
     let commands = ThreadCommandCenter()
+    let input = ThreadInput()
     var snapshot: NativeThreadSnapshot
     let window: OffscreenWindow
     private let pillSize = NSHostingView(rootView: NWJumpToLatest(action: {})).fittingSize
     var olderRequests = 0
+    private var scrollPhase = ScrollPhase.idle
     var olderReply: CheckedContinuation<NativeThreadResult, Never>?
 
     init(messages: Int, running: Bool = false, paragraphs: Int = 3, olderCursor: String? = nil, subagents: [ChildRun] = []) {
@@ -40,8 +42,9 @@ private final class ThreadHarness {
             }
             return .snapshot(value: self.snapshot)
         }
-        window.show(ThreadView(store: store, active: true, isFocused: false, request: request, commandKey: "thread", inspectSubagent: { _ in }, listModels: { .empty })
-            .environment(\.threadCommands, commands))
+        window.show(ThreadView(store: store, active: true, isFocused: false, request: request, commandKey: "thread", inspectSubagent: { _ in }, listModels: { .empty }, retainedInput: input)
+            .environment(\.threadCommands, commands)
+            .onScrollPhaseChange { [weak self] _, phase, _ in self?.scrollPhase = phase })
     }
 
     /// `count` alternating user/assistant messages; each answer is `paragraphs` paragraphs.
@@ -111,21 +114,30 @@ private final class ThreadHarness {
         let region = NSRect(x: host.bounds.midX - ceil(pillSize.width) / 2,
                             y: host.isFlipped ? top : host.bounds.height - top - pillSize.height,
                             width: ceil(pillSize.width), height: ceil(pillSize.height))
-        guard let bitmap = host.bitmapImageRepForCachingDisplay(in: region) else {
+        // Vision on macOS 27 rejects the pill-sized crop. Recognize the whole window and
+        // require the matching text's center to fall inside the pill's measured region.
+        guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else {
             Issue.record("Could not capture the thread while checking the jump pill")
             return false
         }
-        host.cacheDisplay(in: region, to: bitmap)
+        host.cacheDisplay(in: host.bounds, to: bitmap)
         guard let image = bitmap.cgImage else {
             Issue.record("The thread capture had no image")
             return false
         }
         let request = VNRecognizeTextRequest()
         request.usesLanguageCorrection = false
-        do { try VNImageRequestHandler(cgImage: image).perform([request]) }
-        catch { Issue.record(error); return false }
-        return (request.results ?? []).contains {
-            $0.topCandidates(1).first?.string.localizedCaseInsensitiveContains("Jump to latest") == true
+        do {
+            try request.useCPUForTests()
+            try VNImageRequestHandler(cgImage: image).perform([request])
+        } catch { Issue.record(error); return false }
+        return (request.results ?? []).contains { observation in
+            guard let text = observation.topCandidates(1).first,
+                  let range = text.string.range(of: "Jump to latest", options: .caseInsensitive),
+                  let bounds = try? text.boundingBox(for: range)?.boundingBox else { return false }
+            let point = NSPoint(x: bounds.midX * host.bounds.width,
+                                y: (host.isFlipped ? 1 - bounds.midY : bounds.midY) * host.bounds.height)
+            return region.contains(point)
         }
     }
 
@@ -137,14 +149,16 @@ private final class ThreadHarness {
         host.cacheDisplay(in: host.bounds, to: bitmap)
         let image = try #require(bitmap.cgImage)
         let request = VNRecognizeTextRequest()
+        try request.useCPUForTests()
         request.usesLanguageCorrection = false
         try VNImageRequestHandler(cgImage: image).perform([request])
         return request.results?.first { $0.topCandidates(1).first?.string == text }
             .map { (1 - $0.boundingBox.midY) * host.bounds.height }
     }
 
-    /// Scrolls the clip view to the end, the way a reader dragging to the bottom lands.
+    /// The wheel monitor's real input path, followed by its native clip-view movement.
     func scrollToEnd() {
+        input.readerScrolled(upward: false)
         let clip = scrollView.contentView
         let target = clip.constrainBoundsRect(NSRect(origin: NSPoint(x: 0, y: scrollView.documentView!.bounds.height), size: clip.bounds.size)).origin
         clip.scroll(to: target)
@@ -196,7 +210,7 @@ private final class ThreadHarness {
             let now = distanceFromBottom
             still = abs(now - last) < 0.5 ? still + 1 : 0
             last = now
-            return still >= 4
+            return still >= 4 && scrollPhase == .idle
         }
     }
 

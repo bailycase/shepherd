@@ -61,8 +61,8 @@ struct ComposerAttachments: Equatable {
     mutating func reject(_ message: String) { error = message }
 }
 
-/// Shared by a thread's drop surface and composer; only the composer observes attachments
-/// and focus requests, so these interactions do not rebuild the transcript.
+/// Shared by a thread's input paths; only the composer observes attachments and focus
+/// requests. Scroll intent is sampled with geometry, without rebuilding the transcript.
 @MainActor
 @Observable
 final class ThreadInput {
@@ -73,6 +73,18 @@ final class ThreadInput {
         didSet { if available != oldValue { generation += 1 } }
     }
     private var generation = 0
+    @ObservationIgnored private var wheelIntentUntil = Date.distantPast
+    @ObservationIgnored private var wheelUpward = false
+
+    /// Recoil after a downward wheel tick is layout, not a reader scrolling up again.
+    func hasWheelIntent(movingUp: Bool) -> Bool {
+        Date() <= wheelIntentUntil && movingUp == wheelUpward
+    }
+
+    func readerScrolled(upward: Bool) {
+        wheelUpward = upward
+        wheelIntentUntil = Date().addingTimeInterval(0.35)
+    }
 
     func focus() {
         guard available else { return }
