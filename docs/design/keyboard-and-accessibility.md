@@ -11,8 +11,10 @@ in UserDefaults under `shepherd.keybindings`).
 - **One source:** menus, palette keycaps, Settings ▸ Keyboard, copy that names a chord
   (Settings ▸ Agents and Terminal), and the Ghostty unbind list all read the store. Hardcoding a
   chord in a view is a bug, and a hint is never shown for a chord that isn't wired.
-- **Rules for a rebound chord:** it must include ⌘, must not use a digit (⌘1–9), must not
-  be ⌘, or a plain ⌘ system or terminal chord (⌘Q, ⌘H, ⌘M, ⌘C, ⌘V, ⌘X, ⌘A, ⌘Z), and must not be
+- **Rules for a rebound chord:** it must include ⌘, except ⇧⇥ for Cycle thinking level in a
+  focused composer. It must not use a digit (⌘1–9), must not
+  be ⌘,, an app-switching chord (⌘⇥ or ⇧⌘⇥), or a plain ⌘ system or terminal chord
+  (⌘Q, ⌘H, ⌘M, ⌘C, ⌘V, ⌘X, ⌘A, ⌘Z), and must not be
   another action's chord.
 - **Keycaps** (`NWKeycap`; Controls, Composer & menus): one cap per key, modifiers first in
   Apple's order (⌃⌥⇧⌘), each at least 18pt, mono 10.5 `textSecondary` on `bgRaised` with a
@@ -37,6 +39,7 @@ in UserDefaults under `shepherd.keybindings`).
 | ⌘J · ⇧⌘↩ | Show or hide the terminal panel, opening a terminal when there is none · maximize or restore it |
 | ⇧⌘S · ⇧⌘B | Show or hide the sidebar · the side pane |
 | ⇧⌘M | Model picker |
+| ⇧⇥ | Cycle thinking level through the focused composer's offered choices, wrapping at the end; rebindable in Settings > Keyboard > Thread, no menu item or terminal unbind |
 | ⌘. | Stop the agent |
 | ⌥⌘↑ · ⌥⌘↓ | Previous · next turn |
 | ⌘I | Inspect subagent |

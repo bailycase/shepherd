@@ -175,8 +175,9 @@ that scales row heights, not controls. Text size scales type only.
 - The keyboard is first-class and the fast path never needs a dialog. Every action is a menu-bar
   item; a chord lives in `KeybindingsStore` and nowhere else. Hardcoding a chord in a view is a
   bug, and a hint is never shown for a chord that isn't wired.
-- A rebound chord must include ⌘ and avoid ⌘1–9, ⌘, and the plain system chords. A chord the app
-  chrome uses must be in `appOwnedChords` so a focused Ghostty surface does not eat it.
+- A rebound chord must include ⌘, except ⇧⇥ for Cycle thinking level in a focused composer, and
+  avoid ⌘1–9, ⌘, and the plain system chords. A chord the app chrome uses must be in `appOwnedChords`
+  so a focused Ghostty surface does not eat it; composer-only shortcuts stay out.
 - Keycaps (`NWKeycap`) put modifiers in Apple's order, ⌃⌥⇧⌘, one cap per key.
 - ⏎ confirms and ⎋ cancels in a sheet (a destructive button, and every button of
   `PeerApprovalDialog`, is never the ⏎ default); Esc closes a menu, then the command list, then

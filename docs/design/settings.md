@@ -308,7 +308,7 @@ automated step of the worktree flows can be turned off here.
 
 ## Keyboard (SettingsKeyboard)
 
-"Click a shortcut to record a new one. Shortcuts must include ⌘."
+"Click a shortcut to record a new one. Shortcuts must include ⌘, except ⇧⇥ for cycling thinking levels."
 
 - **A shortcut row:** the action's name as its title, in sentence case with "…" when it opens a
   sheet ("New agent with options…"), and its keycaps trailing. Clicking the keycaps records: they
@@ -316,7 +316,9 @@ automated step of the worktree flows can be turned off here.
   the next chord is proposed, and ⎋ cancels. A chord the rules reject (Keyboard) is refused with its
   reason as the row's problem. A changed shortcut shows Reset (`.nwLink`, Geist 12, 6pt either
   side) just before its keycaps, `NW.Space.xs` away. A change reaches every menu, keycap, and
-  terminal surface at once.
+  terminal surface at once. The recorder's hit area is at least `NW.Height.controlS`, while its
+  keycaps keep the existing Settings tokens. The added thinking-level row follows the user's
+  [Cycle thinking requirement](boards/CycleThinking.md).
 - **Groups on the board:**
   - Agents: New agent in current checkout ⌘N · New agent with options… ⇧⌘T · New space… ⇧⌘N · Rename
     agent… ⌘R · Next agent · Previous agent · Command palette. The board shows Next agent, Previous
@@ -332,7 +334,8 @@ automated step of the worktree flows can be turned off here.
     is changed. An individual Reset checks for conflicts just like a new assignment. If another
     action now uses that default, the row shows the existing conflict message and keeps its chord.
 - **Every rebindable action is listed**, in the menu bar's groups: the app adds Delete agent ⇧⌘W to
-  Agents, a Thread group (Stop agent, Model picker, Previous turn, Next turn, Inspect subagent),
+  Agents, a Thread group (Stop agent, Choose model…, Cycle thinking level ⇧⇥, Previous turn, Next
+  turn, Inspect subagent),
   While the agent is working (QueueStates' Keyboard card, in its order: ↩ and ⌘↩ named for what they do,
   "Queue it, the agent takes it when the turn ends" and "Send and steer now"; Edit the last queued message ↑;
   Move the focused message ⌥↑↓; Delete the focused message ⌫; Steer the focused message ⌘↩; Stop the
