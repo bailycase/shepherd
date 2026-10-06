@@ -718,6 +718,46 @@ struct ThreadTailFlowTests {
         }
     }
 
+    @Test(arguments: [false, true])
+    func workersFinishingDuringLongTurnsKeepTheTranscriptVisible(native: Bool) async throws {
+        try await Self.withDeck(size: CGSize(width: 2000, height: 870), native: native) { deck in
+            deck.model.tray = true
+            try await deck.open()
+            for turn in 0..<2 {
+                let at = Fx.base + Double(50_000 + turn * 2) * 60_000
+                var live = [Fx.user("worker-turn-\(turn)", "Review the project with two workers.", at: at)]
+                var workers = (0..<2).map { index in
+                    ChildRun(runID: "worker-\(turn)-\(index)", label: "Read-only review of project settings and thread rendering", state: "running", startedAt: at + Double(index), role: "worker")
+                }
+                for step in 0..<30 {
+                    live.append(Fx.reply("worker-prose-\(turn)-\(step)", Fx.prose(step.isMultiple(of: 10) ? 45 : 1, step), at: at + Double(step) * 2000))
+                    live.append(Fx.tool("worker-call-\(turn)-\(step)", "shepherd_child_wait", ["ids": workers.map(\.runID)], output: "Waiting for the review.", at: at + Double(step) * 2000))
+                    if step >= 25 {
+                        for index in workers.indices {
+                            workers[index].state = "complete"
+                            workers[index].endedAt = at + 6000
+                            workers[index].summary = "Review complete. No material regression found."
+                        }
+                    }
+                    deck.host.running = true
+                    deck.host.provisional = live
+                    deck.host.subagents = workers
+                    deck.host.bump()
+                    await deck.store.refresh()
+                    if step.isMultiple(of: 5) { try await deck.pass(.milliseconds(40)) }
+                }
+                live.append(Fx.reply("worker-final-\(turn)", "Both reviews are complete.", at: at + 64_000))
+                await deck.publish(running: false, provisional: live)
+                try await deck.pass(.milliseconds(500))
+                let liveIDs = Set(deck.store.rows.map(\.id))
+                await deck.publish(running: false, provisional: []) { $0.all += live }
+                #expect(deck.store.rows.count == 1, "the saved page starts inside the completed turn")
+                #expect(deck.store.rows.allSatisfy { !liveIDs.contains($0.id) }, "saved history replaces the live reply's ID")
+                try await deck.expectTail("workers and turn \(turn) complete", holding: .milliseconds(300))
+            }
+        }
+    }
+
     /// A finished subagent's tray over the composer, then gone.
     @Test(.timingSensitive, arguments: sizes)
     func aFinishedSubagentTrayCollapsingKeepsTheTail(size: CGSize) async throws {
@@ -794,9 +834,8 @@ struct ThreadTailFlowTests {
                 guard !turnOpen else { return }
                 counter += 1
                 turnOpen = true
-                await deck.publish(running: true, provisional: []) {
-                    $0.all.append(Fx.user("fz\(counter)u", "Prompt \(counter): please run the tests and fix what fails.", at: promptAt()))
-                }
+                let prompt = Fx.user("fz\(counter)u", "Prompt \(counter): please run the tests and fix what fails.", at: promptAt())
+                await deck.publish(running: true, provisional: []) { $0.all.append(prompt) }
             }
             @MainActor func finishTurn() async {
                 guard turnOpen else { return }

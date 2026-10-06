@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 
-// Separate from pi-subagents data. Records carry no executable configuration.
+// Shepherd-owned records carry no executable configuration.
 export function missionStore(root, cwd) {
   const project = fs.realpathSync(cwd);
   const dir = path.join(root, "missions", createHash("sha256").update(project).digest("hex"));

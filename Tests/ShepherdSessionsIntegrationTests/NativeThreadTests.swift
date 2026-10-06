@@ -477,16 +477,16 @@ struct NativeThreadTests {
 
     /// Model-only customs and Shepherd's own child reports stay out; ids of messages without a
     /// timestamp keep their position in pi's list.
-    @Test func subagentNoiseStaysOutOfTheTranscript() async throws {
+    @Test func modelOnlyCustomsAndChildReportsStayOutOfTheTranscript() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
         let pi = try await PiAgent.launch(on: h)
-        _ = try await pi.send("subagent-noise", from: try await pi.ready())
+        _ = try await pi.send("child-report-noise", from: try await pi.ready())
         let s = try await pi.snapshot("the noisy history") { $0.messages.last?.entryID == "m:8" }
         #expect(s.messages.map(\.entryID) == ["user:1733234567890", "assistant:1733234567891", "m:2", "m:3", "t:call_1", "m:6", "m:8"])
         #expect(s.messages.first { $0.entryID == "m:6" }?.blocks.first?.text == "A note the user should see")
         #expect(s.messages.first { $0.entryID == "m:3" }?.blocks.map(\.text) == ["Spawning."])
-        #expect(s.messages.first { $0.entryID == "t:call_1" }?.argumentsText == #"{"action":"list"}"#)
+        #expect(s.messages.first { $0.entryID == "t:call_1" }?.argumentsText == "{}")
         #expect(try await pi.request(.snapshot(beforeEntryID: "m:8")).snapshotValue?.messages.last?.entryID == "m:6")
     }
 

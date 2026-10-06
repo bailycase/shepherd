@@ -145,6 +145,39 @@ struct ScrollFollowerLayoutTests {
         #expect(!follower.followingSentTurn)
     }
 
+    @Test(arguments: [false, true])
+    func layoutCannotReattachAReaderButScrollingBackToTheTailCan(nativeAnchor: Bool) {
+        var follower = NativeScrollFollower(sticky: false, unseen: true)
+        let above = Self.probe(offset: 1120)
+        let shrinking = Self.probe(content: 1000)
+        let clamped = Self.probe(content: 1000, offset: 420)
+        let resized = Self.probe(content: 1020, offset: 420)
+        let nearTail = Self.probe(content: 1020, offset: 430)
+        // Replacement shrinks past the reader, then clamps the offset in a separate reading.
+        let shrinkRepair = follower.observe(from: above, to: shrinking, gesture: false, nativeAnchor: nativeAnchor)
+        let clampRepair = follower.observe(from: shrinking, to: clamped, gesture: false, nativeAnchor: nativeAnchor)
+        #expect(!shrinkRepair && !clampRepair)
+        #expect(!follower.sticky && follower.unseen)
+        // Even a live gesture does not turn a layout adjustment into reader intent.
+        let layoutRepair = follower.observe(from: clamped, to: resized, gesture: true, nativeAnchor: nativeAnchor)
+        #expect(!layoutRepair && !follower.sticky && follower.unseen)
+        // A reader returning inside the band with the layout unchanged re-attaches.
+        let readerRepair = follower.observe(from: resized, to: nearTail, gesture: true, nativeAnchor: nativeAnchor)
+        #expect(!readerRepair)
+        #expect(follower.sticky && !follower.unseen)
+    }
+
+    @Test(arguments: [1800.0, 2200.0])
+    func aReadersReturnToTheTailCanRemeasureLazyRows(content: Double) {
+        var follower = NativeScrollFollower(sticky: false, unseen: true)
+        let above = Self.probe(offset: 1120)
+        let tail = Self.probe(content: content, offset: content - 580)
+        #expect(tail.layoutDiffers(from: above))
+        let repaired = follower.observe(from: above, to: tail, gesture: true)
+        #expect(!repaired)
+        #expect(follower.sticky && !follower.unseen)
+    }
+
     @Test func theTailIsZeroAndFittingContentIsNegative() {
         #expect(Self.tail.distance == 0)
         #expect(NativeScrollProbe(content: 300, offset: -60, container: 520, insetTop: 60, insetBottom: 120).distance < 0)

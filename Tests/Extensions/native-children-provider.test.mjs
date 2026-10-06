@@ -9,7 +9,7 @@ import { children, childrenSource, harness, installManagedProvider, providerServ
 process.env.SHEPHERD_MISSIONS = "1"; // These tests cover mission records and the mission parameters, which are off unless this is set (docs/native-subagents.md › Missions).
 
 const PARENT = (dir, home) => ({
-  HOME: dir, PI_CODING_AGENT_DIR: home, PI_OFFLINE: "1", PI_SUBAGENT_EXTRA_AGENT_DIRS: undefined, SHEPHERD_CLIPROXYAPI_CONFIG: undefined,
+  HOME: dir, PI_CODING_AGENT_DIR: home, PI_OFFLINE: "1", SHEPHERD_CLIPROXYAPI_CONFIG: undefined,
   SHEPHERD_NATIVE_CHILDREN: "1", SHEPHERD_AGENT_ID: "fixture", SHEPHERD_SOCKET: path.join(dir, "shepherd.sock"), SHEPHERD_EXT_CHILDREN: childrenSource,
 });
 const put = (file, text) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, text); };
@@ -28,7 +28,7 @@ test("a helper from a home with a connection gets the managed provider and only 
     put(bridge, ""); put(userExtension, "");
     const parentEnv = {
       PATH: "/usr/bin", HOME: dir, PI_CODING_AGENT_DIR: home, PI_PACKAGE_DIR: "/engine/package", PI_OFFLINE: "0", PI_SKIP_VERSION_CHECK: "1",
-      PI_TELEMETRY: "0", PI_SUBAGENTS_TEMP_ROOT: "/tmp/pi-subagents", PI_MODEL: "parent/model", PI_SESSION_ID: "parent-session",
+      PI_TELEMETRY: "0", PI_MODEL: "parent/model", PI_SESSION_ID: "parent-session",
       NODE_EXTRA_CA_CERTS: "/certs/keychain-certificates.pem", _SHEPHERD_STASH_NAMES: "NODE_OPTIONS", _SHEPHERD_STASH_NODE_OPTIONS: "--require /user/hook.js",
       SHEPHERD_AGENT_ID: "parent-agent", SHEPHERD_SOCKET: "/run/shepherd.sock", SHEPHERD_DESIGN_ID: "d1", SHEPHERD_EXT_PANES: "/ext/panes.ts",
       SHEPHERD_EXT_CHILDREN: bridge, SHEPHERD_NATIVE_CHILDREN: "1", SHEPHERD_MODEL: "parent/model", SHEPHERD_CHILD_CONCURRENCY: "4",
@@ -56,7 +56,7 @@ test("a helper from a home with a connection gets the managed provider and only 
     assert.equal(launch.env.NODE_EXTRA_CA_CERTS, "/certs/keychain-certificates.pem", "a private CA reaches the helper's requests");
     assert.equal(launch.env._SHEPHERD_STASH_NODE_OPTIONS, "--require /user/hook.js", "the user's environment is still there for a helper's shell commands (restore-env.sh)");
     // What the filter removes on purpose.
-    for (const key of ["PI_SUBAGENTS_TEMP_ROOT", "PI_MODEL", "PI_SESSION_ID"]) assert.equal(launch.env[key], undefined, key);
+    for (const key of ["PI_MODEL", "PI_SESSION_ID"]) assert.equal(launch.env[key], undefined, key);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 

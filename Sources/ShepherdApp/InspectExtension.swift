@@ -8,7 +8,7 @@ import ShepherdProtocol
 enum InspectExtension {
     static let extensionSource = #"""
         #!/usr/bin/env node
-        // Flat terminal inspector over native or pi-subagents artifacts. Importable view
+        // Flat terminal inspector over Shepherd-owned child artifacts. Importable view
         // helpers are also used by the in-parent fleet. No socket or process ownership.
         import * as fs from "node:fs";
         import * as path from "node:path";

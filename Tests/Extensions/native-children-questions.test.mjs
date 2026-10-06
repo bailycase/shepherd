@@ -86,7 +86,7 @@ before(async () => {
   server = fixtureServer();
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   saved = { ...process.env };
-  process.env.HOME = dir; delete process.env.PI_SUBAGENT_EXTRA_AGENT_DIRS; delete process.env.SHEPHERD_CLIPROXYAPI_CONFIG;
+  process.env.HOME = dir; delete process.env.SHEPHERD_CLIPROXYAPI_CONFIG;
   process.env.PI_CODING_AGENT_DIR = path.join(dir, "config"); process.env.PI_OFFLINE = "1";
   process.env.SHEPHERD_NATIVE_CHILDREN = "1"; process.env.SHEPHERD_AGENT_ID = "fixture";
   process.env.SHEPHERD_SOCKET = path.join(dir, "absent.sock"); process.env.SHEPHERD_EXT_CHILDREN = source;

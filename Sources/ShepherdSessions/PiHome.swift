@@ -80,8 +80,7 @@ public struct PiHome: Equatable, Sendable {
         var pins = [("PI_CODING_AGENT_DIR", directory.path)]
         if let package = engine.packageDirectory { pins.append(("PI_PACKAGE_DIR", package)) }
         pins.append(("SHEPHERD_CLIPROXYAPI_CONFIG", directory.appendingPathComponent(CLIProxyAPIStore.fileName).path))
-        pins += [("PI_OFFLINE", "1"), ("PI_SKIP_VERSION_CHECK", "1"), ("PI_TELEMETRY", "0"),
-                 ("PI_SUBAGENTS_TEMP_ROOT", directory.appendingPathComponent("tmp/pi-subagents").path)]
+        pins += [("PI_OFFLINE", "1"), ("PI_SKIP_VERSION_CHECK", "1"), ("PI_TELEMETRY", "0")]
         return pins
     }
 

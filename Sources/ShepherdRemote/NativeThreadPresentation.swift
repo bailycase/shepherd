@@ -146,17 +146,6 @@ public extension NativeToolRow {
             // The child's message to its parent, not the JSON receipt.
             preview = string("message") ?? firstLine
             if args?["needsReply"] as? Bool == true { results.append(Result("asked", tone: .muted)) }
-        case "subagent":
-            // pi-subagents: the output is launch boilerplate ("Run fan-out: 0/32 used…"); the
-            // agent and its task say what the call did.
-            let task = string("task").flatMap { $0.split(whereSeparator: \.isNewline).first.map(String.init) }
-            if let agent = string("agent") {
-                preview = task.map { "\(agent) · \($0)" } ?? agent
-            } else if args?["workflowScript"] != nil {
-                preview = "workflow"
-            } else {
-                preview = string("action") ?? firstLine
-            }
         default:
             // Unknown tools prefer an obvious action field (a URL beats "<html>") and fall back
             // to the first output line, capped at 120 chars.
@@ -686,7 +675,12 @@ public struct NativeScrollFollower: Equatable, Sendable {
                                  nativeAnchor: Bool = true) -> Bool {
         let layoutChanged = new.layoutDiffers(from: old)
         let intent = gesture && new.distance > old.distance && !layoutChanged
-        observe(distanceFromBottom: new.distance, userIntent: intent)
+        // Layout and recovery can clamp a detached viewport into the bottom band. A reader
+        // moving down may also remeasure lazy rows, but clamping a shrunken document moves up.
+        let returning = gesture && new.offset > old.offset && new.distance < old.distance
+        if sticky || jumping || (gesture && (!layoutChanged || returning)) {
+            observe(distanceFromBottom: new.distance, userIntent: intent)
+        }
         // With a native anchor, negative distances during layout are intermediate readings, not a
         // settled scroll position. SwiftUI can also leave the top content margin below the tail
         // on older systems.
@@ -717,6 +711,8 @@ public struct NativeScrollProbe: Equatable, Sendable {
         inset = insetBottom
         self.insetTop = insetTop
     }
+
+    fileprivate var offset: Double { content - distance - container - insetTop }
 
     public func layoutDiffers(from other: NativeScrollProbe) -> Bool {
         content != other.content || container != other.container || inset != other.inset || insetTop != other.insetTop

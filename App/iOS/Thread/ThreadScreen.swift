@@ -199,13 +199,15 @@ struct ThreadTranscript: View {
                     proxy.scrollTo(Self.bottomID, anchor: .bottom)
                 }
             }
-            .onScrollPhaseChange { _, phase, context in
+            .onScrollPhaseChange { old, phase, context in
                 if phase == .interacting { historyPaging.beginScroll() }
                 // Only a finger on the thread is intent; momentum and programmatic scrolls are
                 // not, and a drag that ends near the bottom re-sticks where it lands.
                 follow { follower in
                     follower.userScrolling = phase == .interacting
-                    if phase == .idle { follower.observe(distanceFromBottom: Self.probe(context.geometry).distance) }
+                    if phase == .idle, old == .interacting || old == .decelerating {
+                        follower.observe(distanceFromBottom: Self.probe(context.geometry).distance, userIntent: true)
+                    }
                     return false
                 }
             }

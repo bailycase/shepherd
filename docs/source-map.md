@@ -309,7 +309,7 @@ Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free)
                           automation_*, notify; see docs/agent-coordination.md (agent_* and automation_*
                           are registered `deferred` in a thread)
   shepherd-review.ts      review_diff (readies the side pane's Changes tab; `deferred` in a thread)
-  shepherd-subagents.ts   setAgentChildren (native + pi-subagents runs)
+  shepherd-subagents.ts   setAgentChildren (Shepherd-owned child runs)
   shepherd-children.ts (+ -config, -ui, shepherd-workflow, shepherd-missions, shepherd-inspect.mjs)
                           native subagent runtime; see docs/native-subagents.md
   shepherd-instructions.ts  Settings ▸ Instructions' AGENTS.md and APPEND_SYSTEM.md, added to

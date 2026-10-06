@@ -1003,7 +1003,7 @@ final class RPCThreadState {
     }
 
     /// What the user sent the child whose session is `file`, oldest first; none for a run
-    /// without the file (a pi-subagents run, or one from an older extension).
+    /// without the file, such as a run from an older extension.
     static func userMessages(beside file: String) -> [(text: String, at: Double)] {
         let path = URL(fileURLWithPath: file).deletingLastPathComponent().appendingPathComponent(userMessagesFile).path
         guard let handle = FileHandle(forReadingAtPath: path) else { return [] }
@@ -1696,7 +1696,7 @@ final class RPCThreadState {
                 return
             }
             // Some extensions publish machine payloads for their own TUI component
-            // (pi-subagents: "PI_SUBAGENT_ASYNC_JSON:{…}"). Those are not for people.
+            // rather than human-readable text. Those are not for people.
             if let text, Self.isMachineWidget(text) { setWidget(nil, key: key); return }
             setWidget(text.map { NativeThreadWidget(namespace: "pi", key: key, kind: .text, text: $0) }, key: key)
         case "notify":
@@ -1883,9 +1883,10 @@ final class RPCThreadState {
         var index = end - 1
         while index >= 0 {
             let message = history[index]
-            size += bytes(message) + 1
+            let messageBytes = bytes(message)
+            size += messageBytes + 1
             // What does not fit is an older page (`olderCursor`), not clipped.
-            if size > snapshotLimit { break }
+            if size > snapshotLimit, !value.messages.isEmpty || messageBytes + bytes(message.entryID) > textLimit * 8 { break }
             value.messages.insert(message, at: 0)
             index -= 1
             if value.messages.count == pageSize { break }
@@ -1954,7 +1955,9 @@ final class RPCThreadState {
             clipped()
         }
         // Each message is counted with a comma, as when the growing snapshot was encoded. History
-        // always has `historyReserve` to fill, whatever the rest of the snapshot weighs.
+        // always has `historyReserve` to fill. Keep at least one bounded message even if JSON
+        // escaping makes it exceed that reserve, otherwise there is no row or paging cursor.
+        // Unbounded producer IDs are not admitted this way: leave room for the cursor and frame.
         var budgeted = size()
         let limit = max(snapshotLimit, budgeted + historyReserve)
         var page: [Sized<NativeThreadMessage>] = []
@@ -1963,7 +1966,7 @@ final class RPCThreadState {
             let entry = history(index)
             budgeted += entry.bytes + 1
             // Older history that does not fit is a page away (`olderCursor`), not clipped.
-            if budgeted > limit { break }
+            if budgeted > limit, !page.isEmpty || entry.bytes + bytes(entry.value.entryID) > textLimit * 8 { break }
             page.append(entry)
             index -= 1
             if page.count == pageSize { break }
@@ -2044,7 +2047,7 @@ final class RPCThreadState {
 
     /// pi's message list as thread history, with the same rules wherever it comes from (pi's
     /// `get_messages`, or its session file read from disk): custom messages are model-only
-    /// unless their extension marked them display (pi-subagents' task-completed JSON is the
+    /// unless their extension marked them display. A model-only completion report is the
     /// usual case), and child reports ("Child native-… (worker): complete … Session: …") restate
     /// the card and ledger, which own that information here (the TUI still shows them). pi keeps
     /// a call's arguments and start on the assistant's toolCall block; the toolResult row is

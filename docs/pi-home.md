@@ -167,7 +167,7 @@ instructions, skills, prompts, themes, extensions) is a copy in the home (Import
    corporate CA bundle always wins; nothing merges the two. The prefix isn't `SHEPHERD_`, which the
    children extension drops from a child's environment;
 2. exports the pins: `PI_CODING_AGENT_DIR` (the home), `PI_PACKAGE_DIR` (the engine's package),
-   `PI_OFFLINE=1`, `PI_SKIP_VERSION_CHECK=1`, `PI_TELEMETRY=0`, and `PI_SUBAGENTS_TEMP_ROOT`;
+   `PI_OFFLINE=1`, `PI_SKIP_VERSION_CHECK=1`, `PI_TELEMETRY=0`;
 3. refuses `install`, `remove`, `uninstall`, `update` and `config` (exit 2), pointing at
    Settings ▸ Pi;
 4. execs the engine, or, when its files are missing, says so and exits 127 (the agent then waits
@@ -214,10 +214,9 @@ package's `dist/bundle/cli.js`, never a `pi` from PATH, and inherit the pins fro
 `PI_SKIP_VERSION_CHECK`, `PI_TELEMETRY`, and `NODE_EXTRA_CA_CERTS` (the launcher's keychain
 certificates or the user's own, so a private CA works for a helper's requests too); `PI_OFFLINE` is
 set to 1. The `_SHEPHERD_STASH_*` variables pass through as well (their prefix isn't `SHEPHERD_`),
-so a helper's own shell commands get the user's environment back from `restore-env.sh`. Two sets
-are dropped: `PI_SUBAGENT*` (including `PI_SUBAGENTS_TEMP_ROOT`, which only the pi-subagents
-package uses), and every `SHEPHERD_*` variable, so a helper is cut off from the host (its agent id,
-socket and design are the parent's alone). The one exception is the managed provider's file, above.
+so a helper's own shell commands get the user's environment back from `restore-env.sh`. Every
+`SHEPHERD_*` variable is dropped, so a helper is cut off from the host: its agent id, socket,
+and design belong only to the parent. The one exception is the managed provider's file, above.
 What Shepherd sets per agent through its own variables and extensions reaches no helper: a helper
 runs with pi's defaults for its model (a service tier Shepherd sets for an agent, for one, isn't
 applied to its helpers).
