@@ -130,13 +130,19 @@ in Settings instead. Third-party settings do not affect native definitions.
 | --- | --- |
 | `shepherd_child_start` | Starts a background child and returns its run ID. `agent` selects a profile (`role` is an alias). |
 | `shepherd_child_message` | Steering or follow-up input. Acceptance is not completion. |
-| `shepherd_child_wait` | Waits for any or all of up to 16 children, for up to 60 s (default 30 s). Cancelling a wait does not cancel the children. |
-| `shepherd_child_result` | Lists retained runs or reads one result: up to 16 KiB of text per child, 4 KiB inside a wait. `sessionFile` holds the full conversation. |
+| `shepherd_child_result` | Lists retained runs or reads one result: up to 16 KiB of text per child. `sessionFile` holds the full conversation. |
 | `shepherd_child_cancel` | Clears queues, aborts, and terminates the child, waiting for the process to exit. |
 | `shepherd_child_resume` | Continues an exited child with its saved profile, model, cwd, and transcript. Tools can only narrow across a resume. |
 | `shepherd_child_agents` | Lists profiles, where they came from, and diagnostics. |
 | `shepherd_workflow` | Runs a script (below). |
 | `shepherd_mission` | Manages mission records (below). Not registered unless `SHEPHERD_MISSIONS=1`. |
+
+Children report asynchronously. There is no standalone `shepherd_child_wait` tool. Start the
+children, do independent work, then end your turn when only dependent work remains. The default
+`delivery: "continue"` resumes an idle parent on completion; `delivery: "report"` stores the result
+without starting another parent turn. Do not poll `shepherd_child_result` instead of ending the
+turn. Use it to inspect a run or recover a result. For a group that must finish before dependent
+work starts, use a workflow with `runs.all`, which delivers the group's result to the parent.
 
 **Questions and results.** A subagent never reaches the user: it asks its parent, and the parent
 answers it or asks the user itself, in its own thread, then passes the answer down. Routine
@@ -179,10 +185,10 @@ instructions that come once per delivery, however many children asked:
 An idle parent is woken by the question as it is by an unread completion; while the parent works,
 the notice joins the batch delivered at `agent_before_settle`, so several children that asked
 arrive as one continuation. Questions notify once, without a second completion wake, and in
-either delivery mode. `shepherd_child_wait` and `shepherd_child_result` return a child that asked
-with `needsReply`, its `questionID` and a `parentAction` naming the exact call that answers it;
-`shepherd_child_result` without an id lists who still waits, and a wait for all hands over a
-child that asked once it has finished its turn, without holding it for the others. The answer is
+either delivery mode. `shepherd_child_result` returns a child that asked with `needsReply`, its
+`questionID` and a `parentAction` naming the exact call that answers it; without an id it lists
+who still waits. A child's question reaches its parent without waiting for other children to
+finish. The answer is
 `shepherd_child_resume` (or `shepherd_child_message`) with the `questionID`: it waits for the child
 to finish the turn it asked in (its process ends when that turn settles, and an answer sent into the
 turn would be lost with it, which a prompt parent would otherwise do) and then resumes it. An answer to a question that
@@ -192,8 +198,8 @@ question and marks the child stopped; the user's own Steer ends it too, since it
 child. Nothing times out: a child whose parent never answers waits until Stopped.
 
 Unread completion wakes an idle parent; while the parent works, pending results are combined at
-`agent_before_settle` into one continuation, not separate follow-up turns. Explicit result reads
-and completed waits consume their pending notices; a cancelled wait hands its completion back.
+`agent_before_settle` into one continuation, not separate follow-up turns. An explicit result read
+consumes that child's pending notice.
 Notifications are hidden coordination messages, not user requests, and tell the parent not to
 acknowledge receipt. Stop/error settlement suppresses automatic wake until the parent starts
 again. Delivery is not durable or exactly-once across a crash.
@@ -208,10 +214,10 @@ summary and completion notice list the children that asked, with the same instru
 parent answers them once the workflow ends (a child is resumed only after its workflow).
 
 An accepted queued user send while the parent works sends `parentInput` on its registered children
-connection. That ends a child/workflow wait with `waitInterrupted: "user_input"` and the Pi
+connection. That ends a synchronous workflow action with `waitInterrupted: "user_input"` and the Pi
 terminate-tool result, without cancelling any child. This host signal is necessary because
 host-queued user messages have not yet reached Pi's ordinary input event. Direct Pi streaming
-input also ends waits, with its interruption cleared when that user message is consumed. The user turn can then drain normally; background results do not force
+input also ends synchronous workflow actions, with its interruption cleared when that user message is consumed. The user turn can then drain normally; background results do not force
 a continuation ahead of waiting user input. An unrelated long-running tool is not forcibly
 cancelled by this signal.
 
@@ -439,7 +445,8 @@ is what they do.
   row was (workflow children, including `/run`, at the `shepherd_workflow` row; children with no
   tool call at the end of the last agent turn), and once every child finished, "3 subagents
   finished" with the span, files and combined diff, where they finished. The spawn calls and the
-  parent's `shepherd_child_wait` and `shepherd_child_result` calls leave no activity lines. Both
+  parent's `shepherd_child_result` calls leave no activity lines. Legacy `shepherd_child_wait`
+  calls in saved sessions remain hidden too. Both
   lines open the first child in the inspector. Diff counts come from `edit` calls; `write` lists
   the file at +0/−0.
 - **Turn footer:** reads "time · duration · N tool calls · n subagents". The subagent count

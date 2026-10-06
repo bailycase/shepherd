@@ -21,7 +21,7 @@ const PEERS = ["agent_list", "agent_send", "agent_read", "agent_steer", "agent_i
 const AUTOMATIONS = ["automation_create", "automation_list", "automation_update", "automation_delete", "automation_start", "automation_stop"];
 const DEFERRED = [...BROWSER, ...PEERS, ...AUTOMATIONS, "review_diff"];
 const DIRECT = ["read", "bash", "edit", "write", "terminal_list", "terminal_open", "terminal_run", "terminal_read", "terminal_focus", "terminal_close", "notify",
-  "shepherd_child_agents", "shepherd_child_start", "shepherd_child_message", "shepherd_child_result", "shepherd_child_wait", "shepherd_child_cancel",
+  "shepherd_child_agents", "shepherd_child_start", "shepherd_child_message", "shepherd_child_result", "shepherd_child_cancel",
   "shepherd_child_resume", "shepherd_workflow"];
 
 const names = (request) => request.body.tools.map((tool) => tool.name);
@@ -64,6 +64,7 @@ test("a thread's first request carries none of the deferred tools or their lines
   const system = JSON.stringify(first.body.input) + String(first.body.instructions ?? "");
   for (const name of DEFERRED) assert.ok(!system.includes(`- ${name}:`), `${name} has no line in the tool list`);
   assert.equal(first.activeTools.includes("browser_open"), false);
+  assert.equal(first.toolSources.shepherd_child_wait, undefined, "the standalone wait tool is not registered");
   assert.ok(first.toolSources.browser_open.endsWith("shepherd-browser.ts"), "the tool is registered, only not declared");
   // One line, naming each family, and the rule about what arrives, written once.
   const lines = system.split("\\n- ").filter((line) => line.startsWith("Shepherd tools you load with tool_search"));
@@ -78,6 +79,7 @@ test("a thread with every tool direct is what it was: the switch off sends all o
   const off = await capture("thread-defer-off", { pkg });
   const sent = off.body.tools.map((tool) => tool.name);
   for (const name of [...DEFERRED, ...DIRECT]) assert.ok(sent.includes(name), `${name} is sent`);
+  assert.ok(!sent.includes("shepherd_child_wait"), "disabling deferral does not restore the removed tool");
   assert.ok(!JSON.stringify(off.body.input).includes("Shepherd tools you load with tool_search"));
   assert.ok(JSON.stringify(off.body.input).includes("- browser_open: Open a URL in the thread's Browser page"), "with its line in the tool list");
 });
