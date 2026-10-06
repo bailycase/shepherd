@@ -76,6 +76,9 @@ public enum DesignReferenceReading {
     /// was sent at, what the copy holds, and every other version of it this thread was sent.
     public static func summary(_ payload: DesignReferencePayload, versions: [UInt64]) -> String {
         var lines = ["ref: \(payload.reference.string)", "design: \(payload.design)"]
+        if let page = payload.reference.page {
+            lines.append("page: \(page)" + (payload.pageTitle.map { " (\($0))" } ?? ""))
+        }
         if let board = payload.reference.board {
             lines.append("board: \(board.rawValue)" + (payload.boardTitle.map { " (\($0))" } ?? ""))
         }
@@ -87,7 +90,9 @@ public enum DesignReferenceReading {
         }
         if let boards = payload.boards {
             let titles = boards.map { $0.title ?? $0.board.stem }.joined(separator: ", ")
-            lines.append("boards: \(boards.count) of \(payload.boardCount ?? boards.count) (\(titles))")
+            lines.append(payload.reference.page != nil
+                ? "boards: all \(boards.count) on this page (\(titles))"
+                : "boards: \(boards.count) of \(payload.boardCount ?? boards.count) (\(titles))")
         }
         lines.append("sent at revision \(payload.revision); this copy is what the user sent and never changes")
         let others = versions.filter { $0 != payload.revision }

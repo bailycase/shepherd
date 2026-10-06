@@ -333,6 +333,147 @@ struct DesignReferenceIntegrationTests {
         }
     }
 
+    @Test func aPageSendAttachesEveryBoardInCanvasOrderAndGrantsOnlyThatPage() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let asked = drawing(h)
+        let pi = try await PiAgent.launch(on: h)
+        let id = try await design(h, system: false)
+        var entries: [String: JSONValue] = [:]
+        var paths = [Self.board]
+        for index in 0..<14 {
+            let path = DesignPath("B\(index).dc.html")!
+            paths.append(path)
+            _ = try await h.server.writeDesignBoard(id, path: path, source: DesignTests.board(root: "<p>\(index)</p>"))
+            entries[path.rawValue] = .object(["x": .number(Double(index) * 500), "y": .number(0),
+                "w": .number(390), "h": .number(844), "page": .string(index == 13 ? "other" : "flows")])
+        }
+        _ = try await h.server.updateDesignIndex(id, patch: .object([
+            "pages": .array([.object(["id": .string("flows"), "name": .string("Flows")]),
+                             .object(["id": .string("other"), "name": .string("Other")])]),
+            "boards": .object(entries), "order": .array(paths.reversed().map { .string($0.rawValue) })]))
+        let page = DesignReference(designID: id, page: "flows")!
+        let picked = try await h.server.pinDesignReference(page)
+        #expect(picked.pageTitle == "Flows" && picked.reference.label == "Checkout ☕️ funnel › Page · Flows")
+        #expect(picked.outline.kind == .page && picked.outline.boards == 14 && picked.outline.boardCount == 14)
+        #expect(DesignReferencePresentation.sends(picked.outline).contains("all 14 boards on this page"))
+        let expected = Array(paths.dropLast().reversed()) // Unassigned A belongs to the first page.
+        _ = try await send(pi, "tools:0 implement this page", references: [picked.reference], from: try await pi.ready())
+        let delivered = try await pi.snapshot("the page reference to reach pi") { $0.messages.contains { $0.designReferences != nil } }
+        let record = try #require(lastRecord(pi))
+        #expect(record.page == "flows" && record.pageTitle == "Flows" && record.board == nil)
+        #expect(record.boards == 14 && record.boardCount == 14 && record.files?.count == 29)
+        #expect(delivered.messages.last { $0.role == "user" }?.designReferences == [record.withoutFiles])
+        #expect(asked.current.first?.boards.map(\.path) == expected)
+        let grant = try #require(grants(h, pi.agent.id).first)
+        #expect(grant.page == "flows" && grant.board == nil && grant.element == nil)
+        #expect(try h.persisted().agents.first { $0.id == pi.agent.id }?.designGrants == [grant])
+        let client = try ExtensionClient(path: h.socketPath)
+        guard case .designReference(1, let images) = try await answer(client, 1, agent: pi.agent.id, record.ref, "image") else {
+            Issue.record("page images refused"); return
+        }
+        #expect(images.files.count == 14 && images.lookedAt?.title == record.label)
+        guard case .designReference(2, let summary) = try await answer(client, 2, agent: pi.agent.id, record.ref, "summary") else {
+            Issue.record("page summary refused"); return
+        }
+        #expect(summary.text.contains("page: flows (Flows)") && summary.text.contains("boards: all 14 on this page"))
+        for (number, ref) in [DesignReference(designID: id)!, DesignReference(designID: id, page: "other")!, reference(id)].enumerated() {
+            guard case .error(_, "not_granted", _) = try await answer(client, number + 3, agent: pi.agent.id, ref.string, "summary") else {
+                Issue.record("page grant escaped its scope"); return
+            }
+            #expect(await h.server.designReferenceLookedAt(agentID: pi.agent.id, ref: ref.string, aspects: [.summary]) == nil)
+        }
+        #expect(await h.server.designReferenceLookedAt(agentID: pi.agent.id, ref: record.ref, aspects: [.summary])?.title == record.label)
+        _ = try await h.server.writeDesignBoard(id, path: paths.last!, source: DesignTests.board(root: "<p>unrelated</p>"))
+        #expect(await h.server.designReferenceFreshness(picked.reference) == .current)
+        #expect(await h.server.designReferenceFreshness(agentID: pi.agent.id, payloadID: record.payloadID!) == .current)
+    }
+
+    @Test func aPinnedPageKeepsItsNameMembershipOrderAndDeletedOrMovedBoardSources() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let asked = drawing(h)
+        let pi = try await PiAgent.launch(on: h)
+        let id = try await design(h, system: false)
+        let second = DesignPath("B.dc.html")!
+        let outsider = DesignPath("C.dc.html")!
+        for path in [second, outsider] {
+            _ = try await h.server.writeDesignBoard(id, path: path, source: DesignTests.board(root: "<p>\(path.stem)</p>"))
+        }
+        _ = try await h.server.updateDesignIndex(id, patch: .object([
+            "pages": .array([.object(["id": .string("flows"), "name": .string("Original")]), .object(["id": .string("other")])]),
+            "boards": .object([second.rawValue: .object(["x": .number(0), "y": .number(0), "w": .number(390), "h": .number(844),
+                "title": .string("Original B"), "page": .string("flows")]), outsider.rawValue: .object([
+                "x": .number(0), "y": .number(0), "w": .number(390), "h": .number(844), "page": .string("other")])]),
+            "order": .array([.string(second.rawValue), .string(Self.board.rawValue), .string(outsider.rawValue)])]))
+        let picked = try await h.server.pinDesignReference(DesignReference(designID: id, page: "flows")!)
+        _ = try await h.server.writeDesignBoard(id, path: outsider, source: DesignTests.board(root: "<p>unrelated change</p>"))
+        #expect(await h.server.designReferenceFreshness(picked.reference) == .current)
+        _ = try await h.server.updateDesignIndex(id, patch: .object([
+            "pages": .array([.object(["id": .string("flows"), "name": .string("Renamed")]), .object(["id": .string("other")])]),
+            "boards": .object([Self.board.rawValue: .null, second.rawValue: .object(["page": .string("other"), "title": .string("New B")]),
+                outsider.rawValue: .object(["page": .string("flows")])])]))
+        _ = try await h.server.writeDesignBoard(id, path: second, source: DesignTests.board(root: "<p>edited B</p>"))
+        guard case .updatedSince = await h.server.designReferenceFreshness(picked.reference) else {
+            Issue.record("page membership change was missed"); return
+        }
+        _ = try await send(pi, "tools:0 original page", references: [picked.reference], from: try await pi.ready())
+        let record = try #require(lastRecord(pi))
+        #expect(record.revision == picked.reference.revision && record.pageTitle == "Original" && record.boards == 2)
+        let drawn = try #require(asked.current.first)
+        #expect(drawn.boards.map(\.path) == [second, Self.board])
+        #expect(drawn.boards.map(\.source) == [DesignTests.board(root: "<p>B</p>"), DesignTests.board(root: Self.card)])
+        #expect(drawn.boards.allSatisfy { !$0.isCurrent })
+        let copy = try #require(await h.server.designReferencePayload(agentID: pi.agent.id, payloadID: record.payloadID!))
+        #expect(copy.payload.boards?.first?.title == "Original B" && copy.payload.pageTitle == "Original")
+        guard case .updatedSince = await h.server.designReferenceFreshness(agentID: pi.agent.id, payloadID: copy.payload.id) else {
+            Issue.record("sent page membership change was missed"); return
+        }
+        _ = try await h.server.updateDesignIndex(id, patch: .object(["pages": .array([.object(["id": .string("other")])])]))
+        #expect(await h.server.designReferenceFreshness(picked.reference) == .deleted)
+        #expect(await h.server.designReferenceFreshness(agentID: pi.agent.id, payloadID: copy.payload.id) == .deleted)
+    }
+
+    @Test func anEmptyPagePinsAndSendsItsOriginalNameEvenAfterDeletion() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        let id = try await design(h, system: false)
+        _ = try await h.server.updateDesignIndex(id, patch: .object(["pages": .array([
+            .object(["id": .string("flows")]), .object(["id": .string("empty"), "name": .string("Empty page")])])]))
+        let picked = try await h.server.pinDesignReference(DesignReference(designID: id, page: "empty")!)
+        #expect(picked.outline.boards == 0 && picked.outline.boardCount == 0 && picked.pageTitle == "Empty page")
+        _ = try await h.server.updateDesignIndex(id, patch: .object(["pages": .array([.object(["id": .string("flows")])])]))
+        #expect(await h.server.designReferenceFreshness(picked.reference) == .deleted)
+        _ = try await send(pi, "tools:0 empty page", references: [picked.reference], from: try await pi.ready())
+        let record = try #require(lastRecord(pi))
+        #expect(record.page == "empty" && record.pageTitle == "Empty page" && record.boards == 0 && record.files?.count == 1)
+        let copy = try #require(await h.server.designReferencePayload(agentID: pi.agent.id, payloadID: record.payloadID!))
+        #expect(copy.payload.boards == [] && copy.payload.pageTitle == "Empty page")
+        // No renderer is needed when this page has no boards.
+        await #expect(throws: DesignReferenceError("no_such_page", "That page is no longer here.")) {
+            try await h.server.pinDesignReference(DesignReference(designID: id, page: "empty")!)
+        }
+    }
+
+    @Test func aPageWithAMissingListedBoardSourceFailsRatherThanOmittingIt() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let id = try await design(h, system: false)
+        _ = try await h.server.updateDesignIndex(id, patch: .object(["pages": .array([.object(["id": .string("flows")])])]))
+        let project = try #require(h.server.designs.projectFolder(for: id))
+        try FileManager.default.removeItem(at: project.appendingPathComponent(Self.board.rawValue))
+        await #expect(throws: DesignReferenceError.self) {
+            try await h.server.pinDesignReference(DesignReference(designID: id, page: "flows")!)
+        }
+        let pi = try await PiAgent.launch(on: h)
+        do {
+            _ = try await send(pi, "tools:0 missing source", references: [DesignReference(designID: id, page: "flows")!], from: try await pi.ready())
+            Issue.record("a page with a missing source was sent")
+        } catch RemoteHostClientError.rejected { }
+        #expect(grants(h, pi.agent.id).isEmpty && copies(h, pi.agent.id).isEmpty && prompts(pi).isEmpty)
+    }
+
     /// A whole design pinned at one version sends the boards it held then, as they were, even
     /// when a board added since comes first on the canvas: only "Send vN" sends a newer version.
     @Test func aWholeDesignPinnedBeforeTheCanvasChangedSendsWhatItHeldThen() async throws {
@@ -383,7 +524,7 @@ struct DesignReferenceIntegrationTests {
         #expect(!prompts(pi).contains { $0.contains("design-ref") })
     }
 
-    @Test(arguments: ["missingBoard", "missingElement", "otherMac", "unknownDesign", "tooMany"])
+    @Test(arguments: ["missingBoard", "missingPage", "missingElement", "otherMac", "unknownDesign", "tooMany"])
     func aReferenceTheDesignDoesNotHaveIsRefusedAndKeepsNothing(_ kind: String) async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
@@ -394,6 +535,7 @@ struct DesignReferenceIntegrationTests {
         let good = reference(designID)
         let references: [DesignReference] = switch kind {
         case "missingBoard": [good, DesignReference(designID: designID, board: DesignPath("B.dc.html")!)!]
+        case "missingPage": [good, DesignReference(designID: designID, page: "missing")!]
         case "missingElement": [DesignReference(designID: designID, board: Self.board, element: DesignElementID("A.dc.html#9:1/7")!)!]
         case "otherMac": [DesignReference(host: .remote(UUID()), designID: designID, board: Self.board)!]
         case "tooMany": Array(repeating: good, count: DesignReferenceRecord.maxPerMessage + 1)
@@ -401,6 +543,7 @@ struct DesignReferenceIntegrationTests {
         }
         let code: String = switch kind {
         case "missingBoard": "no_such_board"
+        case "missingPage": "no_such_page"
         case "missingElement": "no_such_element"
         case "otherMac": "remote_design"
         case "tooMany": "too_many_references"

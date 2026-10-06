@@ -127,6 +127,21 @@ struct DesignMentionTests {
         #expect(inside.dropFirst().allSatisfy { $0.reference.revision == nil && $0.reference.element != nil })
     }
 
+    @Test func pagesAreSeparateFromBoardsAndUseTheCanvasesMembershipRule() throws {
+        var snapshot = Self.snapshot()
+        snapshot.index.pages = [.init(id: "checkout", name: "Checkout flow"), .init(id: "analytics", name: "Analytics"), .init(id: "empty", name: nil)]
+        snapshot.index.boards[DesignPath("B.dc.html")!]?.page = "analytics"
+        let entries = try #require(DesignMentionCatalog.entries(design: Self.design, snapshot: snapshot, sources: [:], system: nil))
+        let catalog = DesignMentionCatalog(designs: [entries.design], pages: [Self.design.id: entries.pages],
+                                           boards: [Self.design.id: entries.boards], elements: entries.elements)
+        #expect(entries.pages.map(\.title) == ["Checkout flow", "Analytics", "empty"])
+        #expect(entries.pages.map(\.boardCount) == [1, 1, 0], "a board without a page belongs to the first page, just as on the canvas")
+        #expect(catalog.rows(in: .design(Self.design.id)).map(\.kind) == [.design, .page, .page, .page, .board, .board])
+        let page = try #require(catalog.search("checkout flow").first)
+        #expect(page.kind == .page && page.reference.page == "checkout" && page.reference.board == nil)
+        #expect(catalog.search("checkout flow", limit: 1).count == 1)
+    }
+
     @Test func searchMatchesEveryLevelInCatalogOrder() throws {
         let catalog = try Self.catalog()
         #expect(catalog.search("funnel").map(\.kind) == [.design, .board, .element, .element, .element, .element, .element, .element, .board])

@@ -12,11 +12,11 @@ public enum DesignMentionHost: Hashable, Sendable {
     case remote(name: String, offline: Bool, lastSeen: Double?)
 }
 
-/// One row the composer's @ picker can pick: a design, one of its boards, or an element of a
+/// One row the composer's @ picker can pick: a design, a page, a board, or an element of a
 /// board, with its breadcrumb (docs/designs.md › Design references › The @ picker).
 public struct DesignMentionItem: Identifiable, Hashable, Sendable {
     public enum Kind: String, Hashable, Sendable {
-        case design, board, element
+        case design, page, board, element
     }
 
     public var id: String { reference.string }
@@ -145,6 +145,7 @@ public struct DesignMentionLoad: Equatable, Sendable {
 /// `search` narrows it, both pure.
 public struct DesignMentionCatalog: Hashable, Sendable {
     public var designs: [DesignMentionItem]
+    public var pages: [DesignID: [DesignMentionItem]]
     public var boards: [DesignID: [DesignMentionItem]]
     /// By the board's reference string (`DesignMentionItem.id`).
     public var elements: [String: [DesignMentionItem]]
@@ -152,9 +153,10 @@ public struct DesignMentionCatalog: Hashable, Sendable {
     /// A board lists at most this many elements.
     public static let maxElementsPerBoard = 300
 
-    public init(designs: [DesignMentionItem] = [], boards: [DesignID: [DesignMentionItem]] = [:],
-                elements: [String: [DesignMentionItem]] = [:]) {
+    public init(designs: [DesignMentionItem] = [], pages: [DesignID: [DesignMentionItem]] = [:],
+                boards: [DesignID: [DesignMentionItem]] = [:], elements: [String: [DesignMentionItem]] = [:]) {
         self.designs = designs
+        self.pages = pages
         self.boards = boards
         self.elements = elements
     }
@@ -173,7 +175,7 @@ public struct DesignMentionCatalog: Hashable, Sendable {
         case .designs:
             return designs
         case .design(let id):
-            return (designs.first { $0.reference.designID == id }.map { [$0] } ?? []) + (boards[id] ?? [])
+            return (designs.first { $0.reference.designID == id }.map { [$0] } ?? []) + (pages[id] ?? []) + (boards[id] ?? [])
         case .board(let reference):
             let key = reference.unpinned.string
             let board = boards[reference.designID]?.first { $0.id == key }
@@ -190,6 +192,10 @@ public struct DesignMentionCatalog: Hashable, Sendable {
         var out: [DesignMentionItem] = []
         for design in designs {
             if design.matches(words) { out.append(design) }
+            for page in pages[design.reference.designID] ?? [] where page.matches(words) {
+                if out.count >= limit { return out }
+                out.append(page)
+            }
             for board in boards[design.reference.designID] ?? [] {
                 if out.count >= limit { return out }
                 if board.matches(words) { out.append(board) }
@@ -207,11 +213,17 @@ public struct DesignMentionCatalog: Hashable, Sendable {
     /// sources by path; a board without one lists no elements), and each board's elements with
     /// their words or `data-el` names.
     public static func entries(design: Design, snapshot: DesignSnapshot, sources: [DesignPath: String], system: String?)
-        -> (design: DesignMentionItem, boards: [DesignMentionItem], elements: [String: [DesignMentionItem]])? {
+        -> (design: DesignMentionItem, pages: [DesignMentionItem], boards: [DesignMentionItem], elements: [String: [DesignMentionItem]])? {
         guard let whole = DesignReference(designID: design.id, board: nil) else { return nil }
         let order = DesignReferenceReading.canvasOrder(snapshot.index)
         let designItem = DesignMentionItem(kind: .design, reference: whole, title: design.name, breadcrumb: [], system: system,
                                            boardCount: order.count, activeAt: design.lastActiveAt, revision: snapshot.revision)
+        let pages = (snapshot.index.pages ?? []).compactMap { page -> DesignMentionItem? in
+            guard let reference = DesignReference(designID: design.id, board: nil, page: page.id) else { return nil }
+            return DesignMentionItem(kind: .page, reference: reference, title: page.name.flatMap(DesignViewRecord.label) ?? page.id,
+                                     breadcrumb: [design.name], boardCount: order.filter { snapshot.index.page(of: $0) == page.id }.count,
+                                     revision: snapshot.revision)
+        }
         var boards: [DesignMentionItem] = []
         var elements: [String: [DesignMentionItem]] = [:]
         for path in order {
@@ -222,7 +234,7 @@ public struct DesignMentionCatalog: Hashable, Sendable {
                                             width: entry.w, height: entry.h, elementCount: rows.count, revision: snapshot.revision))
             elements[reference.string] = rows
         }
-        return (designItem, boards, elements)
+        return (designItem, pages, boards, elements)
     }
 
     /// A board's elements as the picker lists them: each that has words or a `data-el` name,

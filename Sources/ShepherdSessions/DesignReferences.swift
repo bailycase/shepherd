@@ -42,6 +42,7 @@ public struct PreparedDesignReference: Hashable, Sendable {
     public var reference: DesignReference
     public var design: String
     public var boardTitle: String?
+    public var pageTitle: String? = nil
     public var elementLabel: String?
     public var elementName: String?
     public var width: Double?
@@ -53,7 +54,8 @@ public struct PreparedDesignReference: Hashable, Sendable {
     /// design's name: what "Implement …" and the toasts name.
     public var piece: String {
         DesignReferencePresentation.piece((reference.kind, design, boardTitle ?? reference.board?.stem,
-                                           reference.element.map { _ in DesignReferenceReading.elementTitle(name: elementName, label: elementLabel) }))
+                                           reference.element.map { _ in DesignReferenceReading.elementTitle(name: elementName, label: elementLabel) }),
+                                           page: pageTitle ?? reference.page)
     }
 }
 
@@ -100,7 +102,26 @@ struct DesignReferenceService: Sendable {
             var revision = snapshot.revision
             var boardCount = snapshot.index.boards.count
             let older = reference.revision.flatMap { $0 != snapshot.revision ? $0 : nil }
-            if let board = reference.board {
+            if let page = reference.page {
+                if let wanted = older, let render = try await server.designs.pinnedRender(reference.designID, revision: wanted, boards: []) {
+                    guard render.files.index.pages?.contains(where: { $0.id == page }) == true else {
+                        throw DesignReferenceError("no_such_page", "That page was not on the pinned canvas.")
+                    }
+                    let order = DesignReferenceReading.canvasOrder(render.files.index).filter { render.files.index.page(of: $0) == page }
+                    for path in order {
+                        guard let source = render.files.sources[path] else { throw DesignStoreError.noSuchBoard(path) }
+                        let sha = DesignStore.sha256(Data(source.utf8))
+                        boards.append((DesignBoardSource(path: path, source: source, sha256: sha, revision: wanted), sha == snapshot.boards[path]))
+                    }
+                    revision = wanted
+                } else if let wanted = older, exact {
+                    throw DesignReferenceError.versionGone(wanted)
+                } else {
+                    let pin = try await server.designs.pinPage(reference.designID, page: page)
+                    boards = pin.boards.map { ($0, $0.sha256 == snapshot.boards[$0.path]) }
+                    revision = pin.revision
+                }
+            } else if let board = reference.board {
                 if let wanted = older, let pinned = try await server.designs.pinnedBoard(reference.designID, path: board, revision: wanted) {
                     boards = [(pinned, pinned.sha256 == snapshot.boards[board])]
                     revision = wanted
@@ -134,7 +155,7 @@ struct DesignReferenceService: Sendable {
             }
             snapshot.index = render.files.index
             snapshot.revision = revision
-            boardCount = render.files.index.boards.count
+            boardCount = reference.page != nil ? boards.count : render.files.index.boards.count
             var label: String?
             var name: String?
             if let element = reference.element, let source = boards.first?.source.source {
@@ -175,14 +196,17 @@ struct DesignReferenceService: Sendable {
         var pinned = reference.pinned(at: resolved.revision)
         let board = reference.board.flatMap { resolved.snapshot.index.boards[$0] }
         let title = board?.title.flatMap(DesignViewRecord.label)
+        let pageTitle = reference.page.map { id in
+            resolved.snapshot.index.pages?.first { $0.id == id }?.name.flatMap(DesignViewRecord.label) ?? id
+        }
         let read = Self.reading(reference, sources: resolved.boards.map(\.source.source), systems: resolved.systems)
         let outline = DesignReferenceOutline(kind: reference.kind, styles: read.styles.count, tokens: read.tokens.count, system: read.system,
                                              boards: reference.board == nil ? resolved.boards.count : nil,
                                              boardCount: reference.board == nil ? resolved.boardCount : nil)
         pinned.label = DesignReference.label(design: resolved.design.name, board: reference.board.map { title ?? $0.stem },
                                              element: reference.element.map { _ in
-                                                 DesignReferenceReading.elementTitle(name: resolved.elementName, label: resolved.elementLabel) })
-        return PreparedDesignReference(reference: pinned, design: resolved.design.name, boardTitle: title,
+                                                 DesignReferenceReading.elementTitle(name: resolved.elementName, label: resolved.elementLabel) }, page: pageTitle)
+        return PreparedDesignReference(reference: pinned, design: resolved.design.name, boardTitle: title, pageTitle: pageTitle,
                                        elementLabel: resolved.elementLabel, elementName: resolved.elementName,
                                        width: board?.w, height: board?.h, outline: outline)
     }
@@ -204,8 +228,13 @@ struct DesignReferenceService: Sendable {
             var payload = DesignReferencePayload(
                 id: id, agentID: agentID, reference: pinned, design: resolved.design.name,
                 elementLabel: resolved.elementLabel, elementName: resolved.elementName, revision: resolved.revision, capturedAt: now,
-                styles: read.styles, tokens: read.tokens, components: read.components, system: read.system)
-            payload.renderSHA = resolved.renderSHA
+                styles: read.styles, tokens: read.tokens, components: read.components, system: read.system,
+                pageTitle: pinned.page.map { id in
+                    resolved.snapshot.index.pages?.first { $0.id == id }?.name.flatMap(DesignViewRecord.label) ?? id
+                })
+            payload.renderSHA = pinned.page != nil
+                ? try await server.designs.pinnedRenderSHA(pinned.designID, revision: resolved.revision, page: pinned.page)
+                : resolved.renderSHA
             if let board = pinned.board, let first = resolved.boards.first {
                 let entry = resolved.snapshot.index.boards[board]
                 payload.boardTitle = entry?.title.flatMap(DesignViewRecord.label)
@@ -261,7 +290,7 @@ struct DesignReferenceService: Sendable {
             try await payloads.save(payload)
             let grant = DesignGrant(designID: pinned.designID, board: pinned.board?.rawValue, element: pinned.element?.description,
                                     label: resolved.elementLabel, revision: resolved.revision, boardSHA: payload.boardSHA,
-                                    grantedAt: now, payload: id)
+                                    grantedAt: now, payload: id, page: pinned.page)
             return SentDesignReference(payload: payload, record: payload.record(folder: folder), grant: grant)
         } catch {
             await payloads.remove(agentID: agentID, payloads: [id])
@@ -275,7 +304,7 @@ struct DesignReferenceService: Sendable {
     /// it is now. Everything read from the design is fenced as data; files are the copy's.
     func answer(_ reference: DesignReference, aspect: DesignReferenceAspect, agent: Agent) async throws -> DesignReferenceAnswer {
         guard let grant = agent.designGrant(designID: reference.designID, board: reference.board?.rawValue,
-                                            element: reference.element?.description, revision: reference.revision),
+                                            element: reference.element?.description, revision: reference.revision, page: reference.page),
               let payloadID = grant.payload else { throw DesignReferenceError.notGranted }
         let payloads = server.designReferencePayloads
         guard let payload = await payloads.load(agentID: agent.id, payload: payloadID),
@@ -315,7 +344,7 @@ struct DesignReferenceService: Sendable {
             return listed("Each board the copy holds as a standalone page, as it was sent. Read them with your read tool.", pages)
         case .element:
             guard payload.reference.element != nil else {
-                throw DesignReferenceError("no_element", "This reference is a whole board or design: ask for its html or image, or its tokens.")
+                throw DesignReferenceError("no_element", "This reference is a whole board, page or design: ask for its html or image, or its tokens.")
             }
             let files = [path(payload.element), path(payload.elementStyles)].compactMap { $0 }
             guard !files.isEmpty else { throw DesignReferenceError("no_element", "The copy holds no markup for the element.") }
@@ -368,15 +397,16 @@ struct DesignReferenceService: Sendable {
         guard reference.host == .local else { return .current }
         guard state.designs.contains(where: { $0.id == reference.designID }),
               let snapshot = try? await server.designs.snapshot(reference.designID) else { return .deleted }
+        if let page = reference.page, snapshot.index.pages?.contains(where: { $0.id == page }) != true { return .deleted }
         let payloads = server.designReferencePayloads
         let pinnedSHA: String?
         if let payload { pinnedSHA = payload.renderSHA }
         else if let revision = reference.revision {
-            pinnedSHA = try? await server.designs.pinnedRenderSHA(reference.designID, revision: revision)
+            pinnedSHA = try? await server.designs.pinnedRenderSHA(reference.designID, revision: revision, page: reference.page)
         } else { pinnedSHA = nil }
         let renderChanged: Bool
         if let pinnedSHA {
-            renderChanged = (try? await server.designs.renderSHA(reference.designID)) != pinnedSHA
+            renderChanged = (try? await server.designs.renderSHA(reference.designID, page: reference.page)) != pinnedSHA
         } else {
             // Old sent copies have no rendering fingerprint; don't call source equality fresh.
             renderChanged = reference.revision.map { $0 != snapshot.revision } ?? false
@@ -408,9 +438,14 @@ struct DesignReferenceService: Sendable {
             return .updatedSince(latest: snapshot.revision, changes: DesignReferenceReading.changeLines(
                 reference: reference, label: label, before: before, after: after.source))
         }
-        let order = DesignReferenceReading.canvasOrder(snapshot.index)
+        let order = DesignReferenceReading.canvasOrder(snapshot.index).filter { path in
+            reference.page.map { snapshot.index.page(of: path) == $0 } ?? true
+        }
         let current = order.compactMap { path in snapshot.boards[path].map { (board: path, title: snapshot.index.boards[path]?.title, sha256: $0) } }
         guard let payload, let held = payload.boards else {
+            if reference.page != nil, pinnedSHA != nil {
+                return renderChanged ? .updatedSince(latest: snapshot.revision, changes: []) : .current
+            }
             return reference.revision.map { $0 == snapshot.revision } ?? true ? .current : .updatedSince(latest: snapshot.revision, changes: [])
         }
         let before = held.map { (board: $0.board, title: $0.title, sha256: $0.sha256) }
@@ -439,6 +474,7 @@ struct DesignReferenceService: Sendable {
             }
             guard let entries else { continue }
             catalog.designs.append(entries.design)
+            catalog.pages[design.id] = entries.pages
             catalog.boards[design.id] = entries.boards
             catalog.elements.merge(entries.elements) { $1 }
         }
@@ -449,7 +485,7 @@ struct DesignReferenceService: Sendable {
 /// Each design's @ picker rows as last derived, by its revision and name: a picker opening again
 /// reads no board it read before unless the design changed.
 final class DesignMentionCache: @unchecked Sendable {
-    typealias Entries = (design: DesignMentionItem, boards: [DesignMentionItem], elements: [String: [DesignMentionItem]])
+    typealias Entries = (design: DesignMentionItem, pages: [DesignMentionItem], boards: [DesignMentionItem], elements: [String: [DesignMentionItem]])
     private struct Kept {
         var revision: UInt64
         var name: String

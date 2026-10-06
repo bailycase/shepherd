@@ -28,19 +28,22 @@ public enum DesignReferenceHost: Hashable, Sendable {
 }
 
 /// A piece of a design handed to an ordinary thread (docs/designs.md › Design references): the
-/// whole design, a board, or one element of a board, pinned at a revision. Its string form
+/// whole design, a canvas page, a board, or one element of a board, pinned at a revision. Its string form
 /// (`string`) is what Copy reference puts on the pasteboard:
 ///
 ///     shepherd-design-ref://<host>/<designID>[/<board view name>[#<tid>:<path>]][@<revision>]
 ///
+/// A page instead uses `shepherd-design-ref://<host>/<designID>?page=<pageID>[@<revision>]`.
 /// It names things by id only: never a file path on disk, a token, or anything the design's
-/// files say. The label (design › board › element) is for display and never travels in it.
+/// files say. The label (design › page, or design › board › element) is for display and never travels in it.
 /// The scheme is not the board sandbox's `shepherd-design://`, which WebKit serves boards from.
 public struct DesignReference: Hashable, Sendable {
     public var host: DesignReferenceHost
     public var designID: DesignID
-    /// The board, or nil for the whole design.
+    /// The board, or nil for a canvas page or the whole design.
     public var board: DesignPath?
+    /// All boards on this canvas page; mutually exclusive with board and element.
+    public var page: String?
     /// An element of `board` (its id names the board by view name), or nil for the board whole.
     public var element: DesignElementID?
     /// The design's revision it was pinned at; nil pins it when it is sent.
@@ -52,20 +55,23 @@ public struct DesignReference: Hashable, Sendable {
 
     /// What a reference names.
     public enum Kind: String, Codable, Hashable, Sendable {
-        case design, board, element
+        case design, page, board, element
     }
 
-    /// Nil when the element is on another board (or names none), or the design id can't name a
-    /// design folder.
-    public init?(host: DesignReferenceHost = .local, designID: DesignID, board: DesignPath?, element: DesignElementID? = nil,
+    /// Nil for invalid ids, an element on another board, or a page combined with a board or element.
+    public init?(host: DesignReferenceHost = .local, designID: DesignID, board: DesignPath? = nil, page: String? = nil, element: DesignElementID? = nil,
                  revision: UInt64? = nil, label: String? = nil) {
         guard Self.isDesignID(designID.rawValue) else { return nil }
+        if let page {
+            guard DesignPath.isIndexID(page), board == nil, element == nil else { return nil }
+        }
         if let element {
             guard let board, element.board == board.viewName else { return nil }
         }
         self.host = host
         self.designID = designID
         self.board = board
+        self.page = page
         // Which rendering of a repeated element is the view record's business, not a reference's.
         self.element = element.flatMap { DesignElementID(board: $0.board, tid: $0.tid, path: $0.path) }
         self.revision = revision
@@ -76,6 +82,7 @@ public struct DesignReference: Hashable, Sendable {
     public var string: String {
         var text = "\(Self.scheme)://\(host.rawValue)/\(designID.rawValue)"
         if let board { text += "/\(board.viewName)" }
+        if let page { text += "?page=\(page)" }
         if let element { text += "#\(element.tid):" + element.path.map(String.init).joined(separator: "/") }
         if let revision { text += "@\(revision)" }
         return text
@@ -110,6 +117,15 @@ public struct DesignReference: Hashable, Sendable {
             fragment = rest[rest.index(after: hash)...]
             rest = rest[..<hash]
         }
+        var page: String?
+        if let query = rest.firstIndex(of: "?") {
+            let value = rest[rest.index(after: query)...]
+            guard value.hasPrefix("page="), fragment == nil else { return nil }
+            let id = String(value.dropFirst(5))
+            guard DesignPath.isIndexID(id) else { return nil }
+            page = id
+            rest = rest[..<query]
+        }
         if rest.hasSuffix("/") { rest = rest.dropLast() }
         let parts = rest.split(separator: "/", omittingEmptySubsequences: false)
         guard parts.count >= 2, let host = DesignReferenceHost(rawValue: String(parts[0])),
@@ -126,7 +142,7 @@ public struct DesignReference: Hashable, Sendable {
             guard let board, let id = DesignElementID(board.viewName + "#" + fragment), id.instance == nil else { return nil }
             element = id
         }
-        self.init(host: host, designID: DesignID(rawValue: String(parts[1])), board: board, element: element, revision: revision)
+        self.init(host: host, designID: DesignID(rawValue: String(parts[1])), board: board, page: page, element: element, revision: revision)
     }
 
     /// The same piece, pinned at `revision`.
@@ -145,18 +161,18 @@ public struct DesignReference: Hashable, Sendable {
     }
 
     public var kind: Kind {
-        element != nil ? .element : board != nil ? .board : .design
+        element != nil ? .element : board != nil ? .board : page != nil ? .page : .design
     }
 
-    /// Whether `other` names the same piece (host, design, board, element), whatever its revision.
+    /// Whether `other` names the same piece (host, design, page, board, element), whatever its revision.
     public func isSamePiece(as other: DesignReference) -> Bool {
-        host == other.host && designID == other.designID && board == other.board && element == other.element
+        host == other.host && designID == other.designID && board == other.board && page == other.page && element == other.element
     }
 
     /// "Checkout › A · Checkout funnel › Primary button": the design's name, the board's title
     /// (else its stem), and the element's words, each one line cut short.
-    public static func label(design: String, board: String?, element: String?) -> String {
-        [design, board, element].compactMap { $0.flatMap(DesignViewRecord.label) }.joined(separator: " › ")
+    public static func label(design: String, board: String?, element: String?, page: String? = nil) -> String {
+        [design, page.map { "Page · \($0)" }, board, element].compactMap { $0.flatMap(DesignViewRecord.label) }.joined(separator: " › ")
     }
 
     /// A design folder's name: `[A-Za-z0-9_-]{1,64}` (`DesignStore.folder(for:)`).
@@ -210,6 +226,8 @@ public struct DesignReferenceRecord: Codable, Hashable, Sendable {
     public var design: String?
     public var board: String?
     public var boardTitle: String?
+    public var page: String?
+    public var pageTitle: String?
     public var element: String?
     public var elementLabel: String?
     public var revision: UInt64?
@@ -227,11 +245,14 @@ public struct DesignReferenceRecord: Codable, Hashable, Sendable {
 
     public init(ref: String, design: String? = nil, board: String? = nil, boardTitle: String? = nil, element: String? = nil,
                 elementLabel: String? = nil, revision: UInt64? = nil, width: Double? = nil, height: Double? = nil,
-                files: [String]? = nil, payload: String? = nil, boards: Int? = nil, boardCount: Int? = nil) {
+                files: [String]? = nil, payload: String? = nil, boards: Int? = nil, boardCount: Int? = nil,
+                page: String? = nil, pageTitle: String? = nil) {
         self.ref = ref
         self.design = design
         self.board = board
         self.boardTitle = boardTitle
+        self.page = page
+        self.pageTitle = pageTitle
         self.element = element
         self.elementLabel = elementLabel
         self.revision = revision
@@ -256,7 +277,8 @@ public struct DesignReferenceRecord: Codable, Hashable, Sendable {
 
     /// "Checkout › A · Funnel first › Pay now", from what the host read.
     public var label: String {
-        DesignReference.label(design: design ?? "", board: boardTitle ?? board.flatMap { DesignPath($0)?.stem }, element: elementLabel)
+        DesignReference.label(design: design ?? "", board: boardTitle ?? board.flatMap { DesignPath($0)?.stem }, element: elementLabel,
+                              page: pageTitle ?? page ?? reference?.page)
     }
 
     /// The record as the thread's snapshot carries it: without the host's file paths.
