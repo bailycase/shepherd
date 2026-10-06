@@ -244,6 +244,11 @@ jobs:
       - name: Stage bundled pi for subagent file checks
         run: python3 scripts/pi_engine.py stage
 
+      - name: Smoke test the staged SDK
+        run: |
+          SHEPHERD_ENGINE_SMOKE=.build/pi-engine \
+            python3 -m unittest discover -s Tests/Release -p test_pi_engine_sdk.py
+
       # Serially within a shard: on the shared 3-core runner, tests run in parallel queued behind
       # one another's main-thread work until their waits ran out. The tests that block the main
       # queue or change process-wide state still run as exit tests in their own process. The
