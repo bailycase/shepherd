@@ -65,7 +65,8 @@ remain isolated. The storage and cleanup rules are in [the Browser spec](docs/de
 3. **One quiet line per burst.** Consecutive calls of one kind merge into one activity line.
 4. **Nothing in the thread spins.** One thing moves at a time, and it is text (live text shimmers).
 5. **Nothing in the default view that isn't useful.** No key-hint rows, no repeated status text,
-   no footers in menus, nothing under the composer but its controls.
+   no footers in menus, nothing under the composer but its controls. Expanded tool activity exposes
+   saved inputs and outputs separately; opening codemode shows its script without a hidden gesture.
 
 The rules that follow:
 
