@@ -140,10 +140,9 @@ test("native slash parsing strips trailing flags only, quotes scripts safely, re
   const hostile = 'worker "); throw Error("escape"); //';
   const parsed = ui.parseRunCommand(hostile);
   assert.equal(JSON.parse(parsed.workflowScript.slice(parsed.workflowScript.indexOf('{'), -2)).task, hostile.slice(7));
-  assert.equal(ui.nativeCommandNames([], []).run, 'run');
-  assert.equal(ui.nativeCommandNames([{name:'run:1'}], []).run, 'shepherd-run');
-  assert.equal(ui.nativeCommandNames([], [{name:'subagent'}]).subagents, 'shepherd-subagents');
-  assert.equal(ui.nativeCommandNames([{name:'run'}, {name:'shepherd-run'}], []).run, 'shepherd-shepherd-run');
+  assert.equal(ui.nativeCommandNames([]).run, 'run');
+  assert.equal(ui.nativeCommandNames([{name:'run:1'}]).run, 'shepherd-run');
+  assert.equal(ui.nativeCommandNames([{name:'run'}, {name:'shepherd-run'}]).run, 'shepherd-shepherd-run');
 });
 
 test("fleet ordering, frozen age, narrow Unicode rendering and stable paused transcript anchors", () => {
@@ -284,8 +283,8 @@ test("under Shepherd the fleet overlay and Stop are not registered, and every co
   assert.deepEqual(entries,[]);
   // Doctor lists the names that exist, and a collision elsewhere on a command that is not registered changes nothing.
   assert(!messages.find(({m})=>m.content.includes('NATIVE SUBAGENTS')).m.content.includes('/subagents-fleet'));
-  assert.equal(ui.nativeCommandNames([{name:'subagents-fleet'}],[],ui.listedCommandNames(env)).run,'run');
-  assert.equal(ui.nativeCommandNames([{name:'subagents-fleet'}],[]).run,'shepherd-run');
+  assert.equal(ui.nativeCommandNames([{name:'subagents-fleet'}],ui.listedCommandNames(env)).run,'run');
+  assert.equal(ui.nativeCommandNames([{name:'subagents-fleet'}]).run,'shepherd-run');
 });
 
 test("standalone inspector refreshes lifecycle while paused, distinguishes literal stop, confirms run-wide stop and exits on ctrl+c", async () => {

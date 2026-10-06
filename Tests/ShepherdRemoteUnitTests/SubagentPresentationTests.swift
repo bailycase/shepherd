@@ -87,7 +87,7 @@ struct SubagentPlacementTests {
     }
 
     @Test func runsSharingASpawnCallStayTogetherInPublishOrder() {
-        let turns = nativeTurns([F.user(), F.tool("subagent", callID: "fan")])
+        let turns = nativeTurns([F.user(), F.tool("shepherd_workflow", callID: "fan")])
         let lanes = [F.run("l0", toolCallID: "fan"), F.run("l1", toolCallID: "fan")]
         #expect(nativeSubagentPlacements(lanes, turns: turns)[turns[1].id]?.byToolCall["fan"] == lanes)
     }

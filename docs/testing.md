@@ -237,8 +237,8 @@ separate check, not a consequence of passing Mac AX tests.
 pointing at a Pi package with its modular `dist/index.js` and dependencies. The staged engine
 now provides those too. Nothing looks pi up on PATH. They isolate `HOME` and use a local fake
 provider. `test_pi_engine_sdk.py` checks SDK imports/session creation against the staged engine
-in CI and the signed app during release. `test_pi_engine_subagents.py` additionally exercises two
-background children with an isolated pi-subagents 0.76.1 install. See [pi-engine.md](pi-engine.md).
+in CI and the signed app during release. The native child extension tests exercise Shepherd-owned
+children and workflows with a loopback provider. See [pi-engine.md](pi-engine.md).
 `native-children.smoke.mjs` is an opt-in real-model smoke (`PI_SMOKE_MODEL`).
 `Tests/ShepherdIOSChecks` holds the iOS client's scripts ([docs/ios/VALIDATION.md](ios/VALIDATION.md)).
 

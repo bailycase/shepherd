@@ -94,7 +94,7 @@ anything that must survive a relaunch out of that path.
 **Terminals** run the shell from Settings ▸ Terminal as a login shell, without wrapping
 `pi` or injecting a theme. The user's rc files and pi settings are never edited, and agent-only
 variables are blanked, as are pi's `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSION_DIR`,
-`PI_PACKAGE_DIR`, `PI_OFFLINE` and `PI_SUBAGENTS_TEMP_ROOT`: `pi` in a terminal is the user's own.
+`PI_PACKAGE_DIR` and `PI_OFFLINE`: `pi` in a terminal is the user's own.
 
 **Automations** are saved prompts (`ShepherdState.automations`).
 

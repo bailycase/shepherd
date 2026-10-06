@@ -68,7 +68,7 @@ final class AppSettings {
         static let agentMessages = "shepherd.pi.agentMessages"
         static let piPanesExtension = "shepherd.pi.extension.panes"
         static let piReviewExtension = "shepherd.pi.extension.review"
-        static let piSubagentsExtension = "shepherd.pi.extension.subagents"
+        static let subagentDisplay = "shepherd.pi.extension.subagents"
         static let piNativeSubagents = "shepherd.pi.extension.nativeSubagents"
         static let piMCPExtension = "shepherd.pi.extension.mcp"
         static let piBrowserExtension = "shepherd.pi.extension.browser"
@@ -101,7 +101,7 @@ final class AppSettings {
         static let all = [
             terminalFontFamily, terminalFontSize, defaultModel,
             defaultThinking, defaultServiceTier, goalCrossProviderEvaluation, autoNameAgents, queueDelivery, trimToolOutput, deferTools, codemode, compactAtPercent, shellPath,
-            agentMessages, piPanesExtension, piReviewExtension, piSubagentsExtension, piNativeSubagents,
+            agentMessages, piPanesExtension, piReviewExtension, subagentDisplay, piNativeSubagents,
             piMCPExtension, piBrowserExtension, piDesignReferences,
             childConcurrency, childModel, childThinking, childContext,
             uiDensity, uiTextScale, sidebarWidth, sidebarRowDensity,
@@ -288,8 +288,8 @@ final class AppSettings {
         didSet { store.set(piDesignReferences, forKey: Key.piDesignReferences) }
     }
 
-    var piSubagentsExtension: Bool {
-        didSet { store.set(piSubagentsExtension, forKey: Key.piSubagentsExtension) }
+    var subagentDisplay: Bool {
+        didSet { store.set(subagentDisplay, forKey: Key.subagentDisplay) }
     }
 
     var piNativeSubagents: Bool {
@@ -510,7 +510,7 @@ final class AppSettings {
             .flatMap(AgentMessagePolicy.init(rawValue:)) ?? AgentMessagePolicy.default
         piPanesExtension = store.object(forKey: Key.piPanesExtension) as? Bool ?? true
         piReviewExtension = store.object(forKey: Key.piReviewExtension) as? Bool ?? true
-        piSubagentsExtension = store.object(forKey: Key.piSubagentsExtension) as? Bool ?? true
+        subagentDisplay = store.object(forKey: Key.subagentDisplay) as? Bool ?? true
         piNativeSubagents = store.object(forKey: Key.piNativeSubagents) as? Bool ?? true
         piMCPExtension = store.object(forKey: Key.piMCPExtension) as? Bool ?? true
         piBrowserExtension = store.object(forKey: Key.piBrowserExtension) as? Bool ?? true
@@ -613,7 +613,7 @@ final class AppSettings {
         agentMessages = AgentMessagePolicy.default
         piPanesExtension = true
         piReviewExtension = true
-        piSubagentsExtension = true
+        subagentDisplay = true
         piNativeSubagents = true
         piMCPExtension = true
         piBrowserExtension = true

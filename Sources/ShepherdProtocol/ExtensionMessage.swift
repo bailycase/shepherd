@@ -802,18 +802,18 @@ public struct AgentCoordinationResult: Codable, Hashable, Sendable {
     }
 }
 
-/// One live (or just-finished) pi-subagents child run under an agent, as
-/// mirrored by the subagents extension. Ephemeral display state: rows live in
+/// One live or finished Shepherd-owned child run under an agent, as
+/// published by the subagents extension. Ephemeral display state: rows live in
 /// the GUI only and die with the run, the pi process, or the app.
 public struct ChildRun: Codable, Hashable, Sendable, Identifiable {
-    /// pi-subagents async run id. With `childIndex` this identifies a row.
+    /// Shepherd-owned run id. With `childIndex` this identifies a row.
     public var runID: String
     /// Lane index inside a workflow run; nil for a single-agent run.
     public var childIndex: Int?
     /// Display label — the workflow lane key or the agent profile name.
     public var label: String
-    /// pi-subagents state verbatim (running/complete/failed/…). Kept as a
-    /// string on purpose: their vocabulary can grow without breaking decode.
+    /// Runtime state verbatim (running/complete/failed/…). Kept as a
+    /// string so new states do not break decoding.
     public var state: String
     /// Milliseconds since epoch, matching the snapshot's clock.
     public var startedAt: Double?
@@ -824,7 +824,7 @@ public struct ChildRun: Codable, Hashable, Sendable, Identifiable {
     /// Run artifact directory, for a later inspector.
     public var asyncDir: String?
 
-    // MARK: Card fields (native children only; all optional so pi-subagents rows still decode)
+    // MARK: Card fields (optional for older publishers)
 
     /// Agent profile name ("worker").
     public var role: String?
