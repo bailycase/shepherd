@@ -1,19 +1,18 @@
 #!/usr/bin/env python3
-"""The pi engine Shepherd ships: Node plus pi's bundle, pinned by scripts/pi-engine-pin.json.
+"""The pi engine Shepherd ships: Node, Pi's bundle and SDK, pinned by scripts/pi-engine-pin.json.
 
 Staging downloads Node from nodejs.org and pi's tarballs from the npm registry, checks every
 download against the pin, and writes the tree the app carries:
 
   Helpers/node                      Node's darwin-arm64 binary as published: Shepherd runs on
                                     Apple silicon only
-  Resources/pi-engine/              pi's package.json, dist/bundle, its assets, docs and examples,
-                                    and a node_modules holding only jiti, photon-node and
-                                    quickjs-wasi's WebAssembly binary, plus LICENSE, NODE-LICENSE
-                                    and THIRD-PARTY-NOTICES
+  Resources/pi-engine/              Pi's package.json, dist (bundle and modular SDK), assets,
+                                    docs, examples and locked SDK dependencies, plus LICENSE,
+                                    NODE-LICENSE and THIRD-PARTY-NOTICES
   pin.json                          a copy of the pin it was staged from (the Xcode phase's stamp)
   inputs.xcfilelist, outputs.xcfilelist
-                                    every file the Xcode phase reads and every file and folder it
-                                    writes: user script sandboxing allows only declared paths
+                                    node/stamp paths for the sandboxed signing phase. Xcode copies
+                                    Resources/pi-engine as a native folder resource
 
 No npm and no package scripts: tarballs are unpacked here with tarfile, so nothing in them runs
 (stronger than npm's --ignore-scripts). Downloads are cached by name and reused only while they
@@ -36,6 +35,7 @@ import hashlib
 import json
 import mmap
 import os
+import re
 import shutil
 import struct
 import sys
@@ -73,27 +73,31 @@ PI_KEEP = (
     "CHANGELOG.md",
     "docs/**",
     "examples/**",
-    "dist/bundle/**",
-    "dist/modes/interactive/theme/*.json",
-    "dist/modes/interactive/assets/*.png",
-    "dist/core/export-html/template.html",
-    "dist/core/export-html/template.css",
-    "dist/core/export-html/template.js",
-    "dist/core/export-html/vendor/*.js",
+    "dist/**",
 )
 
-# The only modules the bundle loads from node_modules. Everything else pi depends on (its own
-# packages, the MCP and codemode runtimes, chord, undici) is compiled into dist/bundle, so
-# esbuild (chord's dependency) and its 26 platform packages never ship. quickjs-wasi's JavaScript is
-# bundled too: the codemode extension resolves only its `quickjs.wasm` (WebAssembly, not native
-# code) from node_modules, so that file and the package.json its exports map needs are kept and
-# its `extensions/*.so` side modules (WebAssembly that pi never loads, named like native code)
-# are not.
-MODULE_KEEP = {
-    "jiti": ("**",),
-    "@silvia-odwyer/photon-node": ("**",),
-    "quickjs-wasi": ("package.json", "quickjs.wasm"),
+# Detached extension runners import the modular SDK outside Pi's bundle loader. Keep its
+# locked dependency tree, including nested versions. Chord's root/context exports need no
+# esbuild; its optional bundler API is not supported. No native compiler or platform packages
+# ship. QuickJS's side modules are unused WebAssembly named like native libraries.
+REQUIRED_MODULES = {
+    "jiti", "@silvia-odwyer/photon-node", "quickjs-wasi", "typebox",
+    "@earendil-works/pi-agent-core", "@earendil-works/pi-ai",
+    "@earendil-works/pi-tui", "@earendil-works/chord",
 }
+MODULE_KEEP = {
+    "quickjs-wasi": ("package.json", "quickjs.wasm", "dist/**"),
+    "@earendil-works/pi-tui": ("package.json", "dist/**", "LICENSE*", "LICENCE*"),
+}
+
+
+def module_name(install_path: str) -> str:
+    """A pinned npm install location, including nested node_modules, never an arbitrary path."""
+    package = r"(?:@[a-z0-9._-]+/)?[a-z0-9._-]+"
+    if (not re.fullmatch(package + r"(?:/node_modules/" + package + r")*", install_path)
+            or any(part in (".", "..") for part in install_path.split("/"))):
+        raise EngineError(f"invalid module install path: {install_path!r}")
+    return install_path.rsplit("node_modules/", 1)[-1]
 
 # What the bundle resolves inside a module by name at runtime, so the module is useless without
 # it: pi finds the QuickJS binary with `require.resolve("quickjs-wasi/quickjs.wasm")` when a
@@ -183,10 +187,17 @@ def pin_problems(pin: dict) -> list[str]:
     pi = pin.get("pi", {})
     problems += _package_problems("pi", pi.get("name", ""), pi)
     modules = pin.get("modules", {})
-    if sorted(modules) != sorted(MODULE_KEEP):
-        problems.append(f"modules are {sorted(modules)}, expected {sorted(MODULE_KEEP)}")
-    for name, module in modules.items():
-        problems += _package_problems(f"modules.{name}", name, module)
+    if missing := REQUIRED_MODULES - set(modules):
+        problems.append(f"missing SDK modules: {sorted(missing)}")
+    for location, module in modules.items():
+        try:
+            name = module_name(location)
+        except EngineError as error:
+            problems.append(str(error))
+            continue
+        if name == "esbuild" or name.startswith("@esbuild/"):
+            problems.append(f"modules.{location}: esbuild must not ship")
+        problems += _package_problems(f"modules.{location}", name, module)
     return problems
 
 
@@ -275,7 +286,9 @@ def download_all(pin: dict, cache: str, offline: bool = False, opener=urllib.req
                            lambda path: sha256_of(path) == archive["sha256"], offline, opener)
     packages = [("pi", pin["pi"])] + [(name, module) for name, module in pin["modules"].items()]
     for name, package in packages:
-        path = fetch(package["tarball"], os.path.join(downloads, os.path.basename(package["tarball"])),
+        # Scoped packages can share a tarball basename (e.g. retry and @types/retry).
+        filename = name.replace("/", "__") + "-" + os.path.basename(package["tarball"])
+        path = fetch(package["tarball"], os.path.join(downloads, filename),
                      lambda p, want=package["integrity"]: integrity_of(p) == want, offline, opener)
         if name == "pi":
             result["pi"] = path
@@ -300,9 +313,10 @@ def _kept(relative: str, rules) -> bool:
 
 
 def package_files(archive: str, rules) -> dict[str, bytes]:
-    """The kept regular files of an npm tarball, by path under `package/`. Links, devices and
-    any path that climbs out are refused."""
+    """Kept regular files under an npm tarball's single root (usually package/, but @types
+    archives use their package name). Links, devices, multiple roots and traversal are refused."""
     files = {}
+    root = None
     with tarfile.open(archive, "r:*") as tar:
         for member in tar.getmembers():
             name = member.name
@@ -313,12 +327,19 @@ def package_files(archive: str, rules) -> dict[str, bytes]:
             if not member.isfile():
                 raise EngineError(f"{os.path.basename(archive)}: {name!r} is not a regular file")
             top, _, relative = name.partition("/")
-            if top != "package" or not relative:
-                raise EngineError(f"{os.path.basename(archive)}: {name!r} is outside package/")
+            root = root or top
+            if top != root or not relative:
+                raise EngineError(f"{os.path.basename(archive)}: {name!r} is outside {root}/")
+            # Some npm archives repeat a file as both dist/x and ./dist/x. Xcode treats
+            # those as one output, so normalize before building its sandbox file lists.
+            relative = os.path.normpath(relative)
             if _kept(relative, rules):
                 data = tar.extractfile(member)
                 assert data is not None
-                files[relative] = data.read()
+                contents = data.read()
+                if relative in files and files[relative] != contents:
+                    raise EngineError(f"{os.path.basename(archive)}: conflicting duplicate {relative!r}")
+                files[relative] = contents
     return files
 
 
@@ -386,28 +407,41 @@ def build_tree(pin: dict, downloads: dict) -> dict[str, bytes]:
     if ENTRY not in pi:
         raise EngineError(f"pi's tarball has no {ENTRY}")
     shrinkwrap = json.loads(pi.pop("npm-shrinkwrap.json", b"{}"))
+    expected = {
+        key.removeprefix("node_modules/") for key, value in shrinkwrap.get("packages", {}).items()
+        if key and not value.get("dev") and not value.get("optional") and key != "node_modules/esbuild"
+    }
+    if set(pin["modules"]) != expected:
+        raise EngineError(f"SDK modules differ from pi's shrinkwrap: missing {sorted(expected - set(pin['modules']))}, "
+                          f"extra {sorted(set(pin['modules']) - expected)}")
     for relative, data in pi.items():
         tree[f"{ENGINE}/{relative}"] = data
 
     licences = {}
-    for name, module in pin["modules"].items():
-        files = package_files(downloads["modules"][name], MODULE_KEEP[name] + ("LICENSE*", "LICENCE*"))
+    for location, module in pin["modules"].items():
+        name = module_name(location)
+        keep = MODULE_KEEP.get(name, ("**",))
+        files = package_files(downloads["modules"][location], keep + ("LICENSE*", "LICENCE*"))
         meta = json.loads(files["package.json"])
         if (meta.get("name"), meta.get("version")) != (name, module["version"]):
             raise EngineError(f"{name}'s tarball is {meta.get('name')} {meta.get('version')}, not the pinned one")
-        locked = shrinkwrap.get("packages", {}).get(f"node_modules/{name}", {})
+        locked = shrinkwrap.get("packages", {}).get(f"node_modules/{location}", {})
         if locked.get("version") != module["version"] or locked.get("integrity", module["integrity"]) != module["integrity"]:
             raise EngineError(f"{name} {module['version']} is not what pi's shrinkwrap resolves ({locked.get('version')})")
         texts = sorted(f for f in files if f.upper().startswith(("LICENSE", "LICENCE")))
         if texts:
-            licences[name] = (texts[0], files[texts[0]].decode("utf-8"))
+            licences[location] = (texts[0], files[texts[0]].decode("utf-8"))
         elif meta.get("license") == "MIT":
-            licences[name] = ("MIT, from package.json", MIT.format(holder=_author(meta)))
+            licences[location] = ("MIT, from package.json", MIT.format(holder=_author(meta)))
+        elif name.startswith("@aws-sdk/") and meta.get("license") == "Apache-2.0":
+            # Some AWS tarballs omit the shared license. Use the text from their pinned core.
+            text = package_files(downloads["modules"]["@aws-sdk/core"], ("LICENSE",))["LICENSE"]
+            licences[location] = ("Apache-2.0, from @aws-sdk/core/LICENSE", text.decode("utf-8"))
         else:
             raise EngineError(f"{name} ships no licence text")
         for relative, data in files.items():
-            if _kept(relative, MODULE_KEEP[name]):
-                tree[f"{ENGINE}/node_modules/{name}/{relative}"] = data
+            if _kept(relative, keep):
+                tree[f"{ENGINE}/node_modules/{location}/{relative}"] = data
 
     tree[NODE], tree[f"{ENGINE}/NODE-LICENSE"] = node_files(downloads["node"], pin["node"]["version"])
     # pi's tarball carries no LICENSE; package.json says MIT and names the author.
@@ -416,20 +450,11 @@ def build_tree(pin: dict, downloads: dict) -> dict[str, bytes]:
     return tree
 
 
-def file_lists(tree: dict[str, bytes]) -> tuple[str, str]:
-    """The Xcode phase's input and output file lists for a staged tree. The sandbox grants
-    reads of each listed input (and its parent folders) and writes of each listed output, one
-    literal path at a time, so every folder the phase creates is listed as an output too."""
-    files = sorted(tree)
-    inputs = [f"{STAGED_IN_XCODE}/{STAMP}"] + [f"{STAGED_IN_XCODE}/{relative}" for relative in files]
-    folders = set()
-    for relative in files:
-        parts = relative.split("/")[:-1]
-        for depth in range(1, len(parts) + 1):
-            folder = "/".join(parts[:depth])
-            if folder != "Resources":
-                folders.add(folder)
-    outputs = [f"{CONTENTS_IN_XCODE}/{path}" for path in sorted(folders | set(files))]
+def file_lists() -> tuple[str, str]:
+    """Only Node and the stamp belong to the sandboxed phase. Xcode copies the SDK as a
+    folder resource, avoiding thousands of sandbox-exec arguments for its individual files."""
+    inputs = [f"{STAGED_IN_XCODE}/{path}" for path in (STAMP, NODE)]
+    outputs = [f"{CONTENTS_IN_XCODE}/{path}" for path in ("Helpers", NODE)]
     return "\n".join(inputs) + "\n", "\n".join(outputs) + "\n"
 
 
@@ -447,7 +472,7 @@ def write_tree(tree: dict[str, bytes], pin_text: str, out: str) -> None:
             with open(path, "wb") as f:
                 f.write(data)
             os.chmod(path, 0o755 if relative == NODE else 0o644)
-        inputs, outputs = file_lists(tree)
+        inputs, outputs = file_lists()
         for name, text in ((INPUTS, inputs), (OUTPUTS, outputs), (STAMP, pin_text)):
             with open(os.path.join(staging, name), "w", encoding="utf-8") as f:
                 f.write(text)
@@ -508,8 +533,8 @@ def _slice_mentions(path: str, offset: int, size: int, needle: bytes) -> bool:
 
 def verify(root: str, pin: dict | None = None) -> list[str]:
     """Problems with the engine under `root`: an app bundle, its Contents/, or a staged tree.
-    Empty when node is arm64 only, at the pinned version, pi and its three modules
-    are the pinned ones (each with the file the bundle resolves in it), nothing else is in
+    Empty when node is arm64 only, at the pinned version, Pi and its SDK modules
+    are the pinned ones (each with the file the runtime resolves in it), nothing else is in
     node_modules, nothing native or esbuild is in the engine, and the licences are there."""
     pin = pin or load_pin()
     if os.path.isdir(os.path.join(root, "Contents")):
@@ -534,29 +559,25 @@ def verify(root: str, pin: dict | None = None) -> list[str]:
     if not os.path.isdir(engine):
         return problems + [f"{ENGINE} is missing"]
     problems += _package_version(engine, pin["pi"]["name"], pin["pi"]["version"], ENGINE)
-    if not os.path.isfile(os.path.join(engine, ENTRY)):
-        problems.append(f"{ENGINE}/{ENTRY} is missing")
+    for entry in (ENTRY, "dist/index.js"):
+        if not os.path.isfile(os.path.join(engine, entry)):
+            problems.append(f"{ENGINE}/{entry} is missing")
     for name in LICENSES:
         if not os.path.isfile(os.path.join(engine, name)):
             problems.append(f"{ENGINE}/{name} is missing")
     modules = os.path.join(engine, "node_modules")
-    present = set()
-    if os.path.isdir(modules):
-        for entry in os.listdir(modules):
-            if entry.startswith("@"):
-                present.update(f"{entry}/{sub}" for sub in os.listdir(os.path.join(modules, entry)))
-            else:
-                present.add(entry)
-    for extra in sorted(present - set(MODULE_KEEP)):
-        problems.append(f"node_modules/{extra} is not one of the modules pi's bundle loads")
-    for name, module in pin["modules"].items():
-        if name not in present:
-            problems.append(f"node_modules/{name} is missing")
+    present = installed_modules(modules)
+    for extra in sorted(present - set(pin["modules"])):
+        problems.append(f"node_modules/{extra} is not pinned")
+    for location, module in pin["modules"].items():
+        name = module_name(location)
+        if location not in present:
+            problems.append(f"node_modules/{location} is missing")
         else:
-            problems += _package_version(os.path.join(modules, name), name, module["version"], f"node_modules/{name}")
+            problems += _package_version(os.path.join(modules, location), name, module["version"], f"node_modules/{location}")
             for required in MODULE_REQUIRED.get(name, ()):
-                if not os.path.isfile(os.path.join(modules, name, required)):
-                    problems.append(f"node_modules/{name}/{required} is missing")
+                if not os.path.isfile(os.path.join(modules, location, required)):
+                    problems.append(f"node_modules/{location}/{required} is missing")
     for directory, dirs, files in os.walk(engine):
         for entry in dirs + files:
             if any(fnmatch.fnmatchcase(entry, pattern) for pattern in FORBIDDEN_NAMES):
@@ -566,6 +587,20 @@ def verify(root: str, pin: dict | None = None) -> list[str]:
             if not os.path.islink(path) and slices(path):
                 problems.append(f"{os.path.relpath(path, root)} is native code; only {NODE} may be")
     return problems
+
+
+def installed_modules(directory: str) -> set[str]:
+    """List package locations, retaining nested dependency versions rather than flattening them."""
+    found = set()
+    if not os.path.isdir(directory):
+        return found
+    for name in os.listdir(directory):
+        names = [f"{name}/{sub}" for sub in os.listdir(os.path.join(directory, name))] if name.startswith("@") else [name]
+        for package in names:
+            found.add(package)
+            nested = installed_modules(os.path.join(directory, package, "node_modules"))
+            found.update(f"{package}/node_modules/{child}" for child in nested)
+    return found
 
 
 def _package_version(directory: str, name: str, version: str, where: str) -> list[str]:

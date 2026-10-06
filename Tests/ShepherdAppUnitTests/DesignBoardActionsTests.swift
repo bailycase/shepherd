@@ -124,6 +124,32 @@ struct DesignBoardActionsTests {
         #expect(screen.viewRecord?.page == nil && screen.viewRecord?.pageName == nil)
     }
 
+    @Test func aCommentCardRevealsItsBoardAndPageWhileAPinLeavesTheViewportAlone() async throws {
+        let screen = await screen(CanvasHost(try Self.index()))
+        let comment = DesignComment(number: 1, board: Self.system, tid: 2, path: [1],
+                                    rect: DesignCommentRect(x: 20, y: 30, w: 200, h: 100), text: "Check the tokens", createdAt: 0)
+        screen.applyComments(DesignComments(revision: 1, comments: [comment]))
+        screen.paneTab = .comments
+        screen.present(Self.a)
+        screen.viewport = NWCanvasViewport(offset: CGPoint(x: -10_000, y: -10_000), zoom: 1)
+        #expect(!screen.visibleBoards.contains(Self.system))
+
+        screen.revealComment(comment.id)
+
+        #expect(screen.page == "system" && screen.presented == nil)
+        #expect(screen.selectedWhole == [Self.system] && screen.visibleBoards.contains(Self.system))
+        #expect(screen.openThread?.id == comment.id && screen.popoverAnchor?.board == Self.system.rawValue)
+        #expect(screen.paneTab == .comments, "opening a card keeps the list available")
+        let frame = try #require(screen.boards.first?.frame)
+        let middle = screen.viewport.screen(CGPoint(x: frame.midX, y: frame.midY))
+        #expect(abs(middle.x - 600) < 1 && abs(middle.y - 400) < 1, "the board is centered")
+
+        screen.closeComment()
+        let viewport = screen.viewport
+        screen.openThread(comment.id.uuidString)
+        #expect(screen.openThread?.id == comment.id && screen.viewport == viewport, "a pin opens in place")
+    }
+
     // MARK: The actions bar
 
     /// RefImplementMenu: the bar floats over the last pick's board, an element's too, so

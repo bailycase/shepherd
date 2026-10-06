@@ -331,7 +331,7 @@ struct RemoteDesignChatPane: View {
                     .allowsHitTesting(chat)
                     .accessibilityHidden(!chat)
                 if tab == .comments {
-                    DesignCommentsList(cards: screen.openCards) { screen.openThread($0.uuidString) }
+                    DesignCommentsList(cards: screen.openCards, resolve: { screen.resolve($0) }, open: { screen.revealComment($0) })
                         .background(Color.nw.bgWindow)
                 }
                 if let tweak = screen.tweak, tab == .tweak {
