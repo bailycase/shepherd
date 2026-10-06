@@ -97,6 +97,31 @@ struct DesignReferencePayloadTests {
         #expect(try DesignReferencePayload.decode(whole.encoded()) == whole)
     }
 
+    @Test func aPageCopyRetainsItsTitleCountsAndBackwardCompatibleFields() throws {
+        let ref = try #require(DesignReference(designID: DesignID(rawValue: "d1"), page: "flows", revision: 23))
+        let board = DesignPath("A.dc.html")!
+        let payload = DesignReferencePayload(agentID: AgentID(rawValue: "a1"), reference: ref, design: "Checkout",
+            revision: 23, capturedAt: 1, boards: [.init(board: board, title: "A", width: 10, height: 10, sha256: "aa")],
+            boardCount: 1, pageTitle: "Flows")
+        #expect(try DesignReferencePayload.decode(payload.encoded()) == payload)
+        #expect(payload.page == "flows" && payload.label == "Checkout › Page · Flows")
+        #expect(payload.outline.kind == .page && payload.outline.boards == 1)
+        let record = payload.record(folder: URL(fileURLWithPath: "/copy"))
+        #expect(record.page == "flows" && record.pageTitle == "Flows" && record.label == payload.label)
+        #expect(try JSONDecoder().decode(DesignReferenceRecord.self, from: JSONEncoder().encode(record)) == record)
+        #expect(DesignReferenceLookedAt.make(payload, aspects: [.summary]).title == payload.label)
+        #expect(DesignReferenceReading.summary(payload, versions: [23]).contains("page: flows (Flows)"))
+        #expect(DesignReferenceReading.summary(payload, versions: [23]).contains("boards: all 1 on this page"))
+        #expect(DesignReferenceReading.tokensReport(payload).contains("All 1 board on page Flows"))
+        let old = try JSONDecoder().decode(DesignReferenceRecord.self, from: Data(#"{"ref":"shepherd-design-ref://local/d1@3"}"#.utf8))
+        #expect(old.page == nil && old.pageTitle == nil)
+        var fields = try #require(JSONSerialization.jsonObject(with: Self.payload().encoded()) as? [String: Any])
+        fields.removeValue(forKey: "page")
+        fields.removeValue(forKey: "pageTitle")
+        let oldPayload = try DesignReferencePayload.decode(JSONSerialization.data(withJSONObject: fields))
+        #expect(oldPayload.page == nil && oldPayload.pageTitle == nil)
+    }
+
     @Test func aCopysRecordListsItsFilesWhereTheyAreKept() {
         let folder = URL(fileURLWithPath: "/support/design-refs/a1/copy", isDirectory: true)
         let record = Self.payload().record(folder: folder)

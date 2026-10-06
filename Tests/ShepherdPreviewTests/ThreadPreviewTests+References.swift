@@ -87,7 +87,8 @@ extension ThreadPreviewTests {
 
     /// The thread's references, answering from fixtures: the sent copy as `freshness` has it, what
     /// the agent looked at, and this Mac's designs for the @ picker.
-    static func referenceChips(freshness: DesignReferenceFreshness = .current) -> DesignReferenceChips {
+    static func referenceChips(freshness: DesignReferenceFreshness = .current, catalog: DesignMentionCatalog? = nil) -> DesignReferenceChips {
+        let mentions = catalog ?? mentionCatalog
         let picture = referencePicture()
         let lookedAt = DesignReferenceLookedAt(
             ref: sentReference.string, title: "Checkout funnel dashboard › A · Funnel first", aspects: [.image, .html, .element, .tokens],
@@ -100,14 +101,14 @@ extension ThreadPreviewTests {
             freshness: { _ in freshness },
             pinnedFreshness: { _ in .current },
             lookedAt: { _, _ in lookedAt },
-            picture: { _ in picture },
-            catalog: { mentionCatalog },
-            rowPicture: { item in item.kind == .element ? elementPicture(item.detail ?? "") : picture }))
+            picture: { $0.page == nil ? picture : nil },
+            catalog: { mentions },
+            rowPicture: { item in item.kind == .page ? nil : item.kind == .element ? elementPicture(item.detail ?? "") : picture }))
         chips.seed(sent: [referencePayload: DesignReferenceChips.Sent(
             crumbs: ["Checkout funnel dashboard", "A · Funnel first", "card “Checkout funnel”"],
             picture: NWReferenceImage(id: "sent", image: Image(decorative: picture, scale: 2)), freshness: freshness,
             pinned: "pinned Sep 27, 10:42", system: "acme-web", gets: ["picture", "html", "11 styles", "8 tokens"])],
-                   catalog: mentionCatalog)
+                   catalog: mentions)
         return chips
     }
 
@@ -289,6 +290,53 @@ extension ThreadPreviewTests {
     @Test func referenceAtDesigns() async throws {
         try await renderReferences("thread-reference-at-designs", Self.referenceSnapshot(sent: false), chips: Self.referenceChips(),
                                    draft: "Match the funnel in @", ready: { true })
+    }
+
+    /// Page and board rows are distinct even when their titles are identical.
+    static func pageMentionCatalog(longName: Bool = false) throws -> DesignMentionCatalog {
+        let design = Design(id: Self.referenceDesign, name: "Checkout funnel dashboard", createdAt: 1)
+        var index = DesignIndex(title: nil)
+        let pageName = longName ? "Checkout flow for returning customers, subscriptions, saved cards and international payment methods" : "Checkout flow"
+        index.pages = [.init(id: "flow", name: pageName), .init(id: "analytics", name: "Analytics"), .init(id: "archive", name: "Archive")]
+        index.boards[Self.referenceBoard] = .init(x: 0, y: 0, w: 1280, h: 800, title: "Checkout flow", page: "flow")
+        index.boards[DesignPath("B.dc.html")!] = .init(x: 1440, y: 0, w: 1280, h: 800, title: "B · Payment form", page: "flow")
+        index.boards[DesignPath("C.dc.html")!] = .init(x: 2880, y: 0, w: 1280, h: 800, title: "C · Analytics overview", page: "analytics")
+        index.order = [Self.referenceBoard, DesignPath("B.dc.html")!, DesignPath("C.dc.html")!]
+        let snapshot = DesignSnapshot(designID: design.id, revision: 23, index: index, boards: [:])
+        let entries = try #require(DesignMentionCatalog.entries(design: design, snapshot: snapshot, sources: [:], system: "acme-web"))
+        return DesignMentionCatalog(designs: [entries.design], pages: [design.id: entries.pages],
+                                    boards: [design.id: entries.boards], elements: entries.elements)
+    }
+
+    @Test func referenceAtPages() async throws {
+        let catalog = try Self.pageMentionCatalog()
+        let chips = Self.referenceChips(catalog: catalog)
+        try await renderReferences("thread-reference-at-pages", Self.referenceSnapshot(sent: false), chips: chips,
+                                   draft: "Build the checkout from @Checkout funnel dashboard › ", matrix: true)
+    }
+
+    @Test func referenceAtPageSearch() async throws {
+        let chips = Self.referenceChips(catalog: try Self.pageMentionCatalog())
+        try await renderReferences("thread-reference-at-page-search", Self.referenceSnapshot(sent: false), chips: chips,
+                                   draft: "Build the checkout from @checkout flow", matrix: true)
+    }
+
+    @Test func referenceAtPageLongName() async throws {
+        let chips = Self.referenceChips(catalog: try Self.pageMentionCatalog(longName: true))
+        try await renderReferences("thread-reference-at-page-long-name", Self.referenceSnapshot(sent: false), chips: chips,
+                                   draft: "Build the checkout from @Checkout funnel dashboard › ", matrix: true)
+    }
+
+    @Test func referenceWithPageAndBoardAttached() async throws {
+        let catalog = try Self.pageMentionCatalog()
+        let page = try #require(catalog.pages[Self.referenceDesign]?.first)
+        let board = try #require(catalog.boards[Self.referenceDesign]?.first)
+        let attached = [NativeAttachedReference(reference: page.reference.pinned(at: 23), label: "Checkout funnel dashboard › Page · " + page.title,
+                                                outline: DesignReferenceOutline(kind: .page, styles: 0, tokens: 14, system: "acme-web", boards: 2, boardCount: 2)),
+                        NativeAttachedReference(reference: board.reference.pinned(at: 23), label: "Checkout funnel dashboard › " + board.title,
+                                                outline: DesignReferenceOutline(kind: .board, styles: 42, tokens: 14, system: "acme-web"))]
+        try await renderReferences("thread-reference-page-and-board-attached", Self.referenceSnapshot(sent: false), chips: Self.referenceChips(catalog: catalog),
+                                   draft: "Implement these screens in the checkout page.", attached: attached, matrix: true)
     }
 
     /// RefAtElements: inside a board, "Whole board" then its elements, the breadcrumb over them.

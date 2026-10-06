@@ -9,8 +9,10 @@ import Foundation
 /// `DesignReference` checks them before a grant is made.
 public struct DesignGrant: Codable, Hashable, Sendable {
     public var designID: DesignID
-    /// The board's path in the design (`DesignPath.rawValue`); nil for the whole design.
+    /// The board's path in the design (`DesignPath.rawValue`); nil for a page or the whole design.
     public var board: String?
+    /// The canvas page, or nil for a whole design, board or element.
+    public var page: String?
     /// The element's id (`File.dc.html#<tid>:<path>`) for an element's reference; nil for the
     /// board whole.
     public var element: String?
@@ -31,9 +33,10 @@ public struct DesignGrant: Codable, Hashable, Sendable {
     public static let maxPerAgent = 100
 
     public init(designID: DesignID, board: String?, element: String? = nil, label: String? = nil, revision: UInt64,
-                boardSHA: String? = nil, grantedAt: Double, payload: UUID? = nil) {
+                boardSHA: String? = nil, grantedAt: Double, payload: UUID? = nil, page: String? = nil) {
         self.designID = designID
         self.board = board
+        self.page = page
         self.element = element
         self.label = label
         self.revision = revision
@@ -42,23 +45,22 @@ public struct DesignGrant: Codable, Hashable, Sendable {
         self.payload = payload
     }
 
-    /// Whether this grant is the piece `designID`/`board`/`element` names: the same design, board
-    /// and element (nil board: the whole design; nil element: the board whole).
-    public func isPiece(designID: DesignID, board: String?, element: String?) -> Bool {
-        self.designID == designID && self.board == board && self.element == element
+    /// Whether this grant names exactly this design, page, board and element.
+    public func isPiece(designID: DesignID, board: String?, element: String?, page: String? = nil) -> Bool {
+        self.designID == designID && self.board == board && self.element == element && self.page == page
     }
 
     /// The same piece of the same design, whatever the revision.
     public func isSamePiece(as other: DesignGrant) -> Bool {
-        isPiece(designID: other.designID, board: other.board, element: other.element)
+        isPiece(designID: other.designID, board: other.board, element: other.element, page: other.page)
     }
 }
 
 extension Agent {
     /// The grant for exactly this piece with a kept copy, pinned at `revision` when given, else
     /// the latest sent; nil when the thread was never sent it.
-    public func designGrant(designID: DesignID, board: String?, element: String?, revision: UInt64? = nil) -> DesignGrant? {
-        let pool = designGrants.filter { $0.payload != nil && $0.isPiece(designID: designID, board: board, element: element) }
+    public func designGrant(designID: DesignID, board: String?, element: String?, revision: UInt64? = nil, page: String? = nil) -> DesignGrant? {
+        let pool = designGrants.filter { $0.payload != nil && $0.isPiece(designID: designID, board: board, element: element, page: page) }
         if let revision { return pool.last { $0.revision == revision } }
         return pool.max { ($0.revision, $0.grantedAt) < ($1.revision, $1.grantedAt) }
     }

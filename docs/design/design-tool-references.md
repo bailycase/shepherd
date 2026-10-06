@@ -89,11 +89,16 @@ and a pinned version no longer kept is refused, with Send vN offered for the cur
 - **The @ picker** (`NWMentionPicker`), over the thread above the card like the slash menu: "@" at
   the start or after a space opens it on the designs (40×26 pictures, the name in 13 medium, the
   system in mono · "4 boards · edited 2h ago" in 11.5 `textTertiary`, a chevron); → or ⏎ drills
-  into a design (Whole design, then its boards) and a board ("Whole board", then Elements), each
+  into a design, Whole design, then separate Pages and Boards sections, and a board, Whole board
+  then Elements, each
   under a breadcrumb with Back (← or ⌫ with nothing typed after it), the draft spelling the way
   in ("@Checkout funnel dashboard › A · Funnel first › "); ⏎ on an element or a whole row picks it:
-  the mention leaves the words and the chip joins the composer. Typing searches designs, boards
-  and elements by their own names, each with its path, the words underlined ("6 matches").
+  the mention leaves the words and the chip joins the composer. A page row picks immediately,
+  uses the outline `rectangle.stack` glyph and says "Page · 2 boards · attaches all boards".
+  It attaches every board on that page as one chip, including pages with more than twelve boards.
+  The chip says "Page · <name>" and opens that page in the canvas. Board and element selection
+  stays unchanged. Typing searches designs, pages, boards and elements by their own names, each
+  with its path, the words underlined. Page results keep their glyph, kind label and board count.
   "Nothing matches “pricng”" and "No designs yet. Start a design and its boards show up here." are
   its empty stages, said only once this Mac's designs have been read. Until then, and when the read
   fails, the picker still opens at once and says so (no board draws these, the user's decision,

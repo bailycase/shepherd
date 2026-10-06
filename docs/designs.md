@@ -1264,8 +1264,8 @@ Designs until the viewer's choice, if one is needed, is made.
 
 ## Design references
 
-A design reference hands a thread a piece of a design on purpose: the whole design, a board, or
-one element of it (docs/native-thread.md › Design references). It is the only way anything of a
+A design reference hands a thread a piece of a design on purpose: the whole design, a page of
+boards, one board, or one element of it (docs/native-thread.md › Design references). It is the only way anything of a
 design reaches an ordinary thread (Design agents and ordinary threads, above), and it never
 reaches a design's agent. The whole feature waits behind Settings ▸ Experiments ▸ Design tool.
 "Implement in a thread…", "Copy reference", the composer's @ picker, the reference chip and the
@@ -1275,13 +1275,18 @@ below; docs/design/design-tool-references.md › Design references); the model b
 ### The reference
 
 `DesignReference` (ShepherdProtocol) names the host (`local`, or a remote host's id), the design,
-optionally a board (nil: the whole design), optionally an element of that board (`tid:path`), and a
+optionally a page or board, optionally an element of that board (`tid:path`), and a
 pinned revision; its label ("Checkout › A · Funnel first › button “Pay now”", each part one line
 cut short) is for chips and menus and never travels. Its string is what Copy reference copies:
 
 ```text
 shepherd-design-ref://<host>/<designID>[/<board view name>[#<tid>:<path>]][@<revision>]
+shepherd-design-ref://<host>/<designID>?page=<pageID>[@<revision>]
 ```
+
+A page id follows the canvas index's `[A-Za-z0-9_-]{1,40}` grammar. A page reference cannot also
+name a board or element. With neither a page nor a board, the reference names the whole design.
+Page grants name that page only, so they cannot read another page or the whole design.
 
 - **By id only:** a design folder's id, the board's view name (`flows%2FCart.dc.html`) and the
   element's halves. Never a path on disk, a token, or anything the design's files say.
@@ -1388,7 +1393,11 @@ folder, which is pruned after a day). `payload.json` is the manifest; beside it:
   line it came from when the system was built from a repository, and each `<x-import>` component
   with the system's source component for its export;
 - a whole design: each board's picture, page and source (`01-<stem>@2x.png`, …), at most twelve
-  (`DesignReferencePayload.maxBoards`), in canvas order, and how many boards the design had.
+  (`DesignReferencePayload.maxBoards`), in canvas order, and how many boards the design had;
+- a page: every board on that page at the pinned revision, in canvas order, with the same picture,
+  HTML and source files. A page counts as one of the five attachments and does not truncate its
+  boards at twelve. The retained canvas index determines membership, including boards assigned
+  to the first page by default. Empty pages remain valid attachments.
 
 The app draws it (`SessionServer.onDesignReferenceCapture`, `DesignRendering.capture`): each board
 off screen at zoom 1 in a view of its own, the pinned source swapped in (`replaceSource`) when the
@@ -1403,7 +1412,8 @@ and short lines of what changed in the piece since the copy (a sent chip,
 composer, `designReferenceFreshness(_:)`): an element's own style changes ("padding 24px → 20px",
 a token by its name), its words, and elements added or removed inside it; a board's elements; a
 whole design's boards (`DesignReferenceReading.changeLines`, `designChangeLines`, six lines at
-most); `deleted` when the design or the board is gone. "Send vN" (`sendLatestDesignReference`)
+most); a page's membership and retained rendering inputs; `deleted` when the design, page or
+board is gone. "Send vN" (`sendLatestDesignReference`)
 puts the same piece pinned at the revision now in the composer in place of the older chip; nothing
 newer reaches the agent until the user sends it.
 
@@ -1411,7 +1421,7 @@ newer reaches the agent until the user sends it.
 
 `SessionServer.designMentionCatalog()` answers `DesignMentionCatalog` (ShepherdRemote): this Mac's
 designs (most recently active first; a design being built as a design system is left out), each
-design's boards in canvas order, and each board's elements (at most 300: those with words or a
+design's pages in index order, boards in canvas order, and each board's elements (at most 300: those with words or a
 `data-el` name, leaving out the runtime's scaffold and an element that only repeats its parent's
 words), each row with its breadcrumb and the design's revision. An element's row says what it is
 and holds (`DesignElementSummary`, from the source): a kind noun, then the first run of like
@@ -1422,8 +1432,13 @@ pills of a few words) listed by their words ("chips · All platforms, Web, iOS, 
 what it is and how many elements it holds. A board's element count is the rows the picker lists
 on it. It is derived off the main thread and the server's queue, and a design unchanged since the
 last call is not read again (`DesignMentionCache`, by revision).
-`rows(in:)` gives a scope's rows (the designs; a design's own row, the whole design, then its
-boards; a board's own row, "Whole board", then its elements), and `search(_:)` matches every level
+`rows(in:)` gives a scope's rows, the designs; inside a design, Whole design, then separate Pages
+and Boards sections; inside a board, Whole board, then its elements. A page row uses the outline
+`rectangle.stack` glyph and says "Page · 2 boards · attaches all boards". It attaches immediately;
+board rows still drill into Whole board and Elements. Search includes pages with the same glyph,
+kind label and board count, so a page and board with identical names remain distinct. A page's
+chip says "Page · <name>" and Open in design switches to that page and fits its boards.
+`search(_:)` matches every level
 by each word of the query, in the catalog's order. The composer keeps the results whose own name
 holds a word of the query (the path places each; RefAtSearch), so a design named for the query
 doesn't list every board and element in it.

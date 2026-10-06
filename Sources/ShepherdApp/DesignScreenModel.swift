@@ -143,7 +143,7 @@ final class DesignScreenModel {
     /// hands nothing to threads (another host's design, previews of other screens).
     @ObservationIgnored var referenceActions: DesignReferenceCanvasActions?
     /// A piece "Open in design" asked for, shown once the canvas has read the design.
-    @ObservationIgnored var pendingReveal: (board: DesignPath, element: DesignElementID?)?
+    @ObservationIgnored var pendingReveal: (board: DesignPath?, element: DesignElementID?, page: String?)?
 
     // Pages, moving, presenting
     /// The page the canvas shows (canvas.json's page id); nil on a canvas without pages.
@@ -356,6 +356,7 @@ final class DesignScreenModel {
         canvasSize = size
         fitIfNeeded()
         planLive()
+        applyReveal()
     }
 
     /// The first time the canvas has both a size and boards, it frames them.
