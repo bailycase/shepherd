@@ -15,6 +15,10 @@ ride in every later request. So there are three parts: a guard on the start (The
 thread rarely uses kept out of it until the model asks for them (Deferred tools), and clearing for the
 run (Clearing).
 
+The standalone `shepherd_child_wait` tool is no longer registered. The six retained child tools
+use async completion delivery; workflows keep internal group coordination. `shepherd_child_result`
+is for inspecting retained output, not polling until a child finishes.
+
 ## Measuring it
 
 `python3 scripts/context_budget.py` launches a real pi the way Shepherd launches an agent's

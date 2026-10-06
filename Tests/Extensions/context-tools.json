@@ -143,7 +143,6 @@
         "shepherd_child_start",
         "shepherd_child_message",
         "shepherd_child_result",
-        "shepherd_child_wait",
         "shepherd_child_cancel",
         "shepherd_child_resume"
       ],
@@ -155,6 +154,13 @@
         "design": "keep"
       },
       "reason": "Delegating to a helper is how a thread keeps a big search out of its own context (docs/context-budget.md, For agents), so the helper tools stay direct (1.2k tokens); a design's agent relays its tools through them."
+    },
+    {
+      "tools": ["shepherd_child_wait"],
+      "group": "subagents",
+      "extension": "shepherd-children.ts",
+      "verdicts": { "thread": "drop", "automation": "drop", "design": "drop" },
+      "reason": "Standalone children report asynchronously. Continue delivery resumes the parent, report delivery stores results quietly, and workflows join dependent children. No blocking child tool or polling loop."
     },
     {
       "tools": [

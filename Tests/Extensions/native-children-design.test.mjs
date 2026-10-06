@@ -61,7 +61,6 @@ function script(dir) {
     return { text, steps: after.filter((m) => m.role === "assistant" && m.tool_calls).map((m) => m.tool_calls.map((c) => c.function.name)),
       results: after.filter((m) => m.role === "tool").map((m) => m.content) };
   };
-  const ids = (results) => results.flatMap((content) => { try { const id = JSON.parse(content).id; return id ? [id] : []; } catch { return []; } });
   return ({ body }) => {
     const { text, steps, results } = stage(body.messages);
     const toolNames = (body.tools ?? []).map((tool) => tool.function.name);
@@ -70,8 +69,7 @@ function script(dir) {
       const start = (task, extra = {}) => ({ name: "shepherd_child_start", args: { agent: "design-editor", task, mission: false, ...extra } });
       if (text === "ROUND") {
         if (steps.length === 0) return { toolCalls: [start("HELPER_A board A.dc.html"), start("HELPER_B board B.dc.html"), { name: "shepherd_child_start", args: { role: "scout", model: "fixture/helper", task: "SCOUT look around", mission: false } }] };
-        if (steps.length === 1) return { toolCalls: [{ name: "shepherd_child_wait", args: { ids: ids(results), all: true, timeoutSeconds: 60 } }] };
-        return { text: "round finished" };
+        return { text: "round delegated" };
       }
       // The scenarios below start a helper whose design call Shepherd holds, then act on it a prompt at a time, so
       // the test (not a timer) says when the helper's call is in flight.
@@ -83,8 +81,7 @@ function script(dir) {
         return steps.length === 1 ? { toolCalls: [{ name: "shepherd_child_result", args: { id: held } }] } : { text: "cancelled" };
       }
       if (text === "FINISHED") {
-        if (steps.length === 0) return { toolCalls: [{ name: "shepherd_child_wait", args: { ids: [held], timeoutSeconds: 30 } }] };
-        return steps.length === 1 ? { toolCalls: [{ name: "shepherd_child_result", args: { id: held } }] } : { text: "finished" };
+        return steps.length === 0 ? { toolCalls: [{ name: "shepherd_child_result", args: { id: held } }] } : { text: "finished" };
       }
       return { text: "nothing to do" };
     }
@@ -129,6 +126,18 @@ function startParent({ dir, home, socketPath, design }) {
       assert(events.find((event) => event.id === id && event.type === "response").success, `prompt refused: ${stderr}`);
       await until(() => settled() > before, 90000);
     },
+    async round() {
+      const childDir = path.join(dir, "children");
+      const before = new Set(fs.existsSync(childDir) ? fs.readdirSync(childDir) : []);
+      await this.prompt("ROUND");
+      let runs;
+      await until(() => {
+        runs = fs.readdirSync(childDir).filter((name) => name.startsWith("native-") && !before.has(name))
+          .map((name) => JSON.parse(fs.readFileSync(path.join(childDir, name, "status.json"), "utf8")));
+        return runs.length === 3 && runs.every((run) => run.state === "complete");
+      }, 60000);
+      return runs;
+    },
     stop: async () => { proc.stdin.end(); await new Promise((resolve) => { proc.once("close", resolve); setTimeout(() => { proc.kill("SIGKILL"); }, 5000).unref(); }); },
   };
 }
@@ -146,7 +155,11 @@ test("a design agent's helpers read and edit its boards through it, with no iden
   fs.writeFileSync(path.join(home, "agents", "design-editor.md"), PROFILE);
   const parent = startParent({ dir, home, socketPath: host.socketPath, design: true });
   try {
-    await parent.prompt("ROUND");
+    const completed = await parent.round();
+    await until(() => completed.every((run) => provider.requests.some((request) => request.body.model === "parent"
+      && JSON.stringify(request.body.messages).includes(`Child ${run.id}`))));
+    assert(provider.requests.filter((request) => request.body.model === "parent")
+      .every((request) => !request.body.tools.some((tool) => tool.function.name === "shepherd_child_wait")));
 
     // The parent's own facts read came first, on the connection the parent's design extension opened.
     const own = host.frames.find((frame) => frame.type === "designRead" && !frame.path);
@@ -184,9 +197,8 @@ test("a design agent's helpers read and edit its boards through it, with no iden
       const names = fs.readFileSync(path.join(dir, `env-${marker}.txt`), "utf8").trim().split("\n").map((line) => line.split("=")[0]).sort();
       assert.deepEqual(names, ["SHEPHERD_CHILD", "SHEPHERD_CHILD_RELAY", "SHEPHERD_CHILD_TOOLS"], `${marker}: no agent id, socket, design or extension path`);
     }
-    // The parent finished its turn normally, with every helper complete.
-    const waited = toolMessages(provider.requests, "parent").find((content) => content.includes('"state":"complete"'));
-    assert(waited && (waited.match(/"state":"complete"/g) ?? []).length === 3, `three helpers completed: ${waited}`);
+    // The helpers settle and report back without the parent issuing a blocking tool.
+    assert.deepEqual(completed.map((run) => run.state), ["complete", "complete", "complete"]);
   } finally {
     await parent.stop();
     await host.close();
@@ -222,7 +234,7 @@ test("stopping a helper cancels the design call it has in flight, and the parent
     // Shepherd's reply, too late, changes nothing and breaks nothing: the parent serves a new round.
     host.held[0].reply({ type: "designEdited", result: { revision: 99, changed: true, created: false, warnings: [], boardCount: 3 }, replaced: [1] });
     await sleep(100);
-    await parent.prompt("ROUND");
+    await parent.round();
     assert.equal(host.frames.filter((frame) => frame.type === "designEditBoard" && frame.path !== "C.dc.html").length, 2);
   } finally {
     await parent.stop();
@@ -248,6 +260,7 @@ test("a helper killed outright takes the design call it had in flight with it", 
     const [run] = fs.readdirSync(path.join(dir, "children")).filter((name) => name.startsWith("native-"));
     const { pid } = JSON.parse(fs.readFileSync(path.join(dir, "children", run, "writer", "owner.json"), "utf8"));
     process.kill(pid, "SIGKILL");
+    await until(() => JSON.parse(fs.readFileSync(path.join(dir, "children", run, "status.json"), "utf8")).state === "failed");
     await parent.prompt("FINISHED");
     const checked = toolMessages(provider.requests, "parent").map((content) => { try { return JSON.parse(content); } catch { return undefined; } })
       .filter((result) => result?.task === "HOLD board C.dc.html").at(-1);
