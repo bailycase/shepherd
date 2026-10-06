@@ -1,6 +1,6 @@
 # The pi engine
 
-Shepherd ships its own pi: the official Node binary plus pi's bundle, inside the Mac app. Every
+Shepherd ships its own pi: the official Node binary, Pi's CLI bundle and modular SDK, inside the Mac app. Every
 pi Shepherd starts runs it (agents, the model catalog, PR descriptions, children), through the
 launcher in Shepherd's own pi home ([pi-home.md](pi-home.md)); the sign-in bridge (pi's own login,
 imported from the bundle's `index.js`) runs on its node. Nothing runs the `pi` on the user's PATH.
@@ -11,16 +11,16 @@ imported from the bundle's `index.js`) runs on its node. Nothing runs the `pi` o
 | --- | --- |
 | `Helpers/node` | Node for `arm64` only (Shepherd runs on Apple silicon only), Node's release binary as published. Never stripped |
 | `Resources/pi-engine/package.json` | pi's, with its version and config-dir name |
-| `Resources/pi-engine/dist/bundle/` | pi's bundle; `cli.js` is the entry (`node cli.js …`) |
+| `Resources/pi-engine/dist/` | Pi's CLI bundle under `bundle/` and modular SDK at `index.js`. Agents still launch `bundle/cli.js` |
 | `Resources/pi-engine/dist/modes/interactive/{theme,assets}/`, `dist/core/export-html/` | the themes, interactive assets and export templates pi finds beside the bundle |
 | `Resources/pi-engine/README.md`, `docs/`, `examples/`, `CHANGELOG.md` | what pi's system prompt points the model at |
-| `Resources/pi-engine/node_modules/` | only `jiti`, `@silvia-odwyer/photon-node` and `quickjs-wasi` (its `package.json` and `quickjs.wasm`): the modules the bundle loads |
+| `Resources/pi-engine/node_modules/` | Pi's pinned SDK dependency tree, retaining nested versions. No esbuild, optional platform packages, TUI native addons or QuickJS side modules |
 | `Resources/pi-engine/LICENSE`, `NODE-LICENSE`, `THIRD-PARTY-NOTICES` | pi's MIT notice, Node's licence verbatim, and the packages the bundle compiles in |
 
 Nothing lives in `Contents/MacOS` (the release strips everything there), and no path matches pi's
 install-method detection (`/node_modules/`, `/npm/`, …, above the entry), so pi never offers to
-update itself. esbuild and its 26 platform packages never ship: chord declares esbuild, but pi 1.0's
-bundle no longer loads chord at all (0.87.1 imported its `context` entry), so it is not a module here.
+update itself. esbuild and its platform packages never ship. Chord's root and `context` exports
+work without esbuild; its separate bundler API is not supported by this engine.
 
 `BundledPiEngine` (ShepherdSessions) finds this layout in an app and gives the command prefix,
 the package directory and pi's version.
@@ -28,16 +28,17 @@ the package directory and pi's version.
 ## The pin and staging
 
 `scripts/pi-engine-pin.json` pins Node (version, and the SHA-256 of its `darwin-arm64.tar.xz`) and
-pi and its three modules (version, registry tarball, and `sha512` integrity).
+Pi and its SDK modules by install location, version, registry tarball and `sha512` integrity.
 
 `python3 scripts/pi_engine.py stage` (stdlib only):
 
 1. Downloads Node's `SHASUMS256.txt` and checks it lists the pinned archive with the pinned
    hash, then the archive, checked against the pin.
-2. Downloads pi's and the modules' tarballs, checked against their integrity. Each module must
-   also be the version pi's `npm-shrinkwrap.json` resolves.
-3. Unpacks with `tarfile`: no npm, and no package script ever runs. Links, devices and paths
-   outside `package/` are refused.
+2. Downloads Pi's and the modules' tarballs, checked against their integrity. The module set must
+   match Pi's non-optional production shrinkwrap entries, except esbuild. Each module's version
+   and any integrity recorded in the shrinkwrap must match. Scoped packages have distinct cache keys.
+3. Unpacks with `tarfile`: no npm, and no package script ever runs. Links, devices, traversal and
+   multiple archive roots are refused. Named roots used by `@types` packages are supported.
 4. Keeps the files above (Node's binary as it comes), writes the licences, and swaps the tree
    into `.build/pi-engine` whole.
 5. Verifies the result the way `release.py verify-app` does.
@@ -52,27 +53,49 @@ so a second stage is offline (`--offline` insists on it). Nothing is written out
 `https://registry.npmjs.org/<name>/<version>`. The module versions must match pi's shrinkwrap.
 Then stage, build, and run the smoke test.
 
-A new pi can need modules the old one didn't. pi compiles its dependencies into `dist/bundle`, so
-only what the bundle resolves from `node_modules` at run time ships (`MODULE_KEEP`, and
-`MODULE_REQUIRED` for the files it finds by name): look for bare `import()`/`require` specifiers
-and `require.resolve` in the bundle's chunks, then prove each with a control (stage without the
-module and run the feature: pi 1.0 without `quickjs-wasi` answers a codemode script "Cannot find
-module 'quickjs-wasi/quickjs.wasm'"). Also run the extension tests against the pinned version
-(CI installs it from the pin), `EngineSmokeTests` and `EngineThreadTests`
-(docs/testing.md › Engine smoke), and compare the real engine's RPC replies and events with the
-last pin's.
+A new Pi can need modules the old one didn't. Update the locked SDK dependency tree as well as
+bundle runtime files (`MODULE_KEEP`, `MODULE_REQUIRED`). Run the SDK check against the staged
+engine, not an npm install, then the extension tests, `EngineSmokeTests` and `EngineThreadTests`
+(docs/testing.md › Engine smoke). Compare the real engine's RPC replies and events with the last pin's.
+
+## Background extension runners
+
+A detached `pi-subagents` runner imports the host SDK outside Pi's bundled extension loader.
+Shipping only `dist/bundle` left `package.json` pointing at a missing `dist/index.js` and omitted
+its peer packages. The parent loaded normally, but background children failed before producing
+a transcript. Shepherd now keeps the modular SDK and its locked dependencies alongside the CLI
+bundle. The launcher is unchanged.
+
+Pi 1.0 removed `@earendil-works/pi-agent-core/node`. `pi-subagents` 0.73.1 requires that export;
+update the extension before testing this fix. Version 0.76.1 treats it as optional and passes the
+two-child test below. That version also uses `workflow: "./script.js"` instead of `workflowScript`.
+Shepherd does not patch installed extensions or fabricate removed Pi exports.
+
+```bash
+SHEPHERD_ENGINE_SMOKE=.build/pi-engine \
+  python3 -m unittest discover -s Tests/Release -p test_pi_engine_sdk.py
+SHEPHERD_ENGINE_SMOKE=.build/pi-engine PI_SUBAGENTS_PACKAGE_DIR=/path/to/isolated/pi-subagents \
+  python3 -m unittest discover -s Tests/Release -p test_pi_engine_subagents.py
+```
+
+The first check imports the host peers and creates/disposes a session. CI runs it after staging;
+release runs it against the signed app before notarization. The second uses an isolated 0.76.1
+installation and a loopback provider to run two background children, checking process exit,
+output and persisted transcripts. It makes no external model calls. An old bundle-only engine
+fails the first check with `ERR_MODULE_NOT_FOUND`.
 
 ## The Xcode phase
 
-"Embed pi engine" is the Mac target's last phase, in all three configurations. It checks the
-staged `pin.json` equals the pin, copies the tree into `Contents/`, and signs node
-(`scripts/sign-engine.sh`) when the build signs. It never downloads.
+Xcode's Resources phase copies `.build/pi-engine/Resources/pi-engine` as a native folder resource.
+The sandboxed "Embed pi engine" phase remains last in all three Mac configurations. It checks
+`pin.json`, copies Node into `Contents/Helpers`, and signs Node with `scripts/sign-engine.sh`
+when the build signs. Neither phase downloads.
 
-Script sandboxing stays on. The sandbox grants each declared input and output as a literal path,
-not a folder's contents, so staging also writes `inputs.xcfilelist` (every staged file) and
-`outputs.xcfilelist` (every file and folder the phase writes), and the phase declares them. A
-build before staging fails on the missing file list; one after a pin change fails on the stamp.
-Either way, stage and build again.
+Script sandboxing stays on. `inputs.xcfilelist` declares only Node and the stamp;
+`outputs.xcfilelist` declares `Helpers` and Node. Listing the SDK's thousands of individual
+paths exceeded macOS's argument limit when Xcode launched `sandbox-exec`. The native folder
+copy avoids that limit without disabling sandboxing. A build before staging fails on missing
+inputs; one after a pin change fails on the stamp. Stage and build again.
 
 ## Signing
 
@@ -88,8 +111,8 @@ Xcode does for the app. The smoke test signs a scratch copy with the runtime to 
 entitlements anyway.
 
 `release.py verify-app` checks the engine before signing: node is arm64 only at the pinned
-version, pi and each module are the pinned versions, `node_modules` holds nothing else, nothing
-native or esbuild sits in the engine, and the licences are there.
+version, Pi and each module are the pinned versions, including nested dependencies, `node_modules`
+holds nothing else, nothing native or esbuild sits in the engine, and the licences are there.
 
 ## pi 1.0
 
@@ -99,9 +122,8 @@ not read off the changelog.
 
 **The bundle.** pi 1.0 ships MCP, codemode (model-written JavaScript in a QuickJS WebAssembly
 sandbox) and tool search as built-in extensions, and drops chord from the bundle's imports.
-`node_modules` is `jiti`, photon and `quickjs-wasi` (only `package.json` and `quickjs.wasm`; its
-`extensions/*.so` are WebAssembly side modules pi never loads, named like native code). The staged
-engine is 135 MB, from 134 MB.
+The initial bundle-only engine was 135 MB. The SDK dependency tree is now shipped too, as described
+above. QuickJS's `extensions/*.so` side modules and Pi TUI's optional native addons remain excluded.
 
 **MCP, tool search and codemode use Pi's implementations.** Agents use pi's own MCP, with Settings ▸
 MCP servers on top of it ([mcp.md](mcp.md) has the evidence, measured on this engine, and the layering).
@@ -166,5 +188,6 @@ would need `SettingsManager.getOrCreateDeviceId` and a catalog row), Anthropic's
 
 ## Size
 
-About 116 MB for Node and 19 MB for pi (with docs and examples): 135 MB staged with pi 1.0.0
-(134 MB with 0.87.1; the growth is the bundle's MCP, codemode and image-model code and their docs).
+The staged Node, Pi bundle and modular SDK contain about 236 MB of file data, with 119 pinned
+module locations. The original bundle-only engine was about 135 MB. The additional SDK files
+and dependencies are required by detached extension runners, not by Shepherd's native children.
