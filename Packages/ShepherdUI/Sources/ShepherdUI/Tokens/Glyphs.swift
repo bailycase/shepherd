@@ -32,12 +32,20 @@ public enum NWGlyph: CaseIterable, Sendable {
 
     public var image: Image { Image(systemName: symbolName) }
 
+    /// The design's comment actions, shared by its cards and canvas threads.
+    public enum Design: String, Sendable {
+        case resolveComment = "checkmark"
+
+        public var image: Image { Image(systemName: rawValue) }
+    }
+
     /// Static outline artwork supplied with the Settings boards. Keep this native so controls
     /// retain their accessibility actions rather than mounting the board's HTML.
     public enum Settings: String, CaseIterable {
         case back, search, appearance, terminal, agents, subagents, worktrees, projects, pi
         case instructions, skills, mcp, remoteConnection, keyboard, advanced, experiments
         case next, folder, computer, browserSearch, globe, lock
+        case subagentPlus, subagentFile, subagentNext
 
         public var size: CGSize {
             switch self {
@@ -46,7 +54,8 @@ public enum NWGlyph: CaseIterable, Sendable {
             case .next: CGSize(width: 8, height: 10)
             case .folder: CGSize(width: 16, height: 16)
             case .computer: CGSize(width: 12, height: 12)
-            case .browserSearch, .globe, .lock: CGSize(width: 14, height: 14)
+            case .browserSearch, .globe, .lock, .subagentFile: CGSize(width: 14, height: 14)
+            case .subagentPlus, .subagentNext: CGSize(width: 12, height: 12)
             default: CGSize(width: 15, height: 15)
             }
         }
@@ -93,6 +102,9 @@ public enum NWGlyph: CaseIterable, Sendable {
             case .computer: "desktopcomputer"
             case .globe: "globe"
             case .lock: "lock"
+            case .subagentPlus: "plus"
+            case .subagentFile: "arrow.turn.down.right"
+            case .subagentNext: "chevron.right"
             }
         }
         #endif

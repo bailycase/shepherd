@@ -42,8 +42,8 @@ Save or Apply. Instructions and [Projects](settings-projects.md) edit files with
   on screen has no match, the first page that does opens at once (no cross-fade per keystroke). With
   nothing matching, the nav says "No matching settings" in `caption`/`textTertiary`.
 - **Projects** uses the [SettingsProjects spec](settings-projects.md) and a project-only editor.
-  It fills the available width, like every other Settings page. Subagents reuses the existing
-  native-subagent settings, moved out of Pi.
+  It fills the available width, like every other Settings page. [Subagents](settings-subagents.md)
+  manages Shepherd-owned Markdown definitions. Pi retains native-subagent switches and run defaults.
 - **Content** (every page but Projects, Instructions, Skills, MCP servers and Experiments): the page on `bgWindow`,
   fills the available width, 44pt from the top, 40pt from the sides and 48pt from the bottom.
   The user's full-width request replaces the old centered 720pt column. The page scrolls, and the

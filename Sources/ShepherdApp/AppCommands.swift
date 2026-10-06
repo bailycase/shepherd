@@ -123,9 +123,12 @@ struct FileCommands: Commands {
             }
         }
         CommandGroup(replacing: .saveItem) {
-            Button("Save Project File") { Task { await vm.projects.save() } }
+            Button(vm.settingsSection == .subagents ? "Save Subagent File" : "Save Project File") {
+                Task { if vm.settingsSection == .subagents { await vm.subagentDefinitions.save() } else { await vm.projects.save() } }
+            }
                 .keyboardShortcut(keys.shortcut(.saveProjectFile))
-                .disabled(!vm.showSettings || vm.settingsSection != .projects || vm.projects.showingBrowser || !vm.projects.fileLoaded || vm.projects.saving || vm.projects.selected?.unavailable != nil)
+                .disabled(!vm.showSettings || (vm.settingsSection == .subagents ? !vm.subagentDefinitions.canSave :
+                    vm.settingsSection != .projects || vm.projects.showingBrowser || !vm.projects.fileLoaded || vm.projects.saving || vm.projects.selected?.unavailable != nil))
             Button("Close Terminal") { later { vm.closeFocusedTerminal() } }
                 .keyboardShortcut(keys.shortcut(.closeTerminal))
         }
