@@ -87,7 +87,8 @@ The rules that follow:
 - **The sidebar is the primary navigation**; the command palette is a secondary way to jump.
   Done is the first activity group when it has unseen completions. A new local thread with an
   opening message enters Working without flashing in Recents. Active goals stay in Working
-  between turns unless the thread needs an answer.
+  between turns unless the thread needs an answer. A thread with live, unpaused subagents
+  also stays in Working after its parent's turn ends; Done waits for the children to settle.
 - **One primary action per surface.** A destructive action is never the ⏎ default.
 - **Native controls, Night Watch styles.** A control is a Night Watch style on a native `Button`,
   `Toggle`, `Picker` or `TextField`; context menus are native `.contextMenu`. Shared views are

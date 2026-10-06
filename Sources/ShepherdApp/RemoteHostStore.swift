@@ -57,7 +57,14 @@ final class RemoteHostStore {
         /// When the connection last dropped, this launch (the Hosts page's Last seen); nil while
         /// connected, or when it never connected. Never persisted.
         fileprivate(set) var lastSeen: Date?
-        var state = ShepherdState() { didSet { onProjectionChanged?() } }
+        var state = ShepherdState() {
+            didSet {
+                let agentIDs = Set(state.agents.map(\.id))
+                let kept = children.filter { agentIDs.contains($0.key) }
+                if kept.count != children.count { children = kept }
+                onProjectionChanged?()
+            }
+        }
         fileprivate(set) var children: [AgentID: [ChildRun]] = [:] { didSet { onProjectionChanged?() } }
         @ObservationIgnored fileprivate var onProjectionChanged: (() -> Void)?
         @ObservationIgnored fileprivate var childRefreshTask: Task<Void, Never>?
@@ -131,12 +138,16 @@ final class RemoteHostStore {
         func stopChildRefresh() {
             childRefreshTask?.cancel()
             childRefreshTask = nil
-            if !children.isEmpty { children = [:] }
+            // Keep the last snapshot offline, like state. Clearing it would briefly finish a
+            // done parent on reconnect before the first child query restores its live work.
         }
 
         func startChildRefresh(client: RemoteHostClient, every interval: Duration) {
             stopChildRefresh()
-            guard client.capabilities.contains(RemoteProtocol.agentInspectionCapability) else { return }
+            guard client.capabilities.contains(RemoteProtocol.agentInspectionCapability) else {
+                if !children.isEmpty { children = [:] }
+                return
+            }
             childRefreshTask = Task { [weak self, weak client] in
                 while !Task.isCancelled {
                     guard let client, let agents = self?.state.agents,
@@ -244,6 +255,7 @@ final class RemoteHostStore {
     func reconnect(id: UUID) {
         guard let connection = connections.first(where: { $0.id == id }) else { return }
         connection.reconnectTask?.cancel()
+        connection.phase = .connecting
         connection.stopChildRefresh()
         for pane in connection.panes.values {
             pane.detach()
@@ -325,9 +337,6 @@ final class RemoteHostStore {
             for sessionID in Array(connection.panes.keys) where !liveSessionIDs.contains(sessionID) {
                 connection.panes.removeValue(forKey: sessionID)?.detach()
             }
-            let agentIDs = Set(state.agents.map(\.id))
-            let children = connection.children.filter { agentIDs.contains($0.key) }
-            if children.count != connection.children.count { connection.children = children }
             connection.stateGeneration &+= 1
             connection.state = state
         }
@@ -358,6 +367,7 @@ final class RemoteHostStore {
         client.onDisconnected = { [weak self, weak connection] reason in
             guard let self, let connection,
                   connection.client.map(ObjectIdentifier.init) == clientID else { return }
+            connection.phase = .failed(RemoteHostFailure(disconnect: reason))
             connection.client = nil
             connection.designs.connect(nil, available: false)
             connection.stopChildRefresh()
@@ -366,7 +376,6 @@ final class RemoteHostStore {
             }
             connection.panes.removeAll()
             if self.connections.contains(where: { $0 === connection }) {
-                connection.phase = .failed(RemoteHostFailure(disconnect: reason))
                 self.scheduleReconnect(connection)
             }
         }
