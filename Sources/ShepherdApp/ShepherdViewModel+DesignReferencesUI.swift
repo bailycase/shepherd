@@ -107,6 +107,7 @@ extension ShepherdViewModel {
     /// first board.
     func referencePicture(_ reference: DesignReference) -> CGImage? {
         guard reference.host == .local, design(reference.designID) != nil else { return nil }
+        if reference.page != nil { return nil }
         if let board = reference.board {
             if let image = designRendering.host(for: reference.designID)?.image(board) { return image }
             if let image = designRendering.boardPictures.image(reference.designID, board) { return image }
@@ -120,6 +121,8 @@ extension ShepherdViewModel {
         switch item.kind {
         case .design:
             return designRendering.thumbnails.image(item.reference.designID)
+        case .page:
+            return nil
         case .board:
             guard let board = item.reference.board else { return nil }
             return designRendering.boardPictures.image(item.reference.designID, board)
@@ -170,6 +173,7 @@ extension ShepherdViewModel {
             return
         }
         openDesign(reference.designID)
-        if let board = reference.board { designScreen(reference.designID).reveal(board: board, element: reference.element) }
+        if let page = reference.page { designScreen(reference.designID).reveal(page: page) }
+        else if let board = reference.board { designScreen(reference.designID).reveal(board: board, element: reference.element) }
     }
 }

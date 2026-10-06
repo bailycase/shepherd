@@ -101,6 +101,8 @@ public struct DesignReferencePayload: Codable, Hashable, Sendable, Identifiable 
     /// The design's name then.
     public var design: String
     public var boardTitle: String?
+    public var page: String?
+    public var pageTitle: String?
     /// The element's words, and its `data-el` name (else its tag).
     public var elementLabel: String?
     public var elementName: String?
@@ -133,9 +135,9 @@ public struct DesignReferencePayload: Codable, Hashable, Sendable, Identifiable 
     public var components: [Component]
     /// The first installed design system's name ("from acme-web").
     public var system: String?
-    /// A whole design's copy: each board it holds, in canvas order, at most `maxBoards`.
+    /// A page's copy holds all its boards; a whole design holds at most `maxBoards`, in canvas order.
     public var boards: [Board]?
-    /// A whole design's copy: how many boards the design had.
+    /// How many boards the page or whole design had.
     public var boardCount: Int?
 
     /// A whole design's copy holds at most this many boards (a picture and a page of each), so a
@@ -149,12 +151,15 @@ public struct DesignReferencePayload: Codable, Hashable, Sendable, Identifiable 
                 width: Double? = nil, height: Double? = nil, boardSHA: String? = nil, picture: File? = nil, html: File? = nil,
                 element: File? = nil, elementStyles: File? = nil, source: File? = nil, tokensNote: File? = nil,
                 styles: [String] = [], computedStyles: [String: String]? = nil, tokens: [Token] = [],
-                components: [Component] = [], system: String? = nil, boards: [Board]? = nil, boardCount: Int? = nil) {
+                components: [Component] = [], system: String? = nil, boards: [Board]? = nil, boardCount: Int? = nil,
+                page: String? = nil, pageTitle: String? = nil) {
         self.id = id
         self.agentID = agentID
         self.reference = reference
         self.design = design
         self.boardTitle = boardTitle
+        self.page = page ?? reference.page
+        self.pageTitle = pageTitle
         self.elementLabel = elementLabel
         self.elementName = elementName
         self.revision = revision
@@ -180,7 +185,8 @@ public struct DesignReferencePayload: Codable, Hashable, Sendable, Identifiable 
     /// "Checkout › A · Funnel first › card “Checkout funnel”".
     public var label: String {
         DesignReference.label(design: design, board: reference.board.map { boardTitle ?? $0.stem },
-                              element: reference.element.map { _ in DesignReferenceReading.elementTitle(name: elementName, label: elementLabel) })
+                              element: reference.element.map { _ in DesignReferenceReading.elementTitle(name: elementName, label: elementLabel) },
+                              page: reference.page.map { pageTitle ?? $0 })
     }
 
     /// What the copy holds, as the sheet's footer and the chip's preview count it.
@@ -201,7 +207,7 @@ public struct DesignReferencePayload: Codable, Hashable, Sendable, Identifiable 
             ref: reference.string, design: design, board: reference.board?.viewName, boardTitle: boardTitle,
             element: reference.element?.description, elementLabel: elementLabel, revision: revision, width: width, height: height,
             files: files.map { folder.appendingPathComponent($0.name).path }, payload: id.uuidString,
-            boards: boards?.count, boardCount: boardCount)
+            boards: boards?.count, boardCount: boardCount, page: reference.page, pageTitle: pageTitle)
     }
 
     /// The manifest as the copy's folder keeps it.
@@ -239,7 +245,7 @@ public struct DesignReferenceCaptureRequest: Sendable {
     }
 
     public var reference: DesignReference
-    /// One board for a board or element reference; up to `DesignReferencePayload.maxBoards` for a
+    /// All boards on a page; one for a board or element; up to `DesignReferencePayload.maxBoards` for a
     /// whole design, in canvas order.
     public var boards: [Board]
     /// An element reference's markup and computed styles, from `boards[0]`.
@@ -408,7 +414,7 @@ public struct DesignReferenceLookedAt: Codable, Hashable, Sendable {
     /// What reading `aspects` of `payload` got.
     public static func make(_ payload: DesignReferencePayload, aspects: Set<DesignReferenceAspect>) -> DesignReferenceLookedAt {
         let title = DesignReference.label(design: payload.design, board: payload.reference.board.map { payload.boardTitle ?? $0.stem },
-                                          element: nil)
+                                          element: nil, page: payload.reference.page.map { payload.pageTitle ?? $0 })
         var out = DesignReferenceLookedAt(ref: payload.reference.string, title: title,
                                           aspects: DesignReferenceAspect.allCases.filter(aspects.contains))
         if aspects.contains(.image) {
@@ -491,6 +497,7 @@ extension DesignReferenceReading {
         case .element: "The element"
         case .board: "The board"
         case .design: "The design's boards"
+        case .page: "All \(payload.boards?.count ?? 0) \(payload.boards?.count == 1 ? "board" : "boards") on page \(payload.pageTitle ?? payload.reference.page ?? "")"
         }
         var text = tokensReport(tokens: tokens, components: components, scope: scope)
         if payload.system == nil { text += "\nThe design had no design system installed." }

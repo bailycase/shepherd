@@ -606,6 +606,44 @@ struct DesignReferenceFlowTests {
         #expect(w.vm.referenceToast?.kind == .copied && w.vm.referenceToast?.piece == "button “Pay now”")
     }
 
+    @Test func aPageCapturesAllItsBoardsThroughTheRealRendererAndDrawsOneChip() async throws {
+        let w = try await workspace()
+        defer { w.app.stop() }
+        let payment = DesignPath("Payment.dc.html")!
+        let other = DesignPath("Other.dc.html")!
+        _ = try await w.app.server.writeDesignBoards(w.design.id, sources: [
+            payment: Self.hero.replacingOccurrences(of: "Pay now", with: "Continue"), other: Self.hero])
+        _ = try await w.app.server.updateDesignIndex(w.design.id, patch: .object([
+            "pages": .array([.object(["id": .string("flow"), "name": .string("Checkout flow")]), .object(["id": .string("other")])]),
+            "boards": .object(["Hero.dc.html": .object(["page": .string("flow")]),
+                                payment.rawValue: .object(["page": .string("flow"), "title": .string("Payment"),
+                                                          "x": .number(460), "y": .number(0), "w": .number(400), "h": .number(300)]),
+                                other.rawValue: .object(["page": .string("other"),
+                                                        "x": .number(0), "y": .number(0), "w": .number(400), "h": .number(300)])])]))
+        let picked = try await w.app.server.pinDesignReference(DesignReference(designID: w.design.id, page: "flow")!)
+        let (record, folder, _) = try await sent(w, [picked.reference])
+        let payload = try JSONDecoder().decode(DesignReferencePayload.self, from: Data(contentsOf: folder.appendingPathComponent(DesignReferencePayload.manifestName)))
+        #expect(record.page == "flow" && record.pageTitle == "Checkout flow" && record.boards == 2)
+        #expect(payload.boards?.map(\.board) == [DesignPath("Hero.dc.html")!, payment])
+        for board in try #require(payload.boards) {
+            let picture = try #require(board.picture)
+            #expect(try Data(contentsOf: folder.appendingPathComponent(picture.name)).prefix(8) == Data([137, 80, 78, 71, 13, 10, 26, 10]))
+            let html = try String(contentsOf: folder.appendingPathComponent(try #require(board.html).name), encoding: .utf8)
+            #expect(html.contains(board.board == payment ? "Continue" : "Pay now"))
+            #expect(!html.contains("onclick") && !html.localizedCaseInsensitiveContains("<script"))
+        }
+        let chips = try #require(w.vm.designReferenceChips(for: w.thread.agent.id))
+        let id = try #require(record.payloadID)
+        await chips.loadSent(id)
+        #expect(chips.sent[id]?.crumbs == [w.design.name, "Page · Checkout flow"])
+        #expect(chips.sent[id]?.gets.first == "all 2 boards" && chips.sent[id]?.freshness == .current)
+        chips.io.open(picked.reference)
+        let screen = w.vm.designScreen(w.design.id)
+        await screen.refresh()
+        screen.resized(CGSize(width: 900, height: 600))
+        #expect(screen.page == "flow" && screen.boards.map(\.id) == ["Hero.dc.html", payment.rawValue])
+    }
+
     /// Copy reference, then a paste into a thread's composer (RefCopied, RefPasted, RefSentThread):
     /// the reference becomes a chip and leaves the words, the composer's send carries it, the sent
     /// message draws the chip from the copy the host kept, and that chip stays (greyed, "deleted")

@@ -12,27 +12,43 @@ extension DesignScreenModel {
     /// "Open in design" from a thread's chip: the piece's board picked and brought into view, and
     /// its element selected once the board draws live.
     func reveal(board: DesignPath, element: DesignElementID?) {
-        pendingReveal = (board, element)
+        pendingReveal = (board, element, nil)
+        applyReveal()
+    }
+
+    /// Waits for the canvas's snapshot just as a board reveal does.
+    func reveal(page: String) {
+        pendingReveal = (nil, nil, page)
         applyReveal()
     }
 
     func applyReveal() {
         guard let reveal = pendingReveal, let index = snapshot?.index else { return }
+        if reveal.page != nil, canvasSize.width <= 0 || canvasSize.height <= 0 { return }
         pendingReveal = nil
-        guard let entry = index.boards[reveal.board] else { return }
-        if let pageID = index.page(of: reveal.board), pageID != page { showPage(pageID) }
+        if let pageID = reveal.page {
+            guard index.pages?.contains(where: { $0.id == pageID }) == true else { return }
+            showPage(pageID)
+            present(nil)
+            closeComment()
+            clearSelection()
+            viewport = .fitting(boards.bounds, in: canvasSize)
+            return
+        }
+        guard let board = reveal.board, let entry = index.boards[board] else { return }
+        if let pageID = index.page(of: board), pageID != page { showPage(pageID) }
         present(nil)
         closeComment()
-        setSelection([Pick(board: reveal.board)])
+        setSelection([Pick(board: board)])
         center(on: CGRect(x: entry.x, y: entry.y, width: entry.w, height: entry.h))
         guard let element = reveal.element, let host else { return }
         Task {
             // The board goes live as the selection's focus; ask it where the element is once it
             // draws (a few tries: a board loads in well under a second).
             for _ in 0..<20 {
-                if let found = await host.locate(reveal.board, tids: [element.tid]) {
-                    if let pick = found[element.tid], pick.id.path == element.path, picks.last?.board == reveal.board {
-                        setSelection([Pick(board: reveal.board, element: pick)])
+                if let found = await host.locate(board, tids: [element.tid]) {
+                    if let pick = found[element.tid], pick.id.path == element.path, picks.last?.board == board {
+                        setSelection([Pick(board: board, element: pick)])
                     }
                     return
                 }
