@@ -9,7 +9,10 @@ import ShepherdTestSupport
 @Suite("Project settings files", .integrationTimeLimit)
 struct ProjectSettingsTests {
     @Test func projectFilesAreScopedConflictCheckedAndRetainedAfterWorkspaceDeletion() async throws {
-        let scratch = try ScratchServer()
+        let directory = try makeScratchDirectory("srv")
+        // Project listing imports old pi sessions: do not share earlier suites' session home.
+        let pi = PiSetup(engine: PiSetup.app.engine, home: directory.appendingPathComponent("pi"))
+        let scratch = try ScratchServer(dir: directory, pi: pi)
         defer { scratch.stop() }
         let fm = FileManager.default
         let first = scratch.dir.appendingPathComponent("one"), second = scratch.dir.appendingPathComponent("two")

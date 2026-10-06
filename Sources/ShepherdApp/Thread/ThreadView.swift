@@ -82,7 +82,6 @@ struct ThreadView: View {
     @State private var gutter = AppLayout.gutter
     @State private var hovering = false
     @State private var wheelMonitor: Any?
-    @State private var wheelIntentUntil = Date.distantPast
     /// Measured height of the floating composer: the scroll view insets by exactly this, so the
     /// thread neither hides under the card nor scrolls into blank space below the last turn.
     /// Read only by the inset's own modifier, so the composer changing height (a question taking
@@ -109,7 +108,7 @@ struct ThreadView: View {
         let settled = active && !catchingUp
         let arrived = arrivals.update(rows.map(\.id), session: store.sessionKey, active: active, catchingUp: catchingUp)
         ScrollViewReader { proxy in
-            let _ = keepTail(proxy, hasRows: !rows.isEmpty)
+            let _ = keepTail(proxy)
             ZStack(alignment: .bottom) {
                 ScrollView {
                     // Never animated as a whole (rows, their text, and the tail anchor change on
@@ -178,6 +177,9 @@ struct ThreadView: View {
                     }
                 }
                 .onChange(of: historyEnabled) { _, _ in loadVisibleHistory() }
+                .onChange(of: running) { _, running in
+                    if !running { tailGuard.turnFinished() }
+                }
                 .onChange(of: store.sessionKey) { _, _ in
                     historyAnchor.cancel()
                     loadVisibleHistory()
@@ -185,7 +187,7 @@ struct ThreadView: View {
                 .modifier(ThreadTailAnchor(sticky: follower.sticky, native: nativeTail))
                 .onScrollGeometryChange(for: NativeScrollProbe.self, of: Self.probe) { old, new in
                     // Intent is a wheel tick (350 ms window) or a live drag phase.
-                    let gesture = Date() <= wheelIntentUntil || follower.userScrolling
+                    let gesture = input.hasWheelIntent(movingUp: new.distance > old.distance) || follower.userScrolling
                     // Where nothing anchors the scroll view, every reading is the layout's own:
                     // growth, a shrinking history, the composer resizing and a send's collapsing
                     // tray all land back on the tail as they arrive.
@@ -196,7 +198,7 @@ struct ThreadView: View {
                     tailGuard.distance = new.distance
                     tailGuard.suspect()
                 }
-                .onScrollPhaseChange { _, phase, context in
+                .onScrollPhaseChange { old, phase, context in
                     // Only a live finger/wheel counts. Momentum and programmatic phases are not
                     // intent; a gesture that ends near the bottom re-sticks from where it lands.
                     follower.userScrolling = phase == .interacting
@@ -205,8 +207,8 @@ struct ThreadView: View {
                         historyPaging.beginScroll()
                         tailGuard.readerMoved()
                     }
-                    if phase == .idle {
-                        follower.observe(distanceFromBottom: Self.distanceFromBottom(context.geometry))
+                    if phase == .idle, old == .interacting || old == .decelerating {
+                        follower.observe(distanceFromBottom: Self.distanceFromBottom(context.geometry), userIntent: true)
                     }
                 }
                 .onChange(of: store.sentCount) { _, _ in
@@ -328,13 +330,13 @@ struct ThreadView: View {
 
     /// What the tail guard reads when a check comes due, refreshed by every render and never
     /// observed.
-    private func keepTail(_ proxy: ScrollViewProxy, hasRows: Bool) {
+    private func keepTail(_ proxy: ScrollViewProxy) {
         tailGuard.bottomID = Self.bottomID
-        tailGuard.hasRows = hasRows
         tailGuard.active = active
         tailGuard.following = follower.sticky
         tailGuard.userScrolling = follower.userScrolling
         tailGuard.land = { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
+        tailGuard.rowIDs = Set(store.rows.map(\.id))
     }
 
     private var historyEnabled: Bool { active && store.ready && !store.loadingOlder && !follower.sticky }
@@ -426,7 +428,7 @@ struct ThreadView: View {
         wheelMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
             if hovering {
                 historyAnchor.cancel()
-                wheelIntentUntil = Date().addingTimeInterval(0.35)
+                if event.scrollingDeltaY != 0 { input.readerScrolled(upward: event.scrollingDeltaY > 0) }
                 historyPaging.beginScroll()
                 tailGuard.readerMoved()
             }

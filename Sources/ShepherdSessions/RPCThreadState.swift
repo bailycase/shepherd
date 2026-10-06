@@ -1883,9 +1883,10 @@ final class RPCThreadState {
         var index = end - 1
         while index >= 0 {
             let message = history[index]
-            size += bytes(message) + 1
+            let messageBytes = bytes(message)
+            size += messageBytes + 1
             // What does not fit is an older page (`olderCursor`), not clipped.
-            if size > snapshotLimit { break }
+            if size > snapshotLimit, !value.messages.isEmpty || messageBytes + bytes(message.entryID) > textLimit * 8 { break }
             value.messages.insert(message, at: 0)
             index -= 1
             if value.messages.count == pageSize { break }
@@ -1954,7 +1955,9 @@ final class RPCThreadState {
             clipped()
         }
         // Each message is counted with a comma, as when the growing snapshot was encoded. History
-        // always has `historyReserve` to fill, whatever the rest of the snapshot weighs.
+        // always has `historyReserve` to fill. Keep at least one bounded message even if JSON
+        // escaping makes it exceed that reserve, otherwise there is no row or paging cursor.
+        // Unbounded producer IDs are not admitted this way: leave room for the cursor and frame.
         var budgeted = size()
         let limit = max(snapshotLimit, budgeted + historyReserve)
         var page: [Sized<NativeThreadMessage>] = []
@@ -1963,7 +1966,7 @@ final class RPCThreadState {
             let entry = history(index)
             budgeted += entry.bytes + 1
             // Older history that does not fit is a page away (`olderCursor`), not clipped.
-            if budgeted > limit { break }
+            if budgeted > limit, !page.isEmpty || entry.bytes + bytes(entry.value.entryID) > textLimit * 8 { break }
             page.append(entry)
             index -= 1
             if page.count == pageSize { break }

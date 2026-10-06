@@ -31,7 +31,7 @@ struct ThreadTailGuardTests {
             clip.postsBoundsChangedNotifications = true
             guardian.scrollView = { [scroll] in scroll }
             guardian.bottomID = "thread-bottom"
-            guardian.hasRows = true
+            guardian.rowIDs = ["row"]
             guardian.active = true
             guardian.following = true
             guardian.land = { [unowned self] in landings += 1 }
@@ -71,8 +71,9 @@ struct ThreadTailGuardTests {
     /// A thread drawing nothing is walked back toward its rows, and the walk is the guard's own
     /// scrolling: a view it leaves a little above the end of the document (the marker is in view from
     /// there, under the composer) is taken the rest of the way. Seeing only the clear bottom marker
-    /// is still a blank transcript, not a successful repair.
-    @Test(arguments: [[], ["thread-bottom"]])
+    /// is still a blank transcript, not a successful repair. A cached target for a live reply that
+    /// completion replaced is no better; only a current row can end the repair.
+    @Test(arguments: [[], ["thread-bottom"], ["removed-live-reply", "thread-bottom"]])
     func aRepairedThreadRestingUnderTheComposerIsTakenToTheEndOfItsDocument(visible: [String]) async throws {
         let rig = Rig()
         defer { rig.close() }
@@ -81,10 +82,63 @@ struct ThreadTailGuardTests {
             rig.document.setFrameSize(NSSize(width: 800, height: 5500))
             rig.guardian.targets(["row", "thread-bottom"])
         }
+        if visible.contains("removed-live-reply") { rig.guardian.rowIDs = ["removed-live-reply"] }
         rig.guardian.targets(visible)
-        try await eventuallyOnMain("the guard to walk the view and finish", timeout: .seconds(10)) { rig.guardian.visible.count == 2 && !rig.guardian.repairing }
+        // History replaces the live reply before another target-visibility callback arrives.
+        rig.guardian.rowIDs = ["row"]
+        try await eventuallyOnMain("the guard to walk the view and finish", timeout: .seconds(10)) { rig.guardian.visible.contains("row") && !rig.guardian.repairing }
         try await eventuallyOnMain("the view to rest on the end of its document", timeout: .seconds(5)) { rig.gap <= ThreadTailGuard.slack }
         #expect(rig.landings == 0, "the guard aimed at the end the stack believes in, which would undo an exact landing")
+    }
+
+    @Test func aNewCompletedTurnCanRecoverAfterEarlierAttemptsFailed() async throws {
+        let rig = Rig()
+        defer { rig.close() }
+        rig.guardian.scrollView = { nil }
+        rig.guardian.targets([])
+        try await eventuallyOnMain("bounded attempts are exhausted", timeout: .seconds(10)) {
+            rig.landings == ThreadTailGuard.maxAttempts
+        }
+        try await Task.sleep(for: .milliseconds(250))
+        rig.guardian.scrollView = { rig.scroll }
+        rig.onFirstMove { rig.guardian.targets(["completed-reply", "thread-bottom"]) }
+        rig.guardian.rowIDs = ["completed-reply"]
+        rig.guardian.targets([])
+        rig.guardian.turnFinished()
+        try await eventuallyOnMain("the completed turn gets its own bounded recovery", timeout: .seconds(3)) {
+            rig.guardian.visible.contains("completed-reply") && !rig.guardian.repairing
+        }
+    }
+
+    @Test func returningToAThreadCompletedWhileHiddenRestartsRecovery() async throws {
+        let rig = Rig()
+        defer { rig.close() }
+        rig.guardian.active = false
+        rig.guardian.scrollView = { nil }
+        rig.guardian.targets([])
+        rig.guardian.turnFinished()
+        let land = rig.guardian.land
+        rig.guardian.land = {
+            land()
+            rig.guardian.targets(["row", "thread-bottom"])
+        }
+        rig.guardian.active = true
+        try await eventuallyOnMain("visible completion rechecks its missing rows", timeout: .seconds(3)) {
+            rig.landings > 0
+        }
+    }
+
+    @Test(arguments: ["hidden", "reader"])
+    func completionOnlyRecoversAVisibleFollowingThread(state: String) async throws {
+        let rig = Rig()
+        defer { rig.close() }
+        if state == "hidden" { rig.guardian.active = false }
+        if state == "reader" { rig.guardian.readerMoved() }
+        rig.guardian.targets([])
+        rig.guardian.turnFinished()
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(rig.landings == 0)
+        #expect(!rig.guardian.repairing)
     }
 
     /// Farther above its end than the composer hides, the marker is out of view and the guard's walk is
@@ -129,17 +183,18 @@ struct ThreadTailGuardTests {
     }
 
     /// A reader's hands are never fought: the end is not taken for a reader who has just moved.
-    @Test func aReaderWhoJustMovedIsNotTakenToTheEnd() async throws {
+    @Test(arguments: [["row"], ["row", "thread-bottom"]])
+    func aReaderWhoJustMovedIsNotTakenToTheEnd(visible: [String]) async throws {
         let rig = Rig()
         defer { rig.close() }
         rig.onFirstMove {
             rig.document.setFrameSize(NSSize(width: 800, height: 5500))
-            rig.guardian.targets(["row", "thread-bottom"])
+            rig.guardian.targets(visible)
             rig.guardian.readerMoved()
         }
         rig.guardian.targets([])
-        try await eventuallyOnMain("the guard to walk the view", timeout: .seconds(10)) { rig.guardian.visible.count == 2 && !rig.guardian.repairing }
-        try await Task.sleep(for: .milliseconds(200))
+        try await eventuallyOnMain("the guard to walk the view", timeout: .seconds(10)) { rig.guardian.visible.contains("row") && !rig.guardian.repairing }
+        #expect(rig.landings == 0, "a wheel tick that interrupts recovery must not jump back to the tail")
         #expect(rig.gap > 90, "the view stayed where the reader's last move left it")
     }
 }
