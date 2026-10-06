@@ -72,7 +72,6 @@ struct PiLauncherTests {
         #expect(Set(lines.filter { $0.hasPrefix("PI_") }) == [
             "PI_CODING_AGENT_DIR=\(home.directory.path)", "PI_PACKAGE_DIR=/engine/package",
             "PI_OFFLINE=1", "PI_SKIP_VERSION_CHECK=1", "PI_TELEMETRY=0",
-            "PI_SUBAGENTS_TEMP_ROOT=\(home.directory.path)/tmp/pi-subagents",
         ])
         #expect(lines.contains("NODE_EXTRA_CA_CERTS=/their/ca.pem"))
         for key in ["NODE_OPTIONS", "JITI_ALIAS", "OPENSSL_CONF", "PI_EXPERIMENTAL"] {

@@ -63,9 +63,8 @@ stand-in), never a `pi` looked up on PATH ([pi-home.md](pi-home.md)).
   refreshes its model catalogs in the background, so offline mode buys little of its boot, and
   it would cost the agent for its whole life: no catalog refresh (a model published since the
   last one could not be picked, though Shepherd's picker lists it), no install of a package
-  newly added to pi's settings, and a `PI_OFFLINE` that every extension and subagent inherits
-  (pi-subagents then stops finding agents and skills in the global npm root). A slow boot is
-  covered instead by the thread drawing at once (below).
+  newly added to pi's settings, and a `PI_OFFLINE` that every extension and subagent inherits.
+  A slow boot is covered instead by the thread drawing at once (below).
 - **The opening prompt** is the first native `send`. It is not a positional argument, because RPC
   mode ignores positional messages. The app hands it to the host with the new pi
   (`SessionServer.sendOpeningPrompt`), which holds it until the thread serves and sends it in
@@ -291,6 +290,9 @@ events come out on stdout, one record per LF.
       messages at the sizes a thread's messages have) and live content for 48 KiB
       (`activeReserve`), so the snapshot can then pass 240 KiB, never by more than the
       reserves. History that does not fit is a page away (`olderCursor`), never a clip.
+      JSON escaping can make a bounded message exceed the 96 KiB reserve. Keep the newest
+      message anyway, up to 128 KiB encoded, so the page retains a row and an older cursor.
+      This exception does not admit oversized producer metadata, such as an unbounded ID.
   - One 16 KiB text budget per message, shared across its blocks and tool fields, and at most
     128 blocks per message. A message cut to it is `truncated`, which its row says ("Output
     truncated"); the thread has nothing missing.
@@ -895,7 +897,9 @@ The pure derivations live in ShepherdRemote:
   payloads, the iOS header pill's state (the Mac toolbar has none), subagent state, placement,
   and rollups, clock and duration text, and `NativeScrollFollower` (only a live scroll gesture detaches following; momentum,
   content replacement, composer resizes, and growth are treated as layout, never as intent;
-  the Mac thread from macOS 27, which sets no scroll anchor, repairs a view left past its
+  layout and recovery never re-attach a detached reader, even if they clamp the viewport into
+  the bottom band. A real scroll back into the band re-attaches; programmatic scrolls ending
+  idle do not. The Mac thread from macOS 27, which sets no scroll anchor, repairs a view left past its
   tail by any layout change at once, `nativeAnchor: false`).
   The iOS client still draws the older turn items and tool rows from here (`nativeTurnItems`,
   `NativeToolRow`).

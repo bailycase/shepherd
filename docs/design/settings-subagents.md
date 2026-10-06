@@ -26,7 +26,7 @@ still applies: 232pt navigation and 40pt side gutters, with no fixed 720pt page 
 
 Only `<Shepherd support>/pi/agents` supplies named definitions. Do not read user `.agents`, project
 `.agents` or `.pi/agents`, package agent directories, extra-directory environment variables, or
-pi-subagents settings overrides. Seed the existing scout, reviewer, planner and worker once without
+third-party subagent settings overrides. Seed the existing scout, reviewer, planner and worker once without
 overwriting existing files. Persist completion of seeding so deletes survive relaunch. Restoring
 defaults is an explicit action. Existing custom files already in the owned folder stay in place.
 

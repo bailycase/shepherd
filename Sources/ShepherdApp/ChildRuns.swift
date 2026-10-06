@@ -2,111 +2,37 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 
-/// Child runs per agent, including finished native runs with inspectable transcripts.
-///
-/// Pure value logic, separated from the view model for tests. Rows are
-/// ephemeral display state: pi-subagents owns the runs; Shepherd only mirrors
-/// the extension's publishes and enforces row lifecycle so nothing stale can
-/// stick in the UI:
-///   - a publish replaces the agent's rows wholesale (the extension always
-///     sends its full projection),
-///   - terminal legacy rows without pending attention expire after `terminalTTL`,
-///   - finished native transcripts stay available until the publisher removes them or the
-///     parent exits, so a finished run stays reachable from the palette,
-///   - an agent whose extension has gone quiet (`staleAfter` without any
-///     publish) loses all its rows — a killed pi can't strand "running" rows,
-///   - `clear(agent:)` serves the hard cases (process exit, agent deletion).
+/// Ephemeral display state published by Shepherd's child runtime.
+/// Each publish replaces the parent's rows. Finished transcripts remain inspectable until
+/// the publisher removes them or the parent exits; stale live rows never strand the UI.
 struct ChildRuns {
-    /// Terminal rows linger this long so a finished lane stays readable
-    /// (`done`) until the batch resolves; the extension's parent-turn sweep
-    /// usually clears them sooner.
-    var terminalTTL: TimeInterval = 300
-    /// No publish for this long means the publisher is gone (it refreshes
-    /// every 45s while runs are active); drop every row for that agent.
+    /// The publisher refreshes every five seconds while rows are visible.
     var staleAfter: TimeInterval = 120
-
-    private struct ChildKey: Hashable {
-        let agentID: AgentID
-        let runID: String
-    }
 
     private(set) var rows: [AgentID: [ChildRun]] = [:]
     private var publishedAt: [AgentID: Date] = [:]
-    private var terminalSince: [ChildKey: Date] = [:]
 
     mutating func apply(agentID: AgentID, children: [ChildRun], now: Date = Date()) {
-        publishedAt[agentID] = now
-        // Track when each row first went terminal, keyed by agent and row id;
-        // the TTL runs from that moment, not from the publish that repeats it.
-        var seen = Set<ChildKey>()
-        for child in children where child.isTerminal && !child.needsAttention {
-            let key = ChildKey(agentID: agentID, runID: child.id)
-            seen.insert(key)
-            if terminalSince[key] == nil { terminalSince[key] = now }
-        }
-        for key in Array(terminalSince.keys) where key.agentID == agentID && !seen.contains(key) {
-            // Row disappeared, resumed, or needs a reply: forget the mark.
-            terminalSince.removeValue(forKey: key)
-        }
-        let kept = children.filter { child in
-            let key = ChildKey(agentID: agentID, runID: child.id)
-            guard child.isTerminal, child.sessionFile == nil, let since = terminalSince[key] else { return true }
-            return now.timeIntervalSince(since) < terminalTTL
-        }
-        if kept.isEmpty {
-            rows.removeValue(forKey: agentID)
-            publishedAt.removeValue(forKey: agentID)
-            for key in Array(terminalSince.keys) where key.agentID == agentID {
-                terminalSince.removeValue(forKey: key)
-            }
+        if children.isEmpty {
+            clear(agent: agentID)
         } else {
-            rows[agentID] = kept
+            publishedAt[agentID] = now
+            rows[agentID] = children
         }
     }
 
-    /// Drop expired terminal rows and rows from stale publishers. Returns
-    /// true when anything changed (the caller re-renders).
+    /// Drop live rows from stale publishers. Finished transcripts remain inspectable.
     mutating func sweep(now: Date = Date()) -> Bool {
         var changed = false
-        let agentIDs = Set(rows.keys).union(publishedAt.keys)
-        for agentID in agentIDs {
-            if let last = publishedAt[agentID], now.timeIntervalSince(last) > staleAfter {
-                // A quiet publisher must not strand live/attention rows, but a finished
-                // transcript remains useful even when no further updates arrive.
-                let retained = (rows[agentID] ?? []).filter {
-                    $0.isTerminal && !$0.needsAttention && $0.sessionFile != nil
-                }
-                if retained != rows[agentID] { changed = true }
-                if retained.isEmpty { rows.removeValue(forKey: agentID) }
-                else { rows[agentID] = retained }
-                publishedAt.removeValue(forKey: agentID)
-                for key in Array(terminalSince.keys) where key.agentID == agentID {
-                    terminalSince.removeValue(forKey: key)
-                }
-                continue
+        for agentID in Array(publishedAt.keys) {
+            guard let last = publishedAt[agentID], now.timeIntervalSince(last) > staleAfter else { continue }
+            let retained = (rows[agentID] ?? []).filter {
+                $0.isTerminal && !$0.needsAttention && $0.sessionFile != nil
             }
-            guard let children = rows[agentID] else { continue }
-            let kept = children.filter { child in
-                let key = ChildKey(agentID: agentID, runID: child.id)
-                guard child.isTerminal, child.sessionFile == nil, let since = terminalSince[key] else { return true }
-                return now.timeIntervalSince(since) < terminalTTL
-            }
-            if kept.count != children.count {
-                if kept.isEmpty {
-                    rows.removeValue(forKey: agentID)
-                    publishedAt.removeValue(forKey: agentID)
-                    for key in Array(terminalSince.keys) where key.agentID == agentID {
-                        terminalSince.removeValue(forKey: key)
-                    }
-                } else {
-                    rows[agentID] = kept
-                    let keptKeys = Set(kept.map { ChildKey(agentID: agentID, runID: $0.id) })
-                    for key in Array(terminalSince.keys) where key.agentID == agentID && !keptKeys.contains(key) {
-                        terminalSince.removeValue(forKey: key)
-                    }
-                }
-                changed = true
-            }
+            if retained != rows[agentID] { changed = true }
+            if retained.isEmpty { rows.removeValue(forKey: agentID) }
+            else { rows[agentID] = retained }
+            publishedAt.removeValue(forKey: agentID)
         }
         return changed
     }
@@ -114,9 +40,6 @@ struct ChildRuns {
     mutating func clear(agent agentID: AgentID) {
         rows.removeValue(forKey: agentID)
         publishedAt.removeValue(forKey: agentID)
-        for key in Array(terminalSince.keys) where key.agentID == agentID {
-            terminalSince.removeValue(forKey: key)
-        }
     }
 
     func children(of agentID: AgentID) -> [ChildRun] {

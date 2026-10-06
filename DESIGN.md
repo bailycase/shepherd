@@ -209,7 +209,8 @@ A list is as fast with three hundred rows as with thirty. Count budgets in
   from every page, except when filtered by search. Project MCP reuses the global OAuth sheet;
   authentication runs on the selected host and opens the viewer's browser.
   Details: [Project MCP](docs/design/project-mcp.md).
-- Blank-thread recovery checks for visible content rows, not the invisible bottom scroll marker.
+- Blank-thread recovery checks for visible current content rows, not the invisible bottom marker
+  or cached targets from a live reply that completion replaced.
 - Motion no one sees costs nothing (`nwMotionPaused`); detail in
   [performance](docs/design/performance.md).
 

@@ -42,7 +42,7 @@ enum HostSettingsMapping {
         ("panes", "Terminals and agent tools", \.piPanesExtension),
         ("review", "Diff review tool", \.piReviewExtension),
         ("nativeSubagents", "Native subagents", \.piNativeSubagents),
-        ("subagents", "Subagent display", \.piSubagentsExtension),
+        ("subagents", "Subagent display", \.subagentDisplay),
         ("mcp", "MCP servers", \.piMCPExtension),
         ("browser", "Browser tools", \.piBrowserExtension),
         // Settings ▸ Agents ▸ Context on the Mac; a client lists it with the other switches.

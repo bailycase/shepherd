@@ -108,7 +108,7 @@ function startParent({ dir, home, socketPath, design }) {
   const events = [];
   const env = { ...process.env, HOME: dir, PI_CODING_AGENT_DIR: home, PI_OFFLINE: "1", SHEPHERD_AGENT_ID: "designer-1", SHEPHERD_SOCKET: socketPath,
     SHEPHERD_NATIVE_CHILDREN: "1", SHEPHERD_EXT_CHILDREN: childrenSource };
-  delete env.SHEPHERD_CHILD; delete env.SHEPHERD_DESIGN_ID; delete env.PI_SUBAGENT_EXTRA_AGENT_DIRS; delete env.SHEPHERD_CLIPROXYAPI_CONFIG;
+  delete env.SHEPHERD_CHILD; delete env.SHEPHERD_DESIGN_ID; delete env.SHEPHERD_CLIPROXYAPI_CONFIG;
   if (design) env.SHEPHERD_DESIGN_ID = "d1";
   const extensions = design ? ["-e", designSource, "-e", childrenSource] : ["-e", childrenSource];
   const proc = spawn(process.execPath, [path.join(pkg, "dist/bundle/cli.js"), "--mode", "rpc", "--no-extensions", "--no-skills", "--no-prompt-templates",

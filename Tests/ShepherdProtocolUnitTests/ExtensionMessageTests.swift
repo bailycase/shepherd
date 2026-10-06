@@ -672,7 +672,7 @@ struct ChildRunTests {
         #expect(ChildRun(runID: "run", childIndex: 3, label: "l", state: "running").id == "run#3")
     }
 
-    /// The children extension's exact `JSON.stringify` shape: a pi-subagents row with every
+    /// The children extension's exact `JSON.stringify` shape: a minimal child row with every
     /// optional omitted next to native rows carrying card fields.
     @Test func decodesTheSubagentsExtensionShape() throws {
         let json = #"""

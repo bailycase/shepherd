@@ -717,7 +717,7 @@ struct ThreadProjectionTests {
     // MARK: - Widgets
 
     @Test(arguments: [
-        ("PI_SUBAGENT_ASYNC_JSON:{\"kind\":\"snapshot\"}", true),
+        ("MACHINE_SNAPSHOT:{\"kind\":\"snapshot\"}", true),
         ("  {\"a\":1}", true),
         ("[1,2]", true),
         ("TASK_42: queued", true),

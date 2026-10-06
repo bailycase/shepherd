@@ -1078,7 +1078,7 @@ final class TerminalSessionStore {
             extensionPath: try StatusExtension.installedPath(),
             panesExtensionPath: Self.wantsPanes(for: agent, enabled: settings.piPanesExtension) ? try PanesExtension.installedPath() : nil,
             reviewExtensionPath: Self.wantsReview(for: agent, enabled: settings.piReviewExtension) ? try ReviewExtension.installedPath() : nil,
-            subagentsExtensionPath: settings.piSubagentsExtension ? try SubagentsExtension.installedPath() : nil,
+            subagentsExtensionPath: settings.subagentDisplay ? try SubagentsExtension.installedPath() : nil,
             childrenExtensionPath: settings.piNativeSubagents ? try ChildrenExtension.installedPath() : nil,
             childEnvironment: settings.childEnvironment,
             goalCrossProviderEvaluation: settings.goalCrossProviderEvaluation,

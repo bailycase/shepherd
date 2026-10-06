@@ -104,6 +104,39 @@ struct SnapshotBudgetTests {
         #expect(snapshot.messages.last?.entryID == "m:29")
     }
 
+    @Test(arguments: [1, 128])
+    func anEscapedNewestMessageDoesNotEraseHistory(blockCount: Int) {
+        let base = Self.heavyBase(runs: Self.heavyRuns, turns: Self.heavyTurns)
+        var reply = Self.message(1, bytes: 0)
+        reply.blocks = (0..<blockCount).map { _ in
+            .init(kind: .text, text: String(repeating: "\u{0000}", count: RPCThreadState.textLimit / blockCount))
+        }
+        #expect(RPCThreadState.bytes(reply) > RPCThreadState.historyReserve)
+        let history = [Self.message(0, bytes: 100, role: "user"), reply]
+        let (result, bytes) = Self.budget(base, history: history)
+        #expect(result.messages.last == reply)
+        #expect(result.olderCursor == reply.entryID)
+        #expect(bytes == RPCThreadState.bytes(result))
+        #expect(RPCThreadState.bytes(RemoteReply.nativeThread(id: 1, result: .snapshot(value: result))) < NDJSON.maxPayloadBytes)
+        var preview = base
+        RPCThreadState.fillPage(&preview, from: history, end: history.count)
+        #expect(preview.messages.last == reply)
+        #expect(preview.olderCursor == reply.entryID)
+    }
+
+    @Test(arguments: [500_000, NDJSON.maxPayloadBytes])
+    func oversizedProducerIdentifiersDoNotBypassTheWireLimit(idLength: Int) {
+        let base = Self.heavyBase(runs: Self.heavyRuns, turns: Self.heavyTurns)
+        var entry = Self.message(0, bytes: 0)
+        entry.entryID = String(repeating: "x", count: idLength)
+        let result = Self.budget(base, history: [entry]).snapshot
+        #expect(result.messages.isEmpty)
+        #expect(RPCThreadState.bytes(RemoteReply.nativeThread(id: 1, result: .snapshot(value: result))) < NDJSON.maxPayloadBytes)
+        var page = base
+        RPCThreadState.fillPage(&page, from: [entry], end: 1)
+        #expect(page.messages.isEmpty)
+    }
+
     @Test func theLiveRunKeepsItsReserveBesideAHeavyBase() {
         let base = Self.heavyBase(runs: Self.heavyRuns, turns: Self.heavyTurns)
         let active = [Self.message(0, bytes: 100, role: "user")]

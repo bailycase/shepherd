@@ -217,7 +217,7 @@ enum ChildrenExtension {
           const env = { ...parentEnv };
           // A helper is cut off from the host: none of the parent's SHEPHERD_* reaches it (its agent id,
           // socket and design are the parent's alone), nor the parent's session or model variables.
-          for (const key of Object.keys(env)) if (key.startsWith("SHEPHERD_") || key.startsWith("PI_SUBAGENT") || ["PI_SESSION_ID", "PI_SESSION_FILE", "PI_PROVIDER", "PI_MODEL", "PI_REASONING_LEVEL"].includes(key)) delete env[key];
+          for (const key of Object.keys(env)) if (key.startsWith("SHEPHERD_") || ["PI_SESSION_ID", "PI_SESSION_FILE", "PI_PROVIDER", "PI_MODEL", "PI_REASONING_LEVEL"].includes(key)) delete env[key];
           env.SHEPHERD_CHILD = "1"; env.PI_OFFLINE = "1";
           env.SHEPHERD_CHILD_TOOLS = JSON.stringify([...run.tools, "shepherd_parent_message"]);
           if (relay.length) env.SHEPHERD_CHILD_RELAY = JSON.stringify(relay);
@@ -1415,7 +1415,7 @@ enum ChildrenExtension {
           }
 
           // session_start runs after every extension factory, so load order cannot
-          // produce numeric /run collisions with pi-subagents' factory registrations.
+          // produce command collisions with other extension factories.
           const registerCommands = () => registerNativeCommands(pi, {
             defaults, catalog: (ctx) => discoverChildAgents(ctx, defaults.scope), resolveModel,
             list: () => [...runs.values()].map(summary), get: (id) => summary(get(id)),
@@ -1762,7 +1762,7 @@ enum ChildrenExtension {
         import * as path from "node:path";
         import { createHash, randomUUID } from "node:crypto";
 
-        // Separate from pi-subagents data. Records carry no executable configuration.
+        // Shepherd-owned records carry no executable configuration.
         export function missionStore(root, cwd) {
           const project = fs.realpathSync(cwd);
           const dir = path.join(root, "missions", createHash("sha256").update(project).digest("hex"));
@@ -1819,10 +1819,9 @@ enum ChildrenExtension {
         export function listedCommandNames(env = process.env) {
           return env.SHEPHERD_AGENT_ID ? commandNames.filter((name) => !coveredByShepherd.includes(name)) : commandNames;
         }
-        export function nativeCommandNames(commands, tools, listed = commandNames) {
+        export function nativeCommandNames(commands, listed = commandNames) {
           const occupied = new Set(commands.map((c) => c.name.split(":")[0]));
-          const legacy = tools.some((t) => t.name === "subagent" || /(?:^|[/:])pi-subagents(?:[@/]|$)/.test(t.sourceInfo?.source ?? ""));
-          const collisions = legacy || listed.some((name) => occupied.has(name));
+          const collisions = listed.some((name) => occupied.has(name));
           return Object.fromEntries(commandNames.map((name) => {
             let chosen = collisions ? `shepherd-${name}` : name;
             while (occupied.has(chosen)) chosen = `shepherd-${chosen}`;
@@ -2009,7 +2008,7 @@ enum ChildrenExtension {
 
         export function registerNativeCommands(pi, runtime, env = process.env) {
           const listed = listedCommandNames(env);
-          const names = nativeCommandNames(pi.getCommands(), pi.getAllTools(), listed);
+          const names = nativeCommandNames(pi.getCommands(), listed);
           const aliasNote = names.run !== "run" ? `command collision detected · native commands use /${names.run} and /${names.workflows}; existing commands are unchanged` : "native command names available without aliases";
           pi.registerEntryRenderer("shepherd-native-report", (entry) => new Text(cleanText(entry.data.text), 0, 0));
           // The TUI draws the entry. RPC mode (Shepherd's) has no toast: a notify there never reaches the

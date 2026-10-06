@@ -519,9 +519,8 @@ public struct ShepherdState: Codable, Hashable, Sendable {
         automations = try c.decodeIfPresent([Automation].self, forKey: .automations) ?? []
         // Absent before the Design tool.
         designs = try c.decodeIfPresent([Design].self, forKey: .designs) ?? []
-        // `subagents` in older state.json files is ignored: agents now nest
-        // their children inside their own pi process (pi-subagents), so
-        // Shepherd has no separate entity to track.
+        // `subagents` in older state.json files is ignored: Shepherd-owned children
+        // are ephemeral runtime records, never persisted app entities.
     }
 }
 
