@@ -20,6 +20,7 @@ import ShepherdTestSupport
             case .read: reads += 1; return .text(ProjectFileText(file: file, text: "old project"))
             case .save: return .text(ProjectFileText(file: file, text: "saved"))
             case .open: return .opened
+            case .mcp: return .mcp(.init())
             }
         }
         await model.load([ProjectsHost(id: "local", name: "This Mac", known: [])])

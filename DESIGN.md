@@ -207,7 +207,9 @@ A list is as fast with three hundred rows as with thirty. Count budgets in
   as a `Bool`; hover lives in the row. Stores derive rows once per change, never in `body`.
 - Hidden agents stay out of the visible one's updates (see AGENTS.md, switching is a flip).
 - Projects uses the shared MCP server cards and forms. Pi's three Settings subpages stay visible
-  from every page, except when filtered by search. Details: [Project MCP](docs/design/project-mcp.md).
+  from every page, except when filtered by search. Project MCP reuses the global OAuth sheet;
+  authentication runs on the selected host and opens the viewer's browser.
+  Details: [Project MCP](docs/design/project-mcp.md).
 - Blank-thread recovery checks for visible current content rows, not the invisible bottom marker
   or cached targets from a live reply that completion replaced.
 - Motion no one sees costs nothing (`nwMotionPaused`); detail in
