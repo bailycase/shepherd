@@ -241,6 +241,11 @@ jobs:
             '${{ steps.cert.outputs.identity }}' App/Shepherd.entitlements \
             App/Engine.entitlements
 
+      - name: Smoke test the shipped SDK
+        run: |
+          SHEPHERD_ENGINE_SMOKE="$PRODUCTS/$PRODUCT" \
+            python3 -m unittest discover -s Tests/Release -p test_pi_engine_sdk.py
+
       - name: Notarize
         if: steps.cert.outputs.identity != '-'
         env:

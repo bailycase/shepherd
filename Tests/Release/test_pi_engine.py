@@ -97,7 +97,7 @@ class Fixture:
             "node_modules/@silvia-odwyer/photon-node": {"version": "0.3.4", "license": "Apache-2.0"},
             "node_modules/quickjs-wasi": {"version": "3.6.2", "license": "MIT"},
             "node_modules/esbuild": {"version": "0.28.2", "license": "MIT"},
-            "node_modules/@esbuild/darwin-arm64": {"version": "0.28.2", "license": "MIT"},
+            "node_modules/@esbuild/darwin-arm64": {"version": "0.28.2", "license": "MIT", "optional": True},
             "node_modules/undici": {"version": "8.10.2", "license": "MIT"},
         }}
         self.pi_files = pi_files if pi_files is not None else {
@@ -107,10 +107,11 @@ class Fixture:
             "README.md": b"readme", "CHANGELOG.md": b"changes",
             "docs/rpc.md": b"docs", "examples/extensions/hello.ts": b"example",
             "dist/bundle/cli.js": b"#!/usr/bin/env node\n", "dist/bundle/chunks/a.js": b"chunk",
+            "dist/index.js": b"export {};",
             "dist/modes/interactive/theme/dark.json": b"{}", "dist/modes/interactive/assets/logo.png": b"png",
             "dist/core/export-html/template.html": b"<html>", "dist/core/export-html/template.css": b"css",
             "dist/core/export-html/template.js": b"js", "dist/core/export-html/vendor/marked.min.js": b"js",
-            # Not shipped: the modular build, its maps and types, and the shrinkwrap itself.
+            # SDK files must ship too. The shrinkwrap remains staging metadata only.
             "dist/cli.js": b"modular", "dist/cli.js.map": b"map", "dist/index.d.ts": b"types",
             "dist/core/export-html/index.js": b"modular", "npm-shrinkwrap.json": json.dumps(shrinkwrap).encode(),
         }
@@ -148,6 +149,19 @@ class Fixture:
             self.pin["modules"][name] = {"version": version,
                                          "tarball": f"https://registry.npmjs.org/{name}/-/{base}-{version}.tgz",
                                          "integrity": sri(self.archives[name])}
+        for name in sorted((pi_engine.REQUIRED_MODULES | {"undici"}) - set(versions)):
+            version = {"typebox": "1.3.27", "undici": "8.10.2"}.get(name, "1.0.0")
+            self.archives[name] = targz({
+                "package.json": json.dumps({"name": name, "version": version}).encode(),
+                "LICENSE": b"MIT License", "dist/index.js": b"export {};"})
+            self.pin["modules"][name] = {
+                "version": version,
+                "tarball": f"https://registry.npmjs.org/{name}/-/{name.split('/')[-1]}-{version}.tgz",
+                "integrity": sri(self.archives[name])}
+            shrinkwrap["packages"][f"node_modules/{name}"] = {"version": version, "license": "MIT"}
+        self.pi_files["npm-shrinkwrap.json"] = json.dumps(shrinkwrap).encode()
+        self.archives["pi"] = targz(self.pi_files, extra=pi_extra)
+        self.pin["pi"]["integrity"] = sri(self.archives["pi"])
         self.requests = []
 
     def urls(self):
@@ -182,8 +196,7 @@ def listing(root):
 
 
 class PinTests(unittest.TestCase):
-    """scripts/pi-engine-pin.json: Node 24 LTS for Apple silicon, and pi with the three modules its
-    bundle loads, each by version and hash."""
+    """Node 24 LTS for Apple silicon, Pi and the SDK dependency tree, each by version and hash."""
 
     def test_the_checked_in_pin_is_usable(self):
         self.assertEqual(pi_engine.pin_problems(pi_engine.load_pin()), [])
@@ -193,7 +206,9 @@ class PinTests(unittest.TestCase):
         self.assertEqual(pin["node"]["version"].split(".")[0], "24")
         self.assertEqual(list(pin["node"]["archives"]), ["arm64"])
         self.assertEqual((pin["pi"]["name"], pin["pi"]["version"]), ("@earendil-works/pi-coding-agent", "1.0.0"))
-        self.assertEqual(sorted(pin["modules"]), ["@silvia-odwyer/photon-node", "jiti", "quickjs-wasi"])
+        self.assertTrue(pi_engine.REQUIRED_MODULES <= set(pin["modules"]))
+        self.assertIn("@earendil-works/pi-ai/node_modules/openai", pin["modules"])
+        self.assertNotIn("esbuild", pin["modules"])
 
     def test_a_pin_that_could_not_be_verified_or_would_not_run_is_refused(self):
         good = pi_engine.load_pin()
@@ -213,6 +228,7 @@ class PinTests(unittest.TestCase):
             "another registry": lambda p: p["pi"].update(tarball="https://example.com/pi.tgz"),
             "an extra module": lambda p: p["modules"].update(esbuild=dict(p["modules"]["jiti"])),
             "a missing module": lambda p: p["modules"].pop("jiti"),
+            "an escaping module path": lambda p: p["modules"].update({"../bad": dict(p["modules"]["jiti"])}),
         }
         for name, change in cases.items():
             with self.subTest(name):
@@ -265,6 +281,8 @@ class StageTests(unittest.TestCase):
                 *(engine + f for f in (
                     "package.json", "README.md", "CHANGELOG.md", "docs/rpc.md", "examples/extensions/hello.ts",
                     "dist/bundle/cli.js", "dist/bundle/chunks/a.js", "dist/modes/interactive/theme/dark.json",
+                    "dist/index.js", "dist/cli.js", "dist/cli.js.map", "dist/index.d.ts",
+                    "dist/core/export-html/index.js",
                     "dist/modes/interactive/assets/logo.png", "dist/core/export-html/template.html",
                     "dist/core/export-html/template.css", "dist/core/export-html/template.js",
                     "dist/core/export-html/vendor/marked.min.js",
@@ -273,7 +291,11 @@ class StageTests(unittest.TestCase):
                     "node_modules/@silvia-odwyer/photon-node/LICENSE.md",
                     "node_modules/@silvia-odwyer/photon-node/photon_rs_bg.wasm",
                     "node_modules/quickjs-wasi/package.json", "node_modules/quickjs-wasi/quickjs.wasm",
+                    "node_modules/quickjs-wasi/dist/index.js",
                     "LICENSE", "NODE-LICENSE", "THIRD-PARTY-NOTICES")),
+                *(engine + f"node_modules/{name}/{file}"
+                  for name in set(fixture.pin["modules"]) - {"jiti", "quickjs-wasi", "@silvia-odwyer/photon-node"}
+                  for file in ("package.json", "LICENSE", "dist/index.js")),
             ]))
             self.assertEqual(set(pi_engine.slices(os.path.join(out, "Helpers/node"))), {"arm64"})
             self.assertEqual(pi_engine.verify(out, fixture.pin), [])
@@ -313,24 +335,17 @@ class StageTests(unittest.TestCase):
             self.assertIn("Copyright (c) quickjs-wasi", notices)
             self.assertIn("@earendil-works/chord 1.0.0  MIT", notices, "what the bundle compiles in is listed too")
 
-    def test_the_file_lists_declare_every_file_the_xcode_phase_reads_and_every_path_it_writes(self):
+    def test_the_sandbox_lists_only_node_and_the_stamp_not_thousands_of_sdk_paths(self):
         fixture = Fixture()
         with tempfile.TemporaryDirectory() as scratch:
             out = fixture.stage(scratch)
-            staged = [p for p in listing(out) if not p.endswith(".xcfilelist")]
             with open(os.path.join(out, "inputs.xcfilelist")) as f:
-                inputs = f.read().split()
+                inputs = f.read().splitlines()
             with open(os.path.join(out, "outputs.xcfilelist")) as f:
-                outputs = f.read().split()
-            self.assertEqual(sorted(inputs), sorted(f"$(SRCROOT)/.build/pi-engine/{p}" for p in staged))
+                outputs = f.read().splitlines()
+            self.assertEqual(inputs, [f"$(SRCROOT)/.build/pi-engine/{p}" for p in ("pin.json", "Helpers/node")])
             contents = "$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/"
-            for path in staged:
-                if path != "pin.json":
-                    self.assertIn(contents + path, outputs)
-            for folder in ("Helpers", "Resources/pi-engine", "Resources/pi-engine/dist/bundle/chunks",
-                           "Resources/pi-engine/node_modules/@silvia-odwyer"):
-                self.assertIn(contents + folder, outputs)
-            self.assertNotIn(contents + "Resources", outputs, "the phase never creates Resources/")
+            self.assertEqual(outputs, [contents + "Helpers", contents + "Helpers/node"])
 
     def test_restaging_reuses_the_cache(self):
         fixture = Fixture()
@@ -362,6 +377,66 @@ class StageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as scratch:
             with self.assertRaisesRegex(pi_engine.EngineError, "needs node"):
                 Fixture(engines=">=26.0.0").stage(scratch)
+
+    def test_omitting_a_transitive_sdk_dependency_is_refused(self):
+        fixture = Fixture()
+        fixture.pin["modules"].pop("undici")
+        with tempfile.TemporaryDirectory() as scratch:
+            with self.assertRaisesRegex(pi_engine.EngineError, "missing.*undici"):
+                fixture.stage(scratch)
+
+    def test_nested_dependency_versions_are_not_flattened(self):
+        fixture = Fixture()
+        location = "jiti/node_modules/undici"
+        fixture.pin["modules"][location] = dict(fixture.pin["modules"]["undici"])
+        fixture.archives[location] = fixture.archives["undici"]
+        locked = json.loads(fixture.pi_files["npm-shrinkwrap.json"])
+        locked["packages"][f"node_modules/{location}"] = {"version": "8.10.2"}
+        fixture.pi_files["npm-shrinkwrap.json"] = json.dumps(locked).encode()
+        fixture.archives["pi"] = targz(fixture.pi_files)
+        fixture.pin["pi"]["integrity"] = sri(fixture.archives["pi"])
+        with tempfile.TemporaryDirectory() as scratch:
+            out = fixture.stage(scratch)
+            self.assertIn(f"Resources/pi-engine/node_modules/{location}/dist/index.js", listing(out))
+            self.assertEqual(pi_engine.verify(out, fixture.pin), [])
+
+    def test_npm_named_tarball_roots_are_supported_but_multiple_roots_are_not(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            path = os.path.join(scratch, "types.tgz")
+            with open(path, "wb") as f:
+                f.write(targz({"package.json": b"{}"}, prefix="node v22.19/"))
+            self.assertEqual(pi_engine.package_files(path, ("**",)), {"package.json": b"{}"})
+            extra = tarfile.TarInfo("other/file")
+            extra.size = 1
+            with open(path, "wb") as f:
+                f.write(targz({"package.json": b"{}"}, extra=[(extra, b"x")]))
+            with self.assertRaisesRegex(pi_engine.EngineError, "outside"):
+                pi_engine.package_files(path, ("**",))
+
+    def test_identical_dotted_archive_paths_produce_one_staged_file(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            path = os.path.join(scratch, "package.tgz")
+            for repeated, succeeds in ((b"same", True), (b"different", False)):
+                with open(path, "wb") as f:
+                    f.write(targz({"dist/index.js": b"same", "./dist/index.js": repeated}))
+                if succeeds:
+                    files = pi_engine.package_files(path, ("**",))
+                    self.assertEqual(files, {"dist/index.js": b"same"})
+                    self.assertNotIn("./dist/index.js", files)
+                else:
+                    with self.assertRaisesRegex(pi_engine.EngineError, "conflicting duplicate"):
+                        pi_engine.package_files(path, ("**",))
+
+    def test_cache_keys_distinguish_scoped_tarball_basename_collisions(self):
+        fixture = Fixture()
+        # Two registries paths may end in the same filename but contain different packages.
+        fixture.pin["modules"]["undici"]["tarball"] = "https://registry.npmjs.org/@other/jiti/-/jiti-2.7.0.tgz"
+        with tempfile.TemporaryDirectory() as scratch:
+            downloads = pi_engine.download_all(fixture.pin, scratch, opener=fixture.opener())
+            self.assertNotEqual(downloads["modules"]["jiti"], downloads["modules"]["undici"])
+            self.assertEqual(pi_engine.integrity_of(downloads["modules"]["jiti"]),
+                             fixture.pin["modules"]["jiti"]["integrity"])
+            pi_engine.download_all(fixture.pin, scratch, offline=True)
 
     def test_a_module_pi_does_not_resolve_to_is_refused(self):
         with tempfile.TemporaryDirectory() as scratch:
@@ -409,14 +484,21 @@ class VerifyTests(unittest.TestCase):
         self.write("dist/bundle/helper", thin_macho("arm64"))
         self.assertOneProblem("native code")
 
-    def test_a_module_the_bundle_does_not_load_does_not_ship(self):
-        self.write("node_modules/undici/package.json", json.dumps({"name": "undici", "version": "8.10.2"}).encode())
-        self.assertOneProblem("node_modules/undici")
+    def test_an_unpinned_module_does_not_ship(self):
+        self.write("node_modules/unpinned/package.json", b"{}")
+        self.assertOneProblem("node_modules/unpinned")
 
-    def test_chord_compiled_into_the_bundle_does_not_ship_beside_it(self):
-        self.write("node_modules/@earendil-works/chord/package.json",
-                   json.dumps({"name": "@earendil-works/chord", "version": "1.0.0"}).encode())
-        self.assertOneProblem("node_modules/@earendil-works/chord")
+    def test_the_modular_sdk_entry_must_ship_beside_the_bundle(self):
+        os.remove(os.path.join(self.engine, "dist/index.js"))
+        self.assertOneProblem("dist/index.js is missing")
+
+    def test_missing_host_peer_is_rejected(self):
+        shutil.rmtree(os.path.join(self.engine, "node_modules/@earendil-works/pi-agent-core"))
+        self.assertOneProblem("pi-agent-core is missing")
+
+    def test_unpinned_nested_modules_are_rejected(self):
+        self.write("node_modules/jiti/node_modules/unpinned/package.json", b"{}")
+        self.assertOneProblem("jiti/node_modules/unpinned is not pinned")
 
     def test_the_files_the_bundle_resolves_by_name_must_be_there(self):
         # pi's codemode finds quickjs-wasi/quickjs.wasm with require.resolve, and a script fails
@@ -512,9 +594,9 @@ class LayoutContractTests(unittest.TestCase):
         self.assertEqual(pi_engine.STAGED_IN_XCODE, "$(SRCROOT)/.build/pi-engine")
         self.assertEqual(pi_engine.DEFAULT_STAGED, os.path.join(pi_engine.ROOT, ".build", "pi-engine"))
 
-    def test_the_phase_copies_the_staged_layout_checks_the_stamp_and_never_downloads(self):
+    def test_the_phase_copies_node_checks_the_stamp_and_never_downloads(self):
         script = self.phase()
-        self.assertIn(f'staged}}/{pi_engine.ENGINE}\\"', script)
+        self.assertNotIn('/bin/cp -Rc', script)
         self.assertIn(f'staged}}/{pi_engine.NODE}\\"', script)
         self.assertIn('cmp -s \\"${SRCROOT}/scripts/pi-engine-pin.json\\" \\"${staged}/pin.json\\"', script)
         self.assertIn("scripts/sign-engine.sh", script)
@@ -522,6 +604,12 @@ class LayoutContractTests(unittest.TestCase):
         for fetcher in ("curl", "wget", "http", "npm ", "pi_engine.py stage\\\" ", "python3 scripts/pi_engine.py stage;"):
             for line in commands:
                 self.assertNotIn(fetcher, line.replace("Run: python3 scripts/pi_engine.py stage", ""))
+
+    def test_xcode_copies_the_sdk_as_a_folder_resource_without_a_shell(self):
+        project = read("Shepherd.xcodeproj", "project.pbxproj")
+        self.assertIn('lastKnownFileType = folder; path = ".build/pi-engine/Resources/pi-engine"; sourceTree = SOURCE_ROOT;', project)
+        resources = re.search(r'5E000000000000000000E003 /\* Resources \*/ = \{(.*?)\n\t\t\};', project, re.S).group(1)
+        self.assertIn("pi-engine in Resources", resources)
 
     def test_the_swift_locator_uses_the_same_paths(self):
         swift = read("Sources", "ShepherdSessions", "PiEngine.swift")
@@ -615,6 +703,17 @@ class ReleaseWorkflowTests(unittest.TestCase):
         strip = self.step("Strip debug symbols")
         self.assertIn('"$PRODUCTS/$PRODUCT/Contents/MacOS/"*', strip)
         self.assertNotIn("Helpers", strip.split("run:", 1)[1])
+
+    def test_the_shipped_sdk_is_smoke_tested_after_signing_before_notarization(self):
+        names = [title for title, _ in self.steps()]
+        self.assertLess(names.index("Sign"), names.index("Smoke test the shipped SDK"))
+        self.assertLess(names.index("Smoke test the shipped SDK"), names.index("Notarize"))
+        smoke = self.step("Smoke test the shipped SDK")
+        self.assertIn('SHEPHERD_ENGINE_SMOKE="$PRODUCTS/$PRODUCT"', smoke)
+        self.assertIn("test_pi_engine_sdk.py", smoke)
+        ci = read(".github", "workflows", "ci.yml")
+        self.assertIn("SHEPHERD_ENGINE_SMOKE=.build/pi-engine", ci)
+        self.assertIn("test_pi_engine_sdk.py", ci)
 
     def test_signing_passes_the_engine_entitlements(self):
         sign = self.step("Sign")
