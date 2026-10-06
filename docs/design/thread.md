@@ -472,7 +472,14 @@ tools merge only with the same tool. Consecutive lines form one part of the turn
     (secondary) and Done (primary) in its header, the output in mono 12 scrolling both ways, and
     "The host clipped this output; the full text is in the agent's session file." beneath it when the
     host clipped it.
-  - ⌥-click or the context menu's Show Call opens the raw arguments; the menu also has
+  - Expanded lines include an input row before each call with saved arguments. For codemode,
+    the row reads "script" · "JavaScript" and immediately shows the first 12 lines of the saved
+    `code` argument as source text. Other tools read "input" · the tool name and open their saved
+    JSON arguments when clicked. Input rows toggle independently of output; "… n more lines"
+    opens the full saved input in the existing Copy/Done sheet. Missing arguments or empty source
+    add no input row. Live lines keep their existing
+    non-expanding presentation. User requirement: [Tool call details](boards/ToolCallDetails.md).
+  - ⌥-click or the context menu's Show Call still opens the raw arguments; the menu also has
     Review <file>, Open Output, and Copy Output.
 
 **Changes card** (`NWChangesCard`, ChangesCard(turn.changes); Main, NWThread): every finished turn
