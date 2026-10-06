@@ -156,6 +156,7 @@ struct CycleThinkingShortcutIntegrationTests {
 
     @MainActor
     private static func cyclingNewComposers() async throws {
+        AccessibilityNode.enable()
         try StubPi.installAsEngine()
         let listing = ModelListing(models: ["openai/gpt-5", "fixture/plain"], defaultModel: "openai/gpt-5",
             withoutThinking: ["fixture/plain"], thinkingLevels: ["openai/gpt-5": ["low", "medium", "high", "xhigh"]])
@@ -169,6 +170,10 @@ struct CycleThinkingShortcutIntegrationTests {
         vm.newThread.prompt = "Keep the opening prompt."
         let window = OffscreenWindow(size: CGSize(width: 1000, height: 700), NewThreadPage(vm: vm, chrome: PageHeaderChrome()))
         defer { window.close() }
+        try await eventuallyOnMain("the new-thread field to take the keyboard") {
+            window.layout()
+            return (window.window.firstResponder as? NSTextView)?.isFieldEditor == true
+        }
         let newThreadMonitor = try await readyMonitor(in: window)
         #expect(newThreadMonitor.handle(try key(in: window)))
         try await eventuallyOnMain("new thread to wrap to Low") { vm.newThread.thinking == .low }
@@ -188,6 +193,10 @@ struct CycleThinkingShortcutIntegrationTests {
         vm.newDesign.setThinking(.medium)
         vm.newDesign.brief = "Keep the design brief."
         window.show(NewDesignPage(vm: vm, chrome: PageHeaderChrome()))
+        try await eventuallyOnMain("the new-design field to take the keyboard") {
+            window.layout()
+            return (window.window.firstResponder as? NSTextView)?.isFieldEditor == true
+        }
         let newDesignMonitor = try await readyMonitor(in: window)
         #expect(newDesignMonitor.handle(try key(in: window)))
         try await eventuallyOnMain("new design to choose High") { vm.newDesign.thinking == .high }
