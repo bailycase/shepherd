@@ -360,6 +360,9 @@ page, and nothing here adds a control the user has to learn.
 
 ## Comments (DZCanvas, DZTweak, NWDesignTool)
 
+User reference for the list actions: [DesignComments.png](boards/DesignComments.png).
+[Checklist, control validation, and renders](evidence/design-comment-actions/README.md).
+
 **Built on the Mac** (`NWCommentPin`, `NWCommentThread`, `NWCommentCard`; docs/designs.md ›
 Comments), as below, with these choices the boards leave open:
 
@@ -371,6 +374,13 @@ Comments), as below, with these choices the boards leave open:
 - In the chat, the agent's reply inside the card has no turn footer, and the card ends at the
   first compaction in that reply: the compaction's line and everything after it are an ordinary
   reply under the card, with its own footer.
+- The Comments tab's card opens its board directly: select it, switch to its page, exit Present,
+  center the board in the canvas, and open its thread. A canvas pin opens in place without moving
+  the viewport. The tab remains available after opening a card.
+- Hovering a card reveals a text-only "Resolve" action in a 24pt small ghost button at
+  the header's trailing edge, visually replacing author and age without changing the card's
+  height. Keyboard focus and VoiceOver also reveal it; the card's named Resolve accessibility
+  action works at rest. The open and resolve buttons are siblings, with 24pt minimum hit areas.
 - A resolved comment leaves the canvas and the Comments tab (the chat keeps its card); nothing
   lists resolved comments yet. The Comments tab's count is the open comments' and the notes
   threads left (RefNoteBack), and it shows no count at zero; with none it is blank.
