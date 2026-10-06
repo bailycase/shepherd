@@ -112,6 +112,29 @@ extension PreviewTests {
         }
     }
 
+    @Test(arguments: ["working", "finished", "empty", "long"])
+    func sidebarWorkingSubagents(state sample: String) async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let space = Space(name: "Shepherd", path: workspace.dir.path)
+        let title = sample == "long" ? "Review the complete sidebar status and navigation behavior while background subagents are still working" : "Review sidebar status"
+        let (parent, tab) = try await workspace.agent(title, in: space, order: 0, status: .done)
+        let (other, otherTab) = try await workspace.agent("Fix the release notes", in: space, order: 1, status: .done)
+        if sample != "empty" {
+            try await workspace.seed(ShepherdState(spaces: [space], tabs: [tab, otherTab], agents: [parent, other]))
+            workspace.vm.applyAgentChildren(parent.id, [ChildRun(runID: "child", label: "reviewer", state: "running")])
+            if sample == "finished" {
+                workspace.vm.applyAgentChildren(parent.id, [ChildRun(runID: "child", label: "reviewer", state: "complete")])
+            }
+            #expect(workspace.vm.state.agents.first?.status == .done)
+            #expect(workspace.vm.sidebarLists.working.count == (sample == "finished" ? 0 : 1))
+            #expect(workspace.vm.sidebarLists.done.count == (sample == "finished" ? 2 : 1))
+        }
+        try await Preview.renderMatrix("sidebar-working-subagents-\(sample)", size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 650)) {
+            SidebarView(vm: workspace.vm).nwDensity(.standard)
+        }
+    }
+
     @Test(arguments: [NativeGoalState.working, .checking])
     func sidebarActiveGoal(state: NativeGoalState) async throws {
         let w = try PreviewWorkspace()

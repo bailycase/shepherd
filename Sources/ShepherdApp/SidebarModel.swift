@@ -145,6 +145,19 @@ struct SidebarSource: Equatable {
     /// Settings ▸ Experiments ▸ Design tool: This Mac's designs have their own group. Their agents
     /// never are: a design's chat is its agent's thread.
     var designs = false
+
+    /// Child work affects sidebar presentation, never the parent's actual turn status.
+    static func presentationState(_ state: ShepherdState, children: [AgentID: [ChildRun]]) -> ShepherdState {
+        var state = state
+        for index in state.agents.indices {
+            let agent = state.agents[index]
+            if (agent.status == .idle || agent.status == .done),
+               children[agent.id]?.contains(where: { !$0.isTerminal && $0.paused != true }) == true {
+                state.agents[index].status = .working
+            }
+        }
+        return state
+    }
 }
 
 enum SidebarDerivation {
