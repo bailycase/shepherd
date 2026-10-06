@@ -115,7 +115,10 @@ after(async () => {
 });
 
 const noticesAbout = (id) => h.messages.filter((m) => m.message.content.includes(id));
-const askingState = async (id) => (await h.call("wait", { ids: [id], timeoutSeconds: 30 }))[0];
+const askingState = async (id) => {
+  await until(() => ["complete", "failed", "stopped"].includes(h.card(id)?.state));
+  return h.call("result", { id });
+};
 const countOf = (text, needle) => text.split(needle).length - 1;
 
 test("a child is told to ask its parent and never the user, in its prompt and in its tool", async () => {
@@ -160,7 +163,7 @@ test("a child's question reaches its parent as a hidden notice that says what to
   assert.equal(h.card(child.id).question.text, "Which alias should I use?");
 });
 
-test("wait and result hand the parent the question, its questionID and the call that answers it", async () => {
+test("result hands the parent the question, its questionID and the call that answers it", async () => {
   const child = await h.call("start", { task: "ASK_PARENT:cache", role: "scout", mission: false });
   const asked = await askingState(child.id);
   assert.equal(asked.needsReply, true);
@@ -267,7 +270,7 @@ test("a working parent gets the question at its settlement boundary, several chi
     ids.push(child.id); files[child.id] = path.join(path.dirname(child.sessionFile), "status.json");
   }
   await until(() => ids.every((id) => h.card(id)?.needsAttention === true && h.card(id).state === "complete"));
-  // Not read through result or wait, which would consume the notices this test is about.
+  // Not read through result, which would consume the notices this test is about.
   for (const id of ids) questionIDs[id] = JSON.parse(fs.readFileSync(files[id], "utf8")).questionID;
   assert.equal(h.messages.length, 0, "a working parent is not interrupted by a question");
   const boundary = h.events.get("agent_before_settle")({ entries: [], outcome: "completed" });
@@ -294,16 +297,18 @@ test("a working parent gets the question at its settlement boundary, several chi
   for (const id of ids) assert.match((await askingState(id)).output, /reply:Use the default\./);
 });
 
-test("a wait for all hands the parent a child that asked without holding it for the others", async () => {
+test("a question wakes the parent without waiting for another child's completion", async () => {
+  h.messages.length = 0;
   const slow = await h.call("start", { task: "SLOWER work", role: "scout", mission: false });
-  const asking = await h.call("start", { task: "ASK_PARENT:wait", role: "scout", mission: false });
-  const started = Date.now();
-  const results = await h.call("wait", { ids: [slow.id, asking.id], all: true, timeoutSeconds: 30 });
-  const byID = Object.fromEntries(results.map((r) => [r.id, r]));
-  assert.equal(byID[asking.id].needsReply, true);
-  assert(byID[asking.id].parentAction.includes(byID[asking.id].questionID));
-  assert.equal(byID[slow.id].state, "running", `the slow child is still running (${Date.now() - started} ms)`);
+  const asking = await h.call("start", { task: "ASK_PARENT:async", role: "scout", mission: false });
+  await until(() => noticesAbout(asking.id).length === 1);
+  assert.equal(noticesAbout(asking.id)[0].options.triggerTurn, true);
+  const asked = await h.call("result", { id: asking.id });
+  assert.equal(asked.needsReply, true);
+  assert(asked.parentAction.includes(asked.questionID));
+  assert.equal(h.card(slow.id).state, "running", "the question does not wait for the slow child");
   await h.call("cancel", { id: slow.id });
+  await askingState(asking.id);
   await h.call("cancel", { id: asking.id });
 });
 

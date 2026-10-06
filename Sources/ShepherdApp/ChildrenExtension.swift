@@ -652,7 +652,7 @@ enum ChildrenExtension {
             if (pendingNotices.size && !noticeTimer) { noticeTimer = setTimeout(flushIdleNotices, 0); noticeTimer.unref(); }
           });
           // The actionable boundary batches unread results into one continuation, not one queued
-          // follow-up turn per child. Explicit result/wait reads remove their pending notices.
+          // follow-up turn per child. Explicit result reads remove their pending notices.
           pi.on("agent_before_settle", (event) => {
             if (event.outcome !== "completed") { parentInterrupted = true; return; }
             if (!pendingNotices.size) return;
@@ -662,9 +662,6 @@ enum ChildrenExtension {
             return { entries: [...event.entries, { type: "custom_message", ...noticeMessage(content) }],
               continue: event.continue || (!userInputWaiting && !directInputWaiting && notices.some((n) => n.wake)) };
           });
-          // Run id -> the shepherd_child_wait calls watching it. A completion inside a wait is that
-          // wait's result: a notice as well would wake the parent for a second turn on it.
-          const waiters = new Map();
           function command(run, type, fields = {}, timeout = 10_000) {
             if (!run.proc || run.exited) return Promise.reject(new Error("Child is not running"));
             if (run.pending.size >= 20) return Promise.reject(new Error("Child command queue is full"));
@@ -738,7 +735,7 @@ enum ChildrenExtension {
             save(run); run.resolveClosed();
             const notice = `${run.state}\n${run.error || run.output || "No text result"}\nSession: ${run.sessionFile}`;
             if (run.state === "complete" && run.needsReply && run.questionNotified) return;
-            if (waiters.get(run.id)) run.heldNotice = notice; else notify(run, notice);
+            notify(run, notice);
           }
           function receive(run, event) {
             if (run.exited) return;
@@ -909,7 +906,9 @@ enum ChildrenExtension {
             return { id: run.id, delivery: "accepted or queued", mode };
           }
           async function controls(run) {
-            if (run.controlBusy || !current(run)) return;
+            if (!current(run)) return;
+            // A watch event during an in-flight receipt must be rescanned, not dropped.
+            if (run.controlBusy) { run.controlsPending = true; return; }
             run.controlBusy = true;
             try {
               const stopFile = path.join(run.dir, "control", "stop.json");
@@ -943,7 +942,10 @@ enum ChildrenExtension {
                 save(run);
               }
             } catch { /* The inspector may not have created an inbox yet. */ }
-            finally { run.controlBusy = false; }
+            finally {
+              run.controlBusy = false;
+              if (run.controlsPending) { run.controlsPending = false; void controls(run); }
+            }
           }
           // The app's native thread cards drive children over the extension socket: Shepherd sends
           // childCommand frames, this replies childCommandResult, calling the same functions the tools use.
@@ -1131,7 +1133,7 @@ enum ChildrenExtension {
           pi.registerTool({ name: "shepherd_child_agents", label: "child agents", description: "List effective agent profiles, sources and unsupported-field diagnostics. Reads only Shepherd's pi/agents folder. Invalid files stay visible as diagnostics and cannot run.",
             parameters: Type.Object({}), async execute(_id, _p, _s, _u, ctx) { return result({ defaults, ...discoverChildAgents(ctx, defaults.scope) }); } });
           pi.registerTool({ name: "shepherd_child_start", label: "start child", parameters: startSchema,
-            description: "Start an owned background Pi helper. Use shepherd_child_agents for discovered profiles. Explicit call overrides profile, then Shepherd defaults, then parent model/thinking. Fresh or fork context; tools intersect the parent allowlist. Cwd is not a sandbox. Progress stays in the child record. A child never reaches the user: when it is blocked it asks you (needsReply, in a notice and in wait/result with a questionID): answer it yourself if you can with shepherd_child_resume and that questionID, else ask the user in your own reply and pass their answer down. delivery:report stores completion without waking the parent, so the user can keep chatting; delivery:continue resumes dependent work; a question wakes you in either. Result/wait reads consume pending notices. " + (missionsOn ? "Default creates a mission; mission:false opts out. " : "") + "No nested delegation or automatic worktrees.",
+            description: "Start an owned background Pi helper. Use shepherd_child_agents for discovered profiles. Explicit call overrides profile, then Shepherd defaults, then parent model/thinking. Fresh or fork context; tools intersect the parent allowlist. Cwd is not a sandbox. Progress stays in the child record. A child never reaches the user: when it is blocked it asks you (needsReply, in a notice and result with a questionID): answer it yourself if you can with shepherd_child_resume and that questionID, else ask the user in your own reply and pass their answer down. delivery:report stores completion without waking the parent, so the user can keep chatting; delivery:continue resumes dependent work; a question wakes you in either. Result reads consume pending notices. For dependent work use delivery:continue and end your turn; completion resumes you. Do not poll child_result. " + (missionsOn ? "Default creates a mission; mission:false opts out. " : "") + "No nested delegation or automatic worktrees.",
             async execute(id, p, signal, _update, ctx) { return result(await start(p, signal, ctx, undefined, id)); } });
           // The parent's answer to a child's question, from either tool with the questionID. A child that asked is told to finish
           // its turn, and its process ends when that turn settles, so an answer sent into the turn is lost with it. The answer
@@ -1169,38 +1171,6 @@ enum ChildrenExtension {
               // The list names the children that wait on an answer, so a question is never lost with its notice.
               return result(p.id ? forParent(get(p.id)) : [...runs.values()].map((r) => ({ id: r.id, role: r.role, state: r.state, task: clip(r.task, 160),
                 ...(r.needsReply ? { needsReply: true, questionID: r.questionID, question: r.questionText } : {}) })));
-            } });
-          pi.registerTool({ name: "shepherd_child_wait", label: "wait for children", description: "Wait for selected children, up to 60 seconds. New user input ends the wait immediately without stopping children; waitInterrupted names this outcome. Timeout or cancellation also leaves children running. A child that asked a question (needsReply, with a questionID and parentAction) ends a wait for all. Returns bounded results for up to 16 ids.",
-            parameters: Type.Object({ ids: Type.Array(idSchema, { minItems: 1, maxItems: 16 }), all: Type.Optional(Type.Boolean()), timeoutSeconds: Type.Optional(Type.Number({ minimum: 0, maximum: 60 })) }),
-            async execute(_id, p, signal) {
-              const selected = p.ids.map(get), watched = [...new Set(selected)], deadline = Date.now() + (p.timeoutSeconds ?? 30) * 1000;
-              const inputVersion = parentInputVersion;
-              for (const r of watched) waiters.set(r.id, (waiters.get(r.id) ?? 0) + 1);
-              let answered = false;
-              try {
-                while (Date.now() < deadline) {
-                  signal?.throwIfAborted();
-                  if (userInputWaiting || directInputWaiting || parentInputVersion !== inputVersion) break;
-                  const done = selected.map((r) => !["running", "queued"].includes(r.state));
-                  // A child that asked waits on the parent, so a wait for all hands it over without holding it up.
-                  const asked = selected.some((r) => r.needsReply && !["running", "queued"].includes(r.state));
-                  if (p.all ? done.every(Boolean) || asked : done.some(Boolean)) break;
-                  await new Promise((r) => setTimeout(r, 100));
-                }
-                const interrupted = userInputWaiting || directInputWaiting || parentInputVersion !== inputVersion;
-                const value = { ...result(selected.map((r) => forParent(r, { output: clip(r.output, 4096),
-                  ...(interrupted ? { waitInterrupted: "user_input" } : {}) }))), ...(interrupted ? { terminate: true } : {}) };
-                answered = true;
-                return value;
-              } finally {
-                for (const r of watched) {
-                  const left = waiters.get(r.id) - 1;
-                  if (left > 0) waiters.set(r.id, left); else waiters.delete(r.id);
-                  // This wait's result carries a completion it saw; a cancelled wait hands it back.
-                  if (answered) { r.heldNotice = undefined; pendingNotices.delete(r.id); }
-                  else if (left <= 0 && r.heldNotice) { const notice = r.heldNotice; r.heldNotice = undefined; notify(r, notice); }
-                }
-              }
             } });
           pi.registerTool({ name: "shepherd_child_cancel", label: "cancel child", description: "Clear queued work, abort, and terminate an owned child. Returns only after its process exits. Session history remains available for explicit continuation.",
             parameters: Type.Object({ id: idSchema }), async execute(_id, p) { const run = get(p.id); await stop(run); dismissQuestion(run); pendingNotices.delete(run.id); return result(summary(run)); } });

@@ -170,7 +170,8 @@ test("nested output is persisted as display-only bounded excerpts", { timeout: 6
     const result = reply.data.messages.find((m) => m.role === "toolResult" && m.toolName === "codemode");
     assert.equal(result.nestedCalls.calls.length, 6);
     const excerpts = result.details.calls;
-    assert.ok(excerpts.every((c) => Buffer.byteLength(c.output) <= 8192 && c.outputTruncated));
+    assert.ok(excerpts.every((c) => Buffer.byteLength(c.output) <= 8192 && c.outputTruncated),
+      JSON.stringify(excerpts.map((c) => ({ id: c.id, bytes: Buffer.byteLength(c.output), truncated: c.outputTruncated }))));
     assert.ok(excerpts.reduce((n,c) => n + Buffer.byteLength(c.output),0) <= 32768);
     assert.ok(excerpts.every((c) => !c.output.includes("\uFFFD")));
     assert.doesNotMatch(JSON.stringify(turn.requests.at(-1).messages), /🐑/);

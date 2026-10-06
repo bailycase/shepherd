@@ -339,9 +339,9 @@ the turn has finished, the changes card and the footer end it. A running turn ha
     pi's reply has a row): the turn ends in live thinking, "Thinking…" shimmering. When pi's
     thinking streams it is the same line, and it settles into "Thought for Ns".
   - Replying: the text being written is the indicator; no line joins it.
-  - A running call the subagent record or the tray stands for (`shepherd_child_wait`) still
-    counts as moving: the parent waiting on its subagents shows nothing of its own. What moves
-    then is in the tray: a running row's words shimmer beside its still dot (Subagents › A row).
+  - Async children keep moving in the tray after their parent ends its turn. A running row's
+    words shimmer beside its still dot (Subagents › A row); no standalone wait tool keeps the
+    parent turn open. Legacy wait calls in saved sessions remain hidden.
   - A pending question replaces all of it with the composer's question panel. Waiting isn't
     working: a steering message in Up next waits still (Up next).
   - A counting timer is motion enough: the running call's clock ticks beside its shimmer in

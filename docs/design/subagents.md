@@ -111,7 +111,8 @@ parent's answer all draw as `queued`; a subagent never draws `attention`, which 
   and a 10pt chevron; a real button with the row hover; with no run to open, no chevron, its
   place kept, and not a button). "Started 3 subagents · worker · reviewer
   · tests" (at most six names, then "+2 more") takes the first spawn call's place; later spawns
-  and the parent's `shepherd_child_wait` and `shepherd_child_result` calls leave no line, and the
+  and the parent's `shepherd_child_result` calls leave no line. Legacy `shepherd_child_wait`
+  calls in saved sessions remain hidden; the standalone tool is no longer registered. The
   activity lines around them run on as one (a burst of one kind still merges across them). Once every run has finished, "3 subagents finished · 45m ·
   7 files · +318 −64" (the span from the first start to the last end, "1 failed" when any did,
   the files touched, the combined diff) sits where they finished: before the first part of the
