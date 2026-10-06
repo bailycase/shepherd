@@ -127,6 +127,8 @@ Sources/
                        PiModelCatalog, PiConfig,
                        PiSessionPreview (a thread from pi's session file),
                        InstructionsStore (Settings ▸ Instructions' files and their history),
+                       SubagentDefinitionsStore (Settings ▸ Subagents' owned Markdown files; the
+                       runtime parser, safe writes and default restoration),
                        SuggestionsStore (Suggested instructions: settings, waiting, added),
                        SkillsStore (a host's skills in its pi home's skills/; docs/skills.md),
                        SkillsGit (the partial clones skills install from),
@@ -238,7 +240,8 @@ Sources/
       QuitConfirmation (QuitDialog)
     CommandPalette, CommandPaletteView, PaletteContentSearch, Keybindings (KeybindingsStore)
     SettingsView, SettingsWindow, SettingsComponents, Settings{Appearance, Terminal, Agents,
-      Worktrees, Pi, Instructions, Skills, Remote, Keyboard, Advanced, Experiments}, AppSettings,
+      Worktrees, Pi, Instructions, Subagents, Skills, Remote, Keyboard, Advanced, Experiments}, AppSettings,
+      SubagentDefinitionsModel (the owned-file list, drafts and confirmation actions),
       InstructionsModel (the Instructions page's files, drafts and sync), InstructionsEditor (its
       NSTextView), SuggestionsModel (the Experiments page's suggestions), SkillsSheets (Browse
       skills.sh, Add from repo), YourPiModel (Settings ▸ Pi ▸ From your pi, and the first launch's

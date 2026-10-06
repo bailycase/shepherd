@@ -432,6 +432,13 @@ final class ShepherdViewModel {
     var settingsSection: SettingsSection = .appearance
     @ObservationIgnored var madeProjects: ProjectsModel?
     @ObservationIgnored var madeProjectCookies: ProjectCookiesModel?
+    @ObservationIgnored var madeSubagentDefinitions: SubagentDefinitionsModel?
+    var subagentDefinitions: SubagentDefinitionsModel {
+        if let madeSubagentDefinitions { return madeSubagentDefinitions }
+        let model = SubagentDefinitionsModel(pi: server.pi)
+        madeSubagentDefinitions = model
+        return model
+    }
     /// Debug builds: the component gallery over the workspace.
     var showComponentGallery = false
     /// ⌘K command palette visibility.

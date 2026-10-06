@@ -51,9 +51,8 @@
     thread you sent one to gets the tool.", shown only while Settings ▸ Experiments ▸ Design tool
     is on (not drawn; it follows the rows above). With the Design tool off no thread loads it,
     whatever the row says; a running agent follows either change at its next start.
-The Projects board adds a top-level **Subagents** page. Native subagents, Subagent display
-and the defaults below now live there. Pi keeps the engine, imported configuration and
-other bundled-extension controls.
+[SubagentsSettings](settings-subagents.md) revision 598 makes the top-level Subagents page the
+owned-file manager. Native subagents, Subagent display and the defaults below remain on Pi.
 
 - **Native subagent defaults** (only while Native subagents is on; footnote "Precedence: explicit
   call → agent file → these defaults → parent. Child tools run with your account's access."):
@@ -63,8 +62,6 @@ other bundled-extension controls.
   - Thinking, no description: Inherit parent, a divider, then Off · Minimal · Low · Medium · High ·
     Xhigh · Max.
   - Context, "Start each child fresh, or fork the parent's conversation.": Fresh · Fork.
-  - Agent discovery, "Project profiles require pi project trust. Files stay the source of truth.":
-    User + project · User · Project · Bundled only.
 - **No Updates group** (a departure from SettingsPi, which draws Update pi daily, Update extensions
   daily and a version row with Check now and Update now): Shepherd runs its own pi, which ships
   inside the app and updates only with it, so nothing on the page runs `pi update` or checks npm

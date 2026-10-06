@@ -35,7 +35,6 @@ parent launch.
 | Model | Inherit parent, or a model ID | Inherit parent |
 | Thinking | Inherit parent, Off, Minimal, Low, Medium, High, Xhigh, Max | Inherit parent |
 | Context | Fresh, Fork | Fresh |
-| Agent discovery | User + project, User, Project, Bundled only | User + project |
 
 Concurrency is shared across direct calls and workflows. A parent retains up to 64 child records
 and 32 workflows, and runs at most four workflows at once.
@@ -60,33 +59,41 @@ from its pi home and retains `SHEPHERD_CLIPROXYAPI_CONFIG`, so direct starts, wo
 resumes use the same managed catalog and authentication as the parent. Other project and parent
 CLI-only extensions still need explicit profile `extensions` entries.
 
-`shepherd_child_agents` lists effective profiles, where each came from, and any diagnostics.
-Agent Markdown files stay the source of truth, and Shepherd never edits them. Pi's agent
-directory comes from `getAgentDir()`, which honors `PI_CODING_AGENT_DIR`: Shepherd's own pi home,
-which its launcher pins ([pi-home.md](pi-home.md)).
+`shepherd_child_agents` lists effective profiles, their owned source files, and diagnostics.
+Settings > Subagents manages the same Markdown definitions. Both use the exported parser in
+`shepherd-children-config.ts` and pi's frontmatter parser, not a second YAML implementation.
 
-Discovery order, from lowest to highest precedence:
+Only `<Shepherd support>/pi/agents` supplies definitions. Pi's `getAgentDir()` is pinned by
+Shepherd's launcher. Project `.pi/agents`, project `.agents`, the user's `~/.agents`, package
+agent directories, `PI_SUBAGENT_EXTRA_AGENT_DIRS`, and settings overrides are not read. The
+retired discovery preference is ignored. This replaces the former multi-source discovery
+policy. There is no automatic import or migration from those folders.
 
-1. Shepherd's bundled scout, reviewer, planner, and worker profiles.
-2. Agent directories declared by configured, already installed pi packages
-   (`pi-subagents.agents` or `pi.subagents.agents`). Nothing is installed and no registry is
-   scanned.
-3. `PI_SUBAGENT_EXTRA_AGENT_DIRS`, then `<pi agent dir>/agents`, then `~/.agents`.
-4. The nearest project root's `.agents`, then `.pi/agents` (`.pi/agents` wins within the
-   project). Pi's `CONFIG_DIR_NAME` replaces `.pi` on rebranded distributions.
+On first use, missing scout, reviewer, planner and worker files are created without replacing
+existing files, then `.shepherd-defaults-v1` records initialization. These defaults preserve the
+original tools, instructions, append mode and project-context inheritance. They are ordinary
+editable files. Deleting one persists across launches, with no in-memory fallback. Restore
+defaults asks for confirmation, restores those four files and preserves custom files.
 
-The Agent discovery setting selects user, project, both, or bundled only; package scope follows
-the same choice.
+Settings filters names, descriptions, filenames and diagnostics. New subagent and open-row
+use the native Markdown editor. Save validates before writing and compares a content hash;
+a stale save, delete or restore fails rather than replacing another editor's changes. Delete
+asks first. Unsaved navigation asks to discard. Show in Finder reveals the owned folder;
+Open in editor validates the regular file's identity before passing its URL to macOS. Neither action reads another profile root.
+Edits apply to new children. Existing runs and their continuations keep their captured profile.
 
-- **What is read:** Markdown files, recursively. `.chain.md`, skill directories, `.git`,
-  `node_modules`, and nested project roots are skipped.
-- **Limits:** directory symlinks are not followed. A project file symlink that escapes its agent
-  directory is rejected. Files are capped at 128 KiB and traversal at 16 levels.
-- **Trust:** project profiles require pi's saved trust for the current directory. A child
-  working in a different directory needs a saved trust decision for that directory or an
-  ancestor; the parent's temporary trust does not carry over. A skipped project root produces a
-  diagnostic. Children still run with `--no-approve`, and trusting discovery does not enable
-  ambient project extensions.
+- Markdown traversal skips hidden folders, skills, node_modules and `.chain.md` files, with at
+  most 512 definitions, 512 folders, 16 nesting levels and 128 KiB of UTF-8 per file. File and directory
+  symlinks do not supply definitions. Broken files stay visible with their actual diagnostic.
+  Duplicate names fail every affected definition rather than selecting a fallback. Save and
+  Restore refuse new duplicates and catalog overflow before writing. New paths cannot target
+  the `skills` or `node_modules` directories that discovery ignores.
+- Settings invokes the bundled node and bundled pi parser locally, with no model call. Parser
+  work runs off the main actor and has a 10-second timeout and 8 MiB output limit. File writes
+  are descriptor-relative, no-follow, same-directory atomic replacements.
+- Profile ownership does not remove project-context or explicit skill/extension support.
+  A child working elsewhere still needs that directory's saved pi trust for inherited skills.
+  The parent's temporary trust does not carry over. Children still run with `--no-approve`.
 
 ### Supported profile fields
 
@@ -114,10 +121,8 @@ the same choice.
   each prompt, and disallowed calls are blocked. Nested delegation tools stay forbidden.
   `shepherd_parent_message` is always available.
 
-`subagents.agentOverrides` entries fill fields that a custom file leaves out; project entries
-beat user entries, and explicit file fields still win. Overrides on Shepherd's bundled profiles
-fail closed and name the affected agent. `disableBuiltins` is honored. Other pi-subagents
-settings produce diagnostics and are not imported. This is not full pi-subagents parity.
+`subagents.agentOverrides` and `disableBuiltins` no longer affect native definitions. Edit or
+delete the owned files instead. This is not full pi-subagents parity.
 
 ## Child tools
 
@@ -531,7 +536,8 @@ PI_PACKAGE_DIR="$(npm root -g)/@earendil-works/pi-coding-agent" \
 
 - **Isolation:** the node tests isolate `HOME`, pi settings, and discovery roots, and use a local
   fake provider. No model request is made.
-- **Coverage:** discovery, trust and precedence, profile fields and overrides, model and default
+- **Coverage:** owned-folder isolation, initialization, deletion and restoration, profile fields,
+  trust and model precedence, model and default
   propagation, resume, mission isolation and interruption, workflow sequencing, steering,
   errors and cancellation, evaluator limits, command-name collisions, the RPC fallbacks, and the
   inspector's input handling. Managed CLIProxyAPI runs exercise start, resume and workflows against

@@ -77,7 +77,6 @@ final class AppSettings {
         static let childModel = "shepherd.pi.children.model"
         static let childThinking = "shepherd.pi.children.thinking"
         static let childContext = "shepherd.pi.children.context"
-        static let childScope = "shepherd.pi.children.scope"
         static let shellPath = "shepherd.pane.shell"
         static let uiDensity = "shepherd.ui.density"
         static let uiTextScale = "shepherd.ui.textScale"
@@ -104,7 +103,7 @@ final class AppSettings {
             defaultThinking, defaultServiceTier, goalCrossProviderEvaluation, autoNameAgents, queueDelivery, trimToolOutput, deferTools, codemode, compactAtPercent, shellPath,
             agentMessages, piPanesExtension, piReviewExtension, piSubagentsExtension, piNativeSubagents,
             piMCPExtension, piBrowserExtension, piDesignReferences,
-            childConcurrency, childModel, childThinking, childContext, childScope,
+            childConcurrency, childModel, childThinking, childContext,
             uiDensity, uiTextScale, sidebarWidth, sidebarRowDensity,
             sidebarStyle, sidebarGroupByHost, sidebarKeepIdleDays,
             remoteListenerEnabled, remoteListenerPort,
@@ -324,16 +323,11 @@ final class AppSettings {
         didSet { store.set(childContext, forKey: Key.childContext) }
     }
 
-    var childScope: String {
-        didSet { store.set(childScope, forKey: Key.childScope) }
-    }
-
     var childEnvironment: [String: String] {
         ["SHEPHERD_CHILD_CONCURRENCY": String(min(16, max(1, childConcurrency))),
          "SHEPHERD_CHILD_MODEL": childModel.trimmingCharacters(in: .whitespacesAndNewlines),
          "SHEPHERD_CHILD_THINKING": childThinking,
-         "SHEPHERD_CHILD_CONTEXT": childContext,
-         "SHEPHERD_CHILD_SCOPE": childScope]
+         "SHEPHERD_CHILD_CONTEXT": childContext]
     }
 
     /// Shell for terminals, which are not an agent's pi process (⌘D, and the
@@ -527,8 +521,6 @@ final class AppSettings {
         childThinking = ["", "off", "minimal", "low", "medium", "high", "xhigh", "max"].contains(childReasoning) ? childReasoning : ""
         let context = store.string(forKey: Key.childContext) ?? "fresh"
         childContext = ["fresh", "fork"].contains(context) ? context : "fresh"
-        let scope = store.string(forKey: Key.childScope) ?? "both"
-        childScope = ["user", "project", "both", "bundled"].contains(scope) ? scope : "both"
         shellPath = store.string(forKey: Key.shellPath) ?? Defaults.shellPath
         let density = store.double(forKey: Key.uiDensity)
         uiDensity = min(max(density == 0 ? 1 : density, Self.uiDensityRange.lowerBound), Self.uiDensityRange.upperBound)
@@ -630,7 +622,6 @@ final class AppSettings {
         childModel = ""
         childThinking = ""
         childContext = "fresh"
-        childScope = "both"
         shellPath = Defaults.shellPath
         worktreeBaseMode = .fresh
         worktreeFetchBeforeCreate = true

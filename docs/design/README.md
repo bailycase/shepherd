@@ -83,6 +83,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | SettingsProjects | [settings-projects](settings-projects.md), [project-mcp](project-mcp.md) | Settings > Projects | Built |
 | ProjectInstructions | [project-instructions](project-instructions.md) | Settings > Projects > Instructions | Built |
 | ProjectBrowser | [project-browser](project-browser.md) | Settings > Projects > Browser | Built |
+| SubagentsSettings | [settings-subagents](settings-subagents.md) | Settings › Subagents | Built |
 | SettingsPi | [settings-pi](settings-pi.md) | Settings › Pi | Built |
 | SettingsPiSignIn | [settings-pi](settings-pi.md) | Settings › Pi ▸ Sign-in | Built (departures) |
 | SettingsPiSignInKeys | [settings-pi](settings-pi.md) | Settings › Pi ▸ Sign-in (API keys, custom providers, the provider menu) | Built |
@@ -318,6 +319,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | [queue](queue.md) | Read when you change the queue above the composer, steering, or Send now. |
 | [settings-instructions](settings-instructions.md) | Read when you change Settings ▸ Instructions or its per-host view. |
 | [settings-mcp-experiments](settings-mcp-experiments.md) | Read when you change Settings ▸ MCP servers or Experiments. |
+| [settings-subagents](settings-subagents.md) | Read when you change the owned Markdown profile list and editor. |
 | [settings-pi](settings-pi.md) | Read when you change Settings ▸ Pi: Slash commands, Sign-in, the CLIProxyAPI connection, or From your pi. |
 | [settings-skills](settings-skills.md) | Read when you change Settings ▸ Skills, Browse skills.sh or Add from repo. |
 | [settings](settings.md) | Read when you change a Settings page other than Pi, Instructions, Skills, MCP servers and Experiments. |

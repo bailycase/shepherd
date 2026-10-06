@@ -252,11 +252,11 @@ enum ChildrenExtension {
           if (matches.length > 1) {
             return `Ambiguous agent "${name}": it names ${matches.map((a) => `${a.name} (${a.source}${a.filePath ? `, ${a.filePath}` : ""})`).join(" and ")}. Pass one profile's full name.`;
           }
-          const roles = agents.filter((a) => a.source === "bundled").map((a) => a.name);
-          const profiles = agents.filter((a) => a.source !== "bundled").map((a) => a.name);
+          const roles = Object.keys(ROLES).filter((name) => agents.some((a) => a.name === name));
+          const profiles = agents.filter((a) => !Object.hasOwn(ROLES, a.name)).map((a) => a.name);
           const wanted = nameTokens(name);
           const close = agents.map((a) => a.name).filter((other) => { const tokens = nameTokens(other); return within(wanted, tokens) || within(tokens, wanted); }).slice(0, 3);
-          return `Unknown agent "${name}". Roles: ${roles.join(", ") || "none (Shepherd's bundled roles are disabled)"}. `
+          return `Unknown agent "${name}". Roles: ${roles.join(", ") || "none (the default files were removed)"}. `
             + `Profiles: ${profiles.join(", ") || "none discovered"}. `
             + (close.length ? `Did you mean ${close.join(" or ")}? ` : "")
             + "Pass one of them as agent (role is an alias); shepherd_child_agents lists each with its source.";
@@ -1083,7 +1083,7 @@ enum ChildrenExtension {
               if (!supported) throw new Error("Shepherd native children require Pi 0.85.1 or newer");
               signal?.throwIfAborted(); capacity();
               if (runs.size >= MAX_RUNS) throw new Error("64 retained children reached; start a new parent session");
-              if (params.agent && params.role) throw Error("Pass either an agent profile or a role, not both: agent and role name the same thing (role is an alias for agent). Use agent for a profile from shepherd_child_agents, or role for one of the bundled roles (scout, reviewer, planner, worker).");
+              if (params.agent && params.role) throw Error("Pass either an agent profile or a role, not both: agent and role name the same thing (role is an alias for agent). Use agent for a profile from shepherd_child_agents, or role for one of the default files (scout, reviewer, planner, worker).");
               const cwd = fs.realpathSync(path.resolve(ctx.cwd, params.cwd ?? "."));
               if (!fs.statSync(cwd).isDirectory()) throw new Error("Child cwd must be a directory");
               const targetContext = childTargetContext(ctx, cwd);
@@ -1128,7 +1128,7 @@ enum ChildrenExtension {
                 return await launch(run, params.task, signal);
               } catch (error) { if (!run.proc) { run.state = "failed"; run.endedAt = Date.now(); run.error = clip(error.message); save(run); } throw error; }
           }
-          pi.registerTool({ name: "shepherd_child_agents", label: "child agents", description: "List effective agent profiles, sources and unsupported-field diagnostics. Reads user files and trusted project files without changing them.",
+          pi.registerTool({ name: "shepherd_child_agents", label: "child agents", description: "List effective agent profiles, sources and unsupported-field diagnostics. Reads only Shepherd's pi/agents folder. Invalid files stay visible as diagnostics and cannot run.",
             parameters: Type.Object({}), async execute(_id, _p, _s, _u, ctx) { return result({ defaults, ...discoverChildAgents(ctx, defaults.scope) }); } });
           pi.registerTool({ name: "shepherd_child_start", label: "start child", parameters: startSchema,
             description: "Start an owned background Pi helper. Use shepherd_child_agents for discovered profiles. Explicit call overrides profile, then Shepherd defaults, then parent model/thinking. Fresh or fork context; tools intersect the parent allowlist. Cwd is not a sandbox. Progress stays in the child record. A child never reaches the user: when it is blocked it asks you (needsReply, in a notice and in wait/result with a questionID): answer it yourself if you can with shepherd_child_resume and that questionID, else ask the user in your own reply and pass their answer down. delivery:report stores completion without waking the parent, so the user can keep chatting; delivery:continue resumes dependent work; a question wakes you in either. Result/wait reads consume pending notices. " + (missionsOn ? "Default creates a mission; mission:false opts out. " : "") + "No nested delegation or automatic worktrees.",
@@ -1448,20 +1448,20 @@ enum ChildrenExtension {
         import { CONFIG_DIR_NAME, getAgentDir, parseFrontmatter, SettingsManager, DefaultPackageManager, ProjectTrustStore, loadSkills } from "@earendil-works/pi-coding-agent";
 
         export const bundledAgents = {
-          scout: { tools: ["read", "grep", "find", "ls"], prompt: "Find relevant code and facts. Return concise findings with file paths. Do not edit files." },
-          reviewer: { tools: ["read", "grep", "find", "ls"], prompt: "Review for correctness and security. Report actionable findings with paths and evidence. Do not edit files." },
-          planner: { tools: ["read", "grep", "find", "ls"], prompt: "Inspect the code and propose a bounded implementation plan. Do not edit files." },
-          worker: { tools: ["read", "grep", "find", "ls", "bash", "edit", "write"], prompt: "Implement only the assigned task. Inspect local conventions, preserve unrelated work, and run focused checks. Never commit or push." },
+          scout: { description: "Find relevant code and facts. Do not edit files.", tools: ["read", "grep", "find", "ls"], prompt: "Find relevant code and facts. Return concise findings with file paths. Do not edit files." },
+          reviewer: { description: "Review for correctness and security. Do not edit files.", tools: ["read", "grep", "find", "ls"], prompt: "Review for correctness and security. Report actionable findings with paths and evidence. Do not edit files." },
+          planner: { description: "Reads the code and proposes a bounded plan before anyone starts editing.", tools: ["read", "grep", "find", "ls"], prompt: "Inspect the code and propose a bounded implementation plan. Do not edit files." },
+          worker: { description: "Implement only the assigned task and run focused checks.", tools: ["read", "grep", "find", "ls", "bash", "edit", "write"], prompt: "Implement only the assigned task. Inspect local conventions, preserve unrelated work, and run focused checks. Never commit or push." },
         };
         export const thinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
         export function childDefaults(env = process.env) {
           const concurrency = Number(env.SHEPHERD_CHILD_CONCURRENCY ?? 4);
           const thinking = env.SHEPHERD_CHILD_THINKING || undefined;
           const context = env.SHEPHERD_CHILD_CONTEXT || "fresh";
-          const scope = env.SHEPHERD_CHILD_SCOPE || "both";
+          const scope = "shepherd";
           if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 16) throw Error("Child concurrency must be 1..16");
           if (thinking && !thinkingLevels.includes(thinking)) throw Error("Invalid child thinking default");
-          if (!["fresh", "fork"].includes(context) || !["user", "project", "both", "bundled"].includes(scope)) throw Error("Invalid child discovery/context defaults");
+          if (!["fresh", "fork"].includes(context)) throw Error("Invalid child context default");
           return { concurrency, thinking, context, scope, model: env.SHEPHERD_CHILD_MODEL || undefined };
         }
         const list = (value, field) => {
@@ -1500,101 +1500,126 @@ enum ChildrenExtension {
           return { ...ctx, cwd, isProjectTrusted: () => trusted };
         }
 
-        export function discoverChildAgents(ctx, scope) {
-          const agents = new Map(Object.entries(bundledAgents).map(([name, a]) => [name, { ...a, name, description: a.prompt, source: "bundled", inheritProjectContext: true, systemPromptMode: "append" }]));
-          const diagnostics = [], roots = [];
-          const agentDir = getAgentDir();
-          const trusted = ctx.isProjectTrusted?.() === true;
-          let projectRoot = ctx.cwd;
-          while (!directory(path.join(projectRoot, CONFIG_DIR_NAME)) && !directory(path.join(projectRoot, ".agents"))) {
-            const parent = path.dirname(projectRoot); if (parent === projectRoot) { projectRoot = undefined; break; } projectRoot = parent;
+        // Settings and launches use this exact parser. Invalid files remain visible, never a fallback.
+        export function parseChildAgent(text, file) {
+          const { frontmatter: f, body } = parseFrontmatter(text);
+          if (!f || typeof f !== "object" || Array.isArray(f)) throw Error("Agent frontmatter must be an object");
+          const unknown = Object.keys(f).filter((key) => !supported.has(key));
+          if (unknown.length) throw Error(`Unsupported agent fields: ${unknown.join(", ")}`);
+          if (typeof f.name !== "string" || !f.name.trim() || typeof f.description !== "string" || !f.description.trim()) throw Error("An agent needs a name and description");
+          if (f.package !== undefined && (typeof f.package !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(f.package))) throw Error("Invalid agent package");
+          const name = f.package ? `${f.package}.${f.name}` : f.name;
+          if (name.length > 80 || f.description.length > 16384) throw Error("Agent name or description is too long");
+          for (const field of ["inheritProjectContext", "inheritSkills", "disabled"]) if (f[field] !== undefined && typeof f[field] !== "boolean") throw Error(`Invalid ${field}`);
+          const thinking = f.thinking === false ? "off" : f.thinking;
+          if (thinking !== undefined && !thinkingLevels.includes(thinking)) throw Error("Invalid thinking");
+          const context = f.defaultContext ?? f.context;
+          if (context !== undefined && !["fresh", "fork"].includes(context)) throw Error("Invalid defaultContext");
+          const systemPromptMode = f.systemPromptMode ?? (name === "delegate" ? "append" : "replace");
+          if (!["append", "replace"].includes(systemPromptMode)) throw Error("Invalid systemPromptMode");
+          const prompt = f.prompt ?? f.systemPrompt ?? body;
+          if (typeof prompt !== "string" || !prompt.trim() || prompt.length > 65536 || (f.model !== undefined && typeof f.model !== "string")) throw Error("Invalid or empty prompt/model");
+          if (f.tools === "inherit") throw Error("tools: inherit is unsupported. Omit tools for Pi builtins or list tools and explicit extension files.");
+          const tools = f.tools === undefined ? undefined : list(f.tools, "tools");
+          const extensions = [...list(f.extensions, "extensions"), ...list(f.subagentOnlyExtensions, "subagentOnlyExtensions")].map((p) => resolvePath(p, path.dirname(file)));
+          if (extensions.some((p) => !fs.statSync(p).isFile())) throw Error("Extensions must name explicit local files, not packages or directories");
+          return { name, description: f.description, source: "shepherd", filePath: file, prompt, model: f.model, thinking, context, systemPromptMode,
+            inheritProjectContext: f.inheritProjectContext ?? name === "delegate", inheritSkills: f.inheritSkills ?? false, tools,
+            skills: list(f.skills ?? f.skill, "skills"), skillPaths: list(f.skillPath, "skillPath").map((p) => resolvePath(p, path.dirname(file))),
+            extensions, aliases: list(f.aliases ?? f.alias, "aliases"), disabled: f.disabled === true };
+        }
+
+        export function childAgentError(text, file, error) {
+          let name = path.basename(file, ".md");
+          try {
+            const { frontmatter: f } = parseFrontmatter(text);
+            if (typeof f?.name === "string" && f.name.trim() && f.name.length <= 80) name = f.package ? `${f.package}.${f.name}` : f.name;
+          } catch {}
+          return { name, filePath: file, source: "shepherd", error: error.message };
+        }
+
+        export const childAgentDefaults = Object.fromEntries(Object.entries(bundledAgents).map(([name, a]) => [name + ".md",
+          `---\nname: ${name}\ndescription: ${JSON.stringify(a.description)}\ntools: [${a.tools.join(", ")}]\nsystemPromptMode: append\ninheritProjectContext: true\n---\n\n${a.prompt}\n`]));
+        export const childAgentsSeedMarker = ".shepherd-defaults-v1";
+
+        export function ensureChildAgents() {
+          const home = getAgentDir();
+          fs.mkdirSync(home, { recursive: true, mode: 0o700 });
+          if (fs.lstatSync(home).isSymbolicLink() || !fs.lstatSync(home).isDirectory()) throw Error("Shepherd's pi home cannot be a symbolic link");
+          const dir = path.join(home, "agents");
+          fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+          if (fs.lstatSync(dir).isSymbolicLink() || !fs.lstatSync(dir).isDirectory()) throw Error("The subagent folder cannot be a symbolic link");
+          const homeIdentity = fs.lstatSync(home), dirIdentity = fs.lstatSync(dir);
+          function create(file, text) {
+            let fd;
+            try {
+              const before = fs.lstatSync(dir);
+              if (before.isSymbolicLink() || before.dev !== dirIdentity.dev || before.ino !== dirIdentity.ino) throw Error("The subagent folder changed during initialization");
+              fd = fs.openSync(path.join(dir,file), fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_NOFOLLOW, 0o600);
+              const current = fs.lstatSync(dir), currentHome = fs.lstatSync(home);
+              if (current.isSymbolicLink() || current.dev !== dirIdentity.dev || current.ino !== dirIdentity.ino || currentHome.isSymbolicLink() || currentHome.dev !== homeIdentity.dev || currentHome.ino !== homeIdentity.ino) throw Error("The subagent folder changed during initialization");
+              fs.writeFileSync(fd,text);
+            } catch (error) { if (error.code !== "EEXIST") throw error; }
+            finally { if (fd !== undefined) fs.closeSync(fd); }
           }
-          if (["user", "both"].includes(scope)) {
-            roots.push(...(process.env.PI_SUBAGENT_EXTRA_AGENT_DIRS || "").split(path.delimiter).filter(Boolean).map((dir) => ({ dir, source: "user" })));
-            roots.push({ dir: path.join(agentDir, "agents"), source: "user" }, { dir: path.join(os.homedir(), ".agents"), source: "user" });
+          if (!fs.existsSync(path.join(dir, childAgentsSeedMarker))) {
+            for (const [file, text] of Object.entries(childAgentDefaults)) create(file,text);
+            create(childAgentsSeedMarker,"1\n");
           }
-          if (["project", "both"].includes(scope) && projectRoot) {
-            if (trusted) roots.push({ dir: path.join(projectRoot, ".agents"), source: "project" }, { dir: path.join(projectRoot, CONFIG_DIR_NAME, "agents"), source: "project" });
-            else diagnostics.push({ source: "project", error: "Project agent discovery requires Pi project trust; project definitions were not loaded" });
+          return dir;
+        }
+
+        export function discoverChildAgents(_ctx, _scope) {
+          const agents = [], diagnostics = [];
+          let root, folders = 0;
+          try { root = ensureChildAgents(); }
+          catch (error) { return { agents, diagnostics: [{ source: "shepherd", error: error.message }] }; }
+          const canonicalRoot = fs.realpathSync(root), rootIdentity = fs.lstatSync(root), homeIdentity = fs.lstatSync(getAgentDir());
+          function checkRoot() {
+            const current = fs.lstatSync(root), home = fs.lstatSync(getAgentDir());
+            if (current.isSymbolicLink() || home.isSymbolicLink() || current.dev !== rootIdentity.dev || current.ino !== rootIdentity.ino || home.dev !== homeIdentity.dev || home.ino !== homeIdentity.ino) throw Error("The subagent folder changed during discovery");
           }
-          const settings = SettingsManager.create(projectRoot ?? ctx.cwd, agentDir, { projectTrusted: trusted });
-          const settingsErrors = settings.drainErrors();
-          if (settingsErrors.length) throw Error(`Cannot read Pi agent settings: ${settingsErrors[0].error.message}`);
-          const userSettings = ["both", "user"].includes(scope) ? settings.getGlobalSettings().subagents ?? {} : {};
-          const projectSettings = ["both", "project"].includes(scope) ? settings.getProjectSettings().subagents ?? {} : {};
-          const overrides = { ...(userSettings.agentOverrides ?? {}), ...(projectSettings.agentOverrides ?? {}) };
-          if (scope !== "bundled") {
-            const packages = new DefaultPackageManager({ cwd: projectRoot ?? ctx.cwd, agentDir, settingsManager: settings });
-            for (const pkg of packages.listConfiguredPackages()) {
-              if (!pkg.installedPath || (pkg.scope === "user" && scope === "project") || (pkg.scope === "project" && scope === "user")) continue;
-              try {
-                const manifest = JSON.parse(fs.readFileSync(path.join(pkg.installedPath, "package.json"), "utf8"));
-                const paths = manifest["pi-subagents"]?.agents ?? manifest.pi?.subagents?.agents ?? [];
-                for (const entry of list(paths, "package agents")) roots.unshift({ dir: path.resolve(pkg.installedPath, entry), source: "package", requiresProjectTrust: pkg.scope === "project" });
-              } catch (error) { diagnostics.push({ source: "package", filePath: pkg.installedPath, error: error.message }); }
-            }
-          }
-          function scan(dir, root, source, depth = 0, requiresProjectTrust = source === "project") {
-            if (depth > 16) { diagnostics.push({ source, filePath: dir, error: "Agent discovery nesting exceeds 16 directories" }); return; }
-            if (!directory(dir)) return;
+          function scan(dir, depth = 0) {
+            checkRoot();
+            if (fs.lstatSync(dir).isSymbolicLink() || path.relative(canonicalRoot, fs.realpathSync(dir)).startsWith("..")) throw Error("Subagent folders cannot follow symbolic links");
+            if (++folders > 512) throw Error("At most 512 subagent folders can be scanned");
+            if (depth > 16) throw Error("Subagent folders can nest at most 16 levels");
             for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+              if (entry.name.startsWith(".") || ["node_modules", "skills"].includes(entry.name)) continue;
               const file = path.join(dir, entry.name);
-              if (entry.isDirectory()) {
-                if (![".git", "node_modules", "skills"].includes(entry.name) && !directory(path.join(file, CONFIG_DIR_NAME)) && !directory(path.join(file, ".agents")) && !fs.existsSync(path.join(file, ".git"))) scan(file, root, source, depth + 1, requiresProjectTrust);
-                continue;
-              }
+              if (entry.isDirectory()) { scan(file, depth + 1); continue; }
               if (!entry.name.endsWith(".md") || entry.name.endsWith(".chain.md")) continue;
-              let name;
+              if (agents.length >= 512) throw Error("At most 512 subagent files can load");
+              let fd, text = "";
               try {
-                if (source === "project" && path.relative(fs.realpathSync(root), fs.realpathSync(file)).startsWith("..")) throw Error("Project agent symlink escapes its discovery directory");
-                if (fs.statSync(file).size > 128 * 1024) throw Error("Agent file exceeds 128 KiB");
-                const { frontmatter: raw, body } = parseFrontmatter(fs.readFileSync(file, "utf8"));
-                if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw Error("Agent frontmatter must be an object");
-                if (raw.package !== undefined && (typeof raw.package !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(raw.package))) throw Error("Invalid agent package");
-                name = raw.package ? `${raw.package}.${raw.name}` : raw.name;
-                const f = { ...(overrides[name] ?? {}), ...raw, name };
-                if (overrides[name]) diagnostics.push({ name, source, filePath: file, warning: "Supported settings override fields fill fields omitted by this agent file" });
-                if (typeof raw.name !== "string" || typeof name !== "string" || !name.trim() || typeof f.description !== "string") continue;
-                if (name.length > 80 || f.description.length > 16384) throw Error("Agent name or description is too long");
-                const unknown = Object.keys(f).filter((key) => !supported.has(key));
-                if (unknown.length) throw Error(`Unsupported agent fields: ${unknown.join(", ")}`);
-                for (const field of ["inheritProjectContext", "inheritSkills", "disabled"]) if (f[field] !== undefined && typeof f[field] !== "boolean") throw Error(`Invalid ${field}`);
-                const thinking = f.thinking === false ? "off" : f.thinking;
-                if (thinking !== undefined && !thinkingLevels.includes(thinking)) throw Error("Invalid thinking");
-                const context = f.defaultContext ?? f.context;
-                if (context !== undefined && !["fresh", "fork"].includes(context)) throw Error("Invalid defaultContext");
-                const systemPromptMode = f.systemPromptMode ?? (name === "delegate" ? "append" : "replace");
-                if (!["append", "replace"].includes(systemPromptMode)) throw Error("Invalid systemPromptMode");
-                const prompt = f.prompt ?? f.systemPrompt ?? body;
-                if (typeof prompt !== "string" || prompt.length > 65536 || (f.model !== undefined && typeof f.model !== "string")) throw Error("Invalid prompt/model");
-                const extensions = [...list(f.extensions, "extensions"), ...list(f.subagentOnlyExtensions, "subagentOnlyExtensions")].map((p) => resolvePath(p, path.dirname(file)));
-                if (extensions.some((p) => !fs.statSync(p).isFile())) throw Error("Extensions must name explicit local files, not packages or directories");
-                agents.set(name, { name, requiresProjectTrust, description: f.description, source, filePath: file, prompt, model: f.model, thinking, context, systemPromptMode,
-                  inheritProjectContext: f.inheritProjectContext ?? name === "delegate", inheritSkills: f.inheritSkills ?? false,
-                  tools: f.tools === "inherit" ? "inherit" : f.tools === undefined ? undefined : list(f.tools, "tools"),
-                  skills: list(f.skills ?? f.skill, "skills"), skillPaths: list(f.skillPath, "skillPath").map((p) => resolvePath(p, path.dirname(file))),
-                  extensions, aliases: list(f.aliases ?? f.alias, "aliases"), disabled: f.disabled === true });
+                fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+                const info = fs.fstatSync(fd);
+                if (!info.isFile() || info.size > 128 * 1024) throw Error("Choose a regular UTF-8 agent file of at most 128 KiB");
+                checkRoot();
+                const observed = fs.lstatSync(file);
+                if (observed.isSymbolicLink() || observed.dev !== info.dev || observed.ino !== info.ino || path.relative(canonicalRoot, fs.realpathSync(file)).startsWith("..")) throw Error("Agent path escapes or changed in its folder");
+                const bytes = Buffer.alloc(128 * 1024 + 1);
+                let length = 0, count;
+                while (length < bytes.length && (count = fs.readSync(fd, bytes, length, bytes.length-length, null)) > 0) length += count;
+                if (length > 128 * 1024) throw Error("Agent file exceeds 128 KiB");
+                text = new TextDecoder("utf-8", {fatal:true}).decode(bytes.subarray(0,length));
+                agents.push(parseChildAgent(text, file));
               } catch (error) {
-                diagnostics.push({ name, filePath: file, source, error: error.message });
-                // A broken higher-priority definition must not fall back to a more permissive one.
-                if (typeof name === "string") agents.set(name, { name, source, filePath: file, error: error.message });
-              }
+                const failed = childAgentError(text, file, error);
+                agents.push(failed); diagnostics.push(failed);
+              } finally { if (fd !== undefined) fs.closeSync(fd); }
             }
           }
-          for (const { dir, source, requiresProjectTrust = source === "project" } of roots) scan(dir, dir, source, 0, requiresProjectTrust);
-          for (const [name, override] of Object.entries(overrides)) {
-            const agent = agents.get(name);
-            if (!agent || agent.source !== "bundled") continue;
-            // Settings-managed builtins must never bypass disabled/tool policies.
-            agents.set(name, { ...agent, error: `Settings override for bundled agent ${name} is unsupported; define a user agent file with the supported fields instead` });
-            diagnostics.push({ name, source: "settings", error: agents.get(name).error });
+          try { scan(root); }
+          catch (error) { return { agents: [], diagnostics: [{ source: "shepherd", error: error.message }] }; }
+          // No last-file-wins ambiguity: every duplicate refuses to launch.
+          const counts = new Map();
+          for (const agent of agents) counts.set(agent.name, (counts.get(agent.name) ?? 0) + 1);
+          for (const agent of agents) if (counts.get(agent.name) > 1) {
+            agent.error = `Duplicate subagent name: ${agent.name}`;
+            diagnostics.push({ name: agent.name, source: agent.source, filePath: agent.filePath, error: agent.error });
           }
-          if (userSettings.disableBuiltins === true || projectSettings.disableBuiltins === true) for (const [name, agent] of agents) if (agent.source === "bundled") agents.delete(name);
-          for (const [source, values] of [["user", userSettings], ["project", projectSettings]]) {
-            const unknown = Object.keys(values).filter((key) => !["agentOverrides", "disableBuiltins"].includes(key));
-            if (unknown.length) diagnostics.push({ source, warning: `Unsupported pi-subagents settings: ${unknown.join(", ")}. Shepherd defaults apply; these settings are not imported.` });
-          }
-          return { agents: [...agents.values()], diagnostics, projectRoot };
+          return { agents, diagnostics };
         }
 
         export function childSkills(profile, ctx) {

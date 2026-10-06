@@ -29,7 +29,7 @@ struct AppSettingsTests {
         #expect(settings.worktreeAutoCommit && settings.worktreeGeneratePRDescription && settings.worktreeDeleteLocalBranch)
         #expect(!settings.worktreeAutoMergePR, "merging is strictly opt-in")
         #expect(settings.worktreeMergeMethod == .squash)
-        #expect(settings.childConcurrency == 4 && settings.childContext == "fresh" && settings.childScope == "both")
+        #expect(settings.childConcurrency == 4 && settings.childContext == "fresh")
         #expect(settings.childModel.isEmpty && settings.childThinking.isEmpty)
         #expect(settings.queueDelivery == .all, "the queue arrives as one turn")
         #expect(settings.trimToolOutput, "old tool output is trimmed from the model's context until switched off")
@@ -279,14 +279,15 @@ struct AppSettingsTests {
         store.set("sideways", forKey: AppSettings.Key.worktreeBaseMode)
         store.set("octopus", forKey: AppSettings.Key.worktreeMergeMethod)
         store.set("invalid", forKey: AppSettings.Key.childContext)
-        store.set("galaxy", forKey: AppSettings.Key.childScope)
+        store.set("project", forKey: "shepherd.pi.children.scope") // Retired discovery choice must not reach a launch.
         store.set("ultra", forKey: AppSettings.Key.childThinking)
 
         let settings = AppSettings(store: store)
         #expect(settings.defaultThinking == .medium)
         #expect(settings.defaultServiceTier == .standard, "a tier from a newer build reads as Standard")
         #expect(settings.worktreeBaseMode == .fresh && settings.worktreeMergeMethod == .squash)
-        #expect(settings.childContext == "fresh" && settings.childScope == "both" && settings.childThinking.isEmpty)
+        #expect(settings.childContext == "fresh" && settings.childThinking.isEmpty)
+        #expect(settings.childEnvironment["SHEPHERD_CHILD_SCOPE"] == nil)
     }
 
     @Test(arguments: [(100.0, 190.0), (275, 275), (500, 340)])
@@ -359,10 +360,9 @@ struct AppSettingsTests {
         settings.childModel = " provider/model "
         settings.childThinking = "high"
         settings.childContext = "fork"
-        settings.childScope = "user"
         #expect(settings.childEnvironment == [
             "SHEPHERD_CHILD_CONCURRENCY": "16", "SHEPHERD_CHILD_MODEL": "provider/model",
-            "SHEPHERD_CHILD_THINKING": "high", "SHEPHERD_CHILD_CONTEXT": "fork", "SHEPHERD_CHILD_SCOPE": "user",
+            "SHEPHERD_CHILD_THINKING": "high", "SHEPHERD_CHILD_CONTEXT": "fork",
         ])
     }
 

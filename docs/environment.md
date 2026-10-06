@@ -31,7 +31,10 @@
   - With the matching extension on: `SHEPHERD_EXT_PANES`, `SHEPHERD_EXT_BROWSER` (the installed
     `shepherd-browser.ts`, for Settings ▸ Pi ▸ Browser tools; never in a design's agent),
     `SHEPHERD_NATIVE_CHILDREN`,
-    `SHEPHERD_EXT_CHILDREN`, and `SHEPHERD_CHILD_*`; `SHEPHERD_EXT_GOAL=1` loads the
+    `SHEPHERD_EXT_CHILDREN`, and `SHEPHERD_CHILD_*`. The retired `SHEPHERD_CHILD_SCOPE` is
+    ignored; profiles load only from `<PI_CODING_AGENT_DIR>/agents`. `SHEPHERD_CHILD_MODEL`,
+    `SHEPHERD_CHILD_THINKING`, `SHEPHERD_CHILD_CONTEXT` and `SHEPHERD_CHILD_CONCURRENCY` retain
+    their Settings ▸ Pi defaults; `SHEPHERD_EXT_GOAL=1` loads the
     conversation-goal controller after the child controller, even while the experiment is off
     so it can switch live. `SHEPHERD_GOALS_ENABLED` is explicitly `0` by default, `1` only while
     Settings > Experiments > Goals is on. The host's internal configure command updates running

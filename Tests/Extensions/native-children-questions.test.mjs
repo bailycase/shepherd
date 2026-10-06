@@ -102,8 +102,8 @@ before(async () => {
       parameters: { type: "object", properties: { question: { type: "string" } }, required: ["question"] },
       async execute(_id, params, _signal, _update, ctx) { const answer = await ctx.ui.select(params.question, ["30 days", "13 months"]); return { content: [{ type: "text", text: String(answer) }] }; } });
   }`);
-  fs.mkdirSync(path.join(dir, ".pi", "agents"), { recursive: true });
-  fs.writeFileSync(path.join(dir, ".pi", "agents", "asker.md"), `---\nname: asker\ndescription: asks the human\ntools: read, ask_user\nextensions: ${asker}\n---\nAsk the human.\n`);
+  fs.mkdirSync(path.join(process.env.PI_CODING_AGENT_DIR, "agents"), { recursive: true });
+  fs.writeFileSync(path.join(process.env.PI_CODING_AGENT_DIR, "agents", "asker.md"), `---\nname: asker\ndescription: asks the human\ntools: read, ask_user\nextensions: ${asker}\n---\nAsk the human.\n`);
   h = await harness(dir);
 });
 after(async () => {

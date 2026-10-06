@@ -213,5 +213,5 @@ test("the message helpers are pure, and cap a long provider list", () => {
   assert.match(children.unknownAgentMessage("a", [{ name: "a", source: "user", filePath: "/x/a.md" }, { name: "a", source: "project", filePath: "/p/a.md" }], [{ name: "a", source: "user", filePath: "/x/a.md" }, { name: "a", source: "project", filePath: "/p/a.md" }]),
     /^Ambiguous agent "a": it names a \(user, \/x\/a\.md\) and a \(project, \/p\/a\.md\)\./);
   assert.match(children.unknownAgentMessage("q", [{ name: "scout", source: "bundled" }]), /Profiles: none discovered/);
-  assert.match(children.unknownAgentMessage("q", []), /none \(Shepherd's bundled roles are disabled\)/);
+  assert.match(children.unknownAgentMessage("q", []), /none \(the default files were removed\)/);
 });
