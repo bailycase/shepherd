@@ -627,6 +627,14 @@ final class DesignScreenModel {
         openComment = id
     }
 
+    /// A card in the Comments tab reveals its board, including a board on another page, before
+    /// opening the thread. Canvas pins use `openThread` directly to leave the viewport alone.
+    func revealComment(_ id: UUID) {
+        guard let comment = comments.first(where: { $0.id == id && $0.isOpen }) else { return }
+        reveal(board: comment.board, element: nil)
+        openThread(id.uuidString)
+    }
+
     /// Keeps the comment being written: the host checks its element and hands it to the design
     /// agent as a turn of its own. An empty comment is no comment.
     @discardableResult
