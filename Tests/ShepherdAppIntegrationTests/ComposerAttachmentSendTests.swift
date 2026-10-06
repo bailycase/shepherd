@@ -38,7 +38,8 @@ struct ComposerAttachmentSendTests {
             return .snapshot(value: snapshot)
         }, listModels: { .empty }, retainedInput: input))
         func monitor(_ view: NSView) -> ComposerKeyMonitor? {
-            if let reader = view as? ComposerWindowReader.Reader { return reader.monitor }
+            if let reader = view as? ComposerWindowReader.Reader,
+               reader.monitor?.chord() == KeybindingsStore.shared.chord(for: .alternateSend) { return reader.monitor }
             return view.subviews.lazy.compactMap(monitor).first
         }
         try await eventuallyOnMain("composer to accept a send") {

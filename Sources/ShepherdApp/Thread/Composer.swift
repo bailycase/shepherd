@@ -655,6 +655,9 @@ struct Composer: View {
             .autocorrectionDisabled()
             .tint(Color.nw.lantern)
             .focused($composing)
+            .modifier(CycleThinkingShortcut(focused: composing && active && thinkingAvailable && store.supports("setThinking") && dialogs.isEmpty,
+                                          current: store.thinking, levels: store.thinkingLevels.map(\.id),
+                                          choose: { level in Task { await store.setThinking(level) } }))
             .onKeyPress(.return, phases: .down) { press in
                 // ⌘↩ reaches here when a key press brings it; the key monitor usually takes it first.
                 switch ComposerReturnKey.action(modifiers: press.modifiers, alternate: KeybindingsStore.shared.chord(for: .alternateSend),
@@ -1431,18 +1434,21 @@ enum ComposerSendKey {
     }
 }
 
-/// Takes the alternate send (⌘↩ unless rebound) for the composer while its field, or one of its
-/// queued messages, has focus: ahead of any key equivalent in the window (the review pane's ⌘⏎),
-/// and only in the composer's own window. The composer counts the presses it took.
+/// Takes a composer-scoped shortcut ahead of any key equivalent in its window. The composer
+/// watches only while its field, or for alternate send one of its queued messages, has focus.
 @MainActor
 @Observable
 final class ComposerKeyMonitor {
     private(set) var presses = 0
     @ObservationIgnored weak var window: NSWindow?
-    @ObservationIgnored var chord: () -> KeyChord = { KeybindingsStore.shared.chord(for: .alternateSend) }
+    @ObservationIgnored var chord: () -> KeyChord
     /// Whether the composer can use a press now; one it cannot use goes on to the window.
     @ObservationIgnored var accepts: () -> Bool = { true }
     @ObservationIgnored private var monitor: Any?
+
+    init(action: ShortcutAction = .alternateSend) {
+        chord = { KeybindingsStore.shared.chord(for: action) }
+    }
 
     /// Watches the window's key presses while the composer has focus, and only then.
     func watch(_ focused: Bool) {
@@ -1460,9 +1466,40 @@ final class ComposerKeyMonitor {
     /// Takes `event` when it is the chord, in the composer's window.
     @discardableResult
     func handle(_ event: NSEvent) -> Bool {
-        guard let window, event.window === window, chord().matches(event), accepts() else { return false }
+        guard !KeybindingsStore.shared.isRecording,
+              let window, event.window === window, chord().matches(event), accepts() else { return false }
         presses += 1
         return true
+    }
+}
+
+/// The same focused-field shortcut in existing threads and the New thread and New design pages.
+struct CycleThinkingShortcut: ViewModifier {
+    let focused: Bool
+    let current: String?
+    let levels: [String]
+    let choose: (String) -> Void
+    @State private var monitor = ComposerKeyMonitor(action: .cycleThinkingLevel)
+
+    nonisolated static func next(current: String?, levels: [String], steps: Int = 1) -> String? {
+        guard let current, levels.count > 1, steps > 0 else { return nil }
+        let index = levels.firstIndex(of: current) ?? (levels.count - 1)
+        return levels[(index + steps % levels.count) % levels.count]
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .background { ComposerWindowReader(monitor: monitor) }
+            .onChange(of: focused && Self.next(current: current, levels: levels) != nil, initial: true) { _, enabled in
+                monitor.accepts = { enabled }
+                monitor.watch(enabled)
+            }
+            .onChange(of: monitor.presses) { previous, presses in
+                // SwiftUI can combine several key presses into one view update.
+                guard focused, let next = Self.next(current: current, levels: levels, steps: presses - previous) else { return }
+                choose(next)
+            }
+            .onDisappear { monitor.watch(false) }
     }
 }
 

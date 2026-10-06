@@ -918,6 +918,12 @@ components ([docs/design/thread.md](design/thread.md) specifies their look):
 - **`Composer`:**
   - the field, attachments (resized to a 2000 px longest edge; at most 4 images of 2 MiB each)
   - chips: model with its picker on ⇧⌘M, and thinking
+  - Cycle thinking level, ⇧⇥ by default and rebindable in Settings > Keyboard > Thread. The
+    focused field advances through the model's offered levels in menu order and wraps. The same
+    shortcut updates the New thread and New design drafts through their existing setters, using
+    the effective displayed level. It never submits or edits the prompt, intercepts terminal keys,
+    or acts while the shortcut recorder is active. A waiting question, an unavailable thinking
+    control or fewer than two offered levels leaves the key alone.
   - Up next (`QueueStack`): the host's queue above the card, with the stack's own view state
     (`QueueStackState`: the editor, Undo rows, expansion, a drag) around `NativeQueueRules`
   - the Send menu (two rows), and the keys that send while pi works (↩ queues, ⌘↩ steers now)

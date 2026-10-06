@@ -25,6 +25,8 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
     /// Scoped to the composer (like its ↩) and a focused queued message, so it has no menu item:
     /// it sends the other way while pi works (steer ⇄ queue) and steers the focused message.
     case alternateSend
+    /// Cycles the focused composer's offered thinking levels without opening a menu.
+    case cycleThinkingLevel
     /// Scoped to a design's canvas with a board or element selected (RefImplementMenu): Implement
     /// in a thread… and Copy reference. The canvas holds no composer or terminal, so ⌘↩ here
     /// never meets the composer's alternate send.
@@ -62,6 +64,7 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .maximizeTerminal: return "Maximize or Restore Terminal"
         case .importDesign: return "Import Claude Design Project…"
         case .alternateSend: return "Send and Steer Now"
+        case .cycleThinkingLevel: return "Cycle Thinking Level"
         case .implementInThread: return "Implement in a Thread…"
         case .copyDesignReference: return "Copy Design Reference"
         case .focusAddressBar: return "Focus Address Bar"
@@ -81,7 +84,7 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
 
     var scope: Scope {
         switch self {
-        case .alternateSend: .composer
+        case .alternateSend, .cycleThinkingLevel: .composer
         case .implementInThread, .copyDesignReference: .canvas
         case .focusAddressBar, .selectElement: .browser
         default: .app
@@ -132,6 +135,7 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .maximizeTerminal: return KeyChord(key: "return", command: true, shift: true)
         case .importDesign: return KeyChord(key: "i", command: true, shift: true)
         case .alternateSend: return KeyChord(key: "return", command: true)
+        case .cycleThinkingLevel: return KeyChord(key: "tab", shift: true)
         // The boards' ⌘↩ and ⇧⌘C (RefImplementMenu), on the canvas only.
         case .implementInThread: return KeyChord(key: "return", command: true)
         case .copyDesignReference: return KeyChord(key: "c", command: true, shift: true)
@@ -218,7 +222,7 @@ enum FixedChord: String, CaseIterable, Identifiable {
 /// `KeyboardShortcut` (menus), display string (hints and keycaps), and
 /// ghostty keybind syntax (per-surface unbinds so the terminal lets the
 /// chord through). `key` is a canonical token: a single lowercase character,
-/// `left`/`right`/`up`/`down`, or `return`.
+/// `left`/`right`/`up`/`down`, `return`, or `tab`.
 struct KeyChord: Codable, Hashable {
     var key: String
     var command = false
@@ -252,6 +256,7 @@ struct KeyChord: Codable, Hashable {
         case "up": return "↑"
         case "down": return "↓"
         case "return": return "↩"
+        case "tab": return "⇥"
         default: return key.uppercased()
         }
     }
@@ -265,6 +270,7 @@ struct KeyChord: Codable, Hashable {
         case "up": return .upArrow
         case "down": return .downArrow
         case "return": return .return
+        case "tab": return .tab
         default: return KeyEquivalent(key.first ?? " ")
         }
     }
@@ -327,7 +333,7 @@ struct KeyChord: Codable, Hashable {
     // MARK: Capture
 
     /// Chord from a recorder key event; nil for keys the app does not accept
-    /// (space, function keys, tab…).
+    /// (space, function keys…).
     init?(event: NSEvent) {
         guard let token = Self.token(keyCode: event.keyCode, characters: event.charactersIgnoringModifiers) else {
             return nil
@@ -381,6 +387,7 @@ struct KeyChord: Codable, Hashable {
         case 125: return "down"
         case 126: return "up"
         case 36, 76: return "return"
+        case 48: return "tab"
         default: break
         }
         guard let ch = characters?.lowercased().first,
@@ -445,7 +452,7 @@ final class KeybindingsStore {
 
     enum AssignmentError: Error, Equatable, CustomStringConvertible {
         /// Without ⌘ a chord would be a plain terminal keystroke; every
-        /// unbound chord must stay out of the typing alphabet.
+        /// unbound chord must stay out of the typing alphabet, except the composer's Shift-Tab.
         case missingCommand
         /// ⌘1–9 (agent selection), ⌘, (Settings), and the plain-⌘ system and
         /// terminal chords (quit/hide, copy/paste/undo/select-all).
@@ -467,8 +474,9 @@ final class KeybindingsStore {
     ]
 
     func validate(_ chord: KeyChord, for action: ShortcutAction) -> AssignmentError? {
-        guard chord.command else { return .missingCommand }
+        guard chord.command || (action == .cycleThinkingLevel && chord == action.defaultChord) else { return .missingCommand }
         if let first = chord.key.first, first.isNumber { return .reservedChord }
+        if chord.key == "tab", chord.command, !chord.option && !chord.control { return .reservedChord }
         if !chord.shift && !chord.option && !chord.control,
            Self.reservedPlainCommandKeys.contains(chord.key) {
             return .reservedChord

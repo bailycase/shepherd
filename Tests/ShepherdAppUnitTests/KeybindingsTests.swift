@@ -18,7 +18,7 @@ struct KeybindingsTests {
         (.toggleTerminal, "⌘J"), (.maximizeTerminal, "⇧⌘↩"),
         (.toggleSidebar, "⇧⌘S"), (.toggleRightPane, "⇧⌘B"), (.modelPicker, "⇧⌘M"),
         (.stopAgent, "⌘."), (.previousTurn, "⌥⌘↑"), (.nextTurn, "⌥⌘↓"), (.inspectSubagent, "⌘I"),
-        (.alternateSend, "⌘↩"), (.importDesign, "⇧⌘I"), (.implementInThread, "⌘↩"), (.copyDesignReference, "⇧⌘C"),
+        (.alternateSend, "⌘↩"), (.cycleThinkingLevel, "⇧⇥"), (.importDesign, "⇧⌘I"), (.implementInThread, "⌘↩"), (.copyDesignReference, "⇧⌘C"),
         (.focusAddressBar, "⌘L"), (.selectElement, "⇧⌘C"),
     ])
     func defaultsMatchTheDesignTable(action: ShortcutAction, display: String) {
@@ -27,7 +27,7 @@ struct KeybindingsTests {
         #expect(keys.isDefault(action))
     }
 
-    /// Every default must itself pass validation: it includes ⌘, is not reserved, and no two
+    /// Every default must pass validation, including the composer's Shift-Tab exception, and no two
     /// actions that can be pressed in the same place share a chord.
     @Test func everyDefaultIsAValidDistinctChord() {
         let keys = KeybindingsStore(store: Fixture.defaults())
@@ -126,6 +126,28 @@ struct KeybindingsTests {
         #expect(keys.assign(KeyChord(key: "j", command: true, option: true), to: .alternateSend) == nil)
         #expect(keys.display(.alternateSend) == "⌥⌘J")
         #expect(keys.customGhosttyUnbinds.isEmpty)
+    }
+
+    @Test func thinkingCyclingCanBeReboundPersistedAndResetWithoutTakingTerminalKeys() {
+        let defaults = Fixture.defaults()
+        let keys = KeybindingsStore(store: defaults)
+        let action = ShortcutAction.cycleThinkingLevel
+        let custom = KeyChord(key: "y", command: true, option: true)
+        #expect(action.scope == .composer && !action.reachesPastTerminals)
+        #expect(keys.assign(action.defaultChord, to: action) == nil)
+        #expect(keys.assign(action.defaultChord, to: .alternateSend) == .missingCommand)
+        #expect(keys.assign(KeyChord(key: "tab"), to: action) == .missingCommand)
+        #expect(keys.assign(KeyChord(key: "tab", shift: true, option: true), to: action) == .missingCommand)
+        #expect(keys.assign(KeyChord(key: "tab", command: true), to: action) == .reservedChord)
+        #expect(keys.assign(KeyChord(key: "tab", command: true, shift: true), to: action) == .reservedChord)
+        #expect(keys.assign(ShortcutAction.modelPicker.defaultChord, to: action) == .conflict(.modelPicker))
+        #expect(keys.assign(custom, to: action) == nil)
+        let reloaded = KeybindingsStore(store: defaults)
+        #expect(reloaded.chord(for: action) == custom)
+        #expect(reloaded.customGhosttyUnbinds.isEmpty)
+        #expect(reloaded.reset(action) == nil)
+        #expect(reloaded.display(action) == "⇧⇥" && reloaded.isDefault(action))
+        #expect(KeybindingsStore(store: defaults).chord(for: action) == action.defaultChord)
     }
 
     /// The queue's fixed keys, as the Keyboard board lists them and Settings shows them.
@@ -318,6 +340,7 @@ struct KeyChordTests {
 
     @Test(arguments: [
         ("left", "←", "left"), ("right", "→", "right"), ("up", "↑", "up"), ("down", "↓", "down"),
+        ("tab", "⇥", "tab"),
         ("[", "[", "left_bracket"), ("]", "]", "right_bracket"), (",", ",", "comma"), (".", ".", "period"),
         ("/", "/", "slash"), (";", ";", "semicolon"), ("'", "'", "apostrophe"), ("\\", "\\", "backslash"),
         ("-", "-", "minus"), ("=", "=", "equal"), ("`", "`", "grave_accent"), ("k", "K", "k"), ("7", "7", "7"),
@@ -332,7 +355,7 @@ struct KeyChordTests {
         (0, "A", "a"), (30, "]", "]"), (18, "1", "1"), (43, ",", ","),
         (49, " ", nil),            // space is not bindable
         (122, "\u{F704}", nil),    // F1
-        (48, "\t", nil),           // tab
+        (48, "\t", "tab"), (48, "\u{19}", "tab"), // Tab and Shift-Tab use the physical key
         (0, nil, nil),
     ] as [(UInt16, String?, String?)])
     func recorderTokensAcceptOnlyBindableKeys(keyCode: UInt16, characters: String?, token: String?) {
@@ -348,6 +371,14 @@ struct KeyChordTests {
         #expect(KeyChord.digit(keyCode: 29) == nil, "0 belongs to no digit family")
         #expect(KeyChord.digit(keyCode: 125) == nil)
         #expect(KeyChord.digit(keyCode: 0) == nil)
+    }
+
+    @Test func shiftTabMatchesOnlyItsExactModifiers() {
+        let chord = ShortcutAction.cycleThinkingLevel.defaultChord
+        #expect(chord.keyEquivalent == .tab)
+        #expect(chord.matches(key: .tab, modifiers: [.shift]))
+        #expect(!chord.matches(key: .tab, modifiers: []))
+        #expect(!chord.matches(key: .tab, modifiers: [.shift, .command]))
     }
 
     @Test func modifierFlagsCoverExactlyTheFourAppModifiers() {
