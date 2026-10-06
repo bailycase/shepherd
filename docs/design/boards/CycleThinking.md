@@ -17,6 +17,7 @@ User requirement: Shift-Tab cycles through thinking levels, and Settings > Keybo
 
 - Saved the [eight-render settings matrix](../evidence/thinking-shortcut/settings-row-matrix.png). The default and rebound row match the checklist in light and dark at text scales 1 and 1.3.
 - Pressed the recorder in default and rebound states, cancelled recording, and pressed Reset through accessibility. The recorder, its recording state and Reset each have a desktop hit area of at least 24pt.
+- Creation-composer tests use the accessibility-backed off-screen setup of the existing New thread picker tests and wait for the native field editor before checking the shortcut. Focused validation with `CI=true` and `--no-parallel` passes 43 unit tests and eight integration tests.
 - Passed all 1,043 app unit tests, 38 focused integration tests and 14 documentation guards in the clean PR worktree based on current `nightly`. The shortcut integration tests cover supported-level cycling, wraparound, rapid presses sharing a render, rebinding, reset, focus and draft preservation, unavailable states, and cycling from the effective displayed level in both new composers.
 - Staged the current pinned engine and built the Dev scheme with locked package versions and signing disabled for local validation. No running user app or preferences were touched.
 - Reviewed the rendered settings row against this checklist and reviewed the scoped diff. The rapid-press regression failed before the counter-delta fix and passes with it.
