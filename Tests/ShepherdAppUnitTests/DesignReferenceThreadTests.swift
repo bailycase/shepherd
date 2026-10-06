@@ -90,6 +90,25 @@ struct DesignReferenceThreadTests {
         #expect(search.sections.first?.trailing == "3 matches" && search.rows.allSatisfy { $0.matched == ["funnel"] })
     }
 
+    @Test func pagesHaveTheirOwnSectionAndPickAllBoardsWithoutReplacingBoardDrilling() throws {
+        var catalog = Self.catalog
+        let reference = try #require(DesignReference(designID: Self.checkout, board: nil, page: "funnel"))
+        let page = DesignMentionItem(kind: .page, reference: reference, title: "A · Funnel first", breadcrumb: ["Checkout funnel dashboard"], boardCount: 2)
+        catalog.pages[Self.checkout] = [page]
+        let content = MentionPickerContent.make(catalog: catalog, scope: .design(Self.checkout, name: "Checkout funnel dashboard"), filter: "")
+        #expect(content.sections.map(\.title) == ["", "Pages", "Boards"])
+        let row = try #require(content.rows.first { $0.kind == .page })
+        #expect(row.trailing == .pick && row.subtitle == "Page · 2 boards · attaches all boards")
+        #expect(content.rows.filter { $0.kind == .board }.allSatisfy { $0.trailing == .drill })
+        var picker = MentionPickerState()
+        picker.update(draft: "Build @Checkout funnel dashboard › ", catalog: catalog)
+        #expect(picker.choose(row) == .pick(reference, draft: "Build "))
+        #expect(!picker.isOpen)
+        let searched = MentionPickerContent.make(catalog: catalog, scope: .designs, filter: "first")
+        #expect(searched.rows.map(\.kind) == [.page, .board], "a page and board with the same name remain distinct")
+        #expect(searched.rows.map(\.trailing) == [.pick, .drill])
+    }
+
     @Test func thePickersEmptyStagesSayWhy() {
         #expect(MentionPickerContent.make(catalog: DesignMentionCatalog(), scope: .designs, filter: "").empty == .noDesigns)
         let none = MentionPickerContent.make(catalog: Self.catalog, scope: .designs, filter: "pricng")
@@ -166,6 +185,8 @@ struct DesignReferenceThreadTests {
         let record = DesignReferenceRecord(ref: "x", design: "Checkout funnel dashboard", board: "A.dc.html", boardTitle: "A · Funnel first",
                                            element: Self.card.description, elementLabel: "Checkout funnel", revision: 23)
         #expect(DesignReferenceChips.crumbs(record) == ["Checkout funnel dashboard", "A · Funnel first", "“Checkout funnel”"])
+        let page = DesignReferenceRecord(ref: "shepherd-design-ref://local/checkout?page=funnel@23", design: "Checkout", page: "funnel", pageTitle: "Checkout flow")
+        #expect(DesignReferenceChips.crumbs(page) == ["Checkout", "Page · Checkout flow"])
         #expect(DesignReferenceChips.crumbs(label: "Checkout › A · Funnel first › button “Pay”") == ["Checkout", "A · Funnel first", "button “Pay”"])
         #expect(DesignReferenceChips.state(.current) == .current)
         #expect(DesignReferenceChips.state(.updatedSince(latest: 26, changes: [])) == .updated("updated since · now v26"))

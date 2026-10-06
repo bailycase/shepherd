@@ -421,12 +421,32 @@ public final class DesignStore: @unchecked Sendable {
     /// them as what a whole-design reference holds at that revision (`pinnedDesign`), with the
     /// number of boards the design had then.
     public func pinBoards(_ id: DesignID, paths: [DesignPath], wholeDesign boardCount: Int? = nil) async throws -> [DesignBoardSource] {
+        try await pinBoards(id, paths: paths, boardCount: boardCount, page: nil).boards
+    }
+
+    /// Page membership, sources and revision (including an empty page) pinned in one queue turn.
+    public func pinPage(_ id: DesignID, page: String) async throws -> (boards: [DesignBoardSource], revision: UInt64) {
+        try await pinBoards(id, paths: [], boardCount: nil, page: page)
+    }
+
+    private func pinBoards(_ id: DesignID, paths requested: [DesignPath], boardCount: Int?, page: String?) async throws
+        -> (boards: [DesignBoardSource], revision: UInt64) {
         try await run {
             var design = try self.load(id)
             let files = try self.files(of: id, &design)
             // Whole-design membership and its count belong to the same queue turn as the files.
-            let paths = boardCount == nil ? paths : Array(DesignReferenceReading.canvasOrder(design.index)
-                .filter { files[$0] != nil }.prefix(DesignReferencePayload.maxBoards))
+            let paths: [DesignPath]
+            if let page {
+                guard design.index.pages?.contains(where: { $0.id == page }) == true else {
+                    throw DesignReferenceError("no_such_page", "That page is no longer here.")
+                }
+                paths = DesignReferenceReading.canvasOrder(design.index).filter { design.index.page(of: $0) == page }
+            } else if boardCount != nil {
+                paths = Array(DesignReferenceReading.canvasOrder(design.index)
+                    .filter { files[$0] != nil }.prefix(DesignReferencePayload.maxBoards))
+            } else {
+                paths = requested
+            }
             guard let folder = self.folder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
             let pins = folder.appendingPathComponent("pins", isDirectory: true)
             var index = try Self.pinIndex(pins)
@@ -464,7 +484,7 @@ public final class DesignStore: @unchecked Sendable {
                 where Self.isPinObject(name) && !kept.contains(name) {
                 try? FileManager.default.removeItem(at: pins.appendingPathComponent(name))
             }
-            return out
+            return (out, design.revision)
         }
     }
 
@@ -668,18 +688,51 @@ public final class DesignStore: @unchecked Sendable {
     }
 
     /// Freshness needs only the manifest, not every historical file's bytes.
-    public func pinnedRenderSHA(_ id: DesignID, revision: UInt64) async throws -> String? {
+    public func pinnedRenderSHA(_ id: DesignID, revision: UInt64, page: String? = nil) async throws -> String? {
         try await run {
             guard let folder = self.folder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
-            return try Self.pinIndex(folder.appendingPathComponent("pins")).renders?["\(revision)"]?.sha256
+            let pins = folder.appendingPathComponent("pins")
+            guard let render = try Self.pinIndex(pins).renders?["\(revision)"] else { return nil }
+            guard let page else { return try render.sha256 }
+            guard let canvas = render.project["canvas.json"],
+                  let data = try? Data(contentsOf: pins.appendingPathComponent(canvas)),
+                  Self.sha256(data) == String(canvas.prefix(64)) else { return nil }
+            return try Self.referenceRenderSHA(render, index: DesignIndex.decode(data), page: page) { path in
+                guard let name = render.project[path.rawValue],
+                      let data = try? Data(contentsOf: pins.appendingPathComponent(name)),
+                      Self.sha256(data) == String(name.prefix(64)) else { return nil }
+                return String(decoding: data, as: UTF8.self)
+            }
         }
     }
 
-    public func renderSHA(_ id: DesignID) async throws -> String {
+    public func renderSHA(_ id: DesignID, page: String? = nil) async throws -> String {
         try await run {
             let design = try self.load(id)
-            return try self.renderInputs(id, index: design.index, retainingBytes: false).0.sha256
+            let (render, objects) = try self.renderInputs(id, index: design.index, retainingBytes: page != nil)
+            return try Self.referenceRenderSHA(render, index: design.index, page: page) { path in
+                render.project[path.rawValue].flatMap { objects[$0] }.map { String(decoding: $0, as: UTF8.self) }
+            }
         }
+    }
+
+    private static func referenceRenderSHA(_ render: RenderInputs, index: DesignIndex, page: String?,
+                                           source: (DesignPath) -> String?) throws -> String {
+        guard let page else { return try render.sha256 }
+        var scoped = index
+        scoped.boards = index.boards.filter { index.page(of: $0.key) == page }
+        scoped.order = DesignReferenceReading.canvasOrder(index).filter { scoped.boards[$0] != nil }
+        scoped.pages = index.pages?.filter { $0.id == page }
+        scoped.notes = index.notes?.filter { index.page(of: $0.value) == page }
+        scoped.launch = nil
+        let members = Set(DesignBundle.members(scoped.order, source: source))
+        var render = render
+        // Shared support/assets remain conservative dependencies; unrelated boards do not.
+        render.project = render.project.filter { path, _ in
+            DesignPath(path).map(members.contains) ?? true
+        }
+        render.project["canvas.json"] = sha256(try scoped.encoded())
+        return try render.sha256
     }
 
     // MARK: Notes back (docs/designs.md › Notes back)

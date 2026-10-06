@@ -81,6 +81,26 @@ struct DesignReferenceCanvasTests {
         return screen
     }
 
+    @Test func openingAPageWaitsForItsSnapshotAndRevealsOnlyThatPage() async throws {
+        let b = DesignPath("B.dc.html")!
+        var index = DesignIndex(title: nil)
+        index.pages = [.init(id: "first", name: "First"), .init(id: "second", name: "Second")]
+        index.boards[Self.a] = .init(x: 0, y: 0, w: 1280, h: 800, page: "first")
+        index.boards[b] = .init(x: 1500, y: 0, w: 1280, h: 800, page: "second")
+        index.order = [Self.a, b]
+        let snapshot = DesignSnapshot(designID: Self.checkout, revision: 1, index: index, boards: [:])
+        let screen = DesignScreenModel(designID: Self.checkout, host: nil, snapshot: { _ in snapshot }, source: { _, _ in "" })
+        screen.reveal(page: "second")
+        await screen.refresh()
+        #expect(screen.pendingReveal?.page == "second", "the window has no canvas size yet")
+        screen.resized(CGSize(width: 900, height: 600))
+        #expect(screen.page == "second" && screen.boards.map(\.id) == [b.rawValue])
+        #expect(screen.pendingReveal == nil && screen.picks.isEmpty)
+        screen.select(b.rawValue)
+        screen.reveal(page: "second")
+        #expect(screen.picks.isEmpty, "opening the whole page clears an individual board selection")
+    }
+
     @Test func theRightClickMenuHandsTheSelectionToAThread() async throws {
         var implemented: [DesignReferenceSelection] = []
         let screen = try await screen(implemented: { implemented.append($0) })
