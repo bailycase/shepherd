@@ -99,7 +99,7 @@ public struct NWCommentThread: View {
                     .lineLimit(1)
                 Spacer(minLength: NW.Space.m)
                 if let onResolve {
-                    Button("Resolve", systemImage: "checkmark", action: onResolve)
+                    Button("Resolve", systemImage: NWGlyph.Design.resolveComment.rawValue, action: onResolve)
                         .buttonStyle(.nw(.ghost, size: .s))
                 }
             }
@@ -166,19 +166,70 @@ public struct NWCommentCard: View, Equatable {
     let text: String
     /// The design agent's answer follows in the card: its bottom edge stays open for it.
     let continues: Bool
+    let onOpen: (() -> Void)?
+    let onResolve: (() -> Void)?
+    /// Seeds the same hover state in previews and offscreen control tests.
+    let hovering: Bool
+    @State private var pointerInside = false
+    private enum Control: Hashable { case open, resolve }
+    @FocusState private var focused: Control?
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
 
-    public init(number: Int, target: String, meta: String, text: String, continues: Bool = false) {
+    public init(number: Int, target: String, meta: String, text: String, continues: Bool = false,
+                onOpen: (() -> Void)? = nil, onResolve: (() -> Void)? = nil, hovering: Bool = false) {
         self.number = number
         self.target = target
         self.meta = meta
         self.text = text
         self.continues = continues
+        self.onOpen = onOpen
+        self.onResolve = onResolve
+        self.hovering = hovering
+    }
+
+    nonisolated public static func == (a: Self, b: Self) -> Bool {
+        a.number == b.number && a.target == b.target && a.meta == b.meta && a.text == b.text
+            && a.continues == b.continues && a.hovering == b.hovering
+            && (a.onOpen == nil) == (b.onOpen == nil) && (a.onResolve == nil) == (b.onResolve == nil)
     }
 
     public var body: some View {
         let _ = NWRenderProbe.tick("design.comment")
+        let showResolve = onResolve != nil && (pointerInside || hovering || focused != nil || voiceOver)
+        ZStack(alignment: .topTrailing) {
+            if let onOpen {
+                Button(action: onOpen) { card(hidingMeta: showResolve) }
+                    .buttonStyle(.plain)
+                    .contentShape(RoundedRectangle(cornerRadius: NWDesignMetrics.commentCardRadius))
+                    .focused($focused, equals: .open)
+                    .accessibilityLabel("Open comment \(number)")
+                    .accessibilityValue("\(target), \(meta), \(text)")
+                    .accessibilityHint("Open the comment's board")
+                    .accessibilityActions {
+                        if let onResolve { Button("Resolve", action: onResolve) }
+                    }
+            } else {
+                card(hidingMeta: showResolve)
+            }
+            if let onResolve {
+                Button(action: onResolve) { NWGlyph.Design.resolveComment.image }
+                    .buttonStyle(.nwIcon(size: NW.Height.controlS))
+                    .focused($focused, equals: .resolve)
+                    .help("Resolve comment")
+                    .accessibilityLabel("Resolve comment \(number)")
+                    .opacity(showResolve ? 1 : 0)
+                    .allowsHitTesting(showResolve)
+                    .accessibilityHidden(!showResolve)
+                    .padding(.trailing, NWDesignMetrics.commentCardPaddingHorizontal)
+                    .padding(.top, NWDesignMetrics.commentCardPaddingVertical - (NW.Height.controlS - NWDesignMetrics.cardPinSize) / 2)
+            }
+        }
+        .onHover { pointerInside = $0 }
+    }
+
+    private func card(hidingMeta: Bool) -> some View {
         let nw = Color.nw
-        VStack(alignment: .leading, spacing: NWDesignMetrics.commentCardSpacing) {
+        return VStack(alignment: .leading, spacing: NWDesignMetrics.commentCardSpacing) {
             HStack(spacing: NW.Space.m) {
                 NWCommentPin(number, size: .card)
                 (Text("on ") + Text(target).fontWeight(.semibold).foregroundStyle(nw.textPrimary))
@@ -186,6 +237,8 @@ public struct NWCommentCard: View, Equatable {
                     .truncationMode(.tail)
                 Spacer(minLength: NW.Space.m)
                 Text(meta).lineLimit(1)
+                    .frame(minWidth: onResolve == nil ? nil : NW.Height.controlS, alignment: .trailing)
+                    .opacity(hidingMeta ? 0 : 1)
             }
             .font(.nwSans(NWDesignMetrics.commentMetaSize))
             .foregroundStyle(nw.textTertiary)
