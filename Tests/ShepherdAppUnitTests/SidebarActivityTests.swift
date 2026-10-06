@@ -75,6 +75,92 @@ struct SidebarActivityTests {
         #expect(lists.done.first?.accessory == .age(since: Date(timeIntervalSince1970: 1)))
     }
 
+    @Test(arguments: [
+        ("running", nil, true), ("pending", nil, true), ("needsReply", nil, true),
+        ("future-state", nil, true), ("running", true, false),
+        ("complete", nil, false), ("failed", nil, false), ("stopped", nil, false),
+        ("paused", nil, false), ("rejected", nil, false),
+    ] as [(String, Bool?, Bool)])
+    func unfinishedUnpausedChildrenKeepSettledParentsWorking(state: String, paused: Bool?, working: Bool) {
+        let space = Fixture.space("workspace")
+        for status in AgentStatus.allCases {
+            var parent = Fixture.agent("parent", in: space).agent
+            parent.status = status
+            let raw = ShepherdState(spaces: [space], agents: [parent])
+            let child = ChildRun(runID: "child", label: "worker", state: state, paused: paused)
+            let source = SidebarSource(local: SidebarSource.presentationState(raw, children: [parent.id: [child]]))
+            let expected = working && (status == .done || status == .idle) ? AgentStatus.working : status
+            let row = SidebarDerivation.lists(source).all.first
+            #expect(raw.agents.first?.status == status, "the real parent status does not change")
+            #expect(source.local.agents.first?.status == expected)
+            #expect(row?.leading == .dot(AgentState(expected)))
+            #expect(row?.section == (expected == .working ? .working : expected == .blocked ? .needsYou : expected == .done ? .done : .recents))
+            #expect(row?.completion == (expected == .done ? 1 : nil))
+        }
+    }
+
+    @Test func childWorkKeepsPinsQuestionsAutomationAndProjectRollupsConsistent() {
+        let space = Fixture.space("workspace")
+        var parent = Fixture.agent("parent", in: space).agent
+        parent.status = .done
+        var blocked = Fixture.agent("asking", in: space, order: 1).agent
+        blocked.status = .blocked
+        var run = Fixture.agent("automation", in: space, order: 2).agent
+        run.status = .done
+        let child = ChildRun(runID: "child", label: "worker", state: "running", needsAttention: true)
+        let automation = Automation(name: "watch", prompt: "p", cwd: space.path, agentID: run.id)
+        let raw = ShepherdState(spaces: [space], agents: [parent, blocked, run], automations: [automation])
+        let source = SidebarSource(local: SidebarSource.presentationState(raw, children: [parent.id: [child], blocked.id: [child], run.id: [child]]),
+            failedTurns: [parent.id], openRuns: [automation.id: AutomationRun(startedAt: 10, settledAt: 12, result: .finished, agentID: run.id)])
+        let lists = SidebarDerivation.lists(source, pins: SidebarPins([.local(parent.id)]))
+        #expect(lists.pinned.first?.leading == .dot(.running))
+        #expect(lists.pinned.first?.completion == nil)
+        #expect(lists.needsYou.map(\.id) == [.local(blocked.id)], "only the parent's own question needs the user")
+        #expect(lists.working.map(\.id) == [.local(run.id)])
+        #expect(lists.working.first?.accessibilityLabel == "automation, automation, running")
+        #expect(lists.done.isEmpty)
+        let tree = SidebarDerivation.tree(source, options: SidebarTreeOptions())
+        #expect(tree.projects.first?.rollup == .waiting)
+        #expect(tree.projects.first?.rows.first(where: { $0.id == .local(parent.id) })?.leading == .dot(.running))
+    }
+
+    @Test func childCompletionCreatesANewUnseenCompletionOnlyAfterTheLastChildFinishesLocallyAndRemotely() throws {
+        let space = Fixture.space("workspace")
+        var parent = Fixture.agent("parent", in: space).agent
+        parent.status = .done
+        let raw = ShepherdState(spaces: [space], agents: [parent])
+        let host = UUID(), endpoint = UUID()
+        let child = ChildRun(runID: "first", label: "worker", state: "running")
+        var second = child
+        second.runID = "second"
+        func source(_ children: [ChildRun]) -> SidebarSource {
+            let state = SidebarSource.presentationState(raw, children: [parent.id: children])
+            return SidebarSource(local: state, hosts: [.init(id: host, name: "horizon", state: state)])
+        }
+        var completions = SidebarCompletions()
+        completions.reconcile(source([]), endpoints: [host: endpoint])
+        let seen = completions.records.mapValues(\.generation)
+        for children in [[child, second], [ChildRun(runID: "first", label: "worker", state: "complete"), second]] {
+            var working = source(children)
+            completions.reconcile(working, endpoints: [host: endpoint])
+            working.completions = completions.records
+            let lists = SidebarDerivation.lists(working, seen: seen)
+            #expect(lists.working.count == 2 && lists.done.isEmpty)
+            #expect(completions.records.values.allSatisfy { !$0.finished })
+            #expect(SidebarDerivation.tree(working, options: SidebarTreeOptions()).projects.first?.rollup == .running)
+        }
+        var finished = source([ChildRun(runID: "first", label: "worker", state: "complete"),
+                               ChildRun(runID: "second", label: "worker", state: "failed")])
+        completions.reconcile(finished, endpoints: [host: endpoint])
+        finished.completions = completions.records
+        let lists = SidebarDerivation.lists(finished, seen: seen)
+        #expect(lists.done.count == 2 && lists.working.isEmpty)
+        for row in lists.done { #expect(try #require(row.completion) != seen[row.id]) }
+        #expect(lists.done.first(where: { if case .remote = $0.id { true } else { false } })?.accessory == .tag("horizon"))
+        finished.hosts[0].offline = true
+        #expect(SidebarDerivation.lists(finished).recents.count == 1)
+    }
+
     @Test func automationTimesUseSecondsButActivityUsesMilliseconds() {
         var agent = Fixture.agent("run", in: Fixture.space("workspace")).agent
         agent.status = .done

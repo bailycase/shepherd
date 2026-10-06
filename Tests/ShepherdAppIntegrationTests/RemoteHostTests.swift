@@ -160,9 +160,8 @@ struct RemoteHostTests {
         #expect(vm.blockedCount == 0)
     }
 
-    /// A subagent asks its parent, never the user: one that asked leaves its agent's row where it
-    /// was, on the host's own sidebar and on a client's, though the question itself reaches both
-    /// as data (the tray reads it and says the child waits on its parent).
+    /// A subagent asks its parent, never the user. A live child keeps its idle parent working
+    /// locally and remotely, without putting it in Needs you; the tray shows the child's question.
     @Test func aSubagentThatAskedItsParentNeverPutsItsAgentInNeedsYouOnTheHostOrItsClients() async throws {
         let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }
@@ -179,13 +178,13 @@ struct RemoteHostTests {
         hostVM.applyAgentChildren(agent.id, [asking])
         #expect(hostVM.childRuns.children(of: agent.id).first?.needsAttention == true, "the question is there to read")
         #expect(hostVM.sidebarLists.needsYou.isEmpty)
-        #expect(hostVM.sidebarLists.recents.first?.id == .local(agent.id))
-        #expect(hostVM.sidebarLists.recents.first?.leading == .dot(.idle))
+        #expect(hostVM.sidebarLists.working.first?.id == .local(agent.id))
+        #expect(hostVM.sidebarLists.working.first?.leading == .dot(.running))
         #expect(hostVM.blockedCount == 0)
         try await eventuallyOnMain("the question to reach the client") { vm.remoteChildren[target]?.first?.needsAttention == true }
         #expect(vm.sidebarLists.needsYou.isEmpty)
-        #expect(vm.sidebarLists.recents.first?.id == .remote(target))
-        #expect(vm.sidebarLists.recents.first?.accessory == .tag(connection.config.name))
+        #expect(vm.sidebarLists.working.first?.id == .remote(target))
+        #expect(vm.sidebarLists.working.first?.accessory == .tag(connection.config.name))
         #expect(vm.blockedCount == 0)
     }
 
