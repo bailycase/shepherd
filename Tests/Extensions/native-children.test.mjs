@@ -97,9 +97,7 @@ function fixtureServer() {
       res.write(`data: ${JSON.stringify({ id: "fixture", object: "chat.completion.chunk", created: 1, model: "fixture", choices: [{ index: 0, delta, finish_reason: null }] })}\n\n`);
       res.end(`data: ${JSON.stringify({ id: "fixture", object: "chat.completion.chunk", choices: [{ index: 0, delta: {}, finish_reason: finish }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } })}\n\ndata: [DONE]\n\n`);
     };
-    if (last.role === "user" && text === "WAIT_PARENT") {
-      say({ tool_calls: [{ index: 0, id: "parent-wait", type: "function", function: { name: "fixture_wait", arguments: "{}" } }] }, "tool_calls");
-    } else if (last.role === "user" && text === "BOUNDARY_PARENT") {
+    if (last.role === "user" && text === "BOUNDARY_PARENT") {
       say({ tool_calls: [{ index: 0, id: "boundary-child", type: "function", function: { name: "shepherd_child_start", arguments: JSON.stringify({ task: "BOUNDARY_RESULT", role: "scout", mission: false }) } }] }, "tool_calls");
     } else if (last.role === "user" && text.includes("SHELL:")) {
       const command = text.slice(text.indexOf("SHELL:") + 6);
@@ -152,6 +150,19 @@ async function harness(dir, entries = [], timers, commandEnv) {
   mod.default(pi, timers, commandEnv); await events.get("session_start")({}, ctx);
   return { tools, commands, events, messages, projections, entries, ctx, activeTools,
     call: async (name, p, signal) => (await tools.get(`shepherd_child_${name}`).execute("call", p, signal, undefined, ctx)).details,
+    // Observe settlement in the fixture, then read the completed result once.
+    settled: async (id) => {
+      const file = entries.find((e) => e.customType === "shepherd-child" && e.data.id === id).data.sessionFile;
+      await until(() => {
+        const visible = projections.at(-1)?.children.find((c) => c.runID === id);
+        // The tray shows only 20 children; older retained runs need their saved state.
+        const state = visible?.state ?? JSON.parse(fs.readFileSync(path.join(path.dirname(file), "status.json"))).state;
+        return ["complete", "failed", "stopped"].includes(state);
+      }, 30000);
+      const settled = (await tools.get("shepherd_child_result").execute("call", { id }, undefined, undefined, ctx)).details;
+      assert(["complete", "failed", "stopped"].includes(settled.state), `settled result for ${id}: ${settled.state}`);
+      return settled;
+    },
     tool: async (name, p, signal) => (await tools.get(name).execute("call", p, signal, undefined, ctx)).details,
     shutdown: () => events.get("session_shutdown")() };
 }
@@ -296,12 +307,12 @@ test("managed CLIProxyAPI reaches native starts, resumes and workflow children w
     h.ctx.model = { provider: "cliproxyapi", id: "managed-fixture" };
     h.ctx.modelRegistry.getAll = () => [h.ctx.model];
     const child = await h.call("start", { task: "managed start", agent: "managed", mission: false });
-    const done = (await h.call("wait", { ids: [child.id], all: true, timeoutSeconds: 10 }))[0];
+    const done = (await h.settled(child.id));
     assert.equal(done.state, "complete", done.error);
     assert.equal(done.model, "cliproxyapi/managed-fixture");
     assert.match(done.output, /reply:managed start/);
     await h.call("resume", { id: child.id, message: "managed resume" });
-    const resumed = (await h.call("wait", { ids: [child.id], all: true, timeoutSeconds: 10 }))[0];
+    const resumed = (await h.settled(child.id));
     assert.equal(resumed.state, "complete", resumed.error);
     assert.match(resumed.output, /reply:managed resume/);
     const workflow = await h.tool("shepherd_workflow", { async: false, mission: false,
@@ -322,7 +333,7 @@ test("managed CLIProxyAPI reaches native starts, resumes and workflow children w
   }
 });
 
-test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, result, cancellation, continuation, inspector and late callbacks", { timeout: 120000 }, async () => {
+test("real Pi RPC lifecycle: parallel, role tools, isolation, async reporting, result, cancellation, continuation, inspector and late callbacks", { timeout: 120000 }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-native-"));
   const { server, requests } = fixtureServer();
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
@@ -361,6 +372,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
   let ticks = intervalSpy();
   try {
     h = await harness(dir, [], ticks.timers);
+    assert(!h.tools.has("shepherd_child_wait"), "there is no standalone blocking child tool");
     assert.equal(ticks.active.size, 0, "an idle parent with no runs never ticks");
     await until(() => control.sockets.length === 1);
     assert.equal(control.frames[0].agentID, "fixture");
@@ -377,15 +389,15 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     const originalCatalog = h.ctx.modelRegistry.getAll;
     h.ctx.modelRegistry.getAll = () => [...originalCatalog(), {provider:"extension-fixture",id:"extension-model"}];
     const extensionChild = await h.call("start", {task:"extension provider child",role:"scout",model:"extension-fixture/extension-model"});
-    const extensionDone = await h.call("wait", {ids:[extensionChild.id],all:true,timeoutSeconds:30});
-    assert.equal(extensionDone[0].state, "complete");
-    assert.match(extensionDone[0].output, /reply:extension provider child/);
+    const extensionDone = await h.settled(extensionChild.id);
+    assert.equal(extensionDone.state, "complete");
+    assert.match(extensionDone.output, /reply:extension provider child/);
     const extensionRequests = requests.filter((r) => r.model === "extension-model");
     assert(extensionRequests.length > 0, "extension-only provider was not called");
     assert(extensionRequests.every((r) => (r.tools ?? []).every((t) => ["read","grep","find","ls","shepherd_parent_message"].includes(t.function.name))), "extension tools exceeded the allowlist");
     await h.call("resume", {id:extensionChild.id,message:"resume extension provider child"});
-    const extensionResumed = await h.call("wait", {ids:[extensionChild.id],all:true,timeoutSeconds:30});
-    assert.equal(extensionResumed[0].state, "complete");
+    const extensionResumed = await h.settled(extensionChild.id);
+    assert.equal(extensionResumed.state, "complete");
     fs.unlinkSync(providerFile);
     h.ctx.modelRegistry.getAll = originalCatalog;
     h.messages.length = 0;
@@ -410,7 +422,8 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     h.messages.length = 0;
     const pair = await Promise.all([h.call("start", { task: "SLOW one", role: "scout" }), h.call("start", { task: "SLOW two", role: "reviewer" })]);
     assert.notEqual(pair[0].id, pair[1].id);
-    const done = await h.call("wait", { ids: pair.map((r) => r.id), all: true, timeoutSeconds: 30 });
+    await until(() => pair.every((child) => h.messages.some((message) => message.message.content.includes(child.id))));
+    const done = await Promise.all(pair.map((run) => h.settled(run.id)));
     assert.deepEqual(done.map((r) => r.state), ["complete", "complete"], JSON.stringify(done));
     assert.equal(ticks.active.size, 0, "the tick stops once the last run settles");
     // Card projection for a finished background child: counters, summary, spawn call id.
@@ -425,27 +438,17 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     assert.equal(doneCard.summary, mod.summarize(doneCard.output)); assert.equal(doneCard.cwd, fs.realpathSync(dir)); assert.equal(doneCard.files, undefined);
     assert.equal(doneCard.sessionID, JSON.parse(fs.readFileSync(pair[0].sessionFile, "utf8").split("\n")[0]).id);
     assert(requests.every((r) => !r.tools?.some((t) => ["bash", "write", "edit", "shepherd_child_start"].includes(t.function.name))));
-    // The pair's completions were the wait's result, so neither wakes the parent for another turn.
-    assert.equal(h.messages.length, 0, JSON.stringify(h.messages));
-    // A completion nobody waits for wakes the parent.
+    for (const child of pair) {
+      const notices = h.messages.filter((message) => message.message.content.includes(child.id));
+      assert.equal(notices.length, 1, "each completion resumes the idle parent exactly once");
+      assert.equal(notices[0].options.triggerTurn, true);
+    }
+    h.messages.length = 0;
+    // A completion wakes the idle parent without any waiting tool.
     const unwaited = await h.call("start", { task: "nobody waits", role: "scout" });
     await until(() => h.messages.length === 1);
     assert(h.messages[0].options.triggerTurn && h.messages[0].options.deliverAs === "followUp");
     assert(h.messages[0].message.content.startsWith(`Child ${unwaited.id} (scout): complete`));
-    // A wait that ends before the child does leaves its completion to wake the parent.
-    const early = await h.call("start", { task: "SLOW left early", role: "scout" });
-    const leave = new AbortController();
-    const leaving = h.call("wait", { ids: [early.id], timeoutSeconds: 30 }, leave.signal);
-    leave.abort();
-    await assert.rejects(leaving);
-    await until(() => h.messages.length === 2);
-    assert(h.messages[1].message.content.startsWith(`Child ${early.id} (scout): complete`));
-    // A wait cancelled after the child finished, before it could answer, hands the completion back.
-    const late = await h.call("start", { task: "SLOW cancelled late", role: "scout" });
-    const lateState = () => h.projections.at(-1).children.find((c) => c.runID === late.id)?.state;
-    await assert.rejects(h.call("wait", { ids: [late.id], timeoutSeconds: 30 }, { throwIfAborted() { if (lateState() === "complete") throw Error("cancelled"); } }), /cancelled/);
-    await until(() => h.messages.length === 3);
-    assert(h.messages[2].message.content.startsWith(`Child ${late.id} (scout): complete`));
     h.messages.length = 0;
     // Routine progress is record-only; while working, completed results form one boundary
     // continuation, and reading a result explicitly consumes its pending notice.
@@ -478,22 +481,18 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     await h.call("result", { id: stoppedParent.id });
     assert.equal(h.events.get("agent_before_settle")({ entries: [], outcome: "completed" }), undefined);
     h.events.get("agent_settled")();
-    // Reports reach context without waking an idle parent; user input ends a wait without
-    // cancelling the still-running child or asking the model for a receipt-only reply.
+    // Reports reach context without waking an idle parent. Queued user input does not
+    // cancel a background child or trigger a receipt-only continuation.
     const reportOnly = await h.call("start", { task: "SLOW quiet report", role: "scout", delivery: "report" });
     await until(() => h.messages.some((m) => m.message.content.includes(reportOnly.id)));
     assert.equal(h.messages.find((m) => m.message.content.includes(reportOnly.id)).options.triggerTurn, false);
     const background = await h.call("start", { task: "SLOW background during chat", role: "scout" });
     h.events.get("agent_start")();
-    const waiting = h.tools.get("shepherd_child_wait").execute("wait", { ids: [background.id], timeoutSeconds: 60 }, undefined, undefined, h.ctx);
     control.sockets.at(-1).write(JSON.stringify({ type: "parentInput" }) + "\n");
-    const yielded = await waiting;
-    assert.equal(yielded.terminate, true);
-    assert.equal(yielded.details[0].waitInterrupted, "user_input");
-    assert.equal(yielded.details[0].state, "running");
-    h.events.get("agent_settled")();
-    h.events.get("agent_start")();
-    await h.call("wait", { ids: [background.id], timeoutSeconds: 30 });
+    await until(() => stateOf(background.id) === "complete");
+    const queuedInput = h.events.get("agent_before_settle")({ entries: [], outcome: "completed" });
+    assert.equal(queuedInput.continue, false);
+    assert(queuedInput.entries[0].content.includes(background.id));
     h.events.get("agent_settled")();
     h.events.get("agent_start")();
     const workflowWait = h.tools.get("shepherd_workflow").execute("workflow", { async: false, mission: false,
@@ -513,17 +512,18 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     const firstFile = pair[0].sessionFile;
     await h.call("resume", { id: pair[0].id, message: "continued" });
     await assert.rejects(h.call("resume", { id: pair[0].id, message: "double writer" }), /already active/);
-    const resumed = (await h.call("wait", { ids: [pair[0].id], timeoutSeconds: 30 }))[0];
+    const resumed = await h.settled(pair[0].id);
     assert.equal(resumed.state, "complete"); assert.equal(resumed.sessionFile, firstFile);
     assert(fs.readFileSync(firstFile, "utf8").includes("continued"));
     assert(requests.some((r) => r.messages.filter((m) => m.role === "user").length >= 2));
     const limited = await h.call("start", { task: "TOKEN_LIMIT", role: "scout" });
-    const partial = (await h.call("wait", { ids: [limited.id], timeoutSeconds: 30 }))[0];
+    const partial = (await h.settled(limited.id));
     assert.equal(partial.state, "failed"); assert.equal(partial.stopReason, "length"); assert.match(partial.error, /Incomplete/);
     const failedCard = h.projections.at(-1).children.find((c) => c.runID === limited.id);
     assert.match(failedCard.exitReason, /^Incomplete answer/); assert.equal(failedCard.result, undefined); assert.equal(failedCard.summary, undefined);
     const ask = await h.call("start", { task: "ASK_PARENT", role: "scout" });
-    const asked = (await h.call("wait", { ids: [ask.id], timeoutSeconds: 30 }))[0];
+    await until(() => h.messages.some((message) => message.message.content.includes(ask.id)));
+    const asked = (await h.settled(ask.id));
     assert(asked.needsReply);
     assert.equal(typeof asked.questionID, "string");
     await assert.rejects(h.call("resume", { id: ask.id, message: "stale answer", questionID: "old-attempt/question" }), /question changed/);
@@ -550,7 +550,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     // The control channel reconnects with the new parent; a card answer resumes the settled child.
     await until(() => control.sockets.length === 2);
     assert.deepEqual(await childCommand({ runID: ask.id, action: "message", text: "card answer", mode: "steer" }), { type: "childCommandResult", id: 1 });
-    await h.call("wait", { ids: [ask.id], timeoutSeconds: 30 });
+    await h.settled(ask.id);
     assert.equal(ticks.active.size, 0);
     assert(fs.readFileSync(asked.sessionFile, "utf8").includes("card answer"));
     assert.equal((await h.call("result", { id: ask.id })).needsReply, false);
@@ -564,12 +564,12 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     await h.commands.get("subagents-fleet").handler(ask.id, fleetContext);
     const uiReply = await fleet.runtime.send(pair[0].id, "fleet answer", "steer");
     assert.equal(uiReply.mode, "reply");
-    await h.call("wait", { ids: [pair[0].id], timeoutSeconds: 30 });
+    await h.settled(pair[0].id);
     assert(fs.readFileSync(firstFile, "utf8").includes("fleet answer"));
     const askDir = path.dirname(asked.sessionFile), askStatus = () => JSON.parse(fs.readFileSync(path.join(askDir, "status.json")));
     fs.writeFileSync(path.join(askDir, "control", "steer-requests", "answer.json"), JSON.stringify({ message: "inspector answer" }));
     await until(() => askStatus().controlRequestID === "answer" && askStatus().controlNotice === "reply accepted or queued");
-    await h.call("wait", { ids: [ask.id], timeoutSeconds: 30 });
+    await h.settled(ask.id);
     assert(fs.readFileSync(asked.sessionFile, "utf8").includes("inspector answer"));
     assert.equal((await h.call("result", {id: ask.id})).needsReply, false);
     // Resume saves running state before Pi acknowledges the new prompt.
@@ -577,7 +577,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     await until(() => askStatus().state === "running");
     assert.equal(askStatus().controlRequestID, "answer", "launch must not publish the new request ID with the previous acceptance");
     await until(() => askStatus().controlRequestID === "second-answer" && askStatus().controlNotice === "reply accepted or queued");
-    await h.call("wait", { ids: [ask.id], timeoutSeconds: 30 });
+    await h.settled(ask.id);
     assert(fs.readFileSync(asked.sessionFile, "utf8").includes("second inspector answer"));
     // What the user sent (a card, the inspector, the fleet view) is recorded beside the session;
     // what the parent sent through its tools is not.
@@ -594,7 +594,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     fs.rmSync(leaseDir,{recursive:true});
     // Files touched by edit/write aggregate per path (write counts no lines, the edit adds two).
     const editor = await h.call("start", { task: `WRITE_THEN_EDIT:${path.join(dir, "touched.txt")}`, role: "worker" });
-    assert.equal((await h.call("wait", { ids: [editor.id], timeoutSeconds: 30 }))[0].state, "complete");
+    assert.equal((await h.settled(editor.id)).state, "complete");
     const editorCard = h.projections.at(-1).children.find((c) => c.runID === editor.id);
     assert.deepEqual(editorCard.files, [{ path: path.join(dir, "touched.txt"), added: 2, removed: 0 }]);
     assert.deepEqual(editorCard.result, { files: 1, added: 2, removed: 0, tools: 2, tokens: 4 });
@@ -612,12 +612,12 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     const published = h.projections.length;
     await until(() => h.projections.length >= published + 2, 5000);
     const receipt = await fleet.runtime.send(shell.id, "queued message", "followUp"); assert.equal(receipt.mode, "followUp"); assert.match(receipt.delivery, /accepted/);
-    const timeout = await h.call("wait", { ids: [shell.id], timeoutSeconds: 0.05 }); assert.equal(timeout[0].state, "running");
+    assert.equal((await h.call("result", { id: shell.id })).state, "running");
     const runDir = path.dirname(shell.sessionFile);
     fs.writeFileSync(path.join(runDir, "control", "steer-requests", "fixture.json"), JSON.stringify({ message: "inspector message" }));
     await until(() => JSON.parse(fs.readFileSync(path.join(runDir, "status.json"))).controlNotice === "message accepted or queued");
     fs.writeFileSync(path.join(runDir, "control", "stop.json"), JSON.stringify({ id: "stop-fixture", type: "stop" }));
-    const cancelled = (await h.call("wait", { ids: [shell.id], timeoutSeconds: 30 }))[0]; assert.equal(cancelled.state, "stopped");
+    const cancelled = (await h.settled(shell.id)); assert.equal(cancelled.state, "stopped");
     const stoppedCard = h.projections.at(-1).children.find((c) => c.runID === shell.id);
     assert.equal(stoppedCard.lastActivity.tool, "bash"); assert.match(stoppedCard.lastActivity.preview, /^printf/); assert.equal(stoppedCard.toolCalls, 1);
     assert.equal(stoppedCard.lastActivity.kind, "tool", "a finished call is no longer in flight");
@@ -629,7 +629,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     h.activeTools.splice(h.activeTools.indexOf("edit"), 1);
     h.activeTools.splice(h.activeTools.indexOf("write"), 1);
     await h.call("resume", { id: shell.id, message: "narrowed continuation" });
-    await h.call("wait", { ids: [shell.id], timeoutSeconds: 30 });
+    await h.settled(shell.id);
     assert(!requests.at(-1).tools.some((t) => ["bash", "edit", "write"].includes(t.function.name)));
     h.activeTools.push("bash", "edit", "write");
     const aborted = new AbortController(); aborted.abort();
@@ -646,8 +646,8 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     assert.equal(held.state, "running", "pause must not complete or kill the child");
     const continueReceipt = await childCommand({ runID: pausing.id, action: "continue" });
     assert.equal(continueReceipt.error, undefined);
-    const unpaused = await h.call("wait", { ids: [pausing.id], all: true, timeoutSeconds: 30 });
-    assert.equal(unpaused[0].state, "complete");
+    const unpaused = await h.settled(pausing.id);
+    assert.equal(unpaused.state, "complete");
     const cancelPaused = await h.call("start", { task: "SHELL:sleep 1; echo cancel-paused", role: "worker" });
     assert.equal((await childCommand({ runID: cancelPaused.id, action: "pause" })).error, undefined);
     await sleep(1500);
@@ -668,7 +668,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     for (let i = 0; i < 4; i++) await until(() => !live(Number(fs.readFileSync(path.join(dir, `busy-${i}`)))));
     // Card Retry resumes with the original task.
     assert.deepEqual(await childCommand({ runID: limited.id, action: "resume" }), { type: "childCommandResult", id: controlSequence });
-    await h.call("wait", { ids: [limited.id], timeoutSeconds: 30 });
+    await h.settled(limited.id);
     const userTurns = fs.readFileSync(partial.sessionFile, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)).filter((e) => e.message?.role === "user");
     assert(userTurns.length >= 2 && JSON.stringify(userTurns.at(-1).message.content).includes("TOKEN_LIMIT"), `resume re-sends the original task: ${JSON.stringify(userTurns.at(-1))}`);
     const priorCatalog = h.ctx.modelRegistry.getAll;
@@ -687,11 +687,11 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     // Even newer unanswered questions cannot hide a resumed running child.
     for (let i = 0; i < 20; i++) {
       const short = await h.call("start", { task: `ASK_PARENT history ${i}`, role: "scout" });
-      await h.call("wait", { ids: [short.id], timeoutSeconds: 30 });
+      await h.settled(short.id);
     }
     await h.call("resume", { id: pair[0].id, message: "SLOW old resumed child" });
     assert(h.projections.at(-1).children.some((c) => c.runID === pair[0].id && c.state === "running"));
-    await h.call("wait", { ids: [pair[0].id], timeoutSeconds: 30 });
+    await h.settled(pair[0].id);
     // Hard parent death: a separate owner holds RPC stdin. Killing just that
     // owner must make real Pi observe EOF and stop its in-flight bash descendant.
     const ownerScript = path.join(dir, "owner.mjs");
@@ -714,7 +714,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     } finally { try { process.kill(-ownerProc.pid, "SIGKILL"); } catch {} }
     // Exercise the real parent's runtime replacement, not just the harness hook.
     const driver = path.join(dir, "parent-driver.ts");
-    fs.writeFileSync(driver, `import children from ${JSON.stringify(source)};\nexport default function(pi) { const tools = new Map(); let lastChild; children(new Proxy(pi, { get(target, key) { if (key === 'registerTool') return (tool) => { tools.set(tool.name, tool); target.registerTool(tool); }; return target[key]; } }));\npi.on('agent_before_settle', (event,ctx) => { if(event.entries.some(e=>e.customType==='shepherd-child')) ctx.ui.notify('fixture-child-boundary'); });\npi.registerCommand('run', {description:'foreign run collision',handler:async()=>{}});\npi.registerCommand('fixture-start', { description:'fixture', handler: async (args, ctx) => { const data = await tools.get('shepherd_child_start').execute('fixture', { task: args, role:'worker' }, undefined, undefined, ctx); lastChild = data.details.id; ctx.ui.notify(JSON.stringify(data.details)); } });\npi.registerTool({name:'fixture_wait',label:'wait',description:'test wait',parameters:{type:'object',properties:{}},execute:async(id,p,signal,u,ctx)=>tools.get('shepherd_child_wait').execute(id,{ids:[lastChild],timeoutSeconds:60},signal,u,ctx)});\npi.registerCommand('fixture-reload', { description:'fixture reload', handler: async (_args, ctx) => { await ctx.reload(); } });\n}`);
+    fs.writeFileSync(driver, `import children from ${JSON.stringify(source)};\nexport default function(pi) { const tools = new Map(); children(new Proxy(pi, { get(target, key) { if (key === 'registerTool') return (tool) => { tools.set(tool.name, tool); target.registerTool(tool); }; return target[key]; } }));\npi.on('agent_before_settle', (event,ctx) => { if(event.entries.some(e=>e.customType==='shepherd-child')) ctx.ui.notify('fixture-child-boundary'); });\npi.registerCommand('run', {description:'foreign run collision',handler:async()=>{}});\npi.registerCommand('fixture-start', { description:'fixture', handler: async (args, ctx) => { const data = await tools.get('shepherd_child_start').execute('fixture', { task: args, role:'worker' }, undefined, undefined, ctx); ctx.ui.notify(JSON.stringify(data.details)); } });\npi.registerCommand('fixture-reload', { description:'fixture reload', handler: async (_args, ctx) => { await ctx.reload(); } });\n}`);
     const actual = spawn(process.execPath, [path.join(pkg, "dist/cli.js"), "--mode", "rpc", "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-themes", "--no-approve", "-e", driver, "--session", path.join(dir, "actual-parent.jsonl"), "--model", "fixture/fixture"],
       { cwd: dir, env: process.env, stdio: ["pipe", "pipe", "pipe"] });
     const actualEvents = [], actualErrors = [];
@@ -761,14 +761,11 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
       await rpc("prompt", { message: `/fixture-start SHELL:sleep 30 >/dev/null 2>&1 & echo $! > '${dir}/chat-child'; wait` });
       await until(() => fs.existsSync(path.join(dir, "chat-child")));
       const chatChild = Number(fs.readFileSync(path.join(dir, "chat-child")));
-      const eventsBeforeWait = actualEvents.length;
-      await rpc("prompt", { message: "WAIT_PARENT" });
-      await until(() => actualEvents.slice(eventsBeforeWait).some((e) => e.type === "tool_execution_start" && e.toolName === "fixture_wait"));
-      control.sockets.at(-1).write(JSON.stringify({ type: "parentInput" }) + "\n");
-      await until(() => actualEvents.slice(eventsBeforeWait).some((e) => e.type === "agent_settled"));
-      assert(live(chatChild), "yielding the real parent wait leaves its child alive");
+      const eventsBeforeChat = actualEvents.length;
+      const idle = await rpc("get_state");
+      assert.equal(idle.isStreaming, false, "the parent is idle while its helper works");
       await rpc("prompt", { message: "USER_CHAT_WHILE_CHILD_RUNS" });
-      await until(() => actualEvents.slice(eventsBeforeWait).filter((e) => e.type === "agent_settled").length >= 2);
+      await until(() => actualEvents.slice(eventsBeforeChat).some((e) => e.type === "agent_settled"));
       assert(live(chatChild), "the parent can answer a new user while its child is still running");
       assert(requests.some((r) => JSON.stringify(r.messages.at(-1)).includes("USER_CHAT_WHILE_CHILD_RUNS")));
     } finally { actual.stdin.end(); await until(() => actual.exitCode !== null || actual.signalCode !== null).catch(() => actual.kill("SIGKILL")); }
@@ -779,7 +776,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     fs.writeFileSync(profilePath, `---\nname: minimal\ndescription: minimal profile\nmodel: inherit\nextensions: ${explicitExtension}\n---\nPROFILE_MARKER\n`);
     h.activeTools.push("terminal_open");
     const minimal = await h.call("start", { task: "minimal profile test", agent: "minimal", mission: false });
-    await h.call("wait", { ids: [minimal.id], timeoutSeconds: 30 });
+    await h.settled(minimal.id);
     assert.equal(minimal.missionId, undefined);
     assert.deepEqual(minimal.tools, ["read", "bash", "edit", "write"]);
     fs.unlinkSync(explicitExtension);
@@ -787,18 +784,18 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     assert.equal((await h.call("result", { id: minimal.id })).state, "failed");
     fs.writeFileSync(explicitExtension, "export default function() {}\n");
     await h.call("resume", { id: minimal.id, message: "retry restored extension" });
-    const retried = (await h.call("wait", { ids: [minimal.id], timeoutSeconds: 30 }))[0];
+    const retried = (await h.settled(minimal.id));
     assert.equal(retried.state, "complete");
     assert.match(retried.output, /reply:retry restored extension/);
     h.activeTools.splice(h.activeTools.indexOf("terminal_open"), 1);
     fs.writeFileSync(profilePath, '---\nname: minimal\ndescription: minimal profile\nmodel: fixture:high\nthinking: low\ntools: read\ndefaultContext: fresh\n---\nPROFILE_MARKER\n');
     const custom = await h.call("start", { task: "profile precedence", agent: "minimal", thinking: "off", mission: false });
     assert.equal(custom.thinking, "off"); assert.equal(custom.model, "fixture/fixture");
-    await h.call("wait", { ids: [custom.id], timeoutSeconds: 30 });
+    await h.settled(custom.id);
     fs.writeFileSync(profilePath, '---\nname: minimal\ndescription: changed profile\ntools: read, bash, edit, write\n---\nnew role\n');
     h.activeTools.splice(h.activeTools.indexOf("read"), 1);
     await h.call("resume", { id: custom.id, message: "narrow across restart" });
-    await h.call("wait", { ids: [custom.id], timeoutSeconds: 30 });
+    await h.settled(custom.id);
     h.activeTools.push("read");
     await h.shutdown();
     process.env.SHEPHERD_CHILD_CONCURRENCY = "2"; process.env.SHEPHERD_CHILD_THINKING = "high";
@@ -806,12 +803,12 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     h = await harness(dir, h.entries, undefined, outsideShepherd);
     const defaultsRun = await h.call("start", { task: "configured defaults", role: "scout", mission: false });
     assert.equal(defaultsRun.thinking, "high"); assert.equal(defaultsRun.context, "fork"); assert.equal(defaultsRun.model, "fixture/fixture");
-    await h.call("wait", { ids: [defaultsRun.id], timeoutSeconds: 30 });
+    await h.settled(defaultsRun.id);
     const configuredProfile = await h.call("start", { task: "profile overrides defaults", agent: "minimal", mission: false });
-    await h.call("wait", { ids: [configuredProfile.id], timeoutSeconds: 30 });
+    await h.settled(configuredProfile.id);
     const continued = await h.call("resume", { id: custom.id, message: "must not regain tools after reload" });
     assert.deepEqual(continued.tools, []);
-    await h.call("wait", { ids: [custom.id], timeoutSeconds: 30 });
+    await h.settled(custom.id);
     const workflow = await h.tool("shepherd_workflow", { async: false, task: "fixture workflow", workflowScript: `
       const scan = await runs.run("scan", { agent: "scout", task: "workflow scan" });
       await state.set("scan", scan.output);
@@ -884,7 +881,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     assert.equal(endedSiblings.state,"failed"); assert.equal(endedSiblings.children.length,2);
     assert(endedSiblings.children.every((c)=>c.state==="stopped"), JSON.stringify(endedSiblings));
     const interrupted = await h.call("start", { task: "restore interrupted ledger", role: "scout" });
-    await h.call("wait", { ids: [interrupted.id], timeoutSeconds: 30 });
+    await h.settled(interrupted.id);
     await h.shutdown();
     const statusFile = path.join(path.dirname(interrupted.sessionFile), "status.json");
     const interruptedStatus = JSON.parse(fs.readFileSync(statusFile)); interruptedStatus.state = "running";
@@ -897,7 +894,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
       const ledger = await h.tool("shepherd_mission", { action: "create", title: withChild ? "last child finished" : "no child yet" });
       if (withChild) {
         const completedChild = await h.call("start", { task: "finished before script return", role: "scout", missionId: ledger.id });
-        await h.call("wait", { ids: [completedChild.id], timeoutSeconds: 30 });
+        await h.settled(completedChild.id);
       }
       const { missionStore } = await jiti.import(path.join(root, "Extensions/shepherd-missions.ts"));
       missionStore(path.join(dir, "shepherd-native"), dir).update(ledger.id, (m) => { m.workflow = { id: `workflow-interrupted-${withChild}`, state: "running" }; });
@@ -951,13 +948,13 @@ test("the global instructions copied into Shepherd's pi home reach a child that 
     const requestFor = (task) => requests.find((r) => JSON.stringify(r.messages).includes(task));
 
     const kept = await h.call("start", { task: "KEEPS-CONTEXT task", role: "scout" });
-    assert.equal((await h.call("wait", { ids: [kept.id], all: true, timeoutSeconds: 30 }))[0].state, "complete");
+    assert.equal((await h.settled(kept.id)).state, "complete");
     const withContext = JSON.stringify(requestFor("KEEPS-CONTEXT task"));
     assert.match(withContext, /FIXTURE-GLOBAL-INSTRUCTIONS/, "the child's system prompt has the copied instructions");
     assert(withContext.includes(path.join(yours, "AGENTS.md")), "with their real path");
 
     const isolated = await h.call("start", { task: "NO-CONTEXT task", role: "isolated" });
-    assert.equal((await h.call("wait", { ids: [isolated.id], all: true, timeoutSeconds: 30 }))[0].state, "complete");
+    assert.equal((await h.settled(isolated.id)).state, "complete");
     assert.doesNotMatch(JSON.stringify(requestFor("NO-CONTEXT task")), /FIXTURE-GLOBAL-INSTRUCTIONS/);
   } finally {
     await h?.shutdown();
