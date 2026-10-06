@@ -10,6 +10,9 @@ public enum RemoteProjectsRequest: Codable, Hashable, Sendable {
     public var requiresDetails: Bool {
         switch self { case .context, .open: true; default: false }
     }
+    /// Explicit, host-owned OAuth actions. No server configuration or tokens cross this API.
+    case mcp(directory: String, file: String, action: ProjectMCPAction)
+    public var requiresMCP: Bool { if case .mcp = self { true } else { false } }
     case read(directory: String, file: String)
     case save(directory: String, file: String, text: String, expected: String?)
 }
@@ -73,6 +76,30 @@ public enum RemoteProjectsResult: Codable, Hashable, Sendable {
     case text(ProjectFileText)
     case context(ProjectContext)
     case opened
+    case mcp(ProjectMCPResult)
+}
+
+public enum ProjectMCPAction: Codable, Hashable, Sendable {
+    case credentials
+    case login(server: String)
+    case poll(id: UUID)
+    case complete(id: UUID, redirectURL: String)
+    case cancel(id: UUID)
+    case logout(server: String)
+}
+
+public struct ProjectMCPResult: Codable, Hashable, Sendable {
+    public enum Phase: String, Codable, Sendable { case waiting, done, failed }
+    public var id: UUID?
+    public var phase: Phase
+    public var authorizationURL: String?
+    public var signedIn: [String]
+    public var message: String?
+    public init(id: UUID? = nil, phase: Phase = .done, authorizationURL: String? = nil,
+                signedIn: [String] = [], message: String? = nil) {
+        self.id = id; self.phase = phase; self.authorizationURL = authorizationURL
+        self.signedIn = signedIn; self.message = message
+    }
 }
 
 public struct ProjectContext: Codable, Hashable, Sendable {

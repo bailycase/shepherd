@@ -98,6 +98,8 @@ public final class SessionServer: @unchecked Sendable {
 
     private final class ExtensionConnection {
         let fd: Int32
+        let projectMCPOwner = UUID()
+        var projectMCPRequests: [Int: Task<Void, Never>] = [:]
         /// True for a remote Shepherd client on the TCP listener; false for a
         /// pi extension on the Unix socket.
         let isRemote: Bool
@@ -727,7 +729,7 @@ public final class SessionServer: @unchecked Sendable {
         self.projects = ProjectSettingsStore(historyURL: stateURL.deletingLastPathComponent().appendingPathComponent("projects.json"),
                                              home: URL(fileURLWithPath: pi.userHome, isDirectory: true), sessions: pi.sessionsRoot,
                                              systems: stateURL.deletingLastPathComponent().appendingPathComponent("design-systems"),
-                                             globalDirectories: { [pi.home] + [pi.yourPi.resolve()?.agentDirectory].compactMap { $0 } })
+                                             globalDirectories: { [pi.home] + [pi.yourPi.resolve()?.agentDirectory].compactMap { $0 } }, pi: pi)
         self.serviceTierOffers = ServiceTierOffers(home: pi.files)
         self.modelCatalog = modelCatalog ?? SessionServer.piModelCatalog(pi)
         self.originStore = ThreadOriginStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("thread-origins", isDirectory: true))
@@ -912,6 +914,7 @@ public final class SessionServer: @unchecked Sendable {
     /// terminates: sessions must not outlive the app. A design deleted within its undo window is
     /// deleted for good.
     public func stop() {
+        Task { await projects.stopMCP() }
         lifecycleLock.lock()
         defer { lifecycleLock.unlock() }
         let owned = queue.sync { () -> Bool in
@@ -1812,13 +1815,22 @@ public final class SessionServer: @unchecked Sendable {
                 send(.error(id: id, code: "update_required", message: "Update Shepherd on the host to read project context and open its editor."), to: client)
                 return
             }
+            guard !request.requiresMCP || offeredCapabilities.contains(RemoteProtocol.projectMCPCapability) else {
+                send(.error(id: id, code: "update_required", message: "Update Shepherd on the host to sign in to project MCP servers."), to: client)
+                return
+            }
+            guard !request.requiresMCP || client.projectMCPRequests.count < 16 else {
+                send(.error(id: id, code: "busy", message: "Too many MCP requests are pending."), to: client)
+                return
+            }
             let state = store.state, projects = projects
-            Task { [weak self] in
+            let task = Task { [weak self] in
                 let result: Result<RemoteProjectsResult, Error>
-                do { result = .success(try await projects.request(request, state: state)) }
+                do { result = .success(try await projects.request(request, state: state, owner: client.projectMCPOwner)) }
                 catch { result = .failure(error) }
                 self?.queue.async { [weak self] in
                     guard let self, self.clients[client.fd] === client else { return }
+                    client.projectMCPRequests[id] = nil
                     switch result {
                     case .success(let value): self.send(.projects(id: id, result: value), to: client)
                     case .failure(let error):
@@ -1826,6 +1838,7 @@ public final class SessionServer: @unchecked Sendable {
                     }
                 }
             }
+            if request.requiresMCP { client.projectMCPRequests[id] = task }
         case .hostSettings(let id, let request):
             guard let handler = onRemoteHostSettings else {
                 send(.error(id: id, code: "unavailable", message: "This host has no settings to share."), to: client)
@@ -2667,6 +2680,9 @@ public final class SessionServer: @unchecked Sendable {
         }
         client.upload = nil
         client.tunnels?.closeAll()
+        for task in client.projectMCPRequests.values { task.cancel() }
+        client.projectMCPRequests.removeAll()
+        Task { await projects.cancelMCP(owner: client.projectMCPOwner) }
         client.tunnels = nil
         browserDriveConnectionClosed(client)
         for (id, pending) in childCommandPending where pending.client === client {

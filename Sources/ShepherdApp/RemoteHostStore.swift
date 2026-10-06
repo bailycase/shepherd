@@ -114,6 +114,7 @@ final class RemoteHostStore {
         var supportsSkills: Bool { client?.capabilities.contains(RemoteProtocol.skillsCapability) == true }
         var supportsProjects: Bool { client?.capabilities.contains(RemoteProtocol.projectsCapability) == true }
         var supportsProjectDetails: Bool { client?.capabilities.contains(RemoteProtocol.projectDetailsCapability) == true }
+        var supportsProjectMCP: Bool { client?.capabilities.contains(RemoteProtocol.projectMCPCapability) == true }
         /// What Settings ▸ Skills reads and changes the host's skills through, while it's connected.
         var skillsClient: (any SkillsClient)? { phase == .connected ? client : nil }
         /// The host takes every level pi has in `createAgent` (older hosts: Off to High).

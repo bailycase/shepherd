@@ -6,6 +6,18 @@ import ShepherdProtocol
 @Suite("Project MCP configuration", .mainActorExclusive)
 @MainActor
 struct ProjectMCPTests {
+    @Test func oauthActionsReflectHostCredentialsAndExcludeHeadersAndStdio() {
+        let text = #"{"mcpServers":{"issues":{"url":"https://example.test/mcp"},"header":{"url":"https://example.test/mcp","headers":{"authorization":"Bearer ${TOKEN}"}},"local":{"command":"tools"}}}"#
+        let unsigned = ProjectMCPConfiguration(text: text, canSignIn: true)
+        #expect(unsigned.rows.first(where: { $0.name == "issues" })?.signIn == .signIn)
+        #expect(unsigned.rows.first(where: { $0.name == "header" })?.signIn != .signIn)
+        #expect(unsigned.rows.first(where: { $0.name == "local" })?.signIn != .signIn)
+        let signed = ProjectMCPConfiguration(text: text, signedIn: ["issues"], canSignIn: true)
+        #expect(signed.rows.first(where: { $0.name == "issues" })?.signIn == .account("Signed in"))
+        let oldHost = ProjectMCPConfiguration(text: text, canSignIn: false)
+        #expect(oldHost.rows.first(where: { $0.name == "issues" })?.signIn == .unverified)
+    }
+
     @Test(arguments: [".pi/mcp.json", ".mcp.json"])
     func editsUseTheSelectedHostAndFileWithoutChangingUnknownFields(_ path: String) async throws {
         let original = #"{"owner":"keep","servers":{"other":{"command":"vscode-only"}},"mcpServers":{"issues":{"url":"https://example.test/mcp","enabled":true,"disabled":false,"exposure":"hidden","toolExposure":{"lookup":"direct"},"oauth":{"custom":"keep"},"headers":{"Authorization":"Bearer ${PROJECT_TOKEN}"},"future":{"keep":true}}}}"#
@@ -114,6 +126,7 @@ struct ProjectMCPTests {
                     self.text = text
                     return .text(ProjectFileText(file: self.reference, text: text))
                 case .open: return .opened
+                case .mcp: return .mcp(.init())
                 }
             }
             await model.load([host])

@@ -26,16 +26,24 @@ Settings page when search is empty.
   not the global store. A missing file starts empty. Never start processes, probe URLs, open a
   browser or access the global Keychain merely by opening or editing a project's configuration.
 - Connection status is "Not checked yet" or "Off". Tool count is unknown. The detail explains
-  that live status and sign-in belong to threads on the project's host; it does not offer a
-  nonfunctional Reconnect or pretend to know the tool catalog.
+  that live status belongs to threads on the project's host; it does not offer a nonfunctional
+  Reconnect or pretend to know the tool catalog. HTTP servers without an Authorization header
+  offer the same Sign in sheet as global MCP settings, and Sign out when the host holds tokens.
+  Older hosts explain that an update is required instead of offering inactive controls.
+  The sign-in requirement and control checklist are in [ProjectMCPSignIn](boards/ProjectMCPSignIn.md).
 - Structured edits preserve unknown JSON keys and the existing project's format. Native
   `.pi/mcp.json` uses `enabled`, `exposure`, `timeout` and `oauth`; shared `.mcp.json` uses
   `disabled` and its existing deferred-tool behavior. Do not silently write global-only
   `shepherd` options or Keychain references into either file. Preserve fractional timeouts and
   values above 300 seconds through unrelated edits.
 - Project credentials stay in the project file or use `${VAR}` references from the host's
-  environment. State that distinction in the form, conceal secret values and preserve existing
+  environment. OAuth credentials stay in the selected host's pi home, never in the project file
+  or viewer. State that distinction in the form, conceal secret values and preserve existing
   values when unchanged. Removing a project entry never deletes global credentials.
+  Adding an HTTP server with OAuth uses "Add and sign in", after saving successfully. Remote
+  sign-in opens the viewer's browser and forwards only the matching loopback OAuth callback.
+  Cancellation, switching projects, disconnection and the five-minute limit stop pending work.
+  Model calls, notifications and automatic restart are not part of sign-in.
 - Add, Edit, on/off and exposure controls save through `ProjectsModel` to the selected host and
   directory with the existing expected-content check. Do not close an unsuccessful edit or
   discard its draft. Remove asks for confirmation. Other hosts and the global file stay intact.
