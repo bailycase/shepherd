@@ -291,6 +291,9 @@ events come out on stdout, one record per LF.
       messages at the sizes a thread's messages have) and live content for 48 KiB
       (`activeReserve`), so the snapshot can then pass 240 KiB, never by more than the
       reserves. History that does not fit is a page away (`olderCursor`), never a clip.
+      JSON escaping can make a bounded message exceed the 96 KiB reserve. Keep the newest
+      message anyway, up to 128 KiB encoded, so the page retains a row and an older cursor.
+      This exception does not admit oversized producer metadata, such as an unbounded ID.
   - One 16 KiB text budget per message, shared across its blocks and tool fields, and at most
     128 blocks per message. A message cut to it is `truncated`, which its row says ("Output
     truncated"); the thread has nothing missing.

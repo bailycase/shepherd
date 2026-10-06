@@ -46,8 +46,12 @@ final class ThreadTailGuard {
     /// Off, the thread is left as the stack leaves it (a test showing what it is for).
     var enabled = true
     /// What the thread's last render knew, read when a check comes due.
-    var hasRows = false
-    var active = false
+    var rowIDs: Set<String> = [] {
+        didSet { if rowIDs != oldValue { suspect() } }
+    }
+    var active = false {
+        didSet { if active && !oldValue { suspect() } }
+    }
     var following = false
     var userScrolling = false
     /// How far the visible bottom sits above the end of the content, as the scroll view last
@@ -94,6 +98,12 @@ final class ThreadTailGuard {
         suspect()
     }
 
+    /// A completed turn gets a fresh bounded repair, without changing the reader's position.
+    func turnFinished() {
+        attempts = 0
+        suspect()
+    }
+
     /// The reader's hands are on the scroll view (a wheel tick, a drag): leave it alone a moment.
     func readerMoved() {
         readerUntil = .now + Self.hands
@@ -105,8 +115,11 @@ final class ThreadTailGuard {
         check = nil
     }
 
+    private var hasRows: Bool { !rowIDs.isEmpty }
     private var tailInView: Bool { visible.contains(bottomID) }
-    private var rowsInView: Bool { visible.contains { $0 != bottomID } }
+    /// Completion can evict the live turn's prompt from the history page and replace its reply ID.
+    /// A cached target for that old reply is no more evidence of content than the clear marker.
+    private var rowsInView: Bool { !rowIDs.isDisjoint(with: visible) }
 
     /// No content in view, the tail missing from it while the thread follows it from afar, or a
     /// thread that was just repaired resting short of its end.
@@ -183,7 +196,7 @@ final class ThreadTailGuard {
             return
         }
         if attempts > 1 || !rowsInView { await walk(by: 1, until: { self.tailInView }, doubling: false) }
-        if following, !userScrolling, active { land() }
+        if following, !userScrolling, active, ContinuousClock.now >= readerUntil { land() }
     }
 
     /// Scrolls the rest of the way to the end of the document, from where the marker is already in

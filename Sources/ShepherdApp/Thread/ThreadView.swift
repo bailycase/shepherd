@@ -109,7 +109,7 @@ struct ThreadView: View {
         let settled = active && !catchingUp
         let arrived = arrivals.update(rows.map(\.id), session: store.sessionKey, active: active, catchingUp: catchingUp)
         ScrollViewReader { proxy in
-            let _ = keepTail(proxy, hasRows: !rows.isEmpty)
+            let _ = keepTail(proxy)
             ZStack(alignment: .bottom) {
                 ScrollView {
                     // Never animated as a whole (rows, their text, and the tail anchor change on
@@ -178,6 +178,9 @@ struct ThreadView: View {
                     }
                 }
                 .onChange(of: historyEnabled) { _, _ in loadVisibleHistory() }
+                .onChange(of: running) { _, running in
+                    if !running { tailGuard.turnFinished() }
+                }
                 .onChange(of: store.sessionKey) { _, _ in
                     historyAnchor.cancel()
                     loadVisibleHistory()
@@ -328,13 +331,13 @@ struct ThreadView: View {
 
     /// What the tail guard reads when a check comes due, refreshed by every render and never
     /// observed.
-    private func keepTail(_ proxy: ScrollViewProxy, hasRows: Bool) {
+    private func keepTail(_ proxy: ScrollViewProxy) {
         tailGuard.bottomID = Self.bottomID
-        tailGuard.hasRows = hasRows
         tailGuard.active = active
         tailGuard.following = follower.sticky
         tailGuard.userScrolling = follower.userScrolling
         tailGuard.land = { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
+        tailGuard.rowIDs = Set(store.rows.map(\.id))
     }
 
     private var historyEnabled: Bool { active && store.ready && !store.loadingOlder && !follower.sticky }
