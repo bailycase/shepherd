@@ -170,10 +170,12 @@ final class ShepherdViewModel {
     /// views; both are set before the first design draws.
     @ObservationIgnored var designNetwork: DesignRenderingNetwork = .googleFonts
     @ObservationIgnored var designLiveCap = DesignLivePlan.liveCap
-    /// Child runs per agent, as published: the palette's Subagents section and the needs-you
-    /// mark on an agent's sidebar row.
+    /// Child runs per agent, as published: the palette's Subagents section and the parent's
+    /// Working sidebar presentation. A child's question is for its parent, never Needs you.
     /// Ephemeral display state; see `ChildRuns` for the lifecycle rules.
-    var childRuns = ChildRuns()
+    var childRuns = ChildRuns() {
+        didSet { reconcileSidebarCompletions() }
+    }
     /// Native diff-review panes keyed by their review leaf. Ephemeral: review
     /// leaves are persisted long enough for layout writes, then purged on the
     /// next app start by the session server.

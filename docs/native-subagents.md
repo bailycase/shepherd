@@ -416,6 +416,12 @@ actual names.
 **The tray and the record.** [docs/design/subagents.md](design/subagents.md) specifies how they look; this
 is what they do.
 
+- **The sidebar:** published nonterminal, unpaused children keep their idle or done parent in
+  Working until they settle. The same derived status drives local and connected-host activity
+  groups, project rollups and completion generations, without changing the parent's turn status.
+  A child's question remains data for its parent, never a Needs you badge. Connected-host child
+  snapshots remain cached in memory across disconnects, with offline rows staying in Recents;
+  reconnect refreshes/prunes them without inventing a completion before inspection returns.
 - **The tray:** while a turn's children run, they dock above the composer, one row each, in
   the same card as Up next (`NativeSubagentTray`, derived by the thread store). It shows the
   newest spawn group, plus any child still live from an earlier one, and stays once every child

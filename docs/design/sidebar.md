@@ -102,6 +102,12 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
     with the source); a pin change redraws the moved row and both groups' count headers. A status
     report on a pinned thread redraws only its row (`ListPerformanceTests`).
 - **Working**: unpinned running threads and live automation runs, most recently active first.
+  A thread with a live, unpaused child stays here even after its own turn becomes idle or done,
+  on this Mac and connected hosts. Its dot and accessibility label say running, and project-tree
+  rollups use the same presentation. A child's question never puts the thread in Needs you.
+  Pinned, the parent's own question, startup failures and offline hosts keep their existing rules.
+  This uses the published child rows, not a changed agent status or an extra poll. See the
+  [user requirement and checklist](boards/SidebarWorkingSubagents.md).
   A Working or Checking goal keeps its thread here between pi turns, on this Mac and connected
   hosts. An open question still puts it in Needs you; pinned threads remain Pinned. Paused,
   Met and cleared goals follow ordinary turn status.
@@ -127,8 +133,13 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
   survive disconnects and use a changed `lastActiveAt` on reconnect as a catch-up hint. A refused
   send during disconnection is indistinguishable from a missed completion; older hosts without
   timestamps can miss a completion. An endpoint change resets that host's records. Authoritative
-  deletion prunes records, but an offline snapshot does not. No extra transcript polling or new
-  server fields.
+  deletion prunes records, but an offline snapshot does not. A parent with working children is
+  not finished; finishing or clearing the last child creates a new completion generation, so an
+  earlier seen parent turn cannot hide it in Recents. Identical child reports do not create more
+  completions. Remote child snapshots stay cached in memory across disconnects, just like agent
+  snapshots; offline precedence hides Working and Done until reconnect. Refresh replaces settled
+  or empty child rows and prunes deleted agents. Disconnecting or reconnecting never fabricates a
+  completion before that refresh. No extra transcript polling or new server fields.
 - **Designs**: a separate group below Recents while the Design tool experiment is on. Rows use
   the outline nib and real board count, sorted by their design's last activity. A design's agent
   never has a thread row. The existing Remove from Recents action hides that design's sidebar row
