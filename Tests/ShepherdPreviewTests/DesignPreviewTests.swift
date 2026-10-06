@@ -330,6 +330,74 @@ struct DesignPreviewTests {
         #expect(screen.pins.map(\.number) == [1, 2, 3])
     }
 
+    /// The requested comment actions, from the real server and card formatter. The hover panel
+    /// seeds the pointer state without moving it; the full-window captures show navigation and
+    /// resolution, then detached/long comments and the empty list, in both text sizes.
+    @Test func designCommentActions() async throws {
+        let (workspace, checkout, agent) = try await designWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        vm.selectSidebarRow(.design(checkout.id))
+        let screen = vm.designScreen(checkout.id)
+        let comments = try await comment(on: workspace, checkout, agent: agent)
+        let b = try DesignPath.validate("B.dc.html")
+        _ = try await workspace.server.updateDesignIndex(checkout.id, patch: .object([
+            "pages": .array([.object(["id": .string("flows"), "name": .string("Flows")]),
+                             .object(["id": .string("system"), "name": .string("System")])]),
+            "boards": .object([b.rawValue: .object(["page": .string("system"), "x": .number(12_000), "y": .number(6_000)])])
+        ]))
+        let third = try await workspace.server.addDesignComment(checkout.id, draft: DesignCommentDraft(
+            board: b, tid: 7, path: [1, 1, 0], target: "Step 1", rect: DesignCommentRect(x: 32, y: 78, w: 396, h: 80),
+            text: "Keep the counts readable on the step table."))
+        await screen.refresh()
+        screen.paneTab = .comments
+        try await Preview.renderMatrix("app-window-design-comment-list", size: Self.windowSize, ready: { screen.isDrawn }) {
+            RootView(vm: vm)
+        }
+        try await Preview.renderMatrix("design-comment-hover", size: CGSize(width: AppLayout.designChatWidth, height: 440)) {
+            VStack(spacing: 0) {
+                NWDesignPaneTabs(DesignChatPane.tabs(open: screen.commentsTabCount, tweak: false), selection: "comments") { _ in }
+                DesignCommentsList(cards: screen.openCards, resolve: { screen.resolve($0) }, hovering: third.comment.id,
+                                   open: { screen.revealComment($0) })
+            }
+            .background(Color.nw.bgWindow)
+        }
+        #expect(screen.page == "flows" && !screen.visibleBoards.contains(b))
+        screen.revealComment(third.comment.id)
+        try await Preview.renderMatrix("app-window-design-comment-opened", size: Self.windowSize, ready: { screen.isDrawn }) {
+            RootView(vm: vm)
+        }
+        #expect(screen.page == "system" && screen.visibleBoards.contains(b) && screen.openThread?.id == third.comment.id)
+        await screen.resolve(third.comment.id)?.value
+        try await Preview.renderMatrix("app-window-design-comment-resolved", size: Self.windowSize, ready: { screen.isDrawn }) {
+            RootView(vm: vm)
+        }
+        #expect(screen.openThread == nil && screen.openCards.count == 2)
+
+        // Removing the commented board produces detached metadata through the real host.
+        _ = try await workspace.server.updateDesignIndex(checkout.id, patch: .object([
+            "boards": .object(["A.dc.html": .null])
+        ]))
+        let c = try DesignPath.validate("C.dc.html")
+        _ = try await workspace.server.addDesignComment(checkout.id, draft: DesignCommentDraft(
+            board: c, tid: 7, path: [1, 1, 0], target: "Step 1 and all following funnel steps with absolute counts",
+            rect: DesignCommentRect(x: 32, y: 78, w: 396, h: 80),
+            text: Array(repeating: "Keep the absolute counts readable beside the percentages, including narrow layouts and larger text.", count: 5).joined(separator: " ")))
+        await screen.refresh()
+        #expect(screen.openCards.prefix(2).allSatisfy { $0.meta.contains("element changed") })
+        try await Preview.renderMatrix("design-comment-long-detached", size: CGSize(width: AppLayout.designChatWidth, height: 760)) {
+            DesignCommentsList(cards: screen.openCards, resolve: { screen.resolve($0) }, hovering: screen.openCards.last?.id,
+                               open: { screen.revealComment($0) })
+                .background(Color.nw.bgWindow)
+        }
+        for card in screen.openCards { await screen.resolve(card.id)?.value }
+        try await Preview.renderMatrix("app-window-design-comment-empty", size: Self.windowSize, ready: { screen.isDrawn }) {
+            RootView(vm: vm)
+        }
+        #expect(screen.openCards.isEmpty && screen.commentsTabCount == 0)
+        #expect(screen.commentCards.cards[comments[0].id] != nil, "the resolved comments remain in chat history")
+    }
+
     /// The checkout's A and A · phone as a design system would draw them: tokens declared in the
     /// helmet, the step cards named "funnel card", and two data-props under Labels.
     private static func tokenized(_ board: DesignFixtures.Board) -> String {

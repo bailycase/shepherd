@@ -32,6 +32,13 @@ public enum NWGlyph: CaseIterable, Sendable {
 
     public var image: Image { Image(systemName: symbolName) }
 
+    /// The design's comment actions, shared by its cards and canvas threads.
+    public enum Design: String, Sendable {
+        case resolveComment = "checkmark"
+
+        public var image: Image { Image(systemName: rawValue) }
+    }
+
     /// Static outline artwork supplied with the Settings boards. Keep this native so controls
     /// retain their accessibility actions rather than mounting the board's HTML.
     public enum Settings: String, CaseIterable {
