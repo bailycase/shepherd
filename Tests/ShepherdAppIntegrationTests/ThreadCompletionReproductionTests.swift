@@ -66,11 +66,18 @@ struct ThreadCompletionReproductionTests {
             host.all += live
             host.bump()
             await deck.store.refresh()
-            try await Task.sleep(for: .seconds(1))
             let prefix = "\(native ? "anchored" : "scrolling")-\(turn)"
-            let before = try capture(deck, to: directory.appendingPathComponent(prefix + ".png"))
-            let text = try recognizedText(before)
-            let recognizedFinal = text.contains { $0.contains("worker has finished") }
+            var recognizedFinal = false
+            do {
+                // Recovery walks the lazy stack in multiple steps. Wait on compositor pixels,
+                // not a fixed delay or forced layouts that could repair the view for the test.
+                try await eventuallyOnMain("\(prefix) to paint its final answer", poll: .milliseconds(100)) {
+                    let image = try ThreadWindowCapture.image(deck.window.window)
+                    recognizedFinal = try recognizedText(image).contains { $0.contains("worker has finished") }
+                    return recognizedFinal
+                }
+            } catch is WaitTimeout { }
+            _ = try capture(deck, to: directory.appendingPathComponent(prefix + ".png"))
             print("COMPLETION \(prefix): rows=\(deck.store.rows.count), targets=\(deck.tailGuard.visible), following=\(deck.tailGuard.following), \(deck.reading.map(String.init(describing:)) ?? "no scroll view"), answer=\(recognizedFinal)")
             guard recognizedFinal else {
                 // Save what the user would try next as evidence, not as a way to pass the test.

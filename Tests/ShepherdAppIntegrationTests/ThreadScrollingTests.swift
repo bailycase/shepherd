@@ -11,15 +11,17 @@ import Vision
 
 /// A real `ThreadView` in an off-screen window, fed snapshots the test controls. Nothing here
 /// sends mouse or keyboard events: "the user moved" is the ⌥⌘↑/↓ turn commands (the same
-/// path the menu takes) or a programmatic scroll of the clip view.
+/// path the menu takes) or a clip-view scroll with the real input handler's wheel intent.
 @MainActor
 private final class ThreadHarness {
     let store = NativeThreadStore()
     let commands = ThreadCommandCenter()
+    let input = ThreadInput()
     var snapshot: NativeThreadSnapshot
     let window: OffscreenWindow
     private let pillSize = NSHostingView(rootView: NWJumpToLatest(action: {})).fittingSize
     var olderRequests = 0
+    private var scrollPhase = ScrollPhase.idle
     var olderReply: CheckedContinuation<NativeThreadResult, Never>?
 
     init(messages: Int, running: Bool = false, paragraphs: Int = 3, olderCursor: String? = nil, subagents: [ChildRun] = []) {
@@ -40,8 +42,9 @@ private final class ThreadHarness {
             }
             return .snapshot(value: self.snapshot)
         }
-        window.show(ThreadView(store: store, active: true, isFocused: false, request: request, commandKey: "thread", inspectSubagent: { _ in }, listModels: { .empty })
-            .environment(\.threadCommands, commands))
+        window.show(ThreadView(store: store, active: true, isFocused: false, request: request, commandKey: "thread", inspectSubagent: { _ in }, listModels: { .empty }, retainedInput: input)
+            .environment(\.threadCommands, commands)
+            .onScrollPhaseChange { [weak self] _, phase, _ in self?.scrollPhase = phase })
     }
 
     /// `count` alternating user/assistant messages; each answer is `paragraphs` paragraphs.
@@ -153,8 +156,9 @@ private final class ThreadHarness {
             .map { (1 - $0.boundingBox.midY) * host.bounds.height }
     }
 
-    /// Scrolls the clip view to the end, the way a reader dragging to the bottom lands.
+    /// The wheel monitor's real input path, followed by its native clip-view movement.
     func scrollToEnd() {
+        input.readerScrolled(upward: false)
         let clip = scrollView.contentView
         let target = clip.constrainBoundsRect(NSRect(origin: NSPoint(x: 0, y: scrollView.documentView!.bounds.height), size: clip.bounds.size)).origin
         clip.scroll(to: target)
@@ -206,7 +210,7 @@ private final class ThreadHarness {
             let now = distanceFromBottom
             still = abs(now - last) < 0.5 ? still + 1 : 0
             last = now
-            return still >= 4
+            return still >= 4 && scrollPhase == .idle
         }
     }
 
