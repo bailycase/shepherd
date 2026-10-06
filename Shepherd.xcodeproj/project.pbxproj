@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		5E000000000000000000B004 /* pi-engine in Resources */ = {isa = PBXBuildFile; fileRef = 5E000000000000000000A007 /* pi-engine */; };
 		15000000000000000000B101 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 5E000000000000000000A003 /* AppIcon.icon */; };
 		15000000000000000000B201 /* ShepherdCore in Frameworks */ = {isa = PBXBuildFile; productRef = 15000000000000000000C001 /* ShepherdCore */; };
 		15000000000000000000B202 /* ShepherdProtocol in Frameworks */ = {isa = PBXBuildFile; productRef = 15000000000000000000C002 /* ShepherdProtocol */; };
@@ -40,6 +41,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		5E000000000000000000A007 /* pi-engine */ = {isa = PBXFileReference; lastKnownFileType = folder; path = ".build/pi-engine/Resources/pi-engine"; sourceTree = SOURCE_ROOT; };
 		15000000000000000000A201 /* Shepherd iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Shepherd iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		5E000000000000000000A001 /* ShepherdLauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShepherdLauncher.swift; sourceTree = "<group>"; };
 		5E000000000000000000A002 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -105,6 +107,7 @@
 			children = (
 				5E000000000000000000D002 /* App */,
 				5E000000000000000000D005 /* Products */,
+				5E000000000000000000A007 /* pi-engine */,
 			);
 			sourceTree = "<group>";
 		};
@@ -241,6 +244,7 @@
 			files = (
 				5E000000000000000000B002 /* AppIcon.icon in Resources */,
 				5E000000000000000000B003 /* AppIconNightly.icon in Resources */,
+				5E000000000000000000B004 /* pi-engine in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -268,7 +272,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "# Embeds the pi engine that scripts/pi_engine.py staged in .build/pi-engine (node in\n# Contents/Helpers, pi in Contents/Resources/pi-engine) and signs node. It never\n# downloads; staging does, once, outside the build: python3 scripts/pi_engine.py stage\n# Script sandboxing allows only the paths the staged file lists declare.\nset -euo pipefail\nstaged=\"${SRCROOT}/.build/pi-engine\"\nif ! cmp -s \"${SRCROOT}/scripts/pi-engine-pin.json\" \"${staged}/pin.json\"; then\n  echo \"error: The pi engine in .build/pi-engine was staged for another pin. Run: python3 scripts/pi_engine.py stage\" >&2\n  exit 1\nfi\ncontents=\"${TARGET_BUILD_DIR}/${CONTENTS_FOLDER_PATH}\"\nif ! rm -rf \"${contents}/Resources/pi-engine\" \"${contents}/Helpers/node\"; then\n  echo \"error: An engine from another pin is in the app. Clean the build folder and build again.\" >&2\n  exit 1\nfi\nmkdir -p \"${contents}/Helpers\"\n/bin/cp -Rc \"${staged}/Resources/pi-engine\" \"${contents}/Resources/pi-engine\"\n/bin/cp -c \"${staged}/Helpers/node\" \"${contents}/Helpers/node\"\nif [ \"${CODE_SIGNING_ALLOWED}\" = YES ]; then\n  identity=\"${EXPANDED_CODE_SIGN_IDENTITY:--}\"\n  # As Xcode does for the app: the hardened runtime only with a real identity.\n  runtime=()\n  if [ \"${ENABLE_HARDENED_RUNTIME}\" = YES ] && [ \"${identity}\" != - ]; then runtime=(--runtime); fi\n  TMPDIR=\"${TEMP_DIR}\" \"${SRCROOT}/scripts/sign-engine.sh\" ${runtime[@]+\"${runtime[@]}\"} \"${contents}/Helpers/node\" \\\n    \"${identity}\" \"${SRCROOT}/App/Engine.entitlements\"\nfi\n";
+			shellScript = "# Checks the staged pin, copies and signs node. Xcode's Resources phase copies the\n# pi-engine folder natively; listing its SDK files here exceeds sandbox-exec's argv limit.\n# No downloads. Stage first: python3 scripts/pi_engine.py stage\n# Script sandboxing allows only the node/stamp paths the staged file lists declare.\nset -euo pipefail\nstaged=\"${SRCROOT}/.build/pi-engine\"\nif ! cmp -s \"${SRCROOT}/scripts/pi-engine-pin.json\" \"${staged}/pin.json\"; then\n  echo \"error: The pi engine in .build/pi-engine was staged for another pin. Run: python3 scripts/pi_engine.py stage\" >&2\n  exit 1\nfi\ncontents=\"${TARGET_BUILD_DIR}/${CONTENTS_FOLDER_PATH}\"\nif ! rm -f \"${contents}/Helpers/node\"; then\n  echo \"error: An engine from another pin is in the app. Clean the build folder and build again.\" >&2\n  exit 1\nfi\nmkdir -p \"${contents}/Helpers\"\n/bin/cp -c \"${staged}/Helpers/node\" \"${contents}/Helpers/node\"\nif [ \"${CODE_SIGNING_ALLOWED}\" = YES ]; then\n  identity=\"${EXPANDED_CODE_SIGN_IDENTITY:--}\"\n  # As Xcode does for the app: the hardened runtime only with a real identity.\n  runtime=()\n  if [ \"${ENABLE_HARDENED_RUNTIME}\" = YES ] && [ \"${identity}\" != - ]; then runtime=(--runtime); fi\n  TMPDIR=\"${TEMP_DIR}\" \"${SRCROOT}/scripts/sign-engine.sh\" ${runtime[@]+\"${runtime[@]}\"} \"${contents}/Helpers/node\" \\\n    \"${identity}\" \"${SRCROOT}/App/Engine.entitlements\"\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

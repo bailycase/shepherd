@@ -500,10 +500,11 @@ def make_engine(contents):
     files = {release.pi_engine.NODE: macho(ARM64, f"node v{pin['node']['version']}\0".encode())}
     engine = release.pi_engine.ENGINE
     packages = {"": (pin["pi"]["name"], pin["pi"]["version"])}
-    packages.update({f"node_modules/{name}/": (name, module["version"]) for name, module in pin["modules"].items()})
+    packages.update({f"node_modules/{path}/": (release.pi_engine.module_name(path), module["version"])
+                     for path, module in pin["modules"].items()})
     for folder, (name, version) in packages.items():
         files[f"{engine}/{folder}package.json"] = json.dumps({"name": name, "version": version}).encode()
-    for name in (release.pi_engine.ENTRY,) + release.pi_engine.LICENSES:
+    for name in (release.pi_engine.ENTRY, "dist/index.js") + release.pi_engine.LICENSES:
         files[f"{engine}/{name}"] = b"x"
     for module, required in release.pi_engine.MODULE_REQUIRED.items():
         for name in required:
