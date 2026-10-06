@@ -274,7 +274,7 @@ struct PeerApprovalFlowTests {
         #expect(s.vm.peerApprovals.isEmpty)
     }
 
-    /// Settings ▸ Pi's row: a popup that says its value, which a switch for the agent tools turns off and on.
+    /// Settings ▸ Extensions' row: a popup that says its value, which a switch for the agent tools turns off and on.
     @MainActor
     static func pressingTheSettingsRow() async throws {
         AccessibilityNode.enable()
@@ -282,7 +282,7 @@ struct PeerApprovalFlowTests {
         defer { app.stop() }
         let settings = app.settings
         let window = OffscreenWindow(size: CGSize(width: 900, height: 1400), dark: true,
-                                     ScrollView { PiSettings(pi: app.server.pi, settings: settings).padding(32) }
+                                     ScrollView { ExtensionsSettings(settings: settings).padding(32) }
                                          .background(Color.nw.bgWindow))
         defer { window.close() }
         window.layout()

@@ -16,7 +16,7 @@ struct SlashCommandsPresentationTests {
 
     @Test func commandsGroupByWhereTheyComeFromEachByName() {
         let page = SlashCommandsPresentation(catalog: Self.catalog, hidden: [], query: "")
-        #expect(page.groups.map(\.title) == ["Extensions", "Prompt templates", "Skills", "Other"])
+        #expect(page.groups.map(\.title) == ["Extensions", "Prompt templates", "Skills", "Unreported commands"])
         #expect(page.groups.map { $0.rows.map(\.name) } == [["session-name"], ["fix-tests", "release-notes"], ["skill:brave-search"], ["mystery"]])
         #expect(page.groups[1].rows.last?.arguments == "[tag]")
         #expect(page.groups.flatMap(\.rows).allSatisfy { $0.isOn && !$0.unlisted }, "every command starts on")
@@ -28,7 +28,7 @@ struct SlashCommandsPresentationTests {
         let row = page.groups[1].rows[0]
         #expect(row.name == "fix-tests" && !row.isOn && !row.unlisted, "so it can be switched back on")
         #expect(page.groups.flatMap(\.rows).filter(\.isOn).count == 4)
-        #expect(page.hidden == 1 && page.summary == "5 commands · 1 hidden")
+        #expect(page.hidden == 1 && page.summary == "5 commands · 1 disabled")
     }
 
     /// Hidden before this launch, or its pi has stopped: no pi lists it, but it stays on the page.

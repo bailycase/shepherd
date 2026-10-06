@@ -43,7 +43,7 @@ public enum NWGlyph: CaseIterable, Sendable {
     /// retain their accessibility actions rather than mounting the board's HTML.
     public enum Settings: String, CaseIterable {
         case back, search, appearance, terminal, agents, subagents, worktrees, projects, pi
-        case instructions, skills, mcp, remoteConnection, keyboard, advanced, experiments
+        case instructions, skills, extensions, slashCommands, mcp, remoteConnection, keyboard, advanced, experiments
         case next, folder, computer, browserSearch, globe, lock
         case subagentPlus, subagentFile, subagentNext
 
@@ -55,6 +55,9 @@ public enum NWGlyph: CaseIterable, Sendable {
             case .folder: CGSize(width: 16, height: 16)
             case .computer: CGSize(width: 12, height: 12)
             case .browserSearch, .globe, .lock, .subagentFile: CGSize(width: 14, height: 14)
+            // Filled outlines on the board's 40-unit grid, drawn at its 42.86pt scale.
+            case .extensions: CGSize(width: 18.75, height: 16.07)
+            case .slashCommands: CGSize(width: 21.96, height: 15)
             case .subagentPlus, .subagentNext: CGSize(width: 12, height: 12)
             default: CGSize(width: 15, height: 15)
             }
@@ -93,6 +96,8 @@ public enum NWGlyph: CaseIterable, Sendable {
             case .pi: "function"
             case .instructions: "doc.text"
             case .skills: "graduationcap"
+            case .extensions: "puzzlepiece.extension"
+            case .slashCommands: "chevron.left.forwardslash.chevron.right"
             case .mcp: "server.rack"
             case .remoteConnection: NWGlyph.remoteConnection.symbolName
             case .keyboard: "keyboard"

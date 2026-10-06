@@ -23,9 +23,8 @@ struct SettingsPreviewTests {
         workspace.vm.settingsSection = section
         // Tall enough for the whole page.
         let height: CGFloat = switch section {
-        case .pi: 1400
+        case .pi: 3000
         case .piSignIn: 1500
-        case .piFromYourPi: 1900
         case .keyboard: 2200
         case .remote, .worktrees, .appearance: 1000
         default: 900
@@ -601,7 +600,7 @@ struct SettingsPreviewTests {
     @Test func settingsPiWithNoPiOfYours() async throws {
         let workspace = try PreviewWorkspace(yourPi: PreviewYourPi.none)
         defer { workspace.stop() }
-        workspace.vm.settingsSection = .piFromYourPi
+        workspace.vm.settingsSection = .pi
         try await Preview.render("settings-pi-none", size: CGSize(width: 1280, height: 900)) {
             SettingsView(vm: workspace.vm)
         }

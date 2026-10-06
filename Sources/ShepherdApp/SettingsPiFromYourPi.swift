@@ -3,17 +3,19 @@ import ShepherdUI
 import ShepherdSessions
 import ShepherdRemote
 
-/// Settings ▸ Pi ▸ From your pi (SettingsPiFromPi, SettingsPiExtensions; docs/design/settings-pi.md › Pi ▸ From
-/// your pi): where Shepherd's copy came from, each item with how it stands and Re-import, the
-/// files copied, and the user's extensions with their switches.
+/// Settings ▸ Pi ▸ From pi (SettingsPiFromPi, SettingsPiExtensions; docs/design/settings-pi.md › Pi ▸ From
+/// pi): a section of the Pi page, under its own heading. Where Shepherd's copy came from, each item
+/// with how it stands and Re-import, the files copied, and the user's extensions with their switches.
 struct FromYourPiSettings: View {
     let model: YourPiModel
-    var openSkills: () -> Void = {}
+    var openExtensions: () -> Void = {}
 
     var body: some View {
         let survey = model.survey ?? YourPiSurvey()
-        SettingsPage(title: "From your pi",
-                     explanation: "What Shepherd brought over from the pi in your terminal. Shepherd keeps its own copy, so nothing here changes your pi.") {
+        VStack(alignment: .leading, spacing: AppLayout.settingsGroupSpacing) {
+            SettingsHeader(title: "From pi",
+                           explanation: "What Shepherd brought over from the pi in your terminal. Shepherd keeps its own copy, so nothing here changes your pi.",
+                           titleSize: AppLayout.settingsSectionTitleSize)
             if let folder = survey.folder {
                 source(survey, folder: folder)
                 broughtOver(survey)
@@ -25,6 +27,7 @@ struct FromYourPiSettings: View {
                 }
             }
         }
+        .padding(.top, NW.Space.l)
         .task { await model.refresh() }
     }
 
@@ -161,8 +164,9 @@ struct FromYourPiSettings: View {
     // MARK: Extensions
 
     private func extensions(_ survey: YourPiSurvey, folder: String) -> some View {
-        SettingsGroup(title: "Extensions", footnote: "Code, so each one came over switched off. Shepherd’s own extensions are on the Pi page.",
-                      trailing: "\(survey.extensions.count) in \((folder as NSString).abbreviatingWithTildeInPath)/extensions") {
+        VStack(alignment: .leading, spacing: NW.Space.m) {
+            SettingsGroup(title: "Imported extensions",
+                          trailing: "\(survey.extensions.count) in \((folder as NSString).abbreviatingWithTildeInPath)/extensions") {
             ForEach(survey.extensions) { item in
                 NWExtensionRow(item.copy.name, path: YourPiText.extensionPath(item), summary: item.summary,
                                state: item.failure.map { .failed($0, lines: item.failureLines) } ?? (item.on ? .on : .off),
@@ -178,6 +182,16 @@ struct FromYourPiSettings: View {
                     .buttonStyle(.nw(.secondary, size: .s))
                     .disabled(model.busy.contains(YourPiModel.rowID(.files(.extensions))))
             }
+            }
+            // The board's footnote ends in a link to the Extensions page.
+            HStack(spacing: 0) {
+                SettingsNote(text: "Code, so each one came over switched off. Shepherd's bundled extensions are on ")
+                Button("Extensions", action: openExtensions)
+                    .buttonStyle(.nwLink(font: .nwSans(AppLayout.settingsFootnoteSize)))
+                    .underline()
+                SettingsNote(text: ".")
+            }
+            .padding(.horizontal, NW.Space.xs)
         }
     }
 

@@ -153,10 +153,10 @@ final class RPCThreadState {
     /// Settings ▸ Pi ▸ Slash commands (`hiddenCommands`). Every client reads this one list.
     private(set) var commands: [NativeCommand]? { didSet { commandsHash = commands.hashValue } }
     /// Everything pi's `get_commands` listed, after the projection (`projectCommands`) and before
-    /// the user's switches. Typing a hidden command still runs it, so what is typed is checked
-    /// against this list, and the Settings page lists from it so a hidden command can come back.
+    /// the user's switches. The Settings page lists from it so a disabled command can come back.
     private(set) var allCommands: [NativeCommand]? { didSet { rebuildCommands() } }
-    /// Names left out of `commands`: this host's own switches, set by the server and applied live.
+    /// Names left out of `commands` and refused when sent: this host's own switches, set by the
+    /// server and applied live.
     var hiddenCommands: Set<String> = [] {
         didSet {
             guard hiddenCommands != oldValue else { return }

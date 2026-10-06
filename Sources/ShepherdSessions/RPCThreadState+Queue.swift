@@ -517,19 +517,24 @@ extension RPCThreadState {
     }
 
     /// Validate the effective prompt at admission and delivery; fenced content is never a command.
+    /// A command switched off in Settings ▸ Slash commands is refused here too: off disables it,
+    /// typed or picked.
     private func goalCommandFailure(_ text: String, context: String? = nil) -> NativeThreadResult? {
         let prompt = Self.prompt(text, context: context)
         guard prompt.hasPrefix("/") else { return nil }
         let name = prompt.dropFirst().prefix { !$0.isWhitespace }
         if name == "shepherd-goal" { return .failure(code: "invalid", message: "This is a host control command. Use /goal.") }
         if name == "goal", !goalsEnabled { return .failure(code: "unsupported", message: "Enable Goals in Settings > Experiments.") }
+        if hiddenCommands.contains(String(name)) {
+            return .failure(code: "unsupported", message: "/\(name) is disabled. Turn it back on in Settings ▸ Slash commands.")
+        }
         return nil
     }
 
     func isExtensionCommand(_ text: String) -> Bool {
         guard text.hasPrefix("/") else { return false }
         let name = text.dropFirst().prefix { !$0.isWhitespace }
-        // A command the user hid from the / menu still runs when typed, so it is looked up in everything pi listed.
+        // Looked up in everything pi listed: a disabled command is refused before it gets here.
         return allCommands?.contains { $0.name == name && $0.source == "extension" } == true
     }
 

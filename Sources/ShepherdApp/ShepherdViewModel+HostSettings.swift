@@ -46,7 +46,7 @@ enum HostSettingsMapping {
         ("mcp", "MCP servers", \.piMCPExtension),
         ("browser", "Browser tools", \.piBrowserExtension),
         // Settings ▸ Agents ▸ Context on the Mac; a client lists it with the other switches.
-        ("context", "Trim old tool output from the model’s context", \.trimToolOutput),
+        ("context", "Trim old tool output from the model's context", \.trimToolOutput),
         ("deferTools", "Defer rarely used tools", \.deferTools),
         ("codemode", "Codemode", \.codemode),
     ]

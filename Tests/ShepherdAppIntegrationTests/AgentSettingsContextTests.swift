@@ -32,7 +32,7 @@ struct AgentSettingsContextTests {
 
     // MARK: Scenarios
 
-    private static let trim = "Trim old tool output from the model’s context"
+    private static let trim = "Trim old tool output from the model's context"
     private static let defers = "Defer rarely used tools"
 
     @MainActor
@@ -96,12 +96,12 @@ struct AgentSettingsContextTests {
         defer { window.close() }
 
         // The picker's segments are radio buttons; their labels are the page's own, so they are found by what they say.
-        let titles = ["pi’s default", "60%", "70%", "80%", "90%"]
+        let titles = ["Default", "60%", "70%", "80%", "90%"]
         func segments() -> [Control] { window.controls().filter { $0.role == ControlRole.radioButton && titles.contains($0.label ?? "") } }
         try #require(segments().map(\.label) == titles, "pi's default, then each share: \(window.controls())")
         #expect(segments().map(\.isSelected) == [true, false, false, false, false], "pi's own compaction until a share is chosen")
 
-        for (title, expected, selected) in [("80%", 80 as Int?, 3), ("60%", 60, 1), ("90%", 90, 4), ("pi’s default", nil, 0), ("70%", 70, 2)] {
+        for (title, expected, selected) in [("80%", 80 as Int?, 3), ("60%", 60, 1), ("90%", 90, 4), ("Default", nil, 0), ("70%", 70, 2)] {
             let pressed = try window.press(title, role: ControlRole.radioButton)
             #expect(pressed.frame.height >= 24, "\(title) is a whole segment tall: \(pressed)")
             #expect(settings.compactAtPercent == expected, "pressing \(title)")

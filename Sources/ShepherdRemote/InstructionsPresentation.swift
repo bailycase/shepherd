@@ -202,19 +202,20 @@ public enum InstructionsPresentation {
         return String(format: "%02d:%02d", parts.hour ?? 0, parts.minute ?? 0)
     }
 
-    /// What a file is for, as its tab says it: "how you work", "rules that win".
+    /// What a file is for, as its tab says it: "how you work", "overrides everything".
     public static func role(_ file: InstructionFile) -> String {
         switch file {
         case .agents: "how you work"
-        case .appendSystem: "rules that win"
+        case .appendSystem: "overrides everything"
         }
     }
 
-    /// A file's note under its name: what it is for and its size ("how you work · ~640 tokens").
+    /// A file's note under its name: what it is for and its length ("how you work · 1,204 characters").
     /// `sentence` starts it with a capital, as a row on the phone does.
     public static func fileNote(_ file: InstructionFile, text: String, sentence: Bool = false) -> String {
         let role = role(file)
-        return "\(sentence ? role.prefix(1).uppercased() + role.dropFirst() : role) · \(InstructionsText.sizeNote(text))"
+        let count = text.count
+        return "\(sentence ? role.prefix(1).uppercased() + role.dropFirst() : role) · \(count.formatted()) \(count == 1 ? "character" : "characters")"
     }
 
     /// Same on every host's state in one line, under the iPad's scope control: "Studio, build-01
