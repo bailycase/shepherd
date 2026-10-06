@@ -113,6 +113,20 @@ it reports `needs-auth`; `pi mcp logout` deletes the entry. `oauth` also takes `
 (a `${VAR}` or `!command` works), `callbackPort`, `scope` and `authServerMetadataUrl`. Only HTTP servers
 with no `Authorization` header use it.
 
+Settings > Projects > MCP servers also offers Sign in and Sign out for both project file
+formats, using the same sheet as global settings. Add and sign in saves first. A host-owned
+SDK bridge loads only the selected HTTP entry and uses pi's native OAuth implementation,
+without changing global configuration, loading project extensions or calling a model.
+Tokens stay in that host's pi home, available to its threads; the viewer receives only status.
+Remote sign-in opens the viewer's browser. A loopback-only listener accepts the pending
+callback path and state, then returns the redirect to the host. Pi verifies state and PKCE.
+The existing remote listener has no TLS. Use trusted/private transport or an encrypted tunnel,
+not the public internet. Command-based secret resolvers are not executed by this settings action.
+Four active sign-ins per host, one flow per server namespace, a five-minute deadline and
+sixteen retained results bound the work. Login-shell-only variables in shared-file URLs resolve
+after an explicit sign-in; status checks do not start a shell just to expand them. Cancel, navigation, disconnection and host shutdown close pending work. Restart never
+resumes it. Remote hosts advertise `projects.mcp.v1`; older hosts require an update.
+
 **The CLI.** `pi mcp list [--json]` connects to every enabled server and prints each one's name, `state`
 (`connected`, `needs-auth`, `failed`, `disabled`, …), `exposure`, `transport`, tool names, `error` and any
 config errors; it exits 1 when something is not connected. Tool names only: no descriptions or schemas.

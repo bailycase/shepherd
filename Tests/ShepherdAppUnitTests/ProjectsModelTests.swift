@@ -41,6 +41,7 @@ struct ProjectsModelTests {
             switch request {
             case .files: return .files([file])
             case .read: return .text(ProjectFileText(file: file, text: "old"))
+            case .mcp: return .mcp(.init())
             case .save(_, _, let text, _): return .text(ProjectFileText(file: file, text: text))
             case .list: return .listing(ProjectListing(projects: [project]))
             case .context: return .context(ProjectContext())
@@ -78,6 +79,7 @@ struct ProjectsModelTests {
                 }
                 return .files([file])
             case .read: return .text(ProjectFileText(file: file, text: "original"))
+            case .mcp: return .mcp(.init())
             case .save: return .text(ProjectFileText(file: file, text: "saved"))
             case .context: return .context(ProjectContext())
             case .open: return .opened
@@ -107,6 +109,7 @@ struct ProjectsModelTests {
             case .list: return .listing(ProjectListing(projects: [project]))
             case .files: return .files([file])
             case .read: return .text(ProjectFileText(file: file, text: nil))
+            case .mcp: return .mcp(.init())
             case .save: saves += 1; return .text(ProjectFileText(file: file, text: "wrong host"))
             case .context: return .context(ProjectContext())
             case .open: return .opened

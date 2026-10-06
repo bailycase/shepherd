@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdSessions
@@ -9,6 +10,7 @@ struct ProjectsHost: Equatable, Identifiable {
     var name: String
     var endpointID: UUID?
     var supportsDetails = true
+    var supportsMCP = true
     var unavailable: String?
     var known: [ProjectSummary]
 }
@@ -24,7 +26,14 @@ struct ProjectsRow: Equatable, Identifiable {
 @Observable
 final class ProjectsModel {
     typealias Request = @MainActor (ProjectsHost, RemoteProjectsRequest) async throws -> RemoteProjectsResult
-    @ObservationIgnored private let request: Request
+    @ObservationIgnored let request: Request
+    @ObservationIgnored var openMCPURL: @MainActor (URL) -> Void = { NSWorkspace.shared.open($0) }
+    @ObservationIgnored var copyMCPLink: @MainActor (String) -> Void = {
+        NSPasteboard.general.clearContents(); NSPasteboard.general.setString($0, forType: .string)
+    }
+    var mcpSignIn: MCPSignInFlow?
+    @ObservationIgnored var mcpSignOut: Task<Void, Never>?
+    var mcpSignedIn: Set<String> = []
     private(set) var hosts: [ProjectsHost] = []
     private(set) var rows: [ProjectsRow] = []
     private(set) var visible: [ProjectsRow] = []
@@ -89,8 +98,9 @@ final class ProjectsModel {
     }
     private(set) var mcp = ProjectMCPConfiguration()
 
-    private func deriveMCP() {
-        mcp = ProjectMCPConfiguration(text: draft, path: selectedFile?.path ?? ".pi/mcp.json", host: selected?.host.name ?? "This Mac")
+    func deriveMCP() {
+        mcp = ProjectMCPConfiguration(text: draft, path: selectedFile?.path ?? ".pi/mcp.json", host: selected?.host.name ?? "This Mac",
+                                      signedIn: mcpSignedIn, canSignIn: selected?.host.supportsMCP == true)
     }
     private(set) var tokenText = "empty"
     private(set) var modifiedAt: Double?
@@ -185,9 +195,12 @@ final class ProjectsModel {
                 self.selected = invalid
             }
         }
+        if self.selected?.unavailable != nil || self.selected?.host.supportsMCP == false { closeMCPSignIn() }
     }
 
     func open(_ row: ProjectsRow) async {
+        closeMCPSignIn()
+        mcpSignedIn = []
         guard row.unavailable == nil else { error = row.unavailable; return }
         generation += 1
         let token = generation
@@ -218,6 +231,7 @@ final class ProjectsModel {
     }
 
     private func apply(_ action: Pending) async {
+        closeMCPSignIn()
         switch action {
         case .close:
             showingBrowser = false; generation += 1; selected = nil; selectedFile = nil; files = []; fileLoaded = false; fileError = nil
@@ -231,6 +245,8 @@ final class ProjectsModel {
     }
 
     func read(_ file: ProjectFile) async {
+        closeMCPSignIn()
+        mcpSignedIn = []
         guard let selected, selected.unavailable == nil else { return }
         generation += 1
         let token = generation
@@ -239,7 +255,12 @@ final class ProjectsModel {
             guard case .text(let value) = try await request(selected.host, .read(directory: selected.project.directory, file: file.path)) else { throw ProjectFileError("protocol", "Unexpected project file reply.") }
             guard token == generation else { return }
             selectedFile = value.file; saved = value.text; draft = value.text ?? ""; modifiedAt = value.modifiedAt; fileLoaded = true
-            if category == .mcp { deriveMCP() }
+            if category == .mcp {
+                deriveMCP()
+                fileLoading = false // Credential metadata must not hold an already-loaded file's controls disabled.
+                await refreshMCPCredentials()
+                guard token == generation else { return }
+            }
             deriveReadRows()
             await compareHosts(token: token, text: value.text, file: file, selected: selected)
         } catch { if token == generation { fileError = String(describing: error) } }
@@ -322,6 +343,7 @@ final class ProjectsModel {
             await load(hosts, force: true)
             if case .context(let context) = try? await request(selected.host, .context(directory: selected.project.directory)), token == generation { self.context = context; deriveReadRows() }
             await compareHosts(token: token, text: value.text, file: file, selected: selected)
+            if category == .mcp, token == generation { await refreshMCPCredentials() }
         } catch { if token == generation { fileError = String(describing: error) } }
         saving = false
     }
@@ -340,7 +362,7 @@ extension ShepherdViewModel {
             let reason: String? = connection.phase == .connected
                 ? connection.supportsProjects ? nil : "Update Shepherd on this host to edit project settings."
                 : "Host offline. Reconnect in Settings > Remote to edit its projects."
-            return ProjectsHost(id: connection.id.uuidString, name: connection.config.name, endpointID: connection.endpointID, supportsDetails: connection.supportsProjectDetails, unavailable: reason, known: known(connection.state, reason: reason))
+            return ProjectsHost(id: connection.id.uuidString, name: connection.config.name, endpointID: connection.endpointID, supportsDetails: connection.supportsProjectDetails, supportsMCP: connection.supportsProjectMCP, unavailable: reason, known: known(connection.state, reason: reason))
         }
     }
 

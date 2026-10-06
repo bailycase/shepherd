@@ -207,7 +207,7 @@ struct AddMCPServerSheet: View {
 
     private var primaryTitle: String {
         if isEditing { return "Save" }
-        if project != nil, kind != .json { return "Add" }
+        if project != nil, kind == .local { return "Add" }
         switch kind {
         case .remote: return signIn == .oauth ? "Add and sign in" : "Add"
         case .local: return "Add and start"
@@ -534,7 +534,6 @@ struct AddMCPServerSheet: View {
 
     private func load() {
         kind = initialKind ?? .remote
-        if project != nil { signIn = .none }
         if let draft {
             name = draft.name
             nameEdited = !draft.name.isEmpty
@@ -573,7 +572,7 @@ struct AddMCPServerSheet: View {
             headerName = auth
             headerValue = headers.removeValue(forKey: auth) ?? ""
         } else {
-            signIn = (store?.usesOAuth(entry) ?? (nativeOptions && entry.json["oauth"] != nil)) ? .oauth : .none
+            signIn = (store?.usesOAuth(entry) ?? (entry.kind == .remote)) ? .oauth : .none
         }
         extraHeaders = headers.sorted { $0.key < $1.key }.map { variable($0.key, $0.value) }
     }
@@ -658,7 +657,10 @@ struct AddMCPServerSheet: View {
                     if let project { try await saveProjectEntries([entry], in: project) }
                     else if let store { try store.save(entry, secrets: secrets, replacing: editing?.name) }
                     close()
-                    if kind == .remote, signIn == .oauth, case .oauth = check { store?.beginSignIn(entry.name) }
+                    if kind == .remote, signIn == .oauth {
+                        if let project { project.beginMCPSignIn(entry.name) }
+                        else if case .oauth = check { store?.beginSignIn(entry.name) }
+                    }
                 }
             } catch { problem = "\(error)" }
         }

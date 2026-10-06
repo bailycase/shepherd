@@ -78,6 +78,24 @@ struct ProjectsPreviewTests {
         try await Preview.renderMatrix("projects-mcp-add", size: CGSize(width: 720, height: 780)) {
             AddMCPServerSheet(project: model, initialKind: .remote, editing: nil) {}
         }
+        let oauth = MCPServerEntry(name: "linear-with-a-long-project-server-name", json: ["url": .string("https://linear.example.invalid/mcp")])
+        try await model.saveMCP([oauth])
+        try await Preview.renderMatrix("projects-mcp-oauth-unsigned", size: CGSize(width: 1040, height: 720)) {
+            ProjectMCPSettings(model: model, initiallyExpanded: oauth.name).padding(NW.Space.xxl)
+                .frame(width: 1040, height: 720).background(Color.nw.bgWindow)
+        }
+        let auth = fixture.local.dir.appendingPathComponent("pi/mcp-auth.json")
+        try FileManager.default.createDirectory(at: auth.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let credentials = ["mcp__\(oauth.name.replacingOccurrences(of: "-", with: "_"))|\(oauth.url!)": ["tokens": ["access_token": "fixture-only"]]]
+        try JSONSerialization.data(withJSONObject: credentials).write(to: auth)
+        await model.refreshMCPCredentials()
+        #expect(model.mcpSignedIn.contains(oauth.name))
+        try await Preview.renderMatrix("projects-mcp-oauth-signed", size: CGSize(width: 1040, height: 720)) {
+            ProjectMCPSettings(model: model, initiallyExpanded: oauth.name).padding(NW.Space.xxl)
+                .frame(width: 1040, height: 720).background(Color.nw.bgWindow)
+        }
+        try FileManager.default.removeItem(at: auth)
+        await model.refreshMCPCredentials()
         let native = try #require(model.selectedFile)
         let project = try #require(model.selected)
         try ((model.saved ?? "") + "\n").write(
