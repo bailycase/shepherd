@@ -111,21 +111,30 @@ private final class ThreadHarness {
         let region = NSRect(x: host.bounds.midX - ceil(pillSize.width) / 2,
                             y: host.isFlipped ? top : host.bounds.height - top - pillSize.height,
                             width: ceil(pillSize.width), height: ceil(pillSize.height))
-        guard let bitmap = host.bitmapImageRepForCachingDisplay(in: region) else {
+        // Vision on macOS 27 rejects the pill-sized crop. Recognize the whole window and
+        // require the matching text's center to fall inside the pill's measured region.
+        guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else {
             Issue.record("Could not capture the thread while checking the jump pill")
             return false
         }
-        host.cacheDisplay(in: region, to: bitmap)
+        host.cacheDisplay(in: host.bounds, to: bitmap)
         guard let image = bitmap.cgImage else {
             Issue.record("The thread capture had no image")
             return false
         }
         let request = VNRecognizeTextRequest()
         request.usesLanguageCorrection = false
-        do { try VNImageRequestHandler(cgImage: image).perform([request]) }
-        catch { Issue.record(error); return false }
-        return (request.results ?? []).contains {
-            $0.topCandidates(1).first?.string.localizedCaseInsensitiveContains("Jump to latest") == true
+        do {
+            try request.useCPUForTests()
+            try VNImageRequestHandler(cgImage: image).perform([request])
+        } catch { Issue.record(error); return false }
+        return (request.results ?? []).contains { observation in
+            guard let text = observation.topCandidates(1).first,
+                  let range = text.string.range(of: "Jump to latest", options: .caseInsensitive),
+                  let bounds = try? text.boundingBox(for: range)?.boundingBox else { return false }
+            let point = NSPoint(x: bounds.midX * host.bounds.width,
+                                y: (host.isFlipped ? 1 - bounds.midY : bounds.midY) * host.bounds.height)
+            return region.contains(point)
         }
     }
 
@@ -137,6 +146,7 @@ private final class ThreadHarness {
         host.cacheDisplay(in: host.bounds, to: bitmap)
         let image = try #require(bitmap.cgImage)
         let request = VNRecognizeTextRequest()
+        try request.useCPUForTests()
         request.usesLanguageCorrection = false
         try VNImageRequestHandler(cgImage: image).perform([request])
         return request.results?.first { $0.topCandidates(1).first?.string == text }

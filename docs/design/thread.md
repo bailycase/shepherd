@@ -46,8 +46,10 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   leave the scroll view at an offset its numbers call the tail but that lies past every row the
   stack placed. Nothing is realized there and nothing moves it, so the thread draws nothing, in
   a window of any height, and a view that keeps following lets the reader scroll no way out of
-  it. The guard notices that no content row is in view, even when the invisible bottom marker
-  is still visible. That marker alone must not end recovery. It also notices a following thread
+  it. The guard notices that no current content row is in view, even when the invisible bottom
+  marker or a cached target from a replaced live reply is still reported visible. Completion can
+  replace that reply's ID when its prompt falls outside the saved history page. Neither the marker
+  nor a removed row may end recovery. It also notices a following thread
   resting more than 80pt above its tail with the bottom marker out of view. It waits for quiet
   layout, at most 160ms for a blank thread, and lands on the tail again; when that is not enough it
   walks the scroll view back toward the rows and then down a page at a time until the marker is
@@ -57,7 +59,8 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   the guard takes it the rest of the way by scrolling to the end of the scroll view itself
   (`ThreadTailGuardTests`; one steer-now send in sixteen ended 38pt short for good). A reader's
   scroll, or one that just ended, is never moved, and a thread that is not
-  stranded is never touched (`ThreadTailFlowTests`). While a
+  stranded is never touched (`ThreadTailFlowTests`). A turn finishing renews the bounded
+  recovery attempts. An earlier failed repair must not disable them for later turns. While a
   gesture is live, layout changes never move the view either: a drag up measures the rows it
   reveals, and landing on the tail then would pull the thread out from under the finger. "↓ Jump to latest"
   (`NWJumpToLatest`, a `bgRaised` capsule above the composer) appears while detached if the
