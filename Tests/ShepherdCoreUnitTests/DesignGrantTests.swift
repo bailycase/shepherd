@@ -49,6 +49,27 @@ struct DesignGrantTests {
         #expect(agent.designGrants(forPieceOf: later).map(\.revision) == [4, 9])
     }
 
+    @Test func pageGrantsNeverCoverTheWholeDesignAnotherPageOrABoard() throws {
+        var agent = Agent(name: "t", spaceID: SpaceID(), tabID: TabID())
+        let page = DesignGrant(designID: Self.design, board: nil, revision: 4, grantedAt: 1, payload: UUID(), page: "flows")
+        var later = page
+        later.revision = 9
+        later.payload = UUID()
+        let other = DesignGrant(designID: Self.design, board: nil, revision: 10, grantedAt: 2, payload: UUID(), page: "other")
+        agent.addDesignGrants([page, later, other, Self.whole, Self.board])
+        #expect(agent.designGrant(designID: Self.design, board: nil, element: nil, page: "flows") == later)
+        #expect(agent.designGrant(designID: Self.design, board: nil, element: nil, revision: 4, page: "flows") == page)
+        #expect(agent.designGrant(designID: Self.design, board: nil, element: nil, page: "missing") == nil)
+        #expect(agent.designGrant(designID: Self.design, board: "A.dc.html", element: nil, page: "flows") == nil)
+        #expect(agent.designGrant(designID: Self.design, board: nil, element: nil) == Self.whole)
+        #expect(agent.designGrants(forPieceOf: page) == [page, later])
+        #expect(!page.isSamePiece(as: Self.whole) && !page.isSamePiece(as: other))
+        #expect(try Fixture.roundTrip(page) == page)
+        #expect(try Fixture.roundTrip(agent) == agent)
+        let old = try Fixture.decode(DesignGrant.self, #"{"designID":"d1","revision":3,"grantedAt":1}"#)
+        #expect(old.page == nil)
+    }
+
     /// A grant from before copies were kept answers nothing.
     @Test func aGrantWithoutACopyAnswersNothing() {
         var agent = Agent(name: "t", spaceID: SpaceID(), tabID: TabID())
