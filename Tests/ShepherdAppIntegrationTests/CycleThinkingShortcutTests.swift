@@ -172,7 +172,7 @@ struct CycleThinkingShortcutIntegrationTests {
         defer { window.close() }
         try await eventuallyOnMain("the new-thread field to take the keyboard") {
             window.layout()
-            return (window.window.firstResponder as? NSTextView)?.isFieldEditor == true
+            return (window.window.firstResponder as? NSTextView)?.isEditable == true
         }
         let newThreadMonitor = try await readyMonitor(in: window)
         #expect(newThreadMonitor.handle(try key(in: window)))
@@ -187,21 +187,23 @@ struct CycleThinkingShortcutIntegrationTests {
         #expect(!newThreadMonitor.handle(try key(in: window)))
         #expect(vm.state.agents.isEmpty, "cycling never submits the prompt")
 
+        window.close()
         vm.openNewDesign()
         try await eventuallyOnMain("new-design levels to load") { vm.newDesign.listing != nil }
         vm.newDesign.setModel("openai/gpt-5")
         vm.newDesign.setThinking(.medium)
         vm.newDesign.brief = "Keep the design brief."
-        window.show(NewDesignPage(vm: vm, chrome: PageHeaderChrome()))
+        let designWindow = OffscreenWindow(size: CGSize(width: 1000, height: 700), NewDesignPage(vm: vm, chrome: PageHeaderChrome()))
+        defer { designWindow.close() }
         try await eventuallyOnMain("the new-design field to take the keyboard") {
-            window.layout()
-            return (window.window.firstResponder as? NSTextView)?.isFieldEditor == true
+            designWindow.layout()
+            return (designWindow.window.firstResponder as? NSTextView)?.isEditable == true
         }
-        let newDesignMonitor = try await readyMonitor(in: window)
-        #expect(newDesignMonitor.handle(try key(in: window)))
+        let newDesignMonitor = try await readyMonitor(in: designWindow)
+        #expect(newDesignMonitor.handle(try key(in: designWindow)))
         try await eventuallyOnMain("new design to choose High") { vm.newDesign.thinking == .high }
         vm.newDesign.setThinking(.minimal)
-        #expect(newDesignMonitor.handle(try key(in: window)))
+        #expect(newDesignMonitor.handle(try key(in: designWindow)))
         try await eventuallyOnMain("new design to advance from the displayed Low") { vm.newDesign.thinking == .medium }
         #expect(vm.newDesign.brief == "Keep the design brief.")
         #expect(vm.state.agents.isEmpty)
