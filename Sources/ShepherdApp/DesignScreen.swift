@@ -196,7 +196,7 @@ struct DesignChatPane: View {
                     .accessibilityHidden(!chat)
                 }
                 if tab == .comments {
-                    DesignCommentsList(cards: screen.openCards) { screen.openThread($0.uuidString) }
+                    DesignCommentsList(cards: screen.openCards, resolve: { screen.resolve($0) }, open: { screen.revealComment($0) })
                         .background(Color.nw.bgWindow)
                 }
                 if let tweak = screen.tweak, tab == .tweak {
@@ -216,21 +216,22 @@ struct DesignChatPane: View {
     }
 }
 
-/// The Comments tab: the open comments' cards, oldest first, one lazy row each. A card opens its
-/// thread on the canvas.
+/// The Comments tab: the open comments' cards, oldest first, one lazy row each. A card reveals
+/// its board and opens its thread; its hover action resolves it without leaving the list.
 struct DesignCommentsList: View {
     let cards: [DesignCommentCardValue]
+    var resolve: ((UUID) -> Void)? = nil
+    var hovering: UUID? = nil
     let open: (UUID) -> Void
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: AppLayout.designCommentsSpacing) {
                 ForEach(cards) { card in
-                    Button { open(card.id) } label: {
-                        NWCommentCard(number: card.number, target: card.target, meta: card.meta, text: card.text)
-                            .equatable()
-                    }
-                    .buttonStyle(.plain)
+                    NWCommentCard(number: card.number, target: card.target, meta: card.meta, text: card.text,
+                                  onOpen: { open(card.id) }, onResolve: resolve.map { action in { action(card.id) } },
+                                  hovering: hovering == card.id)
+                        .equatable()
                 }
             }
             .padding(AppLayout.designCommentsPadding)
