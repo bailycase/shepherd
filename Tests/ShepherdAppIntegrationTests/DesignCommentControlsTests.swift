@@ -64,6 +64,10 @@ struct DesignCommentControlsTests {
             return window.controls().contains { $0.label == "Open comment 1" }
         }
         #expect(window.controls().contains { $0.label == "Resolve comment 1" } == hovering)
+        if hovering {
+            let resolve = try #require(window.controls().first { $0.label == "Resolve comment 1" })
+            #expect(resolve.frame.width > NW.Height.controlS, "Resolve has room for its visible text, not just an icon")
+        }
         #expect(ControlPress.actions(onLabelContaining: "Open comment 1", under: window.host).contains("Resolve"))
         #expect(ControlPress.undersized(window.controls(), minimum: .desktop).isEmpty)
 

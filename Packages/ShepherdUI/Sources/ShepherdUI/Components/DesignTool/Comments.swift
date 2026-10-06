@@ -212,8 +212,8 @@ public struct NWCommentCard: View, Equatable {
                 card(hidingMeta: showResolve)
             }
             if let onResolve {
-                Button(action: onResolve) { NWGlyph.Design.resolveComment.image }
-                    .buttonStyle(.nwIcon(size: NW.Height.controlS))
+                Button("Resolve", action: onResolve)
+                    .buttonStyle(.nw(.ghost, size: .s))
                     .focused($focused, equals: .resolve)
                     .help("Resolve comment")
                     .accessibilityLabel("Resolve comment \(number)")

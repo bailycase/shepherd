@@ -247,5 +247,5 @@ More: [docs/design/verifying.md](docs/design/verifying.md).
 | Controls, status pieces, keyboard, accessibility | [components.md](docs/design/components.md), [keyboard-and-accessibility.md](docs/design/keyboard-and-accessibility.md) |
 | iPhone or iPad | `ios-*.md` in [docs/design/](docs/design/README.md), and [docs/ios](docs/ios/README.md) |
 | Notifications, Live Activities | [notifications.md](docs/design/notifications.md) |
-| The Design tool | `design-tool*.md` in [docs/design/](docs/design/README.md); [comment actions and validation](docs/design/evidence/design-comment-actions/README.md) |
+| The Design tool | `design-tool*.md` in [docs/design/](docs/design/README.md); [comment actions, text-only Resolve, and validation](docs/design/evidence/design-comment-actions/README.md) |
 | Where the app departs from a board, or falls short | [departures.md](docs/design/departures.md), [known-gaps.md](docs/design/known-gaps.md) |

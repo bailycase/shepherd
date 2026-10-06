@@ -7,7 +7,7 @@ Reference: [DesignComments.png](../../boards/DesignComments.png), supplied with 
 - Keep the Comments tab and its open-comment count, the blank empty state, and the oldest-first lazy card list. Tabs come from `DesignChatPane.tabs`; cards come from `DesignScreenModel.openCards`.
 - Keep each card's numbered lantern pin, `on` plus board and element, author and age, detached `element changed` text, and comment body. `DesignScreenModel.card` produces these strings. The screenshot's comments are user data, not preview literals.
 - Preserve `AppLayout.designChatWidth`, `designCommentsPadding`, and `designCommentsSpacing`. Preserve `NWDesignMetrics.commentCardPaddingVertical`, `commentCardPaddingHorizontal`, `commentCardSpacing`, `commentCardRadius`, `commentMetaSize`, `commentTextSize`, and `commentLineHeight`, with `bgRaised`, `lineStrong`, and the existing text roles.
-- On hover, replace the trailing metadata visually with a checkmark resolve button. The requested action is not drawn in the reference. Use the same unfilled `checkmark` as the existing Resolve action, in a `NW.Height.controlS` icon button, with help `Resolve comment` and accessibility label `Resolve comment <number>`. Keep the original metadata's layout space so hovering does not resize the card.
+- On hover, replace the trailing metadata visually with a text button labeled `Resolve`, without an icon, as requested in the follow-up. Use the existing small ghost button style, `.nw(.ghost, size: .s)`, with help `Resolve comment` and accessibility label `Resolve comment <number>`. Keep the original metadata's layout space so hovering does not resize the card.
 - Also reveal Resolve on keyboard focus and with VoiceOver, and expose the named `Resolve` accessibility action at rest. The card is a native button labeled `Open comment <number>` with its target, metadata, and text as its accessibility value. Resolve is a sibling button, never nested in the open button.
 - Pressing a card selects and reveals its board using the existing reference-reveal path, switches to that board's page if necessary, exits Present, and opens its comment thread. Clicking a canvas pin still opens in place without recentering.
 - Pressing Resolve uses the existing revision-fenced host action. On success the card, count, pin, and any open thread disappear, while the chat keeps its historical card. On failure the card stays and the existing error report explains why.
@@ -25,7 +25,8 @@ Reference: [DesignComments.png](../../boards/DesignComments.png), supplied with 
   Resolve buttons, and both named Resolve accessibility actions at rest. The tests check host
   persistence, different-page and offscreen navigation, selection, thread placement, no accidental
   navigation on Resolve, removal of cards/pins/counts, historical cards, and the final empty list.
-- All tested buttons pass the desktop 24pt hit-area check. The local and remote host paths pass.
+- All tested buttons pass the desktop 24pt hit-area check. The hover Resolve button also has
+  enough width for its text label rather than reverting to an icon. The local and remote host paths pass.
 - The agent-docs, design-section, and context-budget Python checks passed. `git diff --check` passed.
 - Read-only code review found no consequential issues. Visual review checked all 24 captures
   against the saved reference and checklist, with no retained departures or clipping in the cards.

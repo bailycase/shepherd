@@ -377,7 +377,7 @@ Comments), as below, with these choices the boards leave open:
 - The Comments tab's card opens its board directly: select it, switch to its page, exit Present,
   center the board in the canvas, and open its thread. A canvas pin opens in place without moving
   the viewport. The tab remains available after opening a card.
-- Hovering a card reveals an unfilled `checkmark` Resolve action in a 24pt ghost icon button at
+- Hovering a card reveals a text-only "Resolve" action in a 24pt small ghost button at
   the header's trailing edge, visually replacing author and age without changing the card's
   height. Keyboard focus and VoiceOver also reveal it; the card's named Resolve accessibility
   action works at rest. The open and resolve buttons are siblings, with 24pt minimum hit areas.
