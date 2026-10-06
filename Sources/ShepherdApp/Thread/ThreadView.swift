@@ -82,7 +82,6 @@ struct ThreadView: View {
     @State private var gutter = AppLayout.gutter
     @State private var hovering = false
     @State private var wheelMonitor: Any?
-    @State private var wheelIntentUntil = Date.distantPast
     /// Measured height of the floating composer: the scroll view insets by exactly this, so the
     /// thread neither hides under the card nor scrolls into blank space below the last turn.
     /// Read only by the inset's own modifier, so the composer changing height (a question taking
@@ -188,7 +187,7 @@ struct ThreadView: View {
                 .modifier(ThreadTailAnchor(sticky: follower.sticky, native: nativeTail))
                 .onScrollGeometryChange(for: NativeScrollProbe.self, of: Self.probe) { old, new in
                     // Intent is a wheel tick (350 ms window) or a live drag phase.
-                    let gesture = Date() <= wheelIntentUntil || follower.userScrolling
+                    let gesture = input.hasWheelIntent(movingUp: new.distance > old.distance) || follower.userScrolling
                     // Where nothing anchors the scroll view, every reading is the layout's own:
                     // growth, a shrinking history, the composer resizing and a send's collapsing
                     // tray all land back on the tail as they arrive.
@@ -199,7 +198,7 @@ struct ThreadView: View {
                     tailGuard.distance = new.distance
                     tailGuard.suspect()
                 }
-                .onScrollPhaseChange { _, phase, context in
+                .onScrollPhaseChange { old, phase, context in
                     // Only a live finger/wheel counts. Momentum and programmatic phases are not
                     // intent; a gesture that ends near the bottom re-sticks from where it lands.
                     follower.userScrolling = phase == .interacting
@@ -208,8 +207,8 @@ struct ThreadView: View {
                         historyPaging.beginScroll()
                         tailGuard.readerMoved()
                     }
-                    if phase == .idle {
-                        follower.observe(distanceFromBottom: Self.distanceFromBottom(context.geometry))
+                    if phase == .idle, old == .interacting || old == .decelerating {
+                        follower.observe(distanceFromBottom: Self.distanceFromBottom(context.geometry), userIntent: true)
                     }
                 }
                 .onChange(of: store.sentCount) { _, _ in
@@ -429,7 +428,7 @@ struct ThreadView: View {
         wheelMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
             if hovering {
                 historyAnchor.cancel()
-                wheelIntentUntil = Date().addingTimeInterval(0.35)
+                if event.scrollingDeltaY != 0 { input.readerScrolled(upward: event.scrollingDeltaY > 0) }
                 historyPaging.beginScroll()
                 tailGuard.readerMoved()
             }

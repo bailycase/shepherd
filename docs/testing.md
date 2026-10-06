@@ -36,6 +36,9 @@ stores crashed macOS 26's bundle-less test runner; the bundled app still uses pe
   It lets a raw `ExtensionClient` speak as any agent (`extensionPeerCheck`, which a real server
   leaves `nil`: a connection speaks only for the agent whose pi opened it); a test of the rule
   itself calls `useRealPeerCheck()` and runs stub pis (`ExtensionIdentityTests`).
+  Its default `PiSetup.app` shares the process's scratch session home. A test asserting an exact
+  Projects listing passes a `PiSetup` with a per-test home: listing intentionally imports old
+  session headers, including those other suites left in a shared home.
 - `StubPi.command`: runs `Resources/stub-pi.py`, a scripted `pi --mode rpc` driven by prompt
   keywords (`ask`, `select`, `hang`, `die`, `big`, `slow`, `widgets`, `fill`, `newsession`, …).
   `speak` (and `STUB_PI_SPEAK`, or `speak` in `stub-pi-startup.json`) has it talk on the
@@ -72,7 +75,14 @@ stores crashed macOS 26's bundle-less test runner; the bundled app still uses pe
   `tools:N` prompt makes N tool calls that wait for `tool-<k>` files).
 - `eventually("what", …)` and `eventuallyOnMain`: named 10 ms polls that throw `WaitTimeout`
   saying what never happened. Never sleep a fixed amount; wait on a callback or `eventually`.
-  Keep timeouts generous (they default to 30 s), but make the happy path fast.
+  Keep timeouts generous (they default to 30 s), but make the happy path fast. Completion probes
+  wait for the final text in WindowServer pixels without forcing layout; the guard's multi-step
+  recovery is not guaranteed to finish in a fixed one-second delay. Turn-navigation probes wait
+  for the viewport to land above the bottom band, not merely for the navigation intent to detach
+  following while its first animated frames are still at the tail. The off-screen scroll harness
+  declares wheel intent through the same `ThreadInput.readerScrolled(upward:)` method as the native
+  monitor before moving the clip view. A clip-view movement without that signal is layout, not
+  a reader gesture, and must not re-attach following.
 - Every integration and preview suite is time-limited to two minutes per test, so a hang fails
   the test that hung, by name.
   - Most suites carry `.integrationTimeLimit`.

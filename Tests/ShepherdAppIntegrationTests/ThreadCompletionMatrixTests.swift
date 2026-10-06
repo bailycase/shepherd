@@ -183,19 +183,23 @@ struct ThreadCompletionMatrixTests {
         await deck.publish(running: true, provisional: live)
         try await deck.expectTail("long active turn")
         deck.command(.previousTurn)
-        try await eventuallyOnMain("reader leaves the tail") { !deck.tailGuard.following }
+        try await eventuallyOnMain("reader lands above the tail") {
+            !deck.tailGuard.following && (deck.reading?.distance ?? 0) > NativeScrollFollower.threshold
+        }
         #expect(!deck.tailGuard.following)
         var final = [live[0], Fx.reply("new-history-id", "The worker completed the review.", at: marker + 120_000)]
         final[0].entryID = "new-history-user"
         await deck.publish(running: false, provisional: []) { $0.all = final }
-        try await Task.sleep(for: .seconds(2))
-        let image = try ThreadWindowCapture.image(deck.window.window)
-        let destination = FileManager.default.temporaryDirectory.appendingPathComponent("completion-reader-replaced.png")
-        try #require(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])).write(to: destination)
         let request = VNRecognizeTextRequest()
         try request.useCPUForTests()
         request.recognitionLanguages = ["en-US"]
-        try VNImageRequestHandler(cgImage: image).perform([request])
+        try await eventuallyOnMain("the replacement history to paint", poll: .milliseconds(100)) {
+            try VNImageRequestHandler(cgImage: ThreadWindowCapture.image(deck.window.window)).perform([request])
+            return request.results?.contains { $0.topCandidates(1).first?.string.contains("worker completed") == true } == true
+        }
+        let image = try ThreadWindowCapture.image(deck.window.window)
+        let destination = FileManager.default.temporaryDirectory.appendingPathComponent("completion-reader-replaced.png")
+        try #require(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])).write(to: destination)
         #expect(request.results?.contains { $0.topCandidates(1).first?.string.contains("worker completed") == true } == true)
         #expect(!deck.tailGuard.following, "replacing the history must not cancel reader detachment")
     }
