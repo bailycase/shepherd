@@ -47,13 +47,13 @@ struct SubagentSettingsControlTests {
         try await eventuallyOnMain("native editor request") { opened != nil && !model.busy }
         let editorURL = try #require(opened)
         #expect(try String(contentsOf: editorURL, encoding: .utf8) == files.open("reviewer-strict.md").text, "the native editor opens the verified file's real contents")
-        try setEditor(to: model.draft + "\nMore review instructions.\n", under: window.host)
+        try await setEditor(to: model.draft + "\nMore review instructions.\n", under: window.host)
         window.layout(); try window.press("Save")
         try await eventuallyOnMain("invalid save refused") { !model.busy && model.problem != nil }
         #expect(model.problem?.contains("Unsupported agent fields: runner") == true)
         let unchangedInvalid = try files.open("reviewer-strict.md")
         #expect(model.dirty && !unchangedInvalid.text.contains("More review instructions."))
-        try setEditor(to: model.draft.replacingOccurrences(of: "runner: strict\n", with: ""), under: window.host)
+        try await setEditor(to: model.draft.replacingOccurrences(of: "runner: strict\n", with: ""), under: window.host)
         window.layout()
         let save = try window.press("Save")
         #expect(ControlPress.undersized([save], minimum: .desktop).isEmpty)
@@ -65,7 +65,7 @@ struct SubagentSettingsControlTests {
         try window.press("New subagent")
         #expect(model.original == nil && model.dirty)
         try setField("Subagent filename", to: "check.md", under: window.host)
-        try setEditor(to: "---\nname: check\ndescription: Real created profile\ntools: [read]\n---\nInspect the assigned code.\n", under: window.host)
+        try await setEditor(to: "---\nname: check\ndescription: Real created profile\ntools: [read]\n---\nInspect the assigned code.\n", under: window.host)
         #expect(model.filename == "check.md")
         window.layout()
         try window.press("Back to Subagents")
@@ -149,11 +149,13 @@ struct SubagentSettingsControlTests {
         field.stringValue = text
         field.delegate?.controlTextDidChange?(Notification(name: NSControl.textDidChangeNotification, object: field))
     }
-    private static func setEditor(to text: String, under root: NSView) throws {
+    private static func setEditor(to text: String, under root: NSView) async throws {
         func find(_ view: NSView) -> NSTextView? {
             if let editor = view as? NSTextView, editor.accessibilityLabel() == "Subagent definition editor" { return editor }
             return view.subviews.lazy.compactMap(find).first
         }
+        // Model busy=false precedes SwiftUI applying isEnabled to the native editor.
+        try await eventuallyOnMain("subagent editor becomes editable") { find(root)?.isEditable == true }
         let editor = try #require(find(root))
         #expect(editor.isEditable)
         editor.string = text; editor.didChangeText()
