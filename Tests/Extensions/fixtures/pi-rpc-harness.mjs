@@ -6,7 +6,7 @@
 //   options.project    (dir, work) => void, to lay out the project folder pi runs in
 //   options.cwd        (dir, work) => the folder pi runs in, when it is not `work` (lay it out in `project`)
 //   options.args       extra command-line arguments
-//   options.env        extra environment for pi (its HOME and PI_* variables are always ours)
+//   options.env        extra environment for pi, or (dir, work) => it (its HOME and PI_* variables are always ours)
 //   options.onRequest  the fake provider's script: ({ index, path, body }) => { call | tool | status, text } | void
 //
 // Needs PI_PACKAGE_DIR, the installed pi package (CI installs the pinned one).
@@ -104,7 +104,8 @@ export async function withPi(t, options, body) {
     fs.writeFileSync(file, typeof content === "string" ? content : JSON.stringify(content));
   }
   project?.(dir, work);
-  const env = { PATH: process.env.PATH, HOME: dir, PI_CODING_AGENT_DIR: home, PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0", ...extraEnv };
+  const extra = typeof extraEnv === "function" ? extraEnv(dir, work) : extraEnv;
+  const env = { PATH: process.env.PATH, HOME: dir, PI_CODING_AGENT_DIR: home, PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0", ...extra };
   const child = spawn(process.execPath, [path.join(pkg, "dist/bundle/cli.js"), "--mode", "rpc", "--session-dir", path.join(dir, "sessions"),
     "--model", "fixture/fixture", ...args], { cwd: cwd?.(dir, work) ?? work, env, stdio: ["pipe", "pipe", "pipe"] });
   t.after(() => child.kill("SIGKILL"));

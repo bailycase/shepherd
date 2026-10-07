@@ -296,7 +296,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .worktrees: ["Base branch", "Fetch before creating", "Commit remaining work", "Generate PR descriptions", "Delete local branch", "Merge PR automatically"]
         case .subagents: ["Filter subagents", "New subagent", "Restore defaults", "Show in Finder",
                           "Native subagents", "Subagent display", "Concurrency", "Model", "Thinking", "Context"]
-        case .projects: ["Filter projects", "All hosts", "Add project…", "Instructions", "Pi settings", "Skills", "Extensions", "MCP servers"]
+        case .projects: ["Filter projects", "All hosts", "Add project", "Instructions", "Pi settings", "Skills", "Extensions", "MCP servers"]
         case .pi: ["Shepherd's pi", "Source", "Last brought over", "Re-import all", "Logins", "Custom providers", "Default model", "Trusted folders",
                    "Instructions", "Skills", "Prompts", "Themes", "Imported extensions"]
         case .extensions: ["Terminals and agent tools", "Agent-to-agent messages", "Diff review tool", "MCP servers", "Browser tools", "Design references"]

@@ -84,9 +84,15 @@ public final class ProjectSettingsStore: @unchecked Sendable {
                         guard offset >= 0, offset <= history.count else { throw ProjectFileError("invalid", "Invalid project page.") }
                         let end = min(history.count, offset + Self.pageSize)
                         let designs = designSystemDirectories(state)
+                        let folders = parentCandidates()
                         return .listing(ProjectListing(projects: history[offset..<end].map { entry in
                             var project = summary(entry, designSystem: designs.contains(entry.directory))
                             project.projectID = state.spaces.first { absolute($0.path) == entry.directory }?.id
+                            project.parent = ProjectNesting.parent(of: entry.directory, among: folders)
+                            project.mcpServers = sharedMCP(entry.directory)
+                            if let parent = project.parent {
+                                project.inheritedMCP = sharedMCP(parent).filter { !project.mcpServers.contains($0) }
+                            }
                             return project
                         },
                                                        nextOffset: end < history.count ? end : nil))
@@ -120,6 +126,35 @@ public final class ProjectSettingsStore: @unchecked Sendable {
                 })
             }
         }
+    }
+
+    /// The project `cwd` is a subproject of, for an agent starting there: the outermost project
+    /// folder that holds it (`ProjectNesting`), or nil. Its `.pi/mcp.json` servers are shared with
+    /// the agent (`shepherd-mcp-parent.ts`). Reads the history on this store's worker, never the
+    /// caller's queue.
+    public func parentProject(of cwd: String, state: ShepherdState) async -> String? {
+        await withCheckedContinuation { continuation in
+            queue.async { [self] in
+                try? load()
+                try? rememberEntries(Self.directories(in: state))
+                continuation.resume(returning: ProjectNesting.parent(of: absolute(cwd), among: parentCandidates()))
+            }
+        }
+    }
+
+    /// Every project folder that can be a parent: never the home folder (its `.pi` is the user's
+    /// own pi) and never the root.
+    private func parentCandidates() -> [String] {
+        let home = absolute(home.path)
+        return history.map(\.directory).filter { $0 != home && $0 != "/" }
+    }
+
+    /// The servers a project's own `.pi/mcp.json` names, sorted: what it shares with its subprojects.
+    private func sharedMCP(_ directory: String) -> [String] {
+        guard let root = try? root(directory), let text = try? read(root: root, file: ".pi/mcp.json"),
+              let object = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
+              let servers = object["mcpServers"] as? [String: Any] else { return [] }
+        return servers.keys.sorted()
     }
 
     /// Primary agent cwd only, never a terminal tab. Names do not merge distinct directories.
@@ -362,7 +397,7 @@ public final class ProjectSettingsStore: @unchecked Sendable {
                 if let text = try? read(root: root, file: file.path), let object = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
                    let servers = object["mcpServers"] as? [String: Any] { mcpNames.formUnion(servers.keys) }
             }
-            if !mcpNames.isEmpty { parts.append("\(mcpNames.count) MCP") }
+            if !mcpNames.isEmpty { parts.append("\(mcpNames.count) MCP \(mcpNames.count == 1 ? "server" : "servers")") }
             if designSystem { parts.append("design system") }
             let minimal = parts.isEmpty || parts == ["AGENTS.md"]
             return ProjectSummary(directory: entry.directory, name: entry.name, displayPath: String(path),
