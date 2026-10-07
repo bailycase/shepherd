@@ -261,17 +261,24 @@ struct DesignToolbar: View, Equatable {
     /// ••• (DesignToolbarMenu): Rename…, Duplicate, Export…, Show design system, Delete design….
     var menu: DesignMenu?
     var perform: (DesignMenuAction) -> Void = { _ in }
+    /// The field that opens Jump to a board (JumpInContext); nil where it can't (another host's
+    /// design). `jumpOpen` lights its ring while the card is up.
+    var jump: (() -> Void)?
+    var jumpOpen = false
 
     nonisolated static func == (a: Self, b: Self) -> Bool {
         a.name == b.name && a.system == b.system && a.swatches == b.swatches && (a.openSystem == nil) == (b.openSystem == nil)
             && a.leadingInset == b.leadingInset && (a.showSidebar == nil) == (b.showSidebar == nil)
             && a.screen.map(ObjectIdentifier.init) == b.screen.map(ObjectIdentifier.init) && (a.export == nil) == (b.export == nil)
-            && a.menu == b.menu
+            && a.menu == b.menu && (a.jump == nil) == (b.jump == nil) && a.jumpOpen == b.jumpOpen
     }
 
     var body: some View {
         NWDesignHeader(name, style: .toolbar, leadingInset: leadingInset, sidebar: showSidebar,
-                       sidebarShortcut: KeybindingsStore.shared.display(.toggleSidebar), designs: designs) {
+                       sidebarShortcut: KeybindingsStore.shared.display(.toggleSidebar), designs: designs,
+                       center: jump.map { jump in
+                           AnyView(NWJumpField(shortcut: KeybindingsStore.shared.display(.commandPalette), isOpen: jumpOpen, action: jump))
+                       }) {
             if let screen, screen.pages.count > 1 {
                 NWPopupMenu(screen.pageName ?? "Pages") {
                     ForEach(screen.pages, id: \.id) { page in

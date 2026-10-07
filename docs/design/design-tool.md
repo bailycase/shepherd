@@ -326,6 +326,47 @@ are off the tokens). Opening a design fills the main column: the header, then th
     (`setModel`, `setThinking`). What it sends still carries the canvas's view record. A system
     build's chat (DZSystem) and a remote design's chat have the same composer.
 
+## Jump to a board (JumpInContext)
+
+**Built** (`DesignJumpView.swift`, `DesignJump.swift`, `NWJumpCard` and its parts in ShepherdUI's
+`Jump.swift`). Over a design, the command palette's chord (the rebindable `commandPalette`, ⌘K by
+default) opens this card instead of the palette; anywhere else it is the palette. Pressed again it
+closes the card. The board's "⌘P" is the chord as bound: the field and its tooltip show it from
+`KeybindingsStore`.
+
+- **The field** sits centered in the design's toolbar, between equal spacers: 260 by 30, radius 8,
+  `bgRaised` with a `lineStrong` line, 10pt in, the 14pt glass, "Jump to a board…" in 12.5
+  `textSecondary`, and the chord trailing in mono 10.5 `textTertiary`. It narrows to 80pt before the
+  breadcrumb or the trailing controls give way, and wears a 1px `running` ring while the card is
+  open. Clicking it opens (or closes) the card. Another host's design draws no field.
+- **The card**: 620 wide (the window less 16pt margins when narrower), 15% down the window, over
+  the sheet's scrim (black 55%), `.nwPopover()` at radius 12. A click on the scrim or Esc closes
+  it; VoiceOver stays inside it.
+  - **Search row** (48pt, 14pt in): the 14pt glass, the field in 14 ("Jump to a board or a
+    design…", its placeholder `textTertiary`), and the scope pills This design · All designs
+    (24pt, radius 12, 12pt words; the chosen one on `bgBubble` with a `lineStrong` line in
+    `textPrimary` medium). ⇥ switches scope.
+  - **This design**, with no query: RECENT, the boards jumped to lately that the design still has,
+    newest first, each "1280 × 800 · opened 2m ago"; then OTHER BOARDS with their count, the rest
+    in canvas order, each with its size alone. Section caps are mono 10.5 tracked in
+    `textTertiary`. A click on the canvas picks a board, it doesn't open one: only a jump puts a
+    board in Recent. A design remembers its last 8, across launches (the sidebar's defaults).
+  - **All designs**: this Mac's designs (never a system build), most recently edited first, each
+    "4 boards · edited 2h ago".
+  - **A query** filters either scope by name with the palette's ranking, in one list with no caps.
+  - **Rows** (44pt, radius 8, 10pt in): the board's picture 44 by 28 at radius 4 (the canvas's
+    last drawing, else the board's small picture; a design's first board), the name in 13 over its
+    line in mono 10.5 `textTertiary`. The highlighted row is `bgSelected`, its name semibold, with
+    ⏎ in a `lineStrong` box trailing; the board picked on the canvas says "this board" (the design
+    on screen, "this design") in mono 10.5 `textTertiary`.
+  - **The highlight** opens on the first row that isn't the one on screen, so getting back to the
+    board you were just on takes only ⏎. ↑↓ and the pointer move it; a new query or scope moves it
+    to the top.
+  - **⏎** on a board picks it and brings it into view (the "Open in design" reveal: its page shown,
+    centered, fitted when larger than the view) and puts it first in Recent; on a design, opens it.
+  - **The footer** (34pt, 14pt in, 11.5 `textTertiary`): "↑↓ move", "⏎ jump", and "esc close"
+    trailing.
+
 ## Shared pieces (not drawn on any board)
 
 **Built on the Mac** (docs/designs.md › Shared pieces). A **piece** is a board other boards import

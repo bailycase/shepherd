@@ -101,6 +101,13 @@ final class ShepherdViewModel {
     let newDesign = NewDesignState()
     /// The Export sheet over a design (DZExport), while it is up.
     var designExport: DesignExportModel?
+    /// Jump to a board (JumpInContext) over the design on screen, while it is up.
+    var designJump: DesignJumpModel?
+    /// The boards each design opened lately, for the jump card's Recent section. Kept in the
+    /// sidebar's defaults across launches.
+    var designJumpRecents = DesignJumpRecents() {
+        didSet { if let data = try? JSONEncoder().encode(designJumpRecents) { sidebarDefaults.set(data, forKey: Self.designJumpRecentsKey) } }
+    }
     /// Delete design and Delete design system while they ask (DeleteDesignDialog,
     /// DeleteSystemDialog).
     var designDeleteRequest: DesignDeleteRequest?
@@ -209,6 +216,7 @@ final class ShepherdViewModel {
         didSet { sidebarDefaults.set(collapsedProjects.sorted(), forKey: Self.collapsedProjectsKey) }
     }
     static let collapsedProjectsKey = "shepherd.sidebar.collapsedProjects"
+    static let designJumpRecentsKey = "shepherd.designs.jumpRecents"
     var collapsedActivitySections: Set<SidebarActivitySection> = [] {
         didSet { sidebarDefaults.set(collapsedActivitySections.map(\.rawValue).sorted(), forKey: Self.collapsedActivitySectionsKey) }
     }
@@ -571,6 +579,10 @@ final class ShepherdViewModel {
         // footer) stay in older preferences and are no longer read.
         sidebarHidden = sidebarDefaults.bool(forKey: "shepherd.sidebarHidden")
         collapsedProjects = Set(sidebarDefaults.stringArray(forKey: Self.collapsedProjectsKey) ?? [])
+        if let data = sidebarDefaults.data(forKey: Self.designJumpRecentsKey),
+           let recents = try? JSONDecoder().decode(DesignJumpRecents.self, from: data) {
+            designJumpRecents = recents
+        }
         collapsedActivitySections = Set((sidebarDefaults.stringArray(forKey: Self.collapsedActivitySectionsKey) ?? [])
             .compactMap(SidebarActivitySection.init(rawValue:)))
         sidebarPins = SidebarPins(defaults: sidebarDefaults)
