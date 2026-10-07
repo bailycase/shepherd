@@ -23,14 +23,21 @@ Settings page when search is empty.
   variable rows. The project footer keeps "Open in editor" and "Save" for external editing and
   retries. "Reload" rereads the selected project file through the existing discard guard.
 - Take server names, endpoints, credentials metadata and enabled state from the selected file,
-  not the global store. A missing file starts empty. Never start processes, probe URLs, open a
-  browser or access the global Keychain merely by opening or editing a project's configuration.
-- Connection status is "Not checked yet" or "Off". Tool count is unknown. The detail explains
+  not the global store. A missing file starts empty. Opening a native file runs only a bounded
+  SDK trust check, never project resources, MCP connections, a browser, a model or the global
+  Keychain. Editing configuration starts no server.
+- Connection status is "Blocked", "Unchecked" or "Off". Tool count is unknown. The detail explains
   that live status belongs to threads on the project's host; it does not offer a nonfunctional
   Reconnect or pretend to know the tool catalog. HTTP servers without an Authorization header
   offer the same Sign in sheet as global MCP settings, and Sign out when the host holds tokens.
   Older hosts explain that an update is required instead of offering inactive controls.
-  The sign-in requirement and control checklist are in [ProjectMCPSignIn](boards/ProjectMCPSignIn.md).
+  Saved OAuth rows say "Credentials saved" and explain that tokens do not establish a thread
+  connection. Native project files show a separate approval card, with the block reason and
+  "Trust this project…" confirmation. Approval covers all Pi protected project resources, not
+  only MCP, and is saved on the selected host. The checklist and all required states are in
+  [ProjectMCPTrust](boards/ProjectMCPTrust.md). Native screenshots in `evidence/project-mcp-trust/`
+  cover 22 cases in light and dark at text scales 1.0 and 1.3. The sign-in requirement and control checklist
+  are in [ProjectMCPSignIn](boards/ProjectMCPSignIn.md).
 - Structured edits preserve unknown JSON keys and the existing project's format. Native
   `.pi/mcp.json` uses `enabled`, `exposure`, `timeout` and `oauth`; shared `.mcp.json` uses
   `disabled` and its existing deferred-tool behavior. Do not silently write global-only

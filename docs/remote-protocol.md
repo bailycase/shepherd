@@ -85,6 +85,12 @@
     The callback URL returns over the existing connection, never access/refresh tokens.
     Disconnect cancels pending requests and runs; reconnect never resumes them. Both clients
     share the codec/capability gate; the Mac Projects page offers the sign-in sheet.
+  - `projects.trust.v1`: adds explicit `approveProject` to project MCP actions and optional
+    `projectTrusted` metadata to credential status. The host validates the known canonical
+    project and native file before Pi's SDK reads or saves its trust decision. Old clients ignore
+    the metadata; both clients refuse approval before sending when the host lacks this
+    capability. Approval covers all protected Pi project resources, never just OAuth or MCP.
+    The home folder remains excluded. No credential or global trust setting crosses the wire.
   - `projects.details.v1`: adds host-local metadata/context and editor opening to projects.
     Clients gate context/open requests separately; older `projects.v1` hosts still edit files.
   - `projects` (`projects.v1`): host-owned project history, project-file inventory, reads and

@@ -127,6 +127,41 @@ sixteen retained results bound the work. Login-shell-only variables in shared-fi
 after an explicit sign-in; status checks do not start a shell just to expand them. Cancel, navigation, disconnection and host shutdown close pending work. Restart never
 resumes it. Remote hosts advertise `projects.mcp.v1`; older hosts require an update.
 
+### Project approval and thread loading
+
+Saving configuration or signing in does not approve a project. The OAuth bridge explicitly
+loads one selected entry, so it can save credentials even while Pi blocks `.pi/mcp.json` in
+RPC threads. The project page labels that state "Credentials saved", not a live connection.
+
+For `.pi/mcp.json`, the page checks the selected host's Pi trust decision separately. An
+undecided or denied folder shows "Project configuration blocked" and "Trust this project…".
+The confirmation explains that trust also allows executable extensions, settings, skills, MCP
+commands and configured package installation. It approves only the selected canonical folder
+through Pi's `ProjectTrustStore` in `<support>/pi/trust.json`, with Pi's interprocess locking.
+No parent-folder approval, global "always" setting or blanket `--approve` launch flag is added.
+Pi inherits this decision in descendant folders, which the confirmation also explains.
+Inherited saved decisions and Pi's global default are read using Pi's own implementation.
+The home folder remains excluded and its threads retain `--no-approve`, even if Pi has a saved
+approval or an "always" default.
+
+The check and save use the bundled SDK without creating a Pi session, loading project
+resources, connecting MCP servers or calling a provider. They have a ten-second deadline.
+Normal new-thread startup then resolves the saved decision, loads `.pi/mcp.json` through
+`builtin:mcp`, and registers tools after connection. Deferred tools are available through
+`builtin:tool-search` and codemode's `ALL_TOOLS`. Existing threads need restarting. MCP must
+also be enabled under Settings > Pi > Bundled extensions. Approval permits loading, but does
+not establish a connection or tool catalog; those belong to each thread.
+
+Remote hosts advertise `projects.trust.v1`. Approval goes to that host over the existing
+authenticated connection; older hosts show an update-required reason. Failure never turns
+into approval, and a confirmation for another host or folder cannot apply to a new selection.
+The shared `.mcp.json` file keeps its separate "Also use a repo's .mcp.json" opt-in.
+
+`ProjectMCPTrustTests` uses the bundled Pi RPC startup and a local scripted provider and MCP
+server. It verifies that undecided resources stay blocked, approval registers a deferred tool
+that search discovers and codemode calls, siblings stay blocked, and home protection wins
+over saved approval and the global default. All homes, credentials and project data are scratch.
+
 **The CLI.** `pi mcp list [--json]` connects to every enabled server and prints each one's name, `state`
 (`connected`, `needs-auth`, `failed`, `disabled`, …), `exposure`, `transport`, tool names, `error` and any
 config errors; it exits 1 when something is not connected. Tool names only: no descriptions or schemas.

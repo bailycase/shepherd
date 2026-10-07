@@ -5,7 +5,7 @@ import SwiftUI
 public struct MCPServerDetailModel: Equatable, Sendable {
     public enum SignIn: Equatable, Sendable {
         /// Signed in with OAuth.
-        case signedIn(account: String?, scopes: [String], note: String)
+        case signedIn(account: String?, scopes: [String], note: String, title: String = "Signed in")
         /// OAuth that needs you: `title` says why ("Not signed in", "Expired", "Needs issues:write").
         case needsSignIn(title: String, note: String, again: Bool)
         /// A header whose value comes from a variable.
@@ -141,22 +141,22 @@ public struct MCPServerDetail: View {
         let nw = Color.nw
         let M = NWMCPMetrics.self
         switch model.signIn {
-        case .signedIn(let account, let scopes, let note):
+        case .signedIn(let account, let scopes, let note, let title):
             HStack(spacing: NW.Space.m) {
                 Image(systemName: "person.crop.circle").foregroundStyle(nw.textSecondary).accessibilityHidden(true)
                 if let account {
                     Text("Signed in as \(Text(account).fontWeight(.semibold))")
                 } else {
-                    Text("Signed in")
+                    Text(title)
                 }
             }
             .font(.nwSans(M.detailTextSize))
             .foregroundStyle(nw.textPrimary)
             if !scopes.isEmpty { MCPChipFlow(scopes.map { MCPChip($0) }) }
             noteText(note)
-            HStack(spacing: NW.Space.s) {
-                Button("Sign in again", action: actions.signIn).buttonStyle(.nw(.secondary, size: .s))
-                Button("Sign out", action: actions.signOut).buttonStyle(.nw(.ghost, size: .s))
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: NW.Space.s) { signedInActions }.fixedSize()
+                VStack(alignment: .leading, spacing: NW.Space.s) { signedInActions }
             }
         case .needsSignIn(let title, let note, let again):
             Text(title).font(.nwSans(M.detailTextSize)).foregroundStyle(nw.lanternText)
@@ -252,6 +252,11 @@ public struct MCPServerDetail: View {
         .padding(.vertical, -M.optionHitPadding)
         .help(help)
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+    }
+
+    @ViewBuilder private var signedInActions: some View {
+        Button("Sign in again", action: actions.signIn).buttonStyle(.nw(.secondary, size: .s))
+        Button("Sign out", action: actions.signOut).buttonStyle(.nw(.ghost, size: .s))
     }
 
     private func noteText(_ text: String) -> some View {

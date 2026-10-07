@@ -209,7 +209,9 @@ A list is as fast with three hundred rows as with thirty. Count budgets in
 - Hidden agents stay out of the visible one's updates (see AGENTS.md, switching is a flip).
 - Projects uses the shared MCP server cards and forms. Pi's three Settings subpages stay visible
   from every page, except when filtered by search. Project MCP reuses the global OAuth sheet;
-  authentication runs on the selected host and opens the viewer's browser.
+  authentication runs on the selected host and opens the viewer's browser. Native MCP also
+  shows Pi's project approval separately from saved credentials, with explicit confirmation
+  covering executable project resources before approval on that host.
   Details: [Project MCP](docs/design/project-mcp.md).
 - Blank-thread recovery checks for visible current content rows, not the invisible bottom marker
   or cached targets from a live reply that completion replaced.
