@@ -91,6 +91,67 @@ struct ThreadTailGuardTests {
         #expect(rig.landings == 0, "the guard aimed at the end the stack believes in, which would undo an exact landing")
     }
 
+    /// SwiftUI can keep reporting the clear marker after the walk has found no current row.
+    /// It is not evidence of content, and must not suppress the final tail landing.
+    @Test func aBottomMarkerWithoutAnyCurrentRowDoesNotEndRecovery() async throws {
+        let rig = Rig()
+        defer { rig.close() }
+        let land = rig.guardian.land
+        rig.guardian.land = {
+            land()
+            rig.scrollToEnd()
+            rig.guardian.targets(["row", "thread-bottom"])
+        }
+        rig.guardian.targets(["thread-bottom"])
+        try await eventuallyOnMain("a marker-only viewport to land on real content", timeout: .seconds(5)) {
+            rig.landings > 0 && rig.guardian.visible.contains("row") && !rig.guardian.repairing
+        }
+        #expect(rig.landings == 1)
+        #expect(abs(rig.gap) <= ThreadTailGuard.slack)
+    }
+
+    @Test func aFittingBlankDocumentRebuildsOnceAfterBoundedScrollingFails() async throws {
+        let rig = Rig()
+        defer { rig.close() }
+        rig.document.setFrameSize(NSSize(width: 800, height: 200))
+        rig.clip.scroll(to: rig.clip.constrainBoundsRect(rig.clip.bounds).origin)
+        var rebuilds = 0
+        rig.guardian.rebuild = { rebuilds += 1 }
+        rig.guardian.targets([])
+        try await eventuallyOnMain("bounded recovery to rebuild the fitting blank document") {
+            rebuilds == 1 && rig.landings == ThreadTailGuard.maxAttempts
+        }
+        for _ in 0..<20 { rig.guardian.targets([]) }
+        #expect(rebuilds == 1)
+        #expect(rig.landings == ThreadTailGuard.maxAttempts)
+        rig.guardian.asked()
+        try await eventuallyOnMain("an explicit tail request to get its own bounded rebuild") {
+            rebuilds == 2 && rig.landings == ThreadTailGuard.maxAttempts * 2
+        }
+    }
+
+    @Test(arguments: ["hidden", "reader"])
+    func rebuildingAHiddenOrDetachedTranscriptIsNeverRequested(state: String) async throws {
+        let rig = Rig()
+        defer { rig.close() }
+        rig.document.setFrameSize(NSSize(width: 800, height: 200))
+        var rebuilds = 0
+        rig.guardian.rebuild = { rebuilds += 1 }
+        let land = rig.guardian.land
+        rig.guardian.land = {
+            land()
+            if rig.landings == ThreadTailGuard.maxAttempts {
+                if state == "hidden" { rig.guardian.active = false }
+                else { rig.guardian.following = false }
+            }
+        }
+        rig.guardian.targets([])
+        try await eventuallyOnMain("the final attempt to leave a hidden reader alone") {
+            rig.landings == ThreadTailGuard.maxAttempts
+        }
+        #expect(rebuilds == 0)
+    }
+
     @Test func aNewCompletedTurnCanRecoverAfterEarlierAttemptsFailed() async throws {
         let rig = Rig()
         defer { rig.close() }

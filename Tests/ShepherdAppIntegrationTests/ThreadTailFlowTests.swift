@@ -512,6 +512,37 @@ struct ThreadTailFlowTests {
         }
     }
 
+    @Test func exhaustedBlankRecoveryRecreatesOnlyTheTranscriptAndKeepsTheDraft() async throws {
+        let host = FlowHost(turns: 0, mix: .moderate)
+        host.all = [Fx.user("prompt", "Check the project.", at: Fx.base),
+                    Fx.reply("reply", "The check is complete.", at: Fx.base + 1)]
+        let deck = Deck(host: host, size: CGSize(width: 1400, height: 1100), native: false)
+        defer { deck.close() }
+        try await deck.open()
+        deck.store.draft = "Keep this unsent draft."
+        try await eventuallyOnMain("the draft to finish resizing the composer") {
+            deck.reading != nil && deck.tailGuard.visible.contains("thread-bottom")
+        }
+        let scroll = try #require(deck.scrollView)
+        let rows = deck.store.rows
+        func editors(_ view: NSView) -> [NSTextField] {
+            if let editor = view as? NSTextField, editor.isEditable { return [editor] }
+            return view.subviews.flatMap(editors)
+        }
+        let editor = try #require(editors(deck.window.window.contentView!).first)
+        // A stale visibility report cannot be repaired by scrolling a document that fits.
+        // Suppress tail landings so the fallback itself, rather than another scroll, is tested.
+        deck.tailGuard.land = {}
+        deck.tailGuard.targets([])
+        try await eventuallyOnMain("exhausted recovery to replace only the transcript scroll view", timeout: .seconds(5)) {
+            guard let current = deck.scrollView else { return false }
+            return current !== scroll && deck.tailGuard.visible.contains("thread-bottom")
+        }
+        #expect(deck.store.draft == "Keep this unsent draft.")
+        #expect(deck.store.rows == rows)
+        #expect(editors(deck.window.window.contentView!).contains { $0 === editor })
+    }
+
     // MARK: A terminal panel under a running turn
 
     struct PanelCase: Sendable, CustomTestStringConvertible {
