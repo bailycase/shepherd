@@ -1815,6 +1815,10 @@ public final class SessionServer: @unchecked Sendable {
                 send(.error(id: id, code: "update_required", message: "Update Shepherd on the host to read project context and open its editor."), to: client)
                 return
             }
+            guard !request.requiresProjectTrust || offeredCapabilities.contains(RemoteProtocol.projectTrustCapability) else {
+                send(.error(id: id, code: "update_required", message: "Project approval is unavailable on this host."), to: client)
+                return
+            }
             guard !request.requiresMCP || offeredCapabilities.contains(RemoteProtocol.projectMCPCapability) else {
                 send(.error(id: id, code: "update_required", message: "Update Shepherd on the host to sign in to project MCP servers."), to: client)
                 return
