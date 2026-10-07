@@ -266,7 +266,6 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | --- | --- | --- | --- |
 | DZStart | [design-tool](design-tool.md) | Design tool › New design | Built, without Capture a page, From a screenshot and "/ commands" |
 | DZCanvas | [design-tool](design-tool.md) | Design tool › A design: canvas and chat, Comments | Partly built: header, canvas, board frames, Chat, comments; not actions, Tweak |
-| JumpInContext | [design-tool](design-tool.md) | Design tool › Jump to a board | Built (departures: no ⌘⏎) |
 | DZTweak | [design-tool-references](design-tool-references.md) | Design tool › Tweak | Not built yet |
 | DZSystem | [design-tool-references](design-tool-references.md) | Design tool › Design systems | Not built yet |
 | DZExport | [design-tool-references](design-tool-references.md) | Design tool › Export and share | Partly built: the sheet, its formats and Attach to a thread; not the live link or Attach to a mission |
