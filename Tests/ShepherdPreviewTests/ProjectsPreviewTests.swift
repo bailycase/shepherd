@@ -42,30 +42,33 @@ struct ProjectsPreviewTests {
         try await Preview.renderMatrix("projects-\(state)", size: size) { RootView(vm: world.vm) }
     }
 
-    /// The board's tree (SettingsProjects, parents and subprojects): shepherd with its two
-    /// subprojects inside its folder, which share its two MCP servers (one adds its own), then
-    /// payments, and the daemon on Build-01. Collapsed, shepherd folds its subprojects away.
+    /// The board's tree (SettingsProjects, parents and subprojects): acme with the three projects
+    /// added inside its folder (frontend, backend, admin), which share its two MCP servers (frontend
+    /// adds its own), then payments, and the daemon on Build-01. Collapsed, acme folds them away.
     @Test(arguments: ["tree", "tree-collapsed", "tree-filtered"])
     func subprojects(state: String) async throws {
         let world = try await ProjectsPreviewWorld(empty: true)
         defer { world.stop() }
         let home = URL(fileURLWithPath: world.local.server.pi.userHome)
         let code = home.appendingPathComponent("code")
-        let shepherd = code.appendingPathComponent("shepherd")
-        let landing = shepherd.appendingPathComponent("landing"), testing = shepherd.appendingPathComponent("testing")
+        let acme = code.appendingPathComponent("acme")
+        let frontend = acme.appendingPathComponent("frontend"), backend = acme.appendingPathComponent("backend")
+        let admin = acme.appendingPathComponent("admin")
         let payments = code.appendingPathComponent("payments")
         func write(_ folder: URL, _ relative: String, _ text: String) throws {
             let url = folder.appendingPathComponent(relative)
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try Data(text.utf8).write(to: url)
         }
-        try write(shepherd, ".pi/mcp.json", #"{"mcpServers":{"linear":{},"sentry":{}}}"#)
-        try write(landing, ".pi/mcp.json", #"{"mcpServers":{"vercel":{}}}"#)
-        try write(testing, "AGENTS.md", "# Tests\n")
+        try write(acme, ".pi/mcp.json", #"{"mcpServers":{"linear":{},"sentry":{}}}"#)
+        try write(frontend, ".pi/mcp.json", #"{"mcpServers":{"vercel":{}}}"#)
+        try write(backend, "AGENTS.md", "# Backend\n")
+        try write(admin, "AGENTS.md", "# Admin\n")
         for skill in ["ledger", "refunds", "release"] { try write(payments, ".pi/skills/\(skill)/SKILL.md", "# \(skill)\n") }
         try write(payments, ".pi/mcp.json", #"{"mcpServers":{"stripe":{},"docs":{}}}"#)
-        let spaces = [Space(name: "shepherd", path: shepherd.path), Space(name: "shepherd-landing", path: landing.path),
-                      Space(name: "shepherd-testing", path: testing.path), Space(name: "payments", path: payments.path)]
+        let spaces = [Space(name: "acme", path: acme.path), Space(name: "frontend", path: frontend.path),
+                      Space(name: "backend", path: backend.path), Space(name: "admin", path: admin.path),
+                      Space(name: "payments", path: payments.path)]
         try await world.local.server.putState(ShepherdState(spaces: spaces))
         world.vm.adopt(world.local.server.state)
         let daemon = URL(fileURLWithPath: world.remote.server.pi.userHome).appendingPathComponent("srv/daemon")
@@ -74,10 +77,10 @@ struct ProjectsPreviewTests {
         try await eventuallyOnMain("the host's project") { world.vm.remoteHosts.connections.first?.state.spaces.count == 1 }
         await world.vm.projects.load(world.vm.projectsSources, force: true)
         let model = world.vm.projects
-        #expect(model.visible.map(\.project.name) == ["shepherd", "shepherd-landing", "shepherd-testing", "payments", "daemon"])
+        #expect(model.visible.map(\.project.name) == ["acme", "frontend", "backend", "admin", "payments", "daemon"])
         #expect(model.visible[1].configuration == "2 inherited · 1 local MCP")
         if state == "tree-collapsed" { model.collapsed = [model.visible[0].id] }
-        if state == "tree-filtered" { model.filter = "testing" }
+        if state == "tree-filtered" { model.filter = "front" }
         try await Preview.renderMatrix("projects-\(state)", size: CGSize(width: 1440, height: 900)) { RootView(vm: world.vm) }
     }
 
