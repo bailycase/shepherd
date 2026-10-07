@@ -30,8 +30,8 @@ struct TerminalSettings: View {
                     .onChange(of: settings.terminalFontFamily) { vm.rebuildSurfaces() }
                 }
                 SettingsRow(title: "Font size") {
-                    NWValueSlider("Font size", value: $settings.terminalFontSize, in: AppSettings.fontSizeRange, step: 0.5) {
-                        String(format: "%.1f pt", $0)
+                    NWValueSlider("Font size", value: $settings.terminalFontSize, in: AppSettings.fontSizeRange, step: 0.5, unit: "points") {
+                        String(format: "%.1f", $0)
                     }
                     .onChange(of: settings.terminalFontSize) { vm.rebuildSurfaces() }
                 }

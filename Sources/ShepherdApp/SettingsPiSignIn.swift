@@ -15,9 +15,7 @@ struct PiSignInSettings: View {
         ScrollViewReader { proxy in
             SettingsPage(title: "Sign-in",
                          explanation: "Subscriptions and API keys for agents on this Mac. They live in Shepherd’s own pi, so your terminal pi keeps its own.") {
-                Button { Task { await yourPi.reimport(.logins) } } label: {
-                    Label("Re-import from your pi", systemImage: "square.and.arrow.down")
-                }
+                Button("Re-import from pi") { Task { await yourPi.reimport(.logins) } }
                 .buttonStyle(.nw(.secondary, size: .s))
                 .nwControlScale(.standard)
                 .disabled(yourPi.survey?.folder == nil || yourPi.busy.contains(YourPiModel.rowID(.logins)))
@@ -125,10 +123,10 @@ struct PiSignInSettings: View {
         }
     }
 
-    /// Re-import from your pi, with how it stands as the item's second line.
+    /// Re-import from pi, with how it stands as the item's second line.
     private func reimportItem(_ row: ProviderRowModel) -> some View {
         Button { Task { await yourPi.reimport(.login(row.id)) } } label: {
-            Text("Re-import from your pi")
+            Text("Re-import from pi")
             if let word = PiSignInWords.freshness(row.freshness) { Text(word) }
         }
         .disabled(row.freshness == nil)

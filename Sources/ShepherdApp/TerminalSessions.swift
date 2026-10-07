@@ -1083,8 +1083,9 @@ final class TerminalSessionStore {
             childEnvironment: settings.childEnvironment,
             goalCrossProviderEvaluation: settings.goalCrossProviderEvaluation,
             goalsEnabled: settings.goalsEnabled,
-            namerExtensionPath: settings.autoNameAgents ? try NamerExtension.installedPath() : nil,
-            needsName: Self.wantsNamer(for: agent, autoName: settings.autoNameAgents),
+            namerExtensionPath: try NamerExtension.installedPath(),
+            needsName: !agent.nameIsFinal,
+            namingModel: settings.namingModel,
             isAutomation: isAutomation,
             instructions: (try InstructionsExtension.installedPath(), ShepherdPaths.instructionsDirectory().path),
             suggestFiles: suggestFiles.map(\.fileName),
@@ -1128,12 +1129,6 @@ final class TerminalSessionStore {
     /// change at its next start.
     static func wantsDesignReferences(for agent: Agent, enabled: Bool, designTool: Bool) -> Bool {
         enabled && designTool && agent.designID == nil
-    }
-
-    /// An agent gets pi's namer only while its name is still provisional and
-    /// the user has left auto-naming on.
-    static func wantsNamer(for agent: Agent, autoName: Bool) -> Bool {
-        !agent.nameIsFinal && autoName
     }
 
     nonisolated static func resolvedCwd(_ raw: String) -> String {

@@ -242,6 +242,8 @@ public struct NWValueSlider: View {
     let range: ClosedRange<Double>
     let step: Double
     let format: (Double) -> String
+    /// What VoiceOver reads after the drawn number when the board draws it bare ("percent", "points").
+    let unit: String?
     let neutral: Double?
     let editingChanged: ((Bool) -> Void)?
     /// Bumped by each reset, the one change that animates: a drag or an arrow key tracks at once.
@@ -251,8 +253,10 @@ public struct NWValueSlider: View {
     /// `onEditingChanged` hears a drag begin (true) and end (false), as a native slider's does;
     /// an arrow key or a reset is a change that begins and ends at once.
     public init(_ label: String = "", value: Binding<Double>, in range: ClosedRange<Double>, step: Double,
-                neutral: Double? = nil, format: @escaping (Double) -> String, onEditingChanged: ((Bool) -> Void)? = nil) {
+                neutral: Double? = nil, unit: String? = nil, format: @escaping (Double) -> String,
+                onEditingChanged: ((Bool) -> Void)? = nil) {
         _value = value
+        self.unit = unit
         self.label = label
         self.range = range
         self.step = step
@@ -266,9 +270,9 @@ public struct NWValueSlider: View {
             NWSliderTrack(value: $value, range: range, step: step, editingChanged: editingChanged)
                 .accessibilityRepresentation {
                     Slider(value: $value, in: range, step: step) { Text(label) }
-                        .accessibilityValue(format(value))
+                        .accessibilityValue(spoken(value))
                         .accessibilityActions {
-                            if let neutral { Button("Reset to \(format(neutral))") { reset(to: neutral) } }
+                            if let neutral { Button("Reset to \(spoken(neutral))") { reset(to: neutral) } }
                         }
                 }
             Text(format(value))
@@ -287,6 +291,8 @@ public struct NWValueSlider: View {
         // Resetting the text size moves everything around the slider at once; it moves with it.
         .geometryGroup()
     }
+
+    private func spoken(_ value: Double) -> String { format(value) + (unit.map { " \($0)" } ?? "") }
 
     private func reset(to neutral: Double) {
         guard value != neutral else { return }

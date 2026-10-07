@@ -1,58 +1,53 @@
 # Settings: Pi
 
-> Read when you change Settings ▸ Pi: Slash commands, Sign-in, the CLIProxyAPI connection, or From your pi.
+> Read when you change Settings ▸ Pi (and its From pi section), Extensions, Slash commands, Sign-in or the CLIProxyAPI connection.
 
-## Pi (SettingsPi)
+## Pi (SettingsPi, SettingsPiFromPi, SettingsPiExtensions)
 
-"Shepherd's own pi, the extensions Shepherd bundles into it, and defaults for native subagents."
+"Shepherd's own copy of pi." One page, in this order (macOS Settings boards, revision 1083):
 
-- **Shepherd's pi** (first; a departure from SettingsPi, which predates Shepherd running its own
-  pi: the "Bundled pi, isolated home" plan, phase 3; footnote "Shepherd runs its own copy of pi,
-  with its own sign-ins, settings and conversations. The pi in your terminal is yours: Shepherd
-  never runs it or changes its files."):
-  - the engine: a `PathRow`, "pi 0.87.1" (the version the app ships; "pi" alone when a Debug
-    build's override brings its own), "Included with Shepherd, and updated with it. Its home:",
-    then the home's folder name in mono (its path on hover) and Reveal.
-- **Sign-in and From your pi** have pages of their own, under Pi in the nav (below). The Pi page
-  keeps what the SettingsPi board draws besides them.
+- **Shepherd's pi** (footnote "Shepherd runs its own copy of pi, with its own sign-ins, settings
+  and conversations. The pi in your terminal is yours: Shepherd never runs it or changes its
+  files."): a `PathRow`, "pi 0.87.1" (the version the app ships; "pi" alone when a Debug build's
+  override brings its own), "Included with Shepherd, and updated with it. Its home:", then the
+  home's folder name in mono (its path on hover) and Reveal.
+- **From pi**, a second heading inside the page (Geist 17/600, `AppLayout.settingsSectionTitleSize`)
+  with its own explanation: the section below, "Pi ▸ From pi".
+- Native subagents and their defaults are on Settings ▸ Subagents, under the list
+  ([settings-subagents](settings-subagents.md)).
+
+## Extensions (SettingsExtensions, SettingsPiDesignReferences)
+
+"Control the extensions included with Shepherd." (`ExtensionsSettings`, its own nav row.) The
+sidebar's Extensions destination opens this page.
 
 - **Bundled extensions** (footnote "Applies to agents launched on this Mac, including automations
   and remote agents. Running agents keep their extensions until restarted. Status and session
   tracking are always on."), switches, all on by default:
-  - Name agents automatically, "Titles each new agent from its first prompt using the cheapest
-    authed model. A rename you type is always final."
   - Terminals and agent tools, "Let agents open and drive terminals, message or spawn agents,
     manage automations and send notifications." (the stored key `shepherd.pi.extension.panes`
     and the extension's id, `panes`, keep their names)
-  - Agent-to-agent messages (the user's request, 2026-10-01; no board draws it), a popup row under
-    Terminals and agent tools, not a switch: **Ask me** (the default), **Always allow**, **Never**.
-    "Whether an agent may message, steer, read or start another thread. Ask me opens a dialog each
-    time. Automations can't answer one, so they need Always allow." (`NWPopupMenu`, accessibility
-    label "Agent-to-agent messages", stored as `shepherd.pi.agentMessages`; Reset settings puts it
-    back to Ask me.) It is dimmed while Terminals and agent tools is off, since no agent has the
-    tools then. The host enforces it (docs/agent-coordination.md › Approving what agents do to other
-    threads); the dialog Ask me opens is `PeerApprovalDialog` (Dialogs and sheets). A change takes
-    effect for running agents at once, and forgets every "Allow for this thread". A remote client
-    does not set it: it is this Mac's own choice, like Remote's listener.
+  - Agent-to-agent messages, a popup row, not a switch: **Ask me** (the default), **Always allow**,
+    **Never**. "Whether an agent may message, steer, read or start another thread. Ask me opens a
+    dialog each time. Automations can't answer one, so they need Always allow." (`NWPopupMenu`,
+    accessibility label "Agent-to-agent messages", stored as `shepherd.pi.agentMessages`; Reset
+    settings puts it back to Ask me.) It is dimmed while Terminals and agent tools is off. The host
+    enforces it (docs/agent-coordination.md › Approving what agents do to other threads); the
+    dialog Ask me opens is `PeerApprovalDialog`. A change takes effect for running agents at once
+    and forgets every "Allow for this thread". A remote client does not set it.
   - Diff review tool, "Let agents open the review pane with `review_diff`."
-  - Native subagents, "Shepherd helpers, agent files and scripted workflows. Needs
-    pi 0.85.1+. Children stop with their parent." (the board adds "and durable missions", which are
-    off: docs/design/departures.md) Turning it off hides the next group, which
-    discloses back when it returns.
-  - Subagent display, "Show subagent runs in their agent's thread, the inspector and the palette.
-    Off doesn't stop them running." (the board says "in the sidebar"; subagents have no sidebar
-    rows, see Subagents)
+  - MCP servers, "Let agents use the servers in Settings ▸ MCP servers, with tool search."
   - Browser tools, "Let agents open pages in their thread's Browser, read and click through them,
-    and take screenshots.", after MCP servers: a seventh row, which the SettingsPi board draws
-    (the user's decision, 2026-09-30; canvas v125). On by default; a remote client changes it as
-    any bundled extension (`bundled` id `browser`); a running agent follows a change at its next
-    start. A design's agent never gets the tools, whatever the row says (docs/browser.md).
+    and take screenshots." A design's agent never gets the tools, whatever the row says
+    (docs/browser.md).
   - Design references, "Let a thread read the design pieces you hand it with `design_get`. Only a
     thread you sent one to gets the tool.", shown only while Settings ▸ Experiments ▸ Design tool
-    is on (not drawn; it follows the rows above). With the Design tool off no thread loads it,
-    whatever the row says; a running agent follows either change at its next start.
-[SubagentsSettings](settings-subagents.md) revision 598 makes the top-level Subagents page the
-owned-file manager. Native subagents, Subagent display and the defaults below remain on Pi.
+    is on (SettingsPiDesignReferences).
+- **Name agents automatically** is gone: naming is always on (the user's decision, 2026-10-07).
+  Agents ▸ Session naming model picks the model.
+
+The native subagent groups below sit on [Settings ▸ Subagents](settings-subagents.md), under the
+list of definitions (the user's decision, 2026-10-07).
 
 - **Native subagent defaults** (only while Native subagents is on; footnote "Precedence: explicit
   call → agent file → these defaults → parent. Child tools run with your account's access."):
@@ -67,44 +62,39 @@ owned-file manager. Native subagents, Subagent display and the defaults below re
   inside the app and updates only with it, so nothing on the page runs `pi update` or checks npm
   (the "Bundled pi, isolated home" plan). Remote clients' two update switches are ignored.
 
-## Pi ▸ Slash commands (SettingsPiSlashCommands)
+## Slash commands (SettingsPiSlashCommands)
 
-No board draws this page: it is the user's decision, 2026-10-01 (the PR lists it under Departures).
-A page under Pi in the nav, after From your pi: "The commands pi lists in the `/` menu of your
-agents, from its extensions, prompt templates and skills. Turn one off to hide it from the menu."
+Its own nav row, after Extensions: "Commands supplied by extensions, prompt templates and skills.
+Turn one off to disable it entirely, including when typed directly."
 (`SettingsSection.piSlashCommands`; full available width with 40pt side gutters;
-`SlashCommandsSettings`, its groups derived
-once per change by `SlashCommandsModel`).
+`SlashCommandsSettings`, its groups derived once per change by `SlashCommandsModel`).
 
 - **Search commands:** a 280pt `NWSearchField` and, trailing in caption `textTertiary`, the count:
-  "56 commands", "56 commands · 6 hidden", "No commands yet". The search matches a command's name or
+  "7 commands", "7 commands · 2 disabled", "No commands yet". The search matches a command's name or
   description ignoring a leading slash, and the count stays the whole list's.
 - **Groups**, each a `SettingsGroup` card, in this order and each by name: **Extensions**,
-  **Prompt templates**, **Skills** (the `skill:` commands), **Other** (a source pi did not say, and
-  hidden names no pi lists now). A group with no row left by the search is not drawn.
+  **Prompt templates**, **Skills** (the `skill:` commands), **Unreported commands** (a source pi
+  did not say, and disabled names no pi lists now). A group with no row left by the search is not drawn.
 - **A row** (`SlashCommandListRow`, at least 54pt, the Skills list's measures, a hairline above each
   but the group's first, lazy in a `LazyVStack` so 128 commands build only what is on screen):
   `/name` in Geist Mono 13 semibold `textPrimary` (`textSecondary` while off), its argument hint after
   it in mono 11.5 `textTertiary` ("[tag]"), the description under it in Geist 12.5 `textSecondary`
   on one line, and the lantern switch trailing (`SettingsSwitch`, labelled "/name" for VoiceOver).
-  Off, the description line says "Hidden from the / menu. Typing it still runs it." in `textTertiary`.
-  A name hidden before this launch that no pi lists says "Hidden. No agent's pi lists it right
-  now." and can still be switched on. The row's tooltip: "Listed in the / menu. Turn off to hide
-  /name from it; typing it still works." and, off, "Hidden from the / menu. Typing /name still runs it."
+  Off, the description line says "Disabled. Cannot be invoked until re-enabled." in `textTertiary`.
+  The row's tooltip: "Turn off to disable /name in every thread, typed or picked from the / menu."
+  and, off, "Disabled. /name can't be invoked until you turn it back on."
 - **Empty:** with nothing listed, one card: "No commands yet. pi reports its commands when an agent
   starts, so they list here once one is running."; with a search that leaves none, "No command
   matches “<query>”."
-- **Footnote** under the last group: "Applies to the agents on this Mac, in every client that views
-  them, the iPhone and iPad included. An off command is only hidden from the menu: typing its name
-  still runs it. A command lists here once an agent's pi has reported it."
+- **No footnote**: the board draws none.
 - **What a switch does:** every command is on until it is switched off (`AppSettings.hiddenSlashCommands`,
   `shepherd.pi.slashCommands.hidden`, a sorted list; Reset settings turns them all on). The server
-  hears each change (`SessionServer.setHiddenSlashCommands`) and the host's projection of pi's
-  `get_commands` leaves the names out of every thread's snapshot at once, so the `/` menu on this
-  Mac, on another Mac viewing it and on the iPhone and iPad all lose it on their next pull. It hides
-  from that menu and from nothing else: typing the name runs it, and the host still lists it for
-  this page (`SessionServer.slashCommandCatalog`: every command a pi here has listed since the
-  app started, so a hidden one can be switched back on).
+  hears each change (`SessionServer.setHiddenSlashCommands`). The host's projection of pi's
+  `get_commands` leaves the names out of every thread's snapshot, so every client's `/` menu loses
+  them on its next pull. Sending one, typed or picked, is refused before pi sees it with
+  "/name is disabled. Turn it back on in Settings ▸ Slash commands." (`RPCThreadState`'s command
+  check, which every send, edit, steer and dispatch path runs). The host still lists the command for
+  this page (`SessionServer.slashCommandCatalog`) so it can be switched back on.
 - **This Mac's setting.** It is not in `HostSettings`: another client cannot switch a host's
   commands from its own Settings, because the iPhone and iPad have no page for it. The filter
   is on the host, so a remote client's menu follows the host's switches; changing them from a client
@@ -112,11 +102,11 @@ once per change by `SlashCommandsModel`).
 - **Settings ▸ Skills ▸ Skills in the / menu** is still a client-side filter for skill commands on
   this Mac's composer; a skill switched off here is gone from every client's menu either way.
 
-## Pi ▸ Sign-in (SettingsPiSignIn, SettingsPiSignInKeys, PiAuthStates)
+## Sign-in (SettingsPiSignIn, SettingsPiSignInKeys, PiAuthStates)
 
 "Subscriptions and API keys for agents on this Mac. They live in Shepherd’s own pi, so your
-terminal pi keeps its own." The header's trailing edge holds **Re-import from your pi**
-(secondary, small, `square.and.arrow.down`), which copies every login again (disabled with no
+terminal pi keeps its own." The header's trailing edge holds **Re-import from pi**
+(secondary, small, no glyph, as the board draws it), which copies every login again (disabled with no
 pi of yours). Everything here is Shepherd's pi's alone (its home's `auth.json` and
 `models.json`): nothing reads or writes the user's pi but a Re-import, which only reads it.
 
@@ -164,7 +154,7 @@ pi of yours). Everything here is Shepherd's pi's alone (its home's `auth.json` a
   groups, at most 8 characters: "sk-proj-", "sk-") and "••••" and its last 4
   ("sk-proj-••••3kQz"); a key shorter than 12 characters shows "••••" alone. Nothing else of a
   key's value is ever drawn, logged or put in a tooltip.
-- **`NWKeySourceLabel`** after a key: "copied from your pi" (`textTertiary`; its key is the one
+- **`NWKeySourceLabel`** after a key: "copied from pi" (`textTertiary`; its key is the one
   the import copied), "reads `$NAME`" (the key is a `$NAME` reference, read from the login shell
   when an agent starts), "runs a command `op read …`" (a `!command`: pi runs it when the key is
   first needed; a custom provider's command in mono 11 `textSecondary`, truncated in the middle,
@@ -175,11 +165,11 @@ pi of yours). Everything here is Shepherd's pi's alone (its home's `auth.json` a
   "Signing in here and in your terminal pi can sign one of them out." in Geist 11.5
   `textTertiary`, 3pt under the status line.
 - **The provider menu** (the native menu, `NWOptionsMenu`'s anatomy):
-  - a subscription: Sign in again · Re-import from your pi (with its freshness as the item's
+  - a subscription: Sign in again · Re-import from pi (with its freshness as the item's
     second line; disabled when your pi has no sign-in for it) · a divider · Sign out, in
     `failed`. Sign out removes it from Shepherd's pi only: its entry in the home's `auth.json`,
     through pi's own `logout`; the user's pi keeps theirs.
-  - a key: Change key… · Re-import from your pi (freshness) · a divider · Remove key, in `failed`.
+  - a key: Change key… · Re-import from pi (freshness) · a divider · Remove key, in `failed`.
   - "same as here", "newer in your pi", "changed here" (`PiFreshness`) compare Shepherd's
     copy with theirs by a digest taken at the copy (never the values).
 - **The page never waits on a network**: rows come from the two files, read off the main thread
@@ -206,10 +196,10 @@ it is inert without configuration. Existing agents adopt changes at an idle boun
 interrupting an active turn. An old selected model is not silently sent to a disabled connection.
 Host setup is local to the Mac running the agents; remote model pickers use the host's catalog.
 
-## Pi ▸ From your pi (SettingsPiFromPi, SettingsPiExtensions)
+## Pi ▸ From pi (SettingsPiFromPi, SettingsPiExtensions)
 
-"What Shepherd brought over from the pi in your terminal. Shepherd keeps its own copy, so
-nothing here changes your pi."
+A section of the Pi page, under its heading "From pi": "What Shepherd brought over from the pi in
+your terminal. Shepherd keeps its own copy, so nothing here changes your pi."
 
 - A card of two `SettingsActionRow`s, no label:
   - **Source**: "Source" over `~/.pi/agent` in mono 12.5, "The pi in your terminal, found through
@@ -238,8 +228,9 @@ nothing here changes your pi."
   ("12 skills, listed with the rest in Skills."; Show in Finder, at Shepherd's copies), Prompts (their names as `NWTag`s in
   mono, "/review", at most six and "+3"; Show in Finder), Themes the same way when there are
   any; each with Re-import.
-- **Extensions**, labelled "Extensions" with "4 in `~/.pi/agent/extensions`" trailing (footnote
-  "Code, so each one came over switched off. Shepherd’s own extensions are on the Pi page."):
+- **Imported extensions**, with "4 in `~/.pi/agent/extensions`" trailing (footnote "Code, so each
+  one came over switched off. Shepherd's bundled extensions are on Extensions.", where
+  "Extensions" is a link that opens that page):
   one **`NWExtensionRow`** each: its name in mono 13/500, its path in mono 11.5 `textTertiary`,
   its package.json description in caption `textSecondary`, the switch trailing:
   - off: nothing more;

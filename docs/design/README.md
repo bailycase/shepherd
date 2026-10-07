@@ -84,11 +84,16 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | ProjectInstructions | [project-instructions](project-instructions.md) | Settings > Projects > Instructions | Built |
 | ProjectBrowser | [project-browser](project-browser.md) | Settings > Projects > Browser | Built |
 | SubagentsSettings | [settings-subagents](settings-subagents.md) | Settings › Subagents | Built |
-| SettingsPi | [settings-pi](settings-pi.md) | Settings › Pi | Built |
-| SettingsPiSignIn | [settings-pi](settings-pi.md) | Settings › Pi ▸ Sign-in | Built (departures) |
-| SettingsPiSignInKeys | [settings-pi](settings-pi.md) | Settings › Pi ▸ Sign-in (API keys, custom providers, the provider menu) | Built |
-| SettingsPiFromPi | [settings-pi](settings-pi.md) | Settings › Pi ▸ From your pi | Built (departures) |
-| SettingsPiExtensions | [settings-pi](settings-pi.md) | Settings › Pi ▸ From your pi (Extensions) | Built |
+| SettingsPi | [settings-pi](settings-pi.md) | Settings › Pi | Built (departures) |
+| SettingsPiSignIn | [settings-pi](settings-pi.md) | Settings › Sign-in | Built (departures) |
+| SettingsPiSignInKeys | [settings-pi](settings-pi.md) | Settings › Sign-in (API keys, custom providers, the provider menu) | Built |
+| SettingsPiFromPi | [settings-pi](settings-pi.md) | Settings › Pi ▸ From pi | Built (departures) |
+| SettingsExtensions | [settings-pi](settings-pi.md) | Settings › Extensions | Built |
+| SettingsPiDesignReferences | [settings-pi](settings-pi.md) | Settings › Extensions (Design references) | Built |
+| SettingsPiSlashCommands | [settings-pi](settings-pi.md) | Settings › Slash commands | Built |
+| SettingsTerminal | [settings](settings.md) | Settings › Terminal | Built |
+| SettingsAgentsDeferred | [settings](settings.md) | Settings › Agents (Defer rarely used tools) | Built |
+| SettingsPiExtensions | [settings-pi](settings-pi.md) | Settings › Pi ▸ From pi (Imported extensions) | Built |
 | SignInBrowser | [dialogs-and-palette](dialogs-and-palette.md) | Dialogs and sheets › Sign in to <provider> (Browser) | Built |
 | SignInDevice | [dialogs-and-palette](dialogs-and-palette.md) | Dialogs and sheets › Sign in to <provider> (Device code) | Built (departures) |
 | SignInPaste | [dialogs-and-palette](dialogs-and-palette.md) | Dialogs and sheets › Sign in to <provider> (Paste a code) | Built |

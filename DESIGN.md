@@ -1,10 +1,9 @@
 # Shepherd design: the rules
 
-The rules every UI change obeys, on the Mac and in the iPhone and iPad client. The spec of each
-surface (and every board, with how much of it is built) is in [docs/design/](docs/design/README.md):
-read only the part you need with `python3 scripts/design_section.py "<board or heading>"` (find a
-board with `--boards | grep -i <word>`). [AGENTS.md](AGENTS.md) has the step-by-step procedure for
-implementing a design.
+Every UI change on the Mac, iPhone and iPad follows these rules. Each surface's spec, and every
+board with how much of it is built, lives in [docs/design/](docs/design/README.md). Print only the
+part you need with `python3 scripts/design_section.py "<board or heading>"` (find a board with
+`--boards | grep -i <word>`). [AGENTS.md](AGENTS.md) has the step-by-step procedure.
 
 ## Precedence
 
@@ -12,106 +11,112 @@ The first of these that speaks wins:
 
 1. **The design the user gives you in this thread**: an image, a board, a design reference, or
    words describing the change.
-2. The design canvas's board, and its entry in the board index.
+2. The design canvas's board, saved in `docs/design/boards/` and listed in the board index.
 3. The surface's spec in `docs/design/`.
 4. The rules in this file.
 
 - This file and the specs never override a design the user just gave. If they disagree, build
-  the design and update the spec in the same change, in the same commit. A UI decision changes
-  the spec and the canvas together.
-- If you build something that departs from a design, whether you could not match it or the code
-  forces another shape, say so in your final message: each place, and why. A departure from a
-  design is the user's call, never yours. Decided departures live in
+  the design and update the spec in the same commit.
+- A departure from a design is the user's call, never yours. Name each one in your final
+  message with the reason. Departures the user accepted live in
   [docs/design/departures.md](docs/design/departures.md).
-- A spec marked **Not built yet.** is a design for later: build it when asked, skip it otherwise.
-- Every value lives in code. Tokens and shared components are in `Packages/ShepherdUI`; the
+- A spec marked **Not built yet.** is a design for later. Build it when asked.
+- Every value lives in code. Tokens and shared components are in `Packages/ShepherdUI`. The
   Mac's own surface dimensions are in `Sources/ShepherdApp/AppLayout+<Domain>.swift`.
 
 ## What the app is for
 
-Shepherd supervises agents, not chats: live `pi` processes you watch. Every decision has to
-survive "does this help a person supervise ten working agents at once?"
+Shepherd supervises agents. It is not a chat app: each thread is a live `pi` process you watch.
+Every decision has to pass one test: does this help one person supervise ten working agents?
 
-- An agent has a short task title it gave itself (`Fix plan mode`), a workplace and a lifecycle
-  (working, needs you, done, failed, idle). It renders only as a native thread.
+- An agent has a short task title it gave itself (`Fix plan mode`), a workplace, and a
+  lifecycle: working, needs you, done, failed, idle. It renders only as a native thread.
 - Terminals are tabs under a thread, one terminal per tab. No splits, no global shells.
-- Copy says "the agent", never "pi", except where the user's own pi is the subject (Settings ▸ Pi).
-- Missions and the Artifacts and Files tabs are not built: nothing shows or links to them.
-- Conversation Goals are default off under Settings ▸ Experiments. Goals have no time/token
-  budgets; elapsed time and token counts are reporting only. Off pauses active goals without
-  clearing them, and re-enable never resumes work by itself.
-
-## Settings width
-
-Every Settings page fills the available width with the same 40pt side gutters as Skills and
-Instructions. This is the user's latest requirement and replaces the former 720pt standard-page
-and 860pt Projects caps. Navigation and its divider occupy 232pt together. Project editors
-expand beside their 250pt context rail; narrow windows stack the rail instead of horizontally
-scrolling a fixed page. Destructive cookie confirmations center over the whole Settings viewport.
-ProjectBrowser uses the supplied static vector glyphs, exact Geist faces and fractional font
-sizes, and CSS-point borders. Do not substitute SF Symbols or generic form-control styling.
-
-## Browser data
-
-Browser pages and agent controls belong to threads. Saved cookies, local storage and cache belong
-to projects and survive app restarts and thread deletion. Different projects and remote hosts
-remain isolated. The storage and cleanup rules are in [the Browser spec](docs/design/side-pane-browser.md).
+- Copy says "the agent", never "pi". The exception is where the user's own pi is the subject
+  (Settings ▸ Pi, Sign-in).
+- Missions and the Artifacts and Files tabs are not built. Nothing shows or links to them.
+- Goals are an experiment, off by default (Settings ▸ Experiments). They have no time or token
+  budgets. Turning them off pauses active goals and never clears them. Turning them back on
+  never resumes work by itself.
 
 ## Principles, in priority order
 
-1. **Readable measure.** The thread column is at most 820pt and agent prose 640pt.
-2. **Shape, not labels.** No speaker labels or avatars: a user turn is a trailing bubble, agent
+1. **Readable measure.** The thread column is at most 820pt wide and agent prose 640pt.
+2. **Shape, not labels.** No speaker labels or avatars. A user turn is a trailing bubble; agent
    output is unboxed prose.
 3. **One quiet line per burst.** Consecutive calls of one kind merge into one activity line.
 4. **Nothing in the thread spins.** One thing moves at a time, and it is text (live text shimmers).
 5. **Nothing in the default view that isn't useful.** No key-hint rows, no repeated status text,
-   no footers in menus, nothing under the composer but its controls. Expanded tool activity exposes
-   saved inputs and outputs separately; opening codemode shows its script without a hidden gesture.
+   no footers in menus, nothing under the composer but its controls.
 
-The rules that follow:
+What follows from them:
 
-- **Flat surfaces, 1px lines.** Surfaces step `bgBase` (chrome), `bgWindow` (thread), `bgRaised`
-  (cards, composer, menus), `bgSunken` (code, headers). Separation is a hairline, never a shadow.
-- **One shadow**, `.nwPopover()`: menus, palette, popovers, toasts. The sidebar and side pane
-  borrow it (`.nwFloatShadow`) only while they float. No vibrancy, translucency or gradients.
-- **Honest affordances.** Never draw a control that does nothing, a shortcut that isn't wired, or
-  sample data in place of real data. Hide what is unsupported, or say why.
-- **No permission model.** Never invent approval UI for what an agent runs. A question from pi or
-  an extension is a question, with the answers the asker offered. The one approval Shepherd asks
-  is for an agent acting on another thread (`PeerApprovalDialog`, and `PeerDeleteDialog` to
-  delete one): the user's decision, in Departures.
-- **Status is a dot or glyph plus a word.** `AgentState` colors every status surface; color is
+- **Flat surfaces, 1px lines.** Surfaces step `bgBase` (chrome), `bgWindow` (thread),
+  `bgRaised` (cards, composer, menus), `bgSunken` (code, headers). A hairline separates them,
+  never a shadow.
+- **One shadow**, `.nwPopover()`, for menus, palette, popovers and toasts. The sidebar and side
+  pane borrow it (`.nwFloatShadow`) only while they float. No vibrancy, translucency or gradients.
+- **Honest affordances.** Never draw a control that does nothing, a shortcut that isn't wired,
+  or sample data in place of real data. Hide what is unsupported, or say why.
+- **No permission model.** Never invent approval UI for what an agent runs. A question from pi
+  or an extension is a question, with the answers the asker offered. The one approval Shepherd
+  asks for is an agent acting on another thread (`PeerApprovalDialog`, `PeerDeleteDialog`).
+- **Status is a dot or glyph plus a word.** `AgentState` colors every status surface. Color is
   never the only signal.
 - **Lantern means you.** Amber marks the primary action and what needs you. Running blue marks
   work in progress, links and keyboard focus.
-- **The sidebar is the primary navigation**; the command palette is a secondary way to jump.
-  Done is the first activity group when it has unseen completions. A new local thread with an
-  opening message enters Working without flashing in Recents. Active goals stay in Working
-  between turns unless the thread needs an answer. A thread with live, unpaused subagents
-  also stays in Working after its parent's turn ends; Done waits for the children to settle.
+- **The sidebar is the primary navigation.** The command palette is a second way to jump.
 - **One primary action per surface.** A destructive action is never the ⏎ default.
-- **Native controls, Night Watch styles.** A control is a Night Watch style on a native `Button`,
-  `Toggle`, `Picker` or `TextField`; context menus are native `.contextMenu`. Shared views are
-  `NW`-prefixed.
+- **Native controls, Night Watch styles.** A control is a Night Watch style on a native
+  `Button`, `Toggle`, `Picker` or `TextField`. Context menus are native `.contextMenu`. Shared
+  views are `NW`-prefixed.
 
 ## Matching a design
 
-- Draw what the design draws: every element in its order, with its copy, its glyph (symbol name
-  and fill variant), and its size, spacing, radius and color as tokens.
-- Draw every state it shows: rest, hover, pressed, focused, disabled, selected, loading, error,
-  empty, in both appearances.
-- Do not add an element the design lacks (a chip, a hint, a label), and do not drop one it has.
-- Every control it draws does something. If the code cannot do it yet, say so in your final
-  message instead of shipping a dead control.
-- If a value has no token, use the nearest and list the difference; a new color is a theme role.
-- Copy is the design's: sentence case in drawn UI, Title Case in native menus, "the agent" not
-  "pi".
+- Draw what the design draws: every element in its order, with its copy, its glyph, its size,
+  spacing, radius and color as tokens.
+- Draw every state it shows (rest, hover, pressed, focused, disabled, selected, loading, error,
+  empty) in both appearances.
+- Don't add an element the design lacks, and don't drop one it has.
+- Every control it draws does something. If the code can't do it yet, say so instead of
+  shipping a dead control.
+- A value with no token uses the nearest one, and you list the difference. A new color is a
+  theme role.
+- Copy is the design's: sentence case in drawn UI, Title Case in native menus.
+- Render from the real data path. A preview built from the board's strings looks right and
+  hides copy bugs.
+
+## Settings
+
+The macOS Settings board set (`docs/design/boards/Settings*.png`, `SignIn*.png`; page "macOS -
+Settings", revision 1083) is the source of truth for every Settings page.
+
+- **Navigation** is one flat list on `bgBase`, in the boards' order: Appearance, Terminal,
+  Agents, Subagents, Worktrees, Projects, Sign-in, Pi, Instructions, Skills, Extensions, Slash
+  commands, MCP servers, Remote, Keyboard, Advanced, Experiments. No nested rows. Sign-in
+  carries a lantern dot while a sign-in needs the user. The footer reads
+  "Shepherd x.y.z · agent x.y.z", and "· pi x.y.z" on Pi.
+- **Pages** fill the width with 40pt side gutters. Each page has a Geist 22/600 title, one
+  explanation line, then groups 28pt apart. A group has a caps label, a flat card (radius 10,
+  1px `lineSubtle`), and an optional footnote.
+- **Pi** is Shepherd's pi, then **From pi**: the source, what was brought over, the copies and
+  the imported extensions.
+- **Subagents** lists the definition files, then the native subagent switches and defaults.
+- **Extensions** holds the bundled extension switches and Agent-to-agent messages.
+- **Slash commands**: off disables a command entirely, in the menu and when typed.
+- **Projects** reuses the shared MCP server cards, forms and OAuth sheet. Authentication runs on
+  the selected host and opens the viewer's browser. Native MCP shows Pi's project approval apart
+  from saved credentials, and asks for explicit confirmation of executable project resources
+  before approving them on that host ([Project MCP](docs/design/project-mcp.md)).
+- Sliders show the bare number the board draws ("100", "232", "12.5"). VoiceOver reads the unit.
+
+Detail: [settings.md](docs/design/settings.md) and its `settings-*` files.
 
 ## Night Watch
 
-Never hardcode a color, font size, dimension, duration or curve in a view. Use a shared ShepherdUI
-component before hand-rolling chrome; a reusable part goes in `Packages/ShepherdUI` with a
-`#Preview` in both appearances. Full detail: [theme](docs/design/theme.md),
+Never hardcode a color, font size, dimension, duration or curve in a view. Use a shared
+ShepherdUI component before hand-rolling chrome. A reusable part goes in `Packages/ShepherdUI`
+with a `#Preview` in both appearances. Full detail: [theme](docs/design/theme.md),
 [foundations](docs/design/foundations.md), [motion](docs/design/motion.md).
 
 **Color** is `Color.nw.<role>`, dynamic per appearance (values in `NightWatch.swift`):
@@ -124,98 +129,84 @@ component before hand-rolling chrome; a reusable part goes in `Packages/Shepherd
 | Brand and state | `lantern` (+`lanternText`, `lanternTint`) primary action, needs you · `running` (+Tint) work, links, focus · `done` (+Tint) · `failed` (+Tint) destructive |
 | Syntax | `syn*` for code blocks and diffs |
 
-- Views never branch on `colorScheme` for a color. A new color is a role on `ThemeColors`, filled
-  in both variants of every theme, with a `NWPalette` property and a contrast rule if it has text.
-- Borders and hovers are theme roles, never ad-hoc alphas. Status colors come from `AgentState`
-  (`running`, `attention`, `done`, `failed`, `stuck`, `queued`, `idle`), never picked per view:
-  `textColor` for the word, `color` for dots and glyphs, `tint` for the fill, never a role with
-  `.opacity(…)`. Draw state with `NWStatusDot`, `NWStateGlyph` or `NWStatusPill`.
+- Views never branch on `colorScheme` for a color. A new color is a role on `ThemeColors`,
+  filled in both variants, with a `NWPalette` property and a contrast rule if it carries text.
+- Borders and hovers are theme roles, never ad-hoc alphas. Status colors come from
+  `AgentState`: `textColor` for the word, `color` for dots and glyphs, `tint` for the fill.
+  Never apply `.opacity(…)` to a role. Draw state with `NWStatusDot`, `NWStateGlyph` or
+  `NWStatusPill`.
 
-**Type**: Geist for prose and chrome, Geist Mono for anything the agent touched. `Font.nw(_:)` or
-`.nwText(_:)` only (they follow Settings ▸ Appearance ▸ Text size on the Mac, Dynamic Type on iOS);
-`Font.nwSans`/`nwMono` only for a size a board gives outside the ramp.
+**Type** is Geist for prose and chrome, and Geist Mono for anything the agent touched. Use only
+`Font.nw(_:)` or `.nwText(_:)`, which follow Settings ▸ Appearance ▸ Text size on the Mac and
+Dynamic Type on iOS. Use `Font.nwSans`/`nwMono` only for a size a board gives outside the ramp.
 
 | Style | Mac | Use |
 | --- | --- | --- |
-| `display` · `title` · `headline` | 28/600 · 15/600 · 13.5/600 | onboarding (unused on the Mac) · dialog titles · card titles, headings |
+| `display` · `title` · `headline` | 28/600 · 15/600 · 13.5/600 | onboarding · dialog titles · card titles, headings |
 | `body` · `ui` · `caption` | 13.5/400 · 12.5/500 · 11.5/400 | prose, bubbles, composer · rows, buttons · secondary info |
 | `code` · `mono` · `micro` | Mono 12 · 11.5 · 10.5/500 | code, output · paths, commands · section labels, counts |
 
-**Space** (`NW.Space`, 4pt grid): 2, 4, 6, 8, 12, 16, 24, 32; padding and gaps use only these.
-**Radius** (`NW.Radius`): 4 pills, keycaps · 6 buttons, fields, rows, composer chips · 8 cards,
-composer, code · 12 popovers, palette, drawn sheets. **Height** (`NW.Height`): rows 22 · 28 · 36 (scaled by
-Density), controls 24 · 28 · 32 (never scaled), touch 44. Hairlines are 1px (`NWHairline`,
-`.nwBorder`).
+**Space** (`NW.Space`, 4pt grid): 2, 4, 6, 8, 12, 16, 24, 32. **Radius** (`NW.Radius`): 4 pills
+and keycaps · 6 buttons, fields, rows · 8 cards, composer, code · 12 popovers, palette, sheets.
+**Height** (`NW.Height`): rows 22 · 28 · 36 (scaled by Density), controls 24 · 28 · 32 (never
+scaled), touch 44. Hairlines are 1px (`NWHairline`, `.nwBorder`).
 
-**Elevation**: `.nwCard()` flat (raised fill, 1px `lineSubtle`, radius 8); `.nwPopover()` (1px
-`lineStrong`, radius 12, the only shadow). **Focus**: `.nwFocusRing()`, a 2pt `running` ring for
-keyboard focus only; every custom control draws it after `.focusEffectDisabled()`.
+**Elevation**: `.nwCard()` is flat (raised fill, 1px `lineSubtle`, radius 8). `.nwPopover()` is
+the only shadow. **Focus**: `.nwFocusRing()`, a 2pt `running` ring for keyboard focus only.
 
-**Icons**: SF Symbols only, monochrome, weight `.medium`, 13–16pt (14 in icon buttons), never
-emoji. Use the exact symbol and fill variant the design shows (`bolt` is not `bolt.fill`,
-`xmark` is not `xmark.circle`). A glyph more than one view draws is an `NWGlyph` case. The board's
-symbols are in [foundations](docs/design/foundations.md#space-radius-height-elevation).
-`DesignRulesTests` fails on a literal font size, a tinted status color, a raw color and a raw glyph
-name.
+**Icons**: SF Symbols, monochrome, weight `.medium`, 13 to 16pt, never emoji. Use the exact
+symbol and fill variant the design shows (`bolt` is not `bolt.fill`). Where a board draws its
+own outline (Settings' nav), it ships as a vector in `NWGlyph.Settings`. A glyph more than one
+view draws is an `NWGlyph` case. `DesignRulesTests` fails on a literal font size, a tinted
+status color, a raw color, or a raw glyph name.
 
-**Motion** is `NW.Motion` anchors, never a literal duration or curve in a view:
+**Motion** uses `NW.Motion` anchors, never a literal duration or curve:
 
-- `hover`, `content` 120ms · `disclosure`, `list`, `pane`, `overlay` 180ms · `sheet`, `emphasis`,
-  `scroll` 240ms, all springs; `glow` 1.6s (attention only), `spin` 1s, `shimmer` 1.8s (live
-  text only), `pulse` 1.4s.
-- State a store changes: `.nwAnimation(_:value:)` and `.nwTransition` on the view. State an
-  action changes: `withNWAnimation`. Never an ad-hoc `withAnimation`.
+- `hover`, `content` 120ms · `disclosure`, `list`, `pane`, `overlay` 180ms · `sheet`,
+  `emphasis`, `scroll` 240ms, all springs; `glow` 1.6s (attention only), `spin` 1s, `shimmer`
+  1.8s (live text only), `pulse` 1.4s.
+- A store-driven change uses `.nwAnimation(_:value:)` and `.nwTransition`. An action-driven
+  change uses `withNWAnimation`. Never use an ad-hoc `withAnimation`.
 - Switching agents, keyboard navigation, selection, streaming text and terminal resizes land at
   once (`.nwInstant()`). Under Reduce Motion nothing travels: cross-fade in 120ms or stand still.
-- Spinners and glows are Core Animation layers, never a view redrawn per frame.
+- Spinners and glows are Core Animation layers, never a view redrawn every frame.
 
-**Density**: Settings ▸ Appearance sets sidebar row height (22 · 28 · 36) and a 80–150% Density
-that scales row heights, not controls. Text size scales type only.
+**Density**: Settings ▸ Appearance sets sidebar row height (22 · 28 · 36) and a Density of 80 to
+150 that scales row heights, never controls. Text size scales type only.
 
 ## Interaction and keyboard
 
-- The keyboard is first-class and the fast path never needs a dialog. Every action is a menu-bar
-  item; a chord lives in `KeybindingsStore` and nowhere else. Hardcoding a chord in a view is a
-  bug, and a hint is never shown for a chord that isn't wired.
-- A rebound chord must include ⌘, except ⇧⇥ for Cycle thinking level in a focused composer, and
-  avoid ⌘1–9, ⌘, and the plain system chords. A chord the app chrome uses must be in `appOwnedChords`
-  so a focused Ghostty surface does not eat it; composer-only shortcuts stay out.
+- The keyboard is first-class, and the fast path never needs a dialog. Every action is a
+  menu-bar item. A chord lives in `KeybindingsStore` and nowhere else. A hint is never shown
+  for a chord that isn't wired.
+- A rebound chord must include ⌘ and avoid ⌘1–9, ⌘, and the plain system chords. A chord the
+  app chrome uses goes in `appOwnedChords`, so a focused Ghostty surface can't eat it.
 - Keycaps (`NWKeycap`) put modifiers in Apple's order, ⌃⌥⇧⌘, one cap per key.
-- ⏎ confirms and ⎋ cancels in a sheet (a destructive button, and every button of
-  `PeerApprovalDialog`, is never the ⏎ default); Esc closes a menu, then the command list, then
-  stops pi while it works, and never stops pi while a question waits.
+- In a sheet, ⏎ confirms and ⎋ cancels. Esc closes a menu, then the command list, then stops pi
+  while it works. It never stops pi while a question waits.
 - Status events are banners inside the pane they concern, never a modal alert.
 
 ## Accessibility
 
 - Every control is a real `Button`, `Toggle` or field, or carries button traits and an action.
-  Icon-only buttons have an `accessibilityLabel`; a hover-only affordance is also reachable as a
-  button or a named action. Rows read as one element ("title, running"). Banner text reads as
-  one element, with action buttons separately reachable by label.
-- Color is always paired with a word or a glyph shape; contrast rules are in
+  Icon-only buttons have an `accessibilityLabel`. A hover-only affordance is also reachable as
+  a button or a named action. Rows read as one element ("title, running").
+- Color always comes with a word or a glyph shape. Contrast rules are in
   [theme](docs/design/theme.md#contrast-rules) and hold in both appearances.
-- Reduce Motion: see Motion. Mac type scales with Text size; iOS follows Dynamic Type and keeps
-  44pt touch targets (`NW.Height.touch`).
+- A value the design draws without its unit still reads with it ("100 percent").
+- Mac type scales with Text size. iOS follows Dynamic Type and keeps 44pt touch targets.
 
 ## Performance
 
-A list is as fast with three hundred rows as with thirty. Count budgets in
-`ListPerformanceTests` pin each rule; add a budget with any new long list.
+A list is as fast with three hundred rows as with thirty. Budgets in `ListPerformanceTests` pin
+each rule. Add a budget with any new long list.
 
 - Anything that can outgrow a screen is a lazy stack with stable ids.
-- A lazy `ForEach` makes exactly one view per element: wrap an `if` or `switch` in a container.
-- Rows are plain `Equatable` values; closures stay out of `==`; highlight and selection arrive
-  as a `Bool`; hover lives in the row. Stores derive rows once per change, never in `body`.
-- Hidden agents stay out of the visible one's updates (see AGENTS.md, switching is a flip).
-- Projects uses the shared MCP server cards and forms. Pi's three Settings subpages stay visible
-  from every page, except when filtered by search. Project MCP reuses the global OAuth sheet;
-  authentication runs on the selected host and opens the viewer's browser. Native MCP also
-  shows Pi's project approval separately from saved credentials, with explicit confirmation
-  covering executable project resources before approval on that host.
-  Details: [Project MCP](docs/design/project-mcp.md).
-- Blank-thread recovery checks for visible current content rows, not the invisible bottom marker
-  or cached targets from a live reply that completion replaced.
-- Motion no one sees costs nothing (`nwMotionPaused`); detail in
+- A lazy `ForEach` makes exactly one view per element. Wrap an `if` or `switch` in a container.
+- Rows are plain `Equatable` values. Closures stay out of `==`, highlight and selection arrive as
+  a `Bool`, and hover lives in the row. Stores derive rows once per change, never in `body`.
+- Hidden agents stay out of the visible one's updates (switching is a visibility flip).
+- Motion no one sees costs nothing (`nwMotionPaused`). Detail:
   [performance](docs/design/performance.md).
 
 ## Verifying visuals
@@ -223,17 +214,13 @@ A list is as fast with three hundred rows as with thirty. Count budgets in
 1. Render the surface: `SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter <suite>`
    (`ThreadPreviewTests`, `NavigationPreviewTests`, `AgentsPreviewTests`, `ReviewPreviewTests`,
    `SettingsPreviewTests`, `DesignPreviewTests`, `PreviewTests`). It writes
-   `<surface>-<light|dark>.png`. Add a new surface's render to its domain's suite. Drive it from
-   the real producer (store, extension output, formatter), never strings copied from the board,
-   and cover each state, empty, long text and text scale 1.3, the largest Text size (`Preview.renderMatrix`).
-2. Open the PNGs and look: both appearances, element by element against the design. List every
-   difference and fix it.
-3. Press each control the design draws, in every state it appears in, with `ControlPress`
-   (docs/testing.md › Pressing a control): it finds the control by label and runs its press action
-   as VoiceOver does. Assert the request it sent, the state it left and its hit area. A control that
-   is not a real `Button` (no press action) fails there. Windows stay off-screen; never post mouse
-   or keyboard events. Example: `ModelSettingsPopoverTests`.
-4. Motion: record frames with `MotionProbe` and compare against the start and end states.
+   `<surface>-<light|dark>.png`. Drive it from the real producer, and cover each state, empty,
+   long text and text scale 1.3 (`Preview.renderMatrix`).
+2. Open the PNGs beside the design, both appearances, element by element. Fix every difference
+   you can name.
+3. Press each control the design draws with `ControlPress` (docs/testing.md › Pressing a
+   control). Assert the request it sent, the state it left and its hit area.
+4. Motion: record frames with `MotionProbe` and compare the start and end states.
 5. Run the `Shepherd (Dev)` scheme and check the change in both appearances.
 
 More: [docs/design/verifying.md](docs/design/verifying.md).
@@ -249,11 +236,12 @@ More: [docs/design/verifying.md](docs/design/verifying.md).
 | A list, scroll or hot path | [performance.md](docs/design/performance.md) |
 | Window, toolbar, sidebar, pages | [window-and-toolbar.md](docs/design/window-and-toolbar.md), [sidebar.md](docs/design/sidebar.md), [pages.md](docs/design/pages.md) |
 | Conversation goals | [thread.md](docs/design/thread.md#goal-card), [goals.md](docs/goals.md) |
-| Thread, composer, queue, subagents | [thread.md](docs/design/thread.md), [composer.md](docs/design/composer.md), [queue.md](docs/design/queue.md), [subagents.md](docs/design/subagents.md), [restored-model send failure](docs/design/boards/RestoredModelSend.md) |
+| Thread, composer, queue, subagents | [thread.md](docs/design/thread.md), [composer.md](docs/design/composer.md), [queue.md](docs/design/queue.md), [subagents.md](docs/design/subagents.md) |
 | Side pane, terminal, palette, dialogs | [side-pane-changes.md](docs/design/side-pane-changes.md), [side-pane-browser.md](docs/design/side-pane-browser.md), [terminal.md](docs/design/terminal.md), [dialogs-and-palette.md](docs/design/dialogs-and-palette.md) |
-| Settings | [settings.md](docs/design/settings.md) and its `settings-*` files, including [Projects](docs/design/settings-projects.md), [Subagents](docs/design/settings-subagents.md) and [Codemode settings](docs/design/codemode-settings.md) |
+| Settings | [settings.md](docs/design/settings.md), [settings-pi.md](docs/design/settings-pi.md), [settings-projects.md](docs/design/settings-projects.md), [settings-subagents.md](docs/design/settings-subagents.md), [codemode-settings.md](docs/design/codemode-settings.md) |
+| Projects in Settings | [project-browser.md](docs/design/project-browser.md), [project-mcp.md](docs/design/project-mcp.md), [project-instructions.md](docs/design/project-instructions.md) |
 | Controls, status pieces, keyboard, accessibility | [components.md](docs/design/components.md), [keyboard-and-accessibility.md](docs/design/keyboard-and-accessibility.md) |
 | iPhone or iPad | `ios-*.md` in [docs/design/](docs/design/README.md), and [docs/ios](docs/ios/README.md) |
 | Notifications, Live Activities | [notifications.md](docs/design/notifications.md) |
-| The Design tool | `design-tool*.md` in [docs/design/](docs/design/README.md); [comment actions, text-only Resolve, and validation](docs/design/evidence/design-comment-actions/README.md) |
+| The Design tool | `design-tool*.md` in [docs/design/](docs/design/README.md) |
 | Where the app departs from a board, or falls short | [departures.md](docs/design/departures.md), [known-gaps.md](docs/design/known-gaps.md) |

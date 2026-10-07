@@ -93,15 +93,9 @@ struct SettingsView: View {
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: AppLayout.settingsNavRowSpacing) {
                     ForEach(sections) { section in
-                        if section.isSubpage {
-                            NWSettingsNavSubRow(section.title, selected: vm.settingsSection == section,
-                                                attention: section == .piSignIn && vm.piSignInNeedsAttention) {
-                                navigate(to: section)
-                            }
-                        } else {
-                            NWSettingsNavRow(section.title, glyph: section.artwork, selected: vm.settingsSection == section) {
-                                navigate(to: section)
-                            }
+                        NWSettingsNavRow(section.title, glyph: section.artwork, selected: vm.settingsSection == section,
+                                         attention: section == .piSignIn && vm.piSignInNeedsAttention) {
+                            navigate(to: section)
                         }
                         if !query.isEmpty {
                             ForEach(matches(section), id: \.self) { item in
@@ -169,9 +163,9 @@ struct SettingsView: View {
     }
 
     /// "Shepherd 0.1.0 · agent 0.87.1", or "Shepherd Nightly 0.0.0-nightly.… · agent 0.87.1".
-    /// The Pi pages name the program: "· pi 0.87.1", as the SettingsPi boards draw.
+    /// The Pi page names the program: "· pi 0.87.1", as the SettingsPi boards draw.
     static func versions(app: String, agent: String?, on section: SettingsSection) -> String {
-        app + (agent.map { " · \(section.isPi ? "pi" : "agent") \($0)" } ?? "")
+        app + (agent.map { " · \(section == .pi ? "pi" : "agent") \($0)" } ?? "")
     }
 
     @ViewBuilder private var page: some View {
@@ -179,11 +173,11 @@ struct SettingsView: View {
         case .appearance: AppearanceSettings(vm: vm)
         case .terminal: TerminalSettings(vm: vm)
         case .agents: AgentSettings(pi: vm.server.pi, settings: vm.settings)
-        case .subagents: SubagentsSettings(model: vm.subagentDefinitions)
+        case .subagents: SubagentsSettings(model: vm.subagentDefinitions, native: NativeSubagentSettings(pi: vm.server.pi, settings: vm.settings))
         case .projects: ProjectsSettings(vm: vm, model: vm.projects)
-        case .pi: PiSettings(pi: vm.server.pi, settings: vm.settings)
+        case .pi: PiSettings(pi: vm.server.pi, yourPi: vm.yourPi) { vm.settingsSection = .extensions }
         case .piSignIn: PiSignInSettings(yourPi: vm.yourPi, auth: vm.piAuth)
-        case .piFromYourPi: FromYourPiSettings(model: vm.yourPi, openSkills: { vm.settingsSection = .skills })
+        case .extensions: ExtensionsSettings(settings: vm.settings)
         case .piSlashCommands: SlashCommandsSettings(model: vm.slashCommands, settings: vm.settings)
         case .worktrees: WorktreeSettings()
         case .instructions: InstructionsSettings(model: vm.instructions)
@@ -264,13 +258,8 @@ private struct SettingsSearchHit: View {
 }
 
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case appearance, terminal, agents, subagents, worktrees, projects, pi, piSignIn, piFromYourPi, piSlashCommands, instructions, skills, mcp, remote, keyboard, advanced, experiments
-
-    /// A page listed under another in the nav: Pi's Sign-in, From your pi and Slash commands.
-    var isSubpage: Bool { self == .piSignIn || self == .piFromYourPi || self == .piSlashCommands }
-
-    /// One of the Pi pages, whose footer names the program.
-    var isPi: Bool { self == .pi || isSubpage }
+    // The nav's order, as every Settings board draws it.
+    case appearance, terminal, agents, subagents, worktrees, projects, piSignIn, pi, instructions, skills, extensions, piSlashCommands, mcp, remote, keyboard, advanced, experiments
 
     var id: String { rawValue }
 
@@ -284,7 +273,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .worktrees: return "Worktrees"
         case .pi: return "Pi"
         case .piSignIn: return "Sign-in"
-        case .piFromYourPi: return "From your pi"
+        case .extensions: return "Extensions"
         case .piSlashCommands: return "Slash commands"
         case .instructions: return "Instructions"
         case .skills: return "Skills"
@@ -302,17 +291,18 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .appearance: ["Theme", "Mode", "Organize by", "Group by host", "Keep idle threads", "Sidebar rows", "Density", "Text size",
                            "Sidebar width"]
         case .terminal: ["Font family", "Font size", "Shell"]
-        case .agents: ["Default model", "Default thinking level", "Speed for new threads",
-                       "When a turn ends, send the queue", "Compact at", "Trim old tool output from the model’s context", "Defer rarely used tools", "Codemode"]
+        case .agents: ["Default model", "Default thinking level", "Speed for new threads", "Session naming model",
+                       "When a turn ends, send the queue", "Compact at", "Trim old tool output from the model's context", "Defer rarely used tools", "Codemode"]
         case .worktrees: ["Base branch", "Fetch before creating", "Commit remaining work", "Generate PR descriptions", "Delete local branch", "Merge PR automatically"]
-        case .subagents: ["Filter subagents", "New subagent", "Restore defaults", "Show in Finder"]
+        case .subagents: ["Filter subagents", "New subagent", "Restore defaults", "Show in Finder",
+                          "Native subagents", "Subagent display", "Concurrency", "Model", "Thinking", "Context"]
         case .projects: ["Filter projects", "All hosts", "Add project…", "Instructions", "Pi settings", "Skills", "Extensions", "MCP servers"]
-        case .pi: ["Shepherd's pi", "Name agents automatically", "Terminals and agent tools", "Agent-to-agent messages", "Diff review tool", "MCP servers", "Browser tools", "Native subagents", "Subagent display", "Concurrency", "Model", "Thinking", "Context"]
-        case .piSignIn: ["Re-import from your pi", "Subscriptions", "Anthropic", "OpenAI Codex", "GitHub Copilot", "xAI", "Kimi", "Radius",
+        case .pi: ["Shepherd's pi", "Source", "Last brought over", "Re-import all", "Logins", "Custom providers", "Default model", "Trusted folders",
+                   "Instructions", "Skills", "Prompts", "Themes", "Imported extensions"]
+        case .extensions: ["Terminals and agent tools", "Agent-to-agent messages", "Diff review tool", "MCP servers", "Browser tools", "Design references"]
+        case .piSignIn: ["Re-import from pi", "Subscriptions", "Anthropic", "OpenAI Codex", "GitHub Copilot", "xAI", "Kimi", "Radius",
                          "API keys", "Add an API key", "CLIProxyAPI", "Custom providers"]
-        case .piFromYourPi: ["Source", "Last brought over", "Re-import all", "Logins", "Custom providers", "Default model", "Trusted folders",
-                             "Instructions", "Skills", "Prompts", "Themes", "Extensions"]
-        case .piSlashCommands: ["Search commands", "Extensions", "Prompt templates", "Skills", "Hidden commands"]
+        case .piSlashCommands: ["Search commands", "Extensions", "Prompt templates", "Skills", "Disabled commands"]
         case .instructions: ["Same on every host", "AGENTS.md", "APPEND_SYSTEM.md", "History"]
         case .skills: ["Installed skills", "Browse skills.sh", "Add from repo",
                        "Skills in the / menu", "Same skills on every host", "Update automatically"]
@@ -333,39 +323,43 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                            "Organize by": ["projects", "activity", "folders", "sidebar style", "tree"],
                            "Group by host": ["hosts", "machines"], "Keep idle threads": ["archive", "idle"]]
         case .terminal: ["Font family": ["ghostty", "monospace"], "Shell": ["zsh", "bash", "fish"]]
-        case .agents: ["Default model": ["claude", "gpt", "provider"], "Default thinking level": ["reasoning", "effort"],
+        case .agents: ["Default model": ["claude", "gpt", "provider"], "Session naming model": ["name", "title", "rename", "haiku"], "Default thinking level": ["reasoning", "effort"],
                        "Speed for new threads": ["fast", "fast mode", "priority", "service tier", "codex", "openai", "standard"],
                        "When a turn ends, send the queue": ["queue", "follow-up", "one per turn", "all at once"],
                        "Compact at": ["compaction", "compacting", "context window", "percent", "full", "tokens", "auto-compact"],
-                       "Trim old tool output from the model’s context": ["tool results", "clear", "clipping", "context", "tokens", "compaction",
+                       "Trim old tool output from the model's context": ["tool results", "clear", "clipping", "context", "tokens", "compaction",
                                                                      "screenshots", "cache"],
                        "Defer rarely used tools": ["tool search", "tool_search", "deferred", "tokens"],
                        "Codemode": ["javascript", "script", "batch", "tools", "project"]]
         case .worktrees: ["Base branch": ["git", "origin"], "Merge PR automatically": ["github", "pull request"]]
-        case .subagents: ["New subagent": ["children", "helpers", "profiles", "agents", "Markdown"], "Restore defaults": ["scout", "reviewer", "planner", "worker"]]
+        case .subagents: ["New subagent": ["children", "helpers", "profiles", "agents", "Markdown"], "Restore defaults": ["scout", "reviewer", "planner", "worker"],
+                          "Native subagents": ["children", "workflows"], "Concurrency": ["parallel", "limit"]]
         case .projects: ["Filter projects": ["folders", "directory", "project settings"], "Instructions": ["AGENTS.md", "APPEND_SYSTEM.md"], "Pi settings": [".pi", "settings.json"]]
         case .pi: ["Shepherd's pi": ["version", "engine", "home", "folder"],
-                   "Agent-to-agent messages": ["agent_send", "agent_spawn", "message", "steer", "peer", "threads", "approve", "allow",
-                                               "ask", "permission", "never", "dialog"]]
+                   "Source": ["~/.pi/agent", "terminal pi", "your pi", "from pi"], "Re-import all": ["import", "re-import", "copy"],
+                   "Logins": ["re-import", "auth.json", "sign-ins"],
+                   "Custom providers": ["models.json", "re-import"], "Default model": ["re-import", "provider"],
+                   "Trusted folders": ["trust.json", "project trust", "re-import"],
+                   "Instructions": ["AGENTS.md", "CLAUDE.md", "SYSTEM.md", "APPEND_SYSTEM.md", "context", "re-import"],
+                   "Skills": ["SKILL.md", "re-import"], "Prompts": ["prompt templates", "re-import"], "Themes": ["re-import"],
+                   "Imported extensions": ["packages", "npm", "full access", "switch on", "didn't load"]]
+        case .extensions: ["Terminals and agent tools": ["panes", "notifications", "automations"],
+                           "Agent-to-agent messages": ["agent_send", "agent_spawn", "message", "steer", "peer", "threads", "approve", "allow",
+                                                       "ask", "permission", "never", "dialog"],
+                           "Diff review tool": ["review_diff"], "MCP servers": ["tool search"], "Browser tools": ["screenshots"],
+                           "Design references": ["design_get"]]
         case .piSignIn: ["Subscriptions": ["login", "log in", "sign in", "oauth", "subscription", "auth.json", "claude", "chatgpt", "copilot",
                                            "sign out", "expired"],
                          "API keys": ["api key", "key", "environment", "variable", "auth.json", "sign out"],
                          "Add an API key": ["groq", "mistral", "openrouter", "deepseek"],
                          "CLIProxyAPI": ["cpa", "proxy", "server", "connection", "refresh models"],
                          "Custom providers": ["models.json", "ollama", "gateway"],
-                         "Re-import from your pi": ["import", "copy", "your pi"]]
-        case .piFromYourPi: ["Source": ["~/.pi/agent", "terminal pi", "your pi"], "Re-import all": ["import", "re-import", "copy"],
-                             "Logins": ["re-import", "auth.json", "sign-ins"],
-                             "Custom providers": ["models.json", "re-import"], "Default model": ["re-import", "provider"],
-                             "Trusted folders": ["trust.json", "project trust", "re-import"],
-                             "Instructions": ["AGENTS.md", "CLAUDE.md", "SYSTEM.md", "APPEND_SYSTEM.md", "context", "re-import"],
-                             "Skills": ["SKILL.md", "re-import"], "Prompts": ["prompt templates", "re-import"], "Themes": ["re-import"],
-                             "Extensions": ["packages", "npm", "full access", "switch on", "didn't load"]]
+                         "Re-import from pi": ["import", "copy", "your pi"]]
         case .piSlashCommands: ["Search commands": ["slash", "/ menu", "command", "composer", "hide", "turn off", "switch"],
                                 "Extensions": ["registerCommand", "pi extensions"],
                                 "Prompt templates": ["prompts", "templates", "argument-hint"],
                                 "Skills": ["skill:", "SKILL.md"],
-                                "Hidden commands": ["off", "hidden", "turned off", "switched off"]]
+                                "Disabled commands": ["off", "hidden", "disabled", "turned off", "switched off"]]
         case .instructions: ["Same on every host": ["sync", "hosts"], "AGENTS.md": ["system prompt", "how you work", "context"],
                              "APPEND_SYSTEM.md": ["system prompt", "override"], "History": ["restore", "undo"]]
         case .skills: ["Installed skills": ["SKILL.md", ".agents", "agent skills", "from your pi", "copied", ".pi"],
@@ -405,7 +399,10 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .subagents: .subagents
         case .projects: .projects
         case .worktrees: .worktrees
-        case .pi, .piSignIn, .piFromYourPi, .piSlashCommands: .pi
+        case .piSignIn: .lock
+        case .pi: .pi
+        case .extensions: .extensions
+        case .piSlashCommands: .slashCommands
         case .instructions: .instructions
         case .skills: .skills
         case .mcp: .mcp
@@ -425,9 +422,9 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .projects: return "folder"
         case .worktrees: return "arrow.branch"
         case .pi: return "pi"
-        case .piSignIn: return "key"
-        case .piFromYourPi: return "square.and.arrow.down"
-        case .piSlashCommands: return "slash.circle"
+        case .piSignIn: return "lock"
+        case .extensions: return "puzzlepiece.extension"
+        case .piSlashCommands: return "chevron.left.forwardslash.chevron.right"
         case .instructions: return "doc.text"
         case .skills: return "graduationcap"
         case .mcp: return "server.rack"

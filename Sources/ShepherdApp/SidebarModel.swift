@@ -393,7 +393,7 @@ enum SidebarDerivation {
             case page(MainDestination)
             /// More's disclosure.
             case more
-            /// Settings ▸ Pi, where the bundled extensions are.
+            /// Settings ▸ Extensions, the bundled extensions.
             case extensions
             /// More ▸ Design systems: the system page opened last, else the first.
             case designSystems

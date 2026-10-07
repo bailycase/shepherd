@@ -139,13 +139,13 @@ extension ShepherdViewModel {
     }
 
     /// A destination row: its page (a remote thread on screen leaves it), More's disclosure, or
-    /// Extensions, which lives in Settings ▸ Pi.
+    /// Extensions, which is Settings ▸ Extensions.
     func openSidebarDestination(_ target: SidebarDerivation.Destination.Target) {
         switch target {
         case .page(let page): openDestination(page)
         case .more: moreOpen.toggle()
         case .extensions:
-            settingsSection = .pi
+            settingsSection = .extensions
             showSettings = true
         case .designSystems:
             openDesignSystems()
