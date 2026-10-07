@@ -83,7 +83,7 @@ struct SettingsSearchTests {
         ("engine", .pi, ["Shepherd's pi"]),
         ("browser", .extensions, ["Browser tools"]),
         ("session naming", .agents, ["Session naming model"]),
-        ("native subagents", .pi, ["Native subagents"]),
+        ("native subagents", .subagents, ["Native subagents"]),
         ("filter subagents", .subagents, ["Filter subagents"]),
         ("profiles", .subagents, ["New subagent"]),
         ("restore defaults", .subagents, ["Restore defaults"]),

@@ -13,8 +13,8 @@
   home's folder name in mono (its path on hover) and Reveal.
 - **From pi**, a second heading inside the page (Geist 17/600, `AppLayout.settingsSectionTitleSize`)
   with its own explanation: the section below, "Pi ▸ From pi".
-- **Native subagents** and **Native subagent defaults**, after From pi. No board draws them; they
-  are kept from the earlier Pi page so the switches stay reachable (departures).
+- Native subagents and their defaults are on Settings ▸ Subagents, under the list
+  ([settings-subagents](settings-subagents.md)).
 
 ## Extensions (SettingsExtensions, SettingsPiDesignReferences)
 
@@ -46,8 +46,8 @@ sidebar's Extensions destination opens this page.
 - **Name agents automatically** is gone: naming is always on (the user's decision, 2026-10-07).
   Agents ▸ Session naming model picks the model.
 
-[SubagentsSettings](settings-subagents.md) revision 598 makes the top-level Subagents page the
-owned-file manager. Native subagents, Subagent display and the defaults below remain on Pi.
+The native subagent groups below sit on [Settings ▸ Subagents](settings-subagents.md), under the
+list of definitions (the user's decision, 2026-10-07).
 
 - **Native subagent defaults** (only while Native subagents is on; footnote "Precedence: explicit
   call → agent file → these defaults → parent. Child tools run with your account's access."):

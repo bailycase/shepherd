@@ -4,6 +4,8 @@ import ShepherdSessions
 
 struct SubagentsSettings: View {
     @Bindable var model: SubagentDefinitionsModel
+    /// The native subagent switches and defaults under the list; nil in a test of the list alone.
+    var native: NativeSubagentSettings? = nil
     static let explanation = "A subagent is a Markdown file: a name, a description, and the instructions it runs with. An agent starts one by name and gets the result back. Shepherd ships a few to start with. Edit them, delete them, or add your own. They are read from one folder, and nowhere else."
 
     var body: some View {
@@ -52,6 +54,7 @@ struct SubagentsSettings: View {
                     .nwBorder(Color.nw.projectDivider, radius: NWCardRowMetrics.settingsCardRadius, width: NWSettingsNavMetrics.borderWidth)
                     .disabled(model.busy)
             }
+            if let native { native.padding(.top, AppLayout.settingsGroupSpacing - AppLayout.subagentSettingsGap) }
         }
     }
     private var filter: some View {
