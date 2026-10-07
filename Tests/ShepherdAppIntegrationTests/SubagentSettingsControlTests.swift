@@ -47,13 +47,18 @@ struct SubagentSettingsControlTests {
         try await eventuallyOnMain("native editor request") { opened != nil && !model.busy }
         let editorURL = try #require(opened)
         #expect(try String(contentsOf: editorURL, encoding: .utf8) == files.open("reviewer-strict.md").text, "the native editor opens the verified file's real contents")
-        try await setEditor(to: model.draft + "\nMore review instructions.\n", under: window.host)
+        #expect(model.loadProblem?.contains("Unsupported agent fields: runner") == true, "the form says why the profile does not load")
+        try await setEditor(to: model.form.body + "\nMore review instructions.\n", under: window.host)
+        window.layout(); try window.press("Revert")
+        #expect(try !model.dirty && model.draft == files.open("reviewer-strict.md").text, "Revert puts the file's own text back")
+        try await setEditor(to: model.form.body + "\nMore review instructions.\n", under: window.host)
         window.layout(); try window.press("Save")
         try await eventuallyOnMain("invalid save refused") { !model.busy && model.problem != nil }
         #expect(model.problem?.contains("Unsupported agent fields: runner") == true)
         let unchangedInvalid = try files.open("reviewer-strict.md")
         #expect(model.dirty && !unchangedInvalid.text.contains("More review instructions."))
-        try await setEditor(to: model.draft.replacingOccurrences(of: "runner: strict\n", with: ""), under: window.host)
+        // The form draws only the fields Shepherd knows, so an unsupported one is removed in a text editor.
+        model.draft = model.draft.replacingOccurrences(of: "runner: strict\n", with: "")
         window.layout()
         let save = try window.press("Save")
         #expect(ControlPress.undersized([save], minimum: .desktop).isEmpty)
@@ -61,12 +66,22 @@ struct SubagentSettingsControlTests {
         #expect(try files.open("reviewer-strict.md").text == model.draft)
         window.layout()
         try window.press("Back to Subagents")
+        try await eventuallyOnMain("list reloaded after Back") { !model.editing && !model.busy }
         window.layout()
         try window.press("New subagent")
         #expect(model.original == nil && model.dirty)
         try setField("Subagent filename", to: "check.md", under: window.host)
-        try await setEditor(to: "---\nname: check\ndescription: Real created profile\ntools: [read]\n---\nInspect the assigned code.\n", under: window.host)
+        try setField("Subagent name", to: "check", under: window.host)
+        try setField("Subagent description", to: "Real created profile", under: window.host)
+        window.layout()
+        for tool in ["grep", "find", "ls"] { try window.press(tool); window.layout() }
+        try window.press("Disabled", role: ControlRole.checkBox)
+        window.layout()
+        try window.press("Disabled", role: ControlRole.checkBox)
+        try await setEditor(to: "Inspect the assigned code.\n", under: window.host)
         #expect(model.filename == "check.md")
+        #expect(model.form.scalar("name") == "check" && model.form.scalar("description") == "Real created profile")
+        #expect(model.form.list("tools") == ["read"] && model.form.bool("disabled") == nil && model.form.body == "Inspect the assigned code.\n")
         window.layout()
         try window.press("Back to Subagents")
         let discardSheet = try await sheet(window)
@@ -151,7 +166,7 @@ struct SubagentSettingsControlTests {
     }
     private static func setEditor(to text: String, under root: NSView) async throws {
         func find(_ view: NSView) -> NSTextView? {
-            if let editor = view as? NSTextView, editor.accessibilityLabel() == "Subagent definition editor" { return editor }
+            if let editor = view as? NSTextView, editor.accessibilityLabel() == "Subagent instructions" { return editor }
             return view.subviews.lazy.compactMap(find).first
         }
         // Model busy=false precedes SwiftUI applying isEnabled to the native editor.

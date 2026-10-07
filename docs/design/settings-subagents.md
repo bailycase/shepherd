@@ -18,9 +18,22 @@ still applies: 232pt navigation and 40pt side gutters, with no fixed 720pt page 
 - Name is actual parsed name, 13pt/500 mono. Filename identifies invalid or unreadable files. Description is actual runtime-parser output, 12.5pt and 1.4 line height, one line with full text on hover/accessibility. `default` is an outlined 10.5pt mono badge for shipped filenames. Capability text is derived from allowed tools: `read-only` or `can edit`, with ` · fork` for a fork profile.
 - Invalid definitions remain openable, with `can’t load`, failed glyph/text and actual diagnostic. Unknown fields fail closed, such as `Unsupported agent fields: runner. The profile did not load.` Never substitute sample names, count or diagnostics from the board.
 - Empty folder shows `No subagents` and offers the existing New and Restore controls. A filter with no match says `No matching subagents`. Initial read says `Loading subagents…`. Read/save/delete/restore failure keeps the draft and shows the actual bounded error.
-- Row opens the file in the existing native Markdown editor. No create/edit board was supplied; reuse that editor and existing Settings header/actions rather than inventing a form. New opens an unsaved starter Markdown draft and filename field. Save validates through the runtime parser, conflict-checks the original bytes and atomically writes only inside the owned directory. Open in editor uses the native editor; Back refuses dirty dismissal without explicit Discard.
+- Row opens the file in the form below. New opens an unsaved starter draft in the same form, with the filename typed in the path chip. Save validates through the runtime parser, conflict-checks the original bytes and atomically writes only inside the owned directory. Open in editor uses the native editor; Back refuses dirty dismissal without explicit Discard.
 - Delete requires confirmation and the file snapshot shown. Restore requires confirmation, restores only shipped definitions, preserves custom files and refuses stale snapshots. Cancel writes nothing. New Save refuses filename/path collisions.
 - Under the list, the page carries the Native subagents and Native subagent defaults groups (`NativeSubagentSettings`, standard Settings groups 28pt below the list), moved from Pi on 2026-10-07 by the user's decision; no board draws them. There is no discovery selector that contradicts single-folder ownership. Existing runs retain their loaded configuration; future launches read the updated files. No model call, background watcher, remote synchronization or automatic restart is added.
+
+## Edit form (SubagentEdit)
+
+The user supplied `SubagentEdit.dc.html@1105`, saved unchanged as
+[SubagentEdit.png](boards/SubagentEdit.png). A row opens it, and New opens it empty. The page is a
+wide one: 40pt sides, 44pt top, no 720pt cap.
+
+- Header: `Subagents` (Back, 13) `/` the name (15/600) and the `pi/agents/<file>.md` chip (mono 11, radius 5). Delete (failed), Revert and Save (lantern, 600) are 30pt high at radius 7. Delete shows only for a saved file. Revert and Save wait for an edit.
+- Left column 400pt, 16pt apart: Name (mono), Description (58pt, wraps), Tools chips (read grep find ls bash edit write, 26pt, on = raised with a strong line), Model and Thinking popups side by side, Starts with, Instructions are, then three switches (AGENTS.md, skills, Disabled) each with its note.
+- Right column: Instructions with `Markdown` and `used / 65,536`, a plain mono 12.5 editor at 1.65 lines with no line numbers, and the board's note.
+- Every control reads and rewrites one frontmatter key of the draft (`SubagentProfileText`). Keys the form does not draw, comments and block lists stay as written. Clearing Name, Description, Model or Thinking removes the key. Save still validates through the runtime parser, so an unsupported field refuses the save and the form says which one, with Open in editor to repair it.
+- Starts with is `defaultContext` (fresh, fork), and an older `context:` key is dropped when it changes. Instructions are is `systemPromptMode` (replace, append). The switches are `inheritProjectContext`, `inheritSkills`, `disabled`. Tools omitted from the file show pi's four defaults on.
+- Below 700pt the columns stack and the instructions take 360pt.
 
 ## Ownership
 

@@ -91,28 +91,9 @@ struct SubagentsSettings: View {
         }
     }
 
+    /// SubagentEdit.dc.html: the file as a form, beside its instructions.
     private var editor: some View {
-        VStack(alignment: .leading, spacing: NW.Space.l) {
-            Button("Subagents") { model.back() }.buttonStyle(.nw(.ghost)).accessibilityLabel("Back to Subagents").disabled(model.busy)
-            SettingsHeader(title: model.original == nil ? "New subagent" : model.filename, explanation: "Markdown frontmatter names the subagent and its options. The body is its instructions. Saved changes apply to new child runs.")
-            if model.original == nil {
-                TextField("Filename", text: $model.filename).nwField(mono: true).accessibilityLabel("Subagent filename").disabled(model.busy)
-            }
-            InstructionsEditor(text: $model.draft, saved: model.original?.text ?? "", accessibilityLabel: "Subagent definition editor", project: true)
-                .frame(minHeight: AppLayout.projectNarrowEditorHeight)
-                .nwBorder(Color.nw.lineSubtle, radius: NW.Radius.m)
-                .disabled(model.busy)
-            if let problem = model.problem { NWInlineProblem(problem) }
-            HStack(spacing: NW.Space.m) {
-                if model.original != nil {
-                    Button("Delete") { model.askDelete() }.buttonStyle(.nw(.danger)).disabled(model.busy)
-                    Button("Open in editor") { Task { await model.openInEditor() } }.buttonStyle(.nw(.secondary)).disabled(model.busy)
-                }
-                Spacer(minLength: 0)
-                Text(model.dirty ? "Unsaved changes" : "Saved").font(.nw(.caption)).foregroundStyle(Color.nw.textSecondary)
-                Button("Save") { Task { await model.save() } }.buttonStyle(.nw(.primary)).disabled(!model.canSave)
-            }
-        }
+        SubagentEditForm(model: model, inheritedContext: native?.settings.childContext ?? "fresh")
     }
 
     private struct Confirmation: Identifiable {

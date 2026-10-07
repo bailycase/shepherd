@@ -196,7 +196,7 @@ struct SettingsView: View {
             if vm.settingsSection == .projects {
                 page
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if vm.settingsSection.isWide {
+            } else if vm.settingsSection.isWide || (vm.settingsSection == .subagents && vm.subagentDefinitions.editing) {
                 // A wide page fills the area and scrolls inside itself (its editor, its side column).
                 Group { page }
                     .nwTransition(.content)
@@ -227,7 +227,7 @@ struct SettingsView: View {
                 .nwTransition(.content)
             }
         }
-        .nwAnimation(.content, value: vm.settingsSection.isWide)
+        .nwAnimation(.content, value: vm.settingsSection.isWide || vm.subagentDefinitions.editing)
         .background(Color.nw.bgWindow)
         .overlay(alignment: .top) {
             // The window has no title bar; the strip above the content still drags it.
