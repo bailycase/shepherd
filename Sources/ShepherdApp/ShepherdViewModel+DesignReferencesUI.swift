@@ -100,6 +100,7 @@ extension ShepherdViewModel {
     func referencePicturesLanded() {
         for chips in referenceChips.values { chips.picturesChanged() }
         newThread.referenceChips?.picturesChanged()
+        designJump?.picturesLanded()
     }
 
     /// A piece's picture before it is sent: its board as the canvas last drew it (cut to the

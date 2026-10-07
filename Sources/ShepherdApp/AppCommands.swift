@@ -144,7 +144,8 @@ struct ViewCommands: Commands {
 
     var body: some Commands {
         CommandGroup(after: .toolbar) {
-            Button("Command Palette") { later { vm.showCommandPalette.toggle() } }
+            // Over a design it opens Jump to a board instead (JumpInContext).
+            Button("Command Palette") { later { vm.toggleCommandPaletteOrJump() } }
                 .keyboardShortcut(keys.shortcut(.commandPalette))
             Button(menu.sidebarVisible ? "Hide Sidebar" : "Show Sidebar") { later { vm.toggleSidebar() } }
                 .keyboardShortcut(keys.shortcut(.toggleSidebar))

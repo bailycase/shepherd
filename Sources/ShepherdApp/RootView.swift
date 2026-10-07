@@ -119,6 +119,8 @@ struct RootView: View {
         // Export (DZExport) sits over the whole window on its own scrim.
         .overlay { DesignExportOverlay(vm: vm) }
         .overlay { ImplementSheetOverlay(vm: vm) }
+        // Over a design, the palette's chord jumps to a board instead (JumpInContext).
+        .overlay { DesignJumpOverlay(vm: vm) }
         // ⌘K floats over everything, 18% down and capped to the window; the scrim dismisses.
         .nwCommandPalette(isPresented: Binding(
             get: { vm.showCommandPalette && !vm.showSettings && !vm.showComponentGallery },
@@ -330,7 +332,9 @@ struct WorkspaceHeaderView: View {
                               showSidebar: showSidebar, designs: { vm.openDestination(.designs) }, screen: vm.designScreen(design.id),
                               export: { vm.openDesignExport(design.id) },
                               menu: vm.designMenu(.local(design.id), context: .toolbar),
-                              perform: { vm.performDesignMenu($0, on: .local(design.id)) })
+                              perform: { vm.performDesignMenu($0, on: .local(design.id)) },
+                              jump: { vm.designJump == nil ? vm.openDesignJump(design.id) : (vm.designJump = nil) },
+                              jumpOpen: vm.designJump?.design == design.id)
                     .equatable()
                     .id(agent.id)
             } else if let agent = vm.selectedAgent, vm.activeTabID == agent.tabID,
