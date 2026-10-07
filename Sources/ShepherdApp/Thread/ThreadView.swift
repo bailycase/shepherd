@@ -71,6 +71,7 @@ struct ThreadView: View {
     @State private var fallbackInput = ThreadInput()
     private var input: ThreadInput { retainedInput ?? fallbackInput }
     @State private var fallbackTailGuard = ThreadTailGuard()
+    @State private var transcriptRevision = 0
     private var tailGuard: ThreadTailGuard { retainedTailGuard ?? fallbackTailGuard }
     @State private var follower = NativeScrollFollower()
     @State private var historyPaging = NativeHistoryPaging()
@@ -163,6 +164,7 @@ struct ThreadView: View {
                         URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath, isDirectory: true)
                     })
                 }
+                .id(transcriptRevision)
                 // The composer floats over the scroll view; inset by its real height so "the
                 // bottom" is the last turn, not the space under the card.
                 .modifier(ComposerInsetPadding(inset: composerInset))
@@ -336,6 +338,13 @@ struct ThreadView: View {
         tailGuard.following = follower.sticky
         tailGuard.userScrolling = follower.userScrolling
         tailGuard.land = { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
+        tailGuard.rebuild = { [historyAnchor, weak guardian = tailGuard, revision = $transcriptRevision] in
+            historyAnchor.cancel()
+            guardian?.targets([])
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { revision.wrappedValue &+= 1 }
+        }
         tailGuard.rowIDs = Set(store.rows.map(\.id))
     }
 
