@@ -99,8 +99,9 @@ Settings", revision 1083) is the source of truth for every Settings page.
 - **Pages** fill the width with 40pt side gutters. Each page has a Geist 22/600 title, one
   explanation line, then groups 28pt apart. A group has a caps label, a flat card (radius 10,
   1px `lineSubtle`), and an optional footnote.
-- **Pi** is Shepherd's pi, then **From pi**: the source, what was brought over, the copies,
-  the imported extensions, then native subagents.
+- **Pi** is Shepherd's pi, then **From pi**: the source, what was brought over, the copies and
+  the imported extensions.
+- **Subagents** lists the definition files, then the native subagent switches and defaults.
 - **Extensions** holds the bundled extension switches and Agent-to-agent messages.
 - **Slash commands**: off disables a command entirely, in the menu and when typed.
 - Sliders show the bare number the board draws ("100", "232", "12.5"). VoiceOver reads the unit.

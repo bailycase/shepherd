@@ -173,9 +173,9 @@ struct SettingsView: View {
         case .appearance: AppearanceSettings(vm: vm)
         case .terminal: TerminalSettings(vm: vm)
         case .agents: AgentSettings(pi: vm.server.pi, settings: vm.settings)
-        case .subagents: SubagentsSettings(model: vm.subagentDefinitions)
+        case .subagents: SubagentsSettings(model: vm.subagentDefinitions, native: NativeSubagentSettings(pi: vm.server.pi, settings: vm.settings))
         case .projects: ProjectsSettings(vm: vm, model: vm.projects)
-        case .pi: PiSettings(pi: vm.server.pi, settings: vm.settings, yourPi: vm.yourPi) { vm.settingsSection = .extensions }
+        case .pi: PiSettings(pi: vm.server.pi, yourPi: vm.yourPi) { vm.settingsSection = .extensions }
         case .piSignIn: PiSignInSettings(yourPi: vm.yourPi, auth: vm.piAuth)
         case .extensions: ExtensionsSettings(settings: vm.settings)
         case .piSlashCommands: SlashCommandsSettings(model: vm.slashCommands, settings: vm.settings)
@@ -294,11 +294,11 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .agents: ["Default model", "Default thinking level", "Speed for new threads", "Session naming model",
                        "When a turn ends, send the queue", "Compact at", "Trim old tool output from the model's context", "Defer rarely used tools", "Codemode"]
         case .worktrees: ["Base branch", "Fetch before creating", "Commit remaining work", "Generate PR descriptions", "Delete local branch", "Merge PR automatically"]
-        case .subagents: ["Filter subagents", "New subagent", "Restore defaults", "Show in Finder"]
+        case .subagents: ["Filter subagents", "New subagent", "Restore defaults", "Show in Finder",
+                          "Native subagents", "Subagent display", "Concurrency", "Model", "Thinking", "Context"]
         case .projects: ["Filter projects", "All hosts", "Add project…", "Instructions", "Pi settings", "Skills", "Extensions", "MCP servers"]
         case .pi: ["Shepherd's pi", "Source", "Last brought over", "Re-import all", "Logins", "Custom providers", "Default model", "Trusted folders",
-                   "Instructions", "Skills", "Prompts", "Themes", "Imported extensions",
-                   "Native subagents", "Subagent display", "Concurrency", "Model", "Thinking", "Context"]
+                   "Instructions", "Skills", "Prompts", "Themes", "Imported extensions"]
         case .extensions: ["Terminals and agent tools", "Agent-to-agent messages", "Diff review tool", "MCP servers", "Browser tools", "Design references"]
         case .piSignIn: ["Re-import from pi", "Subscriptions", "Anthropic", "OpenAI Codex", "GitHub Copilot", "xAI", "Kimi", "Radius",
                          "API keys", "Add an API key", "CLIProxyAPI", "Custom providers"]
@@ -332,7 +332,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                        "Defer rarely used tools": ["tool search", "tool_search", "deferred", "tokens"],
                        "Codemode": ["javascript", "script", "batch", "tools", "project"]]
         case .worktrees: ["Base branch": ["git", "origin"], "Merge PR automatically": ["github", "pull request"]]
-        case .subagents: ["New subagent": ["children", "helpers", "profiles", "agents", "Markdown"], "Restore defaults": ["scout", "reviewer", "planner", "worker"]]
+        case .subagents: ["New subagent": ["children", "helpers", "profiles", "agents", "Markdown"], "Restore defaults": ["scout", "reviewer", "planner", "worker"],
+                          "Native subagents": ["children", "workflows"], "Concurrency": ["parallel", "limit"]]
         case .projects: ["Filter projects": ["folders", "directory", "project settings"], "Instructions": ["AGENTS.md", "APPEND_SYSTEM.md"], "Pi settings": [".pi", "settings.json"]]
         case .pi: ["Shepherd's pi": ["version", "engine", "home", "folder"],
                    "Source": ["~/.pi/agent", "terminal pi", "your pi", "from pi"], "Re-import all": ["import", "re-import", "copy"],
@@ -341,8 +342,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                    "Trusted folders": ["trust.json", "project trust", "re-import"],
                    "Instructions": ["AGENTS.md", "CLAUDE.md", "SYSTEM.md", "APPEND_SYSTEM.md", "context", "re-import"],
                    "Skills": ["SKILL.md", "re-import"], "Prompts": ["prompt templates", "re-import"], "Themes": ["re-import"],
-                   "Imported extensions": ["packages", "npm", "full access", "switch on", "didn't load"],
-                   "Native subagents": ["children", "workflows"]]
+                   "Imported extensions": ["packages", "npm", "full access", "switch on", "didn't load"]]
         case .extensions: ["Terminals and agent tools": ["panes", "notifications", "automations"],
                            "Agent-to-agent messages": ["agent_send", "agent_spawn", "message", "steer", "peer", "threads", "approve", "allow",
                                                        "ask", "permission", "never", "dialog"],

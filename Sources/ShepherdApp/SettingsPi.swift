@@ -4,16 +4,14 @@ import ShepherdUI
 import ShepherdSessions
 
 /// Settings ▸ Pi (SettingsPi, SettingsPiFromPi, SettingsPiExtensions): Shepherd's own pi, then
-/// From pi, what came over from the user's pi. The bundled extensions are on Settings ▸ Extensions.
+/// From pi, what came over from the user's pi. The bundled extensions are on Settings ▸ Extensions,
+/// native subagents on Settings ▸ Subagents.
 struct PiSettings: View {
-    /// Shepherd's pi on this Mac, whose catalog names the subagent model choices.
+    /// Shepherd's pi on this Mac: its version and home.
     let pi: PiSetup
-    /// The view model's settings, so a preview's own settings draw the page.
-    @Bindable var settings: AppSettings
     /// The user's own pi, for From pi; nil leaves the section out (a test of the switches alone).
     var yourPi: YourPiModel? = nil
     var openExtensions: () -> Void = {}
-    @State private var modelOptions: [String] = []
 
     var body: some View {
         SettingsPage(title: "Pi", explanation: "Shepherd's own copy of pi.") {
@@ -23,6 +21,21 @@ struct PiSettings: View {
                         subtitle: "Included with Shepherd, and updated with it. Its home:", url: pi.home)
             }
             if let yourPi { FromYourPiSettings(model: yourPi, openExtensions: openExtensions) }
+        }
+    }
+}
+
+/// Settings ▸ Subagents, under the list: whether agents run native subagents, whether the app shows
+/// them, and the defaults a child run starts with. No board draws these; they moved here from Pi
+/// (the user's decision, 2026-10-07).
+struct NativeSubagentSettings: View {
+    /// Shepherd's pi on this Mac, whose catalog names the subagent model choices.
+    let pi: PiSetup
+    @Bindable var settings: AppSettings
+    @State private var modelOptions: [String] = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppLayout.settingsGroupSpacing) {
             SettingsGroup(title: "Native subagents") {
                 SettingsRow(title: "Native subagents",
                             subtitle: "Shepherd helpers, agent files and scripted workflows. Needs pi 0.85.1+. Children stop with their parent.") {
@@ -75,6 +88,7 @@ struct PiSettings: View {
                 .nwTransition(.disclosure)
             }
         }
+        .nwControlScale(.settings)
         .nwAnimation(.disclosure, value: settings.piNativeSubagents)
     }
 

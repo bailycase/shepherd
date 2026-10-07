@@ -166,5 +166,5 @@ Additions the boards don't have:
 - **The iPad's folded question card** (iOS: iPad › Questions): iPadQuestion draws Hide the
   question but not what it folds to.
 - **A confirmation before closing a terminal tab** on iOS, naming the tab and how many shells stop.
-| macOS Settings (revision 1083): the Pi page ends after From pi | Native subagents and Native subagent defaults stay on Pi, after From pi | No board draws them, and removing them would leave the switches unreachable. Pending the user's call (2026-10-07) |
+| macOS Settings (revision 1083): no board draws the native subagent switches or defaults | They sit on Settings ▸ Subagents, under the list of definitions | Removing them would leave the switches unreachable. The user chose Subagents (2026-10-07) |
 | SettingsAgents: no Codemode row in Context | The Codemode switch stays last in Context | The user's codemode requirement ([codemode-settings](codemode-settings.md)) predates the board. The user kept it (2026-10-07) |
