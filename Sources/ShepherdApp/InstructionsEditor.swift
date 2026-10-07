@@ -15,6 +15,9 @@ struct InstructionsEditor: NSViewRepresentable {
     let accessibilityLabel: String
     var project = false
     var markdown = true
+    /// A project editor without the gutter: text in the primary color on the board's 1.65 line
+    /// (the subagent form's Instructions pane).
+    var plain = false
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -33,6 +36,7 @@ struct InstructionsEditor: NSViewRepresentable {
         textView.smartInsertDeleteEnabled = false
         textView.drawsBackground = true
         textView.project = project
+        textView.plain = plain
         textView.backgroundColor = NSColor(project ? Color.nw.projectEditorBackground : Color.nw.bgWindow)
         textView.insertionPointColor = NSColor(Color.nw.lantern)
         textView.textContainerInset = NSSize(width: 0, height: project ? AppLayout.projectEditorInset : AppLayout.instructionsEditorInset)
@@ -93,7 +97,7 @@ struct InstructionsEditor: NSViewRepresentable {
             let scale = ThemeStore.shared.textScale
             if let styled, styled.text == text, styled.saved == saved, styled.scale == scale { return }
             styled = (text, saved, scale)
-            let styles = InstructionsEditorStyles(scale: scale, project: parent.project)
+            let styles = InstructionsEditorStyles(scale: scale, project: parent.project, plain: parent.plain)
             storage.beginEditing()
             storage.setAttributes(styles.base, range: NSRange(location: 0, length: storage.length))
             var location = 0
@@ -135,11 +139,11 @@ struct InstructionsEditorStyles {
 
     static var current: InstructionsEditorStyles { InstructionsEditorStyles(scale: ThemeStore.shared.textScale) }
 
-    init(scale: CGFloat, project: Bool = false) {
+    init(scale: CGFloat, project: Bool = false, plain: Bool = false) {
         let size = (project ? AppLayout.projectsHostSize : AppLayout.instructionsEditorTextSize) * scale
         let font = NSFont(name: "GeistMono-Regular", size: size) ?? .monospacedSystemFont(ofSize: size, weight: .regular)
         let bold = NSFont(name: "GeistMono-SemiBold", size: size) ?? .monospacedSystemFont(ofSize: size, weight: .semibold)
-        let lineHeight = (project ? AppLayout.projectEditorLineHeight : AppLayout.instructionsEditorLineHeight) * scale
+        let lineHeight = (plain ? AppLayout.subagentInstructionLineHeight : project ? AppLayout.projectEditorLineHeight : AppLayout.instructionsEditorLineHeight) * scale
         let paragraph = NSMutableParagraphStyle()
         paragraph.minimumLineHeight = lineHeight
         paragraph.maximumLineHeight = lineHeight
@@ -147,7 +151,7 @@ struct InstructionsEditorStyles {
         let offset = max(0, (lineHeight - (font.ascender - font.descender)) / 2)
         base = [
             .font: font,
-            .foregroundColor: NSColor(project ? Color.nw.projectInstructionText : Color.nw.textSecondary),
+            .foregroundColor: NSColor(plain ? Color.nw.textPrimary : project ? Color.nw.projectInstructionText : Color.nw.textSecondary),
             .paragraphStyle: paragraph,
             .baselineOffset: offset,
         ]
@@ -185,8 +189,10 @@ final class InstructionsTextView: NSTextView {
     /// Lines (from 0) changed since the last save.
     var changedLines: Set<Int> = []
     var project = false
-    private var gutter: CGFloat { project ? AppLayout.projectEditorGutter : AppLayout.instructionsGutterWidth }
-    private var leading: CGFloat { project ? gutter + AppLayout.projectEditorInset : gutter + AppLayout.instructionsGutterGap }
+    var plain = false
+    private var gutter: CGFloat { plain ? 0 : project ? AppLayout.projectEditorGutter : AppLayout.instructionsGutterWidth }
+    private var leading: CGFloat { plain ? AppLayout.subagentInstructionInset : project ? gutter + AppLayout.projectEditorInset : gutter + AppLayout.instructionsGutterGap }
+    private var trailing: CGFloat { plain ? AppLayout.subagentInstructionInset : AppLayout.instructionsGutterGap }
 
     override var textContainerOrigin: NSPoint {
         NSPoint(x: leading, y: textContainerInset.height)
@@ -194,7 +200,7 @@ final class InstructionsTextView: NSTextView {
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
-        let width = max(0, newSize.width - leading - AppLayout.instructionsGutterGap)
+        let width = max(0, newSize.width - leading - trailing)
         if textContainer?.containerSize.width != width {
             textContainer?.containerSize = NSSize(width: width, height: CGFloat.greatestFiniteMagnitude)
         }
@@ -203,8 +209,8 @@ final class InstructionsTextView: NSTextView {
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
         guard let layoutManager else { return }
-        let styles = InstructionsEditorStyles(scale: ThemeStore.shared.textScale, project: project)
-        if project {
+        let styles = InstructionsEditorStyles(scale: ThemeStore.shared.textScale, project: project, plain: plain)
+        if project, !plain {
             NSColor(Color.nw.projectEditorBackground).setFill()
             NSRect(x: 0, y: rect.minY, width: gutter, height: rect.height).fill()
         }
@@ -229,6 +235,7 @@ final class InstructionsTextView: NSTextView {
 
     /// The tint across a changed line, and its number in the gutter beside its first row.
     private func drawLine(_ index: Int, in lineRect: NSRect, styles: InstructionsEditorStyles) {
+        if plain { return }
         if !project, changedLines.contains(index) {
             NSColor(Color.nw.lanternTint).setFill()
             NSRect(x: 0, y: lineRect.minY, width: bounds.width, height: lineRect.height).fill()
