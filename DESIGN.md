@@ -65,7 +65,8 @@ What follows from them:
   never the only signal.
 - **Lantern means you.** Amber marks the primary action and what needs you. Running blue marks
   work in progress, links and keyboard focus.
-- **The sidebar is the primary navigation.** The command palette is a second way to jump.
+- **The sidebar is the primary navigation.** The command palette is a second way to jump. Over a
+  design, the palette's chord opens Jump to a board instead.
 - **One primary action per surface.** A destructive action is never the ⏎ default.
 - **Native controls, Night Watch styles.** A control is a Night Watch style on a native
   `Button`, `Toggle`, `Picker` or `TextField`. Context menus are native `.contextMenu`. Shared

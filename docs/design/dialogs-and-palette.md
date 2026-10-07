@@ -7,7 +7,8 @@
 ⌘K (the rebindable `commandPalette`) opens `CommandPaletteView` (`CommandPaletteView.swift`, items
 in `ShepherdViewModel+Palette.swift`, matching in `CommandPalette.swift`) through
 `.nwCommandPalette(isPresented:)` (NWComposer › Command palette; CommandPalette). It is a jump
-surface: every destination and command in it is also in the sidebar or the menus.
+surface: every destination and command in it is also in the sidebar or the menus. Over a design the
+same chord opens Jump to a board instead ([Design tool › Jump to a board](design-tool.md#jump-to-a-board-jumpincontext)).
 
 - **Placement:** a 620pt `NWPaletteCard` (`.nwPopover()`, radius 12), or the window's width less
   16pt margins, 18% down the window over the 30% `scrim`, and never taller than the window leaves

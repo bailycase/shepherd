@@ -35,11 +35,14 @@ public struct NWDesignHeader<Trailing: View>: View {
     let sidebar: (() -> Void)?
     let sidebarShortcut: String?
     let designs: () -> Void
+    /// Centered between the breadcrumb and the trailing controls (JumpInContext's field).
+    let center: AnyView?
     let trailing: Trailing
 
     public init(_ title: String, style: Style, section: String = "Designs", status: Status? = nil, leadingInset: CGFloat = 0,
                 sidebar: (() -> Void)? = nil, sidebarShortcut: String? = nil, designs: @escaping () -> Void,
-                @ViewBuilder trailing: () -> Trailing) {
+                center: AnyView? = nil, @ViewBuilder trailing: () -> Trailing) {
+        self.center = center
         self.title = title
         self.style = style
         self.section = section
@@ -89,6 +92,12 @@ public struct NWDesignHeader<Trailing: View>: View {
             .font(.nwSans(NWDesignMetrics.headerTextSize))
             .nwAnimation(.content, value: status)
             Spacer(minLength: NW.Space.l)
+            // The board's field sits between two equal spacers; it narrows (to 80pt) before
+            // the breadcrumb or the trailing controls give way.
+            if let center {
+                center.layoutPriority(0.5)
+                Spacer(minLength: NW.Space.l)
+            }
             HStack(spacing: NW.Space.m) { trailing }
                 .fixedSize()
                 .layoutPriority(1)
