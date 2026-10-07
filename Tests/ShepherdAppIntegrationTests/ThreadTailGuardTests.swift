@@ -91,6 +91,25 @@ struct ThreadTailGuardTests {
         #expect(rig.landings == 0, "the guard aimed at the end the stack believes in, which would undo an exact landing")
     }
 
+    /// SwiftUI can keep reporting the clear marker after the walk has found no current row.
+    /// It is not evidence of content, and must not suppress the final tail landing.
+    @Test func aBottomMarkerWithoutAnyCurrentRowDoesNotEndRecovery() async throws {
+        let rig = Rig()
+        defer { rig.close() }
+        let land = rig.guardian.land
+        rig.guardian.land = {
+            land()
+            rig.scrollToEnd()
+            rig.guardian.targets(["row", "thread-bottom"])
+        }
+        rig.guardian.targets(["thread-bottom"])
+        try await eventuallyOnMain("a marker-only viewport to land on real content", timeout: .seconds(5)) {
+            rig.landings > 0 && rig.guardian.visible.contains("row") && !rig.guardian.repairing
+        }
+        #expect(rig.landings == 1)
+        #expect(abs(rig.gap) <= ThreadTailGuard.slack)
+    }
+
     @Test func aNewCompletedTurnCanRecoverAfterEarlierAttemptsFailed() async throws {
         let rig = Rig()
         defer { rig.close() }

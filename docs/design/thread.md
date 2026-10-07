@@ -49,7 +49,8 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   it. The guard notices that no current content row is in view, even when the invisible bottom
   marker or a cached target from a replaced live reply is still reported visible. Completion can
   replace that reply's ID when its prompt falls outside the saved history page. Neither the marker
-  nor a removed row may end recovery. It also notices a following thread
+  nor a removed row may end recovery. After an unsuccessful walk, a cached bottom marker must
+  not suppress the final tail landing when no current row is in view. It also notices a following thread
   resting more than 80pt above its tail with the bottom marker out of view. It waits for quiet
   layout, at most 160ms for a blank thread, and lands on the tail again; when that is not enough it
   walks the scroll view back toward the rows and then down a page at a time until the marker is
