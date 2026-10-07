@@ -104,6 +104,10 @@ Settings", revision 1083) is the source of truth for every Settings page.
 - **Subagents** lists the definition files, then the native subagent switches and defaults.
 - **Extensions** holds the bundled extension switches and Agent-to-agent messages.
 - **Slash commands**: off disables a command entirely, in the menu and when typed.
+- **Projects** reuses the shared MCP server cards, forms and OAuth sheet. Authentication runs on
+  the selected host and opens the viewer's browser. Native MCP shows Pi's project approval apart
+  from saved credentials, and asks for explicit confirmation of executable project resources
+  before approving them on that host ([Project MCP](docs/design/project-mcp.md)).
 - Sliders show the bare number the board draws ("100", "232", "12.5"). VoiceOver reads the unit.
 
 Detail: [settings.md](docs/design/settings.md) and its `settings-*` files.

@@ -25,6 +25,14 @@ remains available for repair and unsupported advanced fields. Extensions also in
 skill, extension or MCP server, change project trust, or restart an agent. Running agents must
 restart before they use the changes.
 
+The native MCP page separately shows whether Pi approves project resources. "Trust this
+project…" requires confirmation covering settings, executable extensions, MCP commands and
+package installation. The selected host saves its own Pi decision for that canonical folder;
+it never approves a parent or the home folder. New threads use it without a global trust
+override. "Credentials saved" means OAuth tokens exist on that host, not that a thread has
+loaded or connected the server. The approval card also distinguishes checking, unavailable
+hosts, old hosts and errors. See [MCP approval](mcp.md#project-approval-and-thread-loading).
+
 ## Storage and safety
 
 `<support>/projects.json` holds directory/name history separately from `state.json`. A page

@@ -58,6 +58,7 @@ struct ProjectMCPAuthTests {
         let text = #"{"mcpServers":{"issues":{"url":"https://example.invalid/mcp"}}}"#
         _ = try await client.projects(.save(directory: root.path, file: ".pi/mcp.json", text: text, expected: nil))
         #expect(client.capabilities.contains(RemoteProtocol.projectMCPCapability))
+        #expect(client.capabilities.contains(RemoteProtocol.projectTrustCapability))
         guard case .mcp(let result) = try await client.projects(.mcp(directory: root.path, file: ".pi/mcp.json", action: .credentials)) else { Issue.record("Expected MCP credentials"); return }
         #expect(result.signedIn.isEmpty && result.id == nil && result.authorizationURL == nil)
         await #expect(throws: RemoteHostClientError.self) {
@@ -65,11 +66,14 @@ struct ProjectMCPAuthTests {
         }
         let old = try RemoteHost()
         defer { old.stop() }
-        old.server.advertisedCapabilities = RemoteProtocol.capabilities.filter { $0 != RemoteProtocol.projectMCPCapability }
+        old.server.advertisedCapabilities = RemoteProtocol.capabilities.filter { $0 != RemoteProtocol.projectMCPCapability && $0 != RemoteProtocol.projectTrustCapability }
         let oldClient = try await old.typed()
         defer { oldClient.disconnect() }
         await #expect(throws: RemoteHostClientError.self) {
             _ = try await oldClient.projects(.mcp(directory: root.path, file: ".pi/mcp.json", action: .login(server: "issues")))
+        }
+        await #expect(throws: RemoteHostClientError.self) {
+            _ = try await oldClient.projects(.mcp(directory: root.path, file: ".pi/mcp.json", action: .approveProject))
         }
     }
 
@@ -109,6 +113,14 @@ struct ProjectMCPAuthTests {
         func action(_ action: ProjectMCPAction) async throws -> ProjectMCPResult {
             guard case .mcp(let value) = try await client.projects(.mcp(directory: project.path, file: file, action: action)) else { throw ProjectFileError("protocol", "Expected MCP result") }
             return value
+        }
+        if file == ".pi/mcp.json" {
+            #expect(try await action(.credentials).projectTrusted == false)
+            #expect(try await action(.approveProject).projectTrusted == true)
+            #expect(try await action(.credentials).projectTrusted == true)
+            await #expect(throws: RemoteHostClientError.self) {
+                _ = try await client.projects(.mcp(directory: directory.path, file: file, action: .approveProject))
+            }
         }
         let started = try await action(.login(server: "issues"))
         let id = try #require(started.id)
