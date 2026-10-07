@@ -84,6 +84,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | ProjectInstructions | [project-instructions](project-instructions.md) | Settings > Projects > Instructions | Built |
 | ProjectBrowser | [project-browser](project-browser.md) | Settings > Projects > Browser | Built |
 | SubagentsSettings | [settings-subagents](settings-subagents.md) | Settings › Subagents | Built |
+| SubagentEdit | [settings-subagents](settings-subagents.md) | Settings › Subagents › Edit form | Built |
 | SettingsPi | [settings-pi](settings-pi.md) | Settings › Pi | Built (departures) |
 | SettingsPiSignIn | [settings-pi](settings-pi.md) | Settings › Sign-in | Built (departures) |
 | SettingsPiSignInKeys | [settings-pi](settings-pi.md) | Settings › Sign-in (API keys, custom providers, the provider menu) | Built |
