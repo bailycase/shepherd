@@ -18,7 +18,11 @@ final class SubagentDefinitionsModel {
     private(set) var original: SubagentDefinitionsStore.File?
     var filename = ""
     var draft = ""
+    /// Models Shepherd's pi can run, for the form's Model popup. Read when a profile opens.
+    private(set) var modelChoices: [String] = []
     var confirmation: Confirmation?
+    @ObservationIgnored private var starter = ""
+    @ObservationIgnored var models: @Sendable () -> [String] = { [] }
     @ObservationIgnored private var restoreExpected: [String: String] = [:]
     @ObservationIgnored private var afterDiscard: (() -> Void)?
     @ObservationIgnored let store: SubagentDefinitionsStore
@@ -28,10 +32,23 @@ final class SubagentDefinitionsModel {
     }
 
     init(store: SubagentDefinitionsStore) { self.store = store }
-    convenience init(pi: PiSetup) { self.init(store: SubagentDefinitionsStore(pi: pi, parserSource: ChildrenExtension.configSource)) }
+    convenience init(pi: PiSetup) {
+        self.init(store: SubagentDefinitionsStore(pi: pi, parserSource: ChildrenExtension.configSource))
+        let catalog = pi.catalog
+        models = { Array(Set(catalog.entriesOrConfigured().map(\.id))).sorted() }
+    }
     var dirty: Bool { editing && (original == nil || draft != original?.text) }
     var canSave: Bool { editing && dirty && !busy && SubagentDefinitionsStore.acceptsFilename(filename) }
     var directory: URL { store.directory }
+    /// The form's view of `draft`: it reads and rewrites the keys it draws and leaves the rest.
+    var form: SubagentProfileText {
+        get { SubagentProfileText(draft) }
+        set { draft = newValue.text }
+    }
+    /// Why the open file does not load (an unsupported field, say), which the form cannot draw.
+    var loadProblem: String? {
+        original.flatMap { file in definitions.first { $0.file == file.file }?.diagnostic }
+    }
 
     func refresh() async {
         guard !busy, !editing else { return }
@@ -59,7 +76,21 @@ final class SubagentDefinitionsModel {
     func create() {
         guard !busy else { return }
         original = nil; filename = "new-subagent.md"; problem = nil; editing = true
-        draft = "---\nname: new-subagent\ndescription: Describe the assigned task.\ntools: [read, grep, find, ls]\n---\n\nWrite the instructions this subagent should follow.\n"
+        starter = "---\nname: new-subagent\ndescription: Describe the assigned task.\ntools: [read, grep, find, ls]\n---\n\nWrite the instructions this subagent should follow.\n"
+        draft = starter
+        loadModels()
+    }
+
+    /// Puts the form back to what is on disk (or to the starter of a new file).
+    func revert() {
+        guard editing, !busy else { return }
+        draft = original?.text ?? starter
+        problem = nil
+    }
+
+    private func loadModels() {
+        let models = models
+        Task { modelChoices = await Task.detached(priority: .userInitiated) { models() }.value }
     }
 
     func open(_ definition: Definition) async {
@@ -70,6 +101,7 @@ final class SubagentDefinitionsModel {
             let store = store
             original = try await Task.detached(priority: .userInitiated) { try store.open(definition.file) }.value
             filename = definition.file; draft = original!.text; editing = true
+            loadModels()
         } catch { problem = String(describing: error) }
     }
 

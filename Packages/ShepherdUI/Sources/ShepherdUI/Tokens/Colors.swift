@@ -29,6 +29,11 @@ public final class NWPalette: Sendable {
     public let projectRowDivider: Color
     public let subagentFailureTile: Color
     public let subagentFailureBorder: Color
+    /// A tool chip that is on (SubagentEdit): the fill and line the board draws over the window.
+    public let subagentChipOn: Color
+    public let subagentChipOnBorder: Color
+    /// A quiet control's label on the SubagentEdit board (Revert, the unchosen segment).
+    public let subagentControlText: Color
     public let projectCookieDanger: Color
     public let projectCookieConfirm: Color
     public let projectCookieConfirmHover: Color
@@ -153,6 +158,9 @@ public final class NWPalette: Sendable {
         }
         subagentFailureTile = Color(light: failedTile(l), dark: failedTile(d))
         subagentFailureBorder = theme.id == "night-watch" ? Color(light: l.failedTint, dark: "#5a2a2a") : mix(\.failed, \.bgWindow, portion: 0.34)
+        subagentChipOn = theme.id == "night-watch" ? Color(light: l.bgBubble, dark: "#23272c") : bgSelected
+        subagentChipOnBorder = theme.id == "night-watch" ? Color(light: l.lineStrong, dark: "#3a3f45") : lineStrong
+        subagentControlText = theme.id == "night-watch" ? Color(light: l.textSecondary, dark: "#c1c5cb") : textSecondary
         projectCookieDanger = mix(\.failed, \.textPrimary, portion: 0.8)
         projectCookieConfirm = mix(\.failed, \.textOnLantern, portion: 0.75)
         projectCookieConfirmHover = mix(\.failed, \.textOnLantern, portion: 0.75, brightness: 0.94)
