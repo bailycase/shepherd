@@ -224,22 +224,26 @@ public struct NWSettingsNavRow: View {
     let title: String
     let systemImage: String
     let selected: Bool
+    /// A 6pt `lantern` dot trailing while the page wants attention (Sign-in).
+    let attention: Bool
     let action: () -> Void
 
     private let artwork: NWGlyph.Settings?
 
-    public init(_ title: String, systemImage: String, selected: Bool, action: @escaping () -> Void) {
+    public init(_ title: String, systemImage: String, selected: Bool, attention: Bool = false, action: @escaping () -> Void) {
         self.title = title
         self.systemImage = systemImage
         self.selected = selected
+        self.attention = attention
         self.action = action
         self.artwork = nil
     }
 
-    public init(_ title: String, glyph: NWGlyph.Settings, selected: Bool, action: @escaping () -> Void) {
+    public init(_ title: String, glyph: NWGlyph.Settings, selected: Bool, attention: Bool = false, action: @escaping () -> Void) {
         self.title = title
         self.systemImage = ""
         self.selected = selected
+        self.attention = attention
         self.action = action
         self.artwork = glyph
     }
@@ -260,6 +264,10 @@ public struct NWSettingsNavRow: View {
                     .foregroundStyle(nw.textPrimary)
                     .lineLimit(1)
                 Spacer(minLength: 0)
+                if attention {
+                    Circle().fill(nw.lantern).frame(width: NWSettingsNavMetrics.attentionDot, height: NWSettingsNavMetrics.attentionDot)
+                        .accessibilityHidden(true)
+                }
             }
             .padding(.horizontal, NWSettingsNavMetrics.rowPadding)
             .frame(minHeight: NW.Height.scaled(NWSettingsNavMetrics.rowHeight))
@@ -267,45 +275,6 @@ public struct NWSettingsNavRow: View {
         }
         .buttonStyle(.nwRow(selected: selected, selectedFill: Color.nw.settingsNavSelected, focusColor: artwork != nil ? .nw.running : nil))
         .accessibilityLabel(title)
-        .accessibilityAddTraits(selected ? [.isSelected] : [])
-    }
-}
-
-/// A page under another in Settings' navigation (Pi's Sign-in and From your pi; SettingsPi): 28pt,
-/// scaled by density, 35pt in, the name in Geist 12.5 `textSecondary` (`textPrimary` at 500 on
-/// `bgSelected` when selected), and a 6pt `lantern` dot trailing while it wants attention.
-public struct NWSettingsNavSubRow: View {
-    let title: String
-    let selected: Bool
-    let attention: Bool
-    let action: () -> Void
-
-    public init(_ title: String, selected: Bool, attention: Bool = false, action: @escaping () -> Void) {
-        self.title = title
-        self.selected = selected
-        self.attention = attention
-        self.action = action
-    }
-
-    public var body: some View {
-        let nw = Color.nw
-        Button(action: action) {
-            HStack(spacing: NW.Space.m) {
-                Text(title)
-                    .font(.nwSans(NWSettingsNavMetrics.subTextSize, selected ? .medium : .regular))
-                    .foregroundStyle(selected ? nw.textPrimary : nw.textSecondary)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-                if attention {
-                    Circle().fill(nw.lantern).frame(width: 6, height: 6).accessibilityHidden(true)
-                }
-            }
-            .padding(.leading, NWSettingsNavMetrics.subRowLeading)
-            .padding(.trailing, NWSettingsNavMetrics.rowPadding)
-            .frame(minHeight: NW.Height.scaled(NWSettingsNavMetrics.subRowHeight))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.nwRow(selected: selected, focusColor: .nw.running))
         .accessibilityLabel(attention ? "\(title), needs you" : title)
         .accessibilityAddTraits(selected ? [.isSelected] : [])
     }
@@ -326,9 +295,8 @@ public enum NWSettingsNavMetrics {
     /// The page names, and the Back row's words.
     public static let textSize: CGFloat = 13
     /// A page under another: 28pt, 35pt in (past the icon), Geist 12.5.
-    public static let subRowHeight: CGFloat = 28
-    public static let subRowLeading: CGFloat = 35
     public static let subTextSize: CGFloat = 12.5
+    public static let attentionDot: CGFloat = 6
     /// CSS points, not device pixels, in the supplied Settings boards.
     public static let borderWidth: CGFloat = 1
     public static let searchHeight: CGFloat = 34

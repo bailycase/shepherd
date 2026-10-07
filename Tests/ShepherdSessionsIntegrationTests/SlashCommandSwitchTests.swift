@@ -6,10 +6,10 @@ import ShepherdRemote
 @testable import ShepherdSessions
 import ShepherdTestSupport
 
-/// Settings ▸ Pi ▸ Slash commands: a command the user turns off leaves the `/` menu of every thread
-/// on the host, in every client, because the host's projection of pi's `get_commands` leaves it
-/// out. It is left out of that and nothing else: typing it still runs it, and the host still lists
-/// it (`slashCommandCatalog`) so the page can switch it back on. The stub pi lists
+/// Settings ▸ Slash commands: a command the user turns off is disabled in every thread on the host,
+/// in every client: the host's projection of pi's `get_commands` leaves it out of the `/` menu, and
+/// typing it is refused before pi sees it. The host still lists it (`slashCommandCatalog`) so the
+/// page can switch it back on. The stub pi lists
 /// `/session-name` (an extension command) and `/fix-tests` (a prompt template).
 @Suite("Slash command switches", .integrationTimeLimit)
 struct SlashCommandSwitchTests {
@@ -33,7 +33,7 @@ struct SlashCommandSwitchTests {
         #expect(names(back) == ["session-name", "fix-tests"], "back where pi listed it")
     }
 
-    @Test func aHiddenCommandStillRunsWhenItIsTyped() async throws {
+    @Test func aDisabledCommandIsRefusedWhenItIsTypedAndRunsOnceBackOn() async throws {
         let t = try Thread()
         defer { t.stop() }
         _ = try await t.ready()
@@ -41,12 +41,20 @@ struct SlashCommandSwitchTests {
         t.queue.async { t.state.hiddenCommands = ["session-name"] }
         _ = try await t.settle("the menu without it") { names($0) == ["fix-tests"] }
 
+        let refused = await withCheckedContinuation { continuation in
+            t.queue.async { t.state.send(id: UUID(), text: "/session-name info Session named", delivery: .followUp, images: []) { continuation.resume(returning: $0) } }
+        }
+        guard case .failure(let code, let message) = refused else { Issue.record("sent: \(refused)"); return }
+        #expect(code == "unsupported" && message.contains("/session-name is disabled"))
+
+        t.queue.async { t.state.hiddenCommands = [] }
+        _ = try await t.settle("the menu with it again") { names($0)?.count == 2 }
         await t.sendAsUser("/session-name info Session named")
         let s = try await t.settle("the command's answer") { snapshot in
             (snapshot.messages + snapshot.provisional).contains { $0.entryID.hasPrefix("n:") }
         }
         let row = try #require((s.messages + s.provisional).first { $0.entryID.hasPrefix("n:") })
-        #expect(row.blocks == [NativeThreadBlock(kind: .text, text: "Session named")], "it ran as an extension command, hidden or not")
+        #expect(row.blocks == [NativeThreadBlock(kind: .text, text: "Session named")], "on again, it runs")
     }
 
     @Test func theServerHidesACommandInEveryThreadAndStillListsItInItsCatalog() async throws {

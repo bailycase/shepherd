@@ -38,7 +38,6 @@ extension ShepherdViewModel {
 enum HostSettingsMapping {
     /// The bundled extensions a client may turn on or off, in Settings ▸ Pi's order.
     static let bundled: [(id: String, name: String, keyPath: ReferenceWritableKeyPath<AppSettings, Bool>)] = [
-        ("namer", "Name agents automatically", \.autoNameAgents),
         ("panes", "Terminals and agent tools", \.piPanesExtension),
         ("review", "Diff review tool", \.piReviewExtension),
         ("nativeSubagents", "Native subagents", \.piNativeSubagents),
@@ -46,7 +45,7 @@ enum HostSettingsMapping {
         ("mcp", "MCP servers", \.piMCPExtension),
         ("browser", "Browser tools", \.piBrowserExtension),
         // Settings ▸ Agents ▸ Context on the Mac; a client lists it with the other switches.
-        ("context", "Trim old tool output from the model’s context", \.trimToolOutput),
+        ("context", "Trim old tool output from the model's context", \.trimToolOutput),
         ("deferTools", "Defer rarely used tools", \.deferTools),
         ("codemode", "Codemode", \.codemode),
     ]

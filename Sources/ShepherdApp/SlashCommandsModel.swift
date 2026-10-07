@@ -72,7 +72,7 @@ struct SlashCommandGroup: Equatable, Identifiable {
             case .extensions: "Extensions"
             case .prompts: "Prompt templates"
             case .skills: "Skills"
-            case .other: "Other"
+            case .other: "Unreported commands"
             }
         }
     }
@@ -116,10 +116,10 @@ struct SlashCommandsPresentation: Equatable {
         }
     }
 
-    /// "41 commands · 3 hidden", "No commands yet".
+    /// "41 commands · 3 disabled", "No commands yet".
     var summary: String {
         guard total > 0 else { return "No commands yet" }
         let count = total == 1 ? "1 command" : "\(total) commands"
-        return hidden == 0 ? count : "\(count) · \(hidden) hidden"
+        return hidden == 0 ? count : "\(count) · \(hidden) disabled"
     }
 }

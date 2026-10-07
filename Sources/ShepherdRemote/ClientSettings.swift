@@ -290,11 +290,11 @@ public final class ClientInstructions {
                                           keptDifferent: false, syncedAt: syncedAt[host.id], now: now)
     }
 
-    /// "Save to 3 hosts", "Save", "Save to build-01".
+    /// "Save to all hosts", "Save", "Save to build-01".
     public func saveTitle(in hosts: [SettingsHost], selectedHost: UUID? = nil) -> String {
         if sameEverywhere {
             let targets = hosts.filter { files(of: $0) != .unsupported }.count
-            return targets > 1 ? "Save to \(targets) hosts" : "Save"
+            return targets > 1 ? "Save to all hosts" : "Save"
         }
         return edited(in: hosts, selectedHost: selectedHost).map { "Save to \($0.name)" } ?? "Save"
     }

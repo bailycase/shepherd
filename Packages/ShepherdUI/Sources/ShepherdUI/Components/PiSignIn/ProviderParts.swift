@@ -173,7 +173,7 @@ public enum NWKeySource: Equatable, Sendable {
     /// The status line's parts for it, joined to the key before them.
     public var parts: [NWProviderStatus.Part] {
         switch self {
-        case .copiedFromYourPi: [.init("copied from your pi", tone: .tertiary, separated: false)]
+        case .copiedFromYourPi: [.init("copied from pi", tone: .tertiary, separated: false)]
         case .variable(let name): [.init("reads", tone: .tertiary, separated: false),
                                    .init("$" + name, mono: true, small: true, separated: false)]
         case .command(let command): [.init("runs a command", tone: .tertiary, separated: false),

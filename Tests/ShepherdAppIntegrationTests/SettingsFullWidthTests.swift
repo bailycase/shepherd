@@ -30,11 +30,7 @@ struct SettingsFullWidthTests {
             }
         }
         for section in SettingsSection.allCases {
-            if section.isSubpage {
-                try ControlPress.press("Appearance", under: window.host)
-                window.layout()
-            }
-            for title in ["Sign-in", "From your pi", "Slash commands"] {
+            for title in ["Sign-in", "Extensions", "Slash commands"] {
                 #expect(window.controls().contains { $0.label == title && $0.role == ControlRole.button },
                         "\(title) stays in the navigation while \(vm.settingsSection.title) is selected")
             }

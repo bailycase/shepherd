@@ -75,6 +75,7 @@ enum StatusExtension {
         goalsEnabled: Bool = false,
         namerExtensionPath: String? = nil,
         needsName: Bool = false,
+        namingModel: String = "",
         isAutomation: Bool = false,
         instructions: (extensionPath: String, directory: String)? = nil,
         suggestFiles: [String] = [],
@@ -119,7 +120,11 @@ enum StatusExtension {
             env["SHEPHERD_EXT_CHILDREN"] = childrenExtensionPath
             env.merge(childEnvironment) { _, value in value }
         }
-        if namerExtensionPath != nil && needsName { env["SHEPHERD_NEEDS_NAME"] = "1" }
+        if namerExtensionPath != nil && needsName {
+            env["SHEPHERD_NEEDS_NAME"] = "1"
+            // Settings ▸ Agents ▸ Session naming model; the namer still falls back to the agent's own model.
+            if !namingModel.isEmpty { env["SHEPHERD_NAMER_MODELS"] = namingModel }
+        }
         if isAutomation { env["SHEPHERD_AUTOMATION"] = "1" }
         // A design's agent: its design tools, and the skill they hand pi.
         if let design {

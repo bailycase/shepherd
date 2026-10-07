@@ -11,7 +11,7 @@ struct SettingsResetTests {
     private func customize(_ app: AppHarness) {
         app.settings.terminalFontSize = 20
         app.settings.defaultModel = "openai/gpt-5"
-        app.settings.autoNameAgents = false
+        app.settings.namingModel = "google/gemini-2.5-flash"
         _ = app.keybindings.assign(KeyChord(key: "p", command: true), to: .newAgent)
         app.themeManager.select(.light)
     }
@@ -31,7 +31,7 @@ struct SettingsResetTests {
         #expect(app.settings.terminalFontSize == AppSettings.Defaults.terminalFontSize)
         #expect(app.settings.defaultModel.isEmpty)
         #expect(app.settings.defaultThinking == AppSettings.Defaults.thinking)
-        #expect(app.settings.autoNameAgents)
+        #expect(app.settings.namingModel.isEmpty)
         #expect(app.keybindings.overrides.isEmpty)
         #expect(app.themeManager.mode == .system)
         #expect(app.server.state == workspace && vm.state == workspace)
@@ -50,7 +50,7 @@ struct SettingsResetTests {
 
         #expect(app.settings.terminalFontSize == 20)
         #expect(app.settings.defaultModel == "openai/gpt-5")
-        #expect(!app.settings.autoNameAgents)
+        #expect(app.settings.namingModel == "google/gemini-2.5-flash")
         #expect(app.keybindings.overrides[.newAgent] == KeyChord(key: "p", command: true))
         #expect(app.themeManager.current.id == "night-watch-light")
     }

@@ -39,7 +39,6 @@ public enum HostSettingsPresentation {
     /// this client doesn't know yet.
     public static func note(forBundled id: String) -> String? {
         switch id {
-        case "namer": "Titles each new thread from its first prompt. A name you type is always final."
         case "panes": "Lets agents open and drive terminals, message or spawn agents, manage automations and notify."
         case "review": "Lets agents open the review pane with `review_diff`."
         case "nativeSubagents": "Helpers, agent files and workflows. Needs agent 0.85.1 or later."

@@ -306,14 +306,11 @@ final class InstructionsModel {
 
     // MARK: Saving
 
-    /// "Save to 3 hosts", "Save", or "Save to build-01".
+    /// "Save to all hosts", "Save", "Save to This Mac" or "Save to build-01" (SettingsInstructions,
+    /// SettingsInstructionsHosts).
     var saveTitle: String {
-        if sameEverywhere {
-            let targets = saveTargets
-            return targets > 1 ? "Save to \(targets) hosts" : "Save"
-        }
-        if case .remote = machine { return "Save to \(name(of: machine))" }
-        return "Save"
+        if sameEverywhere { return saveTargets > 1 ? "Save to all hosts" : "Save" }
+        return saveTargets > 1 ? "Save to \(name(of: machine))" : "Save"
     }
 
     var canSave: Bool { !busy && isEdited(file, on: machine) }
