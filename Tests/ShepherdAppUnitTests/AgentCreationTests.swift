@@ -57,15 +57,6 @@ struct AgentCreationTests {
         #expect(config.model == "anthropic/claude-sonnet-4" && config.thinking == .high)
     }
 
-    // MARK: Naming
-
-    /// pi's namer runs only while the name is provisional and auto-naming is on.
-    @Test(arguments: [(false, true, true), (false, false, false), (true, true, false), (true, false, false)])
-    func theNamerRunsOnlyForProvisionalNamesWithAutoNamingOn(nameIsFinal: Bool, autoName: Bool, wants: Bool) {
-        let agent = Agent(name: "fix the sidebar", spaceID: SpaceID(), tabID: TabID(), nameIsFinal: nameIsFinal)
-        #expect(TerminalSessionStore.wantsNamer(for: agent, autoName: autoName) == wants)
-    }
-
     // MARK: New Agent sheet defaults
 
     /// A remote host's defaults arrive late: they fill untouched fields, never overwrite an edit,

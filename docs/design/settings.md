@@ -192,8 +192,8 @@ shell they run."
     Automatic (default) · Claude Haiku 4.5 · Anthropic · Codex Mini · OpenAI · Gemini 2.5 Flash ·
     Google (`AppSettings.namingModel`, "" for Automatic). A chosen model reaches the namer as
     `SHEPHERD_NAMER_MODELS`, tried first; the namer still falls back to the agent's own model.
-    Automatic is the namer's own cheapest-first list. The on/off switch for naming is a host
-    setting remote clients change ("namer"); this Mac's page has no switch, as the board draws none.
+    Automatic is the namer's own cheapest-first list. Naming is always on: there is no switch here
+    or on a remote client (the user's decision, 2026-10-07). A name the user types stays final.
 - **While the agent is working** (the queue's setting; QueueStates' Settings card still draws the
   retired Return row beside it):
   - There is no Return setting any more (the user's call, 2026-09-30): ↩ always queues and ⌘↩ is

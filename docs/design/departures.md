@@ -167,5 +167,4 @@ Additions the boards don't have:
   question but not what it folds to.
 - **A confirmation before closing a terminal tab** on iOS, naming the tab and how many shells stop.
 | macOS Settings (revision 1083): the Pi page ends after From pi | Native subagents and Native subagent defaults stay on Pi, after From pi | No board draws them, and removing them would leave the switches unreachable. Pending the user's call (2026-10-07) |
-| SettingsAgents: no Codemode row in Context | The Codemode switch stays last in Context | The user's codemode requirement ([codemode-settings](codemode-settings.md)) predates the board. Pending the user's call (2026-10-07) |
-| SettingsAgents: Session naming has only the model popup | No "Name agents automatically" switch on this Mac's page; a remote client still sets the host's `namer` switch | The board draws none. The popup is drawn as the board draws it (2026-10-07) |
+| SettingsAgents: no Codemode row in Context | The Codemode switch stays last in Context | The user's codemode requirement ([codemode-settings](codemode-settings.md)) predates the board. The user kept it (2026-10-07) |

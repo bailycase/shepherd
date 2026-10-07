@@ -27,7 +27,7 @@ struct HostSettingsMappingTests {
         #expect(settings.goalCrossProviderEvaluation && settings.goalsEnabled)
         #expect(settings.worktreeBase == .head)
         #expect(settings.mergePRAutomatically && settings.mergeMethod == .rebase)
-        #expect(settings.bundledExtensions.map(\.id) == ["namer", "panes", "review", "nativeSubagents", "subagents", "mcp", "browser", "context", "deferTools", "codemode"])
+        #expect(settings.bundledExtensions.map(\.id) == ["panes", "review", "nativeSubagents", "subagents", "mcp", "browser", "context", "deferTools", "codemode"])
         #expect(settings.bundledExtensions.first { $0.id == "review" }?.on == false)
         #expect(settings.bundledExtensions.first { $0.id == "review" }?.name == "Diff review tool")
         // The extension keeps its stored id; it reads as terminals to the user.
@@ -108,8 +108,6 @@ struct HostSettingsMappingTests {
         #expect(app.worktreeMergeMethod == .merge)
         HostSettingsMapping.apply(.bundledExtension(id: "panes", on: false), to: app)
         #expect(!app.piPanesExtension)
-        HostSettingsMapping.apply(.bundledExtension(id: "namer", on: false), to: app)
-        #expect(!app.autoNameAgents)
         HostSettingsMapping.apply(.bundledExtension(id: "browser", on: false), to: app)
         #expect(!app.piBrowserExtension, "a remote client can switch Browser tools")
         // An extension the Mac doesn't bundle changes nothing.

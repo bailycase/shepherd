@@ -55,7 +55,6 @@ final class AppSettings {
         static let defaultThinking = "shepherd.agent.defaultThinking"
         static let defaultServiceTier = "shepherd.agent.defaultServiceTier"
         static let goalCrossProviderEvaluation = "shepherd.agent.goalCrossProviderEvaluation"
-        static let autoNameAgents = "shepherd.agent.autoName"
         static let namingModel = "shepherd.agent.namingModel"
         static let skillsInSlashMenu = "shepherd.skills.slashMenu"
         static let hiddenSlashCommands = "shepherd.pi.slashCommands.hidden"
@@ -101,7 +100,7 @@ final class AppSettings {
 
         static let all = [
             terminalFontFamily, terminalFontSize, defaultModel,
-            defaultThinking, defaultServiceTier, goalCrossProviderEvaluation, autoNameAgents, namingModel, queueDelivery, trimToolOutput, deferTools, codemode, compactAtPercent, shellPath,
+            defaultThinking, defaultServiceTier, goalCrossProviderEvaluation, namingModel, queueDelivery, trimToolOutput, deferTools, codemode, compactAtPercent, shellPath,
             agentMessages, piPanesExtension, piReviewExtension, subagentDisplay, piNativeSubagents,
             piMCPExtension, piBrowserExtension, piDesignReferences,
             childConcurrency, childModel, childThinking, childContext,
@@ -126,7 +125,6 @@ final class AppSettings {
         static let terminalFontSize: Double = 12.5
         static let thinking: ThinkingLevel = .medium
         static let serviceTier: ServiceTier = .standard
-        static let autoNameAgents = true
         static let skillsInSlashMenu = true
         static let queueDelivery: NativeQueueMode = .all
         static let sidebarStyle: NWSidebarStyle = .activity
@@ -168,12 +166,6 @@ final class AppSettings {
     /// agent start, including a restart; running agents keep their launch policy.
     var goalCrossProviderEvaluation: Bool {
         didSet { store.set(goalCrossProviderEvaluation, forKey: Key.goalCrossProviderEvaluation) }
-    }
-
-    /// Off means agents keep their provisional name (the truncated opening
-    /// prompt) and the namer extension is never passed to pi.
-    var autoNameAgents: Bool {
-        didSet { store.set(autoNameAgents, forKey: Key.autoNameAgents) }
     }
 
     /// Settings ▸ Agents ▸ Session naming model: "provider/id" the namer tries first, or "" for
@@ -496,7 +488,8 @@ final class AppSettings {
             .flatMap(ServiceTier.init(rawValue:)) ?? Defaults.serviceTier
         goalsEnabled = store.object(forKey: Key.goalsEnabled) as? Bool ?? false
         goalCrossProviderEvaluation = store.object(forKey: Key.goalCrossProviderEvaluation) as? Bool ?? false
-        autoNameAgents = store.object(forKey: Key.autoNameAgents) as? Bool ?? Defaults.autoNameAgents
+        // Naming is always on now; only its model is a setting.
+        store.removeObject(forKey: "shepherd.agent.autoName")
         namingModel = store.string(forKey: Key.namingModel) ?? ""
         skillsInSlashMenu = store.object(forKey: Key.skillsInSlashMenu) as? Bool ?? Defaults.skillsInSlashMenu
         hiddenSlashCommands = Set(store.stringArray(forKey: Key.hiddenSlashCommands) ?? [])
@@ -601,7 +594,6 @@ final class AppSettings {
         defaultServiceTier = Defaults.serviceTier
         goalsEnabled = false
         goalCrossProviderEvaluation = false
-        autoNameAgents = Defaults.autoNameAgents
         namingModel = ""
         skillsInSlashMenu = Defaults.skillsInSlashMenu
         hiddenSlashCommands = []
