@@ -17,7 +17,7 @@ struct KeyboardSettings: View {
 
     private static let groups: [(title: String, actions: [ShortcutAction])] = [
         ("Agents", [.newAgent, .newAgentOptions, .newSpace, .renameAgent, .nextAgent, .previousAgent, .deleteAgent, .commandPalette]),
-        ("Thread", [.stopAgent, .modelPicker, .previousTurn, .nextTurn, .inspectSubagent]),
+        ("Thread", [.stopAgent, .modelPicker, .cycleThinkingLevel, .previousTurn, .nextTurn, .inspectSubagent]),
         ("Window", [.toggleSidebar, .toggleRightPane]),
         ("Terminal", [.newTerminal, .closeTerminal, .nextTerminal, .previousTerminal,
                       .toggleTerminal, .maximizeTerminal]),
@@ -26,7 +26,7 @@ struct KeyboardSettings: View {
     ]
 
     var body: some View {
-        SettingsPage(title: "Keyboard", explanation: "Click a shortcut to record a new one. Shortcuts must include ⌘.") {
+        SettingsPage(title: "Keyboard", explanation: "Click a shortcut to record a new one. Shortcuts must include ⌘, except ⇧⇥ for cycling thinking levels.") {
             ForEach(Self.groups, id: \.title) { group in
                 SettingsGroup(title: group.title) {
                     ForEach(group.actions, id: \.self) { action in

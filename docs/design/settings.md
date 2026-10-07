@@ -316,7 +316,7 @@ automated step of the worktree flows can be turned off here.
 
 ## Keyboard (SettingsKeyboard)
 
-"Click a shortcut to record a new one. Shortcuts must include ⌘."
+"Click a shortcut to record a new one. Shortcuts must include ⌘, except ⇧⇥ for cycling thinking levels."
 
 - **A shortcut row:** the action's name as its title, in sentence case with "…" when it opens a
   sheet ("New agent with options…"), and its keycaps trailing. Clicking the keycaps records: they
@@ -325,9 +325,9 @@ automated step of the worktree flows can be turned off here.
   reason as the row's problem. A changed shortcut shows Reset (`.nwLink`, Geist 12, 6pt either
   side) just before its keycaps, `NW.Space.xs` away. A change reaches every menu, keycap, and
   terminal surface at once. The recorder's hit area is at least `NW.Height.controlS`, while its
-  keycaps keep the existing Settings tokens. Cycle thinking level (⇧⇥ in the composer,
-  [Cycle thinking requirement](boards/CycleThinking.md)) still works and stays in `KeybindingsStore`,
-  but the page no longer lists it: the SettingsKeyboard board (revision 1083) draws no such row.
+  keycaps keep the existing Settings tokens. The Cycle thinking level row (after Choose model…)
+  follows the user's [Cycle thinking requirement](boards/CycleThinking.md), which the
+  SettingsKeyboard board (revision 1083) does not draw (departures).
 - **Groups on the board:**
   - Agents: New agent in current checkout ⌘N · New agent with options… ⇧⌘T · New space… ⇧⌘N · Rename
     agent… ⌘R · Next agent · Previous agent · Command palette. The board shows Next agent, Previous
