@@ -502,6 +502,18 @@ struct AgentLaunchCommandTests {
         #expect(MCPLaunch.forAgents(settings: settings, store: store, install: install) == nil)
     }
 
+    /// An agent in a subproject also loads the extension that shares its parent's MCP servers, told
+    /// the parent's folder; a top-level project's launch is unchanged.
+    @Test func aSubprojectsLaunchSharesItsParentsServers() throws {
+        let base = MCPLaunch(extensions: MCPLaunch.builtIns, environment: ["SHEPHERD_MCP_SECRETS": ""])
+        let install = { "/tmp/support/shepherd-mcp-parent.ts" }
+        #expect(base.sharingParent(nil, install: install) == base)
+        let shared = base.sharingParent("/code/acme", install: install)
+        #expect(shared.extensions == MCPLaunch.builtIns + ["/tmp/support/shepherd-mcp-parent.ts"])
+        #expect(shared.environment["SHEPHERD_PARENT_PROJECT"] == "/code/acme")
+        #expect(shared.environment["SHEPHERD_MCP_SECRETS"] == "", "the user's own MCP launch is kept")
+    }
+
     /// Watchers must never create watchers.
     @Test func automationAgentsAreMarked() {
         #expect(command(isAutomation: true).env["SHEPHERD_AUTOMATION"] == "1")
