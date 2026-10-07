@@ -11,6 +11,7 @@ struct ProjectsHost: Equatable, Identifiable {
     var endpointID: UUID?
     var supportsDetails = true
     var supportsMCP = true
+    var supportsProjectTrust = true
     var unavailable: String?
     var known: [ProjectSummary]
 }
@@ -34,6 +35,11 @@ final class ProjectsModel {
     var mcpSignIn: MCPSignInFlow?
     @ObservationIgnored var mcpSignOut: Task<Void, Never>?
     var mcpSignedIn: Set<String> = []
+    var mcpProjectTrusted: Bool?
+    var mcpTrustError: String?
+    var mcpTrustChecking = false
+    var mcpTrustSaving = false
+    @ObservationIgnored var mcpTrustRequestID = UUID()
     private(set) var hosts: [ProjectsHost] = []
     private(set) var rows: [ProjectsRow] = []
     private(set) var visible: [ProjectsRow] = []
@@ -100,7 +106,7 @@ final class ProjectsModel {
 
     func deriveMCP() {
         mcp = ProjectMCPConfiguration(text: draft, path: selectedFile?.path ?? ".pi/mcp.json", host: selected?.host.name ?? "This Mac",
-                                      signedIn: mcpSignedIn, canSignIn: selected?.host.supportsMCP == true)
+                                      signedIn: mcpSignedIn, canSignIn: selected?.host.supportsMCP == true, projectTrusted: mcpProjectTrusted)
     }
     private(set) var tokenText = "empty"
     private(set) var modifiedAt: Double?
@@ -201,6 +207,8 @@ final class ProjectsModel {
     func open(_ row: ProjectsRow) async {
         closeMCPSignIn()
         mcpSignedIn = []
+        mcpProjectTrusted = nil; mcpTrustError = nil
+        mcpTrustRequestID = UUID(); mcpTrustChecking = false
         guard row.unavailable == nil else { error = row.unavailable; return }
         generation += 1
         let token = generation
@@ -247,6 +255,8 @@ final class ProjectsModel {
     func read(_ file: ProjectFile) async {
         closeMCPSignIn()
         mcpSignedIn = []
+        mcpProjectTrusted = nil; mcpTrustError = nil
+        mcpTrustRequestID = UUID(); mcpTrustChecking = false
         guard let selected, selected.unavailable == nil else { return }
         generation += 1
         let token = generation
@@ -362,7 +372,7 @@ extension ShepherdViewModel {
             let reason: String? = connection.phase == .connected
                 ? connection.supportsProjects ? nil : "Update Shepherd on this host to edit project settings."
                 : "Host offline. Reconnect in Settings > Remote to edit its projects."
-            return ProjectsHost(id: connection.id.uuidString, name: connection.config.name, endpointID: connection.endpointID, supportsDetails: connection.supportsProjectDetails, supportsMCP: connection.supportsProjectMCP, unavailable: reason, known: known(connection.state, reason: reason))
+            return ProjectsHost(id: connection.id.uuidString, name: connection.config.name, endpointID: connection.endpointID, supportsDetails: connection.supportsProjectDetails, supportsMCP: connection.supportsProjectMCP, supportsProjectTrust: connection.supportsProjectTrust, unavailable: reason, known: known(connection.state, reason: reason))
         }
     }
 

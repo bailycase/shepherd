@@ -36,7 +36,23 @@ enum ProjectMCPScript {
 
         let session;
         try {
-          const { server, config: original, shared, directory, command } = await configured;
+          const { server, config: original, shared, directory, command, userHome, canonicalDirectory } = await configured;
+          if (["trust-status", "trust"].includes(command)) {
+            // Reuse Pi's canonical paths, inherited decisions and interprocess lock. No resource
+            // loader, project extensions, packages, MCP connections or model runtime run here.
+            const { ProjectTrustStore, SettingsManager } = await import(pathToFileURL(process.argv[2]).href);
+            const fs = await import("node:fs");
+            const resolvedDirectory = fs.realpathSync(directory);
+            if (resolvedDirectory !== canonicalDirectory) throw new Error("The project folder changed. Reload the project before approving it.");
+            const isHome = resolvedDirectory === fs.realpathSync(userHome);
+            if (command === "trust" && isHome) throw new Error("Home cannot be approved");
+            const store = new ProjectTrustStore(process.argv[3]);
+            if (command === "trust") store.set(canonicalDirectory, true);
+            const settings = SettingsManager.create(directory, process.argv[3], { projectTrusted: false });
+            const trusted = !isHome && (store.get(directory) ?? settings.getDefaultProjectTrust() === "always");
+            send({ type: "event", event: { type: "info", message: JSON.stringify({ projectTrusted: trusted }) } });
+            send({ type: "done", provider: "project", credential: "approval" });
+          } else {
           if (!/^[A-Za-z0-9_-]+$/.test(server) || !["login", "logout"].includes(command)) throw new Error("Invalid action");
           const config = { url: original.url, headers: original.headers, oauth: original.oauth, exposure: "hidden", timeout: 30 };
           // Match the shared-file registration's expansion and separation from Shepherd's own secrets.
@@ -111,9 +127,10 @@ enum ProjectMCPScript {
           await session.prompt(`/mcp ${command} ${server}`);
           send(failed ? { type: "failed", code: "other", reason: "The MCP server couldn't complete sign-in. Check its URL and OAuth settings, then try again." }
             : { type: "done", provider: server, credential: "oauth" });
+          }
         } catch {
           // Never return provider responses, project header values, tokens or redirect codes as errors.
-          send({ type: "failed", code: "other", reason: "Project MCP authentication failed. Check the server configuration and try again." });
+          send({ type: "failed", code: "other", reason: "The project MCP action failed. Check the configuration and try again." });
         } finally {
           if (session) {
             await session.extensionRunner.emit({ type: "session_shutdown", reason: "exit" });

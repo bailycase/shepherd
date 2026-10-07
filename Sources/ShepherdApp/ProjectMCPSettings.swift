@@ -12,6 +12,7 @@ struct ProjectMCPSettings: View {
     @State private var sheet: MCPSheet?
     @State private var removing: String?
     @State private var removeError: String?
+    @State private var trustProject: ProjectsRow?
 
     init(model: ProjectsModel, initiallyExpanded: String? = nil, initialQuery: String = "", copyJSON: @escaping (String) -> Void = {
         NSPasteboard.general.clearContents()
@@ -39,6 +40,21 @@ struct ProjectMCPSettings: View {
                     Task { await model.navigate(.file(file)) }
                 }.buttonStyle(.nw(.secondary)).disabled(model.fileLoading || model.saving)
             }
+            if model.selectedFile?.path == ".pi/mcp.json" {
+                VStack(alignment: .leading, spacing: NW.Space.m) {
+                    Text(model.mcpTrustTitle).font(.nw(.ui, weight: .semibold)).foregroundStyle(Color.nw.textPrimary)
+                    Text(model.mcpTrustExplanation).font(.nw(.caption)).foregroundStyle(Color.nw.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if model.mcpProjectTrusted == false, model.selected?.host.supportsProjectTrust == true {
+                        Button("Trust this project…") { model.mcpTrustError = nil; trustProject = model.selected }
+                            .buttonStyle(.nw(.secondary)).disabled(!model.mcpEditable || model.dirty || model.mcpTrustChecking)
+                    } else if model.mcpTrustError != nil {
+                        Button("Check again") { Task { await model.refreshMCPCredentials() } }
+                            .buttonStyle(.nw(.secondary)).disabled(!model.mcpEditable || model.mcpTrustChecking)
+                    }
+                }
+                .padding(NW.Space.l).frame(maxWidth: .infinity, alignment: .leading).nwCard()
+            }
             if let problem = model.mcp.problem {
                 NWInlineProblem(problem)
             } else {
@@ -62,6 +78,9 @@ struct ProjectMCPSettings: View {
         .onDisappear { model.closeMCPSignIn() }
         .sheet(item: Binding(get: { model.mcpSignIn }, set: { if $0 == nil { model.closeMCPSignIn() } })) { flow in
             MCPSignInSheetHost(flow: flow) { model.closeMCPSignIn() }
+        }
+        .sheet(item: $trustProject) { project in
+            ProjectMCPTrustConfirmation(model: model, project: project) { trustProject = nil }
         }
         .sheet(item: $sheet) { selection in
             switch selection {
