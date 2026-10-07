@@ -6,7 +6,7 @@ import ShepherdTestSupport
 import ShepherdUI
 @testable import ShepherdApp
 
-@Suite("Project MCP approval previews", .mainActorExclusive)
+@Suite("Project MCP approval previews", .mainActorExclusive, .enabled(if: Preview.enabled))
 @MainActor
 struct ProjectMCPTrustPreviewTests {
     @Test func everyApprovalAndCredentialStateRendersFromProjectRequests() async throws {
