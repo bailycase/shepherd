@@ -33,3 +33,29 @@ struct ProjectsProtocolTests {
         #expect(try NDJSON.decode(RemoteReply.self, from: NDJSON.encode(value)) == value)
     }
 }
+
+/// Subprojects (Settings ▸ Projects, parents and subprojects): which project a folder sits inside,
+/// and the listing's new fields across an older host.
+@Suite("Project nesting")
+struct ProjectNestingTests {
+    @Test(arguments: [
+        ("/code/acme/apps/web", "/code/acme"),
+        ("/code/acme/apps/web/admin", "/code/acme"),
+        ("/code/acme", nil),
+        ("/code/acme-landing", nil),
+        ("/code/payments", nil),
+    ] as [(String, String?)])
+    func aProjectsParentIsTheOutermostProjectThatHoldsIt(directory: String, parent: String?) {
+        let projects = ["/code/acme", "/code/acme/apps/web", "/code/acme/apps/web/admin", "/code/acme-landing", "/code/payments", "/"]
+        #expect(ProjectNesting.parent(of: directory, among: projects) == parent)
+    }
+
+    @Test func anOlderHostsListingDecodesWithNoParentAndNoServers() throws {
+        let old = #"{"directory":"/a","name":"a","displayPath":"~/a","summary":"AGENTS.md only","minimal":true}"#
+        let project = try JSONDecoder().decode(ProjectSummary.self, from: Data(old.utf8))
+        #expect(project.parent == nil && project.mcpServers.isEmpty && project.inheritedMCP.isEmpty)
+        let nested = ProjectSummary(directory: "/a/web", name: "web", displayPath: "~/a/web", summary: "1 MCP",
+                                    parent: "/a", mcpServers: ["local"], inheritedMCP: ["docs", "shared"])
+        #expect(try JSONDecoder().decode(ProjectSummary.self, from: JSONEncoder().encode(nested)) == nested)
+    }
+}

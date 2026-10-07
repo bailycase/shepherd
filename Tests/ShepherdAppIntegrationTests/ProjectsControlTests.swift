@@ -50,7 +50,7 @@ struct ProjectsControlTests {
         let model = vm.projects
         try await eventuallyOnMain("the project row") { model.visible.count == 1 }
         window.layout()
-        let open = try ControlPress.press("Open dashboard on This Mac", under: window.host)
+        let open = try ControlPress.press("Open dashboard", under: window.host)
         #expect(ControlPress.undersized([open], minimum: .desktop).isEmpty)
         try await eventuallyOnMain("the first project file") { model.fileLoaded }
         for (category, label) in [(ProjectFile.Category.instructions, "Instructions"), (.pi, "Settings"), (.skills, "Resources"), (.mcp, "MCP servers")] {
@@ -143,7 +143,7 @@ struct ProjectsControlTests {
         try ControlPress.press("Clear search", under: window.host)
         try await eventuallyOnMain("the cleared project filter") { model.filter.isEmpty && model.visible.count == 1 }
         window.layout()
-        let add = try ControlPress.press("Add project…", under: window.host)
+        let add = try ControlPress.press("Add project", under: window.host)
         #expect(ControlPress.undersized([add], minimum: .desktop).isEmpty)
         try await eventuallyOnMain("the folder picker") { window.window.attachedSheet != nil }
         let sheet = try #require(window.window.attachedSheet?.contentView)
@@ -169,5 +169,63 @@ struct ProjectsControlTests {
         }
         try ControlPress.press("Back to Shepherd", under: window.host)
         #expect(!vm.showSettings)
+    }
+
+    /// The tree (SettingsProjects, parents and subprojects): a folder inside another project sits
+    /// under it, the disclosure folds it away and back, Add subproject opens the folder picker in the
+    /// parent's folder, and a subproject's Open project opens it.
+    @Test func theTreesDisclosureAddSubprojectAndOpenProjectWorkThroughAccessibility() async {
+        await #expect(processExitsWith: .success) {
+            await recordingErrors { try await Self.pressTree() }
+        }
+    }
+
+    private static func pressTree() async throws {
+        AccessibilityNode.enable()
+        let scratch = try ScratchServer()
+        defer { scratch.stop() }
+        let acme = scratch.dir.appendingPathComponent("acme").resolvingSymlinksInPath()
+        let web = acme.appendingPathComponent("apps/web")
+        try FileManager.default.createDirectory(at: web, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: acme.appendingPathComponent(".pi"), withIntermediateDirectories: true)
+        try Data(#"{"mcpServers": {"docs": {"command": "true"}, "shared": {"command": "true"}}}"#.utf8).write(to: acme.appendingPathComponent(".pi/mcp.json"))
+        try await scratch.server.putState(ShepherdState(spaces: [Space(name: "acme", path: acme.path), Space(name: "web", path: web.path)]))
+        let defaults = ScratchDefaults()
+        let vm = ShepherdViewModel(server: scratch.server, settings: AppSettings(store: defaults), keybindings: KeybindingsStore(store: defaults),
+                                   themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .dark),
+                                   remoteHosts: RemoteHostStore(defaults: defaults), sidebarDefaults: defaults, themeInstaller: { _ in },
+                                   restoresAgentsAtLaunch: false, checkoutReader: nil)
+        vm.showSettings = true; vm.settingsSection = .projects
+        let window = OffscreenWindow(size: CGSize(width: 1440, height: 1000), dark: true, RootView(vm: vm))
+        defer { window.close() }
+        let model = vm.projects
+        try await eventuallyOnMain("the tree") { model.visible.map(\.project.name) == ["acme", "web"] }
+        #expect(model.visible[1].configuration == "2 inherited MCP servers")
+
+        try await eventuallyOnMain("the disclosure") { window.layout(); return window.controls().contains { $0.label == "Collapse acme" } }
+        let collapse = try window.press("Collapse acme")
+        #expect(ControlPress.undersized([collapse], minimum: .desktop).isEmpty, "the disclosure's hit area is \(collapse.frame)")
+        try await eventuallyOnMain("web folded away") { model.visible.map(\.project.name) == ["acme"] }
+        try await eventuallyOnMain("the disclosure to read Expand") { window.controls().contains { $0.label == "Expand acme" } }
+        try window.press("Expand acme")
+        try await eventuallyOnMain("web back") { model.visible.count == 2 }
+
+        try await eventuallyOnMain("Add subproject") { window.controls().contains { $0.label == "Add subproject to acme" } }
+        let add = try window.press("Add subproject to acme")
+        #expect(ControlPress.undersized([add], minimum: .desktop).isEmpty)
+        try await eventuallyOnMain("the folder picker in acme's folder") {
+            guard let sheet = window.window.attachedSheet?.contentView else { return false }
+            sheet.layoutSubtreeIfNeeded()
+            // The listing is acme's: its apps folder is a row.
+            return AccessibilityNode.all(under: sheet).contains { $0.label == "apps" }
+        }
+        let sheet = try #require(window.window.attachedSheet?.contentView)
+        try ControlPress.press("Cancel", under: sheet)
+        try await eventuallyOnMain("the folder picker to close") { window.window.attachedSheet == nil }
+
+        try await eventuallyOnMain("Open project") { window.controls().contains { $0.label == "Open project" } }
+        let open = try window.press("Open project")
+        #expect(ControlPress.undersized([open], minimum: .desktop).isEmpty)
+        try await eventuallyOnMain("web's detail") { model.selected?.project.name == "web" }
     }
 }
