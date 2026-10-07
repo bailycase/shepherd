@@ -191,7 +191,8 @@ final class ThreadTailGuard {
         NWRenderProbe.tick("thread.tailRepair")
         if !rowsInView { await walk(by: -1, until: { self.rowsInView }, doubling: true) }
         guard following else { return }
-        guard !tailInView else {
+        // A cached clear marker is not a landing if the walk found no content.
+        if rowsInView && tailInView {
             reachTheEnd()
             return
         }
