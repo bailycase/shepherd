@@ -204,7 +204,10 @@ final class RealPi: @unchecked Sendable {
         """
 
     static func launch(engine: BundledPiEngine) async throws -> RealPi {
-        let host = try ScratchServer()
+        let directory = try makeScratchDirectory("real-pi")
+        let setup = PiSetup(engine: .bundled(engine), home: directory.appendingPathComponent("support/pi"),
+                            userHome: directory.appendingPathComponent("home").path)
+        let host = try ScratchServer(dir: directory, pi: setup)
         do {
             let files = FileManager.default
             let userHome = host.dir.appendingPathComponent("home", isDirectory: true)

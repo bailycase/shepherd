@@ -13,6 +13,9 @@ public enum RemoteProjectsRequest: Codable, Hashable, Sendable {
     /// Explicit, host-owned OAuth actions. No server configuration or tokens cross this API.
     case mcp(directory: String, file: String, action: ProjectMCPAction)
     public var requiresMCP: Bool { if case .mcp = self { true } else { false } }
+    public var requiresProjectTrust: Bool {
+        if case .mcp(_, _, .approveProject) = self { true } else { false }
+    }
     case read(directory: String, file: String)
     case save(directory: String, file: String, text: String, expected: String?)
 }
@@ -81,6 +84,8 @@ public enum RemoteProjectsResult: Codable, Hashable, Sendable {
 
 public enum ProjectMCPAction: Codable, Hashable, Sendable {
     case credentials
+    /// Explicit user confirmation covers all Pi project resources, not only MCP.
+    case approveProject
     case login(server: String)
     case poll(id: UUID)
     case complete(id: UUID, redirectURL: String)
@@ -95,10 +100,12 @@ public struct ProjectMCPResult: Codable, Hashable, Sendable {
     public var authorizationURL: String?
     public var signedIn: [String]
     public var message: String?
+    /// Eligibility to load project resources, never a live thread connection. Nil on old hosts.
+    public var projectTrusted: Bool?
     public init(id: UUID? = nil, phase: Phase = .done, authorizationURL: String? = nil,
-                signedIn: [String] = [], message: String? = nil) {
+                signedIn: [String] = [], message: String? = nil, projectTrusted: Bool? = nil) {
         self.id = id; self.phase = phase; self.authorizationURL = authorizationURL
-        self.signedIn = signedIn; self.message = message
+        self.signedIn = signedIn; self.message = message; self.projectTrusted = projectTrusted
     }
 }
 

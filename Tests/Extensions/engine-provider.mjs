@@ -28,6 +28,15 @@ const server = http.createServer(async (req, res) => {
   res.writeHead(200, { "content-type": "text/event-stream" });
   const finish = (reason) => { if (!closed) res.end(chunk({}, reason, usage) + "data: [DONE]\n\n"); };
 
+  const lastTool = body.messages.filter(message => message.role === "assistant").at(-1)?.tool_calls?.at(-1)?.function?.name;
+  if (text === "mcp probe" && lastTool !== "codemode") {
+    const name = lastTool === "tool_search" ? "codemode" : "tool_search";
+    const args = name === "tool_search" ? { query: "Echo the text back", limit: 5 } : {
+      code: 'const names = ALL_TOOLS.filter(t => t.name.startsWith("mcp__probe__")); text({mcpNames:names.map(t => t.name)}); if (names.some(t => t.name === "mcp__probe__echo")) text(await tools.mcp__probe__echo({text:"approved scratch project"}));'
+    };
+    res.write(chunk({ tool_calls: [{ index: 0, id: "call_" + name, type: "function", function: { name, arguments: JSON.stringify(args) } }] }));
+    return finish("tool_calls");
+  }
   if (last.role === "tool") {
     res.write(chunk({ content: "tool done" }));
     return finish("stop");

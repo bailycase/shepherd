@@ -22,7 +22,7 @@ actor ProjectMCPService {
     private var resolvedURLs: [String: String] = [:]
     init(pi: PiSetup, timeout: TimeInterval = ProjectMCPService.timeout) { self.pi = pi; self.timeout = timeout }
 
-    func request(directory: String, file: String, text: String, action: ProjectMCPAction, owner: UUID?) async throws -> ProjectMCPResult {
+    func request(directory: String, file: String, text: String, action: ProjectMCPAction, owner: UUID?, canonicalDirectory: String? = nil) async throws -> ProjectMCPResult {
         try Task.checkCancellation()
         switch action {
         case .poll(let id), .complete(let id, _), .cancel(let id):
@@ -35,6 +35,11 @@ actor ProjectMCPService {
                 run.bridge.send(.answer(id: "redirect", value: redirect))
             }
             return runs[id]?.result ?? run.result
+        case .approveProject:
+            guard file == ".pi/mcp.json", !PiLaunch.isHomeFolder(directory, userHome: pi.userHome) else {
+                throw ProjectFileError("protected", "The home folder cannot be trusted as a project.")
+            }
+            return .init(projectTrusted: try await projectTrust(directory: directory, approve: true, canonicalDirectory: canonicalDirectory ?? PiHome.canonical(directory)))
         case .credentials:
             let entries = try servers(text)
             let data = try? Data(contentsOf: pi.home.appendingPathComponent("mcp-auth.json"))
@@ -47,7 +52,12 @@ actor ProjectMCPService {
                 let state = (auth[key] ?? auth[canonical]) as? [String: Any]
                 return (state?["tokens"] as? [String: Any])?["access_token"] is String ? name : nil
             }
-            return .init(signedIn: signed.sorted())
+            guard file == ".pi/mcp.json" else { return .init(signedIn: signed.sorted()) }
+            do {
+                return .init(signedIn: signed.sorted(), projectTrusted: try await projectTrust(directory: directory, approve: false))
+            } catch {
+                return .init(signedIn: signed.sorted(), message: "Couldn't check project approval. Check again before starting a new thread.")
+            }
         case .login(let server), .logout(let server):
             guard runs.values.filter({ $0.result.phase == .waiting }).count + preparing.count < 4 else {
                 throw ProjectFileError("busy", "Too many sign-ins are running. Close one and try again.")
@@ -103,9 +113,43 @@ actor ProjectMCPService {
         }
     }
 
+    /// Reads or saves Pi's decision without starting a session or loading any project code.
+    private func projectTrust(directory: String, approve: Bool, canonicalDirectory: String? = nil) async throws -> Bool {
+        if let problem = await Task.detached(operation: { [pi] in pi.prepare() }).value {
+            throw ProjectFileError("pi", problem.message)
+        }
+        try Task.checkCancellation()
+        guard let package = pi.engine.packageDirectory else { throw ProjectFileError("pi", "Shepherd's pi SDK is unavailable.") }
+        let script = try ProjectMCPScript.install(in: pi.home)
+        let sdk = URL(fileURLWithPath: package).appendingPathComponent(BundledPiEngine.libraryPath).path
+        let bridge = PiSignInBridge(line: PiLaunch.signInBridge(node: pi.engine.node, script: script.path, sdk: sdk, home: pi.files))
+        let expiry = Task {
+            try? await Task.sleep(for: .seconds(10))
+            if !Task.isCancelled { bridge.close() }
+        }
+        defer { expiry.cancel(); bridge.close() }
+        let payload = ["command": approve ? "trust" : "trust-status", "directory": directory, "userHome": pi.userHome, "canonicalDirectory": canonicalDirectory ?? PiHome.canonical(directory)]
+        bridge.send(.answer(id: "config", value: String(decoding: try JSONSerialization.data(withJSONObject: payload), as: UTF8.self)))
+        return try await withTaskCancellationHandler {
+            var trusted: Bool?
+            for await reply in bridge.replies {
+                try Task.checkCancellation()
+                switch reply {
+                case .info(let message):
+                    trusted = (try? JSONSerialization.jsonObject(with: Data(message.utf8)) as? [String: Bool])?["projectTrusted"]
+                case .done:
+                    if let trusted { return trusted }
+                case .failed: throw ProjectFileError("trust", "Project approval couldn't be checked or saved. Try again.")
+                default: break
+                }
+            }
+            throw ProjectFileError("trust", "Project approval didn't finish. Try again.")
+        } onCancel: { bridge.close() }
+    }
+
     private func servers(_ text: String) throws -> [String: [String: Any]] {
         guard let object = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
-              let entries = object["mcpServers"] as? [String: [String: Any]] else {
+              let entries = (object["mcpServers"] ?? [:]) as? [String: [String: Any]] else {
             throw ProjectFileError("invalid", "Enter a valid MCP server configuration before signing in.")
         }
         return entries

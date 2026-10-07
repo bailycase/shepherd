@@ -12,7 +12,7 @@ struct ProjectMCPConfiguration: Equatable {
     var problem: String?
     var native = true
 
-    init(text: String = "", path: String = ".pi/mcp.json", host: String = "This Mac", signedIn: Set<String> = [], canSignIn: Bool = false) {
+    init(text: String = "", path: String = ".pi/mcp.json", host: String = "This Mac", signedIn: Set<String> = [], canSignIn: Bool = false, projectTrusted: Bool? = nil) {
         native = path == ".pi/mcp.json"
         switch MCPConfigFile.parse(Data(text.utf8)) {
         case .invalid(let line):
@@ -64,7 +64,7 @@ struct ProjectMCPConfiguration: Equatable {
             let variables = entry.env.count + entry.headers.count
             return MCPServerRowModel(name: entry.name, kind: entry.kind == .local ? .local : .remote,
                                      endpoint: entry.endpoint, status: enabled ? .idle : .off,
-                                     signIn: canSignIn && Self.usesOAuth(entry) ? (signedIn.contains(entry.name) ? .account("Signed in") : .signIn)
+                                     signIn: canSignIn && Self.usesOAuth(entry) ? (signedIn.contains(entry.name) ? .account("Credentials saved") : .signIn)
                                          : variables > 0 ? .variables(variables) : .unverified,
                                      tools: nil, enabled: enabled)
         }
@@ -74,7 +74,7 @@ struct ProjectMCPConfiguration: Equatable {
             let note = native ? (direct == nil ? "Current mode: \(exposure)." : nil) : "Shared .mcp.json uses Search."
             let signIn: MCPServerDetailModel.SignIn = if canSignIn && Self.usesOAuth(entry) {
                 signedIn.contains(entry.name)
-                    ? .signedIn(account: nil, scopes: [], note: "OAuth · kept fresh by the agent on \(host)")
+                    ? .signedIn(account: nil, scopes: [], note: "OAuth credentials saved on \(host). This does not confirm a thread connection.", title: "Credentials saved")
                     : .needsSignIn(title: "Not signed in", note: "Sign in once on \(host); the agent keeps the token fresh.", again: false)
             } else {
                 .unverified(canSignIn ? "Environment references are read on \(host)." : "Update Shepherd on \(host) to sign in here. Environment references are read on that host.")
@@ -83,7 +83,7 @@ struct ProjectMCPConfiguration: Equatable {
                 signIn: signIn,
                 toolNames: [], toolCount: nil, direct: direct, searchCost: "", directCost: "", chosenNote: note,
                 transport: entry.kind == .local ? "stdio" : entry.transport == .sse ? "Legacy SSE" : "Streamable HTTP",
-                hosts: [.init(name: host, detail: "Not checked yet", mark: .none)], toolsNote: "Not checked on this page.")
+                hosts: [.init(name: host, detail: native && projectTrusted == false ? "Blocked" : "Unchecked", mark: .none)], toolsNote: native && projectTrusted == false ? "New threads cannot load this server until the project is approved." : "Connection and tools are checked in each thread.")
             return (entry.name, detail)
         })
     }

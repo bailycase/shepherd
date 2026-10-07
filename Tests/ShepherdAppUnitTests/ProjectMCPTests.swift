@@ -13,7 +13,7 @@ struct ProjectMCPTests {
         #expect(unsigned.rows.first(where: { $0.name == "header" })?.signIn != .signIn)
         #expect(unsigned.rows.first(where: { $0.name == "local" })?.signIn != .signIn)
         let signed = ProjectMCPConfiguration(text: text, signedIn: ["issues"], canSignIn: true)
-        #expect(signed.rows.first(where: { $0.name == "issues" })?.signIn == .account("Signed in"))
+        #expect(signed.rows.first(where: { $0.name == "issues" })?.signIn == .account("Credentials saved"))
         let oldHost = ProjectMCPConfiguration(text: text, canSignIn: false)
         #expect(oldHost.rows.first(where: { $0.name == "issues" })?.signIn == .unverified)
     }
