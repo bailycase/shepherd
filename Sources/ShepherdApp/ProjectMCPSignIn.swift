@@ -6,11 +6,62 @@ extension ProjectsModel {
     func refreshMCPCredentials() async {
         guard let selected, let file = selectedFile, selected.host.supportsMCP else { return }
         let identity = selected.id, contents = saved
-        if case .mcp(let result) = try? await request(selected.host, .mcp(directory: selected.project.directory, file: file.path, action: .credentials)),
-           self.selected?.id == identity, self.selected?.host.endpointID == selected.host.endpointID,
-           selectedFile?.path == file.path, saved == contents {
+        let requestID = UUID()
+        mcpTrustRequestID = requestID
+        mcpTrustChecking = true
+        defer { if mcpTrustRequestID == requestID { mcpTrustChecking = false } }
+        do {
+            guard case .mcp(let result) = try await request(selected.host, .mcp(directory: selected.project.directory, file: file.path, action: .credentials)),
+                  mcpTrustRequestID == requestID, self.selected?.id == identity, self.selected?.host.endpointID == selected.host.endpointID,
+                  selectedFile?.path == file.path, saved == contents else { return }
             mcpSignedIn = Set(result.signedIn)
+            mcpProjectTrusted = result.projectTrusted
+            mcpTrustError = result.message
             deriveMCP()
+        } catch {
+            guard mcpTrustRequestID == requestID, self.selected?.id == identity, self.selected?.host.endpointID == selected.host.endpointID,
+                  selectedFile?.path == file.path, saved == contents else { return }
+            mcpProjectTrusted = nil
+            mcpTrustError = "Couldn't check project approval. Check again before starting a new thread."
+        }
+    }
+
+    var mcpTrustTitle: String {
+        if selected?.unavailable != nil { return "Project host unavailable" }
+        if mcpTrustChecking { return "Checking project approval…" }
+        if mcpTrustError != nil || selected?.host.supportsProjectTrust != true || mcpProjectTrusted == nil { return "Project approval unavailable" }
+        return mcpProjectTrusted == true ? "Project configuration approved" : "Project configuration blocked"
+    }
+
+    var mcpTrustExplanation: String {
+        if let reason = selected?.unavailable { return reason }
+        if mcpTrustChecking { return "Saved credentials don't confirm that threads can load this project's servers." }
+        if let mcpTrustError { return mcpTrustError }
+        if selected?.host.supportsProjectTrust != true || mcpProjectTrusted == nil { return "Update Shepherd on the host to check and approve project configuration." }
+        return mcpProjectTrusted == true
+            ? "New threads may load this project's MCP servers when MCP is enabled. Each thread checks its own connection and tools. Restart existing threads to apply this approval."
+            : "This folder hasn't been approved. New threads won't load its MCP servers, settings, extensions or packages."
+    }
+
+    func approveMCPProject(_ expected: ProjectsRow) async -> Bool {
+        guard selected?.id == expected.id, selected?.host.endpointID == expected.host.endpointID, mcpEditable, !dirty, !mcpTrustSaving, let selected, selected.host.supportsProjectTrust,
+              let file = selectedFile, file.path == ".pi/mcp.json" else { return false }
+        mcpTrustRequestID = UUID(); mcpTrustChecking = false
+        mcpTrustSaving = true
+        defer { mcpTrustSaving = false }
+        do {
+            guard case .mcp(let result) = try await request(selected.host, .mcp(directory: selected.project.directory, file: file.path, action: .approveProject)),
+                  self.selected?.id == selected.id, self.selected?.host.endpointID == selected.host.endpointID,
+                  selectedFile?.path == file.path else { return false }
+            guard result.projectTrusted == true else { throw ProjectFileError("trust", "Project approval wasn't saved. Try again.") }
+            mcpProjectTrusted = true; mcpTrustError = nil
+            deriveMCP()
+            return true
+        } catch {
+            guard self.selected?.id == selected.id, self.selected?.host.endpointID == selected.host.endpointID,
+                  selectedFile?.path == file.path else { return false }
+            mcpTrustError = "Project approval couldn't be saved. Try again."
+            return false
         }
     }
 

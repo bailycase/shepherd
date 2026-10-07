@@ -24,6 +24,71 @@ struct ProjectMCPControlTests {
         await #expect(processExitsWith: .success) { await recordingErrors { try await Self.checkSignIn() } }
     }
 
+    @Test func projectApprovalRequiresConfirmationAndTargetsOnlyTheSelectedHostAndFolder() async {
+        await #expect(processExitsWith: .success) { await recordingErrors { try await Self.checkTrust() } }
+    }
+
+    private static func checkTrust() async throws {
+        AccessibilityNode.enable()
+        let fixture = try await Fixture()
+        defer { fixture.scratch.stop() }
+        var project = try #require(fixture.model.selected)
+        project.host.id = "selected-host"
+        var approved = false, fail = true, checkingFails = false
+        var writes = 0
+        let model = ProjectsModel { host, request in
+            if case .mcp(let directory, let file, let action) = request {
+                #expect(host.id == project.host.id && directory == project.project.directory && file == ".pi/mcp.json")
+                switch action {
+                case .credentials:
+                    return .mcp(.init(signedIn: ["docs"], message: checkingFails ? "Couldn't check project approval." : nil,
+                                     projectTrusted: checkingFails ? nil : approved))
+                case .approveProject:
+                    writes += 1
+                    if fail { throw ProjectFileError("fixture", "Approval refused") }
+                    approved = true
+                    return .mcp(.init(projectTrusted: true))
+                default: break
+                }
+            }
+            return try await fixture.scratch.server.projects.request(request, state: fixture.scratch.server.state)
+        }
+        await model.load([project.host]); await model.open(project); await model.navigate(.category(.mcp))
+        let window = OffscreenWindow(size: CGSize(width: 1040, height: 850), dark: false,
+                                     ProjectMCPSettings(model: model, initiallyExpanded: "docs"))
+        defer { window.close() }
+        func hasText(_ text: String) -> Bool { window.elements().contains { $0.label?.contains(text) == true || $0.value?.contains(text) == true } }
+        try await eventuallyOnMain("approval block reason") { hasText("Project configuration blocked") }
+        #expect(hasText("This folder hasn't been approved"))
+        #expect(model.mcpSignedIn == ["docs"] && model.mcpProjectTrusted == false)
+        #expect(ControlPress.undersized(window.controls(), minimum: .desktop).isEmpty)
+        try window.press("Trust this project…")
+        var dialog = try await Self.sheet(window)
+        #expect(ControlPress.undersized(ControlPress.controls(in: dialog), minimum: .desktop).isEmpty)
+        try ControlPress.press("Cancel", under: dialog)
+        try await eventuallyOnMain("cancel closes without approval") { window.window.attachedSheet == nil }
+        #expect(writes == 0 && !approved)
+        try window.press("Trust this project…")
+        dialog = try await Self.sheet(window)
+        try ControlPress.press("Trust project", under: dialog)
+        try await eventuallyOnMain("failed approval keeps confirmation open") { model.mcpTrustError != nil && !model.mcpTrustSaving }
+        #expect(window.window.attachedSheet != nil && writes == 1 && !approved)
+        fail = false
+        try ControlPress.press("Trust project", under: dialog)
+        try await eventuallyOnMain("approval visible after retry") { window.window.attachedSheet == nil && model.mcpProjectTrusted == true }
+        #expect(writes == 2 && hasText("Project configuration approved"))
+        #expect(window.element("Trust this project…") == nil)
+        checkingFails = true
+        await model.refreshMCPCredentials()
+        try await eventuallyOnMain("check failure offers retry") { window.element("Check again") != nil }
+        checkingFails = false
+        try window.press("Check again")
+        try await eventuallyOnMain("check retry restores approval") { model.mcpProjectTrusted == true && model.mcpTrustError == nil }
+        #expect(writes == 2)
+        #expect(await model.approveMCPProject(.init(host: project.host, project: .init(directory: "/different", name: "other", displayPath: "/different", summary: "other", minimal: true))) == false)
+        #expect(writes == 2, "A stale confirmation cannot approve a different project")
+    }
+
     private static func checkSignIn() async throws {
         AccessibilityNode.enable()
         let fixture = try await Fixture()
@@ -47,7 +112,8 @@ struct ProjectMCPControlTests {
                 #expect(selectedHost.id == host.host.id && directory == host.project.directory && path == file.path)
                 actions.append(action)
                 switch action {
-                case .credentials: return .mcp(.init(signedIn: signedIn ? ["docs"] : []))
+                case .credentials: return .mcp(.init(signedIn: signedIn ? ["docs"] : [], projectTrusted: false))
+                case .approveProject: return .mcp(.init(projectTrusted: true))
                 case .login: return .mcp(.init(id: id, phase: .waiting, authorizationURL: auth))
                 case .poll:
                     if fail { return .mcp(.init(id: id, phase: .failed, message: "Fixture sign-in refused.")) }
@@ -66,8 +132,8 @@ struct ProjectMCPControlTests {
         var opened = 0, copied = ""
         flowModel.openMCPURL = { _ in opened += 1 }
         flowModel.copyMCPLink = { copied = $0 }
-        let window = OffscreenWindow(size: CGSize(width: 1000, height: 750), dark: true,
-                                     ProjectMCPSettings(model: flowModel, initiallyExpanded: "docs"))
+        let window = OffscreenWindow(size: CGSize(width: 740, height: 900), dark: true,
+                                     ProjectMCPSettings(model: flowModel, initiallyExpanded: "docs").frame(width: 740, height: 900))
         defer { window.close() }
         try await eventuallyOnMain("project sign-in") { window.element("Sign in") != nil }
         try window.press("Sign in", nth: 0)
@@ -87,6 +153,12 @@ struct ProjectMCPControlTests {
         try await eventuallyOnMain("signed in credentials refreshed") { flowModel.mcpSignedIn.contains("docs") }
         try ControlPress.press("Done", under: try await Self.sheet(window))
         try await eventuallyOnMain("success sheet closed") { window.window.attachedSheet == nil }
+        #expect(ControlPress.undersized(window.controls(), minimum: .desktop).isEmpty)
+        try window.press("Sign in again")
+        let again = try await Self.sheet(window)
+        try await eventuallyOnMain("narrow sign-in again finishes") { ControlPress.controls(in: again).contains { $0.label == "Done" } }
+        try ControlPress.press("Done", under: again)
+        try await eventuallyOnMain("narrow sign-in again sheet closed") { window.window.attachedSheet == nil }
         try window.press("Sign out")
         try await eventuallyOnMain("signed out") { !flowModel.mcpSignedIn.contains("docs") && actions.contains(.logout(server: "docs")) }
         fail = true; finish = false

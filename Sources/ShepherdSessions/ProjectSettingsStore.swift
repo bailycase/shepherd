@@ -55,11 +55,14 @@ public final class ProjectSettingsStore: @unchecked Sendable {
                 return .mcp(try await mcp.request(directory: directory, file: file, text: "", action: action, owner: owner))
             default: break
             }
+            let canonicalDirectory = PiHome.canonical(directory)
             let value = try await self.request(.read(directory: directory, file: file), state: state)
-            guard case .text(let text) = value, let contents = text.text else {
-                throw ProjectFileError("missing", "Save the server before signing in.")
-            }
-            return .mcp(try await mcp.request(directory: directory, file: file, text: contents, action: action, owner: owner))
+            guard case .text(let text) = value else { throw ProjectFileError("protocol", "Unexpected project file reply.") }
+            let contents: String
+            if let saved = text.text { contents = saved }
+            else if action == .credentials || action == .approveProject { contents = "{}" }
+            else { throw ProjectFileError("missing", "Save the server before signing in.") }
+            return .mcp(try await mcp.request(directory: directory, file: file, text: contents, action: action, owner: owner, canonicalDirectory: canonicalDirectory))
         }
         if case .open(let directory, let file) = request {
             let value = try await self.request(.read(directory: directory, file: file), state: state)

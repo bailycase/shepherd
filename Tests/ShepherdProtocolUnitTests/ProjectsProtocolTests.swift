@@ -5,6 +5,7 @@ import ShepherdProtocol
 @Suite("Project settings protocol")
 struct ProjectsProtocolTests {
     @Test(arguments: [RemoteProjectsRequest.mcp(directory: "/host/repo", file: ".pi/mcp.json", action: .credentials),
+                      .mcp(directory: "/host/repo", file: ".pi/mcp.json", action: .approveProject),
                       .mcp(directory: "/host/repo", file: ".pi/mcp.json", action: .login(server: "issues")),
                       .mcp(directory: "/host/repo", file: ".mcp.json", action: .logout(server: "issues")),
                       .mcp(directory: "/host/repo", file: ".pi/mcp.json", action: .poll(id: UUID())),
@@ -22,7 +23,7 @@ struct ProjectsProtocolTests {
 
     @Test(arguments: [RemoteProjectsResult.mcp(.init(id: UUID(), phase: .waiting, authorizationURL: "https://example.test/auth")),
                       .mcp(.init(signedIn: ["issues"])), .mcp(.init(phase: .failed, message: "Cancelled.")),
-                      RemoteProjectsResult.opened, .context(ProjectContext(files: [.init(path: "/a/AGENTS.md", displayPath: "~/a/AGENTS.md")], resources: 4, mcpServers: 1)), RemoteProjectsResult.listing(ProjectListing(projects: [], nextOffset: 64)),
+                      RemoteProjectsResult.opened, .mcp(.init(projectTrusted: false)), .mcp(.init(projectTrusted: true)), .context(ProjectContext(files: [.init(path: "/a/AGENTS.md", displayPath: "~/a/AGENTS.md")], resources: 4, mcpServers: 1)), RemoteProjectsResult.listing(ProjectListing(projects: [], nextOffset: 64)),
                       .listing(ProjectListing(projects: [ProjectSummary(directory: "/a", name: "a", displayPath: "~/a", summary: "AGENTS.md only", minimal: true)])),
                       .files([ProjectFile(path: "AGENTS.md", category: .instructions, exists: false)]),
                       .text(ProjectFileText(file: ProjectFile(path: "AGENTS.md", category: .instructions, exists: false), text: nil)),
