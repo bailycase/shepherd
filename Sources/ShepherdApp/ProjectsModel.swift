@@ -19,8 +19,43 @@ struct ProjectsHost: Equatable, Identifiable {
 struct ProjectsRow: Equatable, Identifiable {
     var host: ProjectsHost
     var project: ProjectSummary
+    /// Its subprojects on the same host, shown under it (a top-level row only).
+    var children = 0
+    /// Its parent's name, for "From <parent>" (a subproject only).
+    var parentName: String?
     var id: String { host.id + "\n" + project.directory }
     var unavailable: String? { host.unavailable ?? project.error }
+    var isSubproject: Bool { parentName != nil }
+
+    /// The board's CONFIGURATION line: a parent's "2 shared MCP servers", a subproject's
+    /// "2 inherited · 1 local MCP" (its own servers counted apart), else the host's summary.
+    var configuration: String {
+        let own = project.mcpServers.count, inherited = project.inheritedMCP.count
+        if isSubproject, inherited > 0 {
+            return own > 0 ? "\(inherited) inherited · \(own) local MCP" : "\(inherited) inherited MCP \(inherited == 1 ? "server" : "servers")"
+        }
+        if children > 0, own > 0 { return "\(own) shared MCP \(own == 1 ? "server" : "servers")" }
+        return project.summary
+    }
+
+    /// Top-level projects in the host's order, each followed by its subprojects, by folder.
+    static func tree(_ rows: [ProjectsRow]) -> [ProjectsRow] {
+        let byKey = Dictionary(rows.map { ($0.host.id + "\n" + $0.project.directory, $0) }, uniquingKeysWith: { first, _ in first })
+        func parentKey(_ row: ProjectsRow) -> String? {
+            row.project.parent.map { row.host.id + "\n" + $0 }.flatMap { byKey[$0] == nil ? nil : $0 }
+        }
+        let children = Dictionary(grouping: rows.filter { parentKey($0) != nil }, by: { parentKey($0)! })
+        return rows.filter { parentKey($0) == nil }.flatMap { top -> [ProjectsRow] in
+            var top = top
+            let kids = (children[top.id] ?? []).map { kid -> ProjectsRow in
+                var kid = kid
+                kid.parentName = top.project.name
+                return kid
+            }
+            top.children = kids.count
+            return [top] + kids
+        }
+    }
 }
 
 @MainActor
@@ -43,6 +78,8 @@ final class ProjectsModel {
     private(set) var hosts: [ProjectsHost] = []
     private(set) var rows: [ProjectsRow] = []
     private(set) var visible: [ProjectsRow] = []
+    /// Parents whose subprojects are folded away, by row id.
+    var collapsed: Set<String> = [] { didSet { if collapsed != oldValue { derive() } } }
     var filter = "" { didSet { derive() } }
     var host = "all" { didSet { derive() } }
     private(set) var loading = false
@@ -140,15 +177,33 @@ final class ProjectsModel {
     var hostOptions: [(String, String)] { [("all", "All hosts")] + hosts.map { ($0.id, $0.name) } }
     var addHost: ProjectsHost? { hosts.first { $0.id == (host == "all" ? "local" : host) } }
 
+    /// The tree, filtered: a subproject that matches keeps its parent above it, and a parent that
+    /// matches keeps its subprojects. A collapsed parent's subprojects stay folded unless a filter
+    /// matched them.
     private func derive() {
         let query = filter.trimmingCharacters(in: .whitespacesAndNewlines)
-        let next = rows.filter { row in
-            (host == "all" || row.host.id == host) && (query.isEmpty || [row.project.name, row.project.directory, row.project.displayPath, row.host.name].contains {
+        func matches(_ row: ProjectsRow) -> Bool {
+            query.isEmpty || [row.project.name, row.project.directory, row.project.displayPath, row.host.name].contains {
                 $0.localizedCaseInsensitiveContains(query)
-            })
+            }
+        }
+        let tree = ProjectsRow.tree(rows.filter { host == "all" || $0.host.id == host })
+        var next: [ProjectsRow] = []
+        var index = 0
+        while index < tree.count {
+            let top = tree[index]
+            let kids = Array(tree[(index + 1)..<min(tree.count, index + 1 + top.children)])
+            index += 1 + top.children
+            let matchedKids = matches(top) ? kids : kids.filter(matches)
+            guard matches(top) || !matchedKids.isEmpty else { continue }
+            next.append(top)
+            if query.isEmpty ? !collapsed.contains(top.id) : true { next += matchedKids }
         }
         if visible != next { visible = next }
     }
+
+    /// Projects counted the board's way: every project the hosts list, subprojects included.
+    var countText: String { rows.count == 1 ? "1 project" : "\(rows.count) projects" }
 
     func load(_ sources: [ProjectsHost], force: Bool = false) async {
         guard force || loadedHosts != sources else { return }

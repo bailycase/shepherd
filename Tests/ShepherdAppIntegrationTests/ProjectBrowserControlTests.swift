@@ -65,13 +65,7 @@ struct ProjectBrowserControlTests {
         defer { window.close() }
         try await eventuallyOnMain("Projects list in the Settings overlay") {
             window.layout()
-            return AccessibilityNode.all(under: window.host).contains { $0.label == "Open payments on This Mac" }
-        }
-        let projectControl = try ControlPress.press("Open payments on This Mac", under: window.host)
-        #expect(abs(projectControl.frame.width - 1128) <= 1)
-        try await eventuallyOnMain("project detail in the Settings overlay") {
-            window.layout()
-            return AccessibilityNode.all(under: window.host).contains { $0.label == "Project category Browser" }
+            return AccessibilityNode.all(under: window.host).contains { $0.label == "Open payments" }
         }
         func column(_ identifier: String) throws -> CGRect {
             let selector = NSSelectorFromString("accessibilityIdentifier")
@@ -79,6 +73,13 @@ struct ProjectBrowserControlTests {
                 $0.object.responds(to: selector) && $0.object.perform(selector)?.takeUnretainedValue() as? String == identifier
             })
             return window.host.convert(window.window.convertFromScreen(node.frame), from: nil)
+        }
+        let list = try column("ProjectsTable")
+        #expect(abs(list.width - 1128) <= 1, "the table fills the page: \(list)")
+        try ControlPress.press("Open payments", under: window.host)
+        try await eventuallyOnMain("project detail in the Settings overlay") {
+            window.layout()
+            return AccessibilityNode.all(under: window.host).contains { $0.label == "Project category Browser" }
         }
         let editor = try column("ProjectEditorColumn"), context = try column("ProjectContextColumn")
         #expect(abs(editor.minX - 272) <= 1 && abs(editor.width - 858) <= 1)
@@ -172,7 +173,7 @@ struct ProjectBrowserControlTests {
         #expect(back.isEnabled)
         try await eventuallyOnMain("return to the full-width Projects list") { vm.projects.selected == nil }
         window.layout()
-        #expect(abs(try frame("Open payments on This Mac").width - 1128) <= 1)
+        #expect(abs(try column("ProjectsTable").width - 1128) <= 1)
     }
 
     private static func nativeScrollViews(_ view: NSView) -> [NSScrollView] {

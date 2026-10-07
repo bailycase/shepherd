@@ -28,12 +28,52 @@ public struct ProjectSummary: Codable, Hashable, Sendable, Identifiable {
     public var summary: String
     public var minimal: Bool
     public var error: String?
+    /// The project this one sits inside (`ProjectNesting`), by folder; nil for a top-level project.
+    /// Absent from an older host's listing.
+    public var parent: String?
+    /// The MCP servers its own `.pi/mcp.json` names, which its subprojects share.
+    public var mcpServers: [String]
+    /// The parent's `.pi/mcp.json` servers it runs too, the ones its own file doesn't override.
+    public var inheritedMCP: [String]
     public var id: String { directory }
 
-    public init(directory: String, name: String, displayPath: String, summary: String, minimal: Bool = false, error: String? = nil, projectID: SpaceID? = nil) {
+    public init(directory: String, name: String, displayPath: String, summary: String, minimal: Bool = false, error: String? = nil, projectID: SpaceID? = nil,
+                parent: String? = nil, mcpServers: [String] = [], inheritedMCP: [String] = []) {
         self.projectID = projectID
         self.directory = directory; self.name = name; self.displayPath = displayPath
         self.summary = summary; self.minimal = minimal; self.error = error
+        self.parent = parent; self.mcpServers = mcpServers; self.inheritedMCP = inheritedMCP
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case directory, projectID, name, displayPath, summary, minimal, error, parent, mcpServers, inheritedMCP
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        directory = try c.decode(String.self, forKey: .directory)
+        projectID = try c.decodeIfPresent(SpaceID.self, forKey: .projectID)
+        name = try c.decode(String.self, forKey: .name)
+        displayPath = try c.decode(String.self, forKey: .displayPath)
+        summary = try c.decode(String.self, forKey: .summary)
+        minimal = try c.decodeIfPresent(Bool.self, forKey: .minimal) ?? false
+        error = try c.decodeIfPresent(String.self, forKey: .error)
+        parent = try c.decodeIfPresent(String.self, forKey: .parent)
+        mcpServers = try c.decodeIfPresent([String].self, forKey: .mcpServers) ?? []
+        inheritedMCP = try c.decodeIfPresent([String].self, forKey: .inheritedMCP) ?? []
+    }
+}
+
+/// Subprojects (Settings ▸ Projects, parents and subprojects): a project inside another project's
+/// folder is its subproject, one level deep. A project inside several takes the outermost as its
+/// parent, so `acme/apps/web/admin` is a subproject of `acme`, never of `acme/apps/web`.
+public enum ProjectNesting {
+    /// The parent of `directory` among `projects` (absolute, standardized folders): the outermost
+    /// one that holds it, or nil. A project is never its own parent.
+    public static func parent(of directory: String, among projects: [String]) -> String? {
+        projects
+            .filter { $0 != directory && $0 != "/" && directory.hasPrefix($0.hasSuffix("/") ? $0 : $0 + "/") }
+            .min { $0.count < $1.count }
     }
 }
 

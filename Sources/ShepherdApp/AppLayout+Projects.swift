@@ -6,17 +6,22 @@ extension AppLayout {
     static let projectsTitleSize: CGFloat = 22
     static let projectsExplanationSize: CGFloat = 13.5
     static let projectsSpacing: CGFloat = 22
-    static let projectsToolbarGap: CGFloat = 10
     static let projectsFilterWidth: CGFloat = 302
     static let projectsSummaryWidth: CGFloat = 230
-    static let projectsDisclosureWidth: CGFloat = 20
-    static let projectsColumnGap: CGFloat = 16
-    static let projectsNameRatio: CGFloat = 1.5
-    static let projectsHostRatio: CGFloat = 1
     static let projectsHeaderHeight: CGFloat = 32
-    static let projectsRowHeight: CGFloat = 58
+    /// SettingsProjects (parents and subprojects): rows at least 64pt; host 120 and action 152
+    /// beside the 230pt configuration; the disclosure 28 by 32; the folder 16 in an 18pt frame.
+    static let projectsRowHeight: CGFloat = 64
+    static let projectsHostWidth: CGFloat = 120
+    static let projectsActionWidth: CGFloat = 152
+    /// A narrow window keeps a project's name and path readable; the configuration gives way first.
+    static let projectsNameMinWidth: CGFloat = 200
+    static let projectsSummaryMinWidth: CGFloat = 120
+    static let projectsToggleWidth: CGFloat = 28
+    static let projectsToggleHeight: CGFloat = 32
+    static let projectsFolderSize: CGFloat = 14
+    static let projectsFolderFrame: CGFloat = 18
     static let projectsHeaderSize: CGFloat = 10.5
-    static let projectsHeaderTracking: CGFloat = 0.06
     static let projectsNameSize: CGFloat = 13.5
     static let projectsHostSize: CGFloat = 12.5
     static let projectsPathSize: CGFloat = 11.5

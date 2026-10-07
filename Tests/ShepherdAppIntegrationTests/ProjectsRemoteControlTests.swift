@@ -58,7 +58,7 @@ struct ProjectsRemoteControlTests {
         try ControlPress.press("mac-mini", role: ControlRole.radioButton, under: window.host)
         #expect(model.visible.allSatisfy { $0.host.name == "mac-mini" })
         window.layout()
-        try ControlPress.press("Open Remote project on mac-mini", under: window.host)
+        try ControlPress.press("Open Remote project", under: window.host)
         try await eventuallyOnMain("the remote project's instructions") { model.fileLoaded }
         #expect(model.draft == "Host instructions\n")
         window.layout()

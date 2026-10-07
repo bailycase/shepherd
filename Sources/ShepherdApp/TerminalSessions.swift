@@ -644,11 +644,13 @@ final class TerminalSessionStore {
             guard rpc else { throw TerminalSessionStoreError.paneUnavailable(pane.id) }
             // Ready Shepherd's pi home, and give pi a session to find, so --session-id does not warn.
             let (fresh, problem) = await Self.prepareLaunch(for: agent, cwd: cwd, pi: server.pi)
+            let parent = await server.projects.parentProject(of: cwd, state: state)
             // RPC mode ignores a positional prompt; the opening prompt goes to the server below.
             let command = try problem.map(Self.refusedCommand)
                 ?? Self.rpcAgentCommand(for: agent, cwd: cwd, pi: server.pi, sessionIsFresh: fresh, isAutomation: isAutomation,
                                         suggestFiles: suggestionFiles(isAutomation: isAutomation),
-                                        modelOverride: modelOverrides.removeValue(forKey: agent.id), mcp: mcpLaunch)
+                                        modelOverride: modelOverrides.removeValue(forKey: agent.id),
+                                        mcp: { [mcpLaunch] in try mcpLaunch()?.sharingParent(parent) })
             // A forked transcript resumes: pi not finding it is a start problem, never a new session.
             let resuming = fresh ? nil : agent.effectivePiSessionID
             guard ownsPane(session, pane: pane, tabID: tab.id, expectedAgentID: agent.id),
@@ -895,10 +897,12 @@ final class TerminalSessionStore {
                 // Respawn after relaunch: an agent that was never prompted has
                 // no session file yet, so seed one before pi looks for it.
                 let (fresh, problem) = await Self.prepareLaunch(for: agent, cwd: cwd, pi: server.pi)
+                let parent = await server.projects.parentProject(of: cwd, state: serverState ?? ShepherdState())
                 command = try problem.map(Self.refusedCommand)
                     ?? Self.rpcAgentCommand(for: agent, cwd: cwd, pi: server.pi, sessionIsFresh: fresh,
                                             suggestFiles: suggestionFiles(isAutomation: false),
-                                            modelOverride: modelOverrides.removeValue(forKey: agent.id), mcp: mcpLaunch)
+                                            modelOverride: modelOverrides.removeValue(forKey: agent.id),
+                                            mcp: { [mcpLaunch] in try mcpLaunch()?.sharingParent(parent) })
                 if checksResume, !fresh { resuming = agent.effectivePiSessionID }
             } else {
                 command = ShellIntegration.command(shell: AppSettings.shared.shellCommand)
