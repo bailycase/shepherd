@@ -43,8 +43,8 @@ sidebar's Extensions destination opens this page.
   - Design references, "Let a thread read the design pieces you hand it with `design_get`. Only a
     thread you sent one to gets the tool.", shown only while Settings ▸ Experiments ▸ Design tool
     is on (SettingsPiDesignReferences).
-- **Name agents automatically** is not on this page: the boards draw no such switch. Naming is
-  set on Agents ▸ Session naming model. Remote clients still change the host's `namer` switch.
+- **Name agents automatically** is gone: naming is always on (the user's decision, 2026-10-07).
+  Agents ▸ Session naming model picks the model.
 
 [SubagentsSettings](settings-subagents.md) revision 598 makes the top-level Subagents page the
 owned-file manager. Native subagents, Subagent display and the defaults below remain on Pi.

@@ -16,7 +16,7 @@ struct AppSettingsTests {
         #expect(settings.defaultModel.isEmpty)
         #expect(settings.defaultThinking == .medium)
         #expect(settings.defaultServiceTier == .standard, "new threads start on Standard")
-        #expect(settings.autoNameAgents)
+        #expect(settings.namingModel.isEmpty, "session naming starts on Automatic")
         #expect(!settings.goalCrossProviderEvaluation, "cross-provider goal checks require consent")
         #expect(!settings.goalsEnabled, "Goals is an opt-in experiment")
         #expect(settings.piPanesExtension && settings.piReviewExtension && settings.piDesignReferences)
@@ -214,7 +214,7 @@ struct AppSettingsTests {
         settings.defaultModel = "anthropic/claude-sonnet-4"
         settings.defaultThinking = .high
         settings.defaultServiceTier = .fast
-        settings.autoNameAgents = false
+        settings.namingModel = "openai/gpt-5.1-codex-mini"
         settings.agentMessages = .never
         settings.piPanesExtension = false
         settings.piReviewExtension = false
@@ -240,7 +240,7 @@ struct AppSettingsTests {
         #expect(reloaded.terminalFontFamily == "Menlo" && reloaded.terminalFontSize == 15)
         #expect(reloaded.defaultModel == "anthropic/claude-sonnet-4" && reloaded.defaultThinking == .high)
         #expect(reloaded.defaultServiceTier == .fast)
-        #expect(!reloaded.autoNameAgents)
+        #expect(reloaded.namingModel == "openai/gpt-5.1-codex-mini")
         #expect(reloaded.agentMessages == .never)
         #expect(!reloaded.piPanesExtension && !reloaded.piReviewExtension && !reloaded.piDesignReferences)
         #expect(!reloaded.subagentDisplay && !reloaded.piNativeSubagents)
@@ -301,7 +301,7 @@ struct AppSettingsTests {
         settings.terminalFontSize = 20
         settings.defaultModel = "openai/gpt-5"
         settings.defaultServiceTier = .fast
-        settings.autoNameAgents = false
+        settings.namingModel = "google/gemini-2.5-flash"
         settings.uiDensity = 1.3
         settings.uiTextScale = 1.2
         settings.sidebarWidth = 300
@@ -310,7 +310,7 @@ struct AppSettingsTests {
 
         settings.resetToDefaults()
 
-        #expect(settings.terminalFontSize == 12.5 && settings.defaultModel.isEmpty && settings.autoNameAgents)
+        #expect(settings.terminalFontSize == 12.5 && settings.defaultModel.isEmpty && settings.namingModel.isEmpty)
         #expect(settings.defaultServiceTier == .standard)
         #expect(settings.uiDensity == 1 && settings.uiTextScale == 1)
         #expect(settings.sidebarWidth == AppSettings.defaultSidebarWidth)

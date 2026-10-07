@@ -42,10 +42,10 @@ stand-in), never a `pi` looked up on PATH ([pi-home.md](pi-home.md)).
   (`PiSessionFile.adopt`; [pi-home.md](pi-home.md) › Adoption).
   `--model`/`--thinking` are passed only while that file has no conversation (a fresh session).
 - **Extensions** are installed into the support directory from embedded literals and loaded
-  with `-e`. Nothing is installed into a pi home. The status extension is always loaded; the
-  rest follow Settings ▸ Pi ▸ Bundled extensions: "Terminals and agent tools", "Diff review tool",
-  "Subagent display", "Native subagents", "Name agents automatically" (the namer, and only
-  for agents whose name is not final), "Browser tools" (the `browser_*` tools on the thread's own
+  with `-e`. Nothing is installed into a pi home. The status extension is always loaded, and so
+  is the namer (it names only agents whose name is not final, with Settings ▸ Agents ▸ Session
+  naming model tried first). The rest follow Settings ▸ Extensions and Pi: "Terminals and agent
+  tools", "Diff review tool", "Subagent display", "Native subagents", "Browser tools" (the `browser_*` tools on the thread's own
   Browser page, for agents that draw no design; docs/browser.md), and "Design references"
   (design_get and design_note, for agents that draw no design, while Settings ▸ Experiments ▸
   Design tool is on; `SHEPHERD_DESIGN_REFS`).

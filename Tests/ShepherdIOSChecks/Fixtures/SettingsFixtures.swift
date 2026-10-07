@@ -69,7 +69,6 @@ extension FixtureData {
             shepherdVersion: "0.4.2", piVersion: pi, defaultModel: "anthropic/claude-opus", defaultThinking: .medium,
             queueDelivery: .all, mergePRAutomatically: true, mergeMethod: .squash,
             bundledExtensions: [
-                HostSettings.BundledExtension(id: "namer", name: "Name agents automatically", on: true),
                 HostSettings.BundledExtension(id: "panes", name: "Panes and agent tools", on: true),
                 HostSettings.BundledExtension(id: "review", name: "Diff review tool", on: true),
                 HostSettings.BundledExtension(id: "nativeSubagents", name: "Native subagents", on: false),

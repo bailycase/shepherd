@@ -256,9 +256,8 @@ extension ShepherdViewModel {
             thinkingLevel: config.thinking,
             // Provisional: pi's namer replaces it with a real title from the
             // agent's opening prompt, whether that prompt came from the sheet
-            // or was typed into the TUI afterwards (⌘N). With auto-naming off
-            // the provisional name is what the agent keeps, so it is final.
-            nameIsFinal: !settings.autoNameAgents || config.designID != nil,
+            // or was typed into the TUI afterwards (⌘N). A design names itself.
+            nameIsFinal: config.designID != nil,
             piSessionID: config.piSessionID,
             worktreeBranch: config.worktreeBranch,
             worktreeBase: config.worktreeBase,
