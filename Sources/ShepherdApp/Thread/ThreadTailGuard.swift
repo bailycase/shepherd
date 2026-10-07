@@ -60,12 +60,15 @@ final class ThreadTailGuard {
     /// The scroll target at the end of the thread, and how to scroll there.
     var bottomID = ""
     var land: () -> Void = {}
+    /// Recreates only the transcript scroll view if bounded scrolling cannot realize a row.
+    var rebuild: () -> Void = {}
     var scrollView: () -> NSScrollView? = { nil }
     private var check: Task<Void, Never>?
     private var settling = false
     /// A repair has begun and the thread has not been seen resting on its tail since.
     private var unsettled = false
     private var attempts = 0
+    private var rebuilt = false
     private var changed = ContinuousClock.now
     private var readerUntil = ContinuousClock.now
 
@@ -94,6 +97,7 @@ final class ThreadTailGuard {
     /// The reader asked for the tail (a send, the jump pill): put it back as often as it takes.
     func asked() {
         attempts = 0
+        rebuilt = false
         following = true
         suspect()
     }
@@ -101,6 +105,7 @@ final class ThreadTailGuard {
     /// A completed turn gets a fresh bounded repair, without changing the reader's position.
     func turnFinished() {
         attempts = 0
+        rebuilt = false
         suspect()
     }
 
@@ -186,6 +191,13 @@ final class ThreadTailGuard {
         attempts += 1
         defer {
             settling = false
+            // A collapsed lazy layout can report a fitting document with no realized rows.
+            // There is then nowhere to scroll. Rebuild once, without replacing the composer.
+            if attempts == Self.maxAttempts, !rebuilt, !rowsInView, following, active,
+               !userScrolling, ContinuousClock.now >= readerUntil {
+                rebuilt = true
+                rebuild()
+            }
             suspect(quiet: Self.recheck)
         }
         NWRenderProbe.tick("thread.tailRepair")
