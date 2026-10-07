@@ -780,7 +780,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.createAgentImagesCapability,
             RemoteProtocol.instructionsCapability, RemoteProtocol.suggestionsCapability,
             RemoteProtocol.hostSettingsCapability, RemoteProtocol.skillsCapability, RemoteProtocol.projectsCapability, RemoteProtocol.projectDetailsCapability,
-            RemoteProtocol.projectMCPCapability, RemoteProtocol.piSkillsCapability,
+            RemoteProtocol.projectMCPCapability, RemoteProtocol.projectTrustCapability, RemoteProtocol.piSkillsCapability,
             RemoteProtocol.terminalControlCapability,
             RemoteProtocol.designContextCapability,
             RemoteProtocol.nativeRetryCapability,
@@ -796,6 +796,7 @@ struct RemoteProtocolConstantTests {
 
     /// Capability strings are negotiated with older peers; they must never be renamed.
     @Test func capabilityStringsAreStable() {
+        #expect(RemoteProtocol.projectTrustCapability == "projects.trust.v1")
         #expect(RemoteProtocol.nativeThreadCapability == "native.thread.v1")
         #expect(RemoteProtocol.nativeThreadV2Capability == "native.thread.v2")
         #expect(RemoteProtocol.changesCapability == "changes.v1")
