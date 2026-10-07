@@ -161,6 +161,8 @@ The shared `.mcp.json` file keeps its separate "Also use a repo's .mcp.json" opt
 server. It verifies that undecided resources stay blocked, approval registers a deferred tool
 that search discovers and codemode calls, siblings stay blocked, and home protection wins
 over saved approval and the global default. All homes, credentials and project data are scratch.
+`ProjectMCPTrustPreviewTests` renders only when `SHEPHERD_PREVIEW_DIR` is set, like the other
+preview suites. Normal CI runs the protocol capability checks without rendering screenshots.
 
 **The CLI.** `pi mcp list [--json]` connects to every enabled server and prints each one's name, `state`
 (`connected`, `needs-auth`, `failed`, `disabled`, …), `exposure`, `transport`, tool names, `error` and any
