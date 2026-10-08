@@ -81,6 +81,8 @@ struct ProjectsModelTests {
         let host = ProjectsHost(id: "local", name: "This Mac", known: [])
         let old = Task { await model.load([host], force: true) }
         for await _ in started.stream { break }
+        #expect(await model.load([host]) == false, "The Settings task must not supersede an identical in-flight refresh")
+        #expect(calls == 1)
         #expect(await model.load([host], force: true))
         pending?.resume(returning: .listing(ProjectListing(projects: [])))
         #expect(await old.value == false)

@@ -333,6 +333,7 @@ final class ShepherdViewModel {
     }
 
     var spacePickerTarget: SpacePickerTarget?
+    var addingChildProject: ChildProjectModel?
     /// Compatibility spelling used by remote call sites.
     var remoteSpacePickerHostID: UUID? {
         get {

@@ -224,6 +224,9 @@ struct SidebarProjectMenu: View {
         }
         // Finder and Terminal reach This Mac's folders only.
         if project.space != nil {
+            Button("Add Child Project…") {
+                vm.addingChildProject = vm.childProjectModel(path: project.path, name: project.name)
+            }
             Button("Reveal in Finder", systemImage: "folder") { vm.revealProjectInFinder(project.path) }
             Button("Open in Terminal", systemImage: "terminal") { vm.openProjectInTerminal(project.path) }
         }

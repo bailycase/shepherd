@@ -46,6 +46,9 @@ struct AppDialogs: ViewModifier {
                 FinalizeWorktreeSheet(vm: vm, agent: request.agent, space: request.space)
                     .dialogSheetFrame()
             }
+            .sheet(item: $vm.addingChildProject) { model in
+                ChildProjectSheet(model: model, dismiss: { vm.addingChildProject = nil })
+            }
             .sheet(item: $vm.spacePickerTarget) { target in
                 spacePicker(target)
                     .dialogSheetFrame()

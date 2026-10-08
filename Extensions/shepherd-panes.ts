@@ -413,7 +413,7 @@ export default function shepherdPanes(pi: ExtensionAPI) {
   const PROJECTS = {
     name: "shepherd_projects",
     description: "register existing local project directories and refresh Shepherd's project UI",
-    instructions: "Use project_register or project_refresh when the user requests project registration or refresh. Never edit projects.json or state.json to register a project.",
+    instructions: "Use project_register, project_add_child or project_refresh when the user requests project registration, child folder creation, or refresh. Never edit projects.json or state.json to register a project.",
   };
   if (!isAutomationAgent) pi.registerTool({
     name: "project_register",
@@ -427,6 +427,23 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     }),
     async execute(_id, args) {
       const reply = await request({ type: "registerProject", path: args.path, name: args.name });
+      return text(JSON.stringify({ space: reply.space, created: reply.created }));
+    },
+  });
+  if (!isAutomationAgent) pi.registerTool({
+    name: "project_add_child",
+    label: "Add Child Project",
+    description: "When requested by the user, create an empty direct child folder or register an existing descendant of a local parent project. Set create:true only to create a new folder, false for an existing folder. Canonical paths must stay inside parentPath. Never overwrites a folder or link, initializes Git, or starts a thread. Returns JSON {space, created}; created means a new registration. Creation errors leave existing files untouched. If registration fails after creation, the folder remains; retry with create:false. Requires a Shepherd build with child project tools.",
+    ...later(DEFER, PROJECTS),
+    promptSnippet: line(DEFER, "Create or register a child project folder inside a parent project"),
+    parameters: Type.Object({
+      parentPath: Type.String({ description: "Existing parent project directory, absolute or ~/" }),
+      path: Type.String({ description: "Child directory, absolute or ~/; creation must be directly inside parentPath" }),
+      name: Type.String({ description: "Display name, 1–256 characters, no control characters" }),
+      create: Type.Boolean({ description: "true: create a new empty folder; false: register an existing folder" }),
+    }),
+    async execute(_id, args) {
+      const reply = await request({ type: "addChildProject", parentPath: args.parentPath, path: args.path, name: args.name, create: args.create });
       return text(JSON.stringify({ space: reply.space, created: reply.created }));
     },
   });

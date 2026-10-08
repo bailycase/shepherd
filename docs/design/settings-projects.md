@@ -53,6 +53,12 @@ revision 562, defines the detail screen and replaces the first implementation.
   light/dark and text scale 1.3. Press navigation, host segments, every row, Add project, detail
   category/file selection, editor selection, Open in editor, Refresh, Save and discard controls through accessibility.
 
+## Add child project
+
+The user's create-or-add request extends the local **Add subproject** action. It opens the
+shared [Add child project dialog](child-projects.md), also reachable from a local project's
+sidebar menu. Remote rows retain the existing directory picker.
+
 ## Codemode override
 
 The user requested global codemode on by default and a per-project override. Before the Pi settings

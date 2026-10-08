@@ -373,6 +373,10 @@ agent and its auxiliary processes while the app runs, and quitting the app termi
   naming the files and touching none, when any of them changed after the turn (or the Undo).
   The index, HEAD, refs, the stash and every other file stay as they are.
 
+- **Add child project**, explicitly requested through the local dialog or `project_add_child`,
+  may create one empty direct child directory with `mkdirat`. It never overwrites an entry,
+  initializes Git, writes project files, or deletes a folder if registration fails.
+
 Nothing else mutates repository state, and Shepherd never prunes worktrees.
 
 **Reviews dock; they don't split.** A review (`ReviewSession`, `ShepherdViewModel+Review.swift`)

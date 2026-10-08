@@ -2794,6 +2794,8 @@ public final class SessionServer: @unchecked Sendable {
             routeProjectRequest(.register(path: path, name: name), agentID: agentID, requestID: id, client: client)
         case .refreshProjects(let id, let agentID):
             routeProjectRequest(.refresh, agentID: agentID, requestID: id, client: client)
+        case .addChildProject(let id, let agentID, let parentPath, let path, let name, let create):
+            routeProjectRequest(.child(parentPath: parentPath, path: path, name: name, create: create), agentID: agentID, requestID: id, client: client)
         case .listAgents(let id, let agentID):
             guard !refusesDesignPeer(id: id, sender: agentID, client: client) else { return }
             routeAgentPeerRequest(.list(agentID: agentID), requestID: id, client: client)
@@ -4295,6 +4297,19 @@ public final class SessionServer: @unchecked Sendable {
             }
             try self.addSpaceOnQueue(prepared.0, first: true)
             return (prepared.0, true)
+        }
+    }
+
+    public func addChildProject(parentPath: String, path: String, name: String, create: Bool) async throws -> (space: Space, created: Bool) {
+        let directory = try await Task.detached(priority: .userInitiated) {
+            try ChildProjectDirectory.prepare(parentPath: parentPath, path: path, name: name, create: create)
+        }.value
+        do { return try await registerProject(path: directory, name: name) }
+        catch {
+            if create {
+                throw ProjectFileError("registration_failed", "Created \(directory), but registration failed: \(error). Select Existing folder to retry. The folder was left in place.")
+            }
+            throw error
         }
     }
 

@@ -5,6 +5,7 @@ import ShepherdProtocol
 public enum ProjectRequest: Sendable {
     case register(path: String, name: String)
     case refresh
+    case child(parentPath: String, path: String, name: String, create: Bool)
 }
 
 public typealias ProjectOutcome = Result<(space: Space?, created: Bool), ProjectFileError>

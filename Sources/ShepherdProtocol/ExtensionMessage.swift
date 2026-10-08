@@ -183,6 +183,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
 
     case registerProject(id: Int, agentID: AgentID, path: String, name: String)
     case refreshProjects(id: Int, agentID: AgentID)
+    case addChildProject(id: Int, agentID: AgentID, parentPath: String, path: String, name: String, create: Bool)
 
     private enum CodingKeys: String, CodingKey {
         case type, id, agentID, status, name, piSessionID, sessionID, children
@@ -196,6 +197,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case call, proposals
         case what
         case server, challenge, report
+        case parentPath, create
     }
 
     private enum Kind: String, Codable {
@@ -211,12 +213,18 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case designSystemRead, designSystemWrite, designProposeComments
         case designGet, designNote
         case helloBrowser, browser
-        case registerProject, refreshProjects
+        case registerProject, refreshProjects, addChildProject
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         switch try c.decode(Kind.self, forKey: .type) {
+        case .addChildProject:
+            self = .addChildProject(
+                id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID),
+                parentPath: try c.decode(String.self, forKey: .parentPath), path: try c.decode(String.self, forKey: .path),
+                name: try c.decode(String.self, forKey: .name), create: try c.decode(Bool.self, forKey: .create)
+            )
         case .registerProject:
             self = .registerProject(
                 id: try c.decode(Int.self, forKey: .id),
@@ -524,6 +532,14 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         switch self {
+        case .addChildProject(let id, let agentID, let parentPath, let path, let name, let create):
+            try c.encode(Kind.addChildProject, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(parentPath, forKey: .parentPath)
+            try c.encode(path, forKey: .path)
+            try c.encode(name, forKey: .name)
+            try c.encode(create, forKey: .create)
         case .registerProject(let id, let agentID, let path, let name):
             try c.encode(Kind.registerProject, forKey: .type)
             try c.encode(id, forKey: .id)

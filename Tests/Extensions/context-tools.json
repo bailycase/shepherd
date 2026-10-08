@@ -68,7 +68,7 @@
       "reason": "The thread's terminal tabs (command-J) are how an agent runs a dev server or a watcher; six small tools, 590 tokens together."
     },
     {
-      "tools": ["project_register", "project_refresh"],
+      "tools": ["project_register", "project_add_child", "project_refresh"],
       "group": "other",
       "extension": "shepherd-panes.ts",
       "verdicts": { "thread": "defer" },

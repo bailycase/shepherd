@@ -76,7 +76,7 @@ test("project tools send authenticated requests and return registration and refr
   const space = { id: "s1", name: "psp-hub", path: "/projects/hub" };
   let created = true;
   const h = await harness((frame) => {
-    if (frame.type === "registerProject") return { type: "projectResult", space, created };
+    if (["registerProject", "addChildProject"].includes(frame.type)) return { type: "projectResult", space, created };
     if (frame.type === "refreshProjects") return { type: "projectResult", created: false };
   });
   try {
@@ -91,6 +91,14 @@ test("project tools send authenticated requests and return registration and refr
     assert.ok(frames.every((f) => f.agentID === "agent-1"));
     assert.equal(frames[0].path, "/projects/hub");
     assert.equal(frames[0].name, "psp-hub");
+    const child = h.tools.get("project_add_child");
+    assert.deepEqual(child.parameters.required, ["parentPath", "path", "name", "create"]);
+    for (const create of [true, false]) {
+      const result = await child.execute("child", { parentPath: "/projects", path: "/projects/hub", name: "psp-hub", create });
+      assert.deepEqual(JSON.parse(output(result)), { space, created: false });
+    }
+    assert.deepEqual(h.frames.filter((f) => f.type === "addChildProject").map((f) => [f.parentPath, f.path, f.name, f.create, f.agentID]),
+      [["/projects", "/projects/hub", "psp-hub", true, "agent-1"], ["/projects", "/projects/hub", "psp-hub", false, "agent-1"]]);
   } finally { h.close(); }
 });
 
@@ -101,7 +109,7 @@ test("project tools defer by default and are absent from automation runs", async
   delete process.env.SHEPHERD_AUTOMATION;
   const h = await harness(() => null);
   try {
-    for (const name of ["project_register", "project_refresh"]) {
+    for (const name of ["project_register", "project_add_child", "project_refresh"]) {
       assert.equal(h.tools.get(name).exposure, "deferred");
       assert.equal(h.tools.get(name).namespace.name, "shepherd_projects");
     }
@@ -109,6 +117,7 @@ test("project tools defer by default and are absent from automation runs", async
     const run = await harness(() => null);
     try {
       assert.ok(!run.tools.has("project_register"));
+      assert.ok(!run.tools.has("project_add_child"));
       assert.ok(!run.tools.has("project_refresh"));
     } finally { run.close(); }
   } finally {

@@ -288,7 +288,9 @@ SidebarTree, SidebarProjects and SidebarProjectsHosts. Mac only: the iPad and iP
 - **Project menu** (right-click a project, or ···; native): New Thread in <project> (on the host
   its newest thread runs on, else This Mac, else a connected host that has it), Reveal in Finder
   and Open in Terminal (This Mac's projects: the Mac's Terminal in the folder), Copy Path,
-  Collapse All, and Hide from Sidebar (This Mac's).
+  Collapse All, and Hide from Sidebar (This Mac's). The user's child-project request adds
+  **Add Child Project…** before Reveal in Finder for local projects. It opens the shared
+  [create-or-add dialog](child-projects.md); project rows remain flat.
 - **Keys:** a click on a project opens or closes it and gives the tree the keyboard: ← closes
   that project and → opens it (plain arrows, only while the tree has focus, so never a chord for
   `KeybindingsStore` or Ghostty's list). ⌥-click opens or closes every project. ⌘1–9 and ⌘↑/↓
