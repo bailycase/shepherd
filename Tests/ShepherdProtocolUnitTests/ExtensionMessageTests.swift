@@ -23,14 +23,16 @@ struct ExtensionMessageTests {
              .designRead, .designWriteBoard, .designEditBoard, .designUpdateIndex, .designComments, .designCommentReply,
              .designEditBoards, .designSearch, .designCheckpoint, .designRender, .designExtract,
              .designSystemRead, .designSystemWrite, .designProposeComments, .designGet, .designNote,
-             .helloBrowser, .browser:
+             .helloBrowser, .browser, .registerProject, .refreshProjects:
             return Wire.caseName(message)
         }
     }
-    static let caseCount = 46
+    static let caseCount = 48
     static let design = DesignID(rawValue: "d1")
 
     static let samples: [ExtensionMessage] = [
+        .registerProject(id: 70, agentID: agent, path: "/tmp/project", name: "Project"),
+        .refreshProjects(id: 71, agentID: agent),
         .setAgentStatus(agentID: agent, status: .blocked),
         .setAgentName(agentID: agent, name: "Title with \"quotes\" and ünicode", sessionID: "session-a"),
         .setAgentSession(agentID: agent, piSessionID: "01a026dd-ce9a-7ea2-b1bb-195d958cca0c"),
@@ -377,11 +379,11 @@ struct ExtensionReplyTests {
              .agents, .message, .agentRequest, .agentResult, .suggestion, .design, .designBoard, .designWritten, .designEdited,
              .designComments, .designComment, .designSystems, .designSystem, .designSystemWritten, .designProposals,
              .designBatchEdited, .designSearchResult, .designCheckpoints, .designRendered, .designExtracted,
-             .designReference, .designNote, .browserResult:
+             .designReference, .designNote, .browserResult, .projectResult:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 32
+    static let caseCount = 33
     static let system = DesignSystemSummary(
         info: DesignSystemInfo(namespace: "acme-web", title: "acme-web", revision: 3, createdAt: 1_000, updatedAt: 2_000,
                                syncedAt: 2_000, ownerDesignID: DesignID(rawValue: "d1"), spaceID: SpaceID(rawValue: "s1"),
@@ -409,6 +411,8 @@ struct ExtensionReplyTests {
     )
 
     static let samples: [ExtensionReply] = [
+        .projectResult(id: 70, space: Space(name: "Project", path: "/tmp/project"), created: true),
+        .projectResult(id: 71, space: nil, created: false),
         .parentInput,
         .childCommand(id: 1, runID: "native-1", action: .message, text: "Replace everywhere", mode: .steer),
         .ok(id: 1),

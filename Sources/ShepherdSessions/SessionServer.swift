@@ -277,6 +277,7 @@ public final class SessionServer: @unchecked Sendable {
     /// the reply comes back through the completion. Delivered on the main
     /// actor; the completion may be called from any thread.
     public var onPaneRequest: ((PaneRequest, @escaping (PaneOutcome) -> Void) -> Void)?
+    public var onProjectRequest: ((ProjectRequest, @escaping (ProjectOutcome) -> Void) -> Void)?
     /// An agent asked to open a native diff-review pane. The GUI owns the
     /// review layout and user interaction; the completion carries the result.
     public var onReviewRequest: ((ReviewRequest, @escaping (ReviewOutcome) -> Void) -> Void)?
@@ -2789,6 +2790,10 @@ public final class SessionServer: @unchecked Sendable {
             for (token, pending) in agentRequests where pending.caller === client && pending.id == id && !pending.deletionConfirmed {
                 finishAgentRequest(token, result: .init(text: "request cancelled", code: "cancelled"))
             }
+        case .registerProject(let id, let agentID, let path, let name):
+            routeProjectRequest(.register(path: path, name: name), agentID: agentID, requestID: id, client: client)
+        case .refreshProjects(let id, let agentID):
+            routeProjectRequest(.refresh, agentID: agentID, requestID: id, client: client)
         case .listAgents(let id, let agentID):
             guard !refusesDesignPeer(id: id, sender: agentID, client: client) else { return }
             routeAgentPeerRequest(.list(agentID: agentID), requestID: id, client: client)
@@ -3520,8 +3525,32 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    /// Hand a peer-thread request to the GUI and write its reply back, the
-    /// same shape as pane routing.
+    /// Project requests use the app's live adoption and settings reload path.
+    private func routeProjectRequest(_ request: ProjectRequest, agentID: AgentID, requestID: Int, client: ExtensionConnection) {
+        guard store.state.agents.contains(where: { $0.id == agentID && $0.designID == nil }) else {
+            reply(.error(id: requestID, code: "no_such_agent", message: "Project tools require a live thread."), to: client)
+            return
+        }
+        guard let handler = onProjectRequest else {
+            reply(.error(id: requestID, code: "unsupported", message: "Project control unavailable."), to: client)
+            return
+        }
+        hopToMain { [weak self, weak client] in
+            handler(request) { outcome in
+                guard let self, let client else { return }
+                self.queue.async {
+                    switch outcome {
+                    case .success(let result):
+                        self.reply(.projectResult(id: requestID, space: result.space, created: result.created), to: client)
+                    case .failure(let error):
+                        self.reply(.error(id: requestID, code: error.code, message: error.description), to: client)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Hand a peer-thread request to the GUI and write its reply back.
     private func routeAgentPeerRequest(_ request: AgentPeerRequest, requestID: Int, client: ExtensionConnection) {
         guard let handler = onAgentPeerRequest else {
             reply(.error(id: requestID, code: "unsupported", message: "agent peers unavailable"), to: client)
@@ -3842,7 +3871,7 @@ public final class SessionServer: @unchecked Sendable {
     private func replyID(_ message: ExtensionReply) -> Int {
         switch message {
         case .parentInput: return 0
-        case .childCommand(let id, _, _, _, _), .ok(let id),
+        case .childCommand(let id, _, _, _, _), .ok(let id), .projectResult(let id, _, _),
              .error(let id, _, _),
              .panes(let id, _),
              .paneOpened(let id, _),
@@ -4226,13 +4255,46 @@ public final class SessionServer: @unchecked Sendable {
     /// `first` puts it at the top of the projects (a project the user adds: the sidebar's project
     /// tree lists new ones on top); otherwise it goes last.
     public func addSpace(_ space: Space, first: Bool = false) async throws {
-        try await enqueue {
-            guard !self.store.state.spaces.contains(where: { $0.id == space.id }) else {
-                throw SessionServerError.conflict("space \(space.id) already exists")
+        try await enqueue { try self.addSpaceOnQueue(space, first: first) }
+    }
+
+    private func addSpaceOnQueue(_ space: Space, first: Bool) throws {
+        guard !store.state.spaces.contains(where: { $0.id == space.id }) else {
+            throw SessionServerError.conflict("space \(space.id) already exists")
+        }
+        try mutateState {
+            if first { $0.spaces.insert(space, at: 0) } else { $0.spaces.append(space) }
+        }
+    }
+
+    /// Validate off the state queue; deduplicate and persist atomically on it.
+    public func registerProject(path: String, name: String) async throws -> (space: Space, created: Bool) {
+        let spaces = state.spaces
+        let prepared = try await Task.detached(priority: .userInitiated) {
+            let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let expanded = (path as NSString).expandingTildeInPath
+            guard expanded.hasPrefix("/"), !path.contains("\0"),
+                  !name.isEmpty, name.count <= 256,
+                  name.rangeOfCharacter(from: .controlCharacters) == nil else {
+                throw ProjectFileError("invalid", "Provide an absolute directory path and a display name of 1–256 characters without control characters.")
             }
-            try self.mutateState {
-                if first { $0.spaces.insert(space, at: 0) } else { $0.spaces.append(space) }
+            let canonical = URL(fileURLWithPath: expanded).standardizedFileURL.resolvingSymlinksInPath().path
+            var directory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: canonical, isDirectory: &directory), directory.boolValue,
+                  FileManager.default.isReadableFile(atPath: canonical) else {
+                throw ProjectFileError("invalid_path", "Project path must be an existing readable directory.")
             }
+            let aliases = Set(spaces.filter {
+                URL(fileURLWithPath: $0.path).standardizedFileURL.resolvingSymlinksInPath().path == canonical
+            }.map(\.path))
+            return (Space(name: name, path: canonical), aliases)
+        }.value
+        return try await enqueue {
+            if let existing = self.store.state.spaces.first(where: { $0.path == prepared.0.path || prepared.1.contains($0.path) }) {
+                return (existing, false)
+            }
+            try self.addSpaceOnQueue(prepared.0, first: true)
+            return (prepared.0, true)
         }
     }
 

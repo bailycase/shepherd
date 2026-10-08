@@ -205,8 +205,9 @@ final class ProjectsModel {
     /// Projects counted the board's way: every project the hosts list, subprojects included.
     var countText: String { rows.count == 1 ? "1 project" : "\(rows.count) projects" }
 
-    func load(_ sources: [ProjectsHost], force: Bool = false) async {
-        guard force || loadedHosts != sources else { return }
+    @discardableResult
+    func load(_ sources: [ProjectsHost], force: Bool = false) async -> Bool {
+        guard force || loadedHosts != sources else { return true }
         loadGeneration += 1
         let revision = loadGeneration
         hosts = sources
@@ -220,12 +221,12 @@ final class ProjectsModel {
                     var offset = 0, pages = 0
                     projects = []
                     repeat {
-                        guard revision == loadGeneration else { return }
-                        guard !Task.isCancelled else { loading = false; return }
+                        guard revision == loadGeneration else { return false }
+                        guard !Task.isCancelled else { loading = false; return false }
                         guard case .listing(let page) = try await request(source, .list(offset: offset)) else {
                             throw ProjectFileError("protocol", "Unexpected project listing.")
                         }
-                        guard revision == loadGeneration, !Task.isCancelled else { return }
+                        guard revision == loadGeneration, !Task.isCancelled else { return false }
                         projects += page.projects
                         pages += 1
                         guard let next = page.nextOffset else { break }
@@ -233,7 +234,7 @@ final class ProjectsModel {
                         offset = next
                     } while true
                 } catch {
-                    guard revision == loadGeneration else { return }
+                    guard revision == loadGeneration else { return false }
                     source.unavailable = String(describing: error)
                     projects = rows.filter { $0.host.id == source.id && $0.host.endpointID == source.endpointID }.map(\.project)
                     if projects.isEmpty { projects = source.known }
@@ -245,8 +246,8 @@ final class ProjectsModel {
             }
             next += projects.map { ProjectsRow(host: source, project: $0) }
         }
-        guard revision == loadGeneration else { return }
-        guard !Task.isCancelled else { loading = false; return }
+        guard revision == loadGeneration else { return false }
+        guard !Task.isCancelled else { loading = false; return false }
         rows = next; loading = false; loadedHosts = sources; derive()
         if let selected, let current = rows.first(where: { $0.id == selected.id }) {
             if current.host.endpointID == selected.host.endpointID { self.selected = current }
@@ -257,6 +258,7 @@ final class ProjectsModel {
             }
         }
         if self.selected?.unavailable != nil || self.selected?.host.supportsMCP == false { closeMCPSignIn() }
+        return true
     }
 
     func open(_ row: ProjectsRow) async {
@@ -443,11 +445,46 @@ extension ShepherdViewModel {
         return model
     }
 
+    func installProjectControl() {
+        server.onProjectRequest = { [weak self] request, respond in
+            MainActor.assumeIsolated {
+                _ = Task<Void, Never> { @MainActor in
+                    guard let self else {
+                        respond(.failure(ProjectFileError("unavailable", "Shepherd is closing.")))
+                        return
+                    }
+                    do { respond(.success(try await self.handleProjectRequest(request))) }
+                    catch let error as ProjectFileError { respond(.failure(error)) }
+                    catch { respond(.failure(ProjectFileError("failed", String(describing: error)))) }
+                }
+            }
+        }
+    }
+
+    func handleProjectRequest(_ request: ProjectRequest) async throws -> (space: Space?, created: Bool) {
+        let result: (space: Space?, created: Bool)
+        switch request {
+        case .register(let path, let name):
+            let registered = try await server.registerProject(path: path, name: name)
+            result = (registered.space, registered.created)
+        case .refresh:
+            result = (nil, false)
+        }
+        // Adopt before replying, without selecting a project or touching editor drafts.
+        let canonical = server.state
+        sessions.stateDidChange(canonical)
+        adopt(canonical)
+        guard await projects.load(projectsSources, force: true) else {
+            throw ProjectFileError("refresh_superseded", "Another project reload started. Registration, if requested, is preserved. Retry project_refresh.")
+        }
+        if let error = projects.error { throw ProjectFileError("refresh_failed", error) }
+        return result
+    }
+
     func addSettingsProject(path: String, host: ProjectsHost) async throws {
         if host.id == "local" {
-            if state.spaces.contains(where: { $0.path == path }) { return }
-            try await server.addSpace(Space(name: URL(fileURLWithPath: path).lastPathComponent, path: path), first: true)
-            adopt(server.state)
+            _ = try await handleProjectRequest(.register(path: path, name: URL(fileURLWithPath: path).lastPathComponent))
+            return
         } else if let hostID = UUID(uuidString: host.id) {
             guard remoteHosts.connections.first(where: { $0.id == hostID })?.endpointID == host.endpointID else {
                 throw ProjectFileError("host_changed", "The host address changed. Close the picker and choose the host again.")

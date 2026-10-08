@@ -29,6 +29,7 @@ extension ExtensionMessage {
              .designCommentReply(_, let agentID, _, _, _), .designSystemRead(_, let agentID, _, _),
              .designSystemWrite(_, let agentID, _, _), .designProposeComments(_, let agentID, _, _, _),
              .designGet(_, let agentID, _, _), .designNote(_, let agentID, _, _),
+             .registerProject(_, let agentID, _, _), .refreshProjects(_, let agentID),
              .helloBrowser(let agentID), .browser(_, let agentID, _):
             return agentID
         case .childCommandResult,
@@ -57,6 +58,7 @@ extension ExtensionMessage {
              .designCommentReply(let id, _, _, _, _), .designSystemRead(let id, _, _, _),
              .designSystemWrite(let id, _, _, _), .designProposeComments(let id, _, _, _, _),
              .designGet(let id, _, _, _), .designNote(let id, _, _, _),
+             .registerProject(let id, _, _, _), .refreshProjects(let id, _),
              .browser(let id, _, _):
             return id
         case .setAgentStatus, .setAgentName, .setAgentSession, .setAgentChildren, .notify, .helloAgent, .helloChildren,
