@@ -82,7 +82,9 @@ stores crashed macOS 26's bundle-less test runner; the bundled app still uses pe
   row to disappear or reappear before asserting its visibility or pressing it; layout alone is
   not that boundary (`NestedProjectsFlowTests`). Completion probes
   wait for the final text in WindowServer pixels without forcing layout; the guard's multi-step
-  recovery is not guaranteed to finish in a fixed one-second delay. Turn-navigation probes wait
+  recovery is not guaranteed to finish in a fixed one-second delay. The real-workspace completion
+  probe saves its last polled image on success or timeout, so failure evidence is the pixels that
+  failed the paint condition. Turn-navigation probes wait
   for the viewport to land above the bottom band, not merely for the navigation intent to detach
   following while its first animated frames are still at the tail. The off-screen scroll harness
   declares wheel intent through the same `ThreadInput.readerScrolled(upward:)` method as the native

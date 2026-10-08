@@ -150,16 +150,24 @@ struct ThreadCompletionReproductionTests {
             try await eventuallyOnMain("the completed host snapshot reaches the thread") {
                 !store.running && store.messages.contains { $0.blocks.contains { $0.text.hasPrefix("Reply to " + prompt) } }
             }
-            try await Task.sleep(for: .seconds(1))
             let prefix = "workspace-\(Int(size.width))-\(turn)"
-            let bitmap = NSBitmapImageRep(cgImage: try ThreadWindowCapture.image(window.window))
+            var lastImage: CGImage?
+            var painted = false
+            do {
+                // Store completion precedes painting; observe pixels without forcing layout.
+                try await eventuallyOnMain("\(prefix) to paint its completed answer", poll: .milliseconds(100)) {
+                    let image = try ThreadWindowCapture.image(window.window)
+                    lastImage = image
+                    painted = try recognizedText(image).contains {
+                        let letters = $0.lowercased().filter { $0.isLetter || $0.isNumber }
+                        return letters.contains("completiontrial") || letters.contains("letval") || letters.contains("paragraph")
+                    }
+                    return painted
+                }
+            } catch is WaitTimeout { }
+            let bitmap = NSBitmapImageRep(cgImage: try #require(lastImage))
             try #require(bitmap.representation(using: .png, properties: [:])).write(to: directory.appendingPathComponent(prefix + ".png"))
-            let text = try recognizedText(#require(bitmap.cgImage))
-            let painted = text.contains {
-                let letters = $0.lowercased().filter { $0.isLetter || $0.isNumber }
-                return letters.contains("completiontrial") || letters.contains("letval") || letters.contains("paragraph")
-            }
-            print("WORKSPACE \(prefix): rows=\(store.rows.count), children=\(store.subagents.count), painted=\(painted)")
+            print("WORKSPACE \(prefix): rows=\(store.rows.count), messages=\(store.messages.count), running=\(store.running), ready=\(store.ready), children=\(store.subagents.count), mountedTabs=\(vm.mountedTabs.count), painted=\(painted)")
             guard painted else {
                 Issue.record("The real workspace did not paint its completed answer; see \(directory.path)/\(prefix).png")
                 return
