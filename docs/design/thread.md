@@ -51,9 +51,11 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   replace that reply's ID when its prompt falls outside the saved history page. Neither the marker
   nor a removed row may end recovery. After an unsuccessful walk, a cached bottom marker must
   not suppress the final tail landing when no current row is in view. If all eight scrolling
-  attempts still reveal no row, the guard recreates only the transcript scroll view once. A collapsed
-  lazy layout can report content that fits the viewport while placing every row outside it, so there
-  is nowhere to scroll. The composer stays mounted, keeping its draft and controls. Hidden threads
+  attempts still leave the thread stranded, the guard recreates only the transcript scroll view once.
+  A current row in view is not enough when the bottom marker remains missing more than 80pt above
+  the tail: completion can leave the final answer unrealized even after walking and landing exhaust
+  their budget (`ThreadTailGuardTests`). A collapsed lazy layout can also report content that fits
+  the viewport while placing every row outside it, so there is nowhere to scroll. The composer stays mounted, keeping its draft and controls. Hidden threads
   and detached readers never trigger this fallback. A send or completed turn permits a fresh bounded
   recovery; restarts keep no repair state. It also notices a following thread resting more than 80pt
   above its tail with the bottom marker out of view. It waits for quiet layout, at most 160ms for a

@@ -60,14 +60,14 @@ final class ThreadTailGuard {
     /// The scroll target at the end of the thread, and how to scroll there.
     var bottomID = ""
     var land: () -> Void = {}
-    /// Recreates only the transcript scroll view if bounded scrolling cannot realize a row.
+    /// Recreates only the transcript scroll view if bounded scrolling cannot restore its tail.
     var rebuild: () -> Void = {}
     var scrollView: () -> NSScrollView? = { nil }
     private var check: Task<Void, Never>?
     private var settling = false
     /// A repair has begun and the thread has not been seen resting on its tail since.
     private var unsettled = false
-    private var attempts = 0
+    private(set) var attempts = 0
     private var rebuilt = false
     private var changed = ContinuousClock.now
     private var readerUntil = ContinuousClock.now
@@ -124,7 +124,7 @@ final class ThreadTailGuard {
     private var tailInView: Bool { visible.contains(bottomID) }
     /// Completion can evict the live turn's prompt from the history page and replace its reply ID.
     /// A cached target for that old reply is no more evidence of content than the clear marker.
-    private var rowsInView: Bool { !rowIDs.isDisjoint(with: visible) }
+    var rowsInView: Bool { !rowIDs.isDisjoint(with: visible) }
 
     /// No content in view, the tail missing from it while the thread follows it from afar, or a
     /// thread that was just repaired resting short of its end.
@@ -191,9 +191,9 @@ final class ThreadTailGuard {
         attempts += 1
         defer {
             settling = false
-            // A collapsed lazy layout can report a fitting document with no realized rows.
-            // There is then nowhere to scroll. Rebuild once, without replacing the composer.
-            if attempts == Self.maxAttempts, !rebuilt, !rowsInView, following, active,
+            // A lazy layout can stay stranded even with a current row visible: neither walking
+            // nor landing realizes its tail. Rebuild once, without replacing the composer.
+            if attempts == Self.maxAttempts, !rebuilt, strayed, following, active,
                !userScrolling, ContinuousClock.now >= readerUntil {
                 rebuilt = true
                 rebuild()
