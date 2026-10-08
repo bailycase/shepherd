@@ -1,0 +1,94 @@
+"""Evaluate the native CI runner fence without GitHub or a YAML dependency."""
+import re
+import unittest
+
+from test_ci_workflow import JOBS
+
+
+def runner_expression(job):
+    return re.search(r"    runs-on: >-\n\s+\$\{\{(.*?)\}\}", job, re.S).group(1).strip()
+
+
+def select(expression, metadata):
+    # GitHub's && / || return operands, just like Python's and / or.
+    expression = re.sub(r"github\.[\w.]+", lambda m: repr(metadata.get(m[0])), expression)
+    expression = expression.replace("&&", " and ").replace("||", " or ")
+    return eval(" ".join(expression.split()), {"__builtins__": {}, "format": str.format})
+
+
+def metadata(event="pull_request", actor="19316389", author=19316389):
+    ref = "refs/pull/236/merge" if event == "pull_request" else "refs/heads/nightly"
+    return {
+        "github.event_name": event,
+        "github.actor_id": actor,
+        "github.actor": "maintainer",
+        "github.triggering_actor": "maintainer",
+        "github.repository": "owner/Shepherd",
+        "github.ref": ref,
+        "github.workflow_ref": f"owner/Shepherd/.github/workflows/ci.yml@{ref}",
+        "github.event.pull_request.number": 236,
+        "github.event.pull_request.head.repo.full_name": "owner/Shepherd",
+        "github.event.pull_request.user.id": author,
+    }
+
+
+class CIRunnerTests(unittest.TestCase):
+    def test_both_mac_jobs_use_the_same_native_fence_and_mask_before_checkout(self):
+        self.assertEqual(runner_expression(JOBS["build"]), runner_expression(JOBS["tests"]))
+        for name in ("build", "tests"):
+            job = JOBS[name]
+            self.assertRegex(job, r"(?m)^    env:\n(?:      .*\n)*      SELFHOSTED_LOG_MASK: \$\{\{ secrets.SELFHOSTED_HOSTNAME \}\}")
+            self.assertLess(job.index("SELFHOSTED_LOG_MASK:"), job.index("    steps:"))
+            self.assertNotIn("needs.plan.outputs", runner_expression(job))
+            self.assertNotIn("labels", runner_expression(job))
+        self.assertIn("timeout-minutes: 45", JOBS["build"])
+        self.assertIn("timeout-minutes: 60", JOBS["tests"])
+        for name, job in JOBS.items():
+            if name not in ("build", "tests"):
+                self.assertIn("runs-on: ubuntu-latest", job)
+
+    def test_only_same_repo_maintainer_prs_and_trusted_nightly_pushes_select_local(self):
+        expression = runner_expression(JOBS["tests"])
+        for actor in ("19316389", "3370624"):
+            for author in (19316389, 3370624):
+                self.assertEqual(select(expression, metadata(actor=actor, author=author)), "shepherd-release")
+            self.assertEqual(select(expression, metadata("push", actor=actor)), "shepherd-release")
+        # Usernames confer no trust; an ID-preserving rename works, a reused name does not.
+        renamed = metadata()
+        renamed.update({"github.actor": "renamed", "github.triggering_actor": "renamed"})
+        self.assertEqual(select(expression, renamed), "shepherd-release")
+
+    def test_each_failed_trust_boundary_stays_hosted(self):
+        expression = runner_expression(JOBS["tests"])
+        for event in ("pull_request", "push"):
+            changes = [
+                {"github.actor_id": "999"},
+                {"github.actor_id": None},
+                {"github.triggering_actor": "other-maintainer"},
+                {"github.triggering_actor": "unknown"},
+                {"github.workflow_ref": "fork/Shepherd/.github/workflows/ci.yml@refs/heads/nightly"},
+                {"github.workflow_ref": "owner/Shepherd/.github/workflows/other.yml@refs/heads/nightly"},
+                {"github.workflow_ref": "owner/Shepherd/.github/workflows/ci.yml@refs/heads/feature"},
+                {"github.event_name": "workflow_dispatch"},
+                {"github.event_name": "schedule"},
+                {"github.event_name": "pull_request_target"},
+            ]
+            if event == "pull_request":
+                changes += [
+                    {"github.event.pull_request.head.repo.full_name": "fork/Shepherd"},
+                    {"github.event.pull_request.head.repo.full_name": None},
+                    {"github.event.pull_request.user.id": 999},
+                    {"github.event.pull_request.user.id": None},
+                    {"github.ref": "refs/heads/feature", "github.workflow_ref": "owner/Shepherd/.github/workflows/ci.yml@refs/heads/feature"},
+                ]
+            else:
+                changes += [{"github.ref": "refs/heads/master", "github.workflow_ref": "owner/Shepherd/.github/workflows/ci.yml@refs/heads/master"}]
+            for change in changes:
+                with self.subTest(event=event, change=change):
+                    data = metadata(event)
+                    data.update(change)
+                    self.assertEqual(select(expression, data), "macos-26")
+
+
+if __name__ == "__main__":
+    unittest.main()
