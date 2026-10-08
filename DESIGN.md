@@ -111,7 +111,8 @@ Settings", revision 1083) is the source of truth for every Settings page.
 - Local projects offer [Add child project](docs/design/child-projects.md) from Settings' existing
   Add subproject action and the sidebar project menu. The shared dialog creates an empty folder
   or registers an existing descendant. Child projects nest under their main project in the
-  sidebar, with their threads indented again; parent collapse hides the whole group.
+  sidebar, with their threads indented again; parent collapse hides the whole group. Remove
+  Project… confirms registration/session removal while preserving local folders and child projects.
 - Sliders show the bare number the board draws ("100", "232", "12.5"). VoiceOver reads the unit.
 
 Detail: [settings.md](docs/design/settings.md) and its `settings-*` files.

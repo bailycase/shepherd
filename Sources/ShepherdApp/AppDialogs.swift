@@ -337,7 +337,7 @@ struct PeerDeleteDialog: View {
     }
 }
 
-/// Remove Space: always confirmed, since it stops the space's agents.
+/// Remove Project: always confirmed, since it stops the project's agents.
 struct SpaceDeleteDialog: View {
     var vm: ShepherdViewModel
     let space: Space
@@ -345,12 +345,12 @@ struct SpaceDeleteDialog: View {
     var body: some View {
         let count = vm.state.agents.count { $0.spaceID == space.id }
         DialogSheet(
-            title: "Remove space",
+            title: "Remove project",
             subtitle: "Removes \(space.name) from the sidebar and stops its \(count) agent\(count == 1 ? "" : "s"). "
-                + "Conversations stay on disk; the checkout is untouched. Nested project spaces are separate and survive.",
+                + "The local folder and all its files are kept. Saved conversations and project history remain. Child projects stay registered.",
             actions: [
                 DialogAction("Cancel", kind: .cancel) { vm.spaceDeleteTarget = nil },
-                DialogAction("Remove space", kind: .destructive) {
+                DialogAction("Remove project", kind: .destructive) {
                     let id = space.id
                     vm.spaceDeleteTarget = nil
                     // Deleting a space tears down mounted terminal layouts — a huge view-tree

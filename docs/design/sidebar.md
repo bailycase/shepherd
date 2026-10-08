@@ -298,6 +298,10 @@ SidebarTree, SidebarProjects and SidebarProjectsHosts. Mac only: the iPad and iP
   shortcuts skip collapsed groups. Roots and siblings keep saved order, and dragging only
   reorders siblings. A hidden parent's visible children become top-level rows. Ambiguous
   name-merged remote projects are not assigned a guessed parent.
+- **Remove Project…** follows Hide from Sidebar in a local project's menu, with a divider and
+  native destructive role. The confirmation names the project and its own agent count, says
+  the folder/files and saved conversations remain, and preserves child registrations. It
+  removes the registration and stops only its own sessions; it never deletes local folders.
 - **Keys:** a click on a project opens or closes it and gives the tree the keyboard: ← closes
   that project and → opens it (plain arrows, only while the tree has focus, so never a chord for
   `KeybindingsStore` or Ghostty's list). ⌥-click opens or closes every project. ⌘1–9 and ⌘↑/↓

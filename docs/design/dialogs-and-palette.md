@@ -167,9 +167,12 @@ dialog. There is no `.alert`, `confirmationDialog`, or `NSAlert` in the app:
   an "Unreconciled work" attention banner ("<what> will be lost with the worktree.") when there
   is some, then Cancel, Delete agent only, and a destructive Delete agent and worktree that stays
   disabled until the check is in
-- Remove Space (`SpaceDeleteDialog`): "Remove space", "Removes <space> from the sidebar and stops
-  its <n> agents. Conversations stay on disk; the checkout is untouched. Nested project spaces
-  are separate and survive.", Cancel and a destructive Remove space
+- Remove Project (`SpaceDeleteDialog`): "Remove project", "Removes <project> from the sidebar and
+  stops its <n> agent(s). The local folder and all its files are kept. Saved conversations and
+  project history remain. Child projects stay registered.", Cancel and a destructive Remove
+  project. Count is the selected project's own agents, never its children's. The action keeps
+  every folder and saved conversation; only the registration, its own agents/tabs, and live
+  sessions are removed. The user's folder-retention requirement applies to parents and children.
 - An agent asking to delete another (`PeerDeleteDialog`, "Delete agent"): rows for the agent, its
   worktree branch (else its directory, so agents sharing a name can be told apart), its space, and
   who asked, an attention banner (its pi session and everything it started stop; a worktree agent's
