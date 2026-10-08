@@ -185,8 +185,8 @@ jobs:
   # same branch (measured: over a minute quicker than building here and restoring in the shards).
   # This job exists for the runs that start from scratch, which are the first of each UTC day,
   # the daily run and a manual `clean`: it builds once, saves, and writes today's marker, and
-  # every shard restores its build. A pull request has none; its shards each restore the base
-  # branch's newest build and compile what the pull request changed.
+  # every shard restores its build. A pull request has none; its shards restore the base
+  # branch's newest build, or the exact-commit build an earlier local shard saved.
   build:
     name: build
     needs: plan
@@ -258,13 +258,14 @@ jobs:
           ref: ${{ needs.plan.outputs.checkout_ref }}
 
       # Restores the build the build job saved, or the newest one of the branch (the base
-      # branch's, for a pull request) and compiles what this change touched. Pull requests save
-      # nothing, which keeps the cache quota free and an upload off the critical path; on a
-      # push, the last shard saves, right after its build and before its tests.
+      # branch's, for a pull request) and compiles what this change touched. Hosted pull
+      # requests save nothing; local shards save before tests so later serial shards can
+      # restore this exact commit despite the runner's .build cleanup. Hosted pushes still
+      # save only the last shard's build.
       - uses: ./.github/actions/swift-build
         with:
           clean: ${{ needs.plan.outputs.shared_build != 'true' && needs.plan.outputs.clean == 'true' }}
-          save: ${{ matrix.shard.save }}
+          save: ${{ matrix.shard.save || runner.environment == 'self-hosted' }}
 
       - name: Stage bundled pi for subagent file checks
         run: python3 scripts/pi_engine.py stage
