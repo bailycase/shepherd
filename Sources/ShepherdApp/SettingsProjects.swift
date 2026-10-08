@@ -8,6 +8,7 @@ struct ProjectsSettings: View {
     /// Add project, or Add subproject with the parent's folder the picker opens in (so the folder
     /// chosen lands inside it). One value, so the sheet never opens without its folder.
     @State private var adding: AddingProject?
+    @State private var addingChild: ChildProjectModel?
 
     private struct AddingProject: Identifiable {
         let host: ProjectsHost
@@ -33,6 +34,9 @@ struct ProjectsSettings: View {
         }
         .nwControlScale(.settings)
         .task(id: vm.projectsSources) { await model.load(vm.projectsSources) }
+        .sheet(item: $addingChild) { model in
+            ChildProjectSheet(model: model, dismiss: { addingChild = nil })
+        }
         .sheet(item: $adding) { adding in
             let host = adding.host
             RemoteDirectoryPicker(title: "Add project", actionTitle: "Add project", hostName: host.name,
@@ -55,7 +59,7 @@ struct ProjectsSettings: View {
     private var index: some View {
         VStack(alignment: .leading, spacing: AppLayout.projectsSpacing) {
             HStack(alignment: .center, spacing: NW.Space.xl) {
-                SettingsHeader(title: "Projects", explanation: "Shared settings at the parent, project-specific changes below it.",
+                SettingsHeader(title: "Projects", explanation: "Organize projects without moving folders. Settings still follow folder ancestry.",
                                titleSize: AppLayout.projectsTitleSize, explanationSize: AppLayout.projectsExplanationSize)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 add
@@ -69,7 +73,7 @@ struct ProjectsSettings: View {
             }
             if let error = model.error { SettingsNote(text: error) }
             table
-            Text("Global defaults → parent project → subproject. Overrides change only their project.")
+            Text("Project grouping changes only Shepherd. Instructions and settings follow folders on disk.")
                 .nwText(size: AppLayout.projectsHostSize, lineHeight: AppLayout.projectsFooterLineHeight)
                 .foregroundStyle(Color.nw.textSecondary)
                 .frame(maxWidth: AppLayout.projectsTextWidth, alignment: .leading)
@@ -114,7 +118,16 @@ struct ProjectsSettings: View {
                         ProjectTreeRow(row: row, expanded: !model.collapsed.contains(row.id),
                                        open: { Task { await model.open(row) } },
                                        toggle: { model.collapsed.formSymmetricDifference([row.id]) },
-                                       addSubproject: { adding = AddingProject(host: row.host, under: row.project.directory) })
+                                       addSubproject: {
+                                           if row.host.id == "local" {
+                                               addingChild = vm.childProjectModel(path: row.project.directory, name: row.project.name)
+                                           } else {
+                                               adding = AddingProject(host: row.host, under: row.project.directory)
+                                           }
+                                       }, remove: row.host.id == "local" && row.project.projectID != nil
+                                           ? { vm.spaceDeleteTarget = row.project.projectID } : nil,
+                                       rename: row.host.id == "local" && row.project.projectID != nil
+                                           ? { vm.spaceRenameTarget = row.project.projectID } : nil)
                         if row.id != model.visible.last?.id { NWHairline() }
                     }
                 }
@@ -176,6 +189,8 @@ private struct ProjectTreeRow: View {
     let open: () -> Void
     let toggle: () -> Void
     let addSubproject: () -> Void
+    var remove: (() -> Void)? = nil
+    var rename: (() -> Void)? = nil
 
     var body: some View {
         let _ = NWRenderProbe.tick("settings.project.row")
@@ -198,8 +213,12 @@ private struct ProjectTreeRow: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel(row.isSubproject ? "Open \(row.project.name) under \(row.parentName!)" : "Open \(row.project.name)")
                     .accessibilityHint(row.unavailable ?? row.project.displayPath)
+                    .accessibilityActions {
+                        if let rename { Button("Rename Project…", action: rename) }
+                        if let remove { Button("Remove Project…", role: .destructive, action: remove) }
+                    }
             }
-            .padding(.leading, row.isSubproject ? NW.Space.xxl : 0)
+            .padding(.leading, CGFloat(row.ancestorIDs.count) * NW.Space.xxl)
             Text(row.host.name).font(.nwSans(AppLayout.projectsHostSize)).foregroundStyle(Color.nw.textSecondary).lineLimit(1)
             configuration
             action
@@ -209,6 +228,10 @@ private struct ProjectTreeRow: View {
         .contentShape(Rectangle())
         .onTapGesture(perform: open)
         .help(row.unavailable ?? "\(row.project.directory)\n\(row.configuration)")
+        .contextMenu {
+            if let rename { Button("Rename Project…", action: rename) }
+            if let remove { Button("Remove Project…", role: .destructive, action: remove) }
+        }
     }
 
     private var identity: some View {
@@ -248,7 +271,7 @@ private struct ProjectTreeRow: View {
         return VStack(alignment: .leading, spacing: NW.Space.xs) {
             Text(label).font(.nwSans(AppLayout.projectsHostSize))
                 .foregroundStyle(row.unavailable != nil ? Color.nw.textTertiary : Color.nw.textSecondary)
-            if let parent = row.parentName, !row.project.inheritedMCP.isEmpty, row.unavailable == nil {
+            if let parent = row.project.inheritedFromName ?? row.parentName, !row.project.inheritedMCP.isEmpty, row.unavailable == nil {
                 Text("From \(parent)").font(.nwMono(AppLayout.projectsPathSize)).foregroundStyle(Color.nw.textTertiary)
             }
         }
