@@ -21,6 +21,7 @@ import sys
 import tarfile
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 _spec = importlib.util.spec_from_file_location("pi_engine", os.path.join(ROOT, "scripts", "pi_engine.py"))
@@ -193,6 +194,35 @@ class Fixture:
 
 def listing(root):
     return sorted(os.path.relpath(os.path.join(d, f), root) for d, _, files in os.walk(root) for f in files)
+
+
+class SkillPatchTests(unittest.TestCase):
+    def test_patch_identity_is_pinned_and_version_checked(self):
+        pin = pi_engine.load_pin()
+        self.assertEqual(pi_engine.engine_patch(pin)["version"], pin["pi"]["version"])
+        pin["patch"]["sha256"] = "0" * 64
+        with self.assertRaisesRegex(pi_engine.EngineError, "differs from the pin"):
+            pi_engine.engine_patch(pin)
+        pin = pi_engine.load_pin()
+        pin["pi"]["version"] = "99.0.0"
+        with self.assertRaisesRegex(pi_engine.EngineError, "pinned pi version"):
+            pi_engine.engine_patch(pin)
+
+    def test_patch_checks_source_anchor_and_result_before_staging(self):
+        change = {"path": "test.js", "before": hashlib.sha256(b"old").hexdigest(),
+                  "after": hashlib.sha256(b"new").hexdigest(), "edits": [{"old": "old", "new": "new"}]}
+        with patch.object(pi_engine, "engine_patch", return_value={"files": [change]}):
+            files = {"test.js": b"old"}
+            pi_engine.apply_patch(files, {})
+            self.assertEqual(files["test.js"], b"new")
+            with self.assertRaisesRegex(pi_engine.EngineError, "source mismatch"):
+                pi_engine.apply_patch(files, {})
+            change["after"] = "0" * 64
+            with self.assertRaisesRegex(pi_engine.EngineError, "result mismatch"):
+                pi_engine.apply_patch({"test.js": b"old"}, {})
+            change["edits"][0]["old"] = "missing"
+            with self.assertRaisesRegex(pi_engine.EngineError, "anchor mismatch"):
+                pi_engine.apply_patch({"test.js": b"old"}, {})
 
 
 class PinTests(unittest.TestCase):
@@ -467,6 +497,16 @@ class VerifyTests(unittest.TestCase):
         self.assertEqual(len(problems), 1, problems)
         self.assertIn(mentioning, problems[0])
 
+    def test_verification_refuses_missing_or_changed_runtime_patch(self):
+        source = b"patched"
+        change = {"path": "dist/core/skills-fixture.js", "after": hashlib.sha256(source).hexdigest()}
+        with patch.object(pi_engine, "engine_patch", return_value={"files": [change]}):
+            self.assertOneProblem("engine patch missing or modified")
+            self.write(change["path"], source)
+            self.assertEqual(pi_engine.verify(self.out, self.fixture.pin), [])
+            self.write(change["path"], b"stale")
+            self.assertOneProblem("engine patch missing or modified")
+
     def test_esbuild_does_not_ship(self):
         self.write("node_modules/esbuild/package.json", json.dumps({"name": "esbuild"}).encode())
         problems = pi_engine.verify(self.out, self.fixture.pin)
@@ -534,7 +574,7 @@ class VerifyTests(unittest.TestCase):
         self.assertEqual(pi_engine.verify(self.out, self.fixture.pin), [], "a fat file of one arm64 slice is fine")
 
     def test_the_pinned_pi_and_its_entry_and_licences_must_be_there(self):
-        for relative, mentioning in (("dist/bundle/cli.js", "cli.js is missing"),
+        for relative, mentioning in (("dist/cli.js", "cli.js is missing"),
                                      ("NODE-LICENSE", "NODE-LICENSE is missing"),
                                      ("THIRD-PARTY-NOTICES", "THIRD-PARTY-NOTICES is missing")):
             with self.subTest(relative):

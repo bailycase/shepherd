@@ -17,6 +17,28 @@ import ShepherdTestSupport
 @Suite("The bundled pi engine, through the thread", .integrationTimeLimit,
        .enabled(if: EngineSmoke.engine != nil, "set SHEPHERD_ENGINE_SMOKE to a built Shepherd.app or a staged engine"))
 struct EngineThreadTests {
+    @Test func skillsAddedEditedAndRemovedAppearInTheExistingThreadWithoutRestarting() async throws {
+        let pi = try await RealPi.launch(engine: #require(EngineSmoke.engine))
+        defer { pi.stop() }
+        let ready = try await pi.ready()
+        _ = try await pi.send("hello", from: ready)
+        let before = try await pi.settled("the initial conversation") { $0.messages.last?.blocks.first?.text == "ok" }
+        let folder = pi.host.dir.appendingPathComponent("support/pi/skills/live")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let file = folder.appendingPathComponent("SKILL.md")
+        try "---\nname: live\ndescription: First version\n---\nLive instructions.\n".write(to: file, atomically: true, encoding: .utf8)
+        let added = try await pi.snapshot("the newly discovered skill") { $0.commands?.contains { $0.name == "skill:live" } == true }
+        #expect(added.piSessionID == before.piSessionID)
+        #expect(added.messages == before.messages)
+        try "---\nname: renamed\ndescription: Second version\n---\nNew instructions.\n".write(to: file, atomically: true, encoding: .utf8)
+        let edited = try await pi.snapshot("the edited skill") { $0.commands?.contains { $0.name == "skill:renamed" } == true }
+        #expect(edited.commands?.contains { $0.name == "skill:live" } == false)
+        try FileManager.default.removeItem(at: file)
+        let removed = try await pi.snapshot("the removed skill") { $0.commands?.contains { $0.name == "skill:renamed" } == false }
+        #expect(removed.piSessionID == before.piSessionID)
+        #expect(removed.messages == before.messages)
+    }
+
     /// A turn, a tool call and a reasoning block, and what the thread offers as commands: pi's
     /// skills and prompt templates and an extension's command, never the built-ins Shepherd's
     /// pi turns off or the terminal-only ones.

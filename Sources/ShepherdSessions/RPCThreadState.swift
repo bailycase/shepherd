@@ -451,6 +451,14 @@ final class RPCThreadState {
     /// How long a command's toasts count as its own after pi answers it.
     var commandNoticeGrace: TimeInterval = 1.5
 
+    /// One disk-only request at a time, only while idle; no model calls or persistent work.
+    // ponytail: polls scan configured skill trees; use filesystem events if large installs make this costly.
+    static let skillRefreshInterval: TimeInterval = 5
+    private var skillRefreshStarted = false
+    private(set) var skillRefreshFailures = 0
+    private var skillCommandsPending = false
+    private var skillRefreshInFlight = false
+
     private static let encoder = JSONEncoder()
     private static let queueFieldBytes = #","queue":"#.utf8.count
     private static let ansi = try! NSRegularExpression(
@@ -485,12 +493,58 @@ final class RPCThreadState {
             self.announceIfServable()
         }
         refreshStats(timeout: timeout)
+        refreshCommands(timeout: timeout)
+        if !skillRefreshStarted {
+            skillRefreshStarted = true
+            scheduleSkillRefresh()
+        }
+    }
+
+    private func scheduleSkillRefresh() {
+        queue.asyncAfter(deadline: .now() + Self.skillRefreshInterval) { [weak self] in
+            self?.refreshSkillsIfIdle()
+        }
+    }
+
+    func refreshSkillsIfIdle() {
+        guard session.isAlive, skillRefreshFailures < 3, !skillRefreshInFlight else { return }
+        guard piSessionID != nil, !running, !inputActive, compactingRun == nil else {
+            scheduleSkillRefresh()
+            return
+        }
+        skillRefreshInFlight = true
+        session.request(.refreshSkills) { [weak self] result in
+            guard let self else { return }
+            self.skillRefreshInFlight = false
+            if case .success(let response) = result, response.success {
+                self.skillRefreshFailures = 0
+                self.skillCommandsPending = self.skillCommandsPending || response.data?["changed"]?.boolValue == true
+                if self.skillCommandsPending { self.refreshCommands() }
+            } else if case .success(let response) = result, response.error == "skills_busy" {
+                // Engine-side fence also covers prompt preflight and queued continuations.
+            } else {
+                // A timeout can lose the reply after pi already replaced its catalog. The next
+                // successful refresh may say unchanged; still reconcile the host's command list.
+                self.skillCommandsPending = true
+                self.skillRefreshFailures += 1
+                if self.skillRefreshFailures == 3 {
+                    ShepherdLog.warning("Skill refresh stopped after three failures for session \(self.session.id)")
+                }
+            }
+            self.scheduleSkillRefresh()
+        }
+    }
+
+    private func refreshCommands(timeout: TimeInterval = 10) {
         session.request(.getCommands, timeout: timeout) { [weak self] result in
             guard let self, case .success(let response) = result, response.success else { return }
             let listed = response.data?["commands"]
-            self.allCommands = Self.projectCommands(listed)
+            self.skillCommandsPending = false
+            let commands = Self.projectCommands(listed)
+            guard self.allCommands != commands else { return }
+            self.allCommands = commands
             self.commit()
-            self.onCommandsListed?(self.allCommands ?? [])
+            self.onCommandsListed?(commands)
             self.readArgumentHints(Self.promptTemplateFiles(listed))
         }
     }

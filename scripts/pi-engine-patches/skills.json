@@ -1,0 +1,50 @@
+{
+  "version": "1.0.0",
+  "files": [
+    {
+      "path": "dist/core/resource-loader.js",
+      "before": "710e367e37c40df9f8f0239ebee6955e0a971a028d20467024bf4ea9ff55a42a",
+      "after": "a102a477ac24358d3a80e0c9bbf7adb5047a06eb16127b4bfdab8dd7db2a4a50",
+      "edits": [
+        {
+          "old": "    async loadProjectTrustExtensions() {",
+          "new": "    // Shepherd: reparse skills without reloading executable extensions or settings.\n    refreshSkills() {\n        const previous = JSON.stringify(this.getSkills());\n        const metadata = new Map(this.resourceMetadataByPath);\n        let paths = this.lastSkillPaths;\n        if (!this.noSkills) {\n            const manager = this.packageManager;\n            const accumulator = manager.createAccumulator();\n            const global = this.settingsManager.getGlobalSettings();\n            const project = this.settingsManager.getProjectSettings();\n            const projectBase = join(this.cwd, CONFIG_DIR_NAME);\n            manager.resolveLocalEntries(project.skills ?? [], \"skills\", accumulator.skills,\n                { source: \"local\", scope: \"project\", origin: \"top-level\" }, projectBase);\n            manager.resolveLocalEntries(global.skills ?? [], \"skills\", accumulator.skills,\n                { source: \"local\", scope: \"user\", origin: \"top-level\" }, this.agentDir);\n            manager.addAutoDiscoveredResources(accumulator, global, project, this.agentDir, projectBase);\n            // Keep startup precedence: CLI extension resources, ranked local/package\n            // resources, explicit --skill paths, then extension-discovered paths.\n            const prefix = [], suffix = [];\n            for (const path of this.lastSkillPaths) {\n                const info = this.resourceMetadataByPath.get(path);\n                if (info?.scope === \"temporary\") prefix.push(path);\n                else if (info?.origin === \"package\") manager.addResource(accumulator.skills, path, info, true);\n                else if (this.extensionSkillSourceInfos.has(path) || (info?.source !== \"auto\" && info?.source !== \"local\")) suffix.push(path);\n            }\n            const resources = manager.toResolvedPaths(accumulator).skills;\n            for (const resource of resources) metadata.set(resource.path, resource.metadata);\n            paths = this.mergePaths(prefix, [...resources.filter(r => r.enabled).map(r => this.mapSkillPath(r, metadata)), ...this.additionalSkillPaths, ...suffix]);\n        }\n        this.updateSkillsFromPaths(paths, metadata);\n        return previous !== JSON.stringify(this.getSkills());\n    }\n    async loadProjectTrustExtensions() {"
+        }
+      ]
+    },
+    {
+      "path": "dist/core/agent-session.js",
+      "before": "476722dd363a0347049d450b5a0c67386cf156ecae2b039676962aa00a857161",
+      "after": "5075c356727c1370cc7b4d75a17bf9d5ddf82d8d9bfa4edd5187c8285387529b",
+      "edits": [
+        {
+          "old": "    async reload(options) {",
+          "new": "    refreshSkills() {\n        if (!this.isIdle) throw new Error(\"skills_busy\");\n        if (typeof this._resourceLoader.refreshSkills !== \"function\") throw new Error(\"skills_refresh_unsupported\");\n        const changed = this._resourceLoader.refreshSkills();\n        if (changed) this._rebuildSystemPrompt(this.getActiveToolNames());\n        return { changed };\n    }\n    async reload(options) {"
+        }
+      ]
+    },
+    {
+      "path": "dist/modes/rpc/rpc-mode.js",
+      "before": "631697cd35928fc827f4a423538c43ff227b8cbf63c2a2f11060616f55eba6db",
+      "after": "e3eca034f28c40226a1f03bec3dcb4b390b6d4dd0f2b7fe5544a13c8d413cace",
+      "edits": [
+        {
+          "old": "    // Handle a single command",
+          "new": "    let skillRefreshPrompts = 0;\n    // Handle a single command"
+        },
+        {
+          "old": "        switch (command.type) {",
+          "new": "        switch (command.type) {\n            case \"refresh_skills\": {\n                if (skillRefreshPrompts || !session.isIdle) return error(id, \"refresh_skills\", \"skills_busy\");\n                return success(id, \"refresh_skills\", session.refreshSkills());\n            }"
+        },
+        {
+          "old": "                let preflightSucceeded = false;",
+          "new": "                let preflightSucceeded = false;\n                skillRefreshPrompts++;"
+        },
+        {
+          "old": "                });\n                return undefined;",
+          "new": "                }).finally(() => { skillRefreshPrompts--; });\n                return undefined;"
+        }
+      ]
+    }
+  ]
+}

@@ -136,6 +136,8 @@ public enum RPCCommand: Encodable, Hashable, Sendable {
     case getMessages
     case getSessionStats
     case getCommands
+    /// Shepherd's pinned engine: skills-only disk refresh, refused while busy.
+    case refreshSkills
     case setModel(provider: String, modelId: String)
     case setThinkingLevel(level: String)
     /// The levels the session's current model takes (`{"levels": [...]}`).
@@ -157,6 +159,7 @@ public enum RPCCommand: Encodable, Hashable, Sendable {
         case .getMessages: return "get_messages"
         case .getSessionStats: return "get_session_stats"
         case .getCommands: return "get_commands"
+        case .refreshSkills: return "refresh_skills"
         case .setModel: return "set_model"
         case .setThinkingLevel: return "set_thinking_level"
         case .getAvailableThinkingLevels: return "get_available_thinking_levels"
@@ -190,7 +193,7 @@ public enum RPCCommand: Encodable, Hashable, Sendable {
             try c.encodeIfPresent(cancelled, forKey: .cancelled)
         case .compact(let customInstructions):
             try c.encodeIfPresent(customInstructions, forKey: .customInstructions)
-        case .abort, .clearQueue, .getState, .getMessages, .getSessionStats, .getCommands, .getAvailableThinkingLevels, .newSession:
+        case .abort, .clearQueue, .getState, .getMessages, .getSessionStats, .getCommands, .refreshSkills, .getAvailableThinkingLevels, .newSession:
             break
         }
     }
