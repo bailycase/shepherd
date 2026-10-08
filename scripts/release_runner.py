@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bounded Horizon build selection. Publication is deliberately not part of this script."""
+"""Bounded Self-hosted build selection. Publication is deliberately not part of this script."""
 from __future__ import annotations
 
 import argparse
@@ -66,7 +66,7 @@ def cancel_run(client, worker):
         run = client.request("GET", f"/actions/runs/{worker}")
         if (run.get("status") != "completed"
                 or run.get("conclusion") not in ("success", "failure", "timed_out", "cancelled")):
-            raise RunnerError("Horizon cancellation conflict is not a known terminal state") from None
+            raise RunnerError("Self-hosted cancellation conflict is not a known terminal state") from None
         return True
     return False
 
@@ -85,11 +85,11 @@ def validate_parent(client, parent, attempt, sha, build, plan, local=False, ref=
         raise RunnerError("parent Release attempt is not active or does not match the build")
     if local:
         if run.get("head_branch") != "nightly" or plan.get("channel") != "nightly":
-            raise RunnerError("Horizon builds only Nightly releases")
+            raise RunnerError("Self-hosted builds only Nightly releases")
         jobs = client.request("GET", f"/actions/runs/{parent}/jobs?filter=latest&per_page=100")["jobs"]
-        if not any(job.get("name") == "Prefer Horizon for Nightly" and job.get("status") == "in_progress"
+        if not any(job.get("name") == "Prefer Self-hosted for Nightly" and job.get("status") == "in_progress"
                    for job in jobs):
-            raise RunnerError("parent has no active Horizon selection job")
+            raise RunnerError("parent has no active Self-hosted selection job")
     if plan.get("channel") == "nightly":
         expected_ref = release.NIGHTLY_BRANCH
         stamp = plan.get("tag", "").removeprefix("nightly-")
@@ -109,7 +109,7 @@ def select_local(client, parent, attempt, sha, build, plan, output, clock=time.m
                  sleep=time.sleep, queue=QUEUE, execution=EXECUTION, cancel=CANCEL, interval=INTERVAL):
     """One dispatch, one local attempt, at most one hosted fallback. Unknown state fails closed."""
     validate_parent(client, parent, attempt, sha, build, plan, local=True)
-    title = f"Horizon release {parent}-{attempt}"
+    title = f"Self-hosted release {parent}-{attempt}"
     deadline = clock() + queue
     client.request("POST", f"/actions/workflows/{WORKFLOW}/dispatches", {
         "ref": "nightly", "inputs": {"parent_run": str(parent), "parent_attempt": str(attempt),
@@ -122,19 +122,19 @@ def select_local(client, parent, attempt, sha, build, plan, output, clock=time.m
             runs = client.request("GET", f"/actions/workflows/{WORKFLOW}/runs?event=workflow_dispatch&per_page=100")["workflow_runs"]
             matches = [r for r in runs if r.get("display_title") == title]
             if len(matches) > 1:
-                raise RunnerError("ambiguous Horizon dispatch; no fallback")
+                raise RunnerError("ambiguous Self-hosted dispatch; no fallback")
             if matches:
                 child = matches[0]["id"]
                 output("worker_run", str(child))
                 break
             if clock() >= deadline:
-                raise RunnerError("Horizon dispatch not discovered; no fallback")
+                raise RunnerError("Self-hosted dispatch not discovered; no fallback")
             sleep(min(interval, max(0, deadline - clock())))
 
         while True:
             run = client.request("GET", f"/actions/runs/{child}")
             if run.get("run_attempt") != 1:
-                raise RunnerError("Horizon attempt was rerun; no fallback")
+                raise RunnerError("Self-hosted attempt was rerun; no fallback")
             jobs = client.request("GET", f"/actions/runs/{child}/jobs?filter=latest&per_page=100")["jobs"]
             job = next((j for j in jobs if j.get("name") == BUILD_JOB), None)
             if run.get("status") == "completed":
@@ -143,14 +143,14 @@ def select_local(client, parent, attempt, sha, build, plan, output, clock=time.m
                     artifacts = client.request("GET", f"/actions/runs/{child}/artifacts?per_page=100")["artifacts"]
                     packages = [a for a in artifacts if a.get("name") == artifact_name(parent, attempt) and not a.get("expired")]
                     if len(packages) != 1:
-                        raise RunnerError("successful Horizon build has no unique package; no fallback")
+                        raise RunnerError("successful Self-hosted build has no unique package; no fallback")
                     validate_parent(client, parent, attempt, sha, build, plan, local=True)
                     output("package_run", str(child))
                     output("fallback", "false")
                     return
                 if (run.get("conclusion") not in ("failure", "timed_out")
                         or not job or job.get("conclusion") not in ("failure", "timed_out")):
-                    raise RunnerError("Horizon was cancelled or failed before building; no fallback")
+                    raise RunnerError("Self-hosted was cancelled or failed before building; no fallback")
                 break
             if job and job.get("status") == "in_progress" and started is None:
                 started = clock()
@@ -166,12 +166,12 @@ def select_local(client, parent, attempt, sha, build, plan, output, clock=time.m
                         completed = True
                         break
                     if clock() >= acknowledgement:
-                        raise RunnerError("Horizon cancellation not acknowledged; no fallback")
+                        raise RunnerError("Self-hosted cancellation not acknowledged; no fallback")
                     sleep(min(interval, max(0, acknowledgement - clock())))
                 if run.get("conclusion") == "success":
                     continue  # Success raced cancellation: prefer its complete local package.
                 if run.get("conclusion") not in ("cancelled", "failure", "timed_out"):
-                    raise RunnerError("unexpected terminal Horizon state; no fallback")
+                    raise RunnerError("unexpected terminal Self-hosted state; no fallback")
                 break
             sleep(min(interval, max(0, limit - clock())))
         validate_parent(client, parent, attempt, sha, build, plan, local=True)
@@ -239,7 +239,7 @@ def main():
         elif args.command == "validate":
             if args.local and (env.get("GITHUB_REF") != release.NIGHTLY_BRANCH
                                or env.get("GITHUB_RUN_ATTEMPT") != "1"):
-                raise RunnerError("Horizon dispatch must be a first attempt on nightly")
+                raise RunnerError("Self-hosted dispatch must be a first attempt on nightly")
             validate_parent(client, parent, attempt, sha, build, plan, args.local, env.get("GITHUB_REF"))
         else:
             select_local(client, parent, attempt, sha, build, plan, output)
