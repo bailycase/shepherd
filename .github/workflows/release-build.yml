@@ -1,0 +1,37 @@
+name: Release build
+run-name: Horizon release ${{ inputs.parent_run }}-${{ inputs.parent_attempt }}
+
+# Registration only. Dispatch targeting nightly runs nightly's reviewed implementation.
+# This default-branch copy must never build, sign, or publish an older master source.
+on:
+  workflow_dispatch:
+    inputs:
+      parent_run:
+        type: string
+        required: true
+      parent_attempt:
+        type: string
+        required: true
+      source_sha:
+        type: string
+        required: true
+      build_number:
+        type: string
+        required: true
+      plan:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  registration-only:
+    name: Refuse default-branch execution
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: python3 scripts/release_runner.py
