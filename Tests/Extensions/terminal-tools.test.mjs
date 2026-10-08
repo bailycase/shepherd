@@ -72,6 +72,95 @@ async function harness(replyTo) {
 
 const output = (result) => result.content.map((block) => block.text).join("\n");
 
+test("project tools send authenticated requests and return registration and refresh results", async () => {
+  const space = { id: "s1", name: "psp-hub", path: "/projects/hub" };
+  let created = true;
+  const h = await harness((frame) => {
+    if (["registerProject", "addChildProject"].includes(frame.type)) return { type: "projectResult", space, created };
+    if (frame.type === "refreshProjects") return { type: "projectResult", created: false };
+  });
+  try {
+    const register = h.tools.get("project_register");
+    assert.deepEqual(register.parameters.required, ["path", "name"]);
+    assert.deepEqual(JSON.parse(output(await register.execute("call", { path: "/projects/hub", name: "psp-hub" }))), { space, created: true });
+    created = false;
+    assert.deepEqual(JSON.parse(output(await register.execute("call", { path: "/projects/hub", name: "unchanged" }))), { space, created: false });
+    assert.deepEqual(JSON.parse(output(await h.tools.get("project_refresh").execute("call", {}))), { refreshed: true });
+    const frames = h.frames.filter((f) => ["registerProject", "refreshProjects"].includes(f.type));
+    assert.equal(frames.length, 3);
+    assert.ok(frames.every((f) => f.agentID === "agent-1"));
+    assert.equal(frames[0].path, "/projects/hub");
+    assert.equal(frames[0].name, "psp-hub");
+    const child = h.tools.get("project_add_child");
+    assert.deepEqual(child.parameters.required, ["parentPath", "path", "name", "create"]);
+    for (const create of [true, false]) {
+      const result = await child.execute("child", { parentPath: "/projects", path: "/projects/hub", name: "psp-hub", create });
+      assert.deepEqual(JSON.parse(output(result)), { space, created: false });
+    }
+    assert.deepEqual(h.frames.filter((f) => f.type === "addChildProject").map((f) => [f.parentPath, f.path, f.name, f.create, f.agentID]),
+      [["/projects", "/projects/hub", "psp-hub", true, "agent-1"], ["/projects", "/projects/hub", "psp-hub", false, "agent-1"]]);
+  } finally { h.close(); }
+});
+
+test("project tools defer by default and are absent from automation runs", async () => {
+  const previous = process.env.SHEPHERD_DEFER_TOOLS;
+  const automation = process.env.SHEPHERD_AUTOMATION;
+  process.env.SHEPHERD_DEFER_TOOLS = "1";
+  delete process.env.SHEPHERD_AUTOMATION;
+  const h = await harness(() => null);
+  try {
+    for (const name of ["project_register", "project_add_child", "project_edit", "project_delete", "project_refresh"]) {
+      assert.equal(h.tools.get(name).exposure, "deferred");
+      assert.equal(h.tools.get(name).namespace.name, "shepherd_projects");
+    }
+    process.env.SHEPHERD_AUTOMATION = "1";
+    const run = await harness(() => null);
+    try {
+      assert.ok(!run.tools.has("project_register"));
+      assert.ok(!run.tools.has("project_add_child"));
+      assert.ok(!run.tools.has("project_edit"));
+      assert.ok(!run.tools.has("project_delete"));
+      assert.ok(!run.tools.has("project_refresh"));
+    } finally { run.close(); }
+  } finally {
+    h.close();
+    if (previous === undefined) delete process.env.SHEPHERD_DEFER_TOOLS; else process.env.SHEPHERD_DEFER_TOOLS = previous;
+    if (automation === undefined) delete process.env.SHEPHERD_AUTOMATION; else process.env.SHEPHERD_AUTOMATION = automation;
+  }
+});
+
+test("project edits default to metadata only and deletion does not claim completed removal", async () => {
+  const space = { id: "s1", name: "Docs", path: "/project/docs" };
+  const h = await harness((frame) => ["editProject", "deleteProject"].includes(frame.type)
+    ? { type: "projectResult", space, created: frame.request?.folderAction === "copy" } : null);
+  try {
+    const edit = h.tools.get("project_edit");
+    assert.deepEqual(edit.parameters.required, ["projectID"]);
+    assert.deepEqual(JSON.parse(output(await edit.execute("call", { projectID: "s1", name: "Docs", parentProjectID: "s2" }))), { space, created: false });
+    const metadata = h.frames.find((f) => f.type === "editProject");
+    assert.equal(metadata.request.folderAction, "none");
+    assert.equal(metadata.request.destinationPath, undefined);
+    assert.equal(metadata.request.parentProjectID, "s2");
+    assert.equal(metadata.agentID, "agent-1");
+    for (const folderAction of ["move", "copy"]) {
+      const result = JSON.parse(output(await edit.execute("call", { projectID: "s1", folderAction, destinationPath: "/new/docs" })));
+      assert.equal(result.created, folderAction === "copy");
+    }
+    assert.deepEqual(h.frames.filter((f) => f.type === "editProject").slice(1).map((f) => [f.request.folderAction, f.request.destinationPath]), [["move", "/new/docs"], ["copy", "/new/docs"]]);
+    const deletion = h.tools.get("project_delete");
+    assert.deepEqual(deletion.parameters.required, ["projectID"]);
+    assert.deepEqual(JSON.parse(output(await deletion.execute("call", { projectID: "s1" }))), { projectID: "s1", status: "confirmation_required" });
+  } finally { h.close(); }
+});
+
+test("project registration reports server validation failures instead of success", async () => {
+  const h = await harness((frame) => frame.type === "registerProject"
+    ? { type: "error", code: "invalid_path", message: "Project path must be an existing readable directory." } : null);
+  try {
+    await assert.rejects(() => h.tools.get("project_register").execute("call", { path: "/missing", name: "Name" }), /invalid_path/);
+  } finally { h.close(); }
+});
+
 test("the tools are the terminal_* set and the old pane_* names are gone", async () => {
   const h = await harness(() => null);
   try {

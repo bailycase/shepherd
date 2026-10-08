@@ -172,8 +172,8 @@ struct ProjectsControlTests {
     }
 
     /// The tree (SettingsProjects, parents and subprojects): a folder inside another project sits
-    /// under it, the disclosure folds it away and back, Add subproject opens the folder picker in the
-    /// parent's folder, and a subproject's Open project opens it.
+    /// under it, the disclosure folds it away and back, Add subproject opens the create-or-add
+    /// dialog for the parent, and a subproject's Open project opens it.
     @Test func theTreesDisclosureAddSubprojectAndOpenProjectWorkThroughAccessibility() async {
         await #expect(processExitsWith: .success) {
             await recordingErrors { try await Self.pressTree() }
@@ -213,15 +213,24 @@ struct ProjectsControlTests {
         try await eventuallyOnMain("Add subproject") { window.controls().contains { $0.label == "Add subproject to acme" } }
         let add = try window.press("Add subproject to acme")
         #expect(ControlPress.undersized([add], minimum: .desktop).isEmpty)
-        try await eventuallyOnMain("the folder picker in acme's folder") {
+        try await eventuallyOnMain("the child-project dialog") {
             guard let sheet = window.window.attachedSheet?.contentView else { return false }
             sheet.layoutSubtreeIfNeeded()
-            // The listing is acme's: its apps folder is a row.
-            return AccessibilityNode.all(under: sheet).contains { $0.label == "apps" }
+            return ControlPress.controls(in: sheet).contains { $0.label == "Create and add" }
         }
         let sheet = try #require(window.window.attachedSheet?.contentView)
+        try ControlPress.press("Existing folder", role: ControlRole.radioButton, under: sheet)
+        sheet.layoutSubtreeIfNeeded()
+        try ControlPress.press("Browse…", under: sheet)
+        try await eventuallyOnMain("the folder picker in acme's folder") {
+            guard let picker = window.window.attachedSheet?.attachedSheet?.contentView else { return false }
+            return AccessibilityNode.all(under: picker).contains { $0.label == "apps" }
+        }
+        let picker = try #require(window.window.attachedSheet?.attachedSheet?.contentView)
+        try ControlPress.press("Cancel", under: picker)
+        try await eventuallyOnMain("the folder picker to close") { window.window.attachedSheet?.attachedSheet == nil }
         try ControlPress.press("Cancel", under: sheet)
-        try await eventuallyOnMain("the folder picker to close") { window.window.attachedSheet == nil }
+        try await eventuallyOnMain("the child dialog to close") { window.window.attachedSheet == nil }
 
         try await eventuallyOnMain("Open project") { window.controls().contains { $0.label == "Open project" } }
         let open = try window.press("Open project")

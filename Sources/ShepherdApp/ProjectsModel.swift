@@ -21,8 +21,10 @@ struct ProjectsRow: Equatable, Identifiable {
     var project: ProjectSummary
     /// Its subprojects on the same host, shown under it (a top-level row only).
     var children = 0
+    var sharesConfigurationWithChildren = false
     /// Its parent's name, for "From <parent>" (a subproject only).
     var parentName: String?
+    var ancestorIDs: [String] = []
     var id: String { host.id + "\n" + project.directory }
     var unavailable: String? { host.unavailable ?? project.error }
     var isSubproject: Bool { parentName != nil }
@@ -31,10 +33,10 @@ struct ProjectsRow: Equatable, Identifiable {
     /// "2 inherited · 1 local MCP" (its own servers counted apart), else the host's summary.
     var configuration: String {
         let own = project.mcpServers.count, inherited = project.inheritedMCP.count
-        if isSubproject, inherited > 0 {
+        if inherited > 0 {
             return own > 0 ? "\(inherited) inherited · \(own) local MCP" : "\(inherited) inherited MCP \(inherited == 1 ? "server" : "servers")"
         }
-        if children > 0, own > 0 { return "\(own) shared MCP \(own == 1 ? "server" : "servers")" }
+        if sharesConfigurationWithChildren, own > 0 { return "\(own) shared MCP \(own == 1 ? "server" : "servers")" }
         return project.summary
     }
 
@@ -45,16 +47,18 @@ struct ProjectsRow: Equatable, Identifiable {
             row.project.parent.map { row.host.id + "\n" + $0 }.flatMap { byKey[$0] == nil ? nil : $0 }
         }
         let children = Dictionary(grouping: rows.filter { parentKey($0) != nil }, by: { parentKey($0)! })
-        return rows.filter { parentKey($0) == nil }.flatMap { top -> [ProjectsRow] in
-            var top = top
-            let kids = (children[top.id] ?? []).map { kid -> ProjectsRow in
-                var kid = kid
-                kid.parentName = top.project.name
-                return kid
+        func branch(_ row: ProjectsRow, ancestors: [String], parentName: String?) -> [ProjectsRow] {
+            var row = row
+            row.ancestorIDs = ancestors
+            row.parentName = parentName
+            let kids = (children[row.id] ?? []).filter { !ancestors.contains($0.id) }.flatMap {
+                branch($0, ancestors: ancestors + [row.id], parentName: row.project.name)
             }
-            top.children = kids.count
-            return [top] + kids
+            row.children = kids.count
+            row.sharesConfigurationWithChildren = kids.contains { ProjectNesting.parent(of: $0.project.directory, among: [row.project.directory]) != nil }
+            return [row] + kids
         }
+        return rows.filter { parentKey($0) == nil }.flatMap { branch($0, ancestors: [], parentName: nil) }
     }
 }
 
@@ -167,6 +171,7 @@ final class ProjectsModel {
     var pending: Pending?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var loadGeneration = 0
+    @ObservationIgnored private var loadInFlight = false
     @ObservationIgnored private var loadedHosts: [ProjectsHost]?
 
     init(request: @escaping Request) { self.request = request }
@@ -188,16 +193,12 @@ final class ProjectsModel {
             }
         }
         let tree = ProjectsRow.tree(rows.filter { host == "all" || $0.host.id == host })
-        var next: [ProjectsRow] = []
-        var index = 0
-        while index < tree.count {
-            let top = tree[index]
-            let kids = Array(tree[(index + 1)..<min(tree.count, index + 1 + top.children)])
-            index += 1 + top.children
-            let matchedKids = matches(top) ? kids : kids.filter(matches)
-            guard matches(top) || !matchedKids.isEmpty else { continue }
-            next.append(top)
-            if query.isEmpty ? !collapsed.contains(top.id) : true { next += matchedKids }
+        let matching = tree.filter(matches)
+        let matchingIDs = Set(matching.map(\.id))
+        let ancestors = Set(matching.flatMap(\.ancestorIDs))
+        let next = tree.filter { row in
+            let included = matchingIDs.contains(row.id) || ancestors.contains(row.id) || row.ancestorIDs.contains { matchingIDs.contains($0) }
+            return included && (!query.isEmpty || !row.ancestorIDs.contains { collapsed.contains($0) })
         }
         if visible != next { visible = next }
     }
@@ -205,10 +206,15 @@ final class ProjectsModel {
     /// Projects counted the board's way: every project the hosts list, subprojects included.
     var countText: String { rows.count == 1 ? "1 project" : "\(rows.count) projects" }
 
-    func load(_ sources: [ProjectsHost], force: Bool = false) async {
-        guard force || loadedHosts != sources else { return }
+    @discardableResult
+    func load(_ sources: [ProjectsHost], force: Bool = false) async -> Bool {
+        guard force || loadedHosts != sources else { return true }
+        // A Settings .task caused by adoption must not supersede the tool's identical reload.
+        guard force || !loadInFlight || hosts != sources else { return false }
         loadGeneration += 1
         let revision = loadGeneration
+        loadInFlight = true
+        defer { if revision == loadGeneration { loadInFlight = false } }
         hosts = sources
         if host != "all", !sources.contains(where: { $0.id == host }) { host = "all" }
         loading = rows.isEmpty; error = nil
@@ -220,12 +226,12 @@ final class ProjectsModel {
                     var offset = 0, pages = 0
                     projects = []
                     repeat {
-                        guard revision == loadGeneration else { return }
-                        guard !Task.isCancelled else { loading = false; return }
+                        guard revision == loadGeneration else { return false }
+                        guard !Task.isCancelled else { loading = false; return false }
                         guard case .listing(let page) = try await request(source, .list(offset: offset)) else {
                             throw ProjectFileError("protocol", "Unexpected project listing.")
                         }
-                        guard revision == loadGeneration, !Task.isCancelled else { return }
+                        guard revision == loadGeneration, !Task.isCancelled else { return false }
                         projects += page.projects
                         pages += 1
                         guard let next = page.nextOffset else { break }
@@ -233,7 +239,7 @@ final class ProjectsModel {
                         offset = next
                     } while true
                 } catch {
-                    guard revision == loadGeneration else { return }
+                    guard revision == loadGeneration else { return false }
                     source.unavailable = String(describing: error)
                     projects = rows.filter { $0.host.id == source.id && $0.host.endpointID == source.endpointID }.map(\.project)
                     if projects.isEmpty { projects = source.known }
@@ -245,8 +251,8 @@ final class ProjectsModel {
             }
             next += projects.map { ProjectsRow(host: source, project: $0) }
         }
-        guard revision == loadGeneration else { return }
-        guard !Task.isCancelled else { loading = false; return }
+        guard revision == loadGeneration else { return false }
+        guard !Task.isCancelled else { loading = false; return false }
         rows = next; loading = false; loadedHosts = sources; derive()
         if let selected, let current = rows.first(where: { $0.id == selected.id }) {
             if current.host.endpointID == selected.host.endpointID { self.selected = current }
@@ -257,6 +263,7 @@ final class ProjectsModel {
             }
         }
         if self.selected?.unavailable != nil || self.selected?.host.supportsMCP == false { closeMCPSignIn() }
+        return true
     }
 
     func open(_ row: ProjectsRow) async {
@@ -418,9 +425,14 @@ extension ShepherdViewModel {
     var projectsSources: [ProjectsHost] {
         func known(_ state: ShepherdState, reason: String?) -> [ProjectSummary] {
             var seen = Set<String>()
+            let parents = ProjectNesting.parents(in: state.spaces)
+            let spaces = Dictionary(uniqueKeysWithValues: state.spaces.map { ($0.id, $0) })
             return ProjectSettingsStore.directories(in: state).compactMap { directory, name in
                 guard seen.insert(directory).inserted else { return nil }
-                return ProjectSummary(directory: directory, name: name, displayPath: directory, summary: reason ?? "loading project settings", minimal: true)
+                let space = state.spaces.first { $0.path == directory }
+                let parent = space.flatMap { parents[$0.id] }.flatMap { spaces[$0]?.path }
+                return ProjectSummary(directory: directory, name: name, displayPath: directory, summary: reason ?? "loading project settings", minimal: true,
+                                      projectID: space?.id, parent: parent)
             }
         }
         return [ProjectsHost(id: "local", name: "This Mac", known: known(state, reason: nil))] + remoteHosts.connections.map { connection in
@@ -443,11 +455,73 @@ extension ShepherdViewModel {
         return model
     }
 
+    func childProjectModel(path: String, name: String) -> ChildProjectModel {
+        ChildProjectModel(parentPath: path, parentName: name) { [weak self] request in
+            guard let self else { throw ProjectFileError("unavailable", "Shepherd is closing.") }
+            _ = try await self.handleProjectRequest(request)
+        }
+    }
+
+    func installProjectControl() {
+        server.onProjectRequest = { [weak self] request, respond in
+            MainActor.assumeIsolated {
+                _ = Task<Void, Never> { @MainActor in
+                    guard let self else {
+                        respond(.failure(ProjectFileError("unavailable", "Shepherd is closing.")))
+                        return
+                    }
+                    do { respond(.success(try await self.handleProjectRequest(request))) }
+                    catch let error as ProjectFileError { respond(.failure(error)) }
+                    catch { respond(.failure(ProjectFileError("failed", String(describing: error)))) }
+                }
+            }
+        }
+    }
+
+    func handleProjectRequest(_ request: ProjectRequest) async throws -> (space: Space?, created: Bool) {
+        let result: (space: Space?, created: Bool)
+        var revealHierarchy = false
+        switch request {
+        case .register(let path, let name):
+            let registered = try await server.registerProject(path: path, name: name)
+            result = (registered.space, registered.created)
+        case .refresh:
+            result = (nil, false)
+        case .edit(let id, let request):
+            result = (try await server.editProject(id, edit: request), request.folderAction == .copy)
+            revealHierarchy = request.parentProjectID != nil
+        case .delete(let id):
+            guard let space = server.state.spaces.first(where: { $0.id == id && !$0.hidden }) else {
+                throw ProjectFileError("no_such_project", "No registered local project has that ID.")
+            }
+            guard spaceDeleteTarget == nil || spaceDeleteTarget == id else {
+                throw ProjectFileError("confirmation_busy", "Another project removal is awaiting confirmation.")
+            }
+            adopt(server.state)
+            spaceDeleteTarget = id
+            return (space, false)
+        case .child(let parentPath, let path, let name, let create):
+            let registered = try await server.addChildProject(parentPath: parentPath, path: path, name: name, create: create)
+            result = (registered.space, registered.created)
+        }
+        // Adopt before replying, without selecting a project or touching editor drafts.
+        let canonical = server.state
+        sessions.stateDidChange(canonical)
+        adopt(canonical)
+        if result.created || revealHierarchy, let space = result.space, let project = sidebarTree.projects.first(where: { $0.space == space.id }) {
+            for parent in project.ancestorIDs { setProject(parent, expanded: true) }
+        }
+        guard await projects.load(projectsSources, force: true) else {
+            throw ProjectFileError("refresh_superseded", "Another project reload started. Registration, if requested, is preserved. Retry project_refresh.")
+        }
+        if let error = projects.error { throw ProjectFileError("refresh_failed", error) }
+        return result
+    }
+
     func addSettingsProject(path: String, host: ProjectsHost) async throws {
         if host.id == "local" {
-            if state.spaces.contains(where: { $0.path == path }) { return }
-            try await server.addSpace(Space(name: URL(fileURLWithPath: path).lastPathComponent, path: path), first: true)
-            adopt(server.state)
+            _ = try await handleProjectRequest(.register(path: path, name: URL(fileURLWithPath: path).lastPathComponent))
+            return
         } else if let hostID = UUID(uuidString: host.id) {
             guard remoteHosts.connections.first(where: { $0.id == hostID })?.endpointID == host.endpointID else {
                 throw ProjectFileError("host_changed", "The host address changed. Close the picker and choose the host again.")

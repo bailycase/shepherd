@@ -46,6 +46,9 @@ struct AppDialogs: ViewModifier {
                 FinalizeWorktreeSheet(vm: vm, agent: request.agent, space: request.space)
                     .dialogSheetFrame()
             }
+            .sheet(item: $vm.addingChildProject) { model in
+                ChildProjectSheet(model: model, dismiss: { vm.addingChildProject = nil })
+            }
             .sheet(item: $vm.spacePickerTarget) { target in
                 spacePicker(target)
                     .dialogSheetFrame()
@@ -71,13 +74,7 @@ struct AppDialogs: ViewModifier {
                     .dialogSheetFrame()
             }
             .sheet(item: $vm.spaceRenameSpace) { space in
-                RenameDialog(title: "Rename space", caption: "Sidebar label only — the folder on disk is not renamed.",
-                             name: space.name) { name in
-                    vm.renameSpace(space.id, to: name)
-                    vm.spaceRenameTarget = nil
-                } onCancel: {
-                    vm.spaceRenameTarget = nil
-                }
+                ProjectRenameDialog(vm: vm, space: space)
             }
             .sheet(item: $vm.agentRenameAgent) { agent in
                 RenameDialog(title: "Rename agent", name: agent.name) { name in
@@ -334,7 +331,28 @@ struct PeerDeleteDialog: View {
     }
 }
 
-/// Remove Space: always confirmed, since it stops the space's agents.
+struct ProjectRenameDialog: View {
+    var vm: ShepherdViewModel
+    let space: Space
+    @State var error: String?
+
+    static func problem(_ name: String) -> String? {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !name.isEmpty && name.count <= 256 && name.rangeOfCharacter(from: .controlCharacters) == nil
+            ? nil : "Use a name of 1–256 characters without control characters."
+    }
+
+    var body: some View {
+        RenameDialog(title: "Rename project", caption: error ?? "Display name only. The folder name and location stay unchanged.", name: space.name) { name in
+            let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let problem = Self.problem(name) { error = problem; return }
+            vm.renameSpace(space.id, to: name)
+            vm.spaceRenameTarget = nil
+        } onCancel: { vm.spaceRenameTarget = nil }
+    }
+}
+
+/// Remove Project: always confirmed, since it stops the project's agents.
 struct SpaceDeleteDialog: View {
     var vm: ShepherdViewModel
     let space: Space
@@ -342,12 +360,12 @@ struct SpaceDeleteDialog: View {
     var body: some View {
         let count = vm.state.agents.count { $0.spaceID == space.id }
         DialogSheet(
-            title: "Remove space",
+            title: "Remove project",
             subtitle: "Removes \(space.name) from the sidebar and stops its \(count) agent\(count == 1 ? "" : "s"). "
-                + "Conversations stay on disk; the checkout is untouched. Nested project spaces are separate and survive.",
+                + "The local folder and all its files are kept. Saved conversations and project history remain. Child projects stay registered.",
             actions: [
                 DialogAction("Cancel", kind: .cancel) { vm.spaceDeleteTarget = nil },
-                DialogAction("Remove space", kind: .destructive) {
+                DialogAction("Remove project", kind: .destructive) {
                     let id = space.id
                     vm.spaceDeleteTarget = nil
                     // Deleting a space tears down mounted terminal layouts — a huge view-tree

@@ -246,6 +246,31 @@ struct StateMutationTests {
         #expect(try await committed(h) == ShepherdState(spaces: [space]))
     }
 
+    @Test func registeringAProjectPersistsAndBroadcastsOnceEvenWhenCallsRace() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        async let first = h.server.registerProject(path: h.dir.path, name: "Project")
+        async let second = h.server.registerProject(path: h.dir.path + "/.", name: "Other name")
+        let results = try await [first, second]
+        #expect(results.filter(\.created).count == 1)
+        #expect(results[0].space == results[1].space)
+        #expect(try await committed(h) == ShepherdState(spaces: [results[0].space]))
+    }
+
+    @Test func duplicateProjectRegistrationPreservesNamesFlagsOrderAndDisk() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        var space = Fixture.space("Keep this name", path: h.dir.path)
+        space.sidebarHidden = true
+        let other = Fixture.space("Other")
+        try await h.seed(ShepherdState(spaces: [other, space]))
+        try await expectNoChange(on: h) {
+            let result = try await h.server.registerProject(path: h.dir.path, name: "Do not rename")
+            #expect(result.space == space)
+            #expect(!result.created)
+        }
+    }
+
     @Test func addingASpaceTwiceIsAConflict() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }

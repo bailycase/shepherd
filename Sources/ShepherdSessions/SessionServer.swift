@@ -277,6 +277,7 @@ public final class SessionServer: @unchecked Sendable {
     /// the reply comes back through the completion. Delivered on the main
     /// actor; the completion may be called from any thread.
     public var onPaneRequest: ((PaneRequest, @escaping (PaneOutcome) -> Void) -> Void)?
+    public var onProjectRequest: ((ProjectRequest, @escaping (ProjectOutcome) -> Void) -> Void)?
     /// An agent asked to open a native diff-review pane. The GUI owns the
     /// review layout and user interaction; the completion carries the result.
     public var onReviewRequest: ((ReviewRequest, @escaping (ReviewOutcome) -> Void) -> Void)?
@@ -414,6 +415,10 @@ public final class SessionServer: @unchecked Sendable {
     private let queue = DispatchQueue(label: "shepherd.sessions")
     private let socketPath: String
     private let store: StateStore
+    // ponytail: serialize workspace writes during explicit folder IO; per-project reservations
+    // can replace this if concurrent large transfers become necessary.
+    private var projectFolderOperation = false
+    private var projectDirectoryRequests = 0
     private let modelCatalog: ModelCatalog
     /// Which pi this server's agents run, and its home (`PiSetup`).
     public let pi: PiSetup
@@ -2789,6 +2794,16 @@ public final class SessionServer: @unchecked Sendable {
             for (token, pending) in agentRequests where pending.caller === client && pending.id == id && !pending.deletionConfirmed {
                 finishAgentRequest(token, result: .init(text: "request cancelled", code: "cancelled"))
             }
+        case .editProject(let id, let agentID, let projectID, let request):
+            routeProjectRequest(.edit(projectID: projectID, request: request), agentID: agentID, requestID: id, client: client)
+        case .deleteProject(let id, let agentID, let projectID):
+            routeProjectRequest(.delete(projectID: projectID), agentID: agentID, requestID: id, client: client)
+        case .registerProject(let id, let agentID, let path, let name):
+            routeProjectRequest(.register(path: path, name: name), agentID: agentID, requestID: id, client: client)
+        case .refreshProjects(let id, let agentID):
+            routeProjectRequest(.refresh, agentID: agentID, requestID: id, client: client)
+        case .addChildProject(let id, let agentID, let parentPath, let path, let name, let create):
+            routeProjectRequest(.child(parentPath: parentPath, path: path, name: name, create: create), agentID: agentID, requestID: id, client: client)
         case .listAgents(let id, let agentID):
             guard !refusesDesignPeer(id: id, sender: agentID, client: client) else { return }
             routeAgentPeerRequest(.list(agentID: agentID), requestID: id, client: client)
@@ -3520,8 +3535,32 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    /// Hand a peer-thread request to the GUI and write its reply back, the
-    /// same shape as pane routing.
+    /// Project requests use the app's live adoption and settings reload path.
+    private func routeProjectRequest(_ request: ProjectRequest, agentID: AgentID, requestID: Int, client: ExtensionConnection) {
+        guard store.state.agents.contains(where: { $0.id == agentID && $0.designID == nil }) else {
+            reply(.error(id: requestID, code: "no_such_agent", message: "Project tools require a live thread."), to: client)
+            return
+        }
+        guard let handler = onProjectRequest else {
+            reply(.error(id: requestID, code: "unsupported", message: "Project control unavailable."), to: client)
+            return
+        }
+        hopToMain { [weak self, weak client] in
+            handler(request) { outcome in
+                guard let self, let client else { return }
+                self.queue.async {
+                    switch outcome {
+                    case .success(let result):
+                        self.reply(.projectResult(id: requestID, space: result.space, created: result.created), to: client)
+                    case .failure(let error):
+                        self.reply(.error(id: requestID, code: error.code, message: error.description), to: client)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Hand a peer-thread request to the GUI and write its reply back.
     private func routeAgentPeerRequest(_ request: AgentPeerRequest, requestID: Int, client: ExtensionConnection) {
         guard let handler = onAgentPeerRequest else {
             reply(.error(id: requestID, code: "unsupported", message: "agent peers unavailable"), to: client)
@@ -3842,7 +3881,7 @@ public final class SessionServer: @unchecked Sendable {
     private func replyID(_ message: ExtensionReply) -> Int {
         switch message {
         case .parentInput: return 0
-        case .childCommand(let id, _, _, _, _), .ok(let id),
+        case .childCommand(let id, _, _, _, _), .ok(let id), .projectResult(let id, _, _),
              .error(let id, _, _),
              .panes(let id, _),
              .paneOpened(let id, _),
@@ -4080,6 +4119,7 @@ public final class SessionServer: @unchecked Sendable {
     /// Apply a state mutation, persist it, and notify the GUI.
     private func mutateState(_ mutate: (inout ShepherdState) -> Void) throws {
         try requireStarted()
+        guard !projectFolderOperation else { throw ProjectFileError("project_busy", "A project folder operation is in progress. Retry after it completes.") }
         let before = store.state
         do {
             try store.update(mutate)
@@ -4226,13 +4266,160 @@ public final class SessionServer: @unchecked Sendable {
     /// `first` puts it at the top of the projects (a project the user adds: the sidebar's project
     /// tree lists new ones on top); otherwise it goes last.
     public func addSpace(_ space: Space, first: Bool = false) async throws {
+        try await enqueue { try self.addSpaceOnQueue(space, first: first) }
+    }
+
+    private func addSpaceOnQueue(_ space: Space, first: Bool) throws {
+        guard !store.state.spaces.contains(where: { $0.id == space.id }) else {
+            throw SessionServerError.conflict("space \(space.id) already exists")
+        }
+        try mutateState {
+            if first { $0.spaces.insert(space, at: 0) } else { $0.spaces.append(space) }
+        }
+    }
+
+    /// Folder creation/validation and physical transfers must not race each other.
+    private func withProjectDirectoryAccess<T>(_ operation: () async throws -> T) async throws -> T {
         try await enqueue {
-            guard !self.store.state.spaces.contains(where: { $0.id == space.id }) else {
-                throw SessionServerError.conflict("space \(space.id) already exists")
+            try self.requireStarted()
+            guard !self.projectFolderOperation else { throw ProjectFileError("project_busy", "A project folder operation is in progress.") }
+            self.projectDirectoryRequests += 1
+        }
+        do {
+            let result = try await operation()
+            _ = await enqueueValue { self.projectDirectoryRequests -= 1 }
+            return result
+        } catch {
+            _ = await enqueueValue { self.projectDirectoryRequests -= 1 }
+            throw error
+        }
+    }
+
+    public func registerProject(path: String, name: String) async throws -> (space: Space, created: Bool) {
+        try await withProjectDirectoryAccess { try await registerProjectDirectory(path: path, name: name) }
+    }
+
+    /// Validate off the state queue; deduplicate and persist atomically on it.
+    private func registerProjectDirectory(path: String, name: String) async throws -> (space: Space, created: Bool) {
+        let spaces = state.spaces
+        let prepared = try await Task.detached(priority: .userInitiated) {
+            let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let expanded = (path as NSString).expandingTildeInPath
+            guard expanded.hasPrefix("/"), !path.contains("\0"),
+                  !name.isEmpty, name.count <= 256,
+                  name.rangeOfCharacter(from: .controlCharacters) == nil else {
+                throw ProjectFileError("invalid", "Provide an absolute directory path and a display name of 1–256 characters without control characters.")
             }
-            try self.mutateState {
-                if first { $0.spaces.insert(space, at: 0) } else { $0.spaces.append(space) }
+            let canonical = URL(fileURLWithPath: expanded).standardizedFileURL.resolvingSymlinksInPath().path
+            var directory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: canonical, isDirectory: &directory), directory.boolValue,
+                  FileManager.default.isReadableFile(atPath: canonical) else {
+                throw ProjectFileError("invalid_path", "Project path must be an existing readable directory.")
             }
+            let aliases = Set(spaces.filter {
+                URL(fileURLWithPath: $0.path).standardizedFileURL.resolvingSymlinksInPath().path == canonical
+            }.map(\.path))
+            return (Space(name: name, path: canonical), aliases)
+        }.value
+        return try await enqueue {
+            if let existing = self.store.state.spaces.first(where: { $0.path == prepared.0.path || prepared.1.contains($0.path) }) {
+                return (existing, false)
+            }
+            try self.addSpaceOnQueue(prepared.0, first: true)
+            return (prepared.0, true)
+        }
+    }
+
+    public func editProject(_ id: SpaceID, edit: ProjectEdit) async throws -> Space {
+        let prepared = try await enqueue { () -> (Space, ShepherdState, [String]) in
+            try self.requireStarted()
+            guard !self.projectFolderOperation, edit.folderAction == .none || self.projectDirectoryRequests == 0 else {
+                throw ProjectFileError("project_busy", "Another project folder request is in progress. Retry after it completes.")
+            }
+            guard let current = self.store.state.spaces.first(where: { $0.id == id && !$0.hidden }) else {
+                throw ProjectFileError("no_such_project", "No registered local project has that ID.")
+            }
+            var editing = current
+            if edit.folderAction == .copy { editing.id = SpaceID(); editing.sidebarHidden = false }
+            let candidates = edit.folderAction == .copy ? self.store.state.spaces + [editing] : self.store.state.spaces
+            let updated = try ProjectEditing.updated(editing, edit: edit, spaces: candidates)
+            if edit.folderAction == .none {
+                if current != updated { try self.mutateState { state in state.spaces[state.spaces.firstIndex { $0.id == id }!] = updated } }
+            } else { self.projectFolderOperation = true }
+            return (updated, self.store.state, self.sessions.values.filter(\.isAlive).map { $0.info.cwd })
+        }
+        guard edit.folderAction != .none else { return prepared.0 }
+        let plan: ProjectFolderTransfer.Plan
+        do {
+            plan = try await Task.detached(priority: .userInitiated) {
+                try ProjectFolderTransfer.plan(space: prepared.0, edit: edit, state: prepared.1, liveDirectories: prepared.2,
+                    protectedPaths: [self.store.url.deletingLastPathComponent().path, self.pi.home.path,
+                                     (self.pi.userHome as NSString).appendingPathComponent(".pi"),
+                                     (self.pi.userHome as NSString).appendingPathComponent(".agents"),
+                                     "/Applications", "/System", "/Library", Bundle.main.bundlePath])
+            }.value
+            try await Task.detached(priority: .userInitiated) { try ProjectFolderTransfer.perform(plan) }.value
+        } catch {
+            _ = await enqueueValue { self.projectFolderOperation = false }
+            throw error
+        }
+        do {
+            return try await enqueue {
+                self.projectFolderOperation = false
+                var updated = prepared.0
+                updated.path = plan.destination
+                do {
+                    try self.mutateState { state in
+                        if plan.action == .copy {
+                            state.spaces.insert(updated, at: 0)
+                        } else {
+                            for index in state.spaces.indices {
+                                if state.spaces[index].id == id { state.spaces[index] = updated }
+                                else if let path = plan.paths[state.spaces[index].id] { state.spaces[index].path = path }
+                            }
+                        }
+                    }
+                } catch { self.projectFolderOperation = true; throw error }
+                return updated
+            }
+        } catch {
+            let restored = plan.action == .move ? await Task.detached { ProjectFolderTransfer.rollbackMove(plan) }.value : false
+            _ = await enqueueValue { self.projectFolderOperation = false }
+            throw ProjectFileError("registration_failed", "Folder operation completed but registration failed: \(error). \(restored ? "The folder was moved back to its original path." : "Inspect " + plan.destination + "; it was left in place. No files were deleted to recover.")")
+        }
+    }
+
+    public func addChildProject(parentPath: String, path: String, name: String, create: Bool) async throws -> (space: Space, created: Bool) {
+        try await withProjectDirectoryAccess {
+            try await addChildProjectDirectory(parentPath: parentPath, path: path, name: name, create: create)
+        }
+    }
+
+    private func addChildProjectDirectory(parentPath: String, path: String, name: String, create: Bool) async throws -> (space: Space, created: Bool) {
+        let spaces = state.spaces
+        let prepared = try await Task.detached(priority: .userInitiated) {
+            let directory = try ChildProjectDirectory.prepare(parentPath: parentPath, path: path, name: name, create: create)
+            let parent = URL(fileURLWithPath: (parentPath as NSString).expandingTildeInPath).standardizedFileURL.resolvingSymlinksInPath().path
+            let parentID = spaces.first {
+                !$0.hidden && URL(fileURLWithPath: ($0.path as NSString).expandingTildeInPath).standardizedFileURL.resolvingSymlinksInPath().path == parent
+            }?.id
+            return (directory, parentID)
+        }.value
+        let directory = prepared.0
+        let folderName = URL(fileURLWithPath: directory.path).lastPathComponent
+        let displayName = !directory.createdDirectory && name.caseInsensitiveCompare(URL(fileURLWithPath: path).lastPathComponent) == .orderedSame ? folderName : name
+        do {
+            let result = try await registerProjectDirectory(path: directory.path, name: displayName)
+            if result.created, let parentID = prepared.1 {
+                return (try await editProject(result.space.id, edit: ProjectEdit(parentProjectID: parentID.rawValue)), true)
+            }
+            return result
+        }
+        catch {
+            if directory.createdDirectory {
+                throw ProjectFileError("registration_failed", "Created \(directory.path), but registration failed: \(error). Select Existing folder to retry. The folder was left in place.")
+            }
+            throw error
         }
     }
 
@@ -4269,6 +4456,10 @@ public final class SessionServer: @unchecked Sendable {
             let doomedTabIDs = Set(doomedTabs.map(\.id))
             try self.mutateState {
                 $0.spaces.removeAll { $0.id == spaceID }
+                for index in $0.spaces.indices where $0.spaces[index].parentID == spaceID {
+                    $0.spaces[index].parentID = nil
+                    $0.spaces[index].parentIsExplicit = true
+                }
                 $0.agents.removeAll { doomedAgents.contains($0.id) }
                 $0.tabs.removeAll { doomedTabIDs.contains($0.id) }
                 for i in $0.automations.indices where $0.automations[i].agentID.map(doomedAgents.contains) == true {
@@ -5460,6 +5651,7 @@ public final class SessionServer: @unchecked Sendable {
 
     private func makeSessionOnQueue(params: CreateSessionParams, resuming: String? = nil) throws -> SessionInfo {
         try requireStarted()
+        guard !projectFolderOperation else { throw ProjectFileError("project_busy", "A project folder operation is in progress. Retry after it completes.") }
         let server = self
         weak let serverWeak = server
         if params.runtime == .rpc {

@@ -85,13 +85,20 @@ public final class ProjectSettingsStore: @unchecked Sendable {
                         let end = min(history.count, offset + Self.pageSize)
                         let designs = designSystemDirectories(state)
                         let folders = parentCandidates()
+                        let parents = ProjectNesting.parents(in: state.spaces)
+                        let spaces = Dictionary(uniqueKeysWithValues: state.spaces.map { ($0.id, $0) })
                         return .listing(ProjectListing(projects: history[offset..<end].map { entry in
                             var project = summary(entry, designSystem: designs.contains(entry.directory))
                             project.projectID = state.spaces.first { absolute($0.path) == entry.directory }?.id
-                            project.parent = ProjectNesting.parent(of: entry.directory, among: folders)
+                            let folderParent = ProjectNesting.parent(of: entry.directory, among: folders)
+                            project.parent = project.projectID.map { id in parents[id].flatMap { spaces[$0].map { absolute($0.path) } } } ?? folderParent
                             project.mcpServers = sharedMCP(entry.directory)
-                            if let parent = project.parent {
+                            // Organization never grants config or MCP inheritance across unrelated folders.
+                            if let parent = folderParent {
                                 project.inheritedMCP = sharedMCP(parent).filter { !project.mcpServers.contains($0) }
+                                if !project.inheritedMCP.isEmpty {
+                                    project.inheritedFromName = history.first { $0.directory == parent }?.name ?? URL(fileURLWithPath: parent).lastPathComponent
+                                }
                             }
                             return project
                         },
@@ -186,13 +193,15 @@ public final class ProjectSettingsStore: @unchecked Sendable {
         return URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
     }
 
-    private func rememberEntries(_ entries: [(String, String)]) throws {
+    private func rememberEntries(_ entries: [(String, String)], updateExisting: Bool = true) throws {
+        var seen = Set<String>()
         var changed = false
         let original = history
         for (path, name) in entries where !path.isEmpty && path.utf8.count <= 4096 {
             let path = absolute(path)
+            guard seen.insert(path).inserted else { continue }
             if let index = history.firstIndex(where: { $0.directory == path }) {
-                if history[index].name != name { history[index].name = name; changed = true }
+                if updateExisting, history[index].name != name { history[index].name = name; changed = true }
             } else {
                 history.append(Entry(directory: path, name: name)); changed = true
             }
@@ -228,7 +237,7 @@ public final class ProjectSettingsStore: @unchecked Sendable {
                   cwd.hasPrefix("/"), !cwd.hasPrefix(historyURL.deletingLastPathComponent().path + "/") else { continue }
             entries.append((cwd, (cwd as NSString).lastPathComponent))
         }
-        try rememberEntries(entries)
+        try rememberEntries(entries, updateExisting: false)
         importedSessions = true
     }
 
