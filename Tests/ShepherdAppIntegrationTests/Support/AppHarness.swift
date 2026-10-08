@@ -24,9 +24,12 @@ final class AppHarness {
     var server: SessionServer { scratch.server }
     var dir: URL { scratch.dir }
 
-    /// `pi` brings a test's own Shepherd pi home and "your pi"; otherwise the process's.
-    init(pi: PiSetup = .app, modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels }) throws {
-        scratch = try ScratchServer(modelCatalog: modelCatalog, pi: pi)
+    /// Each harness gets its own pi home; pass `.app` explicitly to share process history.
+    init(pi: PiSetup? = nil, modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels }) throws {
+        let directory = try makeScratchDirectory("srv")
+        let setup = pi ?? PiSetup(engine: PiSetup.app.engine, home: directory.appendingPathComponent("pi"),
+                                  yourPi: PiSetup.app.yourPi, userHome: PiSetup.app.userHome)
+        scratch = try ScratchServer(dir: directory, modelCatalog: modelCatalog, pi: setup)
         settings = AppSettings(store: defaults)
         keybindings = KeybindingsStore(store: defaults)
         themeManager = ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .dark)

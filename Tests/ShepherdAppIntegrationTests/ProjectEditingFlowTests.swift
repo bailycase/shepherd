@@ -4,6 +4,7 @@ import SwiftUI
 import Testing
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdSessions
 import ShepherdTestSupport
 @testable import ShepherdApp
 
@@ -49,6 +50,30 @@ struct ProjectEditingFlowTests {
         let refused = try await ask(.editProject(id: 3, agentID: agent.agent.id, projectID: child.id, request: ProjectEdit(name: "spoofed")))
         guard case .error(3, _, _) = refused else { Issue.record("Unowned caller was accepted"); return }
         #expect(app.server.state.spaces.contains(edited))
+    }
+
+    @Test func projectListingDoesNotImportAnotherHarnessSessionHistory() async throws {
+        let other = try AppHarness(pi: .app)
+        defer { other.stop() }
+        let sessions = other.server.pi.sessionDirectory(forCwd: other.dir.path)
+        try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: true)
+        let header = try JSONSerialization.data(withJSONObject: ["type": "session", "cwd": other.dir.path])
+        try header.write(to: sessions.appendingPathComponent("isolation.jsonl"))
+
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space("Only this project", path: app.dir.path)
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: []))
+        _ = try await vm.handleProjectRequest(.refresh)
+        #expect(vm.projects.visible.map(\.project.directory) == [canonical(app.dir)])
+
+        // Import is intentional when a caller explicitly shares that pi home.
+        let shared = try AppHarness(pi: .app)
+        defer { shared.stop() }
+        guard case .listing(let listing) = try await shared.server.projects.request(.list(), state: ShepherdState()) else {
+            Issue.record("Expected project listing"); return
+        }
+        #expect(listing.projects.contains { $0.directory == canonical(other.dir) })
     }
 
     @Test func explicitNestedParentsAppearAtEveryLevelAndRootOverrideDoesNotMoveData() async throws {
