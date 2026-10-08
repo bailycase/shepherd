@@ -14,7 +14,8 @@ push to `nightly` or `master` (docs/testing.md).
 
 ## Releases
 
-One workflow (`.github/workflows/release.yml`) ships two Mac apps and the iOS client's TestFlight builds. Its rules live in
+The Release workflow (`.github/workflows/release.yml`) ships two Mac apps and the iOS client's TestFlight builds.
+Its build-only helper (`.github/workflows/release-build.yml`) shares Mac packaging between Horizon and hosted runners. Its rules live in
 `scripts/release.py` (tested in `Tests/Release`); the YAML only runs them. A `plan` job decides
 from the pushed ref what to build, and the build job is skipped when the answer is nothing.
 Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
@@ -166,6 +167,58 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   prune older completed nightlies from its frozen snapshot; drafts and releases completed during
   publication are never pruned. Failed acquisition, metadata validation, generation or pushing
   prunes nothing. A skipped publisher (no Sparkle key) prunes nothing either.
+- **Nightly prefers Horizon, with hosted fallback.** Release's Ubuntu orchestrator dispatches
+  the build-only helper on `nightly`, targeting the existing `horizon-shepherd-release` runner's
+  sole custom label, `shepherd-release`. No runner registration, PAT, extra secrets or PR
+  execution is involved. Stable/beta and TestFlight remain hosted. Both Mac attempts check out
+  the exact Release source SHA and use its run number, plan, signing identities, entitlements
+  and notarization policy; the dispatched helper's own run number is never a shipped build number.
+  - `scripts/release_runner.py` allows three minutes for dispatch discovery and queueing,
+    sixty minutes for local execution, two minutes for cancellation acknowledgement, and polls
+    every fifteen seconds. Each API request has a ten-second timeout; the Ubuntu job has a
+    seventy-minute outer bound. The build jobs also have a sixty-minute execution limit.
+    Job timeouts alone do not bound a queued offline runner. There is one dispatch and at most
+    one hosted fallback, not a retry loop.
+  - A completed local build failure/timeout permits fallback. An expired queue/execution bound
+    first cancels the isolated helper run and waits for API status `completed`; accepting the
+    cancellation request alone is insufficient. If cancellation returns HTTP 409 because the
+    worker completed between GET and POST, monitoring and cleanup re-fetch its state: confirmed
+    success follows the normal package checks, confirmed build failure follows the fallback
+    guards, and an unknown/nonterminal response fails closed. Unknown dispatch identity/state, API errors,
+    unacknowledged cancellation, an explicit cancellation or an invalid successful package
+    fail closed, without fallback. If success races cancellation, a confirmed successful local
+    package is still preferred; neither build can publish.
+  - The helper validates its active Release parent/attempt and Nightly-only dispatch before
+    scheduling Horizon, again on runner entry, and before accessing signing credentials.
+    Re-running the helper is refused. Parent cancellation best-effort cancels its helper;
+    if the parent disappears before cleanup, a late queued helper refuses the inactive
+    parent, and already-running work is bounded and cannot publish. Re-running Release uses
+    a new attempt identity and retains the existing published-tag/build-number protection.
+  - Each successful attempt uploads a required DMG, eligibility metadata and a manifest
+    binding its checksum to the parent run/attempt, source SHA, build number and planned
+    tag/version, plus optional dSYMs. The single hosted Release publisher downloads only the
+    selected attempt's artifact and verifies that manifest before any tag/release mutation.
+    Fallback never reacts to publication/appcast failure or partial success: existing draft-first
+    release publication, immutable tags and the serialized appcast job remain the boundary.
+  - Horizon uses a temporary signing keychain with a random password, preserves/restores the
+    exact existing user keychain search list and removes imported certificate/notary files in
+    an `always()` cleanup step, including after failure/cancellation. Forced runner termination
+    can prevent cleanup: inspect the runner's job temp directory before reusing a killed worker.
+    No installed app, runner registration, permanent keychain or user application data is changed.
+  - **Rollout prerequisite:** GitHub requires a dispatch workflow to exist on the repository's
+    default branch (`master`) even when dispatch targets `nightly`. Preparing these files does
+    not enable Horizon routing until `release-build.yml` has been separately authorized and
+    landed there. Bootstrap only the shared worker and its orchestrator script on `master`,
+    preserving that branch's existing release workflow and signing/feed contracts. The owner
+    approves the bootstrap and live rollout separately; merging the Nightly PR alone is not
+    enough. Absent dispatch support, selection fails closed rather than bypassing its fence.
+    `.github/CODEOWNERS` names `@bailycase` and `@jhartzell` for workflows, release/signing
+    scripts and engine staging inputs; the owner must enable required code-owner reviews in
+    branch protection to enforce those assignments.
+  - **Decisions:** the default bounds above, fail-closed uncertain state, hosted-only publication,
+    ephemeral keychain handling are deliberate. Tests use
+    fake GitHub states, scratch packages/keychains and the existing fake publication shell;
+    local tests cannot establish GitHub's live cancellation or cross-run artifact semantics.
 - **Building Shepherd Nightly locally:** the `Shepherd (Nightly)` scheme, or
   `xcodebuild -scheme 'Shepherd (Nightly)' -configuration Nightly …` as the workflow does.
 - **Enhanced Security** is set on the Mac target only, because at project level it would push

@@ -748,12 +748,12 @@ class ContractTests(unittest.TestCase):
                 self.assertEqual(self.setting(self.target_configuration(name), "ARCHS"), "arm64")
 
     def test_the_release_builds_arm64_only_and_thins_what_came_prebuilt_before_verifying(self):
-        workflow = self.read(".github", "workflows", "release.yml")
+        workflow = self.read(".github", "workflows", "release-build.yml")
         build = workflow.split("      - name: Build ${{ env.APP_NAME }}\n", 1)[1].split("\n      - ", 1)[0]
         # SwiftPM package targets take no target settings: only the command line reaches them.
         self.assertIn("ARCHS=arm64 \\\n", build)
         self.assertIn("-onlyUsePackageVersionsFromResolvedFile", build)
-        self.assertIn("key: xcode-${{ runner.os }}-${{ env.CONFIGURATION }}-${{ steps.xcode.outputs.version }}-${{ github.sha }}", workflow)
+        self.assertIn("key: xcode-${{ runner.os }}-${{ env.CONFIGURATION }}-${{ steps.xcode.outputs.version }}-${{ inputs.source_sha }}", workflow)
         self.assertNotIn("x86_64", workflow)
         thin = workflow.index('python3 scripts/release.py thin-app "$PRODUCTS/$PRODUCT"')
         self.assertLess(workflow.index("      - name: Build ${{ env.APP_NAME }}"), thin)
