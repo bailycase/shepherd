@@ -24,7 +24,7 @@ extension ShepherdViewModel {
             items.append(PaletteItem(id: "action.renameSpace", kind: .action("renameSpace"), section: .commands,
                                      title: "Rename space…", subtitle: space.name, icon: "pencil"))
             items.append(PaletteItem(id: "action.removeSpace", kind: .action("removeSpace"), section: .commands,
-                                     title: "Remove space…", subtitle: space.name, icon: "trash"))
+                                     title: "Remove project…", subtitle: space.name, icon: "trash"))
         }
         items.append(PaletteItem(id: "action.newAgentOptions", kind: .action("newAgentOptions"), section: .commands,
                                  title: "New agent with options…", shortcut: keys.display(.newAgentOptions),

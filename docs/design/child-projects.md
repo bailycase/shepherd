@@ -67,6 +67,31 @@ The user's subsequent request supersedes the initial flat-sidebar behavior.
   both appearances at text scales 1 and 1.3. Press parent/child disclosures and child actions,
   assert indentation, selection reveal, hidden rows, shortcut order, and drag sibling boundaries.
 
+## Remove project checklist
+
+The user requested removing a project or child project without deleting its folder.
+
+- Add native "Remove Project…" after Hide from Sidebar, separated by a divider, in a local
+  project's sidebar menu. Use the native destructive role, no new glyph or style. Settings'
+  local registered project rows offer the same context-menu action. Unregistered history rows
+  and remote-only projects do not expose this local removal action.
+- Reuse SpaceDeleteDialog and the existing deleteSpace flow. Title and destructive action:
+  "Remove project". Cancel stays the ghost cancel action; removal is never the Return default.
+- Subtitle uses the selected project's name and live direct-agent count: "Removes <name> from
+  the sidebar and stops its <count> agent(s). The local folder and all its files are kept.
+  Saved conversations and project history remain. Child projects stay registered."
+- Keep NWDialogMetrics.width, shared DialogSheet styles, typography, spacing, and colors. Long
+  project names wrap in the message. Zero, one, and several agents use the existing count and
+  pluralization. The existing dismissal-before-layout-teardown timing stays unchanged.
+- Cancel changes nothing. Confirm removes only the selected registration and its own agents,
+  tabs, and live sessions. Child/sibling registrations and their processes survive. Parent
+  removal promotes visible child projects to top-level rows. No repository, folder, worktree,
+  branch, project file, or saved conversation is deleted. Settings retains directory history.
+- Render parent/child, zero/one/several agents, and long names at scales 1 and 1.3 in light/dark.
+  ControlPress exercises both menu entry points, Cancel and Remove project, with 24pt dialog
+  hit areas. Verify committed state, surviving registrations, stopped/surviving processes, and
+  byte-for-byte retention of files in both parent and child directories.
+
 ## Verification
 
 The six-state matrix was rendered and inspected in light/dark at scales 1 and 1.3.

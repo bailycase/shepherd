@@ -124,7 +124,8 @@ struct ProjectsSettings: View {
                                            } else {
                                                adding = AddingProject(host: row.host, under: row.project.directory)
                                            }
-                                       })
+                                       }, remove: row.host.id == "local" && row.project.projectID != nil
+                                           ? { vm.spaceDeleteTarget = row.project.projectID } : nil)
                         if row.id != model.visible.last?.id { NWHairline() }
                     }
                 }
@@ -186,6 +187,7 @@ private struct ProjectTreeRow: View {
     let open: () -> Void
     let toggle: () -> Void
     let addSubproject: () -> Void
+    var remove: (() -> Void)? = nil
 
     var body: some View {
         let _ = NWRenderProbe.tick("settings.project.row")
@@ -208,6 +210,9 @@ private struct ProjectTreeRow: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel(row.isSubproject ? "Open \(row.project.name) under \(row.parentName!)" : "Open \(row.project.name)")
                     .accessibilityHint(row.unavailable ?? row.project.displayPath)
+                    .accessibilityActions {
+                        if let remove { Button("Remove Project…", role: .destructive, action: remove) }
+                    }
             }
             .padding(.leading, row.isSubproject ? NW.Space.xxl : 0)
             Text(row.host.name).font(.nwSans(AppLayout.projectsHostSize)).foregroundStyle(Color.nw.textSecondary).lineLimit(1)
@@ -219,6 +224,9 @@ private struct ProjectTreeRow: View {
         .contentShape(Rectangle())
         .onTapGesture(perform: open)
         .help(row.unavailable ?? "\(row.project.directory)\n\(row.configuration)")
+        .contextMenu {
+            if let remove { Button("Remove Project…", role: .destructive, action: remove) }
+        }
     }
 
     private var identity: some View {

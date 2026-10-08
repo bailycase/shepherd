@@ -24,6 +24,13 @@ its count and attention indicator include their threads. Selecting a child threa
 both levels. Dragging reorders siblings, not parent relationships. Hiding a parent leaves its
 visible children as top-level projects.
 
+To remove a local project or subproject from the sidebar, choose **Remove Project…** from
+its sidebar menu or its Settings row's context menu, then confirm **Remove project**. This
+stops that project's agents and closes its tabs, but keeps the local folder, all files,
+worktrees, saved conversations, and Settings directory history. Child projects are separate
+registrations and survive parent removal, becoming top-level sidebar rows. Cancel changes
+nothing. History-only Settings rows and remote projects have no local removal action.
+
 Open a project to edit its existing files, or create the standard instruction, pi settings or MCP
 files when they are missing. The categories are Instructions, Pi settings, Skills, Extensions
 and MCP servers. Text files use the existing Instructions editor. MCP uses the same server

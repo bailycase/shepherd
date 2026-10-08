@@ -242,6 +242,8 @@ struct SidebarProjectMenu: View {
         Button("Collapse All", systemImage: "arrow.down.and.line.horizontal.and.arrow.up") { vm.setAllProjects(expanded: false) }
         if let space = project.space {
             Button("Hide from Sidebar", systemImage: "eye.slash") { vm.setProjectHiddenFromSidebar(space, true) }
+            Divider()
+            Button("Remove Project…", role: .destructive) { vm.spaceDeleteTarget = space }
         }
     }
 }

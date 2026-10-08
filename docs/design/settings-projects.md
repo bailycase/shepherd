@@ -57,7 +57,9 @@ revision 562, defines the detail screen and replaces the first implementation.
 
 The user's create-or-add request extends the local **Add subproject** action. It opens the
 shared [Add child project dialog](child-projects.md), also reachable from a local project's
-sidebar menu. Remote rows retain the existing directory picker.
+sidebar menu. Remote rows retain the existing directory picker. Registered local rows expose
+Remove Project… in their context menu and accessibility actions, using the shared confirmation.
+Removal retains folder contents and Settings history; history-only and remote rows omit it.
 
 ## Codemode override
 
