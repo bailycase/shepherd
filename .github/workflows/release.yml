@@ -27,7 +27,7 @@ name: Release
 # untagged, which every such build sees, so they update to a Shepherd build
 # that moves them to Beta, and never to Shepherd Nightly.
 #
-# Each build is signed, notarized and packaged into a DMG, published as a
+# Each selected build is signed, notarized and packaged into a DMG, published as a
 # GitHub Release, and every appcast on gh-pages is regenerated. Signing is
 # Developer ID + notarization when the secrets exist, ad-hoc otherwise.
 #
@@ -104,200 +104,104 @@ jobs:
           jq -r 'if .build then "\(.title): \(.scheme), \(.configuration), \(.dmg)" else "::notice::\(.reason)" end' <<<"${plan#plan=}"
           jq -r 'if .ios then "TestFlight: \(.ios_scheme), \(.ios_configuration), \(.ios_testing) testing" else "::notice title=TestFlight::\(.ios_reason)" end' <<<"${plan#plan=}"
 
-  release:
-    name: build and publish
+  selfhosted:
+    name: Prefer Self-hosted for Nightly
     needs: plan
-    if: fromJSON(needs.plan.outputs.plan).build
-    runs-on: macos-26
+    if: fromJSON(needs.plan.outputs.plan).build && fromJSON(needs.plan.outputs.plan).channel == 'nightly'
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    permissions:
+      contents: read
+      actions: write
+    outputs:
+      fallback: ${{ steps.select.outputs.fallback }}
+      package_run: ${{ steps.select.outputs.package_run }}
     env:
-      APP_KEY: ${{ fromJSON(needs.plan.outputs.plan).app }}
-      APP_NAME: ${{ fromJSON(needs.plan.outputs.plan).name }}
+      GH_TOKEN: ${{ github.token }}
+      PARENT_RUN: ${{ github.run_id }}
+      PARENT_ATTEMPT: ${{ github.run_attempt }}
+      SOURCE_SHA: ${{ github.sha }}
+      BUILD_NUMBER: ${{ github.run_number }}
+      RELEASE_PLAN: ${{ needs.plan.outputs.plan }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Select the local package or safe hosted fallback
+        id: select
+        run: python3 scripts/release_runner.py select
+      - name: Cancel a remaining local attempt
+        if: always()
+        env:
+          WORKER_RUN: ${{ steps.select.outputs.worker_run }}
+        run: python3 scripts/release_runner.py cancel
+
+  hosted-build:
+    name: Hosted build
+    needs: [plan, selfhosted]
+    if: >-
+      !cancelled() && fromJSON(needs.plan.outputs.plan).build &&
+      (fromJSON(needs.plan.outputs.plan).channel != 'nightly' ||
+      (needs.selfhosted.result == 'success' && needs.selfhosted.outputs.fallback == 'true'))
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/release-build.yml
+    with:
+      hosted: true
+      parent_run: ${{ format('{0}', github.run_id) }}
+      parent_attempt: ${{ format('{0}', github.run_attempt) }}
+      source_sha: ${{ github.sha }}
+      build_number: ${{ format('{0}', github.run_number) }}
+      plan: ${{ needs.plan.outputs.plan }}
+    secrets:
+      SELFHOSTED_HOSTNAME: ${{ secrets.SELFHOSTED_HOSTNAME }}
+      DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}
+      DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+      NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+      NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+      NOTARY_KEY: ${{ secrets.NOTARY_KEY }}
+
+  release:
+    name: publish selected package
+    needs: [plan, selfhosted, hosted-build]
+    if: >-
+      !cancelled() && fromJSON(needs.plan.outputs.plan).build &&
+      (needs.hosted-build.result == 'success' ||
+      (needs.selfhosted.result == 'success' && needs.selfhosted.outputs.package_run != ''))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    env:
       CHANNEL: ${{ fromJSON(needs.plan.outputs.plan).channel }}
-      VERSION: ${{ fromJSON(needs.plan.outputs.plan).version }}
       TAG: ${{ fromJSON(needs.plan.outputs.plan).tag }}
-      SCHEME: ${{ fromJSON(needs.plan.outputs.plan).scheme }}
-      CONFIGURATION: ${{ fromJSON(needs.plan.outputs.plan).configuration }}
-      PRODUCTS: build/Build/Products/${{ fromJSON(needs.plan.outputs.plan).configuration }}
-      PRODUCT: ${{ fromJSON(needs.plan.outputs.plan).product }}
       DMG: ${{ fromJSON(needs.plan.outputs.plan).dmg }}
       DSYMS: ${{ fromJSON(needs.plan.outputs.plan).dsyms }}
-      VOLUME: ${{ fromJSON(needs.plan.outputs.plan).volume }}
       TITLE: ${{ fromJSON(needs.plan.outputs.plan).title }}
       PRERELEASE: ${{ fromJSON(needs.plan.outputs.plan).prerelease }}
       NOTES: ${{ fromJSON(needs.plan.outputs.plan).notes }}
+      PARENT_RUN: ${{ github.run_id }}
+      PARENT_ATTEMPT: ${{ github.run_attempt }}
+      SOURCE_SHA: ${{ github.sha }}
+      BUILD_NUMBER: ${{ github.run_number }}
+      RELEASE_PLAN: ${{ needs.plan.outputs.plan }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Xcode version
-        id: xcode
-        run: echo "version=$(xcodebuild -version | shasum -a 256 | cut -c1-12)" >> "$GITHUB_OUTPUT"
-      - name: Cache DerivedData
-        uses: actions/cache@v4
+      - name: Fetch the selected package
+        uses: actions/download-artifact@v4
         with:
-          path: build
-          # Exact-match only. A prefix-restored cache from before a model
-          # change poisons incremental builds (stale ShepherdCore objects vs
-          # new ShepherdApp sources — nightly 0217 shipped a build break that
-          # `swift test` had already passed). Release builds are rare enough
-          # that a clean rebuild beats a wrong binary. Keyed per configuration:
-          # the two apps build different ones. Keyed on the engine's pin too: a
-          # restored app holding another pin's engine fails the "Embed pi engine"
-          # phase, whose sandbox can't remove files the new pin doesn't declare.
-          key: xcode-${{ runner.os }}-${{ env.CONFIGURATION }}-${{ steps.xcode.outputs.version }}-${{ github.sha }}
-
-      # The pi engine (Node and pi's bundle) the Mac target's "Embed pi engine" phase copies
-      # into Contents/Helpers and Contents/Resources/pi-engine. Staging downloads Node from
-      # nodejs.org and pi from the npm registry, checked against scripts/pi-engine-pin.json;
-      # the cache keeps those downloads, and staging reuses one only while it matches the pin.
-      - name: Cache the pi engine's downloads
-        uses: actions/cache@v4
-        with:
-          path: .build/pi-engine-cache
-          key: pi-engine-${{ hashFiles('scripts/pi-engine-pin.json') }}
-      - name: Stage the pi engine
-        run: python3 scripts/pi_engine.py stage
-
-      - name: Import Developer ID certificate
-        id: cert
-        env:
-          P12: ${{ secrets.DEVELOPER_ID_P12 }}
-          P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
-        run: |
-          if [[ -z "$P12" ]]; then
-            echo "identity=-" >> "$GITHUB_OUTPUT"
-            echo "No Developer ID cert; ad-hoc signing."
-            exit 0
-          fi
-          KEYCHAIN=$RUNNER_TEMP/build.keychain
-          security create-keychain -p ci "$KEYCHAIN"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN"
-          security unlock-keychain -p ci "$KEYCHAIN"
-          echo "$P12" | base64 -d > "$RUNNER_TEMP/cert.p12"
-          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$P12_PASSWORD" \
-            -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple: -s -k ci "$KEYCHAIN"
-          security list-keychains -d user -s "$KEYCHAIN" login.keychain
-          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN" \
-            | awk -F'"' '/Developer ID Application/ {print $2; exit}')
-          echo "identity=$IDENTITY" >> "$GITHUB_OUTPUT"
-
-      # Apple silicon only. The Mac target sets ARCHS = arm64, but SwiftPM package
-      # targets take no target settings, so the command line sets it for them too.
-      - name: Build ${{ env.APP_NAME }}
-        run: |
-          xcodebuild \
-            -project Shepherd.xcodeproj \
-            -scheme "$SCHEME" \
-            -configuration "$CONFIGURATION" \
-            -destination 'platform=macOS,arch=arm64' \
-            -derivedDataPath build \
-            -onlyUsePackageVersionsFromResolvedFile \
-            ARCHS=arm64 \
-            CODE_SIGNING_ALLOWED=NO \
-            MARKETING_VERSION="$VERSION" \
-            CURRENT_PROJECT_VERSION='${{ github.run_number }}' \
-            build
-
-      # Prebuilt binaries (Sparkle's framework and its helpers) come universal.
-      - name: Thin to arm64
-        run: python3 scripts/release.py thin-app "$PRODUCTS/$PRODUCT"
-
-      # The one guard against shipping one app under the other's identity:
-      # bundle id, name, executable and feed must be this app's. It also checks
-      # every binary is arm64 only, and the pi engine is the pinned one, with
-      # nothing but what pi's bundle loads.
-      - name: Verify the app's identity
-        run: python3 scripts/release.py verify-app "$PRODUCTS/$PRODUCT" "$APP_KEY" "$VERSION"
-
-      # Workflow artifacts expire (90 days at most on a public repo), while a
-      # stable release stays on the appcast far longer, so the same dSYMs are
-      # also zipped for the GitHub release. Neither may fail a release.
-      - name: Keep dSYMs
-        uses: actions/upload-artifact@v4
-        continue-on-error: true
-        with:
-          name: dSYMs-${{ env.TAG }}
-          path: ${{ env.PRODUCTS }}/*.dSYM
-          if-no-files-found: warn
-
-      - name: Zip dSYMs
-        continue-on-error: true
-        working-directory: ${{ env.PRODUCTS }}
-        run: zip -qr "$GITHUB_WORKSPACE/$DSYMS" ./*.dSYM
-
-      # `xcodebuild build` never strips, so the app binary would ship a debug
-      # map of runner object-file paths. -S -x drops debug and local symbols
-      # and keeps global ones, so crash logs stay partly readable; the dSYMs
-      # above predate the strip and share its UUIDs, so they still symbolicate.
-      # The engine's node (Contents/Helpers) is Node's release binary and stays
-      # as Node ships it.
-      - name: Strip debug symbols
-        run: xcrun strip -S -x "$PRODUCTS/$PRODUCT/Contents/MacOS/"*
-
-      # node is signed with the engine's entitlements (V8 needs allow-jit under
-      # the hardened runtime); scripts/sign-engine.sh says why.
-      - name: Sign
-        run: |
-          scripts/sign-app.sh "$PRODUCTS/$PRODUCT" \
-            '${{ steps.cert.outputs.identity }}' App/Shepherd.entitlements \
-            App/Engine.entitlements
-
-      - name: Smoke test the shipped SDK
-        run: |
-          SHEPHERD_ENGINE_SMOKE="$PRODUCTS/$PRODUCT" \
-            python3 -m unittest discover -s Tests/Release -p test_pi_engine_sdk.py
-
-      - name: Notarize
-        if: steps.cert.outputs.identity != '-'
-        env:
-          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
-          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
-          NOTARY_KEY: ${{ secrets.NOTARY_KEY }}
-        run: |
-          APP="$PRODUCTS/$PRODUCT"
-          echo "$NOTARY_KEY" > "$RUNNER_TEMP/notary.p8"
-          ditto -c -k --sequesterRsrc --keepParent "$APP" notarize.zip
-          xcrun notarytool submit notarize.zip \
-            --key "$RUNNER_TEMP/notary.p8" \
-            --key-id "$NOTARY_KEY_ID" \
-            --issuer "$NOTARY_ISSUER_ID" \
-            --wait
-          xcrun stapler staple "$APP"
-
-      - name: Package DMG
-        env:
-          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
-          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
-        run: |
-          STAGE=$RUNNER_TEMP/dmg
-          mkdir -p "$STAGE"
-          cp -R "$PRODUCTS/$PRODUCT" "$STAGE/"
-          ln -s /Applications "$STAGE/Applications"
-          hdiutil create -volname "$VOLUME" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
-          # The stapled app is inside. The DMG gets its own notarization
-          # ticket so Gatekeeper can verify it offline at mount time; stapler
-          # has nothing to staple until the DMG itself is notarized. Ad-hoc
-          # builds skip all of it.
-          if [[ '${{ steps.cert.outputs.identity }}' != '-' ]]; then
-            codesign --force --timestamp --sign '${{ steps.cert.outputs.identity }}' "$DMG"
-            # notary.p8 was written by the Notarize step.
-            xcrun notarytool submit "$DMG" \
-              --key "$RUNNER_TEMP/notary.p8" \
-              --key-id "$NOTARY_KEY_ID" \
-              --issuer "$NOTARY_ISSUER_ID" \
-              --wait
-            xcrun stapler staple "$DMG"
-          fi
-          shasum -a 256 "$DMG"
-
+          name: release-package-${{ github.run_id }}-${{ github.run_attempt }}
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.selfhosted.outputs.package_run || github.run_id }}
+      - name: Verify package provenance
+        run: python3 scripts/release_runner.py verify
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
-          SIGNING_IDENTITY: ${{ steps.cert.outputs.identity }}
         run: |
-          # New releases always declare eligibility, including ad-hoc builds. A later
-          # signed publisher must never mistake an ad-hoc archive for legacy history.
-          python3 -c 'import json,os; print(json.dumps({"version":1,"tag":os.environ["TAG"],"eligible":bool(os.environ["SIGNING_IDENTITY"] and os.environ["SIGNING_IDENTITY"] != "-")}))' > shepherd-appcast.json
+          test -f "$DMG"
+          test -f shepherd-appcast.json
           ARGS=(--title "$TITLE" --notes "$NOTES" --draft)
           # beta and nightly are GitHub prereleases; feed membership is by tag
           # NAME (release.py route), never by the prerelease flag — so the

@@ -74,7 +74,7 @@ function script(dir) {
       // The scenarios below start a helper whose design call Shepherd holds, then act on it a prompt at a time, so
       // the test (not a timer) says when the helper's call is in flight.
       const held = /native-[0-9a-f-]{36}/.exec(JSON.stringify(body.messages))?.[0];
-      if (text === "HOLD") return steps.length === 0 ? { toolCalls: [start("HOLD board C.dc.html")] } : { text: "started" };
+      if (text === "HOLD") return steps.length === 0 ? { toolCalls: [start("HOLD board C.dc.html", { delivery: "report" })] } : { text: "started" };
       if (text === "RESULT") return steps.length === 0 ? { toolCalls: [{ name: "shepherd_child_result", args: { id: held } }] } : { text: "read" };
       if (text === "CANCEL") {
         if (steps.length === 0) return { toolCalls: [{ name: "shepherd_child_cancel", args: { id: held } }] };
@@ -123,7 +123,8 @@ function startParent({ dir, home, socketPath, design }) {
       const before = settled(), id = `p-${++sequence}`;
       proc.stdin.write(JSON.stringify({ id, type: "prompt", message }) + "\n");
       await until(() => events.some((event) => event.id === id && event.type === "response"), 30000);
-      assert(events.find((event) => event.id === id && event.type === "response").success, `prompt refused: ${stderr}`);
+      const response = events.find((event) => event.id === id && event.type === "response");
+      assert(response.success, `prompt refused: ${response.error ?? "unknown error"}; ${stderr}`);
       await until(() => settled() > before, 90000);
     },
     async round() {

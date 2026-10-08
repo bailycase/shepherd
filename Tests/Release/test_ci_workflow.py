@@ -129,10 +129,21 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertIn("actions/cache/save@v4", build)
         self.assertIn("--clean-due", JOBS["plan"])
 
-    def test_only_the_shard_the_plan_names_saves_the_build(self):
+    def test_hosted_shards_save_only_when_named_and_local_shards_always_save(self):
         tests = JOBS["tests"]
-        self.assertIn("save: ${{ matrix.shard.save }}", tests)
+        expression = re.search(r"save: \$\{\{ (.*?) \}\}", tests).group(1)
+        self.assertEqual(expression, "matrix.shard.save || runner.environment == 'self-hosted'")
+        for save in (False, True):
+            for environment in ("github-hosted", "self-hosted"):
+                with self.subTest(save=save, environment=environment):
+                    native = expression.replace("matrix.shard.save", repr(save)).replace("runner.environment", repr(environment))
+                    actual = eval(native.replace("||", " or "), {"__builtins__": {}})
+                    self.assertEqual(actual, save or environment == "self-hosted")
         self.assertNotIn('save: "true"', tests)
+        # Saving is inside the build action, before the shard runs any tests; exact
+        # cache hits skip both compilation and another upload.
+        self.assertLess(tests.index("uses: ./.github/actions/swift-build"), tests.index("- name: Run tests"))
+        self.assertIn("if: inputs.save == 'true' && steps.build.outputs.cache-hit != 'true'", ACTION)
 
     def test_the_plan_outputs_every_value_the_other_jobs_read(self):
         declared = set(re.findall(r"^      (\w+): \$\{\{ steps\.plan\.outputs\.\w+ \}\}", JOBS["plan"], re.M))

@@ -38,7 +38,9 @@ stores crashed macOS 26's bundle-less test runner; the bundled app still uses pe
   itself calls `useRealPeerCheck()` and runs stub pis (`ExtensionIdentityTests`).
   Its default `PiSetup.app` shares the process's scratch session home. A test asserting an exact
   Projects listing passes a `PiSetup` with a per-test home: listing intentionally imports old
-  session headers, including those other suites left in a shared home.
+  session headers, including those other suites left in a shared home. `AppHarness` instead
+  defaults to a per-harness pi home (removed by `stop()`), isolating session history and pi
+  settings across app suites; pass `pi: .app` explicitly when testing process-home sharing.
 - `StubPi.command`: runs `Resources/stub-pi.py`, a scripted `pi --mode rpc` driven by prompt
   keywords (`ask`, `select`, `hang`, `die`, `big`, `slow`, `widgets`, `fill`, `newsession`, …).
   `speak` (and `STUB_PI_SPEAK`, or `speak` in `stub-pi-startup.json`) has it talk on the
@@ -75,9 +77,14 @@ stores crashed macOS 26's bundle-less test runner; the bundled app still uses pe
   `tools:N` prompt makes N tool calls that wait for `tool-<k>` files).
 - `eventually("what", …)` and `eventuallyOnMain`: named 10 ms polls that throw `WaitTimeout`
   saying what never happened. Never sleep a fixed amount; wait on a callback or `eventually`.
-  Keep timeouts generous (they default to 30 s), but make the happy path fast. Completion probes
+  Keep timeouts generous (they default to 30 s), but make the happy path fast. Disclosure controls
+  update model state before SwiftUI finishes updating its accessibility tree: wait for a nested
+  row to disappear or reappear before asserting its visibility or pressing it; layout alone is
+  not that boundary (`NestedProjectsFlowTests`). Completion probes
   wait for the final text in WindowServer pixels without forcing layout; the guard's multi-step
-  recovery is not guaranteed to finish in a fixed one-second delay. Turn-navigation probes wait
+  recovery is not guaranteed to finish in a fixed one-second delay. The real-workspace completion
+  probe saves its last polled image on success or timeout, so failure evidence is the pixels that
+  failed the paint condition. Turn-navigation probes wait
   for the viewport to land above the bottom band, not merely for the navigation intent to detach
   following while its first animated frames are still at the tail. The off-screen scroll harness
   declares wheel intent through the same `ThreadInput.readerScrolled(upward:)` method as the native
@@ -435,6 +442,11 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
   (420pt), the narrowest thread column (400pt) and a phone's, at text scales 1 and 1.3, and an
   opened activity line fits too (`ThreadFitTests`: nothing is drawn in the thread's right gutter).
   A row that cannot shrink widens the stack every row shares and runs the whole thread off its pane.
+- **Composer menus:** `ComposerMenuTests` checks all window widths without moving the card,
+  transcript inset or scroll position, and keeps the menu anchored above the card. Settings-menu
+  height uses `ModelCatalog.settingsModels` with the fixture catalog, current model and
+  `RecentModels.load()`, plus the All models row: a previous model choice can add a second quick
+  choice. Thinking-segment wrapping uses the same row count, not a wider bounds tolerance.
 - **App logic:** keybindings (defaults, validation, stored overrides for removed actions
   ignored), palette and settings search, workspace selection and parking, sidebar ordering and
   reveal, pinned threads (their order, persistence and pruning, Needs you winning, the digits),
@@ -450,8 +462,40 @@ it passes when every job the plan asked for did (a job the plan skipped counts a
 are no workflow path filters, because a filtered-out workflow never reports `CI`. Tests that
 depend on the machine's speed skip on CI (`CI=true`).
 
+**Mac runner routing:** the existing Ubuntu `plan` lane and all checks stay in place. The
+Swift `build` and `tests` jobs select the existing runner's sole custom label,
+`shepherd-release`, only for same-repository PRs authored by account IDs `19316389` (Baily)
+or `3370624` (Josh), with the original actor also one of those IDs and
+`github.triggering_actor == github.actor`. Trusted pushes to `nightly` use it too. The native
+`runs-on` expression checks `github.workflow_ref` against this repository's `ci.yml` at the
+PR merge ref or `nightly` push ref before checkout; checkout code and plan outputs cannot
+change that expression's decision. Forks, unknown authors/actors, cross-maintainer reruns,
+`master` pushes, schedules and manual runs remain on `macos-26`. Names alone grant no trust.
+A same-account rerun stays local; a different account's rerun is conservatively hosted even
+when both maintainers are trusted. Both Mac jobs reference `SELFHOSTED_HOSTNAME` in job-level
+env to mask the machine name in initialization logs.
+
+This is routing, not a platform security boundary: a PR runs its own workflow source and
+can edit the guard. Keep GitHub's `all_external_contributors` approval policy and existing
+runner access restrictions; no workflow guard claims to replace them. Trusted maintainers
+can deliberately edit workflows. No additional secrets or signing access are introduced.
+
+The one local runner executes the unchanged four full-lane shards serially. Its nonadmin
+Nix pre/post hooks remove checkout `build`/`.build` and enforce 20 GiB; the existing SwiftPM
+Actions cache restores builds between jobs. Local shards save a successfully built exact-commit
+cache before tests, even on PRs, so subsequent serial shards skip compilation after an exact
+hit; a cache miss still compiles cold. This uses GitHub's bounded 10 GiB repository cache,
+not a persistent host build directory. Hosted PRs still save nothing. Execution
+limits remain 45 minutes for `build`, 60 for each shard, plus the existing test watchdog and
+one failed-test retry. A queued job's actual bound is GitHub's 24-hour maximum, **not** its
+execution timeout. CI has no custom queue selector or hosted fallback. Newer runs cancel
+superseded runs as before. CI competes with Nightly release for this runner; only Release
+retains its existing three-minute queue / sixty-minute execution fallback
+([releases](releases.md)). `Tests/Release/test_ci_runner.py` exercises both allowed IDs and
+each rejected trust condition without contacting GitHub.
+
 - **Fast lane**, every pull request into `nightly`: the unit tier (seconds), a smoke set (`SMOKE`),
-  and the integration suites the changed paths can affect, in one to four `macos-26` shards
+  and the integration suites the changed paths can affect, in one to four Mac shards (runner routing above)
   (about 200 s of tests each). The impact map (`RULES` and `AREAS` in `scripts/ci_impact.py`) is
   explicit and conservative; the first rule a path matches decides it:
   - Docs, `*.md`, `Extensions/` (node tests, and `Tests/Release`'s check that each embedded copy
@@ -528,7 +572,9 @@ depend on the machine's speed skip on CI (`CI=true`).
   change to ShepherdCore. That measured quicker than a build job the shards wait for, by over a
   minute. A push to `master` also saves: its last shard saves both caches under the
   commit right after building and before its tests, so every pull request into that branch finds a
-  warm entry. Pull requests save nothing. The first full run of each UTC day, a manual `clean` run
+  warm entry. Hosted pull requests save nothing. Self-hosted PR shards save before tests so
+  the first shard warms the exact-commit cache for the remaining serial shards; exact hits
+  skip both building and saving again. The first full run of each UTC day, a manual `clean` run
   and the daily run start from scratch instead: the `build` job builds once, saves and writes the
   day's marker, and every shard restores that build whole (`shared_build: true` or `false` forces
   either way). A shard that restores its own commit's build skips `swift build`. Run the workflow
@@ -537,7 +583,8 @@ depend on the machine's speed skip on CI (`CI=true`).
   --ref refs/pull/N/merge` (or `refs/heads/<branch>`).
 - **Checking a CI change:** a pull request's run exercises the pull request's copy of the workflow
   and is cold ("Cache not found") until `nightly` holds an entry for the same toolchain and
-  epoch, and it saves nothing, so it cannot show an incremental build. Before merging, run the
+  epoch or a local shard has saved that PR's build. Hosted PRs save nothing, so they cannot
+  show an incremental build without a base-branch cache. Before merging, run the
   workflow by hand on the branch (`-f lane=full`), let it finish (a second run on the same ref
   cancels the first), push a small source change, and run it again: its shards restore the first
   run's entry by prefix, "Restore source mtimes" reports about as many new or changed files as the

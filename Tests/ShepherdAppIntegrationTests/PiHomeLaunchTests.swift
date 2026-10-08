@@ -40,7 +40,7 @@ struct PiHomeLaunchTests {
 
         // Every pin wins over the decoys, which pi never sees; they wait for its shell commands.
         for (key, value) in home.pins where key != "PI_PACKAGE_DIR" { #expect(launch.env[key] == value, "\(key)") }
-        #expect(launch.env["PI_CODING_AGENT_DIR"] == TestProcess.piHome.standardizedFileURL.path)
+        #expect(launch.env["PI_CODING_AGENT_DIR"] == home.directory.standardizedFileURL.path)
         for key in ["PI_PACKAGE_DIR", "NODE_OPTIONS", "JITI_ALIAS", "PI_EXPERIMENTAL"] { #expect(launch.env[key] == nil, "\(key) reached pi") }
         let decoy = TestProcess.piDecoyDirectory.path
         #expect(launch.env["_SHEPHERD_STASH_NODE_OPTIONS"] == "--require=\(decoy)/node-options.cjs")

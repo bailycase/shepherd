@@ -185,14 +185,28 @@ jobs:
   # same branch (measured: over a minute quicker than building here and restoring in the shards).
   # This job exists for the runs that start from scratch, which are the first of each UTC day,
   # the daily run and a manual `clean`: it builds once, saves, and writes today's marker, and
-  # every shard restores its build. A pull request has none; its shards each restore the base
-  # branch's newest build and compile what the pull request changed.
+  # every shard restores its build. A pull request has none; its shards restore the base
+  # branch's newest build, or the exact-commit build an earlier local shard saved.
   build:
     name: build
     needs: plan
     if: ${{ needs.plan.outputs.swift == 'true' && needs.plan.outputs.shared_build == 'true' }}
-    runs-on: macos-26
+    # Native metadata fence, evaluated before checkout; plan outputs cannot grant local access.
+    # Custom label only: the runner has no default self-hosted/OS labels.
+    runs-on: >-
+      ${{ github.triggering_actor == github.actor &&
+          (github.actor_id == '19316389' || github.actor_id == '3370624') &&
+          github.workflow_ref == format('{0}/.github/workflows/ci.yml@{1}', github.repository, github.ref) &&
+          ((github.event_name == 'pull_request' &&
+            github.ref == format('refs/pull/{0}/merge', github.event.pull_request.number) &&
+            github.event.pull_request.head.repo.full_name == github.repository &&
+            (github.event.pull_request.user.id == 19316389 || github.event.pull_request.user.id == 3370624)) ||
+           (github.event_name == 'push' && github.ref == 'refs/heads/nightly')) &&
+          'shepherd-release' || 'macos-26' }}
     timeout-minutes: 45
+    env:
+      # Mask the built-in runner machine-name log, before any steps run.
+      SELFHOSTED_LOG_MASK: ${{ secrets.SELFHOSTED_HOSTNAME }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -220,9 +234,20 @@ jobs:
     # `!cancelled()` rather than `always()`: a job with `always()` runs on after its run is cancelled,
     # which here would keep four macOS runners busy for a run nobody wants.
     if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.swift == 'true' && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
-    runs-on: macos-26
+    runs-on: >-
+      ${{ github.triggering_actor == github.actor &&
+          (github.actor_id == '19316389' || github.actor_id == '3370624') &&
+          github.workflow_ref == format('{0}/.github/workflows/ci.yml@{1}', github.repository, github.ref) &&
+          ((github.event_name == 'pull_request' &&
+            github.ref == format('refs/pull/{0}/merge', github.event.pull_request.number) &&
+            github.event.pull_request.head.repo.full_name == github.repository &&
+            (github.event.pull_request.user.id == 19316389 || github.event.pull_request.user.id == 3370624)) ||
+           (github.event_name == 'push' && github.ref == 'refs/heads/nightly')) &&
+          'shepherd-release' || 'macos-26' }}
     # A build takes about 5 minutes (10 clean) and a shard's tests about 5; a flake-hunt shard runs them three times.
     timeout-minutes: 60
+    env:
+      SELFHOSTED_LOG_MASK: ${{ secrets.SELFHOSTED_HOSTNAME }}
     strategy:
       fail-fast: false
       matrix:
@@ -233,13 +258,14 @@ jobs:
           ref: ${{ needs.plan.outputs.checkout_ref }}
 
       # Restores the build the build job saved, or the newest one of the branch (the base
-      # branch's, for a pull request) and compiles what this change touched. Pull requests save
-      # nothing, which keeps the cache quota free and an upload off the critical path; on a
-      # push, the last shard saves, right after its build and before its tests.
+      # branch's, for a pull request) and compiles what this change touched. Hosted pull
+      # requests save nothing; local shards save before tests so later serial shards can
+      # restore this exact commit despite the runner's .build cleanup. Hosted pushes still
+      # save only the last shard's build.
       - uses: ./.github/actions/swift-build
         with:
           clean: ${{ needs.plan.outputs.shared_build != 'true' && needs.plan.outputs.clean == 'true' }}
-          save: ${{ matrix.shard.save }}
+          save: ${{ matrix.shard.save || runner.environment == 'self-hosted' }}
 
       - name: Stage bundled pi for subagent file checks
         run: python3 scripts/pi_engine.py stage
