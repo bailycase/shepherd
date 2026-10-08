@@ -407,6 +407,11 @@ def engine_patch(pin: dict) -> dict | None:
         patch = json.load(f)
     if patch["version"] != pin["pi"]["version"]:
         raise EngineError("engine patch does not match the pinned pi version")
+    for change in patch["files"]:
+        if "source" in change:
+            source = os.path.join(os.path.dirname(path), change["source"])
+            if sha256_of(source) != change["after"]:
+                raise EngineError("engine patch source differs from its pinned hash")
     return patch
 
 
@@ -418,7 +423,9 @@ def apply_patch(files: dict[str, bytes], pin: dict) -> None:
         if hashlib.sha256(original).hexdigest() != change["before"]:
             raise EngineError(f"engine patch source mismatch: {path}")
         text = original.decode("utf-8")
-        for edit in change["edits"]:
+        if "source" in change:
+            text = _text(os.path.join(ROOT, "scripts", "pi-engine-patches", change["source"]))
+        for edit in change.get("edits", []):
             if text.count(edit["old"]) != 1:
                 raise EngineError(f"engine patch anchor mismatch: {path}")
             text = text.replace(edit["old"], edit["new"])

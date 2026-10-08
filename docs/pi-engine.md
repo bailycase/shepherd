@@ -76,13 +76,16 @@ with `ERR_MODULE_NOT_FOUND`.
 ## Skills-only runtime patch
 
 `scripts/pi-engine-patches/skills.json` is a narrowly scoped, tracked patch to pi 1.0.0's readable
-modular resource loader, agent session and RPC mode. Its hash is recorded in the engine pin.
+modular resource loader, package discovery, agent session and RPC mode, plus the small native
+watcher source `skill-watch.js`. Its hash is recorded in the engine pin.
 Staging verifies the pi version, full original file hashes, unique replacement anchors and final
 file hashes; verification also checks the shipped patched files. A source, patch or pin mismatch
 fails closed. Update the patch hash in the pin and restage whenever the patch changes, so Xcode's
 existing pin stamp cannot reuse an older unpatched engine.
 
-The patch supplies `refresh_skills` and the skills-only loader/session operation; it does not
+The patch supplies `refresh_skills`, native file observation and the `skills_changed` /
+`skills_watch_error` RPC events. The host coalesces dirty state and refreshes immediately at an
+idle boundary, without periodic requests. It does not
 reload extensions, tools, providers or settings. See [live skills](skills.md#live-threads) for
 bounds, discovery scope and busy behavior. All launches still go through `PiLaunch` and the one
 `BundledPiEngine.entryPath`, now upstream's `dist/cli.js`: agents, children, catalog and print
@@ -92,7 +95,8 @@ existing SDK-only sign-in and definition-discovery imports still use `bundle/ind
 
 `EngineSmokeTests` runs trust, busy preflight, Stop and prompt/history/extension-preservation
 checks from `Tests/Extensions/engine-live-skills.mjs`, including CLI, loaded local-package and
-extension-provided paths and their collision precedence against project and global skills.
+extension-provided paths and their collision precedence against project and global skills,
+native-event delivery for missing/replaced roots and symlink targets, and watcher cleanup.
 `EngineThreadTests` proves a real existing
 thread's menu follows additions, edits and removals. Existing smoke tests also cover modular
 launch, TypeScript extensions, MCP, catalogs, launcher inheritance and hardened signing.

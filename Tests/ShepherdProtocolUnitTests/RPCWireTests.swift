@@ -242,6 +242,8 @@ struct RPCWireTests {
     static let simpleEvents: [(String, RPCEvent)] = [
         (#"{"type":"agent_start"}"#, .agentStart),
         (#"{"type":"agent_settled"}"#, .agentSettled),
+        (#"{"type":"skills_changed"}"#, .skillsChanged),
+        (#"{"type":"skills_watch_error","error":"fixture failure"}"#, .skillsWatchError("fixture failure")),
         (#"{"type":"turn_start"}"#, .turnStart),
         (#"{"type":"agent_end"}"#, .agentEnd(messages: [], willRetry: false)),
         (#"{"type":"agent_end","messages":[{"role":"assistant","content":"done"}],"willRetry":true}"#,

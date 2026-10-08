@@ -49,6 +49,8 @@ export function runPiCli(home, args, { env = {}, cwd = home, timeout = 60000 } =
       env: { PATH: process.env.PATH, HOME: path.dirname(home), PI_CODING_AGENT_DIR: home, PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0", ...env },
     });
     let stdout = "", stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk) => { stdout += chunk; });
     child.stderr.on("data", (chunk) => { stderr += chunk; });
     const timer = setTimeout(() => child.kill("SIGKILL"), timeout);
@@ -111,6 +113,9 @@ export async function withPi(t, options, body) {
   t.after(() => child.kill("SIGKILL"));
   const events = [];
   let out = "", err = "", next = 0;
+  // Decode across pipe chunks; Buffer.toString per chunk corrupts split Unicode in JSON.
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
   child.stdout.on("data", (chunk) => {
     out += chunk;
     for (let nl; (nl = out.indexOf("\n")) >= 0; out = out.slice(nl + 1)) { try { events.push(JSON.parse(out.slice(0, nl))); } catch {} }
