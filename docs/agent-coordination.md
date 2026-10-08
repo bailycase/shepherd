@@ -97,8 +97,9 @@ The extension socket verifies the caller's agent identity. Invalid input, an una
 a failed state write, or a failed reload returns a tool error, not success. A reload can fail
 after registration has committed. Retrying registration is safe. `refresh_superseded` means a
 newer UI reload interrupted this one; retry `project_refresh`. Calls use the extension's
-15-second request timeout, except `project_edit`, which waits up to 130 seconds. A timeout
-does not roll back a registration already committed or cancel an in-flight filesystem call.
+15-second request timeout, except `project_edit`, which uses the shared 130-second peer
+request timeout. A timeout does not roll back a registration already committed or cancel an
+in-flight filesystem call.
 
 These tools require a build containing this feature and the **Terminals and agent tools**
 bundled extension enabled. They are not added to an already installed Nightly by this PR.
