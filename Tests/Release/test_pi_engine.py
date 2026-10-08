@@ -207,6 +207,10 @@ class SkillPatchTests(unittest.TestCase):
         pin["pi"]["version"] = "99.0.0"
         with self.assertRaisesRegex(pi_engine.EngineError, "pinned pi version"):
             pi_engine.engine_patch(pin)
+        digest = pi_engine.sha256_of
+        with patch.object(pi_engine, "sha256_of", side_effect=lambda path: "0" * 64 if path.endswith("skill-watch.js") else digest(path)):
+            with self.assertRaisesRegex(pi_engine.EngineError, "source differs"):
+                pi_engine.engine_patch(pi_engine.load_pin())
 
     def test_patch_checks_source_anchor_and_result_before_staging(self):
         change = {"path": "test.js", "before": hashlib.sha256(b"old").hexdigest(),

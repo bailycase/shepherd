@@ -1037,6 +1037,7 @@ fail_switched_history = False
 
 blocked_model_inputs = 0
 skill_refresh_reply_lost = False
+skill_commands_failed = False
 for raw in sys.stdin.buffer:
     line = raw.rstrip(b"\n").rstrip(b"\r")
     if not line:
@@ -1079,6 +1080,10 @@ for raw in sys.stdin.buffer:
         else:
             respond(cmd, t, data={"changed": False})
     elif t == "get_commands":
+        if skill_refresh_reply_lost and os.environ.get("STUB_PI_SKILL_COMMANDS_FAIL_ONCE") and not skill_commands_failed:
+            skill_commands_failed = True
+            respond(cmd, t, success=False, error="fixture command list unavailable")
+            continue
         # STUB_PI_PROMPT_TEMPLATE: the file fix-tests came from, as pi reports a template's source.
         template = os.environ.get("STUB_PI_PROMPT_TEMPLATE")
         commands = [dict(c, sourceInfo={"path": template}) if template and c["name"] == "fix-tests" else c for c in COMMANDS]

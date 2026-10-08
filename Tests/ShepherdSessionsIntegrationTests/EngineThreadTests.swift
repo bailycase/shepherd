@@ -83,12 +83,18 @@ struct EngineThreadTests {
         let streaming = try await pi.snapshot("the reply streaming") { s in
             s.running && s.provisional.contains { $0.role == "assistant" && $0.blocks.first?.text.contains("word1") == true }
         }
+        let skillFolder = pi.host.dir.appendingPathComponent("support/pi/skills/after-stop")
+        try FileManager.default.createDirectory(at: skillFolder, withIntermediateDirectories: true)
+        try "---\nname: after-stop\ndescription: Added during a running turn\n---\nWait safely.\n".write(
+            to: skillFolder.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
         let queuedID = UUID()
         _ = try await pi.send("hello queued", delivery: .followUp, operationID: queuedID, from: streaming)
         let queued = try await pi.snapshot("the follow-up held by the host") { $0.queue?.items.map(\.id) == [queuedID] }
         let stop = NativeThreadRequest.abort(expectedSessionID: queued.piSessionID, generation: queued.generation, operationID: UUID())
         _ = try await pi.request(stop)
-        let stopped = try await pi.snapshot("the turn stopped") { !$0.running && $0.provisional.isEmpty }
+        let stopped = try await pi.snapshot("the turn stopped and deferred skill became available") {
+            !$0.running && $0.provisional.isEmpty && $0.commands?.contains { $0.name == "skill:after-stop" } == true
+        }
         let partial = try #require(stopped.messages.last { $0.role == "assistant" })
         #expect(partial.blocks.first?.text.contains("word0") == true, "what streamed before the stop is kept: \(partial)")
         #expect(partial.status == "aborted" || partial.status == "stopped", "and says it was stopped: \(String(describing: partial.status))")

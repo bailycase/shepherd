@@ -694,6 +694,9 @@ public enum RPCEvent: Decodable, Hashable, Sendable {
     case agentStart
     case agentEnd(messages: [RPCMessage], willRetry: Bool)
     case agentSettled
+    /// The engine's native skill-file watchers invalidated the cached catalog.
+    case skillsChanged
+    case skillsWatchError(String)
     case turnStart
     case turnEnd(message: RPCMessage?, toolResults: [RPCMessage])
     case messageStart(message: RPCMessage)
@@ -748,6 +751,10 @@ public enum RPCEvent: Decodable, Hashable, Sendable {
             )
         case "agent_settled":
             self = .agentSettled
+        case "skills_changed":
+            self = .skillsChanged
+        case "skills_watch_error":
+            self = .skillsWatchError(try c.decodeIfPresent(String.self, forKey: .error) ?? "Skill observation failed")
         case "turn_start":
             self = .turnStart
         case "turn_end":

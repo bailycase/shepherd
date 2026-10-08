@@ -3,7 +3,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { withPi, until } from "./fixtures/pi-rpc-harness.mjs";
+import * as os from "node:os";
+import { pathToFileURL } from "node:url";
+import { withPi, until, pkg } from "./fixtures/pi-rpc-harness.mjs";
 
 const skill = (name, description = name, extra = "") => `---\nname: ${name}\ndescription: ${description}\n${extra}---\n${description}\n`;
 const write = (file, text) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, text); };
@@ -174,3 +176,170 @@ for (const source of ["cli", "package", "extension"]) {
     });
   });
 }
+
+test("native events observe absent sources, atomic directory replacement and dangling symlink recovery", { timeout: 30000 }, async t => {
+  await withPi(t, { settings: { extensions: OFF }, files: (_dir, work) => ({ "trust.json": { [work]: true } }) }, async pi => {
+    await pi.commands();
+    const observe = async mutate => {
+      const mark = pi.events.length;
+      mutate();
+      await until("a native skill invalidation", () => pi.events.slice(mark).some(e => e.type === "skills_changed"), 3000);
+      assert.equal((await pi.request({ type: "refresh_skills" })).success, true);
+    };
+    await observe(() => write(path.join(pi.work, ".agents/skills/event/SKILL.md"), skill("agents-event")));
+    assert.ok((await pi.commands()).some(c => c.name === "skill:agents-event"));
+    const folder = path.join(pi.work, ".pi/skills/event");
+    await observe(() => write(path.join(folder, "SKILL.md"), skill("event-one")));
+    assert.ok((await pi.commands()).some(c => c.name === "skill:event-one"));
+    const replacement = path.join(pi.dir, "replacement");
+    write(path.join(replacement, "SKILL.md"), skill("event-two"));
+    await observe(() => {
+      fs.renameSync(folder, path.join(pi.dir, "old-skill"));
+      fs.renameSync(replacement, folder);
+    });
+    assert.ok((await pi.commands()).some(c => c.name === "skill:event-two"));
+    await observe(() => fs.rmSync(path.join(pi.work, ".pi/skills"), { recursive: true }));
+    assert.ok(!(await pi.commands()).some(c => c.name.startsWith("skill:event-")));
+    const linked = path.join(pi.dir, "linked-target");
+    await observe(() => {
+      fs.mkdirSync(path.join(pi.work, ".pi/skills"), { recursive: true });
+      fs.symlinkSync(linked, path.join(pi.work, ".pi/skills/link"));
+    });
+    await observe(() => write(path.join(linked, "nested/SKILL.md"), skill("linked-event")));
+    assert.ok((await pi.commands()).some(c => c.name === "skill:linked-event"));
+    await observe(() => fs.rmSync(linked, { recursive: true }));
+    assert.ok(!(await pi.commands()).some(c => c.name === "skill:linked-event"));
+    await observe(() => write(path.join(linked, "nested/SKILL.md"), skill("linked-back")));
+    assert.ok((await pi.commands()).some(c => c.name === "skill:linked-back"));
+    assert.ok(!pi.events.some(e => e.type === "skills_watch_error"), JSON.stringify(pi.events.filter(e => e.type === "skills_watch_error")));
+  });
+});
+
+test("closing native skill observation releases its watchers and suppresses later callbacks", { timeout: 10000 }, async t => {
+  const { watchSkillPaths } = await import(pathToFileURL(path.join(pkg, "dist/core/shepherd-skill-watch.js")));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "skill-watch-close-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  let changes = 0;
+  const errors = [];
+  const close = watchSkillPaths([directory], () => { changes++; }, error => errors.push(error));
+  close();
+  close();
+  // A separate native watcher proves the filesystem delivered this edit after disposal.
+  const delivered = new Promise(resolve => {
+    const control = fs.watch(directory, () => { control.close(); resolve(); });
+    t.after(() => control.close());
+  });
+  write(path.join(directory, "SKILL.md"), skill("after-close"));
+  await delivered;
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(changes, 0);
+  assert.deepEqual(errors, []);
+});
+
+test("shallow missing-source anchors ignore unrelated repository edits", { timeout: 10000 }, async t => {
+  const { watchSkillPaths } = await import(pathToFileURL(path.join(pkg, "dist/core/shepherd-skill-watch.js")));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "skill-watch-scope-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  let changes = 0;
+  const errors = [];
+  const close = watchSkillPaths([path.join(directory, ".pi/skills")], () => { changes++; }, error => errors.push(error));
+  t.after(close);
+  const delivered = new Promise(resolve => {
+    const control = fs.watch(directory, () => { control.close(); resolve(); });
+    t.after(() => control.close());
+  });
+  write(path.join(directory, "unrelated.txt"), "not a skill");
+  await delivered;
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(changes, 0);
+  write(path.join(directory, ".pi/skills/new/SKILL.md"), skill("in-scope"));
+  await until("the selected source event", () => changes > 0, 3000);
+  assert.deepEqual(errors, []);
+});
+
+test("ancestor symlink retargets and dangling recovery invalidate the new skill source", { timeout: 30000 }, async t => {
+  await withPi(t, {
+    settings: { extensions: OFF }, files: (_dir, work) => ({ "trust.json": { [work]: true } }),
+    project: (dir, work) => {
+      write(path.join(dir, "one/skills/example/SKILL.md"), skill("from-one"));
+      write(path.join(dir, "two/skills/example/SKILL.md"), skill("from-two"));
+      fs.symlinkSync(path.join(dir, "one"), path.join(work, ".pi"));
+    },
+  }, async pi => {
+    assert.ok((await pi.commands()).some(c => c.name === "skill:from-one"));
+    const observe = async mutate => {
+      const mark = pi.events.length;
+      mutate();
+      await until("ancestor-link skill notification", () => pi.events.slice(mark).some(e => e.type === "skills_changed"), 3000);
+      await refresh(pi);
+    };
+    const retarget = target => {
+      fs.symlinkSync(path.join(pi.dir, target), path.join(pi.work, "replacement-link"));
+      fs.renameSync(path.join(pi.work, "replacement-link"), path.join(pi.work, ".pi"));
+    };
+    await observe(() => retarget("two"));
+    assert.ok((await pi.commands()).some(c => c.name === "skill:from-two"));
+    assert.ok(!(await pi.commands()).some(c => c.name === "skill:from-one"));
+    await observe(() => write(path.join(pi.dir, "two/skills/example/SKILL.md"), skill("edited-two")));
+    assert.ok((await pi.commands()).some(c => c.name === "skill:edited-two"));
+    await observe(() => retarget("missing"));
+    assert.ok(!(await pi.commands()).some(c => c.name === "skill:edited-two"));
+    await observe(() => write(path.join(pi.dir, "missing/skills/example/SKILL.md"), skill("recovered-ancestor")));
+    assert.ok((await pi.commands()).some(c => c.name === "skill:recovered-ancestor"));
+  });
+});
+
+test("reference symlinks below SKILL.md never observe unrelated repository contents", { timeout: 10000 }, async t => {
+  const { watchSkillPaths } = await import(pathToFileURL(path.join(pkg, "dist/core/shepherd-skill-watch.js")));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "skill-reference-scope-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const root = path.join(directory, "skills");
+  const unrelated = path.join(directory, "unrelated-repo");
+  write(path.join(root, "example/SKILL.md"), skill("example"));
+  fs.mkdirSync(unrelated);
+  fs.symlinkSync(unrelated, path.join(root, "example/reference"));
+  let changes = 0;
+  const errors = [];
+  const close = watchSkillPaths([root], () => { changes++; }, error => errors.push(error));
+  t.after(close);
+  const delivered = new Promise(resolve => {
+    const control = fs.watch(unrelated, () => { control.close(); resolve(); });
+    t.after(() => control.close());
+  });
+  write(path.join(unrelated, "source.txt"), "not a skill resource");
+  await delivered;
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(changes, 0);
+  write(path.join(root, "example/SKILL.md"), skill("updated-example"));
+  await until("the real skill instruction edit", () => changes > 0, 3000);
+  assert.deepEqual(errors, []);
+});
+
+test("ignored symlinks stay out of observation until an ignore-file edit allows them", { timeout: 10000 }, async t => {
+  const { watchSkillPaths } = await import(pathToFileURL(path.join(pkg, "dist/core/shepherd-skill-watch.js")));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "skill-ignore-scope-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const root = path.join(directory, "skills");
+  const target = path.join(directory, "outside");
+  write(path.join(root, ".gitignore"), "linked/\n");
+  write(path.join(target, "example/SKILL.md"), skill("ignored-example"));
+  fs.symlinkSync(target, path.join(root, "linked"));
+  let changes = 0;
+  const errors = [];
+  const close = watchSkillPaths([root], () => { changes++; }, error => errors.push(error));
+  t.after(close);
+  const delivered = new Promise(resolve => {
+    const control = fs.watch(path.join(target, "example"), () => { control.close(); resolve(); });
+    t.after(() => control.close());
+  });
+  write(path.join(target, "example/SKILL.md"), skill("still-ignored"));
+  await delivered;
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(changes, 0);
+  write(path.join(root, ".gitignore"), "");
+  await until("ignore-rule edit to reconcile sources", () => changes > 0, 3000);
+  const mark = changes;
+  write(path.join(target, "example/SKILL.md"), skill("now-observed"));
+  await until("the newly allowed target edit", () => changes > mark, 3000);
+  assert.deepEqual(errors, []);
+});
