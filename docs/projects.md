@@ -10,6 +10,40 @@ existing directory picker and creates a space on the selected host. It does not 
 initialize git or write configuration files. All hosts defaults Add project to This Mac.
 An unavailable host keeps its known rows, but cannot accept edits or new projects.
 
+For a local child project, use **Add subproject** on its parent in Settings, or
+**Add Child Project…** in the parent's sidebar menu. Choose **New folder** to create one
+empty direct child folder, or **Existing folder** to select an existing descendant. An
+optional display name defaults to the folder name. Existing folder capitalization is preserved:
+requesting `Docs` reuses `docs`, rather than creating or renaming a second directory.
+Adding updates live state without selecting
+the project or starting a thread. Existing registrations remain unchanged. No Git repository
+is initialized. The folder must resolve inside the parent; symlinks cannot point outside it.
+A failed registration leaves a newly created folder in place, so retry with Existing folder.
+Remote projects retain the existing picker and cannot create folders through this dialog.
+Settings and the sidebar infer the outermost visible parent on the same host for older
+registrations. New child registrations and explicit edits keep their chosen parent, including
+multiple levels. These display relationships never change filesystem/config ancestry.
+The sidebar indents child projects and their threads. Collapsing a parent hides its children;
+its count and attention indicator include their threads. Selecting a child thread reopens
+both levels. Dragging reorders siblings, not parent relationships. Hiding a parent leaves its
+visible children as top-level projects.
+
+To rename a local project or subproject after adding it, choose **Rename Project…** from its
+sidebar menu or Settings row's context menu/accessibility actions. Confirming changes the
+display name, not its ID, folder name, path, parent, or files. Cancel changes nothing.
+
+Agents can edit names and display parents with `project_edit`, and request removal confirmation
+with `project_delete`. Editing defaults to metadata only. Physical folder move/copy requires an
+explicit user request and explicit `folderAction`/`destinationPath` arguments. See the exact
+schemas, refusal conditions, and recovery behavior in [project tools](agent-coordination.md#project-registration-and-refresh).
+
+To remove a local project or subproject from the sidebar, choose **Remove Project…** from
+its sidebar menu or its Settings row's context menu, then confirm **Remove project**. This
+stops that project's agents and closes its tabs, but keeps the local folder, all files,
+worktrees, saved conversations, and Settings directory history. Child projects are separate
+registrations and survive parent removal, becoming top-level sidebar rows. Cancel changes
+nothing. History-only Settings rows and remote projects have no local removal action.
+
 Open a project to edit its existing files, or create the standard instruction, pi settings or MCP
 files when they are missing. The categories are Instructions, Pi settings, Skills, Extensions
 and MCP servers. Text files use the existing Instructions editor. MCP uses the same server

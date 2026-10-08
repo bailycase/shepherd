@@ -92,14 +92,19 @@ struct ProjectDrop: Equatable {
     /// row, every row `pitch` apart. Only This Mac's projects move, among themselves; nil when
     /// the project would stay where it is.
     static func plan(_ drag: ProjectDrag, items: [SidebarTreeItem], pitch: CGFloat) -> ProjectDrop? {
-        // The movable projects' rows, and the last element of their block.
+        guard let source = items.compactMap({ item -> SidebarProjectRow? in
+            if case .project(let project) = item, project.id == drag.id { return project }; return nil
+        }).first else { return nil }
+        // Only siblings can reorder. Descendant rows extend their parent's drop block.
         var movable: [(index: Int, space: SpaceID, id: AnyHashable)] = []
         var regionEnd = -1
         for (index, item) in items.enumerated() {
             switch item {
-            case .project(let project) where project.movable:
+            case .project(let project) where project.movable && project.parentID == source.parentID:
                 guard let space = project.space else { continue }
                 movable.append((index, space, item.id))
+                regionEnd = index
+            case .project(let project) where project.depth > source.depth && !movable.isEmpty && regionEnd == index - 1:
                 regionEnd = index
             case .row where !movable.isEmpty && regionEnd == index - 1:
                 regionEnd = index
@@ -156,6 +161,7 @@ private struct SidebarTreeItemView: View, Equatable {
             case .row(let row):
                 NWSidebarRow(row.title, leading: row.leading, selected: row.selected, dimmed: row.offline,
                              accessory: row.accessory, hasGoal: row.hasGoal, nested: true)
+                    .padding(.leading, CGFloat(row.projectDepth) * (NWProjectMetrics.chevronSlot + NWProjectMetrics.gap))
                     .help(row.help)
                     .sidebarTapRow { vm.selectSidebarRow(row.id) }
                     .accessibilityLabel(row.accessibilityLabel)
@@ -183,6 +189,7 @@ private struct SidebarTreeItemView: View, Equatable {
                             newThread: project.newThreadSpace == nil ? nil : { vm.startThread(in: project) }) {
             SidebarProjectMenu(vm: vm, project: project)
         }
+        .padding(.leading, CGFloat(project.depth) * (NWProjectMetrics.chevronSlot + NWProjectMetrics.gap))
         .help(project.path)
         .contextMenu { SidebarProjectMenu(vm: vm, project: project) }
         .opacity(dragging ? NWProjectMetrics.draggedOpacity : 1)
@@ -224,6 +231,10 @@ struct SidebarProjectMenu: View {
         }
         // Finder and Terminal reach This Mac's folders only.
         if project.space != nil {
+            Button("Rename Project…") { vm.spaceRenameTarget = project.space }
+            Button("Add Child Project…") {
+                vm.addingChildProject = vm.childProjectModel(path: project.path, name: project.name)
+            }
             Button("Reveal in Finder", systemImage: "folder") { vm.revealProjectInFinder(project.path) }
             Button("Open in Terminal", systemImage: "terminal") { vm.openProjectInTerminal(project.path) }
         }
@@ -232,6 +243,8 @@ struct SidebarProjectMenu: View {
         Button("Collapse All", systemImage: "arrow.down.and.line.horizontal.and.arrow.up") { vm.setAllProjects(expanded: false) }
         if let space = project.space {
             Button("Hide from Sidebar", systemImage: "eye.slash") { vm.setProjectHiddenFromSidebar(space, true) }
+            Divider()
+            Button("Remove Project…", role: .destructive) { vm.spaceDeleteTarget = space }
         }
     }
 }

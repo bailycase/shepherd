@@ -108,6 +108,13 @@ Settings", revision 1083) is the source of truth for every Settings page.
   the selected host and opens the viewer's browser. Native MCP shows Pi's project approval apart
   from saved credentials, and asks for explicit confirmation of executable project resources
   before approving them on that host ([Project MCP](docs/design/project-mcp.md)).
+- Local projects offer [Add child project](docs/design/child-projects.md) from Settings' existing
+  Add subproject action and the sidebar project menu. The shared dialog creates an empty folder
+  or registers an existing descendant. Child projects nest under their main project in the
+  sidebar, with their threads indented again; parent collapse hides the whole group. Remove
+  Project… confirms registration/session removal while preserving local folders and child projects.
+  Rename Project… changes only the display name. Tool-driven parent edits change both project
+  trees without changing folders or configuration inheritance; moving/copying data is explicit.
 - Sliders show the bare number the board draws ("100", "232", "12.5"). VoiceOver reads the unit.
 
 Detail: [settings.md](docs/design/settings.md) and its `settings-*` files.

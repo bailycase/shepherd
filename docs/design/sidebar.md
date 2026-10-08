@@ -288,7 +288,21 @@ SidebarTree, SidebarProjects and SidebarProjectsHosts. Mac only: the iPad and iP
 - **Project menu** (right-click a project, or ···; native): New Thread in <project> (on the host
   its newest thread runs on, else This Mac, else a connected host that has it), Reveal in Finder
   and Open in Terminal (This Mac's projects: the Mac's Terminal in the folder), Copy Path,
-  Collapse All, and Hide from Sidebar (This Mac's).
+  Collapse All, and Hide from Sidebar (This Mac's). The user's child-project request adds
+  **Rename Project…** and **Add Child Project…** before Reveal in Finder for local projects. It opens the shared
+  [create-or-add dialog](child-projects.md). The user's subsequent request nests child projects
+  under their parent on their host, matching Settings. Old registrations infer the outermost
+  folder ancestor; new children and `project_edit` may specify a different display parent.
+  Each parent level adds `NWProjectMetrics.chevronSlot + gap` to project and thread insets. Parent
+  disclosure hides the entire group; child disclosure hides only that child's threads. Parent
+  counts and status rollups include children. Selection reveal opens both levels; keyboard
+  shortcuts skip collapsed groups. Roots and siblings keep saved order, and dragging only
+  reorders siblings. A hidden parent's visible children become top-level rows. Ambiguous
+  name-merged remote projects are not assigned a guessed parent.
+- **Remove Project…** follows Hide from Sidebar in a local project's menu, with a divider and
+  native destructive role. The confirmation names the project and its own agent count, says
+  the folder/files and saved conversations remain, and preserves child registrations. It
+  removes the registration and stops only its own sessions; it never deletes local folders.
 - **Keys:** a click on a project opens or closes it and gives the tree the keyboard: ← closes
   that project and → opens it (plain arrows, only while the tree has focus, so never a chord for
   `KeybindingsStore` or Ghostty's list). ⌥-click opens or closes every project. ⌘1–9 and ⌘↑/↓

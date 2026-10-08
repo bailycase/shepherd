@@ -284,6 +284,25 @@ struct ListPerformanceTests {
         #expect(rows["sidebar.lists", default: 0] == 0, "Activity's lists are not derived for the tree: \(rows)")
     }
 
+    @Test func threeHundredNestedProjectsStillBuildOnlyVisibleRows() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let parent = Fixture.space("Platform", path: app.dir.path)
+        let children = (0..<300).map { Fixture.space("Child \($0)", path: app.dir.appendingPathComponent("child-\($0)").path) }
+        let agents = children.enumerated().map { Fixture.agent("Work \($0.offset)", in: $0.element, order: $0.offset) }
+        let vm = try await app.start(with: Fixture.state(spaces: children + [parent], agents: agents))
+        vm.settings.sidebarStyle = .projects
+        var window: OffscreenWindow!
+        let rows = ListPerf.counting {
+            window = OffscreenWindow(size: Self.sidebarSize, dark: true, SidebarView(vm: vm))
+            ListPerf.settle(window)
+        }
+        defer { window.close() }
+        #expect(vm.sidebarTree.projects.filter { $0.parentID == .local(parent.id) }.count == 300)
+        #expect(rows["sidebar.row", default: 0] + rows["sidebar.project", default: 0] <= 2 * Self.sidebarRowsOnScreen)
+        #expect(rows["sidebar.tree", default: 0] <= 1)
+    }
+
     /// Scrolling the tree builds the rows that come into view, never the whole fleet.
     @Test func scrollingTheProjectTreeBuildsOnlyTheRowsComingIntoView() async throws {
         let app = try AppHarness()

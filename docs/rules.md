@@ -373,6 +373,17 @@ agent and its auxiliary processes while the app runs, and quitting the app termi
   naming the files and touching none, when any of them changed after the turn (or the Undo).
   The index, HEAD, refs, the stash and every other file stay as they are.
 
+- **Add child project**, explicitly requested through the local dialog or `project_add_child`,
+  may create one empty direct child directory with `mkdirat`, or reuse an existing matching
+  directory with its on-disk spelling. It never overwrites an entry, initializes Git, writes
+  project files, or deletes a folder if registration fails.
+- **Explicit project folder transfer**, requested through `project_edit` with `folderAction`
+  set to `move` or `copy` and a destination, may rename or copy an idle project folder. A name
+  or parent edit alone never authorizes a filesystem operation. Transfers refuse overwrite,
+  linked worktrees, in-use projects, and protected runtime folders. Copy keeps the original
+  registration and folder; move attempts a no-overwrite rollback on failed state persistence.
+  Partial copies remain for inspection, never automatic deletion. See [project tools](agent-coordination.md#project-registration-and-refresh).
+
 Nothing else mutates repository state, and Shepherd never prunes worktrees.
 
 **Reviews dock; they don't split.** A review (`ReviewSession`, `ShepherdViewModel+Review.swift`)
