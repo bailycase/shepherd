@@ -480,7 +480,7 @@ enum PanesExtension {
               destinationPath: Type.Optional(Type.String({ description: "Unused absolute destination folder, required only for explicit move/copy" })),
             }),
             async execute(_id, args) {
-              const reply = await request({ type: "editProject", projectID: args.projectID, request: { name: args.name, parentProjectID: args.parentProjectID, folderAction: args.folderAction ?? "none", destinationPath: args.destinationPath } }, undefined, APPROVAL_TIMEOUT_MS);
+              const reply = await request({ type: "editProject", projectID: args.projectID, request: { name: args.name, parentProjectID: args.parentProjectID, folderAction: args.folderAction ?? "none", destinationPath: args.destinationPath } }, undefined, PEER_TIMEOUT_MS);
               return text(JSON.stringify({ space: reply.space, created: reply.created }));
             },
           });
