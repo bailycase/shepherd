@@ -388,14 +388,11 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
   bound to its thread speaks for the agent it was launched for; each message's `speaksFor` and `replyID`
   against its wire form (`ExtensionMessageTests`). Check the check has teeth by making it allow
   everything: these tests must fail.
-- **Agent-to-agent approvals:** `AgentApprovalTests` (the server, over the real socket) for each
-  setting (Ask parks, Always allow goes through, Never refuses with no dialog), each gated call
-  (send, spawn, read, steer, interrupt), every way a wait ends (allow once, allow for this thread,
-  deny, timeout, cancel, disconnect, Never) and that only an allow does the call, once; "Allow for
-  this thread" forgotten when the pi restarts or the setting changes; an automation run under Ask
-  refused; nothing a socket message sends answers a dialog (`ExtensionIdentityTests` also counts
-  the dialogs a process claiming another agent opened: none). `PeerApprovalFlowTests` presses each
-  button of the dialog and reads what reached the asking agent and the target.
+- **Agent-to-agent calls:** `AgentApprovalTests` verifies operations proceed without approval UI,
+  internal server-policy APIs still work, validation rejects invalid requests, and cancellation
+  revokes unclaimed deletion tokens. `PeerApprovalFlowTests` checks messages ignore legacy
+  permission choices, reach the target without a sheet, and leave no permission row in Settings. `AgentPeerDeletionTests` verifies immediate deletion stops
+  the target's processes and preserves its checkout, branch and uncommitted files.
 - **Changes:** every scope on a scratch repository, the proof that reading changes leaves the
   index, HEAD, refs, the stash, `.git` and every file alone, and Undo, Redo and the refusal on a
   turn the stub pi made.
