@@ -76,12 +76,9 @@ And the rules that follow from them:
   translucency, no gradients except the fade above the composer.
 - **Honest affordances.** Never show a control that does nothing, a shortcut that isn't wired,
   or sample data in place of real data. Hide unsupported capabilities, or explain them.
-- **No permission model.** Shepherd never invents approval UI for what an agent runs, and
-  ShepherdUI has no permission or approval component (NWSwift). When pi or an extension asks a
-  question, show it as a question with the answers the asker offered. The one approval Shepherd
-  asks is for an agent acting on another thread, which the user decided (2026-10-01): the app
-  composes `PeerApprovalDialog` and `PeerDeleteDialog` from the shared dialog components
-  (Dialogs and sheets, Departures).
+- **No permission model.** Agent tool calls open no approval modals. Cross-thread access stays
+  under the host's setting. Questions from pi or an extension use the question dock with the
+  answers the asker offered.
 - **Status is a dot or glyph plus a word.** One enum, `AgentState`, colors every status surface,
   and color is never the only signal for an actionable state.
 - **Lantern means you.** The brand amber marks the primary action and anything that needs you.

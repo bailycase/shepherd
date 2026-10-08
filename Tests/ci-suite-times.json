@@ -214,7 +214,6 @@
   "ShepherdAppUnitTests.PaletteTerminalCommandTests": 0.01,
   "ShepherdAppUnitTests.PaneFocusMemoryTests": 0.01,
   "ShepherdAppUnitTests.PaneTreeGeometryTests": 0.01,
-  "ShepherdAppUnitTests.PeerApprovalPresentationTests": 0.01,
   "ShepherdAppUnitTests.PiAuthRowsTests": 0.01,
   "ShepherdAppUnitTests.PiImportSheetTests": 0.01,
   "ShepherdAppUnitTests.PiSessionAdoptionTests": 0.04,
