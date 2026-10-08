@@ -11,7 +11,7 @@ imported from the bundle's `index.js`) runs on its node. Nothing runs the `pi` o
 | --- | --- |
 | `Helpers/node` | Node for `arm64` only (Shepherd runs on Apple silicon only), Node's release binary as published. Never stripped |
 | `Resources/pi-engine/package.json` | pi's, with its version and config-dir name |
-| `Resources/pi-engine/dist/` | Pi's CLI bundle under `bundle/` and modular SDK at `index.js`. Agents still launch `bundle/cli.js` |
+| `Resources/pi-engine/dist/` | Pi's upstream modular CLI at `cli.js` and SDK at `index.js`; the published bundle remains present but is not a production entry |
 | `Resources/pi-engine/dist/modes/interactive/{theme,assets}/`, `dist/core/export-html/` | the themes, interactive assets and export templates pi finds beside the bundle |
 | `Resources/pi-engine/README.md`, `docs/`, `examples/`, `CHANGELOG.md` | what pi's system prompt points the model at |
 | `Resources/pi-engine/node_modules/` | Pi's pinned SDK dependency tree, retaining nested versions. No esbuild, optional platform packages, TUI native addons or QuickJS side modules |
@@ -72,6 +72,30 @@ SHEPHERD_ENGINE_SMOKE=.build/pi-engine \
 This check imports the host peers and creates/disposes a session. CI runs it after staging;
 release runs it against the signed app before notarization. An old bundle-only engine fails
 with `ERR_MODULE_NOT_FOUND`.
+
+## Skills-only runtime patch
+
+`scripts/pi-engine-patches/skills.json` is a narrowly scoped, tracked patch to pi 1.0.0's readable
+modular resource loader, agent session and RPC mode. Its hash is recorded in the engine pin.
+Staging verifies the pi version, full original file hashes, unique replacement anchors and final
+file hashes; verification also checks the shipped patched files. A source, patch or pin mismatch
+fails closed. Update the patch hash in the pin and restage whenever the patch changes, so Xcode's
+existing pin stamp cannot reuse an older unpatched engine.
+
+The patch supplies `refresh_skills` and the skills-only loader/session operation; it does not
+reload extensions, tools, providers or settings. See [live skills](skills.md#live-threads) for
+bounds, discovery scope and busy behavior. All launches still go through `PiLaunch` and the one
+`BundledPiEngine.entryPath`, now upstream's `dist/cli.js`: agents, children, catalog and print
+launches all use the patched modular runtime. No dependency was added; the modular SDK and its
+locked dependencies already ship. No production CLI launch executes the unpatched bundle;
+existing SDK-only sign-in and definition-discovery imports still use `bundle/index.js`.
+
+`EngineSmokeTests` runs trust, busy preflight, Stop and prompt/history/extension-preservation
+checks from `Tests/Extensions/engine-live-skills.mjs`, including CLI, loaded local-package and
+extension-provided paths and their collision precedence against project and global skills.
+`EngineThreadTests` proves a real existing
+thread's menu follows additions, edits and removals. Existing smoke tests also cover modular
+launch, TypeScript extensions, MCP, catalogs, launcher inheritance and hardened signing.
 
 ## The Xcode phase
 

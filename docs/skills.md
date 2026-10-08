@@ -47,6 +47,33 @@ the first host's own: Same skills on every host never touches them.
 **What a prompt costs** (below) counts every skill the agent loads, pi's own included, and not one
 pi passes over.
 
+## Live threads
+
+Existing threads discover skill-file changes automatically, without `/reload`, a new thread or
+an extension restart. While a pi session is idle, Shepherd asks it to refresh skills every five
+seconds. Additions, removals, renames, descriptions and invocation-mode changes in Shepherd's
+skills folder and the trusted project's `.pi/skills` and `.agents/skills` update both the model's
+skill catalog and the composer's `/` menu. This includes Settings installs, updates, switches,
+removal and restore, remote changes, hand edits and symlinked skill folders. Project skills still
+do not appear in global Settings. A skill's body is read when its command is invoked; already
+read instructions remain in conversation history, even after the skill is removed.
+
+The pinned engine's `refresh_skills` RPC operation reparses skills only. It preserves session
+history, tools, providers, extension state and the existing trust decision. It neither installs
+packages nor runs skill code nor sends model requests. Loaded package, command-line and
+extension-provided skill paths are retained; local discovery uses the session's existing settings
+and exclusions. Changing settings paths, package configuration or project trust still requires a
+new session; adding or editing a skill file does not.
+
+Refresh is refused during a run, compaction or prompt-command preflight; Shepherd tries again
+when idle, including after Stop, queued work or retries settle. There is at most one refresh
+request in flight per thread, with a ten-second response deadline and a three-consecutive-error
+limit. At that limit refresh stops and logs a warning; ordinary thread actions continue. No
+model budget or external provider is involved. Polling ends with the session and does not resume
+agent work on app restart. No persisted watcher state is kept. The normal discovery cost is
+linear in the configured skill trees once per idle poll; file-system event observation can
+replace polling if large installations make that cost material.
+
 ## On a host
 
 `SkillsStore` (ShepherdSessions) owns a host's skills:

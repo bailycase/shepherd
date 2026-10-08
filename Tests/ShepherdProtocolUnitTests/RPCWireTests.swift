@@ -36,6 +36,7 @@ struct RPCWireTests {
         (.getMessages, nil, #"{"type":"get_messages"}"#),
         (.getSessionStats, nil, #"{"type":"get_session_stats"}"#),
         (.getCommands, nil, #"{"type":"get_commands"}"#),
+        (.refreshSkills, nil, #"{"type":"refresh_skills"}"#),
         (.setModel(provider: "anthropic", modelId: "claude-sonnet-4"), nil,
          #"{"type":"set_model","provider":"anthropic","modelId":"claude-sonnet-4"}"#),
         (.setThinkingLevel(level: "high"), nil, #"{"type":"set_thinking_level","level":"high"}"#),
