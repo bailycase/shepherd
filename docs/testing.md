@@ -439,6 +439,11 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
   (420pt), the narrowest thread column (400pt) and a phone's, at text scales 1 and 1.3, and an
   opened activity line fits too (`ThreadFitTests`: nothing is drawn in the thread's right gutter).
   A row that cannot shrink widens the stack every row shares and runs the whole thread off its pane.
+- **Composer menus:** `ComposerMenuTests` checks all window widths without moving the card,
+  transcript inset or scroll position, and keeps the menu anchored above the card. Settings-menu
+  height uses `ModelCatalog.settingsModels` with the fixture catalog, current model and
+  `RecentModels.load()`, plus the All models row: a previous model choice can add a second quick
+  choice. Thinking-segment wrapping uses the same row count, not a wider bounds tolerance.
 - **App logic:** keybindings (defaults, validation, stored overrides for removed actions
   ignored), palette and settings search, workspace selection and parking, sidebar ordering and
   reveal, pinned threads (their order, persistence and pruning, Needs you winning, the digits),
