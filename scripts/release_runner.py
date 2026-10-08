@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Default-branch bootstrap fence; nightly owns the actual Horizon implementation."""
+"""Default-branch bootstrap fence; nightly owns the actual Self-hosted implementation."""
 import sys
 
 
