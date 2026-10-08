@@ -289,6 +289,36 @@ test("ancestor symlink retargets and dangling recovery invalidate the new skill 
   });
 });
 
+test("explicit nested skill sources still signal edits and removal below an included SKILL.md", { timeout: 30000 }, async t => {
+  for (const source of ["reference/SKILL.md", "reference"]) {
+    await withPi(t, {
+      settings: { extensions: OFF },
+      args: ["--skill", `../home/skills/example/${source}`],
+      files: () => ({
+        "skills/example/SKILL.md": skill("parent"),
+        "skills/example/reference/SKILL.md": skill("nested"),
+      }),
+    }, async pi => {
+      assert.ok((await pi.commands()).some(c => c.name === "skill:nested"));
+      const nested = path.join(pi.home, "skills/example/reference/SKILL.md");
+      const observe = async mutate => {
+        const mark = pi.events.length;
+        mutate();
+        await until("the explicit nested source notification", () => pi.events.slice(mark).some(e => e.type === "skills_changed"), 3000);
+        await refresh(pi);
+      };
+      await observe(() => write(nested, skill("edited-nested")));
+      assert.ok((await pi.commands()).some(c => c.name === "skill:edited-nested"));
+      assert.ok(!(await pi.commands()).some(c => c.name === "skill:nested"));
+      await observe(() => fs.unlinkSync(nested));
+      assert.ok(!(await pi.commands()).some(c => c.name === "skill:edited-nested"));
+      assert.ok((await pi.commands()).some(c => c.name === "skill:parent"));
+      assert.ok(!pi.events.some(e => e.type === "skills_watch_error"));
+      assert.equal(pi.provider.requests.length, 0);
+    });
+  }
+});
+
 test("reference symlinks below SKILL.md never observe unrelated repository contents", { timeout: 10000 }, async t => {
   const { watchSkillPaths } = await import(pathToFileURL(path.join(pkg, "dist/core/shepherd-skill-watch.js")));
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "skill-reference-scope-"));
@@ -302,6 +332,14 @@ test("reference symlinks below SKILL.md never observe unrelated repository conte
   const errors = [];
   const close = watchSkillPaths([root], () => { changes++; }, error => errors.push(error));
   t.after(close);
+  // macOS can deliver source-creation events after watch registration. Establish
+  // observation with a real skill edit before measuring unrelated target events.
+  await until("skill observation to be ready", () => {
+    if (changes > 0) return true;
+    write(path.join(root, "example/SKILL.md"), skill("ready-example"));
+    return false;
+  }, 3000);
+  const mark = changes;
   const delivered = new Promise(resolve => {
     const control = fs.watch(unrelated, () => { control.close(); resolve(); });
     t.after(() => control.close());
@@ -309,9 +347,9 @@ test("reference symlinks below SKILL.md never observe unrelated repository conte
   write(path.join(unrelated, "source.txt"), "not a skill resource");
   await delivered;
   await new Promise(resolve => setImmediate(resolve));
-  assert.equal(changes, 0);
+  assert.equal(changes, mark);
   write(path.join(root, "example/SKILL.md"), skill("updated-example"));
-  await until("the real skill instruction edit", () => changes > 0, 3000);
+  await until("the real skill instruction edit", () => changes > mark, 3000);
   assert.deepEqual(errors, []);
 });
 

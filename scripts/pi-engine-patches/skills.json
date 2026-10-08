@@ -84,7 +84,7 @@
     {
       "path": "dist/core/shepherd-skill-watch.js",
       "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "after": "cb2ef768b34ea6867ed945a6972714ddf51f6e66643900c522eb24abfbc9265d",
+      "after": "6847c462930774a253e23b32dfbae8b03e1413c624f80561a46e4d0f12ca36c0",
       "source": "skill-watch.js"
     }
   ]
