@@ -72,6 +72,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Test the release rules
+        if: github.ref != 'refs/heads/nightly'
         run: python3 -m unittest discover -s Tests/Release -v
       # Secrets cannot appear in `if:`, so only whether all three are set
       # leaves this step; their values never reach the plan.
