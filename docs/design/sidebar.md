@@ -290,7 +290,14 @@ SidebarTree, SidebarProjects and SidebarProjectsHosts. Mac only: the iPad and iP
   and Open in Terminal (This Mac's projects: the Mac's Terminal in the folder), Copy Path,
   Collapse All, and Hide from Sidebar (This Mac's). The user's child-project request adds
   **Add Child Project…** before Reveal in Finder for local projects. It opens the shared
-  [create-or-add dialog](child-projects.md); project rows remain flat.
+  [create-or-add dialog](child-projects.md). The user's subsequent request nests child projects
+  under the outermost visible parent on their host, matching Settings. Child project rows and
+  their threads have an additional `NWProjectMetrics.chevronSlot + gap` leading inset. Parent
+  disclosure hides the entire group; child disclosure hides only that child's threads. Parent
+  counts and status rollups include children. Selection reveal opens both levels; keyboard
+  shortcuts skip collapsed groups. Roots and siblings keep saved order, and dragging only
+  reorders siblings. A hidden parent's visible children become top-level rows. Ambiguous
+  name-merged remote projects are not assigned a guessed parent.
 - **Keys:** a click on a project opens or closes it and gives the tree the keyboard: ← closes
   that project and → opens it (plain arrows, only while the tree has focus, so never a chord for
   `KeybindingsStore` or Ghostty's list). ⌥-click opens or closes every project. ⌘1–9 and ⌘↑/↓

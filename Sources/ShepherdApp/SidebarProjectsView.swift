@@ -92,14 +92,19 @@ struct ProjectDrop: Equatable {
     /// row, every row `pitch` apart. Only This Mac's projects move, among themselves; nil when
     /// the project would stay where it is.
     static func plan(_ drag: ProjectDrag, items: [SidebarTreeItem], pitch: CGFloat) -> ProjectDrop? {
-        // The movable projects' rows, and the last element of their block.
+        guard let source = items.compactMap({ item -> SidebarProjectRow? in
+            if case .project(let project) = item, project.id == drag.id { return project }; return nil
+        }).first else { return nil }
+        // Only siblings can reorder. Descendant rows extend their parent's drop block.
         var movable: [(index: Int, space: SpaceID, id: AnyHashable)] = []
         var regionEnd = -1
         for (index, item) in items.enumerated() {
             switch item {
-            case .project(let project) where project.movable:
+            case .project(let project) where project.movable && project.parentID == source.parentID:
                 guard let space = project.space else { continue }
                 movable.append((index, space, item.id))
+                regionEnd = index
+            case .project(let project) where source.parentID == nil && project.parentID != nil && !movable.isEmpty && regionEnd == index - 1:
                 regionEnd = index
             case .row where !movable.isEmpty && regionEnd == index - 1:
                 regionEnd = index
@@ -156,6 +161,7 @@ private struct SidebarTreeItemView: View, Equatable {
             case .row(let row):
                 NWSidebarRow(row.title, leading: row.leading, selected: row.selected, dimmed: row.offline,
                              accessory: row.accessory, hasGoal: row.hasGoal, nested: true)
+                    .padding(.leading, row.inChildProject ? NWProjectMetrics.chevronSlot + NWProjectMetrics.gap : 0)
                     .help(row.help)
                     .sidebarTapRow { vm.selectSidebarRow(row.id) }
                     .accessibilityLabel(row.accessibilityLabel)
@@ -183,6 +189,7 @@ private struct SidebarTreeItemView: View, Equatable {
                             newThread: project.newThreadSpace == nil ? nil : { vm.startThread(in: project) }) {
             SidebarProjectMenu(vm: vm, project: project)
         }
+        .padding(.leading, project.parentID == nil ? 0 : NWProjectMetrics.chevronSlot + NWProjectMetrics.gap)
         .help(project.path)
         .contextMenu { SidebarProjectMenu(vm: vm, project: project) }
         .opacity(dragging ? NWProjectMetrics.draggedOpacity : 1)
