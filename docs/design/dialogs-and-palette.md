@@ -158,9 +158,10 @@ the value it opened with while it animates away. The composer presents Stop all,
 pane its Revert and Commit…, Settings ▸ Advanced its reset, and `QuitConfirmation` the quit
 dialog. There is no `.alert`, `confirmationDialog`, or `NSAlert` in the app:
 
-- Rename agent and Rename space (`RenameDialog`, 420pt): one field seeded with the name and
-  focused; ⏎ renames, and an empty name cannot. Rename space adds "Sidebar label only — the
-  folder on disk is not renamed."
+- Rename agent and Rename project (`RenameDialog`, 420pt): one field seeded with the name and
+  focused; ⏎ renames, and an empty name cannot. Rename project adds "Display name only. The
+  folder name and location stay unchanged.". It is available for registered local parents
+  and children in the sidebar menu and Settings context/accessibility actions.
 - Delete Worktree Agent (`WorktreeDeleteDialog`, 520pt): "Delete worktree agent", "Stops <agent>.
   “Delete agent and worktree” also removes its checkout and branch.", rows for the Worktree (mono,
   middle-truncated) and the Branch, "Checking for unsaved work…" in the footer while git looks,

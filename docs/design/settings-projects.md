@@ -58,7 +58,11 @@ revision 562, defines the detail screen and replaces the first implementation.
 The user's create-or-add request extends the local **Add subproject** action. It opens the
 shared [Add child project dialog](child-projects.md), also reachable from a local project's
 sidebar menu. Remote rows retain the existing directory picker. Registered local rows expose
-Remove Project… in their context menu and accessibility actions, using the shared confirmation.
+Rename Project… and Remove Project… in their context menu and accessibility actions, using
+the shared dialogs. Explicit display parenting is reflected at each level without changing
+folder/config inheritance; inherited-server labels still name the actual configuration ancestor.
+The header explains "Organize projects without moving folders. Settings still follow folder ancestry.".
+The footer says "Project grouping changes only Shepherd. Instructions and settings follow folders on disk.".
 Removal retains folder contents and Settings history; history-only and remote rows omit it.
 
 ## Codemode override

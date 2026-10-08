@@ -18,7 +18,8 @@ was supplied. The shared Night Watch dialog is the reference for layout.
 - Use NWDialog and NWDialogMetrics.width/inset, NWSheetRow, NWSegmentedPicker, nwField,
   NW.Space spacing, nw primary/ghost/secondary button styles, and existing
   body/caption/mono typography. No new colors, dimensions, animation, or glyphs.
-- New folder is initially selected. Its primary action is "Create and add". Existing folder
+- New folder is initially selected. Its primary action is "Create and add". A matching existing
+  directory is reused with its real capitalization, never renamed or duplicated. Existing folder
   uses "Add project". Blank folder input disables the primary action. An empty display name
   uses the folder's basename. "Adding project…" replaces status during submission, and the
   fields, picker, Browse, and footer actions are disabled. The sheet cannot dismiss mid-save.
@@ -29,15 +30,20 @@ was supplied. The shared Night Watch dialog is the reference for layout.
 - Status appears below the fields, above the footer, as wrapping caption text with no line
   limit. It uses textSecondary when idle or busy and failed for errors. The first preview
   exposed truncated error text in the dialog footer, so status uses the content area's full
-  width instead. Idle status is "The folder must be inside the parent project.". Validation and filesystem
+  width instead. New-folder idle status is "Creates a folder if missing; reuses an existing
+  matching folder.". Existing-folder status is "The folder must be inside the parent project.".
+  Validation and filesystem
   failures appear through the service's error text. They leave input intact and enable retry.
   Creation never overwrites an existing entry, creates intermediate folders, or initializes Git.
+  It reuses an existing matching directory, preserves its actual spelling, and rejects a file,
+  escaping symlink, or ambiguous capitalization match.
   If registration fails after mkdir, the new empty folder stays. The error says where it was
   created and asks the user to select Existing folder to retry; nothing is deleted automatically.
 - Cancel dismisses without filesystem/state changes. Success adopts live state, refreshes the
   Projects list, and dismisses without selecting the child or starting a thread. Registration
-  preserves any existing canonical registration. Projects settings groups by the outermost
-  ancestor as before. The user's subsequent request also nests sidebar child-project rows.
+  preserves any existing canonical registration. New child registrations retain the selected
+  parent. Older registrations infer their outermost folder ancestor. Both project trees nest
+  children under their display parent.
 - Render new/empty, filled, existing, error, busy, and long parent/path/name at text scales 1
   and 1.3 in light and dark. Use real model/service output for labels and errors.
 - ControlPress must exercise both modes, Browse/Choose/Cancel, both submit actions, validation
@@ -48,14 +54,15 @@ was supplied. The shared Night Watch dialog is the reference for layout.
 
 The user's subsequent request supersedes the initial flat-sidebar behavior.
 
-- Derive parent relationships from registered folder paths on the same host. Use the outermost
-  visible registered ancestor, matching Settings' one grouping level. A hidden parent does not
+- Infer parent relationships from registered folder paths on the same host when no explicit
+  parent has been saved. Use the outermost visible registered ancestor for that fallback.
+  Explicit display relationships take precedence and may have multiple levels. A hidden parent does not
   hide a child implicitly. A name-merged remote project with ambiguous host/path ownership stays
   at the top level rather than guessing a parent.
 - Parent row, its own threads, then its child project rows. Keep root order and sibling order
   from the saved spaces. A newly registered child appears inside its parent, never above it.
 - Reuse NWProjectRow and NWSidebarRow unchanged. Child projects receive one additional leading
-  inset of NWProjectMetrics.chevronSlot + NWProjectMetrics.gap. Their thread rows receive the
+  inset of NWProjectMetrics.chevronSlot + NWProjectMetrics.gap per parent level. Their thread rows receive the
   same extra inset on top of existing thread nesting. No new glyph, size, color, or animation.
   Outline folder, existing chevrons, labels, plus/menu actions, and status colors remain unchanged.
 - Parent collapse hides child project rows and their threads. Child collapse hides its own
@@ -92,6 +99,34 @@ The user requested removing a project or child project without deleting its fold
   hit areas. Verify committed state, surviving registrations, stopped/surviving processes, and
   byte-for-byte retention of files in both parent and child directories.
 
+## Rename and organization checklist
+
+- Local parent and child sidebar menus offer "Rename Project…" before Add Child Project….
+  Registered local rows in Settings offer the same context-menu and accessibility action.
+  The command palette calls it "Rename project…". No new glyphs or styles.
+- Reuse RenameDialog at AppLayout.renameSheetWidth. It says "Rename project" and "Display name
+  only. The folder name and location stay unchanged.". The Name field starts with the saved
+  display name and has focus. Rename is the existing primary/default action and is disabled
+  for whitespace-only input; Cancel is the ghost/cancel action. Preserve shared tokens.
+  Submitting more than 256 characters or control characters keeps the dialog open and replaces
+  its caption with "Use a name of 1–256 characters without control characters.".
+- Confirm saves only the display name, refreshes Settings after commit, and keeps project ID,
+  paths, parent relationship, files, and threads. Cancel changes nothing. Render parent,
+  child, long, and blank names in light/dark at scales 1 and 1.3. ControlPress tests both menus,
+  blank validation, Cancel, Rename, persisted labels, stable paths, and unchanged files.
+- `project_edit` can set an explicit display parent or top-level placement without touching
+  folders. Both Settings and the sidebar display that relationship, including multiple levels.
+  Every level uses the existing indentation increment and disclosure. Collapse/shortcuts skip
+  all descendant rows; revealing a thread expands all ancestors. Cycles are refused.
+- Presentation grouping does not change instruction or MCP inheritance. The inherited-server
+  label names the actual folder ancestor, not an unrelated display parent. Old registrations
+  still infer parents from folder paths unless edited explicitly.
+- Explicit folder move/copy is tool-only, not a new UI control. It requires an explicit action
+  and destination, refuses in-use projects and linked worktrees, never overwrites a destination,
+  and reports filesystem effects separately from metadata success. Copy registers a new root
+  and preserves source registrations. `project_delete` requests the existing confirmation;
+  its result never claims the project was removed before confirmation.
+
 ## Verification
 
 The six-state matrix was rendered and inspected in light/dark at scales 1 and 1.3.
@@ -104,3 +139,10 @@ state write. The nested-sidebar follow-up adds disclosure, indentation, selected
 host isolation, sibling-drag tests, and a 300-child lazy-render budget. Its six states were
 also inspected in both appearances at scales 1 and 1.3. No design departures. The Dev build
 compiles; Josh's foreground app verification is still pending before publishing the PR.
+Rename checks exercise sidebar and Settings accessibility actions, blank and overlong input,
+Cancel, successful rename, persisted display names, stable IDs/paths, and unchanged file bytes.
+Tool checks cover metadata reparenting, inherited-config labels, confirmation-only deletion,
+case-preserving reuse, explicit move/copy, protected/in-use/linked-worktree refusals, sparse-file
+size rejection, and persistence failure recovery. The new UI states have light/dark renders
+at text scales 1 and 1.3. A clean isolated test build resolved stale incremental-layout artifacts
+while validating the added model fields.

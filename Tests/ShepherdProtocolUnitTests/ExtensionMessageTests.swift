@@ -23,16 +23,18 @@ struct ExtensionMessageTests {
              .designRead, .designWriteBoard, .designEditBoard, .designUpdateIndex, .designComments, .designCommentReply,
              .designEditBoards, .designSearch, .designCheckpoint, .designRender, .designExtract,
              .designSystemRead, .designSystemWrite, .designProposeComments, .designGet, .designNote,
-             .helloBrowser, .browser, .registerProject, .refreshProjects, .addChildProject:
+             .helloBrowser, .browser, .registerProject, .refreshProjects, .addChildProject, .editProject, .deleteProject:
             return Wire.caseName(message)
         }
     }
-    static let caseCount = 49
+    static let caseCount = 51
     static let design = DesignID(rawValue: "d1")
 
     static let samples: [ExtensionMessage] = [
         .registerProject(id: 70, agentID: agent, path: "/tmp/project", name: "Project"),
         .refreshProjects(id: 71, agentID: agent),
+        .editProject(id: 73, agentID: agent, projectID: SpaceID(rawValue: "p1"), request: ProjectEdit(name: "New name", parentProjectID: "", folderAction: .none)),
+        .deleteProject(id: 74, agentID: agent, projectID: SpaceID(rawValue: "p1")),
         .addChildProject(id: 72, agentID: agent, parentPath: "/tmp/project", path: "/tmp/project/child", name: "Child", create: true),
         .setAgentStatus(agentID: agent, status: .blocked),
         .setAgentName(agentID: agent, name: "Title with \"quotes\" and ünicode", sessionID: "session-a"),

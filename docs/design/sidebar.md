@@ -289,10 +289,11 @@ SidebarTree, SidebarProjects and SidebarProjectsHosts. Mac only: the iPad and iP
   its newest thread runs on, else This Mac, else a connected host that has it), Reveal in Finder
   and Open in Terminal (This Mac's projects: the Mac's Terminal in the folder), Copy Path,
   Collapse All, and Hide from Sidebar (This Mac's). The user's child-project request adds
-  **Add Child Project…** before Reveal in Finder for local projects. It opens the shared
+  **Rename Project…** and **Add Child Project…** before Reveal in Finder for local projects. It opens the shared
   [create-or-add dialog](child-projects.md). The user's subsequent request nests child projects
-  under the outermost visible parent on their host, matching Settings. Child project rows and
-  their threads have an additional `NWProjectMetrics.chevronSlot + gap` leading inset. Parent
+  under their parent on their host, matching Settings. Old registrations infer the outermost
+  folder ancestor; new children and `project_edit` may specify a different display parent.
+  Each parent level adds `NWProjectMetrics.chevronSlot + gap` to project and thread insets. Parent
   disclosure hides the entire group; child disclosure hides only that child's threads. Parent
   counts and status rollups include children. Selection reveal opens both levels; keyboard
   shortcuts skip collapsed groups. Roots and siblings keep saved order, and dragging only

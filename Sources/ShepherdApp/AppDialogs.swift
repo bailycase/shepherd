@@ -74,13 +74,7 @@ struct AppDialogs: ViewModifier {
                     .dialogSheetFrame()
             }
             .sheet(item: $vm.spaceRenameSpace) { space in
-                RenameDialog(title: "Rename space", caption: "Sidebar label only — the folder on disk is not renamed.",
-                             name: space.name) { name in
-                    vm.renameSpace(space.id, to: name)
-                    vm.spaceRenameTarget = nil
-                } onCancel: {
-                    vm.spaceRenameTarget = nil
-                }
+                ProjectRenameDialog(vm: vm, space: space)
             }
             .sheet(item: $vm.agentRenameAgent) { agent in
                 RenameDialog(title: "Rename agent", name: agent.name) { name in
@@ -334,6 +328,27 @@ struct PeerDeleteDialog: View {
             .truncationMode(.middle)
             .help(text)
             .textSelection(.enabled)
+    }
+}
+
+struct ProjectRenameDialog: View {
+    var vm: ShepherdViewModel
+    let space: Space
+    @State var error: String?
+
+    static func problem(_ name: String) -> String? {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !name.isEmpty && name.count <= 256 && name.rangeOfCharacter(from: .controlCharacters) == nil
+            ? nil : "Use a name of 1–256 characters without control characters."
+    }
+
+    var body: some View {
+        RenameDialog(title: "Rename project", caption: error ?? "Display name only. The folder name and location stay unchanged.", name: space.name) { name in
+            let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let problem = Self.problem(name) { error = problem; return }
+            vm.renameSpace(space.id, to: name)
+            vm.spaceRenameTarget = nil
+        } onCancel: { vm.spaceRenameTarget = nil }
     }
 }
 

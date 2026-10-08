@@ -104,7 +104,7 @@ struct ProjectDrop: Equatable {
                 guard let space = project.space else { continue }
                 movable.append((index, space, item.id))
                 regionEnd = index
-            case .project(let project) where source.parentID == nil && project.parentID != nil && !movable.isEmpty && regionEnd == index - 1:
+            case .project(let project) where project.depth > source.depth && !movable.isEmpty && regionEnd == index - 1:
                 regionEnd = index
             case .row where !movable.isEmpty && regionEnd == index - 1:
                 regionEnd = index
@@ -161,7 +161,7 @@ private struct SidebarTreeItemView: View, Equatable {
             case .row(let row):
                 NWSidebarRow(row.title, leading: row.leading, selected: row.selected, dimmed: row.offline,
                              accessory: row.accessory, hasGoal: row.hasGoal, nested: true)
-                    .padding(.leading, row.inChildProject ? NWProjectMetrics.chevronSlot + NWProjectMetrics.gap : 0)
+                    .padding(.leading, CGFloat(row.projectDepth) * (NWProjectMetrics.chevronSlot + NWProjectMetrics.gap))
                     .help(row.help)
                     .sidebarTapRow { vm.selectSidebarRow(row.id) }
                     .accessibilityLabel(row.accessibilityLabel)
@@ -189,7 +189,7 @@ private struct SidebarTreeItemView: View, Equatable {
                             newThread: project.newThreadSpace == nil ? nil : { vm.startThread(in: project) }) {
             SidebarProjectMenu(vm: vm, project: project)
         }
-        .padding(.leading, project.parentID == nil ? 0 : NWProjectMetrics.chevronSlot + NWProjectMetrics.gap)
+        .padding(.leading, CGFloat(project.depth) * (NWProjectMetrics.chevronSlot + NWProjectMetrics.gap))
         .help(project.path)
         .contextMenu { SidebarProjectMenu(vm: vm, project: project) }
         .opacity(dragging ? NWProjectMetrics.draggedOpacity : 1)
@@ -231,6 +231,7 @@ struct SidebarProjectMenu: View {
         }
         // Finder and Terminal reach This Mac's folders only.
         if project.space != nil {
+            Button("Rename Project…") { vm.spaceRenameTarget = project.space }
             Button("Add Child Project…") {
                 vm.addingChildProject = vm.childProjectModel(path: project.path, name: project.name)
             }

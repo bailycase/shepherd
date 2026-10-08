@@ -32,9 +32,8 @@ struct ChildProjectTests {
         #expect(app.server.state.agents.count == 1)
         let keep = URL(fileURLWithPath: path).appendingPathComponent("keep.txt")
         try Data("untouched".utf8).write(to: keep)
-        await #expect(throws: ProjectFileError.self) {
-            try await app.server.addChildProject(parentPath: parent.path, path: path, name: "Other", create: true)
-        }
+        let reused = try await app.server.addChildProject(parentPath: parent.path, path: path, name: "Other", create: true)
+        #expect(reused.space == child && !reused.created)
         let duplicate = try await app.server.addChildProject(parentPath: parent.path, path: path, name: "Other", create: false)
         #expect(!duplicate.created && duplicate.space == child)
         #expect(try String(contentsOf: keep, encoding: .utf8) == "untouched")
@@ -195,10 +194,11 @@ struct ChildProjectTests {
         #expect(vm.state.agents.isEmpty)
 
         dismissed = false
-        model.folder = "child"
+        model.folder = "../escape"
         window.layout()
         try window.press("Create and add")
-        try await eventuallyOnMain("existing folder error") { model.error != nil && !model.busy }
+        try await eventuallyOnMain("invalid folder error") { model.error != nil && !model.busy }
+        model.folder = "child"
         #expect(!dismissed)
         window.layout()
         let existing = try window.press("Existing folder", role: ControlRole.radioButton)

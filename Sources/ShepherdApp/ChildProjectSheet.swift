@@ -26,7 +26,7 @@ final class ChildProjectModel: Identifiable {
 
     var actionTitle: String { create ? "Create and add" : "Add project" }
     var canSubmit: Bool { !busy && !folder.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-    var status: String { error ?? (busy ? "Adding project…" : "The folder must be inside the parent project.") }
+    var status: String { error ?? (busy ? "Adding project…" : create ? "Creates a folder if missing; reuses an existing matching folder." : "The folder must be inside the parent project.") }
 
     func submit() async -> Bool {
         guard canSubmit else { return false }

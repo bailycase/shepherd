@@ -113,6 +113,8 @@ Settings", revision 1083) is the source of truth for every Settings page.
   or registers an existing descendant. Child projects nest under their main project in the
   sidebar, with their threads indented again; parent collapse hides the whole group. Remove
   Project… confirms registration/session removal while preserving local folders and child projects.
+  Rename Project… changes only the display name. Tool-driven parent edits change both project
+  trees without changing folders or configuration inheritance; moving/copying data is explicit.
 - Sliders show the bare number the board draws ("100", "232", "12.5"). VoiceOver reads the unit.
 
 Detail: [settings.md](docs/design/settings.md) and its `settings-*` files.

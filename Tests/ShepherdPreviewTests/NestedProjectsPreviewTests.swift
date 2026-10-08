@@ -9,7 +9,7 @@ import ShepherdTestSupport
 @Suite("Nested sidebar previews", .serialized, .mainActorExclusive, .enabled(if: Preview.enabled))
 @MainActor
 struct NestedProjectsPreviewTests {
-    @Test(arguments: ["open", "parent-closed", "child-closed", "empty", "long", "attention"])
+    @Test(arguments: ["open", "parent-closed", "child-closed", "empty", "long", "attention", "explicit-parent"])
     func sidebar(state: String) async throws {
         let world = try PreviewWorkspace()
         defer { world.stop() }
@@ -27,6 +27,9 @@ struct NestedProjectsPreviewTests {
         try await world.seed(ShepherdState(spaces: [hub, infra, parent], tabs: tabs, agents: agents))
         let vm = world.vm
         vm.settings.sidebarStyle = .projects
+        if state == "explicit-parent" {
+            _ = try await vm.handleProjectRequest(.edit(projectID: hub.id, request: .init(parentProjectID: infra.id.rawValue)))
+        }
         if state == "parent-closed" || state == "attention" { vm.setProject(.local(parent.id), expanded: false) }
         if state == "child-closed" { vm.setProject(.local(hub.id), expanded: false) }
         try await Preview.renderMatrix("sidebar-nested-\(state)", size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 600)) {

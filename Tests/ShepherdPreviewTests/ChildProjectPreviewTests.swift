@@ -27,7 +27,7 @@ struct ChildProjectPreviewTests {
             model.displayName = String(repeating: "Long display name ", count: 8)
         }
         if state == "error" {
-            try FileManager.default.createDirectory(at: scratch.dir.appendingPathComponent("child"), withIntermediateDirectories: false)
+            try Data("existing file".utf8).write(to: scratch.dir.appendingPathComponent("child"))
             #expect(await model.submit() == false)
         }
         let task = state == "busy" ? Task { await model.submit() } : nil
