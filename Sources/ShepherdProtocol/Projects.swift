@@ -28,25 +28,28 @@ public struct ProjectSummary: Codable, Hashable, Sendable, Identifiable {
     public var summary: String
     public var minimal: Bool
     public var error: String?
-    /// The project this one sits inside (`ProjectNesting`), by folder; nil for a top-level project.
-    /// Absent from an older host's listing.
+    /// Display parent directory; explicit organization can differ from folder ancestry.
+    /// Nil for a top-level project, and absent from an older host's listing.
     public var parent: String?
     /// The MCP servers its own `.pi/mcp.json` names, which its subprojects share.
     public var mcpServers: [String]
     /// The parent's `.pi/mcp.json` servers it runs too, the ones its own file doesn't override.
     public var inheritedMCP: [String]
+    /// Actual filesystem/config ancestor, not necessarily the display parent.
+    public var inheritedFromName: String?
     public var id: String { directory }
 
     public init(directory: String, name: String, displayPath: String, summary: String, minimal: Bool = false, error: String? = nil, projectID: SpaceID? = nil,
-                parent: String? = nil, mcpServers: [String] = [], inheritedMCP: [String] = []) {
+                parent: String? = nil, mcpServers: [String] = [], inheritedMCP: [String] = [], inheritedFromName: String? = nil) {
         self.projectID = projectID
         self.directory = directory; self.name = name; self.displayPath = displayPath
         self.summary = summary; self.minimal = minimal; self.error = error
         self.parent = parent; self.mcpServers = mcpServers; self.inheritedMCP = inheritedMCP
+        self.inheritedFromName = inheritedFromName
     }
 
     private enum CodingKeys: String, CodingKey {
-        case directory, projectID, name, displayPath, summary, minimal, error, parent, mcpServers, inheritedMCP
+        case directory, projectID, name, displayPath, summary, minimal, error, parent, mcpServers, inheritedMCP, inheritedFromName
     }
 
     public init(from decoder: Decoder) throws {
@@ -61,13 +64,42 @@ public struct ProjectSummary: Codable, Hashable, Sendable, Identifiable {
         parent = try c.decodeIfPresent(String.self, forKey: .parent)
         mcpServers = try c.decodeIfPresent([String].self, forKey: .mcpServers) ?? []
         inheritedMCP = try c.decodeIfPresent([String].self, forKey: .inheritedMCP) ?? []
+        inheritedFromName = try c.decodeIfPresent(String.self, forKey: .inheritedFromName)
     }
 }
 
-/// Subprojects (Settings ▸ Projects, parents and subprojects): a project inside another project's
-/// folder is its subproject, one level deep. A project inside several takes the outermost as its
-/// parent, so `acme/apps/web/admin` is a subproject of `acme`, never of `acme/apps/web`.
+/// Explicit project relationships organize the UI without moving folders. Automatic relationships
+/// keep the older rule: a nested directory takes the outermost project folder as its parent.
+/// Neither relationship changes how pi resolves configuration from physical directories.
 public enum ProjectNesting {
+    /// Explicit organization takes precedence over directory ancestry. Broken persisted links
+    /// and cycles become roots, never disappearing rows or recursive rendering.
+    public static func parents(in spaces: [Space]) -> [SpaceID: SpaceID] {
+        let spaces = spaces.filter { !$0.hidden }
+        let ids = Set(spaces.map(\.id))
+        let paths = Dictionary(uniqueKeysWithValues: spaces.map { ($0.id, ($0.path as NSString).standardizingPath) })
+        let folders = Array(paths.values)
+        var result: [SpaceID: SpaceID] = [:]
+        for space in spaces {
+            if space.parentIsExplicit {
+                if let parent = space.parentID, parent != space.id, ids.contains(parent) { result[space.id] = parent }
+            } else if let path = parent(of: paths[space.id]!, among: folders),
+                      let parent = spaces.first(where: { paths[$0.id] == path }) {
+                result[space.id] = parent.id
+            }
+        }
+        let proposed = result
+        for id in proposed.keys {
+            var seen: Set<SpaceID> = [id]
+            var cursor = proposed[id]
+            while let next = cursor {
+                if !seen.insert(next).inserted || seen.count > 17 { result[id] = nil; break }
+                cursor = proposed[next]
+            }
+        }
+        return result
+    }
+
     /// The parent of `directory` among `projects` (absolute, standardized folders): the outermost
     /// one that holds it, or nil. A project is never its own parent.
     public static func parent(of directory: String, among projects: [String]) -> String? {
