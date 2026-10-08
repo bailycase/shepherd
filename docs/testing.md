@@ -475,7 +475,10 @@ can deliberately edit workflows. No additional secrets or signing access are int
 
 The one local runner executes the unchanged four full-lane shards serially. Its nonadmin
 Nix pre/post hooks remove checkout `build`/`.build` and enforce 20 GiB; the existing SwiftPM
-Actions cache can restore builds between jobs, but a cache miss recompiles cold. Execution
+Actions cache restores builds between jobs. Local shards save a successfully built exact-commit
+cache before tests, even on PRs, so subsequent serial shards skip compilation after an exact
+hit; a cache miss still compiles cold. This uses GitHub's bounded 10 GiB repository cache,
+not a persistent host build directory. Hosted PRs still save nothing. Execution
 limits remain 45 minutes for `build`, 60 for each shard, plus the existing test watchdog and
 one failed-test retry. A queued job's actual bound is GitHub's 24-hour maximum, **not** its
 execution timeout. CI has no custom queue selector or hosted fallback. Newer runs cancel
@@ -559,7 +562,9 @@ each rejected trust condition without contacting GitHub.
   change to ShepherdCore. That measured quicker than a build job the shards wait for, by over a
   minute. A push to `nightly` or `master` also saves: its last shard saves both caches under the
   commit right after building and before its tests, so every pull request into that branch finds a
-  warm entry. Pull requests save nothing. The first full run of each UTC day, a manual `clean` run
+  warm entry. Hosted pull requests save nothing. Self-hosted PR shards save before tests so
+  the first shard warms the exact-commit cache for the remaining serial shards; exact hits
+  skip both building and saving again. The first full run of each UTC day, a manual `clean` run
   and the daily run start from scratch instead: the `build` job builds once, saves and writes the
   day's marker, and every shard restores that build whole (`shared_build: true` or `false` forces
   either way). A shard that restores its own commit's build skips `swift build`. Run the workflow
@@ -568,7 +573,8 @@ each rejected trust condition without contacting GitHub.
   --ref refs/pull/N/merge` (or `refs/heads/<branch>`).
 - **Checking a CI change:** a pull request's run exercises the pull request's copy of the workflow
   and is cold ("Cache not found") until `nightly` holds an entry for the same toolchain and
-  epoch, and it saves nothing, so it cannot show an incremental build. Before merging, run the
+  epoch or a local shard has saved that PR's build. Hosted PRs save nothing, so they cannot
+  show an incremental build without a base-branch cache. Before merging, run the
   workflow by hand on the branch (`-f lane=full`), let it finish (a second run on the same ref
   cancels the first), push a small source change, and run it again: its shards restore the first
   run's entry by prefix, "Restore source mtimes" reports about as many new or changed files as the
