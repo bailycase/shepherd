@@ -447,8 +447,37 @@ it passes when every job the plan asked for did (a job the plan skipped counts a
 are no workflow path filters, because a filtered-out workflow never reports `CI`. Tests that
 depend on the machine's speed skip on CI (`CI=true`).
 
+**Mac runner routing:** the existing Ubuntu `plan` lane and all checks stay in place. The
+Swift `build` and `tests` jobs select the existing runner's sole custom label,
+`shepherd-release`, only for same-repository PRs authored by account IDs `19316389` (Baily)
+or `3370624` (Josh), with the original actor also one of those IDs and
+`github.triggering_actor == github.actor`. Trusted pushes to `nightly` use it too. The native
+`runs-on` expression checks `github.workflow_ref` against this repository's `ci.yml` at the
+PR merge ref or `nightly` push ref before checkout; checkout code and plan outputs cannot
+change that expression's decision. Forks, unknown authors/actors, cross-maintainer reruns,
+`master` pushes, schedules and manual runs remain on `macos-26`. Names alone grant no trust.
+A same-account rerun stays local; a different account's rerun is conservatively hosted even
+when both maintainers are trusted. Both Mac jobs reference `SELFHOSTED_HOSTNAME` in job-level
+env to mask the machine name in initialization logs.
+
+This is routing, not a platform security boundary: a PR runs its own workflow source and
+can edit the guard. Keep GitHub's `all_external_contributors` approval policy and existing
+runner access restrictions; no workflow guard claims to replace them. Trusted maintainers
+can deliberately edit workflows. No additional secrets or signing access are introduced.
+
+The one local runner executes the unchanged four full-lane shards serially. Its nonadmin
+Nix pre/post hooks remove checkout `build`/`.build` and enforce 20 GiB; the existing SwiftPM
+Actions cache can restore builds between jobs, but a cache miss recompiles cold. Execution
+limits remain 45 minutes for `build`, 60 for each shard, plus the existing test watchdog and
+one failed-test retry. A queued job's actual bound is GitHub's 24-hour maximum, **not** its
+execution timeout. CI has no custom queue selector or hosted fallback. Newer runs cancel
+superseded runs as before. CI competes with Nightly release for this runner; only Release
+retains its existing three-minute queue / sixty-minute execution fallback
+([releases](releases.md)). `Tests/Release/test_ci_runner.py` exercises both allowed IDs and
+each rejected trust condition without contacting GitHub.
+
 - **Fast lane**, every pull request into `nightly`: the unit tier (seconds), a smoke set (`SMOKE`),
-  and the integration suites the changed paths can affect, in one to four `macos-26` shards
+  and the integration suites the changed paths can affect, in one to four Mac shards (runner routing above)
   (about 200 s of tests each). The impact map (`RULES` and `AREAS` in `scripts/ci_impact.py`) is
   explicit and conservative; the first rule a path matches decides it:
   - Docs, `*.md`, `Extensions/` (node tests, and `Tests/Release`'s check that each embedded copy
