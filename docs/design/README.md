@@ -333,6 +333,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | [side-pane-browser](side-pane-browser.md) | Read when you change the Browser tab or how an agent drives it. |
 | [side-pane-changes](side-pane-changes.md) | Read when you change the Changes pane, a diff, a review comment, or the subagent inspector. |
 | [sidebar](sidebar.md) | Read when you change the sidebar: its rows, Needs you, Pinned, Recents or Projects. |
+| [child-projects](child-projects.md) | Read when you change the create-or-add child-project dialog or its entry points. |
 | [subagents](subagents.md) | Read when you change the subagent tray, its cards, or its record lines in a thread. |
 | [terminal](terminal.md) | Read when you change a terminal tab, the panel under a thread, or ⌘J and ⌘D. |
 | [theme](theme.md) | Read when you add or change a color, a theme, an AgentState look, or build on ShepherdUI's tokens. |

@@ -78,7 +78,7 @@ struct ThreadCompletionReproductionTests {
                 }
             } catch is WaitTimeout { }
             _ = try capture(deck, to: directory.appendingPathComponent(prefix + ".png"))
-            print("COMPLETION \(prefix): rows=\(deck.store.rows.count), targets=\(deck.tailGuard.visible), following=\(deck.tailGuard.following), \(deck.reading.map(String.init(describing:)) ?? "no scroll view"), answer=\(recognizedFinal)")
+            print("COMPLETION \(prefix): rows=\(deck.store.rows.count), targets=\(deck.tailGuard.visible), following=\(deck.tailGuard.following), attempts=\(deck.tailGuard.attempts), repairing=\(deck.tailGuard.repairing), rowsInView=\(deck.tailGuard.rowsInView), \(deck.reading.map(String.init(describing:)) ?? "no scroll view"), answer=\(recognizedFinal)")
             guard recognizedFinal else {
                 // Save what the user would try next as evidence, not as a way to pass the test.
                 deck.scroll(by: -500)

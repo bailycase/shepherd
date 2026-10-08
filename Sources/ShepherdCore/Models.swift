@@ -16,6 +16,10 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
     /// `hidden`, which marks the reserved spaces. Decodes false from older files, and is written
     /// only when true.
     public var sidebarHidden: Bool
+    /// UI organization only. Older spaces infer their parent from directory paths.
+    public var parentID: SpaceID?
+    /// True with nil parentID means explicitly top-level, regardless of folder location.
+    public var parentIsExplicit: Bool
 
     public init(
         id: SpaceID = SpaceID(),
@@ -23,7 +27,9 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
         path: String,
         hidden: Bool = false,
         holdsDesigns: Bool = false,
-        sidebarHidden: Bool = false
+        sidebarHidden: Bool = false,
+        parentID: SpaceID? = nil,
+        parentIsExplicit: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -31,6 +37,8 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
         self.hidden = hidden
         self.holdsDesigns = holdsDesigns
         self.sidebarHidden = sidebarHidden
+        self.parentID = parentID
+        self.parentIsExplicit = parentIsExplicit
     }
 
     /// The reserved space for design agents: hidden, never a project.
@@ -42,7 +50,7 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
     public var holdsAutomations: Bool { hidden && !holdsDesigns }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, path, hidden, holdsDesigns, sidebarHidden
+        case id, name, path, hidden, holdsDesigns, sidebarHidden, parentID, parentIsExplicit
     }
 
     public init(from decoder: Decoder) throws {
@@ -53,6 +61,8 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
         hidden = try c.decodeIfPresent(Bool.self, forKey: .hidden) ?? false
         holdsDesigns = try c.decodeIfPresent(Bool.self, forKey: .holdsDesigns) ?? false
         sidebarHidden = try c.decodeIfPresent(Bool.self, forKey: .sidebarHidden) ?? false
+        parentID = try c.decodeIfPresent(SpaceID.self, forKey: .parentID)
+        parentIsExplicit = try c.decodeIfPresent(Bool.self, forKey: .parentIsExplicit) ?? false
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -63,6 +73,8 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
         try c.encode(hidden, forKey: .hidden)
         if holdsDesigns { try c.encode(holdsDesigns, forKey: .holdsDesigns) }
         if sidebarHidden { try c.encode(sidebarHidden, forKey: .sidebarHidden) }
+        try c.encodeIfPresent(parentID, forKey: .parentID)
+        if parentIsExplicit { try c.encode(parentIsExplicit, forKey: .parentIsExplicit) }
     }
 }
 

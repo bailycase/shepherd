@@ -50,6 +50,9 @@ struct SidebarListRow: Identifiable, Equatable {
     var accessory: NWSidebarRow.Accessory
     var hasGoal = false
     var selected = false
+    /// One extra project level in the project sidebar, never in Activity.
+    var projectDepth = 0
+    var inChildProject: Bool { projectDepth > 0 }
     /// A thread the Activity sidebar can pin: not an automation run or a design. Only the
     /// Activity lists say so, so the project tree's menus offer no Pin.
     var pinnable = false
