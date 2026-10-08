@@ -38,7 +38,9 @@ stores crashed macOS 26's bundle-less test runner; the bundled app still uses pe
   itself calls `useRealPeerCheck()` and runs stub pis (`ExtensionIdentityTests`).
   Its default `PiSetup.app` shares the process's scratch session home. A test asserting an exact
   Projects listing passes a `PiSetup` with a per-test home: listing intentionally imports old
-  session headers, including those other suites left in a shared home.
+  session headers, including those other suites left in a shared home. `AppHarness` instead
+  defaults to a per-harness pi home (removed by `stop()`), isolating session history and pi
+  settings across app suites; pass `pi: .app` explicitly when testing process-home sharing.
 - `StubPi.command`: runs `Resources/stub-pi.py`, a scripted `pi --mode rpc` driven by prompt
   keywords (`ask`, `select`, `hang`, `die`, `big`, `slow`, `widgets`, `fill`, `newsession`, …).
   `speak` (and `STUB_PI_SPEAK`, or `speak` in `stub-pi-startup.json`) has it talk on the
