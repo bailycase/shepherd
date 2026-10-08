@@ -18,7 +18,11 @@ the project or starting a thread. Existing registrations remain unchanged. No Gi
 is initialized. The folder must resolve inside the parent; symlinks cannot point outside it.
 A failed registration leaves a newly created folder in place, so retry with Existing folder.
 Remote projects retain the existing picker and cannot create folders through this dialog.
-Settings groups children under the outermost known parent; sidebar project rows remain flat.
+Settings and the sidebar group children under the outermost visible parent on the same host.
+The sidebar indents child projects and their threads. Collapsing a parent hides its children;
+its count and attention indicator include their threads. Selecting a child thread reopens
+both levels. Dragging reorders siblings, not parent relationships. Hiding a parent leaves its
+visible children as top-level projects.
 
 Open a project to edit its existing files, or create the standard instruction, pi settings or MCP
 files when they are missing. The categories are Instructions, Pi settings, Skills, Extensions

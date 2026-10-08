@@ -41,6 +41,8 @@ struct SidebarProject: Identifiable, Equatable {
     /// Every host it lives on is offline (a remote project).
     var dimmed = false
     var rollup: NWProjectRollup = .quiet
+    var parentID: SidebarProjectID?
+    var childThreadCount = 0
 
     /// This Mac's space: it can be hidden and dragged.
     var space: SpaceID? {
@@ -84,6 +86,41 @@ struct SidebarTreeSection: Identifiable, Equatable {
     var projects: [SidebarProject]
 
     var id: String { header.id }
+
+    /// Settings groups descendants under their outermost project. Do the same within a host,
+    /// preserving the saved root and sibling ordering without changing persisted spaces.
+    mutating func nestProjects() {
+        func scope(_ project: SidebarProject) -> String {
+            switch project.id {
+            case .local: "local"
+            case .remote(let host, _): host.uuidString
+            case .named: project.places.count == 1 ? project.places.keys.first.flatMap { $0 }?.uuidString ?? project.id.key : project.id.key
+            }
+        }
+        func path(_ project: SidebarProject) -> String {
+            let value = project.space == nil ? project.path : (project.path as NSString).expandingTildeInPath
+            return (value as NSString).standardizingPath
+        }
+        let paths = Dictionary(uniqueKeysWithValues: projects.map { ($0.id, path($0)) })
+        let groups = Dictionary(grouping: projects, by: scope).mapValues { peers in
+            peers.map { (id: $0.id, path: paths[$0.id]!) }
+        }
+        for index in projects.indices {
+            let peers = groups[scope(projects[index])] ?? []
+            if let parentPath = ProjectNesting.parent(of: paths[projects[index].id]!, among: peers.map(\.path)) {
+                projects[index].parentID = peers.first { $0.path == parentPath }?.id
+            }
+        }
+        let children = Dictionary(grouping: projects.filter { $0.parentID != nil }, by: { $0.parentID! })
+        projects = projects.filter { $0.parentID == nil }.flatMap { project in
+            var parent = project
+            let nested = children[parent.id] ?? []
+            parent.childThreadCount = nested.reduce(0) { $0 + $1.rows.count }
+            let rollups = [parent.rollup] + nested.map(\.rollup)
+            parent.rollup = rollups.contains(.waiting) ? .waiting : rollups.contains(.running) ? .running : .quiet
+            return [parent] + nested
+        }
+    }
 }
 
 /// The whole tree, before collapsing, selection and ⌘-digits are applied.
@@ -96,7 +133,9 @@ struct SidebarTree: Equatable {
     /// ⌘1–9 reach.
     func visibleRows(collapsed: Set<String>) -> [SidebarListRow] {
         sections.flatMap { section in
-            section.projects.flatMap { collapsed.contains($0.id.key) ? [] : $0.rows }
+            section.projects.flatMap { project in
+                collapsed.contains(project.id.key) || project.parentID.map { collapsed.contains($0.key) } == true ? [] : project.rows
+            }
         }
     }
 
@@ -120,14 +159,16 @@ struct SidebarTree: Equatable {
         for (sectionIndex, section) in sections.enumerated() {
             items.append(.header(section.header))
             for project in section.projects {
+                if let parent = project.parentID, collapsed.contains(parent.key) { continue }
                 let expanded = !collapsed.contains(project.id.key)
                 let place = project.newThreadPlace(connected: connected)
                 items.append(.project(SidebarProjectRow(
-                    id: project.id, name: project.name, path: project.path, count: project.rows.count, expanded: expanded,
+                    id: project.id, name: project.name, path: project.path, count: project.rows.count + project.childThreadCount, expanded: expanded,
                     rollup: project.rollup, dimmed: project.dimmed, newThreadHost: place?.host, newThreadSpace: place?.space,
-                    movable: sectionIndex == 0 && project.space != nil)))
+                    movable: sectionIndex == 0 && project.space != nil, parentID: project.parentID)))
                 guard expanded else { continue }
                 for var row in project.rows {
+                    row.inChildProject = project.parentID != nil
                     if row.id == selected { row.selected = true }
                     if shortcuts, digit < 9 {
                         digit += 1
@@ -155,6 +196,7 @@ struct SidebarProjectRow: Equatable {
     let newThreadSpace: SpaceID?
     /// This Mac's project in the first section: it can be dragged.
     let movable: Bool
+    var parentID: SidebarProjectID? = nil
 
     var space: SpaceID? {
         if case .local(let id) = id { return id }
@@ -381,6 +423,7 @@ private struct TreeBuilder {
         } else {
             tree.sections = [SidebarTreeSection(header: .projects, projects: shown.compactMap { built[$0] })]
         }
+        for index in tree.sections.indices { tree.sections[index].nestProjects() }
         return tree
     }
 }

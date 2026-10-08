@@ -489,6 +489,10 @@ extension ShepherdViewModel {
         let canonical = server.state
         sessions.stateDidChange(canonical)
         adopt(canonical)
+        if result.created, let space = result.space,
+           let parent = sidebarTree.projects.first(where: { $0.space == space.id })?.parentID {
+            setProject(parent, expanded: true)
+        }
         guard await projects.load(projectsSources, force: true) else {
             throw ProjectFileError("refresh_superseded", "Another project reload started. Registration, if requested, is preserved. Retry project_refresh.")
         }

@@ -37,12 +37,35 @@ was supplied. The shared Night Watch dialog is the reference for layout.
 - Cancel dismisses without filesystem/state changes. Success adopts live state, refreshes the
   Projects list, and dismisses without selecting the child or starting a thread. Registration
   preserves any existing canonical registration. Projects settings groups by the outermost
-  ancestor as before; this change does not introduce nested sidebar project rows.
+  ancestor as before. The user's subsequent request also nests sidebar child-project rows.
 - Render new/empty, filled, existing, error, busy, and long parent/path/name at text scales 1
   and 1.3 in light and dark. Use real model/service output for labels and errors.
 - ControlPress must exercise both modes, Browse/Choose/Cancel, both submit actions, validation
   errors, duplicate registration, busy controls, and the sidebar/settings entry points. Assert
   filesystem state, live registration/selection, and 24pt hit areas.
+
+## Nested sidebar checklist
+
+The user's subsequent request supersedes the initial flat-sidebar behavior.
+
+- Derive parent relationships from registered folder paths on the same host. Use the outermost
+  visible registered ancestor, matching Settings' one grouping level. A hidden parent does not
+  hide a child implicitly. A name-merged remote project with ambiguous host/path ownership stays
+  at the top level rather than guessing a parent.
+- Parent row, its own threads, then its child project rows. Keep root order and sibling order
+  from the saved spaces. A newly registered child appears inside its parent, never above it.
+- Reuse NWProjectRow and NWSidebarRow unchanged. Child projects receive one additional leading
+  inset of NWProjectMetrics.chevronSlot + NWProjectMetrics.gap. Their thread rows receive the
+  same extra inset on top of existing thread nesting. No new glyph, size, color, or animation.
+  Outline folder, existing chevrons, labels, plus/menu actions, and status colors remain unchanged.
+- Parent collapse hides child project rows and their threads. Child collapse hides its own
+  threads only. Parent counts and collapsed attention/running indicators include descendants.
+  A new registration expands its parent so the child is visible, without changing selection.
+  Revealing a selected child thread expands both its project and parent. Keyboard shortcuts
+  follow only visible threads. Dragging reorders siblings, never reparents directories.
+- Render open, parent-collapsed, child-collapsed, empty, long names, and attention states in
+  both appearances at text scales 1 and 1.3. Press parent/child disclosures and child actions,
+  assert indentation, selection reveal, hidden rows, shortcut order, and drag sibling boundaries.
 
 ## Verification
 
@@ -52,5 +75,7 @@ actions, retries, disabled busy controls, and both entry points. The Settings te
 the native field and creates the child while the real list reload task is active. It checks
 live grouping and does not start an agent. Integration checks also cover canonical escape,
 existing-entry preservation, on-disk registration, and retention of a folder after a failed
-state write. No design departures. The Dev build compiles; Josh's foreground app verification
-is still pending before publishing the PR.
+state write. The nested-sidebar follow-up adds disclosure, indentation, selected-thread reveal,
+host isolation, sibling-drag tests, and a 300-child lazy-render budget. Its six states were
+also inspected in both appearances at scales 1 and 1.3. No design departures. The Dev build
+compiles; Josh's foreground app verification is still pending before publishing the PR.

@@ -95,6 +95,7 @@ extension ShepherdViewModel {
     func openProjectHoldingSelection() {
         guard sidebarStyle == .projects, let selected = selectedSidebarRow,
               let project = sidebarTree.project(holding: selected) else { return }
+        if let parent = project.parentID { setProject(parent, expanded: true) }
         setProject(project.id, expanded: true)
     }
 
