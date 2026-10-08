@@ -515,7 +515,10 @@ each rejected trust condition without contacting GitHub.
     on a label's name), but every job in it is skipped and it cancels nothing; GitHub shows its
     skipped checks beside the real ones, and a skipped check passes. `Tests/Release/test_ci_impact.py`
     fails when a pattern matches no suite or no file, so a rename cannot silently narrow a rule.
-- **Full lane**, pushes to `nightly` and `master`, pull requests into `master` or labelled
+- **Nightly publication** runs no test suites on push. Its release workflow skips the Python
+  test preflight but keeps signing, notarization and artifact verification. Required PR checks
+  still apply before merging.
+- **Full lane**, pushes to `master`, pull requests into `master` or labelled
   `full-ci`, the daily run and manual runs: every suite, in four shards. `Tests/ci-suite-times.json`
   holds each suite's seconds; `scripts/ci_shards.py` assigns suites longest first, each to the
   lightest shard, and a suite the file doesn't know goes to the lightest shard (the summary says
@@ -536,10 +539,10 @@ each rejected trust condition without contacting GitHub.
   (below) counts the runs each one was flaky in, and a test flaky in nearly every run fails its
   first attempt almost every time and passes alone, which points at the test (its order, state it
   shares, a wait that assumes an idle machine) before the machine.
-- **The daily run and the tracking issue:** the full lane runs daily on `nightly` with each shard's
+- **The daily run and the tracking issue:** the full lane runs daily on `master` with each shard's
   tests three times (a test that fails some passes is flaky; `schedule` fires only from the
   default branch's copy of the workflow, so it starts once `master` has this file, and until then
-  `gh workflow run ci.yml --ref nightly -f lane=flake-hunt` does the same). After a full lane on
+  `gh workflow run ci.yml --ref master -f lane=flake-hunt` does the same). After a full lane on
   `nightly` or `master`, `scripts/ci_report.py` keeps one issue labelled `ci-health`: a comment
   per red run with its failing tests, a table of flaky tests in the body (counts kept across runs
   in a hidden JSON block), a comment when green returns. It reopens a closed issue, never closes
@@ -567,7 +570,7 @@ each rejected trust condition without contacting GitHub.
   Every shard builds for itself: it restores the newest entry of its branch (the base branch's, for
   a pull request) and compiles what changed, a minute or two for a typical change and seven for a
   change to ShepherdCore. That measured quicker than a build job the shards wait for, by over a
-  minute. A push to `nightly` or `master` also saves: its last shard saves both caches under the
+  minute. A push to `master` also saves: its last shard saves both caches under the
   commit right after building and before its tests, so every pull request into that branch finds a
   warm entry. Hosted pull requests save nothing. Self-hosted PR shards save before tests so
   the first shard warms the exact-commit cache for the remaining serial shards; exact hits
