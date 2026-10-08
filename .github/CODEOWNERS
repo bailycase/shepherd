@@ -1,0 +1,7 @@
+# Branch protection must require code-owner review to enforce these owners.
+/.github/CODEOWNERS @bailycase @jhartzell
+/.github/workflows/ @bailycase @jhartzell
+/scripts/release*.py @bailycase @jhartzell
+/scripts/sign-*.sh @bailycase @jhartzell
+/scripts/pi_engine.py @bailycase @jhartzell
+/scripts/pi-engine-pin.json @bailycase @jhartzell

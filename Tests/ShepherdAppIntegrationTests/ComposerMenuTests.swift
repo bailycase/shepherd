@@ -24,10 +24,11 @@ struct ComposerMenuTests {
         /// (the slash menu spans the card). The model-settings popover is a model section, then a
         /// segmented Thinking control (one row of segments for pi's standard four levels) and,
         /// for a model with a Fast tier, a segmented Speed control.
-        var height: CGFloat { height(thinkingRows: 1) }
+        /// Picker and slash-menu height; settings menus also need their produced model-row count.
+        var height: CGFloat { height(thinkingRows: 1, modelRows: 0) }
 
-        /// `thinkingRows` is how many rows of segments the thinking levels wrap onto.
-        func height(thinkingRows: Int) -> CGFloat {
+        /// `thinkingRows` counts segment tracks; `modelRows` includes the quick choices and All models.
+        func height(thinkingRows: Int, modelRows: Int) -> CGFloat {
             let padding = 2 * NW.Space.s
             switch self {
             case .slash: return NWComposerMetrics.menuHeaderHeight + CGFloat(NWComposerMetrics.menuMaxRows) * NWComposerMetrics.slashRowHeight + padding
@@ -38,8 +39,7 @@ struct ComposerMenuTests {
                     NW.Space.xs * 2 + 1 + NWComposerMetrics.menuHeaderHeight
                         + CGFloat(rows) * NW.Height.controlS + CGFloat(rows - 1) * NW.Space.xxs + NW.Space.xxs * 2 + NW.Space.s
                 }
-                // Current model + All models.
-                let models = NWComposerMetrics.menuHeaderHeight + 2 * NWComposerMetrics.menuRowHeight + padding
+                let models = NWComposerMetrics.menuHeaderHeight + CGFloat(modelRows) * NWComposerMetrics.menuRowHeight + padding
                 return models + section(rows: thinkingRows) + (self == .speed ? section(rows: 1) : 0)
             }
         }
@@ -90,8 +90,9 @@ struct ComposerMenuTests {
         let band = Int(thread.cardTop - NWComposerMetrics.focusRing - 1)
         let changed = try #require(Pixels.bounds(differing: before, after, rows: 0..<band), "the menu opened")
         let width = min(menu.width, size.width - 2 * thread.columnLeading)
-        let allowed = CGRect(x: thread.columnLeading - Self.shadow, y: thread.cardTop - AppLayout.menuGap - menu.height - Self.shadow,
-                             width: width + 2 * Self.shadow, height: menu.height + AppLayout.menuGap + Self.shadow)
+        let height = menu.height(thinkingRows: 1, modelRows: thread.settingsModelRows)
+        let allowed = CGRect(x: thread.columnLeading - Self.shadow, y: thread.cardTop - AppLayout.menuGap - height - Self.shadow,
+                             width: width + 2 * Self.shadow, height: height + AppLayout.menuGap + Self.shadow)
         #expect(allowed.contains(changed), "only the menu drew over the thread: \(changed) is outside \(allowed)")
         // Left-aligned with the card, its bottom 8pt above it.
         let solid = try #require(Pixels.bounds(differing: before, after, rows: 0..<band, by: Self.edge))
@@ -117,7 +118,7 @@ struct ComposerMenuTests {
         let after = FrameTimer.capture(thread.window, whole)
         let band = Int(thread.cardTop - NWComposerMetrics.focusRing - 1)
         let solid = try #require(Pixels.bounds(differing: before, after, rows: 0..<band, by: Self.edge))
-        #expect(abs(solid.height - Menu.thinking.height(thinkingRows: rows)) <= 2, "\(rows) row(s) of segments: \(solid)")
+        #expect(abs(solid.height - Menu.thinking.height(thinkingRows: rows, modelRows: thread.settingsModelRows)) <= 2, "\(rows) row(s) of segments: \(solid)")
         #expect(abs(solid.width - NWComposerMetrics.modelSettingsWidth) <= 2, "all segments stay inside the popover")
     }
 
@@ -336,6 +337,12 @@ struct ComposerMenuTests {
 // MARK: Reading the window
 
 extension ComposerThread {
+    /// Use the composer's producer and fixture catalog: another test's model pick can add a recent row.
+    var settingsModelRows: Int {
+        ModelCatalog.settingsModels(catalog: ModelCatalog(ModelCatalogFixture.entries), current: store.model,
+                                    recent: RecentModels.load().map(\.id)).count + 1 // All models…
+    }
+
     /// The deepest view under `point` (from the window's top-left), as AppKit hit-tests it.
     func hit(_ point: CGPoint) -> NSView? {
         window.layout()

@@ -139,6 +139,9 @@ in Settings instead. Third-party settings do not affect native definitions.
 
 Children report asynchronously. There is no standalone `shepherd_child_wait` tool. Start the
 children, do independent work, then end your turn when only dependent work remains. The default
+Tests that drive the parent through explicit prompts use `delivery: "report"` for held children,
+so an automatic completion turn cannot race the next prompt. Automatic continuation is tested separately.
+
 `delivery: "continue"` resumes an idle parent on completion; `delivery: "report"` stores the result
 without starting another parent turn. Do not poll `shepherd_child_result` instead of ending the
 turn. Use it to inspect a run or recover a result. For a group that must finish before dependent
