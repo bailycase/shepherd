@@ -17,7 +17,7 @@ dialog and its words), `PeerDeleteDialog` in `AppDialogs.swift`, and `ShepherdVi
 
 ## Project registration and refresh
 
-The same bundled extension exposes two local project tools, deferred through `tool_search`
+The same bundled extension exposes three local project tools, deferred through `tool_search`
 by default. Use them when the user requests registration or refresh. They are not installed
 in automation or design agents and do not use the peer-thread approval setting.
 
@@ -25,6 +25,7 @@ in automation or design agents and do not use the peer-thread approval setting.
 | --- | --- | --- |
 | `project_register` | `path: string`, `name: string` | `{ "space": { "id": "…", "name": "…", "path": "…", … }, "created": true }` |
 | `project_refresh` | `{}` | `{ "refreshed": true }` |
+| `project_add_child` | `parentPath: string`, `path: string`, `name: string`, `create: boolean` | `{ "space": { … }, "created": boolean }` |
 
 `project_register` accepts an existing readable directory on the local Mac. `path` must be
 absolute or start with `~/`. The host resolves symlinks and dot segments. `name` is trimmed,
@@ -39,6 +40,16 @@ Projects settings list to reload. Neither tool selects a project, starts a threa
 folders, grants project trust, or replaces an unsaved editor draft. A successful reply follows
 live UI adoption and list reload. `projects.json` is cached directory history, not sidebar
 registration. Refresh neither imports it into spaces nor rereads `state.json` over live state.
+
+`project_add_child` reuses registration, but also checks that the canonical child path lies
+inside `parentPath`. All four arguments are required. With `create: true`, it creates one
+empty direct child directory, atomically refusing any existing file, folder, or symlink.
+With `create: false`, it registers an existing descendant, including deeper folders. Paths
+are absolute or `~/` paths. It never initializes Git, creates intermediate directories, or
+starts a thread. `created` describes the registration, not the folder. If folder creation
+succeeds but registration fails, the folder remains and the error names it. Retry with
+`create: false`. No automatic deletion or rollback removes user files. The UI exposes this
+same operation in [Add child project](design/child-projects.md).
 
 The extension socket verifies the caller's agent identity. Invalid input, an unavailable app,
 a failed state write, or a failed reload returns a tool error, not success. A reload can fail

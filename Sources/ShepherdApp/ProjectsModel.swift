@@ -167,6 +167,7 @@ final class ProjectsModel {
     var pending: Pending?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var loadGeneration = 0
+    @ObservationIgnored private var loadInFlight = false
     @ObservationIgnored private var loadedHosts: [ProjectsHost]?
 
     init(request: @escaping Request) { self.request = request }
@@ -208,8 +209,12 @@ final class ProjectsModel {
     @discardableResult
     func load(_ sources: [ProjectsHost], force: Bool = false) async -> Bool {
         guard force || loadedHosts != sources else { return true }
+        // A Settings .task caused by adoption must not supersede the tool's identical reload.
+        guard force || !loadInFlight || hosts != sources else { return false }
         loadGeneration += 1
         let revision = loadGeneration
+        loadInFlight = true
+        defer { if revision == loadGeneration { loadInFlight = false } }
         hosts = sources
         if host != "all", !sources.contains(where: { $0.id == host }) { host = "all" }
         loading = rows.isEmpty; error = nil
@@ -445,6 +450,13 @@ extension ShepherdViewModel {
         return model
     }
 
+    func childProjectModel(path: String, name: String) -> ChildProjectModel {
+        ChildProjectModel(parentPath: path, parentName: name) { [weak self] request in
+            guard let self else { throw ProjectFileError("unavailable", "Shepherd is closing.") }
+            _ = try await self.handleProjectRequest(request)
+        }
+    }
+
     func installProjectControl() {
         server.onProjectRequest = { [weak self] request, respond in
             MainActor.assumeIsolated {
@@ -469,6 +481,9 @@ extension ShepherdViewModel {
             result = (registered.space, registered.created)
         case .refresh:
             result = (nil, false)
+        case .child(let parentPath, let path, let name, let create):
+            let registered = try await server.addChildProject(parentPath: parentPath, path: path, name: name, create: create)
+            result = (registered.space, registered.created)
         }
         // Adopt before replying, without selecting a project or touching editor drafts.
         let canonical = server.state

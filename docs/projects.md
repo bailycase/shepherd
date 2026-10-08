@@ -10,6 +10,16 @@ existing directory picker and creates a space on the selected host. It does not 
 initialize git or write configuration files. All hosts defaults Add project to This Mac.
 An unavailable host keeps its known rows, but cannot accept edits or new projects.
 
+For a local child project, use **Add subproject** on its parent in Settings, or
+**Add Child Project…** in the parent's sidebar menu. Choose **New folder** to create one
+empty direct child folder, or **Existing folder** to select an existing descendant. An
+optional display name defaults to the folder name. Adding updates live state without selecting
+the project or starting a thread. Existing registrations remain unchanged. No Git repository
+is initialized. The folder must resolve inside the parent; symlinks cannot point outside it.
+A failed registration leaves a newly created folder in place, so retry with Existing folder.
+Remote projects retain the existing picker and cannot create folders through this dialog.
+Settings groups children under the outermost known parent; sidebar project rows remain flat.
+
 Open a project to edit its existing files, or create the standard instruction, pi settings or MCP
 files when they are missing. The categories are Instructions, Pi settings, Skills, Extensions
 and MCP servers. Text files use the existing Instructions editor. MCP uses the same server

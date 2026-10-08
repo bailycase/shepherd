@@ -8,6 +8,7 @@ struct ProjectsSettings: View {
     /// Add project, or Add subproject with the parent's folder the picker opens in (so the folder
     /// chosen lands inside it). One value, so the sheet never opens without its folder.
     @State private var adding: AddingProject?
+    @State private var addingChild: ChildProjectModel?
 
     private struct AddingProject: Identifiable {
         let host: ProjectsHost
@@ -33,6 +34,9 @@ struct ProjectsSettings: View {
         }
         .nwControlScale(.settings)
         .task(id: vm.projectsSources) { await model.load(vm.projectsSources) }
+        .sheet(item: $addingChild) { model in
+            ChildProjectSheet(model: model, dismiss: { addingChild = nil })
+        }
         .sheet(item: $adding) { adding in
             let host = adding.host
             RemoteDirectoryPicker(title: "Add project", actionTitle: "Add project", hostName: host.name,
@@ -114,7 +118,13 @@ struct ProjectsSettings: View {
                         ProjectTreeRow(row: row, expanded: !model.collapsed.contains(row.id),
                                        open: { Task { await model.open(row) } },
                                        toggle: { model.collapsed.formSymmetricDifference([row.id]) },
-                                       addSubproject: { adding = AddingProject(host: row.host, under: row.project.directory) })
+                                       addSubproject: {
+                                           if row.host.id == "local" {
+                                               addingChild = vm.childProjectModel(path: row.project.directory, name: row.project.name)
+                                           } else {
+                                               adding = AddingProject(host: row.host, under: row.project.directory)
+                                           }
+                                       })
                         if row.id != model.visible.last?.id { NWHairline() }
                     }
                 }
