@@ -191,8 +191,22 @@ jobs:
     name: build
     needs: plan
     if: ${{ needs.plan.outputs.swift == 'true' && needs.plan.outputs.shared_build == 'true' }}
-    runs-on: macos-26
+    # Native metadata fence, evaluated before checkout; plan outputs cannot grant local access.
+    # Custom label only: the runner has no default self-hosted/OS labels.
+    runs-on: >-
+      ${{ github.triggering_actor == github.actor &&
+          (github.actor_id == '19316389' || github.actor_id == '3370624') &&
+          github.workflow_ref == format('{0}/.github/workflows/ci.yml@{1}', github.repository, github.ref) &&
+          ((github.event_name == 'pull_request' &&
+            github.ref == format('refs/pull/{0}/merge', github.event.pull_request.number) &&
+            github.event.pull_request.head.repo.full_name == github.repository &&
+            (github.event.pull_request.user.id == 19316389 || github.event.pull_request.user.id == 3370624)) ||
+           (github.event_name == 'push' && github.ref == 'refs/heads/nightly')) &&
+          'shepherd-release' || 'macos-26' }}
     timeout-minutes: 45
+    env:
+      # Mask the built-in runner machine-name log, before any steps run.
+      SELFHOSTED_LOG_MASK: ${{ secrets.SELFHOSTED_HOSTNAME }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -220,9 +234,20 @@ jobs:
     # `!cancelled()` rather than `always()`: a job with `always()` runs on after its run is cancelled,
     # which here would keep four macOS runners busy for a run nobody wants.
     if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.swift == 'true' && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
-    runs-on: macos-26
+    runs-on: >-
+      ${{ github.triggering_actor == github.actor &&
+          (github.actor_id == '19316389' || github.actor_id == '3370624') &&
+          github.workflow_ref == format('{0}/.github/workflows/ci.yml@{1}', github.repository, github.ref) &&
+          ((github.event_name == 'pull_request' &&
+            github.ref == format('refs/pull/{0}/merge', github.event.pull_request.number) &&
+            github.event.pull_request.head.repo.full_name == github.repository &&
+            (github.event.pull_request.user.id == 19316389 || github.event.pull_request.user.id == 3370624)) ||
+           (github.event_name == 'push' && github.ref == 'refs/heads/nightly')) &&
+          'shepherd-release' || 'macos-26' }}
     # A build takes about 5 minutes (10 clean) and a shard's tests about 5; a flake-hunt shard runs them three times.
     timeout-minutes: 60
+    env:
+      SELFHOSTED_LOG_MASK: ${{ secrets.SELFHOSTED_HOSTNAME }}
     strategy:
       fail-fast: false
       matrix:
