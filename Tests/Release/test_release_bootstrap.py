@@ -16,7 +16,7 @@ class BootstrapTests(unittest.TestCase):
         inputs = workflow.split("    inputs:\n", 1)[1].split("\npermissions:", 1)[0]
         rows = re.findall(r"^      (\w+):\n        type: string\n        required: true$", inputs, re.M)
         self.assertEqual(rows, ["parent_run", "parent_attempt", "source_sha", "build_number", "plan"])
-        self.assertIn("run-name: Horizon release ${{ inputs.parent_run }}-${{ inputs.parent_attempt }}", workflow)
+        self.assertIn("run-name: Self-hosted release ${{ inputs.parent_run }}-${{ inputs.parent_attempt }}", workflow)
         self.assertIn("  workflow_dispatch:", workflow)
         self.assertNotIn("  push:", workflow)
         self.assertNotIn("  pull_request:", workflow)
