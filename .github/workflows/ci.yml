@@ -2,11 +2,11 @@ name: CI
 
 # Two lanes (docs/testing.md). A pull request into nightly gets the fast lane: the unit
 # tier, a smoke set, and the integration suites its changed paths can affect, chosen by
-# scripts/ci_impact.py. Everything runs on pushes to nightly and master, on pull requests into
+# scripts/ci_impact.py. Everything runs on pushes to master, on pull requests into
 # master or labelled `full-ci`, daily (three passes, to find flaky tests), and on demand. The
 # full lane is cut into equal shards from Tests/ci-suite-times.json (scripts/ci_shards.py), and
 # a failed test is retried once (scripts/ci_run_tests.py): if it passes the second time it is
-# reported as flaky instead of failing the run. A red full lane on nightly or master files one
+# reported as flaky instead of failing the run. A red full lane on master files one
 # tracking issue (scripts/ci_report.py).
 #
 # There are no path filters here: a filtered-out workflow never reports the `CI` check, so the
@@ -15,7 +15,7 @@ name: CI
 # `swift test` runs them locally.
 on:
   push:
-    branches: [master, nightly]
+    branches: [master]
   pull_request:
     # `labeled` is how the `full-ci` label takes effect; any other label's event ends at once.
     types: [opened, synchronize, reopened, labeled]
@@ -84,7 +84,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ github.event_name == 'schedule' && 'nightly' || '' }}
+          ref: ${{ github.event_name == 'schedule' && 'master' || '' }}
       # The first full run of each UTC day builds from scratch (see the build job).
       - name: Today's clean build
         id: day

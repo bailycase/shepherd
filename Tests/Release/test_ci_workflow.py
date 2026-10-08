@@ -65,7 +65,8 @@ class WorkflowShapeTests(unittest.TestCase):
         head = WORKFLOW.split("\npermissions:", 1)[0]
         for trigger in ("push:", "pull_request:", "schedule:", "workflow_dispatch:"):
             self.assertIn(f"\n  {trigger}", head)
-        self.assertIn("branches: [master, nightly]", head)
+        self.assertIn("branches: [master]", head)
+        self.assertNotIn("branches: [master, nightly]", head)
         self.assertRegex(head, r'cron: "\d+ \d+ \* \* \*"')
         self.assertIn("types: [opened, synchronize, reopened, labeled]", head)
 
@@ -171,9 +172,16 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertIn("github.event.label.name != 'full-ci'", JOBS["plan"])
         self.assertIn("-label", WORKFLOW.split("\nconcurrency:", 1)[1].split("\ndefaults:", 1)[0])
 
-    def test_the_scheduled_run_tests_nightly_not_master(self):
-        self.assertIn("github.event_name == 'schedule' && 'nightly'", JOBS["plan"])
+    def test_the_scheduled_run_tests_master_not_nightly(self):
+        self.assertIn("github.event_name == 'schedule' && 'master'", JOBS["plan"])
         self.assertIn("ref: ${{ needs.plan.outputs.checkout_ref }}", JOBS["tests"])
+
+    def test_nightly_release_skips_tests_but_other_releases_keep_them(self):
+        with open(os.path.join(ROOT, ".github", "workflows", "release.yml"), encoding="utf-8") as file:
+            workflow = file.read()
+        step = workflow.split("      - name: Test the release rules\n", 1)[1].split("      - name:", 1)[0]
+        self.assertIn("if: github.ref != 'refs/heads/nightly'", step)
+        self.assertIn("python3 -m unittest discover -s Tests/Release -v", step)
 
     def test_no_job_survives_its_runs_cancellation(self):
         # A job-level `always()` runs on after the run is cancelled (macOS shards kept running for a
