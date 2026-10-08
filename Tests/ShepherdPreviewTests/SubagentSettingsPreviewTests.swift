@@ -3,6 +3,7 @@ import Foundation
 import SwiftUI
 import Testing
 import ShepherdSessions
+import ShepherdUI
 import ShepherdTestSupport
 @testable import ShepherdApp
 
@@ -38,6 +39,34 @@ struct SubagentSettingsPreviewTests {
                 try await Preview.renderMatrix("subagents-\(state)-narrow", size: CGSize(width: 1050, height: 900), ready: { model.loaded && !model.busy }) {
                     RootView(vm: workspace.vm)
                 }
+            }
+        }
+    }
+
+    /// A CLIProxyAPI-sized catalog: the editor's Model field, and the picker it opens, unfiltered and searched.
+    @Test func theModelPickerSearchesAThousandProxyModels() async throws {
+        let ids = (0..<1000).map { i in
+            let provider = ["claude", "gpt", "gemini", "qwen", "glm"][i % 5]
+            return "cliproxyapi/\(provider)-\(["opus", "sonnet", "haiku", "mini", "pro", "flash"][i % 6])-\(i / 6)"
+        }
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let store = try SubagentFixtures.store(in: workspace.dir, populated: true)
+        let model = SubagentDefinitionsModel(store: store)
+        model.models = { ids }
+        workspace.vm.madeSubagentDefinitions = model
+        workspace.vm.settingsSection = .subagents; workspace.vm.showSettings = true
+        await model.refresh()
+        await model.open(try #require(model.definitions.first { $0.file == "api-review.md" }))
+        try await Preview.renderMatrix("subagents-model-field", size: CGSize(width: 1440, height: 900),
+                                       ready: { model.loaded && !model.busy && !model.modelChoices.isEmpty }) {
+            RootView(vm: workspace.vm)
+        }
+        for (name, query) in [("all", ""), ("search", "gemini-flash")] {
+            let sections = SubagentModelField.sections(choices: ids, query: query, current: ids[7])
+            try await Preview.renderMatrix("subagents-model-picker-\(name)", size: CGSize(width: 480, height: 520), ready: { true }) {
+                NWModelPicker(query: .constant(query), sections: sections, selection: .constant(0), onChoose: { _ in }, onClose: {})
+                    .padding()
             }
         }
     }

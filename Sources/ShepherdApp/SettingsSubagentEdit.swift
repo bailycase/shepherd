@@ -171,11 +171,7 @@ struct SubagentEditForm: View {
     private var modelMenu: some View {
         let current = model.form.scalar("model")
         let choices = ([current].compactMap { $0 } + model.modelChoices).reduce(into: [String]()) { if !$1.isEmpty, !$0.contains($1) { $0.append($1) } }
-        return SubagentPopup(label: "Model", title: current ?? "Inherit from the thread", mono: current != nil) {
-            Button("Inherit from the thread") { model.form.set("model", scalar: nil) }
-            if !choices.isEmpty { Divider() }
-            ForEach(choices, id: \.self) { id in Button(id) { model.form.set("model", scalar: id) } }
-        }
+        return SubagentModelField(current: current, choices: choices) { model.form.set("model", scalar: $0) }
     }
 
     private var thinkingMenu: some View {
@@ -272,24 +268,66 @@ private struct SubagentPopup<Items: View>: View {
     @ViewBuilder let items: () -> Items
 
     var body: some View {
-        Menu(content: items) {
-            HStack(spacing: NW.Space.m) {
-                Text(title).font(mono ? .nwMono(AppLayout.subagentEditChipSize) : .nwSans(AppLayout.subagentEditFieldSize))
-                    .foregroundStyle(Color.nw.textPrimary).lineLimit(mono ? 1 : 2).truncationMode(.middle)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.down").font(.system(size: AppLayout.subagentEditPopupChevron, weight: .semibold))
-                    .foregroundStyle(Color.nw.settingsMuted)
-            }
-            .padding(.horizontal, AppLayout.subagentEditFieldPadding).padding(.vertical, NW.Space.xs)
-            .frame(maxWidth: .infinity, minHeight: AppLayout.subagentEditFieldHeight)
-            .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: AppLayout.subagentEditFieldRadius))
-            .nwBorder(Color.nw.lineStrong, radius: AppLayout.subagentEditFieldRadius)
-            .contentShape(Rectangle())
+        Menu(content: items) { SubagentPopupLabel(title: title, mono: mono) }
+            .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
+            .nwFocusRing(radius: AppLayout.subagentEditFieldRadius, color: .nw.running)
+            .accessibilityLabel(label).accessibilityValue(title)
+    }
+}
+
+private struct SubagentPopupLabel: View {
+    let title: String
+    let mono: Bool
+
+    var body: some View {
+        HStack(spacing: NW.Space.m) {
+            Text(title).font(mono ? .nwMono(AppLayout.subagentEditChipSize) : .nwSans(AppLayout.subagentEditFieldSize))
+                .foregroundStyle(Color.nw.textPrimary).lineLimit(mono ? 1 : 2).truncationMode(.middle)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.down").font(.system(size: AppLayout.subagentEditPopupChevron, weight: .semibold))
+                .foregroundStyle(Color.nw.settingsMuted)
         }
-        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
-        .nwFocusRing(radius: AppLayout.subagentEditFieldRadius, color: .nw.running)
-        .accessibilityLabel(label).accessibilityValue(title)
+        .padding(.horizontal, AppLayout.subagentEditFieldPadding).padding(.vertical, NW.Space.xs)
+        .frame(maxWidth: .infinity, minHeight: AppLayout.subagentEditFieldHeight)
+        .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: AppLayout.subagentEditFieldRadius))
+        .nwBorder(Color.nw.lineStrong, radius: AppLayout.subagentEditFieldRadius)
+        .contentShape(Rectangle())
+    }
+}
+
+/// The model field: the popup's look, opening the composer's searchable model picker, because a
+/// proxy such as CLIProxyAPI lists hundreds of models. Typing filters by substring of the id.
+struct SubagentModelField: View {
+    let current: String?
+    let choices: [String]
+    let choose: (String?) -> Void
+    @State private var open = false
+    @State private var query = ""
+    @State private var selection = 0
+
+    static let inherit = "Inherit from the thread"
+
+    var body: some View {
+        Button { open = true } label: { SubagentPopupLabel(title: current ?? Self.inherit, mono: current != nil) }
+            .buttonStyle(.plain)
+            .nwFocusRing(radius: AppLayout.subagentEditFieldRadius, color: .nw.running)
+            .accessibilityLabel("Model").accessibilityValue(current ?? Self.inherit)
+            .popover(isPresented: $open, arrowEdge: .bottom) {
+                NWModelPicker(query: $query, sections: Self.sections(choices: choices, query: query, current: current), selection: $selection, onChoose: {
+                    choose($0.id.isEmpty ? nil : $0.id)
+                    open = false
+                }, onClose: { open = false })
+                .onDisappear { query = ""; selection = 0 }
+            }
+    }
+
+    static func sections(choices: [String], query: String, current: String?) -> [NWModelSection] {
+        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        let matches = q.isEmpty ? choices : choices.filter { $0.lowercased().contains(q) }
+        let options = matches.map { NWModelOption(id: $0, title: $0, isCurrent: $0 == current) }
+        let inherit = NWModelOption(id: "", title: Self.inherit, isCurrent: current == nil)
+        return [NWModelSection(title: "Models", options: (q.isEmpty ? [inherit] : []) + options)]
     }
 }
 
