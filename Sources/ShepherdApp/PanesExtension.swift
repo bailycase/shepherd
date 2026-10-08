@@ -431,13 +431,13 @@ enum PanesExtension {
           // Project history is not sidebar registration. These requests go through the live app.
           const PROJECTS = {
             name: "shepherd_projects",
-            description: "register existing local project directories and refresh Shepherd's project UI",
-            instructions: "Use project_register, project_add_child or project_refresh when the user requests project registration, child folder creation, or refresh. Never edit projects.json or state.json to register a project.",
+            description: "register, edit, remove, and refresh local Shepherd projects",
+            instructions: "Use project_register, project_add_child, project_edit, project_delete or project_refresh when the user requests project management. Never edit projects.json or state.json to manage registrations. Folder moves and copies require an explicit user request; editing organization alone never moves data.",
           };
           if (!isAutomationAgent) pi.registerTool({
             name: "project_register",
             label: "Register Project",
-            description: "Register an existing local directory in Shepherd's live sidebar with a display name, when requested by the user. Does not create files, start threads, select a project, or grant project trust. Absolute paths and ~/ paths are accepted. Duplicate canonical paths return the existing registration unchanged. Returns JSON {space, created}; space contains the canonical id, name and path. A successful reply follows live UI adoption. Requires a Shepherd build with project tools.",
+            description: "Register an existing local directory in Shepherd's live sidebar with a display name, when requested by the user. Does not create files, start threads, select a project, or grant project trust. Absolute paths and ~/ paths are accepted. Duplicate canonical paths return the existing registration unchanged. Returns JSON {space, created}; space contains the canonical id, name and path. Preserve folder-name spelling for name unless the user explicitly requests a different display name. A successful reply follows live UI adoption. Requires a Shepherd build with project tools.",
             ...later(DEFER, PROJECTS),
             promptSnippet: line(DEFER, "Register an existing project directory in Shepherd's live sidebar"),
             parameters: Type.Object({
@@ -452,7 +452,7 @@ enum PanesExtension {
           if (!isAutomationAgent) pi.registerTool({
             name: "project_add_child",
             label: "Add Child Project",
-            description: "When requested by the user, create an empty direct child folder or register an existing descendant of a local parent project. Set create:true only to create a new folder, false for an existing folder. Canonical paths must stay inside parentPath. Never overwrites a folder or link, initializes Git, or starts a thread. Returns JSON {space, created}; created means a new registration. Creation errors leave existing files untouched. If registration fails after creation, the folder remains; retry with create:false. Requires a Shepherd build with child project tools.",
+            description: "When requested by the user, create an empty direct child folder or register an existing descendant of a local parent project. Set create:true to create a folder if missing, false to require an existing folder. A unique existing capitalization match is reused with its actual folder spelling. Canonical paths must stay inside parentPath. Never overwrites a folder or link, initializes Git, or starts a thread. Returns JSON {space, created}; created means a new registration. Creation errors leave existing files untouched. If registration fails after creation, the folder remains; retry with create:false. Requires a Shepherd build with child project tools.",
             ...later(DEFER, PROJECTS),
             promptSnippet: line(DEFER, "Create or register a child project folder inside a parent project"),
             parameters: Type.Object({
@@ -464,6 +464,36 @@ enum PanesExtension {
             async execute(_id, args) {
               const reply = await request({ type: "addChildProject", parentPath: args.parentPath, path: args.path, name: args.name, create: args.create });
               return text(JSON.stringify({ space: reply.space, created: reply.created }));
+            },
+          });
+          if (!isAutomationAgent) pi.registerTool({
+            name: "project_edit",
+            label: "Edit Project",
+            description: "Edit a local registered project's display name or parent without changing folders. projectID comes from registration results; sending only projectID inspects the registration or returns no_such_project. Omit parentProjectID to preserve organization; empty string makes it top-level. Only when the user explicitly requests a physical move/copy, set folderAction and destinationPath. Both refuse projects in use, linked worktrees, and existing destinations. Copy keeps the source and its registrations, then registers the copied root with a new ID and created:true. Move requires the same filesystem; related empty project registrations follow the moved folder. Returns JSON {space,created} after live UI adoption. Failures describe any remaining folder effects; do not blindly retry.",
+            ...later(DEFER, PROJECTS),
+            promptSnippet: line(DEFER, "Edit a project name or parent without moving folders unless explicitly requested"),
+            parameters: Type.Object({
+              projectID: Type.String({ description: "Registered local project's space.id" }),
+              name: Type.Optional(Type.String({ description: "New display name; does not rename the directory" })),
+              parentProjectID: Type.Optional(Type.String({ description: "New parent's project ID, or empty string for top-level; omit to preserve" })),
+              folderAction: Type.Optional(Type.Union([Type.Literal("none"), Type.Literal("move"), Type.Literal("copy")], { description: "Defaults to none. move/copy require an explicit user request." })),
+              destinationPath: Type.Optional(Type.String({ description: "Unused absolute destination folder, required only for explicit move/copy" })),
+            }),
+            async execute(_id, args) {
+              const reply = await request({ type: "editProject", projectID: args.projectID, request: { name: args.name, parentProjectID: args.parentProjectID, folderAction: args.folderAction ?? "none", destinationPath: args.destinationPath } }, undefined, APPROVAL_TIMEOUT_MS);
+              return text(JSON.stringify({ space: reply.space, created: reply.created }));
+            },
+          });
+          if (!isAutomationAgent) pi.registerTool({
+            name: "project_delete",
+            label: "Remove Project",
+            description: "Ask Shepherd to show its Remove project confirmation for a local registration, only when the user requests removal. Does not delete a folder or bypass confirmation. Confirming stops that project's agents and removes its registration; child projects, folders, files and saved conversations remain. Returns JSON {projectID,status:'confirmation_required'} when the dialog is requested, NOT proof that the project was removed. The user may cancel.",
+            ...later(DEFER, PROJECTS),
+            promptSnippet: line(DEFER, "Request confirmation to remove a project registration, never its folder"),
+            parameters: Type.Object({ projectID: Type.String({ description: "Registered local project's space.id" }) }),
+            async execute(_id, args) {
+              await request({ type: "deleteProject", projectID: args.projectID });
+              return text(JSON.stringify({ projectID: args.projectID, status: "confirmation_required" }));
             },
           });
           if (!isAutomationAgent) pi.registerTool({

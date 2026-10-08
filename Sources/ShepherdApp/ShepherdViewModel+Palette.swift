@@ -22,7 +22,7 @@ extension ShepherdViewModel {
         if shownDestination == .newThread, let place = newThread.place, place.host == nil,
            let space = state.spaces.first(where: { $0.id == place.space }) {
             items.append(PaletteItem(id: "action.renameSpace", kind: .action("renameSpace"), section: .commands,
-                                     title: "Rename space…", subtitle: space.name, icon: "pencil"))
+                                     title: "Rename project…", subtitle: space.name, icon: "pencil"))
             items.append(PaletteItem(id: "action.removeSpace", kind: .action("removeSpace"), section: .commands,
                                      title: "Remove project…", subtitle: space.name, icon: "trash"))
         }

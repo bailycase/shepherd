@@ -109,7 +109,7 @@ test("project tools defer by default and are absent from automation runs", async
   delete process.env.SHEPHERD_AUTOMATION;
   const h = await harness(() => null);
   try {
-    for (const name of ["project_register", "project_add_child", "project_refresh"]) {
+    for (const name of ["project_register", "project_add_child", "project_edit", "project_delete", "project_refresh"]) {
       assert.equal(h.tools.get(name).exposure, "deferred");
       assert.equal(h.tools.get(name).namespace.name, "shepherd_projects");
     }
@@ -118,6 +118,8 @@ test("project tools defer by default and are absent from automation runs", async
     try {
       assert.ok(!run.tools.has("project_register"));
       assert.ok(!run.tools.has("project_add_child"));
+      assert.ok(!run.tools.has("project_edit"));
+      assert.ok(!run.tools.has("project_delete"));
       assert.ok(!run.tools.has("project_refresh"));
     } finally { run.close(); }
   } finally {
@@ -125,6 +127,30 @@ test("project tools defer by default and are absent from automation runs", async
     if (previous === undefined) delete process.env.SHEPHERD_DEFER_TOOLS; else process.env.SHEPHERD_DEFER_TOOLS = previous;
     if (automation === undefined) delete process.env.SHEPHERD_AUTOMATION; else process.env.SHEPHERD_AUTOMATION = automation;
   }
+});
+
+test("project edits default to metadata only and deletion does not claim completed removal", async () => {
+  const space = { id: "s1", name: "Docs", path: "/project/docs" };
+  const h = await harness((frame) => ["editProject", "deleteProject"].includes(frame.type)
+    ? { type: "projectResult", space, created: frame.request?.folderAction === "copy" } : null);
+  try {
+    const edit = h.tools.get("project_edit");
+    assert.deepEqual(edit.parameters.required, ["projectID"]);
+    assert.deepEqual(JSON.parse(output(await edit.execute("call", { projectID: "s1", name: "Docs", parentProjectID: "s2" }))), { space, created: false });
+    const metadata = h.frames.find((f) => f.type === "editProject");
+    assert.equal(metadata.request.folderAction, "none");
+    assert.equal(metadata.request.destinationPath, undefined);
+    assert.equal(metadata.request.parentProjectID, "s2");
+    assert.equal(metadata.agentID, "agent-1");
+    for (const folderAction of ["move", "copy"]) {
+      const result = JSON.parse(output(await edit.execute("call", { projectID: "s1", folderAction, destinationPath: "/new/docs" })));
+      assert.equal(result.created, folderAction === "copy");
+    }
+    assert.deepEqual(h.frames.filter((f) => f.type === "editProject").slice(1).map((f) => [f.request.folderAction, f.request.destinationPath]), [["move", "/new/docs"], ["copy", "/new/docs"]]);
+    const deletion = h.tools.get("project_delete");
+    assert.deepEqual(deletion.parameters.required, ["projectID"]);
+    assert.deepEqual(JSON.parse(output(await deletion.execute("call", { projectID: "s1" }))), { projectID: "s1", status: "confirmation_required" });
+  } finally { h.close(); }
 });
 
 test("project registration reports server validation failures instead of success", async () => {

@@ -184,6 +184,8 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     case registerProject(id: Int, agentID: AgentID, path: String, name: String)
     case refreshProjects(id: Int, agentID: AgentID)
     case addChildProject(id: Int, agentID: AgentID, parentPath: String, path: String, name: String, create: Bool)
+    case editProject(id: Int, agentID: AgentID, projectID: SpaceID, request: ProjectEdit)
+    case deleteProject(id: Int, agentID: AgentID, projectID: SpaceID)
 
     private enum CodingKeys: String, CodingKey {
         case type, id, agentID, status, name, piSessionID, sessionID, children
@@ -197,7 +199,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case call, proposals
         case what
         case server, challenge, report
-        case parentPath, create
+        case parentPath, create, projectID
     }
 
     private enum Kind: String, Codable {
@@ -213,12 +215,18 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case designSystemRead, designSystemWrite, designProposeComments
         case designGet, designNote
         case helloBrowser, browser
-        case registerProject, refreshProjects, addChildProject
+        case registerProject, refreshProjects, addChildProject, editProject, deleteProject
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         switch try c.decode(Kind.self, forKey: .type) {
+        case .editProject:
+            self = .editProject(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID),
+                                projectID: try c.decode(SpaceID.self, forKey: .projectID), request: try c.decode(ProjectEdit.self, forKey: .request))
+        case .deleteProject:
+            self = .deleteProject(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID),
+                                  projectID: try c.decode(SpaceID.self, forKey: .projectID))
         case .addChildProject:
             self = .addChildProject(
                 id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID),
@@ -532,6 +540,17 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         switch self {
+        case .editProject(let id, let agentID, let projectID, let request):
+            try c.encode(Kind.editProject, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(projectID, forKey: .projectID)
+            try c.encode(request, forKey: .request)
+        case .deleteProject(let id, let agentID, let projectID):
+            try c.encode(Kind.deleteProject, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(projectID, forKey: .projectID)
         case .addChildProject(let id, let agentID, let parentPath, let path, let name, let create):
             try c.encode(Kind.addChildProject, forKey: .type)
             try c.encode(id, forKey: .id)
