@@ -48,11 +48,16 @@ struct NestedProjectsFlowTests {
         #expect(childControl.frame.minX - parentControl.frame.minX == NWProjectMetrics.chevronSlot + NWProjectMetrics.gap)
         #expect(ControlPress.undersized([parentControl, childControl], minimum: .desktop).isEmpty)
         try window.press("Platform, 1 thread")
-        window.layout()
-        #expect(!window.controls().contains { $0.label == "Hub, 1 thread" })
         #expect(vm.sidebarShortcutRows.isEmpty)
+        // Layout alone does not finish SwiftUI's animated accessibility-tree update.
+        try await eventuallyOnMain("the collapsed parent to hide its child") {
+            !window.controls().contains { $0.label == "Hub, 1 thread" }
+        }
+        #expect(!window.controls().contains { $0.label == "Hub, 1 thread" })
         try window.press("Platform, 1 thread")
-        window.layout()
+        try await eventuallyOnMain("the reopened parent to show its child") {
+            window.controls().contains { $0.label == "Hub, 1 thread" }
+        }
         try window.press("Hub, 1 thread")
         window.layout()
         #expect(vm.sidebarShortcutRows.isEmpty)
@@ -64,6 +69,9 @@ struct NestedProjectsFlowTests {
         #expect(!vm.collapsedProjects.contains(SidebarProjectID.local(parent.id).key))
         #expect(!vm.collapsedProjects.contains(SidebarProjectID.local(child.id).key))
         #expect(vm.sidebarShortcutRows.map(\.title) == ["Child work"])
+        try await eventuallyOnMain("selection to reveal the child project") {
+            window.controls().contains { $0.label == "Hub, 1 thread" }
+        }
         #expect(window.controls().contains { $0.label == "Hub, 1 thread" })
         try ControlPress.perform("New thread in Hub", onLabelContaining: "Hub, 1 thread", under: window.host)
         #expect(vm.selectedSpaceID == child.id)
