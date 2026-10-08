@@ -1,5 +1,5 @@
 name: Release build
-run-name: Horizon release ${{ inputs.parent_run }}-${{ inputs.parent_attempt }}
+run-name: Self-hosted release ${{ inputs.parent_run }}-${{ inputs.parent_attempt }}
 
 # Dispatch is local-only, build-only, and fenced on an active Nightly Release parent.
 # This workflow must also exist on the default branch before dispatch is available.
@@ -42,6 +42,8 @@ on:
         type: boolean
         default: true
     secrets:
+      SELFHOSTED_HOSTNAME:
+        required: false
       DEVELOPER_ID_P12:
         required: false
       DEVELOPER_ID_P12_PASSWORD:
@@ -71,7 +73,7 @@ jobs:
       BUILD_NUMBER: ${{ inputs.build_number }}
       RELEASE_PLAN: ${{ inputs.plan }}
     steps:
-      # Validate from the trusted workflow ref before checking out the supplied SHA on Horizon.
+      # Validate from the trusted workflow ref before checking out the supplied SHA on Self-hosted.
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -81,10 +83,12 @@ jobs:
     name: build package
     needs: guard
     if: github.event_name != 'pull_request' && (inputs.hosted || github.ref == 'refs/heads/nightly')
-    # Custom label only: Horizon was registered without default self-hosted/OS labels.
+    # Custom label only: Self-hosted was registered without default self-hosted/OS labels.
     runs-on: ${{ !inputs.hosted && 'shepherd-release' || 'macos-26' }}
     timeout-minutes: 60
     env:
+      # Referencing the hostname as a secret masks the runner's built-in machine-name log.
+      SELFHOSTED_LOG_MASK: ${{ secrets.SELFHOSTED_HOSTNAME }}
       APP_KEY: ${{ fromJSON(inputs.plan).app }}
       APP_NAME: ${{ fromJSON(inputs.plan).name }}
       VERSION: ${{ fromJSON(inputs.plan).version }}

@@ -15,7 +15,7 @@ push to `nightly` or `master` (docs/testing.md).
 ## Releases
 
 The Release workflow (`.github/workflows/release.yml`) ships two Mac apps and the iOS client's TestFlight builds.
-Its build-only helper (`.github/workflows/release-build.yml`) shares Mac packaging between Horizon and hosted runners. Its rules live in
+Its build-only helper (`.github/workflows/release-build.yml`) shares Mac packaging between Self-hosted and hosted runners. Its rules live in
 `scripts/release.py` (tested in `Tests/Release`); the YAML only runs them. A `plan` job decides
 from the pushed ref what to build, and the build job is skipped when the answer is nothing.
 Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
@@ -167,10 +167,12 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   prune older completed nightlies from its frozen snapshot; drafts and releases completed during
   publication are never pruned. Failed acquisition, metadata validation, generation or pushing
   prunes nothing. A skipped publisher (no Sparkle key) prunes nothing either.
-- **Nightly prefers Horizon, with hosted fallback.** Release's Ubuntu orchestrator dispatches
-  the build-only helper on `nightly`, targeting the existing `horizon-shepherd-release` runner's
-  sole custom label, `shepherd-release`. No runner registration, PAT, extra secrets or PR
-  execution is involved. Stable/beta and TestFlight remain hosted. Both Mac attempts check out
+- **Nightly prefers the self-hosted runner, with hosted fallback.** Release's Ubuntu orchestrator dispatches
+  the build-only helper on `nightly`, targeting the existing `shepherd-selfhosted` runner's
+  sole custom label, `shepherd-release`. No PAT or PR execution is involved. The optional
+  `SELFHOSTED_HOSTNAME` secret masks the machine name in the runner's built-in setup log;
+  public workflow labels and errors use generic self-hosted names. It is a log-masking value,
+  not an authentication credential. Existing logs and Git history are not rewritten. Stable/beta and TestFlight remain hosted. Both Mac attempts check out
   the exact Release source SHA and use its run number, plan, signing identities, entitlements
   and notarization policy; the dispatched helper's own run number is never a shipped build number.
   - `scripts/release_runner.py` allows three minutes for dispatch discovery and queueing,
@@ -189,7 +191,7 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
     fail closed, without fallback. If success races cancellation, a confirmed successful local
     package is still preferred; neither build can publish.
   - The helper validates its active Release parent/attempt and Nightly-only dispatch before
-    scheduling Horizon, again on runner entry, and before accessing signing credentials.
+    scheduling Self-hosted, again on runner entry, and before accessing signing credentials.
     Re-running the helper is refused. Parent cancellation best-effort cancels its helper;
     if the parent disappears before cleanup, a late queued helper refuses the inactive
     parent, and already-running work is bounded and cannot publish. Re-running Release uses
@@ -200,14 +202,14 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
     selected attempt's artifact and verifies that manifest before any tag/release mutation.
     Fallback never reacts to publication/appcast failure or partial success: existing draft-first
     release publication, immutable tags and the serialized appcast job remain the boundary.
-  - Horizon uses a temporary signing keychain with a random password, preserves/restores the
+  - Self-hosted uses a temporary signing keychain with a random password, preserves/restores the
     exact existing user keychain search list and removes imported certificate/notary files in
     an `always()` cleanup step, including after failure/cancellation. Forced runner termination
     can prevent cleanup: inspect the runner's job temp directory before reusing a killed worker.
     No installed app, runner registration, permanent keychain or user application data is changed.
   - **Rollout prerequisite:** GitHub requires a dispatch workflow to exist on the repository's
     default branch (`master`) even when dispatch targets `nightly`. Preparing these files does
-    not enable Horizon routing until `release-build.yml` has been separately authorized and
+    not enable Self-hosted routing until `release-build.yml` has been separately authorized and
     landed there. Bootstrap only the shared worker and its orchestrator script on `master`,
     preserving that branch's existing release workflow and signing/feed contracts. The owner
     approves the bootstrap and live rollout separately; merging the Nightly PR alone is not

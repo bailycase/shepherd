@@ -1,4 +1,4 @@
-"""Horizon selection against explicit fake API states; no tokens, runner, or network."""
+"""Self-hosted selection against explicit fake API states; no tokens, runner, or network."""
 import io
 import json
 import os
@@ -44,12 +44,12 @@ class API:
         if path == "/actions/runs/10":
             return dict(self.parent)
         if path.startswith("/actions/runs/10/jobs?"):
-            return {"jobs": [{"name": "Prefer Horizon for Nightly", "status": "in_progress"}] if self.selecting else []}
+            return {"jobs": [{"name": "Prefer Self-hosted for Nightly", "status": "in_progress"}] if self.selecting else []}
         if path.endswith("/dispatches"):
             self.dispatch = body
             return {}
         if path.startswith("/actions/workflows/release-build.yml/runs?"):
-            matches = [{"id": 20, "display_title": "Horizon release 10-1"}] if self.discover else []
+            matches = [{"id": 20, "display_title": "Self-hosted release 10-1"}] if self.discover else []
             return {"workflow_runs": matches * (2 if self.duplicate else 1)}
         if path == "/actions/runs/20/cancel":
             if self.cancel_conflict is not None:
@@ -156,7 +156,7 @@ class SelectionTests(unittest.TestCase):
                     self.select(api)
                 self.assertFalse(any(path.endswith("/dispatches") for _, path, _ in api.calls))
 
-    def test_a_manual_worker_cannot_sign_for_a_parent_that_is_not_selecting_horizon(self):
+    def test_a_manual_worker_cannot_sign_for_a_parent_that_is_not_selecting_selfhosted(self):
         api = API([("queued", None)])
         api.selecting = False
         with self.assertRaises(runner.RunnerError):
@@ -338,8 +338,8 @@ class WorkflowTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/release.yml").read_text()
         build = (ROOT / ".github/workflows/release-build.yml").read_text()
         hosted = workflow.split("  hosted-build:\n")[1].split("  release:\n")[0]
-        self.assertIn("needs.horizon.result == 'success'", hosted)
-        self.assertIn("needs.horizon.outputs.fallback == 'true'", hosted)
+        self.assertIn("needs.selfhosted.result == 'success'", hosted)
+        self.assertIn("needs.selfhosted.outputs.fallback == 'true'", hosted)
         self.assertNotIn("needs.release", hosted)
         self.assertIn("!cancelled()", hosted)
         for mutation in ("git push", "gh release", "SPARKLE_PRIVATE_KEY", "contents: write", "pull_request:"):
@@ -351,7 +351,16 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("needs: guard", build)
         self.assertIn("timeout-minutes: 60", build)
         self.assertIn("run: python3 scripts/release_runner.py verify", workflow)
-        self.assertIn("actions: write", workflow.split("  horizon:\n")[1].split("  hosted-build:\n")[0])
+        self.assertIn("actions: write", workflow.split("  selfhosted:\n")[1].split("  hosted-build:\n")[0])
+
+    def test_public_labels_are_generic_and_machine_name_is_masked_before_steps(self):
+        workflow = (ROOT / ".github/workflows/release.yml").read_text()
+        build = (ROOT / ".github/workflows/release-build.yml").read_text()
+        self.assertIn("name: Prefer Self-hosted for Nightly", workflow)
+        self.assertIn("run-name: Self-hosted release", build)
+        self.assertIn("SELFHOSTED_HOSTNAME: ${{ secrets.SELFHOSTED_HOSTNAME }}", workflow)
+        job_environment = build.split("    env:\n")[2].split("    steps:\n")[0]
+        self.assertIn("SELFHOSTED_LOG_MASK: ${{ secrets.SELFHOSTED_HOSTNAME }}", job_environment)
 
     def test_cleanup_restores_exact_keychain_list_and_removes_credentials_even_on_restore_failure(self):
         build = (ROOT / ".github/workflows/release-build.yml").read_text()
