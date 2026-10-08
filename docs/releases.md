@@ -9,8 +9,9 @@ breaking changes), one logical change per commit, with no AI or attribution line
 
 `nightly` is the integration branch. Feature branches (`feat/…`, `fix/…`) come off it and merge
 back through a PR with a merge commit (`--no-ff`). Every push to `nightly` ships a Shepherd
-Nightly build. CI runs the fast lane on pull requests into `nightly`, and the full lane after a
-push to `nightly` or `master` (docs/testing.md).
+Nightly build. Nightly pushes build and publish without running tests, including the release
+test preflight. Signing, notarization and artifact verification still run. CI tests pull requests
+and pushes to `master`; its daily run also tests `master` (docs/testing.md).
 
 ## Releases
 
