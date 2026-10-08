@@ -79,7 +79,9 @@ The engine uses nonpersistent `fs.watch` handles: recursive only inside actual s
 directories, with shallow, filename-filtered parent watches for absent sources, atomic directory
 replacement and delete/recreate. Symlink targets and ancestor-link retargeting are watched
 separately, with canonical cycle detection. Discovery stops at an included `SKILL.md`, so a
-skill's reference links are not followed into unrelated repositories. Watch discovery reuses
+skill's reference links are not followed into unrelated repositories. Independently supplied
+nested skill sources remain watched for edits and removal even below an included `SKILL.md`.
+Watch discovery reuses
 pi's `.gitignore`, `.ignore` and `.fdignore` rules; editing an ignore file reconciles sources.
 It does not recursively watch the repository or home merely to find skill changes.
 A trusted project's ancestor `.agents/skills` directories follow pi's normal scope (up to the git

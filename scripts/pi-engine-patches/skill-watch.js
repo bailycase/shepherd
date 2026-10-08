@@ -11,10 +11,9 @@ export function watchSkillPaths(paths, changed, failed) {
     let stopped = false;
     let pending;
     const stat = path => { try { return statSync(path); } catch { return undefined; } };
-    const roots = [];
-    for (const path of [...new Set(paths.map(path => resolve(path)))].sort((a, b) => a.length - b.length)) {
-        if (!roots.some(root => path.startsWith(root + sep) && stat(root)?.isDirectory())) roots.push(path);
-    }
+    // An independently supplied descendant remains a source even when discovery
+    // under its ancestor stops at SKILL.md. Reconcile deduplicates shared watches.
+    const roots = [...new Set(paths.map(path => resolve(path)))];
     const invalidate = () => {
         if (stopped || pending) return;
         // Coalesce one filesystem event batch, not a polling or refresh delay.
