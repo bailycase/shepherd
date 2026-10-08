@@ -72,6 +72,60 @@ async function harness(replyTo) {
 
 const output = (result) => result.content.map((block) => block.text).join("\n");
 
+test("project tools send authenticated requests and return registration and refresh results", async () => {
+  const space = { id: "s1", name: "psp-hub", path: "/projects/hub" };
+  let created = true;
+  const h = await harness((frame) => {
+    if (frame.type === "registerProject") return { type: "projectResult", space, created };
+    if (frame.type === "refreshProjects") return { type: "projectResult", created: false };
+  });
+  try {
+    const register = h.tools.get("project_register");
+    assert.deepEqual(register.parameters.required, ["path", "name"]);
+    assert.deepEqual(JSON.parse(output(await register.execute("call", { path: "/projects/hub", name: "psp-hub" }))), { space, created: true });
+    created = false;
+    assert.deepEqual(JSON.parse(output(await register.execute("call", { path: "/projects/hub", name: "unchanged" }))), { space, created: false });
+    assert.deepEqual(JSON.parse(output(await h.tools.get("project_refresh").execute("call", {}))), { refreshed: true });
+    const frames = h.frames.filter((f) => ["registerProject", "refreshProjects"].includes(f.type));
+    assert.equal(frames.length, 3);
+    assert.ok(frames.every((f) => f.agentID === "agent-1"));
+    assert.equal(frames[0].path, "/projects/hub");
+    assert.equal(frames[0].name, "psp-hub");
+  } finally { h.close(); }
+});
+
+test("project tools defer by default and are absent from automation runs", async () => {
+  const previous = process.env.SHEPHERD_DEFER_TOOLS;
+  const automation = process.env.SHEPHERD_AUTOMATION;
+  process.env.SHEPHERD_DEFER_TOOLS = "1";
+  delete process.env.SHEPHERD_AUTOMATION;
+  const h = await harness(() => null);
+  try {
+    for (const name of ["project_register", "project_refresh"]) {
+      assert.equal(h.tools.get(name).exposure, "deferred");
+      assert.equal(h.tools.get(name).namespace.name, "shepherd_projects");
+    }
+    process.env.SHEPHERD_AUTOMATION = "1";
+    const run = await harness(() => null);
+    try {
+      assert.ok(!run.tools.has("project_register"));
+      assert.ok(!run.tools.has("project_refresh"));
+    } finally { run.close(); }
+  } finally {
+    h.close();
+    if (previous === undefined) delete process.env.SHEPHERD_DEFER_TOOLS; else process.env.SHEPHERD_DEFER_TOOLS = previous;
+    if (automation === undefined) delete process.env.SHEPHERD_AUTOMATION; else process.env.SHEPHERD_AUTOMATION = automation;
+  }
+});
+
+test("project registration reports server validation failures instead of success", async () => {
+  const h = await harness((frame) => frame.type === "registerProject"
+    ? { type: "error", code: "invalid_path", message: "Project path must be an existing readable directory." } : null);
+  try {
+    await assert.rejects(() => h.tools.get("project_register").execute("call", { path: "/missing", name: "Name" }), /invalid_path/);
+  } finally { h.close(); }
+});
+
 test("the tools are the terminal_* set and the old pane_* names are gone", async () => {
   const h = await harness(() => null);
   try {

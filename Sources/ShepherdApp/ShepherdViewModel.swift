@@ -718,6 +718,7 @@ final class ShepherdViewModel {
         }
         // Agents drive their own panes through the server's extension socket.
         installPaneControl()
+        installProjectControl()
         installReviewHandler()
         installDesignReferenceHandler()
         installDesignRenderHandler()

@@ -50,6 +50,9 @@ struct ProjectsModelTests {
         }
         await model.open(ProjectsRow(host: host, project: project))
         model.draft = "changed"
+        #expect(await model.load([host], force: true))
+        #expect(model.draft == "changed")
+        #expect(model.dirty)
         await model.navigate(.close)
         #expect(model.pending == .close)
         #expect(model.selected != nil)
@@ -62,6 +65,26 @@ struct ProjectsModelTests {
         await model.navigate(.close)
         await model.discard()
         #expect(model.selected == nil)
+    }
+
+    @Test func aSupersededProjectRefreshDoesNotReportCompletion() async {
+        var calls = 0
+        var pending: CheckedContinuation<RemoteProjectsResult, Never>?
+        let started = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        let model = ProjectsModel { _, _ in
+            calls += 1
+            if calls == 1 {
+                return await withCheckedContinuation { pending = $0; started.continuation.yield(()) }
+            }
+            return .listing(ProjectListing(projects: []))
+        }
+        let host = ProjectsHost(id: "local", name: "This Mac", known: [])
+        let old = Task { await model.load([host], force: true) }
+        for await _ in started.stream { break }
+        #expect(await model.load([host], force: true))
+        pending?.resume(returning: .listing(ProjectListing(projects: [])))
+        #expect(await old.value == false)
+        started.continuation.finish()
     }
 
     @Test func aLateInventoryReplyCannotOverwriteTheReopenedEditorsDraft() async {

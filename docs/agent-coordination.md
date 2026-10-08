@@ -15,6 +15,44 @@ decides, "Allow for this thread"), `AgentPeers.swift` (list, send, spawn, the ap
 the deletion dialog's decisions), `PeerApprovalDialog` and `PeerApproval.swift` (the approval
 dialog and its words), `PeerDeleteDialog` in `AppDialogs.swift`, and `ShepherdViewModel+Review.swift`.
 
+## Project registration and refresh
+
+The same bundled extension exposes two local project tools, deferred through `tool_search`
+by default. Use them when the user requests registration or refresh. They are not installed
+in automation or design agents and do not use the peer-thread approval setting.
+
+| Tool | Arguments | Successful text result, JSON |
+| --- | --- | --- |
+| `project_register` | `path: string`, `name: string` | `{ "space": { "id": "…", "name": "…", "path": "…", … }, "created": true }` |
+| `project_refresh` | `{}` | `{ "refreshed": true }` |
+
+`project_register` accepts an existing readable directory on the local Mac. `path` must be
+absolute or start with `~/`. The host resolves symlinks and dot segments. `name` is trimmed,
+must contain 1–256 characters, and cannot contain control characters. No Git repository is
+required. Registration uses the same state mutation and notifications as Add Project, inserts
+a new space at the top, and persists it in `state.json`. A matching canonical path returns the
+existing space with `created: false`, preserving its name, position, ID, and hidden flags.
+Settings' Add Project uses the same validated registration path.
+
+`project_refresh` adopts the live server state into the sidebar and forces the existing
+Projects settings list to reload. Neither tool selects a project, starts a thread, creates
+folders, grants project trust, or replaces an unsaved editor draft. A successful reply follows
+live UI adoption and list reload. `projects.json` is cached directory history, not sidebar
+registration. Refresh neither imports it into spaces nor rereads `state.json` over live state.
+
+The extension socket verifies the caller's agent identity. Invalid input, an unavailable app,
+a failed state write, or a failed reload returns a tool error, not success. A reload can fail
+after registration has committed. Retrying registration is safe. `refresh_superseded` means a
+newer UI reload interrupted this one; retry `project_refresh`. Calls use the extension's
+15-second request timeout. A timeout does not roll back a registration already committed.
+
+These tools require a build containing this feature and the **Terminals and agent tools**
+bundled extension enabled. They are not added to an already installed Nightly by this PR.
+After merge and release, install/update Nightly and relaunch it once, then start or restart
+an agent so it loads the updated extension. Alternatively, build the updated app locally and
+launch that build. Subsequent registrations and refreshes need no app restart. Do not copy
+just the extension into an older app: that host cannot serve the new requests.
+
 ## The tools
 
 - **`agent_list`**: every top-level thread, with its status and directory.
