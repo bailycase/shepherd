@@ -165,6 +165,8 @@ target.write_text('<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespac
         for identity, eligible in [("-", False), ("", False), ("Developer ID Application: Fixture", True)]:
             with self.subTest(identity=identity):
                 self.state.write_text("[]")
+                (self.root / "shepherd-appcast.json").write_text(json.dumps(
+                    {"version": 1, "tag": "v1.1.0", "eligible": eligible}))
                 result = subprocess.run(["bash", "-c", shell_step("Publish release")], cwd=self.root,
                     env={**self.env, "SIGNING_IDENTITY": identity, "TAG": "v1.1.0", "TITLE": "Fixture", "NOTES": "fixture",
                          "PRERELEASE": "false", "CHANNEL": "stable", "DMG": "Shepherd.dmg", "DSYMS": "absent.zip"},
@@ -178,15 +180,16 @@ target.write_text('<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespac
 
     def test_a_missing_required_archive_never_publishes_a_release(self):
         self.state.write_text("[]")
+        (self.root / "shepherd-appcast.json").write_text(json.dumps(
+            {"version": 1, "tag": "v1.1.0", "eligible": True}))
         result = subprocess.run(["bash", "-c", shell_step("Publish release")], cwd=self.root,
             env={**self.env, "SIGNING_IDENTITY": "Developer ID Application: Fixture", "TAG": "v1.1.0",
                  "TITLE": "Fixture", "NOTES": "fixture", "PRERELEASE": "false", "CHANNEL": "stable",
                  "DMG": "missing.dmg", "DSYMS": "absent.zip"},
             capture_output=True, text=True, timeout=5)
-        self.assertEqual(result.returncode, 24, result.stdout + result.stderr)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertEqual(json.loads(self.state.read_text()), [])
-        calls = [json.loads(line) for line in self.log.read_text().splitlines()]
-        self.assertFalse(any(call[:2] == ["release", "edit"] for call in calls), calls)
+        self.assertFalse(self.log.exists(), "missing package must stop before any GitHub mutation")
 
     def test_new_ad_hoc_is_excluded_from_every_future_regeneration(self):
         self.publish([{"tag": "v1.1.0", "policy": {"version": 1, "tag": "v1.1.0", "eligible": False}},
