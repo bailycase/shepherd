@@ -333,6 +333,7 @@ final class ShepherdViewModel {
     }
 
     var spacePickerTarget: SpacePickerTarget?
+    var addingChildProject: ChildProjectModel?
     /// Compatibility spelling used by remote call sites.
     var remoteSpacePickerHostID: UUID? {
         get {
@@ -718,6 +719,7 @@ final class ShepherdViewModel {
         }
         // Agents drive their own panes through the server's extension socket.
         installPaneControl()
+        installProjectControl()
         installReviewHandler()
         installDesignReferenceHandler()
         installDesignRenderHandler()

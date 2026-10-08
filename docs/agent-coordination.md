@@ -15,6 +15,100 @@ decides, "Allow for this thread"), `AgentPeers.swift` (list, send, spawn, the ap
 the deletion dialog's decisions), `PeerApprovalDialog` and `PeerApproval.swift` (the approval
 dialog and its words), `PeerDeleteDialog` in `AppDialogs.swift`, and `ShepherdViewModel+Review.swift`.
 
+## Project registration and refresh
+
+The same bundled extension exposes five local project tools, deferred through `tool_search`
+by default. Use them when the user requests project management. They are not installed
+in automation or design agents and do not use the peer-thread approval setting.
+
+| Tool | Arguments | Successful text result, JSON |
+| --- | --- | --- |
+| `project_register` | `path: string`, `name: string` | `{ "space": { "id": "…", "name": "…", "path": "…", … }, "created": true }` |
+| `project_refresh` | `{}` | `{ "refreshed": true }` |
+| `project_add_child` | `parentPath: string`, `path: string`, `name: string`, `create: boolean` | `{ "space": { … }, "created": boolean }` |
+| `project_edit` | `projectID: string`; optional `name`, `parentProjectID`, `folderAction`, `destinationPath` | `{ "space": { … }, "created": boolean }` |
+| `project_delete` | `projectID: string` | `{ "projectID": "…", "status": "confirmation_required" }`, not deletion completion |
+
+`project_register` accepts an existing readable directory on the local Mac. `path` must be
+absolute or start with `~/`. The host resolves symlinks and dot segments. `name` is trimmed,
+must contain 1–256 characters, and cannot contain control characters. No Git repository is
+required. Registration uses the same state mutation and notifications as Add Project, inserts
+a new space at the top, and persists it in `state.json`. A matching canonical path returns the
+existing space with `created: false`, preserving its name, position, ID, and hidden flags.
+Settings' Add Project uses the same validated registration path.
+
+`project_refresh` adopts the live server state into the sidebar and forces the existing
+Projects settings list to reload. Neither tool selects a project, starts a thread, creates
+folders, grants project trust, or replaces an unsaved editor draft. A successful reply follows
+live UI adoption and list reload. `projects.json` is cached directory history, not sidebar
+registration. Refresh neither imports it into spaces nor rereads `state.json` over live state.
+
+`project_add_child` reuses registration, but also checks that the canonical child path lies
+inside `parentPath`. All four arguments are required. With `create: true`, it creates one
+empty direct child directory if missing. A unique existing capitalization match is reused
+with the folder's actual spelling: requesting `Docs` reuses `docs`. An exact match wins if
+several entries differ only by case; otherwise an ambiguous match is refused. Existing files
+and symlinks escaping the parent are refused, never overwritten. If `name` matches the
+requested folder name ignoring case, it uses the existing folder's spelling too; an explicit
+different display name is preserved.
+With `create: false`, it registers an existing descendant, including deeper folders. Paths
+are absolute or `~/` paths. It never initializes Git, creates intermediate directories, or
+starts a thread. `created` describes the registration, not the folder. If folder creation
+succeeds but registration fails, the folder remains and the error names it. Retry with
+`create: false`. No automatic deletion or rollback removes user files. The UI exposes this
+same operation in [Add child project](design/child-projects.md). Newly registered children keep
+an explicit relationship to the selected registered parent; duplicates keep their prior relationship.
+
+`project_edit` uses a registration's `space.id`, returned by `project_register` or
+`project_add_child`. All fields except `projectID` are optional. Sending only the ID inspects
+the current registration; `no_such_project` means it is no longer registered. By default, `folderAction`
+is `"none"`. `name` changes only the display name. `parentProjectID` changes the display
+parent, or makes it top-level when the value is an empty string; omitting it preserves the
+existing relationship. Parents must be registered local projects. Cycles and more than 16
+levels are refused. Both sidebar and Settings follow the explicit hierarchy. Paths, files,
+agent working directories, and actual instruction/MCP inheritance stay unchanged.
+
+Only when the user explicitly requests a filesystem operation, supply `folderAction: "move"`
+or `"copy"` and an unused absolute `destinationPath`. A destination with `"none"` is an error.
+The tool does not infer permission from a parent change.
+
+- Move uses a same-filesystem, no-overwrite rename. It preserves project IDs and updates paths
+  for registered descendants. It never silently falls back to copy-and-delete across volumes.
+- Copy preserves the original folder and registrations, and registers the copied root with a
+  new ID and `created: true`. It does not duplicate descendant registrations. Other edits
+  return `created: false`. Configuration, absolute path references, and symlinks are not rewritten.
+  Callers must check external consumers before an explicit transfer; it is not a repository migration.
+- Both operations refuse folders with registered threads/tabs, live processes, automations,
+  or design references; stop/remove those references first and call from another project.
+  Linked Git worktrees/submodules, protected runtime/auth/system folders, and existing
+  destinations are refused. Inspection is capped at 50,000 entries, 2 GiB, and 15 seconds.
+  Filesystem calls may still wait on a slow volume. Workspace writes and new sessions are
+  refused while the transfer runs; the host returns `project_busy` rather than racing the copy.
+  Checks use Shepherd's recorded working directories; external processes are not inspected.
+- If registration fails after a move, the host attempts a no-overwrite move back. The error
+  reports whether that succeeded. Failed/partial copies stay at the destination for inspection;
+  no recovery deletes files. A timeout is not proof of failure: inspect source, destination,
+  and registrations before retrying. A restart never resumes a transfer automatically.
+
+`project_delete` requests the existing Remove project dialog. It does not directly delete a
+registration, stop agents, or remove files. The response says confirmation is required; the
+user may cancel. Confirming removes that registration and its own sessions, retains children
+as separate projects, and keeps folders, files, saved conversations, and project history.
+
+The extension socket verifies the caller's agent identity. Invalid input, an unavailable app,
+a failed state write, or a failed reload returns a tool error, not success. A reload can fail
+after registration has committed. Retrying registration is safe. `refresh_superseded` means a
+newer UI reload interrupted this one; retry `project_refresh`. Calls use the extension's
+15-second request timeout, except `project_edit`, which waits up to 130 seconds. A timeout
+does not roll back a registration already committed or cancel an in-flight filesystem call.
+
+These tools require a build containing this feature and the **Terminals and agent tools**
+bundled extension enabled. They are not added to an already installed Nightly by this PR.
+After merge and release, install/update Nightly and relaunch it once, then start or restart
+an agent so it loads the updated extension. Alternatively, build the updated app locally and
+launch that build. Subsequent registrations and refreshes need no app restart. Do not copy
+just the extension into an older app: that host cannot serve the new requests.
+
 ## The tools
 
 - **`agent_list`**: every top-level thread, with its status and directory.

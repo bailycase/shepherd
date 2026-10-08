@@ -699,7 +699,7 @@ struct SettingsPreviewTests {
 
     @Test func renameSpaceDialog() async throws {
         try await Preview.render("sheet-rename-space", size: CGSize(width: AppLayout.renameSheetWidth, height: 210)) {
-            RenameDialog(title: "Rename space", caption: "Sidebar label only — the folder on disk is not renamed.",
+            RenameDialog(title: "Rename project", caption: "Display name only. The folder name and location stay unchanged.",
                          name: "Shepherd", onRename: { _ in }, onCancel: {})
         }
     }

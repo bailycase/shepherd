@@ -130,8 +130,27 @@ struct ThreadTailGuardTests {
         }
     }
 
-    @Test(arguments: ["hidden", "reader"])
-    func rebuildingAHiddenOrDetachedTranscriptIsNeverRequested(state: String) async throws {
+    @Test func aVisibleRowWithoutTheTailRebuildsOnceAfterBoundedScrollingFails() async throws {
+        let rig = Rig()
+        defer { rig.close() }
+        // Completion can leave a current row visible while its final answer and marker never
+        // realize. Neither walking nor landing changes the lazy stack's cached targets.
+        rig.guardian.distance = 779
+        var rebuilds = 0
+        rig.guardian.rebuild = { rebuilds += 1 }
+        rig.guardian.targets(["row"])
+        try await eventuallyOnMain("the current-row repair budget to be exhausted") {
+            rig.guardian.attempts == ThreadTailGuard.maxAttempts && !rig.guardian.repairing
+        }
+        print("STRANDED ROW: attempts=\(rig.guardian.attempts), repairing=\(rig.guardian.repairing), rowsInView=\(rig.guardian.rowsInView), rebuilds=\(rebuilds)")
+        #expect(rebuilds == 1)
+        #expect(rig.landings == ThreadTailGuard.maxAttempts)
+        rig.guardian.targets(["row"])
+        #expect(rebuilds == 1)
+    }
+
+    @Test(arguments: ["hidden", "reader"], [[], ["row"]])
+    func rebuildingAHiddenOrDetachedTranscriptIsNeverRequested(state: String, visible: [String]) async throws {
         let rig = Rig()
         defer { rig.close() }
         rig.document.setFrameSize(NSSize(width: 800, height: 200))
@@ -145,7 +164,8 @@ struct ThreadTailGuardTests {
                 else { rig.guardian.following = false }
             }
         }
-        rig.guardian.targets([])
+        rig.guardian.distance = 779
+        rig.guardian.targets(visible)
         try await eventuallyOnMain("the final attempt to leave a hidden reader alone") {
             rig.landings == ThreadTailGuard.maxAttempts
         }

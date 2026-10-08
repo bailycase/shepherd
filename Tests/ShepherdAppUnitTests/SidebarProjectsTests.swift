@@ -68,6 +68,46 @@ struct SidebarProjectsTests {
         #expect(asks?.accessory == .reason(SidebarDerivation.reason(question: "Approve the plan?")))
     }
 
+    @Test func childrenNestUnderTheirMainProjectAndCollapseWithIt() throws {
+        let child = Fixture.space("hub", path: shepherd.path + "/hub")
+        let deep = Fixture.space("admin", path: child.path + "/admin")
+        let similar = Fixture.space("shepherd-other", path: shepherd.path + "-other")
+        let state = ShepherdState(spaces: [deep, dashboard, child, shepherd, similar], agents: [
+            agent("parent work", in: shepherd), agent("child work", in: child, status: .blocked, waiting: "Approve?"),
+            agent("deep work", in: deep),
+        ])
+        let nested = tree(state)
+        #expect(nested.projects.map(\.name) == [dashboard.name, shepherd.name, "admin", "hub", "shepherd-other"])
+        #expect(nested.projects.filter { $0.parentID == .local(shepherd.id) }.map(\.name) == ["admin", "hub"])
+        #expect(nested.projects.first { $0.id == .local(shepherd.id) }?.rollup == .waiting)
+        let open = nested.items(collapsed: [], selected: nil, shortcuts: true, connected: [])
+        let rows = open.compactMap { if case .row(let row) = $0 { row } else { nil } }
+        #expect(rows.map(\.inChildProject) == [false, true, true])
+        let parent = try #require(open.compactMap { if case .project(let p) = $0, p.id == .local(shepherd.id) { p } else { nil } }.first)
+        #expect(parent.count == 3)
+        let collapsed: Set<String> = [SidebarProjectID.local(shepherd.id).key]
+        #expect(nested.visibleRows(collapsed: collapsed).isEmpty)
+        let closed = nested.items(collapsed: collapsed, selected: nil, shortcuts: true, connected: [])
+        #expect(closed.compactMap { if case .project(let p) = $0 { p.name } else { nil } } == [dashboard.name, shepherd.name, similar.name])
+        #expect(nested.visibleRows(collapsed: [SidebarProjectID.local(child.id).key]).map(\.title) == ["parent work", "deep work"])
+    }
+
+    @Test func hidingAParentPromotesItsVisibleChildrenAndDragsStayAmongSiblings() throws {
+        var parent = shepherd
+        let child = Fixture.space("hub", path: parent.path + "/hub")
+        let sibling = Fixture.space("infra", path: parent.path + "/infra")
+        let state = ShepherdState(spaces: [child, parent, sibling, dashboard])
+        let items = tree(state).items(collapsed: [], selected: nil, shortcuts: false, connected: [])
+        let plan = try #require(ProjectDrop.plan(ProjectDrag(id: .local(child.id), offset: 1000), items: items, pitch: 28))
+        #expect(plan.line == AnyHashable(SidebarProjectID.local(sibling.id)))
+        let root = try #require(ProjectDrop.plan(ProjectDrag(id: .local(parent.id), offset: 1000), items: items, pitch: 28))
+        #expect(root.line == AnyHashable(SidebarProjectID.local(dashboard.id)))
+        parent.sidebarHidden = true
+        let hidden = tree(ShepherdState(spaces: [child, parent, sibling, dashboard]))
+        #expect(hidden.projects.allSatisfy { $0.parentID == nil })
+        #expect(hidden.projects.map(\.name) == ["hub", "infra", dashboard.name])
+    }
+
     // MARK: Leaving the tree
 
     /// After Keep idle threads, idle and finished threads leave the tree; running ones, ones
@@ -150,6 +190,22 @@ struct SidebarProjectsTests {
                             id: UUID? = nil) -> SidebarSource.Host {
         SidebarSource.Host(id: id ?? host, name: name, state: ShepherdState(spaces: spaces, agents: agents),
                            offline: offline)
+    }
+
+    @Test(arguments: [false, true])
+    func nestingUsesPathsOnlyWithinTheSameHost(grouped: Bool) {
+        let remoteParent = Fixture.space("Remote parent", path: "/srv/platform")
+        let remoteChild = Fixture.space("Remote child", path: "/srv/platform/hub")
+        let localLookalike = Fixture.space("Local lookalike", path: "/srv/platform/local")
+        let secondHostChild = Fixture.space("Different host", path: "/srv/platform/elsewhere")
+        let built = tree(ShepherdState(spaces: [localLookalike]), hosts: [
+            remoteHost(spaces: [remoteChild, remoteParent], agents: []),
+            remoteHost("other", spaces: [secondHostChild], agents: [], id: UUID()),
+        ], groupByHost: grouped)
+        let parentID: SidebarProjectID = grouped ? .remote(hostID: host, remoteParent.id) : .named(remoteParent.name)
+        #expect(built.projects.first { $0.name == remoteChild.name }?.parentID == parentID)
+        #expect(built.projects.first { $0.name == localLookalike.name }?.parentID == nil)
+        #expect(built.projects.first { $0.name == secondHostChild.name }?.parentID == nil)
     }
 
     /// Not grouped, a host's threads sit in the project of the same name, tagged with the host

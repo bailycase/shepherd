@@ -181,6 +181,12 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     /// naming any agent but the one this connection registered is refused `not_registered`.
     case browser(id: Int, agentID: AgentID, request: BrowserRequest)
 
+    case registerProject(id: Int, agentID: AgentID, path: String, name: String)
+    case refreshProjects(id: Int, agentID: AgentID)
+    case addChildProject(id: Int, agentID: AgentID, parentPath: String, path: String, name: String, create: Bool)
+    case editProject(id: Int, agentID: AgentID, projectID: SpaceID, request: ProjectEdit)
+    case deleteProject(id: Int, agentID: AgentID, projectID: SpaceID)
+
     private enum CodingKeys: String, CodingKey {
         case type, id, agentID, status, name, piSessionID, sessionID, children
         case paneID, axis, cwd, relativeTo, command, text, submit, reference
@@ -193,6 +199,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case call, proposals
         case what
         case server, challenge, report
+        case parentPath, create, projectID
     }
 
     private enum Kind: String, Codable {
@@ -208,11 +215,36 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case designSystemRead, designSystemWrite, designProposeComments
         case designGet, designNote
         case helloBrowser, browser
+        case registerProject, refreshProjects, addChildProject, editProject, deleteProject
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         switch try c.decode(Kind.self, forKey: .type) {
+        case .editProject:
+            self = .editProject(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID),
+                                projectID: try c.decode(SpaceID.self, forKey: .projectID), request: try c.decode(ProjectEdit.self, forKey: .request))
+        case .deleteProject:
+            self = .deleteProject(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID),
+                                  projectID: try c.decode(SpaceID.self, forKey: .projectID))
+        case .addChildProject:
+            self = .addChildProject(
+                id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID),
+                parentPath: try c.decode(String.self, forKey: .parentPath), path: try c.decode(String.self, forKey: .path),
+                name: try c.decode(String.self, forKey: .name), create: try c.decode(Bool.self, forKey: .create)
+            )
+        case .registerProject:
+            self = .registerProject(
+                id: try c.decode(Int.self, forKey: .id),
+                agentID: try c.decode(AgentID.self, forKey: .agentID),
+                path: try c.decode(String.self, forKey: .path),
+                name: try c.decode(String.self, forKey: .name)
+            )
+        case .refreshProjects:
+            self = .refreshProjects(
+                id: try c.decode(Int.self, forKey: .id),
+                agentID: try c.decode(AgentID.self, forKey: .agentID)
+            )
         case .setAgentStatus:
             self = .setAgentStatus(
                 agentID: try c.decode(AgentID.self, forKey: .agentID),
@@ -508,6 +540,35 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         switch self {
+        case .editProject(let id, let agentID, let projectID, let request):
+            try c.encode(Kind.editProject, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(projectID, forKey: .projectID)
+            try c.encode(request, forKey: .request)
+        case .deleteProject(let id, let agentID, let projectID):
+            try c.encode(Kind.deleteProject, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(projectID, forKey: .projectID)
+        case .addChildProject(let id, let agentID, let parentPath, let path, let name, let create):
+            try c.encode(Kind.addChildProject, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(parentPath, forKey: .parentPath)
+            try c.encode(path, forKey: .path)
+            try c.encode(name, forKey: .name)
+            try c.encode(create, forKey: .create)
+        case .registerProject(let id, let agentID, let path, let name):
+            try c.encode(Kind.registerProject, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(path, forKey: .path)
+            try c.encode(name, forKey: .name)
+        case .refreshProjects(let id, let agentID):
+            try c.encode(Kind.refreshProjects, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
         case .setAgentStatus(let agentID, let status):
             try c.encode(Kind.setAgentStatus, forKey: .type)
             try c.encode(agentID, forKey: .agentID)
@@ -1074,6 +1135,8 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     /// `mode` (steer/followUp) applies to `message`.
     case childCommand(id: Int, runID: String, action: ChildCommandAction, text: String?, mode: NativeThreadDelivery?)
     case ok(id: Int)
+    /// Register returns the canonical space; refresh returns nil. Existing spaces are unchanged.
+    case projectResult(id: Int, space: Space?, created: Bool)
     case error(id: Int, code: String, message: String)
     case panes(id: Int, panes: [PaneInfo])
     case paneOpened(id: Int, pane: PaneInfo)
@@ -1140,6 +1203,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case requestID, targetAgentID, request, result
+        case space, created
         case type, id, code, message, panes, pane, paneID, lines, automations, agents, text, delivery
         case runID, action, mode
         case outcome
@@ -1153,6 +1217,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
 
     private enum Kind: String, Codable {
         case parentInput, childCommand, agentRequest, agentResult
+        case projectResult
         case ok, error, panes, paneOpened, paneContent, reviewResult, automations, agents, message
         case suggestion
         case design, designBoard, designWritten, designEdited, designComments, designComment
@@ -1186,6 +1251,12 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
             self = .agentResult(
                 id: try c.decode(Int.self, forKey: .id),
                 result: try c.decode(AgentCoordinationResult.self, forKey: .result)
+            )
+        case .projectResult:
+            self = .projectResult(
+                id: try c.decode(Int.self, forKey: .id),
+                space: try c.decodeIfPresent(Space.self, forKey: .space),
+                created: try c.decode(Bool.self, forKey: .created)
             )
         case .ok:
             self = .ok(id: try c.decode(Int.self, forKey: .id))
@@ -1355,6 +1426,11 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
             try c.encode(Kind.agentResult, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(result, forKey: .result)
+        case .projectResult(let id, let space, let created):
+            try c.encode(Kind.projectResult, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encodeIfPresent(space, forKey: .space)
+            try c.encode(created, forKey: .created)
         case .ok(let id):
             try c.encode(Kind.ok, forKey: .type)
             try c.encode(id, forKey: .id)
