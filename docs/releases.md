@@ -170,9 +170,15 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   prune older completed nightlies from its frozen snapshot; drafts and releases completed during
   publication are never pruned. Failed acquisition, metadata validation, generation or pushing
   prunes nothing. A skipped publisher (no Sparkle key) prunes nothing either.
-- **Nightly prefers the self-hosted runner, with hosted fallback.** Release's Ubuntu orchestrator dispatches
-  the build-only helper on `nightly`, targeting the existing `shepherd-selfhosted` runner's
-  sole custom label, `shepherd-release`. No PAT or PR execution is involved. The optional
+- **Nightly builds on GitHub unless self-hosted is explicitly enabled.** The repository variable
+  `SHEPHERD_SELFHOSTED_ENABLED` must equal `true` to opt in. Otherwise the selector immediately
+  chooses hosted without dispatching or waiting for a local helper; direct local helper calls
+  also skip before scheduling the Mac. Keep the shared Mac's runner disabled in launchd until
+  builds have isolated resources. A separate account or reduced CPU priority cannot protect
+  Kubernetes and other apps from build memory exhaustion.
+  When enabled, Release's Ubuntu orchestrator dispatches the build-only helper on `nightly`,
+  targeting the existing `shepherd-selfhosted` runner's sole custom label, `shepherd-release`.
+  No PAT or PR execution is involved. The optional
   `SELFHOSTED_HOSTNAME` secret masks the machine name in the runner's built-in setup log;
   public workflow labels and errors use generic self-hosted names. It is a log-masking value,
   not an authentication credential. Existing logs and Git history are not rewritten. Stable/beta and TestFlight remain hosted. Both Mac attempts check out
@@ -206,6 +212,8 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
     selected attempt's artifact and verifies that manifest before any tag/release mutation.
     Fallback never reacts to publication/appcast failure or partial success: existing draft-first
     release publication, immutable tags and the serialized appcast job remain the boundary.
+    The appcast job requires a successful selected release and checks cancellation explicitly;
+    skipping the unused build path must not suppress publication through implicit `success()`.
   - Self-hosted keeps DerivedData and verified pi downloads between jobs. Checkout preserves
     ignored build outputs but no Git credentials. The build marker combines Xcode, Swift, SDK,
     shared library source and package/project/engine inputs. Changing any of those discards
