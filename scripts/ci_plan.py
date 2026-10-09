@@ -37,7 +37,7 @@ def affects_swift(paths: list[str]) -> bool:
     return False
 
 
-SUMMARY = re.compile(r"Test run with \d+ tests? in \d+ suites? (passed|failed) after")
+SUMMARY = re.compile(r"^(?:[^\w\s]+[ \t]+)?Test run with (\d+) tests?(?: in \d+ suites?)? (passed|failed) after .*\.$")
 ISSUE = re.compile(r"(recorded an issue|Expectation failed|failed after .* with \d+ issues?|Time limit was exceeded|Caught error)")
 
 
@@ -48,10 +48,12 @@ def summarize(lines, out=sys.stdout) -> int:
     for line in lines:
         if ISSUE.search(line):
             out.write(line if line.endswith("\n") else line + "\n")
-        summary = SUMMARY.search(line)
+        summary = SUMMARY.fullmatch(line.rstrip("\n"))
         if summary:
-            verdict = summary.group(1)
-            tests += int(re.search(r"with (\d+) test", line).group(1))
+            # New SwiftPM versions can run multiple test bundles. A later green bundle
+            # must not replace an earlier failure, or a printed fixture look like a verdict.
+            verdict = "failed" if verdict == "failed" or summary.group(2) == "failed" else "passed"
+            tests += int(summary.group(1))
             out.write(line if line.endswith("\n") else line + "\n")
     if verdict is None:
         out.write("::error::swift test printed no summary (did it crash?)\n")

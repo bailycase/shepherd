@@ -695,10 +695,46 @@ class ReleaseWorkflowTests(unittest.TestCase):
         cache = self.step("Cache DerivedData")
         self.assertIn("if: runner.environment == 'github-hosted'", cache)
         self.assertIn("${{ inputs.source_sha }}", cache)
-        self.assertIn("hashFiles('scripts/pi-engine-pin.json', 'Package.resolved')", cache)
-        over = self.step("Start over when the toolchain changed")
+        self.assertIn("${{ steps.xcode.outputs.shared }}", cache)
+        workflow = read(".github", "workflows", "release-build.yml")
+        self.assertIn("clean: ${{ runner.environment != 'self-hosted' }}", workflow)
+        version = self.step("Xcode version")
+        self.assertIn("xcrun --show-sdk-version", version)
+        self.assertIn("git ls-files -s Sources Packages Package.swift Package.resolved", version)
+        self.assertIn("scripts/pi-engine-pin.json scripts/pi_engine.py", version)
+        over = self.step("Start over when shared build inputs changed")
+        self.assertIn("${{ steps.xcode.outputs.version }}-${{ steps.xcode.outputs.shared }}", over)
         self.assertIn("marker=build/ci-toolchain", over)
-        self.assertIn("rm -rf build", over)
+
+    def test_changed_shared_inputs_drop_release_products_but_keep_package_downloads(self):
+        body = self.step("Start over when shared build inputs changed")
+        script = "\n".join(line[10:] for line in body.split("run: |\n", 1)[1].splitlines()
+                           if line.startswith("          "))
+        for previous, survives in (("xcode-library", True), ("xcode-old-library", False),
+                                    ("old-xcode-library", False), (None, False)):
+            with self.subTest(previous=previous), tempfile.TemporaryDirectory() as directory:
+                build = os.path.join(directory, "build")
+                for name in ("SourcePackages", "Build"):
+                    os.makedirs(os.path.join(build, name))
+                    with open(os.path.join(build, name, "fixture"), "w") as f:
+                        f.write("cached")
+                if previous:
+                    with open(os.path.join(build, "ci-toolchain"), "w") as f:
+                        f.write(previous + "\n")
+                result = subprocess.run(["bash", "-e", "-c", script], cwd=directory,
+                                        env={**os.environ, "VERSION": "xcode-library"},
+                                        capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(os.path.exists(os.path.join(build, "Build")), survives)
+                self.assertTrue(os.path.exists(os.path.join(build, "SourcePackages", "fixture")))
+
+    def test_notarization_acceptance_and_stapling_precede_release_package_provenance(self):
+        names = [title for title, _ in self.steps()]
+        for title, target in (("Notarize", "$APP"), ("Package DMG", "$DMG")):
+            body = self.step(title)
+            self.assertIn("--wait", body)
+            self.assertIn(f'xcrun stapler staple "{target}"', body)
+            self.assertLess(names.index(title), names.index("Record package provenance"))
 
     def test_the_verified_app_is_the_one_signed_and_node_is_never_stripped(self):
         names = [title for title, _ in self.steps()]

@@ -25,6 +25,7 @@ List only what you actually ran and what you observed. For example:
 - `Shepherd (Dev)` Xcode build succeeded; manually <what you exercised>
 If you did not exercise the changed behavior, write "Not tested" and why.
 CI runs every test here; a change to docs alone runs no Swift.
+-->
 
 ## UI changes
 

@@ -125,6 +125,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event_name == 'schedule' && 'master' || '' }}
+          clean: ${{ runner.environment != 'self-hosted' }}
+          persist-credentials: false
       - uses: ./.github/actions/swift-build
         with:
           clean: ${{ inputs.clean == true }}
