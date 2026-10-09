@@ -11,7 +11,7 @@ def runner_expression(job):
 
 def select(expression, metadata):
     # GitHub's && / || return operands, just like Python's and / or.
-    expression = re.sub(r"github\.[\w.]+", lambda m: repr(metadata.get(m[0])), expression)
+    expression = re.sub(r"(?:github|vars|inputs)\.[\w.]+", lambda m: repr(metadata.get(m[0])), expression)
     expression = expression.replace("&&", " and ").replace("||", " or ")
     return eval(" ".join(expression.split()), {"__builtins__": {}, "format": str.format})
 
@@ -19,6 +19,7 @@ def select(expression, metadata):
 def metadata(event="pull_request", actor="19316389", author=19316389):
     ref = "refs/pull/236/merge" if event == "pull_request" else "refs/heads/nightly"
     return {
+        "vars.SHEPHERD_SELFHOSTED_ENABLED": "true",
         "github.event_name": event,
         "github.actor_id": actor,
         "github.actor": "maintainer",
@@ -45,6 +46,16 @@ class CIRunnerTests(unittest.TestCase):
         for name, job in JOBS.items():
             if name != "tests":
                 self.assertIn("runs-on: ubuntu-latest", job)
+
+    def test_disabled_or_unset_selfhosted_builds_stay_hosted_including_diagnostics(self):
+        expression = runner_expression(JOBS["tests"])
+        for flag in (None, "", "false", "TRUE", "yes"):
+            for event in ("pull_request", "workflow_dispatch"):
+                with self.subTest(flag=flag, event=event):
+                    data = metadata(event=event)
+                    data["vars.SHEPHERD_SELFHOSTED_ENABLED"] = flag
+                    data["github.event.inputs.diagnostics"] = "ui"
+                    self.assertEqual(select(expression, data), "macos-26")
 
     def test_only_same_repo_maintainer_pull_requests_select_local(self):
         expression = runner_expression(JOBS["tests"])
