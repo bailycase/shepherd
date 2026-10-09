@@ -93,7 +93,9 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   one older page while the thread is active and ready, without a button or menu item. Native scroll
   visibility triggers the fetch; stable turn identities and native scroll position keep the visible
   turn in place as older rows prepend. On the Mac a boundary-row anchor also preserves its exact
-  viewport offset through lazy remeasurement, including a partially clipped row. A new scroll,
+  viewport offset through lazy remeasurement, including a partially clipped row. Pending native
+  layout finishes before the anchor offset is measured; a materialized marker alone does not mean
+  its frame matches the drawn row. A new scroll,
   turn jump, send, session change or hiding the thread cancels that restoration, so a late page
   never takes back the reader's newer navigation. Each visit to the top fetches at most one page, never an
   unbounded drain of history; another scroll away from the top arms the next visit, not layout

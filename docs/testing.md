@@ -543,6 +543,10 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
   that repetition on CI too. No thread suite is excluded because it contains known issues.
   The child-command routing test retires its success-phase async-let before starting the
   failure phase, keeping the same assertions without overlapping cleanup allocations.
+  The paging regression checks both success and failure without moving the original visible
+  turn. Anchor correction completes pending native layout before reading its final position.
+  `threadHistoryLayoutMatrix` renders real store-driven empty, idle and long threads in both
+  appearances and at text scales 1 and 1.3.
   Scroll tests still inspect rendered text and pill pixels. Only repeated whole-window pill OCR
   polls use a 500 ms interval; position assertions and timeouts are unchanged.
 - **The daily run** tests `master` on `macos-26`; `gh workflow run ci.yml --ref <branch>` runs
