@@ -109,7 +109,7 @@ jobs:
     needs: plan
     if: fromJSON(needs.plan.outputs.plan).build && fromJSON(needs.plan.outputs.plan).channel == 'nightly'
     runs-on: ubuntu-latest
-    timeout-minutes: 70
+    timeout-minutes: 80
     permissions:
       contents: read
       actions: write

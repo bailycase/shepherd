@@ -176,10 +176,11 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   not an authentication credential. Existing logs and Git history are not rewritten. Stable/beta and TestFlight remain hosted. Both Mac attempts check out
   the exact Release source SHA and use its run number, plan, signing identities, entitlements
   and notarization policy; the dispatched helper's own run number is never a shipped build number.
-  - `scripts/release_runner.py` allows three minutes for dispatch discovery and queueing,
+  - `scripts/release_runner.py` allows fifteen minutes for dispatch discovery and queueing
+    (a queued local build is usually waiting behind a pull request's CI on the same runner),
     sixty minutes for local execution, two minutes for cancellation acknowledgement, and polls
-    every fifteen seconds. Each API request has a ten-second timeout; the Ubuntu job has a
-    seventy-minute outer bound. The build jobs also have a sixty-minute execution limit.
+    every fifteen seconds. Each API request has a ten-second timeout; the Ubuntu job has an
+    eighty-minute outer bound. The build jobs also have a sixty-minute execution limit.
     Job timeouts alone do not bound a queued offline runner. There is one dispatch and at most
     one hosted fallback, not a retry loop.
   - A completed local build failure/timeout permits fallback. An expired queue/execution bound
