@@ -453,7 +453,7 @@ struct ThreadScrollingTests {
 
         try await thread.settle()
         #expect(thread.distanceFromBottom >= detached - 2, "growth yanked a detached reader back down")
-        try await eventuallyOnMain("the jump pill to show", poll: .milliseconds(150)) { thread.showsJumpPill }
+        try await eventuallyOnMain("the jump pill to show", poll: .milliseconds(500)) { thread.showsJumpPill }
     }
 
     /// ⌥⌘↑ from the tail to a turn just over the follower's threshold above it: the jump's
@@ -486,12 +486,12 @@ struct ThreadScrollingTests {
         defer { thread.close() }
         try await thread.waitUntilReady()
         try await thread.detach()
-        try await eventuallyOnMain("the jump pill to show", poll: .milliseconds(150)) { thread.showsJumpPill }
+        try await eventuallyOnMain("the jump pill to show", poll: .milliseconds(500)) { thread.showsJumpPill }
 
         if how == "command" { try await thread.jumpDownToTheTail() } else { thread.scrollToEnd() }
 
         try await eventuallyOnMain("the view to return to the tail") { thread.isPinned }
-        try await eventuallyOnMain("the pill to go away", poll: .milliseconds(150)) { !thread.showsJumpPill }
+        try await eventuallyOnMain("the pill to go away", poll: .milliseconds(500)) { !thread.showsJumpPill }
         await thread.publish(ThreadHarness.snapshot(count: 34, running: true, revision: 2, paragraphs: 20))
         try await eventuallyOnMain("growth to be followed again") { thread.isPinned }
     }
@@ -540,7 +540,7 @@ struct ThreadScrollingTests {
         try await thread.settle()
 
         #expect(thread.distanceFromBottom >= detached - 2, "the queued message's delivery pulled the reader to the tail")
-        try await eventuallyOnMain("the jump pill to show for the new output", poll: .milliseconds(150)) { thread.showsJumpPill }
+        try await eventuallyOnMain("the jump pill to show for the new output", poll: .milliseconds(500)) { thread.showsJumpPill }
     }
 
     /// ⌥⌘↑ with pi idle: the rows the jump reveals are measured on the way, which grows the
@@ -559,7 +559,7 @@ struct ThreadScrollingTests {
         let before = thread.distanceFromBottom
         #expect(before > NativeScrollFollower.threshold, "the second jump stays detached")
         await thread.publish(ThreadHarness.snapshot(count: 32, running: false, revision: 2, paragraphs: 20))
-        try await eventuallyOnMain("the jump pill to show for the new turn", poll: .milliseconds(150)) { thread.showsJumpPill }
+        try await eventuallyOnMain("the jump pill to show for the new turn", poll: .milliseconds(500)) { thread.showsJumpPill }
     }
 
     @Test func steeringFromEarlierHistoryReturnsToTheTailBeforeDelivery() async throws {

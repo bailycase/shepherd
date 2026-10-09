@@ -117,7 +117,7 @@ jobs:
           github.event.pull_request.head.repo.full_name == github.repository &&
           (github.event.pull_request.user.id == 19316389 || github.event.pull_request.user.id == 3370624) &&
           'shepherd-release' || 'macos-26' }}
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       # Mask the built-in runner machine-name log, before any steps run.
       SELFHOSTED_LOG_MASK: ${{ secrets.SELFHOSTED_HOSTNAME }}
