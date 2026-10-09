@@ -129,7 +129,15 @@ jobs:
           persist-credentials: false
       - name: Select the local package or safe hosted fallback
         id: select
-        run: python3 scripts/release_runner.py select
+        env:
+          SELFHOSTED_ENABLED: ${{ vars.SHEPHERD_SELFHOSTED_ENABLED }}
+        run: |
+          if [[ "$SELFHOSTED_ENABLED" == true ]]; then
+            python3 scripts/release_runner.py select
+          else
+            echo 'Self-hosted builds disabled; using GitHub-hosted without dispatch.'
+            echo 'fallback=true' >> "$GITHUB_OUTPUT"
+          fi
       - name: Cancel a remaining local attempt
         if: always()
         env:
@@ -223,7 +231,8 @@ jobs:
   publish-appcasts:
     name: publish appcasts
     needs: [plan, release]
-    if: needs.release.result == 'success'
+    # A successful selected package must publish even when the other build was skipped.
+    if: ${{ !cancelled() && needs.release.result == 'success' }}
     runs-on: macos-26
     timeout-minutes: 45
     # Only publication coalesces: every tagged build keeps its own release. A replacement
