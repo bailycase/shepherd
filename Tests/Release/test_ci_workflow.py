@@ -114,8 +114,7 @@ class WorkflowShapeTests(unittest.TestCase):
         tests = JOBS["tests"]
         self.assertIn("uses: ./.github/actions/swift-build", tests)
         self.assertIn("python3 scripts/pi_engine.py stage", tests)
-        self.assertRegex(tests, r"swift test --skip-build \$SWIFTPM_FLAGS")
-        self.assertNotIn("--no-parallel", tests, "the app suites gate themselves; the rest runs beside them")
+        self.assertRegex(tests, r"swift test --no-parallel --skip-build \$SWIFTPM_FLAGS")
         self.assertNotIn("matrix:", tests)
         self.assertNotIn("shard", tests)
         self.assertIn('CI: "true"', tests)
@@ -211,6 +210,7 @@ class PlanTests(unittest.TestCase):
 
     def test_the_runner_exit_status_not_printed_fixtures_decides_test_success(self):
         script = run_script(JOBS["tests"])
+        self.assertIn("swift test --no-parallel", script)
         fixture = 'swift() { echo "Test run with 5 tests failed after 1 second with 1 issue."; return "$STATUS"; }\n'
         for status in (0, 1, 23, 134):
             with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
