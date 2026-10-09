@@ -132,13 +132,13 @@ jobs:
           clean: ${{ inputs.clean == true }}
       - name: Stage bundled pi for subagent file checks
         run: python3 scripts/pi_engine.py stage
-      # The app suites gate themselves onto one main-actor queue (`.mainActorExclusive`); the
-      # server, unit and design-kit suites run beside that queue.
+      # Swift 6.3's single test process otherwise launches every server/process case together,
+      # exhausting local resources and timing out unrelated tests. Keep the established CI order.
       - name: Run tests
         env:
           CI: "true"
         run: |
-          if swift test --skip-build $SWIFTPM_FLAGS > "$RUNNER_TEMP/swift-test.log" 2>&1; then
+          if swift test --no-parallel --skip-build $SWIFTPM_FLAGS > "$RUNNER_TEMP/swift-test.log" 2>&1; then
             tail -20 "$RUNNER_TEMP/swift-test.log"
           else
             tail -120 "$RUNNER_TEMP/swift-test.log"

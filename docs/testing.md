@@ -466,10 +466,10 @@ no Swift (the extension tests and release rules always run). Tests that depend o
 speed skip on CI (`CI=true`, `.timingSensitive`).
 
 - **The Swift job** (`swift tests`) is `swift build --build-tests` on top of the last build, then
-  `swift test --skip-build`, once, with a 60-minute ceiling for a cold hosted build and full
-  suite. The app suites carry `.mainActorExclusive`, which already
-  queues them one at a time on the main actor whatever the parallelism; the server, unit and
-  design-kit suites run beside that queue, so the job is not run `--no-parallel`. There is no
+  `swift test --no-parallel --skip-build`, once, with a 60-minute ceiling for a cold hosted
+  build and full suite. The serial setting prevents Swift 6.3 from launching every process,
+  socket and server test together. A full parallel self-hosted run timed out unrelated tests
+  and aborted after 51 seconds. The app suites also retain `.mainActorExclusive`. There is no
   retry: a test that fails is red, and a flaky test is a bug to fix in the test. The full
   `swift test` log is uploaded only when the job fails (`ci-swift-test-log`); the step prints
   the last 20 lines on success or 120 on failure. Swift's exit status decides the result,
