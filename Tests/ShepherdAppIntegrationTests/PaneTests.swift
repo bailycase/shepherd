@@ -147,8 +147,10 @@ struct PaneControlTests {
         vm.selectAgent(visible.agent.id)
 
         let box = SendableReply()
+        // The command echo cannot contain its output marker, even with prompt redraws.
+        let command = "printf 'terminal-%s\\n' ready"
         let request = Task { box.reply = try await app.extensionRequest(.openPane(
-            id: 6, agentID: background.agent.id, axis: .vertical, cwd: nil, relativeTo: nil, command: "echo terminal-ready"))
+            id: 6, agentID: background.agent.id, axis: .vertical, cwd: nil, relativeTo: nil, command: command))
         }
         var opened: LeafPane?
         try await eventuallyOnMain("the new terminal to join the agent's layout") {
@@ -177,10 +179,11 @@ struct PaneControlTests {
                 let markerRows = lines.enumerated().compactMap { row, line in
                     line.range(of: "terminal-ready").map { "\(row):\(line.distance(from: line.startIndex, to: $0.lowerBound))" }
                 }
-                lastRead = "rows=\(lines.count), marker row:column=\(markerRows), command echo=\(lines.contains { $0.contains("echo terminal-ready") })"
-                return lines.contains { $0.hasPrefix("terminal-ready") }
+                lastRead = "rows=\(lines.count), marker row:column=\(markerRows), command-not-found=\(lines.contains { $0.contains("command not found") }), compinit-warning=\(lines.contains { $0.contains("insecure directories") || $0.contains("compinit") })"
+                // Screen readback need not put output at column zero.
+                return lines.contains { $0.contains("terminal-ready") }
             }
-        } catch let error as WaitTimeout {
+        } catch let error as TimedOut {
             let pane = vm.sessions.session(for: terminal, in: tab)
             let phase: String
             switch pane.phase {

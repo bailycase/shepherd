@@ -137,6 +137,13 @@ jobs:
       # Mask the built-in runner machine-name log, before any steps run.
       SELFHOSTED_LOG_MASK: ${{ secrets.SELFHOSTED_HOSTNAME }}
     steps:
+      - name: Require a logged-in build account for AppKit tests
+        if: runner.environment == 'self-hosted'
+        run: |
+          if ! launchctl print "gui/$(id -u)" > /dev/null 2>&1; then
+            echo '::error::UI tests need the build account logged into macOS. Leave its GUI session running; the runner must not log it in or move focus.'
+            exit 1
+          fi
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event_name == 'schedule' && 'master' || '' }}
