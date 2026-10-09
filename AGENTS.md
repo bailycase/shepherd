@@ -114,8 +114,8 @@ python3 scripts/design_section.py "<board or heading>"   # one spec from docs/de
 Run the Mac app from `Shepherd.xcodeproj` (scheme `Shepherd (Dev)`, My Mac); there is no
 `swift run` path. Schemes, support folders, the pi engine and Nightly:
 [docs/build-and-run.md](docs/build-and-run.md).
-A pull request runs every test once (the self-hosted Mac for a maintainer's PR); docs alone run
-no Swift. A push to `nightly` builds and ships without tests ([docs/testing.md](docs/testing.md)).
+Nightly PRs run unit, smoke and affected suites; shared/unknown paths and master run all.
+Docs alone run no Swift; `nightly` ships without tests ([docs/testing.md](docs/testing.md)).
 
 ## Map
 

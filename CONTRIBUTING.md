@@ -48,7 +48,7 @@ then everything.
 | Unit | `swift test --filter UnitTests` | Pure logic: no processes, sockets, windows, git, or sleeps. Seconds for the whole tier. |
 | Integration | `swift test --filter IntegrationTests` | A real `SessionServer` (`ScratchServer`), the scripted stub pi (`StubPi.command`), git scratch repos, off-screen windows. Waits are named `eventually(...)` polls, never fixed sleeps. |
 | Previews | `SHEPHERD_PREVIEW_DIR=/tmp/previews swift test --filter PreviewTests` | Offscreen renders of every surface, in light and dark, written as PNGs. Skipped without the variable. |
-| Everything | `swift test` | All of the above, in parallel. CI runs them serially, in shards: the suites a change can affect on a pull request into `nightly`, every suite after a merge ([docs/testing.md](docs/testing.md)). |
+| Everything | `swift test` | All of the above, in parallel. CI runs one serial process: unit, smoke and affected suites for ordinary `nightly` PRs, all suites for shared changes and `master` ([docs/testing.md](docs/testing.md)). |
 | Extensions | `PI_PACKAGE_DIR=<installed pi package> node --test Tests/Extensions/*.test.mjs` | The bundled pi extensions, against a local fake provider. |
 | Release rules | `python3 -m unittest discover -s Tests/Release` | `scripts/release.py`: what each tag or push builds, which feeds each release lands in, and its agreement with the Xcode project and the apps. CI runs it too. |
 
@@ -106,8 +106,9 @@ Fill in the [pull request template](.github/pull_request_template.md). It asks f
 - for a feature that acts on its own, its bounds, where its data goes, what a restart and Stop do
   to it, and the decisions you made unasked ([docs/rules.md](docs/rules.md))
 
-CI runs every test once on a pull request (on the self-hosted Mac when a maintainer opened it,
-GitHub's macOS runner otherwise); a change to docs alone runs no Swift. A test that fails is red:
+CI runs unit, smoke and affected suites for ordinary `nightly` PRs, and all suites for shared
+or unknown paths, `master`, daily runs and `full-ci`. Maintainer PRs use the self-hosted Mac;
+other events use GitHub's macOS runner. Docs alone run no Swift. A test that fails is red:
 there is no retry, so a flaky test is a bug to fix in the test. A push to `nightly` builds and
 ships without tests.
 

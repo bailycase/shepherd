@@ -474,6 +474,18 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
   `swift test` log is uploaded only when the job fails (`ci-swift-test-log`); the step prints
   the last 20 lines on success or 120 on failure. Swift's exit status decides the result,
   never sample failure text printed by tests of the app's log reader.
+- **Which tests run:** ordinary PRs into `nightly` retain every unit suite, the previous 13
+  smoke suites and the feature/module suites affected by changed paths. The smoke set includes
+  `NativeThreadTests`, so RPC child commands never depend on a feature rule. Thread and layout
+  rules include hidden-layout, completion-painting and scroll regressions. Shared contracts,
+  server core, test support, CI changes and unknown paths run all tests. PRs into `master`,
+  `master` pushes, daily/manual runs and the `full-ci` label also run all tests. Clearly non-Swift
+  PRs still skip Swift, including docs-only `master` PRs. The planner emits fixed regexes, and
+  `swift test list --skip-build` must find a native test ID for every selected pattern before
+  `--filter` runs it. A renamed or empty selection fails instead of passing a zero-test gate.
+  There are no duration estimates, shards or retry/report databases. Label changes reevaluate
+  `full-ci`. Closing a PR supersedes its old run through native concurrency; the closing run
+  skips planning and every dependent job, releasing the self-hosted runner without new tests.
 - **Where it runs:** a same-repository pull request authored by account ID `19316389` (Baily) or
   `3370624` (Josh), triggered by the same account, runs on the self-hosted Mac (the runner's sole
   custom label, `shepherd-release`). The native `runs-on` expression checks `github.workflow_ref`
@@ -508,6 +520,8 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
 - **The steer-send soak** runs the real-host send/scroll scenario once on CI, retaining every
   assertion. Local timing-enabled runs repeat it five times; `SHEPHERD_TIMING_TESTS=1` restores
   that repetition on CI too. No thread suite is excluded because it contains known issues.
+  The child-command routing test retires its success-phase async-let before starting the
+  failure phase, keeping the same assertions without overlapping cleanup allocations.
   Scroll tests still inspect rendered text and pill pixels. Only repeated whole-window pill OCR
   polls use a 500 ms interval; position assertions and timeouts are unchanged.
 - **The daily run** tests `master` on `macos-26`; `gh workflow run ci.yml --ref <branch>` runs
