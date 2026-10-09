@@ -12,6 +12,7 @@ on:
   push:
     branches: [master]
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled, closed]
   schedule:
     # Only the default branch's copy of this file is scheduled, so this starts once master has it.
     - cron: "17 4 * * *"
@@ -35,13 +36,15 @@ defaults:
     shell: bash
 
 jobs:
-  # Whether this change can affect Swift at all (docs and templates cannot).
+  # Ordinary nightly PRs retain unit + smoke + affected suites; shared/unknown paths run all.
   plan:
     name: plan
+    if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       swift: ${{ steps.plan.outputs.swift }}
+      filters: ${{ steps.plan.outputs.filters }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -51,15 +54,17 @@ jobs:
         id: plan
         env:
           EVENT: ${{ github.event_name }}
+          FULL: ${{ github.event_name != 'pull_request' || github.event.pull_request.base.ref != 'nightly' || contains(github.event.pull_request.labels.*.name, 'full-ci') }}
         run: |
-          swift=true
           if [ "$EVENT" = pull_request ]; then
-            # The checkout is the merge of the pull request into its base: the first parent is the base.
+            # The merge checkout's first parent is the base.
             git diff --name-only --no-renames HEAD^1 HEAD > changed.txt
-            swift=$(python3 scripts/ci_plan.py changed.txt)
+          else
+            printf 'Package.swift\n' > changed.txt
           fi
-          echo "swift=$swift" >> "$GITHUB_OUTPUT"
-          echo "swift=$swift"
+          args=()
+          if [ "$FULL" = true ]; then args=(--full); fi
+          python3 scripts/ci_plan.py changed.txt "${args[@]}" | tee -a "$GITHUB_OUTPUT"
 
   # The release workflow's rules (scripts/release.py), the CI helper's own tests, the embedded
   # extension copies and the docs' size and link guards. Stdlib only; it costs no macOS runner.
@@ -137,8 +142,15 @@ jobs:
       - name: Run tests
         env:
           CI: "true"
+          SWIFT_FILTERS: ${{ needs.plan.outputs.filters }}
         run: |
-          if swift test --no-parallel --skip-build $SWIFTPM_FLAGS > "$RUNNER_TEMP/swift-test.log" 2>&1; then
+          filters=()
+          if [ "$SWIFT_FILTERS" != '[]' ]; then
+            swift test list --skip-build $SWIFTPM_FLAGS > "$RUNNER_TEMP/swift-tests.txt"
+            filter=$(python3 scripts/ci_plan.py --validate "$RUNNER_TEMP/swift-tests.txt" "$SWIFT_FILTERS")
+            filters=(--filter "$filter")
+          fi
+          if swift test --no-parallel --skip-build $SWIFTPM_FLAGS "${filters[@]}" > "$RUNNER_TEMP/swift-test.log" 2>&1; then
             tail -20 "$RUNNER_TEMP/swift-test.log"
           else
             tail -120 "$RUNNER_TEMP/swift-test.log"
@@ -156,7 +168,7 @@ jobs:
   ci:
     name: CI
     needs: [plan, release-rules, extensions, tests]
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && github.event.action != 'closed' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:

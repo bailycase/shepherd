@@ -24,7 +24,7 @@ List only what you actually ran and what you observed. For example:
 - `PI_PACKAGE_DIR=… node --test Tests/Extensions/*.test.mjs`: passed
 - `Shepherd (Dev)` Xcode build succeeded; manually <what you exercised>
 If you did not exercise the changed behavior, write "Not tested" and why.
-CI runs every test here; a change to docs alone runs no Swift.
+CI runs unit, smoke and affected suites; shared/unknown paths run all. Docs alone run no Swift.
 -->
 
 ## UI changes

@@ -3,6 +3,7 @@
 The workflow is read as text (the repository's tests are stdlib only). Run:
 python3 -m unittest discover -s Tests/Release -v
 """
+import json
 import os
 import re
 from pathlib import Path
@@ -73,6 +74,16 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertIn("branches: [master]", head)
         self.assertNotIn("nightly", head.split("\non:", 1)[1], "a push to nightly builds a release, it does not test")
         self.assertRegex(head, r'cron: "\d+ \d+ \* \* \*"')
+
+    def test_closing_a_pr_supersedes_obsolete_work_without_starting_new_tests(self):
+        triggers = WORKFLOW.split("permissions:", 1)[0]
+        self.assertIn("labeled, unlabeled, closed", triggers)
+        self.assertIn("cancel-in-progress: true", WORKFLOW)
+        self.assertIn("format('pr-{0}', github.event.pull_request.number)", WORKFLOW)
+        self.assertIn("if: github.event.action != 'closed'", JOBS["plan"])
+        for job in ("release-rules", "extensions", "tests"):
+            self.assertIn("needs: plan", JOBS[job])
+        self.assertIn("github.event.action != 'closed'", JOBS["ci"])
 
     def test_the_scheduled_run_tests_master(self):
         for name in ("plan", "release-rules", "extensions", "tests"):
@@ -208,6 +219,106 @@ class PlanTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertTrue(ci_plan.affects_swift(["docs/x.md", path]))
 
+    def test_shared_unknown_and_ci_changes_run_all_tests(self):
+        for path in ("Sources/ShepherdCore/Agent.swift", "Sources/ShepherdProtocol/Remote.swift",
+                     "Sources/ShepherdSessions/SessionServer.swift", "Sources/ShepherdRemote/Thread.swift",
+                     "Tests/ShepherdTestSupport/X.swift", "Package.swift", "Package.resolved",
+                     ".github/workflows/ci.yml", ".github/actions/swift-build/action.yml",
+                     "scripts/ci_plan.py", "unknown/path"):
+            with self.subTest(path=path):
+                self.assertEqual(ci_plan.filters_for([path]), [])
+        self.assertEqual(ci_plan.filters_for(["Sources/ShepherdApp/Browser.swift"], full=True), [])
+
+    def test_fast_runs_preserve_all_unit_tests_and_the_previous_smoke_gate(self):
+        filters = ci_plan.filters_for(["Sources/shepherd-cli/Main.swift"])
+        self.assertEqual(len(ci_plan.SMOKE), 13)
+        for test_id in ("ShepherdCoreUnitTests.AgentTests/model()", "ShepherdUIUnitTests.TokensTests/fonts()",
+                        "ShepherdSessionsIntegrationTests.NativeThreadTests/subagentCardsAndTheirCommandsGoThroughTheChildrenExtension()",
+                        "ShepherdSessionsIntegrationTests.NativeThreadTests.NestedSuite/child()"):
+            self.assertTrue(any(re.search(pattern, test_id) for pattern in filters), test_id)
+
+    def test_mixed_features_union_filters_and_include_hidden_layout_regressions(self):
+        filters = ci_plan.filters_for(["Sources/ShepherdApp/Thread/ThreadView.swift", "Sources/ShepherdApp/DesignTools.swift"])
+        for test_id in ("ShepherdAppIntegrationTests.ThreadCompletionReproductionTests/realWorkspaceCompletionKeepsPainting(size:)",
+                        "ShepherdAppIntegrationTests.ThreadScrollingTests/reachingTheTopLoadsOnePageWithoutMovingOrRetrying(fails:)",
+                        "ShepherdAppIntegrationTests.IdleCostTests/hiddenLayoutsDrawNoClockFrames()",
+                        "ShepherdAppIntegrationTests.DesignPerformanceTests/oneBoardChangingRedrawsThatBoardAlone()"):
+            self.assertTrue(any(re.search(pattern, test_id) for pattern in filters), test_id)
+        self.assertEqual(ci_plan.filters_for(["Sources/ShepherdApp/Browser.swift", "unmapped"]), [])
+
+    def test_test_support_and_unclassified_app_changes_select_their_whole_module(self):
+        cases = (("Tests/ShepherdAppIntegrationTests/Support/ComposerThread.swift", ci_plan.APP),
+                 ("Tests/ShepherdSessionsIntegrationTests/NativeThreadTests.swift", ci_plan.SES),
+                 ("Sources/ShepherdApp/AgentLayoutDeck.swift", ci_plan.APP),
+                 ("Packages/ShepherdUI/Sources/ShepherdUI/Tokens.swift", ci_plan.APP))
+        for path, pattern in cases:
+            with self.subTest(path=path):
+                self.assertIn(pattern, ci_plan.filters_for([path]))
+
+    def test_every_selected_pattern_must_match_native_test_ids(self):
+        ids = ["Module.Suite/a()", "Other.OtherSuite/b()"]
+        self.assertEqual(ci_plan.validated_filter(ids, [r"^Module\.", r"^Other\."]), r"(?:^Module\.)|(?:^Other\.)")
+        for patterns in ([], ["never_matches"], ["^Module", "renamed_suite"], ["("]):
+            with self.subTest(patterns=patterns), self.assertRaises((ValueError, re.error)):
+                ci_plan.validated_filter(ids, patterns)
+
+    def test_the_workflow_plan_emits_skip_fast_or_full_without_evaluating_paths(self):
+        script = run_script(JOBS["plan"])
+        fixture = '''git() { printf '%s\\n' "$CHANGED"; }
+        python3() { command "$PYTHON" "$PLANNER" "${@:2}"; }
+        '''
+        cases = (("docs/testing.md", "false", "false", False),
+                 ("Sources/ShepherdApp/Browser.swift", "false", "true", True),
+                 ("Sources/ShepherdApp/Browser.swift", "true", "true", False),
+                 (".github/workflows/ci.yml", "false", "true", False))
+        for changed, full, swift, selected in cases:
+            with self.subTest(changed=changed, full=full), tempfile.TemporaryDirectory() as directory:
+                output = Path(directory) / "output"
+                result = subprocess.run(["bash", "-e", "-c", fixture + script], cwd=directory,
+                                        env={**os.environ, "EVENT": "pull_request", "FULL": full,
+                                             "CHANGED": changed, "GITHUB_OUTPUT": str(output), "PYTHON": sys.executable,
+                                             "PLANNER": str(Path(ROOT) / "scripts/ci_plan.py")},
+                                        capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                fields = dict(line.split("=", 1) for line in output.read_text().splitlines())
+                self.assertEqual(fields["swift"], swift)
+                self.assertEqual(bool(json.loads(fields["filters"])), selected)
+
+    def test_full_mode_on_the_workflow_and_filters_are_passed_as_data(self):
+        plan = JOBS["plan"]
+        self.assertIn("github.event.pull_request.base.ref != 'nightly'", plan)
+        self.assertIn("contains(github.event.pull_request.labels.*.name, 'full-ci')", plan)
+        self.assertIn("args=(--full)", plan)
+        tests = JOBS["tests"]
+        self.assertIn("swift test list --skip-build", tests)
+        self.assertIn('filters=(--filter "$filter")', tests)
+        self.assertNotIn("eval ", tests)
+
+    def test_filtered_workflow_uses_native_ids_and_keeps_process_errors(self):
+        script = run_script(JOBS["tests"])
+        fixture = '''swift() {
+          if [ "$2" = list ]; then printf 'Module.Suite/a()\\n'; return 0; fi
+          case "$*" in *--filter*) ;; *) return 42;; esac
+          echo 'native filtered run'; return "$STATUS"
+        }
+        '''
+        for status in (0, 1, 134):
+            with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
+                result = subprocess.run(["bash", "-e", "-c", fixture + script], cwd=ROOT,
+                                        env={**os.environ, "RUNNER_TEMP": directory, "SWIFTPM_FLAGS": "",
+                                             "STATUS": str(status), "SWIFT_FILTERS": '["^Module\\\\."]'},
+                                        capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode == 0, status == 0, result.stderr)
+                self.assertIn("native filtered run", result.stdout)
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run(["bash", "-e", "-c", fixture + script], cwd=ROOT,
+                                    env={**os.environ, "RUNNER_TEMP": directory, "SWIFTPM_FLAGS": "",
+                                         "STATUS": "0", "SWIFT_FILTERS": '["missing"]'},
+                                    capture_output=True, text=True, timeout=5)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("no native tests matched", result.stderr)
+            self.assertFalse((Path(directory) / "swift-test.log").exists())
+
     def test_the_runner_exit_status_not_printed_fixtures_decides_test_success(self):
         script = run_script(JOBS["tests"])
         self.assertIn("swift test --no-parallel", script)
@@ -216,7 +327,7 @@ class PlanTests(unittest.TestCase):
             with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
                 result = subprocess.run(["bash", "-e", "-c", fixture + script],
                                         env={**os.environ, "RUNNER_TEMP": directory,
-                                             "SWIFTPM_FLAGS": "", "STATUS": str(status)},
+                                             "SWIFTPM_FLAGS": "", "STATUS": str(status), "SWIFT_FILTERS": "[]"},
                                         capture_output=True, text=True, timeout=5)
                 self.assertEqual(result.returncode == 0, status == 0, result.stderr)
                 self.assertIn("Test run with 5 tests failed", result.stdout)
