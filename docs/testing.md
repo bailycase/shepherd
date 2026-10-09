@@ -475,7 +475,8 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
 - **The Swift job** (`swift tests`) is `swift build --build-tests` on top of the last build, then
   `swift test --no-parallel --skip-build`, once, with a 60-minute ceiling for a cold hosted
   build and full suite. The job stages pi and puts its checksum-pinned Node on `GITHUB_PATH`
-  before tests; SDK fixtures that request `node` never depend on a system installation.
+  before tests. MCP auth fixtures resolve `TestNode.url` before their login shell resets PATH;
+  they run the installed pinned executable, not a different system Node or a missing bare name.
   The serial setting prevents Swift 6.3 from launching every process,
   socket and server test together. A full parallel self-hosted run timed out unrelated tests
   and aborted after 51 seconds. The app suites also retain `.mainActorExclusive`. There is no
@@ -546,6 +547,8 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
 - **The steer-send soak** runs the real-host send/scroll scenario once on CI, retaining every
   assertion. Local timing-enabled runs repeat it five times; `SHEPHERD_TIMING_TESTS=1` restores
   that repetition on CI too. No thread suite is excluded because it contains known issues.
+  `ThreadTailGuardTests` keeps a cached bottom marker visible with an 834pt measured gap and
+  requires the final landing. Current-row visibility alone cannot suppress bounded repair.
   The child-command routing test retires its success-phase async-let before starting the
   failure phase, keeping the same assertions without overlapping cleanup allocations.
   The paging regression checks both success and failure without moving the original visible
