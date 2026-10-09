@@ -106,10 +106,10 @@ Fill in the [pull request template](.github/pull_request_template.md). It asks f
 - for a feature that acts on its own, its bounds, where its data goes, what a restart and Stop do
   to it, and the decisions you made unasked ([docs/rules.md](docs/rules.md))
 
-CI runs a fast lane on a pull request into `nightly`: every unit test, a smoke set, and the
-integration suites your changed paths can affect (the run's summary says which and why). Add the
-`full-ci` label to run everything. A test that fails and then passes on its retry is reported as
-flaky, not hidden: fix it or say why you can't.
+CI runs every test once on a pull request (on the self-hosted Mac when a maintainer opened it,
+GitHub's macOS runner otherwise); a change to docs alone runs no Swift. A test that fails is red:
+there is no retry, so a flaky test is a bug to fix in the test. A push to `nightly` builds and
+ships without tests.
 
 Don't claim checks passed unless you ran them and saw the result.
 

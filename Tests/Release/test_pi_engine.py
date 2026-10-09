@@ -691,11 +691,14 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("path: .build/pi-engine-cache", cache)
         self.assertIn("hashFiles('scripts/pi-engine-pin.json')", cache)
 
-    def test_a_cached_build_from_another_commit_is_never_restored(self):
+    def test_derived_data_persists_locally_and_is_cached_only_on_hosted_runners(self):
         cache = self.step("Cache DerivedData")
-        # A changed pin necessarily changes the commit, as does any other build input.
+        self.assertIn("if: runner.environment == 'github-hosted'", cache)
         self.assertIn("${{ inputs.source_sha }}", cache)
-        self.assertNotIn("restore-keys:", cache)
+        self.assertIn("hashFiles('scripts/pi-engine-pin.json', 'Package.resolved')", cache)
+        over = self.step("Start over when the toolchain changed")
+        self.assertIn("marker=build/ci-toolchain", over)
+        self.assertIn("rm -rf build", over)
 
     def test_the_verified_app_is_the_one_signed_and_node_is_never_stripped(self):
         names = [title for title, _ in self.steps()]
@@ -712,8 +715,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn('SHEPHERD_ENGINE_SMOKE="$PRODUCTS/$PRODUCT"', smoke)
         self.assertIn("test_pi_engine_sdk.py", smoke)
         ci = read(".github", "workflows", "ci.yml")
-        self.assertIn("SHEPHERD_ENGINE_SMOKE=.build/pi-engine", ci)
-        self.assertIn("test_pi_engine_sdk.py", ci)
+        self.assertIn("python3 scripts/pi_engine.py stage", ci, "the subagent file checks read the staged engine")
 
     def test_signing_passes_the_engine_entitlements(self):
         sign = self.step("Sign")

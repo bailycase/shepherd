@@ -104,7 +104,7 @@ swift build                                   # every package target
 swift test --filter UnitTests                 # fast tier: seconds
 swift test --filter IntegrationTests          # real server, stub pi, git, off-screen windows
 SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter PreviewTests   # PNG of every surface
-CI=true swift test --no-parallel              # what CI's full lane runs (four shards, timing tests skipped)
+CI=true swift test                            # what CI runs, timing tests skipped
 PI_PACKAGE_DIR="$(npm root -g)/@earendil-works/pi-coding-agent" node --test Tests/Extensions/*.test.mjs
 python3 -m unittest discover -s Tests/Release # release rules, docs size and link guards
 python3 scripts/sync-embedded-extension.py <swift-file> <static-name> <Extensions/file>
@@ -114,8 +114,8 @@ python3 scripts/design_section.py "<board or heading>"   # one spec from docs/de
 Run the Mac app from `Shepherd.xcodeproj` (scheme `Shepherd (Dev)`, My Mac); there is no
 `swift run` path. Schemes, support folders, the pi engine and Nightly:
 [docs/build-and-run.md](docs/build-and-run.md).
-A pull request into `nightly` runs CI's fast lane, a pull request into `master` or labelled
-`full-ci` the full one; a docs-only change runs no Swift tests ([docs/testing.md](docs/testing.md)).
+A pull request runs every test once (the self-hosted Mac for a maintainer's PR); docs alone run
+no Swift. A push to `nightly` builds and ships without tests ([docs/testing.md](docs/testing.md)).
 
 ## Map
 

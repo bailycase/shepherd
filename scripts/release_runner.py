@@ -16,7 +16,9 @@ import urllib.request
 
 import release
 
-QUEUE = 180
+# A queued local build is usually waiting behind a pull request's CI on the same runner, so the
+# window covers one such run; an offline runner costs this long once before the hosted fallback.
+QUEUE = 900
 EXECUTION = 3600
 CANCEL = 120
 INTERVAL = 15
