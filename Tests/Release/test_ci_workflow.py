@@ -351,6 +351,20 @@ class PlanTests(unittest.TestCase):
             self.assertIn("no native tests matched", result.stderr)
             self.assertFalse((Path(directory) / "swift-test.log").exists())
 
+    def test_missing_gui_session_fails_before_compiling_or_testing_on_the_mini(self):
+        step = JOBS["tests"].split("- name: Require a logged-in build account for AppKit tests", 1)[1].split("- uses:", 1)[0]
+        self.assertIn("if: runner.environment == 'self-hosted'", step)
+        script = run_script(step)
+        fixture = 'id() { echo 502; }; launchctl() { [ "$1 $2" = "print gui/502" ] || exit 42; return "$GUI_STATUS"; };\n'
+        for status, expected in ((0, 0), (1, 1)):
+            result = subprocess.run(["bash", "-c", fixture + script],
+                                    env={**os.environ, "GUI_STATUS": str(status)},
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            self.assertEqual(result.returncode, expected, result.stderr)
+            if status:
+                self.assertIn("::error::UI tests need the build account logged into macOS", result.stdout)
+        self.assertLess(JOBS["tests"].index("Require a logged-in build account"), JOBS["tests"].index("actions/checkout@v4"))
+
     def test_fixtures_use_the_staged_pinned_node_without_a_system_dependency(self):
         tests = JOBS["tests"]
         self.assertIn('echo "$PWD/.build/pi-engine/Helpers" >> "$GITHUB_PATH"', tests)

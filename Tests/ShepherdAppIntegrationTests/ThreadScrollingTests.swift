@@ -602,6 +602,8 @@ struct ThreadScrollingTests {
         try await eventuallyOnMain("the visible top to request history") { thread.olderReply != nil }
         try await thread.settle()
         let before = try #require(try thread.position(of: "Question 2", diagnoseMissing: true))
+        let beforeClip = thread.scrollView.contentView.bounds
+        let beforeDocument = thread.scrollView.documentView?.bounds
         var page = ThreadHarness.snapshot(count: 12, running: false, prefix: "older", paragraphs: 7)
         for index in page.messages.indices where page.messages[index].role == "user" {
             page.messages[index].blocks = [NativeThreadBlock(kind: .text, text: "Older question \(index)")]
@@ -616,7 +618,11 @@ struct ThreadScrollingTests {
         try await thread.settle()
 
         #expect(thread.olderRequests == 1)
-        let after = try #require(try thread.position(of: "Question 2", diagnoseMissing: true))
+        let drawn = try thread.position(of: "Question 2", diagnoseMissing: true)
+        if drawn == nil || abs((drawn ?? before) - before) >= 2 {
+            print("Paging before/after: label=\(before)/\(String(describing: drawn)), clip=\(beforeClip)/\(thread.scrollView.contentView.bounds), document=\(String(describing: beforeDocument))/\(String(describing: thread.scrollView.documentView?.bounds))")
+        }
+        let after = try #require(drawn)
         #expect(abs(after - before) < 2, "prepending moved the visible turn from \(before) to \(after)")
     }
 

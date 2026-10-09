@@ -180,6 +180,17 @@ struct TerminalSessionTests {
         #expect(await h.server.sessionInfo(sessionID: info.id)?.isAlive == false)
     }
 
+    @Test(arguments: [false, true])
+    func scratchShellsSkipGlobalStartupOnlyWhenInteractive(interactive: Bool) async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let flag = interactive ? "-i" : ""
+        let info = try await h.shell("exec /bin/zsh \(flag) -l -c 'printf \"startup-options:%s\\n\" \"${options[globalrcs]}\"'")
+        let expected = "startup-options:" + (interactive ? "off" : "on")
+        try await h.waitForScreen(info.id, toContain: expected)
+        #expect(await h.screen(info.id).contains(expected))
+    }
+
     // MARK: - Commands typed into a fresh shell
 
     /// Typed before the shell reads, the terminal would echo the command above the prompt and

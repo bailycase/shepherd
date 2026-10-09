@@ -117,7 +117,11 @@ stores crashed macOS 26's bundle-less test runner; the bundled app still uses pe
   `bin/` first on `PATH`, holding stand-ins for `gh` and `pi` that refuse to run, and the scratch
   `ZDOTDIR`'s `.zshenv` and `.zlogin` keep it first in every zsh a test starts. Without them, a
   login shell from a minimal environment (Xcode, launchd) reaches the user's own `gh` and `pi`,
-  because the system startup files rebuild PATH. The root is removed at exit.
+  because the system startup files rebuild PATH. Normal scratch interactive zsh shells also
+  unset `GLOBAL_RCS`, preventing a machine's later global completion/security prompts from
+  consuming the fixture's commands. Local scratch startup files still run; noninteractive
+  login shells and opt-in live-model runs retain global startup coverage. The root is removed
+  at exit. `TerminalSessionTests` checks both interactive and noninteractive modes.
 - The app's engine in a test is `SHEPHERD_PI_ENGINE`, set to `bin/pi-engine`, which refuses to
   run until a test installs the stub over it. No app-level test reaches pi through PATH, and
   nothing a test does may write into `pi-agent/` ("your pi"; `PiHomeLaunchTests` checks it stays
@@ -479,6 +483,10 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
   settle call sites and RGB-change bounds, clipboard selection and a fresh named-board control,
   terminal marker coordinates, paging geometry and hidden-spinner state. They retain their
   assertions and deadlines, and log no raw terminal output or user clipboard contents.
+  Settle failures report wake-up, layout and capture durations separately; a delayed timer
+  and a slow render are not a reason to change pixel comparisons. The terminal fixture builds
+  its output marker with `printf`, so a command echo or shell error cannot satisfy the output
+  check, regardless of the visible screen's cursor position.
 - **Which tests run:** ordinary PRs into `nightly` retain every unit suite, the previous 13
   smoke suites and the feature/module suites affected by changed paths. The smoke set includes
   `NativeThreadTests`, so RPC child commands never depend on a feature rule. Thread and layout
@@ -501,6 +509,10 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
   exception; it uses the same actor, triggering-actor and workflow-identity fence. Its aggregate
   check is named `UI diagnostics`, so it cannot replace the required `CI` check. The planner
   validates its fixed menu, clipboard, pane, paging and idle-cost filters against native test IDs.
+  Self-hosted test jobs require the build account's `gui/<uid>` launchd domain before checkout
+  or compilation. Keep that account logged into macOS, using Fast User Switching to preserve
+  other sessions. The preflight fails with an actionable error rather than running AppKit
+  and pasteboard tests without a GUI login. It never logs in an account or takes focus.
   Names alone grant no trust; `Tests/Release/test_ci_runner.py` exercises both
   allowed IDs and each rejected condition without contacting GitHub. The job references
   `SELFHOSTED_HOSTNAME` in its env to mask the machine name in the runner's setup log.
