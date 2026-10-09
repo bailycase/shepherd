@@ -109,6 +109,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.source_sha }}
+          clean: ${{ runner.environment != 'self-hosted' }}
           persist-credentials: false
       - name: Fence the build on its active parent
         env:
@@ -117,26 +118,30 @@ jobs:
 
       - name: Xcode version
         id: xcode
-        run: echo "version=$(xcodebuild -version | shasum -a 256 | cut -c1-12)" >> "$GITHUB_OUTPUT"
-      # Hosted runners start empty, so the newest build of this configuration is restored (an
-      # incremental xcodebuild on top of it) and this one saved. On the self-hosted runner build/
-      # stays on disk between runs. A new Xcode starts over either way: the key names it.
+        run: |
+          toolchain=$({ xcodebuild -version; xcrun --show-sdk-version; swift --version; } 2>/dev/null)
+          echo "version=$(shasum -a 256 <<<"$toolchain" | cut -c1-12)" >> "$GITHUB_OUTPUT"
+          # A previous cross-commit release cache left transitive ShepherdCore objects stale.
+          # Reuse products only while shared library inputs match, not across model/ABI changes.
+          shared=$(git ls-files -s Sources Packages Package.swift Package.resolved Shepherd.xcodeproj scripts/pi-engine-pin.json scripts/pi_engine.py ':(exclude)Sources/ShepherdApp/**' | shasum -a 256 | cut -c1-12)
+          echo "shared=$shared" >> "$GITHUB_OUTPUT"
+      # Hosted caches and persistent local products share the same invalidation rule.
       - name: Cache DerivedData
         if: runner.environment == 'github-hosted'
         uses: actions/cache@v4
         with:
           path: build
-          key: xcode-${{ runner.os }}-${{ env.CONFIGURATION }}-${{ steps.xcode.outputs.version }}-${{ hashFiles('scripts/pi-engine-pin.json', 'Package.resolved') }}-${{ inputs.source_sha }}
+          key: xcode-${{ runner.os }}-${{ env.CONFIGURATION }}-${{ steps.xcode.outputs.version }}-${{ steps.xcode.outputs.shared }}-${{ inputs.source_sha }}
           restore-keys: |
-            xcode-${{ runner.os }}-${{ env.CONFIGURATION }}-${{ steps.xcode.outputs.version }}-${{ hashFiles('scripts/pi-engine-pin.json', 'Package.resolved') }}-
-      - name: Start over when the toolchain changed
+            xcode-${{ runner.os }}-${{ env.CONFIGURATION }}-${{ steps.xcode.outputs.version }}-${{ steps.xcode.outputs.shared }}-
+      - name: Start over when shared build inputs changed
         env:
-          VERSION: ${{ steps.xcode.outputs.version }}
+          VERSION: ${{ steps.xcode.outputs.version }}-${{ steps.xcode.outputs.shared }}
         run: |
           marker=build/ci-toolchain
           if [ -d build ] && [ "$(cat "$marker" 2>/dev/null)" != "$VERSION" ]; then
-            echo "DerivedData was built by $(cat "$marker" 2>/dev/null || echo nothing), toolchain is $VERSION: starting over"
-            rm -rf build
+            echo "Shared build inputs changed: discarding DerivedData products"
+            find build -mindepth 1 -maxdepth 1 ! -name SourcePackages -exec rm -rf {} +
           fi
           mkdir -p build && echo "$VERSION" > "$marker"
 
@@ -270,18 +275,16 @@ jobs:
           cp -R "$PRODUCTS/$PRODUCT" "$STAGE/"
           ln -s /Applications "$STAGE/Applications"
           hdiutil create -volname "$VOLUME" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
-          # The stapled app is inside. The DMG is submitted for its own ticket too, so a
-          # mount passes Gatekeeper online. Ad-hoc builds skip all of it.
+          # Both app and DMG carry accepted tickets, including offline at mount time.
           if [[ '${{ steps.cert.outputs.identity }}' != '-' ]]; then
             codesign --force --timestamp --sign '${{ steps.cert.outputs.identity }}' "$DMG"
             # notary.p8 was written by the Notarize step.
-            # No --wait and no staple: the app inside already carries its ticket, and Gatekeeper
-            # fetches the DMG's online once Apple has it (minutes), so the release never waits
-            # a second time on Apple.
             xcrun notarytool submit "$DMG" \
               --key "$RUNNER_TEMP/notary.p8" \
               --key-id "$NOTARY_KEY_ID" \
-              --issuer "$NOTARY_ISSUER_ID"
+              --issuer "$NOTARY_ISSUER_ID" \
+              --wait
+            xcrun stapler staple "$DMG"
           fi
           shasum -a 256 "$DMG"
 

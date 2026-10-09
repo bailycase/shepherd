@@ -6,8 +6,10 @@ python3 -m unittest discover -s Tests/Release -v
 import io
 import os
 import re
+from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import unittest
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -104,6 +106,11 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertIn("python3 scripts/ci_plan.py changed.txt", JOBS["plan"])
         self.assertIn("swift: ${{ steps.plan.outputs.swift }}", JOBS["plan"])
 
+    def test_selfhosted_checkout_preserves_build_outputs_without_retaining_git_credentials(self):
+        checkout = JOBS["tests"].split("uses: actions/checkout@v4", 1)[1].split("- uses:", 1)[0]
+        self.assertIn("clean: ${{ runner.environment != 'self-hosted' }}", checkout)
+        self.assertIn("persist-credentials: false", checkout)
+
     def test_the_swift_job_is_one_incremental_build_and_one_swift_test(self):
         tests = JOBS["tests"]
         self.assertIn("uses: ./.github/actions/swift-build", tests)
@@ -139,6 +146,8 @@ class SwiftBuildActionTests(unittest.TestCase):
     def test_a_persistent_build_is_rebuilt_only_when_the_toolchain_changes_or_on_request(self):
         self.assertIn("marker=.build/ci-toolchain", ACTION)
         self.assertIn('[ "$CLEAN" = true ] ||', ACTION)
+        self.assertLess(ACTION.index("- name: Restore dependency and build caches"),
+                        ACTION.index("- name: Start over when the toolchain changed"))
         self.assertIn('[ "$(cat "$marker" 2>/dev/null)" != "$VERSION" ]', ACTION)
         self.assertIn("! -name pi-engine-cache", ACTION, "the engine's downloads survive a clean build")
 
@@ -147,6 +156,36 @@ class SwiftBuildActionTests(unittest.TestCase):
         self.assertIn("if: runner.environment == 'github-hosted'", cache)
         self.assertIn("hashFiles('Package.resolved')", cache)
         self.assertIn("restore-keys:", cache)
+
+    def test_hosted_pull_requests_restore_but_never_save_build_caches(self):
+        self.assertIn("uses: actions/cache/restore@v4", ACTION)
+        save = ACTION.split("- name: Save the hosted branch build", 1)[1]
+        self.assertIn("runner.environment == 'github-hosted' && github.event_name == 'push'", save)
+        self.assertIn("uses: actions/cache/save@v4", save)
+        self.assertGreater(ACTION.index("- name: Save the hosted branch build"), ACTION.index("swift build --build-tests"))
+
+    def test_clean_or_changed_toolchains_drop_products_but_keep_downloads(self):
+        step = ACTION.split("- name: Start over when the toolchain changed", 1)[1].split("- name: Build", 1)[0]
+        script = run_script(step)
+        for previous, clean, survives in (("current", "false", True), ("old", "false", False),
+                                         ("current", "true", False), (None, "false", False)):
+            with self.subTest(previous=previous, clean=clean), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                build = root / ".build"
+                for name in ("checkouts", "repositories", "artifacts", "pi-engine-cache", "arm64-apple-macosx"):
+                    (build / name).mkdir(parents=True)
+                    (build / name / "fixture").write_text("keep or rebuild")
+                (build / "workspace-state.json").write_text("resolved")
+                if previous:
+                    (build / "ci-toolchain").write_text(previous + "\n")
+                result = subprocess.run(["bash", "-e", "-c", script], cwd=root,
+                                        env={**os.environ, "VERSION": "current", "CLEAN": clean},
+                                        capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual((build / "arm64-apple-macosx").exists(), survives)
+                for name in ("checkouts", "repositories", "artifacts", "pi-engine-cache", "workspace-state.json"):
+                    self.assertTrue((build / name).exists(), name)
+                self.assertEqual((build / "ci-toolchain").read_text(), "current\n")
 
     def test_the_stale_transitive_module_workaround_runs_before_every_build(self):
         build = ACTION.split("- name: Build\n", 1)[1]
@@ -174,13 +213,18 @@ class PlanTests(unittest.TestCase):
     def test_the_summary_keeps_issues_and_the_verdict_and_exits_with_it(self):
         passed = io.StringIO("✔ Test a() passed after 0.1 seconds.\n✔ Test run with 12 tests in 3 suites passed after 1.0 seconds.\n")
         self.assertEqual(ci_plan.summarize(passed, io.StringIO()), 0)
+        for prefix in ("✔ ", "\U0010105b  ", ""):
+            self.assertEqual(ci_plan.summarize(io.StringIO(prefix + "Test run with 1 test passed after 0.1 seconds.\n"), io.StringIO()), 0)
         out = io.StringIO()
         failed = io.StringIO("✘ Test b() recorded an issue at X.swift:3: Expectation failed: 1 == 2\n"
                              "✘ Test run with 12 tests in 3 suites failed after 1.0 seconds with 1 issue.\n")
         self.assertEqual(ci_plan.summarize(failed, out), 1)
         self.assertIn("recorded an issue", out.getvalue())
         self.assertIn("failed after", out.getvalue())
-        for text in ("", "✔ Test run with 0 tests in 0 suites passed after 0.0 seconds.\n"):
+        failed_then_passed = "✘ Test run with 2 tests in 1 suite failed after 1.0 seconds with 1 issue.\n" + passed.getvalue()
+        self.assertEqual(ci_plan.summarize(io.StringIO(failed_then_passed), io.StringIO()), 1)
+        for text in ("", "✔ Test run with 0 tests in 0 suites passed after 0.0 seconds.\n",
+                     '◇ Test case passing output → "✔ Test run with 12 tests in 3 suites passed after 1.0 seconds." started.\n'):
             with self.subTest(text=text):
                 self.assertEqual(ci_plan.summarize(io.StringIO(text), io.StringIO()), 1)
 

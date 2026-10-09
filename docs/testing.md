@@ -485,11 +485,12 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
   no workflow guard replaces it.
 - **The persistent build:** on the self-hosted runner the checkout, `.build` and the pi engine's
   downloads (`.build/pi-engine-cache`) stay on disk between jobs, so a run is an incremental
-  build (a minute or two for a typical change, more for one to ShepherdCore) plus the tests. The
+  build plus the tests. Measure cold and warm runs before assigning a time budget. The
   runner's hooks leave `build/` and `.build/` alone and remove them only when the disk is under
   40 GiB (a clean build follows); a job never starts under 20 GiB. The swift-build action
   records the toolchain that built `.build` (`.build/ci-toolchain`) and starts over when Xcode
-  or the SDK changed, or when a manual run asks for `clean`. SwiftPM's native build system
+  or the SDK changed, or when a manual run asks for `clean`. Checkout disables ignored-file cleanup
+  on the self-hosted runner and retains no repository credentials. SwiftPM's native build system
   reruns a target only when a *direct* dependency's module changes, so a change to
   `ShepherdCore` could leave `ShepherdProtocolUnitTests` (which calls it through
   `ShepherdProtocol`) compiled against the old one; the action removes `swift-version-*.txt`,
@@ -509,5 +510,6 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
   installed with lifecycle scripts disabled and cached on the pin.
 - **Checking a CI change:** a pull request's run exercises the pull request's copy of the
   workflow. On the self-hosted runner, push a small source change and read the build step: it
-  compiles only the modules the change touched. A corrupt persistent build: run the workflow by
-  hand with `clean`, or remove `.build` under the runner's checkout as the build account.
+  records the work required by changed source and module inputs. A corrupt persistent build:
+  run the workflow by hand with `clean`, or remove `.build` in the idle runner's checkout as the
+  build account.

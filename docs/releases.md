@@ -204,6 +204,13 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
     selected attempt's artifact and verifies that manifest before any tag/release mutation.
     Fallback never reacts to publication/appcast failure or partial success: existing draft-first
     release publication, immutable tags and the serialized appcast job remain the boundary.
+  - Self-hosted keeps DerivedData and verified pi downloads between jobs. Checkout preserves
+    ignored build outputs but no Git credentials. The build marker combines Xcode, Swift, SDK,
+    shared library source and package/project/engine inputs. Changing any of those discards
+    products but keeps package downloads, preventing reuse across a transitive model/ABI change.
+    Changes confined to ShepherdApp can build incrementally. Hosted cache restores use the same
+    marker inputs. Both the app and DMG still wait for notarization acceptance and receive
+    stapled tickets before package provenance is recorded.
   - Self-hosted uses a temporary signing keychain with a random password, preserves/restores the
     exact existing user keychain search list and removes imported certificate/notary files in
     an `always()` cleanup step, including after failure/cancellation. Forced runner termination

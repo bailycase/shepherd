@@ -27,8 +27,21 @@ runs:
         echo "$toolchain"
         echo "version=$(shasum -a 256 <<<"$toolchain" | cut -c1-12)" >> "$GITHUB_OUTPUT"
 
-    # A persistent build is only as good as its toolchain: a new Xcode or SDK under an old
-    # `.build` links against the wrong modules, so the marker names the toolchain that built it.
+    # Hosted runners start empty. A pull request may restore its base branch's cache, but
+    # never saves one. The self-hosted checkout uses its existing .build instead.
+    - name: Restore dependency and build caches
+      id: cache
+      if: runner.environment == 'github-hosted'
+      uses: actions/cache/restore@v4
+      with:
+        path: .build
+        key: spm-${{ runner.os }}-${{ steps.swift.outputs.version }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
+        restore-keys: |
+          spm-${{ runner.os }}-${{ steps.swift.outputs.version }}-${{ hashFiles('Package.resolved') }}-
+          spm-${{ runner.os }}-${{ steps.swift.outputs.version }}-
+
+    # Validate after restoring too. Keep dependency checkouts and verified pi downloads when
+    # the toolchain changes or clean=true, but never keep products from the old build.
     - name: Start over when the toolchain changed or a clean build was asked for
       shell: bash
       env:
@@ -36,25 +49,13 @@ runs:
         CLEAN: ${{ inputs.clean }}
       run: |
         marker=.build/ci-toolchain
-        if [ "$CLEAN" = true ] || { [ -d .build ] && [ "$(cat "$marker" 2>/dev/null)" != "$VERSION" ]; }; then
+        if [ -d .build ] && { [ "$CLEAN" = true ] || [ "$(cat "$marker" 2>/dev/null)" != "$VERSION" ]; }; then
           echo "building from scratch (clean=$CLEAN, built by $(cat "$marker" 2>/dev/null || echo nothing), toolchain $VERSION)"
           find .build -mindepth 1 -maxdepth 1 ! -name repositories ! -name checkouts \
-            ! -name artifacts ! -name workspace-state.json ! -name pi-engine-cache -exec rm -rf {} + 2>/dev/null || true
+            ! -name artifacts ! -name workspace-state.json ! -name pi-engine-cache -exec rm -rf {} +
         fi
         mkdir -p .build
         echo "$VERSION" > "$marker"
-
-    # Hosted runners start empty: about 1 GB of dependency git packs and the branch's newest
-    # build products. Saved only on a push (a pull request's run saves nothing).
-    - name: Restore dependency and build caches
-      if: runner.environment == 'github-hosted'
-      uses: actions/cache@v4
-      with:
-        path: .build
-        key: spm-${{ runner.os }}-${{ steps.swift.outputs.version }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
-        restore-keys: |
-          spm-${{ runner.os }}-${{ steps.swift.outputs.version }}-${{ hashFiles('Package.resolved') }}-
-          spm-${{ runner.os }}-${{ steps.swift.outputs.version }}-
 
     # SwiftPM's native build system gives each Swift target's compile command only its direct
     # dependencies' modules as inputs, so a target using a transitive module can be left stale
@@ -73,3 +74,10 @@ runs:
           mkdir -p "$d/PackageFrameworks"
           ln -sfn "$PWD/$d/Sparkle.framework" "$d/PackageFrameworks/Sparkle.framework"
         done
+
+    - name: Save the hosted branch build
+      if: runner.environment == 'github-hosted' && github.event_name == 'push' && steps.cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: .build
+        key: ${{ steps.cache.outputs.cache-primary-key }}

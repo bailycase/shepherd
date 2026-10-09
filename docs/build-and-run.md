@@ -59,5 +59,5 @@ SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter PreviewTests
 swift test                                   # everything (previews skip without SHEPHERD_PREVIEW_DIR)
 CI=true swift test                          # what CI runs: timing-sensitive tests skipped
 PI_PACKAGE_DIR="$(npm root -g)/@earendil-works/pi-coding-agent" node --test Tests/Extensions/*.test.mjs
-python3 -m unittest discover -s Tests/Release   # the release workflow's rules (scripts/release.py), CI's stale-link check
+python3 -m unittest discover -s Tests/Release   # release rules, CI planning and workflow checks
 ```
