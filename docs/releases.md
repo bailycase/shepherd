@@ -87,8 +87,10 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   Releases upload as drafts, including `shepherd-appcast.json` eligibility metadata, and become
   public only after their required assets exist. Publication ignores drafts, excludes marked
   ad-hoc releases, and refuses malformed present metadata. Unmarked historical releases retain
-  their legacy eligibility. The publisher resolves Sparkle from the pinned package versions;
-  it needs the Sparkle key and repository write token, not the Developer ID certificate.
+  their legacy eligibility. The publisher fetches only Sparkle's manifest at the exact revision
+  in `Package.resolved`, then lets SwiftPM resolve and checksum-verify its binary tools in a
+  temporary package directory. It never resolves Shepherd's terminal/parser dependency graph.
+  It needs the Sparkle key and repository write token, not the Developer ID certificate.
 - **Two apps, never each other's updates.** Shepherd Nightly has its own bundle id, name
   (`Shepherd Nightly.app`), DMG and feed, and every feed carries one app only. Sparkle is not
   the boundary: its installer picks the new app in an archive by the host's *file name* first
