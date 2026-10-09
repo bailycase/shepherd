@@ -100,7 +100,9 @@ stores crashed macOS 26's bundle-less test runner; the bundled app still uses pe
     without having hung.
 - `.serialized` orders the tests inside its own suite and nothing more. It does not isolate a
   suite from any other: every suite of a target (with SwiftPM's native build system, of every
-  target) shares one process.
+  target) shares one process. `RPCSessionTests.historyDecodeStillProgressesAfterSignInBridgesAreReleased`
+  releases sign-in bridges before requesting a 2 MiB history response; abandoned EOF readers
+  must not starve the utility queue that decodes it. Full sessions runs protect this ordering.
 
 **Process-wide state is set once, never by a test.** Tests never call `setenv`, `unsetenv`,
 `signal`, `chdir`, or `umask`, or change any other global that a concurrent test could observe.
