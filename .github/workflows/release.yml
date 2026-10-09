@@ -130,7 +130,7 @@ jobs:
       - name: Select the local package or safe hosted fallback
         id: select
         env:
-          SELFHOSTED_ENABLED: ${{ vars.SHEPHERD_SELFHOSTED_ENABLED }}
+          SELFHOSTED_ENABLED: ${{ vars.SHEPHERD_SELFHOSTED_ENABLED == 'true' }}
         run: |
           if [[ "$SELFHOSTED_ENABLED" == true ]]; then
             python3 scripts/release_runner.py select
