@@ -109,7 +109,7 @@ jobs:
     needs: plan
     if: fromJSON(needs.plan.outputs.plan).build && fromJSON(needs.plan.outputs.plan).channel == 'nightly'
     runs-on: ubuntu-latest
-    timeout-minutes: 70
+    timeout-minutes: 80
     permissions:
       contents: read
       actions: write
@@ -243,9 +243,22 @@ jobs:
           if [[ -z "$SPARKLE_PRIVATE_KEY" ]]; then
             echo "No SPARKLE_PRIVATE_KEY secret; skipping appcast." && exit 0
           fi
-          # This job has no build products. Resolve pinned tools, never a floating download.
-          swift package resolve --force-resolved-versions
-          BIN=$(find .build -path '*artifacts*Sparkle/bin' -type d | head -1)
+          # Resolve only Sparkle's manifest at our locked revision. SwiftPM verifies its
+          # binary checksum, without fetching Shepherd's unrelated terminal/parser packages.
+          revision=$(python3 - <<'PYTHON'
+          import json, re
+          pins = [p for p in json.load(open("Package.resolved"))["pins"] if p["identity"] == "sparkle"]
+          if len(pins) != 1 or not re.fullmatch(r"[0-9a-f]{40}", pins[0]["state"]["revision"]):
+              raise SystemExit("Expected one pinned Sparkle revision")
+          print(pins[0]["state"]["revision"])
+          PYTHON
+          )
+          tools=$(mktemp -d "$RUNNER_TEMP/sparkle-tools.XXXXXX")
+          curl --fail --silent --show-error --location --connect-timeout 10 --max-time 60 \
+            "https://raw.githubusercontent.com/sparkle-project/Sparkle/$revision/Package.swift" \
+            -o "$tools/Package.swift"
+          swift package --package-path "$tools" resolve
+          BIN=$(find "$tools/.build/artifacts" -path '*/Sparkle/bin' -type d)
           test -x "$BIN/generate_appcast"
           echo "$SPARKLE_PRIVATE_KEY" > "$RUNNER_TEMP/sparkle_key"
 

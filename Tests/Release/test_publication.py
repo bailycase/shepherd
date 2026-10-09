@@ -39,6 +39,16 @@ class PublicationTests(unittest.TestCase):
         self.env = {**os.environ, "PATH": str(self.bin) + os.pathsep + os.environ["PATH"],
                     "FAKE_RELEASES": str(self.state), "FAKE_LOG": str(self.log),
                     "SPARKLE_PRIVATE_KEY": "fixture-not-secret", "TAG": "trigger", "GH_TOKEN": "fake"}
+        self.pin = {"identity": "sparkle", "state": {"revision": "c" * 40}}
+        self.program("curl", '''#!/usr/bin/env python3
+import os, sys
+from pathlib import Path
+args=sys.argv[1:]
+expected='https://raw.githubusercontent.com/sparkle-project/Sparkle/'+'c'*40+'/Package.swift'
+if expected not in args: sys.exit(42)
+if os.environ.get('FAKE_MANIFEST_FAIL'): sys.exit(23)
+Path(args[args.index('-o')+1]).write_text('// fixture manifest at the locked revision')
+''')
         self.program("gh", '''#!/usr/bin/env python3
 import json, os, sys
 from pathlib import Path
@@ -68,7 +78,11 @@ elif args[:2]==['release','upload']: pass
 else: raise RuntimeError(args)
 ''')
         self.program("swift", '''#!/bin/sh
-[ "$*" = "package resolve --force-resolved-versions" ] || exit 42
+[ "$#" = 4 ] && [ "$1" = package ] && [ "$2" = --package-path ] && [ "$4" = resolve ] || exit 42
+tools="$3"
+[ -s "$tools/Package.swift" ] || exit 42
+# Native SwiftPM refuses corrupted binary checksums before any executable is run.
+[ -z "${FAKE_RESOLVE_FAIL:-}" ] || exit 23
 if [ -n "${FAKE_GATE:-}" ]; then
   touch "$FAKE_GATE/entered"
   n=0
@@ -77,8 +91,9 @@ if [ -n "${FAKE_GATE:-}" ]; then
     sleep 0.01
   done
 fi
-mkdir -p .build/artifacts/Sparkle/bin
-cp "$FAKE_GENERATOR" .build/artifacts/Sparkle/bin/generate_appcast
+mkdir -p "$tools/.build/artifacts/Sparkle/bin"
+[ -z "${FAKE_TOOL_MISSING:-}" ] || exit 0
+cp "$FAKE_GENERATOR" "$tools/.build/artifacts/Sparkle/bin/generate_appcast"
 ''')
         generator = self.program("generator", '''#!/usr/bin/env python3
 import sys
@@ -98,7 +113,7 @@ target.write_text('<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespac
     def git(self, *args, cwd=None):
         return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True).stdout
 
-    def publish(self, releases, expected=0):
+    def publish(self, releases, expected=0, pins=None):
         self.state.write_text(json.dumps(releases))
         checkout = self.root / ("publisher-" + str(len(list(self.root.glob('publisher-*')))))
         self.git("clone", str(self.remote), str(checkout))
@@ -110,6 +125,7 @@ target.write_text('<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespac
         (checkout / "scripts").mkdir()
         for file in ("release.py", "pi_engine.py"):
             shutil.copyfile(ROOT / "scripts" / file, checkout / "scripts" / file)
+        (checkout / "Package.resolved").write_text(json.dumps({"pins": [self.pin] if pins is None else pins}))
         temp = checkout / "temp"
         temp.mkdir()
         result = subprocess.run(["bash", "-c", shell_step("Update appcasts")], cwd=checkout,
@@ -159,6 +175,23 @@ target.write_text('<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespac
             raise failures[0]
         self.assertIn('v1.1.0', self.feeds())
         self.assertIn('v1.0.0', self.feeds())
+
+    def test_tool_acquisition_failures_never_publish_or_prune(self):
+        self.publish([{"tag": "v1.0.0"}])
+        before = self.feeds()
+        releases = [{"tag": f"nightly-20261001000{n}", "asset": "Shepherd-Nightly.dmg"} for n in range(6, 0, -1)]
+        for flag, status in (("FAKE_MANIFEST_FAIL", 23), ("FAKE_RESOLVE_FAIL", 23), ("FAKE_TOOL_MISSING", 1)):
+            with self.subTest(flag=flag):
+                self.env[flag] = "1"
+                self.publish(releases, expected=status)
+                self.env.pop(flag)
+                self.assertEqual(self.feeds(), before)
+                self.assertEqual(json.loads(self.state.read_text()), releases)
+        for pins in ([], [self.pin, self.pin], [{"identity": "sparkle", "state": {"revision": "../floating"}}]):
+            with self.subTest(pins=pins):
+                self.publish(releases, expected=1, pins=pins)
+                self.assertEqual(self.feeds(), before)
+                self.assertEqual(json.loads(self.state.read_text()), releases)
 
     def test_release_upload_is_draft_first_and_records_signing_eligibility(self):
         (self.root / "Shepherd.dmg").write_bytes(b"fixture archive")

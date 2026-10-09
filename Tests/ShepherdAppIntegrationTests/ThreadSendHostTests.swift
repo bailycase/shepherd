@@ -36,7 +36,9 @@ struct ThreadSendHostTests {
     /// arrived while the guard walked: the follower stands aside then, and the repair was over once the
     /// marker was back in view.
     @Test func aSteerNowSendLeavesTheThreadRestingOnItsTail() async throws {
-        for run in 0..<5 {
+        // CI keeps the regression check; local runs also repeat the timing-sensitive soak.
+        let runs = TimingTests.enabled ? 5 : 1
+        for run in 0..<runs {
             try await Self.withRig(size: T.short, mix: .moderate) { rig in
                 let trace = rig.trace
                 trace.mark("first send")

@@ -1,60 +1,40 @@
 name: CI
 
-# Two lanes (docs/testing.md). A pull request into nightly gets the fast lane: the unit
-# tier, a smoke set, and the integration suites its changed paths can affect, chosen by
-# scripts/ci_impact.py. Everything runs on pushes to master, on pull requests into
-# master or labelled `full-ci`, daily (three passes, to find flaky tests), and on demand. The
-# full lane is cut into equal shards from Tests/ci-suite-times.json (scripts/ci_shards.py), and
-# a failed test is retried once (scripts/ci_run_tests.py): if it passes the second time it is
-# reported as flaky instead of failing the run. A red full lane on master files one
-# tracking issue (scripts/ci_report.py).
+# One Swift job. A pull request from a maintainer runs on the self-hosted Mac, where the
+# checkout, `.build` and the pi engine's downloads persist between jobs, so a run is an
+# incremental build plus the tests. Everything else (a fork, the daily run, a manual run) builds
+# on GitHub's macOS runner. Maintainers can explicitly request UI diagnostics on the local
+# runner; their result is named `UI diagnostics`, never `CI`. Other checks run on Ubuntu.
 #
 # There are no path filters here: a filtered-out workflow never reports the `CI` check, so the
-# plan job decides instead, and `CI` always reports. Tests whose verdict depends on the
-# machine's speed (frame sampling, wall-clock budgets) skip here, where GitHub sets CI=true;
-# `swift test` runs them locally.
+# plan step decides instead, and `CI` always reports. A change to docs alone runs no Swift.
+# Tests whose verdict depends on the machine's speed skip here, where CI=true (`.timingSensitive`).
 on:
   push:
     branches: [master]
   pull_request:
-    # `labeled` is how the `full-ci` label takes effect; any other label's event ends at once.
-    types: [opened, synchronize, reopened, labeled]
+    types: [opened, synchronize, reopened, labeled, unlabeled, closed]
   schedule:
     # Only the default branch's copy of this file is scheduled, so this starts once master has it.
     - cron: "17 4 * * *"
   workflow_dispatch:
     inputs:
-      lane:
-        description: auto and full run everything; fast needs a base; flake-hunt runs the full lane three times
-        type: choice
-        options: [auto, fast, full, flake-hunt]
-        default: auto
-      base:
-        description: With lane fast, the branch or commit to diff against to choose the suites (for example nightly)
-        type: string
-        default: ""
       clean:
-        description: Ignore the build cache and build from scratch
+        description: Ignore the persistent build and build from scratch
         type: boolean
         default: false
-      shared_build:
-        description: auto builds once in a job of its own only when a clean build is due; true or false forces it either way
+      diagnostics:
+        description: Run focused UI diagnostics, never the required CI check
         type: choice
-        options: [auto, "true", "false"]
-        default: auto
-      report:
-        description: File the tracking issue even though this is not nightly or master (to test the report)
-        type: boolean
-        default: false
+        options: [none, ui]
+        default: none
 
 permissions:
   contents: read
 
-# A newer push supersedes a running build of the same branch or pull request. The daily run
-# has a group of its own, and a label other than full-ci cancels nothing.
+# A newer push supersedes a running build of the same branch or pull request.
 concurrency:
-  group: >-
-    ci-${{ github.event_name == 'schedule' && 'daily' || github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.ref }}${{ github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name != 'full-ci' && '-label' || '' }}
+  group: ci-${{ github.event_name == 'schedule' && 'daily' || github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.ref }}
   cancel-in-progress: true
 
 defaults:
@@ -62,75 +42,39 @@ defaults:
     shell: bash
 
 jobs:
-  # What this run does and why: the lane, the suites, the shards. Its summary says which suites
-  # ran and why.
+  # Ordinary nightly PRs retain unit + smoke + affected suites; shared/unknown paths run all.
   plan:
     name: plan
-    if: ${{ !(github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name != 'full-ci') }}
+    if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      lane: ${{ steps.plan.outputs.lane }}
       swift: ${{ steps.plan.outputs.swift }}
-      scope: ${{ steps.plan.outputs.scope }}
-      selection: ${{ steps.plan.outputs.selection }}
-      shards: ${{ steps.plan.outputs.shards }}
-      repeat: ${{ steps.plan.outputs.repeat }}
-      shared_build: ${{ steps.plan.outputs.shared_build }}
-      report: ${{ steps.plan.outputs.report }}
-      clean: ${{ steps.plan.outputs.clean }}
-      checkout_ref: ${{ steps.plan.outputs.checkout_ref }}
+      filters: ${{ steps.plan.outputs.filters }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           ref: ${{ github.event_name == 'schedule' && 'master' || '' }}
-      # The first full run of each UTC day builds from scratch (see the build job).
-      - name: Today's clean build
-        id: day
-        run: echo "key=ci-clean-build-$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
-      - name: Has today's clean build been made
-        id: marker
-        if: ${{ github.event_name != 'pull_request' }}
-        uses: actions/cache/restore@v4
-        with:
-          path: .ci-clean-marker
-          key: ${{ steps.day.outputs.key }}
-          lookup-only: true
       - name: Plan
         id: plan
         env:
           EVENT: ${{ github.event_name }}
-          BASE_REF: ${{ github.base_ref }}
-          REF: ${{ github.ref }}
-          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
-          LANE: ${{ inputs.lane || 'auto' }}
-          DISPATCH_BASE: ${{ inputs.base }}
-          CLEAN: ${{ inputs.clean }}
-          SHARED_BUILD: ${{ inputs.shared_build }}
-          FORCE_REPORT: ${{ inputs.report }}
-          CLEAN_DUE: ${{ github.event_name != 'pull_request' && steps.marker.outputs.cache-hit != 'true' }}
+          DIAGNOSTICS: ${{ github.event.inputs.diagnostics }}
+          FULL: ${{ github.event_name != 'pull_request' || github.event.pull_request.base.ref != 'nightly' || contains(github.event.pull_request.labels.*.name, 'full-ci') }}
         run: |
-          args=()
           if [ "$EVENT" = pull_request ]; then
-            # The checkout is the merge of the pull request into its base: the first parent is the base.
+            # The merge checkout's first parent is the base.
             git diff --name-only --no-renames HEAD^1 HEAD > changed.txt
-            args+=(--files-from changed.txt)
-          elif [ "$EVENT" = workflow_dispatch ] && [ -n "$DISPATCH_BASE" ]; then
-            # A branch name or any commit.
-            base="origin/$DISPATCH_BASE"
-            git rev-parse --verify -q "$base^{commit}" > /dev/null || base="$DISPATCH_BASE"
-            git diff --name-only --no-renames "$base...HEAD" > changed.txt
-            args+=(--files-from changed.txt)
+          else
+            printf 'Package.swift\n' > changed.txt
           fi
-          [ "$CLEAN" = true ] && args+=(--clean)
-          [ "$CLEAN_DUE" = true ] && args+=(--clean-due)
-          [ "$FORCE_REPORT" = true ] && args+=(--report)
-          [ -n "$SHARED_BUILD" ] && [ "$SHARED_BUILD" != auto ] && args+=(--shared-build "$SHARED_BUILD")
-          python3 scripts/ci_impact.py --event "$EVENT" --base "$BASE_REF" --ref "$REF" \
-            --labels "$LABELS" --lane "$LANE" "${args[@]}"
+          args=()
+          if [ "$FULL" = true ]; then args=(--full); fi
+          if [ "$EVENT" = workflow_dispatch ] && [ "$DIAGNOSTICS" = ui ]; then args=(--ui-diagnostics); fi
+          python3 scripts/ci_plan.py changed.txt "${args[@]}" | tee -a "$GITHUB_OUTPUT"
 
-  # The release workflow's rules (scripts/release.py), the CI helpers' own tests, the embedded
+  # The release workflow's rules (scripts/release.py), the CI helper's own tests, the embedded
   # extension copies and the docs' size and link guards. Stdlib only; it costs no macOS runner.
   release-rules:
     name: release rules
@@ -140,7 +84,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.plan.outputs.checkout_ref }}
+          ref: ${{ github.event_name == 'schedule' && 'master' || '' }}
       - run: python3 -m unittest discover -s Tests/Release
 
   extensions:
@@ -151,46 +95,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.plan.outputs.checkout_ref }}
+          ref: ${{ github.event_name == 'schedule' && 'master' || '' }}
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - name: Cache the pinned pi package
+        id: pi
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/pi-tests
+          key: pi-tests-${{ hashFiles('scripts/pi-engine-pin.json') }}
       - name: Install the pinned modular pi package
+        if: steps.pi.outputs.cache-hit != 'true'
         run: |
           package=$(python3 -c 'import json; p=json.load(open("scripts/pi-engine-pin.json"))["pi"]; print(p["name"]+"@"+p["version"])')
           npm install --prefix "$RUNNER_TEMP/pi-tests" --ignore-scripts --no-audit --no-fund "$package"
-          echo "PI_PACKAGE_DIR=$RUNNER_TEMP/pi-tests/node_modules/@earendil-works/pi-coding-agent" >> "$GITHUB_ENV"
-      # A failed test is run once more by name; if it passes it is flaky, not red.
       - name: Test extensions with isolated fake providers
-        run: python3 scripts/ci_run_tests.py node --out ci-out
-      - name: Upload results
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: ci-results-node
-          path: ci-out/*.json
-          retention-days: 14
-          if-no-files-found: ignore
-      - name: Upload logs
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: ci-logs-node
-          path: ci-out/*.log
-          retention-days: 7
-          if-no-files-found: ignore
+        env:
+          PI_PACKAGE_DIR: ${{ runner.temp }}/pi-tests/node_modules/@earendil-works/pi-coding-agent
+        run: node --test --test-reporter=spec Tests/Extensions/*.test.mjs
 
-  # A full run outside a pull request builds incrementally in every shard, on top of the last
-  # build, and its last shard saves the result for the next run and for pull requests into the
-  # same branch (measured: over a minute quicker than building here and restoring in the shards).
-  # This job exists for the runs that start from scratch, which are the first of each UTC day,
-  # the daily run and a manual `clean`: it builds once, saves, and writes today's marker, and
-  # every shard restores its build. A pull request has none; its shards restore the base
-  # branch's newest build, or the exact-commit build an earlier local shard saved.
-  build:
-    name: build
+  tests:
+    name: swift tests
     needs: plan
-    if: ${{ needs.plan.outputs.swift == 'true' && needs.plan.outputs.shared_build == 'true' }}
+    if: ${{ needs.plan.outputs.swift == 'true' }}
     # Native metadata fence, evaluated before checkout; plan outputs cannot grant local access.
     # Custom label only: the runner has no default self-hosted/OS labels.
     runs-on: >-
@@ -201,117 +129,69 @@ jobs:
             github.ref == format('refs/pull/{0}/merge', github.event.pull_request.number) &&
             github.event.pull_request.head.repo.full_name == github.repository &&
             (github.event.pull_request.user.id == 19316389 || github.event.pull_request.user.id == 3370624)) ||
-           (github.event_name == 'push' && github.ref == 'refs/heads/nightly')) &&
+           (github.event_name == 'workflow_dispatch' &&
+            github.ref_type == 'branch' && github.event.inputs.diagnostics == 'ui')) &&
           'shepherd-release' || 'macos-26' }}
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       # Mask the built-in runner machine-name log, before any steps run.
       SELFHOSTED_LOG_MASK: ${{ secrets.SELFHOSTED_HOSTNAME }}
     steps:
+      - name: Require a logged-in build account for AppKit tests
+        if: runner.environment == 'self-hosted'
+        run: |
+          if ! launchctl print "gui/$(id -u)" > /dev/null 2>&1; then
+            echo '::error::UI tests need the build account logged into macOS. Leave its GUI session running; the runner must not log it in or move focus.'
+            exit 1
+          fi
+          if [ "$(launchctl managername 2>/dev/null)" != Aqua ]; then
+            echo '::error::UI tests must run inside the build account GUI session. A system service cannot access its pasteboard; use the per-user runner agent.'
+            exit 1
+          fi
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.plan.outputs.checkout_ref }}
+          ref: ${{ github.event_name == 'schedule' && 'master' || '' }}
+          clean: ${{ runner.environment != 'self-hosted' }}
+          persist-credentials: false
       - uses: ./.github/actions/swift-build
         with:
-          clean: ${{ needs.plan.outputs.clean == 'true' }}
-          save: "true"
-      - name: Remember today's clean build
-        if: ${{ needs.plan.outputs.clean == 'true' }}
+          clean: ${{ inputs.clean == true }}
+      - name: Stage bundled pi and expose its pinned Node to test fixtures
         run: |
-          echo "$(date -u)" > .ci-clean-marker
-          echo "key=ci-clean-build-$(date -u +%Y%m%d)" >> "$GITHUB_ENV"
-      - name: Save the marker
-        if: ${{ needs.plan.outputs.clean == 'true' }}
-        uses: actions/cache/save@v4
-        with:
-          path: .ci-clean-marker
-          key: ${{ env.key }}
-
-  tests:
-    name: tests ${{ matrix.shard.id }}
-    needs: [plan, build]
-    # A status function so a skipped build (a pull request has none) does not skip the shards, and
-    # `!cancelled()` rather than `always()`: a job with `always()` runs on after its run is cancelled,
-    # which here would keep four macOS runners busy for a run nobody wants.
-    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.swift == 'true' && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
-    runs-on: >-
-      ${{ github.triggering_actor == github.actor &&
-          (github.actor_id == '19316389' || github.actor_id == '3370624') &&
-          github.workflow_ref == format('{0}/.github/workflows/ci.yml@{1}', github.repository, github.ref) &&
-          ((github.event_name == 'pull_request' &&
-            github.ref == format('refs/pull/{0}/merge', github.event.pull_request.number) &&
-            github.event.pull_request.head.repo.full_name == github.repository &&
-            (github.event.pull_request.user.id == 19316389 || github.event.pull_request.user.id == 3370624)) ||
-           (github.event_name == 'push' && github.ref == 'refs/heads/nightly')) &&
-          'shepherd-release' || 'macos-26' }}
-    # A build takes about 5 minutes (10 clean) and a shard's tests about 5; a flake-hunt shard runs them three times.
-    timeout-minutes: 60
-    env:
-      SELFHOSTED_LOG_MASK: ${{ secrets.SELFHOSTED_HOSTNAME }}
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: ${{ fromJSON(needs.plan.outputs.shards) }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.plan.outputs.checkout_ref }}
-
-      # Restores the build the build job saved, or the newest one of the branch (the base
-      # branch's, for a pull request) and compiles what this change touched. Hosted pull
-      # requests save nothing; local shards save before tests so later serial shards can
-      # restore this exact commit despite the runner's .build cleanup. Hosted pushes still
-      # save only the last shard's build.
-      - uses: ./.github/actions/swift-build
-        with:
-          clean: ${{ needs.plan.outputs.shared_build != 'true' && needs.plan.outputs.clean == 'true' }}
-          save: ${{ matrix.shard.save || runner.environment == 'self-hosted' }}
-
-      - name: Stage bundled pi for subagent file checks
-        run: python3 scripts/pi_engine.py stage
-
-      - name: Smoke test the staged SDK
-        run: |
-          SHEPHERD_ENGINE_SMOKE=.build/pi-engine \
-            python3 -m unittest discover -s Tests/Release -p test_pi_engine_sdk.py
-
-      # Serially within a shard: on the shared 3-core runner, tests run in parallel queued behind
-      # one another's main-thread work until their waits ran out. The tests that block the main
-      # queue or change process-wide state still run as exit tests in their own process. The
-      # script lists the tests, cuts this shard's suites, runs them under a watchdog, retries
-      # failed tests once, and writes the summary, annotations and results.
+          python3 scripts/pi_engine.py stage
+          echo "$PWD/.build/pi-engine/Helpers" >> "$GITHUB_PATH"
+      # Swift 6.3's single test process otherwise launches every server/process case together,
+      # exhausting local resources and timing out unrelated tests. Keep the established CI order.
       - name: Run tests
         env:
-          SELECTION: ${{ needs.plan.outputs.selection }}
+          CI: "true"
+          SWIFT_FILTERS: ${{ needs.plan.outputs.filters }}
         run: |
-          python3 scripts/ci_run_tests.py swift --shard "${{ matrix.shard.id }}" --selection "$SELECTION" \
-            --repeat "${{ needs.plan.outputs.repeat }}" --lane "${{ needs.plan.outputs.lane }}" --out ci-out
-
-      - name: Upload results
-        if: ${{ always() }}
+          filters=()
+          if [ "$SWIFT_FILTERS" != '[]' ]; then
+            swift test list --skip-build $SWIFTPM_FLAGS > "$RUNNER_TEMP/swift-tests.txt"
+            filter=$(python3 scripts/ci_plan.py --validate "$RUNNER_TEMP/swift-tests.txt" "$SWIFT_FILTERS")
+            filters=(--filter "$filter")
+          fi
+          if swift test --no-parallel --skip-build $SWIFTPM_FLAGS "${filters[@]}" > "$RUNNER_TEMP/swift-test.log" 2>&1; then
+            tail -20 "$RUNNER_TEMP/swift-test.log"
+          else
+            tail -120 "$RUNNER_TEMP/swift-test.log"
+            exit 1
+          fi
+      - name: Upload the log
+        if: ${{ failure() }}
         uses: actions/upload-artifact@v4
         with:
-          name: ci-results-swift-${{ matrix.shard.slug }}
-          path: ci-out/*.json
-          retention-days: 14
-          if-no-files-found: ignore
-      - name: Upload logs
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: ci-logs-swift-${{ matrix.shard.slug }}
-          path: |
-            ci-out/*.log
-            ci-out/tests.txt
+          name: ci-swift-test-log
+          path: ${{ runner.temp }}/swift-test.log
           retention-days: 7
-          if-no-files-found: ignore
 
-  # The one check to require: green only when every job the plan asked for passed. A job the
-  # plan skipped (no Swift tests for an extensions-only change) counts as passing.
+  # The one required check. It passes when every job passed or was skipped on purpose.
   ci:
-    name: CI
-    needs: [plan, release-rules, extensions, build, tests]
-    if: ${{ !cancelled() && needs.plan.result != 'skipped' }}
+    name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.diagnostics == 'ui' && 'UI diagnostics' || 'CI' }}
+    needs: [plan, release-rules, extensions, tests]
+    if: ${{ !cancelled() && github.event.action != 'closed' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
@@ -322,34 +202,3 @@ jobs:
           for result in $RESULTS; do
             case "$result" in success|skipped) ;; *) echo "::error::a job ended $result"; exit 1 ;; esac
           done
-
-  # A full lane on nightly or master (and the daily and manual runs) files or updates the one
-  # tracking issue: a comment per red run with its failing tests, a count of flaky tests in the
-  # body. It is not part of CI: a failure here never turns a run red.
-  report:
-    name: report
-    needs: [plan, release-rules, extensions, build, tests]
-    if: ${{ !cancelled() && needs.plan.outputs.report == 'true' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-      issues: write
-    env:
-      GH_TOKEN: ${{ github.token }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.plan.outputs.checkout_ref }}
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: ci-results-*
-          path: results
-      - name: Update the tracking issue
-        env:
-          JOB_RESULTS: ${{ join(needs.*.result, ' ') }}
-          TESTED_REF: ${{ needs.plan.outputs.checkout_ref || github.ref_name }}
-        run: |
-          result=success
-          case " $JOB_RESULTS " in *" cancelled "*) result=cancelled ;; *" failure "*) result=failure ;; esac
-          python3 scripts/ci_report.py --results results --result "$result" --sha "$(git rev-parse HEAD)" --ref "$TESTED_REF"

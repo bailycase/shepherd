@@ -276,13 +276,10 @@ public final class PiSignInBridge: @unchecked Sendable {
         process.standardInput = input
         process.standardOutput = output
         process.standardError = stderr
+        // Pipe handlers outlive a weak owner. Remove them even if close released the bridge.
         output.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let chunk = handle.availableData
-            guard let self else { return }
-            if chunk.isEmpty {
-                handle.readabilityHandler = nil
-                return
-            }
+            guard let self, !chunk.isEmpty else { handle.readabilityHandler = nil; return }
             let lines = self.lock.withLock { (try? self.buffer.append(chunk)) ?? [] }
             for line in lines {
                 if let reply = PiSignInReply.parse(line) { self.continuation.yield(reply) }
@@ -297,9 +294,9 @@ public final class PiSignInBridge: @unchecked Sendable {
             }
         }
         process.terminationHandler = { [weak self] process in
-            guard let self else { return }
             output.fileHandleForReading.readabilityHandler = nil
             stderr.fileHandleForReading.readabilityHandler = nil
+            guard let self else { return }
             // What was still in the pipe.
             let rest = output.fileHandleForReading.readDataToEndOfFile()
             let lines = self.lock.withLock { (try? self.buffer.append(rest + (rest.last == 0x0A || rest.isEmpty ? Data() : Data([0x0A])))) ?? [] }

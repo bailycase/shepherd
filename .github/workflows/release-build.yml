@@ -109,8 +109,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.source_sha }}
+          clean: ${{ runner.environment != 'self-hosted' }}
           persist-credentials: false
-          clean: true
       - name: Fence the build on its active parent
         env:
           GH_TOKEN: ${{ github.token }}
@@ -118,26 +118,39 @@ jobs:
 
       - name: Xcode version
         id: xcode
-        run: echo "version=$(xcodebuild -version | shasum -a 256 | cut -c1-12)" >> "$GITHUB_OUTPUT"
+        run: |
+          toolchain=$({ xcodebuild -version; xcrun --show-sdk-version; swift --version; } 2>/dev/null)
+          echo "version=$(shasum -a 256 <<<"$toolchain" | cut -c1-12)" >> "$GITHUB_OUTPUT"
+          # A previous cross-commit release cache left transitive ShepherdCore objects stale.
+          # Reuse products only while shared library inputs match, not across model/ABI changes.
+          shared=$(git ls-files -s Sources Packages Package.swift Package.resolved Shepherd.xcodeproj scripts/pi-engine-pin.json scripts/pi_engine.py ':(exclude)Sources/ShepherdApp/**' | shasum -a 256 | cut -c1-12)
+          echo "shared=$shared" >> "$GITHUB_OUTPUT"
+      # Hosted caches and persistent local products share the same invalidation rule.
       - name: Cache DerivedData
+        if: runner.environment == 'github-hosted'
         uses: actions/cache@v4
         with:
           path: build
-          # Exact-match only. A prefix-restored cache from before a model
-          # change poisons incremental builds (stale ShepherdCore objects vs
-          # new ShepherdApp sources — nightly 0217 shipped a build break that
-          # `swift test` had already passed). Release builds are rare enough
-          # that a clean rebuild beats a wrong binary. Keyed per configuration:
-          # the two apps build different ones. Keyed on the engine's pin too: a
-          # restored app holding another pin's engine fails the "Embed pi engine"
-          # phase, whose sandbox can't remove files the new pin doesn't declare.
-          key: xcode-${{ runner.os }}-${{ env.CONFIGURATION }}-${{ steps.xcode.outputs.version }}-${{ inputs.source_sha }}
+          key: xcode-${{ runner.os }}-${{ env.CONFIGURATION }}-${{ steps.xcode.outputs.version }}-${{ steps.xcode.outputs.shared }}-${{ inputs.source_sha }}
+          restore-keys: |
+            xcode-${{ runner.os }}-${{ env.CONFIGURATION }}-${{ steps.xcode.outputs.version }}-${{ steps.xcode.outputs.shared }}-
+      - name: Start over when shared build inputs changed
+        env:
+          VERSION: ${{ steps.xcode.outputs.version }}-${{ steps.xcode.outputs.shared }}
+        run: |
+          marker=build/ci-toolchain
+          if [ -d build ] && [ "$(cat "$marker" 2>/dev/null)" != "$VERSION" ]; then
+            echo "Shared build inputs changed: discarding DerivedData products"
+            find build -mindepth 1 -maxdepth 1 ! -name SourcePackages -exec rm -rf {} +
+          fi
+          mkdir -p build && echo "$VERSION" > "$marker"
 
       # The pi engine (Node and pi's bundle) the Mac target's "Embed pi engine" phase copies
       # into Contents/Helpers and Contents/Resources/pi-engine. Staging downloads Node from
       # nodejs.org and pi from the npm registry, checked against scripts/pi-engine-pin.json;
       # the cache keeps those downloads, and staging reuses one only while it matches the pin.
       - name: Cache the pi engine's downloads
+        if: runner.environment == 'github-hosted'
         uses: actions/cache@v4
         with:
           path: .build/pi-engine-cache
@@ -206,17 +219,8 @@ jobs:
       - name: Verify the app's identity
         run: python3 scripts/release.py verify-app "$PRODUCTS/$PRODUCT" "$APP_KEY" "$VERSION"
 
-      # Workflow artifacts expire (90 days at most on a public repo), while a
-      # stable release stays on the appcast far longer, so the same dSYMs are
-      # also zipped for the GitHub release. Neither may fail a release.
-      - name: Keep dSYMs
-        uses: actions/upload-artifact@v4
-        continue-on-error: true
-        with:
-          name: dSYMs-${{ env.TAG }}
-          path: ${{ env.PRODUCTS }}/*.dSYM
-          if-no-files-found: warn
-
+      # The dSYMs ship zipped on the GitHub release (the only copy; the workflow artifact they
+      # also went to expired first anyway). Never fails a release.
       - name: Zip dSYMs
         continue-on-error: true
         working-directory: ${{ env.PRODUCTS }}
@@ -271,10 +275,7 @@ jobs:
           cp -R "$PRODUCTS/$PRODUCT" "$STAGE/"
           ln -s /Applications "$STAGE/Applications"
           hdiutil create -volname "$VOLUME" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
-          # The stapled app is inside. The DMG gets its own notarization
-          # ticket so Gatekeeper can verify it offline at mount time; stapler
-          # has nothing to staple until the DMG itself is notarized. Ad-hoc
-          # builds skip all of it.
+          # Both app and DMG carry accepted tickets, including offline at mount time.
           if [[ '${{ steps.cert.outputs.identity }}' != '-' ]]; then
             codesign --force --timestamp --sign '${{ steps.cert.outputs.identity }}' "$DMG"
             # notary.p8 was written by the Notarize step.

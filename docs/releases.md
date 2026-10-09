@@ -87,8 +87,10 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   Releases upload as drafts, including `shepherd-appcast.json` eligibility metadata, and become
   public only after their required assets exist. Publication ignores drafts, excludes marked
   ad-hoc releases, and refuses malformed present metadata. Unmarked historical releases retain
-  their legacy eligibility. The publisher resolves Sparkle from the pinned package versions;
-  it needs the Sparkle key and repository write token, not the Developer ID certificate.
+  their legacy eligibility. The publisher fetches only Sparkle's manifest at the exact revision
+  in `Package.resolved`, then lets SwiftPM resolve and checksum-verify its binary tools in a
+  temporary package directory. It never resolves Shepherd's terminal/parser dependency graph.
+  It needs the Sparkle key and repository write token, not the Developer ID certificate.
 - **Two apps, never each other's updates.** Shepherd Nightly has its own bundle id, name
   (`Shepherd Nightly.app`), DMG and feed, and every feed carries one app only. Sparkle is not
   the boundary: its installer picks the new app in an archive by the host's *file name* first
@@ -176,10 +178,11 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   not an authentication credential. Existing logs and Git history are not rewritten. Stable/beta and TestFlight remain hosted. Both Mac attempts check out
   the exact Release source SHA and use its run number, plan, signing identities, entitlements
   and notarization policy; the dispatched helper's own run number is never a shipped build number.
-  - `scripts/release_runner.py` allows three minutes for dispatch discovery and queueing,
+  - `scripts/release_runner.py` allows fifteen minutes for dispatch discovery and queueing
+    (a queued local build is usually waiting behind a pull request's CI on the same runner),
     sixty minutes for local execution, two minutes for cancellation acknowledgement, and polls
-    every fifteen seconds. Each API request has a ten-second timeout; the Ubuntu job has a
-    seventy-minute outer bound. The build jobs also have a sixty-minute execution limit.
+    every fifteen seconds. Each API request has a ten-second timeout; the Ubuntu job has an
+    eighty-minute outer bound. The build jobs also have a sixty-minute execution limit.
     Job timeouts alone do not bound a queued offline runner. There is one dispatch and at most
     one hosted fallback, not a retry loop.
   - A completed local build failure/timeout permits fallback. An expired queue/execution bound
@@ -203,6 +206,13 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
     selected attempt's artifact and verifies that manifest before any tag/release mutation.
     Fallback never reacts to publication/appcast failure or partial success: existing draft-first
     release publication, immutable tags and the serialized appcast job remain the boundary.
+  - Self-hosted keeps DerivedData and verified pi downloads between jobs. Checkout preserves
+    ignored build outputs but no Git credentials. The build marker combines Xcode, Swift, SDK,
+    shared library source and package/project/engine inputs. Changing any of those discards
+    products but keeps package downloads, preventing reuse across a transitive model/ABI change.
+    Changes confined to ShepherdApp can build incrementally. Hosted cache restores use the same
+    marker inputs. Both the app and DMG still wait for notarization acceptance and receive
+    stapled tickets before package provenance is recorded.
   - Self-hosted uses a temporary signing keychain with a random password, preserves/restores the
     exact existing user keychain search list and removes imported certificate/notary files in
     an `always()` cleanup step, including after failure/cancellation. Forced runner termination

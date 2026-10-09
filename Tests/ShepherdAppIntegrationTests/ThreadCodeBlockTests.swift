@@ -67,9 +67,21 @@ struct ThreadCodeBlockTests {
         let pasteboard = NSPasteboard(name: .init("shepherd-code-test-\(UUID().uuidString)"))
         defer { pasteboard.releaseGlobally() }
         editor.setSelectedRange(NSRange(location: 13, length: 2))
-        pasteboard.declareTypes(editor.writablePasteboardTypes, owner: nil)
-        #expect(editor.writeSelection(to: pasteboard, types: editor.writablePasteboardTypes))
-        #expect(pasteboard.string(forType: .string) == "🐑")
+        let types = editor.writablePasteboardTypes
+        let declared = pasteboard.declareTypes(types, owner: nil)
+        let selected = editor.selectedRange()
+        let exported = editor.writeSelection(to: pasteboard, types: types)
+        let copied = pasteboard.string(forType: .string)
+        if !exported || copied != "🐑" {
+            let control = NSPasteboard(name: .init("shepherd-code-control-\(UUID().uuidString)"))
+            defer { control.releaseGlobally() }
+            control.clearContents()
+            let writable = control.setString("🐑", forType: .string)
+            let readable = control.string(forType: .string) == "🐑"
+            print("Code selection export: editor=\(type(of: editor)), field editor=\(editor.isFieldEditor), selectable=\(editor.isSelectable), selection=\(selected), UTF16 length=\(editor.string.utf16.count), types=\(types), declared=\(declared), change count=\(pasteboard.changeCount), board types=\(String(describing: pasteboard.types)), exported=\(exported), copied emoji=\(copied == "🐑"), control write/read=\(writable)/\(readable)")
+        }
+        #expect(exported)
+        #expect(copied == "🐑")
         editor.setSelectedRange(selection)
         let grown = code + "\nlet count = 42"
         window.show(NWCodeBlock(grown, language: "swift"))
