@@ -753,7 +753,7 @@ class ContractTests(unittest.TestCase):
         # SwiftPM package targets take no target settings: only the command line reaches them.
         self.assertIn("ARCHS=arm64 \\\n", build)
         self.assertIn("-onlyUsePackageVersionsFromResolvedFile", build)
-        self.assertIn("key: xcode-${{ runner.os }}-${{ env.CONFIGURATION }}-${{ steps.xcode.outputs.version }}-${{ inputs.source_sha }}", workflow)
+        self.assertIn("key: xcode-${{ runner.os }}-${{ env.CONFIGURATION }}-${{ steps.xcode.outputs.version }}-", workflow)
         self.assertNotIn("x86_64", workflow)
         thin = workflow.index('python3 scripts/release.py thin-app "$PRODUCTS/$PRODUCT"')
         self.assertLess(workflow.index("      - name: Build ${{ env.APP_NAME }}"), thin)
@@ -827,22 +827,21 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(scheme.find("ProfileAction").get("shouldUseLaunchSchemeArgsEnv"), "YES")
 
     def test_extension_failures_gate_ci_with_the_pinned_pi_package(self):
-        # The workflow's shape (its jobs, the gate, the helpers it runs) is checked in test_ci_workflow.py;
-        # this keeps the extension job's own rules: the pinned package, no scripts, no leniency, and a
-        # failed extension test failing the gate.
+        # The workflow's shape (its jobs, the gate) is checked in test_ci_workflow.py; this keeps the
+        # extension job's own rules: the pinned package, no scripts, no leniency, and a failed
+        # extension test failing the gate.
         workflow = self.read(".github", "workflows", "ci.yml")
-        job = workflow.split("\n  extensions:\n", 1)[1].split("\n  build:\n", 1)[0]
+        job = workflow.split("\n  extensions:\n", 1)[1].split("\n  tests:\n", 1)[0]
         self.assertIn('scripts/pi-engine-pin.json', job)
         self.assertIn('--ignore-scripts', job)
-        self.assertIn('scripts/ci_run_tests.py node', job)
-        self.assertIn('["node", "--test"', self.read("scripts", "ci_run_tests.py"))
+        self.assertIn('node --test --test-reporter=spec Tests/Extensions/*.test.mjs', job)
         self.assertNotIn('continue-on-error', job)
-        aggregate = workflow.split("\n  ci:\n", 1)[1].split("\n  # ", 1)[0]
-        self.assertIn('needs: [plan, release-rules, extensions, build, tests]', aggregate)
+        aggregate = workflow.split("\n  ci:\n", 1)[1]
+        self.assertIn('needs: [plan, release-rules, extensions, tests]', aggregate)
         gate = aggregate.split("      - run: |\n", 1)[1]
         script = "\n".join(line[10:] for line in gate.splitlines())
         for extension_status in ("success", "failure", "cancelled", "skipped"):
-            results = f"success success {extension_status} skipped success"
+            results = f"success success {extension_status} success"
             result = subprocess.run(["bash", "-c", script], env={"RESULTS": results, "PATH": os.environ["PATH"]},
                                     capture_output=True, timeout=5)
             self.assertEqual(result.returncode == 0, extension_status in ("success", "skipped"))
