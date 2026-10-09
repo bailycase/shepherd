@@ -25,6 +25,8 @@ def metadata(event="pull_request", actor="19316389", author=19316389):
         "github.triggering_actor": "maintainer",
         "github.repository": "owner/Shepherd",
         "github.ref": ref,
+        "github.ref_type": "branch",
+        "github.event.inputs.diagnostics": "none",
         "github.workflow_ref": f"owner/Shepherd/.github/workflows/ci.yml@{ref}",
         "github.event.pull_request.number": 236,
         "github.event.pull_request.head.repo.full_name": "owner/Shepherd",
@@ -53,6 +55,21 @@ class CIRunnerTests(unittest.TestCase):
         renamed = metadata()
         renamed.update({"github.actor": "renamed", "github.triggering_actor": "renamed"})
         self.assertEqual(select(expression, renamed), "shepherd-release")
+
+    def test_only_explicit_maintainer_branch_diagnostics_select_local_on_dispatch(self):
+        expression = runner_expression(JOBS["tests"])
+        for actor in ("19316389", "3370624"):
+            data = metadata(event="workflow_dispatch", actor=actor)
+            self.assertEqual(select(expression, data), "macos-26")
+            data["github.event.inputs.diagnostics"] = "ui"
+            self.assertEqual(select(expression, data), "shepherd-release")
+            for change in ({"github.actor_id": "999"}, {"github.triggering_actor": "other"},
+                           {"github.ref_type": "tag"}, {"github.event.inputs.diagnostics": "arbitrary"},
+                           {"github.workflow_ref": "fork/Shepherd/.github/workflows/ci.yml@refs/heads/nightly"},
+                           {"github.workflow_ref": "owner/Shepherd/.github/workflows/other.yml@refs/heads/nightly"}):
+                with self.subTest(actor=actor, change=change):
+                    rejected = dict(data, **change)
+                    self.assertEqual(select(expression, rejected), "macos-26")
 
     def test_each_failed_trust_boundary_stays_hosted(self):
         expression = runner_expression(JOBS["tests"])

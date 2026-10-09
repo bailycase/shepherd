@@ -142,7 +142,7 @@ private final class ThreadHarness {
     }
 
     /// The rendered label's viewport position, independent of lazy document-height estimates.
-    func position(of text: String) throws -> CGFloat? {
+    func position(of text: String, diagnoseMissing: Bool = false) throws -> CGFloat? {
         window.layout()
         let host = window.host
         let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
@@ -152,8 +152,13 @@ private final class ThreadHarness {
         try request.useCPUForTests()
         request.usesLanguageCorrection = false
         try VNImageRequestHandler(cgImage: image).perform([request])
-        return request.results?.first { $0.topCandidates(1).first?.string == text }
+        let result = request.results?.first { $0.topCandidates(1).first?.string == text }
             .map { (1 - $0.boundingBox.midY) * host.bounds.height }
+        if diagnoseMissing && result == nil {
+            let recognized = (request.results ?? []).prefix(16).compactMap { $0.topCandidates(1).first?.string }
+            print("Paging label '\(text)' missing: visible OCR=\(recognized), clip=\(scrollView.contentView.bounds), document=\(String(describing: scrollView.documentView?.bounds)), insets=\(scrollView.contentInsets), model messages=\(store.messages.count), requests=\(olderRequests), loading=\(store.loadingOlder)")
+        }
+        return result
     }
 
     /// The wheel monitor's real input path, followed by its native clip-view movement.
@@ -596,7 +601,7 @@ struct ThreadScrollingTests {
         }
         try await eventuallyOnMain("the visible top to request history") { thread.olderReply != nil }
         try await thread.settle()
-        let before = try #require(try thread.position(of: "Question 2"))
+        let before = try #require(try thread.position(of: "Question 2", diagnoseMissing: true))
         var page = ThreadHarness.snapshot(count: 12, running: false, prefix: "older", paragraphs: 7)
         for index in page.messages.indices where page.messages[index].role == "user" {
             page.messages[index].blocks = [NativeThreadBlock(kind: .text, text: "Older question \(index)")]
@@ -611,7 +616,7 @@ struct ThreadScrollingTests {
         try await thread.settle()
 
         #expect(thread.olderRequests == 1)
-        let after = try #require(try thread.position(of: "Question 2"))
+        let after = try #require(try thread.position(of: "Question 2", diagnoseMissing: true))
         #expect(abs(after - before) < 2, "prepending moved the visible turn from \(before) to \(after)")
     }
 

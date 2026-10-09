@@ -165,10 +165,33 @@ struct PaneControlTests {
         #expect(info.id == terminal.id && info.isAlive && !info.isAgentPane)
         #expect(vm.selectedAgentID == visible.agent.id && vm.focusedPaneID == visible.piPane.id)
         #expect(TerminalPanel.tabs(in: tab.layout, thread: background.piPane.id).map(\.id) == [terminal.id])
-        try await eventuallyAsync("the command's output to show in the terminal", timeout: .seconds(20)) {
-            let reply = try await app.extensionRequest(.readPane(id: 7, agentID: background.agent.id, paneID: terminal.id))
-            guard case .paneContent(_, _, let lines) = reply else { return false }
-            return lines.contains { $0.hasPrefix("terminal-ready") }
+        var lastRead = "no reply"
+        do {
+            try await eventuallyAsync("the command's output to show in the terminal", timeout: .seconds(20)) {
+                let reply = try await app.extensionRequest(.readPane(id: 7, agentID: background.agent.id, paneID: terminal.id))
+                guard case .paneContent(_, _, let lines) = reply else {
+                    if case .error(_, let code, _) = reply { lastRead = "error code \(code)" }
+                    else { lastRead = "unexpected reply kind" }
+                    return false
+                }
+                let markerRows = lines.enumerated().compactMap { row, line in
+                    line.range(of: "terminal-ready").map { "\(row):\(line.distance(from: line.startIndex, to: $0.lowerBound))" }
+                }
+                lastRead = "rows=\(lines.count), marker row:column=\(markerRows), command echo=\(lines.contains { $0.contains("echo terminal-ready") })"
+                return lines.contains { $0.hasPrefix("terminal-ready") }
+            }
+        } catch let error as WaitTimeout {
+            let pane = vm.sessions.session(for: terminal, in: tab)
+            let phase: String
+            switch pane.phase {
+            case .connecting: phase = "connecting"
+            case .live: phase = "live"
+            case .failed: phase = "failed"
+            case .exited: phase = "exited"
+            case .stopped: phase = "stopped"
+            }
+            print("Agent-opened terminal: phase=\(phase), bound=\(pane.sessionID != nil), reported grid=\(pane.lastCols)x\(pane.lastRows), last read=\(lastRead)")
+            throw error
         }
     }
 

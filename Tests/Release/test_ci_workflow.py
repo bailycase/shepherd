@@ -91,7 +91,7 @@ class WorkflowShapeTests(unittest.TestCase):
 
     def test_ci_is_the_one_gate_and_it_waits_for_every_job_that_can_fail_a_run(self):
         gate = JOBS["ci"]
-        self.assertIn("name: CI", gate)
+        self.assertIn("'UI diagnostics' || 'CI'", gate)
         self.assertEqual(sorted(needs(gate)), ["extensions", "plan", "release-rules", "tests"])
         self.assertIn("!cancelled()", gate)
 
@@ -276,13 +276,45 @@ class PlanTests(unittest.TestCase):
                 output = Path(directory) / "output"
                 result = subprocess.run(["bash", "-e", "-c", fixture + script], cwd=directory,
                                         env={**os.environ, "EVENT": "pull_request", "FULL": full,
-                                             "CHANGED": changed, "GITHUB_OUTPUT": str(output), "PYTHON": sys.executable,
+                                             "CHANGED": changed, "DIAGNOSTICS": "none", "GITHUB_OUTPUT": str(output), "PYTHON": sys.executable,
                                              "PLANNER": str(Path(ROOT) / "scripts/ci_plan.py")},
                                         capture_output=True, text=True, timeout=5)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 fields = dict(line.split("=", 1) for line in output.read_text().splitlines())
                 self.assertEqual(fields["swift"], swift)
                 self.assertEqual(bool(json.loads(fields["filters"])), selected)
+
+    def test_manual_diagnostics_are_fixed_validated_filters_and_never_named_ci(self):
+        self.assertIn("options: [none, ui]", WORKFLOW)
+        self.assertIn("github.event_name == 'workflow_dispatch' && github.event.inputs.diagnostics == 'ui'", JOBS["ci"])
+        self.assertIn("'UI diagnostics' || 'CI'", JOBS["ci"])
+        self.assertNotIn("'UI diagnostics' || 'CI'", JOBS["tests"])
+        name = re.search(r"name: \$\{\{(.*?)\}\}", JOBS["ci"]).group(1)
+        for event in ("pull_request", "push", "schedule", "workflow_dispatch"):
+            for diagnostic in ("none", "ui"):
+                expression = name.replace("github.event_name", repr(event)).replace("github.event.inputs.diagnostics", repr(diagnostic))
+                actual = eval(expression.replace("&&", " and ").replace("||", " or "), {"__builtins__": {}})
+                self.assertEqual(actual, "UI diagnostics" if event == "workflow_dispatch" and diagnostic == "ui" else "CI")
+        ids = [f"ShepherdAppIntegrationTests.{name}/case()" for name in (
+            "ComposerMenuTests", "ThreadCodeBlockTests", "PaneControlTests", "ThreadScrollingTests", "IdleCostTests",
+        )]
+        ci_plan.validated_filter(ids, ci_plan.UI_DIAGNOSTICS)
+        script = run_script(JOBS["plan"])
+        fixture = 'python3() { command "$PYTHON" "$PLANNER" "${@:2}"; }\n'
+        for event, diagnostic, expected in (("workflow_dispatch", "ui", ci_plan.UI_DIAGNOSTICS),
+                                            ("workflow_dispatch", "none", []), ("pull_request", "ui", [])):
+            with self.subTest(event=event, diagnostic=diagnostic), tempfile.TemporaryDirectory() as directory:
+                output = Path(directory) / "output"
+                git = 'git() { printf "Package.swift\\n"; }\n'
+                result = subprocess.run(["bash", "-e", "-c", fixture + git + script], cwd=directory,
+                                        env={**os.environ, "EVENT": event, "DIAGNOSTICS": diagnostic, "FULL": "true",
+                                             "GITHUB_OUTPUT": str(output), "PYTHON": sys.executable,
+                                             "PLANNER": str(Path(ROOT) / "scripts/ci_plan.py")},
+                                        capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                fields = dict(line.split("=", 1) for line in output.read_text().splitlines())
+                self.assertEqual(fields["swift"], "true")
+                self.assertEqual(json.loads(fields["filters"]), expected)
 
     def test_full_mode_on_the_workflow_and_filters_are_passed_as_data(self):
         plan = JOBS["plan"]
@@ -295,7 +327,7 @@ class PlanTests(unittest.TestCase):
         self.assertNotIn("eval ", tests)
 
     def test_filtered_workflow_uses_native_ids_and_keeps_process_errors(self):
-        script = run_script(JOBS["tests"])
+        script = run_script(JOBS["tests"].split("- name: Run tests", 1)[1])
         fixture = '''swift() {
           if [ "$2" = list ]; then printf 'Module.Suite/a()\\n'; return 0; fi
           case "$*" in *--filter*) ;; *) return 42;; esac
@@ -319,8 +351,14 @@ class PlanTests(unittest.TestCase):
             self.assertIn("no native tests matched", result.stderr)
             self.assertFalse((Path(directory) / "swift-test.log").exists())
 
+    def test_fixtures_use_the_staged_pinned_node_without_a_system_dependency(self):
+        tests = JOBS["tests"]
+        self.assertIn('echo "$PWD/.build/pi-engine/Helpers" >> "$GITHUB_PATH"', tests)
+        self.assertLess(tests.index("scripts/pi_engine.py stage"), tests.index("- name: Run tests"))
+        self.assertNotIn("actions/setup-node", tests)
+
     def test_the_runner_exit_status_not_printed_fixtures_decides_test_success(self):
-        script = run_script(JOBS["tests"])
+        script = run_script(JOBS["tests"].split("- name: Run tests", 1)[1])
         self.assertIn("swift test --no-parallel", script)
         fixture = 'swift() { echo "Test run with 5 tests failed after 1 second with 1 issue."; return "$STATUS"; }\n'
         for status in (0, 1, 23, 134):
