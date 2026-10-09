@@ -171,7 +171,8 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   publication are never pruned. Failed acquisition, metadata validation, generation or pushing
   prunes nothing. A skipped publisher (no Sparkle key) prunes nothing either.
 - **Nightly builds on GitHub unless self-hosted is explicitly enabled.** The repository variable
-  `SHEPHERD_SELFHOSTED_ENABLED` must equal `true` to opt in. Otherwise the selector immediately
+  `SHEPHERD_SELFHOSTED_ENABLED` must equal `true` to opt in, using GitHub's case-insensitive
+  string comparison for every routing decision. Otherwise the selector immediately
   chooses hosted without dispatching or waiting for a local helper; direct local helper calls
   also skip before scheduling the Mac. Keep the shared Mac's runner disabled in launchd until
   builds have isolated resources. A separate account or reduced CPU priority cannot protect

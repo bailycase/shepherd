@@ -507,7 +507,8 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
   skips planning and every dependent job, releasing the self-hosted runner without new tests.
 - **Where it runs:** GitHub-hosted `macos-26` is the default. A self-hosted Mac must have
   isolated resources before the repository variable `SHEPHERD_SELFHOSTED_ENABLED` is set to
-  exactly `true`; missing, empty or any other value stays hosted, including UI diagnostics.
+  `true`; GitHub compares strings without case. Missing, empty or non-true values stay hosted,
+  including UI diagnostics.
   Separate macOS accounts, nice values and background priority do not cap a build's aggregate
   memory or protect other apps from exhaustion. The shared Mac's runner is disabled in launchd
   and stays offline; do not enable it merely to restore faster builds.
