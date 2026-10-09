@@ -355,14 +355,23 @@ class PlanTests(unittest.TestCase):
         step = JOBS["tests"].split("- name: Require a logged-in build account for AppKit tests", 1)[1].split("- uses:", 1)[0]
         self.assertIn("if: runner.environment == 'self-hosted'", step)
         script = run_script(step)
-        fixture = 'id() { echo 502; }; launchctl() { [ "$1 $2" = "print gui/502" ] || exit 42; return "$GUI_STATUS"; };\n'
-        for status, expected in ((0, 0), (1, 1)):
-            result = subprocess.run(["bash", "-c", fixture + script],
-                                    env={**os.environ, "GUI_STATUS": str(status)},
-                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            self.assertEqual(result.returncode, expected, result.stderr)
-            if status:
-                self.assertIn("::error::UI tests need the build account logged into macOS", result.stdout)
+        fixture = '''id() { echo 502; }; launchctl() {
+          case "$1" in
+            print) [ "$2" = gui/502 ] || exit 42; return "$GUI_STATUS";;
+            managername) printf '%s\\n' "$MANAGER";;
+            *) exit 42;;
+          esac
+        };\n'''
+        for status, manager, expected in ((0, "Aqua", 0), (1, "Aqua", 1), (0, "System", 1), (0, "Background", 1), (0, "", 1)):
+            with self.subTest(status=status, manager=manager):
+                result = subprocess.run(["bash", "-c", fixture + script],
+                                        env={**os.environ, "GUI_STATUS": str(status), "MANAGER": manager},
+                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                self.assertEqual(result.returncode, expected, result.stderr)
+                if status:
+                    self.assertIn("::error::UI tests need the build account logged into macOS", result.stdout)
+                elif expected:
+                    self.assertIn("::error::UI tests must run inside the build account GUI session", result.stdout)
         self.assertLess(JOBS["tests"].index("Require a logged-in build account"), JOBS["tests"].index("actions/checkout@v4"))
 
     def test_fixtures_use_the_staged_pinned_node_without_a_system_dependency(self):

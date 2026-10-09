@@ -178,7 +178,8 @@ test("nested output is persisted as display-only bounded excerpts", { timeout: 6
     const sessions = fs.readdirSync(path.join(pi.dir, "sessions")).filter((p) => p.endsWith(".jsonl"));
     assert.ok(sessions.length > 0);
     const saved = sessions.flatMap((p) => fs.readFileSync(path.join(pi.dir,"sessions",p),"utf8").trim().split("\n").map(JSON.parse));
-    assert.ok(saved.some((entry) => entry.message?.toolCallId === result.toolCallId && entry.message?.details?.calls?.[0]?.output === excerpts[0].output));
+    const persisted = saved.find((entry) => entry.message?.toolCallId === result.toolCallId)?.message;
+    assert.deepEqual(persisted?.details?.calls?.map((call) => call.output), excerpts.map((call) => call.output));
   });
 });
 
