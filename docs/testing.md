@@ -466,7 +466,10 @@ to require: it passes when every job passed or was skipped on purpose. There are
 path filters, because a filtered-out workflow never reports `CI`; the `plan` job
 (`scripts/ci_plan.py`) decides instead, and a pull request that touches only docs, templates,
 the iOS client, `Extensions/`, `Tests/Extensions/`, `Tests/Release/` or the release scripts runs
-no Swift (the extension tests and release rules always run). Tests that depend on the machine's
+no Swift (the extension tests and release rules always run). The RPC fixture decodes stdout
+and stderr with Node's streaming UTF-8 decoder; `rpc-harness.test.mjs` splits emoji at each
+byte boundary through the actual reader. The codemode excerpt test compares every persisted
+output, not only the first call. Tests that depend on the machine's
 speed skip on CI (`CI=true`, `.timingSensitive`).
 
 - **The Swift job** (`swift tests`) is `swift build --build-tests` on top of the last build, then
@@ -509,10 +512,12 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
   exception; it uses the same actor, triggering-actor and workflow-identity fence. Its aggregate
   check is named `UI diagnostics`, so it cannot replace the required `CI` check. The planner
   validates its fixed menu, clipboard, pane, paging and idle-cost filters against native test IDs.
-  Self-hosted test jobs require the build account's `gui/<uid>` launchd domain before checkout
-  or compilation. Keep that account logged into macOS, using Fast User Switching to preserve
-  other sessions. The preflight fails with an actionable error rather than running AppKit
-  and pasteboard tests without a GUI login. It never logs in an account or takes focus.
+  Self-hosted test jobs require the build account's `gui/<uid>` launchd domain and their own
+  Aqua bootstrap context before checkout or compilation. A system runner service cannot use
+  the account's pasteboard merely because the account is logged in. Use its per-user runner
+  agent and keep the account logged in; locking or disconnecting Screen Sharing is fine,
+  logging out takes the runner offline. Fast User Switching preserves other sessions.
+  The preflight fails with an actionable error; it never logs in an account or takes focus.
   Names alone grant no trust; `Tests/Release/test_ci_runner.py` exercises both
   allowed IDs and each rejected condition without contacting GitHub. The job references
   `SELFHOSTED_HOSTNAME` in its env to mask the machine name in the runner's setup log.

@@ -144,6 +144,10 @@ jobs:
             echo '::error::UI tests need the build account logged into macOS. Leave its GUI session running; the runner must not log it in or move focus.'
             exit 1
           fi
+          if [ "$(launchctl managername 2>/dev/null)" != Aqua ]; then
+            echo '::error::UI tests must run inside the build account GUI session. A system service cannot access its pasteboard; use the per-user runner agent.'
+            exit 1
+          fi
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event_name == 'schedule' && 'master' || '' }}
