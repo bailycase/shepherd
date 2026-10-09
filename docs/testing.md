@@ -467,13 +467,18 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
 
 - **The Swift job** (`swift tests`) is `swift build --build-tests` on top of the last build, then
   `swift test --no-parallel --skip-build`, once, with a 60-minute ceiling for a cold hosted
-  build and full suite. The serial setting prevents Swift 6.3 from launching every process,
+  build and full suite. The job stages pi and puts its checksum-pinned Node on `GITHUB_PATH`
+  before tests; SDK fixtures that request `node` never depend on a system installation.
+  The serial setting prevents Swift 6.3 from launching every process,
   socket and server test together. A full parallel self-hosted run timed out unrelated tests
   and aborted after 51 seconds. The app suites also retain `.mainActorExclusive`. There is no
   retry: a test that fails is red, and a flaky test is a bug to fix in the test. The full
   `swift test` log is uploaded only when the job fails (`ci-swift-test-log`); the step prints
   the last 20 lines on success or 120 on failure. Swift's exit status decides the result,
-  never sample failure text printed by tests of the app's log reader.
+  never sample failure text printed by tests of the app's log reader. Failed UI tests report
+  settle call sites and RGB-change bounds, clipboard selection and a fresh named-board control,
+  terminal marker coordinates, paging geometry and hidden-spinner state. They retain their
+  assertions and deadlines, and log no raw terminal output or user clipboard contents.
 - **Which tests run:** ordinary PRs into `nightly` retain every unit suite, the previous 13
   smoke suites and the feature/module suites affected by changed paths. The smoke set includes
   `NativeThreadTests`, so RPC child commands never depend on a feature rule. Thread and layout
@@ -492,7 +497,11 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
   against this repository's `ci.yml` at the pull request's merge ref before checkout; checkout
   code and plan outputs cannot change its decision. Everything else (forks, unknown actors, a
   rerun by the other maintainer, `master` pushes, the daily run, manual runs) runs on
-  `macos-26`. Names alone grant no trust; `Tests/Release/test_ci_runner.py` exercises both
+  `macos-26`. An explicit maintainer branch dispatch with `diagnostics=ui` is the only manual
+  exception; it uses the same actor, triggering-actor and workflow-identity fence. Its aggregate
+  check is named `UI diagnostics`, so it cannot replace the required `CI` check. The planner
+  validates its fixed menu, clipboard, pane, paging and idle-cost filters against native test IDs.
+  Names alone grant no trust; `Tests/Release/test_ci_runner.py` exercises both
   allowed IDs and each rejected condition without contacting GitHub. The job references
   `SELFHOSTED_HOSTNAME` in its env to mask the machine name in the runner's setup log.
   This is routing, not a platform security boundary: a pull request runs its own copy of the
@@ -526,6 +535,8 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
   polls use a 500 ms interval; position assertions and timeouts are unchanged.
 - **The daily run** tests `master` on `macos-26`; `gh workflow run ci.yml --ref <branch>` runs
   the same by hand (`-f clean=true` builds from scratch).
+  `gh workflow run ci.yml --ref <branch> -f diagnostics=ui` collects focused failures in the
+  real self-hosted runner context without rerunning all suites or changing PR coverage.
 - **Release rules** run on `ubuntu-latest` (stdlib Python): the release workflow's, the CI
   workflow's and plan's, the docs' and the embedded extensions'. **Extension tests** run there
   too, with Node 24 and the modular pi package version from `scripts/pi-engine-pin.json`,

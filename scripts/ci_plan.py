@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Select native Swift test filters for ordinary nightly PRs; shared/unknown paths run all.
 
-ci_plan.py changed.txt [--full] prints GitHub outputs, swift and filters.
+ci_plan.py changed.txt [--full | --ui-diagnostics] prints GitHub outputs, swift and filters.
 ci_plan.py --validate test-list.txt '<filters JSON>' checks native matches and prints a regex.
 """
 from __future__ import annotations
@@ -24,6 +24,11 @@ NO_SWIFT = (
     "scripts/release*.py", "scripts/sign-*.sh", "scripts/check_pr_body.py", "scripts/design_section.py",
     "scripts/context-budget.json", "scripts/sync-embedded-extension.py", "scripts/test-browser-persistence.py",
 )
+
+# Manual diagnostics report a different check name and cannot satisfy the required CI gate.
+UI_DIAGNOSTICS = [r"^ShepherdAppIntegrationTests\." + name + r"/" for name in (
+    "ComposerMenuTests", "ThreadCodeBlockTests", "PaneControlTests", "ThreadScrollingTests", "IdleCostTests",
+)]
 
 # This mandatory smoke set preserves the previous fast PR gate, including RPC child commands.
 SMOKE = (
@@ -136,12 +141,13 @@ def main(argv: list[str]) -> int:
         if len(argv) == 4 and argv[1] == "--validate":
             print(validated_filter(Path(argv[2]).read_text().splitlines(), json.loads(argv[3])))
             return 0
-        if len(argv) not in (2, 3) or (len(argv) == 3 and argv[2] != "--full"):
+        if len(argv) not in (2, 3) or (len(argv) == 3 and argv[2] not in ("--full", "--ui-diagnostics")):
             sys.stderr.write(__doc__)
             return 2
         paths = [line.strip() for line in Path(argv[1]).read_text().splitlines() if line.strip()]
         print("swift=" + str(affects_swift(paths)).lower())
-        print("filters=" + json.dumps(filters_for(paths, full=len(argv) == 3) if affects_swift(paths) else [], separators=(",", ":")))
+        filters = UI_DIAGNOSTICS if argv[-1] == "--ui-diagnostics" else filters_for(paths, full=len(argv) == 3)
+        print("filters=" + json.dumps(filters if affects_swift(paths) else [], separators=(",", ":")))
         return 0
     except (OSError, ValueError, re.error) as error:
         sys.stderr.write(f"CI planning failed: {error}\n")

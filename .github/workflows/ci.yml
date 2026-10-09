@@ -3,7 +3,8 @@ name: CI
 # One Swift job. A pull request from a maintainer runs on the self-hosted Mac, where the
 # checkout, `.build` and the pi engine's downloads persist between jobs, so a run is an
 # incremental build plus the tests. Everything else (a fork, the daily run, a manual run) builds
-# on GitHub's macOS runner. The release rules and extension tests run on Ubuntu beside it.
+# on GitHub's macOS runner. Maintainers can explicitly request UI diagnostics on the local
+# runner; their result is named `UI diagnostics`, never `CI`. Other checks run on Ubuntu.
 #
 # There are no path filters here: a filtered-out workflow never reports the `CI` check, so the
 # plan step decides instead, and `CI` always reports. A change to docs alone runs no Swift.
@@ -22,6 +23,11 @@ on:
         description: Ignore the persistent build and build from scratch
         type: boolean
         default: false
+      diagnostics:
+        description: Run focused UI diagnostics, never the required CI check
+        type: choice
+        options: [none, ui]
+        default: none
 
 permissions:
   contents: read
@@ -54,6 +60,7 @@ jobs:
         id: plan
         env:
           EVENT: ${{ github.event_name }}
+          DIAGNOSTICS: ${{ github.event.inputs.diagnostics }}
           FULL: ${{ github.event_name != 'pull_request' || github.event.pull_request.base.ref != 'nightly' || contains(github.event.pull_request.labels.*.name, 'full-ci') }}
         run: |
           if [ "$EVENT" = pull_request ]; then
@@ -64,6 +71,7 @@ jobs:
           fi
           args=()
           if [ "$FULL" = true ]; then args=(--full); fi
+          if [ "$EVENT" = workflow_dispatch ] && [ "$DIAGNOSTICS" = ui ]; then args=(--ui-diagnostics); fi
           python3 scripts/ci_plan.py changed.txt "${args[@]}" | tee -a "$GITHUB_OUTPUT"
 
   # The release workflow's rules (scripts/release.py), the CI helper's own tests, the embedded
@@ -117,10 +125,12 @@ jobs:
       ${{ github.triggering_actor == github.actor &&
           (github.actor_id == '19316389' || github.actor_id == '3370624') &&
           github.workflow_ref == format('{0}/.github/workflows/ci.yml@{1}', github.repository, github.ref) &&
-          github.event_name == 'pull_request' &&
-          github.ref == format('refs/pull/{0}/merge', github.event.pull_request.number) &&
-          github.event.pull_request.head.repo.full_name == github.repository &&
-          (github.event.pull_request.user.id == 19316389 || github.event.pull_request.user.id == 3370624) &&
+          ((github.event_name == 'pull_request' &&
+            github.ref == format('refs/pull/{0}/merge', github.event.pull_request.number) &&
+            github.event.pull_request.head.repo.full_name == github.repository &&
+            (github.event.pull_request.user.id == 19316389 || github.event.pull_request.user.id == 3370624)) ||
+           (github.event_name == 'workflow_dispatch' &&
+            github.ref_type == 'branch' && github.event.inputs.diagnostics == 'ui')) &&
           'shepherd-release' || 'macos-26' }}
     timeout-minutes: 60
     env:
@@ -135,8 +145,10 @@ jobs:
       - uses: ./.github/actions/swift-build
         with:
           clean: ${{ inputs.clean == true }}
-      - name: Stage bundled pi for subagent file checks
-        run: python3 scripts/pi_engine.py stage
+      - name: Stage bundled pi and expose its pinned Node to test fixtures
+        run: |
+          python3 scripts/pi_engine.py stage
+          echo "$PWD/.build/pi-engine/Helpers" >> "$GITHUB_PATH"
       # Swift 6.3's single test process otherwise launches every server/process case together,
       # exhausting local resources and timing out unrelated tests. Keep the established CI order.
       - name: Run tests
@@ -166,7 +178,7 @@ jobs:
 
   # The one required check. It passes when every job passed or was skipped on purpose.
   ci:
-    name: CI
+    name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.diagnostics == 'ui' && 'UI diagnostics' || 'CI' }}
     needs: [plan, release-rules, extensions, tests]
     if: ${{ !cancelled() && github.event.action != 'closed' }}
     runs-on: ubuntu-latest
