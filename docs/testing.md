@@ -219,7 +219,8 @@ extension tests, on every bump (docs/pi-engine.md › Bumping the pin).
   six web views open (five live, one rasterizing), panning recycles them, and one board changing
   redraws one frame (`design.board`) with one snapshot; a Tweak drag redraws no frame and its
   release only the tweaked board's; a board dragged redraws only its own frame, once per step. The Designs grid's and the Comments tab's budgets are in
-  `ListPerformanceTests` (`design.card`, `design.comment`).
+  `ListPerformanceTests` (`design.card`, `design.comment`). Snapshot and live rewrites share one
+  fresh canvas but reset target selection, redraw counts and the snapshot baseline between cases.
 - `SHEPHERD_PERF_REPORT=1 swift test --filter ListPerformanceReport` prints each list's timings
   against large fixtures (`Support/ListFixtures.swift`). `ListPerf` times a change's update,
   layout, and display, and scrolls a list a step at a time by moving its clip view.
@@ -465,7 +466,8 @@ no Swift (the extension tests and release rules always run). Tests that depend o
 speed skip on CI (`CI=true`, `.timingSensitive`).
 
 - **The Swift job** (`swift tests`) is `swift build --build-tests` on top of the last build, then
-  `swift test --skip-build`, once. The app suites carry `.mainActorExclusive`, which already
+  `swift test --skip-build`, once, with a 60-minute ceiling for a cold hosted build and full
+  suite. The app suites carry `.mainActorExclusive`, which already
   queues them one at a time on the main actor whatever the parallelism; the server, unit and
   design-kit suites run beside that queue, so the job is not run `--no-parallel`. There is no
   retry: a test that fails is red, and a flaky test is a bug to fix in the test. The full
@@ -503,6 +505,11 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
   test preflight but keeps signing, notarization and artifact verification. Required PR checks
   still apply before merging. CI competes with the Nightly release for the one runner: a
   release waits up to fifteen minutes for it before building on GitHub instead ([releases](releases.md)).
+- **The steer-send soak** runs the real-host send/scroll scenario once on CI, retaining every
+  assertion. Local timing-enabled runs repeat it five times; `SHEPHERD_TIMING_TESTS=1` restores
+  that repetition on CI too. No thread suite is excluded because it contains known issues.
+  Scroll tests still inspect rendered text and pill pixels. Only repeated whole-window pill OCR
+  polls use a 500 ms interval; position assertions and timeouts are unchanged.
 - **The daily run** tests `master` on `macos-26`; `gh workflow run ci.yml --ref <branch>` runs
   the same by hand (`-f clean=true` builds from scratch).
 - **Release rules** run on `ubuntu-latest` (stdlib Python): the release workflow's, the CI

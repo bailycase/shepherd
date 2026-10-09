@@ -39,7 +39,7 @@ class CIRunnerTests(unittest.TestCase):
         self.assertLess(job.index("SELFHOSTED_LOG_MASK:"), job.index("    steps:"))
         self.assertNotIn("needs.plan.outputs", runner_expression(job))
         self.assertNotIn("labels", runner_expression(job))
-        self.assertIn("timeout-minutes: 30", job)
+        self.assertIn("timeout-minutes: 60", job)
         for name, job in JOBS.items():
             if name != "tests":
                 self.assertIn("runs-on: ubuntu-latest", job)
