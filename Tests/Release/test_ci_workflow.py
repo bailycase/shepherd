@@ -3,7 +3,6 @@
 The workflow is read as text (the repository's tests are stdlib only). Run:
 python3 -m unittest discover -s Tests/Release -v
 """
-import io
 import os
 import re
 from pathlib import Path
@@ -210,23 +209,18 @@ class PlanTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertTrue(ci_plan.affects_swift(["docs/x.md", path]))
 
-    def test_the_summary_keeps_issues_and_the_verdict_and_exits_with_it(self):
-        passed = io.StringIO("✔ Test a() passed after 0.1 seconds.\n✔ Test run with 12 tests in 3 suites passed after 1.0 seconds.\n")
-        self.assertEqual(ci_plan.summarize(passed, io.StringIO()), 0)
-        for prefix in ("✔ ", "\U0010105b  ", ""):
-            self.assertEqual(ci_plan.summarize(io.StringIO(prefix + "Test run with 1 test passed after 0.1 seconds.\n"), io.StringIO()), 0)
-        out = io.StringIO()
-        failed = io.StringIO("✘ Test b() recorded an issue at X.swift:3: Expectation failed: 1 == 2\n"
-                             "✘ Test run with 12 tests in 3 suites failed after 1.0 seconds with 1 issue.\n")
-        self.assertEqual(ci_plan.summarize(failed, out), 1)
-        self.assertIn("recorded an issue", out.getvalue())
-        self.assertIn("failed after", out.getvalue())
-        failed_then_passed = "✘ Test run with 2 tests in 1 suite failed after 1.0 seconds with 1 issue.\n" + passed.getvalue()
-        self.assertEqual(ci_plan.summarize(io.StringIO(failed_then_passed), io.StringIO()), 1)
-        for text in ("", "✔ Test run with 0 tests in 0 suites passed after 0.0 seconds.\n",
-                     '◇ Test case passing output → "✔ Test run with 12 tests in 3 suites passed after 1.0 seconds." started.\n'):
-            with self.subTest(text=text):
-                self.assertEqual(ci_plan.summarize(io.StringIO(text), io.StringIO()), 1)
+    def test_the_runner_exit_status_not_printed_fixtures_decides_test_success(self):
+        script = run_script(JOBS["tests"])
+        fixture = 'swift() { echo "Test run with 5 tests failed after 1 second with 1 issue."; return "$STATUS"; }\n'
+        for status in (0, 1, 23, 134):
+            with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
+                result = subprocess.run(["bash", "-e", "-c", fixture + script],
+                                        env={**os.environ, "RUNNER_TEMP": directory,
+                                             "SWIFTPM_FLAGS": "", "STATUS": str(status)},
+                                        capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode == 0, status == 0, result.stderr)
+                self.assertIn("Test run with 5 tests failed", result.stdout)
+                self.assertTrue((Path(directory) / "swift-test.log").exists())
 
 
 if __name__ == "__main__":

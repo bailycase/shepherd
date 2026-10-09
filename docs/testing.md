@@ -469,8 +469,9 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
   queues them one at a time on the main actor whatever the parallelism; the server, unit and
   design-kit suites run beside that queue, so the job is not run `--no-parallel`. There is no
   retry: a test that fails is red, and a flaky test is a bug to fix in the test. The full
-  `swift test` log is uploaded only when the job fails (`ci-swift-test-log`); the step itself
-  prints only the lines that record an issue and the run's summary (`scripts/ci_plan.py --quiet`).
+  `swift test` log is uploaded only when the job fails (`ci-swift-test-log`); the step prints
+  the last 20 lines on success or 120 on failure. Swift's exit status decides the result,
+  never sample failure text printed by tests of the app's log reader.
 - **Where it runs:** a same-repository pull request authored by account ID `19316389` (Baily) or
   `3370624` (Josh), triggered by the same account, runs on the self-hosted Mac (the runner's sole
   custom label, `shepherd-release`). The native `runs-on` expression checks `github.workflow_ref`

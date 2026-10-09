@@ -356,7 +356,7 @@ Tests/
 scripts/               release.py (the release workflow's rules), sign-app.sh (release
                        signing), sync-embedded-extension.py, context_budget.py (what a thread's
                        first request carries, and its ceilings in context-budget.json),
-                       ci_plan.py (whether a change can affect Swift; the test log's summary),
+                       ci_plan.py (whether a change can affect Swift),
                        pi_engine.py + pi-engine-pin.json (stage and verify the pi engine),
                        sign-engine.sh (node, with the engine's entitlements), check_pr_body.py
                        (the pr-body workflow: what a UI or autonomous-feature PR body must say)

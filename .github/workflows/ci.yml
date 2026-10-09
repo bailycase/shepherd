@@ -137,7 +137,13 @@ jobs:
       - name: Run tests
         env:
           CI: "true"
-        run: swift test --skip-build $SWIFTPM_FLAGS 2>&1 | tee "$RUNNER_TEMP/swift-test.log" | python3 scripts/ci_plan.py --quiet
+        run: |
+          if swift test --skip-build $SWIFTPM_FLAGS > "$RUNNER_TEMP/swift-test.log" 2>&1; then
+            tail -20 "$RUNNER_TEMP/swift-test.log"
+          else
+            tail -120 "$RUNNER_TEMP/swift-test.log"
+            exit 1
+          fi
       - name: Upload the log
         if: ${{ failure() }}
         uses: actions/upload-artifact@v4
