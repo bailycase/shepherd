@@ -122,19 +122,40 @@ struct RemoteBrowserDrivePolicyTests {
         defer { s.stop() }
         try await s.showTab()
         let agent = try s.extensionConnection()
-        let owner = try #require(s.session.remote).owner
-        // Nothing listens on these on the host, so each page fails to load; the port stays held.
-        var ports: [UInt16] = []
-        for _ in 0...BrowserHostGuard.maxForwardedPorts { ports.append(try RemoteBrowserDriveTests.unusedPort()) }
-        for port in ports.dropLast() {
-            s.session.remote?.hostPorts[Int(port)] = Int(try RemoteBrowserDriveTests.unusedPort())
-            _ = try await agent.ask(.open(url: "http://localhost:\(port)/", note: nil))
+        let remote = try #require(s.session.remote)
+        var ports: Set<Int> = []
+        // Claim each viewer port before choosing the next, so it cannot be chosen twice. Quota
+        // coverage must not depend on eight failed WebKit loads, each with a 30-second deadline.
+        for index in 0..<BrowserHostGuard.maxForwardedPorts {
+            let port = Int(try RemoteBrowserDriveTests.unusedPort())
+            remote.hostPorts[port] = Int(s.web.port)
+            let address = "http://localhost:\(port)/port-\(index)"
+            let opened = try await agent.text(.open(url: address, note: nil))
+            #expect(opened.contains("Opened \(address)."))
+            ports.insert(port)
+            #expect(s.vm.browsers.ports.ports(of: remote.owner) == ports)
         }
-        #expect(s.vm.browsers.ports.ports(of: owner).count == BrowserHostGuard.maxForwardedPorts)
-        let over = try #require(ports.last)
+        #expect(ports.count == BrowserHostGuard.maxForwardedPorts)
+        let over = Int(try RemoteBrowserDriveTests.unusedPort())
         let refused = try await agent.failure(.open(url: "http://localhost:\(over)/", note: nil))
         #expect(refused.code == "navigation_failed" && refused.message.contains("already has \(BrowserHostGuard.maxForwardedPorts)"))
-        #expect(!s.vm.browsers.ports.ports(of: owner).contains(Int(over)))
+        #expect(s.vm.browsers.ports.ports(of: remote.owner) == ports, "the ninth port was not claimed")
+    }
+
+    @Test func aRefusedHostConnectionFailsTheNavigationButKeepsItsForwardedPort() async throws {
+        let s = try await setup()
+        defer { s.stop() }
+        try await s.showTab()
+        let agent = try s.extensionConnection()
+        let remote = try #require(s.session.remote)
+        // Setup chose the viewer port while the host server still held its own port: after
+        // stopping it, the host cannot accidentally connect back into the viewer's forward.
+        s.web.stop()
+        try await eventuallyAsync("the host's dev server to close") { !(await remote.answers(port: Int(s.port))) }
+        let failed = try await agent.failure(.open(url: s.url("/"), note: nil))
+        #expect(failed.code == "navigation_failed", "a refused connection must fail, not time out: \(failed)")
+        #expect(s.vm.browsers.ports.ports(of: remote.owner) == [Int(s.port)])
+        #expect(s.web.requested.current.isEmpty)
     }
 
     // MARK: Redirects, frames and scripts

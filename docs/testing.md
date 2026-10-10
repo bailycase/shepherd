@@ -65,7 +65,10 @@ stores crashed macOS 26's bundle-less test runner; the bundled app still uses pe
 - `LoopbackServer` and `DevServerFixture`: a server on the loopback and an ephemeral port standing in
   for a host's dev server in tunnel tests (HTTP GET and a POST of any size with its SHA-256, a
   WebSocket echo, an echo, a firehose, one that never reads), IPv4 or IPv6, or on a chosen address
-  or port. Every tunnel and forwarder test uses it, never the network.
+  or port. Every tunnel and forwarder test uses it, never the network. Browser port-quota
+  coverage loads the live fixture and claims each viewer port before choosing the next. A
+  separate refused-connection test checks that failed navigation retains its claimed port;
+  quota coverage does not depend on eight WebKit connection failures reaching callbacks.
 - `ScrollTrace` (`ShepherdAppIntegrationTests/Support`): a thread's scroll view recorded as it
   changes (offset, content height, insets, stamped with the test's step), with the states a display
   could draw (one per run-loop turn) kept apart from every change in between. Read a scroll rule
