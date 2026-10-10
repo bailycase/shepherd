@@ -44,7 +44,7 @@ test("refresh reparses global, trusted project and linked skills without replaci
     const initial = await inspect(pi);
     assert.equal(initial.starts, 1);
     write(path.join(pi.home, "skills/global/SKILL.md"), skill("global", "Global metadata"));
-    write(path.join(pi.work, ".pi/skills/project/SKILL.md"), skill("project", "Project metadata"));
+    write(path.join(pi.work, ".shepherd/skills/project/SKILL.md"), skill("project", "Project metadata"));
     write(path.join(pi.work, ".agents/skills/agents/SKILL.md"), skill("agents"));
     write(path.join(pi.dir, ".agents/skills/excluded/SKILL.md"), skill("excluded"));
     write(path.join(pi.dir, "linked/SKILL.md"), skill("linked"));
@@ -59,7 +59,7 @@ test("refresh reparses global, trusted project and linked skills without replaci
     assert.match(current.prompt, /Project metadata/);
     assert.equal(await refresh(pi), false);
     write(path.join(pi.home, "skills/global/SKILL.md"), skill("global", "Manual only", "disable-model-invocation: true\n"));
-    write(path.join(pi.work, ".pi/skills/project/SKILL.md"), skill("renamed", "Changed metadata"));
+    write(path.join(pi.work, ".shepherd/skills/project/SKILL.md"), skill("renamed", "Changed metadata"));
     fs.unlinkSync(path.join(pi.dir, "linked/SKILL.md"));
     assert.equal(await refresh(pi), true);
     current = await inspect(pi);
@@ -78,7 +78,7 @@ test("refresh preserves untrusted-project and no-skills exclusions", { timeout: 
     await withPi(t, { settings: { extensions: OFF }, args: ["--no-approve", ...args] }, async pi => {
       await pi.commands();
       write(path.join(pi.home, "skills/global/SKILL.md"), skill("global"));
-      write(path.join(pi.work, ".pi/skills/untrusted/SKILL.md"), skill("untrusted"));
+      write(path.join(pi.work, ".shepherd/skills/untrusted/SKILL.md"), skill("untrusted"));
       write(path.join(pi.work, ".agents/skills/untrusted-agent/SKILL.md"), skill("untrusted-agent"));
       await refresh(pi);
       const names = (await pi.commands()).map(c => c.name);
@@ -138,7 +138,7 @@ for (const source of ["cli", "package", "extension"]) {
         [path.join(dir, "extra-skills/only/SKILL.md")]: skill("extra-only", "Original extra instructions"),
         [path.join(dir, "extra-skills/conflict/SKILL.md")]: skill("conflict", "Extra collision winner"),
         "skills/conflict/SKILL.md": skill("conflict", "Global collision winner"),
-        [path.join(work, ".pi/skills/conflict/SKILL.md")]: skill("conflict", "Project collision winner"),
+        [path.join(work, ".shepherd/skills/conflict/SKILL.md")]: skill("conflict", "Project collision winner"),
       }),
     }, async pi => {
       const initialCommands = await pi.commands();
@@ -164,7 +164,7 @@ for (const source of ["cli", "package", "extension"]) {
       assert.ok(!current.prompt.includes("Edited extra instructions"));
       assert.ok(!(await pi.commands()).some(c => c.name === "skill:extra-only"));
       assert.deepEqual(winners.filter(text => current.prompt.includes(text)), [winner]);
-      fs.unlinkSync(path.join(pi.work, ".pi/skills/conflict/SKILL.md"));
+      fs.unlinkSync(path.join(pi.work, ".shepherd/skills/conflict/SKILL.md"));
       await refresh(pi);
       current = await inspect(pi);
       assert.deepEqual(winners.filter(text => current.prompt.includes(text)), ["Global collision winner"]);
@@ -188,7 +188,7 @@ test("native events observe absent sources, atomic directory replacement and dan
     };
     await observe(() => write(path.join(pi.work, ".agents/skills/event/SKILL.md"), skill("agents-event")));
     assert.ok((await pi.commands()).some(c => c.name === "skill:agents-event"));
-    const folder = path.join(pi.work, ".pi/skills/event");
+    const folder = path.join(pi.work, ".shepherd/skills/event");
     await observe(() => write(path.join(folder, "SKILL.md"), skill("event-one")));
     assert.ok((await pi.commands()).some(c => c.name === "skill:event-one"));
     const replacement = path.join(pi.dir, "replacement");
@@ -198,12 +198,12 @@ test("native events observe absent sources, atomic directory replacement and dan
       fs.renameSync(replacement, folder);
     });
     assert.ok((await pi.commands()).some(c => c.name === "skill:event-two"));
-    await observe(() => fs.rmSync(path.join(pi.work, ".pi/skills"), { recursive: true }));
+    await observe(() => fs.rmSync(path.join(pi.work, ".shepherd/skills"), { recursive: true }));
     assert.ok(!(await pi.commands()).some(c => c.name.startsWith("skill:event-")));
     const linked = path.join(pi.dir, "linked-target");
     await observe(() => {
-      fs.mkdirSync(path.join(pi.work, ".pi/skills"), { recursive: true });
-      fs.symlinkSync(linked, path.join(pi.work, ".pi/skills/link"));
+      fs.mkdirSync(path.join(pi.work, ".shepherd/skills"), { recursive: true });
+      fs.symlinkSync(linked, path.join(pi.work, ".shepherd/skills/link"));
     });
     await observe(() => write(path.join(linked, "nested/SKILL.md"), skill("linked-event")));
     assert.ok((await pi.commands()).some(c => c.name === "skill:linked-event"));
@@ -263,7 +263,7 @@ test("ancestor symlink retargets and dangling recovery invalidate the new skill 
     project: (dir, work) => {
       write(path.join(dir, "one/skills/example/SKILL.md"), skill("from-one"));
       write(path.join(dir, "two/skills/example/SKILL.md"), skill("from-two"));
-      fs.symlinkSync(path.join(dir, "one"), path.join(work, ".pi"));
+      fs.symlinkSync(path.join(dir, "one"), path.join(work, ".shepherd"));
     },
   }, async pi => {
     assert.ok((await pi.commands()).some(c => c.name === "skill:from-one"));
@@ -275,7 +275,7 @@ test("ancestor symlink retargets and dangling recovery invalidate the new skill 
     };
     const retarget = target => {
       fs.symlinkSync(path.join(pi.dir, target), path.join(pi.work, "replacement-link"));
-      fs.renameSync(path.join(pi.work, "replacement-link"), path.join(pi.work, ".pi"));
+      fs.renameSync(path.join(pi.work, "replacement-link"), path.join(pi.work, ".shepherd"));
     };
     await observe(() => retarget("two"));
     assert.ok((await pi.commands()).some(c => c.name === "skill:from-two"));
