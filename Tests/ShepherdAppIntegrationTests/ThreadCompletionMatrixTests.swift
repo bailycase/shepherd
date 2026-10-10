@@ -32,6 +32,38 @@ struct ThreadCompletionMatrixTests {
         deck.model.tray = true
         defer { deck.close() }
         try await deck.open()
+        let trace = boundary == .scrolledReplyCollapses ? deck.scrollView.map(ScrollTrace.init) : nil
+        defer { trace?.stop() }
+        trace?.probe = { (deck.tailGuard.visible.contains(ThreadView.bottomID), deck.tailGuard.repairing) }
+        var phases: [[String: Any]] = []
+        func capturePhase(_ phase: String) {
+            guard boundary == .scrolledReplyCollapses, let scroll = deck.scrollView else { return }
+            trace?.mark(phase)
+            func rect(_ value: CGRect) -> [Double] { [value.minX, value.minY, value.width, value.height].map(Double.init) }
+            func geometry(_ view: NSView) -> [[String: Any]] {
+                var frame = view.convert(view.bounds, to: scroll.contentView)
+                frame.origin.y -= scroll.contentView.bounds.minY
+                var value: [String: Any] = ["type": String(describing: type(of: view)), "frame": rect(view.frame),
+                                            "viewportFrame": rect(frame), "visibleRect": rect(view.visibleRect),
+                                            "hidden": view.isHidden, "alpha": Double(view.alphaValue)]
+                if let marker = view as? ThreadHistoryAnchor.Marker {
+                    value["rowID"] = marker.rowID
+                    value["anchorRowID"] = marker.anchor?.rowID ?? "none"
+                    value["viewportTop"] = marker.viewportTop.map { Double($0) as Any } ?? NSNull()
+                }
+                return [value] + view.subviews.flatMap(geometry)
+            }
+            phases.append(["phase": phase, "reading": deck.reading.map(String.init(describing:)) ?? "no scroll view",
+                           "clip": rect(scroll.contentView.bounds), "document": scroll.documentView.map { rect($0.bounds) } ?? [],
+                           "insets": [Double(scroll.contentInsets.top), Double(scroll.contentInsets.bottom)],
+                           "targets": deck.tailGuard.visible, "following": deck.tailGuard.following,
+                           "repairing": deck.tailGuard.repairing, "attempts": deck.tailGuard.attempts,
+                           "session": deck.store.sessionKey ?? "none", "hostRunning": deck.store.hostRunning,
+                           "running": deck.store.running, "olderRequests": host.olderRequests,
+                           "rows": deck.store.rows.map { ["id": $0.id, "messages": $0.turn.messages.count,
+                                                          "items": $0.presentation?.items.count ?? 0, "live": $0.live] as [String: Any] },
+                           "geometry": geometry(deck.page)])
+        }
         let at = Fx.base + 100_000_000
         var live = [Fx.user("matrix-user", "Audit the thread and finish the review.", at: at)]
         var worker = ChildRun(runID: "matrix-child", label: "Read-only worker review", state: "running", startedAt: at, role: "worker")
@@ -98,6 +130,7 @@ struct ThreadCompletionMatrixTests {
             await deck.store.refresh()
             try await Task.sleep(for: .milliseconds(80))
         }
+        capturePhase("before-replacement")
         host.provisional = []
         if boundary == .historyReplacement { host.all = Array(live.suffix(4)) }
         else if boundary == .scrolledReplyCollapses { host.all += [live[0], live[live.count - 1]] }
@@ -107,10 +140,12 @@ struct ThreadCompletionMatrixTests {
         if boundary == .newSession { host.all = [Fx.user("new-prompt", "New session after completion", at: at), Fx.reply("new-answer", "The session is ready.", at: at + 1000)] }
         host.bump()
         await deck.store.refresh()
+        capturePhase("after-refresh")
         if boundary == .hidden { deck.show() }
         // No forced layout between completion and this bounded recovery interval.
         try await Task.sleep(for: .seconds(2))
         let image = try ThreadWindowCapture.image(deck.window.window)
+        capturePhase("final-image")
         let scroll = try #require(deck.scrollView)
         let viewport = scroll.convert(scroll.bounds, to: nil)
         let scale = CGFloat(image.height) / deck.window.window.frame.height
@@ -132,6 +167,18 @@ struct ThreadCompletionMatrixTests {
         let state = deck.reading
         let prefix = "\(boundary.rawValue)-\(native ? "anchored" : "scrolling")"
         print("BOUNDARY \(prefix): rows=\(deck.store.rows.count), targets=\(deck.tailGuard.visible), following=\(deck.tailGuard.following), compositorInk=\(ink), \(String(describing: state))")
+        if boundary == .scrolledReplyCollapses {
+            // Reuse this exact compositor image; evidence must not force a redraw or move the reader.
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("shepherd-completion-repro")
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let path = directory.appendingPathComponent("matrix-" + prefix)
+            try #require(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])).write(to: path.appendingPathExtension("png"))
+            try JSONSerialization.data(withJSONObject: ["native": native, "ink": ink, "phases": phases], options: [.prettyPrinted, .sortedKeys])
+                .write(to: path.appendingPathExtension("json"))
+            let report = "DRAWN\n" + (trace?.report(limit: 600) ?? "") + "\nALL CHANGES\n" + (trace?.report(limit: 600, allFrames: true) ?? "")
+            try report.write(to: path.appendingPathExtension("trace.txt"), atomically: true, encoding: .utf8)
+            print("COLLAPSE EVIDENCE: \(path.path).{png,json,trace.txt}")
+        }
         guard !deck.store.rows.isEmpty, ink > 120 else {
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent("shepherd-completion-matrix")
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

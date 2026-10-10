@@ -90,7 +90,16 @@ stores crashed macOS 26's bundle-less test runner; the bundled app still uses pe
   failed the paint condition. Failed Swift CI runs include these completion PNGs beside the
   complete log in the seven-day `ci-swift-test-log` artifact. Each workspace image also has
   passive JSON evidence for the last OCR result and native scroll geometry. Capturing it does
-  not force layout or change the paint assertion. Turn-navigation probes wait
+  not force layout or change the paint assertion. The completion matrix's `scrolledReplyCollapses`
+  case retains its exact compositor image, passive pre-replacement, post-refresh and final
+  native geometry/row/anchor snapshots, and `ScrollTrace` in that same artifact directory,
+  in both native modes. It does not materialize rows, move the reader or alter recovery time.
+  The remote-browser reconnect scenario emits generic monotonic markers across fixture
+  startup, handshake/workspace readiness, web-listener states, browser-store creation,
+  ownership, reconnect, extension request/result and cleanup. Other fixture users keep the
+  optional diagnostics off. Markers contain no host, token, URL or response values. These
+  captures diagnose hosted failures; they are not rendering or cancellation fixes.
+  Turn-navigation probes wait
   for the viewport to land above the bottom band, not merely for the navigation intent to detach
   following while its first animated frames are still at the tail. The off-screen scroll harness
   declares wheel intent through the same `ThreadInput.readerScrolled(upward:)` method as the native
@@ -602,7 +611,10 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
   the same by hand (`-f clean=true` builds from scratch).
   `gh workflow run ci.yml --ref <branch> -f diagnostics=ui` collects focused failures in the
   self-hosted runner context only when explicitly enabled, otherwise on GitHub, without
-  rerunning all suites or changing PR coverage. With self-hosted disabled, a trusted
+  rerunning all suites or changing PR coverage. Its fixed, native-ID-validated selection includes
+  menus, code blocks, pane controls, paging, idle checks, both completion suites and remote
+  browser drive. Completion and reconnect diagnostics preserve every original assertion.
+  With self-hosted disabled, a trusted
   `gh workflow run ci.yml --ref nightly -f diagnostics=ui` also seeds Nightly's hosted cache:
   it still builds all test products and runs the existing validated UI diagnostics, reporting
   only `UI diagnostics`, never the required `CI` check. There is no new warmup job or mode.

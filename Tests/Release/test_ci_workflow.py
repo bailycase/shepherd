@@ -420,10 +420,14 @@ class PlanTests(unittest.TestCase):
                 expression = name.replace("github.event_name", repr(event)).replace("github.event.inputs.diagnostics", repr(diagnostic))
                 actual = eval(expression.replace("&&", " and ").replace("||", " or "), {"__builtins__": {}})
                 self.assertEqual(actual, "UI diagnostics" if event == "workflow_dispatch" and diagnostic == "ui" else "CI")
-        ids = [f"ShepherdAppIntegrationTests.{name}/case()" for name in (
-            "ComposerMenuTests", "ThreadCodeBlockTests", "PaneControlTests", "ThreadScrollingTests", "IdleCostTests",
-        )]
-        ci_plan.validated_filter(ids, ci_plan.UI_DIAGNOSTICS)
+        suites = ("ComposerMenuTests", "ThreadCodeBlockTests", "PaneControlTests", "ThreadScrollingTests",
+                  "IdleCostTests", "ThreadCompletionMatrixTests", "ThreadCompletionReproductionTests",
+                  "RemoteBrowserDriveTests")
+        ids = [f"ShepherdAppIntegrationTests.{name}/case()" for name in suites]
+        pattern = ci_plan.validated_filter(ids, ci_plan.UI_DIAGNOSTICS)
+        self.assertEqual(len(ci_plan.UI_DIAGNOSTICS), len(suites))
+        self.assertTrue(all(re.search(pattern, test_id) for test_id in ids))
+        self.assertIsNone(re.search(pattern, "ShepherdAppIntegrationTests.UnrelatedTests/case()"))
         script = run_script(JOBS["plan"])
         fixture = 'python3() { command "$PYTHON" "$PLANNER" "${@:2}"; }\n'
         for event, diagnostic, expected in (("workflow_dispatch", "ui", ci_plan.UI_DIAGNOSTICS),
