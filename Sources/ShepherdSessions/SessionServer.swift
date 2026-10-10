@@ -1777,7 +1777,11 @@ public final class SessionServer: @unchecked Sendable {
         case .design(let id, let request):
             remoteDesign(id: id, request: request, client: client)
         case .projects(let id, let request):
-            guard offeredCapabilities.contains(RemoteProtocol.projectsCapability) else {
+            guard client.clientCapabilities.contains(RemoteProtocol.projectsV2Capability) else {
+                send(.error(id: id, code: "update_required", message: "Update Shepherd on this client to edit this host's project configuration."), to: client)
+                return
+            }
+            guard offeredCapabilities.contains(RemoteProtocol.projectsV2Capability) else {
                 send(.error(id: id, code: "update_required", message: "Update Shepherd on the host to edit its projects from here."), to: client)
                 return
             }

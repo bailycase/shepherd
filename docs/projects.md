@@ -53,7 +53,9 @@ project MCP uses `enabled`, `exposure`, `timeout` and `oauth`; shared `.mcp.json
 and keeps tools searchable. Unknown fields and other top-level sections stay intact.
 Project forms keep credentials and environment references in the project file, never the
 local global Keychain. They neither connect to servers nor report global runtime status as
-project status. Invalid files show an error and cannot be replaced by form edits. Open in editor
+project status. Older remote hosts still inventory native MCP as `.pi/mcp.json`; the viewer
+preserves that selected path and its native `enabled`, exposure and approval behavior. This
+compatibility does not restore local `.pi` discovery. Invalid files show an error and cannot be replaced by form edits. Open in editor
 remains available for repair and unsupported advanced fields. Extensions also includes
 `.shepherd/settings.json`, where pi's extension and package paths live. Saving does not execute a
 skill, extension or MCP server, change project trust, or restart an agent. Running agents must
@@ -73,6 +75,13 @@ Shepherd's bundled engine discovers project configuration in `.shepherd`, not `.
 The file formats are unchanged. Root `AGENTS.md`, `.agents` resources and shared `.mcp.json`
 remain where they were. Terminal Pi's global `~/.pi/agent` import and conversation adoption,
 including its project `.pi/settings.json` session directory, are unchanged.
+
+Remote project settings use `projects.v2` for the `.shepherd` inventory. Current hosts advertise
+v2 instead of v1 and refuse every project request from a client that has not acknowledged v2,
+before file access, migration or trust changes. The response asks the client to update; other
+remote features remain available. Current viewers also support older `projects.v1` hosts and
+preserve their native `.pi` paths and MCP schema. This gate changes neither wire shapes nor
+protocol version 1.
 
 On the first host startup after this change, Shepherd snapshots its existing project history,
 restored workspace directories and the existing bounded session-header history scan. The host
@@ -127,14 +136,14 @@ invalidates an open project's editor.
 Changing category/file or closing a dirty detail asks before discarding. Failed reads cannot
 be saved.
 
-`projects.details.v1` adds metadata/context and host-local editor opening to `projects.v1`.
+`projects.details.v1` adds metadata/context and host-local editor opening to either project version.
 Older hosts retain file editing, disable editor opening and cannot supply context counts.
 Editor opening validates the allowlisted file through directory descriptors and pins its
 identity with a macOS file reference before asking that host's editor to open it.
 
-`projects.v1` carries list, files, read and save requests over the authenticated existing remote
-connection. The host validates every request and accesses only its own project files. An older
-host requires an update. The transport has no TLS; project contents travel over the same
+`projects.v2` (or a legacy host's `projects.v1`) carries list, files, read and save requests over
+the authenticated existing remote connection. The host validates every request and accesses
+only its own project files. Hosts without either capability require an update. The transport has no TLS; project contents travel over the same
 connection as the rest of remote Shepherd, never to a model provider. No file contents are
 logged.
 

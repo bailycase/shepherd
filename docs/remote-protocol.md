@@ -93,12 +93,17 @@
     The home folder remains excluded. No credential or global trust setting crosses the wire.
   - `projects.details.v1`: adds host-local metadata/context and editor opening to projects.
     Clients gate context/open requests separately; older `projects.v1` hosts still edit files.
-  - `projects` (`projects.v1`): host-owned project history, project-file inventory, reads and
-    conflict-checked saves. Only allowlisted files in the selected project are writable,
-    never host-global configuration. The Mac Projects page checks this capability and the
-    connected host identity before requests. Older hosts show update-required rows.
-    Both Mac and iOS decode the additive messages through `ShepherdRemote`; only the Mac
-    exposes a Projects editor in this change. See [Projects](projects.md).
+  - `projects` (`projects.v2`; older hosts use `projects.v1`): host-owned project history,
+    inventory, reads and conflict-checked saves. V1 inventories native `.pi` configuration;
+    v2 inventories `.shepherd`. Current hosts advertise only v2 and require v2 in the client's
+    authenticated hello before any project request reaches file access, migration or approval.
+    A legacy client gets `update_required`, including an editor already open; other remote
+    features remain available. Current clients advertise v2 and accept either host version,
+    preserving the inventoried path and native MCP format. No filesystem aliases are created.
+    Only allowlisted project files are writable, never host-global configuration. The Mac
+    Projects page checks the host capability and connected identity before requests. Mac and
+    iOS share negotiation/codecs through `ShepherdRemote`; only the Mac exposes a Projects
+    editor. Request/result shapes and protocol version 1 are unchanged. See [Projects](projects.md).
   - `skills` (`skills.v1`): Settings ▸ Skills on the host (fetch, look up a repository, install
     from one or from files, on or off, how it's used, remove and restore, check for updates,
     Update automatically), answered with the host's skills or the repository's, and beside them

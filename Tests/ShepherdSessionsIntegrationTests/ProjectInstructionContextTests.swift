@@ -10,10 +10,10 @@ import Testing
 struct ProjectInstructionContextTests {
     @Test func detailsCapabilityIsOptionalForProjectOnlyHosts() async throws {
         let host = try RemoteHost(); defer { host.stop() }
-        host.server.advertisedCapabilities = [RemoteProtocol.projectsCapability]
+        host.server.advertisedCapabilities = [RemoteProtocol.projectsV2Capability]
         let client = try await host.typed()
         defer { client.disconnect() }
-        guard case .listing = try await client.projects(.list()) else { Issue.record("Old project host could not list projects"); return }
+        guard case .listing = try await client.projects(.list()) else { Issue.record("Project-only host could not list projects"); return }
         do { _ = try await client.projects(.context(directory: "/repo")); Issue.record("Missing details capability was ignored") }
         catch let error as RemoteHostClientError {
             guard case .rejected(let code, _) = error else { Issue.record("Expected unsupported, got \(error)"); return }
