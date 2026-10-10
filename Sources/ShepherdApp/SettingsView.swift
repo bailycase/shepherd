@@ -299,7 +299,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .projects: ["Filter projects", "All hosts", "Add project", "Instructions", "Pi settings", "Skills", "Extensions", "MCP servers"]
         case .pi: ["Shepherd's pi", "Source", "Last brought over", "Re-import all", "Logins", "Custom providers", "Default model", "Trusted folders",
                    "Instructions", "Skills", "Prompts", "Themes", "Imported extensions"]
-        case .extensions: ["Terminals and agent tools", "Agent-to-agent messages", "Diff review tool", "MCP servers", "Browser tools", "Design references"]
+        case .extensions: ["Terminals and agent tools", "Diff review tool", "MCP servers", "Browser tools", "Design references"]
         case .piSignIn: ["Re-import from pi", "Subscriptions", "Anthropic", "OpenAI Codex", "GitHub Copilot", "xAI", "Kimi", "Radius",
                          "API keys", "Add an API key", "CLIProxyAPI", "Custom providers"]
         case .piSlashCommands: ["Search commands", "Extensions", "Prompt templates", "Skills", "Disabled commands"]
@@ -344,8 +344,6 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                    "Skills": ["SKILL.md", "re-import"], "Prompts": ["prompt templates", "re-import"], "Themes": ["re-import"],
                    "Imported extensions": ["packages", "npm", "full access", "switch on", "didn't load"]]
         case .extensions: ["Terminals and agent tools": ["panes", "notifications", "automations"],
-                           "Agent-to-agent messages": ["agent_send", "agent_spawn", "message", "steer", "peer", "threads", "approve", "allow",
-                                                       "ask", "permission", "never", "dialog"],
                            "Diff review tool": ["review_diff"], "MCP servers": ["tool search"], "Browser tools": ["screenshots"],
                            "Design references": ["design_get"]]
         case .piSignIn: ["Subscriptions": ["login", "log in", "sign in", "oauth", "subscription", "auth.json", "claude", "chatgpt", "copilot",

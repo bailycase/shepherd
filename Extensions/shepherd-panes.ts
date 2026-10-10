@@ -10,8 +10,8 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 const REQUEST_TIMEOUT_MS = 15_000;
-// A call that touches another thread may wait for the user's approval (up to 120 s on the host).
-const APPROVAL_TIMEOUT_MS = 130_000;
+// Thread creation and process teardown may take longer than a normal peer request.
+const PEER_TIMEOUT_MS = 130_000;
 
 interface Reply {
   type: string;
@@ -461,7 +461,7 @@ export default function shepherdPanes(pi: ExtensionAPI) {
       destinationPath: Type.Optional(Type.String({ description: "Unused absolute destination folder, required only for explicit move/copy" })),
     }),
     async execute(_id, args) {
-      const reply = await request({ type: "editProject", projectID: args.projectID, request: { name: args.name, parentProjectID: args.parentProjectID, folderAction: args.folderAction ?? "none", destinationPath: args.destinationPath } }, undefined, APPROVAL_TIMEOUT_MS);
+      const reply = await request({ type: "editProject", projectID: args.projectID, request: { name: args.name, parentProjectID: args.parentProjectID, folderAction: args.folderAction ?? "none", destinationPath: args.destinationPath } }, undefined, PEER_TIMEOUT_MS);
       return text(JSON.stringify({ space: reply.space, created: reply.created }));
     },
   });
@@ -492,16 +492,16 @@ export default function shepherdPanes(pi: ExtensionAPI) {
 
   // ---- peer threads --------------------------------------------------------
   // Every tool here that touches another thread is for what the user asked for in this
-  // conversation, and Shepherd can ask the user to approve each call (Settings ▸ Pi ▸ Agent-to-agent
-  // messages). The words say so first, because a model reads them before it acts. Authorization
+  // conversation. Calls need no approval dialog or permission setting. The words say so first,
+  // because a model reads them before it acts. Authorization
   // is the host's: nothing here decides whether a call is allowed.
 
   const ONLY_WHEN_ASKED =
     "Only when the user explicitly asks you to, in this conversation. Never on your own initiative: " +
     "not to report status, ask for help, hand off work, share findings or coordinate. If unsure, don't. ";
-  const APPROVAL =
-    "Shepherd may ask the user to approve this call. If it comes back not approved or turned off, " +
-    "stop: do not retry, and do not look for another way to reach the thread.";
+  const ACCESS_POLICY =
+    "No approval dialog is shown. If the host refuses the call, stop: do not retry, " +
+    "and do not look for another way to reach the thread.";
   // The same lines on every tool that touches another thread: pi writes a repeated line once.
   const PEER_GUIDELINES = [
     "Use agent_send, agent_steer, agent_interrupt, agent_read and agent_spawn only when the user explicitly " +
@@ -546,7 +546,7 @@ export default function shepherdPanes(pi: ExtensionAPI) {
       "Sends a message to another agent thread. delivery task (default) asks it to do work: it starts " +
       "an idle agent or queues a follow-up while busy. delivery report is hidden context only, and " +
       "never starts or queues a turn. The other thread sees an agent's message, not the user's. " +
-      APPROVAL + " Dispatch is not confirmation of acceptance or consumption.",
+      ACCESS_POLICY + " Dispatch is not confirmation of acceptance or consumption.",
     promptSnippet: line(deferPeers, "Message another agent thread, only when the user explicitly asked you to"),
     ...later(deferPeers, PEERS),
     promptGuidelines: PEER_GUIDELINES,
@@ -559,7 +559,7 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     async execute(_toolCallId, params, signal) {
       const delivery = params.delivery ?? "task";
       await request({ type: "sendToAgent", targetAgentID: params.agentID, text: params.text, delivery },
-        signal, APPROVAL_TIMEOUT_MS);
+        signal, PEER_TIMEOUT_MS);
       return text(`${delivery} dispatch requested for agent ${params.agentID}; acceptance and consumption are not confirmed`);
     },
   });
@@ -574,7 +574,7 @@ export default function shepherdPanes(pi: ExtensionAPI) {
       "branch, not streaming text. Thinking, images, hidden entries, and tool arguments are omitted. Returns " +
       "entry IDs, nextCursor and truncation flags. Defaults to the latest 20 entries; after reads forward. " +
       "Per-entry text is capped at 4000 characters, total at 48 KiB. A cursor from another branch is an " +
-      "error. " + APPROVAL,
+      "error. " + ACCESS_POLICY,
     promptGuidelines: PEER_GUIDELINES,
     ...later(deferPeers, PEERS),
     parameters: Type.Object({
@@ -584,7 +584,7 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     }),
     async execute(_id, params, signal) {
       const reply = await request({ type: "coordinateAgent", targetAgentID: params.agentID,
-        request: { operation: "read", after: params.after, limit: params.limit } }, signal, APPROVAL_TIMEOUT_MS);
+        request: { operation: "read", after: params.after, limit: params.limit } }, signal, PEER_TIMEOUT_MS);
       return text(reply.result?.text ?? "no messages");
     },
   });
@@ -597,13 +597,13 @@ export default function shepherdPanes(pi: ExtensionAPI) {
       "Wrong: redirecting another thread because you think it is off track. Right: the user said \"tell " +
       "the worker thread to stop using the old API now\". Steers another live agent: the message lands at " +
       "its next step, or starts an idle one. Reports requested, not accepted or consumed. Cannot target " +
-      "yourself. " + APPROVAL,
+      "yourself. " + ACCESS_POLICY,
     promptGuidelines: PEER_GUIDELINES,
     ...later(deferPeers, PEERS),
     parameters: Type.Object({ agentID: Type.String(), text: Type.String({ minLength: 1, maxLength: 32768 }) }),
     async execute(_id, params, signal) {
       const reply = await request({ type: "coordinateAgent", targetAgentID: params.agentID,
-        request: { operation: "steer", text: params.text } }, signal, APPROVAL_TIMEOUT_MS);
+        request: { operation: "steer", text: params.text } }, signal, PEER_TIMEOUT_MS);
       return text(reply.result?.text ?? "steering dispatch requested");
     },
   });
@@ -616,13 +616,13 @@ export default function shepherdPanes(pi: ExtensionAPI) {
       "Wrong: stopping another thread because it seems stuck or slow. Right: the user said \"stop the " +
       "migration thread\". Best-effort cancellation of another live agent's current turn. Does not confirm " +
       "it stopped; tools must cooperate. Also cancels a pending retry or compaction; messages already " +
-      "queued stay queued. Cannot target yourself. " + APPROVAL,
+      "queued stay queued. Cannot target yourself. " + ACCESS_POLICY,
     promptGuidelines: PEER_GUIDELINES,
     ...later(deferPeers, PEERS),
     parameters: Type.Object({ agentID: Type.String() }),
     async execute(_id, params, signal) {
       const reply = await request({ type: "coordinateAgent", targetAgentID: params.agentID,
-        request: { operation: "interrupt" } }, signal, APPROVAL_TIMEOUT_MS);
+        request: { operation: "interrupt" } }, signal, PEER_TIMEOUT_MS);
       return text(reply.result?.text ?? "cancellation requested");
     },
   });
@@ -671,9 +671,8 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     label: "Request Agent Deletion",
     description:
       "Only when the user explicitly asks you to delete another agent. Never on your own initiative, " +
-      "never to tidy up. Asks the real user in Shepherd's native confirmation to delete another agent and " +
-      "terminate all its auxiliary processes. No agent-supplied approval is accepted. Cancel or a 120-second " +
-      "confirmation timeout keeps it intact. Keeps worktrees and branches. Cannot delete yourself.",
+      "never to tidy up. Deletes another agent and terminates all its auxiliary processes immediately, " +
+      "without confirmation. Keeps worktrees and branches. Cannot delete yourself. " + ACCESS_POLICY,
     ...later(deferPeers, PEERS),
     parameters: Type.Object({ agentID: Type.String() }),
     async execute(_id, params, signal) {
@@ -692,7 +691,7 @@ export default function shepherdPanes(pi: ExtensionAPI) {
       "starting a thread to run tests or look into a side question. Right: the user said \"open a thread " +
       "in ~/src/api and have it fix the build\". Starts a new top-level agent thread in Shepherd with an " +
       "opening prompt, visible in the sidebar like any user-created agent. Returns the new agent's id. " +
-      APPROVAL,
+      "No confirmation or separate permission setting is required.",
     promptSnippet: line(deferPeers, "Start a new agent thread, only when the user explicitly asked you to"),
     ...later(deferPeers, PEERS),
     promptGuidelines: PEER_GUIDELINES,
@@ -702,7 +701,7 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     }),
     async execute(_toolCallId, params, signal) {
       const reply = await request({ type: "spawnAgent", cwd: params.cwd, prompt: params.prompt },
-        signal, APPROVAL_TIMEOUT_MS);
+        signal, PEER_TIMEOUT_MS);
       const spawned = reply.agents?.[0];
       if (!spawned) return text("spawned agent thread");
       return text(`spawned agent ${spawned.id} (${spawned.name}) in ${spawned.cwd}`);

@@ -1,7 +1,7 @@
 // What an agent is told about the tools that touch other threads (Extensions/shepherd-panes.ts):
 // each one leads with the rule that it is for what the user asked for, agent_list reminds, a
 // watch agent gets only agent_send, a refusal reaches the model as a short error, and a call
-// that waits for the user's approval is not cut off early. The last test runs a real pi against
+// that takes longer to finish is not cut off early. The last test runs a real pi against
 // a local fake provider and reads what reached the wire: the system prompt and the tool schemas.
 import assert from "node:assert/strict";
 import { test, mock } from "node:test";
@@ -101,7 +101,7 @@ test("every tool that touches another thread leads with the rule and gives a wro
       assert.match(description, /Never on your own initiative/);
       assert.match(description, /If unsure, don't\./);
       assert.match(description, /Wrong: .+ Right: /, `${name} gives one wrong and one right use`);
-      assert.match(description, /Shepherd may ask the user to approve/, `${name} says the user may be asked`);
+      assert.match(description, /No approval dialog is shown/, `${name} does not promise an approval prompt`);
       assert.match(description, /do not look for another way/, `${name} says a refusal is final`);
     }
     assert.match(h.tools.get("agent_spawn").description, /^Only when the user explicitly asks you to start a new agent thread\. Never on your own initiative/);
@@ -196,7 +196,7 @@ test("a refusal reaches the model as a short error with its code, for every tool
   } finally { await h.close(); }
 });
 
-test("a call that waits for the user is not cut off at the usual 15 seconds, and a plain one is", async () => {
+test("a long-running peer call is bounded but gets more time than a plain call", async () => {
   mock.timers.enable({ apis: ["setTimeout"] });
   const h = await harness();
   try {
@@ -209,7 +209,7 @@ test("a call that waits for the user is not cut off at the usual 15 seconds, and
     let settled = false;
     send.then(() => { settled = true; }, () => { settled = true; });
     await new Promise((resolve) => setImmediate(resolve));
-    assert.equal(settled, false, "the send is still waiting for the user after 16 s");
+    assert.equal(settled, false, "the send is still waiting for dispatch after 16 s");
     h.write({ type: "ok", id: h.frames.find((f) => f.type === "sendToAgent").id });
     assert.match(output(await send), /task dispatch requested for agent a1/);
 
@@ -224,7 +224,7 @@ test("a call that waits for the user is not cut off at the usual 15 seconds, and
   }
 });
 
-test("stopping a send while it waits for the user tells the host, so its dialog closes", async () => {
+test("stopping a pending send tells the host", async () => {
   const h = await harness();
   try {
     const controller = new AbortController();
