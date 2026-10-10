@@ -10,8 +10,8 @@ import Testing
 @testable import ShepherdApp
 
 /// The surfaces ThreadControlsFixes changes, from their real producers, light and dark at text
-/// scale 1 and 1.3: the composer's corner (Stop when it works and nothing is typed, Send beside
-/// an outlined Stop with words or a long draft), the workplace menu's Base row, and the base
+/// scale 1 and 1.3: the composer's one corner action (Stop while it works and nothing is typed, Send
+/// alone with words or a long draft, Send when idle), the workplace menu's Base row, and the base
 /// picker over a long list of long names, a short one and an empty search.
 @Suite("Thread controls previews", .serialized, .mainActorExclusive, .enabled(if: Preview.enabled && !Preview.liveModel, "set SHEPHERD_PREVIEW_DIR (without SHEPHERD_LIVE_MODEL) to render previews"))
 @MainActor
