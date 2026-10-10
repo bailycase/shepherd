@@ -32,15 +32,18 @@ import base64
 import datetime
 import fnmatch
 import hashlib
+import http.client
 import json
 import mmap
 import os
 import re
 import shutil
+import socket
 import struct
 import sys
 import tarfile
 import tempfile
+import urllib.error
 import urllib.request
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -52,7 +55,7 @@ DEFAULT_STAGED = os.path.join(ROOT, ".build", "pi-engine")
 # purpose: release.yml strips everything there, and node must ship unstripped.
 NODE = "Helpers/node"
 ENGINE = "Resources/pi-engine"
-ENTRY = "dist/bundle/cli.js"
+ENTRY = "dist/cli.js"
 STAMP = "pin.json"
 INPUTS = "inputs.xcfilelist"
 OUTPUTS = "outputs.xcfilelist"
@@ -184,6 +187,9 @@ def pin_problems(pin: dict) -> list[str]:
         digest = archive.get("sha256", "")
         if len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
             problems.append(f"node.archives.{arch}.sha256 is not a SHA-256")
+    if spec := pin.get("patch"):
+        if not isinstance(spec, dict) or spec.get("file") != "pi-engine-patches/skills.json" or not re.fullmatch(r"[0-9a-f]{64}", str(spec.get("sha256", ""))):
+            problems.append("patch must name pi-engine-patches/skills.json and its SHA-256")
     pi = pin.get("pi", {})
     problems += _package_problems("pi", pi.get("name", ""), pi)
     modules = pin.get("modules", {})
@@ -243,8 +249,39 @@ def fetch(url: str, dest: str, matches, offline: bool = False, opener=urllib.req
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     fd, partial = tempfile.mkstemp(dir=os.path.dirname(dest), prefix=".download-")
     try:
-        with os.fdopen(fd, "wb") as out, opener(url) as response:
-            shutil.copyfileobj(response, out)
+        with os.fdopen(fd, "wb") as out:
+            for attempt in range(1, 4):
+                out.seek(0)
+                out.truncate()
+                response = None
+                complete = False
+                try:
+                    while True:
+                        # Only opening/reading the response may retry, never filesystem writes.
+                        try:
+                            if response is None:
+                                response = opener(url, timeout=60)
+                            block = response.read(1 << 20)
+                        except (OSError, http.client.IncompleteRead) as error:
+                            reason = error.reason if isinstance(error, urllib.error.URLError) else error
+                            if isinstance(error, urllib.error.HTTPError):
+                                transient = error.code in (408, 429, 500, 502, 503, 504)
+                                error.close()
+                            else:
+                                transient = isinstance(reason, (TimeoutError, ConnectionError, http.client.IncompleteRead)) or (
+                                    isinstance(reason, socket.gaierror) and reason.errno == socket.EAI_AGAIN)
+                            if not transient or attempt == 3:
+                                raise EngineError(f"download {url} failed on attempt {attempt}/3: {error}") from error
+                            break
+                        if not block:
+                            complete = True
+                            break
+                        out.write(block)
+                finally:
+                    if response is not None:
+                        response.close()
+                if complete:
+                    break
         if not matches(partial):
             raise EngineError(f"{url} does not match the pin")
         os.replace(partial, dest)
@@ -393,6 +430,45 @@ def _author(package: dict) -> str:
     return author.strip()
 
 
+def engine_patch(pin: dict) -> dict | None:
+    spec = pin.get("patch")
+    if spec is None:
+        return None
+    path = os.path.join(ROOT, "scripts", spec["file"])
+    if sha256_of(path) != spec["sha256"]:
+        raise EngineError("engine patch differs from the pin; update its hash and restage")
+    with open(path, encoding="utf-8") as f:
+        patch = json.load(f)
+    if patch["version"] != pin["pi"]["version"]:
+        raise EngineError("engine patch does not match the pinned pi version")
+    for change in patch["files"]:
+        if "source" in change:
+            source = os.path.join(os.path.dirname(path), change["source"])
+            if sha256_of(source) != change["after"]:
+                raise EngineError("engine patch source differs from its pinned hash")
+    return patch
+
+
+def apply_patch(files: dict[str, bytes], pin: dict) -> None:
+    patch = engine_patch(pin)
+    for change in (patch or {}).get("files", []):
+        path = change["path"]
+        original = files.get(path, b"")
+        if hashlib.sha256(original).hexdigest() != change["before"]:
+            raise EngineError(f"engine patch source mismatch: {path}")
+        text = original.decode("utf-8")
+        if "source" in change:
+            text = _text(os.path.join(ROOT, "scripts", "pi-engine-patches", change["source"]))
+        for edit in change.get("edits", []):
+            if text.count(edit["old"]) != 1:
+                raise EngineError(f"engine patch anchor mismatch: {path}")
+            text = text.replace(edit["old"], edit["new"])
+        result = text.encode("utf-8")
+        if hashlib.sha256(result).hexdigest() != change["after"]:
+            raise EngineError(f"engine patch result mismatch: {path}")
+        files[path] = result
+
+
 def build_tree(pin: dict, downloads: dict) -> dict[str, bytes]:
     """The staged tree as {relative path: bytes}, node included."""
     tree: dict[str, bytes] = {}
@@ -414,6 +490,7 @@ def build_tree(pin: dict, downloads: dict) -> dict[str, bytes]:
     if set(pin["modules"]) != expected:
         raise EngineError(f"SDK modules differ from pi's shrinkwrap: missing {sorted(expected - set(pin['modules']))}, "
                           f"extra {sorted(set(pin['modules']) - expected)}")
+    apply_patch(pi, pin)
     # Keep Pi's environment names; only Shepherd's project configuration directory changes.
     manifest.setdefault("piConfig", {}).update(name="pi", configDir=".shepherd")
     pi["package.json"] = (json.dumps(manifest, indent=2) + "\n").encode()
@@ -543,6 +620,14 @@ def verify(root: str, pin: dict | None = None) -> list[str]:
     if os.path.isdir(os.path.join(root, "Contents")):
         root = os.path.join(root, "Contents")
     problems = []
+    try:
+        patch = engine_patch(pin)
+        for change in (patch or {}).get("files", []):
+            path = os.path.join(root, ENGINE, change["path"])
+            if not os.path.isfile(path) or sha256_of(path) != change["after"]:
+                problems.append(f"engine patch missing or modified: {change['path']}")
+    except (EngineError, OSError, KeyError, ValueError) as error:
+        problems.append(str(error))
     node = os.path.join(root, NODE)
     if not os.path.isfile(node):
         problems.append(f"{NODE} is missing")

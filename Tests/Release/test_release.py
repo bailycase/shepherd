@@ -19,6 +19,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 import urllib.parse
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -521,6 +522,15 @@ def make_engine(contents):
 
 
 class VerifyAppTests(unittest.TestCase):
+    def setUp(self):
+        # These are synthetic engine files, not pi's bytes. Patch integrity is exercised by
+        # test_pi_engine; keep the app identity/architecture fixture's pin unpatched.
+        pin = release.pi_engine.load_pin()
+        pin.pop("patch", None)
+        patched = patch.object(release.pi_engine, "load_pin", return_value=pin)
+        patched.start()
+        self.addCleanup(patched.stop)
+
     def make_app(self, root, product, engine=True, **info):
         path = os.path.join(root, product)
         os.makedirs(os.path.join(path, "Contents", "MacOS"))

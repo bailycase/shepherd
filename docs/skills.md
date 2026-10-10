@@ -47,6 +47,53 @@ the first host's own: Same skills on every host never touches them.
 **What a prompt costs** (below) counts every skill the agent loads, pi's own included, and not one
 pi passes over.
 
+## Live threads
+
+Existing threads discover skill-file changes automatically, without `/reload`, a new thread or
+an extension restart. Native filesystem notifications invalidate the skill catalog; an idle
+thread refreshes immediately, coalescing notifications delivered in the same event-loop batch.
+There is no polling interval or polling fallback. Additions, removals, renames, descriptions and
+invocation-mode changes in Shepherd's
+skills folder and the trusted project's `.pi/skills` and `.agents/skills` update both the model's
+skill catalog and the composer's `/` menu. This includes Settings installs, updates, switches,
+removal and restore, remote changes, hand edits and symlinked skill folders. Project skills still
+do not appear in global Settings. A skill's body is read when its command is invoked; already
+read instructions remain in conversation history, even after the skill is removed.
+
+The pinned engine's `refresh_skills` RPC operation reparses skills only. It preserves session
+history, tools, providers, extension state and the existing trust decision. It neither installs
+packages nor runs skill code nor sends model requests. Loaded package, command-line and
+extension-provided skill paths are retained; local discovery uses the session's existing settings
+and exclusions. Changing settings paths, package configuration or project trust still requires a
+new session; adding or editing a skill file does not.
+
+Refresh is refused during a run, compaction or prompt-command preflight. Notifications coalesce
+while busy and refresh promptly when that work settles, including Stop, queued work and retries.
+There is at most one refresh request in flight per thread, with a ten-second response deadline
+and at most three consecutive error retries per invalidation. A lost response is reconciled on
+recovery even if the engine's next response says unchanged. At the retry limit refresh stops
+and logs a warning; a new filesystem notification may retry. Ordinary thread actions continue.
+No model budget or external provider is involved.
+
+The engine uses nonpersistent `fs.watch` handles: recursive only inside actual skill-source
+directories, with shallow, filename-filtered parent watches for absent sources, atomic directory
+replacement and delete/recreate. Symlink targets and ancestor-link retargeting are watched
+separately, with canonical cycle detection. Discovery stops at an included `SKILL.md`, so a
+skill's reference links are not followed into unrelated repositories. Independently supplied
+nested skill sources remain watched for edits and removal even below an included `SKILL.md`.
+Watch discovery reuses
+pi's `.gitignore`, `.ignore` and `.fdignore` rules; editing an ignore file reconciles sources.
+It does not recursively watch the repository or home merely to find skill changes.
+A trusted project's ancestor `.agents/skills` directories follow pi's normal scope (up to the git
+root, or filesystem root outside a repository). Wholly excluded automatic roots, notably the
+user's own `.agents/skills` under Shepherd's default filters, are not watched. A positive skill
+pattern conservatively keeps automatic root observation so newly matching descendants are
+noticed; normal discovery still enforces exclusions. Explicitly configured broad skill directories retain
+the scope the user chose. Unrelated edits seen by shallow parent watches do not trigger scans.
+A relevant event rechecks source watches and reparses skills; watcher failures are logged through
+`skills_watch_error`, never replaced by polling. Watchers close on session replacement/shutdown,
+and app restart does not resume agent work. No persisted watcher state is kept.
+
 ## On a host
 
 `SkillsStore` (ShepherdSessions) owns a host's skills:
