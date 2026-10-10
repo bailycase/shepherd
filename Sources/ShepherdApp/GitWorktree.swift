@@ -128,9 +128,11 @@ enum GitWorktree {
         }
         var arguments = ["-C", (repo as NSString).expandingTildeInPath, "worktree", "add"]
         if let startPoint {
-            arguments += ["--no-track", "-b", branch, destination, startPoint]
+            // Worktree forwards the base to `git branch`, which needs an option-like local ref qualified too.
+            let startPoint = startPoint.hasPrefix("-") ? "refs/heads/\(startPoint)" : startPoint
+            arguments += ["--no-track", "-b", branch, "--", destination, startPoint]
         } else {
-            arguments += ["-b", branch, destination]
+            arguments += ["-b", branch, "--", destination]
         }
         try run(arguments)
         return destination
@@ -163,9 +165,12 @@ enum GitWorktree {
         }
     }
 
-    /// `git fetch origin <branch>`; false on failure (offline, no remote).
+    /// Fetch a literal branch, never an option or a refspec; false on failure (offline, no remote).
     static func fetch(repo: String, branch: String) -> Bool {
-        (try? run(["-C", (repo as NSString).expandingTildeInPath, "fetch", "--quiet", "origin", branch], timeout: networkTimeout)) != nil
+        let repoPath = (repo as NSString).expandingTildeInPath
+        let ref = "refs/heads/\(branch)"
+        guard (try? run(["-C", repoPath, "check-ref-format", ref])) != nil else { return false }
+        return (try? run(["-C", repoPath, "fetch", "--quiet", "--", "origin", ref], timeout: networkTimeout)) != nil
     }
 
     /// A branch the user picked as the base honours Settings ▸ Worktrees ▸ Fetch before creating
