@@ -38,7 +38,8 @@ struct WorktreeBasePicker: View {
             NWChangesMenuTitle("Branch from")
             if branches != nil {
                 ScrollView {
-                    VStack(spacing: 0) {
+                    // A repository can list hundreds of branches (the engine stops at 500).
+                    LazyVStack(spacing: 0) {
                         ForEach(options) { option in
                             NWChangesMenuRow(option.name, systemImage: NWChangesScopeGlyph.branch.systemImage, titleIsMono: true,
                                              trailing: option.tag.map { .text($0) } ?? .none, checked: option.selected) { choose(option.name) }
