@@ -60,6 +60,14 @@ active goals without clearing them." It has no budget fields/options and default
 Checking, pauses active goals, hides goal chrome and the slash row, and rejects goal controls;
 on shows the preserved Paused goal but never resumes it. Ordinary work and in-flight tools are
 not aborted. The user requested this card after the supplied GoalStates board.
+Projects uses the same card with the Project mark (`NWProjectGlyphView`, 18pt `lanternText`) in the
+lantern tile, "Projects", "Coordinate work across threads and spaces. Turning this off pauses project
+work and keeps your projects and files.", and its switch (`AppSettings.projectsEnabled`, default off).
+It has no options. It sits after Goals; Settings search finds it by "Projects" or "new project", never
+under Spaces. Off hides the Projects group and New project from the Activity and Spaces sidebars and
+refuses every entry (the chip, the palette, `showNewProject`, `openLogicalProject*`), closes only the
+open Project page, settings, New project sheet and pane task or file, and keeps projects, files and
+drafts. On lists them again and never reopens a page or resumes work. The host gates the requests.
 The Design tool's card (not drawn on the board) is the same card
 with the nib in its tile, "Design tool", "Describe a page or flow and a design agent draws it as
 HTML boards on a canvas you pan and zoom. Adds Designs to the sidebar and “Start a design” to New

@@ -67,6 +67,10 @@ struct Composer: View {
     var hidesNotSignedIn = false
     /// `/login` and `/logout`: Shepherd's own commands, for this Mac's agents (nil elsewhere).
     var slashLogin: SlashLoginActions? = nil
+    /// A Project's conversation: a send goes through the Project's revision-checked runtime (the host refuses a raw
+    /// native send to a coordinator), and nothing else changes. nil for every ordinary thread.
+    @Environment(\.projectComposerSend) private var projectSend
+    @Environment(\.projectWorkerThread) private var workerStyle
     /// The thread's design references (the @ picker, a pasted reference, the chips); nil where
     /// none reach: a design's chat, another host's thread, the Design tool off.
     @Environment(\.designReferences) private var references
@@ -159,7 +163,11 @@ struct Composer: View {
     private var canSend: Bool {
         active && store.acceptsSend && (store.hasDraft || !input.attachments.isEmpty)
     }
-    private var canAttach: Bool { store.supportedActions.contains("sendImages") }
+    /// ProjectLead-Started/-ThreadRunning draw the conversation's empty composer as the disabled arrow while the coordinator works: Stop
+    /// there would also pause the Project (Esc included). Worker and ordinary threads keep Stop.
+    private var projectConversation: Bool { projectSend != nil }
+    /// A Project's composer asks the Project's owner (it exists before the first coordinator); every other thread asks its own.
+    private var canAttach: Bool { projectSend?.carriesImages ?? store.supportedActions.contains("sendImages") }
     /// pi answers `/name` prompts itself; the list comes from its command registry. Its skills'
     /// commands stay out unless Settings ▸ Skills lists them.
     private var commands: [NativeCommand] {
@@ -299,6 +307,8 @@ struct Composer: View {
                         .nwTransition(.list, edge: .bottom)
                 }
             }
+            // A Project's strip ("2 of 3 done · 1 needs you") sits over the card, as the board draws it.
+            if let dock = projectSend?.dock { dock().nwTransition(.list, edge: .bottom) }
             // The subagents and "Up next" grow upward from the card, which never moves.
             if store.hasGoal || showsTray || queueStack.isVisible {
                 ComposerDock(tray: store.tray, trayState: trayState, runs: store.subagents, actions: subagents,
@@ -415,8 +425,9 @@ struct Composer: View {
             try? await Task.sleep(for: Self.startingDelay(blank: store.session == nil, delay: startingDelay))
             if !Task.isCancelled { startingShown = true }
         }
-        .frame(maxWidth: AppLayout.threadMaxWidth)
-        .padding(.horizontal, gutter)
+        .frame(maxWidth: projectSend?.columnWidth ?? AppLayout.threadMaxWidth)
+        .padding(.leading, workerStyle?.gutter ?? gutter)
+        .padding(.trailing, (workerStyle?.gutter ?? gutter) + (workerStyle?.composerTrailing ?? 0))
         .padding(.bottom, AppLayout.composerBottom)
         .frame(maxWidth: .infinity)
         .background(alignment: .top) {
@@ -628,9 +639,13 @@ struct Composer: View {
             ComposerControls(model: controlsModel, actions: controlsActions, store: store, directory: directory, showChanges: showChanges).equatable()
         }
         .coordinateSpace(.named(Self.cardSpace))
+        .environment(\.nwComposerControlsInset, projectSend != nil || workerStyle != nil
+                     ? NWComposerControlsInset(top: NWLeadMetrics.composerControlsTop, bottom: NWLeadMetrics.composerControlsBottom) : nil)
     }
 
     private var placeholder: String {
+        if let projectSend { return projectSend.placeholder }
+        if let workerStyle { return workerStyle.placeholder }
         if designChat { return "Describe a change, or click something on the canvas to comment…" }
         if !hasTurns { return "Describe the task, or / for commands…" }
         return commands.isEmpty ? "Follow up…" : "Follow up, or / for commands…"
@@ -752,7 +767,8 @@ struct Composer: View {
             }
             .onKeyPress(.escape) {
                 switch ComposerEscape(menuOpen: menu != nil, commandsOpen: commandQuery != nil || loginQuery != nil || mentionShown,
-                                      canStop: running && dialogs.isEmpty && active && store.supports("abort")) {
+                                      canStop: running && dialogs.isEmpty && active && store.supports("abort")
+                                          && !(projectConversation && !store.hasDraft && input.attachments.isEmpty)) {
                 case .closeMenu: menu = nil
                 case .dismissCommands where mentionShown && commandQuery == nil && loginQuery == nil:
                     mentions.dismissed = store.draft
@@ -779,7 +795,7 @@ struct Composer: View {
     private var controlsModel: ComposerControlsModel {
         let working = running
         let draftEmpty = !store.hasDraft && input.attachments.isEmpty
-        let stops = working && draftEmpty
+        let stops = working && draftEmpty && !projectConversation
         return ComposerControlsModel(
             active: active, canAttach: canAttach, attachFull: input.attachments.isFull,
             model: store.model, modelChangeable: store.supportedActions.contains("setModel"),
@@ -928,6 +944,25 @@ struct Composer: View {
         // `/login …` typed out and sent: Sign-in opens; nothing reaches pi.
         if slashLogin != nil, let command = SlashLogin.parse(store.draft) {
             openLogin(command)
+            return
+        }
+        if let projectSend {
+            // The Project's own send. No delivery choice: the project runtime queues, orders and (while paused) holds the message,
+            // and reports it back through the Project record. The images on the card go with it, and only the ones submitted are
+            // cleared once the runtime accepts; a refusal keeps the draft and every image.
+            let text = store.draft.trimmingCharacters(in: .whitespacesAndNewlines)
+            let images = input.attachments.images
+            let submitted = input.attachments.ids
+            guard !text.isEmpty || !images.isEmpty else { return }
+            Task {
+                if await projectSend.send(text, images) {
+                    store.draft = ""
+                    for id in submitted { input.attachments.remove(id) }
+                } else if !images.isEmpty, let why = projectSend.refusal() {
+                    // The composer's own failed line says why the images (and words) were kept.
+                    input.attachments.reject(why)
+                }
+            }
             return
         }
         let images = input.attachments.images
@@ -1080,7 +1115,7 @@ struct Composer: View {
     /// Dropped or pasted images become attachments through the same resize rules as terminal
     /// drops (longest edge 2000px, JPEG stays JPEG, everything else PNG).
     private func attach(_ providers: [NSItemProvider]) {
-        input.attach(providers, store: store, localFiles: allowsLocalFiles)
+        input.attach(providers, store: store, localFiles: allowsLocalFiles, imagesSupported: projectSend?.carriesImages)
     }
 }
 

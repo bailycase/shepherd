@@ -61,6 +61,15 @@ struct ThreadView: View {
     var modelSettingsOpen = false
     /// A design's chat: its composer says the design's placeholder.
     var designChat = false
+    /// A Project's conversation sets this around the thread (an environment value, so this long initializer is unchanged).
+    @Environment(\.projectComposerSend) private var projectSend
+    @Environment(\.projectActionCards) private var projectActionCards
+    @Environment(\.projectWorkerThread) private var workerStyle
+    /// A Project conversation or one of its worker threads: the boards space the column at 16pt, not an ordinary thread's 28 and 14.
+    private var leadColumn: Bool { projectSend != nil || workerStyle != nil }
+    private var userOrigins: ProjectUserOrigins {
+        ProjectUserOrigins(assignment: workerStyle?.assignmentOperations ?? [], runtime: projectSend?.runtimeOperations ?? [])
+    }
     /// Only this Mac's agents may receive paths from this Mac.
     var allowsLocalFiles = false
     var retainedInput: ThreadInput? = nil
@@ -95,7 +104,9 @@ struct ThreadView: View {
 
     var body: some View {
         let _ = NWRenderProbe.tick("thread.view")
-        let rows = store.rows
+        // A turn made only of the owner's wake-ups has no row. A mixed turn keeps its row (and identity); `turn` draws it per message.
+        let origins = userOrigins
+        let rows: [NativeThreadRow] = origins.runtime.isEmpty ? store.rows : store.rows.filter { !($0.isUser && origins.hides($0.turn)) }
         let running = store.running
         let liveRow = rows.last(where: \.live)
         // Only one thing moves (LiveText): a running call's own line, thinking, or the reply as it
@@ -114,9 +125,10 @@ struct ThreadView: View {
                 ScrollView {
                     // Never animated as a whole (rows, their text, and the tail anchor change on
                     // every streamed chunk): turns that arrive make their own entrance.
-                    LazyVStack(alignment: .leading, spacing: AppLayout.turnSpacing) {
+                    LazyVStack(alignment: .leading, spacing: leadColumn ? NWLeadMetrics.turnGap : AppLayout.turnSpacing) {
                         notices
-                        if rows.isEmpty { emptyState }
+                        if rows.isEmpty { if let project = projectSend?.emptyState { project() } else { emptyState } }
+                        if projectSend != nil || workerStyle != nil, let at = rows.first?.turn.messages.first?.timestamp ?? rows.first?.startedAt { NWLeadDaySeparator(word: FleetFinishedDay.dayTitle(Date(timeIntervalSince1970: at / 1000), now: Date())) }
                         ForEach(rows) { row in
                             let _ = NWRenderProbe.tick("thread.rowBuilder")
                             // One view per row whatever it holds, so the lazy stack builds only the
@@ -136,7 +148,14 @@ struct ThreadView: View {
                                 }
                             }
                         }
-                        if thinking, liveRow == nil { NWThinking.live().nwArrival(settled) }
+                        // A Project's accepted messages the transcript has not taken in: held, in flight, or not delivered.
+                        if let held = projectSend?.held() {
+                            ForEach(held) { message in
+                                UserTurn(bubbles: [.init(text: message.text, images: 0, caption: nil, pending: true)], note: message.note)
+                                    .equatable()
+                            }
+                        }
+                        if thinking, liveRow == nil { (projectActionCards != nil || workerStyle != nil ? AnyView(ProjectLiveLine(startedAt: nil)) : AnyView(NWThinking.live())).nwArrival(settled) }
                         if let authNotice {
                             ThreadAuthNoticeView(notice: authNotice, actions: authActions)
                                 .id(ThreadAuthNotice.rowID)
@@ -152,8 +171,8 @@ struct ThreadView: View {
                             }
                             .accessibilityHidden(true)
                     }
-                    .frame(maxWidth: AppLayout.threadMaxWidth)
-                    .padding(.horizontal, gutter)
+                    .frame(maxWidth: projectSend?.columnWidth ?? AppLayout.threadMaxWidth)
+                    .padding(.horizontal, workerStyle?.gutter ?? gutter)
                     .frame(maxWidth: .infinity)
                     .background { ThreadInputBackground(input: input) }
                     .background { ThreadScrollViewFinder(guardian: tailGuard) }
@@ -167,9 +186,9 @@ struct ThreadView: View {
                 .id(transcriptRevision)
                 // The composer floats over the scroll view; inset by its real height so "the
                 // bottom" is the last turn, not the space under the card.
-                .modifier(ComposerInsetPadding(inset: composerInset))
+                .modifier(ComposerInsetPadding(inset: composerInset, gap: leadColumn ? 0 : AppLayout.composerTranscriptGap))
                 // A margin rather than padding so scrollTo(.top) keeps the 28pt above a turn.
-                .contentMargins(.top, AppLayout.threadTop, for: .scrollContent)
+                .contentMargins(.top, workerStyle != nil ? NWLeadMetrics.paneThreadTop : leadColumn ? NWLeadMetrics.columnTopPadding : AppLayout.threadTop, for: .scrollContent)
                 // Which rows are in view, for `ThreadTailGuard`: nothing, or not the tail while
                 // following it, is a view the lazy stack stranded.
                 .onScrollTargetVisibilityChange(idType: String.self, threshold: 0) { tailGuard.targets($0) }
@@ -266,7 +285,7 @@ struct ThreadView: View {
         }
         // The composer's menus float over the thread and fit the room above the card in it.
         .coordinateSpace(.named(Composer.threadSpace))
-        .modifier(ThreadInputDrop(input: input, store: store, localFiles: allowsLocalFiles))
+        .modifier(ThreadInputDrop(input: input, store: store, localFiles: allowsLocalFiles, imagesSupported: projectSend?.carriesImages))
         // Switching back to an agent is a visibility flip: the pull that catches its thread up
         // runs none of the thread's view-attached motion (the composer gates its own).
         // Keyed on what the render drew, so only the update carrying it is touched: a hover or a
@@ -305,13 +324,18 @@ struct ThreadView: View {
     @ViewBuilder private func turn(_ row: NativeThreadRow, running: Bool, thinking: Bool, arriving: Bool, settled: Bool) -> some View {
         let card = row.designComment.flatMap { commentCards?.cards[$0] }
         if row.isUser {
+            let segments = userOrigins.segments(row.turn)
             if let card {
                 NWCommentCard(number: card.number, target: card.target, meta: card.meta, text: card.text,
                               continues: row.commentAnswered)
                     .equatable()
                     .nwArrival(arriving, .list, edge: .bottom)
+            } else if segments.count == 1, case .person(let person) = segments[0] {
+                UserTurn(turn: person)
+                    .equatable()
+                    .nwArrival(arriving, .list, edge: .bottom)
             } else {
-                UserTurn(turn: row.turn)
+                ProjectUserSegments(segments: segments)
                     .equatable()
                     .nwArrival(arriving, .list, edge: .bottom)
             }
@@ -320,10 +344,16 @@ struct ThreadView: View {
                       subagentActions: subagentActions, startedAt: row.startedAt,
                       retry: retryAction(row, running: running), review: review, recordedTurn: row.recordedTurn,
                       turnActions: turnActions, thinking: thinking, arriving: arriving,
-                      settled: settled, footer: card == nil)
+                      settled: settled, footer: card == nil, cards: projectCardState(row))
                 .equatable()
                 .modifier(CommentAnswer(inCard: card != nil))
         }
+    }
+
+    /// What this turn's typed Project references resolve to now (empty in an ordinary thread), so its card redraws when they change.
+    private func projectCardState(_ row: NativeThreadRow) -> [ProjectActionResolver.Card?] {
+        guard let cards = projectActionCards else { return [] }
+        return row.turn.messages.compactMap(\.projectAction).map(cards.resolved)
     }
 
     /// The scroll target at the end of the thread: scrolled to when following, and in view
@@ -637,9 +667,12 @@ final class ComposerInset {
 /// Reserves the floating composer and the transcript's breathing room above it.
 struct ComposerInsetPadding: ViewModifier {
     let inset: ComposerInset
+    /// The space between the last turn and the composer's card: 24pt. A Project's threads add none: the column's own 16pt spacing already
+    /// separates the last turn from the 1pt anchor row after it, which is the board's 16pt gap to the card.
+    var gap = AppLayout.composerTranscriptGap
 
     func body(content: Content) -> some View {
-        content.safeAreaPadding(.bottom, inset.height + AppLayout.composerTranscriptGap)
+        content.safeAreaPadding(.bottom, inset.height + gap)
     }
 }
 

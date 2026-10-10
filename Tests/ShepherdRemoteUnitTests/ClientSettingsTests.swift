@@ -151,6 +151,23 @@ struct ClientSettingsTests {
         #expect(client.requests.count == 4, "two fetches and only the capable host's two changes")
     }
 
+    @Test func projectsCanBeToggledOnlyOnHostsThatAdvertiseTheExperiment() async {
+        let client = FakeSettingsClient()
+        let model = ClientHostSettings()
+        let old = Self.host("old", client)
+        await model.refresh(old)
+        #expect(model.post(.projectsEnabled(true), on: old) == nil)
+        #expect(model.settings(of: old)?.projectsEnabled == false)
+        #expect(client.requests == ["settings.fetch"])
+        let live = Self.host("new", client, capabilities: Self.all.union([RemoteProtocol.projectsExperimentCapability]))
+        await model.refresh(live)
+        await model.change(.projectsEnabled(true), on: live)
+        #expect(model.settings(of: live)?.projectsEnabled == true)
+        await model.change(.projectsEnabled(false), on: live)
+        #expect(model.settings(of: live)?.projectsEnabled == false)
+        #expect(client.requests.count == 4)
+    }
+
     @Test func lateSettingsAndSuggestionReadsCannotRepopulateAForgottenHost() async {
         let client = FakeSettingsClient()
         let host = Self.host("gone", client)
@@ -182,7 +199,7 @@ struct ClientSettingsTests {
         let model = ClientHostSettings()
         let offline = Self.host("horizon", nil)
         let old = Self.host("studio", FakeSettingsClient(), capabilities: [])
-        let live = Self.host("build-01", FakeSettingsClient(settings: HostSettings(piVersion: "0.87.1")))
+        let live = Self.host("demo-mac", FakeSettingsClient(settings: HostSettings(piVersion: "0.87.1")))
         #expect(model.state(of: offline) == .offline)
         #expect(model.state(of: old) == .unsupported)
         #expect(model.state(of: live) == .loading)
@@ -192,7 +209,7 @@ struct ClientSettingsTests {
 
     @Test func aChangeShowsAtOnceAndAHostThatRefusesPutsItsOwnBack() async {
         let client = FakeSettingsClient(settings: HostSettings(fetchBeforeCreating: true))
-        let host = Self.host("build-01", client)
+        let host = Self.host("demo-mac", client)
         let model = ClientHostSettings()
         await model.refresh(host)
         await model.change(.fetchBeforeCreating(false), on: host)
@@ -207,7 +224,7 @@ struct ClientSettingsTests {
 
     @Test func aSwitchShowsAtOnceAndTheHostFollows() async {
         let client = FakeSettingsClient(settings: HostSettings(updatePiDaily: false))
-        let host = Self.host("build-01", client)
+        let host = Self.host("demo-mac", client)
         let model = ClientHostSettings()
         await model.refresh(host)
         let sent = model.post(.updatePiDaily(true), on: host)
@@ -224,10 +241,10 @@ struct ClientSettingsTests {
         let first = FakeSettingsClient(files: InstructionsSnapshot(agents: "- a\n", directory: "~/i"))
         let second = FakeSettingsClient(files: InstructionsSnapshot(agents: "- old\n", appendSystem: "rule\n", directory: "~/i"))
         let offlineID = UUID()
-        var hosts = [Self.host("build-01", first), Self.host("studio", second), Self.host("horizon", nil, id: offlineID)]
+        var hosts = [Self.host("demo-mac", first), Self.host("studio", second), Self.host("horizon", nil, id: offlineID)]
         let model = ClientInstructions(defaults: ScratchDefaults(), origin: "iPhone")
         await model.refresh(hosts)
-        #expect(model.reference(in: hosts)?.name == "build-01")
+        #expect(model.reference(in: hosts)?.name == "demo-mac")
         #expect(model.text(.agents, in: hosts) == "- a\n")
         #expect(model.saveTitle(in: hosts) == "Save to all hosts")
         #expect(model.chip(for: hosts[1], file: .agents, in: hosts) == InstructionsChip(.attention, "differs · 2 lines"))
@@ -465,7 +482,7 @@ struct ClientSettingsTests {
     @Test func perHostEditsTheChosenHostAlone() async {
         let first = FakeSettingsClient(files: InstructionsSnapshot(agents: "- a\n", directory: "~/i"))
         let second = FakeSettingsClient(files: InstructionsSnapshot(agents: "- docker\n", directory: "~/i"))
-        let hosts = [Self.host("build-01", first), Self.host("studio", second)]
+        let hosts = [Self.host("demo-mac", first), Self.host("studio", second)]
         let model = ClientInstructions(defaults: ScratchDefaults(), origin: "iPad")
         await model.refresh(hosts)
         model.sameEverywhere = false
@@ -486,7 +503,7 @@ struct ClientSettingsTests {
         let first = FakeSettingsClient(files: InstructionsSnapshot(agents: "- new\n", directory: "~/i", history: [old.entry]))
         first.revisions = [old]
         let second = FakeSettingsClient(files: InstructionsSnapshot(agents: "- new\n", directory: "~/i"))
-        let hosts = [Self.host("build-01", first), Self.host("studio", second)]
+        let hosts = [Self.host("demo-mac", first), Self.host("studio", second)]
         let model = ClientInstructions(defaults: ScratchDefaults(), origin: "iPad")
         await model.refresh(hosts)
         #expect(model.history(.agents, in: hosts).map(\.id) == [old.id])
@@ -502,20 +519,20 @@ struct ClientSettingsTests {
     @Test func syncNowGivesADifferingHostTheFirstHostsFiles() async {
         let first = FakeSettingsClient(files: InstructionsSnapshot(agents: "- a\n", directory: "~/i"))
         let second = FakeSettingsClient(files: InstructionsSnapshot(agents: "- mine\n", directory: "~/i"))
-        let hosts = [Self.host("build-01", first), Self.host("studio", second), Self.host("horizon", nil)]
+        let hosts = [Self.host("demo-mac", first), Self.host("studio", second), Self.host("horizon", nil)]
         let model = ClientInstructions(defaults: ScratchDefaults(), origin: "iPhone")
         await model.refresh(hosts)
         #expect(model.differing(in: hosts).map(\.name) == ["studio"])
-        #expect(model.syncLine(in: hosts) == "build-01 synced · studio differs")
+        #expect(model.syncLine(in: hosts) == "demo-mac synced · studio differs")
         await model.syncNow(in: hosts)
         #expect(second.saved.agents == "- a\n")
         #expect(second.requests.last == "instructions.save(AGENTS.md, sync: true, origin: iPhone)")
         #expect(model.differing(in: hosts).isEmpty)
-        #expect(model.syncLine(in: hosts) == "build-01, studio synced")
+        #expect(model.syncLine(in: hosts) == "demo-mac, studio synced")
         // Per host there is nothing to sync, and nothing to say.
         model.sameEverywhere = false
         #expect(model.syncLine(in: hosts) == nil)
-        #expect(model.scope(in: hosts) == "build-01")
+        #expect(model.scope(in: hosts) == "demo-mac")
     }
 
     @Test func sameOnEveryHostIsRememberedPerDevice() {
@@ -537,12 +554,12 @@ struct ClientSettingsTests {
         let on = SuggestedInstructionsSettings(enabled: true, since: 1)
         let first = FakeSettingsClient(suggestions: SuggestionsSnapshot(settings: on, waiting: [Self.suggestion("- a", at: 10)]))
         let second = FakeSettingsClient(suggestions: SuggestionsSnapshot(settings: on, waiting: [Self.suggestion("- b", at: 20)]))
-        let hosts = [Self.host("build-01", first), Self.host("studio", second), Self.host("horizon", nil)]
+        let hosts = [Self.host("demo-mac", first), Self.host("studio", second), Self.host("horizon", nil)]
         let model = ClientSuggestions()
         await model.refresh(hosts)
         #expect(model.isOn(hosts))
         #expect(model.waiting(hosts).map(\.suggestion.line) == ["- b", "- a"])
-        #expect(model.waiting(hosts).map(\.hostName) == ["studio", "build-01"])
+        #expect(model.waiting(hosts).map(\.hostName) == ["studio", "demo-mac"])
 
         let newest = try! #require(model.waiting(hosts).first)
         await model.add(newest, line: "- b, edited", in: hosts)
@@ -561,7 +578,7 @@ struct ClientSettingsTests {
     @Test func theExperimentChangesOnEveryHost() async {
         let first = FakeSettingsClient(suggestions: SuggestionsSnapshot())
         let second = FakeSettingsClient(suggestions: SuggestionsSnapshot())
-        let hosts = [Self.host("build-01", first), Self.host("studio", second)]
+        let hosts = [Self.host("demo-mac", first), Self.host("studio", second)]
         let model = ClientSuggestions()
         await model.refresh(hosts)
         #expect(!model.isOn(hosts))
@@ -576,7 +593,7 @@ struct ClientSettingsTests {
     @Test func theExperimentsSwitchShowsAtOnce() async {
         let on = SuggestedInstructionsSettings(enabled: true)
         let client = FakeSettingsClient(suggestions: SuggestionsSnapshot(settings: on, waiting: [Self.suggestion("- a", at: 10)]))
-        let hosts = [Self.host("build-01", client)]
+        let hosts = [Self.host("demo-mac", client)]
         let model = ClientSuggestions()
         await model.refresh(hosts)
         let sent = model.post(hosts) { $0.enabled = false }
@@ -591,7 +608,7 @@ struct ClientSettingsTests {
     @Test func anEditedLineMustBeOneLine() async {
         let on = SuggestedInstructionsSettings(enabled: true)
         let client = FakeSettingsClient(suggestions: SuggestionsSnapshot(settings: on, waiting: [Self.suggestion("- a", at: 10)]))
-        let hosts = [Self.host("build-01", client)]
+        let hosts = [Self.host("demo-mac", client)]
         let model = ClientSuggestions()
         await model.refresh(hosts)
         let waiting = try! #require(model.waiting(hosts).first)

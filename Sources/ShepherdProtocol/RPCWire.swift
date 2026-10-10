@@ -483,6 +483,8 @@ public struct RPCMessage: Codable, Hashable, Sendable {
     /// Display-only diagnostics and nested tool output. Pi omits details from model context.
     public var details: JSONValue?
     public var nestedCalls: RPCNestedCalls?
+    /// Validated at RPC decoding, not by reparsing tool JSON on the server state queue.
+    public var projectAction: NativeProjectAction? = nil
     /// `compactionSummary` and `branchSummary` messages: what pi summarized, and (compaction)
     /// the context it replaced.
     public var summary: String?
@@ -505,7 +507,7 @@ public struct RPCMessage: Codable, Hashable, Sendable {
         customType: String? = nil, display: Bool? = nil, summary: String? = nil, tokensBefore: Double? = nil,
         sections: [String: String?]? = nil, toolsAdded: [JSONValue]? = nil, toolsRemoved: [JSONValue]? = nil,
         provider: String? = nil, model: String? = nil, details: JSONValue? = nil, usage: RPCUsage? = nil,
-        nestedCalls: RPCNestedCalls? = nil
+        nestedCalls: RPCNestedCalls? = nil, projectAction: NativeProjectAction? = nil
     ) {
         self.role = role
         self.content = content
@@ -519,6 +521,7 @@ public struct RPCMessage: Codable, Hashable, Sendable {
         self.display = display
         self.details = details
         self.nestedCalls = nestedCalls
+        self.projectAction = projectAction
         self.summary = summary
         self.tokensBefore = tokensBefore
         self.sections = sections
@@ -560,6 +563,11 @@ public struct RPCMessage: Codable, Hashable, Sendable {
         case "toolResult":
             nestedCalls = try? c.decodeIfPresent(RPCNestedCalls.self, forKey: .nestedCalls)
             if nestedCalls != nil { details = try? c.decodeIfPresent(JSONValue.self, forKey: .details) }
+            else if let toolName, NativeProjectAction.toolNames.contains(toolName),
+                    let action = try? c.decodeIfPresent(NativeProjectAction.self, forKey: .details) {
+                details = action.details
+            }
+            projectAction = NativeProjectAction.receipt(toolName: toolName, details: details, content: content, isError: isError)
         case "compactionSummary", "branchSummary":
             summary = try? c.decodeIfPresent(String.self, forKey: .summary)
             tokensBefore = try? c.decodeIfPresent(Double.self, forKey: .tokensBefore)
@@ -629,6 +637,7 @@ public struct RPCAssistantDelta: Decodable, Hashable, Sendable {
 public struct RPCToolResult: Decodable, Hashable, Sendable {
     public var content: [RPCContentBlock]
     public var details: JSONValue?
+    public var projectAction: NativeProjectAction? = nil
 
     enum CodingKeys: String, CodingKey { case content, details }
 
@@ -774,12 +783,15 @@ public enum RPCEvent: Decodable, Hashable, Sendable {
                 parentToolCallId: Self.parent(c)
             )
         case "tool_execution_end":
+            let name = try c.decodeIfPresent(String.self, forKey: .toolName) ?? ""
+            let isError = try c.decodeIfPresent(Bool.self, forKey: .isError) ?? false
+            var result = try c.decodeIfPresent(RPCToolResult.self, forKey: .result)
+            if let value = result {
+                result?.projectAction = NativeProjectAction.receipt(toolName: name, details: value.details, content: value.content, isError: isError)
+            }
             self = .toolExecutionEnd(
                 toolCallId: try c.decodeIfPresent(String.self, forKey: .toolCallId) ?? "",
-                toolName: try c.decodeIfPresent(String.self, forKey: .toolName) ?? "",
-                result: try c.decodeIfPresent(RPCToolResult.self, forKey: .result),
-                isError: try c.decodeIfPresent(Bool.self, forKey: .isError) ?? false,
-                parentToolCallId: Self.parent(c)
+                toolName: name, result: result, isError: isError, parentToolCallId: Self.parent(c)
             )
         case "queue_update":
             self = .queueUpdate(

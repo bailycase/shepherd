@@ -7,7 +7,7 @@ import Testing
 struct SettingsSearchTests {
     @Test func theNavListsEveryPageInDesignOrder() {
         #expect(SettingsSection.allCases.map(\.title) == [
-            "Appearance", "Terminal", "Agents", "Subagents", "Worktrees", "Projects", "Sign-in", "Pi", "Instructions", "Skills",
+            "Appearance", "Terminal", "Agents", "Subagents", "Worktrees", "Spaces", "Sign-in", "Pi", "Instructions", "Skills",
             "Extensions", "Slash commands", "MCP servers", "Remote", "Keyboard", "Advanced", "Experiments",
         ])
     }
@@ -53,6 +53,8 @@ struct SettingsSearchTests {
         ("sync", .instructions, ["Same on every host"]),
         ("append", .instructions, ["APPEND_SYSTEM.md"]),
         ("lessons", .experiments, ["Suggested instructions"]),
+        ("projects", .experiments, ["Projects"]),
+        ("new project", .experiments, ["Projects"]),
         ("automations", .experiments, ["Learn from"]),
         ("slash", .skills, ["Skills in the / menu"]),
         ("github", .skills, ["Add from repo"]),
@@ -92,6 +94,14 @@ struct SettingsSearchTests {
     ] as [(String, SettingsSection, [String])])
     func rowsMatchByTitleOrKeyword(query: String, section: SettingsSection, rows: [String]) {
         #expect(section.matches(for: query) == rows)
+    }
+
+    /// Searching the new feature's name finds its experiment, never the Spaces page that used to be called Projects.
+    @Test func searchingProjectsFindsTheExperimentAndNotSpaces() {
+        for query in ["projects", "new project"] {
+            #expect(SettingsSection.allCases.filter { !$0.matches(for: query).isEmpty } == [.experiments], "\(query)")
+        }
+        #expect(SettingsSection.experiments.items.contains("Projects"))
     }
 
     @Test func peerPermissionsAreNotListedOrFoundBySearch() {

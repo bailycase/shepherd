@@ -638,7 +638,7 @@ private struct NWContextItemRow: View {
         let nw = Color.nw
         Button(action: action) {
             HStack(spacing: NW.Space.m) {
-                Image(systemName: item.kind == .command ? "apple.terminal" : item.kind == .file ? "doc.text" : "wrench.and.screwdriver")
+                Image(systemName: item.kind == .command ? "apple.terminal" : item.kind == .file ? NWGlyph.document.symbolName : "wrench.and.screwdriver")
                     .font(.system(size: NWContextMetrics.icon - 1)).foregroundStyle(nw.textTertiary)
                     .frame(width: NWContextMetrics.icon)
                 Text(item.label).font(.nwMono(11.5)).foregroundStyle(nw.textSecondary).lineLimit(1).truncationMode(.tail)

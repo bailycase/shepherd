@@ -122,6 +122,7 @@ public final class SessionServer: @unchecked Sendable {
         var agentID: AgentID?
         /// Set by helloChildren: the children extension's control channel for that agent.
         var childrenAgentID: AgentID?
+        var projectChildScopes = false
         /// Set by helloBrowser: the browser extension's channel for that agent. A browser request
         /// is served only on the connection registered as the agent it names.
         var browserAgentID: AgentID?
@@ -142,6 +143,7 @@ public final class SessionServer: @unchecked Sendable {
         /// The designs this remote client shows (`RemoteDesignRequest.watch`): it is pushed
         /// `designChanged` for these.
         var watchedDesigns: Set<DesignID> = []
+        var watchedExecutions: Set<ProjectExecutionKey> = []
         /// It reads pushed design changes and capability changes.
         var knowsDesigns: Bool { clientCapabilities.contains(RemoteProtocol.designsCapability) }
 
@@ -412,12 +414,75 @@ public final class SessionServer: @unchecked Sendable {
     /// queue.
     private let skillsQueue = DispatchQueue(label: "shepherd.skills", qos: .userInitiated)
 
-    private let queue = DispatchQueue(label: "shepherd.sessions")
+    let queue = DispatchQueue(label: "shepherd.sessions")
+    let logicalProjectFiles = DispatchQueue(label: "shepherd.logical-project-files", qos: .utility)
+    var logicalProjectCreates: Set<ProjectID> = []
+    var logicalProjectEpoch: UInt64 = 0
+    var projectsEnabled = false
+    var projectsGeneration: UInt64 = 0
+    var automationStarts = Set<AutomationID>()
+    /// Server-queue owner adapter. Must use the ProjectTask reservation/activation ledger,
+    /// launch idle, fence native delivery, and retain occupancy for unknown outcomes.
+    public var onProjectAutomationRun: (@Sendable (ProjectID, UInt64, AutomationID, @escaping @Sendable (Result<ProjectTaskID, Error>) -> Void) -> Void)?
+    var logicalProjectSaveCount = 0
+    var logicalProjectReadCount = 0
+    var projectInputWriteCount = 0
+    public var onProjectRuntimeLaunch: (@Sendable (ProjectRuntimeLaunch, @escaping @Sendable (Result<AgentID, Error>) -> Void) -> Void)?
+    var projectLaunches: Set<AgentID> = []
+    var projectInterrupts: Set<AgentID> = []
+    var projectInterruptAcknowledged: Set<AgentID> = []
+    var projectPromptInFlight: [AgentID: UUID] = [:]
+    var projectStartedPrompts: Set<AgentID> = []
+    var publicationPending: Set<UUID> = []
+    var publicationTransfers: Set<UUID> = []
+    var publicationTransferQueue: [ProjectArtifactReceipt] = []
+    var publicationTransferDuration = ProjectArtifactReceipt.transferSeconds
+    /// Test barrier after preparation, outside both state and file queues.
+    var publicationBeforeCommit: (@Sendable () async -> Void)?
+    var currentProjectChildScope: [AgentID: ProjectChildScope] = [:]
+    var projectChildAdmitted: Set<ProjectChildScope> = []
+    var projectChildClosed: Set<ProjectChildScope> = []
+    var projectChildDrained: Set<ProjectChildScope> = []
+    var projectChildStopped: Set<ProjectChildScope> = []
+    var projectChildTakenOver: Set<ProjectChildScope> = []
+    var projectChildDraining: Set<ProjectChildScope> = []
+    public var onProjectRuntimeRequest: (@Sendable (ProjectRuntimeTransport, @escaping @Sendable (Result<ProjectRuntimeResult, Error>) -> Void) -> Void)?
+    /// The owner's currently connected, configured destinations; never populated by a viewer.
+    public var projectEligibleHosts: [ProjectHostReference] = [.local]
+    /// Owner-relative connected, execution-capable destinations. Never a path mapping.
+    var projectExecutionSpaces: [ProjectHostReference: [Space]] = [:]
+    public var onProjectDefaultModel: (@Sendable () async -> String?)?
+    public var onProjectPlacement: (@Sendable (ProjectHostReference, ProjectExecutionRequest, @escaping @Sendable (Result<ProjectExecutionResult, Error>) -> Void) -> Void)?
+    var projectPlacementReads: Set<ProjectExecutionKey> = []
+    var projectPlacementAgain: Set<ProjectExecutionKey> = []
+    var projectAnswersInFlight: Set<ProjectTaskID> = []
+    var projectRuntimeWriterBusy = false
+    var projectRuntimeWriters: [CheckedContinuation<Void, Error>] = []
+    var projectPersistenceFailed: Set<ProjectID> = []
+    var projectPumps: Set<ProjectID> = []
+    var projectPumpAgain: Set<ProjectID> = []
+    var projectRunStarts: [ProjectID: Date] = [:]
+    var projectActivations: [ProjectID: Int] = [:]
+    var projectRunSeconds: TimeInterval = 600
+    var projectActivationLimit = 12
+    public var onProjectExecutionLaunch: (@Sendable (ProjectExecutionAssignment, @escaping @Sendable (Result<AgentID, Error>) -> Void) -> Void)?
+    var executionPending: Set<ProjectExecutionKey> = []
+    var executionWorkers: Set<AgentID> = []
+    var executionCancelled: Set<ProjectExecutionKey> = []
+    var executionSending: Set<ProjectExecutionKey> = []
+    var executionLaunched: Set<ProjectExecutionKey> = []
+    var executionInvoked: Set<ProjectExecutionKey> = []
+    var executionInterrupts: Set<ProjectExecutionKey> = []
+    var executionUnconfirmedStops: Set<ProjectExecutionKey> = []
+    var executionConsumed: [AgentID: UUID] = [:]
+    var executionSaves: [() -> Void] = []
+    var executionDuration: TimeInterval = 600
+    var executionCapacity = ProjectExecutionReceipt.maximumCount
     private let socketPath: String
-    private let store: StateStore
+    let store: StateStore
     // ponytail: serialize workspace writes during explicit folder IO; per-project reservations
     // can replace this if concurrent large transfers become necessary.
-    private var projectFolderOperation = false
+    var projectFolderOperation = false
     private var projectDirectoryRequests = 0
     private let modelCatalog: ModelCatalog
     /// Which pi this server's agents run, and its home (`PiSetup`).
@@ -658,7 +723,12 @@ public final class SessionServer: @unchecked Sendable {
     private var offeredCapabilities: [String] {
         let designs = advertisedCapabilities.contains(RemoteProtocol.designsCapability)
         return advertisedCapabilities.filter {
-            (designsServed && designs || !RemoteProtocol.designCapabilities.contains($0))
+            (isStarted || ($0 != RemoteProtocol.logicalProjectsCapability && $0 != RemoteProtocol.logicalProjectAutomationsCapability && $0 != RemoteProtocol.logicalProjectFilesCapability))
+                && (!([RemoteProtocol.logicalProjectRuntimeCapability, RemoteProtocol.projectWorkerCapability, RemoteProtocol.projectMessageImagesCapability].contains($0)) || (isStarted && onProjectRuntimeRequest != nil && onProjectRuntimeLaunch != nil))
+                && (isStarted && onProjectExecutionLaunch != nil || $0 != RemoteProtocol.projectExecutionCapability)
+                && ($0 != RemoteProtocol.projectPublicationsCapability || (isStarted && (onProjectPlacement != nil || onProjectExecutionLaunch != nil || onProjectRuntimeLaunch != nil)))
+                && ($0 != RemoteProtocol.projectPlacementCapability || (isStarted && (onProjectPlacement != nil || onProjectExecutionLaunch != nil)))
+                && (designsServed && designs || !RemoteProtocol.designCapabilities.contains($0))
                 && (tunnelsServed || ($0 != RemoteProtocol.browserTunnelCapability && $0 != RemoteProtocol.browserDriveCapability))
         }
     }
@@ -859,6 +929,7 @@ public final class SessionServer: @unchecked Sendable {
             queue.sync {
                 isStarted = true
                 acceptOnQueue()
+                recoverCommittedProjectPublications()
             }
         } catch {
             queue.sync {
@@ -1048,7 +1119,8 @@ public final class SessionServer: @unchecked Sendable {
         let staleDesigns = Self.designsNeedReconciling(in: store.state, missing: missingDesigns, removedAgents: runAgents)
             || Self.designAgentsNeedSettling(in: store.state, missing: missingDesigns)
         if !stale.isEmpty || deadInspectors || deadReviews || splitTerminals || staleRuns || !shellTabs.isEmpty
-            || !runAgents.isEmpty || staleDesigns {
+            || !runAgents.isEmpty || staleDesigns || !store.state.projects.isEmpty || store.state.projectExecutions.contains(where: { $0.phase.active })
+            || store.state.agents.contains(where: { $0.coordinatorFor != nil }) {
             do {
                 try store.update { state in
                     for id in stale {
@@ -1092,6 +1164,40 @@ public final class SessionServer: @unchecked Sendable {
                     }
                     Self.reconcileDesigns(&state, missing: missingDesigns)
                     Self.settleDesignAgents(&state)
+                    let orphanCoordinators = state.agents.filter { agent in
+                        agent.coordinatorFor.map { id in !state.projects.contains { $0.id == id } } == true
+                    }
+                    let orphanIDs = Set(orphanCoordinators.map(\.id)), orphanTabs = Set(orphanCoordinators.map(\.tabID))
+                    state.agents.removeAll { orphanIDs.contains($0.id) }
+                    state.tabs.removeAll { orphanTabs.contains($0.id) || $0.inspectorFor.map(orphanIDs.contains) == true }
+                    for i in state.projectExecutions.indices where state.projectExecutions[i].phase.active {
+                        state.projectExecutions[i].phase = .unknown
+                        state.projectExecutions[i].revision += 1
+                        state.projectExecutions[i].outcome = "Executor restarted; no work was resumed or replayed."
+                    }
+                    for i in state.projects.indices {
+                        let staleCoordinator = state.projects[i].coordinatorAgentID.map { id in
+                            !state.agents.contains { $0.id == id }
+                        } ?? false
+                        if !state.projects[i].paused || staleCoordinator || state.projects[i].interruptPending
+                            || state.projects[i].tasks.contains(where: { $0.phase.occupiesSlot || $0.pendingAnswer?.phase == .queued || $0.pendingAnswer?.phase == .delivering })
+                            || state.projects[i].messages.contains(where: { $0.phase == .delivering }) {
+                            state.projects[i].paused = true
+                            if staleCoordinator { state.projects[i].coordinatorAgentID = nil }
+                            state.projects[i].revision += 1
+                        }
+                        state.projects[i].interruptPending = false
+                        for t in state.projects[i].tasks.indices where state.projects[i].tasks[t].phase.occupiesSlot {
+                            state.projects[i].tasks[t].phase = .unknown
+                            state.projects[i].tasks[t].revision += 1
+                        }
+                        for t in state.projects[i].tasks.indices where state.projects[i].tasks[t].pendingAnswer?.phase == .queued || state.projects[i].tasks[t].pendingAnswer?.phase == .delivering {
+                            state.projects[i].tasks[t].pendingAnswer?.phase = .unknown
+                        }
+                        for m in state.projects[i].messages.indices where state.projects[i].messages[m].phase == .delivering {
+                            state.projects[i].messages[m].phase = .unknown
+                        }
+                    }
                 }
             } catch {
                 throw SessionServerError.persistFailed(String(describing: error))
@@ -1178,6 +1284,28 @@ public final class SessionServer: @unchecked Sendable {
 
     private func stopOnQueue() {
         isStarted = false
+        logicalProjectEpoch &+= 1
+        automationStarts.removeAll()
+        executionPending.removeAll()
+        executionWorkers.removeAll()
+        executionCancelled.removeAll()
+        executionSending.removeAll()
+        executionLaunched.removeAll()
+        executionInvoked.removeAll()
+        executionInterrupts.removeAll()
+        executionUnconfirmedStops.removeAll()
+        executionConsumed.removeAll()
+        projectPlacementReads.removeAll(); projectPlacementAgain.removeAll()
+        projectRunStarts.removeAll()
+        projectPumps.removeAll(); projectPumpAgain.removeAll(); projectPersistenceFailed.removeAll()
+        projectInterrupts.removeAll()
+        projectInterruptAcknowledged.removeAll()
+        projectAnswersInFlight.removeAll()
+        projectPromptInFlight.removeAll()
+        projectStartedPrompts.removeAll()
+        currentProjectChildScope.removeAll(); projectChildAdmitted.removeAll(); projectChildClosed.removeAll()
+        projectChildDrained.removeAll(); projectChildDraining.removeAll(); projectChildStopped.removeAll(); projectChildTakenOver.removeAll()
+        projectActivations.removeAll()
         pendingDesignDeletions.removeAll()
         for session in sessions.values {
             session.shutdown()
@@ -1326,6 +1454,22 @@ public final class SessionServer: @unchecked Sendable {
             unavailable("The agent no longer exists.")
             return
         }
+        if queuePausedExecutionAnswer(agentID: agentID, request: request, completion: { completion(.result($0)) }) { return }
+        if queuePausedProjectAnswer(agentID: agentID, request: request, completion: { completion(.result($0)) }) { return }
+        if let projectID = agent.coordinatorFor {
+            switch request {
+            case .send, .retry, .compact, .subagentCommand, .goal, .queue:
+                completion(.failure(code: "project_control", message: "Use the revision-checked Project controls for coordinated messages."))
+                return
+            case .abort(let expected, let generation, _):
+                if let thread = rpcThread(forAgent: agentID), thread.piSessionID == expected, thread.generation == generation { stopProjectRun(projectID) }
+            default: break
+            }
+        }
+        if case .subagentCommand(_, _, _, _, let action, _, _) = request, action != .cancel,
+           isProjectWorker(agentID) {
+            completion(.failure(code: "project_control", message: "Use Project threads through the coordinator; subagents and workflows are unavailable in Projects.")); return
+        }
         guard let tab = store.state.tabs.first(where: { $0.id == agent.tabID }),
               let paneID = agent.paneID, let leaf = tab.layout.leaf(withID: paneID) else {
             unavailable("The agent has no thread.")
@@ -1381,6 +1525,7 @@ public final class SessionServer: @unchecked Sendable {
                 self?.pushToBrowserOwner(agentID, .handBack(agentID: agentID))
             }
             completion(.result(result))
+            if case .queue = request, case .accepted = result { self?.projectRuntimeReady(agentID: agentID) }
         }
     }
 
@@ -1396,6 +1541,13 @@ public final class SessionServer: @unchecked Sendable {
         "The agent exited (\(code.map { "code \($0)" } ?? "signal"))."
     }
 
+    /// Membership outlives a task's active turn, including manual takeover and settlement.
+    /// Executor receipts retain the assignment even when the owning host is disconnected.
+    private func isProjectWorker(_ agentID: AgentID) -> Bool {
+        store.state.projects.contains { $0.tasks.contains { $0.workerAgentID == agentID } }
+            || store.state.projectExecutions.contains { $0.assignment?.reservedWorkerID == agentID }
+    }
+
     /// Server queue. Writes a childCommand to the agent's children-extension connection and
     /// answers with the extension's error text (nil on success). A resume can take a few
     /// seconds while pi boots, hence the 15s ceiling.
@@ -1403,6 +1555,10 @@ public final class SessionServer: @unchecked Sendable {
         agentID: AgentID, runID: String, action: NativeSubagentAction, text: String?, mode: NativeThreadDelivery?,
         completion: @escaping (String?) -> Void
     ) {
+        guard action == .cancel || (!isProjectWorker(agentID) && !store.state.isProjectCoordinator(agentID)) else {
+            completion("Use Project threads through the coordinator; subagents and workflows are unavailable in Projects.")
+            return
+        }
         guard let client = clients.values.first(where: { $0.childrenAgentID == agentID }) else {
             completion("Native subagents are unavailable for this agent (children extension not connected).")
             return
@@ -1421,6 +1577,27 @@ public final class SessionServer: @unchecked Sendable {
         reply(.childCommand(id: correlation, runID: runID, action: childAction, text: text, mode: mode == .interrupt ? .steer : mode), to: client)
         queue.asyncAfter(deadline: .now() + 15) { [weak self] in
             self?.childCommandPending.removeValue(forKey: correlation)?.completion("Subagent command timed out. Refresh before acting; do not automatically retry.")
+        }
+    }
+
+    /// One authenticated controller connection per parent; no helper opens a new host channel.
+    func commandProjectChildren(_ scope: ProjectChildScope, action: ProjectChildAction, completion: @escaping (String?) -> Void) {
+        if action == .stop { projectChildClosed.insert(scope) }
+        let finish: (String?) -> Void = { error in
+            if action == .stop, error == nil { self.projectChildStopped.insert(scope) }
+            completion(error)
+        }
+        guard let client = clients.values.first(where: { $0.childrenAgentID == scope.workerAgentID }) else {
+            finish(projectChildAdmitted.contains(scope) ? "Children extension disconnected; helper outcome is unknown." : nil)
+            return
+        }
+        guard client.projectChildScopes else { completion("Children extension cannot acknowledge scoped cancellation. Restart the worker with the current extension."); return }
+        nextChildCommandID += 1
+        let id = nextChildCommandID
+        childCommandPending[id] = (client, finish)
+        reply(.projectChildren(id: id, scope: scope, action: action), to: client)
+        queue.asyncAfter(deadline: .now() + (action == .stop ? 15 : 615)) { [weak self] in
+            self?.childCommandPending.removeValue(forKey: id)?.completion("Project helper acknowledgement timed out; outcome is unknown.")
         }
     }
 
@@ -1607,6 +1784,9 @@ public final class SessionServer: @unchecked Sendable {
 
         switch request {
         case .nativeThread(let id, let agentID, let request):
+            if store.state.isProjectCoordinator(agentID), !client.clientCapabilities.contains(RemoteProtocol.logicalProjectRuntimeCapability) {
+                send(.error(id: id, code: "project_scope", message: "Use a Project-capable client."), to: client); return
+            }
             guard !line.contains(13) else { disconnect(client); return }
             // Design references are handed over on the Mac that runs the thread (docs/designs.md ›
             // Design references): a remote client's are refused rather than dropped.
@@ -1775,6 +1955,106 @@ public final class SessionServer: @unchecked Sendable {
             remoteSkills(id: id, request: request, client: client)
         case .design(let id, let request):
             remoteDesign(id: id, request: request, client: client)
+        case .logicalProjectRuntime(let id, let request):
+            guard projectsEnabled else {
+                send(.error(id: id, code: "unsupported", message: Self.projectsDisabledMessage), to: client); return
+            }
+            if let references = request.nativeRequest?.designReferences, !references.isEmpty {
+                send(.error(id: id, code: "design_references_local",
+                            message: "Design references go only into a thread on the Mac that runs it, for now."), to: client)
+                return
+            }
+            if case .worker = request,
+               !offeredCapabilities.contains(RemoteProtocol.projectWorkerCapability) || !client.clientCapabilities.contains(RemoteProtocol.projectWorkerCapability) {
+                send(.error(id: id, code: "unsupported", message: "Project worker access requires a compatible owner and viewer."), to: client); return
+            }
+            guard request.messageImages.isEmpty || offeredCapabilities.contains(RemoteProtocol.projectMessageImagesCapability) else {
+                send(.error(id: id, code: "unsupported", message: "Update the Project owner before sending images."), to: client)
+                return
+            }
+            guard offeredCapabilities.contains(RemoteProtocol.logicalProjectRuntimeCapability),
+                  client.clientCapabilities.contains(RemoteProtocol.logicalProjectRuntimeCapability), let perform = onProjectRuntimeRequest else {
+                send(.error(id: id, code: "unsupported", message: "Project runtime is unavailable on this owner."), to: client); return
+            }
+            let generation = projectsGeneration
+            let finish: @Sendable (Result<ProjectRuntimeResult, Error>) -> Void = { result in
+                self.queue.async {
+                    guard self.clients[client.fd] === client else { return }
+                    switch result {
+                    case .success(let value): self.send(.logicalProjectRuntime(id: id, result: value), to: client)
+                    case .failure(let error): self.send(.error(id: id, code: (error as? LogicalProjectsError)?.code ?? "project_failed", message: String(describing: error)), to: client)
+                    }
+                }
+            }
+            // Mutations stay on the owner service, including the admission generation. A
+            // queued GUI callback must not turn an old request into a fresh post-toggle run.
+            switch request {
+            case .action(let project, let revision, let action):
+                Task {
+                    do { finish(.success(.project(try await self.performProjectRuntime(project, expectedRevision: revision,
+                        request: action, coordinator: nil, expectedGeneration: generation)))) }
+                    catch { finish(.failure(error)) }
+                }
+            case .answer(let project, let revision, let task, let answer):
+                Task {
+                    do { finish(.success(.native(try await self.answerProjectQuestion(project, expectedRevision: revision, taskID: task,
+                        request: answer, admission: { _ in
+                            guard self.projectsGeneration == generation else { throw LogicalProjectsError("project_paused", "Project admission was revoked.") }
+                        })))) }
+                    catch { finish(.failure(error)) }
+                }
+            default: hopToMain { perform(request, finish) }
+            }
+        case .projectExecution(let id, let request):
+            guard !request.requiresPublications || (offeredCapabilities.contains(RemoteProtocol.projectPublicationsCapability)
+                && client.clientCapabilities.contains(RemoteProtocol.projectPublicationsCapability)) else {
+                send(.error(id: id, code: "unsupported", message: "Update both owner and executor to publish Project artifacts."), to: client); return
+            }
+            guard !request.requiresPlacement || (offeredCapabilities.contains(RemoteProtocol.projectPlacementCapability)
+                && client.clientCapabilities.contains(RemoteProtocol.projectPlacementCapability)) else {
+                send(.error(id: id, code: "unsupported", message: "Project question controls require placement support."), to: client); return
+            }
+            guard offeredCapabilities.contains(RemoteProtocol.projectExecutionCapability),
+                  client.clientCapabilities.contains(RemoteProtocol.projectExecutionCapability) else {
+                send(.error(id: id, code: "unsupported", message: "Project execution requires an eligible executor and client."), to: client); return
+            }
+            if case .snapshot(let key, let watch) = request {
+                guard !watch || client.watchedExecutions.contains(key) || client.watchedExecutions.count < 128 else {
+                    send(.error(id: id, code: "execution_capacity", message: "Too many receipt subscriptions."), to: client); return
+                }
+                if watch { client.watchedExecutions.insert(key) } else { client.watchedExecutions.remove(key) }
+            }
+            projectExecutionOnQueue(request) { result in
+                guard self.clients[client.fd] === client else { return }
+                switch result {
+                case .success(let value): self.send(.projectExecution(id: id, result: value), to: client)
+                case .failure(let error):
+                    let refusal = error as? LogicalProjectsError
+                    self.send(.error(id: id, code: refusal?.code ?? "execution_failed", message: String(describing: error)), to: client)
+                }
+            }
+        case .logicalProjects(let id, let request):
+            guard offeredCapabilities.contains(RemoteProtocol.logicalProjectsCapability) else {
+                send(.error(id: id, code: "unsupported", message: "Logical projects are unavailable on this host."), to: client)
+                return
+            }
+            guard !request.requiresProjectAutomations || offeredCapabilities.contains(RemoteProtocol.logicalProjectAutomationsCapability) else {
+                send(.error(id: id, code: "unsupported", message: "Project automations are unavailable on this host."), to: client)
+                return
+            }
+            guard !request.requiresProjectFiles || offeredCapabilities.contains(RemoteProtocol.logicalProjectFilesCapability) else {
+                send(.error(id: id, code: "unsupported", message: "Update Shepherd on the host to preview Project artifacts."), to: client)
+                return
+            }
+            logicalProjectsOnQueue(request) { result in
+                guard self.clients[client.fd] === client else { return }
+                switch result {
+                case .success(let value): self.send(.logicalProjects(id: id, result: value), to: client)
+                case .failure(let error):
+                    self.send(.error(id: id, code: (error as? LogicalProjectsError)?.code ?? "project_failed",
+                                     message: String(describing: error)), to: client)
+                }
+            }
         case .projects(let id, let request):
             guard offeredCapabilities.contains(RemoteProtocol.projectsCapability) else {
                 send(.error(id: id, code: "update_required", message: "Update Shepherd on the host to edit its projects from here."), to: client)
@@ -2033,6 +2313,9 @@ public final class SessionServer: @unchecked Sendable {
             guard !exists else { return fail("conflict", "automation \(automationID) already exists") }
         } else if !exists {
             return fail("no_such_automation", "The automation no longer exists on the host.")
+        }
+        if request != .runs, store.state.automations.contains(where: { $0.id == automationID && $0.projectID != nil }) {
+            return fail(Self.projectAutomationScopeError.code, Self.projectAutomationScopeError.description)
         }
         let routed: AutomationRequest
         switch request {
@@ -2547,11 +2830,17 @@ public final class SessionServer: @unchecked Sendable {
             let legacy = client.knowsLegacyThinkingOnly
             let view = RemoteStateView(designs: designs, legacy: legacy)
             if payloads[view] == nil {
-                let state = designs ? full : full.withoutDesigns
+                let state = (designs ? full : full.withoutDesigns).withoutProjectCoordinators.withoutProjectExecutions
                 payloads[view] = .some(Self.stateChangedPayload(legacy && !state.usesOnlyLegacyThinkingLevels
                     ? state.legacyThinkingLevels() : state))
             }
             if let data = payloads[view] ?? nil { enqueuePayload(data, to: client) }
+        }
+    }
+
+    func executionDidCommit(_ receipt: ProjectExecutionReceipt) {
+        for client in clients.values where client.isRemote && client.authenticated && client.watchedExecutions.contains(receipt.key) {
+            send(.projectExecutionChanged(key: receipt.key, revision: receipt.revision), to: client)
         }
     }
 
@@ -2565,7 +2854,7 @@ public final class SessionServer: @unchecked Sendable {
 
     /// The workspace as `client` is sent it (`seesDesigns`).
     private func remoteState(_ state: ShepherdState, for client: ExtensionConnection) -> ShepherdState {
-        seesDesigns(client) ? state : state.withoutDesigns
+        (seesDesigns(client) ? state : state.withoutDesigns).withoutProjectCoordinators.withoutProjectExecutions
     }
 
     private static func stateChangedPayload(_ state: ShepherdState) -> Data? {
@@ -2698,7 +2987,70 @@ public final class SessionServer: @unchecked Sendable {
             refuse(message, on: client)
             return
         }
+        let coordinatorPeer = store.state.agents.contains { agent in
+            agent.coordinatorFor != nil && (agent.id == message.speaksFor || agent.id == client.agentID
+                || isPiProcess(client.peerPID, ofAgent: agent.id))
+        }
+        if coordinatorPeer {
+            switch message {
+            case .setAgentStatus, .setAgentName, .setAgentSession, .helloAgent, .projectRuntime: break
+            default:
+                if let id = message.replyID { reply(.error(id: id, code: "project_scope", message: "Coordinator peer, automation and external tools are unavailable."), to: client) }
+                return
+            }
+        }
+        let assignedWorker = store.state.agents.contains { agent in
+            isProjectWorker(agent.id) && (agent.id == message.speaksFor || agent.id == client.agentID
+                || agent.id == client.childrenAgentID || isPiProcess(client.peerPID, ofAgent: agent.id))
+        }
+        if assignedWorker {
+            switch message {
+            case .childScope, .spawnAgent, .sendToAgent, .coordinateAgent, .createAutomation, .updateAutomation, .startAutomation:
+                if let id = message.replyID { reply(.error(id: id, code: "project_scope", message: "Use Project threads through the coordinator; subagents and workflows are unavailable in Projects. Peer and automation admission is also unavailable."), to: client) }
+                return
+            default: break
+            }
+        }
         switch message {
+        case .sendToAgent(let id, _, let target, _, _), .coordinateAgent(let id, _, let target, _):
+            if store.state.isProjectCoordinator(target) {
+                reply(.error(id: id, code: "project_scope", message: "Use the Project conversation; ordinary peers cannot steer its coordinator."), to: client)
+                return
+            }
+        default: break
+        }
+        switch message {
+        case .projectPublish(let id, let agentID, let request):
+            Task {
+                let result: Result<ProjectPublicationResult, Error>
+                do { result = .success(try await self.projectPublish(agentID, request: request)) }
+                catch { result = .failure(error) }
+                self.queue.async {
+                    guard self.clients[client.fd] === client else { return }
+                    switch result {
+                    case .success(let value): self.reply(.projectPublish(id: id, result: value), to: client)
+                    case .failure(let error):
+                        let refusal = error as? LogicalProjectsError
+                        self.reply(.error(id: id, code: refusal?.code ?? "publication_failed",
+                            message: refusal?.description ?? "Publication could not be persisted. Retained receipts are not automatically replayed."), to: client)
+                    }
+                }
+            }
+        case .projectRuntime(let id, let agentID, let projectID, let revision, let request):
+            Task {
+                let result: Result<Project, Error>
+                do { result = .success(try await self.projectTool(agentID: agentID, projectID: projectID, expectedRevision: revision, request: request)) }
+                catch { result = .failure(error) }
+                self.queue.async {
+                    guard self.clients[client.fd] === client else { return }
+                    switch result {
+                    case .success(let project):
+                        let spaces = self.store.state.spaces.filter { space in !space.hidden && project.linkedSpaces.contains { $0.spaceID == space.id && $0.destination == .local } }
+                        self.reply(.projectRuntime(id: id, project: project, spaces: spaces), to: client)
+                    case .failure(let error): self.reply(.error(id: id, code: (error as? LogicalProjectsError)?.code ?? "project_failed", message: String(describing: error)), to: client)
+                    }
+                }
+            }
         case .setAgentStatus(let agentID, let status):
             applyAgentStatus(agentID: agentID, status: status)
         case .setAgentName(let agentID, let name, let sessionID):
@@ -2709,12 +3061,33 @@ public final class SessionServer: @unchecked Sendable {
             // Rows feed both the thread snapshot (cards) and the sidebar (onAgentChildren).
             rpcThread(forAgent: agentID)?.setSubagents(children)
             hopToMain { [weak self] in self?.onAgentChildren?(agentID, children) }
-        case .helloChildren(let agentID):
+        case .childScope(let id, let agentID, let sessionID, let userTimestamp):
+            guard client.childrenAgentID == agentID, client.projectChildScopes else {
+                reply(.error(id: id, code: "child_scope", message: "Scoped child controller is not registered for this agent."), to: client); return
+            }
+            guard let thread = rpcThread(forAgent: agentID), thread.piSessionID == sessionID else {
+                reply(.error(id: id, code: "child_scope", message: "Native worker session changed."), to: client); return
+            }
+            guard (thread.live.last(where: { $0.kind == .user })?.value.timestamp
+                    ?? thread.history.last(where: { $0.role == "user" })?.timestamp) == userTimestamp else {
+                reply(.error(id: id, code: "child_scope", message: "Native user turn changed or is not yet observed. Retry from the current turn."), to: client); return
+            }
+            // Project membership was refused above. Never turn retained activation identity
+            // (also used by publishers and native questions) into helper admission.
+            reply(.childScope(id: id, scope: nil, deadline: nil), to: client)
+        case .helloChildren(let agentID, let projectScopes):
             guard store.state.agents.contains(where: { $0.id == agentID }), client.agentID == nil else { return }
             for previous in Array(clients.values) where previous !== client && previous.childrenAgentID == agentID {
                 disconnect(previous)
             }
             client.childrenAgentID = agentID
+            client.projectChildScopes = projectScopes == true
+            if client.projectChildScopes, let thread = rpcThread(forAgent: agentID), !thread.piBusy,
+               currentProjectChildScope[agentID] != nil {
+                // Reconnecting reads controller completion, never restarts work or retries Stop.
+                projectWorkerSettled(agentID: agentID)
+                executionSettled(agentID: agentID, thread: thread)
+            }
         case .childCommandResult(let id, let error):
             guard let pending = childCommandPending[id], pending.client === client else { return }
             childCommandPending.removeValue(forKey: id)?.completion(error)
@@ -3468,6 +3841,17 @@ public final class SessionServer: @unchecked Sendable {
     /// Hand an automation request to the GUI and write its reply back, the
     /// same shape as pane routing.
     private func routeAutomationRequest(_ request: AutomationRequest, requestID: Int, client: ExtensionConnection) {
+        let target: AutomationID?
+        switch request {
+        case .create(let automation, _): target = automation.id
+        case .list: target = nil
+        case .update(let id, _, _, _, _), .delete(let id), .start(let id), .stop(let id): target = id
+        }
+        if let target, store.state.automations.contains(where: { $0.id == target && $0.projectID != nil }) {
+            reply(.error(id: requestID, code: Self.projectAutomationScopeError.code,
+                         message: Self.projectAutomationScopeError.description), to: client)
+            return
+        }
         guard let handler = onAutomationRequest else {
             reply(.error(id: requestID, code: "unsupported", message: "automations unavailable"), to: client)
             return
@@ -3772,7 +4156,7 @@ public final class SessionServer: @unchecked Sendable {
     private func replyID(_ message: ExtensionReply) -> Int {
         switch message {
         case .parentInput: return 0
-        case .childCommand(let id, _, _, _, _), .ok(let id), .projectResult(let id, _, _),
+        case .projectPublish(let id, _), .childScope(let id, _, _), .projectChildren(let id, _, _), .projectRuntime(let id, _, _), .childCommand(let id, _, _, _, _), .ok(let id), .projectResult(let id, _, _),
              .error(let id, _, _),
              .panes(let id, _),
              .paneOpened(let id, _),
@@ -4008,16 +4392,45 @@ public final class SessionServer: @unchecked Sendable {
     // MARK: - State mutations (server queue)
 
     /// Apply a state mutation, persist it, and notify the GUI.
-    private func mutateState(_ mutate: (inout ShepherdState) -> Void) throws {
+    func mutateState(_ mutate: (inout ShepherdState) -> Void) throws {
         try requireStarted()
         guard !projectFolderOperation else { throw ProjectFileError("project_busy", "A project folder operation is in progress. Retry after it completes.") }
         let before = store.state
         do {
-            try store.update(mutate)
+            try store.update { state in
+                mutate(&state)
+                Self.reconcileProjectAutomations(&state, before: before)
+            }
         } catch {
             throw SessionServerError.persistFailed(String(describing: error))
         }
+        stateDidCommit(before: before)
+    }
+
+    /// Server queue, after a successfully persisted commit (including an off-queue staged one).
+    func stateDidCommit(before: ShepherdState) {
         let state = store.state
+        let oldWatchers = Set(before.automations.filter { $0.projectID != nil }.compactMap(\.agentID))
+        for agent in before.agents where oldWatchers.contains(agent.id) && !state.agents.contains(where: { $0.id == agent.id }) {
+            for tab in before.tabs where tab.id == agent.tabID || tab.inspectorFor == agent.id {
+                for session in tab.layout.leaves.compactMap(\.sessionID) { killSessionOnQueue(session) }
+            }
+        }
+        for old in before.projects where !state.projects.contains(where: { $0.id == old.id }) {
+            projectRunStarts[old.id] = nil
+            projectActivations[old.id] = nil
+            for agent in old.tasks.map(\.workerAgentID) + [old.coordinatorAgentID].compactMap({ $0 }) {
+                projectPromptInFlight[agent] = nil
+                projectStartedPrompts.remove(agent)
+                projectInterrupts.remove(agent)
+                projectInterruptAcknowledged.remove(agent)
+            }
+            if let coordinator = before.agents.first(where: { $0.id == old.coordinatorAgentID && $0.coordinatorFor == old.id }) {
+                for tab in before.tabs where tab.id == coordinator.tabID || tab.inspectorFor == coordinator.id {
+                    for session in tab.layout.leaves.compactMap(\.sessionID) { killSessionOnQueue(session) }
+                }
+            }
+        }
         let oldProjects = ProjectSettingsStore.directories(in: before)
         let newProjects = ProjectSettingsStore.directories(in: state)
         if !oldProjects.elementsEqual(newProjects, by: { $0.0 == $1.0 && $0.1 == $1.1 }) {
@@ -4029,7 +4442,10 @@ public final class SessionServer: @unchecked Sendable {
         if before.agents.count != state.agents.count || before.agents.map(\.id) != state.agents.map(\.id) {
             let gone = Set(before.agents.map(\.id)).subtracting(state.agents.map(\.id))
             designReferencePayloads.removeAgents(gone)
-            for agentID in gone { ServiceTierFile.remove(for: agentID, in: pi.files) }
+            for agentID in gone {
+                executionExited(agentID: agentID, stopped: false)
+                ServiceTierFile.remove(for: agentID, in: pi.files)
+            }
         }
         syncServiceTiers(state)
         broadcastRemoteState(state)
@@ -4102,6 +4518,13 @@ public final class SessionServer: @unchecked Sendable {
 
     public func putState(_ newState: ShepherdState) async throws {
         try await enqueue {
+            guard newState.projectExecutions == self.store.state.projectExecutions else {
+                throw LogicalProjectsError("conflict", "Execution receipts are executor-owned.")
+            }
+            guard newState.projects == self.store.state.projects,
+                  newState.automations.filter({ $0.projectID != nil }) == self.store.state.automations.filter({ $0.projectID != nil }) else {
+                throw LogicalProjectsError("conflict", "Logical projects must be changed through their revision-checked service.")
+            }
             try self.mutateState { $0 = newState }
         }
     }
@@ -4187,11 +4610,15 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     public func registerProject(path: String, name: String) async throws -> (space: Space, created: Bool) {
-        try await withProjectDirectoryAccess { try await registerProjectDirectory(path: path, name: name) }
+        try await registerProject(path: path, name: name, admission: nil)
+    }
+
+    func registerProject(path: String, name: String, admission: (@Sendable () throws -> Void)?) async throws -> (space: Space, created: Bool) {
+        try await withProjectDirectoryAccess { try await registerProjectDirectory(path: path, name: name, admission: admission) }
     }
 
     /// Validate off the state queue; deduplicate and persist atomically on it.
-    private func registerProjectDirectory(path: String, name: String) async throws -> (space: Space, created: Bool) {
+    private func registerProjectDirectory(path: String, name: String, admission: (@Sendable () throws -> Void)? = nil) async throws -> (space: Space, created: Bool) {
         let spaces = state.spaces
         let prepared = try await Task.detached(priority: .userInitiated) {
             let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -4213,6 +4640,7 @@ public final class SessionServer: @unchecked Sendable {
             return (Space(name: name, path: canonical), aliases)
         }.value
         return try await enqueue {
+            try admission?()
             if let existing = self.store.state.spaces.first(where: { $0.path == prepared.0.path || prepared.1.contains($0.path) }) {
                 return (existing, false)
             }
@@ -4416,6 +4844,8 @@ public final class SessionServer: @unchecked Sendable {
 
     public func addAgent(_ agent: Agent) async throws {
         try await enqueue {
+            try self.validateProjectAgentCreation(agent)
+            try self.validateExecutionAgentCreation(agent)
             guard !self.store.state.agents.contains(where: { $0.id == agent.id }) else {
                 throw SessionServerError.conflict("agent \(agent.id) already exists")
             }
@@ -4434,6 +4864,8 @@ public final class SessionServer: @unchecked Sendable {
     /// snapshot to adopt instead of racing two mutation broadcasts.
     public func addAgent(_ agent: Agent, withTab tab: ShepherdCore.Tab) async throws {
         try await enqueue {
+            try self.validateProjectAgentCreation(agent)
+            try self.validateExecutionAgentCreation(agent, tab: tab)
             guard !self.store.state.agents.contains(where: { $0.id == agent.id }) else {
                 throw SessionServerError.conflict("agent \(agent.id) already exists")
             }
@@ -4541,6 +4973,7 @@ public final class SessionServer: @unchecked Sendable {
 
     public func addAutomation(_ automation: Automation) async throws {
         try await enqueue {
+            guard automation.projectID == nil else { throw Self.projectAutomationScopeError }
             guard !self.store.state.automations.contains(where: { $0.id == automation.id }) else {
                 throw SessionServerError.conflict("automation \(automation.id) already exists")
             }
@@ -4553,6 +4986,9 @@ public final class SessionServer: @unchecked Sendable {
             guard let index = self.store.state.automations.firstIndex(where: { $0.id == automation.id }) else {
                 throw SessionServerError.noSuchAutomation(automation.id)
             }
+            guard self.store.state.automations[index].projectID == nil, automation.projectID == nil else {
+                throw Self.projectAutomationScopeError
+            }
             try self.mutateState { $0.automations[index] = automation }
         }
     }
@@ -4561,6 +4997,9 @@ public final class SessionServer: @unchecked Sendable {
     /// stays in the sidebar as an ordinary agent.
     public func removeAutomation(_ automationID: AutomationID) async throws {
         try await enqueue {
+            guard self.store.state.automations.first(where: { $0.id == automationID })?.projectID == nil else {
+                throw Self.projectAutomationScopeError
+            }
             guard self.store.state.automations.contains(where: { $0.id == automationID }) else {
                 throw SessionServerError.noSuchAutomation(automationID)
             }
@@ -5546,6 +5985,29 @@ public final class SessionServer: @unchecked Sendable {
         let server = self
         weak let serverWeak = server
         if params.runtime == .rpc {
+            if let raw = params.env?["SHEPHERD_AGENT_ID"] {
+                let agent = AgentID(rawValue: raw)
+                if store.state.isProjectCoordinator(agent) || projectLaunches.contains(agent) || executionWorkers.contains(agent) {
+                    try requireProjectsEnabled()
+                    if store.state.isProjectCoordinator(agent) || projectLaunches.contains(agent) {
+                        guard store.state.projects.contains(where: { p in
+                            !p.paused && projectRunStarts[p.id] != nil
+                                && (p.coordinatorAgentID == agent || p.tasks.contains { $0.workerAgentID == agent && $0.phase == .reserved })
+                        }) else { throw LogicalProjectsError("project_paused", "Project launch admission was revoked.") }
+                    }
+                    if executionWorkers.contains(agent) {
+                        guard store.state.projectExecutions.contains(where: {
+                            $0.assignment?.reservedWorkerID == agent && $0.phase == .reserved && !executionCancelled.contains($0.key)
+                        }) else { throw LogicalProjectsError("execution_cancelled", "Execution launch admission was revoked.") }
+                    }
+                }
+            }
+            if params.env?["SHEPHERD_PROJECT_COORDINATOR"] == "1" {
+                guard let raw = params.env?["SHEPHERD_AGENT_ID"],
+                      store.state.agents.contains(where: { $0.id.rawValue == raw && $0.coordinatorFor != nil }) else {
+                    throw LogicalProjectsError("no_such_project", "Coordinator was deleted before launch.")
+                }
+            }
             let sessionQueue = DispatchQueue(label: "shepherd.rpc", target: queue)
             let session: RPCSession
             writeServiceTierFile(forLaunch: params)
@@ -5591,6 +6053,14 @@ public final class SessionServer: @unchecked Sendable {
                 server.applyAgentStatus(agentID: agentID, status: .done)
             }
             // Card actions go to the children extension's control channel, never the parent model.
+            thread.stopProjectChildren = { [weak serverWeak] done in
+                guard let server = serverWeak, let agentID = server.agentID(forSession: sid), let scope = server.currentProjectChildScope[agentID],
+                      !server.projectChildStopped.contains(scope) else { done(nil); return }
+                server.commandProjectChildren(scope, action: .stop) { error in
+                    if error == nil { server.projectChildDrained.insert(scope) }
+                    done(error)
+                }
+            }
             thread.dispatchSubagentCommand = { [weak serverWeak] runID, action, text, mode, done in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { done("Agent is gone."); return }
                 server.sendChildCommand(agentID: agentID, runID: runID, action: action, text: text, mode: mode, completion: done)
@@ -5619,6 +6089,8 @@ public final class SessionServer: @unchecked Sendable {
             thread.onQuestionChanged = { [weak serverWeak] question in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
                 server.applyAgentQuestion(agentID: agentID, question: question?.title, reason: question?.reason)
+                server.projectWorkerQuestion(agentID: agentID, title: question?.title)
+                if let thread = server.rpcThread(forAgent: agentID) { server.executionQuestion(agentID: agentID, thread: thread) }
             }
             // A queued message carrying design references was taken back before pi read it: its
             // grants and copies go (docs/designs.md › Design references).
@@ -5637,6 +6109,8 @@ public final class SessionServer: @unchecked Sendable {
                 guard let server = serverWeak, server.sessions[sid] != nil else { return }
                 server.unannouncedServable.insert(sid)
                 server.announceServableThreads()
+                server.projectRuntimeReady(agentID: server.agentID(forSession: sid))
+                server.executionReady(agentID: server.agentID(forSession: sid))
             }
             session.onStderr = { [weak serverWeak, weak session] line in
                 ShepherdLog.info("rpc session \(sid) stderr: \(line)")
@@ -5654,7 +6128,9 @@ public final class SessionServer: @unchecked Sendable {
             }
             thread.captureSettledTurn = { [weak serverWeak] completion in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { completion(); return }
-                server.changes.turnSettled(agentID: agentID) { sessionQueue.async(execute: completion) }
+                server.changes.turnSettled(agentID: agentID) {
+                    sessionQueue.async(execute: completion)
+                }
             }
             thread.discardPreparedTurn = { [weak serverWeak] in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
@@ -5662,12 +6138,25 @@ public final class SessionServer: @unchecked Sendable {
                     _ = server.changes.preparedTurns.withValue { $0.removeValue(forKey: agentID) }
                 }
             }
+            thread.onUserMessageConsumed = { [weak serverWeak, weak thread] operation, entry in
+                guard let server = serverWeak, let thread, let agentID = server.agentID(forSession: sid) else { return }
+                server.projectChildUserStarted(agentID: agentID, thread: thread, operation: operation)
+                if let operation { server.projectPromptStarted(agentID: agentID, deliveryID: operation) }
+                server.executionUserStarted(agentID: agentID, session: thread.piSessionID, generation: thread.generation, operation: operation, entryID: entry)
+            }
+            thread.onActualTurnSettled = { [weak serverWeak, weak thread] in
+                guard let server = serverWeak, let thread, let agentID = server.agentID(forSession: sid) else { return }
+                server.projectWorkerSettled(agentID: agentID)
+                server.executionSettled(agentID: agentID, thread: thread)
+            }
             thread.onTurnEvent = { [weak serverWeak] event in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
                 switch event {
-                case .started: server.changes.turnStarted(agentID: agentID)
+                case .started:
+                    server.changes.turnStarted(agentID: agentID)
                 case .message(let timestamp, let text): server.changes.turnMessage(agentID: agentID, timestamp: timestamp, text: text)
-                case .settled: server.changes.turnSettled(agentID: agentID)
+                case .settled:
+                    server.changes.turnSettled(agentID: agentID)
                 }
             }
             sessions[sid] = .rpc(session, thread)
@@ -5999,6 +6488,10 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     private func sessionDidExit(_ sessionID: SessionID, code: Int32?) {
+        if let agent = agentID(forSession: sessionID) {
+            projectRuntimeExited(agentID: agent)
+            executionExited(agentID: agent)
+        }
         ShepherdLog.info("session \(sessionID) exited (code \(code.map(String.init) ?? "signal"))")
         if let record = startRecords.removeValue(forKey: sessionID), record.keepsAgent {
             let problem = record.problem(exitCode: code)
@@ -6072,12 +6565,12 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    private func requireStarted() throws {
+    func requireStarted() throws {
         guard isStarted else { throw SessionServerError.conflict("session server is not started") }
     }
 
     /// Run on the server queue and resume the caller with the result.
-    private func enqueue<T>(_ body: @escaping () throws -> T) async throws -> T {
+    func enqueue<T>(_ body: @escaping () throws -> T) async throws -> T {
         try await withCheckedThrowingContinuation { continuation in
             queue.async {
                 do {
@@ -6098,7 +6591,7 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Callbacks are delivered on the main actor, FIFO with respect to server
     /// queue order (the main queue preserves submission order).
-    private func hopToMain(_ body: @escaping () -> Void) {
+    func hopToMain(_ body: @escaping () -> Void) {
         DispatchQueue.main.async(execute: body)
     }
 
@@ -6204,7 +6697,7 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    private func rpcThread(forAgent agentID: AgentID) -> RPCThreadState? {
+    func rpcThread(forAgent agentID: AgentID) -> RPCThreadState? {
         guard let agent = store.state.agents.first(where: { $0.id == agentID }),
               let tab = store.state.tabs.first(where: { $0.id == agent.tabID }),
               let paneID = agent.paneID, let sessionID = tab.layout.leaf(withID: paneID)?.sessionID else { return nil }

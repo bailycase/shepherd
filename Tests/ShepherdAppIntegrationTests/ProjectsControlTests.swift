@@ -55,7 +55,7 @@ struct ProjectsControlTests {
         try await eventuallyOnMain("the first project file") { model.fileLoaded }
         for (category, label) in [(ProjectFile.Category.instructions, "Instructions"), (.pi, "Settings"), (.skills, "Resources"), (.mcp, "MCP servers")] {
             window.layout()
-            let control = try ControlPress.press("Project category \(label)", under: window.host)
+            let control = try ControlPress.press("Space category \(label)", under: window.host)
             #expect(ControlPress.undersized([control], minimum: .desktop).isEmpty, "\(label) hit area is \(String(describing: control.frame))")
             try await eventuallyOnMain("the category to load") { model.category == category && !model.fileLoading }
             if category == .pi {
@@ -75,11 +75,11 @@ struct ProjectsControlTests {
             }
         }
         window.layout()
-        let browser = try ControlPress.press("Project category Browser", under: window.host)
+        let browser = try ControlPress.press("Space category Browser", under: window.host)
         #expect(ControlPress.undersized([browser], minimum: .desktop).isEmpty)
         try await eventuallyOnMain("the project Browser page") { model.showingBrowser && vm.projectCookies.scope != nil && !vm.projectCookies.loading }
         window.layout()
-        try ControlPress.press("Project category Instructions", under: window.host)
+        try ControlPress.press("Space category Instructions", under: window.host)
         try await eventuallyOnMain("instructions to load") { model.category == .instructions && model.fileLoaded }
         for path in ["AGENTS.override.md", ".pi/SYSTEM.md"] {
             window.layout()
@@ -99,7 +99,7 @@ struct ProjectsControlTests {
         try await eventuallyOnMain("the project editor open request") { openedFile == "AGENTS.md" }
         window.layout()
         // The native editor's accessibility value is the text a screen reader edits.
-        let editor = try #require(AccessibilityNode.all(under: window.host).first { $0.label == "Project file editor" })
+        let editor = try #require(AccessibilityNode.all(under: window.host).first { $0.label == "Space file editor" })
         let setter = NSSelectorFromString("setAccessibilityValue:")
         #expect(editor.object.responds(to: setter))
         _ = editor.object.perform(setter, with: "# Changed instructions\n")
@@ -113,12 +113,12 @@ struct ProjectsControlTests {
         if let textView = editor.object as? NSTextView { NotificationCenter.default.post(name: NSText.didChangeNotification, object: textView) }
         try await eventuallyOnMain("the second native edit") { model.dirty }
         window.layout()
-        try ControlPress.press("Back to Projects", under: window.host)
+        try ControlPress.press("Back to Spaces", under: window.host)
         try await eventuallyOnMain("discard confirmation") { model.pending != nil }
         window.layout()
         try ControlPress.press("Keep editing", under: window.host)
         #expect(model.pending == nil && model.dirty)
-        try ControlPress.press("Back to Projects", under: window.host)
+        try ControlPress.press("Back to Spaces", under: window.host)
         try await eventuallyOnMain("the second discard confirmation") { model.pending != nil }
         window.layout()
         try ControlPress.press("Discard", under: window.host)
@@ -131,11 +131,11 @@ struct ProjectsControlTests {
         try ControlPress.press("All hosts", role: ControlRole.radioButton, under: window.host)
         #expect(model.host == "all")
         let filterNodes = AccessibilityNode.all(under: window.host)
-        let filterNode = filterNodes.first { $0.label == "Filter projects" && $0.role == "AXTextField" }
+        let filterNode = filterNodes.first { $0.label == "Filter spaces" && $0.role == "AXTextField" }
         let filter = try #require(filterNode)
         #expect(filter.object.responds(to: setter))
         _ = filter.object.perform(setter, with: "does-not-exist")
-        if let field = nativeTextField(under: window.host, label: "Filter projects") {
+        if let field = nativeTextField(under: window.host, label: "Filter spaces") {
             field.delegate?.controlTextDidChange?(Notification(name: NSControl.textDidChangeNotification, object: field))
         }
         try await eventuallyOnMain("the native filter") { model.filter == "does-not-exist" && model.visible.isEmpty }
@@ -143,7 +143,7 @@ struct ProjectsControlTests {
         try ControlPress.press("Clear search", under: window.host)
         try await eventuallyOnMain("the cleared project filter") { model.filter.isEmpty && model.visible.count == 1 }
         window.layout()
-        let add = try ControlPress.press("Add project", under: window.host)
+        let add = try ControlPress.press("Add space", under: window.host)
         #expect(ControlPress.undersized([add], minimum: .desktop).isEmpty)
         try await eventuallyOnMain("the folder picker") { window.window.attachedSheet != nil }
         let sheet = try #require(window.window.attachedSheet?.contentView)
@@ -154,7 +154,7 @@ struct ProjectsControlTests {
         let settingsSearch = try #require(AccessibilityNode.all(under: window.host).first { $0.label == "Search settings" && $0.role == "AXTextField" })
         let settingsSetter = NSSelectorFromString("setAccessibilityValue:")
         #expect(settingsSearch.object.responds(to: settingsSetter))
-        _ = settingsSearch.object.perform(settingsSetter, with: "Filter projects")
+        _ = settingsSearch.object.perform(settingsSetter, with: "Filter spaces")
         let settingsField = try #require(nativeTextField(under: window.host, label: "Search settings"))
         settingsField.delegate?.controlTextDidChange?(Notification(name: NSControl.textDidChangeNotification, object: settingsField))
         try await eventuallyOnMain("the Settings search to narrow navigation") {
@@ -210,8 +210,8 @@ struct ProjectsControlTests {
         try window.press("Expand acme")
         try await eventuallyOnMain("web back") { model.visible.count == 2 }
 
-        try await eventuallyOnMain("Add subproject") { window.controls().contains { $0.label == "Add subproject to acme" } }
-        let add = try window.press("Add subproject to acme")
+        try await eventuallyOnMain("Add subspace") { window.controls().contains { $0.label == "Add subspace to acme" } }
+        let add = try window.press("Add subspace to acme")
         #expect(ControlPress.undersized([add], minimum: .desktop).isEmpty)
         try await eventuallyOnMain("the child-project dialog") {
             guard let sheet = window.window.attachedSheet?.contentView else { return false }
@@ -232,8 +232,8 @@ struct ProjectsControlTests {
         try ControlPress.press("Cancel", under: sheet)
         try await eventuallyOnMain("the child dialog to close") { window.window.attachedSheet == nil }
 
-        try await eventuallyOnMain("Open project") { window.controls().contains { $0.label == "Open project" } }
-        let open = try window.press("Open project")
+        try await eventuallyOnMain("Open space") { window.controls().contains { $0.label == "Open space" } }
+        let open = try window.press("Open space")
         #expect(ControlPress.undersized([open], minimum: .desktop).isEmpty)
         try await eventuallyOnMain("web's detail") { model.selected?.project.name == "web" }
     }

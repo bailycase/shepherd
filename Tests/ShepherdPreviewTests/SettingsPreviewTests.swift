@@ -301,7 +301,7 @@ struct SettingsPreviewTests {
         let failures: [(String, RemoteHostClientError)] = [
             ("horizon", .system(call: "connect", errno: ECONNREFUSED)),
             ("studio", .rejected(code: RemoteProtocol.unauthorizedCode, message: "bad token")),
-            ("build-01", .rejected(code: RemoteProtocol.versionMismatchCode, message: "host speaks protocol \(RemoteProtocol.version + 1)")),
+            ("demo-mac", .rejected(code: RemoteProtocol.versionMismatchCode, message: "host speaks protocol \(RemoteProtocol.version + 1)")),
         ]
         let connections = failures.map { name, error in
             let connection = RemoteHostStore.Connection(config: .init(name: name, host: "\(name).internal", port: 7433, token: "x"))
@@ -378,6 +378,19 @@ struct SettingsPreviewTests {
         workspace.vm.settings.goalsEnabled = enabled
         workspace.vm.settingsSection = .experiments
         try await Preview.renderMatrix(enabled ? "settings-experiments-goals-on" : "settings-experiments-goals-off",
+                                       size: CGSize(width: 1440, height: 900)) {
+            SettingsView(vm: workspace.vm)
+        }
+    }
+
+    /// The Projects card beside Goals and the Design tool, off (the default) and on, in both appearances and at text size 1.3.
+    @Test(arguments: [false, true])
+    func settingsProjectsExperiment(_ enabled: Bool) async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        workspace.vm.settings.projectsEnabled = enabled
+        workspace.vm.settingsSection = .experiments
+        try await Preview.renderMatrix(enabled ? "settings-experiments-projects-on" : "settings-experiments-projects-off",
                                        size: CGSize(width: 1440, height: 900)) {
             SettingsView(vm: workspace.vm)
         }
@@ -699,7 +712,7 @@ struct SettingsPreviewTests {
 
     @Test func renameSpaceDialog() async throws {
         try await Preview.render("sheet-rename-space", size: CGSize(width: AppLayout.renameSheetWidth, height: 210)) {
-            RenameDialog(title: "Rename project", caption: "Display name only. The folder name and location stay unchanged.",
+            RenameDialog(title: "Rename space", caption: "Display name only. The folder name and location stay unchanged.",
                          name: "Shepherd", onRename: { _ in }, onCancel: {})
         }
     }

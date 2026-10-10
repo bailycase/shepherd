@@ -175,6 +175,7 @@ struct ExtensionIdentityTests {
             .cancelAgentRequest(id: 90, agentID: victim),
         ]
         let requests: [ExtensionMessage] = [
+            .childScope(id: 997, agentID: victim, sessionID: "forged", userTimestamp: 1),
             .listPanes(id: 1, agentID: victim),
             .openPane(id: 2, agentID: victim, axis: .horizontal, cwd: nil, relativeTo: nil, command: "true"),
             .closePane(id: 3, agentID: victim, paneID: PaneID()),
@@ -208,15 +209,14 @@ struct ExtensionIdentityTests {
             .designRender(id: 30, agentID: victim, designID: design, request: DesignRenderRequest(path: "A.dc.html")),
             .designExtract(id: 31, agentID: victim, designID: design, request: DesignExtractRequest(path: "A.dc.html", element: "4", piece: "Card")),
         ]
-        // Every kind of message that names an agent as its actor (39 of the protocol's 46; the other
-        // seven name none) is in one of the two lists.
+        // Exercise the existing actor-bound frames plus native child scope authorization.
         func kind(_ message: ExtensionMessage) throws -> String {
             let object = try JSONSerialization.jsonObject(with: NDJSON.encode(message)) as? [String: Any]
             return try #require(object?["type"] as? String)
         }
         #expect((quiet + requests).allSatisfy { $0.speaksFor == victim })
         #expect(requests.allSatisfy { $0.replyID != nil } && quiet.allSatisfy { $0.replyID == nil })
-        #expect(Set(try (quiet + requests).map(kind)).count == 39)
+        #expect(Set(try (quiet + requests).map(kind)).count == 40)
 
         let client = try ExtensionClient(path: h.socketPath)
         for message in quiet + requests { try client.send(message) }

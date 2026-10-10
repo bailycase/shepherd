@@ -205,7 +205,7 @@ struct DesignSystemCardRow: View, Equatable {
                 .help("Build a design system from \(project.name)")
         } else if projects.isEmpty {
             NWDesignSystemBuildTile(enabled: false)
-                .help("Add a project to build a design system from it")
+                .help("Add a space to build a design system from it")
         } else {
             Menu {
                 ForEach(projects) { project in
@@ -215,7 +215,7 @@ struct DesignSystemCardRow: View, Equatable {
                 .menuStyle(.button)
                 .buttonStyle(.plain)
                 .menuIndicator(.hidden)
-                .help("Build a design system from a project")
+                .help("Build a design system from a space")
         }
     }
 }

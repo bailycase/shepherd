@@ -459,6 +459,9 @@ enum ChildrenExtension {
         // `timers` lets tests observe the control tick, and `commandEnv` decides which commands register
         // (shepherd-children-ui.ts); pi passes only `pi`.
         export default function shepherdChildren(pi, timers = { setInterval, clearInterval }, commandEnv = process.env) {
+          // Registration is also the codemode boundary: hidden tools can still be called directly.
+          // A Project launch stays restricted through later manual turns in this process.
+          if (process.env.SHEPHERD_PROJECT_CONTEXT || process.env.SHEPHERD_PROJECT_COORDINATOR === "1") return;
           if (process.env.SHEPHERD_CHILD === "1") {
             // Cooperative pause at the next model-request boundary. In-flight tools finish normally;
             // the RPC reader remains available for continue/cancel while the context hook waits.
@@ -502,6 +505,69 @@ enum ChildrenExtension {
           if (process.env.SHEPHERD_NATIVE_CHILDREN !== "1" || !process.env.SHEPHERD_AGENT_ID || !process.env.SHEPHERD_SOCKET) return;
 
           const runs = new Map(), workflows = new Map();
+          const projectWorker = !!process.env.SHEPHERD_PROJECT_CONTEXT;
+          const closedScopes = new Set(), scopeStops = new Map(), scopeRequests = new Map(), scopeTimers = new Map();
+          const continuationScopes = new Set(), settleWaiters = new Set();
+          const wakeSettlements = () => { for (const resolve of settleWaiters) resolve(); settleWaiters.clear(); };
+          let scopeSequence = 0, admissionVersion = 0, userTimestamp;
+          const scopeKey = (scope) => scope ? [scope.key.ownerID, scope.key.projectID, scope.key.operationID, scope.workerAgentID, scope.sessionID, scope.generation, scope.epoch ?? 0].join(":") : undefined;
+          const checkScope = (scope) => {
+            if (process.env.SHEPHERD_PROJECT_COORDINATOR === "1") throw Error("Project coordinators cannot create helpers; use typed Project assignments.");
+            if (scope && closedScopes.has(scopeKey(scope))) throw Error("Project helper admission is closed for this activation.");
+          };
+          pi.on("message_start", (event) => { if (event.message?.role === "user") userTimestamp = event.message.timestamp; });
+          async function authorizeScope() {
+            checkScope();
+            if (!projectWorker) return undefined;
+            const timestamp = userTimestamp, version = admissionVersion;
+            const scope = await new Promise((resolve, reject) => {
+              if (!control || control.destroyed) { reject(Error("Native child controller is disconnected; admission is unknown.")); return; }
+              const id = ++scopeSequence;
+              const timer = setTimeout(() => { scopeRequests.delete(id); reject(Error("Native helper admission timed out.")); }, 15000); timer.unref();
+              scopeRequests.set(id, { resolve, reject, timer });
+              control.write(JSON.stringify({ type: "childScope", id, agentID: process.env.SHEPHERD_AGENT_ID, sessionID: owner, userTimestamp: timestamp }) + "\n");
+            });
+            if (timestamp !== userTimestamp) throw Error("Native user turn changed during helper admission.");
+            if (scope && (scopeStops.get(scopeKey({ ...scope, epoch: 0 })) ?? 0) > version) throw Error("Project helper admission closed while authorization was pending.");
+            checkScope(scope);
+            return scope;
+          }
+          async function projectChildren(frame) {
+            const scope = frame.scope;
+            if (!scope?.key?.operationID || scope.workerAgentID !== process.env.SHEPHERD_AGENT_ID || scope.sessionID !== owner || !scope.generation) throw Error("Wrong Project helper scope.");
+            if (!["stop", "drain"].includes(frame.action)) throw Error("Unsupported Project helper command.");
+            const key = scopeKey(scope), matches = (value) => scopeKey(value.projectScope) === key;
+            if (frame.action === "stop") {
+              if (!closedScopes.has(key)) scopeStops.set(scopeKey({ ...scope, epoch: 0 }), ++admissionVersion);
+              closedScopes.add(key); // Synchronous admission fence, before any await.
+              for (const value of [...runs.values(), ...workflows.values()].filter(matches)) pendingNotices.delete(value.id);
+              continuationScopes.delete(key); wakeSettlements();
+              clearTimeout(scopeTimers.get(key)?.timer); scopeTimers.delete(key);
+            }
+            // Already answered authorizations install their queued run/controller before the snapshot.
+            await Promise.resolve();
+            const ownedWorkflows = [...workflows.values()].filter(matches);
+            if (frame.action === "stop") for (const w of ownedWorkflows) { pendingNotices.delete(w.id); w.controller.abort(); }
+            await Promise.all(ownedWorkflows.map((w) => w.done));
+            for (;;) {
+              if (frame.action === "stop") await Promise.all([...runs.values()].filter(matches).map((run) => stop(run, "Project activation stopped")));
+              await Promise.allSettled([...runs.values()].filter(matches).map((run) => run.starting));
+              const live = [...runs.values()].filter(matches).filter((run) => run.proc);
+              if (frame.action === "stop") {
+                await Promise.all(live.map((run) => stop(run, "Project activation stopped")));
+                for (const run of [...runs.values()].filter(matches)) { dismissQuestion(run); pendingNotices.delete(run.id); }
+              } else await Promise.all(live.map((run) => run.closed));
+              if (![...runs.values()].some((run) => matches(run) && (run.proc || run.state === "queued")) && ![...workflows.values()].some((w) => matches(w) && !w.cleaned)) {
+                const noticeWillWake = !userInputWaiting && !directInputWaiting && [...pendingNotices].some(([id, n]) => n.wake && matches(runs.get(id) ?? workflows.get(id) ?? {}));
+                if (frame.action === "drain" && !closedScopes.has(key) && !parentInterrupted && (parentWorking || continuationScopes.has(key) || noticeWillWake)) {
+                  await new Promise(resolve => settleWaiters.add(resolve));
+                  continue;
+                }
+                return;
+              }
+              await Promise.all([...workflows.values()].filter((w) => matches(w) && !w.cleaned).map((w) => w.done));
+            }
+          }
           const defaults = childDefaults();
           let missions;
           let owner, active = false, timer, sessionContext;
@@ -530,7 +596,7 @@ enum ChildrenExtension {
           const summary = (run) => ({ id: run.id, role: run.role, state: run.state, task: run.task, startedAt: run.startedAt, endedAt: run.endedAt, currentTool: run.currentTool, latestTool: run.latestTool, model: run.model, cwd: run.cwd,
             workflowId: run.workflowId, delivery: run.delivery ?? "continue", settled: run.settled, missionId: run.missionId, missionWarning: run.missionWarning, thinking: run.thinking, context: run.context, tools: run.tools, sessionFile: run.sessionFile, output: run.output, error: run.error, needsReply: run.needsReply, stopReason: run.lastStop, omittedInFlight: run.omittedInFlight,
             turns: run.turns, toolCalls: run.toolCalls, tokens: run.tokens, contextPercent: run.contextPercent, files: fileChanges(run), added: run.added, removed: run.removed, lastActivity: run.lastActivity, questionOptions: run.questionOptions, questionText: run.questionText, questionShort: run.questionShort,
-            attempt: run.attempt, questionID: run.questionID, exitCode: run.exitCode, toolCallID: run.toolCallID, stepIndex: run.stepIndex,
+            projectScope: run.projectScope, attempt: run.attempt, questionID: run.questionID, exitCode: run.exitCode, toolCallID: run.toolCallID, stepIndex: run.stepIndex,
             relaying: run.relays?.size || undefined });
           // A result as the parent model reads it: a child that asked also says what to do about it.
           const forParent = (run, extra = {}) => ({ ...summary(run), ...extra, ...(run.needsReply && run.questionID ? { parentAction: parentAction(run) } : {}) });
@@ -539,7 +605,7 @@ enum ChildrenExtension {
           function card(run) {
             const workflow = run.workflowId ? workflows.get(run.workflowId) : undefined;
             return {
-              runID: run.id, label: `${run.role}: ${clip(run.task, 100)}`, state: run.state,
+              runID: run.id, attempt: run.attempt, projectScope: run.projectScope, label: `${run.role}: ${clip(run.task, 100)}`, state: run.state,
               startedAt: run.startedAt, endedAt: run.endedAt, currentTool: run.currentTool,
               needsAttention: run.needsReply === true, attentionText: run.needsReply ? clip(run.questionText ?? run.output, 160) : undefined, asyncDir: run.dir,
               role: run.role, model: run.model, thinking: run.thinking, context: workflow?.async ? "async" : "background",
@@ -622,8 +688,13 @@ enum ChildrenExtension {
             if (!active || parentWorking || parentInterrupted || sessionContext?.isIdle?.() === false || !pendingNotices.size) return;
             const notices = [...pendingNotices.values()];
             const content = compose(notices);
+            const triggerTurn = !userInputWaiting && !directInputWaiting && notices.some((n) => n.wake);
+            if (triggerTurn) for (const [id, notice] of pendingNotices) {
+              const scope = (runs.get(id) ?? workflows.get(id))?.projectScope;
+              if (scope && notice.wake) continuationScopes.add(scopeKey(scope));
+            }
             pendingNotices.clear();
-            try { pi.sendMessage(noticeMessage(content), { triggerTurn: !userInputWaiting && !directInputWaiting && notices.some((n) => n.wake), deliverAs: "followUp" }); }
+            try { pi.sendMessage(noticeMessage(content), { triggerTurn, deliverAs: "followUp" }); }
             catch { /* Results remain retrievable by id. */ }
           }
           const noticeMessage = (content) => ({ customType: "shepherd-child", content,
@@ -631,13 +702,13 @@ enum ChildrenExtension {
           // Everything delivered together, with the parent's instructions for the questions in it said once.
           const compose = (notices) => notices.map((n) => n.content).join("\n\n") + (notices.some((n) => n.question) ? `\n\n${PARENT_QUESTION_GUIDE}` : "");
           function notify(run, message) {
-            if (!current(run) || run.workflowId) return;
+            if (!current(run) || run.workflowId || closedScopes.has(scopeKey(run.projectScope))) return;
             const content = `Child ${run.id} (${run.role}): ${clip(message)}\nAttempt: ${run.attempt ?? "unknown"}\nUse this result to continue the task. Do not acknowledge receipt or repeat it unless it changes the user's outcome.`;
             enqueueNotice(run.id, content, run.delivery !== "report");
           }
           // A child's question goes to its parent in either delivery mode, and wakes an idle one; it notifies once.
           function notifyQuestion(run) {
-            if (!current(run) || run.workflowId) return;
+            if (!current(run) || run.workflowId || closedScopes.has(scopeKey(run.projectScope))) return;
             enqueueNotice(run.id, `${askLine(run)}\nDo not acknowledge receipt: act on it.`, true, true);
           }
           function enqueueNotice(id, content, wake = true, question = false) {
@@ -647,7 +718,7 @@ enum ChildrenExtension {
           pi.on("before_agent_start", () => { userInputWaiting = false; directInputWaiting = false; });
           pi.on("agent_start", () => { parentWorking = true; parentInterrupted = false; });
           pi.on("agent_settled", () => {
-            parentWorking = false;
+            parentWorking = false; continuationScopes.clear(); wakeSettlements();
             // A notice can arrive after the final actionable boundary but before settled.
             if (pendingNotices.size && !noticeTimer) { noticeTimer = setTimeout(flushIdleNotices, 0); noticeTimer.unref(); }
           });
@@ -815,8 +886,9 @@ enum ChildrenExtension {
           }
           async function launch(run, message, signal) {
             signal?.throwIfAborted();
+            checkScope(run.projectScope);
             const inherited = await childUserExtensions(run.cwd);
-            signal?.throwIfAborted();
+            signal?.throwIfAborted(); checkScope(run.projectScope);
             run.pending = new Map(); run.exited = false; run.cancelled = false; run.settled = false;
             run.paused = false;
             run.stopping = undefined; run.output = ""; run.error = undefined; run.stderr = ""; run.lastStop = undefined; run.availableTools = undefined;
@@ -895,6 +967,7 @@ enum ChildrenExtension {
           function get(id) { const run = runs.get(id); if (!run) throw new Error("Unknown child id in this parent session"); return run; }
           function capacity() { if ([...runs.values()].filter((r) => r.state === "running" || r.state === "queued").length >= defaults.concurrency) throw new Error(`${defaults.concurrency === 4 ? "Four" : defaults.concurrency} children are already active; wait or cancel first`); }
           async function send(run, message, mode = "steer") {
+            checkScope(run.projectScope);
             if (!run.proc || run.exited || run.cancelled || run.settled) throw new Error("Child is not accepting messages; use shepherd_child_resume after it exits");
             const question = run.questionID;
             await command(run, "prompt", { message, streamingBehavior: mode });
@@ -971,11 +1044,30 @@ enum ChildrenExtension {
             try {
               const s = net.createConnection(process.env.SHEPHERD_SOCKET);
               control = s; s.unref();
-              s.on("connect", () => { try { s.write(JSON.stringify({ type: "helloChildren", agentID: process.env.SHEPHERD_AGENT_ID }) + "\n"); } catch { s.destroy(); } });
+              s.on("connect", () => { try { s.write(JSON.stringify({ type: "helloChildren", agentID: process.env.SHEPHERD_AGENT_ID, projectScopes: true }) + "\n"); } catch { s.destroy(); } });
               s.on("data", jsonLines((frame) => {
                 if (frame?.type === "parentInput") { parentInput(); return; }
-                if (frame?.type !== "childCommand" || !Number.isSafeInteger(frame.id)) return;
-                childCommand(frame).then(() => undefined, (error) => clip(error.message, 500)).then((error) => {
+                if (["childScope", "error"].includes(frame?.type) && scopeRequests.has(frame.id)) {
+                  const request = scopeRequests.get(frame.id); scopeRequests.delete(frame.id); clearTimeout(request.timer);
+                  if (frame.type === "error") { request.reject(Error(frame.message)); return; }
+                  if (frame.scope) {
+                    const key = scopeKey(frame.scope);
+                    if (!Number.isFinite(frame.deadline) || closedScopes.has(key)) { request.reject(Error("Project helper admission is closed or has no deadline.")); return; }
+                    // Reuse the host's activation deadline locally too: losing the control socket must
+                    // not leave background helpers running beyond their authorized task's bound.
+                    if (!scopeTimers.has(key) || frame.deadline < scopeTimers.get(key).deadline) {
+                      clearTimeout(scopeTimers.get(key)?.timer);
+                      const expire = () => { void projectChildren({ scope: frame.scope, action: "stop" }).catch(() => {}); };
+                      if (frame.deadline <= Date.now()) { expire(); request.reject(Error("Project helper activation deadline reached.")); return; }
+                      const timer = setTimeout(expire, Math.min(frame.deadline - Date.now(), 1800_000)); timer.unref();
+                      scopeTimers.set(key, { deadline: frame.deadline, timer });
+                    }
+                  }
+                  request.resolve(frame.scope);
+                  return;
+                }
+                if (!["childCommand", "projectChildren"].includes(frame?.type) || !Number.isSafeInteger(frame.id)) return;
+                (frame.type === "projectChildren" ? projectChildren(frame) : childCommand(frame)).then(() => undefined, (error) => clip(error.message, 500)).then((error) => {
                   if (control === s) { try { s.write(JSON.stringify({ type: "childCommandResult", id: frame.id, error }) + "\n"); } catch {} }
                 });
               }, () => s.destroy()));
@@ -983,12 +1075,15 @@ enum ChildrenExtension {
               s.on("close", () => {
                 if (control !== s) return;
                 control = undefined;
+                for (const request of scopeRequests.values()) { clearTimeout(request.timer); request.reject(Error("Native controller disconnected; helper admission is unknown.")); }
+                scopeRequests.clear();
                 if (active) { controlRetry = setTimeout(connectControl, 2000); controlRetry.unref(); }
               });
             } catch { control = undefined; }
           }
           pi.on("session_start", (_event, ctx) => {
             owner = ctx.sessionManager.getSessionId(); active = true; sessionContext = ctx;
+            userTimestamp = ctx.sessionManager.getBranch().filter((e) => e.type === "message" && e.message?.role === "user").at(-1)?.message.timestamp;
             parentWorking = false; parentInterrupted = false; userInputWaiting = false; directInputWaiting = false; parentInputVersion += 1; pendingNotices.clear(); clearTimeout(noticeTimer); noticeTimer = undefined;
             connectControl();
             missions = missionStore(path.join(path.dirname(root), "shepherd-native"), ctx.cwd);
@@ -1036,8 +1131,10 @@ enum ChildrenExtension {
             registerCommands();
           });
           pi.on("session_shutdown", async () => {
-            active = false; pendingNotices.clear(); parentWorking = false; clearTimeout(noticeTimer); noticeTimer = undefined; syncTick(); clearTimeout(controlRetry);
+            active = false; pendingNotices.clear(); parentWorking = false; continuationScopes.clear(); wakeSettlements(); clearTimeout(noticeTimer); noticeTimer = undefined; syncTick(); clearTimeout(controlRetry);
             const socket = control; control = undefined; socket?.destroy();
+            for (const { timer } of scopeTimers.values()) clearTimeout(timer);
+            scopeTimers.clear();
             for (const workflow of workflows.values()) workflow.controller.abort();
             await Promise.all([...workflows.values()].map((w) => w.done));
             await Promise.all([...runs.values()].map((run) => stop(run, "Parent session ended")));
@@ -1080,6 +1177,8 @@ enum ChildrenExtension {
             return resolved;
           }
           async function start(params, signal, ctx, workflowId, toolCallID, stepIndex) {
+              const projectScope = workflowId ? workflows.get(workflowId)?.projectScope : projectWorker ? await authorizeScope() : undefined;
+              checkScope(projectScope);
               params = checked(startSchema, params);
               if (!active) throw new Error("No active parent session");
               if (!supported) throw new Error("Shepherd native children require Pi 0.85.1 or newer");
@@ -1111,7 +1210,7 @@ enum ChildrenExtension {
               if (!bridge) throw new Error("Shepherd child extension path is missing");
               const id = `native-${randomUUID()}`, dir = path.join(root, id);
               fs.mkdirSync(path.join(dir, "control", "steer-requests"), { recursive: true, mode: 0o700 });
-              const run = { id, dir, owner, role, model, cwd, thinking: params.thinking ?? resolved.thinkingLevel ?? profile.thinking ?? defaults.thinking ?? ctx.thinkingLevel ?? "off", task: params.task,
+              const run = { id, dir, owner, projectScope, role, model, cwd, thinking: params.thinking ?? resolved.thinkingLevel ?? profile.thinking ?? defaults.thinking ?? ctx.thinkingLevel ?? "off", task: params.task,
                 context: params.context ?? profile.context ?? defaults.context, delivery: params.delivery ?? "continue",
                 requiresProjectTrust: profile.requiresProjectTrust || (targetContext.isProjectTrusted() && (profile.inheritSkills || profile.skills?.length)), profileSource: profile.source, systemPromptMode: profile.systemPromptMode, inheritProjectContext: profile.inheritProjectContext,
                 extensions: profile.extensions ?? [], skills: childSkills(profile, targetContext), workflowId, ...missionFor(params, params.task),
@@ -1127,7 +1226,8 @@ enum ChildrenExtension {
                 fs.writeFileSync(path.join(dir, "prompt.md"), `You are a Shepherd child, not the parent. ${profile.prompt}\nWork only on the delegated task. No nested helpers, workflows, schedules, or worktree management. Routine progress stays in your child record; do not send a separate completion message, your final answer is delivered automatically.\n${CHILD_ASK_RULE}\n`, { mode: 0o600 });
                 const { dir: _dir, output: _output, files: _files, ...descriptor } = run;
                 pi.appendEntry("shepherd-child", descriptor);
-                return await launch(run, params.task, signal);
+                run.starting = launch(run, params.task, signal);
+                return await run.starting;
               } catch (error) { if (!run.proc) { run.state = "failed"; run.endedAt = Date.now(); run.error = clip(error.message); save(run); } throw error; }
           }
           pi.registerTool({ name: "shepherd_child_agents", label: "child agents", description: "List effective agent profiles, sources and unsupported-field diagnostics. Reads only Shepherd's pi/agents folder. Invalid files stay visible as diagnostics and cannot run.",
@@ -1181,6 +1281,7 @@ enum ChildrenExtension {
               return result(p.questionID ? await answerChild(run, p.message, undefined, signal, ctx) : await resume(run, p.message, signal, ctx));
             } });
           async function resume(run, message, signal, ctx) {
+            const projectScope = projectWorker ? await authorizeScope() : undefined;
             if (!active) throw Error("No active parent session");
             if ((run.requiresProjectTrust || run.profileSource === "project") && childTargetContext(ctx, run.cwd).isProjectTrusted() !== true) throw Error("Project profile continuation requires Pi project trust");
             if (run.workflowId && workflows.has(run.workflowId) && !workflows.get(run.workflowId).cleaned) throw Error("Child is still owned by an active workflow");
@@ -1188,10 +1289,12 @@ enum ChildrenExtension {
             if (run.proc || ["running", "queued"].includes(run.state)) throw new Error("Child already active");
             capacity(); signal?.throwIfAborted();
             if (!fs.existsSync(run.sessionFile)) throw new Error("Child transcript is missing");
+            checkScope(projectScope);
+            run.projectScope = projectScope;
             run.workflowId = undefined;
             run.tools = run.tools.filter((name) => pi.getActiveTools().includes(name));
             run.state = "queued";
-            try { return await launch(run, message, signal); }
+            try { run.starting = launch(run, message, signal); return await run.starting; }
             catch (error) { if (!run.proc) { run.state = "failed"; run.endedAt = Date.now(); run.error = clip(error.message); save(run); } throw error; }
           }
           // Every caller is the user (the app's cards and inspector, shepherd-inspect, the fleet view),
@@ -1276,15 +1379,17 @@ enum ChildrenExtension {
                 pendingNotices.delete(w.id);
                 return result(workflowSummary(w));
               }
+              const projectScope = projectWorker ? await authorizeScope() : undefined;
+              checkScope(projectScope); signal?.throwIfAborted();
               if (!p.workflowScript) throw Error("workflowScript is required");
               if (workflows.size >= 32 || [...workflows.values()].filter((w) => w.state === "running").length >= 4) throw Error("Workflow limit reached: four active, 32 retained per parent");
-              const w = { id: `workflow-${randomUUID()}`, owner, state: "running", async: p.async !== false, keys: new Map(), claims: new Set(), starts: new Set(), controller: new AbortController(),
+              const w = { id: `workflow-${randomUUID()}`, owner, projectScope, state: "running", async: p.async !== false, keys: new Map(), claims: new Set(), starts: new Set(), controller: new AbortController(),
                 ...missionFor(p, p.task ?? "Scripted workflow") };
               workflows.set(w.id, w);
               pi.appendEntry("shepherd-workflow", { id: w.id, owner, ownerPID: process.pid, missionId: w.missionId });
               if (w.missionId) try { missions.update(w.missionId, (m) => { m.workflow = { id: w.id, state: "running" }; }); }
               catch (error) { workflows.delete(w.id); throw error; }
-              const guard = () => { w.controller.signal.throwIfAborted(); if (!active || w.state !== "running") throw Error("Workflow is no longer accepting calls"); };
+              const guard = () => { checkScope(w.projectScope); w.controller.signal.throwIfAborted(); if (!active || w.state !== "running") throw Error("Workflow is no longer accepting calls"); };
               const keySchema = Type.String({ minLength: 1, maxLength: 128, pattern: "^[a-zA-Z0-9][a-zA-Z0-9._-]*$" });
               async function runChild(key, params) {
                 checked(Type.Object({ key: keySchema, params: startSchema }, { additionalProperties: false }), { key, params });
@@ -1297,7 +1402,7 @@ enum ChildrenExtension {
                   await new Promise((r) => setTimeout(r, 50)); guard();
                 }
                 guard();
-                const promise = start({ ...params, ...(w.missionId ? { missionId: w.missionId } : { mission: false }) }, w.controller.signal, ctx, w.id, toolCallID, w.claims.size);
+                const promise = start({ ...params, ...(missionsOn ? (w.missionId ? { missionId: w.missionId } : { mission: false }) : {}) }, w.controller.signal, ctx, w.id, toolCallID, w.claims.size);
                 w.starts.add(promise);
                 let receipt;
                 try { receipt = await promise; } finally { w.starts.delete(promise); }
@@ -1359,7 +1464,7 @@ enum ChildrenExtension {
                     m.workflow = { id: w.id, state: w.state, error: w.error };
                   }); } catch (error) { w.missionWarning = clip(error.message); }
                   if (active && owner === w.owner && onSlashComplete) { if (w.async) onSlashComplete(workflowSummary(w)); }
-                  else if (active && owner === w.owner && w.async) {
+                  else if (active && owner === w.owner && w.async && !closedScopes.has(scopeKey(w.projectScope))) {
                     const asking = workflowAsks(w);
                     enqueueNotice(w.id,
                       `Workflow ${w.id}: ${w.state}\n${w.error || clip(JSON.stringify(w.output))}${asking.map((run) => `\n${askLine(run)}`).join("")}\nUse this result to continue the task; do not acknowledge receipt.`,

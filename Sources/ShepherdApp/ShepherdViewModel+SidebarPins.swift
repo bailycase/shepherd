@@ -15,11 +15,11 @@ extension ShepherdViewModel {
         switch row {
         case .local(let id):
             guard let agent = state.agents.first(where: { $0.id == id }) else { return false }
-            return !state.isDesignAgent(agent) && !state.automations.contains { $0.agentID == id }
+            return state.isOrdinaryThread(agent) && !state.automations.contains { $0.agentID == id }
         case .remote(let ref):
             guard let state = remoteHosts.connections.first(where: { $0.id == ref.hostID })?.state,
                   let agent = state.agents.first(where: { $0.id == ref.agentID }) else { return false }
-            return !state.isDesignAgent(agent) && !state.automations.contains { $0.agentID == ref.agentID }
+            return state.isOrdinaryThread(agent) && !state.automations.contains { $0.agentID == ref.agentID }
         case .design:
             return false
         }

@@ -34,7 +34,7 @@ struct ProjectsTreeTests {
         #expect(model.visible[1].configuration == "2 inherited · 1 local MCP")
         #expect(model.visible[2].configuration == "2 inherited MCP servers")
         #expect(model.visible[3].configuration == "3 skills · 2 MCP servers", "a project with no subprojects keeps its summary")
-        #expect(model.countText == "4 projects")
+        #expect(model.countText == "4 spaces")
     }
 
     @Test func collapsingAParentFoldsItsSubprojectsAndAFilterStillFindsThem() async {

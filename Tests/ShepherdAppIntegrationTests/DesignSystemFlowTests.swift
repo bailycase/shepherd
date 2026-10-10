@@ -161,7 +161,9 @@ struct DesignSystemFlowTests {
         vm.openDesignSystem("acme-web")
         #expect(vm.shownDesign?.id == build.id && vm.shownDestination == nil)
         vm.openDestination(.automations)
-        vm.openSidebarDestination(.designSystems)
+        // Design systems has no sidebar row (the boards draw three); the palette's "Open Design systems" reopens the last one.
+        let openSystems = try #require(vm.paletteItems.first { $0.title == "Open Design systems" })
+        vm.runPaletteItem(openSystems)
         #expect(vm.shownDesign?.id == build.id)
 
         // Re-sync reads the project again.

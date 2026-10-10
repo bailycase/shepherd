@@ -18,7 +18,10 @@ struct RemoteListenerTests {
         try client.send(.hello(id: 7, token: r.token, clientName: "test", protocolVersion: RemoteProtocol.version))
         // Designs (and Pencil markup and Delete with them) only while the host's Design tool is
         // on, and it starts off.
-        let offered = RemoteProtocol.capabilities.filter { !RemoteProtocol.designCapabilities.contains($0) }
+        // A bare server also has no owner Project launcher/controller installed.
+        let offered = RemoteProtocol.capabilities.filter {
+            !RemoteProtocol.designCapabilities.contains($0) && $0 != RemoteProtocol.logicalProjectRuntimeCapability && $0 != RemoteProtocol.projectWorkerCapability && $0 != RemoteProtocol.projectMessageImagesCapability && $0 != RemoteProtocol.projectExecutionCapability && $0 != RemoteProtocol.projectPlacementCapability && $0 != RemoteProtocol.projectPublicationsCapability
+        }
         #expect(try await client.next() == .helloOk(id: 7, protocolVersion: RemoteProtocol.version, capabilities: offered))
     }
 

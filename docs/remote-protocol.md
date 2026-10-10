@@ -35,6 +35,13 @@
     Settings > Experiments switches each host live; off pauses/cancels goal work and hides its
     controls without restarting agents, clearing saved goals or aborting in-flight tools.
     On leaves preserved goals Paused until explicit Resume. Missing/null settings default off.
+  - `experiments.projects.v1` supports `HostSettings.projectsEnabled` and `.projectsEnabled(Bool)`,
+    default false for missing/null older payloads. The shared Mac/iOS settings client sends changes
+    only to capable hosts. Capabilities describe protocol support, not current opt-in: disabled
+    hosts refuse new Project requests with “Enable Projects in Settings > Experiments.” Each owner
+    and executor enforces its own switch; OFF retains saved state and uses Pause/stop rather than
+    deletion. Executor snapshot/publication proof reads, Pause and Cancel remain served while OFF
+    for reconciliation. ON never resumes work. Legacy Space/folder project tools remain available.
   - attach, detach, input, resize, and acknowledged paste
   - terminal open and close (`openPane`, `closePane`)
   - `listDir`, `listModels`, `addSpace`, and `createAgent` with `creationOptions` (and the
@@ -79,26 +86,49 @@
     `goalCrossProviderEvaluation` consent is false when missing/null; its change applies to
     newly started or restarted agents, not a live process. Both clients disclose that scope
   - `projects.mcp.v1`: adds credential status, login/logout, poll, callback completion and
-    cancellation to project requests. The host resolves the allowlisted project entry and
+    cancellation to space requests. The host resolves the allowlisted space entry and
     owns the bounded OAuth bridge. A run UUID is scoped to the connection, directory and file;
     only status, signed-in server names and the pending authorization URL reach the viewer.
     The callback URL returns over the existing connection, never access/refresh tokens.
     Disconnect cancels pending requests and runs; reconnect never resumes them. Both clients
-    share the codec/capability gate; the Mac Projects page offers the sign-in sheet.
-  - `projects.trust.v1`: adds explicit `approveProject` to project MCP actions and optional
+    share the codec/capability gate; the Mac Spaces page offers the sign-in sheet.
+  - `projects.trust.v1`: adds explicit `approveProject` to space MCP actions and optional
     `projectTrusted` metadata to credential status. The host validates the known canonical
-    project and native file before Pi's SDK reads or saves its trust decision. Old clients ignore
+    space and native file before Pi's SDK reads or saves its trust decision. Old clients ignore
     the metadata; both clients refuse approval before sending when the host lacks this
     capability. Approval covers all protected Pi project resources, never just OAuth or MCP.
     The home folder remains excluded. No credential or global trust setting crosses the wire.
-  - `projects.details.v1`: adds host-local metadata/context and editor opening to projects.
+  - `projects.details.v1`: adds host-local metadata/context and editor opening to spaces.
     Clients gate context/open requests separately; older `projects.v1` hosts still edit files.
-  - `projects` (`projects.v1`): host-owned project history, project-file inventory, reads and
-    conflict-checked saves. Only allowlisted files in the selected project are writable,
-    never host-global configuration. The Mac Projects page checks this capability and the
+  - `logicalProjects` (`logicalProjects.v1`): NEW logical `Project` records on the owner,
+    separate from `projects` below. `LogicalProjectsRequest`/`LogicalProjectsResult` serve list,
+    get, idempotent create with atomic initial owner-local Space links, revision-checked edit,
+    settings, pause/resume, memory add/forget, link/unlink and delete. Both Mac and iOS use
+    `RemoteHostClient.logicalProjects(_:)` and shared state decoding; `ShepherdState.projects`
+    defaults empty on older hosts. The listener advertises this only while the owner service
+    is started and refuses when not offered; the client gates before sending. Success broadcasts
+    ordinary `stateChanged`; configuration creation alone starts no coordinator. Runtime
+    coordinators remain absent from ordinary fleet snapshots.
+    The capability promises persisted configuration, not dispatch, host transfer or remote-host
+    Space validation. Delete retains the project directory and all ordinary threads and worktrees.
+    See [Projects slice 1](project-lead.md#slice-1-persisted-owner-service-implemented-no-ui-or-dispatch)
+    for method cases, limits, lifecycle and conflict/error semantics. Existing `projects.v1` and
+    `Project*` directory configuration remain wire-compatible.
+  - `logicalProjectRuntime` (`logicalProjectRuntime.v1`): authenticated Project-capable viewers
+    call the OWNER VM/controller, never their own local runtime. `ProjectRuntimeTransport` has
+    revision-checked `action`, native `conversation`, original-fence worker `answer`, and `hosts`
+    (owner-configured connected host names/bindings). Replies use `ProjectRuntimeResult`.
+    Both codec arms and `RemoteHostClient.projectRuntime(_:)` are shared with iOS. The host offers
+    it only when an owner launcher and controller callback are installed. Legacy native requests
+    cannot discover a private coordinator; capable clients can read it explicitly. Raw native
+    sends/retry/queue/compaction still cannot bypass Project admission. This is remote VIEWER
+    routing, not worker placement on a different executor. See [Project runtime](project-lead.md).
+  - `projects` (`projects.v1`): host-owned space history, project-file inventory, reads and
+    conflict-checked saves. Only allowlisted files in the selected space are writable,
+    never host-global configuration. The Mac Spaces page checks this capability and the
     connected host identity before requests. Older hosts show update-required rows.
     Both Mac and iOS decode the additive messages through `ShepherdRemote`; only the Mac
-    exposes a Projects editor in this change. See [Projects](projects.md).
+    exposes a Spaces editor in this change. See [Spaces](projects.md).
   - `skills` (`skills.v1`): Settings ▸ Skills on the host (fetch, look up a repository, install
     from one or from files, on or off, how it's used, remove and restore, check for updates,
     Update automatically), answered with the host's skills or the repository's, and beside them
@@ -161,7 +191,12 @@
   why and waits for Edit or Reconnect. `RemoteHostFailure` (ShepherdRemote) is the one place
   that reads a failed connect as copy and a retry rule, for the Mac and iOS alike. A client
   reports a failed handshake only through what `connect` throws, never `onDisconnected`.
-  Remote hosts are not part of `ShepherdState`.
+  Remote hosts are not part of `ShepherdState`. Each Mac host config also persists a `bindingID`
+  for durable Project execution references. Changing its address, port or token replaces that
+  binding; changing its display name or reconnecting keeps it. Older configs use their existing
+  host ID as the initial binding, so loading them needs no migration write. A binding identifies
+  a configured destination, not an authenticated machine identity; future dispatch must compare
+  the saved binding before using a host connection.
 - **Protocol changes** touch the request and reply enums with every Codable arm, `RemoteProtocol`
   capabilities where relevant, server handling, `RemoteHostClient` (Mac and iOS), and the
   round-trip and listener tests.

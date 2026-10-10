@@ -77,7 +77,19 @@ enum Preview {
                 window.layoutIfNeeded()
             }
             host.layoutSubtreeIfNeeded()
-            let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            // SHEPHERD_PREVIEW_SCALE=2 captures at the boards' own density (their PNGs are 2 px per pt), so a render
+            // lines up pixel for pixel with the supplied image; unset, the capture is 1x as before.
+            let density = Double(ProcessInfo.processInfo.environment["SHEPHERD_PREVIEW_SCALE"] ?? "") ?? 1
+            let bitmap: NSBitmapImageRep
+            if density > 1, let rep = NSBitmapImageRep(
+                bitmapDataPlanes: nil, pixelsWide: Int(host.bounds.width * density), pixelsHigh: Int(host.bounds.height * density),
+                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                bytesPerRow: 0, bitsPerPixel: 0) {
+                rep.size = host.bounds.size
+                bitmap = rep
+            } else {
+                bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            }
             host.cacheDisplay(in: host.bounds, to: bitmap)
             #expect(distinctColors(bitmap) >= 8, "\(surface) rendered (nearly) blank")
             let png = try #require(bitmap.representation(using: .png, properties: [:]))

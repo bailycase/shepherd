@@ -56,7 +56,7 @@ public struct NWDesignReferenceSpecimens: View {
                                               state: .deleted("design deleted · the copy sent here is kept"), thumbnail: picture)
                     }
                     specimen("on another host") {
-                        NWDesignReferenceChip(crumbs: Self.crumbs, version: "v23", state: .anotherHost("build-01"), thumbnail: picture)
+                        NWDesignReferenceChip(crumbs: Self.crumbs, version: "v23", state: .anotherHost("demo-mac"), thumbnail: picture)
                     }
                     specimen("host offline") {
                         NWDesignReferenceChip(crumbs: Self.crumbs, version: "v23",
@@ -115,7 +115,7 @@ public struct NWDesignReferenceSpecimens: View {
                     HStack(alignment: .top, spacing: NW.Space.xl) {
                         VStack(alignment: .leading, spacing: NW.Space.l) {
                             picker([], empty: .loading)
-                            picker([], empty: .unavailable("Design references go to projects on this Mac."))
+                            picker([], empty: .unavailable("Design references go to spaces on this Mac."))
                         }
                         picker([], empty: .failed(reason: "Reading this Mac’s designs took too long."), retry: {})
                     }
@@ -134,7 +134,7 @@ public struct NWDesignReferenceSpecimens: View {
                                          canSend: true, close: {}, send: {}) {
                             NWImplementThreadList(threads: [
                                 NWImplementThread(id: "1", name: "Checkout page polish", project: "dashboard-web", age: "4m"),
-                                NWImplementThread(id: "2", name: "Funnel events backfill", project: "analytics-ingest", host: "build-01", age: "1h"),
+                                NWImplementThread(id: "2", name: "Funnel events backfill", project: "analytics-ingest", host: "demo-mac", age: "1h"),
                                 NWImplementThread(id: "3", name: "Fix CSV export encoding", project: "dashboard-web", age: "yesterday"),
                             ], selection: .constant("1"))
                             NWImplementField("Message") { NWImplementMessageField(text: .constant("Build this in the checkout page.")) }
@@ -145,7 +145,7 @@ public struct NWDesignReferenceSpecimens: View {
                                          sends: NWImplementSheet<EmptyView>.sends("Sends a picture, the board’s HTML, 42 styles and 14 tokens from ",
                                                                                    mono: "acme-web", after: "."),
                                          canSend: true, close: {}, send: {}) {
-                            NWImplementField("Project") {
+                            NWImplementField("Space") {
                                 NWImplementProjectLabel(project: "dashboard-web", host: "This Mac")
                                 NWImplementBranchLine("Starts on a new worktree,", branch: "agent/implement-a-funnel-first")
                             }
@@ -191,7 +191,7 @@ public struct NWDesignReferenceSpecimens: View {
                          trailing: .drill, thumbnail: picture),
             NWMentionRow(id: "d2", kind: .design, title: "Events explorer", subtitle: "3 boards · yesterday", lead: "acme-web", trailing: .drill,
                          thumbnail: picture),
-            NWMentionRow(id: "d3", kind: .design, title: "Pricing page", subtitle: "5 boards · on build-01", lead: "acme-web", host: "build-01",
+            NWMentionRow(id: "d3", kind: .design, title: "Pricing page", subtitle: "5 boards · on demo-mac", lead: "acme-web", host: "demo-mac",
                          trailing: .drill, thumbnail: picture),
             NWMentionRow(id: "d4", kind: .design, title: "Refund flow", subtitle: "horizon is offline · last seen 3h ago", host: "horizon",
                          hostOffline: true, trailing: .drill, thumbnail: picture),

@@ -40,7 +40,7 @@ enum NewThreadPlaces {
     static func chip(_ hosts: [Host], chosen: NewThreadPlace?) -> (project: String, host: String) {
         guard let chosen, let host = hosts.first(where: { $0.id == chosen.host }),
               let space = host.spaces.first(where: { $0.id == chosen.space }) else {
-            return ("Choose a project", hosts.first?.name ?? thisMac)
+            return ("Choose a space", hosts.first?.name ?? thisMac)
         }
         return (space.name, host.name)
     }
@@ -82,11 +82,11 @@ enum NewThreadPlaces {
     /// designs, and reach this Mac's threads only (docs/designs.md › Design references). `host` is
     /// nil for This Mac.
     static func referencesRefusal(count: Int, host: UUID?) -> String? {
-        count > 0 && host != nil ? referencesNote + " Remove them, or choose a project on this Mac." : nil
+        count > 0 && host != nil ? referencesNote + " Remove them, or choose a space on this Mac." : nil
     }
 
     /// What the @ picker says, and Send's tooltip, for a project on another host.
-    static let referencesNote = "Design references go to projects on this Mac."
+    static let referencesNote = "Design references go to spaces on this Mac."
 
     /// Why the attached images cannot go with a new thread there, or nil: a host from before
     /// `createAgentImagesCapability` would drop them, and one send takes only so much. `host` is
@@ -315,7 +315,7 @@ final class NewThreadState {
         let space = place?.space
         Task {
             do {
-                guard let space else { throw RemoteHostClientError.rejected(code: "no_space", message: "Choose a project first") }
+                guard let space else { throw RemoteHostClientError.rejected(code: "no_space", message: "Choose a space first") }
                 let options = try await vm.remoteHosts.creationOptions(hostID: host, spaceID: space, cwd: nil, fetchFirst: nil)
                 guard defaultsRequest == request else { return }
                 if !edited.model { model = options.model ?? "" }
@@ -361,7 +361,7 @@ final class NewThreadState {
     /// Why Send is unavailable; nil when it can send.
     func blocker(_ vm: ShepherdViewModel) -> String? {
         if starting { return "Starting…" }
-        guard let place else { return "Add a project to start a thread." }
+        guard let place else { return "Add a space to start a thread." }
         if let host = place.host {
             guard let connection = vm.remoteHosts.connections.first(where: { $0.id == host }), connection.phase == .connected else {
                 return "That host is offline."
@@ -395,7 +395,7 @@ final class NewThreadState {
             do {
                 if let host = place.host {
                     guard let space = vm.remoteHosts.connections.first(where: { $0.id == host })?.state.spaces
-                        .first(where: { $0.id == place.space }) else { throw AgentStartFailure(message: "That project is gone.") }
+                        .first(where: { $0.id == place.space }) else { throw AgentStartFailure(message: "That space is gone.") }
                     var base: RemoteCreationOptions?
                     if useWorktree {
                         base = try await vm.remoteHosts.creationOptions(hostID: host, spaceID: space.id, cwd: space.path, fetchFirst: nil)
@@ -407,7 +407,7 @@ final class NewThreadState {
                         worktreeBase: base?.base, worktreeFetchFirst: base?.fetchFirst, initialImages: images, serviceTier: tier)
                 } else {
                     guard let space = vm.state.spaces.first(where: { $0.id == place.space }) else {
-                        throw AgentStartFailure(message: "That project is gone.")
+                        throw AgentStartFailure(message: "That space is gone.")
                     }
                     // Design pieces go in the message the thread starts with, which the host sends once
                     // pi serves (`deliverOpeningDesignReferences`); the prompt waits for it, with the images.

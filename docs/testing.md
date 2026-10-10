@@ -318,6 +318,11 @@ be tested has not tried this. `ModelSettingsPopoverTests` is the worked example,
   }
   ```
 
+- **Prove the scenario reached its end.** `processExitsWith: .success` also passes a child that exited early with status 0.
+  Run the body with `completingScenario` (it prints a sentinel after the last statement) and check the parent with
+  `expectScenarioCompleted`, observing `\.standardOutputContent`. A native `Menu` is chosen with
+  `NativeMenuChoice.choose` (the real `accessibilityPerformShowMenu` and `NSMenu` item action). It leaves the menu's tracking open
+  (`NSMenu.cancelTracking()` ends the process with status 0), so a scenario chooses one menu item and reads the saved state after.
 - **Press by label:** `window.press("Fast", in: "Speed")` (a group's label scopes the search),
   `press("Edit", nth: 1)` among equals, `press("Open", role: ControlRole.popUpButton)`. It returns
   the `Control` (role, label, value, frame, enabled). A missing label, a disabled or hidden
