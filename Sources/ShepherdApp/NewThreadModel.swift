@@ -118,8 +118,13 @@ final class NewThreadState {
     var referenceError: String?
     /// The @ picker's and the chips' state, made as the page opens, while the Design tool is on.
     var referenceChips: DesignReferenceChips?
-    private(set) var place: NewThreadPlace?
+    /// A new project (chosen, or the fallback when the chosen one is gone) drops the worktree base
+    /// picked in the last one: a branch of one repository means nothing in another.
+    private(set) var place: NewThreadPlace? { didSet { if place != oldValue { worktreeBase = nil } } }
     var worktree = false
+    /// The branch a new worktree on this Mac starts from, picked in the workplace menu; nil lets
+    /// Settings ▸ Worktrees decide. A host's projects keep the base the host resolves.
+    var worktreeBase: String?
     /// The model, thinking and speed the thread starts with; a blank model is the target's default.
     private(set) var model = ""
     private(set) var thinking: ThinkingLevel = .medium
@@ -381,6 +386,7 @@ final class NewThreadState {
         let submittedImages = attachments.ids
         let submittedReferences = references
         let submittedWorktree = worktree
+        let submittedBase = worktreeBase
         let text = submittedPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let chosenModel = model.trimmingCharacters(in: .whitespaces)
         let level = thinkingLevel(vm)
@@ -427,7 +433,13 @@ final class NewThreadState {
                         let branch = GitWorktree.generatedBranch()
                         let mode = vm.settings.worktreeBaseMode
                         let fetch = vm.settings.worktreeFetchBeforeCreate
+                        let chosen = submittedBase
                         let (path, base) = try await Task.detached(priority: .userInitiated) { () -> (String, String) in
+                            // A picked branch is the start point as it is; otherwise Settings resolves one.
+                            if let chosen {
+                                GitWorktree.fetchPicked(repo: repo, base: chosen, fetchFirst: fetch)
+                                return (try GitWorktree.add(repo: repo, branch: branch, from: chosen), chosen)
+                            }
                             let resolution = GitWorktree.resolveBase(repo: repo, mode: mode, fetchFirst: fetch)
                             return (try GitWorktree.add(repo: repo, branch: branch, from: resolution.startPoint), resolution.display)
                         }.value
@@ -444,6 +456,7 @@ final class NewThreadState {
                 let sent = Set(submittedReferences.map(\.id))
                 references.removeAll { sent.contains($0.id) }
                 if worktree == submittedWorktree { worktree = false }
+                if worktreeBase == submittedBase { worktreeBase = nil }
             } catch RemoteHostClientError.rejected(_, let message) {
                 self.error = message
             } catch {

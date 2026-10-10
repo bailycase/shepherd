@@ -35,6 +35,10 @@ public enum NativeSendChoice: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// The composer's corner button is Stop, not Send, while pi works and there is nothing to
+    /// send. Any input counts: words, attached files, images, design references, page elements.
+    public static func stopsInPlaceOfSend(running: Bool, hasInput: Bool) -> Bool { running && !hasInput }
+
     /// The queued row's Steer now action and the ••• menu's Steer all now say the same.
     public static let steerNowHelp = "Stop the agent and send this now"
     public static let steerAllNowHelp = "Stop the agent and send these now, in order"

@@ -39,20 +39,26 @@ public struct NWPlaceSection: Identifiable, Equatable, Sendable {
     }
 }
 
-/// The worktree option under the projects: a switch with what it does.
+/// The worktree option under the projects: a switch with what it does, and while it is on a Base
+/// row naming the branch it starts from ("Default" until one is picked). `base` nil draws no row.
 public struct NWPlaceWorktree: Equatable, Sendable {
     public var isOn: Bool
     public var caption: String
+    public var base: String?
 
-    public init(isOn: Bool, caption: String) {
+    public init(isOn: Bool, caption: String, base: String? = nil) {
         self.isOn = isOn
         self.caption = caption
+        self.base = base
     }
 }
 
 public enum NWPlaceMenuMetrics {
     /// The menu's width: a project's name and its path side by side.
     public static let width: CGFloat = 320
+    /// The Base row's branch (as the project rows' paths) and its chevron (as All models…).
+    static let baseFont: CGFloat = 11
+    static let baseChevron: CGFloat = 10
 }
 
 /// The workplace menu: sections of projects (a check on the chosen one, its path trailing),
@@ -65,6 +71,7 @@ public struct NWPlaceMenu<RowMenu: View>: View {
     let onChoose: (NWPlaceOption) -> Void
     let onAdd: (NWPlaceSection) -> Void
     let onWorktree: (Bool) -> Void
+    let onChooseBase: () -> Void
     let onClose: () -> Void
     @ViewBuilder let rowMenu: (NWPlaceOption) -> RowMenu
     @State private var selection: Int
@@ -72,7 +79,7 @@ public struct NWPlaceMenu<RowMenu: View>: View {
 
     public init(sections: [NWPlaceSection], worktree: NWPlaceWorktree?, maxHeight: CGFloat? = nil,
                 onChoose: @escaping (NWPlaceOption) -> Void, onAdd: @escaping (NWPlaceSection) -> Void,
-                onWorktree: @escaping (Bool) -> Void, onClose: @escaping () -> Void,
+                onWorktree: @escaping (Bool) -> Void, onChooseBase: @escaping () -> Void = {}, onClose: @escaping () -> Void,
                 @ViewBuilder rowMenu: @escaping (NWPlaceOption) -> RowMenu) {
         self.sections = sections
         self.worktree = worktree
@@ -80,6 +87,7 @@ public struct NWPlaceMenu<RowMenu: View>: View {
         self.onChoose = onChoose
         self.onAdd = onAdd
         self.onWorktree = onWorktree
+        self.onChooseBase = onChooseBase
         self.onClose = onClose
         self.rowMenu = rowMenu
         let options = sections.flatMap(\.options)
@@ -140,6 +148,15 @@ public struct NWPlaceMenu<RowMenu: View>: View {
                 }
                 .padding(.horizontal, NW.Space.m)
                 .padding(.vertical, NW.Space.xs)
+                if worktree.isOn, let base = worktree.base {
+                    NWMenuRow(highlighted: false, action: onChooseBase, onHover: {}) {
+                        Text("Base").font(.nw(.ui, weight: .regular)).foregroundStyle(nw.textPrimary)
+                        Spacer(minLength: NW.Space.m)
+                        Text(base).font(.nwMono(NWPlaceMenuMetrics.baseFont)).foregroundStyle(nw.textTertiary).lineLimit(1).truncationMode(.middle)
+                        Image(systemName: "chevron.right").font(.system(size: NWPlaceMenuMetrics.baseChevron, weight: .semibold)).foregroundStyle(nw.textTertiary)
+                    }
+                    .accessibilityLabel("Base branch: \(base)")
+                }
             }
         }
         .modifier(NWMenuSurface(width: NWPlaceMenuMetrics.width))
