@@ -30,7 +30,8 @@ public enum RemoteProtocol {
     /// sends only for a client that lists it.
     /// And it runs an agent's browser tools on its own page when the host asks
     /// (`browserDriveCapability`), which a host asks only of a client that lists it.
-    public static let clientCapabilities = [nativeQueueCapability, thinkingLevelsCapability, designsCapability, browserTunnelCapability, browserDriveCapability]
+    /// Project editing understands both legacy .pi and current .shepherd inventories (`projectsV2Capability`).
+    public static let clientCapabilities = [nativeQueueCapability, thinkingLevelsCapability, designsCapability, browserTunnelCapability, browserDriveCapability, projectsV2Capability]
     public static let version = 1
     /// A host's final reply to a `hello` whose token it refused; it closes the connection after.
     public static let unauthorizedCode = "unauthorized"
@@ -79,8 +80,10 @@ public enum RemoteProtocol {
     /// The host serves `RemoteRequest.hostSettings`: what its Settings ▸ Agents, Worktrees and Pi
     /// set, its Shepherd and pi versions, and one change at a time. Older hosts show none.
     public static let hostSettingsCapability = "hostSettings.v1"
-    /// Host-owned project history and allowlisted project-only files.
+    /// Older hosts' project inventory uses native .pi configuration paths.
     public static let projectsCapability = "projects.v1"
+    /// Host-owned project files use .shepherd; clients must acknowledge this format before access.
+    public static let projectsV2Capability = "projects.v2"
     public static let projectDetailsCapability = "projects.details.v1"
     public static let projectMCPCapability = "projects.mcp.v1"
     public static let projectTrustCapability = "projects.trust.v1"
@@ -117,7 +120,7 @@ public enum RemoteProtocol {
     public static let goalExperimentCapability = "experiments.goals.v1"
     /// The creation page may choose a tier before the opening prompt reaches pi.
     public static let createAgentServiceTierCapability = "agent.create.serviceTier.v1"
-    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, projectsCapability, projectDetailsCapability, projectMCPCapability, projectTrustCapability, skillsCapability, piSkillsCapability, createAgentImagesCapability, terminalControlCapability, designContextCapability, designsCapability, designMarkupCapability, designDeleteCapability, nativeRetryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability]
+    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectTrustCapability, skillsCapability, piSkillsCapability, createAgentImagesCapability, terminalControlCapability, designContextCapability, designsCapability, designMarkupCapability, designDeleteCapability, nativeRetryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -510,7 +513,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     case hostSettings(id: Int, request: RemoteHostSettingsRequest)
     /// Read or change the host's agent skills (`RemoteProtocol.skillsCapability`).
     case skills(id: Int, request: RemoteSkillsRequest)
-    /// Project-only files, never the host's global settings (`projectsCapability`).
+    /// Project-only files, never the host's global settings (`projectsV2Capability`; older hosts use v1).
     case projects(id: Int, request: RemoteProjectsRequest)
     /// Read or change the host's designs (`RemoteProtocol.designsCapability`).
     case design(id: Int, request: RemoteDesignRequest)
