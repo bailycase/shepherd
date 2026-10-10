@@ -27,14 +27,6 @@ sidebar's Extensions destination opens this page.
   - Terminals and agent tools, "Let agents open and drive terminals, message or spawn agents,
     manage automations and send notifications." (the stored key `shepherd.pi.extension.panes`
     and the extension's id, `panes`, keep their names)
-  - Agent-to-agent messages, a popup row, not a switch: **Ask me** (the default), **Always allow**,
-    **Never**. "Whether an agent may message, steer, read or start another thread. Ask me opens a
-    dialog each time. Automations can't answer one, so they need Always allow." (`NWPopupMenu`,
-    accessibility label "Agent-to-agent messages", stored as `shepherd.pi.agentMessages`; Reset
-    settings puts it back to Ask me.) It is dimmed while Terminals and agent tools is off. The host
-    enforces it (docs/agent-coordination.md › Approving what agents do to other threads); the
-    dialog Ask me opens is `PeerApprovalDialog`. A change takes effect for running agents at once
-    and forgets every "Allow for this thread". A remote client does not set it.
   - Diff review tool, "Let agents open the review pane with `review_diff`."
   - MCP servers, "Let agents use the servers in Settings ▸ MCP servers, with tool search."
   - Browser tools, "Let agents open pages in their thread's Browser, read and click through them,

@@ -58,9 +58,9 @@ What follows from them:
   pane borrow it (`.nwFloatShadow`) only while they float. No vibrancy, translucency or gradients.
 - **Honest affordances.** Never draw a control that does nothing, a shortcut that isn't wired,
   or sample data in place of real data. Hide what is unsupported, or say why.
-- **No permission model.** Never invent approval UI for what an agent runs. A question from pi
-  or an extension is a question, with the answers the asker offered. The one approval Shepherd
-  asks for is an agent acting on another thread (`PeerApprovalDialog`, `PeerDeleteDialog`).
+- **No permission model.** Agent tool calls open no approval UI, including cross-thread calls and
+  deletion. Questions retain the answers the asker offered. There is no agent-to-agent permission
+  row in Settings, and legacy permission choices have no effect.
 - **Status is a dot or glyph plus a word.** `AgentState` colors every status surface. Color is
   never the only signal.
 - **Lantern means you.** Amber marks the primary action and what needs you. Running blue marks
@@ -102,7 +102,7 @@ Settings", revision 1083) is the source of truth for every Settings page.
 - **Pi** is Shepherd's pi, then **From pi**: the source, what was brought over, the copies and
   the imported extensions.
 - **Subagents** lists the definition files, then the native subagent switches and defaults.
-- **Extensions** holds the bundled extension switches and Agent-to-agent messages.
+- **Extensions** holds the bundled extension switches. Peer tools have no separate permission row.
 - **Slash commands**: off disables a command entirely, in the menu and when typed.
 - **Projects** reuses the shared MCP server cards, forms and OAuth sheet. Authentication runs on
   the selected host and opens the viewer's browser. Native MCP shows Pi's project approval apart
