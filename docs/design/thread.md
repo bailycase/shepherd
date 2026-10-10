@@ -26,11 +26,14 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
 - **Following:** the thread follows the tail only while the reader is within 80pt of the bottom
   (`NativeScrollFollower`). Only a live scroll gesture or a wheel tick detaches it; content
   growth, the composer resizing, and history swaps never do. From macOS 27 the Mac thread
-  follows by scrolling alone: it sets no `defaultScrollAnchor` (neither the initial offset nor
-  size changes), because a bottom anchor over the lazy stack, whose unmeasured rows are
+  follows by scrolling alone: while following it sets no `defaultScrollAnchor` (neither the initial
+  offset nor size changes), because a bottom anchor over the lazy stack, whose unmeasured rows are
   estimates, left the scroll view's content size at odds with where the rows were placed and the
   viewport drew nothing (a blank thread after a send or a finished turn, in a window of modest
-  height; `ThreadTailAnchor`). Before 27 the anchors stay: `scrollTo`, the only way to the tail
+  height; `ThreadTailAnchor`). A detached reader on this scrolling-only path uses a top anchor
+  for size changes only. Collapsing a live reply preserves its content offset instead of moving
+  that reader to the tail; the initial offset and short-content alignment stay unchanged.
+  Before 27 the anchors stay: `scrollTo`, the only way to the tail
   without them, builds every row of a long thread there, so a short window can still draw blank
   on macOS 26 (a known issue, `ThreadBlankScreenTests`). Without an anchor every reading is the
   layout's own: a following view that growth,
@@ -49,7 +52,13 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   it. The guard notices that no current content row is in view, even when the invisible bottom
   marker or a cached target from a replaced live reply is still reported visible. Completion can
   replace that reply's ID when its prompt falls outside the saved history page. Neither the marker
-  nor a removed row may end recovery. After an unsuccessful walk, a cached bottom marker must
+  nor a removed row may end recovery. Current-row IDs can be cached too: the Mac thread now
+  requires a live, nonhidden native row marker intersecting its own clip view before treating a
+  reported row as content. Each lazy row has one passive, accessibility-hidden background probe;
+  the registry holds it weakly and drops obsolete IDs. Missing or dead probes prove nothing.
+  This is placement evidence, not a paint check: the giant-history/native/900pt hosted failure
+  still needs validation; a visible marker cannot prove that its sibling text was drawn.
+  After an unsuccessful walk, a cached bottom marker must
   not suppress the final tail landing when no current row is in view. If all eight scrolling
   attempts still leave the thread stranded, the guard recreates only the transcript scroll view once.
   A current row in view is not enough when the bottom marker remains missing more than 80pt above

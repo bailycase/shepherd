@@ -2,7 +2,7 @@
 import re
 import unittest
 
-from test_ci_workflow import JOBS
+from test_ci_workflow import ACTION, JOBS
 
 
 def runner_expression(job):
@@ -13,7 +13,7 @@ def select(expression, metadata):
     # These fences compare strings and return lowercase labels. GitHub ignores case in
     # string comparisons; normalize their operands, including values used by format().
     expression = re.sub(r"'(?:''|[^'])*'", lambda m: m[0].casefold(), expression)
-    expression = re.sub(r"(?:github|vars|inputs)\.[\w.]+", lambda m: repr(
+    expression = re.sub(r"(?:github|vars|inputs|runner|steps)\.[\w.-]+", lambda m: repr(
         metadata[m[0]].casefold() if isinstance(metadata.get(m[0]), str) else metadata.get(m[0])), expression)
     expression = expression.replace("&&", " and ").replace("||", " or ")
     return eval(" ".join(expression.split()), {"__builtins__": {}, "format": str.format})
@@ -49,6 +49,31 @@ class CIRunnerTests(unittest.TestCase):
         for name, job in JOBS.items():
             if name != "tests":
                 self.assertIn("runs-on: ubuntu-latest", job)
+
+    def test_hosted_cache_writes_are_pr_scoped_or_trusted_branch_events_only(self):
+        save = ACTION.split("- name: Save the hosted build", 1)[1]
+        expression = save.split("if: >-\n", 1)[1].split("uses:", 1)[0].strip()
+        for environment in ("github-hosted", "self-hosted"):
+            for hit in ("true", "false", ""):
+                for event in ("pull_request", "push", "workflow_dispatch", "schedule",
+                              "pull_request_target", "workflow_run", "issue_comment", "repository_dispatch"):
+                    for ref_type in ("branch", "tag"):
+                        with self.subTest(environment=environment, hit=hit, event=event, ref_type=ref_type):
+                            data = metadata(event=event)
+                            data.update({"runner.environment": environment, "steps.cache.outputs.cache-hit": hit,
+                                         "github.ref_type": ref_type})
+                            allowed = environment == "github-hosted" and hit != "true" and (
+                                event == "pull_request" or event in ("push", "workflow_dispatch") and ref_type == "branch")
+                            self.assertEqual(bool(select(expression, data)), allowed)
+        data = metadata()
+        data.update({"runner.environment": "github-hosted", "steps.cache.outputs.cache-hit": "false",
+                     "github.ref": "refs/heads/nightly"})
+        self.assertFalse(select(expression, data), "a PR must never write the base branch scope")
+        # Fork PRs are safe to save only because GitHub isolates their merge-ref cache.
+        data = metadata()
+        data.update({"runner.environment": "github-hosted", "steps.cache.outputs.cache-hit": "false",
+                     "github.event.pull_request.head.repo.full_name": "fork/Shepherd", "github.actor_id": "999"})
+        self.assertTrue(select(expression, data))
 
     def test_disabled_or_unset_selfhosted_builds_stay_hosted_including_diagnostics(self):
         expression = runner_expression(JOBS["tests"])

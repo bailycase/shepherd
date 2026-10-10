@@ -2,7 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { createHash } from "node:crypto";
+import { createHash, pbkdf2 } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
@@ -88,6 +88,7 @@ function assertCapabilities(model, native) {
 
 test("factory is inert without settings, registers synchronously when enabled, and never starts a watcher", (t) => {
   const watcher = t.mock.method(fs, "watchFile", () => assert.fail("factory must not start a watcher"));
+  const timer = t.mock.method(globalThis, "setInterval", () => assert.fail("factory must not start a timer"));
   const saved = process.env.SHEPHERD_CLIPROXYAPI_CONFIG;
   delete process.env.SHEPHERD_CLIPROXYAPI_CONFIG;
   try { install({ on: () => assert.fail("no path is inert"), registerProvider: () => assert.fail("no config") }); }
@@ -104,6 +105,7 @@ test("factory is inert without settings, registers synchronously when enabled, a
   assert.equal(f.provider.id, "cliproxyapi");
   assert.equal(f.models.length, 1);
   assert.equal(watcher.mock.callCount(), 0);
+  assert.equal(timer.mock.callCount(), 0);
   assert.equal(f.provider.refreshModels, undefined, "discovery belongs to Swift");
 });
 
@@ -256,15 +258,23 @@ test("stream and streamSimple retain success events and response hooks through t
 
 test("updates wait for idle, re-resolve selected models, and disable refuses stale requests", async (t) => {
   const f = fixture(t);
-  let change, watched = false;
+  let change, watched = false, opened = 0, closed = 0;
   t.mock.method(fs, "watchFile", (file, options, listener) => {
     assert.equal(file, f.configPath); assert.equal(options.persistent, false); change = listener; watched = true;
   });
   t.mock.method(fs, "unwatchFile", (_file, listener) => { if (listener === change) watched = false; });
+  const timers = new Set();
+  t.mock.method(globalThis, "setInterval", (_listener, interval) => {
+    assert.equal(interval, 1000); opened++;
+    const timer = { unref() {} }; timers.add(timer); return timer;
+  });
+  t.mock.method(globalThis, "clearInterval", (timer) => { if (timers.delete(timer)) closed++; });
   f.select(f.models[0]);
   const old = f.selected;
   await f.emit("session_start");
   assert.equal(watched, true);
+  await f.emit("session_start");
+  assert.equal(opened - closed, 1, "restart replaces rather than adds a watcher");
   f.idle(false); await f.emit("agent_start");
   f.write({ ...base, baseURL: "http://127.0.0.1:9999/v1", apiKey: "rotated", updatedAt: 2 });
   change(); await f.emit("input");
@@ -294,12 +304,46 @@ test("updates wait for idle, re-resolve selected models, and disable refuses sta
   assert.match(removed.errorMessage, /no longer available/);
   await f.emit("session_shutdown");
   assert.equal(watched, false);
+  assert.equal(opened, closed, "shutdown releases all watchers");
   f.write(base); change();
   assert.equal(f.models[0].id, "different", "shutdown ends watcher ownership");
 });
 
+for (const timeLimit of [false, true]) {
+  test(`startup snapshot checks stop at their ${timeLimit ? "deadline" : "iteration limit"}`, async (t) => {
+    const f = fixture(t);
+    let tick, elapsed = 0, cleared = false, fileChanged;
+    t.mock.method(Date, "now", () => elapsed);
+    t.mock.method(fs, "watchFile", (_file, _options, listener) => { fileChanged = listener; });
+    t.mock.method(fs, "unwatchFile", () => {});
+    const timer = { unref() {} };
+    t.mock.method(globalThis, "setInterval", (listener, interval) => {
+      assert.equal(interval, 1000); tick = listener; return timer;
+    });
+    t.mock.method(globalThis, "clearInterval", (value) => { if (value === timer) cleared = true; });
+    await f.emit("session_start");
+    const reads = t.mock.method(fs, "readFileSync");
+    if (timeLimit) elapsed = 30000;
+    else for (let i = 0; i < 30; i++) tick();
+    tick();
+    assert.equal(cleared, true);
+    const count = reads.mock.callCount();
+    tick();
+    assert.equal(reads.mock.callCount(), count, "an expired startup check reads nothing");
+    f.write({ ...base, updatedAt: 2 });
+    fileChanged();
+    assert(reads.mock.callCount() > count, "ordinary file-change handling continues after the startup bound");
+  });
+}
+
 test("a session notices creation and atomic replacement, and malformed updates fail closed without leaking secrets", async (t) => {
   const f = fixture(t, null);
+  // Delay the watchFile baseline while publishing. The bounded startup snapshot check
+  // must observe creation even when the first asynchronous stat follows the rename.
+  const occupied = Array.from({ length: 8 }, () => new Promise((resolve, reject) => {
+    pbkdf2("fixture", "salt", 100000, 32, "sha512", (error) => error ? reject(error) : resolve());
+  }));
+  t.after(() => Promise.all(occupied));
   await f.emit("session_start");
   const registered = new Promise((resolve) => {
     // A real watcher catches Swift's atomic rename even when the path was initially absent.
@@ -310,10 +354,20 @@ test("a session notices creation and atomic replacement, and malformed updates f
   await Promise.race([registered, new Promise((_, reject) => {
     // Not unref'd: the watcher is (persistent: false), so on a busy machine nothing else keeps the loop alive
     // for the poll that sees the rename, and the runner ends the test "event loop already resolved".
-    const timer = setTimeout(() => reject(Error("watchFile did not publish")), 5000);
+    const timer = setTimeout(() => reject(Error("config watcher did not publish")), 5000);
     t.after(() => clearTimeout(timer));
   })]);
   const old = f.models[0];
+  const replaced = new Promise((resolve) => {
+    t.mock.method(f.ctx.modelRegistry, "refresh", async () => { resolve(); return { errors: new Map() }; });
+  });
+  fs.writeFileSync(path.join(f.dir, "next"), JSON.stringify({ ...base, baseURL: "http://127.0.0.1:9999/v1", updatedAt: 2 }));
+  fs.renameSync(path.join(f.dir, "next"), f.configPath);
+  await Promise.race([replaced, new Promise((_, reject) => {
+    const timer = setTimeout(() => reject(Error("config replacement did not publish")), 5000);
+    t.after(() => clearTimeout(timer));
+  })]);
+  assert.equal(f.models[0].baseUrl, "http://127.0.0.1:9999/v1");
   f.write('{"enabled":true,"apiKey":"secret-do-not-log');
   await f.emit("input");
   assert.equal(f.models.length, 0);
