@@ -193,7 +193,11 @@ struct ThreadCompletionMatrixTests {
             let request = VNRecognizeTextRequest()
             try request.useCPUForTests()
             request.recognitionLanguages = ["en-US"]
-            try VNImageRequestHandler(cgImage: pixels).perform([request])
+            let textWidth = min(viewport.width, AppLayout.threadMaxWidth + 2 * AppLayout.gutter)
+            let textRegion = CGRect(x: (viewport.midX - textWidth / 2) * scale, y: region.minY,
+                                    width: textWidth * scale, height: region.height)
+            // Include the whole column; the pixel sample cuts the first words off each line.
+            try VNImageRequestHandler(cgImage: #require(image.cropping(to: textRegion))).perform([request])
             let visibleText = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
             #expect(visibleText.range(of: #"Paragraph \d+ of reply \d+|worker completed its review"#, options: .regularExpression) != nil,
                     "an actual reply must paint, not just the prompt, chrome or a cached target")

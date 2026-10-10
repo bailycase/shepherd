@@ -112,7 +112,7 @@ jobs:
       - name: Test extensions with isolated fake providers
         env:
           PI_PACKAGE_DIR: ${{ runner.temp }}/pi-tests/node_modules/@earendil-works/pi-coding-agent
-        run: node --test --test-reporter=spec Tests/Extensions/*.test.mjs
+        run: node --test --test-concurrency=2 --test-reporter=spec Tests/Extensions/*.test.mjs
 
   tests:
     name: swift tests
