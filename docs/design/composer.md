@@ -415,7 +415,9 @@ a docked pane it narrows to the card. They share one anatomy (NWComposer › Men
 - ↑↓ move, ⏎ chooses, Esc closes and returns focus to the field, and a click anywhere outside
   the menu closes it (the click still lands where it was aimed). Only the control that opens a menu (the
   model chip, the context ring, Send) is inside it, and it toggles the menu itself. A click in the
-  field, on Attach or on blank space in the control row closes it. The slash and @ menus are the
+  field, on Attach or on blank space in the control row closes it. Send and Stop also close an
+  unrelated model menu while still performing their action; Send is protected only for its own
+  open Send menu. The slash and @ menus are the
   field's own, so the field keeps them. No footers; the
   only key hints are the slash menu's ⏎ and the model picker's chord.
 

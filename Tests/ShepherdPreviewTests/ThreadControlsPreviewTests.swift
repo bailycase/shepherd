@@ -77,12 +77,21 @@ struct ThreadControlsPreviewTests {
 
     @Test(arguments: [("worktree-place-default", "Default"), ("worktree-place-picked", "agent/calm-stone-3831-with-a-very-long-branch-name")])
     func theWorkplaceMenuWithABaseRow(surface: String, base: String) async throws {
-        let mac = NWPlaceSection(id: "local", title: "This Mac", options: [
-            NWPlaceOption(id: "local/a", section: "local", title: "shepherd", detail: "~/Developer/Shepherd", isCurrent: true),
-        ])
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let repo = try makeScratchRepo()
+        defer { try? FileManager.default.removeItem(at: repo) }
+        try await workspace.seed(ShepherdState(spaces: [Space(name: "shepherd", path: repo.path)]))
+        workspace.vm.openNewThread()
+        let draft = workspace.vm.newThread
+        draft.worktree = true
+        draft.worktreeBase = base == "Default" ? nil : base
         try await Preview.renderMatrix(surface, size: CGSize(width: 360, height: 260)) {
-            NWPlaceMenu(sections: [mac], worktree: NWPlaceWorktree(isOn: true, caption: NewThreadRules.worktreeCaption(base: base == "Default" ? "" : base), base: base),
-                        onChoose: { _ in }, onAdd: { _ in }, onWorktree: { _ in }, onClose: {}) { _ in EmptyView() }
+            NWPlaceMenu(sections: NewThreadPlaces.sections(NewThreadState.hosts(workspace.vm), chosen: draft.place),
+                        worktree: NWPlaceWorktree(isOn: draft.worktree,
+                                                 caption: NewThreadRules.worktreeCaption(base: draft.worktreeBase ?? ""),
+                                                 base: draft.worktreeBase ?? "Default"),
+                        onChoose: { _ in }, onAdd: { _ in }, onWorktree: { draft.worktree = $0 }, onChooseBase: {}, onClose: {}) { _ in EmptyView() }
                 .padding(NW.Space.l)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .background(Color.nw.bgWindow)

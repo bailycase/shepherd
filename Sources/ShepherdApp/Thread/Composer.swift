@@ -1246,7 +1246,7 @@ struct ComposerControls: View, Equatable {
                     NWComposerActionButton(model.stops ? .stop : .send, ringed: model.sendRinged, enabled: model.actionEnabled,
                                            action: model.stops ? actions.stop : actions.send)
                     .help(model.actionHelp)
-                    .background { if let dismissal { ComposerMenuRegion(dismissal: dismissal) } }
+                    .background { if let dismissal, model.sendRinged { ComposerMenuRegion(dismissal: dismissal) } }
                     .overlay { if sendMenu { SecondaryClick(action: actions.sendMenu) } }
                     .simultaneousGesture(LongPressGesture(minimumDuration: AppLayout.sendHoldDelay / .seconds(1)).onEnded { _ in
                         guard sendMenu else { return }
