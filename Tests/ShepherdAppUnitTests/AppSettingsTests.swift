@@ -36,7 +36,6 @@ struct AppSettingsTests {
         #expect(settings.deferTools, "rarely used tools are deferred behind tool search until switched off")
         #expect(settings.codemode, "native tool scripting is enabled until switched off")
         #expect(settings.compactAtPercent == nil, "compaction is pi's own until a share is chosen")
-        #expect(settings.agentMessages == .ask, "an agent asks before it acts on another thread")
     }
 
     /// Settings ▸ Agents ▸ Context: Compact at is a share from the list or pi's default, only a
@@ -65,40 +64,6 @@ struct AppSettingsTests {
         #expect(written == [80, nil])
         #expect(store.object(forKey: AppSettings.Key.compactAtPercent) == nil && store.object(forKey: AppSettings.Key.trimToolOutput) == nil)
         #expect(store.object(forKey: AppSettings.Key.deferTools) == nil && store.object(forKey: AppSettings.Key.codemode) == nil)
-    }
-
-    /// Settings ▸ Pi ▸ Agent-to-agent messages: Ask me until the user chooses, kept across launches,
-    /// put back by Reset settings, and only a change reaches the server.
-    @Test func theAgentMessagesChoicePersistsResetsAndReachesTheServer() {
-        let store = Fixture.defaults()
-        let settings = AppSettings(store: store)
-        var handed: [AgentMessagePolicy] = []
-        settings.onAgentMessagesChange = { handed.append($0) }
-        settings.agentMessages = .ask
-        settings.agentMessages = .always
-        settings.agentMessages = .always
-        settings.agentMessages = .never
-
-        #expect(handed == [.always, .never], "only a change is handed on")
-        #expect(AppSettings(store: store).agentMessages == .never, "and it is read back on the next launch")
-        #expect(store.string(forKey: AppSettings.Key.agentMessages) == "never")
-
-        settings.resetToDefaults()
-        #expect(settings.agentMessages == .ask)
-        #expect(handed == [.always, .never, .ask], "the server hears it is asking again")
-        #expect(store.object(forKey: AppSettings.Key.agentMessages) == nil)
-    }
-
-    /// A value from a newer or hand-edited build means nothing here: the agent asks.
-    @Test(arguments: ["", "sometimes", "ALWAYS", "true"])
-    func aStoredAgentMessagesChoiceThatMeansNothingFallsBackToAsk(stored: String) {
-        let store = Fixture.defaults()
-        store.set(stored, forKey: AppSettings.Key.agentMessages)
-        #expect(AppSettings(store: store).agentMessages == .ask)
-    }
-
-    @Test func theChoicesAreWordedAsTheDesignSays() {
-        #expect(AgentMessagePolicy.allCases.map(\.title) == ["Ask me", "Always allow", "Never"])
     }
 
     @Test func theGoalsExperimentPersistsAndResetPausesItThroughTheLiveCallback() {
@@ -215,7 +180,6 @@ struct AppSettingsTests {
         settings.defaultThinking = .high
         settings.defaultServiceTier = .fast
         settings.namingModel = "openai/gpt-5.1-codex-mini"
-        settings.agentMessages = .never
         settings.piPanesExtension = false
         settings.piReviewExtension = false
         settings.piDesignReferences = false
@@ -241,7 +205,6 @@ struct AppSettingsTests {
         #expect(reloaded.defaultModel == "anthropic/claude-sonnet-4" && reloaded.defaultThinking == .high)
         #expect(reloaded.defaultServiceTier == .fast)
         #expect(reloaded.namingModel == "openai/gpt-5.1-codex-mini")
-        #expect(reloaded.agentMessages == .never)
         #expect(!reloaded.piPanesExtension && !reloaded.piReviewExtension && !reloaded.piDesignReferences)
         #expect(!reloaded.subagentDisplay && !reloaded.piNativeSubagents)
         #expect(!reloaded.piBrowserExtension)
