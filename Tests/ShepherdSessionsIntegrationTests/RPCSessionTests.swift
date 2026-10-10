@@ -44,6 +44,8 @@ struct RPCSessionTests {
             case .agentStart: "agent_start"
             case .agentEnd: "agent_end"
             case .agentSettled: "agent_settled"
+            case .skillsChanged: "skills_changed"
+            case .skillsWatchError: "skills_watch_error"
             case .turnStart: "turn_start"
             case .turnEnd: "turn_end"
             case .messageStart: "message_start"

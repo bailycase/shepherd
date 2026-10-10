@@ -212,7 +212,7 @@ by construction. The builder refuses a session folder that resolves outside the 
 Shepherd sends over RPC names a session file (`RPCCommand`).
 
 Native children run the parent's own engine: `process.execPath` (the engine's node) with the
-package's `dist/bundle/cli.js`, never a `pi` from PATH, and inherit the pins from their parent:
+package's `dist/cli.js`, never a `pi` from PATH, and inherit the pins from their parent:
 `PI_CODING_AGENT_DIR` (the home: settings, sign-ins, models), `PI_PACKAGE_DIR`,
 `PI_SKIP_VERSION_CHECK`, `PI_TELEMETRY`, and `NODE_EXTRA_CA_CERTS` (the launcher's keychain
 certificates or the user's own, so a private CA works for a helper's requests too); `PI_OFFLINE` is
