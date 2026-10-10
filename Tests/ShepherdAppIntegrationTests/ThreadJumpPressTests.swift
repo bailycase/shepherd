@@ -18,28 +18,39 @@ struct ThreadJumpPressTests {
         }
     }
 
+    @Test func aFreshNativeThreadCanJumpFromTheIdleState() async {
+        await #expect(processExitsWith: .success) {
+            await recordingErrors {
+                try await Self.pressingJump(native: true, running: false, probe: "independent")
+            }
+        }
+    }
+
     @MainActor
-    private static func pressingJump(native: Bool, running: Bool) async throws {
+    private static func pressingJump(native: Bool, running: Bool, probe: String = "sequential") async throws {
         AccessibilityNode.enable()
         let host = ThreadTailFlowTests.FlowHost(turns: 85, mix: .giant)
         let deck = ThreadTailFlowTests.Deck(host: host, size: CGSize(width: 1180, height: 900), native: native)
         var phase = "open", completed = false
         defer {
             if !completed {
-                print("Jump failure phase=\(phase), native=\(native), running=\(running), \(deck.reading.map(String.init(describing:)) ?? "no scroll view")")
+                print("Jump failure probe=\(probe), phase=\(phase), native=\(native), running=\(running), \(deck.reading.map(String.init(describing:)) ?? "no scroll view")")
                 let directory = URL(fileURLWithPath: ProcessInfo.processInfo.environment["RUNNER_TEMP"] ?? NSTemporaryDirectory())
                     .appendingPathComponent("shepherd-completion-repro")
                 do {
                     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
                     let image = try ThreadWindowCapture.image(deck.window.window)
                     let bitmap = NSBitmapImageRep(cgImage: image)
-                    let prefix = "jump-\(native)-\(running)-\(phase)"
+                    let prefix = "jump-\(probe)-\(native)-\(running)-\(phase)"
                     try bitmap.representation(using: .png, properties: [:])?.write(to: directory.appendingPathComponent(prefix + ".png"))
-                    let evidence: [String: Any] = ["phase": phase, "native": native, "running": running,
+                    var evidence: [String: Any] = ["probe": probe, "phase": phase, "native": native, "running": running,
                         "reading": deck.reading.map(String.init(describing:)) ?? "none",
                         "following": deck.tailGuard.following, "rows": deck.store.rows.count,
                         "visible": deck.tailGuard.visible,
                         "pageFrame": NSStringFromRect(deck.page.frame)]
+                    if let scroll = deck.scrollView {
+                        evidence["placement"] = ThreadWindowCapture.placement(of: deck.page, in: scroll)
+                    }
                     try JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys])
                         .write(to: directory.appendingPathComponent(prefix + ".json"))
                 } catch { print("Jump failure capture unavailable") }

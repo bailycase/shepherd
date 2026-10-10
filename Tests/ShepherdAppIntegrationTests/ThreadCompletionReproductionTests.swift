@@ -77,18 +77,18 @@ struct ThreadCompletionReproductionTests {
                     return recognizedFinal
                 }
             } catch is WaitTimeout { }
-            _ = try capture(deck, to: directory.appendingPathComponent(prefix + ".png"))
+            _ = try capture(deck, to: directory.appendingPathComponent(prefix + ".png"), placement: !recognizedFinal)
             print("COMPLETION \(prefix): rows=\(deck.store.rows.count), targets=\(deck.tailGuard.visible), following=\(deck.tailGuard.following), attempts=\(deck.tailGuard.attempts), repairing=\(deck.tailGuard.repairing), rowsInView=\(deck.tailGuard.rowsInView), reportedDistance=\(deck.tailGuard.distance), \(deck.reading.map(String.init(describing:)) ?? "no scroll view"), answer=\(recognizedFinal)")
             guard recognizedFinal else {
                 // Save what the user would try next as evidence, not as a way to pass the test.
                 deck.scroll(by: -500)
                 try await Task.sleep(for: .seconds(1))
-                _ = try capture(deck, to: directory.appendingPathComponent(prefix + "-scrolled.png"))
+                _ = try capture(deck, to: directory.appendingPathComponent(prefix + "-scrolled.png"), placement: true)
                 deck.hide()
                 try await Task.sleep(for: .milliseconds(100))
                 deck.show()
                 try await Task.sleep(for: .seconds(1))
-                _ = try capture(deck, to: directory.appendingPathComponent(prefix + "-reshown.png"))
+                _ = try capture(deck, to: directory.appendingPathComponent(prefix + "-reshown.png"), placement: true)
                 Issue.record("Completion did not paint its final answer; see \(directory.path)/\(prefix).png")
                 return
             }
@@ -217,9 +217,17 @@ struct ThreadCompletionReproductionTests {
         #expect(text.contains { $0.contains("Paragraph") || $0.contains("value") || $0.contains("Key point") })
     }
 
-    private func capture(_ deck: Flow.Deck, to path: URL) throws -> CGImage {
+    private func capture(_ deck: Flow.Deck, to path: URL, placement: Bool = false) throws -> CGImage {
         let bitmap = NSBitmapImageRep(cgImage: try ThreadWindowCapture.image(deck.window.window))
         try #require(bitmap.representation(using: .png, properties: [:])).write(to: path)
+        if placement, let scroll = deck.scrollView {
+            var evidence = ThreadWindowCapture.placement(of: deck.page, in: scroll)
+            evidence["reading"] = deck.reading.map(String.init(describing:)) ?? "no scroll view"
+            evidence["targets"] = deck.tailGuard.visible
+            evidence["following"] = deck.tailGuard.following
+            try JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys])
+                .write(to: path.deletingPathExtension().appendingPathExtension("json"))
+        }
         return try #require(bitmap.cgImage)
     }
 
