@@ -111,7 +111,7 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
 - **One EdDSA key** (`SPARKLE_PRIVATE_KEY`, `SUPublicEDKey`) signs both apps.
 - **Legacy feeds for installed builds.** Shepherd builds from before the split read
   `appcast-rc.xml` (allowing Sparkle channel `rc`) or `appcast-nightly.xml` (allowing
-  `nightly`, or no channel at all in the first nightly builds). Every run still writes both, as
+  `nightly`, or no channel at all in the first nightly builds). Both stay published as
   the beta feed with its items untagged: Sparkle shows default-channel items whatever a build
   allows. So those installs update to a Shepherd beta or stable (never Shepherd Nightly), and
   that build's launch migration moves them to Beta. Keep writing them while such installs may
@@ -164,9 +164,21 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
     rejects ad-hoc frameworks, which have no Team ID.
   - Shipped binaries are stripped (`strip -S -x`). Their dSYMs go on each release as
     `Shepherd-dSYMs.zip` or `Shepherd-Nightly-dSYMs.zip`.
-- **Appcasts** are rebuilt by the serialized publication job from all completed eligible
-  releases, keeping the four newest completed nightlies: one `generate_appcast` per feed
-  directory, written to a fixed name (`-o`; left alone it names the file after the app's
+- **Appcasts** are reconciled by the serialized publication job against all completed eligible
+  releases in its snapshot, keeping the four newest completed nightlies. Every candidate's
+  eligibility metadata is checked even when its feed is unchanged; the triggering tag never
+  limits the snapshot, so a coalesced publisher catches up other completed channels too.
+  Only changed feeds download their full archive history and run `generate_appcast`; unchanged
+  feeds and legacy aliases keep their exact published bytes. The publisher's `appcast-inputs.json`
+  on gh-pages records each feed's opaque CLI string archive IDs, sizes, update timestamps/digests
+  and output hashes. Unknown, malformed or duplicate snapshot rows fail before feed selection.
+  It is committed with the feeds, not used by clients. Missing/old records initialize all feeds;
+  missing or edited outputs regenerate their feed (including beta's aliases). Changes to the
+  release script/workflow, Sparkle's pin or source public key also invalidate the record;
+  unrelated package pins and plist fields do not.
+  There is no archive or private-key cache. Snapshot selection, downloads and per-feed
+  generation/delta upload durations are logged separately; hosted measurements must establish
+  any speed improvement. Each changed directory is written to a fixed name (`-o`; left alone it names the file after the app's
   `SUFeedURL`). Deltas go to the feed's newest release, renamed without spaces
   (`Shepherd Nightly63-61.delta` → `Shepherd-Nightly63-61.delta`), because GitHub rewrites
   spaces in asset names. Only after the feed push succeeds (or nothing changed) does that job

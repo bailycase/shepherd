@@ -586,15 +586,19 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
   build plus the tests. Measure cold and warm runs before assigning a time budget. The
   runner's hooks leave `build/` and `.build/` alone and remove them only when the disk is under
   40 GiB (a clean build follows); a job never starts under 20 GiB. The swift-build action
-  records the toolchain that built `.build` (`.build/ci-toolchain`) and starts over when Xcode
-  or the SDK changed, or when a manual run asks for `clean`. Checkout disables ignored-file cleanup
+  records the toolchain and SwiftPM flags that built `.build` (`.build/ci-toolchain`) and starts
+  over when Xcode, the SDK or those flags change, or when a manual run asks for `clean`. Checkout disables ignored-file cleanup
   on the self-hosted runner and retains no repository credentials. SwiftPM's native build system
   reruns a target only when a *direct* dependency's module changes, so a change to
   `ShepherdCore` could leave `ShepherdProtocolUnitTests` (which calls it through
   `ShepherdProtocol`) compiled against the old one; the action removes `swift-version-*.txt`,
   an input of every compile command, before each build so every target's driver runs and
-  recompiles what any module it loaded changed (seconds when nothing did). Hosted runners start
-  empty and restore `.build` from the Actions cache instead, keyed on the OS, toolchain,
+  recompiles what any module it loaded changed. Swift 6.3 or newer must support
+  `-enable-incremental-file-hashing`: test builds enable it so a fresh checkout's timestamps
+  do not alone invalidate identical source contents. Native listing and test commands receive
+  the same flags. Content changes still invalidate dependents; source timestamps are never
+  restored. This does not apply to the release's whole-module optimization build.
+  Hosted runners start empty and restore `.build` from the Actions cache instead, keyed on the OS, toolchain/flags,
   `Package.resolved` and commit, with toolchain/lock and toolchain prefix fallbacks. After a
   successful build, hosted PR merge-ref runs and trusted branch pushes/manual dispatches save
   on an exact-key miss; scheduled and unsupported events do not save. Restore is optional:
