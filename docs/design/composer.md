@@ -87,9 +87,10 @@ it (the palette's New agent with options…, New space on <host>…, and "PR #24
   then the context ring (Context meter, below) 6pt before the action, a 28pt circle: **Send** (a
   14pt `arrow.up` in `textOnLantern` on `lantern`, at 35% until there is something to send) or
   **Stop** (a small rounded `stop.fill` square in
-  `textOnFailed` on `failed`). While pi works with a draft, Stop steps aside **outlined** (a
-  `lineStrong` hairline, no fill, `bgHover` under the pointer, the square in `failed`) and Send
-  takes the corner, 6pt apart; filled Stop ⇄ outlined Stop + Send cross-fades (`content`).
+  `textOnFailed` on `failed`). It is one button with two jobs (the user's decision, 2026-10-10:
+  "the send button … should be a stop button if the thread is active; if active and there's text it
+  should be send"): while pi works and the composer holds nothing it is Stop, and with anything to
+  send it is Send; Stop is never drawn beside Send. Send ⇄ Stop cross-fades (`content`).
   Tooltips: "Send (↩)", or while pi works "Queue (↩) · Steer now (⌘↩)"; "Stop the agent's turn"
   ("Stop the agent and its subagents" while subagents are live). While a question waits, the
   question dock takes the whole card's place (below).
@@ -112,7 +113,9 @@ metrics (the boards draw the Design tool's composers at their own scale).
 
 - **Idle:** Send. The placeholder is "Follow up, or / for commands…" ("Follow up…" when pi
   reports no commands), or "Describe the task, or / for commands…" on a fresh agent.
-- **Running:** Stop (⌘.) while the field is empty; with a draft, Stop outlined and Send. The
+- **Running:** the action is Stop (⌘.) while the composer has no input at all (no words, and no
+  attached image, file, design reference or page element); with any of them it is Send, and Stop
+  stays on ⌘. and Esc. Whitespace alone is no input. The
   field keeps the idle placeholder (the Running board's "Queue a follow-up — sent when the turn ends"
   is a departure; see the table). Send's tooltip names both ways, queueing first:
   "Queue (↩) · Steer now (⌘↩)".
@@ -410,7 +413,10 @@ a docked pane it narrows to the card. They share one anatomy (NWComposer › Men
   menu keeps keyboard focus), but they read as buttons to VoiceOver. A row never wraps: what does
   not fit truncates.
 - ↑↓ move, ⏎ chooses, Esc closes and returns focus to the field, and a click anywhere outside
-  the menu and the card closes it (the click still lands where it was aimed). No footers; the
+  the menu closes it (the click still lands where it was aimed). Only the control that opens a menu (the
+  model chip, the context ring, Send) is inside it, and it toggles the menu itself. A click in the
+  field, on Attach or on blank space in the control row closes it. The slash and @ menus are the
+  field's own, so the field keeps them. No footers; the
   only key hints are the slash menu's ⏎ and the model picker's chord.
 
 - **Slash menu** (`NWSlashMenu`; SlashMenu): opens when the draft is "/…" with no space yet (or
@@ -518,7 +524,7 @@ a docked pane it narrows to the card. They share one anatomy (NWComposer › Men
 ContextFull, ContextCompacted; `ContextMeterButton` and `ContextDetailsPopover` in
 `Thread/ContextMeter.swift`, on ShepherdUI's `NWContextMeterButton`, `NWContextRing` and
 `NWContextDetails`; sizes are `NWContextMetrics`). What fills the model's context window is a
-small ring in the control row, just before Send (and before Stop while pi works); the composer
+small ring in the control row, just before the action, Send or Stop; the composer
 never shows text for it, and the header has no counters (Toolbar). The ring comes from
 the host (`NativeThreadSnapshot.context`, docs/native-thread.md); a host from before it reports
 none, and the row has no ring.
@@ -610,7 +616,7 @@ none, and the row has no ring.
   sheet"; `App/iOS/Composer/ContextMeter.swift`): the same ring and button just before Send — in
   the iPad card's control row, and inside the phone's capsule — with a 44pt touch target around
   its 32pt circle, so it sits 14pt from Send's circle rather than 6pt (the targets never overlap).
-  The ring stays while the agent runs (Stop lives in the header on iOS). Touch has no hover: the
+  The ring stays while the agent runs. Stop is the action in the same corner while the agent works with nothing to send. Touch has no hover: the
   numbers are the ring's VoiceOver label and the sheet's; a pointer over it on iPad shows the
   tooltip. A tap opens the details as a sheet (`NWContextDetails(…, presentation: .sheet)`) on
   `bgRaised` with a drag indicator, fitted to the details' height (the whole screen when taller;

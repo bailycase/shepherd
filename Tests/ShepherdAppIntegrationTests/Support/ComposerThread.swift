@@ -16,6 +16,8 @@ final class ComposerThread {
     let store = NativeThreadStore()
     let commands = ThreadCommandCenter()
     let window: OffscreenWindow
+    /// The composer's images, held here so a test can attach one.
+    let input = ThreadInput()
     let size: CGSize
     private(set) var snapshot: NativeThreadSnapshot
     /// Every request the thread sent its host, in order (its pulls included).
@@ -30,10 +32,11 @@ final class ComposerThread {
     init(messages: Int = 40, size: CGSize = CGSize(width: 900, height: 600), models: [PiModelCatalog.Entry] = ModelCatalogFixture.entries,
          commands: [NativeCommand] = ModelCatalogFixture.commands, dialogs: [NativeThreadDialog] = [], dark: Bool = false,
          focused: Bool = false, animated: Bool = true, speed: Bool = false, fast: Bool = false, model: String = "anthropic/claude-opus-4-5",
-         thinkingLevels: [String]? = nil, designReferences: DesignReferenceChips? = nil) {
+         thinkingLevels: [String]? = nil, designReferences: DesignReferenceChips? = nil, running: Bool = false) {
         self.size = size
         snapshot = Self.snapshot(messages: messages, commands: commands, dialogs: dialogs, model: speed ? "openai/gpt-6-luna" : model, speed: speed)
         if fast { snapshot.serviceTier = "fast" }
+        if running { snapshot.running = true }
         if let thinkingLevels { snapshot.thinkingLevels = thinkingLevels }
         // A local thread whose host takes design references: the @ picker is on.
         if designReferences != nil { snapshot.supportedActions.append("designReferences") }
@@ -59,8 +62,8 @@ final class ComposerThread {
             default: return .snapshot(value: self.snapshot)
             }
         }
-        hosted = { [store, commands = self.commands] in
-            AnyView(ThreadView(store: store, active: true, isFocused: focused, request: request, commandKey: Self.key, listModels: { ModelCatalog(models) })
+        hosted = { [store, input = self.input, commands = self.commands] in
+            AnyView(ThreadView(store: store, active: true, isFocused: focused, request: request, commandKey: Self.key, listModels: { ModelCatalog(models) }, retainedInput: input)
                 .environment(\.threadCommands, commands)
                 .environment(\.designReferences, designReferences)
                 // Without motion, a change's first frame is all of its work.
@@ -91,6 +94,13 @@ final class ComposerThread {
                                     supportedActions: ["send", "abort", "answer", "setModel", "setThinking"] + (speed ? ["setServiceTier"] : []),
                                     dialogsSupported: true, dialogs: dialogs, messages: messages, provisional: [], clipped: false, commands: commands,
                                     serviceTier: speed ? "standard" : nil, serviceTiers: speed ? ["standard", "fast"] : nil)
+    }
+
+    /// The host's turn starts or ends: the next pull carries it, as a poll's does.
+    func setRunning(_ running: Bool) async {
+        snapshot.running = running
+        snapshot.revision += 1
+        await store.refresh(fresh: true)
     }
 
     /// Loaded, laid out, and drawing the same picture twice in a row.
