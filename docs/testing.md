@@ -104,9 +104,14 @@ stores crashed macOS 26's bundle-less test runner; the bundled app still uses pe
   ownership, reconnect, extension request/result and cleanup. Other fixture users keep the
   optional diagnostics off. Markers contain no host, token, URL or response values. These
   captures diagnose hosted failures; they are not rendering or cancellation fixes.
-  Turn-navigation probes wait
-
-  for the viewport to land above the bottom band, not merely for the navigation intent to detach
+  Jump-opening and standalone completion failures also record native text-field frames in the
+  clip view, ancestor opacity/hidden state and logical visible-row IDs. Records omit text and
+  inspect the existing view tree without layout, scrolling or AppKit setters. Native field detail
+  is capped at 512 records with 24 ancestors each; traversal stops at 4,096 views and reports
+  whether it reached that bound. One
+  fresh-process native settled Jump probe complements the existing sequential four-state test
+  with the same press and paint assertions. It compares process history, not retry success.
+  Turn-navigation probes wait for the viewport to land above the bottom band, not merely for the navigation intent to detach
   following while its first animated frames are still at the tail. The off-screen scroll harness
   declares wheel intent through the same `ThreadInput.readerScrolled(upward:)` method as the native
   monitor before moving the clip view. A clip-view movement without that signal is layout, not
