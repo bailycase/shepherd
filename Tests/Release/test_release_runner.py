@@ -14,6 +14,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 import release
 import release_runner as runner
+from test_ci_runner import select as select_expression
+from test_ci_workflow import jobs, run_script
 
 SHA = "a" * 40
 PLAN = release.plan("refs/heads/nightly", "202610010000")
@@ -352,6 +354,49 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("timeout-minutes: 60", build)
         self.assertIn("run: python3 scripts/release_runner.py verify", workflow)
         self.assertIn("actions: write", workflow.split("  selfhosted:\n")[1].split("  hosted-build:\n")[0])
+
+    def test_disabled_or_unset_selfhosted_selection_never_dispatches_or_waits(self):
+        workflow = (ROOT / ".github/workflows/release.yml").read_text()
+        selector = jobs(workflow)["selfhosted"]
+        self.assertIn("SELFHOSTED_ENABLED: ${{ vars.SHEPHERD_SELFHOSTED_ENABLED == 'true' }}", selector)
+        expression = selector.split("SELFHOSTED_ENABLED: ${{ ", 1)[1].split(" }}", 1)[0]
+        code = run_script(selector)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            python = root / "python3"
+            python.write_text('#!/bin/sh\nprintf "%s\\n" "$*" > "$DISPATCH_LOG"\necho fallback=false >> "$GITHUB_OUTPUT"\n')
+            python.chmod(0o700)
+            for flag in (None, "", "false", "FALSE", "yes", "true", "TRUE"):
+                with self.subTest(flag=flag):
+                    output, log = root / "output", root / "dispatch"
+                    output.write_text("")
+                    log.unlink(missing_ok=True)
+                    enabled = select_expression(expression, {"vars.SHEPHERD_SELFHOSTED_ENABLED": flag})
+                    env = {"PATH": str(root), "GITHUB_OUTPUT": str(output), "DISPATCH_LOG": str(log),
+                           "SELFHOSTED_ENABLED": str(enabled).lower()}
+                    result = subprocess.run(["/bin/bash", "-e", "-c", code], env=env,
+                                            capture_output=True, text=True, timeout=5)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(log.exists(), enabled)
+                    self.assertEqual(output.read_text(), "fallback=false\n" if enabled else "fallback=true\n")
+                    if log.exists():
+                        self.assertEqual(log.read_text(), "scripts/release_runner.py select\n")
+
+    def test_disabled_local_workers_never_reach_the_mac_but_hosted_builds_still_can(self):
+        build = jobs((ROOT / ".github/workflows/release-build.yml").read_text())
+        for name in ("guard", "build"):
+            condition = next(line.removeprefix("    if: ") for line in build[name].splitlines()
+                             if line.startswith("    if: "))
+            for flag in (None, "", "false", "true", "TRUE"):
+                for hosted in (False, True):
+                    for event in ("workflow_dispatch", "workflow_call", "pull_request"):
+                        for ref in ("refs/heads/nightly", "refs/heads/master"):
+                            with self.subTest(job=name, flag=flag, hosted=hosted, event=event, ref=ref):
+                                expected = event != "pull_request" and (hosted or (flag in ("true", "TRUE") and ref == "refs/heads/nightly"))
+                                self.assertEqual(select_expression(condition, {
+                                    "vars.SHEPHERD_SELFHOSTED_ENABLED": flag, "inputs.hosted": hosted,
+                                    "github.event_name": event, "github.ref": ref,
+                                }), expected)
 
     def test_public_labels_are_generic_and_machine_name_is_masked_before_steps(self):
         workflow = (ROOT / ".github/workflows/release.yml").read_text()
