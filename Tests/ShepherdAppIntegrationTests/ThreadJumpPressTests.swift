@@ -26,11 +26,45 @@ struct ThreadJumpPressTests {
         }
     }
 
+    @Test func aNativeThreadMountedBeforeAccessibilityCanStillJump() async {
+        await #expect(processExitsWith: .success) {
+            await recordingErrors {
+                try await Self.pressingJump(native: true, running: false, probe: "late-accessibility", accessibilityAtMount: false)
+            }
+        }
+    }
+
+    @Test func aWideNativeThreadCanJumpFromTheIdleState() async {
+        await #expect(processExitsWith: .success) {
+            await recordingErrors {
+                try await Self.pressingJump(native: true, running: false, probe: "wide", size: CGSize(width: 2000, height: 900))
+            }
+        }
+    }
+
+    @Test func aShorterNativeWindowCanJumpFromTheIdleState() async {
+        await #expect(processExitsWith: .success) {
+            await recordingErrors {
+                try await Self.pressingJump(native: true, running: false, probe: "shorter", size: CGSize(width: 1180, height: 870))
+            }
+        }
+    }
+
+    @Test func aModerateNativeHistoryCanJumpFromTheIdleState() async {
+        await #expect(processExitsWith: .success) {
+            await recordingErrors {
+                try await Self.pressingJump(native: true, running: false, probe: "moderate-history", mix: .moderate)
+            }
+        }
+    }
+
     @MainActor
-    private static func pressingJump(native: Bool, running: Bool, probe: String = "sequential") async throws {
-        AccessibilityNode.enable()
-        let host = ThreadTailFlowTests.FlowHost(turns: 85, mix: .giant)
-        let deck = ThreadTailFlowTests.Deck(host: host, size: CGSize(width: 1180, height: 900), native: native)
+    private static func pressingJump(native: Bool, running: Bool, probe: String = "sequential", accessibilityAtMount: Bool = true,
+                                     size: CGSize = CGSize(width: 1180, height: 900), turns: Int = 85,
+                                     mix: ThreadTailFlowTests.Mix = .giant) async throws {
+        if accessibilityAtMount { AccessibilityNode.enable() }
+        let host = ThreadTailFlowTests.FlowHost(turns: turns, mix: mix)
+        let deck = ThreadTailFlowTests.Deck(host: host, size: size, native: native)
         var phase = "open", completed = false
         defer {
             if !completed {
@@ -44,8 +78,11 @@ struct ThreadJumpPressTests {
                     let prefix = "jump-\(probe)-\(native)-\(running)-\(phase)"
                     try bitmap.representation(using: .png, properties: [:])?.write(to: directory.appendingPathComponent(prefix + ".png"))
                     var evidence: [String: Any] = ["probe": probe, "phase": phase, "native": native, "running": running,
+                        "accessibilityAtMount": accessibilityAtMount, "historyTurns": turns,
                         "reading": deck.reading.map(String.init(describing:)) ?? "none",
                         "following": deck.tailGuard.following, "rows": deck.store.rows.count,
+                        "guardEnabled": deck.tailGuard.enabled, "guardActive": deck.tailGuard.active,
+                        "guardAttempts": deck.tailGuard.attempts, "guardRepairing": deck.tailGuard.repairing,
                         "visible": deck.tailGuard.visible,
                         "pageFrame": NSStringFromRect(deck.page.frame)]
                     if let scroll = deck.scrollView {
@@ -62,6 +99,12 @@ struct ThreadJumpPressTests {
             return AccessibilityNode.all(under: deck.page).first { $0.label == "Jump to latest" }
         }
         try await deck.open()
+        if !accessibilityAtMount {
+            phase = "enable-accessibility"
+            AccessibilityNode.enable()
+            _ = jump()
+            try await deck.expectTail("after accessibility activation")
+        }
         phase = "streaming-tail"
         let reply = ThreadBlankScreenTests.reply("jump-live", ThreadBlankScreenTests.prose(12, 85), at: ThreadBlankScreenTests.base + 9_000_000)
         await deck.publish(running: true, provisional: [reply])
