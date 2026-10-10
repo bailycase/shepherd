@@ -62,7 +62,7 @@ permissions:
 jobs:
   guard:
     name: Validate the Release parent
-    if: github.event_name != 'pull_request' && (inputs.hosted || github.ref == 'refs/heads/nightly')
+    if: github.event_name != 'pull_request' && (inputs.hosted || (vars.SHEPHERD_SELFHOSTED_ENABLED == 'true' && github.ref == 'refs/heads/nightly'))
     runs-on: ubuntu-latest
     timeout-minutes: 3
     env:
@@ -82,7 +82,7 @@ jobs:
   build:
     name: build package
     needs: guard
-    if: github.event_name != 'pull_request' && (inputs.hosted || github.ref == 'refs/heads/nightly')
+    if: github.event_name != 'pull_request' && (inputs.hosted || (vars.SHEPHERD_SELFHOSTED_ENABLED == 'true' && github.ref == 'refs/heads/nightly'))
     # Custom label only: Self-hosted was registered without default self-hosted/OS labels.
     runs-on: ${{ !inputs.hosted && 'shepherd-release' || 'macos-26' }}
     timeout-minutes: 60

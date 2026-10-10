@@ -25,6 +25,14 @@ def shell_step(name):
     return "set -euo pipefail\n" + "\n".join(lines).replace("${{ github.repository }}", "fixture/shepherd")
 
 
+class PublicationRoutingTests(unittest.TestCase):
+    def test_a_successful_selected_package_publishes_when_the_other_build_was_skipped(self):
+        job = WORKFLOW.split('  publish-appcasts:\n')[1].split('  testflight:\n')[0]
+        # An explicit status function avoids GitHub's implicit success() after a skipped ancestor.
+        # Keep the successful-release check and cancellation fence; do not use unconditional always().
+        self.assertIn("if: ${{ !cancelled() && needs.release.result == 'success' }}", job)
+
+
 class PublicationTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
