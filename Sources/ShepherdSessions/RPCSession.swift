@@ -105,6 +105,7 @@ final class RPCSession: @unchecked Sendable {
     /// Bytes retained in stdin's bounded queue (also used by backpressure tests).
     var pendingInputBytes: Int { pendingOutput.count - pendingOutputOffset }
     private var pendingRequests: [String: (Result<RPCResponse, RPCError>) -> Void] = [:]
+    private var lateResponses: [String: (RPCResponse) -> Void] = [:]
     private var nextRequestID = 0
     private var reaped = false
     private var exitDelivered = false
@@ -270,10 +271,12 @@ final class RPCSession: @unchecked Sendable {
     }
 
     /// Send a command with a fresh id and resolve on the matching response.
-    /// Must run under the session's queue hierarchy; `completion` runs there too.
+    /// `onLateResponse` observes an answer after timeout without completing the request twice.
+    /// Must run under the session's queue hierarchy; both callbacks run there too.
     func request(
         _ command: RPCCommand,
         timeout: TimeInterval = 10,
+        onLateResponse: ((RPCResponse) -> Void)? = nil,
         completion: @escaping (Result<RPCResponse, RPCError>) -> Void
     ) {
         guard isAlive, !stdinClosed else {
@@ -287,6 +290,7 @@ final class RPCSession: @unchecked Sendable {
             return
         }
         pendingRequests[requestID] = completion
+        lateResponses[requestID] = onLateResponse
         queue.asyncAfter(deadline: .now() + timeout) { [weak self] in
             self?.expire(requestID, type: command.type, timeout: timeout)
         }
@@ -337,6 +341,7 @@ final class RPCSession: @unchecked Sendable {
         onExit = nil
         let outstanding = pendingRequests
         pendingRequests.removeAll()
+        lateResponses.removeAll()
         for (_, completion) in outstanding { completion(.failure(.notAlive)) }
         closeStdin()
         stdoutClosed = true
@@ -556,7 +561,10 @@ final class RPCSession: @unchecked Sendable {
             onEvent?(event)
         case .response(let response):
             if let rid = response.id, let pending = pendingRequests.removeValue(forKey: rid) {
+                lateResponses.removeValue(forKey: rid)
                 pending(.success(response))
+            } else if let rid = response.id, let late = lateResponses.removeValue(forKey: rid) {
+                late(response)
             } else if response.id != nil || !response.success {
                 // A late reply after timeout, or an id-less failure such as
                 // pi's `parse` error for a command we sent fire-and-forget.
@@ -671,6 +679,7 @@ final class RPCSession: @unchecked Sendable {
         guard reaped, stdoutClosed, !recordsInFlight else { return }
         let outstanding = pendingRequests
         pendingRequests.removeAll()
+        lateResponses.removeAll()
         for (_, completion) in outstanding {
             completion(.failure(.exited(code: exitCode)))
         }
