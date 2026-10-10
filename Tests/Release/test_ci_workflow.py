@@ -356,13 +356,17 @@ class PlanTests(unittest.TestCase):
                 self.assertEqual(ci_plan.filters_for([path]), [])
         self.assertEqual(ci_plan.filters_for(["Sources/ShepherdApp/Browser.swift"], full=True), [])
 
-    def test_fast_runs_preserve_all_unit_tests_and_the_previous_smoke_gate(self):
-        filters = ci_plan.filters_for(["Sources/shepherd-cli/Main.swift"])
-        self.assertEqual(len(ci_plan.SMOKE), 13)
+    def test_feature_runs_keep_units_and_cheap_startup_and_identity_checks(self):
+        filters = ci_plan.filters_for(["Sources/ShepherdApp/BrowserHost.swift"])
         for test_id in ("ShepherdCoreUnitTests.AgentTests/model()", "ShepherdUIUnitTests.TokensTests/fonts()",
-                        "ShepherdSessionsIntegrationTests.NativeThreadTests/subagentCardsAndTheirCommandsGoThroughTheChildrenExtension()",
-                        "ShepherdSessionsIntegrationTests.NativeThreadTests.NestedSuite/child()"):
+                        "ShepherdSessionsIntegrationTests.StartupTests/staleStatusesResetToIdle()",
+                        "ShepherdSessionsIntegrationTests.ExtensionIdentityTests/aConnectionSpeaksOnlyForItsAgent()",
+                        "ShepherdSessionsIntegrationTests.ThreadStartupTests/aPiThatHasNotAnsweredYetIsStartingUntilItServes()"):
             self.assertTrue(any(re.search(pattern, test_id) for pattern in filters), test_id)
+        for test_id in ("ShepherdAppIntegrationTests.ThreadCompletionMatrixTests/run()",
+                        "DesignSurfaceKitIntegrationTests.DesignBoardViewTests/run()",
+                        "ShepherdAppIntegrationTests.SidebarListTests/run()"):
+            self.assertFalse(any(re.search(pattern, test_id) for pattern in filters), test_id)
 
     def test_mixed_features_union_filters_and_include_hidden_layout_regressions(self):
         filters = ci_plan.filters_for(["Sources/ShepherdApp/Thread/ThreadView.swift", "Sources/ShepherdApp/DesignTools.swift"])
@@ -373,14 +377,13 @@ class PlanTests(unittest.TestCase):
             self.assertTrue(any(re.search(pattern, test_id) for pattern in filters), test_id)
         self.assertEqual(ci_plan.filters_for(["Sources/ShepherdApp/Browser.swift", "unmapped"]), [])
 
-    def test_test_support_and_unclassified_app_changes_select_their_whole_module(self):
-        cases = (("Tests/ShepherdAppIntegrationTests/Support/ComposerThread.swift", ci_plan.APP),
-                 ("Tests/ShepherdSessionsIntegrationTests/NativeThreadTests.swift", ci_plan.SES),
-                 ("Sources/ShepherdApp/AgentLayoutDeck.swift", ci_plan.APP),
-                 ("Packages/ShepherdUI/Sources/ShepherdUI/Tokens.swift", ci_plan.APP))
-        for path, pattern in cases:
+    def test_module_test_helpers_stay_broad_and_unclassified_source_runs_all(self):
+        self.assertIn(ci_plan.APP, ci_plan.filters_for([
+            "Tests/ShepherdAppIntegrationTests/Support/ComposerThread.swift"]))
+        for path in ("Sources/ShepherdApp/AgentLayoutDeck.swift",
+                     "Packages/ShepherdUI/Sources/ShepherdUI/Tokens.swift"):
             with self.subTest(path=path):
-                self.assertIn(pattern, ci_plan.filters_for([path]))
+                self.assertEqual(ci_plan.filters_for([path]), [])
 
     def test_every_selected_pattern_must_match_native_test_ids(self):
         ids = ["Module.Suite/a()", "Other.OtherSuite/b()"]
