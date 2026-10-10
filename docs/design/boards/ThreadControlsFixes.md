@@ -19,13 +19,16 @@ no input while the thread works. No new screens; each change is on the surface t
 - Send branches from the pick, records it as the agent's base, and clears it. A pick of
   `origin/<branch>` follows Settings ▸ Worktrees ▸ Fetch before creating (a failed fetch leaves the
   cached ref); a local branch has nothing to fetch. The pick is kept whatever the fetch does. Changing the project clears it.
+- The workplace menu's ↑↓ navigation includes the visible Base row after the projects; Return
+  opens the picker. Base uses the existing highlighted-row style and VoiceOver selection.
 - New Worktree sheet: a "Choose…" link beside the Base field opens the same picker in a popover.
 
 **Model settings and picker click-away** (thread, New thread, New design)
 - A click anywhere outside the popover or its chip closes it, including in the field. A click on
   the chip toggles it; Attach, blank space in the control row and the field are outside. Esc and
   choosing behave as before. The slash and @ menus stay open for
-  clicks in the field.
+  clicks in the field. Ordinary Send and Stop clicks close an unrelated model picker and still
+  perform their action; Send is inside only its own open Send menu.
 
 **Send and Stop** (Mac thread composer; iPhone and iPad thread composer). The user's words, 2026-10-10:
 "the send button in the composer should be a stop button if the thread is currently active; if
