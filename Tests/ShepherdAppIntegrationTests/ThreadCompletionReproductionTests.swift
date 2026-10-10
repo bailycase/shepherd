@@ -68,16 +68,18 @@ struct ThreadCompletionReproductionTests {
             await deck.store.refresh()
             let prefix = "\(native ? "anchored" : "scrolling")-\(turn)"
             var recognizedFinal = false
+            var lastImage: CGImage?
             do {
                 // Recovery walks the lazy stack in multiple steps. Wait on compositor pixels,
                 // not a fixed delay or forced layouts that could repair the view for the test.
                 try await eventuallyOnMain("\(prefix) to paint its final answer", poll: .milliseconds(100)) {
                     let image = try ThreadWindowCapture.image(deck.window.window)
+                    lastImage = image
                     recognizedFinal = try recognizedText(image).contains { $0.contains("worker has finished") }
                     return recognizedFinal
                 }
             } catch is WaitTimeout { }
-            _ = try capture(deck, to: directory.appendingPathComponent(prefix + ".png"), placement: !recognizedFinal)
+            _ = try capture(deck, image: #require(lastImage), to: directory.appendingPathComponent(prefix + ".png"), placement: !recognizedFinal)
             print("COMPLETION \(prefix): rows=\(deck.store.rows.count), targets=\(deck.tailGuard.visible), following=\(deck.tailGuard.following), attempts=\(deck.tailGuard.attempts), repairing=\(deck.tailGuard.repairing), rowsInView=\(deck.tailGuard.rowsInView), reportedDistance=\(deck.tailGuard.distance), \(deck.reading.map(String.init(describing:)) ?? "no scroll view"), answer=\(recognizedFinal)")
             guard recognizedFinal else {
                 // Save what the user would try next as evidence, not as a way to pass the test.
@@ -217,8 +219,8 @@ struct ThreadCompletionReproductionTests {
         #expect(text.contains { $0.contains("Paragraph") || $0.contains("value") || $0.contains("Key point") })
     }
 
-    private func capture(_ deck: Flow.Deck, to path: URL, placement: Bool = false) throws -> CGImage {
-        let bitmap = NSBitmapImageRep(cgImage: try ThreadWindowCapture.image(deck.window.window))
+    private func capture(_ deck: Flow.Deck, image: CGImage? = nil, to path: URL, placement: Bool = false) throws -> CGImage {
+        let bitmap = NSBitmapImageRep(cgImage: try image ?? ThreadWindowCapture.image(deck.window.window))
         try #require(bitmap.representation(using: .png, properties: [:])).write(to: path)
         if placement, let scroll = deck.scrollView {
             var evidence = ThreadWindowCapture.placement(of: deck.page, in: scroll)
