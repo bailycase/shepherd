@@ -119,8 +119,8 @@ struct ContextEstimateTests {
         }
         if let global { try Data(global.utf8).write(to: agent.appendingPathComponent("settings.json")) }
         if let project {
-            try FileManager.default.createDirectory(at: repo.appendingPathComponent(".pi"), withIntermediateDirectories: true)
-            try Data(project.utf8).write(to: repo.appendingPathComponent(".pi/settings.json"))
+            try FileManager.default.createDirectory(at: repo.appendingPathComponent(".shepherd"), withIntermediateDirectories: true)
+            try Data(project.utf8).write(to: repo.appendingPathComponent(".shepherd/settings.json"))
         }
         #expect(PiConfig.compactionSettings(model: "anthropic/opus", cwd: repo.path, in: agent) == expected)
     }

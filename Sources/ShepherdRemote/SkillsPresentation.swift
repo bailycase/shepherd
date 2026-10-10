@@ -157,7 +157,7 @@ public enum SkillsPresentation {
 
     /// Under the list: why a repository's own skills aren't here.
     public static let repositorySkillsNote =
-        "A repository’s own skills (.pi/skills, .agents/skills) load only in that repository’s threads, so they aren’t listed here."
+        "A repository’s own skills (.shepherd/skills, .agents/skills) load only in that repository’s threads, so they aren’t listed here."
 
     /// One of pi's own skills under its name on the phone: "Not used: …" when pi passes it over,
     /// else "/skill only · …" or its description.

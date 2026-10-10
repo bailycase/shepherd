@@ -38,7 +38,11 @@ stores crashed macOS 26's bundle-less test runner; the bundled app still uses pe
   itself calls `useRealPeerCheck()` and runs stub pis (`ExtensionIdentityTests`).
   Its default `PiSetup.app` shares the process's scratch session home. A test asserting an exact
   Projects listing passes a `PiSetup` with a per-test home: listing intentionally imports old
-  session headers, including those other suites left in a shared home. `AppHarness` instead
+  session headers, including those other suites left in a shared home. `RemoteHost(pi:)` takes
+  the same per-test setup when asserting an exact remote Projects listing; the cutover imports
+  legacy session headers at startup, before a test adds its workspace. A test-owned
+  `ProjectSettingsStore` uses a separate registry path from the live server's `projects.json`
+  so its worker cannot race the server's startup migration. `AppHarness` instead
   defaults to a per-harness pi home (removed by `stop()`), isolating session history and pi
   settings across app suites; pass `pi: .app` explicitly when testing process-home sharing.
 - `StubPi.command`: runs `Resources/stub-pi.py`, a scripted `pi --mode rpc` driven by prompt
@@ -87,7 +91,8 @@ stores crashed macOS 26's bundle-less test runner; the bundled app still uses pe
   wait for the final text in WindowServer pixels without forcing layout; the guard's multi-step
   recovery is not guaranteed to finish in a fixed one-second delay. The real-workspace completion
   probe saves its last polled image on success or timeout, so failure evidence is the pixels that
-  failed the paint condition. Failed Swift CI runs include these completion PNGs beside the
+  failed the paint condition. Failed Swift CI runs include these completion PNGs and the matrix's
+  blank-transcript captures beside the
   complete log in the seven-day `ci-swift-test-log` artifact. Each workspace image also has
   passive JSON evidence for the last OCR result and native scroll geometry. Capturing it does
   not force layout or change the paint assertion. The completion matrix's `scrolledReplyCollapses`
@@ -100,6 +105,7 @@ stores crashed macOS 26's bundle-less test runner; the bundled app still uses pe
   optional diagnostics off. Markers contain no host, token, URL or response values. These
   captures diagnose hosted failures; they are not rendering or cancellation fixes.
   Turn-navigation probes wait
+
   for the viewport to land above the bottom band, not merely for the navigation intent to detach
   following while its first animated frames are still at the tail. The off-screen scroll harness
   declares wheel intent through the same `ThreadInput.readerScrolled(upward:)` method as the native

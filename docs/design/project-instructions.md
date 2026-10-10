@@ -28,7 +28,7 @@ counts, paths, dates and host state come from `ProjectSettingsStore` and `Projec
   real project resource and MCP configuration counts. The selected underline is the lantern
   token. Resources includes skills and extensions. Tab changes protect unsaved edits.
 - File selectors are 26pt tall, 6pt radius, 10pt horizontal padding and 8pt gap. Instruction
-  files are `AGENTS.md`, `AGENTS.override.md`, `.pi/APPEND_SYSTEM.md` and `.pi/SYSTEM.md`.
+  files are `AGENTS.md`, `AGENTS.override.md`, `.shepherd/APPEND_SYSTEM.md` and `.shepherd/SYSTEM.md`.
   Their labels use filenames, their accessibility names preserve paths. A missing file can
   be selected and created. The selected path appears on the trailing edge.
 - Editor border uses `lineStrong`, radius 10pt. Body is `#111316`, header `#15171a`. Metadata
@@ -54,7 +54,7 @@ counts, paths, dates and host state come from `ProjectSettingsStore` and `Projec
   `Differs`, `Unavailable` or `Unverified` come from file comparisons, never fixture literals.
   The matching dot uses the done color and its label uses the semantic host-comparison color.
 - Final note is `APPEND_SYSTEM.md adds to the system prompt and SYSTEM.md replaces it. Both
-  live in the project's .pi folder.` It wraps at large text sizes.
+  live in the project's .shepherd folder.` It wraps at large text sizes.
 
 ## States and validation
 

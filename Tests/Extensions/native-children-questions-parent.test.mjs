@@ -1,3 +1,4 @@
+import { projectConfigHost } from "./fixtures/project-config-host.mjs";
 // A subagent asks its parent, and the parent answers it or asks the user, with a REAL parent pi (`pi --mode rpc`)
 // that loads the children extension and a real child pi, both on one scripted local provider.
 // Run: PI_PACKAGE_DIR=/path/to/pi-coding-agent node --test Tests/Extensions/native-children-questions-parent.test.mjs
@@ -89,6 +90,7 @@ async function startParent(dir, provider) {
   } } }));
   const env = { PATH: process.env.PATH, HOME: dir, PI_CODING_AGENT_DIR: config, PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0",
     SHEPHERD_NATIVE_CHILDREN: "1", SHEPHERD_AGENT_ID: "parent", SHEPHERD_SOCKET: path.join(dir, "absent.sock"), SHEPHERD_EXT_CHILDREN: extension };
+  const migrationHost = await projectConfigHost(env.SHEPHERD_SOCKET);
   const pi = spawn(process.execPath, [path.join(pkg, "dist/bundle/cli.js"), "--mode", "rpc", "--session-dir", path.join(dir, "sessions"),
     "-ne", "-ns", "-np", "-e", extension, "--model", "fixture/fixture"], { cwd: dir, env, stdio: ["pipe", "pipe", "pipe"] });
   const events = [];
@@ -105,7 +107,7 @@ async function startParent(dir, provider) {
     // Every turn that started has settled. How turns divide depends on timing (a question that lands while the parent
     // still works is a continuation of its turn), so the tests wait on what was said, never on a count of turns.
     idle: () => events.some((e) => e.type === "agent_start") && events.filter((e) => e.type === "agent_start").length === events.filter((e) => e.type === "agent_settled").length,
-    stop() { pi.stdin.end(); pi.kill("SIGTERM"); },
+    async stop() { pi.stdin.end(); pi.kill("SIGTERM"); await migrationHost.close(); },
   };
 }
 
@@ -143,7 +145,7 @@ test("a real parent answers a child's question itself, from the notice, with the
     await until("the child to receive the parent's answer as its next message", () => provider.requests.some((r) => JSON.stringify(r.messages).includes("You are a Shepherd child")
       && textOf(r.messages.at(-1)).startsWith("Postgres.")));
     await until("the child's result to reach the parent", () => parentRequests(provider).some((r) => textOf(r.messages.at(-1)).includes("Used: Postgres.")));
-  } finally { parent.stop(); provider.server.closeAllConnections(); provider.server.close(); fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally { await parent.stop(); provider.server.closeAllConnections(); provider.server.close(); fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
 test("a real parent that cannot answer asks the user in its own reply, and passes the user's answer down in a later turn", { timeout: 120000 }, async () => {
@@ -166,5 +168,5 @@ test("a real parent that cannot answer asks the user in its own reply, and passe
     assert.equal(answer.message, "Acme Corp");
     assert.match(answer.questionID, /^[\w-]+\/\w+$/);
     await until("the child to continue with the user's answer", () => parentRequests(provider).some((r) => textOf(r.messages.at(-1)).includes("Used: Acme Corp")));
-  } finally { parent.stop(); provider.server.closeAllConnections(); provider.server.close(); fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally { await parent.stop(); provider.server.closeAllConnections(); provider.server.close(); fs.rmSync(dir, { recursive: true, force: true }); }
 });

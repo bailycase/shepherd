@@ -18,19 +18,19 @@ struct ProjectMCPTests {
         #expect(oldHost.rows.first(where: { $0.name == "issues" })?.signIn == .unverified)
     }
 
-    @Test(arguments: [".pi/mcp.json", ".mcp.json"])
+    @Test(arguments: [".shepherd/mcp.json", ".pi/mcp.json", ".mcp.json"])
     func editsUseTheSelectedHostAndFileWithoutChangingUnknownFields(_ path: String) async throws {
         let original = #"{"owner":"keep","servers":{"other":{"command":"vscode-only"}},"mcpServers":{"issues":{"url":"https://example.test/mcp","enabled":true,"disabled":false,"exposure":"hidden","toolExposure":{"lookup":"direct"},"oauth":{"custom":"keep"},"headers":{"Authorization":"Bearer ${PROJECT_TOKEN}"},"future":{"keep":true}}}}"#
         let file = File(path: path, text: original)
         let model = await file.open()
         #expect(model.mcp.rows.map(\.name) == ["issues"])
-        #expect(model.mcp.details["issues"]?.direct == (path == ".pi/mcp.json" ? nil : false))
+        #expect(model.mcp.details["issues"]?.direct == (path != ".mcp.json" ? nil : false))
         await model.setMCPEnabled("issues", false)
         #expect(file.saves.count == 1)
         #expect(file.saves[0].0 == original)
         #expect(model.mcp.rows.first?.status == .off)
         let saved = try #require(model.mcp.entries.first)
-        #expect(saved.json[path == ".pi/mcp.json" ? "enabled" : "disabled"] == .bool(path != ".pi/mcp.json"))
+        #expect(saved.json[path != ".mcp.json" ? "enabled" : "disabled"] == .bool(path == ".mcp.json"))
         #expect(saved.json["future"] == .object(["keep": .bool(true)]))
         #expect(saved.json["toolExposure"] == .object(["lookup": .string("direct")]))
         #expect(saved.json["oauth"] == .object(["custom": .string("keep")]))
@@ -39,15 +39,35 @@ struct ProjectMCPTests {
         #expect(model.mcp.document.root["owner"] == .string("keep"))
         #expect(model.mcp.document.root["servers"]?["other"]?["command"] == .string("vscode-only"))
         await model.setMCPDirect("issues", true)
-        #expect(file.saves.count == (path == ".pi/mcp.json" ? 2 : 1))
+        #expect(file.saves.count == (path != ".mcp.json" ? 2 : 1))
         try await model.removeMCP("issues")
         #expect(model.mcp.entries.isEmpty)
         #expect(model.mcp.document.root["servers"]?["other"] != nil)
     }
 
+    @Test func legacyRemoteInventoryKeepsNativeDisabledStateToggleAndApproval() async throws {
+        let file = File(path: ".pi/mcp.json", text: #"{"owner":"keep","mcpServers":{"issues":{"command":"tools","enabled":false,"future":"keep"}}}"#)
+        let model = await file.open()
+        #expect(model.selectedFile?.path == ".pi/mcp.json")
+        #expect(model.mcp.rows.first?.status == .off)
+        await model.setMCPEnabled("issues", true)
+        #expect(file.saves.count == 1)
+        let text = try #require(file.text)
+        let document = try #require(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+        let servers = try #require(document["mcpServers"] as? [String: [String: Any]])
+        #expect(servers["issues"]?["enabled"] as? Bool == true)
+        #expect(servers["issues"]?["disabled"] == nil)
+        #expect(servers["issues"]?["future"] as? String == "keep")
+        #expect(document["owner"] as? String == "keep")
+        let selected = try #require(model.selected)
+        #expect(await model.approveMCPProject(selected))
+        #expect(file.approvals == [".pi/mcp.json"])
+        #expect(model.mcpProjectTrusted == true)
+    }
+
     @Test(arguments: [nil, "", "{}"] as [String?])
     func addingToMissingAndEmptyFilesPreservesTheExpectedContent(_ text: String?) async throws {
-        let file = File(path: ".pi/mcp.json", text: text)
+        let file = File(path: ".shepherd/mcp.json", text: text)
         let model = await file.open()
         try await model.saveMCP([MCPServerEntry(name: "docs", json: ["command": .string("docs-server")])])
         #expect(file.saves.first?.0 == text)
@@ -61,7 +81,7 @@ struct ProjectMCPTests {
                       #"{"mcpServers":{"a":{"timeout":1e100}}}"#,
                       #"{"mcpServers":{"a":{"oauth":{"scope":["read"]}}}}"#])
     func malformedConfigurationsAreNeverOverwritten(_ text: String) async throws {
-        let file = File(path: ".pi/mcp.json", text: text)
+        let file = File(path: ".shepherd/mcp.json", text: text)
         let model = await file.open()
         #expect(model.mcp.problem != nil && !model.mcpEditable)
         await #expect(throws: ProjectFileError.self) {
@@ -71,7 +91,7 @@ struct ProjectMCPTests {
     }
 
     @Test func failedSavesKeepTheDraftAndDoNotReplaceConcurrentEdits() async throws {
-        let file = File(path: ".pi/mcp.json", text: "{}")
+        let file = File(path: ".shepherd/mcp.json", text: "{}")
         let model = await file.open()
         file.text = #"{"other":"written elsewhere"}"#
         await #expect(throws: ProjectFileError.self) {
@@ -88,7 +108,7 @@ struct ProjectMCPTests {
     }
 
     @Test func normalizedImportCollisionsDoNotPartiallySaveOrOverwriteVSCodeEntries() async throws {
-        let file = File(path: ".pi/mcp.json", text: #"{"servers":{"docs":{"command":"not-for-pi"}}}"#)
+        let file = File(path: ".shepherd/mcp.json", text: #"{"servers":{"docs":{"command":"not-for-pi"}}}"#)
         let model = await file.open()
         await #expect(throws: ProjectFileError.self) {
             try await model.saveMCP([MCPServerEntry(name: "a-b", json: ["command": .string("a")]),
@@ -104,6 +124,7 @@ struct ProjectMCPTests {
         let path: String
         var text: String?
         var saves: [(String?, String)] = []
+        var approvals: [String] = []
         var reference: ProjectFile { ProjectFile(path: path, category: .mcp, exists: text != nil) }
         init(path: String, text: String?) { self.path = path; self.text = text }
 
@@ -126,7 +147,13 @@ struct ProjectMCPTests {
                     self.text = text
                     return .text(ProjectFileText(file: self.reference, text: text))
                 case .open: return .opened
-                case .mcp: return .mcp(.init())
+                case .mcp(let directory, let path, let action):
+                    #expect(directory == summary.directory && path == self.path)
+                    if action == .approveProject {
+                        self.approvals.append(path)
+                        return .mcp(.init(projectTrusted: true))
+                    }
+                    return .mcp(.init(projectTrusted: false))
                 }
             }
             await model.load([host])

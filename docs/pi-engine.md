@@ -39,9 +39,13 @@ Pi and its SDK modules by install location, version, registry tarball and `sha51
    and any integrity recorded in the shrinkwrap must match. Scoped packages have distinct cache keys.
 3. Unpacks with `tarfile`: no npm, and no package script ever runs. Links, devices, traversal and
    multiple archive roots are refused. Named roots used by `@types` packages are supported.
-4. Keeps the files above (Node's binary as it comes), writes the licences, and swaps the tree
+4. Sets the staged package's `piConfig` to `name: "pi", configDir: ".shepherd"`. Pi reads this
+   manifest at runtime for project resource discovery; keeping `name` preserves `PI_*` environment
+   names. Shepherd still pins its global agent home, and terminal Pi is unchanged. Verification
+   rejects an engine with a different project directory or application name.
+5. Keeps the files above (Node's binary as it comes), writes the licences, and swaps the tree
    into `.build/pi-engine` whole.
-5. Verifies the result the way `release.py verify-app` does.
+6. Verifies the result the way `release.py verify-app` does.
 
 Downloads are cached in `.build/pi-engine-cache` and reused only while they still match the pin,
 so a second stage is offline (`--offline` insists on it). Each uncached URL gets at most three
@@ -164,7 +168,7 @@ so tools stay reachable through direct calls or tool search when codemode is off
 
 Settings ▸ Agents ▸ Context ▸ Codemode defaults on. Before a primary agent launch, `PiHome.configureCodemode`
 writes `codemode.enabled` in the host's Pi home under Pi's settings lock. A trusted project's
-`.pi/settings.json` can override it. `shepherd-status.ts` uses Pi's `createCodemodeExtension` factory
+`.shepherd/settings.json` can override it. `shepherd-status.ts` uses Pi's `createCodemodeExtension` factory
 with `models: false` and `mode: "on"`. It caps each script at five minutes and 128 nested tool calls.
 Pi still owns the QuickJS executor, discovery, tool hooks, nested-call metadata and cancellation.
 Each nested tool has its own activity row. Pi's `nestedCalls` metadata restores its arguments and
@@ -183,7 +187,7 @@ what pi does with them, measured).
 What pi's MCP does with the files and the environment it is given is in [mcp.md](mcp.md); what it adds
 to a launch is `/mcp` (over RPC it answers with this thread's servers, `name: connected, 9 tools
 (deferred)`), a server section in the system prompt, `tool_search`, and `<home>/mcp-auth.json` for
-sign-ins. A trusted project's `.pi/mcp.json` is read too, as pi's trust model says. `llama.cpp`, the
+sign-ins. A trusted project's `.shepherd/mcp.json` is read too, as pi's trust model says. `llama.cpp`, the
 fourth built-in, is a provider pi has always shipped and stays; `/llama` still does nothing over RPC and
 the thread's command menu leaves it out. `PiConfig.installedExtensions` (Settings ▸ Pi, a host's
 `hostSettings`) and the first copy from "your pi" ignore the `builtin:` entries.

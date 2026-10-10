@@ -231,7 +231,7 @@ public struct PiHome: Equatable, Sendable {
     // MARK: pi's built-in extensions
 
     /// The built-in extensions pi 1.0 loads in every session that Shepherd's pi leaves off: its own
-    /// MCP support (it would read `<home>/mcp.json`, and the `.pi/mcp.json` of any trusted
+    /// MCP support (it would read `<home>/mcp.json`, and the `.shepherd/mcp.json` of any trusted
     /// project, start those servers beside Settings ▸ MCP servers' and add `/mcp`, `codemode` and
     /// an `mcp_servers` section to every prompt), and the codemode and tool-search extensions
     /// that MCP switches on. Shepherd's own MCP extension manages the servers (docs/pi-engine.md ›

@@ -69,7 +69,7 @@ back. The page sits between Instructions and Remote in the nav, with `graduation
   - Pi couldn't be asked: the group's title over the reason (`NWInlineProblem`: "Couldn’t find
     pi, so the skills from your pi setup aren’t listed.", "…node…", "This pi is too old…", "pi
     took too long…"). A remote first host too old to report them says so in the note row.
-  - Last, on `bgSunken`: "A repository’s own skills (.pi/skills, .agents/skills) load only in
+  - Last, on `bgSunken`: "A repository’s own skills (.shepherd/skills, .agents/skills) load only in
     that repository’s threads, so they aren’t listed here." (Settings is global.)
   - Skills an extension adds while pi runs aren't known without running it, so they show only
     in a thread's / menu.
