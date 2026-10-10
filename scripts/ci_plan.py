@@ -142,7 +142,7 @@ def test_filter(path: str, root: Path) -> str:
                 top_level.append(char)
         if depth or "@Test" in "".join(top_level):
             return fallback
-        kinds = r"struct|class|enum|actor|extension|protocol|func|let|var|typealias|macro"
+        kinds = r"struct|class|enum|actor|extension|protocol|func|let|var|typealias|macro|operator|precedencegroup"
         declarations = re.findall(
             rf"((?:(?:private|fileprivate|public|internal|final|indirect)\s+)*)"
             rf"\b({kinds})\s+([A-Za-z_]\w*)", "".join(top_level),
