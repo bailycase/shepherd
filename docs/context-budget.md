@@ -19,6 +19,9 @@ The standalone `shepherd_child_wait` tool is no longer registered. The six retai
 use async completion delivery; workflows keep internal group coordination. `shepherd_child_result`
 is for inspecting retained output, not polling until a child finishes.
 
+Remote project compatibility adds `projects.v2` only to the TCP hello capability lists. It adds
+no agent tool, prompt text, model request or per-turn context cost.
+
 ## Measuring it
 
 `python3 scripts/context_budget.py` launches a real pi the way Shepherd launches an agent's

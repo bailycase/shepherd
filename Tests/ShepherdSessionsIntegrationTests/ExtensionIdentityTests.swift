@@ -191,6 +191,7 @@ struct ExtensionIdentityTests {
             .designRead(id: 14, agentID: victim, designID: design, path: nil),
             .designWriteBoard(id: 15, agentID: victim, designID: design, path: "A.dc.html", source: "<x-dc></x-dc>", baseRevision: nil),
             .designUpdateIndex(id: 16, agentID: victim, designID: design, changes: .object([:]), baseRevision: nil),
+            .prepareProjectConfiguration(id: 117, agentID: victim, cwd: "/project"),
             .designComments(id: 17, agentID: victim, designID: design),
             .designCommentReply(id: 18, agentID: victim, designID: design, commentID: UUID().uuidString, text: "ok"),
             .designSystemRead(id: 19, agentID: victim, designID: design, namespace: nil),
@@ -208,7 +209,7 @@ struct ExtensionIdentityTests {
             .designRender(id: 30, agentID: victim, designID: design, request: DesignRenderRequest(path: "A.dc.html")),
             .designExtract(id: 31, agentID: victim, designID: design, request: DesignExtractRequest(path: "A.dc.html", element: "4", piece: "Card")),
         ]
-        // Every kind of message that names an agent as its actor (39 of the protocol's 46; the other
+        // These actor-scoped messages include the migration fence; the other
         // seven name none) is in one of the two lists.
         func kind(_ message: ExtensionMessage) throws -> String {
             let object = try JSONSerialization.jsonObject(with: NDJSON.encode(message)) as? [String: Any]
@@ -216,7 +217,7 @@ struct ExtensionIdentityTests {
         }
         #expect((quiet + requests).allSatisfy { $0.speaksFor == victim })
         #expect(requests.allSatisfy { $0.replyID != nil } && quiet.allSatisfy { $0.replyID == nil })
-        #expect(Set(try (quiet + requests).map(kind)).count == 39)
+        #expect(Set(try (quiet + requests).map(kind)).count == 40)
 
         let client = try ExtensionClient(path: h.socketPath)
         for message in quiet + requests { try client.send(message) }

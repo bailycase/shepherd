@@ -28,6 +28,63 @@ struct ProjectMCPControlTests {
         await #expect(processExitsWith: .success) { await recordingErrors { try await Self.checkTrust() } }
     }
 
+    @Test func legacyRemoteNativeToggleAndApprovalUseTheInventoryPathThroughAccessibleControls() async {
+        await #expect(processExitsWith: .success) { await recordingErrors { try await Self.checkLegacyRemote() } }
+    }
+
+    private static func checkLegacyRemote() async throws {
+        AccessibilityNode.enable()
+        let path = ".pi/mcp.json"
+        let project = ProjectSummary(directory: "/remote/project", name: "legacy project", displayPath: "~/project", summary: "MCP")
+        let host = ProjectsHost(id: "legacy-remote", name: "build-01", known: [])
+        let file = ProjectFile(path: path, category: .mcp, exists: true)
+        var text = #"{"owner":"keep","mcpServers":{"tools":{"command":"tools-server","enabled":false,"future":"keep"}}}"#
+        var approved = false
+        var saves = 0, approvals = 0
+        let model = ProjectsModel { selectedHost, request in
+            #expect(selectedHost.id == host.id)
+            switch request {
+            case .list: return .listing(.init(projects: [project]))
+            case .files: return .files([file])
+            case .context: return .context(.init())
+            case .read(let directory, let selectedPath):
+                #expect(directory == project.directory && selectedPath == path)
+                return .text(.init(file: file, text: text))
+            case .save(let directory, let selectedPath, let next, let expected):
+                #expect(directory == project.directory && selectedPath == path && expected == text)
+                text = next; saves += 1
+                return .text(.init(file: file, text: text))
+            case .mcp(let directory, let selectedPath, let action):
+                #expect(directory == project.directory && selectedPath == path)
+                if action == .approveProject { approved = true; approvals += 1 }
+                return .mcp(.init(projectTrusted: approved))
+            case .open: return .opened
+            }
+        }
+        await model.load([host]); await model.open(.init(host: host, project: project)); await model.navigate(.category(.mcp))
+        #expect(model.mcp.rows.first?.status == .off)
+        let window = OffscreenWindow(size: CGSize(width: 1040, height: 850), dark: false,
+                                     ProjectMCPSettings(model: model, initiallyExpanded: "tools"))
+        defer { window.close() }
+        try await eventuallyOnMain("legacy native controls") { window.element("Trust this project…") != nil }
+        #expect(window.elements().contains { $0.label?.contains("Only trusted projects load .pi/mcp.json.") == true || $0.value?.contains("Only trusted projects load .pi/mcp.json.") == true })
+        #expect(ControlPress.undersized(window.controls(), minimum: .desktop).isEmpty)
+        try window.press("tools", role: ControlRole.checkBox)
+        try await eventuallyOnMain("legacy native enabled save") { saves == 1 && !model.saving }
+        let document = try #require(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+        let servers = try #require(document["mcpServers"] as? [String: [String: Any]])
+        #expect(servers["tools"]?["enabled"] as? Bool == true)
+        #expect(servers["tools"]?["disabled"] == nil)
+        #expect(servers["tools"]?["future"] as? String == "keep")
+        #expect(document["owner"] as? String == "keep")
+        try window.press("Trust this project…")
+        let dialog = try await Self.sheet(window)
+        #expect(ControlPress.undersized(ControlPress.controls(in: dialog), minimum: .desktop).isEmpty)
+        try ControlPress.press("Trust project", under: dialog)
+        try await eventuallyOnMain("legacy host approval") { window.window.attachedSheet == nil && model.mcpProjectTrusted == true }
+        #expect(approvals == 1 && approved)
+    }
+
     private static func checkTrust() async throws {
         AccessibilityNode.enable()
         let fixture = try await Fixture()
@@ -38,7 +95,7 @@ struct ProjectMCPControlTests {
         var writes = 0
         let model = ProjectsModel { host, request in
             if case .mcp(let directory, let file, let action) = request {
-                #expect(host.id == project.host.id && directory == project.project.directory && file == ".pi/mcp.json")
+                #expect(host.id == project.host.id && directory == project.project.directory && file == ".shepherd/mcp.json")
                 switch action {
                 case .credentials:
                     return .mcp(.init(signedIn: ["docs"], message: checkingFails ? "Couldn't check project approval." : nil,
@@ -340,7 +397,7 @@ struct ProjectMCPControlTests {
             let scratch = try ScratchServer()
             self.scratch = scratch
             let root = scratch.dir.appendingPathComponent("project")
-            url = root.appendingPathComponent(".pi/mcp.json")
+            url = root.appendingPathComponent(".shepherd/mcp.json")
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try #"{"owner":"keep","mcpServers":{"docs":{"url":"https://docs.invalid/mcp","exposure":"deferred","timeout":700.5,"future":"keep"}}}"#
                 .write(to: url, atomically: true, encoding: .utf8)
@@ -359,7 +416,7 @@ struct ProjectMCPControlTests {
             await model.navigate(.category(.mcp))
         }
         func entry(_ name: String) throws -> MCPServerEntry {
-            let config = ProjectMCPConfiguration(text: try String(contentsOf: url, encoding: .utf8), path: ".pi/mcp.json")
+            let config = ProjectMCPConfiguration(text: try String(contentsOf: url, encoding: .utf8), path: ".shepherd/mcp.json")
             return try #require(config.entries.first { $0.name == name })
         }
     }

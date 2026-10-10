@@ -624,6 +624,15 @@ class VerifyTests(unittest.TestCase):
         self.assertEqual(len(problems), 1, problems)
         self.assertIn(mentioning, problems[0])
 
+    def test_project_config_is_shepherd_without_renaming_pi_environment_variables(self):
+        with open(os.path.join(self.engine, "package.json"), encoding="utf-8") as f:
+            manifest = json.load(f)
+        self.assertEqual(manifest["piConfig"], {"name": "pi", "configDir": ".shepherd"})
+        for config in ({"name": "pi", "configDir": ".pi"}, {"name": "shepherd", "configDir": ".shepherd"}):
+            manifest["piConfig"] = config
+            self.write("package.json", json.dumps(manifest).encode())
+            self.assertOneProblem("piConfig")
+
     def test_verification_refuses_missing_or_changed_runtime_patch(self):
         source = b"patched"
         change = {"path": "dist/core/skills-fixture.js", "after": hashlib.sha256(source).hexdigest()}
@@ -755,7 +764,7 @@ class LayoutContractTests(unittest.TestCase):
         phase = self.phase()
         self.assertIn('"$(SRCROOT)/.build/pi-engine/inputs.xcfilelist"', phase)
         self.assertIn('"$(SRCROOT)/.build/pi-engine/outputs.xcfilelist"', phase)
-        for path in ("scripts/pi-engine-pin.json", "scripts/sign-engine.sh", "App/Engine.entitlements"):
+        for path in ("scripts/pi-engine-pin.json", ".build/pi-engine/Resources/pi-engine/package.json", "scripts/sign-engine.sh", "App/Engine.entitlements"):
             self.assertIn(f'"$(SRCROOT)/{path}"', phase)
         self.assertNotIn("x86_64", phase)
         self.assertEqual(pi_engine.STAGED_IN_XCODE, "$(SRCROOT)/.build/pi-engine")
@@ -771,6 +780,36 @@ class LayoutContractTests(unittest.TestCase):
         for fetcher in ("curl", "wget", "http", "npm ", "pi_engine.py stage\\\" ", "python3 scripts/pi_engine.py stage;"):
             for line in commands:
                 self.assertNotIn(fetcher, line.replace("Run: python3 scripts/pi_engine.py stage", ""))
+
+    @unittest.skipUnless(sys.platform == "darwin", "the native manifest preflight uses macOS plutil")
+    def test_same_pin_with_stale_project_configuration_is_refused_before_embedding(self):
+        encoded = re.search(r'shellScript = ("(?:[^"\\]|\\.)*");', self.phase()).group(1)
+        script = json.loads(encoded)
+        with tempfile.TemporaryDirectory() as scratch:
+            staged = os.path.join(scratch, ".build", "pi-engine")
+            manifest = os.path.join(staged, "Resources", "pi-engine", "package.json")
+            os.makedirs(os.path.dirname(manifest))
+            os.makedirs(os.path.join(scratch, "scripts"))
+            os.makedirs(os.path.join(staged, "Helpers"))
+            for path in (os.path.join(scratch, "scripts", "pi-engine-pin.json"), os.path.join(staged, "pin.json")):
+                with open(path, "w") as f:
+                    f.write("same pin")
+            with open(os.path.join(staged, "Helpers", "node"), "w") as f:
+                f.write("scratch node")
+            products = os.path.join(scratch, "products")
+            env = {**os.environ, "SRCROOT": scratch, "TARGET_BUILD_DIR": products,
+                   "CONTENTS_FOLDER_PATH": "Test.app/Contents", "CODE_SIGNING_ALLOWED": "NO"}
+            for config, succeeds in (({"name": "pi", "configDir": ".pi"}, False),
+                                     ({"name": "shepherd", "configDir": ".shepherd"}, False),
+                                     ({}, False), ({"name": "pi", "configDir": ".shepherd"}, True)):
+                with self.subTest(config=config):
+                    with open(manifest, "w") as f:
+                        json.dump({"piConfig": config}, f)
+                    result = subprocess.run(["/bin/bash", "-c", script], env=env, capture_output=True, text=True)
+                    self.assertEqual(result.returncode == 0, succeeds, result.stderr)
+                    if not succeeds:
+                        self.assertIn("Run: python3 scripts/pi_engine.py stage", result.stderr)
+                        self.assertFalse(os.path.exists(products), "stale configuration is refused before touching the app")
 
     def test_xcode_copies_the_sdk_as_a_folder_resource_without_a_shell(self):
         project = read("Shepherd.xcodeproj", "project.pbxproj")

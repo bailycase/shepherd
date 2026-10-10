@@ -31,9 +31,9 @@ public struct ProjectSummary: Codable, Hashable, Sendable, Identifiable {
     /// Display parent directory; explicit organization can differ from folder ancestry.
     /// Nil for a top-level project, and absent from an older host's listing.
     public var parent: String?
-    /// The MCP servers its own `.pi/mcp.json` names, which its subprojects share.
+    /// The MCP servers its own `.shepherd/mcp.json` names, which its subprojects share.
     public var mcpServers: [String]
-    /// The parent's `.pi/mcp.json` servers it runs too, the ones its own file doesn't override.
+    /// The parent's `.shepherd/mcp.json` servers it runs too, the ones its own file doesn't override.
     public var inheritedMCP: [String]
     /// Actual filesystem/config ancestor, not necessarily the display parent.
     public var inheritedFromName: String?

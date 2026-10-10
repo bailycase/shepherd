@@ -36,7 +36,7 @@ actor ProjectMCPService {
             }
             return runs[id]?.result ?? run.result
         case .approveProject:
-            guard file == ".pi/mcp.json", !PiLaunch.isHomeFolder(directory, userHome: pi.userHome) else {
+            guard file == ".shepherd/mcp.json", !PiLaunch.isHomeFolder(directory, userHome: pi.userHome) else {
                 throw ProjectFileError("protected", "The home folder cannot be trusted as a project.")
             }
             return .init(projectTrusted: try await projectTrust(directory: directory, approve: true, canonicalDirectory: canonicalDirectory ?? PiHome.canonical(directory)))
@@ -52,7 +52,7 @@ actor ProjectMCPService {
                 let state = (auth[key] ?? auth[canonical]) as? [String: Any]
                 return (state?["tokens"] as? [String: Any])?["access_token"] is String ? name : nil
             }
-            guard file == ".pi/mcp.json" else { return .init(signedIn: signed.sorted()) }
+            guard file == ".shepherd/mcp.json" else { return .init(signedIn: signed.sorted()) }
             do {
                 return .init(signedIn: signed.sorted(), projectTrusted: try await projectTrust(directory: directory, approve: false))
             } catch {

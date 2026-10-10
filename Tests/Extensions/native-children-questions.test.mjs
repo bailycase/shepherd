@@ -1,3 +1,4 @@
+import { projectConfigHost } from "./fixtures/project-config-host.mjs";
 // Run: PI_PACKAGE_DIR=/path/to/pi-coding-agent node --test Tests/Extensions/native-children-questions.test.mjs
 // A child never reaches the user: its question goes to its parent, which answers it or asks the user and passes the
 // answer down. Real Pi children against a local fake provider, in a temporary directory; no model request leaves the machine.
@@ -80,7 +81,7 @@ async function harness(dir) {
     shutdown: () => events.get("session_shutdown")() };
 }
 
-let dir, server, saved, h;
+let dir, server, saved, h, migrationHost;
 before(async () => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-questions-"));
   server = fixtureServer();
@@ -90,6 +91,7 @@ before(async () => {
   process.env.PI_CODING_AGENT_DIR = path.join(dir, "config"); process.env.PI_OFFLINE = "1";
   process.env.SHEPHERD_NATIVE_CHILDREN = "1"; process.env.SHEPHERD_AGENT_ID = "fixture";
   process.env.SHEPHERD_SOCKET = path.join(dir, "absent.sock"); process.env.SHEPHERD_EXT_CHILDREN = source;
+  migrationHost = await projectConfigHost(process.env.SHEPHERD_SOCKET);
   fs.mkdirSync(process.env.PI_CODING_AGENT_DIR);
   fs.writeFileSync(path.join(process.env.PI_CODING_AGENT_DIR, "models.json"), JSON.stringify({ providers: { fixture: {
     baseUrl: `http://127.0.0.1:${server.address().port}/v1`, api: "openai-completions", apiKey: "local-fixture-not-secret",
@@ -108,6 +110,7 @@ before(async () => {
 });
 after(async () => {
   await h?.shutdown();
+  await migrationHost?.close();
   await new Promise((r) => server.close(r));
   for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
   Object.assign(process.env, saved);
