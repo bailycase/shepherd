@@ -32,15 +32,18 @@ import base64
 import datetime
 import fnmatch
 import hashlib
+import http.client
 import json
 import mmap
 import os
 import re
 import shutil
+import socket
 import struct
 import sys
 import tarfile
 import tempfile
+import urllib.error
 import urllib.request
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -246,8 +249,39 @@ def fetch(url: str, dest: str, matches, offline: bool = False, opener=urllib.req
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     fd, partial = tempfile.mkstemp(dir=os.path.dirname(dest), prefix=".download-")
     try:
-        with os.fdopen(fd, "wb") as out, opener(url) as response:
-            shutil.copyfileobj(response, out)
+        with os.fdopen(fd, "wb") as out:
+            for attempt in range(1, 4):
+                out.seek(0)
+                out.truncate()
+                response = None
+                complete = False
+                try:
+                    while True:
+                        # Only opening/reading the response may retry, never filesystem writes.
+                        try:
+                            if response is None:
+                                response = opener(url, timeout=60)
+                            block = response.read(1 << 20)
+                        except (OSError, http.client.IncompleteRead) as error:
+                            reason = error.reason if isinstance(error, urllib.error.URLError) else error
+                            if isinstance(error, urllib.error.HTTPError):
+                                transient = error.code in (408, 429, 500, 502, 503, 504)
+                                error.close()
+                            else:
+                                transient = isinstance(reason, (TimeoutError, ConnectionError, http.client.IncompleteRead)) or (
+                                    isinstance(reason, socket.gaierror) and reason.errno == socket.EAI_AGAIN)
+                            if not transient or attempt == 3:
+                                raise EngineError(f"download {url} failed on attempt {attempt}/3: {error}") from error
+                            break
+                        if not block:
+                            complete = True
+                            break
+                        out.write(block)
+                finally:
+                    if response is not None:
+                        response.close()
+                if complete:
+                    break
         if not matches(partial):
             raise EngineError(f"{url} does not match the pin")
         os.replace(partial, dest)
