@@ -108,9 +108,11 @@ stores crashed macOS 26's bundle-less test runner; the bundled app still uses pe
   clip view, ancestor opacity/hidden state and logical visible-row IDs. Records omit text and
   inspect the existing view tree without layout, scrolling or AppKit setters. Native field detail
   is capped at 512 records with 24 ancestors each; traversal stops at 4,096 views and reports
-  whether it reached that bound. One
-  fresh-process native settled Jump probe complements the existing sequential four-state test
-  with the same press and paint assertions. It compares process history, not retry success.
+  whether it reached that bound. Document and hosting-root field captures remain separate.
+  Fresh-process Jump probes retain the original giant-history independent and sequential tests,
+  then vary one input at a time: accessibility activation timing, width, height or content mix.
+  Every comparison checks painted content
+  and the same real press action. Passing comparison cases do not replace original failures.
   Turn-navigation probes wait for the viewport to land above the bottom band, not merely for the navigation intent to detach
   following while its first animated frames are still at the tail. The off-screen scroll harness
   declares wheel intent through the same `ThreadInput.readerScrolled(upward:)` method as the native

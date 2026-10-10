@@ -69,9 +69,15 @@ enum ThreadWindowCapture {
             view.subviews.forEach(inspect)
         }
         inspect(scroll.documentView ?? root)
-        return ["scope": scroll.documentView == nil ? "fallback-root" : "scroll-document",
+        var evidence: [String: Any] = ["scope": scroll.documentView == nil ? "fallback-root" : "scroll-document",
             "clip": rect(clip.bounds), "document": scroll.documentView.map { rect($0.bounds) } ?? [],
             "visitedViews": visited, "viewLimitReached": visited >= 4096,
             "fieldLimitReached": fields.count >= 512, "fields": fields]
+        // Keep document evidence separate from controls and any displaced sibling views.
+        fields = []; visited = 0
+        inspect(root)
+        evidence["hostingRoot"] = ["visitedViews": visited, "viewLimitReached": visited >= 4096,
+            "fieldLimitReached": fields.count >= 512, "fields": fields]
+        return evidence
     }
 }
