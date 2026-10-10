@@ -276,7 +276,8 @@ follows the Mac's rules (Thread) with the phone's measures below.
   options (•••: Refresh, Subagents while the thread has runs, Terminal, then Rename…, Move up and
   Move down, and Delete agent… or Delete worktree agent…) at rest; while the agent runs, Stop (a
   `failed` stop square, "Stop agent" to VoiceOver) takes its place. The app keeps ••• beside Stop,
-  and keeps Stop while pi asks.
+  and keeps Stop while pi asks. The composer's corner is Stop too while the agent runs and the
+  field and attachments are empty (the app's addition, as on the Mac).
 - **Column:** 20pt from the header, 16pt sides, 22pt between turns, 12pt between a turn's parts
   (`MobileLayout.turnItemSpacing`). The app pads the column 16pt at the top and spaces turns 24pt
   (`MobileLayout.turnSpacing`, `NW.Space.xxl`).

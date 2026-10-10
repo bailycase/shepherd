@@ -127,6 +127,12 @@ struct ChangesReviewPresentationTests {
         #expect(options.filter(\.selected).map(\.name) == ["origin/main"])
     }
 
+    /// A new worktree may start from the checked-out branch, which a comparison cannot use.
+    @Test func aNewWorktreeMayBranchFromTheCheckedOutBranch() {
+        let names = changesBaseOptions(Self.branches, selected: nil, includeCurrent: true).map(\.name)
+        #expect(names == ["origin/main", "origin/release/2.4", "agent/refund-events", "feat/ledger-v2", "agent/pay-button-jump"])
+    }
+
     @Test(arguments: [("LEDGER", ["feat/ledger-v2"]), ("origin", ["origin/main", "origin/release/2.4"]), ("nothing", [])])
     func theBasePickerFiltersByName(query: String, names: [String]) {
         #expect(changesBaseOptions(Self.branches, selected: "feat/ledger-v2", query: query).map(\.name) == names)
