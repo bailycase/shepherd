@@ -11,7 +11,10 @@ breaking changes), one logical change per commit, with no AI or attribution line
 back through a PR with a merge commit (`--no-ff`). Every push to `nightly` ships a Shepherd
 Nightly build. Nightly pushes build and publish without running tests, including the release
 test preflight. Signing, notarization and artifact verification still run. CI tests pull requests
-and pushes to `master`; its daily run also tests `master` (docs/testing.md).
+and pushes to `master`; its daily run also tests `master` (docs/testing.md). A separate hosted
+`Build cache` workflow compiles reusable test products on relevant Nightly pushes without
+running tests. Release jobs do not depend on it. It maintains bounded retention of recognized
+Actions caches, not release artifacts; an unavailable cache leaves normal cold builds.
 
 ## Releases
 

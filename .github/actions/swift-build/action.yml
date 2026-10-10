@@ -28,7 +28,7 @@ runs:
         echo "version=$(shasum -a 256 <<<"$toolchain" | cut -c1-12)" >> "$GITHUB_OUTPUT"
 
     # Hosted PR caches stay in their merge ref: later heads of that PR can reuse them,
-    # not its base or siblings. A trusted branch dispatch can seed nightly for new PRs.
+    # not its base or siblings. Build cache seeds nightly on trusted pushes for new PRs.
     # The self-hosted checkout uses its existing .build instead.
     - name: Restore dependency and build caches
       id: cache
