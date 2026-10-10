@@ -31,8 +31,8 @@ public enum PiLaunch {
     /// sessions in `home.sessionDirectory(forCwd:)` (`--session-dir`, which wins over anything the
     /// environment or a project's settings say). The `cd` runs after the login shell's startup
     /// files, so a `cd` in them can't move pi. `model` and `thinking` go only to a fresh session;
-    /// `extensions` load in order. `untrustedProject` (an agent in the user's home folder, whose
-    /// project folder `~/.pi` holds their own pi) passes `--no-approve`, so pi loads no project
+    /// `extensions` load in order. `untrustedProject` (an agent in the user's home folder,
+    /// never a trusted project) passes `--no-approve`, so pi loads no project
     /// code or settings there whatever a trust decision says. Throws when the session folder
     /// resolves outside the home.
     public static func agent(home: PiHome, cwd: String, sessionID: String, model: String?, thinking: String?,
@@ -49,13 +49,13 @@ public enum PiLaunch {
     }
 
     /// One-shot capability RPC requests, with no persisted session or prompt, from inside
-    /// the home so a project's `.pi` never applies. Keeps provider extensions for their models.
+    /// the home so a project's `.shepherd` never applies. Keeps provider extensions for their models.
     public static func listModels(home: PiHome) -> Line {
         Line(script: "cd -- \(quoted(home.directory.path)) && exec \(quoted(home.launcher.path))"
              + " --mode rpc --no-session --no-tools --no-skills --no-prompt-templates --no-themes --no-context-files --no-approve")
     }
 
-    /// `pi mcp <arguments>` from inside the home, so no project's `.pi` applies: what Settings ▸
+    /// `pi mcp <arguments>` from inside the home, so no project's `.shepherd` applies: what Settings ▸
     /// MCP servers runs for a server's state and tools (`list --json`) and for signing in and out
     /// (`login <server>`, `logout <server>`). pi's own MCP does the work; the launcher passes
     /// `mcp` to the engine as its first argument (a `-e` before it would hide the subcommand).

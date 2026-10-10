@@ -456,8 +456,12 @@ struct RemoteRequestTests {
         // Older clients list no capabilities: the host reads them as not knowing its queue.
         (#"{"type":"hello","id":1,"token":"t","clientName":"old","protocolVersion":1}"#,
          .hello(id: 1, token: "t", clientName: "old", protocolVersion: 1, capabilities: nil)),
+        (#"{"type":"hello","id":1,"token":"t","clientName":"legacy","protocolVersion":1,"capabilities":["projects.v1"]}"#,
+         .hello(id: 1, token: "t", clientName: "legacy", protocolVersion: 1, capabilities: ["projects.v1"])),
+        (#"{"type":"hello","id":1,"token":"t","clientName":"current","protocolVersion":1,"capabilities":["projects.v2"]}"#,
+         .hello(id: 1, token: "t", clientName: "current", protocolVersion: 1, capabilities: ["projects.v2"])),
     ])
-    func olderClientShapesDecodeWithDefaults(json: String, expected: RemoteRequest) throws {
+    func clientShapesDecodeWithDefaults(json: String, expected: RemoteRequest) throws {
         #expect(try Wire.decode(RemoteRequest.self, json) == expected)
     }
 
@@ -780,7 +784,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.nativeContextCapability,
             RemoteProtocol.createAgentImagesCapability,
             RemoteProtocol.instructionsCapability, RemoteProtocol.suggestionsCapability,
-            RemoteProtocol.hostSettingsCapability, RemoteProtocol.skillsCapability, RemoteProtocol.projectsCapability, RemoteProtocol.projectDetailsCapability,
+            RemoteProtocol.hostSettingsCapability, RemoteProtocol.skillsCapability, RemoteProtocol.projectsV2Capability, RemoteProtocol.projectDetailsCapability,
             RemoteProtocol.projectMCPCapability, RemoteProtocol.projectTrustCapability, RemoteProtocol.piSkillsCapability,
             RemoteProtocol.terminalControlCapability,
             RemoteProtocol.designContextCapability,
@@ -797,6 +801,10 @@ struct RemoteProtocolConstantTests {
 
     /// Capability strings are negotiated with older peers; they must never be renamed.
     @Test func capabilityStringsAreStable() {
+        #expect(RemoteProtocol.projectsCapability == "projects.v1")
+        #expect(RemoteProtocol.projectsV2Capability == "projects.v2")
+        #expect(RemoteProtocol.clientCapabilities.contains(RemoteProtocol.projectsV2Capability))
+        #expect(!RemoteProtocol.capabilities.contains(RemoteProtocol.projectsCapability))
         #expect(RemoteProtocol.projectTrustCapability == "projects.trust.v1")
         #expect(RemoteProtocol.nativeThreadCapability == "native.thread.v1")
         #expect(RemoteProtocol.nativeThreadV2Capability == "native.thread.v2")

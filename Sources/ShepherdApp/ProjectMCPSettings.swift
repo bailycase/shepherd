@@ -40,7 +40,7 @@ struct ProjectMCPSettings: View {
                     Task { await model.navigate(.file(file)) }
                 }.buttonStyle(.nw(.secondary)).disabled(model.fileLoading || model.saving)
             }
-            if model.selectedFile?.path == ".pi/mcp.json" {
+            if model.mcp.native {
                 VStack(alignment: .leading, spacing: NW.Space.m) {
                     Text(model.mcpTrustTitle).font(.nw(.ui, weight: .semibold)).foregroundStyle(Color.nw.textPrimary)
                     Text(model.mcpTrustExplanation).font(.nw(.caption)).foregroundStyle(Color.nw.textSecondary)
@@ -66,7 +66,7 @@ struct ProjectMCPSettings: View {
                 .scrollIndicators(.hidden)
             }
             Text(model.mcp.native
-                 ? "Only trusted projects load .pi/mcp.json. Sign-in credentials stay on the project's host; live status belongs to its threads."
+                 ? "Only trusted projects load \(model.selectedFile?.path ?? ".shepherd/mcp.json"). Sign-in credentials stay on the project's host; live status belongs to its threads."
                  : "This file is used when Also use a repo’s .mcp.json is on in MCP settings. Its tools use Search. Sign-in credentials stay on the project's host.")
                 .font(.nwSans(AppLayout.mcpNoteSize)).foregroundStyle(Color.nw.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)

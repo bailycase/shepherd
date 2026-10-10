@@ -21,9 +21,9 @@ struct SubprojectListingTests {
         let landing = scratch.dir.appendingPathComponent("acme-landing").resolvingSymlinksInPath()
         for folder in [web, admin, landing] { try fm.createDirectory(at: folder, withIntermediateDirectories: true) }
         func mcp(_ folder: URL, _ names: [String]) throws {
-            try fm.createDirectory(at: folder.appendingPathComponent(".pi"), withIntermediateDirectories: true)
+            try fm.createDirectory(at: folder.appendingPathComponent(".shepherd"), withIntermediateDirectories: true)
             let servers = Dictionary(uniqueKeysWithValues: names.map { ($0, ["command": "true"]) })
-            try JSONSerialization.data(withJSONObject: ["mcpServers": servers]).write(to: folder.appendingPathComponent(".pi/mcp.json"))
+            try JSONSerialization.data(withJSONObject: ["mcpServers": servers]).write(to: folder.appendingPathComponent(".shepherd/mcp.json"))
         }
         try mcp(acme, ["docs", "shared"])
         try mcp(web, ["docs", "local"])

@@ -15,8 +15,8 @@ struct ProjectRenamePreviewTests {
         let b = Space(name: "Platform B", path: world.local.dir.appendingPathComponent("b").path)
         let child = Space(name: "docs", path: a.path + "/docs", parentID: b.id, parentIsExplicit: true)
         for space in [a, b, child] { try FileManager.default.createDirectory(atPath: space.path, withIntermediateDirectories: true) }
-        try FileManager.default.createDirectory(atPath: a.path + "/.pi", withIntermediateDirectories: true)
-        try Data(#"{"mcpServers":{"docs":{"command":"true"}}}"#.utf8).write(to: URL(fileURLWithPath: a.path + "/.pi/mcp.json"))
+        try FileManager.default.createDirectory(atPath: a.path + "/.shepherd", withIntermediateDirectories: true)
+        try Data(#"{"mcpServers":{"docs":{"command":"true"}}}"#.utf8).write(to: URL(fileURLWithPath: a.path + "/.shepherd/mcp.json"))
         try await world.local.server.putState(ShepherdState(spaces: [a, b, child]))
         world.vm.adopt(world.local.server.state)
         await world.vm.projects.load(world.vm.projectsSources, force: true)

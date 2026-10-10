@@ -745,7 +745,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         guard !request.requiresMCP || capabilities.contains(RemoteProtocol.projectMCPCapability) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to sign in to project MCP servers.")
         }
-        guard capabilities.contains(RemoteProtocol.projectsCapability) else {
+        guard capabilities.contains(RemoteProtocol.projectsV2Capability) || capabilities.contains(RemoteProtocol.projectsCapability) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to edit its projects from here.")
         }
         guard !request.requiresDetails || capabilities.contains(RemoteProtocol.projectDetailsCapability) else {

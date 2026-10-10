@@ -166,7 +166,8 @@ struct ThreadCompletionMatrixTests {
         }
         let state = deck.reading
         let prefix = "\(boundary.rawValue)-\(native ? "anchored" : "scrolling")"
-        print("BOUNDARY \(prefix): rows=\(deck.store.rows.count), targets=\(deck.tailGuard.visible), following=\(deck.tailGuard.following), compositorInk=\(ink), \(String(describing: state))")
+        let guardState = "rowsInView=\(deck.tailGuard.rowsInView), attempts=\(deck.tailGuard.attempts), repairing=\(deck.tailGuard.repairing), rowIDs=\(deck.tailGuard.rowIDs.count)"
+        print("BOUNDARY \(prefix): rows=\(deck.store.rows.count), targets=\(deck.tailGuard.visible), following=\(deck.tailGuard.following), \(guardState), compositorInk=\(ink), \(String(describing: state))")
         if boundary == .scrolledReplyCollapses {
             // Reuse this exact compositor image; evidence must not force a redraw or move the reader.
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent("shepherd-completion-repro")
@@ -179,11 +180,12 @@ struct ThreadCompletionMatrixTests {
             try report.write(to: path.appendingPathExtension("trace.txt"), atomically: true, encoding: .utf8)
             print("COLLAPSE EVIDENCE: \(path.path).{png,json,trace.txt}")
         }
+
         guard !deck.store.rows.isEmpty, ink > 120 else {
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent("shepherd-completion-matrix")
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             try #require(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])).write(to: directory.appendingPathComponent(prefix + ".png"))
-            Issue.record("Blank completed transcript: \(prefix), \(state). See \(directory.path)")
+            Issue.record("Blank completed transcript: \(prefix), \(guardState), targets=\(deck.tailGuard.visible), \(state). See \(directory.path)")
             return
         }
     }

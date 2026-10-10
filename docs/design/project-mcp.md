@@ -39,7 +39,9 @@ Settings page when search is empty.
   cover 22 cases in light and dark at text scales 1.0 and 1.3. The sign-in requirement and control checklist
   are in [ProjectMCPSignIn](boards/ProjectMCPSignIn.md).
 - Structured edits preserve unknown JSON keys and the existing project's format. Native
-  `.pi/mcp.json` uses `enabled`, `exposure`, `timeout` and `oauth`; shared `.mcp.json` uses
+  `.shepherd/mcp.json` (or `.pi/mcp.json` inventoried by an older remote host) uses `enabled`,
+  `exposure`, `timeout` and `oauth`. Both native paths keep the approval card and use the selected
+  file path in the existing trust footnote; this does not change local discovery. Shared `.mcp.json` uses
   `disabled` and its existing deferred-tool behavior. Do not silently write global-only
   `shepherd` options or Keychain references into either file. Preserve fractional timeouts and
   values above 300 seconds through unrelated edits.

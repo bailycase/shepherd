@@ -45,7 +45,7 @@ extension ProjectsModel {
 
     func approveMCPProject(_ expected: ProjectsRow) async -> Bool {
         guard selected?.id == expected.id, selected?.host.endpointID == expected.host.endpointID, mcpEditable, !dirty, !mcpTrustSaving, let selected, selected.host.supportsProjectTrust,
-              let file = selectedFile, file.path == ".pi/mcp.json" else { return false }
+              let file = selectedFile, mcp.native else { return false }
         mcpTrustRequestID = UUID(); mcpTrustChecking = false
         mcpTrustSaving = true
         defer { mcpTrustSaving = false }
