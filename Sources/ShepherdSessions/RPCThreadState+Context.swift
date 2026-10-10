@@ -78,6 +78,7 @@ extension RPCThreadState {
 
     func compactionEnded(reason: NativeCompactionReason, result: RPCCompactionResult?, aborted: Bool, willRetry: Bool, error: String?) {
         compactingRun = nil
+        refreshSkillsIfIdle()
         let index = live.lastIndex { if case .compaction = $0.kind { true } else { false } }
         if let result, let summary = result.summary {
             compactionNotes.append(CompactionNote(summary: summary, reason: reason, result: result))
