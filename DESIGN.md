@@ -58,6 +58,8 @@ What follows from them:
   pane borrow it (`.nwFloatShadow`) only while they float. No vibrancy, translucency or gradients.
 - **Honest affordances.** Never draw a control that does nothing, a shortcut that isn't wired,
   or sample data in place of real data. Hide what is unsupported, or say why.
+- **Keep the reader's position.** Growth and completion follow the tail only while the reader
+  follows it. A live reply shrinking does not move a detached reader to the tail.
 - **No permission model.** Agent tool calls open no approval UI, including cross-thread calls and
   deletion. Questions retain the answers the asker offered. There is no agent-to-agent permission
   row in Settings, and legacy permission choices have no effect.
@@ -216,6 +218,8 @@ each rule. Add a budget with any new long list.
 - Hidden agents stay out of the visible one's updates (switching is a visibility flip).
 - Paging older thread rows completes pending native layout before measuring its viewport anchor.
 - A cached visible bottom marker never overrides a following thread's measured gap from its tail.
+  Cached current-row IDs require a live, nonhidden native row probe intersecting the Mac viewport;
+  physical placement is not proof of compositor paint.
 - Motion no one sees costs nothing (`nwMotionPaused`). Detail:
   [performance](docs/design/performance.md).
 

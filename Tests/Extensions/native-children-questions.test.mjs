@@ -233,8 +233,17 @@ test("a user's own steer closes the question, and the parent's later answer to i
   const asked = await askingState(child.id);
   const dir = path.dirname(asked.sessionFile), status = () => JSON.parse(fs.readFileSync(path.join(dir, "status.json")));
   // The inspector's Steer (and an older client's Answer) is a message to the child, still accepted.
-  fs.writeFileSync(path.join(dir, "control", "steer-requests", "steer.json"), JSON.stringify({ message: "Use the old one" }));
-  await until(() => status().controlRequestID === "steer" && status().controlNotice === "reply accepted or queued");
+  const request = path.join(dir, "control", "steer-requests", "steer.json");
+  fs.writeFileSync(request, JSON.stringify({ message: "Use the old one" }));
+  try {
+    await until(() => status().controlRequestID === "steer" && status().controlNotice === "reply accepted or queued");
+  } catch (error) {
+    const last = status();
+    console.error("settled steer timeout", JSON.stringify({ state: last.state, needsReply: last.needsReply,
+      questionUnchanged: last.questionID === asked.questionID, requestPresent: fs.existsSync(request),
+      requestMatched: last.controlRequestID === "steer", noticeMatched: last.controlNotice === "reply accepted or queued" }));
+    throw error;
+  }
   const done = await askingState(child.id);
   assert.match(done.output, /reply:Use the old one/);
   assert.equal(done.needsReply, false);

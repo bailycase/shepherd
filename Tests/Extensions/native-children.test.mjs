@@ -680,15 +680,29 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, async reporting, r
     assert(fs.readFileSync(firstFile, "utf8").includes("fleet answer"));
     const askDir = path.dirname(asked.sessionFile), askStatus = () => JSON.parse(fs.readFileSync(path.join(askDir, "status.json")));
     fs.writeFileSync(path.join(askDir, "control", "steer-requests", "answer.json"), JSON.stringify({ message: "inspector answer" }));
-    await until(() => askStatus().controlRequestID === "answer" && askStatus().controlNotice === "reply accepted or queued");
+    try {
+      await until(() => askStatus().controlRequestID === "answer" && askStatus().controlNotice === "reply accepted or queued");
+    } catch (error) {
+      const { state, controlRequestID, controlNotice } = askStatus();
+      console.error(JSON.stringify({ phase: "first-inspector-answer", state, controlRequestID, controlNotice,
+        requests: fs.readdirSync(path.join(askDir, "control", "steer-requests")), activeTicks: ticks.active.size }));
+      throw error;
+    }
     await h.settled(ask.id);
     assert(fs.readFileSync(asked.sessionFile, "utf8").includes("inspector answer"));
     assert.equal((await h.call("result", {id: ask.id})).needsReply, false);
     // Resume saves running state before Pi acknowledges the new prompt.
     fs.writeFileSync(path.join(askDir, "control", "steer-requests", "second-answer.json"), JSON.stringify({ message: "SLOW second inspector answer" }));
-    await until(() => askStatus().state === "running");
-    assert.equal(askStatus().controlRequestID, "answer", "launch must not publish the new request ID with the previous acceptance");
-    await until(() => askStatus().controlRequestID === "second-answer" && askStatus().controlNotice === "reply accepted or queued");
+    try {
+      await until(() => askStatus().state === "running");
+      assert.equal(askStatus().controlRequestID, "answer", "launch must not publish the new request ID with the previous acceptance");
+      await until(() => askStatus().controlRequestID === "second-answer" && askStatus().controlNotice === "reply accepted or queued");
+    } catch (error) {
+      const { state, controlRequestID, controlNotice } = askStatus();
+      console.error(JSON.stringify({ phase: "second-inspector-answer", state, controlRequestID, controlNotice,
+        requests: fs.readdirSync(path.join(askDir, "control", "steer-requests")) }));
+      throw error;
+    }
     await h.settled(ask.id);
     assert(fs.readFileSync(asked.sessionFile, "utf8").includes("second inspector answer"));
     // What the user sent (a card, the inspector, the fleet view) is recorded beside the session;

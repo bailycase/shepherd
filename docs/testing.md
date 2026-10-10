@@ -91,10 +91,29 @@ stores crashed macOS 26's bundle-less test runner; the bundled app still uses pe
   wait for the final text in WindowServer pixels without forcing layout; the guard's multi-step
   recovery is not guaranteed to finish in a fixed one-second delay. The real-workspace completion
   probe saves its last polled image on success or timeout, so failure evidence is the pixels that
-  failed the paint condition. Failed Swift CI runs include these completion PNGs and the
-  matrix's blank-transcript capture alongside the log in the seven-day `ci-swift-test-log` artifact; the
-  matrix's `BOUNDARY` line and failure carry the tail guard's recovery state (`rowsInView`, `attempts`, `repairing`). Turn-navigation probes wait
-  for the viewport to land above the bottom band, not merely for the navigation intent to detach
+  failed the paint condition. Failed Swift CI runs include these completion PNGs and the matrix's
+  blank-transcript captures beside the
+  complete log in the seven-day `ci-swift-test-log` artifact. Each workspace image also has
+  passive JSON evidence for the last OCR result and native scroll geometry. Capturing it does
+  not force layout or change the paint assertion. The completion matrix's `scrolledReplyCollapses`
+  case retains its exact compositor image, passive pre-replacement, post-refresh and final
+  native geometry/row/anchor snapshots, and `ScrollTrace` in that same artifact directory,
+  in both native modes. It does not materialize rows, move the reader or alter recovery time.
+  The remote-browser reconnect scenario emits generic monotonic markers across fixture
+  startup, handshake/workspace readiness, web-listener states, browser-store creation,
+  ownership, reconnect, extension request/result and cleanup. Other fixture users keep the
+  optional diagnostics off. Markers contain no host, token, URL or response values. These
+  captures diagnose hosted failures; they are not rendering or cancellation fixes.
+  Jump-opening and standalone completion failures also record native text-field frames in the
+  clip view, ancestor opacity/hidden state and logical visible-row IDs. Records omit text and
+  inspect the existing view tree without layout, scrolling or AppKit setters. Native field detail
+  is capped at 512 records with 24 ancestors each; traversal stops at 4,096 views and reports
+  whether it reached that bound. Document and hosting-root field captures remain separate.
+  Fresh-process Jump probes retain the original giant-history independent and sequential tests,
+  then vary one input at a time: accessibility activation timing, width, height or content mix.
+  Every comparison checks painted content
+  and the same real press action. Passing comparison cases do not replace original failures.
+  Turn-navigation probes wait for the viewport to land above the bottom band, not merely for the navigation intent to detach
   following while its first animated frames are still at the tail. The off-screen scroll harness
   declares wheel intent through the same `ThreadInput.readerScrolled(upward:)` method as the native
   monitor before moving the clip view. A clip-view movement without that signal is layout, not
@@ -273,7 +292,13 @@ pointing at a Pi package with its modular `dist/index.js` and dependencies. The 
 now provides those too. Nothing looks pi up on PATH. They isolate `HOME` and use a local fake
 provider. `test_pi_engine_sdk.py` checks SDK imports/session creation against the staged engine
 in CI and the signed app during release. The native child extension tests exercise Shepherd-owned
-children and workflows with a loopback provider. See [pi-engine.md](pi-engine.md).
+children and workflows with a loopback provider. CI caps Node file workers at two so real-pi
+fixtures do not start one lane per available CPU. Every extension file still runs.
+The session publication regression delays stat work,
+then creates and atomically replaces its snapshot without a readiness sleep. Both updates must
+publish within the same five-second deadline. Startup checks stop after 30 checks or 30 seconds.
+Tests hit both bounds and verify ordinary file-change handling continues afterward, alongside
+restart replacement, idle coalescing and shutdown cleanup. See [pi-engine.md](pi-engine.md).
 `native-children.smoke.mjs` is an opt-in real-model smoke (`PI_SMOKE_MODEL`).
 `Tests/ShepherdIOSChecks` holds the iOS client's scripts ([docs/ios/VALIDATION.md](ios/VALIDATION.md)).
 
@@ -494,9 +519,12 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
   socket and server test together. A full parallel self-hosted run timed out unrelated tests
   and aborted after 51 seconds. The app suites also retain `.mainActorExclusive`. There is no
   retry: a test that fails is red, and a flaky test is a bug to fix in the test. The full
-  `swift test` log is uploaded only when the job fails (`ci-swift-test-log`); the step prints
-  the last 20 lines on success or 120 on failure. Swift's exit status decides the result,
-  never sample failure text printed by tests of the app's log reader. Failed UI tests report
+  `swift test` stdout and stderr stream live through `tee` to `$RUNNER_TEMP/swift-test.log`;
+  `pipefail` preserves native failures (and fails if the log cannot be written). The full
+  native log is uploaded on success or failure (`ci-swift-test-log`), retained for seven days.
+  Headers report the restored cache's matched key, native test IDs listed before filtering,
+  flags and validated selection. Swift's exit status decides the result, never sample failure
+  text printed by tests of the app's log reader. Failed UI tests report
   settle call sites and RGB-change bounds, clipboard selection and a fresh named-board control,
   terminal marker coordinates, paging geometry and hidden-spinner state. They retain their
   assertions and deadlines, and log no raw terminal output or user clipboard contents.
@@ -566,8 +594,28 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
   `ShepherdProtocol`) compiled against the old one; the action removes `swift-version-*.txt`,
   an input of every compile command, before each build so every target's driver runs and
   recompiles what any module it loaded changed (seconds when nothing did). Hosted runners start
-  empty and restore the branch's newest `.build` from the Actions cache instead, keyed on the
-  toolchain and `Package.resolved`; only pushes save.
+  empty and restore `.build` from the Actions cache instead, keyed on the OS, toolchain,
+  `Package.resolved` and commit, with toolchain/lock and toolchain prefix fallbacks. After a
+  successful build, hosted PR merge-ref runs and trusted branch pushes/manual dispatches save
+  on an exact-key miss; scheduled and unsupported events do not save. Restore is optional:
+  a missing or evicted cache leaves a normal cold build, never a test bypass.
+  GitHub isolates PR saves to `refs/pull/<number>/merge`: a same-head rerun or changed head of
+  that same PR can reuse them, but its base and sibling PRs cannot. New PRs into `nightly`
+  need a visible base-branch cache, seeded with the existing manual UI diagnostics below;
+  reseed when the toolchain or resolved lock changes. This does not enable tests on Nightly push.
+  Keep caches credential-free: retain checkout's `persist-credentials: false` and public,
+  lock-pinned dependencies; never add repository `.git`, user homes, auth or global Git config
+  paths. After each successful hosted build (including cache hits), an inline stdlib Python
+  guard checks `.build`'s `config`/`config.worktree` files, covering bare dependency repositories
+  and checkout `.git` metadata before cache save. Credential/helper, extra-header and cookie
+  directives (even empty), credentialed HTTP URLs, token query parameters and Git includes
+  fail closed. Unreadable files or metadata pointers outside `.build` also fail. Ordinary plugin
+  source symlinks remain valid; submodule Git pointers must name inspected metadata inside
+  the build root without external symlinks. Logs contain only a generic reason or checked-file count,
+  never config values or paths. `test_ci_workflow.py` executes that actual guard against scratch
+  public and fake-credential configs. This is local Git-metadata evidence only, not proof that
+  a whole hosted archive is credential-free; hosted runtime validation and a private archive
+  audit remain necessary before claiming a verified warm baseline.
 - **Nightly publication** runs no test suites on push. Its release workflow skips the Python
   test preflight but keeps signing, notarization and artifact verification. Required PR checks
   still apply before merging. With self-hosted builds disabled, Nightly builds on GitHub
@@ -578,6 +626,11 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
   that repetition on CI too. No thread suite is excluded because it contains known issues.
   `ThreadTailGuardTests` keeps a cached bottom marker visible with an 834pt measured gap and
   requires the final landing. Current-row visibility alone cannot suppress bounded repair.
+  Its native-placement cases keep current-row and bottom IDs cached with zero end-distance in an
+  off-screen AppKit window: hidden, hidden-ancestor, offviewport, dead and missing markers must
+  exhaust eight attempts and rebuild once. A physically visible marker ends repair without a
+  rebuild; removed IDs lose their registry entries. Guard-only cases still use independent target
+  inputs. These are placement regressions, not proof of compositor paint or hosted recovery.
   The child-command routing test retires its success-phase async-let before starting the
   failure phase, keeping the same assertions without overlapping cleanup allocations.
   The paging regression checks both success and failure without moving the original visible
@@ -590,7 +643,18 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
   the same by hand (`-f clean=true` builds from scratch).
   `gh workflow run ci.yml --ref <branch> -f diagnostics=ui` collects focused failures in the
   self-hosted runner context only when explicitly enabled, otherwise on GitHub, without
-  rerunning all suites or changing PR coverage.
+  rerunning all suites or changing PR coverage. Its fixed, native-ID-validated selection includes
+  menus, code blocks, pane controls, paging, idle checks, both completion suites, Jump controls,
+  tail-guard placement cases and remote browser drive. Diagnostics preserve every original assertion.
+  With self-hosted disabled, a trusted
+  `gh workflow run ci.yml --ref nightly -f diagnostics=ui` also seeds Nightly's hosted cache:
+  it still builds all test products and runs the existing validated UI diagnostics, reporting
+  only `UI diagnostics`, never the required `CI` check. There is no new warmup job or mode.
+  The warm five-minute goal remains unmet: the reported PR #240 cold baseline was an 838-second
+  SwiftPM build including dependency fetch, followed by about 35 minutes for 5,527 serial tests.
+  Caching addresses build reuse, not that test duration. Complete hosted success/failure logs
+  must profile the remaining cost before a future resource-isolated static-partition lane;
+  portability and coverage need proof first. No matrix, sharding or test exclusions are added.
 - **Release rules** run on `ubuntu-latest` (stdlib Python): the release workflow's, the CI
   workflow's and plan's, the docs' and the embedded extensions'. **Extension tests** run there
   too, with Node 24 and the modular pi package version from `scripts/pi-engine-pin.json`,

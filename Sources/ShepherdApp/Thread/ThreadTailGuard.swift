@@ -19,10 +19,11 @@ import SwiftUI
 ///   nothing until the reader scrolls hundreds of points up, which a thread that keeps following
 ///   will not let them do.
 ///
-/// Neither shows in the scroll view's numbers. SwiftUI says which rows are in view, though
-/// (`onScrollTargetVisibilityChange`), and while the thread follows its tail the bottom marker is
-/// one of them. That clear marker alone is not content: a thread with no visible row is blank even
-/// when its marker is in view. This waits for things to be quiet, lands on the tail again, and when
+/// Neither shows in the scroll view's numbers. SwiftUI says which rows are in view
+/// (`onScrollTargetVisibilityChange`), but can cache both current rows and the bottom marker after
+/// their native views leave the viewport. The thread therefore also requires a nonhidden native
+/// row marker intersecting its clip view. Neither a cached ID nor the clear bottom marker alone
+/// proves content. This waits for things to be quiet, lands on the tail again, and when
 /// that was not enough goes the way a reader would: back toward the rows if not
 /// even one is in view (a viewport, two, four… at a time), then down a page at a time until the
 /// marker is realized, which is where the stack's guesses meet its rows.
@@ -47,7 +48,21 @@ final class ThreadTailGuard {
     var enabled = true
     /// What the thread's last render knew, read when a check comes due.
     var rowIDs: Set<String> = [] {
-        didSet { if rowIDs != oldValue { suspect() } }
+        didSet {
+            guard rowIDs != oldValue else { return }
+            for id in oldValue.subtracting(rowIDs) { rowMarkers.removeObject(forKey: id as NSString) }
+            suspect()
+        }
+    }
+    /// ThreadView supplies native markers; guard-only rigs retain their independent target inputs.
+    var requiresNativeRows = false
+    private let rowMarkers = NSMapTable<NSString, RowMarker>(keyOptions: .strongMemory, valueOptions: .weakMemory)
+
+    func registerRow(_ marker: RowMarker, id: String) {
+        marker.rowID = id
+        guard rowIDs.contains(id), rowMarkers.object(forKey: id as NSString) !== marker else { return }
+        rowMarkers.setObject(marker, forKey: id as NSString)
+        suspect()
     }
     var active = false {
         didSet { if active && !oldValue { suspect() } }
@@ -123,9 +138,21 @@ final class ThreadTailGuard {
     private var hasRows: Bool { !rowIDs.isEmpty }
     // A cached lazy-stack marker cannot override geometry that puts the answer below view.
     private var tailInView: Bool { visible.contains(bottomID) && distance <= Self.band }
-    /// Completion can evict the live turn's prompt from the history page and replace its reply ID.
-    /// A cached target for that old reply is no more evidence of content than the clear marker.
-    var rowsInView: Bool { !rowIDs.isDisjoint(with: visible) }
+    /// Cached IDs, including current rows, need physical placement evidence in the production view.
+    /// A weak/dead/missing marker cannot prove content, nor can one in another or hidden transcript.
+    var rowsInView: Bool {
+        guard requiresNativeRows else { return !rowIDs.isDisjoint(with: visible) }
+        guard let scroll = scrollView() else { return false }
+        let clip = scroll.contentView
+        return visible.contains { id in
+            guard rowIDs.contains(id), let marker = rowMarkers.object(forKey: id as NSString),
+                  marker.rowID == id, marker.window != nil, marker.enclosingScrollView === scroll,
+                  !marker.isHiddenOrHasHiddenAncestor, !marker.visibleRect.isEmpty else { return false }
+            // A non-clipping NSView can report a visibleRect outside its own bounds.
+            let visible = marker.bounds.intersection(marker.visibleRect)
+            return !visible.isEmpty && marker.convert(visible, to: clip).intersects(clip.bounds)
+        }
+    }
 
     /// No content in view, the tail missing from it while the thread follows it from afar, or a
     /// thread that was just repaired resting short of its end.
@@ -250,6 +277,27 @@ final class ThreadTailGuard {
             if direction > 0, !rowsInView { return }
             if doubling { page *= 2 }
         }
+    }
+
+    /// Passive placement evidence for one lazy row, without retaining it or adding a scroll target.
+    struct RowProbe: NSViewRepresentable {
+        let guardian: ThreadTailGuard
+        let rowID: String
+
+        func makeNSView(context: Context) -> RowMarker {
+            let marker = RowMarker()
+            marker.setAccessibilityElement(false)
+            return marker
+        }
+
+        func updateNSView(_ view: RowMarker, context: Context) {
+            guardian.registerRow(view, id: rowID)
+        }
+    }
+
+    final class RowMarker: NSView {
+        var rowID = ""
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
     }
 }
 

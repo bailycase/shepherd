@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import { withPi, script, until } from "./fixtures/pi-rpc-harness.mjs";
 
@@ -21,6 +21,7 @@ const tool = (code) => ({ tool: { name: "codemode", arguments: { code } } });
 const require = createRequire(path.join(process.env.PI_PACKAGE_DIR, "package.json"));
 const { createJiti } = require("jiti");
 const sdk = ["dist/index.js", "dist/bundle/index.js"].map((p) => path.join(process.env.PI_PACKAGE_DIR, p)).find(fs.existsSync);
+const { CONFIG_DIR_NAME } = await import(pathToFileURL(sdk));
 const jiti = createJiti(import.meta.url, { alias: { "@earendil-works/pi-coding-agent": sdk } });
 const { boundedCodemodeSource } = await jiti.import(status);
 
@@ -107,8 +108,8 @@ for (const [global, project, trusted, expected] of [
       settings: setting(global), args: [...hosted.args, trusted ? "--approve" : "--no-approve"],
       project: (_, work) => {
         if (project === undefined) return;
-        fs.mkdirSync(path.join(work, ".pi"));
-        fs.writeFileSync(path.join(work, ".pi/settings.json"), JSON.stringify(setting(project)));
+        fs.mkdirSync(path.join(work, CONFIG_DIR_NAME));
+        fs.writeFileSync(path.join(work, CONFIG_DIR_NAME, "settings.json"), JSON.stringify(setting(project)));
       },
     }, async (pi) => {
       const sent = await pi.promptSent();
@@ -122,7 +123,7 @@ for (const enabled of [false, true]) {
   test(`a manually enabled bare built-in cannot bypass the hosted setting or model restrictions: ${enabled}`, { timeout: 60000 }, async (t) => {
     await withPi(t, {
       ...hosted, args: [...hosted.args, "--approve"], settings: setting(enabled),
-      files: (_, work) => ({[path.join(work, ".pi/settings.json")]: JSON.stringify({extensions: ["+builtin:codemode"], defaultTools: ["+codemode"]})}),
+      files: (_, work) => ({[path.join(work, CONFIG_DIR_NAME, "settings.json")]: JSON.stringify({extensions: ["+builtin:codemode"], defaultTools: ["+codemode"]})}),
       onRequest: script([tool('return await models.list({})')]),
     }, async (pi) => {
       const turn = await pi.prompt();

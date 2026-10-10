@@ -27,8 +27,9 @@ runs:
         echo "$toolchain"
         echo "version=$(shasum -a 256 <<<"$toolchain" | cut -c1-12)" >> "$GITHUB_OUTPUT"
 
-    # Hosted runners start empty. A pull request may restore its base branch's cache, but
-    # never saves one. The self-hosted checkout uses its existing .build instead.
+    # Hosted PR caches stay in their merge ref: later heads of that PR can reuse them,
+    # not its base or siblings. A trusted branch dispatch can seed nightly for new PRs.
+    # The self-hosted checkout uses its existing .build instead.
     - name: Restore dependency and build caches
       id: cache
       if: runner.environment == 'github-hosted'
@@ -39,6 +40,13 @@ runs:
         restore-keys: |
           spm-${{ runner.os }}-${{ steps.swift.outputs.version }}-${{ hashFiles('Package.resolved') }}-
           spm-${{ runner.os }}-${{ steps.swift.outputs.version }}-
+
+    - name: Report the restored build cache
+      shell: bash
+      env:
+        MATCHED_KEY: ${{ steps.cache.outputs.cache-matched-key }}
+      run: |
+        printf 'Swift build cache matched key: %s\n' "${MATCHED_KEY:-none (cold or persistent local build)}"
 
     # Validate after restoring too. Keep dependency checkouts and verified pi downloads when
     # the toolchain changes or clean=true, but never keep products from the old build.
@@ -75,8 +83,76 @@ runs:
           ln -sfn "$PWD/$d/Sparkle.framework" "$d/PackageFrameworks/Sparkle.framework"
         done
 
-    - name: Save the hosted branch build
-      if: runner.environment == 'github-hosted' && github.event_name == 'push' && steps.cache.outputs.cache-hit != 'true'
+    # This checks generated Git metadata, not every byte in the build archive.
+    - name: Guard hosted cache Git metadata
+      if: runner.environment == 'github-hosted'
+      shell: bash
+      run: |
+        python3 - <<'PY'
+        import os
+        from pathlib import Path
+        import re
+        import sys
+        from urllib.parse import unquote
+        def refuse(reason):
+            sys.exit(f"Hosted cache Git metadata rejected: {reason}")
+        root = Path.cwd() / ".build"
+        sensitive = re.compile(
+            r'\[\s*(?:credential|include|includeif)(?:\s|\.|\])'
+            r'|^\s*(?:credential(?:\.[\w.-]+)?|helper|extraheader|cookiefile|savecookies)\s*(?:=|$)'
+            r'|\bauthorization\s*:'
+            r'|https?://[^\s/\"<>]*@'
+            r'|[?&](?:[\w.-]*(?:token|password|passwd|secret|credential|signature)|auth|authorization|api[_-]?key|key|sig)\s*=',
+            re.IGNORECASE | re.MULTILINE,
+        )
+        count = 0
+        try:
+            if root.is_symlink() or not root.is_dir():
+                refuse("invalid build root")
+            def walk_error(error):
+                raise error
+            for directory, dirs, files in os.walk(root, followlinks=False, onerror=walk_error):
+                base = Path(directory)
+                for name in dirs:
+                    path = base / name
+                    relative = path.relative_to(root)
+                    if path.is_symlink() and (".git" in relative.parts or relative.parts[0] == "repositories" or
+                            (relative.parts[0] == "checkouts" and len(relative.parts) <= 2)):
+                        refuse("symlinked dependency metadata")
+                for name in files:
+                    if name not in (".git", "config", "config.worktree"):
+                        continue
+                    path = base / name
+                    if path.is_symlink() or not path.is_file():
+                        refuse("invalid config file")
+                    text = path.read_text(encoding="utf-8")
+                    if name == ".git":
+                        if not text.startswith("gitdir:") or len(text.splitlines()) != 1:
+                            refuse("invalid dependency pointer")
+                        target = Path(os.path.abspath(base / text[7:].strip()))
+                        relative = target.relative_to(root)
+                        current = root
+                        for part in relative.parts:
+                            current /= part
+                            if current.is_symlink():
+                                refuse("symlinked dependency metadata")
+                        config = target / "config"
+                        if not target.is_dir() or config.is_symlink() or not config.is_file():
+                            refuse("invalid dependency pointer")
+                        continue
+                    if sensitive.search(unquote(re.sub(r'\\\r?\n', '', text))):
+                        refuse("credential directive, URL or external include")
+                    count += 1
+        except (OSError, UnicodeError, ValueError):
+            refuse("metadata could not be inspected")
+        print(f"Hosted cache Git metadata checked: {count} config files")
+        PY
+
+    - name: Save the hosted build
+      if: >-
+        runner.environment == 'github-hosted' && steps.cache.outputs.cache-hit != 'true' &&
+        ((github.event_name == 'pull_request' && github.ref == format('refs/pull/{0}/merge', github.event.pull_request.number)) ||
+         ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref_type == 'branch'))
       uses: actions/cache/save@v4
       with:
         path: .build
