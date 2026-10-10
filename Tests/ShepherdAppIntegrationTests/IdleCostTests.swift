@@ -125,7 +125,24 @@ struct IdleCostTests {
         #expect(frames == 0, "\(frames) clock frames")
         let shimmers = Self.shimmers(in: window.host)
         #expect(shimmers.all >= agents.count - 1 && shimmers.moving == 0, "\(shimmers)")
-        #expect(Self.spinners(in: window.host).all == 0, "nothing in a thread spins")
+        let spinners = Self.spinners(in: window.host)
+        if spinners.all != 0 {
+            let states = agents.enumerated().map { index, agent in
+                let store = vm.threadStores.store(for: agent.agent.id)
+                return "\(index):ready=\(store.ready),starting=\(store.starting),busy=\(store.busy),running=\(store.running)"
+            }
+            let ancestors = Self.views(NWSpinnerLayerView.self, in: window.host).map { spinner in
+                var view: NSView? = spinner
+                var names: [String] = []
+                while let current = view, names.count < 6 {
+                    names.append(String(describing: type(of: current)))
+                    view = current.superview
+                }
+                return names
+            }
+            print("Hidden-layout spinners: count/turning=\(spinners), stores=\(states), ancestor classes=\(ancestors)")
+        }
+        #expect(spinners.all == 0, "nothing in a thread spins")
     }
 
     /// A paused shimmer moves again as its layout comes back on screen. Between tools the

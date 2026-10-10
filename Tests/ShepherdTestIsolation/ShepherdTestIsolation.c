@@ -15,6 +15,8 @@
 //             .zshenv and .zlogin put bin/ back first: from a minimal environment (Xcode, launchd)
 //             nix-darwin's /etc/zshenv replaces PATH, and macOS's path_helper in /etc/zprofile
 //             moves the system directories ahead of it, either of which would find the real tools.
+//             Normal interactive tests skip later global startup files: machine completion
+//             prompts must not consume fixture input. Noninteractive login shells retain them.
 //             They also hold decoys, as a user's own startup files might: .zshenv exports
 //             PI_CODING_AGENT_DIR, PI_PACKAGE_DIR, NODE_OPTIONS, PI_OFFLINE=0, JITI_ALIAS and
 //             PI_EXPERIMENTAL pointing into pi-decoy/, and .zlogin moves a shell that starts
@@ -199,7 +201,9 @@ static void shepherd_test_isolation_install(void) {
                          "export JITI_ALIAS='{\"shepherd-decoy\":\"%s\"}'\n"
                          "export PI_EXPERIMENTAL=1\n",
                          decoyAgent, decoyPackage, decoy, decoy) >= sizeof decoys) fail("path");
-    if ((size_t)snprintf(zshenv, sizeof zshenv, "%s%s", startup, decoys) >= sizeof zshenv) fail("path");
+    if ((size_t)snprintf(zshenv, sizeof zshenv,
+                         "%sif [[ -o interactive ]]; then unsetopt GLOBAL_RCS; fi\n%s",
+                         startup, decoys) >= sizeof zshenv) fail("path");
     // Only a shell that starts Shepherd's pi moves: the git and gh helpers that run in a login
     // shell keep the folder they were started in.
     if ((size_t)snprintf(zlogin, sizeof zlogin, "%sif [[ $ZSH_EXECUTION_STRING == */pi/bin/pi* ]]; then cd /; fi\n", startup)

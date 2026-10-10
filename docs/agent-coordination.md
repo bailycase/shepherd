@@ -347,6 +347,6 @@ PI_PACKAGE_DIR="$(npm root -g)/@earendil-works/pi-coding-agent" \
 swift test --filter 'ExtensionMessageTests|ExtensionReplyTests|ExtensionSocketTests' # wire shapes and peer routing
 swift test --filter AgentCoordinationTests                   # server relaying and tokens
 swift test --filter 'AgentPeerDeletionTests|ReviewFlowTests' # direct deletion, checkout preservation and review_diff
-swift test --filter 'AgentApprovalRulesTests|AgentApprovalTests'  # the gate: every setting, every gated call, every way a wait ends
+swift test --filter 'AgentApprovalRulesTests|AgentApprovalTests' # internal policy, immediate calls, validation and cancellation
 swift test --filter 'AgentApprovalTests|PeerApprovalFlowTests|AgentPeerDeletionTests' # access, no approval sheets, checkout preservation
 ```

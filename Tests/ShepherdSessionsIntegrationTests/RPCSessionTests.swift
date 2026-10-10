@@ -142,6 +142,24 @@ struct RPCSessionTests {
         #expect(text == "Hello line\u{2028}sep world")
     }
 
+    @Test func historyDecodeStillProgressesAfterSignInBridgesAreReleased() async throws {
+        for _ in 0..<64 {
+            var bridge: PiSignInBridge? = PiSignInBridge(line: PiLaunch.Line(
+                script: #"printf '{"type":"ready"}\n'; IFS= read -r reply"#))
+            let replies = bridge!.replies
+            var iterator = replies.makeAsyncIterator()
+            #expect(await iterator.next() == .ready)
+            bridge?.close()
+            bridge = nil
+        }
+        let h = try Harness(env: ["STUB_PI_HISTORY_BYTES": String(2 * 1024 * 1024)])
+        defer { h.stop() }
+        let response = await h.request(.getMessages)
+        let value = try response.get()
+        #expect(value.success)
+        #expect(value.messages?.count == 12)
+    }
+
     /// A record long enough to decode off the queue keeps its place in line: what pi wrote after
     /// it waits, and the session handles every record in the order pi wrote them.
     @Test func recordsAfterALargeResponseAreHandledAfterItInOrder() async throws {

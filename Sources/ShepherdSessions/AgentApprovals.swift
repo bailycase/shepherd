@@ -2,8 +2,8 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 
-/// What an agent asked to do to another thread. Settings ▸ Pi ▸ Agent-to-agent messages
-/// controls access, without approval dialogs. Listing threads and waiting on one are not gated.
+/// What an agent asked to do to another thread. Internal server policy controls access,
+/// without approval dialogs or a Settings permission row. Listing and waiting are not gated.
 public enum AgentGatedAction: Hashable, Sendable {
     case send(targetAgentID: AgentID, text: String, delivery: AgentMessageDelivery)
     case steer(targetAgentID: AgentID, text: String)
