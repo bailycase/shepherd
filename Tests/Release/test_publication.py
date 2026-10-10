@@ -65,7 +65,9 @@ with open(os.environ['FAKE_LOG'],'a') as f: f.write(json.dumps(args)+'\\n')
 if args[:2]==['release','list']:
  print('\\n'.join(r['tag'] for r in releases if not r.get('draft')))
 elif args[:2]==['release','view']:
- r=next(r for r in releases if r['tag']==args[2]); assets=[{'name':r.get('asset','Shepherd.dmg')}]
+ r=next(r for r in releases if r['tag']==args[2]); assets=[{'name':r.get('asset','Shepherd.dmg'),
+  'id':r.get('assetID','RA_kwDOFixture1'), 'size':123, 'updatedAt':'2026-10-10T00:00:00Z',
+  'digest':'sha256:'+'a'*64}]
  if 'policy' in r: assets.append({'name':'shepherd-appcast.json'})
  print(json.dumps({'isDraft':r.get('draft',False),'assets':assets}))
 elif args[:2]==['release','download']:
@@ -104,10 +106,20 @@ mkdir -p "$tools/.build/artifacts/Sparkle/bin"
 cp "$FAKE_GENERATOR" "$tools/.build/artifacts/Sparkle/bin/generate_appcast"
 ''')
         generator = self.program("generator", '''#!/usr/bin/env python3
-import sys
+import json, os, sys
 from pathlib import Path
 args=sys.argv[1:]; target=Path(args[args.index('-o')+1]); directory=Path(args[-1])
-items=''.join('<item><title>'+p.read_text()+'</title><sparkle:version>1</sparkle:version><enclosure url="'+p.name+'"/></item>' for p in sorted(directory.glob('*.dmg')))
+with open(os.environ['FAKE_LOG'],'a') as f: f.write(json.dumps(['generate',directory.name])+'\\n')
+if os.environ.get('FAKE_GENERATE_FAIL') == directory.name: sys.exit(23)
+# Sparkle keeps fewer items than input archives; checkpoint full inputs, not emitted items.
+archives=sorted(directory.glob('*.dmg'), reverse=True)[:3]
+prefix=args[args.index('--download-url-prefix')+1]
+deltas=''
+if len(archives)>1:
+ name=('Shepherd Nightly' if directory.name=='shepherd-nightly' else 'Shepherd')+'2-1.delta'
+ (directory/name).write_text('fixture delta')
+ deltas='<sparkle:deltas><enclosure url="'+prefix+name.replace(' ', '%20')+'"/></sparkle:deltas>'
+items=''.join('<item><title>'+p.read_text()+'</title><sparkle:version>1</sparkle:version><enclosure url="'+prefix+p.name+'"/>'+deltas+'</item>' for p in archives)
 target.write_text('<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel>'+items+'</channel></rss>')
 ''')
         self.env["FAKE_GENERATOR"] = str(generator)
@@ -133,6 +145,10 @@ target.write_text('<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespac
         (checkout / "scripts").mkdir()
         for file in ("release.py", "pi_engine.py"):
             shutil.copyfile(ROOT / "scripts" / file, checkout / "scripts" / file)
+        for file in ("App/Info.plist", ".github/workflows/release.yml"):
+            target = checkout / file
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / file, target)
         (checkout / "Package.resolved").write_text(json.dumps({"pins": [self.pin] if pins is None else pins}))
         temp = checkout / "temp"
         temp.mkdir()
@@ -143,6 +159,97 @@ target.write_text('<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespac
 
     def feeds(self):
         return self.git("--git-dir", str(self.remote), "show", "gh-pages:appcast-beta.xml")
+
+    def published_files(self):
+        names = self.git("--git-dir", str(self.remote), "ls-tree", "--name-only", "gh-pages").splitlines()
+        return {name: self.git("--git-dir", str(self.remote), "show", "gh-pages:" + name) for name in names}
+
+    def calls(self):
+        return [json.loads(line) for line in self.log.read_text().splitlines()]
+
+    def test_nightly_changes_preserve_main_feeds_and_skip_their_archives_and_deltas(self):
+        main = [{"tag": "v1.1.0-beta.1"}, {"tag": "v1.0.0"}]
+        night = {"tag": "nightly-202610010001", "asset": "Shepherd-Nightly.dmg"}
+        self.publish([night] + main)
+        before = self.published_files()
+        self.log.write_text("")
+        newer = {**night, "tag": "nightly-202610010002"}
+        self.publish([newer, night] + main)
+        after = self.published_files()
+        for name in ("appcast.xml", "appcast-beta.xml", "appcast-rc.xml", "appcast-nightly.xml"):
+            self.assertEqual(after[name], before[name], name)
+        self.assertEqual([c for c in self.calls() if c[0] == "generate"], [["generate", "shepherd-nightly"]])
+        downloads = [c[2] for c in self.calls() if c[:2] == ["release", "download"]]
+        self.assertEqual(downloads, [newer["tag"], night["tag"]])
+        uploads = [c for c in self.calls() if c[:2] == ["release", "upload"]]
+        self.assertEqual(len(uploads), 1)
+        self.assertEqual(uploads[0][2], newer["tag"])
+        self.assertIn("Shepherd-Nightly2-1.delta", uploads[0][3])
+        self.assertIn(newer["tag"] + "/Shepherd-Nightly2-1.delta", after["appcast-shepherd-nightly.xml"])
+        self.log.write_text("")
+        self.publish([newer, night] + main)
+        self.assertEqual(self.published_files(), after)
+        self.assertFalse(any(c[0] == "generate" or c[:2] in (["release", "download"], ["release", "upload"])
+                             for c in self.calls()))
+
+    def test_unchanged_history_is_skipped_even_when_sparkle_truncates_items(self):
+        releases = [{"tag": f"v1.{n}.0"} for n in range(5, 0, -1)]
+        self.publish(releases)
+        self.assertEqual(self.feeds().count("<item>"), 3)
+        self.log.write_text("")
+        self.publish(releases)
+        self.assertFalse(any(c[0] == "generate" or c[:2] == ["release", "download"] for c in self.calls()))
+
+    def test_coalesced_cross_channel_updates_and_archive_replacements_are_not_skipped(self):
+        releases = [{"tag": "nightly-202610010001", "asset": "Shepherd-Nightly.dmg"}, {"tag": "v1.0.0"}]
+        self.publish(releases)
+        self.log.write_text("")
+        # Trigger remains unrelated; a skipped beta publisher and a replaced stable asset
+        # both need catching up, but unchanged Nightly output does not.
+        self.publish([{"tag": "v1.1.0-beta.1"}, releases[0], {"tag": "v1.0.0", "assetID": "RA_kwDOFixture2"}])
+        self.assertEqual([c for c in self.calls() if c[0] == "generate"],
+                         [["generate", "stable"], ["generate", "beta"]])
+        self.assertIn("v1.1.0-beta.1", self.feeds())
+
+    def test_ineligible_removal_regenerates_empty_feeds_and_malformed_unchanged_policy_fails(self):
+        self.publish([{"tag": "v1.0.0"}])
+        before = self.published_files()
+        for extra in ({"policy": {"eligible": True}}, {"assetID": 1}, {"assetID": ""}, {"assetID": {"unexpected": True}}):
+            self.publish([{"tag": "v1.0.0", **extra}], expected=1)
+            self.assertEqual(self.published_files(), before)
+        self.publish([{"tag": "v1.0.0", "policy": {"version": 1, "tag": "v1.0.0", "eligible": False}}])
+        self.assertNotIn("v1.0.0", self.feeds())
+
+    def test_missing_alias_or_checkpoint_and_edited_feed_are_rebuilt(self):
+        releases = [{"tag": "v1.0.0"}]
+        self.publish(releases)
+        for file, replacement, expected in [
+                ("appcast-rc.xml", None, [["generate", "beta"]]),
+                ("appcast-beta.xml", "not xml", [["generate", "beta"]]),
+                ("appcast-inputs.json", None, [["generate", "stable"], ["generate", "beta"]])]:
+            with self.subTest(file=file):
+                checkout = self.root / ("editor-" + file)
+                self.git("clone", "--branch", "gh-pages", str(self.remote), str(checkout))
+                self.git("config", "user.email", "fixture@example.invalid", cwd=checkout)
+                self.git("config", "user.name", "fixture", cwd=checkout)
+                if replacement is None:
+                    (checkout / file).unlink()
+                else:
+                    (checkout / file).write_text(replacement)
+                self.git("add", file, cwd=checkout)
+                self.git("commit", "-m", "fixture missing or edited output", cwd=checkout)
+                self.git("push", "origin", "HEAD:gh-pages", cwd=checkout)
+                self.log.write_text("")
+                self.publish(releases)
+                self.assertEqual([c for c in self.calls() if c[0] == "generate"], expected)
+                self.assertIn("v1.0.0", self.published_files()["appcast-rc.xml"])
+
+    def test_generation_failure_preserves_all_feeds_and_input_record(self):
+        self.publish([{"tag": "v1.0.0"}])
+        before = self.published_files()
+        self.env['FAKE_GENERATE_FAIL'] = 'beta'
+        self.publish([{"tag": "v1.1.0"}, {"tag": "v1.0.0"}], expected=23)
+        self.assertEqual(self.published_files(), before)
 
     def test_coalesced_publisher_regenerates_all_completed_tagged_releases(self):
         # These are successive owners of the workflow's single publication slot. Waiting
@@ -287,6 +394,8 @@ target.write_text('<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespac
         self.assertIn('needs: [plan, release]', job)
         self.assertIn('group: appcast-publication', job)
         self.assertIn('cancel-in-progress: false', job)
+        self.assertIn('timeout-minutes: 45', job)
+        self.assertIn('gh release list --limit 100 --exclude-drafts', job)
         build = WORKFLOW.split('  release:\n')[1].split('  publish-appcasts:\n')[0]
         self.assertNotIn('appcast-publication', build)
         self.assertNotIn('gh release delete', build)
