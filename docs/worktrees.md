@@ -29,7 +29,8 @@ There are three entry points:
   - **Branch:** generated as `agent/<adjective>-<noun>-<1000–9999>`, for example
     `agent/calm-stone-3831`. Branches made before 2026-09-25 keep their `worktree/` names.
   - **Base:** an editable ref, pre-filled from the resolved base (below), with a note
-    describing where it came from.
+    describing where it came from, and a "Choose…" link that picks from this Mac's branches
+    (`WorktreeBasePicker`, the Changes pane's base picker).
   - **Checkout:** a sibling of the repository, `<parent>/<repo>-<branch with / replaced by ->`.
 
   "Create and open" is disabled until the base resolves. The agent is named after the branch
@@ -38,8 +39,11 @@ There are three entry points:
   target. It adds a Base field, a "Fetch origin before creating" toggle, and a "Resolve base…"
   link. It uses the same base resolution.
 - **The New thread page's New worktree switch**, in the workplace chip's menu, for a local
-  repository or a host that creates worktrees. It has no Base field: the branch is generated and
-  the base resolved per Settings ▸ Worktrees as above, both recorded on the agent. A failure shows
+  repository or a host that creates worktrees. The branch is generated. On this Mac a Base row
+  in the menu picks the start point from the repository's branches (the checked-out one included);
+  until one is picked, and always on a host, the base is resolved per Settings ▸ Worktrees as
+  above. A picked `origin/…` branch is fetched first when Fetch before creating is on
+  (`GitWorktree.fetchPicked`); the pick is used whatever the fetch does. Both are recorded on the agent. A failure shows
   under the composer before any agent exists.
 
 **Import Existing Worktree…** (same context menu) adopts a worktree you already have. You pick

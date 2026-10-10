@@ -127,8 +127,10 @@ selected thread, or the Overview when none is. Other screens push over the detai
   side-pane button, as the Mac (see the departures): Show side pane (`sidebar.right`) opens the
   Changes pane; while the review docks or the subagent inspector shows it is lit (a
   `runningTint` fill, its glyph in `running`) and reads Hide side pane, which closes that pane
-  (`threadSidePaneOpen`). Then Stop (`stop.fill` in `failed`, while pi runs or asks; iPadSteer
-  and iPadQueue draw it) and •••. Subagents is in the ••• menu (while the thread has runs), a
+  (`threadSidePaneOpen`). Then •••, and Stop (`stop.fill` in `failed`) only while pi asks. While pi runs, Stop is the
+  card's corner when the field and attachments are empty, and Send with any input, as on the Mac
+  (the user's decision, 2026-10-10: iPadSteer and iPadQueue's header Stop is the composer's action
+  now). Subagents is in the ••• menu (while the thread has runs), a
   card's Open and the footer's link. The ••• menu: Refresh, Subagents, Show or Hide Terminal
   (the terminal has no header button), Open in new window, and the agent actions (rename, move,
   delete).
@@ -222,7 +224,8 @@ Up next follows iOS (and Composer › Up next); on iPad it is a card above the c
 - **Swipe** a queued row left: Edit (80pt, `bgSelected`, a 17pt `pencil` over "Edit" at 12/500)
   and Delete (80pt, `failed`, white). Long-press: Steer now, Edit, Move to top, Delete. A delete
   leaves an Undo row.
-- **Header while it runs:** "Running · 5m", the side-pane button and Stop (iPadQueue).
+- **Header while it runs:** "Running · 5m" and the side-pane button (iPadQueue). Stop is the
+  composer's corner.
 
 ## Questions (iPadQuestion)
 
