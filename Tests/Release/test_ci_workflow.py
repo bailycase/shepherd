@@ -134,19 +134,6 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertIn("${{ runner.temp }}/swift-test.log", upload)
         self.assertIn("retention-days: 7", upload)
 
-    def test_failed_swift_runs_keep_completion_pixels_with_the_full_log(self):
-        tests = JOBS["tests"]
-        copy, upload = tests.split("- name: Collect completion evidence", 1)[1].split("- name: Upload the log", 1)
-        self.assertIn("if: ${{ failure() }}", copy)
-        self.assertIn('if [ -d "$TMPDIR/shepherd-completion-repro" ]; then', copy)
-        self.assertIn('cp -R "$TMPDIR/shepherd-completion-repro" "$RUNNER_TEMP/"', copy)
-        self.assertNotIn("|| true", copy)
-        self.assertIn("if: ${{ always() }}", upload)
-        self.assertIn("name: ci-swift-test-log", upload)
-        self.assertIn("path: |\n            ${{ runner.temp }}/swift-test.log\n            ${{ runner.temp }}/shepherd-completion-repro", upload)
-        self.assertIn("retention-days: 7", upload)
-        self.assertIn("if-no-files-found: ignore", upload)
-
     def test_failed_swift_runs_keep_the_log_and_completion_pixels(self):
         tests = JOBS["tests"]
         copy, upload = tests.split("- name: Collect completion evidence", 1)[1].split("- name: Upload the log", 1)
@@ -156,7 +143,7 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertIn('cp -R "$TMPDIR/$folder" "$RUNNER_TEMP/"', copy)
         self.assertNotIn("|| true", copy)
         self.assertNotIn("TMPDIR=", tests, "the tests keep the runner's short socket-safe temp directory")
-        self.assertIn("if: ${{ failure() }}", upload)
+        self.assertIn("if: ${{ always() }}", upload, "green profiling logs and red pixel evidence share one artifact")
         self.assertIn("name: ci-swift-test-log", upload)
         self.assertIn("path: |\n            ${{ runner.temp }}/swift-test.log\n            ${{ runner.temp }}/shepherd-completion-repro\n            ${{ runner.temp }}/shepherd-completion-matrix", upload)
         self.assertIn("retention-days: 7", upload)
@@ -437,7 +424,7 @@ class PlanTests(unittest.TestCase):
                 self.assertEqual(actual, "UI diagnostics" if event == "workflow_dispatch" and diagnostic == "ui" else "CI")
         suites = ("ComposerMenuTests", "ThreadCodeBlockTests", "PaneControlTests", "ThreadScrollingTests",
                   "IdleCostTests", "ThreadCompletionMatrixTests", "ThreadCompletionReproductionTests",
-                  "RemoteBrowserDriveTests")
+                  "RemoteBrowserDriveTests", "ThreadJumpPressTests")
         ids = [f"ShepherdAppIntegrationTests.{name}/case()" for name in suites]
         pattern = ci_plan.validated_filter(ids, ci_plan.UI_DIAGNOSTICS)
         self.assertEqual(len(ci_plan.UI_DIAGNOSTICS), len(suites))
