@@ -221,6 +221,8 @@ extension tests, on every bump (docs/pi-engine.md › Bumping the pin).
   Counts hold on a slow or busy runner; timing budgets do not, so don't add those. Two thread
   budgets differ on macOS 26 (CI) and in Xcode 26 builds whatever the speed, so there they run
   as known issues.
+- The new-worktree base picker is lazy over a repository with 300 branches (`changes.menu.row`, the
+  Changes menus' row probe): opening and scrolling build only the rows in its 300pt list.
 - Goal clock budgets assert that local card/header ticks redraw only their timeline content.
   Five accounting snapshots must redraw no composer bodies/chips, queue bodies/rows or thread
   bodies/row builders. Shared docks read cached goal presence/identity, not the full goal.

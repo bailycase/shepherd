@@ -109,7 +109,7 @@ final class QueueThread {
 
     var columnTrailing: CGFloat { size.width - columnLeading }
 
-    /// Send's right-click catcher, while Send stands beside an outlined Stop.
+    /// Send's right-click catcher, while pi works with a draft (Send is the only action).
     var sendButton: SecondaryClick.Catcher? {
         func find(_ view: NSView) -> SecondaryClick.Catcher? {
             if let catcher = view as? SecondaryClick.Catcher { return catcher }
