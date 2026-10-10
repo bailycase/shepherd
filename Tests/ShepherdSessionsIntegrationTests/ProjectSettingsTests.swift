@@ -69,7 +69,9 @@ struct ProjectSettingsTests {
     }
 
     @Test func aRemoteClientEditsOnlyTheNamedHostProjectAndOldHostsRequireAnUpdate() async throws {
-        let host = try RemoteHost()
+        // Startup imports old pi sessions before this test adds its named project.
+        let pi = PiSetup(engine: PiSetup.app.engine, home: try makeScratchDirectory("rpi"))
+        let host = try RemoteHost(pi: pi)
         defer { host.stop() }
         let directory = host.host.dir.appendingPathComponent("remote-project")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
