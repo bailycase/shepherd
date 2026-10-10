@@ -48,8 +48,10 @@ than that catalog (`gpt-6.1-sol` beside a known `gpt-6-sol`) takes the capabilit
 levels of its owner's nearest earlier version of the same family, where a family is the name with
 its version numbers set aside and a release date is never a version. It keeps its own name. Other
 unknown models use conservative text-only defaults. Known proxy compatibility rules cover DeepSeek's role and
-reasoning fields and Responses tool schemas. Only session-mode instances watch the local config;
-updates wait until idle and never redirect an in-flight turn. The model catalog's fingerprint
+reasoning fields and Responses tool schemas. Session-mode instances use an unref'd file watcher plus at most 30 one-second startup
+snapshot checks within the first 30 seconds. The checks catch publications absorbed by the
+watcher's initial stat; ordinary events handle later changes. Restart replaces both and
+shutdown clears both. Unchanged snapshots deduplicate. Explicit input still reloads settings. Updates wait until idle and never redirect an in-flight turn. The model catalog's fingerprint
 includes the connection file. Configuration and credentials never travel to remote clients.
 
 When a restored conversation's managed model does not match pi's current selection, its next
