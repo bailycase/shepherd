@@ -29,6 +29,7 @@ NO_SWIFT = (
 UI_DIAGNOSTICS = [r"^ShepherdAppIntegrationTests\." + name + r"/" for name in (
     "ComposerMenuTests", "ThreadCodeBlockTests", "PaneControlTests", "ThreadScrollingTests", "IdleCostTests",
     "ThreadCompletionMatrixTests", "ThreadCompletionReproductionTests", "RemoteBrowserDriveTests", "ThreadJumpPressTests",
+    "ThreadTailGuardTests",
 )]
 
 # This mandatory smoke set preserves the previous fast PR gate, including RPC child commands.
