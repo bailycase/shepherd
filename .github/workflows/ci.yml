@@ -1,10 +1,9 @@
 name: CI
 
-# One Swift job. A pull request from a maintainer runs on the self-hosted Mac, where the
-# checkout, `.build` and the pi engine's downloads persist between jobs, so a run is an
-# incremental build plus the tests. Everything else (a fork, the daily run, a manual run) builds
-# on GitHub's macOS runner. Maintainers can explicitly request UI diagnostics on the local
-# runner; their result is named `UI diagnostics`, never `CI`. Other checks run on Ubuntu.
+# One Swift job, hosted by default. Self-hosted is opt-in only on a resource-isolated Mac:
+# a separate account cannot protect other apps from build memory pressure. When enabled,
+# maintainer PRs and explicit UI diagnostics can reuse its persistent build. Diagnostics
+# report `UI diagnostics`, never `CI`. Other checks run on Ubuntu.
 #
 # There are no path filters here: a filtered-out workflow never reports the `CI` check, so the
 # plan step decides instead, and `CI` always reports. A change to docs alone runs no Swift.
@@ -122,7 +121,7 @@ jobs:
     # Native metadata fence, evaluated before checkout; plan outputs cannot grant local access.
     # Custom label only: the runner has no default self-hosted/OS labels.
     runs-on: >-
-      ${{ github.triggering_actor == github.actor &&
+      ${{ vars.SHEPHERD_SELFHOSTED_ENABLED == 'true' && github.triggering_actor == github.actor &&
           (github.actor_id == '19316389' || github.actor_id == '3370624') &&
           github.workflow_ref == format('{0}/.github/workflows/ci.yml@{1}', github.repository, github.ref) &&
           ((github.event_name == 'pull_request' &&
