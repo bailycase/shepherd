@@ -214,12 +214,13 @@ extension LogicalProjectPreviewTests {
             // The same state with the worker's composer focused, through the app's own request (`ThreadInput.focus()`), and `ready` waits
             // until the window's first responder is a field editor, as `theComposerTakesTheKeyboardAgainWhenItsThreadComesBack` does.
             let workerInput = vm.threadStores.input(for: worker)
-            var asked: Set<ObjectIdentifier> = []
+            // Keep each rendered window's identity alive across the four captures: AppKit may reuse a released address.
+            var asked: Set<NSWindow> = []
             let focused: @MainActor () -> Bool = {
                 guard running() else { return false }
                 let windows = NSApp.windows.filter { $0.frame.origin.x < -20_000 }
                 // Each appearance and text scale is a new window: ask once in each, after it has mounted.
-                for window in windows where asked.insert(ObjectIdentifier(window)).inserted {
+                for window in windows where asked.insert(window).inserted {
                     // A window has one first responder and the conversation's composer holds it: let go, then ask for the worker's.
                     _ = window.makeFirstResponder(nil)
                     workerInput.focus()

@@ -273,14 +273,28 @@ export default function (pi: ExtensionAPI) {
   // Synchronous registration is required by --list-models and non-session consumers.
   void reload();
   const changed = () => { if (session) void reload(session); };
+  let poll: ReturnType<typeof setInterval> | undefined;
   pi.on("session_start", async (_event, ctx) => {
     fs.unwatchFile(path, changed);
+    clearInterval(poll); poll = undefined;
     session = ctx;
     sessionRevision++;
     busy = false;
+    fs.watchFile(path, { interval: 1000, persistent: false }, changed);
+    // A watchFile baseline can absorb an immediate publication without reporting a change.
+    // Check snapshots during startup only; ordinary events and input reloads continue afterward.
+    let remaining = 30;
+    const deadline = Date.now() + 30_000;
+    const startupPoll = setInterval(() => {
+      if (remaining === 0 || Date.now() >= deadline) {
+        remaining = 0; clearInterval(startupPoll); return;
+      }
+      changed();
+      if (--remaining === 0) clearInterval(startupPoll);
+    }, 1000);
+    startupPoll.unref(); poll = startupPoll;
     await reload(ctx);
     if (blockedModel(ctx)) notifyBlocked(ctx);
-    fs.watchFile(path, { persistent: false, interval: 1000 }, changed);
   });
   pi.on("model_select", (event) => {
     if (event.source === "set" || event.source === "cycle") requested = undefined;
@@ -310,5 +324,6 @@ export default function (pi: ExtensionAPI) {
     session = undefined;
     sessionRevision++;
     fs.unwatchFile(path, changed);
+    clearInterval(poll); poll = undefined;
   });
 }

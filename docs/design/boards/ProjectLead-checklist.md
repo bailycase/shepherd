@@ -397,7 +397,7 @@ user's workflow decisions; neither is built.
   `create()` and offer tests (the accessibility frame rounds outward to whole points). Ink differences left, not nudged: the New project title ink is 1pt lower
   than the board's (28 against 27) with the box placed as in the markup; Create's left edge 437 against 438 and Add to project's right edge 1248 against 1247 are
   edge snapping at equal widths.
-- **Project composer while the coordinator runs.** The disabled arrow (no Stop), enabled Send and the outlined Stop with a draft, and no pause, checked through
+- **Project composer while the coordinator runs.** The disabled arrow (no Stop), enabled Send alone with a draft (no secondary Stop), and no pause, checked through
   AX with the engine's `project-action` script held by its own `continue-1` file (no focus, no sleep). Reverting the rule turns the test red.
 - **Plain paragraph measurement.** `NWPlainParagraph` no longer uses a numeric size ceiling: the label measures itself with `greatestFiniteMagnitude`; a 300-character
   unbroken token wraps inside a 200pt column (test). Its comment says what was observed, not what SwiftUI does inside.

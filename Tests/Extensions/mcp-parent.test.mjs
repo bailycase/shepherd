@@ -1,5 +1,5 @@
 // shepherd-mcp-parent.ts (docs/mcp.md › Subprojects): a project inside another project's folder shares the parent's
-// `.pi/mcp.json` servers. Real pi in RPC mode against the stand-in stdio server, a loopback fake provider and a temporary
+// `.shepherd/mcp.json` servers. Real pi in RPC mode against the stand-in stdio server, a loopback fake provider and a temporary
 // home. pi runs in `work/apps/web`, a subproject of `work`, with SHEPHERD_PARENT_PROJECT naming `work`.
 // Run: PI_PACKAGE_DIR=/path/to/pi-coding-agent node --test Tests/Extensions/mcp-parent.test.mjs
 import test from "node:test";
@@ -16,8 +16,12 @@ const ARGS = ["-e", "builtin:mcp", "-e", "builtin:tool-search", "-e", extension]
 // The stand-in writes `<dir>/<marker>.pid` when it starts, which `pi.spawned(marker)` reads.
 const server = (dir, marker) => ({ command: process.execPath, args: [stdio], env: { FAKE_MCP_PIDFILE: path.join(dir, `${marker}.pid`) } });
 const mcpFile = (folder, servers) => {
-  fs.mkdirSync(path.join(folder, ".pi"), { recursive: true });
-  fs.writeFileSync(path.join(folder, ".pi/mcp.json"), JSON.stringify({ mcpServers: servers }));
+  // The parent extension uses Shepherd paths; native Pi uses its distribution configDir.
+  const native = JSON.parse(fs.readFileSync(path.join(process.env.PI_PACKAGE_DIR, "package.json"))).piConfig?.configDir ?? ".pi";
+  for (const config of new Set([".shepherd", native])) {
+    fs.mkdirSync(path.join(folder, config), { recursive: true });
+    fs.writeFileSync(path.join(folder, config, "mcp.json"), JSON.stringify({ mcpServers: servers }));
+  }
 };
 const web = (work) => path.join(work, "apps/web");
 

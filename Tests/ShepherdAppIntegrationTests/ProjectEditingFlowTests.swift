@@ -20,8 +20,8 @@ struct ProjectEditingFlowTests {
         let b = Fixture.space("B", path: app.dir.appendingPathComponent("b").path)
         let child = Fixture.space("docs", path: a.path + "/docs")
         for space in [a, b, child] { try FileManager.default.createDirectory(atPath: space.path, withIntermediateDirectories: true) }
-        try FileManager.default.createDirectory(atPath: a.path + "/.pi", withIntermediateDirectories: false)
-        try Data(#"{"mcpServers":{"physical-parent":{"command":"true"}}}"#.utf8).write(to: URL(fileURLWithPath: a.path + "/.pi/mcp.json"))
+        try FileManager.default.createDirectory(atPath: a.path + "/.shepherd", withIntermediateDirectories: false)
+        try Data(#"{"mcpServers":{"physical-parent":{"command":"true"}}}"#.utf8).write(to: URL(fileURLWithPath: a.path + "/.shepherd/mcp.json"))
         let agent = Fixture.agent("requester", in: a, order: 0)
         let vm = try await app.start(with: Fixture.state(spaces: [a, b, child], agents: [agent]))
         vm.settings.sidebarStyle = .projects

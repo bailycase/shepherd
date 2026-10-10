@@ -19,6 +19,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 import urllib.parse
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -503,7 +504,10 @@ def make_engine(contents):
     packages.update({f"node_modules/{path}/": (release.pi_engine.module_name(path), module["version"])
                      for path, module in pin["modules"].items()})
     for folder, (name, version) in packages.items():
-        files[f"{engine}/{folder}package.json"] = json.dumps({"name": name, "version": version}).encode()
+        manifest = {"name": name, "version": version}
+        if not folder:
+            manifest["piConfig"] = {"name": "pi", "configDir": ".shepherd"}
+        files[f"{engine}/{folder}package.json"] = json.dumps(manifest).encode()
     for name in (release.pi_engine.ENTRY, "dist/index.js") + release.pi_engine.LICENSES:
         files[f"{engine}/{name}"] = b"x"
     for module, required in release.pi_engine.MODULE_REQUIRED.items():
@@ -518,6 +522,15 @@ def make_engine(contents):
 
 
 class VerifyAppTests(unittest.TestCase):
+    def setUp(self):
+        # These are synthetic engine files, not pi's bytes. Patch integrity is exercised by
+        # test_pi_engine; keep the app identity/architecture fixture's pin unpatched.
+        pin = release.pi_engine.load_pin()
+        pin.pop("patch", None)
+        patched = patch.object(release.pi_engine, "load_pin", return_value=pin)
+        patched.start()
+        self.addCleanup(patched.stop)
+
     def make_app(self, root, product, engine=True, **info):
         path = os.path.join(root, product)
         os.makedirs(os.path.join(path, "Contents", "MacOS"))
@@ -834,7 +847,7 @@ class ContractTests(unittest.TestCase):
         job = workflow.split("\n  extensions:\n", 1)[1].split("\n  tests:\n", 1)[0]
         self.assertIn('scripts/pi-engine-pin.json', job)
         self.assertIn('--ignore-scripts', job)
-        self.assertIn('node --test --test-reporter=spec Tests/Extensions/*.test.mjs', job)
+        self.assertIn('node --test --test-concurrency=2 --test-reporter=spec Tests/Extensions/*.test.mjs', job)
         self.assertNotIn('continue-on-error', job)
         aggregate = workflow.split("\n  ci:\n", 1)[1]
         self.assertIn('needs: [plan, release-rules, extensions, tests]', aggregate)

@@ -608,6 +608,7 @@ struct DesignReferenceIntegrationTests {
     @Test func rawRemoteProjectTransportsCannotCaptureLocalDesigns() async throws {
         let r = try RemoteHost()
         defer { r.stop() }
+        r.server.setProjectsEnabled(true)
         let pi = try await PiAgent.launch(on: r.host)
         let designID = try await design(r.host)
         let ready = try await pi.ready()

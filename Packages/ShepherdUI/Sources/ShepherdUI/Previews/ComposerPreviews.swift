@@ -2,7 +2,7 @@ import SwiftUI
 
 private struct NWPreviewComposerControls: View {
     var stop = false
-    /// Working with a draft: Stop outlined beside Send.
+    /// Working with a draft: Send, as an idle composer's.
     var draft = false
 
     var body: some View {
@@ -12,10 +12,7 @@ private struct NWPreviewComposerControls: View {
         Spacer(minLength: NW.Space.m)
         Button {} label: { NWComposerBranchLabel(branch: "agent/swiftui-previews", changes: 3) }.buttonStyle(.nwComposerChip())
         if draft {
-            HStack(spacing: NW.Space.s) {
-                NWComposerActionButton(.stop, outlined: true) {}
-                NWComposerActionButton(.send, ringed: true) {}
-            }
+            NWComposerActionButton(.send, ringed: true) {}
         } else {
             NWComposerActionButton(stop ? .stop : .send, enabled: stop) {}
         }

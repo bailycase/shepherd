@@ -283,8 +283,9 @@ struct ComposerMenuTests {
         #expect(abs(menu.maxY - (thread.cardTop - AppLayout.menuGap)) <= 2, "above the card: \(menu)")
     }
 
-    /// A click outside the menu and the card closes it (and still lands where it was aimed); a
-    /// click in the menu, or in the card (a chip toggles its own menu), leaves it open. The
+    /// A click outside the menu closes it (and still lands where it was aimed); a click in the menu,
+    /// or on a chip (it toggles its own menu), leaves it open. The field is the slash menu's own,
+    /// and outside a chip's. The
     /// clicks are handed to the composer's watcher directly: nothing is posted to the window.
     @Test(arguments: [Menu.models, .slash, .thinking, .speed])
     func aClickOutsideTheMenuClosesIt(_ menu: Menu) async throws {
@@ -301,9 +302,16 @@ struct ComposerMenuTests {
         let dismissal = try #require(thread.menuDismissal)
 
         dismissal.handle(thread.click(at: CGPoint(x: thread.columnLeading + 40, y: thread.cardTop - AppLayout.menuGap - 20)))
-        dismissal.handle(thread.click(at: CGPoint(x: thread.columnLeading + 40, y: thread.cardTop + 20)))
+        // The field is the slash menu's own (it is typing there) but outside a chip's menu.
+        if menu == .slash { dismissal.handle(thread.click(at: CGPoint(x: thread.columnLeading + 40, y: thread.cardTop + 20))) }
         try await thread.settle()
-        #expect(FrameTimer.capture(thread.window, whole) == open, "clicks in the menu and the card leave it open")
+        #expect(FrameTimer.capture(thread.window, whole) == open, "clicks in the menu, and in the field for the slash menu, leave it open")
+        if menu != .slash {
+            dismissal.handle(thread.click(at: CGPoint(x: thread.columnLeading + 40, y: thread.cardTop + 20)))
+            try await thread.settle()
+            #expect(FrameTimer.capture(thread.window, whole) == closed, "a click in the field closes a chip's menu")
+            return
+        }
 
         dismissal.handle(thread.click(at: CGPoint(x: thread.size.width - 40, y: 40)))
         try await thread.settle()

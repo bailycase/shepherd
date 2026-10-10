@@ -119,8 +119,9 @@ test("+builtin:mcp, the documented way to turn it back on, is kept by the switch
 
 test("a trusted project's .pi/mcp.json starts a server only while the built-in is on", { timeout: 180000 }, async (t) => {
   const project = (dir, work) => {
-    fs.mkdirSync(path.join(work, ".pi"), { recursive: true });
-    fs.writeFileSync(path.join(work, ".pi/mcp.json"), JSON.stringify({ mcpServers: { project: server(dir, "project") } }));
+    const config = JSON.parse(fs.readFileSync(path.join(process.env.PI_PACKAGE_DIR, "package.json"))).piConfig?.configDir ?? ".pi";
+    fs.mkdirSync(path.join(work, config), { recursive: true });
+    fs.writeFileSync(path.join(work, config, "mcp.json"), JSON.stringify({ mcpServers: { project: server(dir, "project") } }));
   };
   const trust = (dir, work) => ({ "trust.json": { [fs.realpathSync(work)]: true } });
   await withPi(t, { files: trust, project }, async (pi) => {

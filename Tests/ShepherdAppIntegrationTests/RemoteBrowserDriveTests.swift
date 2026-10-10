@@ -30,29 +30,48 @@ struct RemoteBrowserDriveTests {
         let web: TinyWebServer
         /// The viewer-side port the page names, which the forwarder carries to `web`.
         let port: UInt16
+        var diagnostic: (@Sendable (String) -> Void)? = nil
 
-        var session: BrowserSession { vm.browsers.session(for: ref, hosts: local.remoteHosts) }
+        var session: BrowserSession {
+            diagnostic?("browser-store.session.before")
+            let session = vm.browsers.session(for: ref, hosts: local.remoteHosts)
+            diagnostic?("browser-store.session.after")
+            return session
+        }
         var hostVM: ShepherdViewModel { remote.host.vm }
 
         func url(_ path: String) -> String { "http://localhost:\(port)\(path)" }
 
         func stop() {
+            diagnostic?("cleanup.web.before")
             web.stop()
+            diagnostic?("cleanup.web.after")
+            diagnostic?("cleanup.local.before")
             local.stop()
+            diagnostic?("cleanup.local.after")
+            diagnostic?("cleanup.remote.before")
             remote.stop()
+            diagnostic?("cleanup.remote.after")
         }
 
         /// The Browser tab comes on screen and the claim is answered.
         func showTab(_ session: BrowserSession? = nil) async throws {
             let session = session ?? self.session
+            diagnostic?("initial-claim.before")
             vm.browserPaneAppeared(session)
             try await eventuallyOnMain("the viewer to own the agent's browser") { session.remote?.claimant.phase == .owned }
+            diagnostic?("initial-claim.after")
+            diagnostic?("initial-host-owner.before")
             try await eventuallyOnMain("the host to record the owner") { remote.host.server.browserOwnerFD(of: agent.agent.id) != nil }
+            diagnostic?("initial-host-owner.after")
         }
 
         /// The agent's extension on the host.
         func extensionConnection() throws -> AgentConnection {
-            try AgentConnection(socketPath: remote.host.scratch.socketPath, agent: agent.agent.id)
+            diagnostic?("extension-connect.before")
+            let connection = try AgentConnection(socketPath: remote.host.scratch.socketPath, agent: agent.agent.id, diagnostic: diagnostic)
+            diagnostic?("extension-connect.after")
+            return connection
         }
     }
 
@@ -61,18 +80,29 @@ struct RemoteBrowserDriveTests {
         let client: ExtensionClient
         let agentID: AgentID
         private var next = 0
+        private let diagnostic: (@Sendable (String) -> Void)?
 
-        init(socketPath: String, agent: AgentID) throws {
+        init(socketPath: String, agent: AgentID, diagnostic: (@Sendable (String) -> Void)? = nil) throws {
+            self.diagnostic = diagnostic
+            diagnostic?("extension-socket.before")
             client = try ExtensionClient(path: socketPath)
+            diagnostic?("extension-socket.after")
             agentID = agent
+            diagnostic?("extension-hello.before")
             try client.send(.helloBrowser(agentID: agent))
+            diagnostic?("extension-hello.after")
         }
 
         func ask(_ request: BrowserRequest) async throws -> ExtensionReply {
             next += 1
+            diagnostic?("extension-request.before")
             try client.send(.browser(id: next, agentID: agentID, request: request))
+            diagnostic?("extension-request.after")
             let client = client
-            return try await Task.detached { try client.readReply(timeout: .seconds(60)) }.value
+            diagnostic?("extension-result.before")
+            let reply = try await Task.detached { try client.readReply(timeout: .seconds(60)) }.value
+            diagnostic?("extension-result.after")
+            return reply
         }
 
         func text(_ request: BrowserRequest) async throws -> String {
@@ -92,27 +122,49 @@ struct RemoteBrowserDriveTests {
     }
 
     private func setup(pages: [String: String] = BrowserAgentTests.pages, live: Bool = false, grace: TimeInterval? = nil,
-                       policy: BrowserViewerPolicy? = nil, capabilities: [String]? = nil) async throws -> Setup {
-        try await Self.makeSetup(pages: pages, handler: nil, live: live, grace: grace, policy: policy, capabilities: capabilities)
+                       policy: BrowserViewerPolicy? = nil, capabilities: [String]? = nil,
+                       diagnostic: (@Sendable (String) -> Void)? = nil) async throws -> Setup {
+        try await Self.makeSetup(pages: pages, handler: nil, live: live, grace: grace, policy: policy, capabilities: capabilities, diagnostic: diagnostic)
     }
 
     /// A viewer and a host, connected, with a dev server on the host that serves `pages` or, when given, `handler`.
     static func makeSetup(pages: [String: String] = BrowserAgentTests.pages, handler: TinyWebServer.Handler?, live: Bool = false,
-                          grace: TimeInterval? = nil, policy: BrowserViewerPolicy? = nil, capabilities: [String]? = nil) async throws -> Setup {
-        let local = try AppHarness(), remote = try RemoteHostHarness()
+                          grace: TimeInterval? = nil, policy: BrowserViewerPolicy? = nil, capabilities: [String]? = nil,
+                          diagnostic: (@Sendable (String) -> Void)? = nil) async throws -> Setup {
+        diagnostic?("setup.local-fixture.before")
+        let local = try AppHarness()
+        diagnostic?("setup.local-fixture.after")
+        diagnostic?("setup.remote-fixture.before")
+        let remote = try RemoteHostHarness()
+        diagnostic?("setup.remote-fixture.after")
         if let capabilities { remote.host.server.advertisedCapabilities = capabilities }
         let space = Fixture.space(path: local.dir.path)
+        diagnostic?("setup.agent.before")
         let agent = live ? try await remote.host.liveAgent("web", in: space) : Fixture.agent("web", in: space)
+        diagnostic?("setup.agent.after")
+        diagnostic?("setup.local-start.before")
         let vm = try await local.start(with: Fixture.state(spaces: [space], agents: []))
+        diagnostic?("setup.local-start.after")
         if let grace { vm.browsers.driveGrace = grace }
         if let policy { vm.browsers.viewerPolicy = policy }
+        diagnostic?("setup.remote-start.before")
         try await remote.host.start(with: Fixture.state(spaces: [space], agents: [agent]))
+        diagnostic?("setup.remote-start.after")
+        // connect waits for the handshake and initial workspace, not just a TCP connection.
+        diagnostic?("handshake-and-workspace.before")
         let connection = try await remote.connect(local.remoteHosts, name: "build-01")
+        diagnostic?("handshake-and-workspace.after")
         let ref = RemoteAgentRef(hostID: connection.id, agentID: agent.agent.id)
+        diagnostic?("web-fixture.before")
         let web = try handler.map { try TinyWebServer($0) } ?? TinyWebServer(pages: pages)
-        try await web.start()
+        diagnostic?("web-fixture.after")
+        diagnostic?("web-start.before")
+        try await web.start(diagnostic: diagnostic)
+        diagnostic?("web-start.after")
+        diagnostic?("viewer-port.before")
         let port = try unusedPort()
-        let s = Setup(local: local, remote: remote, vm: vm, connection: connection, ref: ref, agent: agent, web: web, port: port)
+        diagnostic?("viewer-port.after")
+        let s = Setup(local: local, remote: remote, vm: vm, connection: connection, ref: ref, agent: agent, web: web, port: port, diagnostic: diagnostic)
         s.session.remote?.hostPorts[Int(port)] = Int(web.port)
         return s
     }
@@ -393,18 +445,34 @@ struct RemoteBrowserDriveTests {
     }
 
     @Test func aReconnectWhileTheTabIsOnScreenClaimsAgainOnTheNewConnection() async throws {
-        let s = try await setup()
+        let started = ContinuousClock.now
+        let diagnostic: @Sendable (String) -> Void = { phase in
+            print("BROWSER RECONNECT \(ContinuousClock.now - started): \(phase)")
+        }
+        diagnostic("scenario.before")
+        defer { diagnostic("scenario.exit") }
+        let s = try await setup(diagnostic: diagnostic)
         defer { s.stop() }
         let session = s.session
         try await s.showTab()
+        diagnostic("reconnect.before")
         s.local.remoteHosts.reconnect(id: s.connection.id)
+        diagnostic("reconnect.after")
+        diagnostic("old-claim-drop.before")
         try await eventuallyOnMain("the claim to drop with the connection", timeout: .seconds(30)) { session.remote?.claimant.phase != .owned }
+        diagnostic("old-claim-drop.after")
+        diagnostic("new-claim.before")
         try await eventuallyOnMain("the tab to claim again on the new connection", timeout: .seconds(30)) {
             session.remote?.claimant.phase == .owned && s.connection.phase == .connected
         }
+        diagnostic("new-claim.after")
+        diagnostic("new-host-owner.before")
         try await eventuallyOnMain("the host to record the new owner") { s.remote.host.server.browserOwnerFD(of: s.agent.agent.id) != nil }
+        diagnostic("new-host-owner.after")
         let agent = try s.extensionConnection()
+        diagnostic("terms-open.before")
         #expect(try await agent.text(.open(url: s.url("/terms"), note: nil)).contains("Page: Terms"))
+        diagnostic("terms-open.after")
         #expect(session.url?.absoluteString == s.url("/terms"))
     }
 

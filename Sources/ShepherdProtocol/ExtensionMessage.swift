@@ -37,6 +37,8 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     case childScope(id: Int, agentID: AgentID, sessionID: String, userTimestamp: Double?)
     /// Outcome of a `childCommand`; `error` is nil on success.
     case childCommandResult(id: Int, error: String?)
+    /// Fence native child start/resume on the owning host's project cutover; grants no trust.
+    case prepareProjectConfiguration(id: Int, agentID: AgentID, cwd: String)
 
     // MARK: Pane control (request/reply)
 
@@ -207,7 +209,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
 
     private enum Kind: String, Codable {
         case setAgentStatus, setAgentName, setAgentSession, setAgentChildren, notify, helloAgent
-        case helloChildren, childCommandResult, childScope
+        case helloChildren, childCommandResult, childScope, prepareProjectConfiguration
         case listPanes, openPane, closePane, focusPane, sendPaneInput, readPane, requestReview
         case createAutomation, listAutomations, updateAutomation, deleteAutomation
         case startAutomation, stopAutomation
@@ -229,6 +231,8 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case .projectRuntime:
             self = .projectRuntime(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID),
                 projectID: try c.decode(ProjectID.self, forKey: .projectID), expectedRevision: try c.decode(UInt64.self, forKey: .expectedRevision), request: try c.decode(ProjectRuntimeRequest.self, forKey: .request))
+        case .prepareProjectConfiguration:
+            self = .prepareProjectConfiguration(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID), cwd: try c.decode(String.self, forKey: .cwd))
         case .editProject:
             self = .editProject(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID),
                                 projectID: try c.decode(SpaceID.self, forKey: .projectID), request: try c.decode(ProjectEdit.self, forKey: .request))
@@ -674,6 +678,11 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(line, forKey: .line)
             try c.encode(reason, forKey: .reason)
             try c.encodeIfPresent(file, forKey: .file)
+        case .prepareProjectConfiguration(let id, let agentID, let cwd):
+            try c.encode(Kind.prepareProjectConfiguration, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(cwd, forKey: .cwd)
         case .listAgents(let id, let agentID):
             try c.encode(Kind.listAgents, forKey: .type)
             try c.encode(id, forKey: .id)

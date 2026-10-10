@@ -44,7 +44,7 @@ export function script(steps) {
  */
 export function runPiCli(home, args, { env = {}, cwd = home, timeout = 60000 } = {}) {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [path.join(pkg, "dist/bundle/cli.js"), ...args], {
+    const child = spawn(process.execPath, [path.join(pkg, "dist/cli.js"), ...args], {
       cwd, stdio: ["ignore", "pipe", "pipe"],
       env: { PATH: process.env.PATH, HOME: path.dirname(home), PI_CODING_AGENT_DIR: home, PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0", ...env },
     });
@@ -106,7 +106,7 @@ export async function withPi(t, options, body) {
   project?.(dir, work);
   const extra = typeof extraEnv === "function" ? extraEnv(dir, work) : extraEnv;
   const env = { PATH: process.env.PATH, HOME: dir, PI_CODING_AGENT_DIR: home, PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0", ...extra };
-  const child = spawn(process.execPath, [path.join(pkg, "dist/bundle/cli.js"), "--mode", "rpc", "--session-dir", path.join(dir, "sessions"),
+  const child = spawn(process.execPath, [path.join(pkg, "dist/cli.js"), "--mode", "rpc", "--session-dir", path.join(dir, "sessions"),
     "--model", "fixture/fixture", ...args], { cwd: cwd?.(dir, work) ?? work, env, stdio: ["pipe", "pipe", "pipe"] });
   t.after(() => child.kill("SIGKILL"));
   const events = [];

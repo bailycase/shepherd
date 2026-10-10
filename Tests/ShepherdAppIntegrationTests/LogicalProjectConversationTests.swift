@@ -529,7 +529,10 @@ private static func chipsAndLinks() async throws {
         let coordinator = r.vm.projectCoordinator
         let first = try await coordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
                                                   request: .assign(operationID: UUID(), spaceID: r.space.id, title: "Library API draft", prompt: "publish-one"))
-        try await eventuallyOnMain("the first task is running") { r.app.server.state.projects.first?.tasks.first?.phase == .running }
+        try await eventuallyOnMain("the first task is running and has published") {
+            r.app.server.state.projects.first?.tasks.first?.phase == .running
+                && r.app.server.state.projects.first?.artifacts.filter { $0.state == .ready }.count == 1
+        }
         let afterFirst = try #require(r.app.server.state.projects.first)
         _ = try await coordinator.perform(projectID: r.project.id, expectedRevision: afterFirst.revision,
                                           request: .assign(operationID: UUID(), spaceID: r.space.id, title: "Library API draft", prompt: "plain"))
@@ -551,7 +554,12 @@ private static func chipsAndLinks() async throws {
         let folder = r.app.dir.appendingPathComponent("logical-projects/\(r.project.id.rawValue)")
         try JSONSerialization.data(withJSONObject: ["prompts": ["name them": [["text": said]]], "socket": socket])
             .write(to: folder.appendingPathComponent("project-script.json"))
-        #expect(await r.vm.logicalProjects.sendMessage(r.ref, text: "name them"))
+        try await eventuallyOnMain("both workers are running and the conversation sees their current revision") {
+            r.app.server.state.projects.first?.tasks.allSatisfy { $0.phase == .running } == true
+                && r.vm.logicalProjects.project(r.ref)?.revision == r.app.server.state.projects.first?.revision
+        }
+        #expect(await r.vm.logicalProjects.sendMessage(r.ref, text: "name them"),
+                "\(r.vm.logicalProjects.failure?.message ?? "no refusal")")
         let agent = try #require(r.app.server.state.projects.first?.coordinatorAgentID)
         try await eventuallyOnMain("the coordinator is a known agent") { r.vm.state.agents.contains { $0.id == agent } }
         let store = try #require(r.vm.projectCoordinator.conversationStore(agentID: agent))
@@ -926,7 +934,7 @@ private static func chipsAndLinks() async throws {
 
     /// ProjectLead-ThreadRunning's left composer. The coordinator's turn is held by the engine's own `project-action` script (it waits for
     /// `continue-1`, which this test never creates), so the thread is running while the composer is drawn. The board draws the disabled arrow,
-    /// not Stop (a Stop would pause the Project). With words typed, Send is enabled and the outlined Stop stands beside it.
+    /// not Stop (a Stop would pause the Project). With words typed, Send is enabled and remains the only action.
     private static func projectComposerWhileRunning() async throws {
         let r = try await rig()
         defer { r.app.stop() }
@@ -962,10 +970,11 @@ private static func chipsAndLinks() async throws {
         #expect(sends.count == 1 && sends.allSatisfy { !$0.isEnabled }, "the Project's own composer shows a disabled arrow: \(sends.map(\.description))")
         #expect(!window.controls().contains { $0.label == "Stop" }, "and no Stop while its field is empty")
         store.draft = "one more thing"
-        try await eventuallyOnMain("a draft enables Send and brings the outlined Stop beside it") {
+        try await eventuallyOnMain("a draft enables the single Send action") {
             window.layout()
-            return window.controls().contains { $0.label == "Stop" } && window.controls().contains { $0.label == "Send" && $0.isEnabled }
+            return window.controls().contains { $0.label == "Send" && $0.isEnabled }
         }
+        #expect(!window.controls().contains { $0.label == "Stop" }, "typing never adds a second action to the Project composer")
         #expect(r.app.server.state.projects.first?.paused == false, "nothing paused the Project")
     }
 

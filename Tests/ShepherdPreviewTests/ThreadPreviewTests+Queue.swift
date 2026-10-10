@@ -13,7 +13,7 @@ import Testing
 ///     SHEPHERD_PREVIEW_DIR=/tmp/previews swift test --filter ThreadPreviewTests
 extension ThreadPreviewTests {
     /// QueueStack: three messages wait above the composer while the tests run, the second
-    /// hovered (grip, Steer now, Edit, Delete), and a draft brings Stop outlined beside Send.
+    /// hovered (grip, Steer now, Edit, Delete), and a draft leaves Send as the one action.
     @Test func queueStack() async throws {
         let fixture = QueueThreadFixture(QueueThreads.running, queue: QueueFixture.messages(QueueThreads.queued),
                                          draft: "Keep the PR title under 60 characters")
