@@ -88,7 +88,8 @@ one. The New agent sheet (⇧⌘T) stays for its directory and base fields.
   no worktree control, so it lives in the chip's menu: its branch is generated and its base resolved
   per Settings ▸ Worktrees, as the New agent sheet does. With the switch on, for a project on this Mac, a **Base** row follows it (the branch in mono
   11, "Default" until one is picked) and opens the Changes pane's base picker
-  (`WorktreeBasePicker`: search, every branch, the checked-out one included). Send branches from the pick and records it;
+  (`WorktreeBasePicker`: search, every branch, the checked-out one included). The workplace menu's
+  ↑↓ navigation includes Base while it is visible, and Return opens it. Send branches from the pick and records it;
   nothing picked leaves Settings ▸ Worktrees in charge, and a host's project has no row
   ([ThreadControlsFixes](boards/ThreadControlsFixes.md)). A project on this Mac has a context menu
   with what the sidebar's space rows offered: Rename…, New Worktree… and Import Existing Worktree…
