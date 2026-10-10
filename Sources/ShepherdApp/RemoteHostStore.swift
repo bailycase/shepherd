@@ -145,7 +145,10 @@ final class RemoteHostStore {
         var supportsInstructions: Bool { client?.capabilities.contains(RemoteProtocol.instructionsCapability) == true }
         /// The host serves Settings ▸ Skills (`skills.v1`).
         var supportsSkills: Bool { client?.capabilities.contains(RemoteProtocol.skillsCapability) == true }
-        var supportsProjects: Bool { client?.capabilities.contains(RemoteProtocol.projectsCapability) == true }
+        var supportsProjects: Bool {
+            client?.capabilities.contains(RemoteProtocol.projectsV2Capability) == true
+                || client?.capabilities.contains(RemoteProtocol.projectsCapability) == true
+        }
         /// The host owns and serves Projects (`logicalProjects.v1`); an older host has none to show.
         var supportsLogicalProjects: Bool { client?.capabilities.contains(RemoteProtocol.logicalProjectsCapability) == true }
         /// The host serves Project automation settings (`logicalProjectAutomations.v1`), apart from running them.

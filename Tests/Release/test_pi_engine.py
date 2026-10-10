@@ -7,7 +7,9 @@ Nothing here reaches the network or a real pi: staging runs against archives bui
 """
 import base64
 import copy
+import errno
 import hashlib
+import http.client
 import importlib.util
 import io
 import json
@@ -15,12 +17,16 @@ import os
 import plistlib
 import re
 import shutil
+import socket
+import ssl
 import struct
 import subprocess
 import sys
 import tarfile
 import tempfile
 import unittest
+import urllib.error
+from unittest.mock import Mock, patch
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 _spec = importlib.util.spec_from_file_location("pi_engine", os.path.join(ROOT, "scripts", "pi_engine.py"))
@@ -177,7 +183,7 @@ class Fixture:
     def opener(self, overrides=None):
         urls = {**self.urls(), **(overrides or {})}
 
-        def open_url(url):
+        def open_url(url, *, timeout):
             self.requests.append(url)
             return io.BytesIO(urls[url])
         return open_url
@@ -193,6 +199,39 @@ class Fixture:
 
 def listing(root):
     return sorted(os.path.relpath(os.path.join(d, f), root) for d, _, files in os.walk(root) for f in files)
+
+
+class SkillPatchTests(unittest.TestCase):
+    def test_patch_identity_is_pinned_and_version_checked(self):
+        pin = pi_engine.load_pin()
+        self.assertEqual(pi_engine.engine_patch(pin)["version"], pin["pi"]["version"])
+        pin["patch"]["sha256"] = "0" * 64
+        with self.assertRaisesRegex(pi_engine.EngineError, "differs from the pin"):
+            pi_engine.engine_patch(pin)
+        pin = pi_engine.load_pin()
+        pin["pi"]["version"] = "99.0.0"
+        with self.assertRaisesRegex(pi_engine.EngineError, "pinned pi version"):
+            pi_engine.engine_patch(pin)
+        digest = pi_engine.sha256_of
+        with patch.object(pi_engine, "sha256_of", side_effect=lambda path: "0" * 64 if path.endswith("skill-watch.js") else digest(path)):
+            with self.assertRaisesRegex(pi_engine.EngineError, "source differs"):
+                pi_engine.engine_patch(pi_engine.load_pin())
+
+    def test_patch_checks_source_anchor_and_result_before_staging(self):
+        change = {"path": "test.js", "before": hashlib.sha256(b"old").hexdigest(),
+                  "after": hashlib.sha256(b"new").hexdigest(), "edits": [{"old": "old", "new": "new"}]}
+        with patch.object(pi_engine, "engine_patch", return_value={"files": [change]}):
+            files = {"test.js": b"old"}
+            pi_engine.apply_patch(files, {})
+            self.assertEqual(files["test.js"], b"new")
+            with self.assertRaisesRegex(pi_engine.EngineError, "source mismatch"):
+                pi_engine.apply_patch(files, {})
+            change["after"] = "0" * 64
+            with self.assertRaisesRegex(pi_engine.EngineError, "result mismatch"):
+                pi_engine.apply_patch({"test.js": b"old"}, {})
+            change["edits"][0]["old"] = "missing"
+            with self.assertRaisesRegex(pi_engine.EngineError, "anchor mismatch"):
+                pi_engine.apply_patch({"test.js": b"old"}, {})
 
 
 class PinTests(unittest.TestCase):
@@ -251,21 +290,139 @@ class FetchTests(unittest.TestCase):
             with open(dest, "wb") as f:
                 f.write(b"cached")
 
-            def refuse(url):
+            def refuse(url, *, timeout):
                 raise AssertionError("no download expected")
             self.assertEqual(pi_engine.fetch("https://x/a.tgz", dest, lambda p: True, opener=refuse), dest)
 
     def test_a_download_that_does_not_match_is_refused_and_never_cached(self):
-        with tempfile.TemporaryDirectory() as scratch:
-            dest = os.path.join(scratch, "a.tgz")
-            with self.assertRaises(pi_engine.EngineError):
-                pi_engine.fetch("https://x/a.tgz", dest, lambda p: False, opener=lambda url: io.BytesIO(b"tampered"))
-            self.assertEqual(os.listdir(scratch), [])
+        for existing in (False, True):
+            with self.subTest(existing=existing), tempfile.TemporaryDirectory() as scratch:
+                dest = os.path.join(scratch, "a.tgz")
+                if existing:
+                    with open(dest, "wb") as f:
+                        f.write(b"previous")
+                opener = Mock(return_value=io.BytesIO(b"tampered"))
+                with self.assertRaisesRegex(pi_engine.EngineError, "does not match the pin"):
+                    pi_engine.fetch("https://x/a.tgz", dest, lambda p: False, opener=opener)
+                opener.assert_called_once_with("https://x/a.tgz", timeout=60)
+                self.assertEqual(os.listdir(scratch), ["a.tgz"] if existing else [])
+                if existing:
+                    with open(dest, "rb") as f:
+                        self.assertEqual(f.read(), b"previous")
 
     def test_offline_staging_needs_the_cache(self):
         with tempfile.TemporaryDirectory() as scratch:
+            opener = Mock(side_effect=AssertionError("no download expected"))
             with self.assertRaises(pi_engine.EngineError):
-                pi_engine.fetch("https://x/a.tgz", os.path.join(scratch, "a.tgz"), lambda p: True, offline=True)
+                pi_engine.fetch("https://x/a.tgz", os.path.join(scratch, "a.tgz"), lambda p: True,
+                                offline=True, opener=opener)
+            opener.assert_not_called()
+            self.assertEqual(os.listdir(scratch), [])
+
+    def test_transient_network_failures_retry_with_an_explicit_socket_timeout(self):
+        url = "https://nodejs.org/dist/v24.21.0/SHASUMS256.txt"
+        failures = [TimeoutError(errno.ETIMEDOUT, "Operation timed out"),
+                    urllib.error.URLError(TimeoutError("timed out")),
+                    ConnectionResetError("connection reset"),
+                    urllib.error.URLError(socket.gaierror(socket.EAI_AGAIN, "try again")),
+                    *(urllib.error.HTTPError(url, code, "transient", {}, None)
+                      for code in (408, 429, 500, 502, 503, 504))]
+        for failure in failures:
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as scratch:
+                dest = os.path.join(scratch, "a.tgz")
+                opener = Mock(side_effect=[failure, failure, io.BytesIO(b"verified")])
+                self.assertEqual(pi_engine.fetch(url, dest, lambda p: pi_engine.sha256_of(p) ==
+                                                hashlib.sha256(b"verified").hexdigest(), opener=opener), dest)
+                self.assertEqual(opener.call_count, 3)
+                for call in opener.call_args_list:
+                    self.assertEqual(call.args, (url,))
+                    self.assertEqual(call.kwargs, {"timeout": 60})
+                self.assertEqual(os.listdir(scratch), ["a.tgz"])
+
+    def test_a_failed_partial_body_is_discarded_before_retrying_from_zero(self):
+        for failure in (TimeoutError("timed out"), ConnectionResetError("reset"),
+                        http.client.IncompleteRead(b"fragment", 100)):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as scratch:
+                dest = os.path.join(scratch, "a.tgz")
+                with open(dest, "wb") as f:
+                    f.write(b"previous")
+                interrupted = Mock(spec=io.BytesIO)
+                interrupted.read.side_effect = [b"partial body longer than the final download", failure]
+                opener = Mock(side_effect=[interrupted, io.BytesIO(b"verified")])
+                matches = lambda p: pi_engine.sha256_of(p) == hashlib.sha256(b"verified").hexdigest()
+                pi_engine.fetch("https://x/a.tgz", dest, matches, opener=opener)
+                self.assertEqual(opener.call_count, 2)
+                interrupted.close.assert_called_once()
+                with open(dest, "rb") as f:
+                    self.assertEqual(f.read(), b"verified")
+                self.assertEqual(os.listdir(scratch), ["a.tgz"])
+
+    def test_exhausted_retries_report_the_url_and_bound_and_leave_no_partial_cache(self):
+        url = "https://registry.npmjs.org/jiti/-/jiti-2.7.0.tgz"
+        for existing in (False, True):
+            with self.subTest(existing=existing), tempfile.TemporaryDirectory() as scratch:
+                dest = os.path.join(scratch, "a.tgz")
+                if existing:
+                    with open(dest, "wb") as f:
+                        f.write(b"previous")
+                responses = []
+                for _ in range(3):
+                    response = Mock(spec=io.BytesIO)
+                    response.read.side_effect = [b"partial", TimeoutError("timed out")]
+                    responses.append(response)
+                opener = Mock(side_effect=responses)
+                with self.assertRaises(pi_engine.EngineError) as raised:
+                    pi_engine.fetch(url, dest, lambda p: False, opener=opener)
+                self.assertIn(url, str(raised.exception))
+                self.assertIn("attempt 3/3", str(raised.exception))
+                self.assertEqual(opener.call_count, 3)
+                for response in responses:
+                    response.close.assert_called_once()
+                self.assertEqual(os.listdir(scratch), ["a.tgz"] if existing else [])
+                if existing:
+                    with open(dest, "rb") as f:
+                        self.assertEqual(f.read(), b"previous")
+
+    def test_permanent_http_dns_and_local_errors_are_not_retried(self):
+        url = "https://x/a.tgz"
+        failures = [*(urllib.error.HTTPError(url, code, "permanent", {}, None)
+                      for code in (400, 401, 403, 404, 410, 501)),
+                    urllib.error.URLError(socket.gaierror(socket.EAI_NONAME, "not found")),
+                    urllib.error.URLError(ssl.SSLCertVerificationError("certificate verification failed")),
+                    FileNotFoundError(errno.ENOENT, "missing archive"),
+                    PermissionError(errno.EACCES, "permission denied")]
+        for failure in failures:
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as scratch:
+                opener = Mock(side_effect=failure)
+                with self.assertRaises(pi_engine.EngineError):
+                    pi_engine.fetch(url, os.path.join(scratch, "a.tgz"), lambda p: True, opener=opener)
+                opener.assert_called_once_with(url, timeout=60)
+                self.assertEqual(os.listdir(scratch), [])
+
+    def test_local_write_errors_are_not_retried_and_preserve_the_destination(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            dest = os.path.join(scratch, "a.tgz")
+            with open(dest, "wb") as f:
+                f.write(b"previous")
+            fdopen = os.fdopen
+
+            def failing_output(fd, mode):
+                output = fdopen(fd, mode)
+                wrapped = Mock(wraps=output)
+                wrapped.write.side_effect = TimeoutError("filesystem timeout")
+                context = Mock()
+                context.__enter__ = Mock(return_value=wrapped)
+                context.__exit__ = Mock(side_effect=lambda *args: output.close())
+                return context
+
+            opener = Mock(return_value=io.BytesIO(b"verified"))
+            with patch.object(pi_engine.os, "fdopen", side_effect=failing_output):
+                with self.assertRaisesRegex(TimeoutError, "filesystem timeout"):
+                    pi_engine.fetch("https://x/a.tgz", dest, lambda p: False, opener=opener)
+            opener.assert_called_once_with("https://x/a.tgz", timeout=60)
+            self.assertEqual(os.listdir(scratch), ["a.tgz"])
+            with open(dest, "rb") as f:
+                self.assertEqual(f.read(), b"previous")
 
 
 class StageTests(unittest.TestCase):
@@ -467,6 +624,25 @@ class VerifyTests(unittest.TestCase):
         self.assertEqual(len(problems), 1, problems)
         self.assertIn(mentioning, problems[0])
 
+    def test_project_config_is_shepherd_without_renaming_pi_environment_variables(self):
+        with open(os.path.join(self.engine, "package.json"), encoding="utf-8") as f:
+            manifest = json.load(f)
+        self.assertEqual(manifest["piConfig"], {"name": "pi", "configDir": ".shepherd"})
+        for config in ({"name": "pi", "configDir": ".pi"}, {"name": "shepherd", "configDir": ".shepherd"}):
+            manifest["piConfig"] = config
+            self.write("package.json", json.dumps(manifest).encode())
+            self.assertOneProblem("piConfig")
+
+    def test_verification_refuses_missing_or_changed_runtime_patch(self):
+        source = b"patched"
+        change = {"path": "dist/core/skills-fixture.js", "after": hashlib.sha256(source).hexdigest()}
+        with patch.object(pi_engine, "engine_patch", return_value={"files": [change]}):
+            self.assertOneProblem("engine patch missing or modified")
+            self.write(change["path"], source)
+            self.assertEqual(pi_engine.verify(self.out, self.fixture.pin), [])
+            self.write(change["path"], b"stale")
+            self.assertOneProblem("engine patch missing or modified")
+
     def test_esbuild_does_not_ship(self):
         self.write("node_modules/esbuild/package.json", json.dumps({"name": "esbuild"}).encode())
         problems = pi_engine.verify(self.out, self.fixture.pin)
@@ -534,7 +710,7 @@ class VerifyTests(unittest.TestCase):
         self.assertEqual(pi_engine.verify(self.out, self.fixture.pin), [], "a fat file of one arm64 slice is fine")
 
     def test_the_pinned_pi_and_its_entry_and_licences_must_be_there(self):
-        for relative, mentioning in (("dist/bundle/cli.js", "cli.js is missing"),
+        for relative, mentioning in (("dist/cli.js", "cli.js is missing"),
                                      ("NODE-LICENSE", "NODE-LICENSE is missing"),
                                      ("THIRD-PARTY-NOTICES", "THIRD-PARTY-NOTICES is missing")):
             with self.subTest(relative):
@@ -588,7 +764,7 @@ class LayoutContractTests(unittest.TestCase):
         phase = self.phase()
         self.assertIn('"$(SRCROOT)/.build/pi-engine/inputs.xcfilelist"', phase)
         self.assertIn('"$(SRCROOT)/.build/pi-engine/outputs.xcfilelist"', phase)
-        for path in ("scripts/pi-engine-pin.json", "scripts/sign-engine.sh", "App/Engine.entitlements"):
+        for path in ("scripts/pi-engine-pin.json", ".build/pi-engine/Resources/pi-engine/package.json", "scripts/sign-engine.sh", "App/Engine.entitlements"):
             self.assertIn(f'"$(SRCROOT)/{path}"', phase)
         self.assertNotIn("x86_64", phase)
         self.assertEqual(pi_engine.STAGED_IN_XCODE, "$(SRCROOT)/.build/pi-engine")
@@ -604,6 +780,36 @@ class LayoutContractTests(unittest.TestCase):
         for fetcher in ("curl", "wget", "http", "npm ", "pi_engine.py stage\\\" ", "python3 scripts/pi_engine.py stage;"):
             for line in commands:
                 self.assertNotIn(fetcher, line.replace("Run: python3 scripts/pi_engine.py stage", ""))
+
+    @unittest.skipUnless(sys.platform == "darwin", "the native manifest preflight uses macOS plutil")
+    def test_same_pin_with_stale_project_configuration_is_refused_before_embedding(self):
+        encoded = re.search(r'shellScript = ("(?:[^"\\]|\\.)*");', self.phase()).group(1)
+        script = json.loads(encoded)
+        with tempfile.TemporaryDirectory() as scratch:
+            staged = os.path.join(scratch, ".build", "pi-engine")
+            manifest = os.path.join(staged, "Resources", "pi-engine", "package.json")
+            os.makedirs(os.path.dirname(manifest))
+            os.makedirs(os.path.join(scratch, "scripts"))
+            os.makedirs(os.path.join(staged, "Helpers"))
+            for path in (os.path.join(scratch, "scripts", "pi-engine-pin.json"), os.path.join(staged, "pin.json")):
+                with open(path, "w") as f:
+                    f.write("same pin")
+            with open(os.path.join(staged, "Helpers", "node"), "w") as f:
+                f.write("scratch node")
+            products = os.path.join(scratch, "products")
+            env = {**os.environ, "SRCROOT": scratch, "TARGET_BUILD_DIR": products,
+                   "CONTENTS_FOLDER_PATH": "Test.app/Contents", "CODE_SIGNING_ALLOWED": "NO"}
+            for config, succeeds in (({"name": "pi", "configDir": ".pi"}, False),
+                                     ({"name": "shepherd", "configDir": ".shepherd"}, False),
+                                     ({}, False), ({"name": "pi", "configDir": ".shepherd"}, True)):
+                with self.subTest(config=config):
+                    with open(manifest, "w") as f:
+                        json.dump({"piConfig": config}, f)
+                    result = subprocess.run(["/bin/bash", "-c", script], env=env, capture_output=True, text=True)
+                    self.assertEqual(result.returncode == 0, succeeds, result.stderr)
+                    if not succeeds:
+                        self.assertIn("Run: python3 scripts/pi_engine.py stage", result.stderr)
+                        self.assertFalse(os.path.exists(products), "stale configuration is refused before touching the app")
 
     def test_xcode_copies_the_sdk_as_a_folder_resource_without_a_shell(self):
         project = read("Shepherd.xcodeproj", "project.pbxproj")

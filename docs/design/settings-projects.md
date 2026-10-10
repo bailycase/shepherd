@@ -41,7 +41,7 @@ revision 562, defines the detail screen and replaces the first implementation.
   terminal directories are excluded. Space identity is host plus absolute directory, not name.
   Summaries come from files in that directory, not copied sample rows.
 - Footer, Geist 12.5/1.55, `textTertiary`, max 700pt: "Instructions in AGENTS.md and settings in
-  a space's .pi folder apply only to that space. Each one is stored on the host the space
+  a space's .shepherd folder apply only to that space. Each one is stored on the host the space
   lives on."
 - Additional states: loading, empty, no filter matches, missing directory, unreachable host,
   older host requiring an update, file loading/error, dirty editor, save conflict and invalid JSON.

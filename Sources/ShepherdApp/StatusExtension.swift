@@ -13,7 +13,7 @@ struct SessionCommand {
 /// docs/mcp.md): pi's own MCP and tool search switched on over the home's `-builtin:` switches, the
 /// secrets the servers' entries refer to in its environment, and, while Settings ▸ MCP servers ▸
 /// Also use a repo's .mcp.json is on, the extension that registers the repo's servers. An agent in a
-/// subproject also gets its parent's `.pi/mcp.json` servers (`sharingParent`).
+/// subproject also gets its parent's `.shepherd/mcp.json` servers (`sharingParent`).
 struct MCPLaunch: Equatable {
     /// `-e` arguments: pi's built-ins by name, then the repo extension's file.
     var extensions: [String]
@@ -37,7 +37,7 @@ struct MCPLaunch: Equatable {
     }
 
     /// This launch for an agent in a subproject of `parent` (Settings ▸ Projects, parents and
-    /// subprojects): the extension that registers the parent's `.pi/mcp.json` servers, and the
+    /// subprojects): the extension that registers the parent's `.shepherd/mcp.json` servers, and the
     /// folder it reads them from. Unchanged for a top-level project.
     func sharingParent(_ parent: String?, install: () throws -> String = MCPParentExtension.installedPath) rethrows -> MCPLaunch {
         guard let parent else { return self }

@@ -12,8 +12,9 @@ struct ProjectMCPConfiguration: Equatable {
     var problem: String?
     var native = true
 
-    init(text: String = "", path: String = ".pi/mcp.json", host: String = "This Mac", signedIn: Set<String> = [], canSignIn: Bool = false, projectTrusted: Bool? = nil) {
-        native = path == ".pi/mcp.json"
+    init(text: String = "", path: String = ".shepherd/mcp.json", host: String = "This Mac", signedIn: Set<String> = [], canSignIn: Bool = false, projectTrusted: Bool? = nil) {
+        // Older remote hosts still inventory native Pi configuration under .pi.
+        native = path == ".shepherd/mcp.json" || path == ".pi/mcp.json"
         switch MCPConfigFile.parse(Data(text.utf8)) {
         case .invalid(let line):
             problem = "This file isn't valid JSON at line \(line). Open it in an editor to repair it, then Reload."
@@ -152,7 +153,7 @@ extension ProjectsModel {
     private func persistMCP(_ next: ProjectMCPConfiguration) async throws {
         let projectID = selected?.id, path = selectedFile?.path
         let text = next.document.text + "\n"
-        if let problem = ProjectMCPConfiguration(text: text, path: path ?? ".pi/mcp.json").problem {
+        if let problem = ProjectMCPConfiguration(text: text, path: path ?? ".shepherd/mcp.json").problem {
             throw ProjectFileError("invalid", problem)
         }
         draft = text

@@ -16,7 +16,7 @@ struct ExtensionMessageTests {
     static func caseName(_ message: ExtensionMessage) -> String {
         switch message {
         case .setAgentStatus, .setAgentName, .setAgentSession, .setAgentChildren, .notify, .helloAgent,
-             .helloChildren, .childScope, .childCommandResult, .listPanes, .openPane, .closePane, .focusPane,
+             .helloChildren, .childScope, .childCommandResult, .prepareProjectConfiguration, .listPanes, .openPane, .closePane, .focusPane,
              .sendPaneInput, .readPane, .requestReview, .listAgents, .sendToAgent, .spawnAgent,
              .coordinateAgent, .agentResponse, .cancelAgentRequest, .createAutomation, .listAutomations,
              .updateAutomation, .deleteAutomation, .startAutomation, .stopAutomation, .suggestInstruction,
@@ -27,7 +27,7 @@ struct ExtensionMessageTests {
             return Wire.caseName(message)
         }
     }
-    static let caseCount = 54
+    static let caseCount = 55
     static let design = DesignID(rawValue: "d1")
 
     static let samples: [ExtensionMessage] = [
@@ -61,6 +61,7 @@ struct ExtensionMessageTests {
         .readPane(id: 8, agentID: agent, paneID: pane),
         .requestReview(id: 9, agentID: agent, cwd: "/tmp/repo", reference: "master..HEAD"),
         .listAgents(id: 16, agentID: agent),
+        .prepareProjectConfiguration(id: 116, agentID: agent, cwd: "/project"),
         .sendToAgent(id: 17, agentID: agent, targetAgentID: AgentID(rawValue: "a2"), text: "CI is green"),
         .sendToAgent(id: 17, agentID: agent, targetAgentID: AgentID(rawValue: "a2"), text: "CI is green", delivery: .report),
         .spawnAgent(id: 18, agentID: agent, cwd: "/tmp/repo", prompt: "Fix the tests."),

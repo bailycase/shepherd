@@ -59,12 +59,17 @@ struct LogicalProjectPreviewTests {
             // The owner records each worker running asynchronously: the next assign carries the revision it really holds.
             let started = prompts.firstIndex { $0.0 == title }.map { $0 + 1 } ?? 1
             try await eventuallyOnMain("task \(started) is recorded on the owner") { (vm.state.projects.first?.tasks.count ?? 0) >= started
-                && vm.state.projects.first?.tasks.allSatisfy { $0.phase != .queued && $0.phase != .reserved } == true }
+                && vm.state.projects.first?.tasks.allSatisfy { $0.phase != .queued && $0.phase != .reserved } == true
+                && (!prompt.hasPrefix("ask") || vm.state.projects.first?.tasks.last?.phase == .waiting) }
             revision = vm.state.projects.first?.revision ?? updated.revision
         }
         try await eventuallyOnMain("workers started") { vm.state.projects.first?.tasks.count == prompts.count }
         // The conversation: a real first message through the runtime, answered by the stub engine's own native turn.
-        #expect(await vm.logicalProjects.sendMessage(ref, text: "Create starter tasks for our sample reading-list app."))
+        try await eventuallyOnMain("the conversation sees the workers' current revision") {
+            vm.logicalProjects.project(ref)?.revision == world.scratch.server.state.projects.first?.revision
+        }
+        #expect(await vm.logicalProjects.sendMessage(ref, text: "Create starter tasks for our sample reading-list app."),
+                "\(vm.logicalProjects.failure?.message ?? "no refusal")")
         try await eventuallyOnMain("the coordinator exists and the message is delivered") {
             vm.state.projects.first?.messages.first?.phase == .delivered && vm.state.projects.first?.coordinatorAgentID != nil
         }

@@ -123,12 +123,17 @@
     cannot discover a private coordinator; capable clients can read it explicitly. Raw native
     sends/retry/queue/compaction still cannot bypass Project admission. This is remote VIEWER
     routing, not worker placement on a different executor. See [Project runtime](project-lead.md).
-  - `projects` (`projects.v1`): host-owned space history, project-file inventory, reads and
-    conflict-checked saves. Only allowlisted files in the selected space are writable,
-    never host-global configuration. The Mac Spaces page checks this capability and the
-    connected host identity before requests. Older hosts show update-required rows.
-    Both Mac and iOS decode the additive messages through `ShepherdRemote`; only the Mac
-    exposes a Spaces editor in this change. See [Spaces](projects.md).
+  - `projects` (`projects.v2`; older hosts use `projects.v1`): host-owned space history,
+    inventory, reads and conflict-checked saves. V1 inventories native `.pi` configuration;
+    v2 inventories `.shepherd`. Current hosts advertise only v2 and require v2 in the client's
+    authenticated hello before any project request reaches file access, migration or approval.
+    A legacy client gets `update_required`, including an editor already open; other remote
+    features remain available. Current clients advertise v2 and accept either host version,
+    preserving the inventoried path and native MCP format. No filesystem aliases are created.
+    Only allowlisted space files are writable, never host-global configuration. The Mac
+    Spaces page checks the host capability and connected identity before requests. Mac and
+    iOS share negotiation/codecs through `ShepherdRemote`; only the Mac exposes a Spaces
+    editor. Request/result shapes and protocol version 1 are unchanged. See [Spaces](projects.md).
   - `skills` (`skills.v1`): Settings ▸ Skills on the host (fetch, look up a repository, install
     from one or from files, on or off, how it's used, remove and restore, check for updates,
     Update automatically), answered with the host's skills or the repository's, and beside them

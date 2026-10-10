@@ -9,7 +9,7 @@
     activity-line states
   - the composer and its menus
   - the queue (the Queue & steer boards): Up next over a running thread with a hovered row and
-    a draft (Stop outlined beside Send), a Steering row under a steered message, the editor with
+    a draft (Send, the one action), a Steering row under a steered message, the editor with
     a Deleted row and the Send menu, every row and stack state, and "From the queue" and
     "Steered" in the thread
   - the subagent tray (every state, a hovered waiting row, one card with Up next, the record

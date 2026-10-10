@@ -44,6 +44,8 @@ struct RPCSessionTests {
             case .agentStart: "agent_start"
             case .agentEnd: "agent_end"
             case .agentSettled: "agent_settled"
+            case .skillsChanged: "skills_changed"
+            case .skillsWatchError: "skills_watch_error"
             case .turnStart: "turn_start"
             case .turnEnd: "turn_end"
             case .messageStart: "message_start"
@@ -129,7 +131,7 @@ struct RPCSessionTests {
         try await h.waitFor("agent_settled")
 
         #expect(h.types() == [
-            "agent_start", "turn_start", "message_start",
+            "agent_start", "turn_start", "message_start", "message_end", "message_start",
             "message_update", "message_update", "message_update", "message_update", "message_update",
             "message_update", "message_update",
             "message_end", "tool_execution_start", "tool_execution_end", "turn_end",
@@ -186,7 +188,7 @@ struct RPCSessionTests {
 
         release.signal()
         try await h.waitFor("agent_settled")
-        #expect(order.current == ["history:12", "prompt", "agent_start", "turn_start", "message_start"]
+        #expect(order.current == ["history:12", "prompt", "agent_start", "turn_start", "message_start", "message_end", "message_start"]
             + Array(repeating: "message_update", count: 7)
             + ["message_end", "tool_execution_start", "tool_execution_end", "turn_end", "unknown:stub_unmodelled_event", "agent_end", "agent_settled"])
     }

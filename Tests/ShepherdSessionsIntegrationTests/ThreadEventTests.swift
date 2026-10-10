@@ -76,6 +76,71 @@ struct ThreadEventTests {
         }
     }
 
+    @Test func skillEventsCoalesceWhileBusyRefreshOnSettleAndDoNothingWhileIdle() async throws {
+        let scratch = try makeScratchDirectory("refresh-events")
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        let log = scratch.appendingPathComponent("stdin.jsonl")
+        let thread = try Thread(env: ["STUB_PI_LOG": log.path])
+        defer { thread.stop() }
+        _ = try await thread.ready()
+        func barrier() async throws {
+            let reply: Result<RPCResponse, RPCError> = await withCheckedContinuation { continuation in
+                thread.queue.async { thread.session.request(.getState) { continuation.resume(returning: $0) } }
+            }
+            #expect(try reply.get().success)
+        }
+        func refreshes() throws -> Int {
+            try String(contentsOf: log, encoding: .utf8).split(separator: "\n").filter { $0.contains("refresh_skills") }.count
+        }
+        try await thread.feed(#"{"type":"agent_start"}"#)
+        for _ in 0..<5 { try await thread.feed(#"{"type":"skills_changed"}"#) }
+        try await barrier()
+        #expect(try refreshes() == 0)
+        try await thread.feed(#"{"type":"agent_settled"}"#)
+        try await barrier()
+        #expect(try refreshes() == 1)
+        for _ in 0..<10 { thread.queue.async { thread.state.refreshSkillsIfIdle() } }
+        try await barrier()
+        #expect(try refreshes() == 1)
+    }
+
+    @Test func aLostRefreshReplyReconcilesCommandsEvenWhenTheNextRefreshIsUnchanged() async throws {
+        let thread = try Thread(env: ["STUB_PI_SKILL_REFRESH_LOST_REPLY": "1", "STUB_PI_SKILL_COMMANDS_FAIL_ONCE": "1"])
+        defer { thread.stop() }
+        let initial = try await thread.ready()
+        #expect(initial.commands?.contains { $0.name == "skill:recovered" } == false)
+        try await thread.feed(#"{"type":"skills_changed"}"#)
+        try await eventually("the unchanged refresh to reconcile the command list") {
+            try await thread.snapshot().commands?.contains { $0.name == "skill:recovered" } == true
+        }
+        #expect(try await thread.snapshot().piSessionID == initial.piSessionID)
+    }
+
+    @Test func skillRefreshStopsAfterThreeFailuresWithoutBreakingTheThread() async throws {
+        let scratch = try makeScratchDirectory("refresh-bound")
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        let log = scratch.appendingPathComponent("stdin.jsonl")
+        let thread = try Thread(env: ["STUB_PI_SKILL_REFRESH_FAIL": "1", "STUB_PI_LOG": log.path])
+        defer { thread.stop() }
+        _ = try await thread.ready()
+        try await thread.feed(#"{"type":"skills_changed"}"#)
+        try await eventually("the refresh failure limit") {
+            await withCheckedContinuation { continuation in
+                thread.queue.async { continuation.resume(returning: thread.state.skillRefreshFailures == 3) }
+            }
+        }
+        let reply: Result<RPCResponse, RPCError> = await withCheckedContinuation { continuation in
+            thread.queue.async {
+                thread.state.refreshSkillsIfIdle()
+                thread.session.request(.getState) { continuation.resume(returning: $0) }
+            }
+        }
+        #expect(try reply.get().success)
+        let records = try String(contentsOf: log, encoding: .utf8).split(separator: "\n")
+        #expect(records.filter { $0.contains("refresh_skills") }.count == 3)
+        #expect(try await thread.snapshot().startProblem == nil)
+    }
+
     @Test func stopPausesTheQueueBeforePiCanSettle() async throws {
         let t = try Thread()
         defer { t.stop() }

@@ -48,8 +48,10 @@ than that catalog (`gpt-6.1-sol` beside a known `gpt-6-sol`) takes the capabilit
 levels of its owner's nearest earlier version of the same family, where a family is the name with
 its version numbers set aside and a release date is never a version. It keeps its own name. Other
 unknown models use conservative text-only defaults. Known proxy compatibility rules cover DeepSeek's role and
-reasoning fields and Responses tool schemas. Only session-mode instances watch the local config;
-updates wait until idle and never redirect an in-flight turn. The model catalog's fingerprint
+reasoning fields and Responses tool schemas. Session-mode instances use an unref'd file watcher plus at most 30 one-second startup
+snapshot checks within the first 30 seconds. The checks catch publications absorbed by the
+watcher's initial stat; ordinary events handle later changes. Restart replaces both and
+shutdown clears both. Unchanged snapshots deduplicate. Explicit input still reloads settings. Updates wait until idle and never redirect an in-flight turn. The model catalog's fingerprint
 includes the connection file. Configuration and credentials never travel to remote clients.
 
 When a restored conversation's managed model does not match pi's current selection, its next
@@ -212,7 +214,7 @@ by construction. The builder refuses a session folder that resolves outside the 
 Shepherd sends over RPC names a session file (`RPCCommand`).
 
 Native children run the parent's own engine: `process.execPath` (the engine's node) with the
-package's `dist/bundle/cli.js`, never a `pi` from PATH, and inherit the pins from their parent:
+package's `dist/cli.js`, never a `pi` from PATH, and inherit the pins from their parent:
 `PI_CODING_AGENT_DIR` (the home: settings, sign-ins, models), `PI_PACKAGE_DIR`,
 `PI_SKIP_VERSION_CHECK`, `PI_TELEMETRY`, and `NODE_EXTRA_CA_CERTS` (the launcher's keychain
 certificates or the user's own, so a private CA works for a helper's requests too); `PI_OFFLINE` is
@@ -466,7 +468,7 @@ refuses pi's own package commands, and the pins turn off pi's update check and i
   install (`PiLauncherTests`), not shown as installed extensions or copied as files
   (`PiConfigTests`, `YourPiResourcesTests`), and, against real pi, a server in `<home>/mcp.json`
   never started with `/mcp` not offered, started with `+builtin:mcp`, a trusted project's
-  `.pi/mcp.json` the same, and `--no-extensions` loading no built-in
+  `.shepherd/mcp.json` the same, and `--no-extensions` loading no built-in
   (`Tests/Extensions/builtin-extensions.test.mjs`, in CI; and, through the shipped engine,
   `EngineSmokeTests.piBuiltInMCPIsOffInShepherdsHomeUnlessSwitchedOn` and
   `piRunsTheDerivedMCPFileOnlyWhenAnAgentsLaunchSwitchesItOn`: the launch's `-e` switches pi's MCP
