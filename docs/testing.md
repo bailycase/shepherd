@@ -113,6 +113,15 @@ stores crashed macOS 26's bundle-less test runner; the bundled app still uses pe
   then vary one input at a time: accessibility activation timing, width, height or content mix.
   Every comparison checks painted content
   and the same real press action. Passing comparison cases do not replace original failures.
+  The completion matrix combines the identical tool-only and empty-final-reply scenarios into
+  `toolOnlyWithEmptyFinalReply`, retaining both native modes (40 parameter cases instead of 42).
+  Tail-flow's blank probe stops at the first RGB channel differing from the background by more
+  than 12; it reports content present or blank, not a pixel count. Its capture region, layout calls,
+  sampling intervals and assertions are unchanged; a tiny bitmap check pins the threshold and
+  excludes alpha and row padding. Passive completion evidence reuses the exact last image checked
+  by OCR instead of taking another capture. These changes retain every observation interval,
+  both native modes, giant histories, all 54 real-workspace completion cycles, and the repair,
+  reader-detachment and hidden-thread checks.
   Turn-navigation probes wait for the viewport to land above the bottom band, not merely for the navigation intent to detach
   following while its first animated frames are still at the tail. The off-screen scroll harness
   declares wheel intent through the same `ThreadInput.readerScrolled(upward:)` method as the native
