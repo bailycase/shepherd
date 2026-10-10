@@ -91,8 +91,9 @@ stores crashed macOS 26's bundle-less test runner; the bundled app still uses pe
   wait for the final text in WindowServer pixels without forcing layout; the guard's multi-step
   recovery is not guaranteed to finish in a fixed one-second delay. The real-workspace completion
   probe saves its last polled image on success or timeout, so failure evidence is the pixels that
-  failed the paint condition. Failed Swift CI runs include these completion PNGs alongside the
-  log in the seven-day `ci-swift-test-log` artifact. Turn-navigation probes wait
+  failed the paint condition. Failed Swift CI runs include these completion PNGs and the
+  matrix's blank-transcript capture alongside the log in the seven-day `ci-swift-test-log` artifact; the
+  matrix's `BOUNDARY` line and failure carry the tail guard's recovery state (`rowsInView`, `attempts`, `repairing`). Turn-navigation probes wait
   for the viewport to land above the bottom band, not merely for the navigation intent to detach
   following while its first animated frames are still at the tail. The off-screen scroll harness
   declares wheel intent through the same `ThreadInput.readerScrolled(upward:)` method as the native
