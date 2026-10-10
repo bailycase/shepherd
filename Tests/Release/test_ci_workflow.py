@@ -170,6 +170,42 @@ class WorkflowShapeTests(unittest.TestCase):
 
 
 class SwiftBuildActionTests(unittest.TestCase):
+    def test_content_hashing_is_required_and_part_of_the_build_marker(self):
+        step = ACTION.split("- name: Swift version and flags", 1)[1].split("- name:", 1)[0]
+        script = run_script(step)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            for name, code in {
+                "swiftc": '#!/bin/sh\nprintf "%s\\n" "$SUPPORTED_FLAG"\n',
+                "swift": '#!/bin/sh\necho "Swift 6.3 fixture"\n',
+                "xcrun": '#!/bin/sh\necho "SDK 26 fixture"\n',
+                "xcodebuild": '#!/bin/sh\necho "Xcode 26 fixture"\n',
+            }.items():
+                program = bin_dir / name
+                program.write_text(code)
+                program.chmod(0o755)
+            env = {**os.environ, "PATH": str(bin_dir) + os.pathsep + os.environ["PATH"],
+                   "RUNNER_TEMP": str(root), "GITHUB_ENV": str(root / "env"),
+                   "GITHUB_OUTPUT": str(root / "output")}
+            def run(code, flag):
+                (root / "env").write_text("")
+                (root / "output").write_text("")
+                result = subprocess.run(["bash", "-eu", "-o", "pipefail", "-c", code],
+                                        env={**env, "SUPPORTED_FLAG": flag}, capture_output=True, text=True)
+                return result, (root / "env").read_text(), (root / "output").read_text()
+            result, flags, marker = run(script, "-enable-incremental-file-hashing")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("-Xswiftc -enable-incremental-file-hashing", flags)
+            changed, _, changed_marker = run(script.replace("--disable-index-store", "--different-fixture-flag"),
+                                             "-enable-incremental-file-hashing")
+            self.assertEqual(changed.returncode, 0, changed.stderr)
+            self.assertNotEqual(marker, changed_marker, "compiler options must invalidate cached products")
+            unsupported, flags, marker = run(script, "-unrelated-flag")
+            self.assertNotEqual(unsupported.returncode, 0)
+            self.assertEqual((flags, marker), ("", ""))
+
     def test_a_persistent_build_is_rebuilt_only_when_the_toolchain_changes_or_on_request(self):
         self.assertIn("marker=.build/ci-toolchain", ACTION)
         self.assertIn('[ "$CLEAN" = true ] ||', ACTION)
