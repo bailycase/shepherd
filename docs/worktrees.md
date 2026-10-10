@@ -63,7 +63,8 @@ to Settings ▸ Worktrees ▸ Base branch:
   2. If that fails and fetching is on, run `git remote set-head origin --auto` and try again.
      With fetching off (or if that still fails), use a local `origin/main` or `origin/master`.
      Fetching off never touches the network.
-  3. With **Fetch before creating** on (the default), run `git fetch --quiet -- origin refs/heads/<default>`.
+  3. With **Fetch before creating** on (the default), validate the full branch with `git check-ref-format`
+     before running `git fetch --quiet -- origin refs/heads/<default>`. Malformed fetch targets change no local refs.
      The note reads "fetched just now". If the fetch fails, the cached `origin/<default>` is used
      and the note reads "cached — fetch failed". A failed fetch does not stop creation.
   4. With fetching off, the note reads "cached — fetch disabled in settings".

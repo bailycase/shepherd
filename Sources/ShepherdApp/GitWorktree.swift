@@ -167,7 +167,10 @@ enum GitWorktree {
 
     /// Fetch a literal branch, never an option or a refspec; false on failure (offline, no remote).
     static func fetch(repo: String, branch: String) -> Bool {
-        (try? run(["-C", (repo as NSString).expandingTildeInPath, "fetch", "--quiet", "--", "origin", "refs/heads/\(branch)"], timeout: networkTimeout)) != nil
+        let repoPath = (repo as NSString).expandingTildeInPath
+        let ref = "refs/heads/\(branch)"
+        guard (try? run(["-C", repoPath, "check-ref-format", ref])) != nil else { return false }
+        return (try? run(["-C", repoPath, "fetch", "--quiet", "--", "origin", ref], timeout: networkTimeout)) != nil
     }
 
     /// A branch the user picked as the base honours Settings ▸ Worktrees ▸ Fetch before creating

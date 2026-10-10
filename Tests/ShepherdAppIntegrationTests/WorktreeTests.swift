@@ -80,6 +80,16 @@ struct GitWorktreeTests {
         #expect(GitWorktree.currentBranch(repo: sandbox.repo.path) == "main")
     }
 
+    @Test func aRefspecCannotWriteAnUnrequestedLocalBranchThroughFetch() throws {
+        let sandbox = try WorktreeSandbox(origin: true)
+        defer { sandbox.remove() }
+        let branch = "main:refs/heads/unrequested"
+        #expect(!GitWorktree.fetch(repo: sandbox.repo.path, branch: branch))
+        GitWorktree.fetchPicked(repo: sandbox.repo.path, base: "origin/\(branch)", fetchFirst: true)
+        #expect(try sandbox.branches() == ["main"])
+        #expect(GitWorktree.currentBranch(repo: sandbox.repo.path) == "main")
+    }
+
     @Test func anOptionLikeStartPointChecksOutItsCommitWithoutChangingTheRequestedBranch() throws {
         let sandbox = try WorktreeSandbox()
         defer { sandbox.remove() }
