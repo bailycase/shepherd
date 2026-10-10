@@ -40,8 +40,9 @@ There are three entry points:
   link. It uses the same base resolution.
 - **The New thread page's New worktree switch**, in the workplace chip's menu, for a local
   repository or a host that creates worktrees. The branch is generated. On this Mac a Base row
-  in the menu picks the start point from the repository's branches (the checked-out one included);
-  until one is picked, and always on a host, the base is resolved per Settings ▸ Worktrees as
+  in the menu picks the start point from the repository's branches (the checked-out one included).
+  The menu's ↑↓ navigation includes the visible Base row; Return opens its picker. With no pick,
+  and always on a host, the base is resolved per Settings ▸ Worktrees as
   above. A picked `origin/…` branch is fetched first when Fetch before creating is on
   (`GitWorktree.fetchPicked`); the pick is used whatever the fetch does. Both are recorded on the agent. A failure shows
   under the composer before any agent exists.
@@ -62,7 +63,7 @@ to Settings ▸ Worktrees ▸ Base branch:
   2. If that fails and fetching is on, run `git remote set-head origin --auto` and try again.
      With fetching off (or if that still fails), use a local `origin/main` or `origin/master`.
      Fetching off never touches the network.
-  3. With **Fetch before creating** on (the default), run `git fetch --quiet origin <default>`.
+  3. With **Fetch before creating** on (the default), run `git fetch --quiet -- origin refs/heads/<default>`.
      The note reads "fetched just now". If the fetch fails, the cached `origin/<default>` is used
      and the note reads "cached — fetch failed". A failed fetch does not stop creation.
   4. With fetching off, the note reads "cached — fetch disabled in settings".
@@ -78,7 +79,7 @@ stops git from waiting on a credential prompt.
 ### The create command
 
 ```sh
-git -C <repo> worktree add --no-track -b <branch> <checkout> <base>
+git -C <repo> worktree add --no-track -b <branch> -- <checkout> <base>
 ```
 
 - `--no-track` matters. Branching from `origin/main` would otherwise make `origin/main` the
@@ -87,6 +88,9 @@ git -C <repo> worktree add --no-track -b <branch> <checkout> <base>
 - If you clear the Base field, the command has no start point and git uses `HEAD`.
 - `-b` refuses to reuse an existing branch, and an existing checkout directory is an error.
   Shepherd never force-resets a branch.
+- Branch names and checkout paths are arguments, never options. Fetch uses a full `refs/heads/`
+  ref, and an option-like local base is qualified likewise because worktree forwards it to
+  `git branch`. The chosen name is still what the agent records.
 - Every `GitWorktree` call runs `/usr/bin/git` by absolute path.
 
 The base is stored on the agent as `Agent.worktreeBase` (`ShepherdCore`), alongside

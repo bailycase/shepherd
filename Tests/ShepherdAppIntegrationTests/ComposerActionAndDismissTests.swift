@@ -46,6 +46,24 @@ struct ComposerActionAndDismissTests {
         }
     }
 
+    @Test func anOrdinarySendClickClosesUnrelatedModelSettings() async {
+        await #expect(processExitsWith: .success) {
+            await recordingErrors { try await Self.clickingThePrimaryAction(stopping: false) }
+        }
+    }
+
+    @Test func anOrdinaryStopClickClosesUnrelatedModelSettings() async {
+        await #expect(processExitsWith: .success) {
+            await recordingErrors { try await Self.clickingThePrimaryAction(stopping: true) }
+        }
+    }
+
+    @Test func aClickOnSendKeepsItsOwnSendMenuOpenUntilAChoiceIsPressed() async {
+        await #expect(processExitsWith: .success) {
+            await recordingErrors { try await Self.clickingSendWithItsOwnMenu() }
+        }
+    }
+
     // MARK: Scenarios
 
     private static let chip = "Model settings: anthropic/claude-opus-4-5"
@@ -115,6 +133,69 @@ struct ComposerActionAndDismissTests {
         try thread.window.press("Send")
         try await eventuallyOnMain("the message to be sent at once") {
             thread.requests.contains { if case .send = $0 { true } else { false } }
+        }
+    }
+
+    @MainActor
+    static func clickingThePrimaryAction(stopping: Bool) async throws {
+        AccessibilityNode.enable()
+        let thread = ComposerThread(running: true)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        if !stopping { thread.store.draft = "also check the tests" }
+        try thread.window.press(Self.chip)
+        try await eventuallyOnMain("the model settings to open") { thread.window.element("Model, thinking and speed") != nil }
+        let label = stopping ? "Stop" : "Send"
+        let control = try #require(thread.window.controls().first { $0.label == label })
+        #expect(control.frame.width >= 24 && control.frame.height >= 24)
+        let point = thread.window.window.convertPoint(fromScreen: CGPoint(x: control.frame.midX, y: control.frame.midY))
+        let click = try #require(NSEvent.mouseEvent(with: .leftMouseDown, location: point, modifierFlags: [], timestamp: 0,
+                                                  windowNumber: thread.window.window.windowNumber, context: nil,
+                                                  eventNumber: 0, clickCount: 1, pressure: 1))
+        try #require(thread.menuDismissal).handle(click)
+        try thread.window.press(label)
+        try await eventuallyOnMain("the primary action to reach the host") {
+            thread.requests.contains {
+                switch $0 {
+                case .abort: return stopping
+                case .send(_, _, _, _, let delivery, _, _, _, _): return !stopping && delivery == .followUp
+                default: return false
+                }
+            }
+        }
+        #expect(thread.window.element("Model, thinking and speed") == nil, "Send and Stop are outside another control's menu")
+    }
+
+    @MainActor
+    static func clickingSendWithItsOwnMenu() async throws {
+        AccessibilityNode.enable()
+        let thread = ComposerThread(running: true)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        thread.store.draft = "also check the tests"
+        func catcher(_ view: NSView) -> SecondaryClick.Catcher? {
+            if let view = view as? SecondaryClick.Catcher { return view }
+            return view.subviews.lazy.compactMap(catcher).first
+        }
+        try await eventuallyOnMain("Send to offer its secondary click") { thread.window.layout(); return catcher(thread.window.host) != nil }
+        let control = try #require(thread.window.controls().first { $0.label == "Send" })
+        let point = thread.window.window.convertPoint(fromScreen: CGPoint(x: control.frame.midX, y: control.frame.midY))
+        let secondary = try #require(NSEvent.mouseEvent(with: .rightMouseDown, location: point, modifierFlags: [], timestamp: 0,
+                                                      windowNumber: thread.window.window.windowNumber, context: nil,
+                                                      eventNumber: 0, clickCount: 1, pressure: 1))
+        try #require(catcher(thread.window.host)).rightMouseDown(with: secondary)
+        let choiceLabel = NativeSendChoice.wait.title + ", " + NativeSendChoice.wait.detail
+        try await eventuallyOnMain("the Send menu to open") { thread.window.element(choiceLabel) != nil }
+        let click = try #require(NSEvent.mouseEvent(with: .leftMouseDown, location: point, modifierFlags: [], timestamp: 0,
+                                                  windowNumber: thread.window.window.windowNumber, context: nil,
+                                                  eventNumber: 0, clickCount: 1, pressure: 1))
+        try #require(thread.menuDismissal).handle(click)
+        #expect(thread.window.element(choiceLabel) != nil, "Send owns this menu, so the watcher leaves its click alone")
+        #expect(!thread.requests.contains { if case .send = $0 { true } else { false } })
+        let choice = try thread.window.press(choiceLabel)
+        #expect(choice.frame.height >= 24 && choice.frame.width >= 24)
+        try await eventuallyOnMain("the menu choice to queue the message") {
+            thread.requests.contains { if case .send(_, _, _, _, let delivery, _, _, _, _) = $0 { delivery == .followUp } else { false } }
         }
     }
 

@@ -190,8 +190,14 @@ extension NewThreadWorktreeBaseTests {
         }
     }
 
+    @Test func theBaseRowCanBeOpenedWithTheMenusArrowAndReturnKeys() async {
+        await #expect(processExitsWith: .success) {
+            await recordingErrors { try await Self.pickingThroughTheWorkplaceMenu(keyboard: true) }
+        }
+    }
+
     @MainActor
-    static func pickingThroughTheWorkplaceMenu() async throws {
+    static func pickingThroughTheWorkplaceMenu(keyboard: Bool = false) async throws {
         AccessibilityNode.enable()
         try StubPi.installAsEngine()
         let repo = try Self.repo()
@@ -217,8 +223,32 @@ extension NewThreadWorktreeBaseTests {
         #expect(draft.worktreeBase == nil, "nothing is picked until the user picks")
 
         // The Base row is a button to VoiceOver and takes the whole row.
-        let row = try window.press("Base branch: Default")
+        let row = try #require(window.controls().first { $0.label == "Base branch: Default" })
         #expect(row.frame.height >= 24 && row.frame.width > 200, "a row, not just its words: \(row)")
+        if keyboard {
+            // Local dispatch reaches SwiftUI's key handlers through this window's responder chain; no events are posted.
+            try await eventuallyOnMain("the workplace menu to own keyboard focus") {
+                window.layout()
+                return window.window.firstResponder != nil && !(window.window.firstResponder is NSTextView)
+            }
+            for (characters, code) in [("\u{F701}", UInt16(125)), ("\r", UInt16(36))] {
+                let event = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+                                                        windowNumber: window.window.windowNumber, context: nil,
+                                                        characters: characters, charactersIgnoringModifiers: characters,
+                                                        isARepeat: false, keyCode: code))
+                try #require(window.window.firstResponder != nil)
+                window.window.sendEvent(event)
+                #expect(!window.window.isKeyWindow, "local key dispatch never takes the user's focus")
+                if code == 125 {
+                    try await eventuallyOnMain("the arrow key to highlight Base") {
+                        window.layout()
+                        return window.controls().contains { $0.label == "Base branch: Default" && $0.isSelected }
+                    }
+                }
+            }
+        } else {
+            try window.press("Base branch: Default")
+        }
         try await eventuallyOnMain("the branch picker") { window.element("Branch from") != nil || window.elements().contains { $0.label?.hasPrefix("release") == true } }
         try await eventuallyOnMain("the branches to load") { window.elements().contains { $0.label?.hasPrefix("release") == true } }
         #expect(draft.worktreeBase == nil, "opening the picker picks nothing")

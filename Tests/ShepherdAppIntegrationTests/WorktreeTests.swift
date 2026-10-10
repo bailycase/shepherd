@@ -56,6 +56,49 @@ struct GitWorktreeTests {
         }
     }
 
+    /// A remote branch is data, even when its name looks like an upload-pack override.
+    @Test(arguments: [false, true])
+    func fetchingABranchNeverExecutesItsName(asPickedBase: Bool) throws {
+        let sandbox = try WorktreeSandbox(origin: true)
+        defer { sandbox.remove() }
+        let marker = sandbox.root.appendingPathComponent("executed")
+        let script = sandbox.root.appendingPathComponent("upload-pack")
+        try "#!/bin/sh\nprintf touched > '\(marker.path)'\nexit 1\n".write(to: script, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+        let branch = "--upload-pack=\(script.path)"
+        let head = try git(["rev-parse", "HEAD"], in: sandbox.repo).trimmingCharacters(in: .whitespacesAndNewlines)
+        try git(["update-ref", "refs/heads/\(branch)", head], in: sandbox.origin)
+        try git(["update-ref", "refs/remotes/origin/\(branch)", head], in: sandbox.repo)
+
+        if asPickedBase {
+            GitWorktree.fetchPicked(repo: sandbox.repo.path, base: "origin/\(branch)", fetchFirst: true)
+        } else {
+            #expect(GitWorktree.fetch(repo: sandbox.repo.path, branch: branch))
+        }
+        #expect(!FileManager.default.fileExists(atPath: marker.path), "a selected ref must never become a git option")
+        #expect(try git(["rev-parse", "FETCH_HEAD"], in: sandbox.repo).trimmingCharacters(in: .whitespacesAndNewlines) == head)
+        #expect(GitWorktree.currentBranch(repo: sandbox.repo.path) == "main")
+    }
+
+    @Test func anOptionLikeStartPointChecksOutItsCommitWithoutChangingTheRequestedBranch() throws {
+        let sandbox = try WorktreeSandbox()
+        defer { sandbox.remove() }
+        try git(["switch", "-qc", "release"], in: sandbox.repo)
+        try "base only\n".write(to: sandbox.repo.appendingPathComponent("base.txt"), atomically: true, encoding: .utf8)
+        try git(["add", "."], in: sandbox.repo)
+        try git(["commit", "-qm", "base contents"], in: sandbox.repo)
+        let head = try git(["rev-parse", "HEAD"], in: sandbox.repo).trimmingCharacters(in: .whitespacesAndNewlines)
+        // A valid ref may have been received or written by git plumbing, not `git branch`.
+        try git(["update-ref", "refs/heads/--detach", head], in: sandbox.repo)
+        try git(["switch", "-q", "main"], in: sandbox.repo)
+
+        let path = try GitWorktree.add(repo: sandbox.repo.path, branch: "agent/from-base", from: "--detach")
+        #expect(GitWorktree.currentBranch(repo: path) == "agent/from-base")
+        #expect(try git(["rev-parse", "HEAD"], in: URL(fileURLWithPath: path)).trimmingCharacters(in: .whitespacesAndNewlines) == head)
+        #expect(try String(contentsOfFile: path + "/base.txt", encoding: .utf8) == "base only\n")
+        #expect(GitWorktree.currentBranch(repo: sandbox.repo.path) == "main")
+    }
+
     @Test func unreconciledWorkNamesUncommittedChangesThenBranchOnlyCommits() throws {
         let sandbox = try WorktreeSandbox()
         defer { sandbox.remove() }

@@ -98,6 +98,8 @@ public struct NWPlaceMenu<RowMenu: View>: View {
 
     public var body: some View {
         let nw = Color.nw
+        let showsBase = worktree?.isOn == true && worktree?.base != nil
+        let rowCount = options.count + (showsBase ? 1 : 0)
         let indexByID = Dictionary(options.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
         VStack(alignment: .leading, spacing: 0) {
             ScrollView(.vertical) {
@@ -149,7 +151,7 @@ public struct NWPlaceMenu<RowMenu: View>: View {
                 .padding(.horizontal, NW.Space.m)
                 .padding(.vertical, NW.Space.xs)
                 if worktree.isOn, let base = worktree.base {
-                    NWMenuRow(highlighted: false, action: onChooseBase, onHover: {}) {
+                    NWMenuRow(highlighted: selection == options.count, action: onChooseBase, onHover: { selection = options.count }) {
                         Text("Base").font(.nw(.ui, weight: .regular)).foregroundStyle(nw.textPrimary)
                         Spacer(minLength: NW.Space.m)
                         Text(base).font(.nwMono(NWPlaceMenuMetrics.baseFont)).foregroundStyle(nw.textTertiary).lineLimit(1).truncationMode(.middle)
@@ -163,14 +165,16 @@ public struct NWPlaceMenu<RowMenu: View>: View {
         .focusable()
         .focusEffectDisabled()
         .focused($focused)
-        .onKeyPress(.downArrow) { selection = min(max(0, options.count - 1), selection + 1); return .handled }
+        .onKeyPress(.downArrow) { selection = min(max(0, rowCount - 1), selection + 1); return .handled }
         .onKeyPress(.upArrow) { selection = max(0, selection - 1); return .handled }
         .onKeyPress(.return) {
             if options.indices.contains(selection) { onChoose(options[selection]) }
+            else if showsBase, selection == options.count { onChooseBase() }
             return .handled
         }
         .onKeyPress(.escape) { onClose(); return .handled }
         .onAppear { focused = true }
+        .onChange(of: rowCount) { _, count in selection = min(selection, max(0, count - 1)) }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Where the thread runs")
     }
