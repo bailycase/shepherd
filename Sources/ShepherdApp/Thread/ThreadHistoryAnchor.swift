@@ -60,8 +60,11 @@ final class ThreadHistoryAnchor {
         DispatchQueue.main.async { [weak self] in
             guard let self, self.generation == token, self.restoring,
                   let marker = self.marker, marker.rowID == self.rowID,
-                  let scroll = marker.enclosingScrollView, let top = marker.viewportTop,
-                  let savedTop = self.savedTop else { return }
+                  let scroll = marker.enclosingScrollView, let savedTop = self.savedTop else { return }
+            // SwiftUI can materialize the row before its final AppKit layout is committed.
+            // Measuring then would apply a correction to a stale marker position.
+            scroll.window?.contentView?.layoutSubtreeIfNeeded()
+            guard let top = marker.viewportTop else { return }
             let delta = top - savedTop
             guard abs(delta) > 0.25 else { return }
             let clip = scroll.contentView

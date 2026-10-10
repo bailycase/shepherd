@@ -58,7 +58,8 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   the viewport while placing every row outside it, so there is nowhere to scroll. The composer stays mounted, keeping its draft and controls. Hidden threads
   and detached readers never trigger this fallback. A send or completed turn permits a fresh bounded
   recovery; restarts keep no repair state. It also notices a following thread resting more than 80pt
-  above its tail with the bottom marker out of view. It waits for quiet layout, at most 160ms for a
+  above its tail. A cached visible bottom marker cannot override that measured gap. It waits for
+  quiet layout, at most 160ms for a
   blank thread, and lands on the tail again; when that is not enough it
   walks the scroll view back toward the rows and then down a page at a time until the marker is
   in view. A repair is not over until the thread has been seen resting on its tail: the follower
@@ -93,7 +94,9 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   one older page while the thread is active and ready, without a button or menu item. Native scroll
   visibility triggers the fetch; stable turn identities and native scroll position keep the visible
   turn in place as older rows prepend. On the Mac a boundary-row anchor also preserves its exact
-  viewport offset through lazy remeasurement, including a partially clipped row. A new scroll,
+  viewport offset through lazy remeasurement, including a partially clipped row. Pending native
+  layout finishes before the anchor offset is measured; a materialized marker alone does not mean
+  its frame matches the drawn row. A new scroll,
   turn jump, send, session change or hiding the thread cancels that restoration, so a late page
   never takes back the reader's newer navigation. Each visit to the top fetches at most one page, never an
   unbounded drain of history; another scroll away from the top arms the next visit, not layout

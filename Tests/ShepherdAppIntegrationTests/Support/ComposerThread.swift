@@ -101,15 +101,36 @@ final class ComposerThread {
     }
 
     /// Waits until the whole window draws the same picture for a few polls.
-    func settle() async throws {
+    func settle(file: StaticString = #fileID, line: UInt = #line) async throws {
         let all = CGRect(origin: .zero, size: size)
         var last = FrameTimer.capture(window, all), still = 0
-        try await eventuallyOnMain("the window to come to rest", timeout: .seconds(10), poll: .milliseconds(20)) {
-            window.layout()
-            let now = FrameTimer.capture(window, all)
-            still = now == last ? still + 1 : 0
-            last = now
-            return still >= 5
+        var previous = last, draws = 0, best = 0
+        var lastDraw = ContinuousClock.now, longestGap = Duration.zero
+        var longestWake = Duration.zero, longestLayout = Duration.zero, longestCapture = Duration.zero
+        do {
+            try await eventuallyOnMain("the window to come to rest", timeout: .seconds(10), poll: .milliseconds(20)) {
+                let woke = ContinuousClock.now
+                longestWake = max(longestWake, lastDraw.duration(to: woke))
+                window.layout()
+                let laidOut = ContinuousClock.now
+                longestLayout = max(longestLayout, woke.duration(to: laidOut))
+                let now = FrameTimer.capture(window, all)
+                let time = ContinuousClock.now
+                longestCapture = max(longestCapture, laidOut.duration(to: time))
+                longestGap = max(longestGap, lastDraw.duration(to: time))
+                lastDraw = time
+                draws += 1
+                previous = last
+                still = now == last ? still + 1 : 0
+                best = max(best, still)
+                last = now
+                return still >= 5
+            }
+        } catch let error as WaitTimeout {
+            let rgb = Pixels.bounds(differing: previous, last, rows: 0..<last.height)
+            let responder = window.window.firstResponder.map { String(describing: Swift.type(of: $0)) } ?? "none"
+            print("Composer settle at \(file):\(line): draws=\(draws), best identical=\(best)/5, longest gap=\(longestGap), wake/layout/capture=\(longestWake)/\(longestLayout)/\(longestCapture), RGB change=\(String(describing: rgb)), responder=\(responder), scroll bounds=\(scrollViews().map { $0.contentView.bounds })")
+            throw error
         }
     }
 

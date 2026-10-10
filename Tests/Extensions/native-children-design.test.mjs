@@ -125,7 +125,7 @@ function startParent({ dir, home, socketPath, design }) {
       proc.stdin.write(JSON.stringify({ id, type: "prompt", message }) + "\n");
       await until(() => events.some((event) => event.id === id && event.type === "response"), 30000);
       const response = events.find((event) => event.id === id && event.type === "response");
-      assert(response.success, `prompt refused: ${response.error ?? ""} ${stderr}`);
+      assert(response.success, `prompt refused: ${response.error ?? "unknown error"}; ${stderr}`);
       await until(() => settled() > before, 90000);
     },
     async round() {
