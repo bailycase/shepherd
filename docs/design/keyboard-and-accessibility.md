@@ -57,8 +57,7 @@ Fixed chords:
   wait for its other tabs. Settings ▸ Keyboard lists them under Fixed, and Ghostty leaves them to
   the app (`appOwnedChords`).
 - ⌘, opens Settings, and ⌘F searches it.
-- ⏎ confirms and ⎋ cancels in sheets. A sheet that asks to allow an agent to act
-  (`PeerApprovalDialog`) has no ⏎ default, so a Return typed as it opens allows nothing; ⎋ is its Deny.
+- ⏎ confirms and ⎋ cancels in user-invoked sheets. Agent tool calls open no approval sheets.
 - In the composer, ↩ sends (while pi works, it queues or steers per Settings) and ⇧↩ or ⌥↩ inserts a
   newline. `/` at the start opens the command list, and Esc closes a menu, then the command list,
   then stops pi while it works.
