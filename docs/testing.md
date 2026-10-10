@@ -486,9 +486,12 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
   socket and server test together. A full parallel self-hosted run timed out unrelated tests
   and aborted after 51 seconds. The app suites also retain `.mainActorExclusive`. There is no
   retry: a test that fails is red, and a flaky test is a bug to fix in the test. The full
-  `swift test` log is uploaded only when the job fails (`ci-swift-test-log`); the step prints
-  the last 20 lines on success or 120 on failure. Swift's exit status decides the result,
-  never sample failure text printed by tests of the app's log reader. Failed UI tests report
+  `swift test` stdout and stderr stream live through `tee` to `$RUNNER_TEMP/swift-test.log`;
+  `pipefail` preserves native failures (and fails if the log cannot be written). The full
+  native log is uploaded on success or failure (`ci-swift-test-log`), retained for seven days.
+  Headers report the restored cache's matched key, native test IDs listed before filtering,
+  flags and validated selection. Swift's exit status decides the result, never sample failure
+  text printed by tests of the app's log reader. Failed UI tests report
   settle call sites and RGB-change bounds, clipboard selection and a fresh named-board control,
   terminal marker coordinates, paging geometry and hidden-spinner state. They retain their
   assertions and deadlines, and log no raw terminal output or user clipboard contents.
@@ -550,8 +553,20 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
   `ShepherdProtocol`) compiled against the old one; the action removes `swift-version-*.txt`,
   an input of every compile command, before each build so every target's driver runs and
   recompiles what any module it loaded changed (seconds when nothing did). Hosted runners start
-  empty and restore the branch's newest `.build` from the Actions cache instead, keyed on the
-  toolchain and `Package.resolved`; only pushes save.
+  empty and restore `.build` from the Actions cache instead, keyed on the OS, toolchain,
+  `Package.resolved` and commit, with toolchain/lock and toolchain prefix fallbacks. After a
+  successful build, hosted PR merge-ref runs and trusted branch pushes/manual dispatches save
+  on an exact-key miss; scheduled and unsupported events do not save. Restore is optional:
+  a missing or evicted cache leaves a normal cold build, never a test bypass.
+  GitHub isolates PR saves to `refs/pull/<number>/merge`: a same-head rerun or changed head of
+  that same PR can reuse them, but its base and sibling PRs cannot. New PRs into `nightly`
+  need a visible base-branch cache, seeded with the existing manual UI diagnostics below;
+  reseed when the toolchain or resolved lock changes. This does not enable tests on Nightly push.
+  Keep caches credential-free: retain checkout's `persist-credentials: false` and public,
+  lock-pinned dependencies; never add repository `.git`, user homes, auth or global Git config
+  paths. The existing whole `.build` includes generated dependency Git metadata: local config
+  audits are not proof that a hosted archive is credential-free. Audit that hosted archive
+  before claiming a verified warm baseline.
 - **Nightly publication** runs no test suites on push. Its release workflow skips the Python
   test preflight but keeps signing, notarization and artifact verification. Required PR checks
   still apply before merging. With self-hosted builds disabled, Nightly builds on GitHub
@@ -574,7 +589,15 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
   the same by hand (`-f clean=true` builds from scratch).
   `gh workflow run ci.yml --ref <branch> -f diagnostics=ui` collects focused failures in the
   self-hosted runner context only when explicitly enabled, otherwise on GitHub, without
-  rerunning all suites or changing PR coverage.
+  rerunning all suites or changing PR coverage. With self-hosted disabled, a trusted
+  `gh workflow run ci.yml --ref nightly -f diagnostics=ui` also seeds Nightly's hosted cache:
+  it still builds all test products and runs the existing validated UI diagnostics, reporting
+  only `UI diagnostics`, never the required `CI` check. There is no new warmup job or mode.
+  The warm five-minute goal remains unmet: the reported PR #240 cold baseline was an 838-second
+  SwiftPM build including dependency fetch, followed by about 35 minutes for 5,527 serial tests.
+  Caching addresses build reuse, not that test duration. Complete hosted success/failure logs
+  must profile the remaining cost before a future resource-isolated static-partition lane;
+  portability and coverage need proof first. No matrix, sharding or test exclusions are added.
 - **Release rules** run on `ubuntu-latest` (stdlib Python): the release workflow's, the CI
   workflow's and plan's, the docs' and the embedded extensions'. **Extension tests** run there
   too, with Node 24 and the modular pi package version from `scripts/pi-engine-pin.json`,

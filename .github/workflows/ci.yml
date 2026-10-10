@@ -166,20 +166,18 @@ jobs:
           CI: "true"
           SWIFT_FILTERS: ${{ needs.plan.outputs.filters }}
         run: |
+          set -o pipefail
           filters=()
+          swift test list --skip-build $SWIFTPM_FLAGS > "$RUNNER_TEMP/swift-tests.txt"
+          printf 'Native test IDs listed (before filtering): %s\n' "$(wc -l < "$RUNNER_TEMP/swift-tests.txt")"
           if [ "$SWIFT_FILTERS" != '[]' ]; then
-            swift test list --skip-build $SWIFTPM_FLAGS > "$RUNNER_TEMP/swift-tests.txt"
             filter=$(python3 scripts/ci_plan.py --validate "$RUNNER_TEMP/swift-tests.txt" "$SWIFT_FILTERS")
             filters=(--filter "$filter")
           fi
-          if swift test --no-parallel --skip-build $SWIFTPM_FLAGS "${filters[@]}" > "$RUNNER_TEMP/swift-test.log" 2>&1; then
-            tail -20 "$RUNNER_TEMP/swift-test.log"
-          else
-            tail -120 "$RUNNER_TEMP/swift-test.log"
-            exit 1
-          fi
+          printf 'Swift test flags: --no-parallel --skip-build %s; selection: %s\n' "$SWIFTPM_FLAGS" "${filter:-all native tests}"
+          swift test --no-parallel --skip-build $SWIFTPM_FLAGS "${filters[@]}" 2>&1 | tee "$RUNNER_TEMP/swift-test.log"
       - name: Upload the log
-        if: ${{ failure() }}
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: ci-swift-test-log

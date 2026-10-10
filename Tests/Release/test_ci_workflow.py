@@ -129,7 +129,10 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertNotIn("matrix:", tests)
         self.assertNotIn("shard", tests)
         self.assertIn('CI: "true"', tests)
-        self.assertIn("if: ${{ failure() }}", tests, "the log is kept only for a red run")
+        upload = tests.split("- name: Upload the log", 1)[1]
+        self.assertIn("if: ${{ always() }}", upload, "keep native profiling evidence on green and red runs")
+        self.assertIn("path: ${{ runner.temp }}/swift-test.log", upload)
+        self.assertIn("retention-days: 7", upload)
 
     def test_the_extension_tests_run_the_pinned_package_without_scripts_or_leniency(self):
         job = JOBS["extensions"]
@@ -166,12 +169,24 @@ class SwiftBuildActionTests(unittest.TestCase):
         self.assertIn("hashFiles('Package.resolved')", cache)
         self.assertIn("restore-keys:", cache)
 
-    def test_hosted_pull_requests_restore_but_never_save_build_caches(self):
+    def test_hosted_builds_save_only_after_building_and_on_a_cache_miss(self):
         self.assertIn("uses: actions/cache/restore@v4", ACTION)
-        save = ACTION.split("- name: Save the hosted branch build", 1)[1]
-        self.assertIn("runner.environment == 'github-hosted' && github.event_name == 'push'", save)
+        save = ACTION.split("- name: Save the hosted build", 1)[1]
+        self.assertIn("steps.cache.outputs.cache-hit != 'true'", save)
         self.assertIn("uses: actions/cache/save@v4", save)
-        self.assertGreater(ACTION.index("- name: Save the hosted branch build"), ACTION.index("swift build --build-tests"))
+        self.assertIn("key: ${{ steps.cache.outputs.cache-primary-key }}", save)
+        self.assertGreater(ACTION.index("- name: Save the hosted build"), ACTION.index("swift build --build-tests"))
+
+    def test_restore_and_save_keep_the_same_build_path_and_toolchain_lock_sha_key(self):
+        restore = ACTION.split("- name: Restore dependency and build caches", 1)[1].split("- name:", 1)[0]
+        save = ACTION.split("- name: Save the hosted build", 1)[1]
+        self.assertIn("path: .build", restore)
+        self.assertIn("path: .build", save)
+        self.assertIn("key: spm-${{ runner.os }}-${{ steps.swift.outputs.version }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}", restore)
+        self.assertIn("MATCHED_KEY: ${{ steps.cache.outputs.cache-matched-key }}", ACTION)
+        self.assertIn("Swift build cache matched key:", ACTION)
+        self.assertNotIn("cache-mode:", WORKFLOW)
+        self.assertNotIn("cache-mode:", ACTION)
 
     def test_clean_or_changed_toolchains_drop_products_but_keep_downloads(self):
         step = ACTION.split("- name: Start over when the toolchain changed", 1)[1].split("- name: Build", 1)[0]
@@ -340,8 +355,9 @@ class PlanTests(unittest.TestCase):
                                         env={**os.environ, "RUNNER_TEMP": directory, "SWIFTPM_FLAGS": "",
                                              "STATUS": str(status), "SWIFT_FILTERS": '["^Module\\\\."]'},
                                         capture_output=True, text=True, timeout=5)
-                self.assertEqual(result.returncode == 0, status == 0, result.stderr)
+                self.assertEqual(result.returncode, status, result.stderr)
                 self.assertIn("native filtered run", result.stdout)
+                self.assertEqual((Path(directory) / "swift-test.log").read_text(), "native filtered run\n")
         with tempfile.TemporaryDirectory() as directory:
             result = subprocess.run(["bash", "-e", "-c", fixture + script], cwd=ROOT,
                                     env={**os.environ, "RUNNER_TEMP": directory, "SWIFTPM_FLAGS": "",
@@ -383,16 +399,38 @@ class PlanTests(unittest.TestCase):
     def test_the_runner_exit_status_not_printed_fixtures_decides_test_success(self):
         script = run_script(JOBS["tests"].split("- name: Run tests", 1)[1])
         self.assertIn("swift test --no-parallel", script)
-        fixture = 'swift() { echo "Test run with 5 tests failed after 1 second with 1 issue."; return "$STATUS"; }\n'
+        self.assertIn('2>&1 | tee "$RUNNER_TEMP/swift-test.log"', script)
+        self.assertIn("set -o pipefail", script)
+        fixture = '''swift() {
+          if [ "$2" = list ]; then printf 'Module.Suite/a()\\n'; return 0; fi
+          echo "Test run with 5 tests failed after 1 second with 1 issue."
+          echo "fixture stderr" >&2
+          return "$STATUS"
+        }\n'''
         for status in (0, 1, 23, 134):
             with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
                 result = subprocess.run(["bash", "-e", "-c", fixture + script],
                                         env={**os.environ, "RUNNER_TEMP": directory,
                                              "SWIFTPM_FLAGS": "", "STATUS": str(status), "SWIFT_FILTERS": "[]"},
                                         capture_output=True, text=True, timeout=5)
-                self.assertEqual(result.returncode == 0, status == 0, result.stderr)
+                self.assertEqual(result.returncode, status, result.stderr)
                 self.assertIn("Test run with 5 tests failed", result.stdout)
-                self.assertTrue((Path(directory) / "swift-test.log").exists())
+                self.assertIn("fixture stderr", result.stdout)
+                self.assertIn("Native test IDs listed (before filtering): 1", result.stdout)
+                self.assertIn("selection: all native tests", result.stdout)
+                self.assertEqual((Path(directory) / "swift-test.log").read_text(),
+                                 "Test run with 5 tests failed after 1 second with 1 issue.\nfixture stderr\n")
+
+    def test_a_failed_log_writer_cannot_turn_a_successful_native_run_green(self):
+        script = run_script(JOBS["tests"].split("- name: Run tests", 1)[1])
+        fixture = 'swift() { echo "Module.Suite/a()"; }; tee() { command tee "$@"; return 7; };\n'
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run(["bash", "-e", "-c", fixture + script],
+                                    env={**os.environ, "RUNNER_TEMP": directory,
+                                         "SWIFTPM_FLAGS": "", "SWIFT_FILTERS": "[]"},
+                                    capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 7, result.stderr)
+            self.assertEqual((Path(directory) / "swift-test.log").read_text(), "Module.Suite/a()\n")
 
 
 if __name__ == "__main__":

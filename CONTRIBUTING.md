@@ -111,7 +111,11 @@ or unknown paths, `master`, daily runs and `full-ci`. Builds use GitHub's macOS 
 `SHEPHERD_SELFHOSTED_ENABLED=true` explicitly enables an isolated self-hosted Mac for maintainer
 PRs and Nightly releases. The shared Mac stays offline to protect other apps. Docs alone run no Swift. A test that fails is red:
 there is no retry, so a flaky test is a bug to fix in the test. A push to `nightly` builds and
-ships without tests.
+ships without tests. Require `CI`, not the manual `UI diagnostics` check. With self-hosted
+builds disabled, a trusted Nightly dispatch with `diagnostics=ui` can seed the hosted cache
+without changing PR coverage or Nightly push behavior. PR cache saves serve only that same
+PR, not its base or siblings; reseed Nightly when the toolchain or resolved lock changes.
+Cache reuse does not establish the unmet warm five-minute test goal ([docs/testing.md](docs/testing.md)).
 
 Don't claim checks passed unless you ran them and saw the result.
 
