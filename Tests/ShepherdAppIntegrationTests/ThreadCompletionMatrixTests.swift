@@ -14,7 +14,7 @@ struct ThreadCompletionMatrixTests {
     typealias Fx = ThreadBlankScreenTests
 
     enum Boundary: String, CaseIterable, Sendable {
-        case smallWindow, tallWindow, hugeLastReply, onlyThinking, onlyTools, emptyReply
+        case smallWindow, tallWindow, hugeLastReply, onlyThinking, toolOnlyWithEmptyFinalReply
         case failure, abort, hidden, readerAbove, composerGrows, composerShrinks, collapsePanel
         case historyReplacement, noPromptInPage, emptyHistoryDuringFinish, newSession
         case spawnRowsCollapse, manyToolsFinish, largeFinalTable, scrolledReplyCollapses
@@ -84,7 +84,7 @@ struct ThreadCompletionMatrixTests {
                 live.append(NativeThreadMessage(entryID: "thinking-\(step)", role: "assistant", blocks: [.init(kind: .thinking, text: Fx.prose(50, step))], timestamp: at + Double(step) * 1000))
             } else {
                 live.append(Fx.tool("matrix-tool-\(step)", "shepherd_child_wait", ["ids": [worker.runID]], output: Fx.prose(step == 5 ? 200 : 1, step), at: at + Double(step) * 1000))
-                if boundary != .onlyTools && boundary != .emptyReply {
+                if boundary != .toolOnlyWithEmptyFinalReply {
                     live.append(Fx.reply("matrix-reply-\(step)", Fx.prose(step == 5 ? (boundary == .scrolledReplyCollapses ? 600 : 100) : 4, step), at: at + Double(step) * 1000 + 100))
                 }
             }
@@ -112,7 +112,7 @@ struct ThreadCompletionMatrixTests {
         let final: String = switch boundary {
         case .hugeLastReply: Fx.prose(500, 999) + "\n\nThe worker completed its review."
         case .largeFinalTable: "| File | Result |\n|---|---|\n" + (0..<150).map { "| File \($0) | Verified |\n" }.joined()
-        case .emptyReply, .onlyThinking, .onlyTools: ""
+        case .toolOnlyWithEmptyFinalReply, .onlyThinking: ""
         default: "The worker completed its review."
         }
         live.append(Fx.reply("matrix-final", final, at: at + 7000))
