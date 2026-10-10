@@ -28,6 +28,8 @@ NO_SWIFT = (
 # Manual diagnostics report a different check name and cannot satisfy the required CI gate.
 UI_DIAGNOSTICS = [r"^ShepherdAppIntegrationTests\." + name + r"/" for name in (
     "ComposerMenuTests", "ThreadCodeBlockTests", "PaneControlTests", "ThreadScrollingTests", "IdleCostTests",
+    "ThreadCompletionMatrixTests", "ThreadCompletionReproductionTests", "RemoteBrowserDriveTests", "ThreadJumpPressTests",
+    "ThreadTailGuardTests",
 )]
 
 # Cheap startup and identity checks stay mandatory; feature integrations follow their callers.
@@ -138,7 +140,7 @@ def test_filter(path: str, root: Path) -> str:
                     return fallback
             elif depth == 0:
                 top_level.append(char)
-        if depth:
+        if depth or "@Test" in "".join(top_level):
             return fallback
         kinds = r"struct|class|enum|actor|extension|protocol|func|let|var|typealias|macro"
         declarations = re.findall(
@@ -151,7 +153,7 @@ def test_filter(path: str, root: Path) -> str:
         for modifiers, kind, name in declarations:
             if kind in ("struct", "class", "enum", "actor", "extension") and name.endswith("Tests"):
                 owners.add(name)
-            elif not re.search(r"\b(private|fileprivate)\b", modifiers):
+            elif kind not in ("func", "let", "var") or not re.search(r"\b(private|fileprivate)\b", modifiers):
                 return fallback
         if "@Test" not in source or not owners:
             return fallback
