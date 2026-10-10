@@ -291,7 +291,7 @@ public final class ProjectSettingsStore: @unchecked Sendable {
     }
 
     /// Older deleted agents still have session headers. Read the header only, never conversation
-    /// text. A bounded migration happens on the user's list request, not on app launch.
+    /// text. The bounded scan runs for the initial cutover cohort or the user's first list request.
     private func importSessions() throws {
         guard !importedSessions else { return }
         let fm = FileManager.default

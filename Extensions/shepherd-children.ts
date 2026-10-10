@@ -110,8 +110,6 @@ function atomic(file, data) {
   fs.renameSync(tmp, file);
 }
 
-// A fork is the active branch through the last complete tool batch. In-flight
-// tool calls and their partial results are omitted, including the spawning call.
 // One authenticated host fence for both fresh starts and resumes. Standalone Pi has no host.
 export function prepareProjectConfiguration(cwd, env = process.env) {
   if (!env.SHEPHERD_SOCKET && !env.SHEPHERD_AGENT_ID) return Promise.resolve();
@@ -143,6 +141,8 @@ export function prepareProjectConfiguration(cwd, env = process.env) {
   });
 }
 
+// A fork is the active branch through the last complete tool batch. In-flight
+// tool calls and their partial results are omitted, including the spawning call.
 export function forkSession(manager, cwd, file) {
   const branch = structuredClone(manager.getBranch());
   let cut = branch.length;
