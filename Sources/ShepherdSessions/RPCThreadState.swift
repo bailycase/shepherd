@@ -451,6 +451,12 @@ final class RPCThreadState {
     /// How long a command's toasts count as its own after pi answers it.
     var commandNoticeGrace: TimeInterval = 1.5
 
+    /// File invalidations coalesce while busy; no timers, model calls or persistent work.
+    private var skillsNeedRefresh = false
+    private(set) var skillRefreshFailures = 0
+    private var skillCommandsPending = false
+    private var skillRefreshInFlight = false
+
     private static let encoder = JSONEncoder()
     private static let queueFieldBytes = #","queue":"#.utf8.count
     private static let ansi = try! NSRegularExpression(
@@ -485,12 +491,55 @@ final class RPCThreadState {
             self.announceIfServable()
         }
         refreshStats(timeout: timeout)
+        refreshCommands(timeout: timeout)
+    }
+
+    func refreshSkillsIfIdle() {
+        guard skillsNeedRefresh, session.isAlive, skillRefreshFailures < 3, !skillRefreshInFlight,
+              piSessionID != nil, !running, !inputActive, compactingRun == nil else { return }
+        skillsNeedRefresh = false
+        skillRefreshInFlight = true
+        session.request(.refreshSkills) { [weak self] result in
+            guard let self else { return }
+            self.skillRefreshInFlight = false
+            if case .success(let response) = result, response.success {
+                self.skillRefreshFailures = 0
+                self.skillCommandsPending = self.skillCommandsPending || response.data?["changed"]?.boolValue == true
+                if self.skillCommandsPending { self.refreshCommands() }
+            } else if case .success(let response) = result, response.error == "skills_busy" {
+                // Engine-side fence also covers prompt preflight and queued continuations.
+                self.skillsNeedRefresh = true
+                return
+            } else {
+                // A timeout can lose the reply after pi already replaced its catalog. The next
+                // successful refresh may say unchanged; still reconcile the host's command list.
+                self.skillCommandsPending = true
+                self.skillsNeedRefresh = true
+                self.skillRefreshFailures += 1
+                if self.skillRefreshFailures == 3 {
+                    ShepherdLog.warning("Skill refresh stopped after three failures for session \(self.session.id)")
+                }
+            }
+            self.refreshSkillsIfIdle()
+        }
+    }
+
+    private func refreshCommands(timeout: TimeInterval = 10, attempt: Int = 0) {
         session.request(.getCommands, timeout: timeout) { [weak self] result in
-            guard let self, case .success(let response) = result, response.success else { return }
+            guard let self else { return }
+            guard case .success(let response) = result, response.success else {
+                if self.skillCommandsPending, self.session.isAlive, attempt < 2 {
+                    self.refreshCommands(timeout: timeout, attempt: attempt + 1)
+                }
+                return
+            }
             let listed = response.data?["commands"]
-            self.allCommands = Self.projectCommands(listed)
+            self.skillCommandsPending = false
+            let commands = Self.projectCommands(listed)
+            guard self.allCommands != commands else { return }
+            self.allCommands = commands
             self.commit()
-            self.onCommandsListed?(self.allCommands ?? [])
+            self.onCommandsListed?(commands)
             self.readArgumentHints(Self.promptTemplateFiles(listed))
         }
     }
@@ -499,6 +548,12 @@ final class RPCThreadState {
 
     func handle(_ event: RPCEvent) {
         switch event {
+        case .skillsChanged:
+            skillsNeedRefresh = true
+            skillRefreshFailures = 0
+            refreshSkillsIfIdle()
+        case .skillsWatchError(let error):
+            ShepherdLog.warning("Skill file observation failed for session \(session.id): \(error)")
         case .agentStart:
             retryStarted()
             // A compaction that stopped or failed says so until the next run.
@@ -540,6 +595,7 @@ final class RPCThreadState {
                 settleCapture = nil
             }
             settled()
+            refreshSkillsIfIdle()
         case .messageStart(let message) where message.role == "user":
             onTurnEvent?(.message(timestamp: message.timestamp, text: DesignViewRecord.strippingFence(from: message.content.compactMap { block -> String? in
                 if case .text(let text) = block { return text }
@@ -1052,7 +1108,7 @@ final class RPCThreadState {
             self.thinkingLevels = levels
         }
         session.request(.getState, timeout: timeout) { [weak self] result in
-            defer { done?(result) }
+            defer { done?(result); self?.refreshSkillsIfIdle() }
             guard let self, case .success(let response) = result, response.success, let data = response.data else { return }
             if let id = data["sessionId"]?.stringValue, id != self.piSessionID {
                 let switched = self.piSessionID != nil
