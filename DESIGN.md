@@ -218,6 +218,8 @@ each rule. Add a budget with any new long list.
 - Hidden agents stay out of the visible one's updates (switching is a visibility flip).
 - Paging older thread rows completes pending native layout before measuring its viewport anchor.
 - A cached visible bottom marker never overrides a following thread's measured gap from its tail.
+  Cached current-row IDs require a live, nonhidden native row probe intersecting the Mac viewport;
+  physical placement is not proof of compositor paint.
 - Motion no one sees costs nothing (`nwMotionPaused`). Detail:
   [performance](docs/design/performance.md).
 
