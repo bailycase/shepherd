@@ -181,9 +181,11 @@ jobs:
       - name: Collect completion evidence
         if: ${{ failure() }}
         run: |
-          if [ -d "$TMPDIR/shepherd-completion-repro" ]; then
-            cp -R "$TMPDIR/shepherd-completion-repro" "$RUNNER_TEMP/"
-          fi
+          for folder in shepherd-completion-repro shepherd-completion-matrix; do
+            if [ -d "$TMPDIR/$folder" ]; then
+              cp -R "$TMPDIR/$folder" "$RUNNER_TEMP/"
+            fi
+          done
       - name: Upload the log
         if: ${{ failure() }}
         uses: actions/upload-artifact@v4
@@ -192,6 +194,7 @@ jobs:
           path: |
             ${{ runner.temp }}/swift-test.log
             ${{ runner.temp }}/shepherd-completion-repro
+            ${{ runner.temp }}/shepherd-completion-matrix
           retention-days: 7
           if-no-files-found: ignore
 

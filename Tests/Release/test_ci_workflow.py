@@ -135,12 +135,14 @@ class WorkflowShapeTests(unittest.TestCase):
         tests = JOBS["tests"]
         copy, upload = tests.split("- name: Collect completion evidence", 1)[1].split("- name: Upload the log", 1)
         self.assertIn("if: ${{ failure() }}", copy)
-        self.assertIn('if [ -d "$TMPDIR/shepherd-completion-repro" ]; then', copy)
-        self.assertIn('cp -R "$TMPDIR/shepherd-completion-repro" "$RUNNER_TEMP/"', copy)
+        self.assertIn("for folder in shepherd-completion-repro shepherd-completion-matrix; do", copy)
+        self.assertIn('if [ -d "$TMPDIR/$folder" ]; then', copy)
+        self.assertIn('cp -R "$TMPDIR/$folder" "$RUNNER_TEMP/"', copy)
         self.assertNotIn("|| true", copy)
+        self.assertNotIn("TMPDIR=", tests, "the tests keep the runner's short socket-safe temp directory")
         self.assertIn("if: ${{ failure() }}", upload)
         self.assertIn("name: ci-swift-test-log", upload)
-        self.assertIn("path: |\n            ${{ runner.temp }}/swift-test.log\n            ${{ runner.temp }}/shepherd-completion-repro", upload)
+        self.assertIn("path: |\n            ${{ runner.temp }}/swift-test.log\n            ${{ runner.temp }}/shepherd-completion-repro\n            ${{ runner.temp }}/shepherd-completion-matrix", upload)
         self.assertIn("retention-days: 7", upload)
         self.assertIn("if-no-files-found: ignore", upload)
 
