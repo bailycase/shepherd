@@ -168,6 +168,14 @@ enum GitWorktree {
         (try? run(["-C", (repo as NSString).expandingTildeInPath, "fetch", "--quiet", "origin", branch], timeout: networkTimeout)) != nil
     }
 
+    /// A branch the user picked as the base honours Settings ▸ Worktrees ▸ Fetch before creating
+    /// as the default does: `origin/<branch>` is fetched first, and a failed fetch leaves the cached
+    /// ref. A local branch has nothing to fetch. Blocking (network); call off the main thread.
+    static func fetchPicked(repo: String, base: String, fetchFirst: Bool) {
+        guard fetchFirst, base.hasPrefix("origin/") else { return }
+        _ = fetch(repo: repo, branch: String(base.dropFirst("origin/".count)))
+    }
+
     /// The current branch of the primary checkout ("feat/x"), or nil when
     /// detached.
     static func currentBranch(repo: String) -> String? {

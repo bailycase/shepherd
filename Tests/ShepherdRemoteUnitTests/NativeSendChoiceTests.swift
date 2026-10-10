@@ -21,6 +21,12 @@ struct NativeSendChoiceTests {
         #expect(NativeThreadDelivery(rawValue: "steer") == .steer)
     }
 
+    /// Stop takes Send's corner only while pi works and the composer holds nothing at all.
+    @Test(arguments: [(true, false, true), (true, true, false), (false, false, false), (false, true, false)])
+    func stopReplacesSendOnlyWhileWorkingWithNoInput(running: Bool, hasInput: Bool, stops: Bool) {
+        #expect(NativeSendChoice.stopsInPlaceOfSend(running: running, hasInput: hasInput) == stops)
+    }
+
     @Test func eachChoiceSaysWhatItDoes() {
         #expect(NativeSendChoice.allCases.map(\.title) == ["Wait for the turn to end", "Steer now"])
         #expect(NativeSendChoice.allCases.allSatisfy { !$0.detail.isEmpty })

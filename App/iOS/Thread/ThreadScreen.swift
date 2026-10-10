@@ -480,13 +480,14 @@ private struct ThreadSidePaneButton: View {
     }
 }
 
-/// Stop, while the agent runs or waits on a question.
+/// Stop while pi waits on a question. The composer's corner is Stop while the agent runs, but a
+/// question takes the composer's place, so this is then the one way to refuse it.
 private struct ThreadStopButton: View {
     let store: NativeThreadStore
     let enabled: Bool
 
     var body: some View {
-        if store.running || !store.dialogs.isEmpty {
+        if !store.dialogs.isEmpty {
             Button("Stop", systemImage: "stop.fill") { Task { await store.abort() } }
                 .tint(Color.nw.failed)
                 .disabled(!enabled || !store.supports("abort"))
