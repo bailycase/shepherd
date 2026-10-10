@@ -129,7 +129,10 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertNotIn("matrix:", tests)
         self.assertNotIn("shard", tests)
         self.assertIn('CI: "true"', tests)
-        self.assertIn("if: ${{ failure() }}", tests, "the log is kept only for a red run")
+        upload = tests.split("- name: Upload the log", 1)[1]
+        self.assertIn("if: ${{ always() }}", upload, "keep native profiling evidence on green and red runs")
+        self.assertIn("${{ runner.temp }}/swift-test.log", upload)
+        self.assertIn("retention-days: 7", upload)
 
     def test_failed_swift_runs_keep_the_log_and_completion_pixels(self):
         tests = JOBS["tests"]
@@ -140,7 +143,7 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertIn('cp -R "$TMPDIR/$folder" "$RUNNER_TEMP/"', copy)
         self.assertNotIn("|| true", copy)
         self.assertNotIn("TMPDIR=", tests, "the tests keep the runner's short socket-safe temp directory")
-        self.assertIn("if: ${{ failure() }}", upload)
+        self.assertIn("if: ${{ always() }}", upload, "green profiling logs and red pixel evidence share one artifact")
         self.assertIn("name: ci-swift-test-log", upload)
         self.assertIn("path: |\n            ${{ runner.temp }}/swift-test.log\n            ${{ runner.temp }}/shepherd-completion-repro\n            ${{ runner.temp }}/shepherd-completion-matrix", upload)
         self.assertIn("retention-days: 7", upload)
@@ -150,7 +153,7 @@ class WorkflowShapeTests(unittest.TestCase):
         job = JOBS["extensions"]
         self.assertIn("scripts/pi-engine-pin.json", job)
         self.assertIn("--ignore-scripts", job)
-        self.assertIn("node --test --test-reporter=spec Tests/Extensions/*.test.mjs", job)
+        self.assertIn("node --test --test-concurrency=2 --test-reporter=spec Tests/Extensions/*.test.mjs", job)
         self.assertNotIn("continue-on-error", job)
 
     def test_every_script_the_workflow_runs_exists(self):
@@ -181,12 +184,121 @@ class SwiftBuildActionTests(unittest.TestCase):
         self.assertIn("hashFiles('Package.resolved')", cache)
         self.assertIn("restore-keys:", cache)
 
-    def test_hosted_pull_requests_restore_but_never_save_build_caches(self):
+    def test_hosted_builds_save_only_after_building_and_on_a_cache_miss(self):
         self.assertIn("uses: actions/cache/restore@v4", ACTION)
-        save = ACTION.split("- name: Save the hosted branch build", 1)[1]
-        self.assertIn("runner.environment == 'github-hosted' && github.event_name == 'push'", save)
+        save = ACTION.split("- name: Save the hosted build", 1)[1]
+        self.assertIn("steps.cache.outputs.cache-hit != 'true'", save)
         self.assertIn("uses: actions/cache/save@v4", save)
-        self.assertGreater(ACTION.index("- name: Save the hosted branch build"), ACTION.index("swift build --build-tests"))
+        self.assertIn("key: ${{ steps.cache.outputs.cache-primary-key }}", save)
+        self.assertGreater(ACTION.index("- name: Save the hosted build"), ACTION.index("swift build --build-tests"))
+
+    def test_hosted_git_metadata_guard_blocks_credentials_without_disclosing_them(self):
+        step = ACTION.split("- name: Guard hosted cache Git metadata", 1)[1].split("- name:", 1)[0]
+        self.assertIn("if: runner.environment == 'github-hosted'", step)
+        self.assertNotIn("continue-on-error", step)
+        self.assertLess(ACTION.index("swift build --build-tests"), ACTION.index("- name: Guard hosted cache Git metadata"))
+        self.assertLess(ACTION.index("- name: Guard hosted cache Git metadata"), ACTION.index("uses: actions/cache/save@v4"))
+        # Execute the actual inline Python, never Swift or the surrounding build script.
+        script = run_script(step).split("python3 - <<'PY'\n", 1)[1].rsplit("\nPY", 1)[0]
+        public = '[remote "origin"]\n url = https://github.com/example/public.git\n[core]\n bare = true\n'
+        secret = "fixture-private-value"
+        cases = [
+            (public, True),
+            ('[http "https://github.com"]\n extraheader = AUTHORIZATION: basic ' + secret, False),
+            ('[HTTP "https://github.com"]\n ExtraHeader = Authorization: Bearer ' + secret, False),
+            ('[credential]\n helper = !echo ' + secret, False),
+            ('[CrEdEnTiAl "https://github.com"]\n username = ' + secret, False),
+            ('[credential]\n helper =\n', False),
+            ('[http]\n cookieFile = /scratch/' + secret, False),
+            ('[http]\n saveCookies = true\n', False),
+            ('[remote "origin"]\n url = https://' + secret + ':password@github.com/example/public.git', False),
+            ('[remote "origin"]\n url = https://github.com/example/public.git?access_token=' + secret, False),
+            ('[remote "origin"]\n url = https://github.com/example/public.git?API_KEY=' + secret, False),
+            ('[remote "origin"]\n url = https://github.com/example/public.git?%74oken=' + secret, False),
+            ('[remote "origin"]\n url = https://github.com/example/public.git?to\\\nken=' + secret, False),
+            ('[include]\n path = /scratch/' + secret, False),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            # A credential-bearing config outside .build must never be read.
+            (root / "config").write_text('[credential]\n helper = ' + secret)
+            for location in ("repositories/bare/config", "checkouts/public/.git/config",
+                             "checkouts/public/.git/config.worktree"):
+                path = root / ".build" / location
+                path.parent.mkdir(parents=True, exist_ok=True)
+                for case, (text, passes) in enumerate(cases):
+                    with self.subTest(location=location, case=case):
+                        path.write_text(text)
+                        result = subprocess.run([sys.executable, "-c", script], cwd=root,
+                                                capture_output=True, text=True, timeout=5)
+                        self.assertEqual(result.returncode == 0, passes, result.stdout + result.stderr)
+                        self.assertNotIn(secret, result.stdout + result.stderr)
+                path.unlink()
+            # Public dependency plugins share source directories through ordinary symlinks.
+            plugins = root / ".build" / "checkouts" / "public" / "Plugins"
+            (plugins / "Shared").mkdir(parents=True)
+            (plugins / "Generator").symlink_to("Shared", target_is_directory=True)
+            result = subprocess.run([sys.executable, "-c", script], cwd=root,
+                                    capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertNotIn(secret, result.stdout + result.stderr)
+            # Submodule gitdir files may refer to inspected metadata inside this build root.
+            module = root / ".build" / "repositories" / "submodule"
+            module.mkdir()
+            (module / "config").write_text(public)
+            indirect = root / ".build" / "checkouts" / "public" / "Submodule" / ".git"
+            indirect.parent.mkdir()
+            alias = root / ".build" / "artifacts" / "metadata-link"
+            alias.parent.mkdir()
+            alias.symlink_to(root, target_is_directory=True)
+            for target, passes in ((str(module), True), (os.path.relpath(module, indirect.parent), True),
+                                   (str(root / secret), False), (str(alias), False)):
+                with self.subTest(gitdir=passes, absolute=os.path.isabs(target)):
+                    indirect.write_text("gitdir: " + target + "\n")
+                    result = subprocess.run([sys.executable, "-c", script], cwd=root,
+                                            capture_output=True, text=True, timeout=5)
+                    self.assertEqual(result.returncode == 0, passes, result.stdout + result.stderr)
+                    self.assertNotIn(secret, result.stdout + result.stderr)
+            indirect.unlink()
+            path = root / ".build" / "repositories" / secret / "config"
+            path.parent.mkdir()
+            path.write_bytes(b"\xff")
+            result = subprocess.run([sys.executable, "-c", script], cwd=root,
+                                    capture_output=True, text=True, timeout=5)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertNotIn(secret, result.stdout + result.stderr)
+            path.unlink()
+            path.symlink_to(root / "config")
+            result = subprocess.run([sys.executable, "-c", script], cwd=root,
+                                    capture_output=True, text=True, timeout=5)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertNotIn(secret, result.stdout + result.stderr)
+            path.unlink()
+            path.parent.rmdir()
+            path.parent.symlink_to(root, target_is_directory=True)
+            result = subprocess.run([sys.executable, "-c", script], cwd=root,
+                                    capture_output=True, text=True, timeout=5)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertNotIn(secret, result.stdout + result.stderr)
+            path.parent.unlink()
+            metadata = root / ".build" / "checkouts" / "public" / ".git"
+            metadata.rmdir()
+            metadata.symlink_to(root, target_is_directory=True)
+            result = subprocess.run([sys.executable, "-c", script], cwd=root,
+                                    capture_output=True, text=True, timeout=5)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertNotIn(secret, result.stdout + result.stderr)
+
+    def test_restore_and_save_keep_the_same_build_path_and_toolchain_lock_sha_key(self):
+        restore = ACTION.split("- name: Restore dependency and build caches", 1)[1].split("- name:", 1)[0]
+        save = ACTION.split("- name: Save the hosted build", 1)[1]
+        self.assertIn("path: .build", restore)
+        self.assertIn("path: .build", save)
+        self.assertIn("key: spm-${{ runner.os }}-${{ steps.swift.outputs.version }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}", restore)
+        self.assertIn("MATCHED_KEY: ${{ steps.cache.outputs.cache-matched-key }}", ACTION)
+        self.assertIn("Swift build cache matched key:", ACTION)
+        self.assertNotIn("cache-mode:", WORKFLOW)
+        self.assertNotIn("cache-mode:", ACTION)
 
     def test_clean_or_changed_toolchains_drop_products_but_keep_downloads(self):
         step = ACTION.split("- name: Start over when the toolchain changed", 1)[1].split("- name: Build", 1)[0]
@@ -310,10 +422,14 @@ class PlanTests(unittest.TestCase):
                 expression = name.replace("github.event_name", repr(event)).replace("github.event.inputs.diagnostics", repr(diagnostic))
                 actual = eval(expression.replace("&&", " and ").replace("||", " or "), {"__builtins__": {}})
                 self.assertEqual(actual, "UI diagnostics" if event == "workflow_dispatch" and diagnostic == "ui" else "CI")
-        ids = [f"ShepherdAppIntegrationTests.{name}/case()" for name in (
-            "ComposerMenuTests", "ThreadCodeBlockTests", "PaneControlTests", "ThreadScrollingTests", "IdleCostTests",
-        )]
-        ci_plan.validated_filter(ids, ci_plan.UI_DIAGNOSTICS)
+        suites = ("ComposerMenuTests", "ThreadCodeBlockTests", "PaneControlTests", "ThreadScrollingTests",
+                  "IdleCostTests", "ThreadCompletionMatrixTests", "ThreadCompletionReproductionTests",
+                  "RemoteBrowserDriveTests", "ThreadJumpPressTests", "ThreadTailGuardTests")
+        ids = [f"ShepherdAppIntegrationTests.{name}/case()" for name in suites]
+        pattern = ci_plan.validated_filter(ids, ci_plan.UI_DIAGNOSTICS)
+        self.assertEqual(len(ci_plan.UI_DIAGNOSTICS), len(suites))
+        self.assertTrue(all(re.search(pattern, test_id) for test_id in ids))
+        self.assertIsNone(re.search(pattern, "ShepherdAppIntegrationTests.UnrelatedTests/case()"))
         script = run_script(JOBS["plan"])
         fixture = 'python3() { command "$PYTHON" "$PLANNER" "${@:2}"; }\n'
         for event, diagnostic, expected in (("workflow_dispatch", "ui", ci_plan.UI_DIAGNOSTICS),
@@ -355,8 +471,9 @@ class PlanTests(unittest.TestCase):
                                         env={**os.environ, "RUNNER_TEMP": directory, "SWIFTPM_FLAGS": "",
                                              "STATUS": str(status), "SWIFT_FILTERS": '["^Module\\\\."]'},
                                         capture_output=True, text=True, timeout=5)
-                self.assertEqual(result.returncode == 0, status == 0, result.stderr)
+                self.assertEqual(result.returncode, status, result.stderr)
                 self.assertIn("native filtered run", result.stdout)
+                self.assertEqual((Path(directory) / "swift-test.log").read_text(), "native filtered run\n")
         with tempfile.TemporaryDirectory() as directory:
             result = subprocess.run(["bash", "-e", "-c", fixture + script], cwd=ROOT,
                                     env={**os.environ, "RUNNER_TEMP": directory, "SWIFTPM_FLAGS": "",
@@ -398,16 +515,38 @@ class PlanTests(unittest.TestCase):
     def test_the_runner_exit_status_not_printed_fixtures_decides_test_success(self):
         script = run_script(JOBS["tests"].split("- name: Run tests", 1)[1])
         self.assertIn("swift test --no-parallel", script)
-        fixture = 'swift() { echo "Test run with 5 tests failed after 1 second with 1 issue."; return "$STATUS"; }\n'
+        self.assertIn('2>&1 | tee "$RUNNER_TEMP/swift-test.log"', script)
+        self.assertIn("set -o pipefail", script)
+        fixture = '''swift() {
+          if [ "$2" = list ]; then printf 'Module.Suite/a()\\n'; return 0; fi
+          echo "Test run with 5 tests failed after 1 second with 1 issue."
+          echo "fixture stderr" >&2
+          return "$STATUS"
+        }\n'''
         for status in (0, 1, 23, 134):
             with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
                 result = subprocess.run(["bash", "-e", "-c", fixture + script],
                                         env={**os.environ, "RUNNER_TEMP": directory,
                                              "SWIFTPM_FLAGS": "", "STATUS": str(status), "SWIFT_FILTERS": "[]"},
                                         capture_output=True, text=True, timeout=5)
-                self.assertEqual(result.returncode == 0, status == 0, result.stderr)
+                self.assertEqual(result.returncode, status, result.stderr)
                 self.assertIn("Test run with 5 tests failed", result.stdout)
-                self.assertTrue((Path(directory) / "swift-test.log").exists())
+                self.assertIn("fixture stderr", result.stdout)
+                self.assertIn("Native test IDs listed (before filtering): 1", result.stdout)
+                self.assertIn("selection: all native tests", result.stdout)
+                self.assertEqual((Path(directory) / "swift-test.log").read_text(),
+                                 "Test run with 5 tests failed after 1 second with 1 issue.\nfixture stderr\n")
+
+    def test_a_failed_log_writer_cannot_turn_a_successful_native_run_green(self):
+        script = run_script(JOBS["tests"].split("- name: Run tests", 1)[1])
+        fixture = 'swift() { echo "Module.Suite/a()"; }; tee() { command tee "$@"; return 7; };\n'
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run(["bash", "-e", "-c", fixture + script],
+                                    env={**os.environ, "RUNNER_TEMP": directory,
+                                         "SWIFTPM_FLAGS": "", "SWIFT_FILTERS": "[]"},
+                                    capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 7, result.stderr)
+            self.assertEqual((Path(directory) / "swift-test.log").read_text(), "Module.Suite/a()\n")
 
 
 if __name__ == "__main__":

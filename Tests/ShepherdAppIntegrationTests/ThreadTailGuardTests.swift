@@ -5,8 +5,9 @@ import Testing
 
 /// What the tail guard leaves the scroll view as, once it has walked it. A scroll view of the
 /// thread's shape (a tall document, the composer's inset) and a guard told what the lazy stack
-/// would say, with no window and no SwiftUI: the stack's guesses are the cause of a stranded view,
-/// and this is the cure's own bookkeeping.
+/// would say, without SwiftUI: the stack's guesses are the cause of a stranded view, and this is
+/// the cure's own bookkeeping. Native-placement cases attach passive row markers to an off-screen
+/// AppKit window; the other cases retain their independent target-visibility inputs.
 @Suite("Thread tail guard", .serialized, .mainActorExclusive)
 @MainActor
 struct ThreadTailGuardTests {
@@ -129,6 +130,91 @@ struct ThreadTailGuardTests {
             rig.landings > 0 && abs(rig.gap) <= ThreadTailGuard.slack
         }
         #expect(rig.landings == 1)
+    }
+
+    /// Completion can cache a current row and the bottom while native geometry still reports the
+    /// end. Only physical row placement may suppress repair; failure still gets just eight tries.
+    @Test(arguments: ["hidden", "hiddenAncestor", "offviewport", "dead", "missing"])
+    func cachedCurrentRowAndBottomIDsWithoutNativeContentStillGetBoundedRepair(state: String) async throws {
+        let rig = Rig()
+        let window = OffscreenWindow(size: rig.scroll.frame.size)
+        defer { rig.close(); window.close() }
+        rig.guardian.active = false
+        rig.guardian.stop()
+        window.window.contentView = rig.scroll
+        rig.document.setFrameSize(NSSize(width: 800, height: rig.clip.bounds.height - rig.scroll.contentInsets.bottom))
+        rig.scrollToEnd()
+        rig.guardian.requiresNativeRows = true
+        weak var weakMarker: ThreadTailGuard.RowMarker?
+        autoreleasepool {
+            guard state != "missing" else { return }
+            let parent = Flipped(frame: NSRect(x: state == "offviewport" ? 1000 : 0, y: 80, width: 200, height: 80))
+            let marker = ThreadTailGuard.RowMarker(frame: NSRect(x: 0, y: 0, width: 200, height: 40))
+            rig.document.addSubview(parent)
+            parent.addSubview(marker)
+            weakMarker = marker
+            rig.guardian.registerRow(marker, id: "row")
+            if state == "hidden" { marker.isHidden = true }
+            if state == "hiddenAncestor" { parent.isHidden = true }
+            if state == "dead" { marker.removeFromSuperview() }
+        }
+        if state == "dead" { #expect(weakMarker == nil, "the guard must not retain lazy rows") }
+        var rebuilds = 0
+        rig.guardian.rebuild = { rebuilds += 1 }
+        rig.guardian.distance = 0
+        rig.guardian.targets(["row", "thread-bottom"])
+        #expect(abs(rig.gap) <= ThreadTailGuard.slack, "native end geometry must not explain this repair")
+        try #require(!rig.guardian.rowsInView)
+        rig.guardian.active = true
+        try await eventuallyOnMain("cached IDs without native content to exhaust bounded repair") {
+            rebuilds == 1 && rig.landings == ThreadTailGuard.maxAttempts && !rig.guardian.repairing
+        }
+        #expect(rig.guardian.attempts == ThreadTailGuard.maxAttempts)
+        #expect(rig.guardian.visible == ["row", "thread-bottom"])
+        for _ in 0..<20 { rig.guardian.targets(["row", "thread-bottom"]) }
+        #expect(rebuilds == 1)
+        #expect(rig.landings == ThreadTailGuard.maxAttempts)
+    }
+
+    @Test func aPhysicallyVisibleCurrentRowEndsRepairWithoutRebuildingAndObsoleteIDsLoseTheirMarkers() async throws {
+        let rig = Rig()
+        let window = OffscreenWindow(size: rig.scroll.frame.size)
+        defer { rig.close(); window.close() }
+        rig.guardian.active = false
+        rig.guardian.stop()
+        window.window.contentView = rig.scroll
+        rig.document.setFrameSize(NSSize(width: 800, height: rig.clip.bounds.height - rig.scroll.contentInsets.bottom))
+        rig.scrollToEnd()
+        rig.guardian.requiresNativeRows = true
+        let marker = ThreadTailGuard.RowMarker(frame: NSRect(x: 0, y: 80, width: 200, height: 40))
+        var rebuilds = 0
+        rig.guardian.rebuild = { rebuilds += 1 }
+        let land = rig.guardian.land
+        rig.guardian.land = {
+            land()
+            rig.document.addSubview(marker)
+            rig.guardian.registerRow(marker, id: "row")
+            rig.guardian.targets(["row", "thread-bottom"])
+        }
+        rig.document.addSubview(marker)
+        rig.guardian.registerRow(marker, id: "row")
+        rig.guardian.distance = 0
+        rig.guardian.targets(["row", "thread-bottom"])
+        #expect(rig.guardian.rowsInView)
+        rig.guardian.active = true
+        rig.guardian.asked()
+        #expect(rig.landings == 0 && rig.guardian.attempts == 0, "a physically visible row must remain healthy")
+        marker.removeFromSuperview()
+        rig.guardian.targets(["row", "thread-bottom"])
+        #expect(!rig.guardian.rowsInView, "a detached marker must not prove content")
+        try await eventuallyOnMain("native content to end the cached-ID repair") {
+            rig.landings == 1 && rig.guardian.rowsInView && rig.guardian.attempts == 0 && !rig.guardian.repairing
+        }
+        #expect(rebuilds == 0)
+        #expect(marker.hitTest(.zero) == nil)
+        rig.guardian.rowIDs = []
+        rig.guardian.rowIDs = ["row"]
+        #expect(!rig.guardian.rowsInView, "an obsolete registry entry must not survive an ID leaving the transcript")
     }
 
     @Test func aFittingBlankDocumentRebuildsOnceAfterBoundedScrollingFails() async throws {

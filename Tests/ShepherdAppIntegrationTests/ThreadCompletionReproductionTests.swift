@@ -77,18 +77,18 @@ struct ThreadCompletionReproductionTests {
                     return recognizedFinal
                 }
             } catch is WaitTimeout { }
-            _ = try capture(deck, to: directory.appendingPathComponent(prefix + ".png"))
+            _ = try capture(deck, to: directory.appendingPathComponent(prefix + ".png"), placement: !recognizedFinal)
             print("COMPLETION \(prefix): rows=\(deck.store.rows.count), targets=\(deck.tailGuard.visible), following=\(deck.tailGuard.following), attempts=\(deck.tailGuard.attempts), repairing=\(deck.tailGuard.repairing), rowsInView=\(deck.tailGuard.rowsInView), reportedDistance=\(deck.tailGuard.distance), \(deck.reading.map(String.init(describing:)) ?? "no scroll view"), answer=\(recognizedFinal)")
             guard recognizedFinal else {
                 // Save what the user would try next as evidence, not as a way to pass the test.
                 deck.scroll(by: -500)
                 try await Task.sleep(for: .seconds(1))
-                _ = try capture(deck, to: directory.appendingPathComponent(prefix + "-scrolled.png"))
+                _ = try capture(deck, to: directory.appendingPathComponent(prefix + "-scrolled.png"), placement: true)
                 deck.hide()
                 try await Task.sleep(for: .milliseconds(100))
                 deck.show()
                 try await Task.sleep(for: .seconds(1))
-                _ = try capture(deck, to: directory.appendingPathComponent(prefix + "-reshown.png"))
+                _ = try capture(deck, to: directory.appendingPathComponent(prefix + "-reshown.png"), placement: true)
                 Issue.record("Completion did not paint its final answer; see \(directory.path)/\(prefix).png")
                 return
             }
@@ -152,19 +152,44 @@ struct ThreadCompletionReproductionTests {
             }
             let prefix = "workspace-\(Int(size.width))-\(turn)"
             var lastImage: CGImage?
+            var lastOCR: [String] = []
             var painted = false
             do {
                 // Store completion precedes painting; observe pixels without forcing layout.
                 try await eventuallyOnMain("\(prefix) to paint its completed answer", poll: .milliseconds(100)) {
                     let image = try ThreadWindowCapture.image(window.window)
                     lastImage = image
-                    painted = try recognizedText(image).contains {
+                    lastOCR = try recognizedText(image)
+                    painted = lastOCR.contains {
                         let letters = $0.lowercased().filter { $0.isLetter || $0.isNumber }
                         return letters.contains("completiontrial") || letters.contains("letval") || letters.contains("paragraph")
                     }
                     return painted
                 }
             } catch is WaitTimeout { }
+            // Read native geometry only; forcing layout here would hide the failed paint boundary.
+            var scrolls: [[String: Any]] = []
+            func inspect(_ view: NSView) {
+                if let scroll = view as? NSScrollView {
+                    let clip = scroll.contentView.bounds
+                    let height = scroll.documentView?.bounds.height ?? 0
+                    scrolls.append([
+                        "class": String(describing: type(of: scroll)),
+                        "clip": [clip.origin.x, clip.origin.y, clip.width, clip.height],
+                        "documentHeight": height, "bottomInset": scroll.contentInsets.bottom,
+                        "endDistance": height - (clip.origin.y + clip.height - scroll.contentInsets.bottom),
+                        "hidden": scroll.isHiddenOrHasHiddenAncestor, "alpha": scroll.alphaValue
+                    ])
+                }
+                view.subviews.forEach(inspect)
+            }
+            if let content = window.window.contentView { inspect(content) }
+            let diagnostic: [String: Any] = [
+                "lastOCR": lastOCR, "scrolls": scrolls,
+                "lastAssistantID": store.messages.last { $0.role == "assistant" }?.entryID ?? "none"
+            ]
+            try JSONSerialization.data(withJSONObject: diagnostic, options: [.prettyPrinted, .sortedKeys])
+                .write(to: directory.appendingPathComponent(prefix + ".json"))
             let bitmap = NSBitmapImageRep(cgImage: try #require(lastImage))
             try #require(bitmap.representation(using: .png, properties: [:])).write(to: directory.appendingPathComponent(prefix + ".png"))
             print("WORKSPACE \(prefix): rows=\(store.rows.count), messages=\(store.messages.count), running=\(store.running), ready=\(store.ready), children=\(store.subagents.count), mountedTabs=\(vm.mountedTabs.count), painted=\(painted)")
@@ -192,9 +217,17 @@ struct ThreadCompletionReproductionTests {
         #expect(text.contains { $0.contains("Paragraph") || $0.contains("value") || $0.contains("Key point") })
     }
 
-    private func capture(_ deck: Flow.Deck, to path: URL) throws -> CGImage {
+    private func capture(_ deck: Flow.Deck, to path: URL, placement: Bool = false) throws -> CGImage {
         let bitmap = NSBitmapImageRep(cgImage: try ThreadWindowCapture.image(deck.window.window))
         try #require(bitmap.representation(using: .png, properties: [:])).write(to: path)
+        if placement, let scroll = deck.scrollView {
+            var evidence = ThreadWindowCapture.placement(of: deck.page, in: scroll)
+            evidence["reading"] = deck.reading.map(String.init(describing:)) ?? "no scroll view"
+            evidence["targets"] = deck.tailGuard.visible
+            evidence["following"] = deck.tailGuard.following
+            try JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys])
+                .write(to: path.deletingPathExtension().appendingPathExtension("json"))
+        }
         return try #require(bitmap.cgImage)
     }
 
