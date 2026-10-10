@@ -378,20 +378,7 @@ final class ShepherdViewModel {
     /// Worktree agent pending delete confirmation (alert in RootView) —
     /// deleting may also remove the checkout, so it always confirms.
     var worktreeDeleteTarget: AgentID?
-    /// An agent's `agent_delete` awaiting the user (`PeerDeleteDialog`). Only the dialog's
-    /// destructive button approves it; `respond` answers the requesting agent exactly once.
-    struct PeerDeleteConfirmation: Identifiable {
-        /// The server's token for the pending request.
-        let requestID: String
-        let agent: Agent
-        let senderName: String
-        let respond: (AgentPeerOutcome) -> Void
-        var id: String { requestID }
-    }
-    var peerDeleteConfirmation: PeerDeleteConfirmation?
-    /// Agents' calls on other threads waiting for the user (`PeerApprovalDialog`), oldest first and
-    /// shown one at a time. The server holds each call and does it only on an answer.
-    var peerApprovals: [AgentApprovalPrompt] = []
+
     /// A snapshot of the agent + space whose Finalize Worktree sheet is
     /// open. Copies, not IDs: the pipeline's last act retires the agent, and
     /// a live lookup would blank the sheet mid-success.
