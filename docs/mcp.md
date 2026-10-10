@@ -39,7 +39,7 @@ Read from pi 1.0's docs (`.build/pi-engine/Resources/pi-engine/docs/mcp.md`) and
 by `pi-mcp.test.mjs`.
 
 **Files and trust.** pi reads `<agent dir>/mcp.json` (Shepherd's home, because `PI_CODING_AGENT_DIR` is its
-own) and, only in a project pi trusts, `<project>/.pi/mcp.json`. No flag or variable names another file,
+own) and, only in a project pi trusts, `<project>/.shepherd/mcp.json`. No flag or variable names another file,
 so Shepherd cannot point pi at `~/.config/mcp/mcp.json`: the file in the home is derived. The format is
 `{"mcpServers": {name: entry}}`. Names are `[A-Za-z0-9_-]+`; two names that differ only by `-` and `_` are
 one server. A bad entry is reported and skipped, the others run. pi never reads `~/.pi` here: its home is
@@ -130,10 +130,10 @@ resumes it. Remote hosts advertise `projects.mcp.v1`; older hosts require an upd
 ### Project approval and thread loading
 
 Saving configuration or signing in does not approve a project. The OAuth bridge explicitly
-loads one selected entry, so it can save credentials even while Pi blocks `.pi/mcp.json` in
+loads one selected entry, so it can save credentials even while Pi blocks `.shepherd/mcp.json` in
 RPC threads. The project page labels that state "Credentials saved", not a live connection.
 
-For `.pi/mcp.json`, the page checks the selected host's Pi trust decision separately. An
+For `.shepherd/mcp.json`, the page checks the selected host's Pi trust decision separately. An
 undecided or denied folder shows "Project configuration blocked" and "Trust this project…".
 The confirmation explains that trust also allows executable extensions, settings, skills, MCP
 commands and configured package installation. It approves only the selected canonical folder
@@ -146,7 +146,7 @@ approval or an "always" default.
 
 The check and save use the bundled SDK without creating a Pi session, loading project
 resources, connecting MCP servers or calling a provider. They have a ten-second deadline.
-Normal new-thread startup then resolves the saved decision, loads `.pi/mcp.json` through
+Normal new-thread startup then resolves the saved decision, loads `.shepherd/mcp.json` through
 `builtin:mcp`, and registers tools after connection. Deferred tools are available through
 `builtin:tool-search` and codemode's `ALL_TOOLS`. Existing threads need restarting. MCP must
 also be enabled under Settings > Pi > Bundled extensions. Approval permits loading, but does
@@ -239,7 +239,7 @@ Deferred tools), so with Settings ▸ Agents ▸ Defer rarely used tools on a th
 `-e builtin:tool-search` even with MCP off (it wins over the home's `-builtin:tool-search`, like MCP's). A design's agent, a
 native subagent, a draft and the model catalog do not (`--no-extensions` or no flag). Native codemode
 defaults on for primary agents, with a global switch and trusted-project override. To keep a project's
-`.pi/mcp.json` server reachable when codemode is off, set its `exposure` to `deferred` or `direct`.
+`.shepherd/mcp.json` server reachable when codemode is off, set its `exposure` to `deferred` or `direct`.
 
 **A repo's `.mcp.json`** (Settings ▸ MCP servers ▸ Also use a repo's .mcp.json, off by default): with
 the switch on, `shepherd-mcp-project.ts` registers the servers of the `.mcp.json` found at the agent's

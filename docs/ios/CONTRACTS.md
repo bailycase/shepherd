@@ -163,6 +163,10 @@ them except the navigator, which is each window's own ([Windows](#windows-ipad))
 - Talk to a host with `hosts.host(ref.host)?.connectedClient` (a `RemoteHostClient`). Key work
   tied to one connection on `host.session`: it changes with every new connection.
 - Check capabilities with `host.supports(RemoteProtocol.…Capability)` before offering a feature.
+  Project-file APIs accept `projects.v1` (legacy `.pi`) or `projects.v2` (`.shepherd`); shared
+  `RemoteHostClient` advertises v2 for both Mac and iOS. Current hosts reject project requests
+  from legacy clients before file access or approval, without disabling other remote features.
+  Keep the inventoried native path/schema; do not alias host files. Wire shapes/version stay 1.
 - **Browser tunnels** (`browser.tunnel.v1`; the Mac's remote Browser tab, docs/browser.md › Remote).
   The iPad's Browser tab reuses the whole protocol layer and none of the Mac's page:
   `host.connectedClient?.tunnels` is the connection's `BrowserTunnelHub` (`bridge(fd:agentID:port:)`

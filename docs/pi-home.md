@@ -466,7 +466,7 @@ refuses pi's own package commands, and the pins turn off pi's update check and i
   install (`PiLauncherTests`), not shown as installed extensions or copied as files
   (`PiConfigTests`, `YourPiResourcesTests`), and, against real pi, a server in `<home>/mcp.json`
   never started with `/mcp` not offered, started with `+builtin:mcp`, a trusted project's
-  `.pi/mcp.json` the same, and `--no-extensions` loading no built-in
+  `.shepherd/mcp.json` the same, and `--no-extensions` loading no built-in
   (`Tests/Extensions/builtin-extensions.test.mjs`, in CI; and, through the shipped engine,
   `EngineSmokeTests.piBuiltInMCPIsOffInShepherdsHomeUnlessSwitchedOn` and
   `piRunsTheDerivedMCPFileOnlyWhenAnAgentsLaunchSwitchesItOn`: the launch's `-e` switches pi's MCP

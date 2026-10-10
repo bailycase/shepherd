@@ -8,7 +8,9 @@ packages as well as MCP. No sensitive project names or data appear in this desig
 ## Implementation checklist
 
 - Keep the existing MCP header, Add server, filter, Reload and server cards in their order.
-- Between the filter and cards, show project configuration eligibility for `.pi/mcp.json`.
+- Between the filter and cards, show project configuration eligibility for `.shepherd/mcp.json`
+  and `.pi/mcp.json` when an older remote host inventories it. The footnote names the selected path;
+  local discovery remains `.shepherd` only.
   Use `NW.Space.m`, `NW.Space.l` and `NWDialogMetrics.inset`, `Font.nw(.ui)` and `.caption`, `Color.nw.textPrimary`
   and `.textSecondary`, and the existing `.nwCard()` and `.nw(.secondary)` button style.
   No new glyphs, colors, dimensions or animation.

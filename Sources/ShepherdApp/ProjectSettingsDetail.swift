@@ -153,7 +153,7 @@ struct ProjectSettingsDetail: View {
                     Button("Discard") { Task { await model.discard() } }.buttonStyle(.nw())
                 }
             }
-            if model.selectedFile?.path == ".pi/settings.json", model.fileLoaded {
+            if model.selectedFile?.path == ".shepherd/settings.json", model.fileLoaded {
                 SettingsGroup(title: "Tools") {
                     SettingsRow(title: "Codemode",
                                 subtitle: "Overrides this host's global setting for this project. Save the file, then start or restart the agent.",
@@ -225,7 +225,7 @@ struct ProjectSettingsDetail: View {
             if model.category == .instructions {
                 readingCard
                 hostsCard
-                Text("APPEND_SYSTEM.md adds to the system prompt and SYSTEM.md replaces it. Both live in the project's .pi folder.")
+                Text("APPEND_SYSTEM.md adds to the system prompt and SYSTEM.md replaces it. Both live in the project's .shepherd folder.")
                     .font(.nwSans(AppLayout.projectsPathSize)).foregroundStyle(Color.nw.settingsMuted)
                     .lineSpacing(AppLayout.projectSideLineExtra).fixedSize(horizontal: false, vertical: true)
             } else { hostsCard }

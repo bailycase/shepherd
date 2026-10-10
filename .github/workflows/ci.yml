@@ -178,13 +178,25 @@ jobs:
             tail -120 "$RUNNER_TEMP/swift-test.log"
             exit 1
           fi
+      - name: Collect completion evidence
+        if: ${{ failure() }}
+        run: |
+          for folder in shepherd-completion-repro shepherd-completion-matrix; do
+            if [ -d "$TMPDIR/$folder" ]; then
+              cp -R "$TMPDIR/$folder" "$RUNNER_TEMP/"
+            fi
+          done
       - name: Upload the log
         if: ${{ failure() }}
         uses: actions/upload-artifact@v4
         with:
           name: ci-swift-test-log
-          path: ${{ runner.temp }}/swift-test.log
+          path: |
+            ${{ runner.temp }}/swift-test.log
+            ${{ runner.temp }}/shepherd-completion-repro
+            ${{ runner.temp }}/shepherd-completion-matrix
           retention-days: 7
+          if-no-files-found: ignore
 
   # The one required check. It passes when every job passed or was skipped on purpose.
   ci:

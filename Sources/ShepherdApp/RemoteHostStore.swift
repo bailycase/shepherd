@@ -119,7 +119,10 @@ final class RemoteHostStore {
         var supportsInstructions: Bool { client?.capabilities.contains(RemoteProtocol.instructionsCapability) == true }
         /// The host serves Settings ▸ Skills (`skills.v1`).
         var supportsSkills: Bool { client?.capabilities.contains(RemoteProtocol.skillsCapability) == true }
-        var supportsProjects: Bool { client?.capabilities.contains(RemoteProtocol.projectsCapability) == true }
+        var supportsProjects: Bool {
+            client?.capabilities.contains(RemoteProtocol.projectsV2Capability) == true
+                || client?.capabilities.contains(RemoteProtocol.projectsCapability) == true
+        }
         var supportsProjectDetails: Bool { client?.capabilities.contains(RemoteProtocol.projectDetailsCapability) == true }
         var supportsProjectMCP: Bool { client?.capabilities.contains(RemoteProtocol.projectMCPCapability) == true }
         var supportsProjectTrust: Bool { client?.capabilities.contains(RemoteProtocol.projectTrustCapability) == true }

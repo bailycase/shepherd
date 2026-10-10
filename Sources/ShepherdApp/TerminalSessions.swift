@@ -642,6 +642,7 @@ final class TerminalSessionStore {
             }
             let cwd = Self.resolvedCwd(pane.cwd)
             guard rpc else { throw TerminalSessionStoreError.paneUnavailable(pane.id) }
+            try await server.projects.prepareProjectConfiguration(for: cwd)
             // Ready Shepherd's pi home, and give pi a session to find, so --session-id does not warn.
             let (fresh, problem) = await Self.prepareLaunch(for: agent, cwd: cwd, pi: server.pi)
             let parent = await server.projects.parentProject(of: cwd, state: state)
@@ -894,6 +895,7 @@ final class TerminalSessionStore {
                 guard session.isRPC, isRPCPane(pane, agent: agent) else {
                     throw TerminalSessionStoreError.paneUnavailable(session.paneID)
                 }
+                try await server.projects.prepareProjectConfiguration(for: cwd)
                 // Respawn after relaunch: an agent that was never prompted has
                 // no session file yet, so seed one before pi looks for it.
                 let (fresh, problem) = await Self.prepareLaunch(for: agent, cwd: cwd, pi: server.pi)
