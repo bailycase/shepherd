@@ -342,8 +342,12 @@ events come out on stdout, one record per LF.
     `operation_conflict`. A session mismatch gets `stale_session`.
   - An accepted result means the command was dispatched, not that the work finished.
   - A refusal from pi is `dispatch_failed` with pi's own reason. No answer within the deadline
-    (10 s, 30 s for a prompt: pi answers a prompt only after its preflight) is
-    `outcome_unknown`, never reported as a refusal: pi may still run it.
+    (10 s, 600 s for a prompt: pi answers a prompt only after its preflight, which can include
+    compaction and gets the same deadline as Compact now) is `outcome_unknown`, never reported
+    as a refusal: pi may still run it. A timed-out send fences later inputs until pi's matching RPC response
+    arrives or the agent restarts. A compaction ending or another request answering does not
+    unlock it. A matching late success or refusal unlocks new sends without completing the old
+    operation again or resending it. Inputs cancelled while fenced are not resumed automatically.
   - `supportedActions` lists what clients may offer: `send`, `abort`, `answer`, `setModel`,
     `setThinking`, `sendImages`, `subagents`, `queue`, `compact`, `designContext`,
     `designReferences`, `browserElements`, `retry`, `interrupt`, `setServiceTier`.

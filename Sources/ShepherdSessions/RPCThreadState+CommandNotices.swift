@@ -45,12 +45,13 @@ extension RPCThreadState {
     }
 
     /// Preflights are serialized because pi's input hooks have no RPC request ID. Control
-    /// commands and abort still bypass this lane. A timeout fences the lane until restart:
-    /// a late marker must never reject a newer input or make an uncertain send retryable.
+    /// commands and abort still bypass this lane. A timeout fences the lane until its matching
+    /// response or restart: a late marker must never reject a newer input or retry the old send.
     func requestInput(id: UUID, prompt: String, images: [RPCImage], delivery: RPCStreamingBehavior,
+                      timeout: TimeInterval = RPCThreadState.promptTimeout,
                       completion: @escaping (NativeThreadResult?) -> Void) {
         guard !inputOutcomeUnknown else {
-            completion(.failure(code: "input_pending", message: "An earlier send's outcome is unknown. Restart the agent before sending again; this message was not sent."))
+            completion(.failure(code: "input_pending", message: "An earlier send's outcome is unknown. Wait for the agent to answer or restart it before sending again; this message was not sent."))
             return
         }
         if inputActive {
@@ -59,14 +60,15 @@ extension RPCThreadState {
                     completion(.failure(code: "send_cancelled", message: "The send was cancelled before pi started it."))
                     return
                 }
-                self.requestInput(id: id, prompt: prompt, images: images, delivery: delivery, completion: completion)
+                self.requestInput(id: id, prompt: prompt, images: images, delivery: delivery, timeout: timeout, completion: completion)
             }
             return
         }
         inputActive = true
         let generation = generation
         beginInput(id, prompt: prompt)
-        session.request(.prompt(message: prompt, images: images, streamingBehavior: delivery), timeout: Self.promptTimeout) { [weak self] result in
+        session.request(.prompt(message: prompt, images: images, streamingBehavior: delivery), timeout: timeout,
+                        onLateResponse: { [weak self] _ in self?.inputOutcomeUnknown = false }) { [weak self] result in
             guard let self else { return }
             if case .failure(.timeout) = result { self.inputOutcomeUnknown = true }
             let failure = self.finishInput(id, result: result)

@@ -41,8 +41,9 @@ final class RPCThreadState {
     static let userMessagesFile = "user-messages.jsonl"
     static let userMessagesReadLimit = 1024 * 1024
     /// pi answers a prompt only once its preflight is done: input handlers, a compaction after
-    /// an aborted run, image processing, or an extension command running to its end.
-    static let promptTimeout: TimeInterval = 30
+    /// an aborted run, image processing, or an extension command running to its end. Allow the
+    /// same bounded time for a preflight compaction as for Compact now.
+    static let promptTimeout: TimeInterval = compactTimeout
 
     /// One row of the run pi is streaming, in the order pi produced it: its assistant messages,
     /// tool calls, the user messages it read, and prompts it has not read yet (pending).
