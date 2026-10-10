@@ -636,8 +636,8 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
   `gh workflow run ci.yml --ref <branch> -f diagnostics=ui` collects focused failures in the
   self-hosted runner context only when explicitly enabled, otherwise on GitHub, without
   rerunning all suites or changing PR coverage. Its fixed, native-ID-validated selection includes
-  menus, code blocks, pane controls, paging, idle checks, both completion suites and remote
-  browser drive. Completion and reconnect diagnostics preserve every original assertion.
+  menus, code blocks, pane controls, paging, idle checks, both completion suites, Jump controls,
+  tail-guard placement cases and remote browser drive. Diagnostics preserve every original assertion.
   With self-hosted disabled, a trusted
   `gh workflow run ci.yml --ref nightly -f diagnostics=ui` also seeds Nightly's hosted cache:
   it still builds all test products and runs the existing validated UI diagnostics, reporting

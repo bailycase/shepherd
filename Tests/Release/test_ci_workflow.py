@@ -424,7 +424,7 @@ class PlanTests(unittest.TestCase):
                 self.assertEqual(actual, "UI diagnostics" if event == "workflow_dispatch" and diagnostic == "ui" else "CI")
         suites = ("ComposerMenuTests", "ThreadCodeBlockTests", "PaneControlTests", "ThreadScrollingTests",
                   "IdleCostTests", "ThreadCompletionMatrixTests", "ThreadCompletionReproductionTests",
-                  "RemoteBrowserDriveTests", "ThreadJumpPressTests")
+                  "RemoteBrowserDriveTests", "ThreadJumpPressTests", "ThreadTailGuardTests")
         ids = [f"ShepherdAppIntegrationTests.{name}/case()" for name in suites]
         pattern = ci_plan.validated_filter(ids, ci_plan.UI_DIAGNOSTICS)
         self.assertEqual(len(ci_plan.UI_DIAGNOSTICS), len(suites))
