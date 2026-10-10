@@ -285,7 +285,13 @@ pointing at a Pi package with its modular `dist/index.js` and dependencies. The 
 now provides those too. Nothing looks pi up on PATH. They isolate `HOME` and use a local fake
 provider. `test_pi_engine_sdk.py` checks SDK imports/session creation against the staged engine
 in CI and the signed app during release. The native child extension tests exercise Shepherd-owned
-children and workflows with a loopback provider. See [pi-engine.md](pi-engine.md).
+children and workflows with a loopback provider. CI caps Node file workers at two so real-pi
+fixtures do not start one lane per available CPU. Every extension file still runs.
+The session publication regression delays stat work,
+then creates and atomically replaces its snapshot without a readiness sleep. Both updates must
+publish within the same five-second deadline. Startup checks stop after 30 checks or 30 seconds.
+Tests hit both bounds and verify ordinary file-change handling continues afterward, alongside
+restart replacement, idle coalescing and shutdown cleanup. See [pi-engine.md](pi-engine.md).
 `native-children.smoke.mjs` is an opt-in real-model smoke (`PI_SMOKE_MODEL`).
 `Tests/ShepherdIOSChecks` holds the iOS client's scripts ([docs/ios/VALIDATION.md](ios/VALIDATION.md)).
 

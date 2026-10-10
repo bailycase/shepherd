@@ -153,7 +153,7 @@ class WorkflowShapeTests(unittest.TestCase):
         job = JOBS["extensions"]
         self.assertIn("scripts/pi-engine-pin.json", job)
         self.assertIn("--ignore-scripts", job)
-        self.assertIn("node --test --test-reporter=spec Tests/Extensions/*.test.mjs", job)
+        self.assertIn("node --test --test-concurrency=2 --test-reporter=spec Tests/Extensions/*.test.mjs", job)
         self.assertNotIn("continue-on-error", job)
 
     def test_every_script_the_workflow_runs_exists(self):

@@ -847,7 +847,7 @@ class ContractTests(unittest.TestCase):
         job = workflow.split("\n  extensions:\n", 1)[1].split("\n  tests:\n", 1)[0]
         self.assertIn('scripts/pi-engine-pin.json', job)
         self.assertIn('--ignore-scripts', job)
-        self.assertIn('node --test --test-reporter=spec Tests/Extensions/*.test.mjs', job)
+        self.assertIn('node --test --test-concurrency=2 --test-reporter=spec Tests/Extensions/*.test.mjs', job)
         self.assertNotIn('continue-on-error', job)
         aggregate = workflow.split("\n  ci:\n", 1)[1]
         self.assertIn('needs: [plan, release-rules, extensions, tests]', aggregate)
