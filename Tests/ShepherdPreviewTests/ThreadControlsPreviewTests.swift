@@ -45,9 +45,12 @@ struct ThreadControlsPreviewTests {
         let dir: URL
         if repo {
             dir = try makeScratchRepo()
-            for name in ["release/2.4", "agent/calm-stone-3831-with-a-very-long-branch-name-that-keeps-going"] + (0..<30).map({ "feat/ledger-\($0)" }) {
-                try git(["branch", name], in: dir)
-            }
+            // One write for every ref (packed-refs), each at the initial commit, not 300 processes.
+            let head = try git(["rev-parse", "HEAD"], in: dir).trimmingCharacters(in: .whitespacesAndNewlines)
+            let names = ["release/2.4", "agent/calm-stone-3831-with-a-very-long-branch-name-that-keeps-going"]
+                + (0..<300).map { "feat/ledger-\(String(format: "%03d", $0))" }
+            let packed = "# pack-refs with: peeled fully-peeled sorted \n" + names.sorted().map { "\(head) refs/heads/\($0)\n" }.joined()
+            try packed.write(to: dir.appendingPathComponent(".git/packed-refs"), atomically: true, encoding: .utf8)
             try git(["worktree", "add", "-q", dir.deletingLastPathComponent().appendingPathComponent("wt-\(UUID().uuidString.prefix(6))").path,
                      "-b", "agent/in-a-worktree"], in: dir)
         } else {
