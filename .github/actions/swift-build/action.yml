@@ -17,18 +17,23 @@ runs:
     # Every SwiftPM call must use the same flags, or it replans the build.
     # --force-resolved-versions skips the network "Updating" pass,
     # --manifest-cache local keeps evaluated manifests inside .build.
+    # Swift 6.3+ can compare content hashes after checkout changes source mtimes. Keep this
+    # incremental-only option out of the release's whole-module optimization build.
     - name: Swift version and flags
       id: swift
       shell: bash
       run: |
-        flags="--force-resolved-versions --disable-index-store --manifest-cache local"
+        swiftc -help-hidden > "$RUNNER_TEMP/swiftc-help.txt"
+        grep -q -- '-enable-incremental-file-hashing' "$RUNNER_TEMP/swiftc-help.txt"
+        flags="--force-resolved-versions --disable-index-store --manifest-cache local -Xswiftc -enable-incremental-file-hashing"
         echo "SWIFTPM_FLAGS=$flags" >> "$GITHUB_ENV"
         toolchain=$({ swift --version; xcrun --show-sdk-version; xcodebuild -version; } 2>/dev/null)
         echo "$toolchain"
-        echo "version=$(shasum -a 256 <<<"$toolchain" | cut -c1-12)" >> "$GITHUB_OUTPUT"
+        version=$(printf '%s\n%s\n' "$toolchain" "$flags" | shasum -a 256 | cut -c1-12)
+        echo "version=$version" >> "$GITHUB_OUTPUT"
 
     # Hosted PR caches stay in their merge ref: later heads of that PR can reuse them,
-    # not its base or siblings. A trusted branch dispatch can seed nightly for new PRs.
+    # not its base or siblings. Build cache seeds nightly on trusted pushes for new PRs.
     # The self-hosted checkout uses its existing .build instead.
     - name: Restore dependency and build caches
       id: cache
