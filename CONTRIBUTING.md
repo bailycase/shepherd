@@ -107,8 +107,9 @@ Fill in the [pull request template](.github/pull_request_template.md). It asks f
   to it, and the decisions you made unasked ([docs/rules.md](docs/rules.md))
 
 CI runs unit, smoke and affected suites for ordinary `nightly` PRs, and all suites for shared
-or unknown paths, `master`, daily runs and `full-ci`. Maintainer PRs use the self-hosted Mac;
-other events use GitHub's macOS runner. Docs alone run no Swift. A test that fails is red:
+or unknown paths, `master`, daily runs and `full-ci`. Builds use GitHub's macOS runner unless
+`SHEPHERD_SELFHOSTED_ENABLED=true` explicitly enables an isolated self-hosted Mac for maintainer
+PRs and Nightly releases. The shared Mac stays offline to protect other apps. Docs alone run no Swift. A test that fails is red:
 there is no retry, so a flaky test is a bug to fix in the test. A push to `nightly` builds and
 ships without tests.
 
