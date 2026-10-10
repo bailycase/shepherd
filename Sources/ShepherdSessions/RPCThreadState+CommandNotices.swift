@@ -74,6 +74,7 @@ extension RPCThreadState {
             self.inputActive = false
             if self.inputOutcomeUnknown { self.cancelWaitingInputs() }
             else if !self.waitingInputs.isEmpty { self.waitingInputs.removeFirst()(true) }
+            self.refreshSkillsIfIdle()
         }
     }
 
