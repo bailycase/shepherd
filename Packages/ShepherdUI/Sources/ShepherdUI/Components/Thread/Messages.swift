@@ -21,8 +21,16 @@ public struct NWUserBubbleMetrics: Equatable, Sendable {
     public var maxWidth: CGFloat
     public var vertical: CGFloat
     public var horizontal: CGFloat
+    /// The hover time floats under the bubble instead of holding room for itself (ProjectLead boards: 16pt from a bubble to the next
+    /// line, with nothing drawn between).
+    public var overlaysCaption = false
+    /// Leading added to the body line the ordinary bubble uses (it takes one point off): the boards' bubble is 20.25pt a line
+    /// (13.5 on 1.5), which measured 2pt a line taller than the ordinary bubble's.
+    public var leadingAdjustment: CGFloat = -1
 
     public static let standard = NWUserBubbleMetrics(maxWidth: NWThreadMetrics.bubbleMaxWidth, vertical: 10, horizontal: 14)
+    /// The Project conversation's bubble (ProjectLead-Started): a 520pt measure inside 12 / 16 padding and a 1pt border (554pt), caption overlaid. The 2.25pt is the half-leading CSS puts above and below a 20.25pt line that SwiftUI's first and last lines lack.
+    public static let lead = NWUserBubbleMetrics(maxWidth: 554, vertical: NW.Space.l + 2.25, horizontal: NW.Space.xl, overlaysCaption: true, leadingAdjustment: -2)
     public static let pad = NWUserBubbleMetrics(maxWidth: 520, vertical: NW.Space.l, horizontal: NW.Space.xl)
 }
 
@@ -112,9 +120,12 @@ public struct NWUserBubble<Leading: View>: View {
                     .nwBorder(steered ? nw.running : nw.lineStrong, radius: NW.Radius.m)
             }
             .frame(maxWidth: metrics.maxWidth, alignment: .trailing)
-            if timestamp != nil || note != nil {
+            if !metrics.overlaysCaption, timestamp != nil || note != nil {
                 caption
             }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if metrics.overlaysCaption, timestamp != nil || note != nil { caption.offset(y: NW.Space.xl) }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .accessibilityElement(children: .combine)
@@ -123,7 +134,7 @@ public struct NWUserBubble<Leading: View>: View {
     private func line(_ value: String, weight: Font.Weight?) -> some View {
         Text(value)
             .font(.nw(.body, weight: weight, size: proseSize))
-            .lineSpacing(max(0, NWTextStyle.body.lineSpacing(proseSize) - 1))
+            .lineSpacing(max(0, NWTextStyle.body.lineSpacing(proseSize) + metrics.leadingAdjustment))
             .foregroundStyle(Color.nw.textPrimary)
             .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)

@@ -23,7 +23,7 @@ struct ProjectBrowserSettings: View {
             footer
             if let notice = model.notice {
                 Text(notice).font(.nwSans(AppLayout.projectTabSize)).foregroundStyle(Color.nw.done)
-                    .accessibilityIdentifier("Project cookie status")
+                    .accessibilityIdentifier("Space cookie status")
             }
         }.disabled(model.pending != nil || model.clearing).accessibilityHidden(model.pending != nil)
             .onDisappear { model.invalidateForDisappear() }
@@ -50,7 +50,7 @@ struct ProjectBrowserSettings: View {
                 .frame(height: AppLayout.projectBrowserTitleLine * ThemeStore.shared.textScale)
                 .offset(y: AppLayout.projectCookieTitleBaseline * ThemeStore.shared.textScale)
                 .accessibilityAddTraits(.isHeader)
-            Text("Browser tabs in all threads and worktrees for \(project.project.name) share cookies on this Mac. Other projects use separate cookies.")
+            Text("Browser tabs in all threads and worktrees for \(project.project.name) share cookies on this Mac. Other spaces use separate cookies.")
                 .font(.nwSans(AppLayout.projectsNameSize)).lineSpacing(AppLayout.projectCookieLineExtra * ThemeStore.shared.textScale)
                 .padding(.vertical, AppLayout.projectCookieParagraphInset * ThemeStore.shared.textScale)
                 .offset(y: AppLayout.projectCookieTextBaseline * ThemeStore.shared.textScale)
@@ -145,10 +145,10 @@ struct ProjectBrowserSettings: View {
         VStack(spacing: NW.Space.m) {
             NWGlyph.Settings.globe.image.foregroundStyle(Color.nw.textTertiary)
                 .accessibilityHidden(true)
-            Text(scope == nil || model.error != nil ? "Project cookies unavailable" : model.loading ? "Loading cookies…" : model.sites.isEmpty ? "No cookies yet" : "No matching sites")
+            Text(scope == nil || model.error != nil ? "Space cookies unavailable" : model.loading ? "Loading cookies…" : model.sites.isEmpty ? "No cookies yet" : "No matching sites")
                 .font(.nwSans(NWTextStyle.title.size, .semibold)).foregroundStyle(Color.nw.textPrimary)
                 .padding(.top, NW.Space.m)
-            Text(scope == nil ? "Add this folder as a project to manage its browser cookies on this Mac." : model.error != nil ? "Reopen Browser to refresh this project's cookie store." : model.loading ? "Reading this project's browser store on this Mac." : model.sites.isEmpty ? "Sites will appear here after you use this project's Browser tabs." : "Try a different site name.")
+            Text(scope == nil ? "Add this folder as a space to manage its browser cookies on this Mac." : model.error != nil ? "Reopen Browser to refresh this space's cookie store." : model.loading ? "Reading this space's browser store on this Mac." : model.sites.isEmpty ? "Sites will appear here after you use this space's Browser tabs." : "Try a different site name.")
                 .font(.nwSans(AppLayout.projectTabSize)).foregroundStyle(Color.nw.textSecondary)
                 .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: AppLayout.projectCookieEmptyCopyWidth)
@@ -177,11 +177,11 @@ struct ProjectBrowserSettings: View {
                 HStack(alignment: .top, spacing: NW.Space.l) {
                     Image(systemName: "exclamationmark.triangle").font(.nwSans(AppLayout.projectCookieConfirmTitle)).foregroundStyle(Color.nw.failed)
                         .accessibilityHidden(true)
-                    Text(removal == .all ? "Clear all project cookies?" : "Clear cookies for this site?")
+                    Text(removal == .all ? "Clear all space cookies?" : "Clear cookies for this site?")
                         .font(.nwSans(AppLayout.projectCookieConfirmTitle, .semibold)).foregroundStyle(Color.nw.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Text("Browser tabs in this project's threads and worktrees may be signed out. Other projects are unaffected. Local storage and cache remain unchanged.")
+                Text("Browser tabs in this space's threads and worktrees may be signed out. Other spaces are unaffected. Local storage and cache remain unchanged.")
                     .font(.nwSans(AppLayout.projectsNameSize)).foregroundStyle(Color.nw.textSecondary)
                     .lineSpacing(AppLayout.projectCookieConfirmLineExtra * ThemeStore.shared.textScale)
                     .fixedSize(horizontal: false, vertical: true)

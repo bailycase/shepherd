@@ -4,7 +4,7 @@ import ShepherdProtocol
 import ShepherdRemote
 
 /// Settings ▸ Experiments (SettingsExperiments): features still being tried, each off until the
-/// user turns it on. Suggested instructions, the Design tool and conversation Goals each
+/// user turns it on. Suggested instructions, the Design tool, conversation Goals and Projects each
 /// keep their own switch. A wide page: the experiment and what waits for the user, beside a
 /// 320pt side column (how it works, what was added, and a note about experiments).
 struct ExperimentsSettings: View {
@@ -28,6 +28,7 @@ struct ExperimentsSettings: View {
                             SuggestedInstructionsCard(model: model, instructions: instructions, openInstructions: openInstructions)
                             DesignToolCard(settings: settings)
                             GoalExperimentCard(settings: settings)
+                            ProjectsExperimentCard(settings: settings)
                             if model.settings.enabled || !model.snapshot.waiting.isEmpty {
                                 WaitingSuggestions(model: model, instructions: instructions, now: context.date)
                                     .nwTransition(.disclosure)
@@ -118,6 +119,38 @@ private struct GoalExperimentCard: View {
             }
             Spacer(minLength: NW.Space.xxl)
             SettingsSwitch(label: "Goals", isOn: $settings.goalsEnabled)
+        }
+        .padding(.vertical, NW.Space.l + NW.Space.xxs)
+        .padding(.horizontal, NW.Space.xl)
+        .nwCard(fill: nw.bgWindow, line: nw.lineStrong)
+    }
+}
+
+/// Projects uses the product's Project mark and the experiment card, with no options. Off hides every Project entry point and
+/// pauses project work; the projects and their files stay.
+private struct ProjectsExperimentCard: View {
+    @Bindable var settings: AppSettings
+
+    var body: some View {
+        let nw = Color.nw
+        HStack(alignment: .top, spacing: NW.Space.l + NW.Space.xxs) {
+            RoundedRectangle(cornerRadius: NW.Radius.m)
+                .fill(nw.lanternTint)
+                .frame(width: AppLayout.experimentTileSize, height: AppLayout.experimentTileSize)
+                .overlay { NWProjectGlyphView(tint: nw.lanternText, size: AppLayout.experimentGlyphSize) }
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+                Text("Projects")
+                    .font(.nwSans(AppLayout.experimentNameSize, .semibold))
+                    .foregroundStyle(nw.textPrimary)
+                Text("Coordinate work across threads and spaces. Turning this off pauses project work and keeps your projects and files.")
+                    .nwText(size: AppLayout.experimentDescriptionSize, lineHeight: AppLayout.experimentDescriptionLineHeight)
+                    .foregroundStyle(nw.textSecondary)
+                    .frame(maxWidth: AppLayout.experimentDescriptionWidth, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: NW.Space.xxl)
+            SettingsSwitch(label: "Projects", isOn: $settings.projectsEnabled)
         }
         .padding(.vertical, NW.Space.l + NW.Space.xxs)
         .padding(.horizontal, NW.Space.xl)
@@ -362,7 +395,7 @@ private struct SuggestionCard: View {
             }
         } label: {
             HStack(spacing: NW.Space.s) {
-                Image(systemName: "doc.text")
+                Image(systemName: NWGlyph.document.symbolName)
                     .font(.nwSans(AppLayout.suggestionTargetGlyphSize))
                     .foregroundStyle(nw.textSecondary)
                 Text(file.fileName)

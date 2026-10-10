@@ -42,7 +42,7 @@ struct SidebarPinnedTests {
         #expect(lists.recents.map(\.title) == ["a", "b"])
     }
 
-    /// Pinned first, then Needs you and Recents, with one row per thread.
+    /// Needs you, then Pinned (the board draws no Pinned, so it never displaces a drawn group), then Recents, one row per thread.
     @Test func pinnedThreadsSitFirstAndLeaveRecents() {
         var asking = agent("asks", status: .blocked, at: 50, waiting: "Ship it?")
         asking.waitingReason = "ship it?"
@@ -51,7 +51,7 @@ struct SidebarPinnedTests {
         #expect(lists.needsYou.map(\.title) == ["asks"])
         #expect(lists.pinned.map(\.title) == ["old"])
         #expect(lists.recents.map(\.title) == ["new", "middle"])
-        #expect(lists.all.map(\.title) == ["old", "asks", "new", "middle"])
+        #expect(lists.all.map(\.title) == ["asks", "old", "new", "middle"])
         #expect(Set(lists.all.map(\.id)).count == lists.all.count)
     }
 
@@ -195,11 +195,11 @@ struct SidebarPinnedTests {
         #expect(lists.shortcutRows.map(\.title) == ["pinned"])
     }
 
-    @Test func theWalkRunsPinnedThenNeedsYouThenRecents() {
+    @Test func theWalkRunsNeedsYouThenPinnedThenRecents() {
         let asking = agent("asks", status: .blocked, at: 9, waiting: "?")
         let pinned = agent("pinned", at: 1)
         let recent = agent("recent", at: 5)
-        #expect(derive([recent, pinned, asking], pins: [local(pinned)]).all.map(\.title) == ["pinned", "asks", "recent"])
+        #expect(derive([recent, pinned, asking], pins: [local(pinned)]).all.map(\.title) == ["asks", "pinned", "recent"])
     }
 
     @Test func theSelectedRowIsMarkedWherePinnedShowsIt() {

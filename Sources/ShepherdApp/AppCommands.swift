@@ -123,7 +123,7 @@ struct FileCommands: Commands {
             }
         }
         CommandGroup(replacing: .saveItem) {
-            Button(vm.settingsSection == .subagents ? "Save Subagent File" : "Save Project File") {
+            Button(vm.settingsSection == .subagents ? "Save Subagent File" : "Save Space File") {
                 Task { if vm.settingsSection == .subagents { await vm.subagentDefinitions.save() } else { await vm.projects.save() } }
             }
                 .keyboardShortcut(keys.shortcut(.saveProjectFile))

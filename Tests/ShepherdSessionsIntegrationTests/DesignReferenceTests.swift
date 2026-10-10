@@ -605,6 +605,42 @@ struct DesignReferenceIntegrationTests {
         #expect(prompts(pi).isEmpty)
     }
 
+    @Test func rawRemoteProjectTransportsCannotCaptureLocalDesigns() async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        let pi = try await PiAgent.launch(on: r.host)
+        let designID = try await design(r.host)
+        let ready = try await pi.ready()
+        let calls = Locked(0)
+        r.server.onProjectRuntimeLaunch = { _, done in done(.failure(WireError("No launch expected"))) }
+        r.server.onProjectRuntimeRequest = { _, done in
+            calls.withValue { $0 += 1 }
+            done(.failure(WireError("Remote design references reached the owner callback")))
+        }
+        defer { r.server.onProjectRuntimeRequest = nil; r.server.onProjectRuntimeLaunch = nil }
+        let client = try await r.raw()
+        let native = NativeThreadRequest.send(expectedSessionID: ready.piSessionID, generation: ready.generation,
+            operationID: UUID(), text: "tools:0 go", delivery: .followUp,
+            designReferences: [DesignReferenceRecord(reference(designID))])
+        let project = ProjectID(), task = ProjectTaskID()
+        let requests: [ProjectRuntimeTransport] = [
+            .worker(projectID: project, taskID: task, request: native),
+            .conversation(projectID: project, request: native),
+            .answer(projectID: project, expectedRevision: 0, taskID: task, request: native)
+        ]
+        for (index, request) in requests.enumerated() {
+            let id = index + 10
+            try client.send(.logicalProjectRuntime(id: id, request: request))
+            let frames = try await client.frames { if case .error(let replyID, _, _) = $0 { replyID == id } else { false } }
+            guard case .error(_, "design_references_local", _)? = frames.last else {
+                Issue.record("Expected server-side design-reference refusal, got \(frames)"); return
+            }
+        }
+        #expect(calls.current == 0)
+        #expect(r.server.state.agents.allSatisfy { $0.designGrants.isEmpty })
+        #expect(copies(r.host, pi.agent.id).isEmpty && prompts(pi).isEmpty)
+    }
+
     // MARK: design_get
 
     /// A thread holding a copy, and the extension connection its design_get uses.

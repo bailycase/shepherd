@@ -8,16 +8,16 @@ struct ProjectMCPTrustConfirmation: View {
     let dismiss: () -> Void
 
     var body: some View {
-        DialogSheet(title: "Trust this project?",
+        DialogSheet(title: "Trust this space?",
                     subtitle: "Approve \(project.project.displayPath) on \(project.host.name).",
                     actions: [
                         DialogAction("Cancel", kind: .cancel, action: dismiss),
-                        DialogAction(model.mcpTrustSaving ? "Saving…" : "Trust project", kind: .prominent) {
+                        DialogAction(model.mcpTrustSaving ? "Saving…" : "Trust space", kind: .prominent) {
                             Task { if await model.approveMCPProject(project) { dismiss() } }
                         },
                     ]) {
             VStack(alignment: .leading, spacing: NW.Space.l) {
-                Text("Pi can load this folder's MCP servers, settings, instructions, skills and executable extensions, and install its configured packages. Local MCP servers can run commands on this host. Pi also applies this approval to projects inside this folder. Approve only a project whose contents you trust.")
+                Text("Pi can load this folder's MCP servers, settings, instructions, skills and executable extensions, and install its configured packages. Local MCP servers can run commands on this host. Pi also applies this approval to spaces inside this folder. Approve only a space whose contents you trust.")
                     .font(.nw(.ui)).foregroundStyle(Color.nw.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
                 Text("Approval applies to new or restarted threads. It does not confirm server connections or tool availability. Saved OAuth credentials are separate.")

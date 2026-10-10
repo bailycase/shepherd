@@ -204,6 +204,7 @@ final class RPCThreadState {
     /// Installed by SessionServer: writes a childCommand to the children extension and answers
     /// with its error text (nil on success). Runs on the server queue.
     var dispatchSubagentCommand: ((String, NativeSubagentAction, String?, NativeThreadDelivery?, @escaping (String?) -> Void) -> Void)?
+    var stopProjectChildren: ((@escaping (String?) -> Void) -> Void)?
     private(set) var history: [NativeThreadMessage] = [] { didSet { historyBytes = Array(repeating: -1, count: history.count) } }
     /// Each history row's encoded size, taken by the first snapshot that shows it (-1 until then).
     private var historyBytes: [Int] = []
@@ -395,9 +396,17 @@ final class RPCThreadState {
     /// Installed by SessionServer: where a turn starts and ends, for the Changes engine's
     /// snapshots of the working tree (`ChangesService`). Called on the session queue.
     var onTurnEvent: ((TurnEvent) -> Void)?
+    private(set) var lastTurnAssistant: NativeThreadMessage?
+    /// A native human question is a safe pause point only when no other tool/assistant runs.
+    var waitingOnlyForDialog: Bool {
+        dialogs.contains(where: { $0.unavailable == nil }) && currentAssistant == nil && liveRows.filter { $0.role == "toolResult" && $0.status == "running" }
+            .allSatisfy { Self.asksUser($0.toolName ?? "") }
+    }
     /// Asynchronous filesystem boundaries; completions return to this thread's queue.
     var beforePrompt: ((@escaping () -> Void) -> Void)?
     var captureSettledTurn: ((@escaping () -> Void) -> Void)?
+    var onUserMessageConsumed: ((UUID?, String) -> Void)?
+    var onActualTurnSettled: (() -> Void)?
     var discardPreparedTurn: (() -> Void)?
     var settleCapture: UUID?
     var preparingPrompts: [UUID: (NativeThreadResult) -> Void] = [:]
@@ -501,6 +510,7 @@ final class RPCThreadState {
         switch event {
         case .agentStart:
             retryStarted()
+            lastTurnAssistant = nil
             // A compaction that stopped or failed says so until the next run.
             live.removeAll { if case .compaction = $0.kind { $0.value.compaction?.phase != .running } else { false } }
             // A retry's second start is the same turn; the engine tells them apart.
@@ -515,7 +525,10 @@ final class RPCThreadState {
                 yieldGoalToQueue()
                 onUserInputWhileRunning?()
             }
-        case .agentEnd:
+        case .agentEnd(let messages, _):
+            if lastTurnAssistant == nil, let message = messages.last(where: { $0.role == "assistant" }) {
+                lastTurnAssistant = Self.project(entryID: liveEntryID(for: message), message: message)
+            }
             dropStreamingCalls()
             refreshMessages()
             refreshState()
@@ -531,6 +544,7 @@ final class RPCThreadState {
                 captureSettledTurn { [weak self] in
                     guard let self, self.settleCapture == token else { return }
                     self.settleCapture = nil
+                    self.onActualTurnSettled?()
                     self.runAfterSettleCapture()
                     self.drainIfReady()
                     self.idleAfterQueue()
@@ -538,6 +552,7 @@ final class RPCThreadState {
             } else {
                 onTurnEvent?(.settled)
                 settleCapture = nil
+                onActualTurnSettled?()
             }
             settled()
         case .messageStart(let message) where message.role == "user":
@@ -591,6 +606,7 @@ final class RPCThreadState {
                 if let time = message.timestamp { stoppedReplies.insert(time) }
             }
             upsertAssistant(ended, ended: true)
+            lastTurnAssistant = live.last(where: { $0.value.role == "assistant" })?.value
             currentAssistant = nil
             // A reply pi stopped, or that failed, runs none of its calls: those still being
             // written leave the thread. Any other hands them to pi, and each execution continues
@@ -615,7 +631,7 @@ final class RPCThreadState {
             let stopped = isError && stopRequested
             askingCalls.removeAll { $0.id == id }
             if stopped { stoppedCalls.insert(id) }
-            upsertTool(id: id, name: name, args: nil, content: result?.content ?? [], isError: isError, status: stopped ? "aborted" : "complete")
+            upsertTool(id: id, name: name, args: nil, content: result?.content ?? [], isError: isError, status: stopped ? "aborted" : "complete", projectAction: result?.projectAction)
             onToolFinished?(name)
         case .queueUpdate(let steering, let followUp):
             piQueueChanged(steering: steering, followUp: followUp)
@@ -664,7 +680,9 @@ final class RPCThreadState {
 
     /// `olderClient`: the request came from a remote client that does not read the host's queue
     /// (its `hello` listed no `native.queue.v1`); its queued sends go to pi alone.
-    func handle(_ request: NativeThreadRequest, olderClient: Bool = false, completion: @escaping (NativeThreadResult) -> Void) {
+    /// `isolateSend`: host-managed operation identity must survive even an all-at-once queue.
+    func handle(_ request: NativeThreadRequest, olderClient: Bool = false, isolateSend: Bool = false,
+                completion: @escaping (NativeThreadResult) -> Void) {
         guard let piSessionID, !historyPending else {
             completion(.failure(code: NativeThreadCode.starting, message: "The agent is starting."))
             return
@@ -721,7 +739,7 @@ final class RPCThreadState {
             }
             operations.append((key, Operation(fingerprint: request)))
             if operations.count > Self.operationTableSize { operations.removeFirst() }
-            perform(request, operationID: operationID, olderClient: olderClient) { [weak self] result in
+            perform(request, operationID: operationID, alone: olderClient || isolateSend) { [weak self] result in
                 guard let self else { completion(result); return }
                 guard let index = self.operations.firstIndex(where: { $0.id == key }) else {
                     // Evicted while in flight; still answer this caller.
@@ -770,7 +788,7 @@ final class RPCThreadState {
     /// An accepted new user send during a running turn. Idempotent operation replay never fires it.
     var onUserInputWhileRunning: (() -> Void)?
 
-    private func perform(_ request: NativeThreadRequest, operationID: UUID, olderClient: Bool, completion: @escaping (NativeThreadResult) -> Void) {
+    private func perform(_ request: NativeThreadRequest, operationID: UUID, alone: Bool, completion: @escaping (NativeThreadResult) -> Void) {
         let accepted = NativeThreadResult.accepted(operationID: operationID)
         let settle: (Result<RPCResponse, RPCError>) -> Void = { result in
             completion(Self.dispatchFailure(result) ?? accepted)
@@ -795,7 +813,7 @@ final class RPCThreadState {
             send(id: operationID, text: text, delivery: delivery, images: images,
                  // A message with references or elements goes to pi on its own: joined, its fence
                  // would give way.
-                 alone: olderClient || !(designReferences ?? []).isEmpty || !elements.isEmpty, context: context,
+                 alone: alone || !(designReferences ?? []).isEmpty || !elements.isEmpty, context: context,
                  designPayloads: (designReferences ?? []).compactMap(\.payloadID),
                  elements: elements.map(\.withoutHTML)) { [weak self] result in
                 if interruptsBackgroundWait, case .accepted = result { self?.onUserInputWhileRunning?() }
@@ -804,7 +822,6 @@ final class RPCThreadState {
         case .abort:
             // Stopping refuses what pi is waiting on: a question has no Dismiss, and a turn
             // waiting on an answer would not stop.
-            refuseDialogs()
             stop { settle($0) }
         case .queue(_, _, _, let action):
             perform(action, operationID: operationID, completion: completion)
@@ -1521,12 +1538,12 @@ final class RPCThreadState {
         }
     }
 
-    private func upsertTool(id: String, name: String, args: JSONValue?, content: [RPCContentBlock], isError: Bool?, status: String) {
+    private func upsertTool(id: String, name: String, args: JSONValue?, content: [RPCContentBlock], isError: Bool?, status: String, projectAction: NativeProjectAction? = nil) {
         let index = live.firstIndex { $0.kind == .tool(id) }
         let previous = index.map { live[$0].value }
         var value = Self.project(
             entryID: "provisional:tool:\(id)",
-            message: RPCMessage(role: "toolResult", content: content, toolName: name, toolCallId: id, isError: isError),
+            message: RPCMessage(role: "toolResult", content: content, toolName: name, toolCallId: id, isError: isError, projectAction: projectAction),
             args: args
         )
         if value.argumentsText == nil { value.argumentsText = previous?.argumentsText }
@@ -2168,7 +2185,9 @@ final class RPCThreadState {
     /// `designReferences`) only when `sentReferences` names every copy it carries: a message the
     /// user sent in this thread. Otherwise it stays, as text.
     static func project(entryID: String, message: RPCMessage, args: JSONValue? = nil, sentReferences: [String]? = nil) -> NativeThreadMessage {
-        var remaining = textLimit
+        // A bounded 20 × 500 worker plan plus its arguments can exceed the ordinary 16 KiB
+        // row (JSON escapes use six bytes). Keep the full report within the existing frame budget.
+        var remaining = message.role == "toolResult" && message.toolName == "project_plan" ? 128 * 1024 : textLimit
         var truncated = false
         func clip(_ value: String) -> String {
             let bytes = value.utf8.count
@@ -2182,6 +2201,7 @@ final class RPCThreadState {
             return text
         }
         var result = NativeThreadMessage(entryID: entryID, role: message.role.isEmpty ? "custom" : message.role, blocks: [], customType: message.customType)
+        result.projectAction = message.projectAction
         if let toolName = message.toolName { result.toolName = clip(toolName) }
         if let toolCallID = message.toolCallId { result.toolCallID = clip(toolCallID) }
         if let args { result.argumentsText = clip(json(args)) }

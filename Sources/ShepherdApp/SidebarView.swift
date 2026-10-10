@@ -34,37 +34,24 @@ struct SidebarView: View {
 
 // MARK: Destinations
 
-/// The destinations: they never move. More discloses Hosts (with how many hosts are offline)
-/// and Extensions.
+/// The destinations: they never move (New thread, Designs while the tool is on, Automations).
 private struct SidebarDestinations: View {
     var vm: ShepherdViewModel
 
     var body: some View {
-        let rows = SidebarDerivation.destinations(shown: vm.shownDestination, moreOpen: vm.moreOpen,
-                                                  offlineHosts: vm.offlineHostCount,
-                                                  newThreadChord: vm.keybindings.display(.newAgent),
-                                                  designs: vm.designToolEnabled, systemShown: vm.shownDesign?.buildsSystem == true)
+        let rows = SidebarDerivation.destinations(shown: vm.shownDestination, newThreadChord: vm.keybindings.display(.newAgent),
+                                                  designs: vm.designToolEnabled)
         VStack(alignment: .leading, spacing: NWSidebarMetrics.rowSpacing) {
             ForEach(rows) { row in
                 NWSidebarDestination(row.title, icon: row.icon, selected: row.selected, child: row.child, trailing: row.trailing) {
                     vm.openSidebarDestination(row.target)
                 }
                 .equatable()
-                .accessibilityLabel(Self.label(row))
-                .nwTransition(.disclosure)
+                .accessibilityLabel(row.title)
             }
         }
         .padding(.vertical, NWSidebarMetrics.destinationsPadding)
         .padding(.horizontal, AppLayout.sidebarPadding)
-        .nwAnimation(.disclosure, value: vm.moreOpen)
-    }
-
-    private static func label(_ row: SidebarDerivation.Destination) -> String {
-        switch (row.target, row.trailing) {
-        case (.more, _): "More, \(row.icon == .disclosure(open: true) ? "expanded" : "collapsed")"
-        case (_, .alert(let alert)): "\(row.title), \(alert)"
-        default: row.title
-        }
     }
 }
 
@@ -137,7 +124,10 @@ private struct SidebarItemView: View, Equatable {
                 NWSidebarSectionHeader(section.title, count: count, isExpanded: !collapsed,
                                        attention: section == .needsYou, pulse: section == .working,
                                        toggle: { vm.toggleActivitySection(section) },
-                                       markAllSeen: section == .done ? { vm.markAllSidebarDoneSeen() } : nil)
+                                       markAllSeen: section == .done ? { vm.markAllSidebarDoneSeen() } : nil,
+                                       chip: section == .projects ? ("New project", { vm.showNewProject() }) : nil)
+            case .project(let project):
+                LogicalProjectSidebarRow(vm: vm, project: project)
             case .row(let row):
                 NWSidebarRow(row.title, leading: row.leading, selected: row.selected, dimmed: row.offline,
                              accessory: accessory(row), hasGoal: row.hasGoal)
@@ -169,7 +159,15 @@ struct SidebarRowMenu: View {
     var body: some View {
         switch row.id {
         case .local(let id):
-            if let automation = row.automation {
+            if let automation = row.automation, vm.projectOwning(automation) != nil {
+                // A Project's automation is changed only through its Project (a revisioned owner action): the generic Stop, Run Now
+                // and Delete here would act without the Project revision, so they are not offered.
+                if vm.projectsEnabled {
+                    Button("Open Project Settings") {
+                        if let ref = vm.projectOwning(automation) { vm.openLogicalProjectSettings(ref, tab: .automations) }
+                    }
+                }
+            } else if let automation = row.automation {
                 // A settled run reads done and runs again, replacing it; only a live one
                 // (starting included) stops.
                 if row.automationLive {

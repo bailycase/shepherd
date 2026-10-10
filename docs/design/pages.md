@@ -37,7 +37,7 @@ leaves it. The pages share one frame (ShepherdUI's Pages components, `NWPageMetr
 `NewThreadPage` (`NewThreadPage.swift`; NavNewThread, "⌘N or the first destination"), its draft in
 `NewThreadState` (`NewThreadModel.swift`), kept while the page is away. ⌘N, the New thread
 destination, the palette's New thread and File ▸ New Thread open it with the field focused; a space
-from the palette or the Space menu opens it in that project, and adding a folder opens it in the new
+from the palette or the Space menu opens it in that space, and adding a folder opens it in the new
 one. The New agent sheet (⇧⌘T) stays for its directory and base fields.
 
 - The header reads "New thread". The body centres one column vertically, padded 40pt at the sides
@@ -49,16 +49,16 @@ one. The New agent sheet (⇧⌘T) stays for its directory and base fields.
   normal composer's shared model-settings button, a spacer, then the workplace chip. Thinking
   appears only while the model takes a level; the settings popover's Speed row only while the target
   supports choosing a tier at creation and the model offers one. The button uses compact labels when needed to
-  fit, with Send outside the fitting candidates. Send is a 28pt `lantern` circle at 35% until there is a prompt and a project. ↩ sends and ⇧↩ adds a
-  line. Why Send cannot go is its tooltip ("Describe the task first.", "Add a project to start a
-  thread.", "Loading build-01's defaults…"), and a failure shows under the card in `failed`.
+  fit, with Send outside the fitting candidates. Send is a 28pt `lantern` circle at 35% until there is a prompt and a space. ↩ sends and ⇧↩ adds a
+  line. Why Send cannot go is its tooltip ("Describe the task first.", "Add a space to start a
+  thread.", "Loading demo-mac's defaults…"), and a failure shows under the card in `failed`.
 - **Images** (the user's decision, 2026-09-25: "Build it (Recommended)") attach as in a thread's
   composer (Composer › Images, `ComposerAttachments`): by drop, paste, or the paperclip, the
   composer's attach button, always shown here; resized on the way in, at most four of 2 MiB each,
   as chips above the field. They go to pi in the opening prompt itself, on this Mac and on a host
   (`createAgent`'s images, docs/native-thread.md). What cannot go shows under the card in `failed`
   and holds Send: the composer's own messages, "The images come to over 5 MiB together. Remove one
-  to send.", and on a host from before `agent.create.images.v1` "Update Shepherd on build-01 to
+  to send.", and on a host from before `agent.create.images.v1` "Update Shepherd on demo-mac to
   start a thread with images.", which would otherwise drop them; nothing is created. Images too
   big for one remote request fail the send the same way ("Images exceed the remote payload
   limit. Send fewer or smaller images.").
@@ -73,24 +73,24 @@ one. The New agent sheet (⇧⌘T) stays for its directory and base fields.
   the fenced record, the copy kept, the prompt and any images as its words
   (`ShepherdViewModel.deliverOpeningDesignReferences`, through the host like Implement's new
   thread, not the thread's store). If that send fails the thread stays, a dialog says why, and the
-  words come back into its composer. They are this Mac's designs and reach this Mac's projects
-  only: for a project on another host the picker says "Design references go to projects on this
+  words come back into its composer. They are this Mac's designs and reach this Mac's spaces
+  only: for a space on another host the picker says "Design references go to spaces on this
   Mac." and, with a chip attached, Send says the same under the card and in its tooltip.
-- **Workplace chip** (`NWPlaceChipLabel`): a 12pt `textSecondary` folder glyph and the project in
+- **Workplace chip** (`NWPlaceChipLabel`): a 12pt `textSecondary` folder glyph and the space in
   mono ("shepherd"), a `textTertiary` "·", a display glyph and the host in mono ("This Mac"), and a
   10pt `textTertiary` chevron, as a 26pt chip in 12 `textSecondary`. It picks where the thread runs,
   and opens the **workplace menu** (`NWPlaceMenu`, the composer menus' anatomy, 320pt, 8pt under the
-  card): one section per host, This Mac then each connected host, listing its projects (its visible
+  card): one section per host, This Mac then each connected host, listing its spaces (its visible
   spaces, nested ones flat, each with its path in mono 11 `textTertiary` and a check on the chosen
   one), each section ending in "Add folder…" (this Mac's directory picker, or the host's); then,
-  when the chosen project is a git checkout on this Mac or on a host that makes worktrees, **New
+  when the chosen space is a git checkout on this Mac or on a host that makes worktrees, **New
   worktree** with its switch and "Keeps the checkout clean. Merge it from Review.". The board draws
   no worktree control, so it lives in the chip's menu: its branch is generated and its base resolved
-  per Settings ▸ Worktrees, as the New agent sheet does. A project on this Mac has a context menu
+  per Settings ▸ Worktrees, as the New agent sheet does. A space on this Mac has a context menu
   with what the sidebar's space rows offered: Rename…, New Worktree… and Import Existing Worktree…
   (git checkouts), and Remove Space…; the palette offers Rename space… and Remove space… for the
-  chosen project while the page shows. A host's project offers New Agent with Options….
-- The page opens in the project of the thread last on screen (a remote thread's, on its host), else
+  chosen space while the page shows. A host's space offers New Agent with Options….
+- The page opens in the space of the thread last on screen (a remote thread's, on its host), else
   the one chosen before, else This Mac's first, else a connected host's first.
 - **Model, Thinking and Speed:** the target's defaults (Settings ▸ Agents on this Mac, the host's
   `creationOptions` on a host), changed through the same settings button and popover as the thread composer,
@@ -139,7 +139,7 @@ one. The New agent sheet (⇧⌘T) stays for its directory and base fields.
   - **Spend:** tokens against the budget ("2.3M / 6M tok") in mono 11 `textSecondary`, over time
     against its budget ("1h12 / 4h") in `textTertiary`, 3pt apart; a draft that has spent nothing
     reads "— / 3M tok" and "— / 2h".
-  - **Host:** mono 11 `textSecondary` ("build-01", "This Mac").
+  - **Host:** mono 11 `textSecondary` ("demo-mac", "This Mac").
 
 ## Designs page
 
@@ -181,7 +181,7 @@ now (no schedules, triggers or next-run column)").
 - **Detail pane:** 360pt at the trailing edge with a hairline on its leading side, for the
   selected row (the first row while none is chosen). Sections are padded 14pt above and below and
   18pt at the sides, with a hairline between them.
-  - **Header,** padded 16pt: the name in `title` over "Starts a thread on build-01 when Shepherd
+  - **Header,** padded 16pt: the name in `title` over "Starts a thread on demo-mac when Shepherd
     starts" (or "when you run it") in 12 `textTertiary`.
   - **Prompt:** "PROMPT" (`NWPageSectionLabel`), 8pt above the prompt on `bgSunken` with a
     `lineSubtle` border, radius 8 (`NWPageQuote`).
@@ -227,10 +227,10 @@ Hosts are still added and edited in Settings ▸ Remote.
     "Update needed").
   - **Facts** (`NWPageFact`, 110pt labels, mono 11.5 values, rows at least 26pt): a connected host
     shows Running ("2 threads", or "none"), Worktrees (how many threads work on one, when any),
-    Repos (its projects), and, for a remote host, Address. An unreachable one shows Waiting from
+    Repos (its spaces), and, for a remote host, Address. An unreachable one shows Waiting from
     its last state ("2 threads, 1 automation"), Last seen ("Sep 24 07:12", when it dropped this
     launch), and Address. A failure that retrying won't fix (a refused token, another version)
     adds its sentence under the facts; this is where the sidebar's host notices went.
   - **Actions** under a hairline, padded 10pt above and below and 14pt at the sides, 8pt apart,
     small, remote hosts only: Retry (secondary, `arrow.clockwise`) while neither connected nor
-    connecting, and Remove (ghost), which asks first ("Remove build-01?"). This Mac has none.
+    connecting, and Remove (ghost), which asks first ("Remove demo-mac?"). This Mac has none.

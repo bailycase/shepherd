@@ -83,7 +83,7 @@ struct ProjectMCPConfiguration: Equatable {
                 signIn: signIn,
                 toolNames: [], toolCount: nil, direct: direct, searchCost: "", directCost: "", chosenNote: note,
                 transport: entry.kind == .local ? "stdio" : entry.transport == .sse ? "Legacy SSE" : "Streamable HTTP",
-                hosts: [.init(name: host, detail: native && projectTrusted == false ? "Blocked" : "Unchecked", mark: .none)], toolsNote: native && projectTrusted == false ? "New threads cannot load this server until the project is approved." : "Connection and tools are checked in each thread.")
+                hosts: [.init(name: host, detail: native && projectTrusted == false ? "Blocked" : "Unchecked", mark: .none)], toolsNote: native && projectTrusted == false ? "New threads cannot load this server until the space is approved." : "Connection and tools are checked in each thread.")
             return (entry.name, detail)
         })
     }
@@ -116,7 +116,7 @@ extension ProjectsModel {
 
     /// Reuses the project's expected-content save and leaves a failed draft available for retry.
     func saveMCP(_ entries: [MCPServerEntry], replacing names: Set<String> = []) async throws {
-        guard mcpEditable else { throw ProjectFileError("unavailable", "This project file cannot be edited right now.") }
+        guard mcpEditable else { throw ProjectFileError("unavailable", "This space file cannot be edited right now.") }
         var next = mcp
         for name in names where !entries.contains(where: { $0.name == name }) { next.remove(name) }
         for var entry in entries {
@@ -143,7 +143,7 @@ extension ProjectsModel {
     }
 
     func removeMCP(_ name: String) async throws {
-        guard mcpEditable else { throw ProjectFileError("unavailable", "This project file cannot be edited right now.") }
+        guard mcpEditable else { throw ProjectFileError("unavailable", "This space file cannot be edited right now.") }
         var next = mcp
         next.remove(name)
         try await persistMCP(next)
@@ -157,8 +157,8 @@ extension ProjectsModel {
         }
         draft = text
         await save()
-        guard selected?.id == projectID, selectedFile?.path == path else { throw ProjectFileError("changed", "The selected project file changed.") }
+        guard selected?.id == projectID, selectedFile?.path == path else { throw ProjectFileError("changed", "The selected space file changed.") }
         if let fileError { throw ProjectFileError("save", fileError) }
-        guard !dirty else { throw ProjectFileError("save", "The project file was not saved. Try again.") }
+        guard !dirty else { throw ProjectFileError("save", "The space file was not saved. Try again.") }
     }
 }

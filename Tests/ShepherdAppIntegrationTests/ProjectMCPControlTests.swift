@@ -41,7 +41,7 @@ struct ProjectMCPControlTests {
                 #expect(host.id == project.host.id && directory == project.project.directory && file == ".pi/mcp.json")
                 switch action {
                 case .credentials:
-                    return .mcp(.init(signedIn: ["docs"], message: checkingFails ? "Couldn't check project approval." : nil,
+                    return .mcp(.init(signedIn: ["docs"], message: checkingFails ? "Couldn't check space approval." : nil,
                                      projectTrusted: checkingFails ? nil : approved))
                 case .approveProject:
                     writes += 1
@@ -58,26 +58,26 @@ struct ProjectMCPControlTests {
                                      ProjectMCPSettings(model: model, initiallyExpanded: "docs"))
         defer { window.close() }
         func hasText(_ text: String) -> Bool { window.elements().contains { $0.label?.contains(text) == true || $0.value?.contains(text) == true } }
-        try await eventuallyOnMain("approval block reason") { hasText("Project configuration blocked") }
+        try await eventuallyOnMain("approval block reason") { hasText("Space configuration blocked") }
         #expect(hasText("This folder hasn't been approved"))
         #expect(model.mcpSignedIn == ["docs"] && model.mcpProjectTrusted == false)
         #expect(ControlPress.undersized(window.controls(), minimum: .desktop).isEmpty)
-        try window.press("Trust this project…")
+        try window.press("Trust this space…")
         var dialog = try await Self.sheet(window)
         #expect(ControlPress.undersized(ControlPress.controls(in: dialog), minimum: .desktop).isEmpty)
         try ControlPress.press("Cancel", under: dialog)
         try await eventuallyOnMain("cancel closes without approval") { window.window.attachedSheet == nil }
         #expect(writes == 0 && !approved)
-        try window.press("Trust this project…")
+        try window.press("Trust this space…")
         dialog = try await Self.sheet(window)
-        try ControlPress.press("Trust project", under: dialog)
+        try ControlPress.press("Trust space", under: dialog)
         try await eventuallyOnMain("failed approval keeps confirmation open") { model.mcpTrustError != nil && !model.mcpTrustSaving }
         #expect(window.window.attachedSheet != nil && writes == 1 && !approved)
         fail = false
-        try ControlPress.press("Trust project", under: dialog)
+        try ControlPress.press("Trust space", under: dialog)
         try await eventuallyOnMain("approval visible after retry") { window.window.attachedSheet == nil && model.mcpProjectTrusted == true }
-        #expect(writes == 2 && hasText("Project configuration approved"))
-        #expect(window.element("Trust this project…") == nil)
+        #expect(writes == 2 && hasText("Space configuration approved"))
+        #expect(window.element("Trust this space…") == nil)
         checkingFails = true
         await model.refreshMCPCredentials()
         try await eventuallyOnMain("check failure offers retry") { window.element("Check again") != nil }
@@ -86,7 +86,7 @@ struct ProjectMCPControlTests {
         try await eventuallyOnMain("check retry restores approval") { model.mcpProjectTrusted == true && model.mcpTrustError == nil }
         #expect(writes == 2)
         #expect(await model.approveMCPProject(.init(host: project.host, project: .init(directory: "/different", name: "other", displayPath: "/different", summary: "other", minimal: true))) == false)
-        #expect(writes == 2, "A stale confirmation cannot approve a different project")
+        #expect(writes == 2, "A stale confirmation cannot approve a different space")
     }
 
     private static func checkSignIn() async throws {

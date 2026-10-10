@@ -45,8 +45,16 @@ extension ShepherdViewModel {
     /// The tree as the sidebar draws it: closed projects closed, the row on screen marked, and
     /// ⌘-digits while ⌘ is held.
     var presentedSidebarTree: [SidebarTreeItem] {
-        sidebarTree.items(collapsed: collapsedProjects, selected: selectedSidebarRow, shortcuts: showAgentShortcutBadges,
-                          connected: connectedHostIDs)
+        let projects = sidebarLogicalProjects
+        // Projects first, above the Spaces (ProjectLead-AddsSpace); every owner's Projects, then the folder tree.
+        // The Project on screen lists its task threads under it, as the boards draw them.
+        let lead: [SidebarTreeItem] = !projectsEnabled ? [] : [.leadHeader(count: projects.count)] + projects.flatMap { project -> [SidebarTreeItem] in
+            guard project.selected, let record = logicalProjects.project(project.ref) else { return [.leadProject(project)] }
+            let tasks = ProjectPagePresentation(record).rows.filter { $0.group != .resolved }
+            return [.leadProject(project)] + tasks.map { .leadTask(project.ref, $0) }
+        }
+        return lead + sidebarTree.items(collapsed: collapsedProjects, selected: selectedSidebarRow, shortcuts: showAgentShortcutBadges,
+                                        connected: connectedHostIDs)
     }
 
     /// The rows ⌘↑/↓ walk, in the style on screen: Needs you then Recents, or the open projects'

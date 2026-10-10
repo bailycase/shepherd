@@ -10,6 +10,9 @@
   "slow"   a streaming turn that pauses twice (mid-deltas, mid-tool) until the
            files `continue-1` / `continue-2` appear in the cwd
   "stream" a reply of 40 text deltas 2 ms apart, as a model streams one
+  "project-action" / "project-plan" one tool call whose result is the JSON in `project-tool-result.json` /
+           `project-plan-result.json` (cwd: {"toolName", "content", "details"}), then it waits for `continue-1`
+  a `project-script.json` in the cwd: `{"prompts": {prompt: items}, "events": [items], "socket": path}` plays `script_turn`: replies, tool calls, owner calls, holds
   "toolcall" the model writing a tool call's arguments slowly (a big `write`): a line of text,
            then toolcall_start, toolcall_delta fragments of the arguments' JSON text (each the
            next few characters, not the text so far), toolcall_end, the reply's message_end,
@@ -280,9 +283,189 @@ def update(delta):
     emit({"type": "message_update", "usage": USAGE, "assistantMessageEvent": delta})
 
 
-def streaming_turn(prompt, slow=False):
+def project_action_turn(prompt, result_file="project-tool-result.json"):
+    """A turn whose one tool call returns the result JSON in `result_file` (cwd): the owner's typed Project receipt
+    ("project-action"), or a worker's `project_plan` result ("project-plan", `project-plan-result.json`). Held until `continue-1`."""
+    with open(result_file) as file:
+        tool = json.load(file)
+    user = {"role": "user", "content": prompt, "timestamp": now_ms()}
+    assistant = {"role": "assistant", "content": [{"type": "toolCall", "id": "project_action_call", "name": tool["toolName"], "arguments": {}}], "stopReason": "toolUse"}
+    result = {"role": "toolResult", "toolCallId": "project_action_call", **tool}
+    emit({"type": "agent_start"})
+    emit({"type": "message_start", "message": user})
+    emit({"type": "message_end", "message": user})
+    emit({"type": "message_start", "message": assistant})
+    emit({"type": "message_end", "message": assistant})
+    emit({"type": "tool_execution_start", "toolCallId": "project_action_call", "toolName": tool["toolName"], "args": {}})
+    emit({"type": "tool_execution_end", "toolCallId": "project_action_call", "toolName": tool["toolName"], "result": tool, "isError": tool.get("isError", False)})
+    wait_for_file("continue-1")
+    MESSAGES.extend([user, assistant, result])
+    STATE["messageCount"] = len(MESSAGES)
+    if messages_file:
+        with open(messages_file, "w") as file:
+            json.dump(MESSAGES, file)
+    emit({"type": "agent_end", "messages": [assistant], "willRetry": False})
+    emit({"type": "agent_settled"})
+
+
+# The script book's own `socket`, when a test server listens elsewhere than the path the app launcher hands pi (as `speak_from_config`).
+SCRIPT = {"socket": None}
+
+
+def owner_call(kind, spec):
+    """The coordinator's real tool call, as `Extensions/shepherd-project-context.ts` makes it: a `projectRuntime` request on the
+    extension socket as this agent, retried only for the owner's own stale-revision answers (the extension reads the revision first).
+    Returns the tool result the extension returns: the owner's Project as text, and details naming the task by its operation."""
+    import socket
+    import uuid
+    context = json.loads(os.environ["SHEPHERD_PROJECT_CONTEXT"])
+
+    def request(action, revision=0):
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as channel:
+            channel.settimeout(15)
+            channel.connect(SCRIPT["socket"] or os.environ["SHEPHERD_SOCKET"])
+            channel.sendall((json.dumps({"type": "projectRuntime", "id": 1, "agentID": os.environ["SHEPHERD_AGENT_ID"],
+                                         "projectID": context["projectID"], "expectedRevision": revision, "request": action}) + "\n").encode())
+            return json.loads(channel.makefile("rb").readline())
+
+    operation = spec.get("operationID", str(uuid.uuid4()))
+    for _ in range(40):
+        read = request({"read": {}})
+        project = read["project"]
+        if kind == "project_assign":
+            action = {"assign": {"operationID": operation, "spaceID": project["linkedSpaces"][spec.get("space", 0)]["spaceID"],
+                                 "title": spec["title"], "prompt": spec["prompt"]}}
+        elif kind == "project_answer":
+            # Typed identities only: no task title or reply-text matching. The owner exposes
+            # at most the consumed human message for this turn, and inspect's native events.
+            inspected = request({"inspect": {"taskID": spec["taskID"]}})["project"]
+            humans = [m for m in inspected["messages"] if m.get("humanSubmitted") is True]
+            events = [m for m in inspected["messages"] if (m.get("source") or {}).get("kind") == "question"]
+            if not humans or not events:
+                reply = {"type": "error", "code": "question_proof", "message": "No consumed human reply and question event"}
+                time.sleep(0.05)
+                continue
+            action = {"answer": {"operationID": operation, "taskID": spec["taskID"],
+                                 "humanReplyID": spec.get("humanReplyID", humans[-1]["id"]),
+                                 "questionEventID": spec.get("questionEventID", events[-1]["id"]), "answer": spec["answer"]}}
+            project = inspected
+        elif kind == "project_resolve":
+            task = next(t for t in project["tasks"] if t["title"] == spec["title"])
+            action = {"resolve": {"taskID": task["id"], "operationID": operation}}
+        else:
+            action = {"proposeSpace": {"operationID": operation, "path": spec["path"], "spaceID": None, "originTaskID": None}}
+        reply = request(action, project["revision"])
+        if reply.get("type") != "error" or reply.get("code") not in ("stale_project", "project_busy", "workspace_changed"):
+            break
+        time.sleep(0.05)
+    if reply.get("type") == "error":
+        return {"toolName": kind, "content": [{"type": "text", "text": json.dumps({"error": reply.get("code"), "message": reply.get("message")})}],
+                "details": {}, "isError": True}
+    project = reply["project"]
+    details = {"projectID": project["id"], "revision": project["revision"]}
+    same = lambda value: isinstance(value, str) and value.lower() == operation
+    if kind == "project_propose_space":
+        found = [x for x in project.get("spaceProposals", []) if same(x["operationID"])]
+        if len(found) == 1:
+            details.update(operationID=operation, proposalID=found[0]["id"])
+    else:
+        found = [t for t in project["tasks"] if (kind == "project_resolve" and any(same(o) for o in t.get("resolutionOperations") or []))
+                 or (kind == "project_assign" and (same(t["operationID"]) or any(same(o) for o in t.get("previousOperations") or [])))]
+        if len(found) == 1:
+            details.update(operationID=operation, taskID=found[0]["id"])
+    return {"toolName": kind, "content": [{"type": "text", "text": json.dumps(project)}], "details": details, "isError": False}
+
+
+def publish_call(call, spec):
+    """The worker's real `project_publish` call, as `Extensions/shepherd-project-context.ts` makes it: writes `spec["content"]` to
+    `spec["source"]` in its cwd, then asks the owner to publish it as `spec["name"]` over the extension socket (`projectPublish`).
+    Returns the tool result the extension returns: status and the owner's receipt, never a name the script typed."""
+    import socket
+    import uuid
+    with open(spec["source"], "w") as source:
+        source.write(spec.get("content", ""))
+    hexed = __import__("hashlib").sha256((os.environ["SHEPHERD_AGENT_ID"] + ":" + call).encode()).hexdigest()
+    publication = str(uuid.UUID(hexed[:32]))
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as channel:
+        channel.settimeout(30)
+        channel.connect(SCRIPT["socket"] or os.environ["SHEPHERD_SOCKET"])
+        channel.sendall((json.dumps({"type": "projectPublish", "id": 1, "agentID": os.environ["SHEPHERD_AGENT_ID"],
+                                     "request": {"publish": {"publicationID": publication, "sourcePath": spec["source"],
+                                                             "artifactName": spec["name"]}}}) + "\n").encode())
+        reply = json.loads(channel.makefile("rb").readline())
+    if reply.get("type") == "error":
+        body = {"error": reply.get("code"), "message": reply.get("message")}
+        return {"toolName": "project_publish", "arguments": {"sourcePath": spec["source"], "artifactName": spec["name"]},
+                "content": [{"type": "text", "text": json.dumps(body)}], "details": {}, "isError": True}
+    artifact = reply["result"].get("artifact")
+    body = {"status": "published" if artifact and artifact.get("state") == "ready" else "staged; waiting for owner", "artifact": artifact}
+    return {"toolName": "project_publish", "arguments": {"sourcePath": spec["source"], "artifactName": spec["name"]},
+            "content": [{"type": "text", "text": json.dumps(body)}], "details": {}, "isError": False}
+
+
+def script_turn(prompt, script):
+    """A turn that plays `script` (a list from `project-script.json` in the cwd): {"text": ...} is an assistant reply,
+    {"tool": {"toolName", "content", "details", "isError"?}} a tool call and its result, {"bash": cmd, "output": ...} a bash call, {"publish": {"source", "name", "content"}} (a worker publishing a file through the owner's real publisher), {"owner": {"project_assign": {"title", "prompt"}}} (also `project_resolve` {"title"} and `project_propose_space` {"path"}) the coordinator calling the owner for real,
+    {"wait": "<file>", "timeout": s} holds until that file exists, {"ask": {"title", "options"}} (last) leaves a select the worker waits on. The user's own words are the prompt, streamed first as pi does. Everything goes
+    through the same events a real turn does, so the host's production projection draws it."""
+    # {"startedAgo": seconds} puts the person's message (the assignment) that long ago: a worker that began half an hour back.
+    ago = sum(item.get("startedAgo", 0) for item in script)
+    user = {"role": "user", "content": prompt, "timestamp": now_ms() - int(ago * 1000)}
+    new = [user]
     emit({"type": "agent_start"})
     emit({"type": "turn_start"})
+    emit({"type": "message_start", "message": user})
+    emit({"type": "message_end", "message": user})
+    for n, item in enumerate(script):
+        if "startedAgo" in item:
+            continue
+        if "wait" in item:
+            wait_for_file(item["wait"], item.get("timeout", 30.0))
+            continue
+        if "ask" in item:
+            # A select the worker waits on (its native dialog): the last item, so the turn stays open until it is answered.
+            global pending_ui
+            pending_ui = "uuid-script"
+            emit({"type": "extension_ui_request", "id": "uuid-script", "method": "select", "title": item["ask"]["title"], "options": item["ask"]["options"]})
+            MESSAGES.extend(new)
+            STATE["messageCount"] = len(MESSAGES)
+            return
+        if "text" in item:
+            message = {"role": "assistant", "content": [{"type": "text", "text": item["text"]}], "stopReason": "stop", "timestamp": now_ms()}
+            emit({"type": "message_start", "message": dict(message, content=[])})
+            emit({"type": "message_end", "message": message})
+            new.append(message)
+            continue
+        call = f"script_call_{n}"
+        if "publish" in item:
+            item = {"tool": publish_call(call, item["publish"])}
+        if "owner" in item:
+            kind, spec = next(iter(item["owner"].items()))
+            item = {"tool": owner_call(kind, spec)}
+        if "bash" in item:
+            name, args, content, details, error = "bash", {"command": item["bash"]}, [{"type": "text", "text": item.get("output", "")}], {}, False
+        else:
+            tool = item["tool"]
+            name, args, content, details, error = tool["toolName"], tool.get("arguments", {}), tool["content"], tool.get("details", {}), tool.get("isError", False)
+        assistant = {"role": "assistant", "content": [{"type": "toolCall", "id": call, "name": name, "arguments": args}], "stopReason": "toolUse", "timestamp": now_ms()}
+        emit({"type": "message_start", "message": dict(assistant, content=[])})
+        emit({"type": "message_end", "message": assistant})
+        emit({"type": "tool_execution_start", "toolCallId": call, "toolName": name, "args": args})
+        result = {"role": "toolResult", "toolCallId": call, "toolName": name, "content": content, "details": details, "isError": error, "timestamp": now_ms()}
+        emit({"type": "tool_execution_end", "toolCallId": call, "toolName": name, "result": {"content": content, "details": details}, "isError": error})
+        new.extend([assistant, result])
+    MESSAGES.extend(new)
+    STATE["messageCount"] = len(MESSAGES)
+    emit({"type": "agent_end", "messages": new[1:], "willRetry": False})
+    emit({"type": "agent_settled"})
+
+
+def streaming_turn(prompt, slow=False):
+    user = {"role": "user", "content": prompt, "timestamp": now_ms()}
+    emit({"type": "agent_start"})
+    emit({"type": "turn_start"})
+    emit({"type": "message_start", "message": user})
+    emit({"type": "message_end", "message": user})
     emit({"type": "message_start", "message": {"role": "assistant", "content": []}})
     update({"type": "text_start", "contentIndex": 0})
     update({"type": "text_delta", "contentIndex": 0, "delta": "Hello"})
@@ -310,7 +493,7 @@ def streaming_turn(prompt, slow=False):
     # An event type this client does not model; must decode as unknown, not fail.
     emit({"type": "stub_unmodelled_event", "reason": "manual"})
     # Like pi, message_end persisted these; get_messages now returns them.
-    MESSAGES.extend([{"role": "user", "content": prompt}, final, tool_result])
+    MESSAGES.extend([user, final, tool_result])
     STATE["messageCount"] = len(MESSAGES)
     emit({"type": "agent_end", "messages": [final], "willRetry": False})
     STATS["contextUsage"] = {"tokens": 60000, "contextWindow": 200000, "percent": 30}
@@ -570,6 +753,21 @@ def agent_run(first):
                 done += 1
                 more = True
             else:
+                if text == "question":
+                    # A steered user turn can ask while the same native run is still active.
+                    QUESTION["count"] += 1
+                    QUESTION["id"] = f"question-{QUESTION['count']}"
+                    QUESTION["response"] = None
+                    QUESTION["answered"].clear()
+                    emit({"type": "extension_ui_request", "id": QUESTION["id"], "method": "confirm",
+                          "title": "Continue the manual task?", "timeout": 30000})
+                    deadline = time.monotonic() + 30
+                    while not RUN["abort"].is_set() and time.monotonic() < deadline:
+                        if QUESTION["answered"].wait(0.02):
+                            break
+                    QUESTION["id"] = None
+                    if RUN["abort"].is_set():
+                        continue
                 answer = f"Reply to {text}"
                 if (long := re.search(r"long:(\d+)", text)):
                     # A long answer: that many paragraphs, then a code block.
@@ -978,14 +1176,27 @@ def load_extensions():
 
 
 def startup():
+    global messages_file
     try:
         with open("stub-pi-startup.json") as f:
             config = json.load(f)
     except (OSError, ValueError):
         config = {}
+    # App-launch fixtures can retain the real messages from their previous stub process.
+    if isinstance(config.get("messagesFile"), str):
+        messages_file = config["messagesFile"]
+        if os.path.exists(messages_file):
+            with open(messages_file) as f:
+                MESSAGES[:] = json.load(f)
     # "model": fields of the starting model, as $STUB_PI_MODEL (for a pi launched the way the app does).
     if isinstance(config.get("model"), dict):
         STATE["model"] = dict(STATE["model"], **config["model"])
+    if isinstance(config.get("thinkingLevel"), str):
+        STATE["thinkingLevel"] = config["thinkingLevel"]
+    # "noThinkingLevels": a model that sets no reasoning level (pi answers an empty set), so the composer draws no level chip.
+    if config.get("noThinkingLevels"):
+        os.environ["STUB_PI_THINKING_LEVELS"] = "{\"*\": []}"
+        STATE["thinkingLevel"] = None
     if isinstance(config.get("speak"), dict) and not os.environ.get("STUB_PI_SPEAK"):
         threading.Thread(target=speak_from_config, args=(config["speak"],), daemon=True).start()
     delay = os.environ.get("STUB_PI_STARTUP_DELAY") or config.get("delay")
@@ -1026,6 +1237,10 @@ record_launch()
 if os.environ.get("STUB_PI_SPEAK"):
     threading.Thread(target=speak_at_start, daemon=True).start()
 startup()
+if os.path.exists("project-script.json"):
+    # A scripted conversation starts empty: pi's own history is what the script plays, not this stub's greeting.
+    del MESSAGES[:]
+    STATE["messageCount"] = 0
 
 pending_ui = None
 turn_thread = None
@@ -1166,6 +1381,41 @@ for raw in sys.stdin.buffer:
                   "message": "This conversation's CLIProxyAPI model is unavailable.", "notifyType": "error"})
             respond(cmd, t, data={"disposition": "handled"})
             continue
+        if message.startswith("project-tools "):
+            import socket
+            respond(cmd, t)
+            emit({"type": "agent_start"})
+            emit({"type": "message_start", "message": {"role": "user", "content": message}})
+            commands = json.loads(message[len("project-tools "):])
+            context = json.loads(os.environ["SHEPHERD_PROJECT_CONTEXT"])
+            def project_request(action, revision=0):
+                with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as channel:
+                    channel.settimeout(10)
+                    channel.connect(os.environ["SHEPHERD_SOCKET"])
+                    channel.sendall((json.dumps({"type": "projectRuntime", "id": 1,
+                        "agentID": os.environ["SHEPHERD_AGENT_ID"], "projectID": context["projectID"],
+                        "expectedRevision": revision, "request": action}) + "\n").encode())
+                    return json.loads(channel.makefile("rb").readline())
+            replies = []
+            for action in commands:
+                for attempt in range(32):
+                    snapshot = project_request({"read": {}})
+                    if snapshot["type"] == "error":
+                        result = snapshot
+                        break
+                    project = snapshot["project"]
+                    for values in action.values():
+                        if values.get("spaceID") == "$linked": values["spaceID"] = project["linkedSpaces"][0]["spaceID"]
+                        if values.get("taskID") == "$first": values["taskID"] = project["tasks"][0]["id"]
+                    result = project_request(action, project["revision"])
+                    if result.get("code") not in ["stale_project", "project_busy", "workspace_changed"]: break
+                replies.append(result)
+            final = {"role": "assistant", "content": [{"type": "text", "text": json.dumps(replies)}], "stopReason": "stop"}
+            MESSAGES.extend([{"role": "user", "content": message}, final])
+            emit({"type": "message_end", "message": final})
+            emit({"type": "agent_end", "messages": [final], "willRetry": False})
+            emit({"type": "agent_settled"})
+            continue
         if message == "hang":
             continue
         if message == "die":
@@ -1261,6 +1511,11 @@ for raw in sys.stdin.buffer:
         if message == "ask":
             pending_ui = "uuid-2"
             emit({"type": "agent_start"})
+            user = {"role": "user", "content": message, "timestamp": now_ms()}
+            emit({"type": "message_start", "message": user})
+            emit({"type": "message_end", "message": user})
+            MESSAGES.append(user)
+            STATE["messageCount"] = len(MESSAGES)
             emit({"type": "extension_ui_request", "id": "uuid-2", "method": "confirm",
                   "title": "Clear session?", "message": "All messages will be lost.", "timeout": 60000})
         elif message in ("ask-short", "ask-long"):
@@ -1298,6 +1553,12 @@ for raw in sys.stdin.buffer:
             emit({"type": "agent_start"})
             emit({"type": "extension_ui_request", "id": "uuid-6", "method": "editor",
                   "title": "Edit the commit message", "prefill": "fix: typo"})
+        elif message == "project-action":
+            turn_thread = threading.Thread(target=project_action_turn, args=(message,), daemon=True)
+            turn_thread.start()
+        elif message == "project-plan":
+            turn_thread = threading.Thread(target=project_action_turn, args=(message, "project-plan-result.json"), daemon=True)
+            turn_thread.start()
         elif message == "slow":
             # Real pi keeps reading stdin during a turn; the paused turn must too.
             turn_aborted = False
@@ -1418,6 +1679,25 @@ for raw in sys.stdin.buffer:
             sys.stderr.write("stub-pi: warning line\n")
             sys.stderr.flush()
             emit({"type": "agent_settled"})
+        elif os.path.exists("project-script.json"):
+            # The fixture's own conversation (`script_turn`): `{"prompts": {<exact prompt>: [items]}, "events": [[items], ...]}`. A prompt
+            # with a script plays it; the owner's "Worker event" wake-ups play `events` in order, then nothing; any other prompt is
+            # an ordinary turn. A scripted agent never greets (its history starts empty).
+            with open("project-script.json") as script_file:
+                book = json.load(script_file)
+            SCRIPT["socket"] = book.get("socket")
+            script = (book.get("prompts") or {}).get(message)
+            if script is None and "Worker event" in message:
+                events = book.setdefault("events", [])
+                script = events.pop(0) if events else []
+                with open("project-script.json", "w") as script_file:
+                    json.dump(book, script_file)
+            turn_aborted = False
+            if script is None:
+                streaming_turn(message)
+            else:
+                turn_thread = threading.Thread(target=script_turn, args=(message, script), daemon=True)
+                turn_thread.start()
         else:
             streaming_turn(message)
     else:

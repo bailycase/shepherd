@@ -372,7 +372,7 @@ agent and its auxiliary processes while the app runs, and quitting the app termi
   or parent edit alone never authorizes a filesystem operation. Transfers refuse overwrite,
   linked worktrees, in-use projects, and protected runtime folders. Copy keeps the original
   registration and folder; move attempts a no-overwrite rollback on failed state persistence.
-  Partial copies remain for inspection, never automatic deletion. See [project tools](agent-coordination.md#project-registration-and-refresh).
+  Partial copies remain for inspection, never automatic deletion. See [project tools](agent-coordination.md#space-registration-and-refresh).
 
 Nothing else mutates repository state, and Shepherd never prunes worktrees.
 

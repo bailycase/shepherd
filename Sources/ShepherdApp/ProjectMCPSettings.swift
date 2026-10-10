@@ -27,7 +27,7 @@ struct ProjectMCPSettings: View {
     var body: some View {
         VStack(alignment: .leading, spacing: NW.Space.l) {
             HStack(alignment: .top, spacing: NW.Space.l) {
-                SettingsHeader(title: "MCP servers", explanation: "Configure servers for this project. Changes apply to new threads on \(model.selected?.host.name ?? "this host").")
+                SettingsHeader(title: "MCP servers", explanation: "Configure servers for this space. Changes apply to new threads on \(model.selected?.host.name ?? "this host").")
                     .frame(maxWidth: AppLayout.mcpExplanationWidth, alignment: .leading)
                 Spacer(minLength: NW.Space.m)
                 MCPAddServerButton(editable: model.mcpEditable) { sheet = .add(.remote) }
@@ -46,7 +46,7 @@ struct ProjectMCPSettings: View {
                     Text(model.mcpTrustExplanation).font(.nw(.caption)).foregroundStyle(Color.nw.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                     if model.mcpProjectTrusted == false, model.selected?.host.supportsProjectTrust == true {
-                        Button("Trust this project…") { model.mcpTrustError = nil; trustProject = model.selected }
+                        Button("Trust this space…") { model.mcpTrustError = nil; trustProject = model.selected }
                             .buttonStyle(.nw(.secondary)).disabled(!model.mcpEditable || model.dirty || model.mcpTrustChecking)
                     } else if model.mcpTrustError != nil {
                         Button("Check again") { Task { await model.refreshMCPCredentials() } }
@@ -66,8 +66,8 @@ struct ProjectMCPSettings: View {
                 .scrollIndicators(.hidden)
             }
             Text(model.mcp.native
-                 ? "Only trusted projects load .pi/mcp.json. Sign-in credentials stay on the project's host; live status belongs to its threads."
-                 : "This file is used when Also use a repo’s .mcp.json is on in MCP settings. Its tools use Search. Sign-in credentials stay on the project's host.")
+                 ? "Only trusted spaces load .pi/mcp.json. Sign-in credentials stay on the space's host; live status belongs to its threads."
+                 : "This file is used when Also use a repo’s .mcp.json is on in MCP settings. Its tools use Search. Sign-in credentials stay on the space's host.")
                 .font(.nwSans(AppLayout.mcpNoteSize)).foregroundStyle(Color.nw.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }

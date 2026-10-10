@@ -269,7 +269,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .terminal: return "Terminal"
         case .agents: return "Agents"
         case .subagents: return "Subagents"
-        case .projects: return "Projects"
+        case .projects: return "Spaces"
         case .worktrees: return "Worktrees"
         case .pi: return "Pi"
         case .piSignIn: return "Sign-in"
@@ -296,7 +296,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .worktrees: ["Base branch", "Fetch before creating", "Commit remaining work", "Generate PR descriptions", "Delete local branch", "Merge PR automatically"]
         case .subagents: ["Filter subagents", "New subagent", "Restore defaults", "Show in Finder",
                           "Native subagents", "Subagent display", "Concurrency", "Model", "Thinking", "Context"]
-        case .projects: ["Filter projects", "All hosts", "Add project", "Instructions", "Pi settings", "Skills", "Extensions", "MCP servers"]
+        case .projects: ["Filter spaces", "All hosts", "Add space", "Instructions", "Pi settings", "Skills", "Extensions", "MCP servers"]
         case .pi: ["Shepherd's pi", "Source", "Last brought over", "Re-import all", "Logins", "Custom providers", "Default model", "Trusted folders",
                    "Instructions", "Skills", "Prompts", "Themes", "Imported extensions"]
         case .extensions: ["Terminals and agent tools", "Diff review tool", "MCP servers", "Browser tools", "Design references"]
@@ -311,8 +311,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .remote: ["Hosts", "Add host", "Listener", "Token"]
         case .keyboard: ["Shortcuts", "Reset all shortcuts"]
         case .advanced: ["Workspace state", "Extension socket", "Update channel", "Check for updates", "Reset settings"]
-        case .experiments: ["Goals", "Suggested instructions", "Learn from", "Can suggest for", "Waiting for you", "Added from suggestions",
-                            "Design tool"]
+        case .experiments: ["Goals", "Projects", "Suggested instructions", "Learn from", "Can suggest for", "Waiting for you",
+                            "Added from suggestions", "Design tool"]
         }
     }
 
@@ -320,7 +320,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     private var keywords: [String: [String]] {
         switch self {
         case .appearance: ["Mode": ["dark", "light", "color", "night watch", "theme"], "Text size": ["font", "zoom", "scale"], "Sidebar rows": ["row height", "comfortable"], "Density": ["compact", "spacing"],
-                           "Organize by": ["projects", "activity", "folders", "sidebar style", "tree"],
+                           "Organize by": ["spaces", "activity", "folders", "sidebar style", "tree"],
                            "Group by host": ["hosts", "machines"], "Keep idle threads": ["archive", "idle"]]
         case .terminal: ["Font family": ["ghostty", "monospace"], "Shell": ["zsh", "bash", "fish"]]
         case .agents: ["Default model": ["claude", "gpt", "provider"], "Session naming model": ["name", "title", "rename", "haiku"], "Default thinking level": ["reasoning", "effort"],
@@ -330,16 +330,16 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                        "Trim old tool output from the model's context": ["tool results", "clear", "clipping", "context", "tokens", "compaction",
                                                                      "screenshots", "cache"],
                        "Defer rarely used tools": ["tool search", "tool_search", "deferred", "tokens"],
-                       "Codemode": ["javascript", "script", "batch", "tools", "project"]]
+                       "Codemode": ["javascript", "script", "batch", "tools", "space"]]
         case .worktrees: ["Base branch": ["git", "origin"], "Merge PR automatically": ["github", "pull request"]]
         case .subagents: ["New subagent": ["children", "helpers", "profiles", "agents", "Markdown"], "Restore defaults": ["scout", "reviewer", "planner", "worker"],
                           "Native subagents": ["children", "workflows"], "Concurrency": ["parallel", "limit"]]
-        case .projects: ["Filter projects": ["folders", "directory", "project settings"], "Instructions": ["AGENTS.md", "APPEND_SYSTEM.md"], "Pi settings": [".pi", "settings.json"]]
+        case .projects: ["Filter spaces": ["folders", "directory", "space settings"], "Instructions": ["AGENTS.md", "APPEND_SYSTEM.md"], "Pi settings": [".pi", "settings.json"]]
         case .pi: ["Shepherd's pi": ["version", "engine", "home", "folder"],
                    "Source": ["~/.pi/agent", "terminal pi", "your pi", "from pi"], "Re-import all": ["import", "re-import", "copy"],
                    "Logins": ["re-import", "auth.json", "sign-ins"],
                    "Custom providers": ["models.json", "re-import"], "Default model": ["re-import", "provider"],
-                   "Trusted folders": ["trust.json", "project trust", "re-import"],
+                   "Trusted folders": ["trust.json", "space trust", "re-import"],
                    "Instructions": ["AGENTS.md", "CLAUDE.md", "SYSTEM.md", "APPEND_SYSTEM.md", "context", "re-import"],
                    "Skills": ["SKILL.md", "re-import"], "Prompts": ["prompt templates", "re-import"], "Themes": ["re-import"],
                    "Imported extensions": ["packages", "npm", "full access", "switch on", "didn't load"]]
@@ -372,7 +372,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .remote: ["Hosts": ["vpn", "tailscale", "ssh"], "Listener": ["port", "serve"]]
         case .keyboard: ["Shortcuts": ["hotkey", "keybinding", "chord", "steer", "queue"]]
         case .advanced: ["Update channel": ["beta", "nightly", "sparkle"], "Workspace state": ["state.json"]]
-        case .experiments: ["Suggested instructions": ["lessons", "learned"], "Learn from": ["threads", "automations"],
+        case .experiments: ["Projects": ["coordinate", "project work", "new project"],
+                            "Suggested instructions": ["lessons", "learned"], "Learn from": ["threads", "automations"],
                             "Design tool": ["designs", "boards", "mockups"]]
         }
     }
@@ -423,7 +424,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .piSignIn: return "lock"
         case .extensions: return "puzzlepiece.extension"
         case .piSlashCommands: return "chevron.left.forwardslash.chevron.right"
-        case .instructions: return "doc.text"
+        case .instructions: return NWGlyph.document.symbolName
         case .skills: return "graduationcap"
         case .mcp: return "server.rack"
         case .remote: return NWGlyph.remoteConnection.symbolName

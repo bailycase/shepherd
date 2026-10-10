@@ -293,7 +293,7 @@ private struct PaletteExcerpt: View {
                         .foregroundStyle(Color.nw.textSecondary)
                         .lineLimit(4)
                 case .activity:
-                    Label(line.text, systemImage: line.failed ? "xmark.circle" : "chevron.right")
+                    Label(line.text, systemImage: line.failed ? NWGlyph.failedStep.symbolName : "chevron.right")
                         .font(.nw(.mono))
                         .foregroundStyle(line.failed ? Color.nw.failed : Color.nw.textTertiary)
                         .lineLimit(1)
