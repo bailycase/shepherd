@@ -65,7 +65,10 @@ stores crashed macOS 26's bundle-less test runner; the bundled app still uses pe
 - `LoopbackServer` and `DevServerFixture`: a server on the loopback and an ephemeral port standing in
   for a host's dev server in tunnel tests (HTTP GET and a POST of any size with its SHA-256, a
   WebSocket echo, an echo, a firehose, one that never reads), IPv4 or IPv6, or on a chosen address
-  or port. Every tunnel and forwarder test uses it, never the network.
+  or port. Every tunnel and forwarder test uses it, never the network. Browser port-quota
+  coverage loads the live fixture and claims each viewer port before choosing the next. A
+  separate refused-connection test checks that failed navigation retains its claimed port;
+  quota coverage does not depend on eight WebKit connection failures reaching callbacks.
 - `ScrollTrace` (`ShepherdAppIntegrationTests/Support`): a thread's scroll view recorded as it
   changes (offset, content height, insets, stamped with the test's step), with the states a display
   could draw (one per run-loop turn) kept apart from every change in between. Read a scroll rule
@@ -505,9 +508,16 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
   There are no duration estimates, shards or retry/report databases. Label changes reevaluate
   `full-ci`. Closing a PR supersedes its old run through native concurrency; the closing run
   skips planning and every dependent job, releasing the self-hosted runner without new tests.
-- **Where it runs:** a same-repository pull request authored by account ID `19316389` (Baily) or
-  `3370624` (Josh), triggered by the same account, runs on the self-hosted Mac (the runner's sole
-  custom label, `shepherd-release`). The native `runs-on` expression checks `github.workflow_ref`
+- **Where it runs:** GitHub-hosted `macos-26` is the default. A self-hosted Mac must have
+  isolated resources before the repository variable `SHEPHERD_SELFHOSTED_ENABLED` is set to
+  `true`; GitHub compares strings without case. Missing, empty or non-true values stay hosted,
+  including UI diagnostics.
+  Separate macOS accounts, nice values and background priority do not cap a build's aggregate
+  memory or protect other apps from exhaustion. The shared Mac's runner is disabled in launchd
+  and stays offline; do not enable it merely to restore faster builds.
+  When opted in, a same-repository pull request authored by account ID `19316389` (Baily) or
+  `3370624` (Josh), triggered by the same account, can run on the self-hosted Mac (the runner's
+  sole custom label, `shepherd-release`). The native `runs-on` expression checks `github.workflow_ref`
   against this repository's `ci.yml` at the pull request's merge ref before checkout; checkout
   code and plan outputs cannot change its decision. Everything else (forks, unknown actors, a
   rerun by the other maintainer, `master` pushes, the daily run, manual runs) runs on
@@ -544,8 +554,9 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
   toolchain and `Package.resolved`; only pushes save.
 - **Nightly publication** runs no test suites on push. Its release workflow skips the Python
   test preflight but keeps signing, notarization and artifact verification. Required PR checks
-  still apply before merging. CI competes with the Nightly release for the one runner: a
-  release waits up to fifteen minutes for it before building on GitHub instead ([releases](releases.md)).
+  still apply before merging. With self-hosted builds disabled, Nightly builds on GitHub
+  immediately without dispatching a local helper. When enabled, CI and release compete for
+  the one runner; a release waits up to fifteen minutes before hosted fallback ([releases](releases.md)).
 - **The steer-send soak** runs the real-host send/scroll scenario once on CI, retaining every
   assertion. Local timing-enabled runs repeat it five times; `SHEPHERD_TIMING_TESTS=1` restores
   that repetition on CI too. No thread suite is excluded because it contains known issues.
@@ -562,7 +573,8 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
 - **The daily run** tests `master` on `macos-26`; `gh workflow run ci.yml --ref <branch>` runs
   the same by hand (`-f clean=true` builds from scratch).
   `gh workflow run ci.yml --ref <branch> -f diagnostics=ui` collects focused failures in the
-  real self-hosted runner context without rerunning all suites or changing PR coverage.
+  self-hosted runner context only when explicitly enabled, otherwise on GitHub, without
+  rerunning all suites or changing PR coverage.
 - **Release rules** run on `ubuntu-latest` (stdlib Python): the release workflow's, the CI
   workflow's and plan's, the docs' and the embedded extensions'. **Extension tests** run there
   too, with Node 24 and the modular pi package version from `scripts/pi-engine-pin.json`,
