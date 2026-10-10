@@ -623,6 +623,9 @@ struct ThreadTailAnchor: ViewModifier {
                 .defaultScrollAnchor(sticky ? .bottom : nil, for: .sizeChanges)
         } else {
             content
+                // Detached, a shrinking live reply must not move the reader beyond its rows.
+                // While following, leave size anchoring to the existing follower and guard.
+                .defaultScrollAnchor(sticky ? nil : .top, for: .sizeChanges)
         }
     }
 }

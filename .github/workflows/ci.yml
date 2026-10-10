@@ -179,12 +179,6 @@ jobs:
       - name: Collect completion evidence
         if: ${{ failure() }}
         run: |
-          if [ -d "$TMPDIR/shepherd-completion-repro" ]; then
-            cp -R "$TMPDIR/shepherd-completion-repro" "$RUNNER_TEMP/"
-          fi
-      - name: Collect completion evidence
-        if: ${{ failure() }}
-        run: |
           for folder in shepherd-completion-repro shepherd-completion-matrix; do
             if [ -d "$TMPDIR/$folder" ]; then
               cp -R "$TMPDIR/$folder" "$RUNNER_TEMP/"

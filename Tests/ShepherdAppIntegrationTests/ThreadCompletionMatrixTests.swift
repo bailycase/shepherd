@@ -188,6 +188,16 @@ struct ThreadCompletionMatrixTests {
             Issue.record("Blank completed transcript: \(prefix), \(guardState), targets=\(deck.tailGuard.visible), \(state). See \(directory.path)")
             return
         }
+        if boundary == .scrolledReplyCollapses {
+            #expect(!deck.tailGuard.following, "completion must not attach a reader")
+            let request = VNRecognizeTextRequest()
+            try request.useCPUForTests()
+            request.recognitionLanguages = ["en-US"]
+            try VNImageRequestHandler(cgImage: pixels).perform([request])
+            let visibleText = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ")
+            #expect(visibleText.range(of: #"Paragraph \d+ of reply \d+|worker completed its review"#, options: .regularExpression) != nil,
+                    "an actual reply must paint, not just the prompt, chrome or a cached target")
+        }
     }
 
     @Test func workerTrayChangesWhileTailRecoveryIsRepairing() async throws {
