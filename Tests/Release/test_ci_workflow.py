@@ -131,6 +131,19 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertIn('CI: "true"', tests)
         self.assertIn("if: ${{ failure() }}", tests, "the log is kept only for a red run")
 
+    def test_failed_swift_runs_keep_the_log_and_completion_pixels(self):
+        tests = JOBS["tests"]
+        copy, upload = tests.split("- name: Collect completion evidence", 1)[1].split("- name: Upload the log", 1)
+        self.assertIn("if: ${{ failure() }}", copy)
+        self.assertIn('if [ -d "$TMPDIR/shepherd-completion-repro" ]; then', copy)
+        self.assertIn('cp -R "$TMPDIR/shepherd-completion-repro" "$RUNNER_TEMP/"', copy)
+        self.assertNotIn("|| true", copy)
+        self.assertIn("if: ${{ failure() }}", upload)
+        self.assertIn("name: ci-swift-test-log", upload)
+        self.assertIn("path: |\n            ${{ runner.temp }}/swift-test.log\n            ${{ runner.temp }}/shepherd-completion-repro", upload)
+        self.assertIn("retention-days: 7", upload)
+        self.assertIn("if-no-files-found: ignore", upload)
+
     def test_the_extension_tests_run_the_pinned_package_without_scripts_or_leniency(self):
         job = JOBS["extensions"]
         self.assertIn("scripts/pi-engine-pin.json", job)
