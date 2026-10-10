@@ -18,30 +18,30 @@ struct ProjectMCPAuthTests {
         let owner = UUID()
         var ids: [UUID] = []
         for index in 0..<4 {
-            let result = try await service.request(directory: dir.path, file: ".pi/mcp.json", text: text, action: .login(server: "issues\(index)"), owner: owner)
+            let result = try await service.request(directory: dir.path, file: ".shepherd/mcp.json", text: text, action: .login(server: "issues\(index)"), owner: owner)
             ids.append(try #require(result.id))
         }
         await #expect(throws: ProjectFileError.self) {
-            _ = try await service.request(directory: dir.path, file: ".pi/mcp.json", text: text, action: .login(server: "issues4"), owner: owner)
+            _ = try await service.request(directory: dir.path, file: ".shepherd/mcp.json", text: text, action: .login(server: "issues4"), owner: owner)
         }
         await #expect(throws: ProjectFileError.self) {
-            _ = try await service.request(directory: dir.path, file: ".pi/mcp.json", text: "", action: .poll(id: ids[0]), owner: UUID())
+            _ = try await service.request(directory: dir.path, file: ".shepherd/mcp.json", text: "", action: .poll(id: ids[0]), owner: UUID())
         }
         await #expect(throws: ProjectFileError.self) {
-            _ = try await service.request(directory: "/other", file: ".pi/mcp.json", text: "", action: .poll(id: ids[0]), owner: owner)
+            _ = try await service.request(directory: "/other", file: ".shepherd/mcp.json", text: "", action: .poll(id: ids[0]), owner: owner)
         }
         try await eventually("host sign-in deadline") {
-            try await service.request(directory: dir.path, file: ".pi/mcp.json", text: "", action: .poll(id: ids[0]), owner: owner).phase == .failed
+            try await service.request(directory: dir.path, file: ".shepherd/mcp.json", text: "", action: .poll(id: ids[0]), owner: owner).phase == .failed
         }
-        let failed = try await service.request(directory: dir.path, file: ".pi/mcp.json", text: "", action: .poll(id: ids[0]), owner: owner)
+        let failed = try await service.request(directory: dir.path, file: ".shepherd/mcp.json", text: "", action: .poll(id: ids[0]), owner: owner)
         #expect(failed.message?.contains("300 seconds") == true)
         await service.cancel(owner: owner)
         await #expect(throws: ProjectFileError.self) {
-            _ = try await service.request(directory: dir.path, file: ".pi/mcp.json", text: "", action: .poll(id: ids[0]), owner: owner)
+            _ = try await service.request(directory: dir.path, file: ".shepherd/mcp.json", text: "", action: .poll(id: ids[0]), owner: owner)
         }
         let restarted = ProjectMCPService(pi: pi)
         await #expect(throws: ProjectFileError.self) {
-            _ = try await restarted.request(directory: dir.path, file: ".pi/mcp.json", text: text, action: .poll(id: ids[0]), owner: owner)
+            _ = try await restarted.request(directory: dir.path, file: ".shepherd/mcp.json", text: text, action: .poll(id: ids[0]), owner: owner)
         }
         #expect(!FileManager.default.fileExists(atPath: pi.home.appendingPathComponent("mcp-auth.json").path))
         await service.cancelAll()
@@ -56,13 +56,13 @@ struct ProjectMCPAuthTests {
         let client = try await host.typed()
         defer { client.disconnect() }
         let text = #"{"mcpServers":{"issues":{"url":"https://example.invalid/mcp"}}}"#
-        _ = try await client.projects(.save(directory: root.path, file: ".pi/mcp.json", text: text, expected: nil))
+        _ = try await client.projects(.save(directory: root.path, file: ".shepherd/mcp.json", text: text, expected: nil))
         #expect(client.capabilities.contains(RemoteProtocol.projectMCPCapability))
         #expect(client.capabilities.contains(RemoteProtocol.projectTrustCapability))
-        guard case .mcp(let result) = try await client.projects(.mcp(directory: root.path, file: ".pi/mcp.json", action: .credentials)) else { Issue.record("Expected MCP credentials"); return }
+        guard case .mcp(let result) = try await client.projects(.mcp(directory: root.path, file: ".shepherd/mcp.json", action: .credentials)) else { Issue.record("Expected MCP credentials"); return }
         #expect(result.signedIn.isEmpty && result.id == nil && result.authorizationURL == nil)
         await #expect(throws: RemoteHostClientError.self) {
-            _ = try await client.projects(.mcp(directory: root.path, file: ".pi/auth.json", action: .credentials))
+            _ = try await client.projects(.mcp(directory: root.path, file: ".shepherd/auth.json", action: .credentials))
         }
         let old = try RemoteHost()
         defer { old.stop() }
@@ -70,14 +70,14 @@ struct ProjectMCPAuthTests {
         let oldClient = try await old.typed()
         defer { oldClient.disconnect() }
         await #expect(throws: RemoteHostClientError.self) {
-            _ = try await oldClient.projects(.mcp(directory: root.path, file: ".pi/mcp.json", action: .login(server: "issues")))
+            _ = try await oldClient.projects(.mcp(directory: root.path, file: ".shepherd/mcp.json", action: .login(server: "issues")))
         }
         await #expect(throws: RemoteHostClientError.self) {
-            _ = try await oldClient.projects(.mcp(directory: root.path, file: ".pi/mcp.json", action: .approveProject))
+            _ = try await oldClient.projects(.mcp(directory: root.path, file: ".shepherd/mcp.json", action: .approveProject))
         }
     }
 
-    @Test(arguments: [".pi/mcp.json", ".mcp.json"])
+    @Test(arguments: [".shepherd/mcp.json", ".mcp.json"])
     func aRemoteProjectCompletesNativeOAuthAndRetainsTokensOnlyOnItsHost(_ file: String) async throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let engineRoot = root.appendingPathComponent(".build/pi-engine")
@@ -114,7 +114,7 @@ struct ProjectMCPAuthTests {
             guard case .mcp(let value) = try await client.projects(.mcp(directory: project.path, file: file, action: action)) else { throw ProjectFileError("protocol", "Expected MCP result") }
             return value
         }
-        if file == ".pi/mcp.json" {
+        if file == ".shepherd/mcp.json" {
             #expect(try await action(.credentials).projectTrusted == false)
             #expect(try await action(.approveProject).projectTrusted == true)
             #expect(try await action(.credentials).projectTrusted == true)

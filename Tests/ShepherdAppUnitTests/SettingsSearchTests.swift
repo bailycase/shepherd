@@ -58,6 +58,7 @@ struct SettingsSearchTests {
         ("github", .skills, ["Add from repo"]),
         // Every skill Shepherd's pi loads is installed, copies from your pi among them.
         (".pi", .skills, ["Installed skills"]),
+        (".shepherd", .skills, ["Installed skills"]),
         ("copied", .skills, ["Installed skills"]),
         ("agent skills", .skills, ["Installed skills"]),
         ("oauth", .mcp, ["How the agent uses them"]),

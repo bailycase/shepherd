@@ -38,7 +38,7 @@ struct ProjectMCPControlTests {
         var writes = 0
         let model = ProjectsModel { host, request in
             if case .mcp(let directory, let file, let action) = request {
-                #expect(host.id == project.host.id && directory == project.project.directory && file == ".pi/mcp.json")
+                #expect(host.id == project.host.id && directory == project.project.directory && file == ".shepherd/mcp.json")
                 switch action {
                 case .credentials:
                     return .mcp(.init(signedIn: ["docs"], message: checkingFails ? "Couldn't check project approval." : nil,
@@ -340,7 +340,7 @@ struct ProjectMCPControlTests {
             let scratch = try ScratchServer()
             self.scratch = scratch
             let root = scratch.dir.appendingPathComponent("project")
-            url = root.appendingPathComponent(".pi/mcp.json")
+            url = root.appendingPathComponent(".shepherd/mcp.json")
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try #"{"owner":"keep","mcpServers":{"docs":{"url":"https://docs.invalid/mcp","exposure":"deferred","timeout":700.5,"future":"keep"}}}"#
                 .write(to: url, atomically: true, encoding: .utf8)
@@ -359,7 +359,7 @@ struct ProjectMCPControlTests {
             await model.navigate(.category(.mcp))
         }
         func entry(_ name: String) throws -> MCPServerEntry {
-            let config = ProjectMCPConfiguration(text: try String(contentsOf: url, encoding: .utf8), path: ".pi/mcp.json")
+            let config = ProjectMCPConfiguration(text: try String(contentsOf: url, encoding: .utf8), path: ".shepherd/mcp.json")
             return try #require(config.entries.first { $0.name == name })
         }
     }

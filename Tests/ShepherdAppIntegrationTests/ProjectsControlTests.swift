@@ -30,7 +30,7 @@ struct ProjectsControlTests {
         let root = scratch.dir.appendingPathComponent("dashboard")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         try Data("# Original instructions\n".utf8).write(to: root.appendingPathComponent("AGENTS.md"))
-        let skills = root.appendingPathComponent(".pi/skills/check/SKILL.md")
+        let skills = root.appendingPathComponent(".shepherd/skills/check/SKILL.md")
         try FileManager.default.createDirectory(at: skills.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data("# Check\n".utf8).write(to: skills)
         try await scratch.server.putState(ShepherdState(spaces: [Space(name: "dashboard", path: root.path)]))
@@ -68,7 +68,7 @@ struct ProjectsControlTests {
                     window.layout()
                     try window.press("Save")
                     try await eventuallyOnMain("codemode saved") { !model.saving && !model.dirty }
-                    let contents = try Data(contentsOf: root.appendingPathComponent(".pi/settings.json"))
+                    let contents = try Data(contentsOf: root.appendingPathComponent(".shepherd/settings.json"))
                     let settings = try #require(JSONSerialization.jsonObject(with: contents) as? [String: Any])
                     #expect(PiCodemode.projectOverride(in: settings) == expected)
                 }
@@ -81,15 +81,15 @@ struct ProjectsControlTests {
         window.layout()
         try ControlPress.press("Project category Instructions", under: window.host)
         try await eventuallyOnMain("instructions to load") { model.category == .instructions && model.fileLoaded }
-        for path in ["AGENTS.override.md", ".pi/SYSTEM.md"] {
+        for path in ["AGENTS.override.md", ".shepherd/SYSTEM.md"] {
             window.layout()
             let file = try ControlPress.press(path, under: window.host)
             #expect(ControlPress.undersized([file], minimum: .desktop).isEmpty)
             try await eventuallyOnMain("\(path) to load") { model.selectedFile?.path == path && model.fileLoaded }
         }
         window.layout()
-        try ControlPress.press(".pi/APPEND_SYSTEM.md", under: window.host)
-        try await eventuallyOnMain("the missing instruction file") { model.selectedFile?.path == ".pi/APPEND_SYSTEM.md" && model.fileLoaded }
+        try ControlPress.press(".shepherd/APPEND_SYSTEM.md", under: window.host)
+        try await eventuallyOnMain("the missing instruction file") { model.selectedFile?.path == ".shepherd/APPEND_SYSTEM.md" && model.fileLoaded }
         #expect(model.saved == nil)
         window.layout()
         try ControlPress.press("AGENTS.md", under: window.host)
@@ -187,8 +187,8 @@ struct ProjectsControlTests {
         let acme = scratch.dir.appendingPathComponent("acme").resolvingSymlinksInPath()
         let web = acme.appendingPathComponent("apps/web")
         try FileManager.default.createDirectory(at: web, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: acme.appendingPathComponent(".pi"), withIntermediateDirectories: true)
-        try Data(#"{"mcpServers": {"docs": {"command": "true"}, "shared": {"command": "true"}}}"#.utf8).write(to: acme.appendingPathComponent(".pi/mcp.json"))
+        try FileManager.default.createDirectory(at: acme.appendingPathComponent(".shepherd"), withIntermediateDirectories: true)
+        try Data(#"{"mcpServers": {"docs": {"command": "true"}, "shared": {"command": "true"}}}"#.utf8).write(to: acme.appendingPathComponent(".shepherd/mcp.json"))
         try await scratch.server.putState(ShepherdState(spaces: [Space(name: "acme", path: acme.path), Space(name: "web", path: web.path)]))
         let defaults = ScratchDefaults()
         let vm = ShepherdViewModel(server: scratch.server, settings: AppSettings(store: defaults), keybindings: KeybindingsStore(store: defaults),

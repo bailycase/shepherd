@@ -145,13 +145,13 @@ public enum PiConfig {
     }
 
     /// pi's compaction settings for `model` ("provider/id"), as pi resolves them: the project's
-    /// `.pi/settings.json` over the agent directory's, a `compaction.modelOverrides` entry for the
+    /// `.shepherd/settings.json` over the agent directory's, a `compaction.modelOverrides` entry for the
     /// model over the ordinary values, each field falling back on its own to pi's default. Read
     /// only; a value pi would reject reads as the default.
     public static func compactionSettings(model: String?, cwd: String?, in directory: URL) -> PiCompactionSettings {
         var merged: [String: Any] = [:]
         var overrides: [String: Any] = [:]
-        for object in [settings(in: directory), cwd.flatMap { settings(in: URL(fileURLWithPath: $0).appendingPathComponent(".pi")) }] {
+        for object in [settings(in: directory), cwd.flatMap { settings(in: URL(fileURLWithPath: $0).appendingPathComponent(".shepherd")) }] {
             guard let compaction = object?["compaction"] as? [String: Any] else { continue }
             for (key, value) in compaction where key != "modelOverrides" { merged[key] = value }
             if let model, let table = compaction["modelOverrides"] as? [String: Any], let entry = table[model] as? [String: Any] {

@@ -28,12 +28,12 @@ struct ProjectInstructionContextTests {
         let root = home.appendingPathComponent("dev/repo")
         let agents = root.appendingPathComponent("AGENTS.md")
         let global = home.appendingPathComponent(".pi/agent/AGENTS.md")
-        try FileManager.default.createDirectory(at: root.appendingPathComponent(".pi/skills/test"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent(".shepherd/skills/test"), withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: global.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data("global".utf8).write(to: global)
         try Data("project".utf8).write(to: agents)
-        try Data("skill".utf8).write(to: root.appendingPathComponent(".pi/skills/test/SKILL.md"))
-        try Data("{\"mcpServers\":{\"docs\":{}}}".utf8).write(to: root.appendingPathComponent(".pi/mcp.json"))
+        try Data("skill".utf8).write(to: root.appendingPathComponent(".shepherd/skills/test/SKILL.md"))
+        try Data("{\"mcpServers\":{\"docs\":{}}}".utf8).write(to: root.appendingPathComponent(".shepherd/mcp.json"))
         let opened = await MainActor.run { OpenedProjectFile() }
         let store = ProjectSettingsStore(historyURL: scratch.dir.appendingPathComponent("history.json"), home: home,
                                         sessions: scratch.dir.appendingPathComponent("sessions"), openEditor: { opened.path = try String(contentsOf: $0, encoding: .utf8) })

@@ -32,10 +32,10 @@ struct ProjectSettingsTests {
             _ = try await store.request(.save(directory: first.path, file: "AGENTS.md", text: "stale", expected: "first"), state: state)
         }
         #expect(try String(contentsOf: first.appendingPathComponent("AGENTS.md"), encoding: .utf8) == "new")
-        _ = try await store.request(.save(directory: first.path, file: ".pi/settings.json", text: "{\"unknownOption\":true}", expected: nil), state: state)
-        #expect(try String(contentsOf: first.appendingPathComponent(".pi/settings.json"), encoding: .utf8).contains("unknownOption"))
+        _ = try await store.request(.save(directory: first.path, file: ".shepherd/settings.json", text: "{\"unknownOption\":true}", expected: nil), state: state)
+        #expect(try String(contentsOf: first.appendingPathComponent(".shepherd/settings.json"), encoding: .utf8).contains("unknownOption"))
         await #expect(throws: ProjectFileError.self) {
-            _ = try await store.request(.save(directory: first.path, file: ".pi/settings.json", text: "[]", expected: "{\"unknownOption\":true}"), state: state)
+            _ = try await store.request(.save(directory: first.path, file: ".shepherd/settings.json", text: "[]", expected: "{\"unknownOption\":true}"), state: state)
         }
         try await scratch.server.putState(ShepherdState())
         let reopened = ProjectSettingsStore(historyURL: scratch.dir.appendingPathComponent("projects.json"), home: scratch.dir, sessions: scratch.dir.appendingPathComponent("no-sessions"))
@@ -50,14 +50,14 @@ struct ProjectSettingsTests {
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
         try fm.createDirectory(at: outside, withIntermediateDirectories: true)
         try Data("untouched".utf8).write(to: outside.appendingPathComponent("settings.json"))
-        try fm.createSymbolicLink(at: root.appendingPathComponent(".pi"), withDestinationURL: outside)
+        try fm.createSymbolicLink(at: root.appendingPathComponent(".shepherd"), withDestinationURL: outside)
         let state = ShepherdState(spaces: [Space(name: "project", path: root.path)])
         let store = scratch.server.projects
         for request in [RemoteProjectsRequest.read(directory: root.path, file: "../outside/settings.json"),
-                        .read(directory: root.path, file: ".pi/auth.json"),
+                        .read(directory: root.path, file: ".shepherd/auth.json"),
                         .read(directory: outside.path, file: "AGENTS.md"),
-                        .read(directory: root.path, file: ".pi/settings.json"),
-                        .save(directory: root.path, file: ".pi/settings.json", text: "{}", expected: nil)] {
+                        .read(directory: root.path, file: ".shepherd/settings.json"),
+                        .save(directory: root.path, file: ".shepherd/settings.json", text: "{}", expected: nil)] {
             await #expect(throws: ProjectFileError.self) { _ = try await store.request(request, state: state) }
         }
         #expect(try String(contentsOf: outside.appendingPathComponent("settings.json"), encoding: .utf8) == "untouched")

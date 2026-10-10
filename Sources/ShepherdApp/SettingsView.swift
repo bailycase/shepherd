@@ -334,7 +334,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .worktrees: ["Base branch": ["git", "origin"], "Merge PR automatically": ["github", "pull request"]]
         case .subagents: ["New subagent": ["children", "helpers", "profiles", "agents", "Markdown"], "Restore defaults": ["scout", "reviewer", "planner", "worker"],
                           "Native subagents": ["children", "workflows"], "Concurrency": ["parallel", "limit"]]
-        case .projects: ["Filter projects": ["folders", "directory", "project settings"], "Instructions": ["AGENTS.md", "APPEND_SYSTEM.md"], "Pi settings": [".pi", "settings.json"]]
+        case .projects: ["Filter projects": ["folders", "directory", "project settings"], "Instructions": ["AGENTS.md", "APPEND_SYSTEM.md"], "Pi settings": [".shepherd", "settings.json"]]
         case .pi: ["Shepherd's pi": ["version", "engine", "home", "folder"],
                    "Source": ["~/.pi/agent", "terminal pi", "your pi", "from pi"], "Re-import all": ["import", "re-import", "copy"],
                    "Logins": ["re-import", "auth.json", "sign-ins"],
@@ -362,7 +362,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                                 "Disabled commands": ["off", "hidden", "disabled", "turned off", "switched off"]]
         case .instructions: ["Same on every host": ["sync", "hosts"], "AGENTS.md": ["system prompt", "how you work", "context"],
                              "APPEND_SYSTEM.md": ["system prompt", "override"], "History": ["restore", "undo"]]
-        case .skills: ["Installed skills": ["SKILL.md", ".agents", "agent skills", "from your pi", "copied", ".pi"],
+        case .skills: ["Installed skills": ["SKILL.md", ".agents", "agent skills", "from your pi", "copied", ".pi", ".shepherd"],
                        "Browse skills.sh": ["directory", "search", "install"],
                        "Add from repo": ["github", "git", "folder"], "Skills in the / menu": ["slash", "command", "composer"],
                        "Same skills on every host": ["sync", "hosts"], "Update automatically": ["update", "upgrade"]]
