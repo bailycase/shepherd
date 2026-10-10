@@ -618,6 +618,11 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
   that repetition on CI too. No thread suite is excluded because it contains known issues.
   `ThreadTailGuardTests` keeps a cached bottom marker visible with an 834pt measured gap and
   requires the final landing. Current-row visibility alone cannot suppress bounded repair.
+  Its native-placement cases keep current-row and bottom IDs cached with zero end-distance in an
+  off-screen AppKit window: hidden, hidden-ancestor, offviewport, dead and missing markers must
+  exhaust eight attempts and rebuild once. A physically visible marker ends repair without a
+  rebuild; removed IDs lose their registry entries. Guard-only cases still use independent target
+  inputs. These are placement regressions, not proof of compositor paint or hosted recovery.
   The child-command routing test retires its success-phase async-let before starting the
   failure phase, keeping the same assertions without overlapping cleanup allocations.
   The paging regression checks both success and failure without moving the original visible
@@ -631,8 +636,8 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
   `gh workflow run ci.yml --ref <branch> -f diagnostics=ui` collects focused failures in the
   self-hosted runner context only when explicitly enabled, otherwise on GitHub, without
   rerunning all suites or changing PR coverage. Its fixed, native-ID-validated selection includes
-  menus, code blocks, pane controls, paging, idle checks, both completion suites and remote
-  browser drive. Completion and reconnect diagnostics preserve every original assertion.
+  menus, code blocks, pane controls, paging, idle checks, both completion suites, Jump controls,
+  tail-guard placement cases and remote browser drive. Diagnostics preserve every original assertion.
   With self-hosted disabled, a trusted
   `gh workflow run ci.yml --ref nightly -f diagnostics=ui` also seeds Nightly's hosted cache:
   it still builds all test products and runs the existing validated UI diagnostics, reporting

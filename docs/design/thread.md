@@ -52,7 +52,13 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   it. The guard notices that no current content row is in view, even when the invisible bottom
   marker or a cached target from a replaced live reply is still reported visible. Completion can
   replace that reply's ID when its prompt falls outside the saved history page. Neither the marker
-  nor a removed row may end recovery. After an unsuccessful walk, a cached bottom marker must
+  nor a removed row may end recovery. Current-row IDs can be cached too: the Mac thread now
+  requires a live, nonhidden native row marker intersecting its own clip view before treating a
+  reported row as content. Each lazy row has one passive, accessibility-hidden background probe;
+  the registry holds it weakly and drops obsolete IDs. Missing or dead probes prove nothing.
+  This is placement evidence, not a paint check: the giant-history/native/900pt hosted failure
+  still needs validation; a visible marker cannot prove that its sibling text was drawn.
+  After an unsuccessful walk, a cached bottom marker must
   not suppress the final tail landing when no current row is in view. If all eight scrolling
   attempts still leave the thread stranded, the guard recreates only the transcript scroll view once.
   A current row in view is not enough when the bottom marker remains missing more than 80pt above
