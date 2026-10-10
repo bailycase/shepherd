@@ -44,8 +44,17 @@ Pi and its SDK modules by install location, version, registry tarball and `sha51
 5. Verifies the result the way `release.py verify-app` does.
 
 Downloads are cached in `.build/pi-engine-cache` and reused only while they still match the pin,
-so a second stage is offline (`--offline` insists on it). Nothing is written outside the repo's
-`.build`.
+so a second stage is offline (`--offline` insists on it). Each uncached URL gets at most three
+attempts, each using a 60-second timeout for blocking socket operations. Only timeouts,
+dropped/refused connections, reported incomplete HTTP bodies, temporary DNS failures and HTTP
+408/429/500/502/503/504 retry, immediately.
+Every retry truncates the partial download and starts from byte zero; only a verified complete file
+atomically replaces the cache entry. Failure cleans up the partial and preserves any existing entry.
+Checksum mismatches, `--offline` cache misses, missing archives, permanent HTTP/DNS/TLS errors and
+filesystem failures do not retry. Download errors name the pinned public URL and attempt out of three.
+The socket timeout is **not a whole-transfer deadline**: a progressing transfer can take longer,
+and DNS resolution is not bounded by the socket timeout. The CI/release build workflow's 60-minute
+job timeout remains the outer bound. Nothing is written outside the repo's `.build`.
 
 **Bumping the pin:** take the `darwin-arm64` archive's SHA-256 from
 `https://nodejs.org/dist/vX.Y.Z/SHASUMS256.txt` (Node 24 LTS or a later even line; pi's
