@@ -1,0 +1,50 @@
+name: Build cache
+
+on:
+  push:
+    branches: [nightly]
+    paths:
+      - 'Sources/**'
+      - 'Tests/**'
+      - 'Packages/**'
+      - 'Vendor/**'
+      - 'Package.swift'
+      - 'Package.resolved'
+      - '.github/actions/swift-build/**'
+      - '.github/workflows/build-cache.yml'
+      - 'scripts/ci_cache.py'
+  workflow_dispatch:
+
+# Cache production never runs PR code with elevated permissions or gates a release.
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-build-cache
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/nightly' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: macos-26
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: write
+      pull-requests: read
+    env:
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Remove caches for closed pull requests
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci_cache.py --delete --closed-only
+      - name: Build test products without running tests
+        uses: ./.github/actions/swift-build
+      - name: Retain current trusted baselines
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci_cache.py --delete

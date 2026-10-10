@@ -601,8 +601,16 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
   a missing or evicted cache leaves a normal cold build, never a test bypass.
   GitHub isolates PR saves to `refs/pull/<number>/merge`: a same-head rerun or changed head of
   that same PR can reuse them, but its base and sibling PRs cannot. New PRs into `nightly`
-  need a visible base-branch cache, seeded with the existing manual UI diagnostics below;
-  reseed when the toolchain or resolved lock changes. This does not enable tests on Nightly push.
+  use a visible base-branch cache. The separate `Build cache` workflow compiles test products
+  after a Nightly change to Swift inputs, fixtures or the build action, without running tests or
+  delaying release publication. It runs only on `macos-26`, has a 25-minute limit, and a newer
+  push cancels an obsolete cache build. Missing or failed baselines still allow ordinary cold CI.
+  `ci_cache.py` defaults to a dry run. The trusted Nightly job deletes only recognized caches
+  for closed PRs before building, then retains the two newest Nightly baselines per cache family.
+  Open PRs, unknown keys and other refs are untouched. Each cleanup allows at most 20 deletions,
+  500 inventory entries and three minutes, with a 30-second API-request deadline. Errors stop
+  cleanup; retention never deletes release assets or changes checks, and logs omit cache values.
+  New caches remain subject to the existing Git-metadata guard. No Mini access is involved.
   Keep caches credential-free: retain checkout's `persist-credentials: false` and public,
   lock-pinned dependencies; never add repository `.git`, user homes, auth or global Git config
   paths. After each successful hosted build (including cache hits), an inline stdlib Python
