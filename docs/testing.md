@@ -40,7 +40,9 @@ stores crashed macOS 26's bundle-less test runner; the bundled app still uses pe
   Projects listing passes a `PiSetup` with a per-test home: listing intentionally imports old
   session headers, including those other suites left in a shared home. `RemoteHost(pi:)` takes
   the same per-test setup when asserting an exact remote Projects listing; the cutover imports
-  legacy session headers at startup, before a test adds its workspace. `AppHarness` instead
+  legacy session headers at startup, before a test adds its workspace. A test-owned
+  `ProjectSettingsStore` uses a separate registry path from the live server's `projects.json`
+  so its worker cannot race the server's startup migration. `AppHarness` instead
   defaults to a per-harness pi home (removed by `stop()`), isolating session history and pi
   settings across app suites; pass `pi: .app` explicitly when testing process-home sharing.
 - `StubPi.command`: runs `Resources/stub-pi.py`, a scripted `pi --mode rpc` driven by prompt

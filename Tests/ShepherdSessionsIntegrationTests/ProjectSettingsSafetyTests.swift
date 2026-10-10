@@ -44,7 +44,8 @@ struct ProjectSettingsSafetyTests {
     @Test func failedHistoryPersistenceRetriesOnTheNextRequest() async throws {
         let scratch = try ScratchServer()
         defer { scratch.stop() }
-        let registry = scratch.dir.appendingPathComponent("projects.json")
+        // The live server's startup migration owns its own projects.json on another worker.
+        let registry = scratch.dir.appendingPathComponent("registry/projects.json")
         let store = ProjectSettingsStore(historyURL: registry, home: scratch.dir,
                                          sessions: scratch.dir.appendingPathComponent("sessions"))
         let one = Space(name: "one", path: scratch.dir.appendingPathComponent("one").path)
