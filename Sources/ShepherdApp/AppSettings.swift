@@ -65,7 +65,6 @@ final class AppSettings {
         static let deferTools = "shepherd.agent.deferTools"
         static let codemode = "shepherd.agent.codemode"
         static let compactAtPercent = "shepherd.agent.compactAtPercent"
-        static let agentMessages = "shepherd.pi.agentMessages"
         static let piPanesExtension = "shepherd.pi.extension.panes"
         static let piReviewExtension = "shepherd.pi.extension.review"
         static let subagentDisplay = "shepherd.pi.extension.subagents"
@@ -101,7 +100,7 @@ final class AppSettings {
         static let all = [
             terminalFontFamily, terminalFontSize, defaultModel,
             defaultThinking, defaultServiceTier, goalCrossProviderEvaluation, namingModel, queueDelivery, trimToolOutput, deferTools, codemode, compactAtPercent, shellPath,
-            agentMessages, piPanesExtension, piReviewExtension, subagentDisplay, piNativeSubagents,
+            piPanesExtension, piReviewExtension, subagentDisplay, piNativeSubagents,
             piMCPExtension, piBrowserExtension, piDesignReferences,
             childConcurrency, childModel, childThinking, childContext,
             uiDensity, uiTextScale, sidebarWidth, sidebarRowDensity,
@@ -259,19 +258,6 @@ final class AppSettings {
 
     /// Writes a new compaction share into the pi home (set by the view model).
     @ObservationIgnored var onCompactAtChange: ((Int?) -> Void)?
-
-    /// Settings ▸ Pi ▸ Agent-to-agent messages: what an agent's call to message, steer, interrupt,
-    /// read or start another thread does. Ask me until the user says otherwise. The server
-    /// enforces it, taking each choice through `onAgentMessagesChange`.
-    var agentMessages: AgentMessagePolicy {
-        didSet {
-            store.set(agentMessages.rawValue, forKey: Key.agentMessages)
-            if agentMessages != oldValue { onAgentMessagesChange?(agentMessages) }
-        }
-    }
-
-    /// Hands a new choice to the server (set by the view model).
-    @ObservationIgnored var onAgentMessagesChange: ((AgentMessagePolicy) -> Void)?
 
     var piPanesExtension: Bool {
         didSet { store.set(piPanesExtension, forKey: Key.piPanesExtension) }
@@ -507,8 +493,6 @@ final class AppSettings {
         deferTools = store.object(forKey: Key.deferTools) as? Bool ?? true
         codemode = store.object(forKey: Key.codemode) as? Bool ?? true
         compactAtPercent = (store.object(forKey: Key.compactAtPercent) as? Int).flatMap { PiCompactionThreshold.choices.contains($0) ? $0 : nil }
-        agentMessages = store.string(forKey: Key.agentMessages)
-            .flatMap(AgentMessagePolicy.init(rawValue:)) ?? AgentMessagePolicy.default
         piPanesExtension = store.object(forKey: Key.piPanesExtension) as? Bool ?? true
         piReviewExtension = store.object(forKey: Key.piReviewExtension) as? Bool ?? true
         subagentDisplay = store.object(forKey: Key.subagentDisplay) as? Bool ?? true
@@ -611,7 +595,6 @@ final class AppSettings {
         sidebarStyle = Defaults.sidebarStyle
         sidebarGroupByHost = false
         sidebarKeepIdleDays = Defaults.sidebarKeepIdleDays
-        agentMessages = AgentMessagePolicy.default
         piPanesExtension = true
         piReviewExtension = true
         subagentDisplay = true
@@ -685,16 +668,6 @@ final class AppSettings {
     }
 }
 
-extension AgentMessagePolicy {
-    /// The words Settings ▸ Pi shows for each choice.
-    var title: String {
-        switch self {
-        case .ask: "Ask me"
-        case .always: "Always allow"
-        case .never: "Never"
-        }
-    }
-}
 
 /// The model/thinking pair a new agent inherits. Passed explicitly so agent
 /// creation stays testable without touching UserDefaults.

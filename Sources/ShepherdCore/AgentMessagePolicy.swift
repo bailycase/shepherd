@@ -1,16 +1,16 @@
 import Foundation
 
-/// Settings ▸ Pi ▸ Agent-to-agent messages: whether an agent may act on another agent's thread
-/// (message, steer, interrupt or read it, or start a new one). The host enforces it, never the
-/// agent's extension.
+/// Legacy server access policy. The app permits peer calls without a Settings preference,
+/// but retains the raw values and server APIs for existing consumers.
 public enum AgentMessagePolicy: String, Codable, CaseIterable, Sendable {
-    /// Each call waits for the user's answer in a dialog.
+    /// Interactive threads may act immediately; unattended automation runs are refused.
+    /// The stored name is retained for existing settings.
     case ask
-    /// Calls go through. Deleting another agent still opens its own dialog.
+    /// All threads, including automation runs, may act immediately.
     case always
     /// Every call is refused without a dialog, deleting included.
     case never
 
-    /// New installs, and what Reset settings returns to.
+    /// Default for standalone server consumers. The app selects `always`.
     public static let `default`: AgentMessagePolicy = .ask
 }

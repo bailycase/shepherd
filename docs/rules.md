@@ -241,27 +241,17 @@ in the page (trusted) takes the page over, and it comes back with the user's nex
 thread (`SessionServer.onUserMessage`), never a peer's `agent_send`. `browser_open` takes `http`,
 `https` and `about:blank` only.
 
-**Agents act on other threads only as the user allows** (Settings ▸ Pi ▸ Agent-to-agent
-messages, default Ask me). `SessionServer` enforces it before anything is sent, relayed or
-started: `agent_send`, `agent_steer`, `agent_interrupt`, `agent_spawn` and `agent_read` of another
-thread wait for the user (`PeerApprovalDialog`), go through (Always allow) or are refused with no
-dialog (Never, and an automation run under Ask, which cannot be asked). The extension only asks:
-it holds no authority, and no message on the socket answers a dialog. Only the app's buttons
-answer, by claiming the server's token (`resolveAgentApproval`), so a call is done at most once and
-never after it lapsed (the agent's Stop, its connection closing, Never, or 120 s: Deny). "Allow for
-this thread" lasts while that agent's pi session runs, is never written to disk, and a changed
-setting forgets it. What the user sends a thread, `/` commands and `agent_list`/`agent_wait` are
-never gated ([docs/agent-coordination.md](agent-coordination.md) › Approving what agents do to
-other threads).
+**Peer tools have no approval UI or permission setting.** The app permits peer calls, including
+reports from automation runs, and ignores legacy stored permission choices. The server still
+checks process identity and validates requests. The tool descriptions require an explicit user
+request before an agent acts on another thread.
 
-**Agents never delete each other on their own.** `agent_delete` opens `PeerDeleteDialog`; only
-its destructive button approves, by claiming the server's token (`claimAgentDeletion`) before
-deleting through Delete Agent (never Delete Worktree Agent, so checkouts and branches stay).
-Cancel, a lapsed token (caller cancelled or disconnected, 120 s timeout), or a second request
-while the dialog is up never deletes. The live coordination tools (`agent_read`, `agent_steer`,
-`agent_interrupt`, `agent_wait`) are answered by the target's own panes extension, never inferred
-from saved state; the server relays each under its own token and accepts the answer only from
-the target's registered connection ([docs/agent-coordination.md](agent-coordination.md)).
+**Agent deletion preserves the checkout.** After validating the request, the app claims the server
+token before deleting through Delete Agent. No confirmation is required. Cancellation,
+disconnection or expiration before claiming prevents deletion. Once claimed, deletion finishes.
+Worktree checkouts and branches stay. The live coordination tools are answered by the target's
+own panes extension, and the server accepts replies only from the target's registered connection
+([docs/agent-coordination.md](agent-coordination.md)).
 
 Shepherd does not nest agents. pi extensions own subagent execution (the bundled native runtime
 is on by default), and the app only *projects* the results: the tray above the parent's
