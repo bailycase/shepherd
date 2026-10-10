@@ -106,8 +106,11 @@ Fill in the [pull request template](.github/pull_request_template.md). It asks f
 - for a feature that acts on its own, its bounds, where its data goes, what a restart and Stop do
   to it, and the decisions you made unasked ([docs/rules.md](docs/rules.md))
 
-CI runs unit, smoke and affected suites for ordinary `nightly` PRs, and all suites for shared
-or unknown paths, `master`, daily runs and `full-ci`. Builds use GitHub's macOS runner unless
+CI runs unit suites, three startup/identity checks and feature-related suites for ordinary
+`nightly` PRs. A suite-local regression selects its declared suite instead of its whole test
+module; shared fixtures and unknown source paths stay broad. Shared contracts, server core,
+CI changes, `master`, daily runs and `full-ci` run all suites. No tests are removed.
+Builds use GitHub's macOS runner unless
 `SHEPHERD_SELFHOSTED_ENABLED=true` explicitly enables an isolated self-hosted Mac for maintainer
 PRs and Nightly releases. The shared Mac stays offline to protect other apps. Docs alone run no Swift. A test that fails is red:
 there is no retry, so a flaky test is a bug to fix in the test. A push to `nightly` builds and

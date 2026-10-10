@@ -30,24 +30,16 @@ UI_DIAGNOSTICS = [r"^ShepherdAppIntegrationTests\." + name + r"/" for name in (
     "ComposerMenuTests", "ThreadCodeBlockTests", "PaneControlTests", "ThreadScrollingTests", "IdleCostTests",
 )]
 
-# This mandatory smoke set preserves the previous fast PR gate, including RPC child commands.
+# Cheap startup and identity checks stay mandatory; feature integrations follow their callers.
 SMOKE = (
     "ShepherdSessionsIntegrationTests.StartupTests",
-    "ShepherdSessionsIntegrationTests.StateMutationTests",
     "ShepherdSessionsIntegrationTests.ExtensionIdentityTests",
-    "ShepherdSessionsIntegrationTests.RemoteListenerTests",
     "ShepherdSessionsIntegrationTests.ThreadStartupTests",
-    "ShepherdSessionsIntegrationTests.NativeThreadTests",
-    "ShepherdAppIntegrationTests.AgentLifecycleTests",
-    "ShepherdAppIntegrationTests.ExtensionIdentityFlowTests",
-    "ShepherdAppIntegrationTests.NewThreadComposerTests",
-    "ShepherdAppIntegrationTests.SidebarListTests",
-    "ShepherdAppIntegrationTests.ThreadInputTests",
-    "ShepherdAppIntegrationTests.TerminalSessionStoreTests",
-    "DesignSurfaceKitIntegrationTests.DesignBoardViewTests",
 )
 APP = r"^ShepherdAppIntegrationTests\."
 SES = r"^ShepherdSessionsIntegrationTests\."
+PREVIEW = r"^ShepherdPreviewTests\."
+ROOT = Path(__file__).resolve().parents[1]
 
 # Short, conservative feature rules. A path not claimed here or by a module below runs all.
 AREAS = (
@@ -55,27 +47,33 @@ AREAS = (
       "Sources/ShepherdApp/NativeThreadStores*.swift", "Sources/ShepherdApp/NewThread*.swift",
       "Sources/ShepherdApp/AgentBanners.swift", "Packages/ShepherdUI/Sources/ShepherdUI/Components/Thread/*",
       "Packages/ShepherdUI/Sources/ShepherdUI/Components/Composer/*"),
-     (APP + r"(Thread|Composer|QueueStack|QuestionDock|ProseImage|NewThread|MotionProbe|ServiceTier|ControlMotion|ModelCatalog|ListPerformance|HiddenAgents|SubagentMotion|IdleCost)",)),
+     (APP + r"(Thread|Composer|QueueStack|QuestionDock|ProseImage|NewThread|MotionProbe|ServiceTier|ControlMotion|ModelCatalog|ModelSettingsPopover|BlockedModelComposer|ListPerformance|HiddenAgents|SubagentMotion|IdleCost|AgentLifecycle)",
+      PREVIEW + "ThreadPreviewTests")),
     (("Sources/ShepherdApp/Browser*.swift", "Sources/ShepherdApp/ShepherdViewModel+Browser*.swift",
       "Sources/ShepherdSessions/BrowserTunnelHost.swift", "Packages/ShepherdUI/Sources/ShepherdUI/Components/Browser/*"),
-     (APP + r"(Browser|RemoteBrowser)", SES + "Browser")),
+     (APP + r"(Browser|RemoteBrowser|ProjectBrowserControl|MCPCallbackRelay)", SES + "Browser",
+      PREVIEW + r"(PreviewTests|ProjectBrowserPreviewTests)")),
     (("Sources/ShepherdApp/Design*.swift", "Sources/ShepherdApp/NewDesignPage.swift",
       "Sources/ShepherdApp/RemoteDesigns.swift", "Sources/ShepherdApp/ShepherdViewModel+Design*.swift",
       "Sources/ShepherdApp/NightWatchSystem.swift", "Sources/ShepherdApp/ImplementSheet.swift",
       "Sources/ShepherdSessions/Design*.swift", "Sources/ShepherdSessions/RemoteDesigns.swift",
       "Sources/DesignSurfaceKit/*", "Tests/Designs/*", "Packages/ShepherdUI/Sources/ShepherdUI/Components/DesignTool/*"),
-     (APP + r"(Design|RemoteDesignFlow)", SES + r"(Design|RemoteDesign)", r"^DesignSurfaceKitIntegrationTests\.")),
+     (APP + r"(Design|RemoteDesignFlow|ListPerformance)", SES + r"(Design|RemoteDesign)", r"^DesignSurfaceKitIntegrationTests\.",
+      PREVIEW + "DesignPreviewTests")),
     (("Sources/ShepherdApp/DiffReview*.swift", "Sources/ShepherdApp/Changes*.swift",
       "Sources/ShepherdApp/*Worktree*.swift", "Sources/ShepherdApp/ReviewCommit*.swift",
       "Sources/ShepherdApp/ShepherdViewModel+Review*.swift", "Sources/ShepherdApp/GitDiff.swift",
       "Sources/ShepherdApp/CodeHighlight.swift", "Sources/ShepherdApp/SplitDiffWheelReader.swift",
       "Sources/ShepherdApp/ChecklistStatus.swift", "Sources/ShepherdApp/CheckoutMonitor.swift",
       "Sources/ShepherdSessions/Changes/*", "Packages/ShepherdUI/Sources/ShepherdUI/Components/Review/*"),
-     (APP + r"(Review|DiffDrawing|GitDiff|GitWorktree|FinalizeWorktree|RemoteWorktree|WorktreeAgent|WorktreeBaseOffline|CheckoutMonitor)", SES + "Changes")),
+     (APP + r"(Review|DiffDrawing|GitDiff|GitWorktree|FinalizeWorktree|RemoteWorktree|WorktreeAgent|WorktreeBaseOffline|NewThreadWorktreeBase|ListPerformance|CheckoutMonitor)",
+      SES + "Changes", PREVIEW + "ReviewPreviewTests")),
+    (("Sources/ShepherdApp/CodeHighlight.swift",),
+     (APP + r"(ThreadCodeBlock|ThreadCompletion|ThreadMarkdown)", PREVIEW + "ThreadPreviewTests")),
     (("Sources/ShepherdApp/Terminal*.swift", "Sources/ShepherdApp/PaneControl.swift", "Sources/ShepherdApp/PaneFocusMemory.swift",
       "Sources/ShepherdApp/ShellIntegration.swift", "Sources/ShepherdApp/ShepherdViewModel+Terminal.swift",
       "Sources/TerminalSurfaceKit/*", "Packages/ShepherdUI/Sources/ShepherdUI/Components/Terminal/*"),
-     (APP + r"(Terminal|ShellTerminalMotion|Pane|LoginShell|ShellIntegration|ThreadTailFlow|IdleCost)",)),
+     (APP + r"(Terminal|ShellTerminalMotion|Pane|LoginShell|ShellIntegration|ThreadTailFlow|IdleCost|ThreadInput)",)),
     (("Sources/ShepherdApp/Sidebar*.swift", "Sources/ShepherdApp/Workspace*.swift", "Sources/ShepherdApp/Pages/*"),
      (APP + r"(Sidebar|Workspace|ShellMotion|RightPaneMotion|PaletteMotion|SettingsMotion|Space|AgentStartup|AgentLifecycle|AgentLaunch|AgentPeerDeletion|AgentStartProblem|IdleCost|ListPerformance|HiddenAgents|InstructionsEditor|ServerStartupRefusal|Thread)",)),
     (("Sources/ShepherdApp/Settings*.swift", "Sources/ShepherdApp/MCP/*", "Sources/ShepherdApp/Pi*.swift",
@@ -85,8 +83,10 @@ AREAS = (
       "Sources/ShepherdSessions/YourPi*.swift", "Sources/ShepherdSessions/PiSignIn*.swift",
       "Sources/ShepherdSessions/CLIProxyAPI*.swift", "Packages/ShepherdUI/Sources/ShepherdUI/Components/Settings/*",
       "Packages/ShepherdUI/Sources/ShepherdUI/Components/Skills/*", "Packages/ShepherdUI/Sources/ShepherdUI/Components/PiSignIn/*"),
-     (APP + r"(MCP|PiSignIn|PiHomeLaunch|YourPi|SettingsReset|SettingsMotion|InstructionsEditor|ModelCatalog)",
-      SES + r"(MCP|PiLauncher|PiSignIn|YourPi|Skills|Suggestions|CLIProxyAPI|RemoteSkills|RemoteInstructions|RemoteHostSettings|StartProblem)")),
+     (APP + r"(MCP|PiSignIn|PiHomeLaunch|YourPi|Settings|SubagentSettings|CodemodeSettings|GoalCheckSettings|InstructionsEditor|ModelCatalog)",
+      SES + r"(MCP|PiLauncher|PiSignIn|YourPi|Skills|Suggestions|CLIProxyAPI|ServiceTier|RemoteSkills|RemoteInstructions|RemoteHostSettings|StartProblem)",
+      PREVIEW + r"(SettingsPreviewTests|SubagentSettingsPreviewTests)")),
+    (("Sources/ShepherdSessions/PiSignIn*.swift",), (SES + "RPCSessionTests",)),
     (("Sources/ShepherdApp/Pages/*", "Sources/ShepherdApp/Remote*.swift", "Sources/ShepherdApp/RemoteHostStore.swift",
       "Sources/ShepherdSessions/AutomationRuns.swift", "Packages/ShepherdUI/Sources/ShepherdUI/Components/Automations/*"),
      (APP + r"(Automations|LocalAutomation|RemoteAutomations|RemoteHost|RemotePaneStream|RemoteThreadMount|Sidebar|Workspace)",
@@ -100,7 +100,73 @@ def affects_swift(paths: list[str]) -> bool:
     return any(not any(fnmatch.fnmatchcase(path, p) for p in NO_SWIFT) for path in paths)
 
 
-def filters_for(paths: list[str], full: bool = False) -> list[str]:
+def test_filter(path: str, root: Path) -> str:
+    """Narrow suite-local files only. Shared fixtures, unfamiliar syntax and deletions stay broad."""
+    file = root / path
+    module = Path(path).parts[1]
+    fallback = "^" + re.escape(module) + r"\."
+    if (len(Path(path).parts) != 3 or file.suffix != ".swift" or file.is_symlink()
+            or not file.resolve().is_relative_to(root.resolve())):
+        return fallback
+    try:
+        source = file.read_text()
+        # Limit this to simple Swift files. Unfamiliar literals stay broad, not guessed.
+        supported = True
+
+        def mask(match: re.Match[str]) -> str:
+            nonlocal supported
+            value = match.group()
+            if not value.startswith('//'):
+                if match.group('hashes') and '\\' in value:
+                    supported = False
+                elif r"\(" in value:
+                    supported &= value.count("(") == value.count(")")
+            return " "
+
+        code = re.sub(r'//[^\n]*|(?P<hashes>\#*)(?P<quotes>"""|")'
+                      r'(?:\\.|(?!(?P=quotes)(?P=hashes)).)*'
+                      r'(?P=quotes)(?P=hashes)', mask, source, flags=re.DOTALL)
+        if not supported or any(token in code for token in ('"', '/', '`')):
+            return fallback
+        top_level, depth = [], 0
+        for char in code:
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth < 0:
+                    return fallback
+            elif depth == 0:
+                top_level.append(char)
+        if depth:
+            return fallback
+        kinds = r"struct|class|enum|actor|extension|protocol|func|let|var|typealias|macro"
+        declarations = re.findall(
+            rf"((?:(?:private|fileprivate|public|internal|final|indirect)\s+)*)"
+            rf"\b({kinds})\s+([A-Za-z_]\w*)", "".join(top_level),
+        )
+        if len(declarations) != len(re.findall(rf"\b(?:{kinds})\b", "".join(top_level))):
+            return fallback
+        owners = set()
+        for modifiers, kind, name in declarations:
+            if kind in ("struct", "class", "enum", "actor", "extension") and name.endswith("Tests"):
+                owners.add(name)
+            elif not re.search(r"\b(private|fileprivate)\b", modifiers):
+                return fallback
+        if "@Test" not in source or not owners:
+            return fallback
+        owners = sorted(owners)
+        references = r"\b(?:" + "|".join(map(re.escape, owners)) + r")\b"
+        # Test suites sometimes double as fixtures. Changing one can affect its consumers.
+        if any(sibling.is_symlink() or re.search(references, sibling.read_text())
+               for sibling in file.parent.rglob("*.swift") if sibling != file):
+            return fallback
+    except (OSError, UnicodeError):
+        return fallback
+    return fallback + "(?:" + "|".join(map(re.escape, owners)) + r")[./]"
+
+
+def filters_for(paths: list[str], full: bool = False, *, root: Path = ROOT) -> list[str]:
     """An empty list means all tests, never an empty test run."""
     if full:
         return []
@@ -108,8 +174,11 @@ def filters_for(paths: list[str], full: bool = False) -> list[str]:
     for path in paths:
         if not affects_swift([path]):
             continue
-        if (fnmatch.fnmatchcase(path, "Sources/ShepherdApp/*Extension.swift") or path.startswith("Sources/shepherd-cli/")
-                or path in ("Tests/Extensions/native-thread-wire.json", "Tests/Extensions/service-tier-support.json")):
+        if fnmatch.fnmatchcase(path, "Sources/ShepherdApp/*Extension.swift"):
+            filters.extend((SES + "NativeThreadTests", APP + "ExtensionIdentityFlowTests"))
+            continue
+        if path == "Tests/Extensions/service-tier-support.json":
+            filters.extend((APP + "ServiceTier", SES + "ServiceTier"))
             continue
         matching = [suites for patterns, suites in AREAS if any(fnmatch.fnmatchcase(path, p) for p in patterns)]
         if matching:
@@ -117,11 +186,9 @@ def filters_for(paths: list[str], full: bool = False) -> list[str]:
         elif path.startswith("Tests/") and len(path.split("/")) > 2:
             module = path.split("/")[1]
             if module in TEST_MODULES:
-                filters.append("^" + re.escape(module) + r"\.")
+                filters.append(test_filter(path, root))
             elif not module.endswith("UnitTests"):
                 return []
-        elif path.startswith(("Sources/ShepherdApp/", "Packages/ShepherdUI/Sources/ShepherdUI/")):
-            filters.extend((APP, r"^ShepherdPreviewTests\."))
         else:
             return []
     return list(dict.fromkeys(filters))

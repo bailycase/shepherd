@@ -504,13 +504,21 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
   and a slow render are not a reason to change pixel comparisons. The terminal fixture builds
   its output marker with `printf`, so a command echo or shell error cannot satisfy the output
   check, regardless of the visible screen's cursor position.
-- **Which tests run:** ordinary PRs into `nightly` retain every unit suite, the previous 13
-  smoke suites and the feature/module suites affected by changed paths. The smoke set includes
-  `NativeThreadTests`, so RPC child commands never depend on a feature rule. Thread and layout
-  rules include hidden-layout, completion-painting and scroll regressions. Shared contracts,
-  server core, test support, CI changes and unknown paths run all tests. PRs into `master`,
+- **Which tests run:** ordinary PRs into `nightly` retain every unit suite, three cheap startup
+  and identity suites, and the feature suites affected by changed paths. The mandatory integration
+  set is `StartupTests`, `ExtensionIdentityTests` and `ThreadStartupTests`. Browser changes run
+  browser UI, remote/tunnel and MCP callback coverage, not thread-completion stress tests.
+  Thread and layout changes still run hidden-layout, completion-painting and scroll regressions.
+  Rules combine when a feature such as code highlighting has several consumers. Embedded
+  extension changes keep RPC child-command and identity-flow checks.
+  A changed suite-local test file selects its declared suite names, not its filename or whole
+  module. Adding a browser regression no longer selects every app integration test. Non-private
+  helpers, references from other test files, nested support files, deletions and unfamiliar
+  declarations keep the whole test module. Shared contracts, server core, shared test support,
+  CI changes and unknown paths run all tests. PRs into `master`,
   `master` pushes, daily/manual runs and the `full-ci` label also run all tests. Clearly non-Swift
-  PRs still skip Swift, including docs-only `master` PRs. The planner emits fixed regexes, and
+  PRs still skip Swift, including docs-only `master` PRs. No tests or assertions are removed.
+  The planner emits regexes for known feature groups and escaped suite declarations, and
   `swift test list --skip-build` must find a native test ID for every selected pattern before
   `--filter` runs it. A renamed or empty selection fails instead of passing a zero-test gate.
   There are no duration estimates, shards or retry/report databases. Label changes reevaluate
