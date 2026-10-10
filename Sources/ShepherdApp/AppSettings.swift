@@ -94,6 +94,7 @@ final class AppSettings {
         static let worktreeAutoMergePR = "shepherd.worktree.autoMergePR"
         static let worktreeMergeMethod = "shepherd.worktree.mergeMethod"
         static let goalsEnabled = "shepherd.experiments.goals"
+        static let projectsEnabled = "shepherd.experiments.projects"
         static let designToolEnabled = "shepherd.experiments.designTool"
         static let implementOpensThread = "shepherd.designs.implementOpensThread"
 
@@ -111,7 +112,7 @@ final class AppSettings {
             worktreeDeleteLocalBranch, worktreeAutoMergePR,
             worktreeMergeMethod, skillsInSlashMenu, hiddenSlashCommands,
             mcpProjectConfig, mcpSameEverywhere,
-            goalsEnabled, designToolEnabled, implementOpensThread,
+            goalsEnabled, projectsEnabled, designToolEnabled, implementOpensThread,
         ]
 
         /// What Reset settings clears: everything but Remote's listener, which only its own
@@ -439,6 +440,15 @@ final class AppSettings {
     }
     @ObservationIgnored var onGoalsChange: ((Bool) -> Void)?
 
+    /// Settings > Experiments > Projects. Turning it off pauses work and preserves project data.
+    var projectsEnabled: Bool {
+        didSet {
+            store.set(projectsEnabled, forKey: Key.projectsEnabled)
+            if projectsEnabled != oldValue { onProjectsChange?(projectsEnabled) }
+        }
+    }
+    @ObservationIgnored var onProjectsChange: ((Bool) -> Void)?
+
     /// Settings ▸ Experiments ▸ Design tool: the Designs destination, design rows in Recents,
     /// and New thread's "Start a design". Off by default; designs made while it was on keep
     /// their files and agents while it is off.
@@ -473,6 +483,7 @@ final class AppSettings {
         defaultServiceTier = store.string(forKey: Key.defaultServiceTier)
             .flatMap(ServiceTier.init(rawValue:)) ?? Defaults.serviceTier
         goalsEnabled = store.object(forKey: Key.goalsEnabled) as? Bool ?? false
+        projectsEnabled = store.object(forKey: Key.projectsEnabled) as? Bool ?? false
         goalCrossProviderEvaluation = store.object(forKey: Key.goalCrossProviderEvaluation) as? Bool ?? false
         // Naming is always on now; only its model is a setting.
         store.removeObject(forKey: "shepherd.agent.autoName")
@@ -577,6 +588,7 @@ final class AppSettings {
         defaultThinking = Defaults.thinking
         defaultServiceTier = Defaults.serviceTier
         goalsEnabled = false
+        projectsEnabled = false
         goalCrossProviderEvaluation = false
         namingModel = ""
         skillsInSlashMenu = Defaults.skillsInSlashMenu

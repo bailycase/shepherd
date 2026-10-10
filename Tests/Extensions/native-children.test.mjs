@@ -568,7 +568,8 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, async reporting, r
     assert(fs.readFileSync(firstFile, "utf8").includes("fleet answer"));
     const askDir = path.dirname(asked.sessionFile), askStatus = () => JSON.parse(fs.readFileSync(path.join(askDir, "status.json")));
     fs.writeFileSync(path.join(askDir, "control", "steer-requests", "answer.json"), JSON.stringify({ message: "inspector answer" }));
-    await until(() => askStatus().controlRequestID === "answer" && askStatus().controlNotice === "reply accepted or queued");
+    await until(() => askStatus().controlRequestID === "answer" && askStatus().controlNotice === "reply accepted or queued")
+      .catch(error => { error.message += ` (inspector receipt: ${askStatus().controlRequestID ?? "none"}; ${askStatus().controlNotice ?? "none"})`; throw error; });
     await h.settled(ask.id);
     assert(fs.readFileSync(asked.sessionFile, "utf8").includes("inspector answer"));
     assert.equal((await h.call("result", {id: ask.id})).needsReply, false);
@@ -754,6 +755,8 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, async reporting, r
       const delivered = (await rpc("get_messages")).messages.filter((m) => m.customType === "shepherd-child");
       assert.equal(delivered.length, 1, "real Pi boundary delivers unread completion once");
       assert.equal(delivered[0].display, false);
+      assert.equal(delivered[0].role, "custom", "child continuation is native custom metadata, never a consumed user turn");
+      assert(!actualEvents.some(e => e.type === "message_start" && e.message?.role === "user" && JSON.stringify(e.message.content).includes("Use this result to continue")), "continuation must not invalidate the native user scope");
       assert(actualEvents.some((e) => e.type === "extension_ui_request" && e.message === "fixture-child-boundary"),
         "completion must use the real actionable boundary while the parent works");
       assert(requests.slice(prior).some((r) => JSON.stringify(r.messages.at(-1)).includes("Use this result to continue")),
@@ -914,6 +917,37 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, async reporting, r
     await new Promise((r) => controlServer.close(r));
     for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key]; Object.assign(process.env, saved);
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Project coordinator and worker launches register no child/workflow tools, commands or revival hooks", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-project-")), saved = { ...process.env };
+  try {
+    Object.assign(process.env, { HOME: dir, PI_CODING_AGENT_DIR: path.join(dir, "config"), PI_OFFLINE: "1",
+      SHEPHERD_NATIVE_CHILDREN: "1", SHEPHERD_AGENT_ID: "fixture",
+      SHEPHERD_PROJECT_CONTEXT: JSON.stringify({ projectID: "project" }),
+      SHEPHERD_SOCKET: path.join(dir, "s.sock"), SHEPHERD_EXT_CHILDREN: source });
+    delete process.env.SHEPHERD_CHILD;
+    for (const coordinator of ["0", "1"]) {
+      process.env.SHEPHERD_PROJECT_COORDINATOR = coordinator;
+      const tools = new Map(), commands = new Map(), hooks = new Map();
+      mod.default({ registerTool: tool => tools.set(tool.name, tool),
+        registerCommand: (name, command) => commands.set(name, command), on: (name, hook) => hooks.set(name, hook) });
+      assert.equal(tools.size, 0, "getAllTools/executeTool (including codemode) cannot find unregistered helpers");
+      assert.equal(commands.size, 0, "slash commands cannot revive old children/workflows");
+      assert.equal(hooks.size, 0, "manual turns and restored sessions cannot reopen child admission");
+    }
+    delete process.env.SHEPHERD_PROJECT_CONTEXT;
+    process.env.SHEPHERD_PROJECT_COORDINATOR = "0";
+    const ordinary = await harness(dir);
+    try {
+      for (const name of ["shepherd_child_start", "shepherd_child_resume", "shepherd_child_message", "shepherd_workflow"]) {
+        assert(ordinary.tools.has(name), `${name} remains registered in ordinary threads`);
+      }
+    } finally { await ordinary.shutdown(); }
+  } finally {
+    for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
+    Object.assign(process.env, saved); fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 

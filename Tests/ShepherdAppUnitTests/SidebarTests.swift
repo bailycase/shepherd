@@ -287,32 +287,26 @@ struct SidebarNeedsYouTests {
     }
 }
 
-/// The destinations never move; More holds Hosts and Extensions. Missions, Designs, Design
-/// systems and Archive are not built, so they are not shown.
+/// The destinations never move, and are the three every ProjectLead board draws: New thread, Designs (while the Design tool is on),
+/// Automations. There is no More: the command palette opens Hosts, Design systems and Extensions.
 @Suite("Sidebar destinations")
 struct SidebarDestinationTests {
-    @Test func closedMoreShowsThreeDestinations() {
-        let rows = SidebarDerivation.destinations(shown: nil, moreOpen: false, offlineHosts: 1, newThreadChord: "⌘N")
-        #expect(rows.map(\.title) == ["New thread", "Automations", "More"])
-        #expect(rows[0].trailing == .keycaps("⌘N"))
-        #expect(rows[0].icon == .newThread)
-        #expect(rows[2].icon == .disclosure(open: false))
-        #expect(rows.allSatisfy { !$0.selected })
+    @Test func theBoardsDrawNewThreadAndAutomationsAndDesignsWhileTheToolIsOn() {
+        let off = SidebarDerivation.destinations(shown: nil, newThreadChord: "⌘N")
+        #expect(off.map(\.title) == ["New thread", "Automations"])
+        #expect(off[0].trailing == .keycaps("⌘N"))
+        #expect(off[0].icon == .newThread)
+        #expect(off.allSatisfy { !$0.selected })
+        let on = SidebarDerivation.destinations(shown: .designs, newThreadChord: "⇧⌘N", designs: true)
+        #expect(on.map(\.title) == ["New thread", "Designs", "Automations"])
+        #expect(on.map(\.selected) == [false, true, false])
+        #expect(on[0].trailing == .keycaps("⇧⌘N"))
     }
 
-    @Test func openMoreHoldsHostsWithTheOfflineCountAndExtensions() {
-        let rows = SidebarDerivation.destinations(shown: .hosts, moreOpen: true, offlineHosts: 2, newThreadChord: "⌘N")
-        #expect(rows.map(\.title) == ["New thread", "Automations", "More", "Hosts", "Extensions"])
-        #expect(rows[3].trailing == .alert("2 offline"))
-        #expect(rows[3].selected && rows[3].child && rows[4].child)
-        #expect(rows[4].target == .extensions)
-        #expect(!rows.contains { ["Missions", "Designs", "Design systems", "Archive"].contains($0.title) })
-    }
-
-    @Test func noOfflineHostsMeansNoBadge() {
-        let rows = SidebarDerivation.destinations(shown: .newThread, moreOpen: true, offlineHosts: 0, newThreadChord: "⇧⌘N")
-        #expect(rows[3].trailing == .none)
-        #expect(rows[0].selected && rows[0].trailing == .keycaps("⇧⌘N"))
+    @Test func noRowIsMoreHostsOrExtensions() {
+        let rows = SidebarDerivation.destinations(shown: .hosts, newThreadChord: "⌘N", designs: true)
+        #expect(!rows.contains { ["More", "Hosts", "Extensions", "Design systems"].contains($0.title) })
+        #expect(rows.allSatisfy { !$0.selected }, "the Hosts page is open and no destination row claims it")
     }
 
     @Test(arguments: [("build-01", "This Mac · build-01"), ("  ", "This Mac"), (nil, "This Mac")] as [(String?, String)])
@@ -354,7 +348,7 @@ struct NewThreadPlacesTests {
 
     @Test func theChipSaysProjectAndHost() {
         #expect(NewThreadPlaces.chip(hosts, chosen: NewThreadPlace(host: hostID, space: web.id)) == ("web", "horizon"))
-        #expect(NewThreadPlaces.chip(hosts, chosen: nil) == ("Choose a project", "This Mac"))
+        #expect(NewThreadPlaces.chip(hosts, chosen: nil) == ("Choose a space", "This Mac"))
     }
 
     /// The chosen project while it exists, else the last thread's, else This Mac's first, else a

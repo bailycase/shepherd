@@ -115,7 +115,7 @@ public struct NWDesignReferenceSpecimens: View {
                     HStack(alignment: .top, spacing: NW.Space.xl) {
                         VStack(alignment: .leading, spacing: NW.Space.l) {
                             picker([], empty: .loading)
-                            picker([], empty: .unavailable("Design references go to projects on this Mac."))
+                            picker([], empty: .unavailable("Design references go to spaces on this Mac."))
                         }
                         picker([], empty: .failed(reason: "Reading this Mac’s designs took too long."), retry: {})
                     }
@@ -145,7 +145,7 @@ public struct NWDesignReferenceSpecimens: View {
                                          sends: NWImplementSheet<EmptyView>.sends("Sends a picture, the board’s HTML, 42 styles and 14 tokens from ",
                                                                                    mono: "acme-web", after: "."),
                                          canSend: true, close: {}, send: {}) {
-                            NWImplementField("Project") {
+                            NWImplementField("Space") {
                                 NWImplementProjectLabel(project: "dashboard-web", host: "This Mac")
                                 NWImplementBranchLine("Starts on a new worktree,", branch: "agent/implement-a-funnel-first")
                             }

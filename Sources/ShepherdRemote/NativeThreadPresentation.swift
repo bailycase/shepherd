@@ -233,6 +233,12 @@ public struct NativeTurn: Identifiable, Equatable, Sendable {
     public var isUser: Bool
     public var messages: [NativeThreadMessage]
 
+    public init(id: String, isUser: Bool, messages: [NativeThreadMessage]) {
+        self.id = id
+        self.isUser = isUser
+        self.messages = messages
+    }
+
     /// A user turn from the queue: how many queued messages it carries ("From the queue · 2").
     /// nil for a message the user sent straight to pi.
     public var fromQueue: Int? {

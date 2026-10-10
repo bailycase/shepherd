@@ -51,6 +51,61 @@ struct ProseComponentTests {
         #expect(plain(markdown) == text)
     }
 
+    // MARK: Project task references (ProjectLead-Question)
+
+    private let known = "shepherd-project-task://p/t1"
+    private var table: NWProseTaskLinks { .init(links: [known: .init(title: "Partner API draft", tone: .attention)]) }
+
+    /// What the paragraph shows, with each chip's room run (a hair space) and its non-breaking title.
+    private func chipText(_ markdown: String) -> String {
+        let attributed = NWProseInline.styled(markdown)
+        guard NWProseTaskLinks.hasReference(attributed) else { return String(attributed.characters) }
+        // The runs the renderer builds are Text values; their words are what the layout holds.
+        var words = ""
+        for run in attributed.runs {
+            let piece = AttributedString(attributed[run.range])
+            if let url = run.link, url.scheme == NWProseTaskLinks.scheme, let link = table.links[url.absoluteString] {
+                words += "\u{200A}" + link.title.replacingOccurrences(of: " ", with: "\u{00A0}")
+            } else {
+                words += String(NWProseTaskLinks.inert(piece).characters)
+            }
+        }
+        return words
+    }
+
+    @Test func aResolvingReferenceShowsTheOwnersCurrentTitleNotTheModelsWords() {
+        #expect(chipText("See [whatever the model wrote](\(known)) now.") == "See \u{200A}Partner\u{00A0}API\u{00A0}draft now.")
+    }
+
+    @Test(arguments: [
+        "[gone](shepherd-project-task://p/missing)",
+        "[other project](shepherd-project-task://q/t1)",
+        "[bad](shepherd-project-task://)",
+    ])
+    func aStaleCrossProjectOrMalformedReferenceIsPlainWordsWithNoLink(markdown: String) {
+        let attributed = NWProseInline.styled(markdown)
+        let inert = NWProseTaskLinks.inert(attributed)
+        #expect(!NWProseTaskLinks.hasReference(inert), "no link survives")
+        #expect(inert.runs.allSatisfy { $0.link == nil && $0.foregroundColor == nil })
+        #expect(String(inert.characters) == String(attributed.characters), "the words are as written")
+        #expect(table.links[attributed.runs.first?.link?.absoluteString ?? ""] == nil)
+    }
+
+    @Test func aReferenceStillBeingWrittenIsPlainTextUntilItCloses() {
+        for partial in ["[Partner API", "[Partner API draft](", "[Partner API draft](shepherd-project-task://p/t", "[Partner API draft](shepherd-project-task://p/t1"] {
+            #expect(!NWProseTaskLinks.hasReference(NWProseInline.styled(partial)), "\(partial) is not a link")
+        }
+        #expect(NWProseTaskLinks.hasReference(NWProseInline.styled("[Partner API draft](\(known))")))
+    }
+
+    @Test func aLongTitleStaysOneNonBreakingRunAndOrdinaryLinksAreUntouched() {
+        let long = String(repeating: "Very long task name ", count: 12)
+        let link = NWProseTaskLinks(links: [known: .init(title: long, tone: .running)])
+        #expect(link.links[known]?.title == long)
+        #expect(!NWProseTaskLinks.hasReference(NWProseInline.styled("[site](https://example.com)")), "an ordinary link is not a task reference")
+        #expect(runs("[site](https://example.com)") == [Run(text: "site", link: "https://example.com")])
+    }
+
     @Test func htmlTagsStyleTheirText() {
         #expect(runs("<b>bold</b>") == [Run(text: "bold", strong: true)])
         #expect(runs("<s>old</s>") == [Run(text: "old", struck: true)])

@@ -31,7 +31,7 @@ struct AppearanceSettings: View {
                 OrganizeByRow(style: Binding(get: { sidebar.sidebarStyle }, set: { vm.setSidebarStyle($0) }))
                 if sidebar.sidebarStyle == .projects {
                     SettingsRow(title: "Group by host",
-                                subtitle: "A section for each Mac or server, its projects inside. Off shows the host as a tag on the row.") {
+                                subtitle: "A section for each Mac or server, its spaces inside. Off shows the host as a tag on the row.") {
                         SettingsSwitch(label: "Group by host", isOn: $sidebar.sidebarGroupByHost)
                     }
                     SettingsRow(title: "Keep idle threads",

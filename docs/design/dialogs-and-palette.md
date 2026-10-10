@@ -23,14 +23,14 @@ surface: every destination and command in it is also in the sidebar or the menus
   Found in conversations, with or without a query.
 - **Sections**, in this order, under `NWPaletteSectionHeader` (24pt, mono 10 medium caps, tracked,
   `textTertiary`):
-  - **Commands:** New thread ("in <space>/", the project the New thread page last chose, once it
+  - **Commands:** New thread ("in <space>/", the space the New thread page last chose, once it
     has chosen one; ⌘N), New agent with options… (⇧⌘T), New space… (⇧⌘N),
     New space on <host>… ("remote", one per connected host), Hide or Show sidebar (⇧⌘S), Settings…
     (⌘,), and Check remote worktree operation (its host) while one is pending. **Not built yet:**
     New mission… (NWComposer; it waits for Missions).
   - **This thread** (the agent on screen): Rename ("<title>", ⌘R), Pin thread or Unpin thread
     (`pin`, `pin.slash`; named for what it does now, no chord; only for a thread the sidebar can pin:
-    not an automation's run, and not in the project tree), Choose model… ("<model>", ⇧⌘M),
+    not an automation's run, and not in the space tree), Choose model… ("<model>", ⇧⌘M),
     Toggle fast mode ("Switch this thread between Standard and Fast", the filled Fast bolt,
     `bolt.fill` through `NWGlyph.fastBolt`, not the automations' outline `bolt`; ComposerSpeed;
     listed only while the thread's model offers a service tier, and it switches the tier as the
@@ -158,8 +158,8 @@ the value it opened with while it animates away. The composer presents Stop all,
 pane its Revert and Commit…, Settings ▸ Advanced its reset, and `QuitConfirmation` the quit
 dialog. There is no `.alert`, `confirmationDialog`, or `NSAlert` in the app:
 
-- Rename agent and Rename project (`RenameDialog`, 420pt): one field seeded with the name and
-  focused; ⏎ renames, and an empty name cannot. Rename project adds "Display name only. The
+- Rename agent and Rename space (`RenameDialog`, 420pt): one field seeded with the name and
+  focused; ⏎ renames, and an empty name cannot. Rename space adds "Display name only. The
   folder name and location stay unchanged.". It is available for registered local parents
   and children in the sidebar menu and Settings context/accessibility actions.
 - Delete Worktree Agent (`WorktreeDeleteDialog`, 520pt): "Delete worktree agent", "Stops <agent>.
@@ -168,10 +168,10 @@ dialog. There is no `.alert`, `confirmationDialog`, or `NSAlert` in the app:
   an "Unreconciled work" attention banner ("<what> will be lost with the worktree.") when there
   is some, then Cancel, Delete agent only, and a destructive Delete agent and worktree that stays
   disabled until the check is in
-- Remove Project (`SpaceDeleteDialog`): "Remove project", "Removes <project> from the sidebar and
+- Remove Space (`SpaceDeleteDialog`): "Remove space", "Removes <space> from the sidebar and
   stops its <n> agent(s). The local folder and all its files are kept. Saved conversations and
-  project history remain. Child projects stay registered.", Cancel and a destructive Remove
-  project. Count is the selected project's own agents, never its children's. The action keeps
+  space history remain. Child spaces stay registered.", Cancel and a destructive Remove
+  space. Count is the selected space's own agents, never its children's. The action keeps
   every folder and saved conversation; only the registration, its own agents/tabs, and live
   sessions are removed. The user's folder-retention requirement applies to parents and children.
 - Agent tool calls open no approval modals. Cross-thread calls and deletion act immediately

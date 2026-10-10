@@ -623,7 +623,8 @@ final class TerminalSessionStore {
 
     /// Spawn the pi session for a freshly created agent, bind it to its pane,
     /// and attach — so the pane view's `session(for:in:)` finds it live.
-    func createAgentSession(pane: LeafPane, tab: Tab, agent: Agent, openingPrompt: OpeningPrompt?, isAutomation: Bool = false) async throws {
+    func createAgentSession(pane: LeafPane, tab: Tab, agent: Agent, openingPrompt: OpeningPrompt?, isAutomation: Bool = false,
+                            requiredHistoryEntryID: String? = nil) async throws {
         defer { reservedPanes.remove(pane.id) }
         try await ensureBootstrapped()
         guard let state = serverState,
@@ -643,11 +644,13 @@ final class TerminalSessionStore {
             let cwd = Self.resolvedCwd(pane.cwd)
             guard rpc else { throw TerminalSessionStoreError.paneUnavailable(pane.id) }
             // Ready Shepherd's pi home, and give pi a session to find, so --session-id does not warn.
-            let (fresh, problem) = await Self.prepareLaunch(for: agent, cwd: cwd, pi: server.pi)
+            let (fresh, problem) = await Self.prepareLaunch(for: agent, cwd: cwd, pi: server.pi, requiredHistoryEntryID: requiredHistoryEntryID)
+            if requiredHistoryEntryID != nil, let problem { throw AgentStartFailure(message: problem.description) }
             let parent = await server.projects.parentProject(of: cwd, state: state)
             // RPC mode ignores a positional prompt; the opening prompt goes to the server below.
             let command = try problem.map(Self.refusedCommand)
                 ?? Self.rpcAgentCommand(for: agent, cwd: cwd, pi: server.pi, sessionIsFresh: fresh, isAutomation: isAutomation,
+                                        project: state.projectContext(for: agent.id),
                                         suggestFiles: suggestionFiles(isAutomation: isAutomation),
                                         modelOverride: modelOverrides.removeValue(forKey: agent.id),
                                         mcp: { [mcpLaunch] in try mcpLaunch()?.sharingParent(parent) })
@@ -900,6 +903,7 @@ final class TerminalSessionStore {
                 let parent = await server.projects.parentProject(of: cwd, state: serverState ?? ShepherdState())
                 command = try problem.map(Self.refusedCommand)
                     ?? Self.rpcAgentCommand(for: agent, cwd: cwd, pi: server.pi, sessionIsFresh: fresh,
+                                            project: serverState?.projectContext(for: agent.id),
                                             suggestFiles: suggestionFiles(isAutomation: false),
                                             modelOverride: modelOverrides.removeValue(forKey: agent.id),
                                             mcp: { [mcpLaunch] in try mcpLaunch()?.sharingParent(parent) })
@@ -1041,13 +1045,25 @@ final class TerminalSessionStore {
     /// (`PiSessionFile.adopt`), then says whether the agent's pi session is still fresh, after
     /// seeding its header (`PiSessionFile.prepareForLaunch`). Off the main actor: at launch every
     /// restored agent does this at once, and a project directory holds hundreds of session files.
-    private static func prepareLaunch(for agent: Agent, cwd: String, pi: PiSetup) async -> (fresh: Bool, problem: PiHomeProblem?) {
+    private static func prepareLaunch(for agent: Agent, cwd: String, pi: PiSetup,
+                                      requiredHistoryEntryID: String? = nil) async -> (fresh: Bool, problem: PiHomeProblem?) {
         let sessionID = agent.effectivePiSessionID
         let codemode = AppSettings.shared.codemode
         return await Task.detached(priority: .userInitiated) {
             if let problem = pi.prepare() { return (true, problem) }
             do { try pi.files.configureCodemode(codemode) }
             catch { return (true, PiHomeProblem("Shepherd couldn't configure codemode: \(error)")) }
+            if let requiredHistoryEntryID {
+                // Project follow-ups may restore this proven conversation, never seed/adopt a replacement.
+                guard PiSessionFile.writableProjectDirectory(forCwd: cwd, sessionsRoot: pi.sessionsRoot) != nil,
+                      let file = PiSessionFile.file(sessionID: sessionID, cwd: cwd, sessionsRoot: pi.sessionsRoot),
+                      PiSessionFile.isOwnFile(file),
+                      let preview = PiSessionPreview.snapshot(file: file, sessionID: sessionID),
+                      preview.messages.contains(where: { $0.entryID == requiredHistoryEntryID }) else {
+                    return (false, PiHomeProblem("The proven Project worker history is unavailable. Restore its original conversation before requesting a follow-up."))
+                }
+                return (false, nil)
+            }
             // Its conversation from before Shepherd ran its own pi, copied in before any seeding.
             _ = PiSessionFile.adopt(sessionID: sessionID, cwd: cwd, sessionsRoot: pi.sessionsRoot, yourPi: pi.yourPi.resolve())
             return (PiSessionFile.prepareForLaunch(sessionID: sessionID, cwd: cwd, sessionsRoot: pi.sessionsRoot), nil)
@@ -1070,6 +1086,7 @@ final class TerminalSessionStore {
     /// and namer extensions; an agent that draws a design gets the design tools instead of panes. Model and
     /// thinking flags go only to a fresh session.
     private static func rpcAgentCommand(for agent: Agent, cwd: String, pi: PiSetup, sessionIsFresh: Bool, isAutomation: Bool = false,
+                                        project: Project? = nil,
                                         suggestFiles: [InstructionFile] = [], modelOverride: String? = nil,
                                         mcp: () throws -> MCPLaunch?) throws -> SessionCommand {
         let settings = AppSettings.shared
@@ -1083,7 +1100,7 @@ final class TerminalSessionStore {
             panesExtensionPath: Self.wantsPanes(for: agent, enabled: settings.piPanesExtension) ? try PanesExtension.installedPath() : nil,
             reviewExtensionPath: Self.wantsReview(for: agent, enabled: settings.piReviewExtension) ? try ReviewExtension.installedPath() : nil,
             subagentsExtensionPath: settings.subagentDisplay ? try SubagentsExtension.installedPath() : nil,
-            childrenExtensionPath: settings.piNativeSubagents ? try ChildrenExtension.installedPath() : nil,
+            childrenExtensionPath: settings.piNativeSubagents && agent.coordinatorFor == nil ? try ChildrenExtension.installedPath() : nil,
             childEnvironment: settings.childEnvironment,
             goalCrossProviderEvaluation: settings.goalCrossProviderEvaluation,
             goalsEnabled: settings.goalsEnabled,
@@ -1097,9 +1114,10 @@ final class TerminalSessionStore {
             designReferences: Self.wantsDesignReferences(for: agent, enabled: settings.piDesignReferences,
                                                          designTool: settings.designToolEnabled)
                 ? (try DesignReferencesExtension.installedPath(), !agent.designGrants.isEmpty) : nil,
-            mcp: try mcp(),
+            mcp: agent.coordinatorFor == nil ? try mcp() : nil,
             browserExtensionPath: Self.wantsBrowser(for: agent, enabled: settings.piBrowserExtension) ? try BrowserExtension.installedPath() : nil,
             contextExtensionPath: settings.trimToolOutput ? try ContextExtension.installedPath() : nil,
+            projectContext: try project.map { (try ProjectContextExtension.installedPath(), try ProjectContextExtension.context($0), agent.coordinatorFor != nil) },
             deferTools: settings.deferTools,
             userHome: pi.userHome,
             // Use another model (an agent not signed in): its next start takes the model picked.
@@ -1111,20 +1129,20 @@ final class TerminalSessionStore {
     /// The panes extension (pane_*, agent_*, automation_*, notify) is for threads. A design's
     /// agent never gets it: its screen shows no panes, and it must not reach threads.
     static func wantsPanes(for agent: Agent, enabled: Bool) -> Bool {
-        enabled && agent.designID == nil
+        enabled && agent.designID == nil && agent.coordinatorFor == nil
     }
 
     /// `review_diff` readies the side pane's Changes tab, which a design's screen has no room for and
     /// whose folder is no repository to review: a design's agent never gets it (docs/context-budget.md).
     static func wantsReview(for agent: Agent, enabled: Bool) -> Bool {
-        enabled && agent.designID == nil
+        enabled && agent.designID == nil && agent.coordinatorFor == nil
     }
 
     /// The browser tools drive a thread's own Browser page: a design's agent never gets them (its
     /// screen has no Browser), and a native subagent never does either (it is launched with
     /// `--no-extensions` and none of Shepherd's variables).
     static func wantsBrowser(for agent: Agent, enabled: Bool) -> Bool {
-        enabled && agent.designID == nil
+        enabled && agent.designID == nil && agent.coordinatorFor == nil
     }
 
     /// design_get and design_note are for threads: a design's agent never gets them (it reads its

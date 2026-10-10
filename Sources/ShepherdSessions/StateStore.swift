@@ -1,6 +1,7 @@
 import Foundation
 import ShepherdCore
 import ShepherdRemote
+import ShepherdProtocol
 
 /// Errors that prevent a corrupt state file from being safely replaced.
 enum StateStoreError: Error, CustomStringConvertible, Sendable {
@@ -48,6 +49,44 @@ final class StateStore: @unchecked Sendable {
         mutate(&candidate)
         try candidate.validate()
         try persist(candidate)
+        commit(candidate)
+    }
+
+    /// Logical-project mutations stage the complete snapshot off the server queue. The final
+    /// rename and publication stay on that queue as one indivisible state transition; otherwise
+    /// another service could persist between the revision check and replacement of state.json.
+    static func stageLogicalProjects(_ candidate: ShepherdState, at url: URL) throws -> URL {
+        try candidate.validate()
+        guard try NDJSON.encode(RemoteReply.stateChanged(state: candidate)).count <= NDJSON.maxPayloadBytes else {
+            throw LogicalProjectsError("project_limit", "Workspace exceeds the remote state frame budget.")
+        }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(candidate.persisted)
+        let staged = url.deletingLastPathComponent().appendingPathComponent(".logical-project-state-\(UUID().uuidString.lowercased())")
+        let fd = open(staged.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
+        guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        let file = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        do {
+            try file.write(contentsOf: data)
+            try file.close()
+            return staged
+        } catch {
+            try? file.close()
+            _ = unlink(staged.path)
+            throw error
+        }
+    }
+
+    func commitLogicalProjects(_ candidate: ShepherdState, version expected: UInt64, staged: URL) throws {
+        if let recoveryError { throw recoveryError }
+        guard version == expected else {
+            throw LogicalProjectsError("workspace_changed", "Workspace changed while saving. Refresh and retry.")
+        }
+        // Only a single atomic metadata operation runs here; encoding and writing ran off queue.
+        guard rename(staged.path, url.path) == 0 else {
+            throw SessionServerError.persistFailed(String(cString: strerror(errno)))
+        }
         commit(candidate)
     }
 

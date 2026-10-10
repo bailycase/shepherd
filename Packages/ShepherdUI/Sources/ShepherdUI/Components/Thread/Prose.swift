@@ -138,6 +138,8 @@ struct NWProseBlocks<Code: View>: View {
     var voice = NWProseVoice.reply
     let code: (String, String?) -> Code
     @Environment(\.nwProseSize) private var size
+    @Environment(\.nwProseHalfLeading) private var halfLeading
+    @Environment(\.nwProseTaskLinks) private var taskLinks
 
     var body: some View {
         let nw = Color.nw
@@ -152,6 +154,9 @@ struct NWProseBlocks<Code: View>: View {
             case .paragraph(let text):
                 words(text).foregroundStyle(tone).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
+                    // CSS puts half of a line's leading above and below it; `.lineSpacing` only adds it between lines, so a paragraph
+                    // of n lines is n line heights tall here only with it (the ProjectLead boards' `line-height: 1.6`).
+                    .padding(.vertical, halfLeading && voice == .reply ? Self.halfLeadingPad : 0)
             case .quote(let inner):
                 VStack(alignment: .leading, spacing: NW.Space.m) {
                     NWProseBlocks(blocks: inner, nested: true, depth: depth, voice: voice == .thinking ? .thinking : .quoted, code: code)
@@ -214,12 +219,25 @@ struct NWProseBlocks<Code: View>: View {
         }
     }
 
+    /// CSS's half-leading for the boards' `line-height: 1.6` at the body size (`NWLeadMetrics.proseLineHeight`).
+    @MainActor private static var halfLeadingPad: CGFloat { NWLineSpacing.halfLeading(size: NWTextStyle.body.size, lineHeight: NWLeadMetrics.proseLineHeight) }
+
     private var font: Font { voice == .thinking ? NWThinking.font : .nw(.body, size: size) }
 
     /// A paragraph's or a list item's text in this voice.
     @ViewBuilder private func words(_ text: AttributedString) -> some View {
         switch voice {
-        case .reply, .quoted: Text(text).nwText(.body, size: size).italic(voice == .quoted)
+        case .reply, .quoted:
+            if voice == .reply, halfLeading, NWPlainParagraph.isPlain(text) {
+                NWPlainParagraph(text: String(text.characters), size: size, lineSpacing: NWTextStyle.body.lineSpacing(size))
+            } else if voice == .reply, let taskLinks, NWProseTaskLinks.hasReference(text) {
+                NWTaskChipText.text(text, links: taskLinks, size: size).nwText(.body, size: size)
+                    .textRenderer(NWTaskChipRenderer(halfLeading: Self.halfLeadingPad))
+                    .modifier(NWTaskChipPressTargets(halfLeading: Self.halfLeadingPad))
+            } else {
+                // Outside a Project conversation a task reference is only words: nothing opens it, the system included.
+                Text(NWProseTaskLinks.hasReference(text) ? NWProseTaskLinks.inert(text) : text).nwText(.body, size: size).italic(voice == .quoted)
+            }
         case .thinking: Text(text).font(NWThinking.font).italic().lineSpacing(NWThinking.lineSpacing)
         }
     }
@@ -236,4 +254,9 @@ struct NWProseBlocks<Code: View>: View {
         // The square asks for its text form: iOS would draw it as a large emoji square.
         ["•", "◦", "▪\u{FE0E}"][depth % 3]
     }
+}
+
+extension EnvironmentValues {
+    /// A paragraph's leading is split above and below each line, as CSS does (the Project conversation and its worker threads).
+    @Entry public var nwProseHalfLeading = false
 }

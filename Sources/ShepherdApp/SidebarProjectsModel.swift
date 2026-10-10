@@ -229,12 +229,21 @@ enum SidebarTreeItem: Identifiable, Equatable {
     case header(SidebarTreeSection.Header)
     case project(SidebarProjectRow)
     case row(SidebarListRow)
+    /// The new Projects section above the Spaces (ProjectLead-AddsSpace): its header (a `+` opens
+    /// New project) and one row per Project.
+    case leadHeader(count: Int)
+    case leadProject(SidebarLogicalProject)
+    /// A task thread under the selected Project (ProjectLead-Paused, -Question).
+    case leadTask(LogicalProjectRef, ProjectTaskRow)
 
     var id: AnyHashable {
         switch self {
         case .header(let header): AnyHashable(header.id)
         case .project(let project): AnyHashable(project.id)
         case .row(let row): AnyHashable(row.id)
+        case .leadHeader: AnyHashable("header.leadProjects")
+        case .leadProject(let project): AnyHashable(project.ref)
+        case .leadTask(_, let task): AnyHashable(task.id)
         }
     }
 }
@@ -346,7 +355,7 @@ private struct TreeBuilder {
         let visible = Set(projectSpaces.map(\.id))
         let runs = Dictionary(state.automations.compactMap { automation in automation.agentID.map { ($0, automation) } },
                               uniquingKeysWith: { first, _ in first })
-        for (index, agent) in state.agents.enumerated() where agent.designID == nil {
+        for (index, agent) in state.agents.enumerated() where agent.designID == nil && !state.isProjectCoordinator(agent) {
             let automation = runs[agent.id]
             let project: SpaceID?
             if visible.contains(agent.spaceID) {
@@ -401,7 +410,7 @@ private struct TreeBuilder {
         }
         let runs = Dictionary(state.automations.compactMap { automation in automation.agentID.map { ($0, automation) } },
                               uniquingKeysWith: { first, _ in first })
-        for (index, agent) in state.agents.enumerated() where !state.isDesignAgent(agent) && agent.designID == nil {
+        for (index, agent) in state.agents.enumerated() where state.isOrdinaryThread(agent) && agent.designID == nil {
             let automation = runs[agent.id]
             var project = projectOf[agent.spaceID]
             if project == nil, let automation,

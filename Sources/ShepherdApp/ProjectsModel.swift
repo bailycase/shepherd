@@ -94,13 +94,13 @@ final class ProjectsModel {
     var showingBrowser = false
     var selectedFile: ProjectFile?
     var savedNotice: String {
-        if category == .mcp { return "Saved to the project folder. MCP changes apply to new threads." }
+        if category == .mcp { return "Saved to the space folder. MCP changes apply to new threads." }
         if selectedFile?.path == ".pi/settings.json" {
             return selectedFile?.exists == true
-                ? "Saved to the project folder. Start or restart the agent to apply Pi settings."
-                : "Save project settings, then start or restart the agent to apply them."
+                ? "Saved to the space folder. Start or restart the agent to apply Pi settings."
+                : "Save space settings, then start or restart the agent to apply them."
         }
-        return "Saved to the project folder. It takes effect in new turns."
+        return "Saved to the space folder. It takes effect in new turns."
     }
     var draft = "" { didSet {
         tokenText = InstructionsText.sizeNote(draft)
@@ -204,7 +204,7 @@ final class ProjectsModel {
     }
 
     /// Projects counted the board's way: every project the hosts list, subprojects included.
-    var countText: String { rows.count == 1 ? "1 project" : "\(rows.count) projects" }
+    var countText: String { rows.count == 1 ? "1 space" : "\(rows.count) spaces" }
 
     @discardableResult
     func load(_ sources: [ProjectsHost], force: Bool = false) async -> Bool {
@@ -229,13 +229,13 @@ final class ProjectsModel {
                         guard revision == loadGeneration else { return false }
                         guard !Task.isCancelled else { loading = false; return false }
                         guard case .listing(let page) = try await request(source, .list(offset: offset)) else {
-                            throw ProjectFileError("protocol", "Unexpected project listing.")
+                            throw ProjectFileError("protocol", "Unexpected space listing.")
                         }
                         guard revision == loadGeneration, !Task.isCancelled else { return false }
                         projects += page.projects
                         pages += 1
                         guard let next = page.nextOffset else { break }
-                        guard next > offset, pages < 1000 else { throw ProjectFileError("too_many", "Project listing exceeded its page limit.") }
+                        guard next > offset, pages < 1000 else { throw ProjectFileError("too_many", "Space listing exceeded its page limit.") }
                         offset = next
                     } while true
                 } catch {
@@ -258,7 +258,7 @@ final class ProjectsModel {
             if current.host.endpointID == selected.host.endpointID { self.selected = current }
             else {
                 var invalid = selected
-                invalid.host.unavailable = "Host changed. Reopen this project before editing it."
+                invalid.host.unavailable = "Host changed. Reopen this space before editing it."
                 self.selected = invalid
             }
         }
@@ -279,7 +279,7 @@ final class ProjectsModel {
         category = .instructions; files = []; selectedFile = nil; fileLoaded = false
         context = ProjectContext(); readRows = []; peers = []
         do {
-            guard case .files(let files) = try await request(row.host, .files(directory: row.project.directory)) else { throw ProjectFileError("protocol", "Unexpected project files reply.") }
+            guard case .files(let files) = try await request(row.host, .files(directory: row.project.directory)) else { throw ProjectFileError("protocol", "Unexpected space files reply.") }
             guard token == generation, selected?.id == row.id else { return }
             self.files = files
             if case .context(let context) = try? await request(row.host, .context(directory: row.project.directory)), token == generation { self.context = context }
@@ -324,7 +324,7 @@ final class ProjectsModel {
         let token = generation
         selectedFile = file; fileLoaded = false; fileLoading = true; fileError = nil; notice = nil
         do {
-            guard case .text(let value) = try await request(selected.host, .read(directory: selected.project.directory, file: file.path)) else { throw ProjectFileError("protocol", "Unexpected project file reply.") }
+            guard case .text(let value) = try await request(selected.host, .read(directory: selected.project.directory, file: file.path)) else { throw ProjectFileError("protocol", "Unexpected space file reply.") }
             guard token == generation else { return }
             selectedFile = value.file; saved = value.text; draft = value.text ?? ""; modifiedAt = value.modifiedAt; fileLoaded = true
             if category == .mcp {
@@ -373,10 +373,10 @@ final class ProjectsModel {
         guard let selected else { readRows = []; return }
         let folder = selected.project.directory + "/"
         let selectedPath = selectedFile.map { folder + $0.path }
-        readRows = [ReadRow(id: "global", label: "Your instructions", scope: "all projects", selected: false)] + context.files.filter { $0.isGlobal != true }.map { file in
+        readRows = [ReadRow(id: "global", label: "Your instructions", scope: "all spaces", selected: false)] + context.files.filter { $0.isGlobal != true }.map { file in
             let current = file.path.hasPrefix(folder)
             let label = current ? selected.project.name + "/" + URL(fileURLWithPath: file.path).lastPathComponent : file.displayPath
-            return ReadRow(id: file.path, label: label, scope: file.path == selectedPath ? "this file" : current ? "project" : "parent", selected: file.path == selectedPath)
+            return ReadRow(id: file.path, label: label, scope: file.path == selectedPath ? "this file" : current ? "space" : "parent", selected: file.path == selectedPath)
         }
     }
 
@@ -408,7 +408,7 @@ final class ProjectsModel {
         saving = true; fileError = nil; notice = nil
         let token = generation, text = draft
         do {
-            guard case .text(let value) = try await request(selected.host, .save(directory: selected.project.directory, file: file.path, text: text, expected: saved)) else { throw ProjectFileError("protocol", "Unexpected project save reply.") }
+            guard case .text(let value) = try await request(selected.host, .save(directory: selected.project.directory, file: file.path, text: text, expected: saved)) else { throw ProjectFileError("protocol", "Unexpected space save reply.") }
             guard token == generation else { saving = false; return }
             saved = value.text; selectedFile = value.file; modifiedAt = value.modifiedAt
             notice = savedNotice
@@ -431,14 +431,14 @@ extension ShepherdViewModel {
                 guard seen.insert(directory).inserted else { return nil }
                 let space = state.spaces.first { $0.path == directory }
                 let parent = space.flatMap { parents[$0.id] }.flatMap { spaces[$0]?.path }
-                return ProjectSummary(directory: directory, name: name, displayPath: directory, summary: reason ?? "loading project settings", minimal: true,
+                return ProjectSummary(directory: directory, name: name, displayPath: directory, summary: reason ?? "loading space settings", minimal: true,
                                       projectID: space?.id, parent: parent)
             }
         }
         return [ProjectsHost(id: "local", name: "This Mac", known: known(state, reason: nil))] + remoteHosts.connections.map { connection in
             let reason: String? = connection.phase == .connected
-                ? connection.supportsProjects ? nil : "Update Shepherd on this host to edit project settings."
-                : "Host offline. Reconnect in Settings > Remote to edit its projects."
+                ? connection.supportsProjects ? nil : "Update Shepherd on this host to edit space settings."
+                : "Host offline. Reconnect in Settings > Remote to edit its spaces."
             return ProjectsHost(id: connection.id.uuidString, name: connection.config.name, endpointID: connection.endpointID, supportsDetails: connection.supportsProjectDetails, supportsMCP: connection.supportsProjectMCP, supportsProjectTrust: connection.supportsProjectTrust, unavailable: reason, known: known(connection.state, reason: reason))
         }
     }
@@ -448,7 +448,7 @@ extension ShepherdViewModel {
         let model = ProjectsModel { [weak self] host, request in
             guard let self else { throw ProjectFileError("unavailable", "Shepherd is closing.") }
             if host.id == "local" { return try await self.server.projects.request(request, state: self.server.state) }
-            guard let id = UUID(uuidString: host.id) else { throw ProjectFileError("invalid", "Unknown project host.") }
+            guard let id = UUID(uuidString: host.id) else { throw ProjectFileError("invalid", "Unknown space host.") }
             return try await self.remoteHosts.projects(hostID: id, endpointID: host.endpointID, request: request)
         }
         madeProjects = model
@@ -492,10 +492,10 @@ extension ShepherdViewModel {
             revealHierarchy = request.parentProjectID != nil
         case .delete(let id):
             guard let space = server.state.spaces.first(where: { $0.id == id && !$0.hidden }) else {
-                throw ProjectFileError("no_such_project", "No registered local project has that ID.")
+                throw ProjectFileError("no_such_project", "No registered local space has that ID.")
             }
             guard spaceDeleteTarget == nil || spaceDeleteTarget == id else {
-                throw ProjectFileError("confirmation_busy", "Another project removal is awaiting confirmation.")
+                throw ProjectFileError("confirmation_busy", "Another space removal is awaiting confirmation.")
             }
             adopt(server.state)
             spaceDeleteTarget = id
@@ -512,7 +512,7 @@ extension ShepherdViewModel {
             for parent in project.ancestorIDs { setProject(parent, expanded: true) }
         }
         guard await projects.load(projectsSources, force: true) else {
-            throw ProjectFileError("refresh_superseded", "Another project reload started. Registration, if requested, is preserved. Retry project_refresh.")
+            throw ProjectFileError("refresh_superseded", "Another space reload started. Registration, if requested, is preserved. Retry project_refresh.")
         }
         if let error = projects.error { throw ProjectFileError("refresh_failed", error) }
         return result

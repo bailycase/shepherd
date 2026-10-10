@@ -1,0 +1,91 @@
+[
+  {
+    "id": "plan-1",
+    "arguments": {
+      "steps": [
+        {
+          "text": "Building the storefront and checkout mockup",
+          "state": "current"
+        },
+        {
+          "text": "Publish it to the project’s files",
+          "state": "pending"
+        }
+      ]
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\"version\":1,\"steps\":[{\"text\":\"Building the storefront and checkout mockup\",\"state\":\"current\"},{\"text\":\"Publish it to the project’s files\",\"state\":\"pending\"}]}"
+        }
+      ],
+      "details": {}
+    }
+  },
+  {
+    "id": "plan-2",
+    "arguments": {
+      "steps": [
+        {
+          "text": "Building the storefront and checkout mockup",
+          "state": "done"
+        },
+        {
+          "text": "Publish it to the project’s files",
+          "state": "failed"
+        }
+      ]
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\"version\":1,\"steps\":[{\"text\":\"Building the storefront and checkout mockup\",\"state\":\"done\"},{\"text\":\"Publish it to the project’s files\",\"state\":\"failed\"}]}"
+        }
+      ],
+      "details": {}
+    }
+  },
+  {
+    "id": "plan-secret",
+    "arguments": {
+      "steps": [
+        {
+          "text": "Check api_key=fixture-secret-value",
+          "state": "pending"
+        }
+      ]
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\"version\":1,\"steps\":[{\"text\":\"Check api_key=fixture-secret-value\",\"state\":\"pending\"}]}"
+        }
+      ],
+      "details": {}
+    }
+  },
+  {
+    "id": "plan-invalid",
+    "arguments": {
+      "steps": [
+        {
+          "text": "Not a state",
+          "state": "success"
+        }
+      ]
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Invalid plan: expected 1–20 steps with nonblank text ≤500 characters and pending/current/done/failed state."
+        }
+      ],
+      "details": {},
+      "isError": true
+    }
+  }
+]

@@ -25,11 +25,37 @@ struct RemoteAgentRef: Hashable {
 @Observable
 final class RemoteHostStore {
     struct HostConfig: Codable, Hashable, Identifiable {
-        var id: UUID = UUID()
+        var id: UUID
+        /// Persisted identity of this destination. Project assignments must not follow an edit
+        /// that points an existing sidebar host at a different server or credential.
+        var bindingID: UUID
         var name: String
         var host: String
         var port: UInt16
         var token: String
+
+        init(id: UUID = UUID(), name: String, host: String, port: UInt16, token: String,
+             bindingID: UUID = UUID()) {
+            self.id = id
+            self.bindingID = bindingID
+            self.name = name
+            self.host = host
+            self.port = port
+            self.token = token
+        }
+
+        private enum CodingKeys: String, CodingKey { case id, bindingID, name, host, port, token }
+
+        init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            id = try values.decode(UUID.self, forKey: .id)
+            // Older configurations have a stable first binding without a write on load.
+            bindingID = try values.decodeIfPresent(UUID.self, forKey: .bindingID) ?? id
+            name = try values.decode(String.self, forKey: .name)
+            host = try values.decode(String.self, forKey: .host)
+            port = try values.decode(UInt16.self, forKey: .port)
+            token = try values.decode(String.self, forKey: .token)
+        }
     }
 
     enum Phase: Equatable {
@@ -120,6 +146,12 @@ final class RemoteHostStore {
         /// The host serves Settings ▸ Skills (`skills.v1`).
         var supportsSkills: Bool { client?.capabilities.contains(RemoteProtocol.skillsCapability) == true }
         var supportsProjects: Bool { client?.capabilities.contains(RemoteProtocol.projectsCapability) == true }
+        /// The host owns and serves Projects (`logicalProjects.v1`); an older host has none to show.
+        var supportsLogicalProjects: Bool { client?.capabilities.contains(RemoteProtocol.logicalProjectsCapability) == true }
+        /// The host serves Project automation settings (`logicalProjectAutomations.v1`), apart from running them.
+        /// The host carries images with a Project message (`logicalProjectRuntime.images.v1`).
+        var supportsProjectMessageImages: Bool { client?.capabilities.contains(RemoteProtocol.projectMessageImagesCapability) == true }
+        var supportsLogicalProjectAutomations: Bool { client?.capabilities.contains(RemoteProtocol.logicalProjectAutomationsCapability) == true }
         var supportsProjectDetails: Bool { client?.capabilities.contains(RemoteProtocol.projectDetailsCapability) == true }
         var supportsProjectMCP: Bool { client?.capabilities.contains(RemoteProtocol.projectMCPCapability) == true }
         var supportsProjectTrust: Bool { client?.capabilities.contains(RemoteProtocol.projectTrustCapability) == true }
@@ -184,6 +216,8 @@ final class RemoteHostStore {
     @ObservationIgnored var onDropError: ((String) -> Void)?
     /// A host connected (again): what waits on it can go now (Settings ▸ Instructions' sync).
     @ObservationIgnored var onHostConnected: ((UUID) -> Void)?
+    @ObservationIgnored var onProjectExecutorConnected: ((ProjectHostReference) -> Void)?
+    @ObservationIgnored var onProjectExecutionChanged: ((ProjectHostReference, ProjectExecutionKey) -> Void)?
     /// A design a host serves changed (one on screen here): its files' revision, its comments',
     /// or both.
     @ObservationIgnored var onDesignChanged: ((UUID, DesignID, UInt64?, UInt64?) -> Void)?
@@ -229,6 +263,9 @@ final class RemoteHostStore {
         guard let connection = connections.first(where: { $0.id == id }) else { return }
         connection.endpointID = UUID()
         var config = connection.config
+        if config.host != host || config.port != port || config.token != token {
+            config.bindingID = UUID()
+        }
         config.name = name
         config.host = host
         config.port = port
@@ -316,6 +353,7 @@ final class RemoteHostStore {
                 connection.startChildRefresh(client: client, every: childRefreshInterval)
                 connection.reconnectDelay = .seconds(1)
                 self.onHostConnected?(connection.id)
+                self.onProjectExecutorConnected?(.remote(hostID: connection.config.id, bindingID: connection.config.bindingID))
             } catch {
                 if connection.client === client {
                     connection.client = nil
@@ -331,6 +369,10 @@ final class RemoteHostStore {
 
     private func wire(client: RemoteHostClient, to connection: Connection) {
         let clientID = ObjectIdentifier(client)
+        client.onProjectExecutionChanged = { [weak self, weak connection] key, _ in
+            guard let connection, connection.client.map(ObjectIdentifier.init) == clientID else { return }
+            self?.onProjectExecutionChanged?(.remote(hostID: connection.config.id, bindingID: connection.config.bindingID), key)
+        }
         client.onStateChanged = { [weak connection] state in
             guard let connection,
                   connection.client.map(ObjectIdentifier.init) == clientID else { return }
@@ -466,10 +508,36 @@ final class RemoteHostStore {
         guard let connection = connections.first(where: { $0.id == hostID }),
               connection.phase == .connected, let client = connection.client else { throw RemoteHostClientError.disconnected }
         guard endpointID == connection.endpointID else {
-            throw RemoteHostClientError.rejected(code: "host_changed", message: "Host changed. Reopen this project before editing it.")
+            throw RemoteHostClientError.rejected(code: "host_changed", message: "Host changed. Reopen this space before editing it.")
         }
         let result = try await client.projects(request)
         guard connection.client === client, endpointID == connection.endpointID else {
+            throw RemoteHostClientError.outcomeUnknown(message: "Host changed after the request was sent. Check the original space before retrying.")
+        }
+        return result
+    }
+
+    /// One Projects request to the host that owns the project. The request names the owner's own IDs.
+    func logicalProjects(hostID: UUID, request: LogicalProjectsRequest) async throws -> LogicalProjectsResult {
+        guard let connection = connections.first(where: { $0.id == hostID }),
+              connection.phase == .connected, let client = connection.client else { throw RemoteHostClientError.disconnected }
+        let endpoint = connection.endpointID
+        let result = try await client.logicalProjects(request)
+        // A host retargeted mid-request answered for another machine: do not trust it.
+        guard connection.client === client, connection.endpointID == endpoint else {
+            throw RemoteHostClientError.outcomeUnknown(message: "Host changed after the request was sent. Check the original project before retrying.")
+        }
+        return result
+    }
+
+    /// One Project runtime request to the host that owns the project (its hosts list, a native read, an action). A host that
+    /// changed identity mid-request answered for another machine and is not trusted.
+    func projectRuntime(hostID: UUID, request: ProjectRuntimeTransport) async throws -> ProjectRuntimeResult {
+        guard let connection = connections.first(where: { $0.id == hostID }),
+              connection.phase == .connected, let client = connection.client else { throw RemoteHostClientError.disconnected }
+        let endpoint = connection.endpointID
+        let result = try await client.projectRuntime(request)
+        guard connection.client === client, connection.endpointID == endpoint else {
             throw RemoteHostClientError.outcomeUnknown(message: "Host changed after the request was sent. Check the original project before retrying.")
         }
         return result

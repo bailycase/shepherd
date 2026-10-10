@@ -23,6 +23,11 @@ enum MainDestination: Hashable, CaseIterable {
     case automations
     /// NavHosts (More ▸ Hosts).
     case hosts
+    /// A Project (ProjectLead boards): its Overview and conversation page, in the main column. Which
+    /// project is `ShepherdViewModel.selectedLogicalProject`.
+    case project
+    /// A Project's own settings (General, Spaces, Memory, Automations), also in the main column.
+    case projectSettings
 }
 
 /// What a Needs you, Pinned or Recents row opens: an agent's thread, or a design (its canvas and
@@ -203,6 +208,8 @@ enum SidebarDerivation {
         }, uniquingKeysWith: { first, _ in first })
         let designs = Set(source.local.designs.map(\.id))
         for (index, agent) in source.local.agents.enumerated() {
+            // A Project's coordinator is its conversation, never an ordinary thread row.
+            guard source.local.isOrdinaryThread(agent) || agent.designID != nil else { continue }
             if let design = agent.designID, designs.contains(design) { continue }
             let automation = localRuns[agent.id]
             let notSignedIn = source.notSignedIn.contains(agent.id)
@@ -227,7 +234,7 @@ enum SidebarDerivation {
         for (hostIndex, host) in source.hosts.enumerated() {
             let runs = Set(host.state.automations.compactMap(\.agentID))
             // A host sends no design's agent (`withoutDesigns`); one from before that is no thread either.
-            for (index, agent) in host.state.agents.enumerated() where !host.state.isDesignAgent(agent) {
+            for (index, agent) in host.state.agents.enumerated() where host.state.isOrdinaryThread(agent) {
                 // Nothing on an offline host can be answered, so none of it waits on you here.
                 let needsYou = !host.offline && agent.status == .blocked
                 let row = remoteRow(agent, host: host, automation: runs.contains(agent.id), needsYou: needsYou)
@@ -258,7 +265,8 @@ enum SidebarDerivation {
                 if seen[entry.row.id] == entry.row.completion { lists.recents.append(entry.row) }
                 else { lists.done.append(entry.row) }
             case .designs: lists.designs.append(entry.row)
-            case .recents, .pinned: lists.recents.append(entry.row)
+            // A thread row is never a Project; Projects are listed from `state.projects`.
+            case .recents, .pinned, .projects: lists.recents.append(entry.row)
             }
         }
         lists.pinned = pins.threads.compactMap { pinnedRows[$0] }
@@ -394,12 +402,6 @@ enum SidebarDerivation {
     struct Destination: Equatable, Identifiable {
         enum Target: Hashable {
             case page(MainDestination)
-            /// More's disclosure.
-            case more
-            /// Settings ▸ Extensions, the bundled extensions.
-            case extensions
-            /// More ▸ Design systems: the system page opened last, else the first.
-            case designSystems
         }
 
         let target: Target
@@ -412,12 +414,11 @@ enum SidebarDerivation {
         var id: Target { target }
     }
 
-    /// New thread (with its chord), Designs while the Design tool is on (selected on its page and
-    /// on New design), Automations, More, and More's Hosts (with how many hosts are offline),
-    /// Design systems (with the Design tool; selected while a system's page shows) and Extensions
-    /// while it is open. Missions and Archive are not built, so they are not shown.
-    static func destinations(shown: MainDestination?, moreOpen: Bool, offlineHosts: Int, newThreadChord: String,
-                             designs: Bool = false, systemShown: Bool = false) -> [Destination] {
+    /// New thread (with its chord), Designs while the Design tool is on (selected on its page and on New design) and Automations,
+    /// as every ProjectLead board draws them. Hosts, Design systems and Extensions have no sidebar row: the command palette
+    /// opens them ("Open Hosts", "Open Design systems", "Open Extensions"), Settings ▸ Remote and Settings ▸ Extensions hold the
+    /// same settings, and a notification still opens Hosts. Missions and Archive are not built, so they are not shown.
+    static func destinations(shown: MainDestination?, newThreadChord: String, designs: Bool = false) -> [Destination] {
         var rows = [
             Destination(target: .page(.newThread), title: "New thread", icon: .newThread, selected: shown == .newThread,
                         child: false, trailing: .keycaps(newThreadChord)),
@@ -426,23 +427,8 @@ enum SidebarDerivation {
             rows.append(Destination(target: .page(.designs), title: "Designs", icon: .symbol("pencil.tip"),
                                     selected: shown == .designs || shown == .newDesign, child: false, trailing: .none))
         }
-        rows += [
-            Destination(target: .page(.automations), title: "Automations", icon: .symbol("bolt"),
-                        selected: shown == .automations, child: false, trailing: .none),
-            Destination(target: .more, title: "More", icon: .disclosure(open: moreOpen), selected: false, child: false,
-                        trailing: .none),
-        ]
-        if moreOpen {
-            rows.append(Destination(target: .page(.hosts), title: "Hosts", icon: .symbol("display"), selected: shown == .hosts,
-                                    child: true, trailing: offlineHosts > 0 ? .alert("\(offlineHosts) offline") : .none))
-            if designs {
-                rows.append(Destination(target: .designSystems, title: "Design systems", icon: .symbol("paintpalette"),
-                                        selected: shown == .designSystem || (shown == nil && systemShown), child: true,
-                                        trailing: .none))
-            }
-            rows.append(Destination(target: .extensions, title: "Extensions", icon: .symbol("puzzlepiece.extension"),
-                                    selected: false, child: true, trailing: .none))
-        }
+        rows.append(Destination(target: .page(.automations), title: "Automations", icon: .symbol("bolt"),
+                                selected: shown == .automations, child: false, trailing: .none))
         return rows
     }
 

@@ -6,7 +6,7 @@ Settings replaces the window content in place (`SettingsView.swift`; the boards 
 through SettingsExperiments). ⌘, toggles it, and "Back to Shepherd" or Esc returns; the swap
 cross-fades on the `sheet` motion, and a page picked in the nav cross-fades on `content`. Every row
 is wired: a row exists only if changing it changes the app, and a change applies at once, with no
-Save or Apply. Instructions and [Projects](settings-projects.md) edit files with an explicit Save.
+Save or Apply. Instructions and [Spaces](settings-projects.md) edit files with an explicit Save.
 
 - **Navigation** (the same on every Settings board): a 232pt column on `bgBase` with a `lineSubtle`
   hairline (`NWHairline`) on its trailing edge, its contents 10pt in from either side
@@ -21,7 +21,7 @@ Save or Apply. Instructions and [Projects](settings-projects.md) edit files with
   - the pages, one `NWSettingsNavRow` each, `NW.Space.xxs` apart, one flat list in the macOS
     Settings boards' order (revision 1083): Appearance (`circle.lefthalf.filled`) · Terminal
     (`terminal`) · Agents (`person.2`) · Subagents (`arrow.turn.down.right`) · Worktrees
-    (`arrow.branch`) · Projects (`folder`) · Sign-in (`lock`; a 6pt `lantern` dot trailing while
+    (`arrow.branch`) · Spaces (`folder`) · Sign-in (`lock`; a 6pt `lantern` dot trailing while
     a provider an agent of this Mac needs isn't signed in or a sign-in expired) · Pi (`pi`) ·
     Instructions (`doc.text`) · Skills (`graduationcap`) · Extensions (the board's filled puzzle
     outline) · Slash commands (the board's filled `</>` outline) · MCP servers (`server.rack`) ·
@@ -41,10 +41,10 @@ Save or Apply. Instructions and [Projects](settings-projects.md) edit files with
   (`caption`, `textSecondary`, indented past the icon); clicking one opens its page. When the page
   on screen has no match, the first page that does opens at once (no cross-fade per keystroke). With
   nothing matching, the nav says "No matching settings" in `caption`/`textTertiary`.
-- **Projects** uses the [SettingsProjects spec](settings-projects.md) and a project-only editor.
+- **Spaces** uses the [SettingsProjects spec](settings-projects.md) and a space-only editor.
   It fills the available width, like every other Settings page. [Subagents](settings-subagents.md)
   manages Shepherd-owned Markdown definitions. Pi retains native-subagent switches and run defaults.
-- **Content** (every page but Projects, Instructions, Skills, MCP servers and Experiments): the page on `bgWindow`,
+- **Content** (every page but Spaces, Instructions, Skills, MCP servers and Experiments): the page on `bgWindow`,
   fills the available width, 44pt from the top, 40pt from the sides and 48pt from the bottom.
   The user's full-width request replaces the old centered 720pt column. The page scrolls, and the
   strip at its top still drags the window. Top to bottom:
@@ -138,12 +138,12 @@ The pages, in nav order. Each names its board; the strings in quotes are the boa
   - Organize by, "What the sidebar lists under New thread and the destinations. Also in View ▸
     Organize Sidebar By.", its control under the words (12pt above, 16 around): two cards
     (`NWSidebarStylePicker`), Activity ("Needs you, then Recents: every kind, newest first.") and
-    Projects ("A folder for each project with its threads inside."), each a 104pt drawing of the
+    Spaces ("A folder for each space with its threads inside."), each a 104pt drawing of the
     sidebar it makes (its rows shrink together to fit the height, as the board's column does) over
     a radio, its name in Geist 13 semibold and the line in 12
     `textSecondary`, on `bgSunken` at radius 10 with a 1pt `lineSubtle` ring, 1.5pt `lantern` when
     chosen, 12pt apart. `AppSettings.sidebarStyle`, default Activity.
-  - For Projects only: Group by host, "A section for each Mac or server, its projects inside. Off
+  - For Spaces only: Group by host, "A section for each Mac or server, its spaces inside. Off
     shows the host as a tag on the row." (a switch, off), and Keep idle threads, "Then they leave
     the sidebar; ⌘K still finds them. Running threads and anything waiting on you stay." (a popup:
     1, 3, 7, 14 or 30 days, or Forever; 7 days). Reset settings returns all three.
@@ -232,10 +232,10 @@ shell they run."
 
   - Codemode, a switch after Defer rarely used tools, default on. Text: "Lets the agent run JavaScript
     to batch tool calls and filter results, up to 128 calls and five minutes per script. Direct tool
-    calls stay available. Scripts cannot call classifier or image models directly. Projects can
+    calls stay available. Scripts cannot call classifier or image models directly. Spaces can
     override this default." No board draws it (a departure kept from codemode-settings.md). The
     Context group has no footnote, as the board draws none. A host's Bundled extensions lists the same `codemode` switch.
-    Project overrides and the user's requirement are in [codemode-settings.md](codemode-settings.md).
+    Space overrides and the user's requirement are in [codemode-settings.md](codemode-settings.md).
 
 - **Goal checks:**
   - Allow cross-provider goal checks, off by default. Off uses the thread's exact model and

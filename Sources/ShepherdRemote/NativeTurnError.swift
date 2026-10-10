@@ -463,7 +463,17 @@ struct NativeProviderError {
 
 /// Keys cut to their first eight and last four characters ("sk-svcac…fvMA"), a provider's own
 /// mask ("sk-proj-****fvMA") the same way, and addresses found.
-enum NativeRedaction {
+public enum NativeRedaction {
+    /// Data forwarded between Project conversations never needs even a key's prefix/suffix.
+    public static func projectData(_ text: String) -> String {
+        var result = text
+        for pattern in [masked, key, bearer, projectSecret, privateKey] {
+            result = pattern.stringByReplacingMatches(in: result, range: NSRange(result.startIndex..., in: result), withTemplate: "[redacted]")
+        }
+        return result
+    }
+    private static let projectSecret = try! NSRegularExpression(pattern: #"(?i)\b(?:password|api[_-]?key|access[_-]?token|authorization)\b[\\\"']*\s*[:=]\s*[\\\"']*[^\s\"'\\,;}]{8,}"#)
+    private static let privateKey = try! NSRegularExpression(pattern: #"(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----"#)
     enum Piece: Equatable {
         case text(String)
         case key(String)

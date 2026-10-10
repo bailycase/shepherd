@@ -16,21 +16,24 @@ struct ExtensionMessageTests {
     static func caseName(_ message: ExtensionMessage) -> String {
         switch message {
         case .setAgentStatus, .setAgentName, .setAgentSession, .setAgentChildren, .notify, .helloAgent,
-             .helloChildren, .childCommandResult, .listPanes, .openPane, .closePane, .focusPane,
+             .helloChildren, .childScope, .childCommandResult, .listPanes, .openPane, .closePane, .focusPane,
              .sendPaneInput, .readPane, .requestReview, .listAgents, .sendToAgent, .spawnAgent,
              .coordinateAgent, .agentResponse, .cancelAgentRequest, .createAutomation, .listAutomations,
              .updateAutomation, .deleteAutomation, .startAutomation, .stopAutomation, .suggestInstruction,
              .designRead, .designWriteBoard, .designEditBoard, .designUpdateIndex, .designComments, .designCommentReply,
              .designEditBoards, .designSearch, .designCheckpoint, .designRender, .designExtract,
              .designSystemRead, .designSystemWrite, .designProposeComments, .designGet, .designNote,
-             .helloBrowser, .browser, .registerProject, .refreshProjects, .addChildProject, .editProject, .deleteProject:
+             .projectPublish, .projectRuntime, .helloBrowser, .browser, .registerProject, .refreshProjects, .addChildProject, .editProject, .deleteProject:
             return Wire.caseName(message)
         }
     }
-    static let caseCount = 51
+    static let caseCount = 54
     static let design = DesignID(rawValue: "d1")
 
     static let samples: [ExtensionMessage] = [
+        .projectRuntime(id: 75, agentID: agent, projectID: ProjectID(), expectedRevision: 1, request: .read),
+        .projectPublish(id: 76, agentID: agent, request: .eligibility),
+        .projectPublish(id: 77, agentID: agent, request: .publish(publicationID: UUID(), sourcePath: "report.txt", artifactName: "result.txt")),
         .registerProject(id: 70, agentID: agent, path: "/tmp/project", name: "Project"),
         .refreshProjects(id: 71, agentID: agent),
         .editProject(id: 73, agentID: agent, projectID: SpaceID(rawValue: "p1"), request: ProjectEdit(name: "New name", parentProjectID: "", folderAction: .none)),
@@ -42,11 +45,13 @@ struct ExtensionMessageTests {
         .setAgentChildren(agentID: agent, children: [
             ChildRun(runID: "r1", childIndex: 2, label: "src/jobs", state: "failed", startedAt: 1, endedAt: 2,
                      currentTool: "read", needsAttention: true, attentionText: "boom", asyncDir: "/tmp/a"),
-            ChildRun(runID: "r2", label: "reviewer", state: "queued"),
+            ChildRun(runID: "r2", label: "reviewer", state: "queued", attempt: "fresh-attempt",
+                     projectScope: .init(key: .init(ownerID: UUID(), projectID: ProjectID(), operationID: UUID()), workerAgentID: agent, sessionID: "session", generation: "generation")),
         ]),
         .notify(agentID: agent, title: "CI passed", body: "PR #42 is green"),
         .helloAgent(agentID: agent),
-        .helloChildren(agentID: agent),
+        .helloChildren(agentID: agent, projectScopes: true),
+        .childScope(id: 77, agentID: agent, sessionID: "session", userTimestamp: 1234),
         .childCommandResult(id: 2, error: "Child is not running"),
         .listPanes(id: 1, agentID: agent),
         .openPane(id: 2, agentID: agent, axis: .horizontal, cwd: "/tmp", relativeTo: pane, command: "npm run dev"),
@@ -378,15 +383,15 @@ struct ExtensionReplyTests {
 
     static func caseName(_ reply: ExtensionReply) -> String {
         switch reply {
-        case .parentInput, .childCommand, .ok, .error, .panes, .paneOpened, .paneContent, .reviewResult, .automations,
+        case .parentInput, .childCommand, .childScope, .projectChildren, .ok, .error, .panes, .paneOpened, .paneContent, .reviewResult, .automations,
              .agents, .message, .agentRequest, .agentResult, .suggestion, .design, .designBoard, .designWritten, .designEdited,
              .designComments, .designComment, .designSystems, .designSystem, .designSystemWritten, .designProposals,
              .designBatchEdited, .designSearchResult, .designCheckpoints, .designRendered, .designExtracted,
-             .designReference, .designNote, .browserResult, .projectResult:
+             .projectPublish, .projectRuntime, .designReference, .designNote, .browserResult, .projectResult:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 33
+    static let caseCount = 37
     static let system = DesignSystemSummary(
         info: DesignSystemInfo(namespace: "acme-web", title: "acme-web", revision: 3, createdAt: 1_000, updatedAt: 2_000,
                                syncedAt: 2_000, ownerDesignID: DesignID(rawValue: "d1"), spaceID: SpaceID(rawValue: "s1"),
@@ -414,6 +419,11 @@ struct ExtensionReplyTests {
     )
 
     static let samples: [ExtensionReply] = [
+        .childScope(id: 78, scope: nil),
+        .childScope(id: 80, scope: .init(key: .init(ownerID: UUID(), projectID: ProjectID(), operationID: UUID()), workerAgentID: AgentID(), sessionID: "session", generation: "generation"), deadline: 1_800_000),
+        .projectChildren(id: 79, scope: .init(key: .init(ownerID: UUID(), projectID: ProjectID(), operationID: UUID()), workerAgentID: AgentID(), sessionID: "session", generation: "generation"), action: .stop),
+        .projectRuntime(id: 75, project: Project(name: "Owner project")),
+        .projectPublish(id: 76, result: .init(active: false)),
         .projectResult(id: 70, space: Space(name: "Project", path: "/tmp/project"), created: true),
         .projectResult(id: 71, space: nil, created: false),
         .parentInput,
@@ -590,6 +600,24 @@ struct ExtensionReplyTests {
         let result = try #require(edited["result"] as? [String: Any])
         #expect(result["revision"] as? Int == 5 && result["changed"] as? Bool == true && result["created"] as? Bool == false)
         #expect(result["warnings"] as? [String] == ["inner_html"] && result["sha256"] as? String == "9c0d")
+    }
+
+    @Test func resumedProjectScopesRoundTripAndLegacyScopesDefaultToEpochZero() throws {
+        let scope = ProjectChildScope(key: .init(ownerID: UUID(), projectID: .init(), operationID: UUID()),
+                                      workerAgentID: .init(), sessionID: "session", generation: "generation", epoch: 3)
+        let bytes = try JSONEncoder().encode(scope)
+        #expect(try JSONDecoder().decode(ProjectChildScope.self, from: bytes) == scope)
+        var legacy = try #require(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+        legacy.removeValue(forKey: "epoch")
+        let initial = try JSONDecoder().decode(ProjectChildScope.self, from: JSONSerialization.data(withJSONObject: legacy))
+        #expect(initial.epoch == 0 && initial != scope)
+        #expect(initial == ProjectChildScope(key: scope.key, workerAgentID: scope.workerAgentID, sessionID: scope.sessionID, generation: scope.generation))
+        let reply = ExtensionReply.projectChildren(id: 81, scope: scope, action: .stop)
+        #expect(try JSONDecoder().decode(ExtensionReply.self, from: JSONEncoder().encode(reply)) == reply)
+        let task = ProjectTask(operationID: UUID(), spaceID: .init(), title: "Legacy", prompt: "task")
+        #expect(try JSONDecoder().decode(ProjectTask.self, from: JSONEncoder().encode(task)).childScopeEpoch == nil)
+        let receipt = ProjectExecutionReceipt(key: scope.key, phase: .cancelled)
+        #expect(try JSONDecoder().decode(ProjectExecutionReceipt.self, from: JSONEncoder().encode(receipt)).childScopeEpoch == nil)
     }
 
     @Test func parentInputHasNoPayload() throws {

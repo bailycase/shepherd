@@ -538,13 +538,13 @@ struct DesignToolTests {
     }
 
     @Test func theDesignsDestinationSitsBetweenNewThreadAndAutomationsWhileTheToolIsOn() {
-        let off = SidebarDerivation.destinations(shown: nil, moreOpen: false, offlineHosts: 0, newThreadChord: "⌘N")
-        #expect(off.map(\.title) == ["New thread", "Automations", "More"])
+        let off = SidebarDerivation.destinations(shown: nil, newThreadChord: "⌘N")
+        #expect(off.map(\.title) == ["New thread", "Automations"])
         for shown in [MainDestination.designs, .newDesign] {
-            let on = SidebarDerivation.destinations(shown: shown, moreOpen: false, offlineHosts: 0, newThreadChord: "⌘N", designs: true)
-            #expect(on.map(\.title) == ["New thread", "Designs", "Automations", "More"])
+            let on = SidebarDerivation.destinations(shown: shown, newThreadChord: "⌘N", designs: true)
+            #expect(on.map(\.title) == ["New thread", "Designs", "Automations"])
             #expect(on[1].icon == .symbol("pencil.tip"))
-            #expect(on.map(\.selected) == [false, true, false, false])
+            #expect(on.map(\.selected) == [false, true, false])
         }
     }
 

@@ -136,7 +136,7 @@ extension ShepherdViewModel {
         let folder: String
         if design.buildsSystem {
             guard let space = design.sourceSpaceID.flatMap({ id in state.spaces.first { $0.id == id } }) else {
-                throw AgentStartFailure(message: "That project is gone.")
+                throw AgentStartFailure(message: "That space is gone.")
             }
             folder = space.path
         } else {

@@ -652,7 +652,7 @@ claude.ai is still checked against).
   files) from the project (`sourceSpaceID`: the system keeps its source repo, for Re-sync),
   named after it, and starts its agent in the designs space, working in the project's folder,
   with Settings' default model
-  and these words: "Build a design system from this project: read its tokens file, its component
+  and these words: "Build a design system from this space: read its tokens file, its component
   templates and a few pages (read only), write the system with system_write, and tell me what
   doesn't match." A project that has a build opens it instead. A build has no card and no Recents
   row; its system (the one whose `ownerDesignID` is the build) is its page.

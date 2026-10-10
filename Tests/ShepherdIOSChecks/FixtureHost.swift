@@ -133,7 +133,8 @@ final class FixtureHost: @unchecked Sendable {
             guard token == FixtureHostData.token, !data.refusesToken else {
                 return [.error(id: id, code: RemoteProtocol.unauthorizedCode, message: "bad token")]
             }
-            return [.helloOk(id: id, protocolVersion: RemoteProtocol.version, capabilities: data.capabilities ?? data.defaultCapabilities)]
+            let capabilities = (data.capabilities ?? data.defaultCapabilities).filter { $0 != RemoteProtocol.projectMessageImagesCapability && $0 != RemoteProtocol.logicalProjectsCapability && $0 != RemoteProtocol.projectWorkerCapability && $0 != RemoteProtocol.logicalProjectFilesCapability && $0 != RemoteProtocol.projectExecutionCapability }
+            return [.helloOk(id: id, protocolVersion: RemoteProtocol.version, capabilities: capabilities)]
         case .stateFetch(let id):
             note("stateFetch")
             return [.state(id: id, state: data.state)]
@@ -205,6 +206,10 @@ final class FixtureHost: @unchecked Sendable {
              .agentAction(let id, _, _), .upload(let id, _):
             mutation(Self.kind(request))
             return [.error(id: id, code: "fixture", message: refused)]
+        case .projectExecution(let id, _):
+            return [.error(id: id, code: "unsupported", message: "Fixture has no executor.")]
+        case .logicalProjects(let id, _):
+            return [.error(id: id, code: "unsupported", message: "This fixture does not serve logical projects.")]
         case .automation(let id, _, let command):
             // Reading an automation's runs is the one automation request that changes nothing.
             if command == .runs { return nil }

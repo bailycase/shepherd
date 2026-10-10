@@ -87,7 +87,7 @@ struct AgentSettings: View {
                     SettingsSwitch(label: "Defer rarely used tools", isOn: $settings.deferTools)
                 }
                 SettingsRow(title: "Codemode",
-                            subtitle: "Lets the agent run JavaScript to batch tool calls and filter results, up to 128 calls and five minutes per script. Direct tool calls stay available. Scripts cannot call classifier or image models directly. Projects can override this default.") {
+                            subtitle: "Lets the agent run JavaScript to batch tool calls and filter results, up to 128 calls and five minutes per script. Direct tool calls stay available. Scripts cannot call classifier or image models directly. Spaces can override this default.") {
                     SettingsSwitch(label: "Codemode", isOn: $settings.codemode)
                 }
             }

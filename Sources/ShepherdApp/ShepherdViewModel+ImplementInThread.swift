@@ -99,7 +99,7 @@ extension ShepherdViewModel {
     /// the same creation as the New thread page's.
     private func startImplementThread(_ model: ImplementSheetModel, piece: String, select: Bool) async throws -> AgentID {
         guard let project = model.chosenProject, let space = state.spaces.first(where: { $0.id == project.id }) else {
-            throw DesignReferenceFailure("That project is gone.")
+            throw DesignReferenceFailure("That space is gone.")
         }
         var config = NewAgentConfig(spaceID: space.id, workingDirectory: space.path, model: settings.agentDefaults.model,
                                     thinking: settings.defaultThinking, initialPrompt: nil)

@@ -30,7 +30,7 @@ public enum RemoteProtocol {
     /// sends only for a client that lists it.
     /// And it runs an agent's browser tools on its own page when the host asks
     /// (`browserDriveCapability`), which a host asks only of a client that lists it.
-    public static let clientCapabilities = [nativeQueueCapability, thinkingLevelsCapability, designsCapability, browserTunnelCapability, browserDriveCapability]
+    public static let clientCapabilities = [projectPublicationsCapability, projectWorkerCapability, projectPlacementCapability, logicalProjectRuntimeCapability, projectExecutionCapability, nativeQueueCapability, thinkingLevelsCapability, designsCapability, browserTunnelCapability, browserDriveCapability]
     public static let version = 1
     /// A host's final reply to a `hello` whose token it refused; it closes the connection after.
     public static let unauthorizedCode = "unauthorized"
@@ -115,9 +115,13 @@ public enum RemoteProtocol {
     public static let nativeGoalCapability = "native.goal.v1"
     /// Live Settings ▸ Experiments ▸ Goals control on this host.
     public static let goalExperimentCapability = "experiments.goals.v1"
+    public static let projectsExperimentCapability = "experiments.projects.v1"
     /// The creation page may choose a tier before the opening prompt reaches pi.
     public static let createAgentServiceTierCapability = "agent.create.serviceTier.v1"
-    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, projectsCapability, projectDetailsCapability, projectMCPCapability, projectTrustCapability, skillsCapability, piSkillsCapability, createAgentImagesCapability, terminalControlCapability, designContextCapability, designsCapability, designMarkupCapability, designDeleteCapability, nativeRetryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability]
+    public static let projectExecutionCapability = "logicalProjects.execution.v1"
+    public static let logicalProjectRuntimeCapability = "logicalProjectRuntime.v1"
+    public static let projectMessageImagesCapability = "logicalProjectRuntime.images.v1"
+    public static let capabilities = [projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, projectsCapability, projectDetailsCapability, projectMCPCapability, projectTrustCapability, skillsCapability, piSkillsCapability, createAgentImagesCapability, terminalControlCapability, designContextCapability, designsCapability, designMarkupCapability, designDeleteCapability, nativeRetryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -512,6 +516,9 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     case skills(id: Int, request: RemoteSkillsRequest)
     /// Project-only files, never the host's global settings (`projectsCapability`).
     case projects(id: Int, request: RemoteProjectsRequest)
+    case logicalProjectRuntime(id: Int, request: ProjectRuntimeTransport)
+    case logicalProjects(id: Int, request: LogicalProjectsRequest)
+    case projectExecution(id: Int, request: ProjectExecutionRequest)
     /// Read or change the host's designs (`RemoteProtocol.designsCapability`).
     case design(id: Int, request: RemoteDesignRequest)
     /// One message of a Browser tunnel (`RemoteProtocol.browserTunnelCapability`). Nothing answers it
@@ -540,12 +547,13 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     }
 
     private enum Kind: String, Codable {
-        case nativeThread
+        case nativeThread, projectExecution
         case hello, stateFetch, attach, detach, input, resize, paste
         case openPane, closePane, resizePaneSplit
         case listDir, listModels, addSpace, createAgent, agentAction, agentQuery, upload, creationOptions
         case automation
-        case instructions, suggestions, hostSettings, skills, projects
+        case logicalProjectRuntime
+        case instructions, suggestions, hostSettings, skills, projects, logicalProjects
         case design
         case tunnel
         case browserClaim, browserRelease, browserAnswer
@@ -579,6 +587,12 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case .hostSettings:
             self = .hostSettings(id: try c.decode(Int.self, forKey: .id),
                                  request: try c.decode(RemoteHostSettingsRequest.self, forKey: .request))
+        case .logicalProjectRuntime:
+            self = .logicalProjectRuntime(id: try c.decode(Int.self, forKey: .id), request: try c.decode(ProjectRuntimeTransport.self, forKey: .request))
+        case .projectExecution:
+            self = .projectExecution(id: try c.decode(Int.self, forKey: .id), request: try c.decode(ProjectExecutionRequest.self, forKey: .request))
+        case .logicalProjects:
+            self = .logicalProjects(id: try c.decode(Int.self, forKey: .id), request: try c.decode(LogicalProjectsRequest.self, forKey: .request))
         case .projects:
             self = .projects(id: try c.decode(Int.self, forKey: .id), request: try c.decode(RemoteProjectsRequest.self, forKey: .request))
         case .skills:
@@ -739,6 +753,17 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encode(Kind.hostSettings, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(request, forKey: .request)
+        case .logicalProjectRuntime(let id, let request):
+            try c.encode(Kind.logicalProjectRuntime, forKey: .type)
+            try c.encode(id, forKey: .id); try c.encode(request, forKey: .request)
+        case .projectExecution(let id, let request):
+            try c.encode(Kind.projectExecution, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(request, forKey: .request)
+        case .logicalProjects(let id, let request):
+            try c.encode(Kind.logicalProjects, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(request, forKey: .request)
         case .projects(let id, let request):
             try c.encode(Kind.projects, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -884,6 +909,10 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     /// A skills request's answer (`RemoteRequest.skills`).
     case skills(id: Int, result: RemoteSkillsResult)
     case projects(id: Int, result: RemoteProjectsResult)
+    case logicalProjectRuntime(id: Int, result: ProjectRuntimeResult)
+    case logicalProjects(id: Int, result: LogicalProjectsResult)
+    case projectExecution(id: Int, result: ProjectExecutionResult)
+    case projectExecutionChanged(key: ProjectExecutionKey, revision: UInt64)
     /// A design request's answer (`RemoteRequest.design`).
     case design(id: Int, result: RemoteDesignResult)
     /// Pushed to a client watching the design (`RemoteDesignRequest.watch`) after each change to
@@ -904,7 +933,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     case browserDrive(BrowserDrivePush)
 
     private enum CodingKeys: String, CodingKey {
-        case result, frame
+        case result, frame, executionKey, executionRevision
         case type, id, protocolVersion, capabilities, code, message, state
         case sessionID, data, exitCode, spaceID, agentID, paneID
         case path, parent, dirs, models, defaultModel, withoutThinking, thinkingLevels, serviceTiers, contexts, attachment, options
@@ -914,14 +943,14 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     }
 
     private enum Kind: String, Codable {
-        case nativeThread
+        case nativeThread, projectExecution, projectExecutionChanged
         case agentResult, helloOk, ok, paneOpened, error, state, stateChanged, attached, output, sessionExited
         case dirListing, models, spaceAdded, agentCreated, uploadResult, creationOptions
         case automationResult
-        case instructions, suggestions, hostSettings, skills, projects
+        case instructions, suggestions, hostSettings, skills, projects, logicalProjects
         case design, designChanged, capabilitiesChanged
         case tunnel
-        case browserClaimed, browserDrive
+        case browserClaimed, browserDrive, logicalProjectRuntime
     }
 
     public init(from decoder: Decoder) throws {
@@ -968,6 +997,14 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case .hostSettings:
             self = .hostSettings(id: try c.decode(Int.self, forKey: .id),
                                  settings: try c.decode(HostSettings.self, forKey: .settings))
+        case .logicalProjectRuntime:
+            self = .logicalProjectRuntime(id: try c.decode(Int.self, forKey: .id), result: try c.decode(ProjectRuntimeResult.self, forKey: .result))
+        case .projectExecution:
+            self = .projectExecution(id: try c.decode(Int.self, forKey: .id), result: try c.decode(ProjectExecutionResult.self, forKey: .result))
+        case .projectExecutionChanged:
+            self = .projectExecutionChanged(key: try c.decode(ProjectExecutionKey.self, forKey: .executionKey), revision: try c.decode(UInt64.self, forKey: .executionRevision))
+        case .logicalProjects:
+            self = .logicalProjects(id: try c.decode(Int.self, forKey: .id), result: try c.decode(LogicalProjectsResult.self, forKey: .result))
         case .projects:
             self = .projects(id: try c.decode(Int.self, forKey: .id), result: try c.decode(RemoteProjectsResult.self, forKey: .result))
         case .skills:
@@ -1087,6 +1124,21 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             try c.encode(Kind.hostSettings, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(settings, forKey: .settings)
+        case .logicalProjectRuntime(let id, let result):
+            try c.encode(Kind.logicalProjectRuntime, forKey: .type)
+            try c.encode(id, forKey: .id); try c.encode(result, forKey: .result)
+        case .projectExecution(let id, let result):
+            try c.encode(Kind.projectExecution, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(result, forKey: .result)
+        case .projectExecutionChanged(let key, let revision):
+            try c.encode(Kind.projectExecutionChanged, forKey: .type)
+            try c.encode(key, forKey: .executionKey)
+            try c.encode(revision, forKey: .executionRevision)
+        case .logicalProjects(let id, let result):
+            try c.encode(Kind.logicalProjects, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(result, forKey: .result)
         case .projects(let id, let result):
             try c.encode(Kind.projects, forKey: .type)
             try c.encode(id, forKey: .id)

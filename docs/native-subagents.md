@@ -39,6 +39,14 @@ parent launch.
 Concurrency is shared across direct calls and workflows. A parent retains up to 64 child records
 and 32 workflows, and runs at most four workflows at once.
 
+Project coordinators and workers do **not** register child/workflow tools or commands, locally
+or remotely. They cannot start, resume or message helpers; workers do coding work directly and
+report extra work to the coordinator for visible Project threads under Threads at once. Manual
+turns in a Project-launched process remain restricted. Ordinary non-Project threads retain the
+runtime described here. Existing scope/Stop/drain machinery remains for activation identity,
+publication fencing and legacy-controller cleanup, not new admission.
+[Project policy and compatibility](project-execution.md#helpers-and-scoped-cancellation).
+
 ## Profiles and discovery
 
 For model, thinking, and context, the most specific source wins: the explicit call, then the

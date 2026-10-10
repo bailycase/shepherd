@@ -173,7 +173,7 @@ struct ListPerformanceTests {
         defer { window.close() }
         #expect(rows["sidebar.row", default: 0] > 0, "\(rows)")
         #expect(rows["sidebar.row", default: 0] <= 2 * Self.sidebarRowsOnScreen, "\(rows)")
-        #expect(rows["sidebar.header", default: 0] <= 2, "Pinned and Recents: \(rows)")
+        #expect(rows["sidebar.header", default: 0] <= 3, "Pinned, Projects and Recents: \(rows)")
         #expect(rows["sidebar.lists", default: 0] <= 1, "one derivation for the whole list: \(rows)")
     }
 

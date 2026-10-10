@@ -59,6 +59,7 @@ enum HostSettingsMapping {
             queueDelivery: app.queueDelivery,
             goalCrossProviderEvaluation: app.goalCrossProviderEvaluation,
             goalsEnabled: app.goalsEnabled,
+            projectsEnabled: app.projectsEnabled,
             worktreeBase: app.worktreeBaseMode == .head ? .head : .fresh,
             fetchBeforeCreating: app.worktreeFetchBeforeCreate,
             commitRemainingWork: app.worktreeAutoCommit,
@@ -80,6 +81,7 @@ enum HostSettingsMapping {
         case .queueDelivery(let mode): app.queueDelivery = mode
         case .goalCrossProviderEvaluation(let on): app.goalCrossProviderEvaluation = on
         case .goalsEnabled(let on): app.goalsEnabled = on
+        case .projectsEnabled(let on): app.projectsEnabled = on
         case .worktreeBase(let base): app.worktreeBaseMode = base == .head ? .head : .fresh
         case .fetchBeforeCreating(let on): app.worktreeFetchBeforeCreate = on
         case .commitRemainingWork(let on): app.worktreeAutoCommit = on

@@ -685,6 +685,31 @@ extension RPCThreadState {
     /// Stop: pi's queue is emptied first (pi's recipe; `abort` alone still delivers it), steering
     /// items return to the queue, and the queue pauses until the user resumes it.
     /// Stop/reset/exit must answer a send even while its filesystem preparation is still held.
+    /// Project cancellation must not erase later ordinary sends in this same worker.
+    func cancelExecutionPrompt(_ operation: UUID) -> Bool {
+        if let dispatch = dispatches.first(where: { $0.id == operation || $0.items.contains { $0.entry.id == operation } }),
+           let done = preparingPrompts.removeValue(forKey: dispatch.id) {
+            let wasPaused = paused, notice = queueNotice
+            dropDispatch(dispatch.id)
+            discardPreparedTurn?()
+            // deliver's failure callback restores its batch and pauses it. Let it restore any
+            // unrelated messages first, then withdraw only this operation and preserve queue policy.
+            done(.failure(code: "send_cancelled", message: "Project execution was cancelled before delivery."))
+            items.removeAll { $0.entry.id == operation }
+            paused = wasPaused
+            queueNotice = notice
+            commit()
+            drainIfReady()
+            return true
+        }
+        if let index = items.firstIndex(where: { $0.entry.id == operation && $0.entry.state != .steering }) {
+            items.remove(at: index)
+            commit()
+            return true
+        }
+        return false
+    }
+
     func cancelPreparingPrompts() {
         cancelWaitingInputs()
         let pending = preparingPrompts
@@ -698,7 +723,10 @@ extension RPCThreadState {
         if !pending.isEmpty { commit() }
     }
 
-    func stop(_ done: @escaping (Result<RPCResponse, RPCError>) -> Void) {
+    func stop(afterProjectChildren helpersUnknown: Bool? = nil, ifCurrent: @escaping () -> Bool = { true },
+              _ done: @escaping (Result<RPCResponse, RPCError>) -> Void) {
+        guard ifCurrent() else { done(.failure(.inputRejected)); return }
+        refuseDialogs()
         goalYieldGeneration = nil
         // pi's abort signal does not reach a nested pre-settlement model call. Cancel the
         // controller first; stdin preserves this command before clear_queue and abort.
@@ -712,12 +740,21 @@ extension RPCThreadState {
         paused = true
         queueNotice = nil
         cancelPreparingPrompts()
-        clearPiQueue { [weak self] steering, followUp, _ in
-            guard let self else { return }
-            self.reclaim(steering: steering, followUp: followUp)
-            self.commit()
-            self.session.request(.abort, completion: done)
+        let abort: (Bool) -> Void = { [weak self] helpersUnknown in
+            guard ifCurrent() else { done(.failure(.inputRejected)); return }
+            self?.clearPiQueue { [weak self] steering, followUp, _ in
+                guard let self else { return }
+                guard ifCurrent() else { done(.failure(.inputRejected)); return }
+                self.reclaim(steering: steering, followUp: followUp)
+                self.commit()
+                self.session.request(.abort) { result in done(helpersUnknown ? .failure(.timeout) : result) }
+            }
         }
+        if let helpersUnknown { abort(helpersUnknown) }
+        else if let stopProjectChildren {
+            // Still stop the root on a helper failure, without claiming the combined stop succeeded.
+            stopProjectChildren { abort($0 != nil) }
+        } else { abort(false) }
     }
 
     /// `agent_settled`: pi is idle. Prompts it accepted but never started are over; steering it
@@ -785,6 +822,7 @@ extension RPCThreadState {
         if let sentReferences { recordReferences(sentReferences, entryID: id) }
         if let origin { recordOrigin(origin, entryID: id) }
         if let operationID { operationsByEntry[id] = operationID }
+        onUserMessageConsumed?(operationID, id)
         unyieldGoalIfQueueEmpty()
     }
 

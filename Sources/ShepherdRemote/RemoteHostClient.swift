@@ -54,6 +54,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// A design this client watches changed on the host (`RemoteDesignRequest.watch`): its files'
     /// new revision, its comments', or both. A hint to pull. Main queue.
     public var onDesignChanged: ((DesignID, UInt64?, UInt64?) -> Void)?
+    public var onProjectExecutionChanged: ((ProjectExecutionKey, UInt64) -> Void)?
     /// What the host offers changed while connected (its Design tool turned on or off);
     /// `capabilities` already holds the new list. Main queue.
     public var onCapabilitiesChanged: ((Set<String>) -> Void)?
@@ -100,6 +101,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         case output(SessionID, Data)
         case exited(SessionID, Int32?)
         case designChanged(DesignID, UInt64?, UInt64?)
+        case projectExecutionChanged(ProjectExecutionKey, UInt64)
         case capabilities(Set<String>)
         case browserDrive(BrowserDrivePush)
     }
@@ -706,6 +708,9 @@ public final class RemoteHostClient: @unchecked Sendable {
         if case .change(.goalsEnabled) = request, !capabilities.contains(RemoteProtocol.goalExperimentCapability) {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to toggle the Goals experiment.")
         }
+        if case .change(.projectsEnabled) = request, !capabilities.contains(RemoteProtocol.projectsExperimentCapability) {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to toggle the Projects experiment.")
+        }
         let reply = try await self.request { .hostSettings(id: $0, request: request) }
         switch reply {
         case .hostSettings(_, let settings): return settings
@@ -737,25 +742,115 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
     }
 
+    public func projectRuntime(_ request: ProjectRuntimeTransport) async throws -> ProjectRuntimeResult {
+        if case .worker = request, !capabilities.contains(RemoteProtocol.projectWorkerCapability) {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update the Project owner before opening its worker threads.")
+        }
+        if let native = request.nativeRequest {
+            if let references = native.designReferences, !references.isEmpty {
+                throw RemoteHostClientError.rejected(code: "design_references_local", message: Self.designReferencesRefusal)
+            }
+            if Self.overFrame(.logicalProjectRuntime(id: 0, request: request)) {
+                throw RemoteHostClientError.rejected(code: "too_large", message: native.images.isEmpty
+                    ? "The thread request is too large for the remote connection. Nothing was sent." : Self.imagesTooLarge)
+            }
+        }
+        if case .action(_, _, .assign(_, _, _, _, let host)) = request, let host, host != .local,
+           !capabilities.contains(RemoteProtocol.projectPlacementCapability) {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update the Project owner before selecting a remote executor.")
+        }
+        guard capabilities.contains(RemoteProtocol.logicalProjectRuntimeCapability) else {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the Project owner to coordinate work.")
+        }
+        if !request.messageImages.isEmpty {
+            guard capabilities.contains(RemoteProtocol.projectMessageImagesCapability) else {
+                throw RemoteHostClientError.rejected(code: "update_required", message: "Update the Project owner before sending images.")
+            }
+            if Self.overFrame(.logicalProjectRuntime(id: 0, request: request)) {
+                throw RemoteHostClientError.rejected(code: "too_large", message: Self.imagesTooLarge)
+            }
+        }
+        let reply: RemoteReply
+        do { reply = try await self.request({ .logicalProjectRuntime(id: $0, request: request) }) }
+        catch RemoteHostClientError.timeout {
+            throw RemoteHostClientError.outcomeUnknown(message: "Project request timed out. Refresh before acting; do not automatically retry.")
+        } catch RemoteHostClientError.disconnected {
+            throw RemoteHostClientError.outcomeUnknown(message: "Connection lost. Refresh before acting; do not automatically retry.")
+        }
+        switch reply {
+        case .logicalProjectRuntime(_, let result): return result
+        case .error(_, "outcome_unknown", let message): throw RemoteHostClientError.outcomeUnknown(message: message)
+        case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)
+        default: throw RemoteHostClientError.rejected(code: "protocol", message: "Unexpected Project runtime reply.")
+        }
+    }
+
+    /// Logical projects on this owning host, shared by Mac and iOS clients. No dispatch implied.
+    public func projectExecution(_ command: ProjectExecutionRequest) async throws -> ProjectExecutionResult {
+        guard !command.requiresPublications || capabilities.contains(RemoteProtocol.projectPublicationsCapability) else {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update the executor before publishing Project artifacts.")
+        }
+        guard !command.requiresPlacement || capabilities.contains(RemoteProtocol.projectPlacementCapability) else {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update the executor before using Project question controls.")
+        }
+        guard capabilities.contains(RemoteProtocol.projectExecutionCapability) else {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "This host does not offer Project execution.")
+        }
+        guard !Self.overFrame(.projectExecution(id: 0, request: command)) else {
+            throw RemoteHostClientError.rejected(code: "invalid_execution", message: "Execution request exceeds the frame limit.")
+        }
+        let reply = try await request { .projectExecution(id: $0, request: command) }
+        switch reply {
+        case .projectExecution(_, let result): return result
+        case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)
+        default: throw RemoteHostClientError.disconnected
+        }
+    }
+
+    public func logicalProjects(_ request: LogicalProjectsRequest) async throws -> LogicalProjectsResult {
+        switch request {
+        case .linkSpace(_, _, _, let host), .unlinkSpace(_, _, _, let host):
+            if let host, host != .local, !capabilities.contains(RemoteProtocol.projectPlacementCapability) {
+                throw RemoteHostClientError.rejected(code: "update_required", message: "Update the Project owner before linking remote Spaces.")
+            }
+        default: break
+        }
+        guard capabilities.contains(RemoteProtocol.logicalProjectsCapability) else {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to manage logical projects.")
+        }
+        guard !request.requiresProjectAutomations || capabilities.contains(RemoteProtocol.logicalProjectAutomationsCapability) else {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to manage Project automations.")
+        }
+        guard !request.requiresProjectFiles || capabilities.contains(RemoteProtocol.logicalProjectFilesCapability) else {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to preview Project artifacts.")
+        }
+        let reply = try await self.request { .logicalProjects(id: $0, request: request) }
+        switch reply {
+        case .logicalProjects(_, let result): return result
+        case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)
+        default: throw RemoteHostClientError.rejected(code: "protocol", message: "Unexpected logical projects reply.")
+        }
+    }
+
     /// Project-only configuration. Capability check happens before anything is sent to an old host.
     public func projects(_ request: RemoteProjectsRequest) async throws -> RemoteProjectsResult {
         guard !request.requiresProjectTrust || capabilities.contains(RemoteProtocol.projectTrustCapability) else {
-            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to approve project configuration.")
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to approve space configuration.")
         }
         guard !request.requiresMCP || capabilities.contains(RemoteProtocol.projectMCPCapability) else {
-            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to sign in to project MCP servers.")
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to sign in to space MCP servers.")
         }
         guard capabilities.contains(RemoteProtocol.projectsCapability) else {
-            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to edit its projects from here.")
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to edit its spaces from here.")
         }
         guard !request.requiresDetails || capabilities.contains(RemoteProtocol.projectDetailsCapability) else {
-            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to read project context and open its editor.")
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to read space context and open its editor.")
         }
         let reply = try await self.request { .projects(id: $0, request: request) }
         switch reply {
         case .projects(_, let result): return result
         case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)
-        default: throw RemoteHostClientError.rejected(code: "protocol", message: "Unexpected project settings reply.")
+        default: throw RemoteHostClientError.rejected(code: "protocol", message: "Unexpected space settings reply.")
         }
     }
 
@@ -1015,7 +1110,7 @@ public final class RemoteHostClient: @unchecked Sendable {
              .state(let id, _), .attached(let id, _),
              .dirListing(let id, _, _, _), .models(let id, _, _, _, _, _, _),
              .spaceAdded(let id, _), .agentCreated(let id, _), .automationResult(let id, _), .instructions(let id, _),
-             .suggestions(let id, _), .hostSettings(let id, _), .skills(let id, _), .projects(let id, _), .design(let id, _),
+             .suggestions(let id, _), .hostSettings(let id, _), .skills(let id, _), .projects(let id, _), .logicalProjects(let id, _), .logicalProjectRuntime(let id, _), .projectExecution(let id, _), .design(let id, _),
              .browserClaimed(let id, _):
             resumePending(id: id, with: reply)
         case .error(let id, _, _):
@@ -1031,6 +1126,8 @@ public final class RemoteHostClient: @unchecked Sendable {
             }
         case .sessionExited(let sessionID, let code):
             push(.exited(sessionID, code))
+        case .projectExecutionChanged(let key, let revision):
+            push(.projectExecutionChanged(key, revision))
         case .designChanged(let designID, let revision, let commentsRevision):
             push(.designChanged(designID, revision, commentsRevision))
         case .tunnel(let frame):
@@ -1062,6 +1159,7 @@ public final class RemoteHostClient: @unchecked Sendable {
                 case .state(let state): self.onStateChanged?(state)
                 case .output(let sessionID, let data): self.onOutput?(sessionID, data)
                 case .exited(let sessionID, let code): self.onSessionExited?(sessionID, code)
+                case .projectExecutionChanged(let key, let revision): self.onProjectExecutionChanged?(key, revision)
                 case .designChanged(let designID, let revision, let comments): self.onDesignChanged?(designID, revision, comments)
                 case .capabilities(let capabilities): self.onCapabilitiesChanged?(capabilities)
                 case .browserDrive(let push): self.onBrowserDrive?(push)

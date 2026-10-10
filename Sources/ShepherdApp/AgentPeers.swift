@@ -28,7 +28,7 @@ extension ShepherdViewModel {
         }
 
         // A design's agent is no thread: it has no peers, and no thread reaches it.
-        guard !state.isDesignAgent(sender) else {
+        guard state.isOrdinaryThread(sender) else {
             respond(.failed(code: "not_a_thread", message: "a design's agent does not coordinate with threads"))
             return
         }
@@ -46,8 +46,8 @@ extension ShepherdViewModel {
                 respond(.failed(code: "no_such_agent", message: "unknown agent \(targetAgentID)"))
                 return
             }
-            guard !state.isDesignAgent(target) else {
-                respond(.failed(code: "not_a_thread", message: "\(target.name) draws a design; it is not a thread"))
+            guard state.isOrdinaryThread(target) else {
+                respond(.failed(code: "not_a_thread", message: "\(target.name) is not an ordinary thread"))
                 return
             }
             // The target's panes extension adds report-only context or sends a user task.
@@ -68,8 +68,8 @@ extension ShepherdViewModel {
                 respond(.failed(code: "no_such_agent", message: "target no longer exists"))
                 return
             }
-            guard !state.isDesignAgent(target) else {
-                respond(.failed(code: "not_a_thread", message: "\(target.name) draws a design; it is not a thread"))
+            guard state.isOrdinaryThread(target) else {
+                respond(.failed(code: "not_a_thread", message: "\(target.name) is not an ordinary thread"))
                 return
             }
             Task { @MainActor in
@@ -122,7 +122,7 @@ extension ShepherdViewModel {
 
     /// What agent_list shows `sender`: every thread, and no design's agent.
     static func peerInfos(in state: ShepherdState, sender: AgentID) -> [AgentPeerInfo] {
-        state.agents.filter { !state.isDesignAgent($0) }.map { agent in
+        state.agents.filter { state.isOrdinaryThread($0) }.map { agent in
             AgentPeerInfo(
                 id: agent.id,
                 name: agent.name,

@@ -16,7 +16,7 @@ public enum NWSidebarStyle: String, CaseIterable, Identifiable, Sendable {
     public var title: String {
         switch self {
         case .activity: "Activity"
-        case .projects: "Projects"
+        case .projects: "Spaces"
         }
     }
 
@@ -24,7 +24,7 @@ public enum NWSidebarStyle: String, CaseIterable, Identifiable, Sendable {
     public var summary: String {
         switch self {
         case .activity: "Needs you, then Recents: every kind, newest first."
-        case .projects: "A folder for each project with its threads inside."
+        case .projects: "A folder for each space with its threads inside."
         }
     }
 }
@@ -35,9 +35,17 @@ public enum NWProjectMetrics {
     public static let chevronSlot: CGFloat = 14
     public static let chevron: CGFloat = 9
     /// The folder glyph.
-    public static let folder: CGFloat = 12
-    /// The gap between a project row's chevron, folder, name and count.
-    public static let gap: CGFloat = 6
+    public static let folder: CGFloat = 14
+    /// The gap between a space row's chevron slot, folder slot, name and count (ProjectLead-AddsSpace: 8pt).
+    public static let gap: CGFloat = 8
+    /// The Spaces and Projects headers (ProjectLead-AddsSpace): 34pt tall, the title `ui` 12.5/500 `textTertiary` at the
+    /// bottom with 2pt under it, 8pt in from the left and 2pt from the right, and a 24pt `+` with a 10pt glyph.
+    public static let headerHeight: CGFloat = 34
+    public static let headerBottom: CGFloat = 2
+    public static let headerLeading: CGFloat = 8
+    public static let headerTrailing: CGFloat = 2
+    /// Between this mode's rows and headers (`--space-xxs`).
+    public static let listSpacing: CGFloat = 2
     /// A project row sits 2pt further out than a thread row.
     public static let outdent: CGFloat = 2
     /// The + and ··· circles a hovered project row shows, 2pt apart, and their glyphs.
@@ -47,8 +55,10 @@ public enum NWProjectMetrics {
     /// The rolled-up dot's gap to the count.
     public static let rollupGap: CGFloat = 5
     /// The Projects header's + circle and its glyph.
-    public static let addButton: CGFloat = 18
-    public static let addGlyph: CGFloat = 9
+    public static let addButton: CGFloat = 24
+    public static let addGlyph: CGFloat = 10
+    /// The board's `+` button is 24pt (x 197...221) but its glyph is drawn at x 201...211, left of the box's center (ProjectLead-Started).
+    public static let addGlyphShift: CGFloat = -3.75
     /// A project being dragged, in place while the line marks where it lands.
     public static let draggedOpacity: Double = 0.55
 }
@@ -128,6 +138,7 @@ public struct NWProjectRow<MenuContent: View>: View, Equatable {
             Image(systemName: "folder")
                 .font(.system(size: NWProjectMetrics.folder, weight: .regular))
                 .foregroundStyle(nw.textSecondary)
+                .frame(width: NWSidebarMetrics.rowSlot)
             Text(name)
                 .font(density.rowTitleFont(weight: .medium))
                 .foregroundStyle(nw.textPrimary)
@@ -173,15 +184,13 @@ public struct NWProjectRow<MenuContent: View>: View, Equatable {
 
     /// The count, rolled up while collapsed.
     @ViewBuilder private var summary: some View {
-        let waiting = !expanded && rollup == .waiting
         HStack(spacing: NWProjectMetrics.rollupGap) {
-            if !expanded, rollup != .quiet {
-                NWSidebarDot(state: waiting ? .attention : .running)
-            }
+            // The boards draw a Space row as its count alone (ProjectLead-AddsSpace): the rollup is said to VoiceOver in the row's
+            // label ("needs you", "running") but draws no dot.
             if count > 0 {
                 Text("\(count)")
                     .font(.nwMono(10.5))
-                    .foregroundStyle(waiting ? Color.nw.lanternText : Color.nw.textTertiary)
+                    .foregroundStyle(Color.nw.textTertiary)
                     .monospacedDigit()
                     .nwContentTransition(.numeric())
             }
@@ -215,40 +224,73 @@ public struct NWProjectRow<MenuContent: View>: View, Equatable {
 
 // MARK: Projects header
 
-/// The tree's header (SidebarTree): "Projects" in Geist 11.5 medium `textTertiary`, spaced like
-/// Needs you and Recents, with an 18pt + circle trailing that opens `menu` (add a project, and
-/// bring back one hidden from the sidebar).
+/// A tree section's header (SidebarTree): its title in Geist 11.5 medium `textTertiary`, spaced like
+/// Needs you and Recents. Two kinds:
+///
+/// - **Projects** (ProjectLead-AddsSpace): an 18pt `+` circle that opens New project.
+/// - **Spaces**: the folder tree's header. The board draws no `+` here, so a Space header shows an
+///   18pt `+` menu only while a Space is hidden from the sidebar (bring it back); otherwise it is the title alone.
+///   Adding a Space stays in Settings ▸ Spaces and the existing menus.
 public struct NWProjectsHeader<MenuContent: View>: View, Equatable {
     let title: String
-    let menu: () -> MenuContent
+    let menu: (() -> MenuContent)?
+    let add: (() -> Void)?
+    let hasMenu: Bool
     @Environment(\.nwDensity) private var density
 
-    public init(_ title: String = "Projects", @ViewBuilder menu: @escaping () -> MenuContent) {
+    /// A header whose `+` opens `menu` (the Spaces header's hidden-space list).
+    public init(_ title: String = "Spaces", hasMenu: Bool = true, @ViewBuilder menu: @escaping () -> MenuContent) {
         self.title = title
         self.menu = menu
+        self.add = nil
+        self.hasMenu = hasMenu
     }
 
-    public nonisolated static func == (a: NWProjectsHeader, b: NWProjectsHeader) -> Bool { a.title == b.title }
+    public nonisolated static func == (a: NWProjectsHeader, b: NWProjectsHeader) -> Bool {
+        a.title == b.title && a.hasMenu == b.hasMenu && (a.add == nil) == (b.add == nil)
+    }
 
     public var body: some View {
-        HStack(spacing: NW.Space.s) {
+        HStack(alignment: .bottom, spacing: NW.Space.s) {
             Text(title)
-                .font(.nwSans(11.5, .medium))
+                .font(.nw(.ui))
                 .foregroundStyle(Color.nw.textTertiary)
                 .accessibilityAddTraits(.isHeader)
+                .padding(.bottom, NWProjectMetrics.headerBottom)
             Spacer(minLength: NW.Space.xs)
-            Menu(content: menu) {
-                Image(systemName: "plus").font(.system(size: NWProjectMetrics.addGlyph, weight: .semibold))
+            if let add {
+                Button(action: add) {
+                    Image(systemName: "plus").font(.system(size: NWProjectMetrics.addGlyph, weight: .medium))
+                        .offset(x: NWProjectMetrics.addGlyphShift)
+                }
+                .buttonStyle(.nwIcon(size: NWProjectMetrics.addButton, tint: .nw.textSecondary))
+                .nwHelp("New project")
+                .accessibilityLabel("New project")
+            } else if let menu, hasMenu {
+                Menu(content: menu) {
+                    Image(systemName: "plus").font(.system(size: NWProjectMetrics.addGlyph, weight: .medium))
+                }
+                .menuStyle(.button)
+                .menuIndicator(.hidden)
+                .buttonStyle(.nwIcon(size: NWProjectMetrics.addButton, tint: .nw.textSecondary))
+                .fixedSize()
+                .nwHelp("Hidden spaces")
+                .accessibilityLabel("Hidden spaces")
             }
-            .menuStyle(.button)
-            .menuIndicator(.hidden)
-            .buttonStyle(.nwIcon(size: NWProjectMetrics.addButton, tint: .nw.textTertiary))
-            .fixedSize()
-            .nwHelp("Add project")
-            .accessibilityLabel("Add project")
         }
-        .padding(EdgeInsets(top: density.sidebarHeaderTop, leading: density.sidebarRowPadding, bottom: NW.Space.xs,
-                            trailing: density.sidebarRowPadding))
+        .padding(EdgeInsets(top: 0, leading: NWProjectMetrics.headerLeading, bottom: NWProjectMetrics.headerBottom,
+                            trailing: NWProjectMetrics.headerTrailing))
+        .frame(maxWidth: .infinity, minHeight: NWProjectMetrics.headerHeight, alignment: .bottomLeading)
+    }
+}
+
+extension NWProjectsHeader where MenuContent == EmptyView {
+    /// The Projects header: a `+` that runs `add`.
+    public init(_ title: String, add: @escaping () -> Void) {
+        self.title = title
+        self.menu = nil
+        self.add = add
+        self.hasMenu = false
     }
 }
 

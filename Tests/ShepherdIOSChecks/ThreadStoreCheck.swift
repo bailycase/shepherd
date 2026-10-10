@@ -151,17 +151,20 @@ struct ThreadStoreCheck {
         pendingAction = nil
         await abort.value
 
-        // Leaving during a mutation retains the draft and ignores the late acknowledgement.
-        let lateSend = Task { await store.send() }
+        // Leaving first makes the outcome unknown. A matching late acknowledgement settles
+        // that send and clears its unchanged draft without reattaching or drawing an echo.
+        let lateSend = Task { await store.send(delivery: .followUp) }
         try await wait { pendingAction != nil }
         guard case .send(_, _, let lateID, _, _, _, _, _, _) = requests.last else { fatalError("send missing") }
         run.cancel()
         store.stop()
+        precondition(!store.ready && store.draft == "keep on unknown" && store.notice != nil)
         pendingAction!.resume(returning: .accepted(operationID: lateID))
         pendingAction = nil
-        await lateSend.value
+        let acceptedAfterStop = await lateSend.value
         await run.value
-        precondition(!store.ready && store.draft == "keep on unknown")
+        precondition(acceptedAfterStop && !store.ready && !store.busy)
+        precondition(store.draft.isEmpty && store.notice == nil && store.sentCount == 2)
         let stoppedCount = requests.count
         try await Task.sleep(for: .milliseconds(600))
         precondition(requests.count == stoppedCount)

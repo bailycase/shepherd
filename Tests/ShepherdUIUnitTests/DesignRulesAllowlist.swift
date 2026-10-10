@@ -24,6 +24,11 @@ enum DesignRuleAllowlist {
     private static let tint = "Predates the rule: a status color tinted with an alpha. Take it from AgentState's tint and text roles when the file is next changed."
     private static let bolt = "Predates NWGlyph: the outline automation bolt as a plain symbol string. Pass NWGlyph.automation.symbolName when the file is next changed."
 
+    private static let document = "Predates NWGlyph.document: the outline file glyph as a plain symbol string. Pass NWGlyph.document.symbolName when the file is next changed, with an iOS build to check it."
+    private static let resolved = "Predates NWGlyph.resolved: the outline checkmark.circle as a plain symbol string. Pass NWGlyph.resolved.symbolName when the file is next changed, with an iOS build to check it."
+
+    private static let chevrons = "Predates NWGlyph.popupChevrons: the up-down popup chevrons as a plain symbol string. Pass NWGlyph.popupChevrons when the file is next changed."
+
     static let entries: [DesignRuleException] = [
         // Raw colors: each is something other than app chrome, or a known fix.
         .init(.rawColor, "App/iOS/DesignPad/PadDesignMarkup.swift", 1, "Flattens an exported drawing onto a white page: image content, not chrome."),
@@ -38,6 +43,11 @@ enum DesignRuleAllowlist {
         .init(.statusTintByOpacity, "Packages/ShepherdUI/Sources/ShepherdUI/Components/PiSignIn/SheetParts.swift", 2, tint),
         // Shared glyphs named as raw symbols.
         .init(.rawGlyphName, "App/iOS/Automations/AutomationsScreen.swift", 1, bolt),
+        .init(.rawGlyphName, "App/iOS/Review/DiffScreen.swift", 1, resolved),
+        .init(.rawGlyphName, "App/iOS/Search/AgentActionSheets.swift", 1, resolved),
+        .init(.rawGlyphName, "App/iOS/Settings/InstructionsScreens.swift", 1, document),
+        .init(.rawGlyphName, "App/iOS/Settings/SettingsRoute.swift", 1, document),
+        .init(.rawGlyphName, "App/iOS/Settings/SkillsScreens.swift", 1, document),
         .init(.rawGlyphName, "App/iOS/Composer/ComposerControls.swift", 1, "The iOS composer draws its own Fast bolt, which NWFastBolt and NWGlyph.fastBolt exist to prevent. Move it to NWGlyph.fastBolt, with an iOS build to check it."),
         .init(.rawGlyphName, "App/iOS/Home/AutomationRow.swift", 1, bolt),
         .init(.rawGlyphName, "App/iOS/Home/HomeRows.swift", 2, bolt),
@@ -48,6 +58,10 @@ enum DesignRuleAllowlist {
         .init(.rawGlyphName, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Automations/Automations.swift", 1, bolt),
         .init(.rawGlyphName, "Sources/ShepherdApp/SettingsExperiments.swift", 1, bolt),
         .init(.rawGlyphName, "Sources/ShepherdApp/SidebarModel.swift", 7, bolt),
+        .init(.rawGlyphName, "App/iOS/Review/ReviewParts.swift", 1, chevrons),
+        .init(.rawGlyphName, "App/iOS/Settings/HostSettingsScreens.swift", 1, chevrons),
+        .init(.rawGlyphName, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Controls/Pickers.swift", 1, chevrons),
+        .init(.rawGlyphName, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Review/TouchDiff.swift", 1, chevrons),
         // Literal font sizes.
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Agents/AgentParts.swift", 1, font),
         .init(.rawFontSize, "Packages/ShepherdUI/Sources/ShepherdUI/Components/Agents/Inspector.swift", 3, font),

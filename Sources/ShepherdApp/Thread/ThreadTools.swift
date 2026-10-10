@@ -12,15 +12,51 @@ struct ActivityLinesView: View, Equatable {
     /// Lines that stream in once the turn is on screen make their entrance.
     var entering = false
 
+    /// A Project conversation's resolver for typed references; nil in every ordinary thread.
+    var cards: ProjectActionCards?
+
+    /// The call whose plan is the turn's latest explicit one (`NativeTurnPresentation.latestProjectPlan`). Its Steps card is drawn
+    /// here; an earlier update to the plan is superseded and draws nothing, so no plan row is ever drawn twice and none as an
+    /// activity line. nil in a turn with no plan.
+    var planCallID: String?
+
+    /// What each typed reference in these bursts resolves to now. Part of equality, so the line redraws when a task changes.
+    private var resolutions: [ProjectActionResolver.Card?] {
+        guard let cards else { return [] }
+        return bursts.map { $0.calls.first?.projectAction.flatMap(cards.resolved) }
+    }
+
     static func == (lhs: ActivityLinesView, rhs: ActivityLinesView) -> Bool {
-        lhs.bursts == rhs.bursts && lhs.entering == rhs.entering && (lhs.review == nil) == (rhs.review == nil)
+        lhs.bursts == rhs.bursts && lhs.entering == rhs.entering && lhs.planCallID == rhs.planCallID && (lhs.review == nil) == (rhs.review == nil)
+            && lhs.resolutions == rhs.resolutions
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppLayout.activitySpacing) {
-            ForEach(bursts) { burst in
-                ActivityLineView(burst: burst, review: review).equatable().nwArrival(entering)
+            ForEach(Array(bursts.enumerated()), id: \.element.id) { index, burst in
+                if let call = burst.calls.first, burst.calls.count == 1, let plan = call.projectPlan {
+                    if call.id == planCallID {
+                        NWLeadStepsCard(steps: plan.steps.map { .init(text: $0.text, state: Self.state($0.state)) }).nwArrival(entering)
+                    }
+                } else if burst.calls.first?.projectAction != nil, burst.calls.count == 1, let cards {
+                    // A Project tool's typed result: the task or Space card when it still resolves, else nothing (a gone task is
+                    // never redrawn from its old receipt).
+                    if let card = resolutions[index] { cards.card(card).nwArrival(entering) }
+                } else {
+                    ActivityLineView(burst: burst, review: review).equatable().nwArrival(entering)
+                }
             }
+        }
+    }
+}
+
+extension ActivityLinesView {
+    static func state(_ state: NativeProjectPlan.State) -> NWLeadStepsCard.State {
+        switch state {
+        case .pending: .pending
+        case .current: .current
+        case .done: .done
+        case .failed: .failed
         }
     }
 }

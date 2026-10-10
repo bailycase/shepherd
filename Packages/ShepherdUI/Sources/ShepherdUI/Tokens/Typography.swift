@@ -273,6 +273,15 @@ extension View {
 
     private static var cache: [Key: CGFloat] = [:]
 
+    /// Half of the leading CSS adds above and below a line of `lineHeight` (a multiple of the size): fractional, as CSS's is, where
+    /// `extra` rounds to a whole point (13.5pt at 1.6 is 21.6, and a line the text system sets at 18 needs 1.8 each side, not 2).
+    static func halfLeading(size: CGFloat, lineHeight: CGFloat) -> CGFloat {
+        let scaled = size * ThemeStore.shared.textScale
+        let ct = CTFontCreateWithName(NWFonts.postScriptName(mono: false, weight: .regular) as CFString, scaled, nil)
+        let line = CTFontGetAscent(ct).rounded(.up) + CTFontGetDescent(ct).rounded(.up) + CTFontGetLeading(ct).rounded(.up)
+        return max(0, (scaled * lineHeight - line) / 2)
+    }
+
     static func extra(size: CGFloat, weight: Font.Weight, mono: Bool, lineHeight: CGFloat) -> CGFloat {
         let scaled = size * ThemeStore.shared.textScale
         let key = Key(size: scaled, weight: weight, mono: mono, lineHeight: lineHeight)

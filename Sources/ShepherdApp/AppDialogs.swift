@@ -49,6 +49,19 @@ struct AppDialogs: ViewModifier {
             .sheet(item: $vm.addingChildProject) { model in
                 ChildProjectSheet(model: model, dismiss: { vm.addingChildProject = nil })
             }
+            .sheet(item: $vm.assigningProjectTask) { shown in
+                // Same guard as the New project sheet below: a dismissing sheet must not write its last draft back.
+                if let ref = vm.selectedLogicalProject {
+                    AssignProjectTaskSheet(vm: vm, ref: ref, draft: Binding(get: { vm.assigningProjectTask ?? shown }, set: { if vm.assigningProjectTask != nil { vm.assigningProjectTask = $0 } }),
+                                           dismiss: { vm.assigningProjectTask = nil })
+                        .dialogSheetFrame()
+                }
+            }
+            .sheet(item: Binding(get: { vm.projectsEnabled ? vm.newLogicalProject : nil }, set: { vm.newLogicalProject = $0 })) { shown in
+                // A dismissing sheet writes its last value back; only write while a draft exists, so turning Projects off (which clears it) stays cleared.
+                NewProjectSheet(vm: vm, draft: Binding(get: { vm.newLogicalProject ?? shown }, set: { if vm.newLogicalProject != nil { vm.newLogicalProject = $0 } }),
+                                dismiss: { vm.newLogicalProject = nil })
+            }
             .sheet(item: $vm.spacePickerTarget) { target in
                 spacePicker(target)
                     .dialogSheetFrame()
@@ -255,7 +268,7 @@ struct ProjectRenameDialog: View {
     }
 
     var body: some View {
-        RenameDialog(title: "Rename project", caption: error ?? "Display name only. The folder name and location stay unchanged.", name: space.name) { name in
+        RenameDialog(title: "Rename space", caption: error ?? "Display name only. The folder name and location stay unchanged.", name: space.name) { name in
             let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
             if let problem = Self.problem(name) { error = problem; return }
             vm.renameSpace(space.id, to: name)
@@ -272,12 +285,12 @@ struct SpaceDeleteDialog: View {
     var body: some View {
         let count = vm.state.agents.count { $0.spaceID == space.id }
         DialogSheet(
-            title: "Remove project",
+            title: "Remove space",
             subtitle: "Removes \(space.name) from the sidebar and stops its \(count) agent\(count == 1 ? "" : "s"). "
-                + "The local folder and all its files are kept. Saved conversations and project history remain. Child projects stay registered.",
+                + "The local folder and all its files are kept. Saved conversations and space history remain. Child spaces stay registered.",
             actions: [
                 DialogAction("Cancel", kind: .cancel) { vm.spaceDeleteTarget = nil },
-                DialogAction("Remove project", kind: .destructive) {
+                DialogAction("Remove space", kind: .destructive) {
                     let id = space.id
                     vm.spaceDeleteTarget = nil
                     // Deleting a space tears down mounted terminal layouts — a huge view-tree

@@ -55,8 +55,8 @@ struct ProjectSettingsDetail: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: NW.Space.m) {
                 Button { Task { await model.navigate(.close) } } label: {
-                    Text("Projects").frame(minHeight: NW.Height.controlS).contentShape(Rectangle())
-                }.buttonStyle(.nwRow(focusColor: .nw.running)).accessibilityLabel("Back to Projects").disabled(model.saving || cookies.clearing)
+                    Text("Spaces").frame(minHeight: NW.Height.controlS).contentShape(Rectangle())
+                }.buttonStyle(.nwRow(focusColor: .nw.running)).accessibilityLabel("Back to Spaces").disabled(model.saving || cookies.clearing)
                 NWGlyph.Settings.next.image.foregroundStyle(Color.nw.textSecondary).accessibilityHidden(true)
                 Text(project.project.name).foregroundStyle(Color.nw.textSecondary).lineLimit(1)
             }.font(.nwSans(AppLayout.projectFileSize)).foregroundStyle(Color.nw.textSecondary)
@@ -95,7 +95,7 @@ struct ProjectSettingsDetail: View {
                                 }.contentShape(Rectangle())
                         }.buttonStyle(.nwRow(radius: AppLayout.projectTabRadius, focusColor: .nw.running))
                             .onHover { hoveredTab = $0 ? label : nil }
-                            .accessibilityLabel("Project category \(label)")
+                            .accessibilityLabel("Space category \(label)")
                             .disabled(model.saving || model.fileLoading || cookies.clearing)
                     }
                     Button { Task { await model.navigate(.browser) } } label: {
@@ -108,7 +108,7 @@ struct ProjectSettingsDetail: View {
                             }.contentShape(Rectangle())
                     }.buttonStyle(.nwRow(radius: AppLayout.projectTabRadius, focusColor: .nw.running))
                         .onHover { hoveredTab = $0 ? "Browser" : nil }
-                        .accessibilityLabel("Project category Browser").disabled(model.saving || cookies.clearing)
+                        .accessibilityLabel("Space category Browser").disabled(model.saving || cookies.clearing)
                 }
             }.scrollIndicators(.hidden).frame(height: AppLayout.projectTabHeight)
                 .background(alignment: .bottom) { Color.nw.lineSubtle.frame(height: NWSettingsNavMetrics.borderWidth) }
@@ -156,9 +156,9 @@ struct ProjectSettingsDetail: View {
             if model.selectedFile?.path == ".pi/settings.json", model.fileLoaded {
                 SettingsGroup(title: "Tools") {
                     SettingsRow(title: "Codemode",
-                                subtitle: "Overrides this host's global setting for this project. Save the file, then start or restart the agent.",
+                                subtitle: "Overrides this host's global setting for this space. Save the file, then start or restart the agent.",
                                 problem: model.codemodeProblem) {
-                        NWSegmentedPicker("Project codemode", selection: $model.projectCodemode,
+                        NWSegmentedPicker("Space codemode", selection: $model.projectCodemode,
                                           options: [(ProjectsModel.CodemodeChoice.inherit, "Use global default"), (.on, "On"), (.off, "Off")])
                             .disabled(model.codemodeProblem != nil || model.saving || model.selected?.unavailable != nil)
                     }
@@ -186,12 +186,12 @@ struct ProjectSettingsDetail: View {
             NWHairline()
             if model.fileLoaded {
                 InstructionsEditor(text: $model.draft, saved: model.saved ?? "",
-                                   accessibilityLabel: "Project file editor", project: true, markdown: model.category == .instructions)
+                                   accessibilityLabel: "Space file editor", project: true, markdown: model.category == .instructions)
                     .disabled(project.unavailable != nil || model.saving)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                NWEmptyState(Text(model.fileLoading ? "Loading file…" : "No project file"),
-                             message: model.fileLoading ? "Reading from \(project.host.name)." : "Choose a file or add this resource in the project folder.") {}
+                NWEmptyState(Text(model.fileLoading ? "Loading file…" : "No space file"),
+                             message: model.fileLoading ? "Reading from \(project.host.name)." : "Choose a file or add this resource in the space folder.") {}
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }.background(Color.nw.projectEditorBackground)
@@ -225,7 +225,7 @@ struct ProjectSettingsDetail: View {
             if model.category == .instructions {
                 readingCard
                 hostsCard
-                Text("APPEND_SYSTEM.md adds to the system prompt and SYSTEM.md replaces it. Both live in the project's .pi folder.")
+                Text("APPEND_SYSTEM.md adds to the system prompt and SYSTEM.md replaces it. Both live in the space's .pi folder.")
                     .font(.nwSans(AppLayout.projectsPathSize)).foregroundStyle(Color.nw.settingsMuted)
                     .lineSpacing(AppLayout.projectSideLineExtra).fixedSize(horizontal: false, vertical: true)
             } else { hostsCard }
@@ -278,7 +278,7 @@ struct ProjectSettingsDetail: View {
     }
 
     private var hostsDescription: String {
-        guard let peer = model.peers.first else { return "This is the copy on \(project.host.name). No other host has this project." }
+        guard let peer = model.peers.first else { return "This is the copy on \(project.host.name). No other host has this space." }
         if peer.status == "In sync" { return "This is the copy on \(project.host.name). \(peer.host) has its own checkout of \(project.project.name), and its \(model.selectedFile?.path ?? "file") matches." }
         return peer.note
     }

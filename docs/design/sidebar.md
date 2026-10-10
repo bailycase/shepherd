@@ -1,26 +1,33 @@
 # Sidebar
 
-> Read when you change sidebar activity groups, disclosures, thread rows or Projects.
+> Read when you change sidebar activity groups, disclosures, thread rows or Spaces.
 
 `SidebarView` (`SidebarView.swift`, its values in `SidebarModel.swift`) on `NWSidebar` (ShepherdUI,
 `Components/Navigation/Sidebar.swift`): the sidebar every Mac board draws (NWNavigation, and the
 sidebars of Main, Running, NavNewThread, NavAutomations and NavHosts). 232pt on `bgBase` by
 default, and it keeps its width when the side pane opens. Top to bottom: the top bar, the
-destinations, Done, Pinned, Needs you, Working, Recents, Designs, and the footer.
+destinations, Designs, Needs you, Working, Done, Projects, Recents, and the footer. Pinned, which the board
+does not draw, follows Done and never displaces a drawn group. The user moved the Designs group to the top
+(an override of ProjectLead-Activity, which draws it last). Projects are the new feature
+([project-lead.md](../project-lead.md)); the Projects group always shows, with a "New project" chip, and
+each row is a logical Project, never a thread. In the folder mode (Spaces) Projects sit above the Spaces, with a
+`+` that opens New project and no `+` on Spaces.
 Reference: [NWNavigation.png](boards/NWNavigation.png), revision 420, and
 [NWNavigation-checklist.md](boards/NWNavigation-checklist.md). The user's clarification puts
-Done first when it contains unseen completions. Pinned follows Done and keeps pinned threads
+Done follows Working and Needs you (the board's order). Pinned follows Done and keeps pinned threads
 there regardless of status. Empty groups remain hidden.
-Settings ▸ Appearance ▸ Organize by (or View ▸ Organize Sidebar By) swaps the activity groups for a project tree (Organized by project, below; it draws no pins); Activity is the
-default. Each part follows Settings ▸ Appearance ▸ Sidebar
+Settings ▸ Appearance ▸ Organize by (or View ▸ Organize Sidebar By) swaps the activity groups for a folder tree, named Spaces on screen (Organized by space, below; it draws no
+pins). The stored value stays `projects`, so older preferences keep working. Activity is the default. The new Projects
+section (ProjectLead boards) is not built here: in Activity it will sit between Done and Recents, and in the folder
+mode above Spaces, with no Spaces header `+`. Each part follows Settings ▸ Appearance ▸ Sidebar
 rows: Compact 22pt, Standard 28pt and Comfortable 36pt. Activity rows have no inter-row gap;
-destinations and the project tree keep their existing 1pt gap.
+destinations and the space tree keep their existing 1pt gap.
 
 The user's decisions, 2026-09-25: "Match the canvas (Recommended)": Recents replaces the This Mac /
 host / space tree, ⌘N opens the New thread page instead of starting an agent at once, spaces become
 the projects of the New thread page's workplace chip, and drag order, nesting and collapsing go
 away. "Hide them (Recommended)": Missions, Designs, More ▸ Design systems and Archive are not built
-yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac user + this Mac
+yet, so they are hidden until built. There is no More row: the command palette opens Hosts, Design systems and Extensions. "Mac user + this Mac
 (Recommended)": the footer shows the Mac's user and this Mac.
 
 - **Top bar (44pt, `NWSidebarTopBar`):** room for the window controls, a spacer that drags the
@@ -37,12 +44,10 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
      (`NWKeycap`, `KeybindingsStore`'s `.newAgent`). It opens the New thread page.
   2. **Designs**, while the Design tool experiment is on: the outline nib. It opens Designs.
   3. **Automations**: an outline `bolt`. It opens the Automations page.
-  4. **More**: a chevron in `textTertiary`, pointing right while closed and turned down while open.
-     It discloses its rows, indented to 22pt leading padding: **Hosts** (`display`), carrying "n
-     offline" in mono 10 `failed` while a host is neither connected nor connecting (NavHosts: "1
-     offline"), which opens the Hosts page; and **Extensions** (`puzzlepiece.extension`), which
-     opens Settings ▸ Pi, where the bundled extensions are. Opening Hosts opens More; the
-     disclosure is not kept across launches.
+  There is no fourth row. The ProjectLead boards draw New thread, Designs and Automations only, so **More is gone**: the command
+  palette opens **Hosts** ("Open Hosts", with "n offline" as its subtitle while a host is neither connected nor connecting),
+  **Design systems** ("Open Design systems", while the Design tool is on) and **Extensions** ("Open Extensions", Settings ▸
+  Extensions). Settings ▸ Remote still holds the hosts' settings, and a notification about a host still opens the Hosts page.
 - **Section headers** (`NWSidebarSectionHeader`): omit empty groups. A 9pt outline chevron
   points down while open and right while folded, 6pt before the title. The title is Geist 11.5
   medium `textSecondary`; its adjacent count is Geist Mono 10.5 `textTertiary`. Needs you uses
@@ -140,7 +145,7 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
   snapshots; offline precedence hides Working and Done until reconnect. Refresh replaces settled
   or empty child rows and prunes deleted agents. Disconnecting or reconnecting never fabricates a
   completion before that refresh. No extra transcript polling or new server fields.
-- **Designs**: a separate group below Recents while the Design tool experiment is on. Rows use
+- **Designs**: a separate group above Needs you (the first activity group, below the destinations) while the Design tool experiment is on. Same visibility and fold rules as before. Rows use
   the outline nib and real board count, sorted by their design's last activity. A design's agent
   never has a thread row. The existing Remove from Recents action hides that design's sidebar row
   until it changes again.
@@ -175,7 +180,7 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
   host that drops keeps its threads in Recents (or Pinned) as it last sent them (NavHosts' `horizon` rows), dimmed (`NWListMetrics.dimmedOpacity`,
   as on the iPad), never in Needs you since nothing there can be answered, and with a menu that
   says "Host Offline"; opening one shows the host's connection state. A host not reached since
-  launch lists nothing. More ▸ Hosts says how many are offline, and the Hosts page carries their
+  launch lists nothing. "Open Hosts" in the palette says how many are offline, and the Hosts page carries their
   notices and Retry.
 - **Footer** (`NWSidebarFooter`): behind a hairline, padded 10pt above and below and 12pt at the
   sides, with a 10pt gap. It holds a 26pt `bgSelected` circle with the initial in Geist 11.5
@@ -216,7 +221,7 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
   - Pin and Unpin are offered on thread rows in every activity group (Activity only),
     never on an automation's run, a design, or a row of the project tree.
 - **Motion:** rows arriving, leaving and moving up animate `.list` (keyed on the rows' ids, never
-  the rows), and More's rows disclose (`.disclosure`). Selecting a row changes no row's place, so
+  the rows), and a disclosure icon is drawn only by section headers. Selecting a row changes no row's place, so
   it lands at once. A status report or a settled name changes only its row, in place (`.content`),
   and counts roll (`.numeric()`).
 - **Gone with the old tree:** the Automations footer and a host's Automations disclosure, space
@@ -237,7 +242,7 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
 - Missions and Archive remain hidden because their destinations do not exist. Designs and
   Design systems remain behind the existing Design tool experiment.
 
-## Organized by project (Sidebar — Projects)
+## Organized by space (Sidebar — Spaces)
 
 `SidebarProjectsList` (`SidebarProjectsView.swift`, its values in `SidebarProjectsModel.swift`
 and `ShepherdViewModel+SidebarProjects.swift`) on `NWProjectRow`, `NWProjectsHeader` and
@@ -246,70 +251,86 @@ SidebarTree, SidebarProjects and SidebarProjectsHosts. Mac only: the iPad and iP
 
 - **Destinations stay** on top in both styles; only the list under them changes. It is one scroll
   view either way, so switching (Settings or the View menu) keeps the thread on screen selected,
-  opens its project and scrolls its row into view.
-- **A project is a space** of This Mac's (`Space`). The reserved spaces never are: an
-  automation's run sits in the project its folder is in (the deepest project holding its `cwd`),
-  with its bolt, or nowhere in the tree when no project holds it (the Automations page and ⌘K
+  opens its space and scrolls its row into view.
+- **A space is a space** of This Mac's (`Space`). The reserved spaces never are: an
+  automation's run sits in the space its folder is in (the deepest space holding its `cwd`),
+  with its bolt, or nowhere in the tree when no space holds it (the Automations page and ⌘K
   still list it). Designs and their agents are not in the tree (see Where Shepherd departs from
   the boards); missions are not built.
-- **Header:** "Projects" in Geist 11.5 medium `textTertiary`, spaced like Recents, with an 18pt +
-  circle (`NWProjectsHeader`) opening a menu: Add Project…, and under Hidden from Sidebar a Show
-  <project> for each hidden one.
-- **Project row** (`NWProjectRow`): the density's height, radius 8, padded 2pt outside a thread
+- **Header:** "Spaces" in Geist 11.5 medium `textTertiary`, spaced like Recents, with an 18pt +
+  circle (`NWProjectsHeader`) opening a menu: Add Space…, and under Hidden from Sidebar a Show
+  <space> for each hidden one.
+- **Space row** (`NWProjectRow`): the density's height, radius 8, padded 2pt outside a thread
   row (6pt, 4 in Compact) and 8pt (6) trailing; a 14pt chevron slot (a 9pt semibold
   `textTertiary` chevron, right while closed and turned down while open, `.disclosure`), a
   `folder` in `textSecondary`, the name in the row font at medium, 6pt apart, and the count
   trailing in mono 10.5 `textTertiary`. Closed, the count rolls up what is inside: a glowing
   lantern dot and the count in `lanternText` while something waits on you, a running dot while
   something runs, else the count alone. Hovered (`bgHover`), the count gives way to + (New thread
-  in this project) and ··· (the project menu), 20pt circles 2pt apart with 11pt glyphs, built only
-  while hovered. A project on a host that is not connected dims and takes no +.
+  in this space) and ··· (the space menu), 20pt circles 2pt apart with 11pt glyphs, built only
+  while hovered. A space on a host that is not connected dims and takes no +.
 - **Threads** are the Recents rows (`NWSidebarRow`, `nested`), led 20pt further in so their dot
   sits under the folder, with the same dots, words, reasons and tags. **Needs you rows stay in
-  their project** with the amber dot and the reason; there is no Needs you section.
-- **Order:** projects keep the spaces' order, which a drag changes (`SessionServer.moveSpace`),
-  and a project added on this Mac or by a remote client goes on top. Inside a project the newest
-  activity comes first (`Agent.lastActiveAt`, as Recents). Every project shows, an empty one too.
-- **Drag** a project by its row (no drop targets): the offset picks the project it lands before,
+  their space** with the amber dot and the reason; there is no Needs you section.
+- **Order:** spaces keep the spaces' order, which a drag changes (`SessionServer.moveSpace`),
+  and a space added on this Mac or by a remote client goes on top. Inside a space the newest
+  activity comes first (`Agent.lastActiveAt`, as Recents). Every space shows, an empty one too.
+- **Drag** a space by its row (no drop targets): the offset picks the space it lands before,
   a 2pt `running` line (`NWDropIndicator`, 4pt in from the sides) marks where between the rows,
-  and the dragged row dims to 55%. Only This Mac's projects move, among themselves.
+  and the dragged row dims to 55%. Only This Mac's spaces move, among themselves.
 - **Keep idle threads** (Settings, 7 days by default): an idle or finished thread quiet for
   longer leaves the tree; running threads, anything waiting on you, and threads no host has
   timed stay. The palette still finds them. The cutoff is kept to the hour, so the tree derives
   again at most hourly for it.
-- **Hide from Sidebar** (the project menu) sets `Space.sidebarHidden`, written to state.json:
-  the project and its threads leave the tree, and the + beside Projects brings it back.
-- **Hosts:** not grouped, a connected host's threads sit in This Mac's project of the same name,
-  tagged with the host as in Recents; a project only hosts have follows This Mac's, by name.
+- **Hide from Sidebar** (the space menu) sets `Space.sidebarHidden`, written to state.json:
+  the space and its threads leave the tree, and the + beside Spaces brings it back.
+- **Hosts:** not grouped, a connected host's threads sit in This Mac's space of the same name,
+  tagged with the host as in Recents; a space only hosts have follows This Mac's, by name.
   **Group by host** (Settings) gives a section per host, This Mac first, each headed by its name
   (`NWSidebarSection(.host)`: Geist 11.5 medium `textTertiary`, and "unreachable" in mono 10
-  `failed` while the host is not connected), its projects inside, and its rows without the tag.
-  A host's projects follow its own order.
-- **Project menu** (right-click a project, or ···; native): New Thread in <project> (on the host
+  `failed` while the host is not connected), its spaces inside, and its rows without the tag.
+  A host's spaces follow its own order.
+- **Space menu** (right-click a space, or ···; native): New Thread in <space> (on the host
   its newest thread runs on, else This Mac, else a connected host that has it), Reveal in Finder
-  and Open in Terminal (This Mac's projects: the Mac's Terminal in the folder), Copy Path,
+  and Open in Terminal (This Mac's spaces: the Mac's Terminal in the folder), Copy Path,
   Collapse All, and Hide from Sidebar (This Mac's). The user's child-project request adds
-  **Rename Project…** and **Add Child Project…** before Reveal in Finder for local projects. It opens the shared
-  [create-or-add dialog](child-projects.md). The user's subsequent request nests child projects
+  **Rename Space…** and **Add Child Space…** before Reveal in Finder for local spaces. It opens the shared
+  [create-or-add dialog](child-projects.md). The user's subsequent request nests child spaces
   under their parent on their host, matching Settings. Old registrations infer the outermost
   folder ancestor; new children and `project_edit` may specify a different display parent.
-  Each parent level adds `NWProjectMetrics.chevronSlot + gap` to project and thread insets. Parent
+  Each parent level adds `NWProjectMetrics.chevronSlot + gap` to space and thread insets. Parent
   disclosure hides the entire group; child disclosure hides only that child's threads. Parent
   counts and status rollups include children. Selection reveal opens both levels; keyboard
   shortcuts skip collapsed groups. Roots and siblings keep saved order, and dragging only
   reorders siblings. A hidden parent's visible children become top-level rows. Ambiguous
-  name-merged remote projects are not assigned a guessed parent.
-- **Remove Project…** follows Hide from Sidebar in a local project's menu, with a divider and
-  native destructive role. The confirmation names the project and its own agent count, says
+  name-merged remote spaces are not assigned a guessed parent.
+- **Remove Space…** follows Hide from Sidebar in a local space's menu, with a divider and
+  native destructive role. The confirmation names the space and its own agent count, says
   the folder/files and saved conversations remain, and preserves child registrations. It
   removes the registration and stops only its own sessions; it never deletes local folders.
-- **Keys:** a click on a project opens or closes it and gives the tree the keyboard: ← closes
-  that project and → opens it (plain arrows, only while the tree has focus, so never a chord for
-  `KeybindingsStore` or Ghostty's list). ⌥-click opens or closes every project. ⌘1–9 and ⌘↑/↓
-  follow the open projects' threads in order. Closed projects are remembered
+- **Keys:** a click on a space opens or closes it and gives the tree the keyboard: ← closes
+  that space and → opens it (plain arrows, only while the tree has focus, so never a chord for
+  `KeybindingsStore` or Ghostty's list). ⌥-click opens or closes every space. ⌘1–9 and ⌘↑/↓
+  follow the open spaces' threads in order. Closed spaces are remembered
   (`shepherd.sidebar.collapsedProjects`, view state, not reset by Reset settings).
 - **Density:** the tree's rows follow Sidebar rows like the rest of the sidebar.
 - **Performance:** one lazy stack; the tree derives once per change (`SidebarDerivation.tree`,
-  cached on `SidebarSource` and `SidebarTreeOptions`), a closed project builds no thread rows,
-  and a status report redraws its row and its project's. `ListPerformanceTests` pins opening,
-  scrolling, a status change and opening a project.
+  cached on `SidebarSource` and `SidebarTreeOptions`), a closed space builds no thread rows,
+  and a status report redraws its row and its space's. `ListPerformanceTests` pins opening,
+  scrolling, a status change and opening a space.
+
+## Projects in the sidebar (ProjectLead boards)
+
+- **Row** (`NWLeadProjectRow`): the Project glyph (the board's stacked outline, a shape: no SF Symbol draws the
+  double cap; `archivebox` is the nearest and was not used), `lantern` while selected else `textTertiary`, 10 x 12.5pt,
+  1pt stroke; the name (semibold while selected) in the density's row font; a mono 10 summary trailing
+  (`lanternText` when it needs you). The summary and the needs-you tone come only from a real lifecycle, so a
+  Project without one shows no status. A click opens the Project page; the context menu opens its settings.
+- **Activity header:** "Projects" with its count and a "New project" chip in the Mark all seen pill (`NWSidebarHeaderChip`).
+- **Spaces mode header:** "Projects" with an 18pt `+` (New project), then the Project rows, then "Spaces" and the
+  folder tree. The Spaces header draws no `+` (the board has none); while a Space is hidden it keeps a small menu
+  (Hidden spaces) to bring one back, which is existing functionality the board does not draw.
+- **Owners:** Projects on a connected host that serves `logicalProjects.v1` list after This Mac's, named by their
+  host. A viewer never interprets the owner's Space IDs.
+- **Not built here:** the thread rows under an expanded Project, the amber dot and `answer`, the needs-you count.
+  They need the coordinator and task lifecycle.

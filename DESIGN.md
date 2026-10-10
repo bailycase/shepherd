@@ -32,9 +32,18 @@ Every decision has to pass one test: does this help one person supervise ten wor
 - An agent has a short task title it gave itself (`Fix plan mode`), a workplace, and a
   lifecycle: working, needs you, done, failed, idle. It renders only as a native thread.
 - Terminals are tabs under a thread, one terminal per tab. No splits, no global shells.
+- **Spaces and Projects.** A Space is the folder a thread runs in (what the app used to call a "Project").
+  A Project is the new feature above Spaces and owns the word. Copy never calls a folder a project. The
+  [ProjectLead boards](docs/design/boards/SpacesTerminology.md) are the spec for Projects; the user's only
+  approved changes to them are macOS-only hosts (no Linux) and the Activity sidebar's Designs group first,
+  above Needs you. Activity then reads Designs, Needs you, Working, Done, Projects, Recents.
 - Copy says "the agent", never "pi". The exception is where the user's own pi is the subject
   (Settings ▸ Pi, Sign-in).
 - Missions and the Artifacts and Files tabs are not built. Nothing shows or links to them.
+- Projects are an experiment, off by default (Settings ▸ Experiments ▸ Projects). Off removes the Projects group
+  (header, New project chip, rows) from both sidebars, and every way to open New project or a Project page. Spaces and
+  ordinary threads are untouched. Off closes only Project navigation and keeps the projects, their files and drafts; on
+  shows them again and reopens or resumes nothing.
 - Goals are an experiment, off by default (Settings ▸ Experiments). They have no time or token
   budgets. Turning them off pauses active goals and never clears them. Turning them back on
   never resumes work by itself.
@@ -92,7 +101,7 @@ The macOS Settings board set (`docs/design/boards/Settings*.png`, `SignIn*.png`;
 Settings", revision 1083) is the source of truth for every Settings page.
 
 - **Navigation** is one flat list on `bgBase`, in the boards' order: Appearance, Terminal,
-  Agents, Subagents, Worktrees, Projects, Sign-in, Pi, Instructions, Skills, Extensions, Slash
+  Agents, Subagents, Worktrees, Spaces, Sign-in, Pi, Instructions, Skills, Extensions, Slash
   commands, MCP servers, Remote, Keyboard, Advanced, Experiments. No nested rows. Sign-in
   carries a lantern dot while a sign-in needs the user. The footer reads
   "Shepherd x.y.z · agent x.y.z", and "· pi x.y.z" on Pi.
@@ -104,16 +113,16 @@ Settings", revision 1083) is the source of truth for every Settings page.
 - **Subagents** lists the definition files, then the native subagent switches and defaults.
 - **Extensions** holds the bundled extension switches. Peer tools have no separate permission row.
 - **Slash commands**: off disables a command entirely, in the menu and when typed.
-- **Projects** reuses the shared MCP server cards, forms and OAuth sheet. Authentication runs on
-  the selected host and opens the viewer's browser. Native MCP shows Pi's project approval apart
-  from saved credentials, and asks for explicit confirmation of executable project resources
-  before approving them on that host ([Project MCP](docs/design/project-mcp.md)).
-- Local projects offer [Add child project](docs/design/child-projects.md) from Settings' existing
-  Add subproject action and the sidebar project menu. The shared dialog creates an empty folder
-  or registers an existing descendant. Child projects nest under their main project in the
+- **Spaces** (the old folder-based "Projects"; the name now belongs to the new Projects feature) reuses the shared MCP server cards, forms and OAuth sheet. Authentication runs on
+  the selected host and opens the viewer's browser. Native MCP shows Pi's space approval apart
+  from saved credentials, and asks for explicit confirmation of executable space resources
+  before approving them on that host ([Space MCP](docs/design/project-mcp.md)).
+- Local spaces offer [Add child space](docs/design/child-projects.md) from Settings' existing
+  Add subspace action and the sidebar space menu. The shared dialog creates an empty folder
+  or registers an existing descendant. Child spaces nest under their main space in the
   sidebar, with their threads indented again; parent collapse hides the whole group. Remove
-  Project… confirms registration/session removal while preserving local folders and child projects.
-  Rename Project… changes only the display name. Tool-driven parent edits change both project
+  Space… confirms registration/session removal while preserving local folders and child spaces.
+  Rename Space… changes only the display name. Tool-driven parent edits change both space
   trees without changing folders or configuration inheritance; moving/copying data is explicit.
 - Sliders show the bare number the board draws ("100", "232", "12.5"). VoiceOver reads the unit.
 
@@ -248,7 +257,7 @@ More: [docs/design/verifying.md](docs/design/verifying.md).
 | Thread, composer, queue, subagents | [thread.md](docs/design/thread.md), [composer.md](docs/design/composer.md), [queue.md](docs/design/queue.md), [subagents.md](docs/design/subagents.md) |
 | Side pane, terminal, palette, dialogs | [side-pane-changes.md](docs/design/side-pane-changes.md), [side-pane-browser.md](docs/design/side-pane-browser.md), [terminal.md](docs/design/terminal.md), [dialogs-and-palette.md](docs/design/dialogs-and-palette.md) |
 | Settings | [settings.md](docs/design/settings.md), [settings-pi.md](docs/design/settings-pi.md), [settings-projects.md](docs/design/settings-projects.md), [settings-subagents.md](docs/design/settings-subagents.md), [codemode-settings.md](docs/design/codemode-settings.md) |
-| Projects in Settings | [project-browser.md](docs/design/project-browser.md), [project-mcp.md](docs/design/project-mcp.md), [project-instructions.md](docs/design/project-instructions.md) |
+| Spaces in Settings | [project-browser.md](docs/design/project-browser.md), [project-mcp.md](docs/design/project-mcp.md), [project-instructions.md](docs/design/project-instructions.md) |
 | Controls, status pieces, keyboard, accessibility | [components.md](docs/design/components.md), [keyboard-and-accessibility.md](docs/design/keyboard-and-accessibility.md) |
 | iPhone or iPad | `ios-*.md` in [docs/design/](docs/design/README.md), and [docs/ios](docs/ios/README.md) |
 | Notifications, Live Activities | [notifications.md](docs/design/notifications.md) |

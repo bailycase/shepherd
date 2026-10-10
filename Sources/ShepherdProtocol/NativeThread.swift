@@ -661,13 +661,16 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
     /// User messages that carried browser elements (`BrowserElementFence`), without their markup:
     /// the thread draws them as chips, and the fence comes off the words. Absent from older hosts.
     public var browserElements: [BrowserElement]?
+    /// Safe typed receipt for a Project action card; absent on ordinary tools and older hosts.
+    public var projectAction: NativeProjectAction?
 
     public init(
         entryID: String, role: String, blocks: [NativeThreadBlock], toolName: String? = nil, toolCallID: String? = nil,
         argumentsText: String? = nil, status: String? = nil, isError: Bool? = nil, truncated: Bool = false, timestamp: Double? = nil,
         startedAt: Double? = nil, thinkingSeconds: Double? = nil, origin: NativeMessageOrigin? = nil, operationID: UUID? = nil,
         compaction: NativeCompaction? = nil, question: NativeQuestionRecord? = nil, provider: String? = nil, model: String? = nil,
-        designReferences: [DesignReferenceRecord]? = nil, browserElements: [BrowserElement]? = nil, customType: String? = nil
+        designReferences: [DesignReferenceRecord]? = nil, browserElements: [BrowserElement]? = nil, customType: String? = nil,
+        projectAction: NativeProjectAction? = nil
     ) {
         self.entryID = entryID
         self.role = role
@@ -690,6 +693,40 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
         self.model = model
         self.designReferences = designReferences
         self.browserElements = browserElements
+        self.projectAction = projectAction
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case entryID, role, customType, blocks, toolName, toolCallID, argumentsText, status, isError, truncated
+        case timestamp, startedAt, thinkingSeconds, origin, operationID, compaction, question, provider, model
+        case designReferences, browserElements, projectAction
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        entryID = try c.decode(String.self, forKey: .entryID)
+        role = try c.decode(String.self, forKey: .role)
+        blocks = try c.decode([NativeThreadBlock].self, forKey: .blocks)
+        truncated = try c.decode(Bool.self, forKey: .truncated)
+        customType = try c.decodeIfPresent(String.self, forKey: .customType)
+        toolName = try c.decodeIfPresent(String.self, forKey: .toolName)
+        toolCallID = try c.decodeIfPresent(String.self, forKey: .toolCallID)
+        argumentsText = try c.decodeIfPresent(String.self, forKey: .argumentsText)
+        status = try c.decodeIfPresent(String.self, forKey: .status)
+        isError = try c.decodeIfPresent(Bool.self, forKey: .isError)
+        timestamp = try c.decodeIfPresent(Double.self, forKey: .timestamp)
+        startedAt = try c.decodeIfPresent(Double.self, forKey: .startedAt)
+        thinkingSeconds = try c.decodeIfPresent(Double.self, forKey: .thinkingSeconds)
+        origin = try c.decodeIfPresent(NativeMessageOrigin.self, forKey: .origin)
+        operationID = try c.decodeIfPresent(UUID.self, forKey: .operationID)
+        compaction = try c.decodeIfPresent(NativeCompaction.self, forKey: .compaction)
+        question = try c.decodeIfPresent(NativeQuestionRecord.self, forKey: .question)
+        provider = try c.decodeIfPresent(String.self, forKey: .provider)
+        model = try c.decodeIfPresent(String.self, forKey: .model)
+        designReferences = try c.decodeIfPresent([DesignReferenceRecord].self, forKey: .designReferences)
+        browserElements = try c.decodeIfPresent([BrowserElement].self, forKey: .browserElements)
+        // Optional display metadata must never make an otherwise readable older transcript fail.
+        projectAction = try? c.decodeIfPresent(NativeProjectAction.self, forKey: .projectAction)
     }
 }
 

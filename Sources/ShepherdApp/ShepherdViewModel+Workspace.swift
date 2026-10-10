@@ -17,7 +17,8 @@ extension ShepherdViewModel {
             selectedSpaceID: selectedSpaceID,
             selectedAgentID: selectedAgentID,
             remoteSelectionActive: selectedRemoteAgent != nil,
-            destination: destination,
+            // A Project page left over from before the experiment went off covers nothing.
+            destination: projectsEnabled || !isProjectDestination ? destination : nil,
             parkedTabIDs: parkedTabIDs,
             pendingMountTabIDs: pendingMountTabIDs
         )

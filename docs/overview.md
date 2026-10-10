@@ -16,8 +16,8 @@ agents.
   the Mac they are real PTYs rendered with libghostty; the iOS client attaches to the host's over
   the remote protocol and renders them with SwiftTerm. There are no global shells and no space
   shell workspaces.
-- **Spaces** are projects: the folders threads start in. The default Activity sidebar has no
-  tree; the optional Projects style groups threads in a project tree. Activity lists
+- **Spaces** are the folders threads start in (the old "projects"; Projects are a separate feature above them). The default Activity sidebar has no
+  tree; the optional Spaces style groups threads in a space tree. Activity lists
   destinations (New thread, Automations, More ▸ Hosts and Extensions), then Needs you, Pinned
   (the threads the user pinned, per Mac) and Recents (every other agent, local and remote, most
   recently active first). The New thread page's workplace
@@ -26,5 +26,5 @@ agents.
   (spaces, agents, terminal layouts) restores from `state.json`, every agent resumes its pi session
   over RPC, and every terminal respawns a fresh shell.
 - **Remote:** Shepherd can serve its agents to other devices over an authenticated TCP listener
-  (off by default). The main use is running projects on one Mac and driving them from another
+  (off by default). The main use is running spaces on one Mac and driving them from another
   Mac running Shepherd. The iPhone and iPad client (`App/iOS`) drives them the same way.

@@ -132,7 +132,7 @@ struct SubagentEditForm: View {
                                  options: [("replace", "Its whole system prompt"), ("append", "Added to the default")])
             }
             VStack(alignment: .leading, spacing: AppLayout.subagentEditSwitchGap - NW.Space.s) {
-                SubagentSwitch(label: "Read the project's AGENTS.md", note: model.form.bool("inheritProjectContext") ?? isDelegate ? "on" : "off by default",
+                SubagentSwitch(label: "Read the space's AGENTS.md", note: model.form.bool("inheritProjectContext") ?? isDelegate ? "on" : "off by default",
                                isOn: flag("inheritProjectContext", default: isDelegate))
                 SubagentSwitch(label: "Use the thread's skills", note: flag("inheritSkills", default: false).wrappedValue ? "on" : "off by default",
                                isOn: flag("inheritSkills", default: false))

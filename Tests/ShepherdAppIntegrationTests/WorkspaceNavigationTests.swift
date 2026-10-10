@@ -64,6 +64,7 @@ struct WorkspaceNavigationTests {
     /// a flip, and the sidebar is asked to reveal that row.
     @Test func aPageHidesTheThreadAndPickingARowReturnsToIt() async throws {
         let app = try AppHarness()
+        app.settings.projectsEnabled = true  // Projects is an opt-in experiment
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         let agents = (0..<2).map { Fixture.agent("a\($0)", in: space, order: $0) }
@@ -73,13 +74,27 @@ struct WorkspaceNavigationTests {
         vm.selectAgent(agents[0].agent.id)
         let mounted = vm.mountedTabs.map(\.id)
 
+        // A project's pages need a project to show: a real one, made through the owner.
+        let made = try await app.server.logicalProjects(.create(projectID: ProjectID(), name: "Gamecards", goal: "", linkedSpaceIDs: []))
+        guard case .project(let project) = made else { Issue.record("Expected a project"); return }
+        try await eventuallyOnMain("the project arrives") { vm.state.projects.count == 1 }
+        vm.selectedLogicalProject = LogicalProjectRef(home: .local, id: project.id)
         for page in MainDestination.allCases {
             vm.openDestination(page)
             #expect(vm.shownDestination == page)
             #expect(vm.activeTabID == nil && vm.selectedSidebarRow == nil)
             #expect(vm.mountedTabs.map(\.id) == mounted, "nothing unmounts behind a page")
         }
-        #expect(vm.moreOpen, "Hosts opens More")
+        // Hosts and Extensions have no sidebar row (the boards draw three destinations); the palette opens them.
+        vm.openDestination(.newThread)
+        let hosts = try #require(vm.paletteItems.first { $0.title == "Open Hosts" })
+        vm.runPaletteItem(hosts)
+        #expect(vm.shownDestination == .hosts)
+        let extensions = try #require(vm.paletteItems.first { $0.title == "Open Extensions" })
+        vm.runPaletteItem(extensions)
+        #expect(vm.showSettings && vm.settingsSection == .extensions)
+        vm.showSettings = false
+        vm.openDestination(.newThread)
         #expect(vm.newThread.place == NewThreadPlace(host: nil, space: space.id), "New thread opens in the thread's project")
 
         let before = vm.sidebarRevealRequest

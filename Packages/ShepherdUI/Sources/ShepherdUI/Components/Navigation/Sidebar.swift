@@ -58,6 +58,10 @@ public enum NWSidebarMetrics {
     public static let rowSlot: CGFloat = 14
     /// The footer's avatar and Settings button.
     public static let footerAvatar: CGFloat = 26
+    /// The footer's rule is 6pt below its top edge (ProjectLead boards: 848 to 854), then 9pt to the avatar and 10pt beneath it.
+    public static let footerAboveRule: CGFloat = 6
+    public static let footerRuleToContent: CGFloat = 9
+    public static let footerBottom: CGFloat = 10
     /// The trailing reason a Needs you row shows ("retention?") is cut to this many characters.
     public static let reasonLength = 14
 }
@@ -531,9 +535,14 @@ public struct NWSidebarFooter: View, Equatable {
                 .nwHelp("Settings", shortcut: settingsShortcut)
                 .accessibilityLabel("Settings")
         }
-        .padding(.vertical, 10)
+        // The boards' footer is 52pt tall and its rule is 46pt above the bottom edge: the content is the 26pt avatar, 9pt below the rule
+        // and 10pt above the bottom; 6pt of the footer's height sits above the rule.
+        .frame(height: NWSidebarMetrics.footerAvatar)
+        .padding(.top, NWSidebarMetrics.footerRuleToContent + 1)
+        .padding(.bottom, NWSidebarMetrics.footerBottom)
         .padding(.horizontal, NW.Space.l)
         .overlay(alignment: .top) { NWHairline() }
+        .padding(.top, NWSidebarMetrics.footerAboveRule)
     }
 }
 

@@ -53,6 +53,44 @@ public extension ShepherdState {
             }
         }
 
+        guard projects.count <= Project.maximumCount else {
+            throw ProjectValidationError("Workspace exceeds 32 logical projects.")
+        }
+        var projectIDs = Set<ProjectID>()
+        for project in projects {
+            guard projectIDs.insert(project.id).inserted else {
+                throw ShepherdStateValidationError.duplicateID(kind: "project", id: project.id.rawValue)
+            }
+            try project.validate()
+            // Space and coordinator links are soft references: deletion leaves inspectable
+            // provenance, and startup clears a missing coordinator, just as it does for designs.
+        }
+        guard try JSONEncoder().encode(projects).count <= Project.maximumEncodedCollectionBytes else {
+            throw ProjectValidationError("Logical projects exceed the 512 KiB workspace budget.")
+        }
+
+        guard projectExecutions.count <= ProjectExecutionReceipt.maximumCount,
+              Set(projectExecutions.map(\.key)).count == projectExecutions.count,
+              try JSONEncoder().encode(projectExecutions).count <= ProjectExecutionReceipt.maximumEncodedBytes,
+              try projectExecutions.reduce(2 + projectExecutions.count, { try $0 + $1.reservedEncodedBytes }) <= ProjectExecutionReceipt.maximumEncodedBytes else {
+            throw ProjectValidationError("Execution receipt capacity exhausted; IDs are not automatically evicted.")
+        }
+        for receipt in projectExecutions {
+            try receipt.validate()
+            if let previous = receipt.previousOperationID {
+                guard previous != receipt.key.operationID,
+                      let predecessor = projectExecutions.first(where: {
+                          $0.key.ownerID == receipt.key.ownerID && $0.key.projectID == receipt.key.projectID && $0.key.operationID == previous
+                      }), let assignment = receipt.assignment, let prior = predecessor.assignment,
+                      prior.taskID == assignment.taskID, prior.reservedWorkerID == assignment.reservedWorkerID,
+                      prior.executorSpaceID == assignment.executorSpaceID,
+                      predecessor.phase == .settled || predecessor.phase == .cancelled,
+                      predecessor.matchedUserEntryID != nil, predecessor.sessionID != nil else {
+                    throw ProjectValidationError("Execution follow-up requires retained settlement proof for the same task and worker.")
+                }
+            }
+        }
+
         var tabIDs = Set<TabID>()
         var paneIDs = Set<PaneID>()
         var tabByID: [TabID: Tab] = [:]
@@ -95,6 +133,16 @@ public extension ShepherdState {
                 if let leafAgentID = pane.agentID, leafAgentID != agent.id {
                     throw ShepherdStateValidationError.inconsistentPaneOwnership(agentID: agent.id, paneID: paneID)
                 }
+            }
+        }
+
+        var coordinators = Set<ProjectID>()
+        for agent in agents {
+            guard let projectID = agent.coordinatorFor else { continue }
+            guard coordinators.insert(projectID).inserted, agent.designID == nil,
+                  spaces.contains(where: { $0.id == agent.spaceID && $0.hidden && $0.holdsProjects }),
+                  projects.first(where: { $0.id == projectID }).map({ $0.coordinatorAgentID == agent.id }) ?? true else {
+                throw ProjectValidationError("Invalid coordinator ownership or reserved Space.")
             }
         }
 

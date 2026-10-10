@@ -383,6 +383,19 @@ struct SettingsPreviewTests {
         }
     }
 
+    /// The Projects card beside Goals and the Design tool, off (the default) and on, in both appearances and at text size 1.3.
+    @Test(arguments: [false, true])
+    func settingsProjectsExperiment(_ enabled: Bool) async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        workspace.vm.settings.projectsEnabled = enabled
+        workspace.vm.settingsSection = .experiments
+        try await Preview.renderMatrix(enabled ? "settings-experiments-projects-on" : "settings-experiments-projects-off",
+                                       size: CGSize(width: 1440, height: 900)) {
+            SettingsView(vm: workspace.vm)
+        }
+    }
+
     /// Experiments with Suggested instructions on: three lines waiting (a thread's, an
     /// automation's for APPEND_SYSTEM.md, and one being edited first) and one already added.
     @Test func settingsExperimentsWithSuggestions() async throws {
@@ -699,7 +712,7 @@ struct SettingsPreviewTests {
 
     @Test func renameSpaceDialog() async throws {
         try await Preview.render("sheet-rename-space", size: CGSize(width: AppLayout.renameSheetWidth, height: 210)) {
-            RenameDialog(title: "Rename project", caption: "Display name only. The folder name and location stay unchanged.",
+            RenameDialog(title: "Rename space", caption: "Display name only. The folder name and location stay unchanged.",
                          name: "Shepherd", onRename: { _ in }, onCancel: {})
         }
     }

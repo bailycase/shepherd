@@ -33,7 +33,8 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     /// The children extension registered this connection as the control
     /// channel for its agent's native child runs: the app may send
     /// `ExtensionReply.childCommand` frames on it (card buttons, inspector steer).
-    case helloChildren(agentID: AgentID)
+    case helloChildren(agentID: AgentID, projectScopes: Bool? = nil)
+    case childScope(id: Int, agentID: AgentID, sessionID: String, userTimestamp: Double?)
     /// Outcome of a `childCommand`; `error` is nil on success.
     case childCommandResult(id: Int, error: String?)
 
@@ -181,6 +182,8 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     /// naming any agent but the one this connection registered is refused `not_registered`.
     case browser(id: Int, agentID: AgentID, request: BrowserRequest)
 
+    case projectRuntime(id: Int, agentID: AgentID, projectID: ProjectID, expectedRevision: UInt64, request: ProjectRuntimeRequest)
+    case projectPublish(id: Int, agentID: AgentID, request: ProjectPublicationRequest)
     case registerProject(id: Int, agentID: AgentID, path: String, name: String)
     case refreshProjects(id: Int, agentID: AgentID)
     case addChildProject(id: Int, agentID: AgentID, parentPath: String, path: String, name: String, create: Bool)
@@ -199,12 +202,12 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case call, proposals
         case what
         case server, challenge, report
-        case parentPath, create, projectID
+        case parentPath, create, projectID, expectedRevision, projectScopes, userTimestamp
     }
 
     private enum Kind: String, Codable {
         case setAgentStatus, setAgentName, setAgentSession, setAgentChildren, notify, helloAgent
-        case helloChildren, childCommandResult
+        case helloChildren, childCommandResult, childScope
         case listPanes, openPane, closePane, focusPane, sendPaneInput, readPane, requestReview
         case createAutomation, listAutomations, updateAutomation, deleteAutomation
         case startAutomation, stopAutomation
@@ -215,12 +218,17 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case designSystemRead, designSystemWrite, designProposeComments
         case designGet, designNote
         case helloBrowser, browser
-        case registerProject, refreshProjects, addChildProject, editProject, deleteProject
+        case registerProject, refreshProjects, addChildProject, editProject, deleteProject, projectRuntime, projectPublish
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         switch try c.decode(Kind.self, forKey: .type) {
+        case .projectPublish:
+            self = .projectPublish(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID), request: try c.decode(ProjectPublicationRequest.self, forKey: .request))
+        case .projectRuntime:
+            self = .projectRuntime(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID),
+                projectID: try c.decode(ProjectID.self, forKey: .projectID), expectedRevision: try c.decode(UInt64.self, forKey: .expectedRevision), request: try c.decode(ProjectRuntimeRequest.self, forKey: .request))
         case .editProject:
             self = .editProject(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID),
                                 projectID: try c.decode(SpaceID.self, forKey: .projectID), request: try c.decode(ProjectEdit.self, forKey: .request))
@@ -275,7 +283,10 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case .helloAgent:
             self = .helloAgent(agentID: try c.decode(AgentID.self, forKey: .agentID))
         case .helloChildren:
-            self = .helloChildren(agentID: try c.decode(AgentID.self, forKey: .agentID))
+            self = .helloChildren(agentID: try c.decode(AgentID.self, forKey: .agentID), projectScopes: try c.decodeIfPresent(Bool.self, forKey: .projectScopes))
+        case .childScope:
+            self = .childScope(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID),
+                sessionID: try c.decode(String.self, forKey: .sessionID), userTimestamp: try c.decodeIfPresent(Double.self, forKey: .userTimestamp))
         case .childCommandResult:
             self = .childCommandResult(id: try c.decode(Int.self, forKey: .id), error: try c.decodeIfPresent(String.self, forKey: .error))
         case .listPanes:
@@ -540,6 +551,16 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         switch self {
+        case .projectPublish(let id, let agentID, let request):
+            try c.encode(Kind.projectPublish, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(request, forKey: .request)
+        case .projectRuntime(let id, let agentID, let projectID, let expectedRevision, let request):
+            try c.encode(Kind.projectRuntime, forKey: .type)
+            try c.encode(id, forKey: .id); try c.encode(agentID, forKey: .agentID)
+            try c.encode(projectID, forKey: .projectID); try c.encode(expectedRevision, forKey: .expectedRevision)
+            try c.encode(request, forKey: .request)
         case .editProject(let id, let agentID, let projectID, let request):
             try c.encode(Kind.editProject, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -594,9 +615,14 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case .helloAgent(let agentID):
             try c.encode(Kind.helloAgent, forKey: .type)
             try c.encode(agentID, forKey: .agentID)
-        case .helloChildren(let agentID):
+        case .helloChildren(let agentID, let projectScopes):
             try c.encode(Kind.helloChildren, forKey: .type)
             try c.encode(agentID, forKey: .agentID)
+            try c.encodeIfPresent(projectScopes, forKey: .projectScopes)
+        case .childScope(let id, let agentID, let sessionID, let userTimestamp):
+            try c.encode(Kind.childScope, forKey: .type)
+            try c.encode(id, forKey: .id); try c.encode(agentID, forKey: .agentID)
+            try c.encode(sessionID, forKey: .sessionID); try c.encodeIfPresent(userTimestamp, forKey: .userTimestamp)
         case .childCommandResult(let id, let error):
             try c.encode(Kind.childCommandResult, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -871,6 +897,9 @@ public struct ChildRun: Codable, Hashable, Sendable, Identifiable {
     public var runID: String
     /// Lane index inside a workflow run; nil for a single-agent run.
     public var childIndex: Int?
+    /// Fresh for every real process attempt, including resumes of the same run ID.
+    public var attempt: String?
+    public var projectScope: ProjectChildScope?
     /// Display label — the workflow lane key or the agent profile name.
     public var label: String
     /// Runtime state verbatim (running/complete/failed/…). Kept as a
@@ -966,8 +995,11 @@ public struct ChildRun: Codable, Hashable, Sendable, Identifiable {
         summary: String? = nil,
         sessionID: String? = nil,
         cwd: String? = nil,
-        paused: Bool? = nil
+        paused: Bool? = nil,
+        attempt: String? = nil,
+        projectScope: ProjectChildScope? = nil
     ) {
+        self.attempt = attempt; self.projectScope = projectScope
         self.runID = runID
         self.childIndex = childIndex
         self.label = label
@@ -1134,6 +1166,9 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     /// Sent on a `helloChildren` connection; answered by `ExtensionMessage.childCommandResult`.
     /// `mode` (steer/followUp) applies to `message`.
     case childCommand(id: Int, runID: String, action: ChildCommandAction, text: String?, mode: NativeThreadDelivery?)
+    case childScope(id: Int, scope: ProjectChildScope?, deadline: Double? = nil)
+    /// Uses the existing childCommandResult acknowledgement, bound to this connection.
+    case projectChildren(id: Int, scope: ProjectChildScope, action: ProjectChildAction)
     case ok(id: Int)
     /// Register returns the canonical space; refresh returns nil. Existing spaces are unchanged.
     case projectResult(id: Int, space: Space?, created: Bool)
@@ -1200,23 +1235,25 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     case designNote(id: Int, note: DesignThreadNote)
     /// A `browser` request's answer: text, and for a screenshot an image (`BrowserOutcome`).
     case browserResult(id: Int, text: String, image: BrowserImage?)
+    case projectRuntime(id: Int, project: Project, spaces: [Space] = [])
+    case projectPublish(id: Int, result: ProjectPublicationResult)
 
     private enum CodingKeys: String, CodingKey {
         case requestID, targetAgentID, request, result
         case space, created
         case type, id, code, message, panes, pane, paneID, lines, automations, agents, text, delivery
-        case runID, action, mode
+        case runID, action, mode, scope, deadline
         case outcome
         case snapshot, board, replaced
         case comments, comment
         case listing, system
         case proposals
-        case answer, note
+        case answer, note, project, spaces
         case image
     }
 
     private enum Kind: String, Codable {
-        case parentInput, childCommand, agentRequest, agentResult
+        case parentInput, childCommand, childScope, projectChildren, agentRequest, agentResult
         case projectResult
         case ok, error, panes, paneOpened, paneContent, reviewResult, automations, agents, message
         case suggestion
@@ -1224,12 +1261,16 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case designBatchEdited, designSearchResult, designCheckpoints, designRendered, designExtracted
         case designSystems, designSystem, designSystemWritten, designProposals
         case designReference, designNote
-        case browserResult
+        case browserResult, projectRuntime, projectPublish
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         switch try c.decode(Kind.self, forKey: .type) {
+        case .childScope:
+            self = .childScope(id: try c.decode(Int.self, forKey: .id), scope: try c.decodeIfPresent(ProjectChildScope.self, forKey: .scope), deadline: try c.decodeIfPresent(Double.self, forKey: .deadline))
+        case .projectChildren:
+            self = .projectChildren(id: try c.decode(Int.self, forKey: .id), scope: try c.decode(ProjectChildScope.self, forKey: .scope), action: try c.decode(ProjectChildAction.self, forKey: .action))
         case .parentInput:
             self = .parentInput
         case .childCommand:
@@ -1395,6 +1436,10 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
                 id: try c.decode(Int.self, forKey: .id),
                 result: try c.decode(DesignSystemWriteResult.self, forKey: .result)
             )
+        case .projectPublish:
+            self = .projectPublish(id: try c.decode(Int.self, forKey: .id), result: try c.decode(ProjectPublicationResult.self, forKey: .result))
+        case .projectRuntime:
+            self = .projectRuntime(id: try c.decode(Int.self, forKey: .id), project: try c.decode(Project.self, forKey: .project), spaces: try c.decodeIfPresent([Space].self, forKey: .spaces) ?? [])
         case .browserResult:
             self = .browserResult(
                 id: try c.decode(Int.self, forKey: .id),
@@ -1409,6 +1454,12 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         switch self {
         case .parentInput:
             try c.encode(Kind.parentInput, forKey: .type)
+        case .childScope(let id, let scope, let deadline):
+            try c.encode(Kind.childScope, forKey: .type); try c.encode(id, forKey: .id)
+            try c.encodeIfPresent(scope, forKey: .scope); try c.encodeIfPresent(deadline, forKey: .deadline)
+        case .projectChildren(let id, let scope, let action):
+            try c.encode(Kind.projectChildren, forKey: .type); try c.encode(id, forKey: .id)
+            try c.encode(scope, forKey: .scope); try c.encode(action, forKey: .action)
         case .childCommand(let id, let runID, let action, let text, let mode):
             try c.encode(Kind.childCommand, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -1543,6 +1594,13 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
             try c.encode(Kind.designNote, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(note, forKey: .note)
+        case .projectPublish(let id, let result):
+            try c.encode(Kind.projectPublish, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(result, forKey: .result)
+        case .projectRuntime(let id, let project, let spaces):
+            try c.encode(Kind.projectRuntime, forKey: .type)
+            try c.encode(id, forKey: .id); try c.encode(project, forKey: .project); try c.encode(spaces, forKey: .spaces)
         case .browserResult(let id, let text, let image):
             try c.encode(Kind.browserResult, forKey: .type)
             try c.encode(id, forKey: .id)

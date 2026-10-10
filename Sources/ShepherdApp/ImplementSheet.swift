@@ -157,7 +157,7 @@ struct ImplementSheetView: View {
                 VStack(alignment: .leading, spacing: NW.Space.m) {
                     NWSearchField("Search threads", text: $model.query)
                     if model.shownThreads.isEmpty {
-                        Text(model.threads.isEmpty ? "No threads yet. Start one in a project." : "No thread matches “\(model.query)”.")
+                        Text(model.threads.isEmpty ? "No threads yet. Start one in a space." : "No thread matches “\(model.query)”.")
                             .font(.nwSans(NWImplementMetrics.rowMetaSize))
                             .foregroundStyle(Color.nw.textTertiary)
                             .frame(maxWidth: .infinity, minHeight: NWImplementMetrics.rowHeight)
@@ -166,7 +166,7 @@ struct ImplementSheetView: View {
                     }
                 }
             } else {
-                NWImplementField("Project") {
+                NWImplementField("Space") {
                     Menu {
                         ForEach(model.projects) { project in
                             Button {
@@ -176,7 +176,7 @@ struct ImplementSheetView: View {
                             }
                         }
                     } label: {
-                        NWImplementProjectLabel(project: model.chosenProject?.name ?? "Choose a project", host: "This Mac")
+                        NWImplementProjectLabel(project: model.chosenProject?.name ?? "Choose a space", host: "This Mac")
                     }
                     .menuStyle(.button)
                     .buttonStyle(.plain)
@@ -186,7 +186,7 @@ struct ImplementSheetView: View {
                         if project.isRepo {
                             NWImplementBranchLine("Starts on a new worktree,", branch: model.branch)
                         } else {
-                            NWImplementBranchLine("Starts in the project: it isn’t a git repository, so no worktree.")
+                            NWImplementBranchLine("Starts in the space: it isn’t a git repository, so no worktree.")
                         }
                     }
                 }

@@ -47,7 +47,9 @@ temporary directory, then builds and runs three programs:
   token waiting for Retry instead of retrying on its own.
 - **`ThreadStoreCheck`:** `NativeThreadStore`. It covers revisions, merging history with live
   entries, stale sessions, acceptance, drafts, unknown outcomes with no automatic resend,
-  questions, abort, and stop and reconnect.
+  questions, abort, and stop and reconnect. A send stopped before its reply keeps its draft as
+  unknown. A later matching acknowledgement clears only the unchanged submitted draft without
+  reattaching the store or drawing a second message.
 - **`RemoteConnectCheck`:** cancellation/disconnect must finish while the socket-open gate is
   still held; a deadline must also release its waiter. A late returned descriptor closes without
   sending `hello`.

@@ -33,7 +33,7 @@ struct ProjectBrowserControlTests {
         let scale = ThemeStore.shared.textScale
         defer { ThemeStore.shared.textScale = scale }
         ThemeStore.shared.textScale = 1
-        let sample = "Browser tabs in all threads and worktrees for payments share cookies on this Mac. Other projects"
+        let sample = "Browser tabs in all threads and worktrees for payments share cookies on this Mac. Other spaces"
         let font = CTFontCreateWithName("Geist-Regular" as CFString, 13.5, nil)
         let line = CTLineCreateWithAttributedString(NSAttributedString(string: sample, attributes: [.font: font]))
         let expected = CTLineGetTypographicBounds(line, nil, nil, nil)
@@ -79,7 +79,7 @@ struct ProjectBrowserControlTests {
         try ControlPress.press("Open payments", under: window.host)
         try await eventuallyOnMain("project detail in the Settings overlay") {
             window.layout()
-            return AccessibilityNode.all(under: window.host).contains { $0.label == "Project category Browser" }
+            return AccessibilityNode.all(under: window.host).contains { $0.label == "Space category Browser" }
         }
         let editor = try column("ProjectEditorColumn"), context = try column("ProjectContextColumn")
         #expect(abs(editor.minX - 272) <= 1 && abs(editor.width - 858) <= 1)
@@ -134,10 +134,10 @@ struct ProjectBrowserControlTests {
         try await eventuallyOnMain("the wide project editor to restore its context rail") {
             window.layout()
             return abs(window.host.bounds.width - 1440) <= 1 && (try? column("ProjectContextColumn").width) == 250
-                && !vm.projects.saving && AccessibilityNode.all(under: window.host).contains { $0.label == "Project category Browser" && $0.isEnabled }
+                && !vm.projects.saving && AccessibilityNode.all(under: window.host).contains { $0.label == "Space category Browser" && $0.isEnabled }
         }
         #expect(!vm.projects.dirty)
-        try ControlPress.press("Project category Browser", under: window.host)
+        try ControlPress.press("Space category Browser", under: window.host)
         try await eventuallyOnMain("Browser table in the Settings overlay") {
             window.layout()
             return !vm.projectCookies.loading && AccessibilityNode.all(under: window.host).contains { $0.label == "Sites with cookies" }
@@ -151,10 +151,10 @@ struct ProjectBrowserControlTests {
         #expect(abs(table.minX - 272) <= 1, "Browser uses the same 40pt gutter as Skills")
         #expect(abs(table.height - 235) <= 1, "the empty table has a 32pt header, 200pt body and border insets")
         #expect(abs(table.minY - 335) <= 1, "the Browser groups follow the board's vertical spacing: \(table)")
-        let description = try frame("Browser tabs in all threads and worktrees for payments share cookies on this Mac. Other projects use separate cookies.")
+        let description = try frame("Browser tabs in all threads and worktrees for payments share cookies on this Mac. Other spaces use separate cookies.")
         #expect(description.minX >= table.minX && description.maxX <= table.minX + 620,
                 "the rendered explanation stays within the board's 620pt text measure")
-        #expect(abs(try frame("Back to Projects").minX - table.minX) <= 1)
+        #expect(abs(try frame("Back to Spaces").minX - table.minX) <= 1)
         for size in [CGSize(width: 1050, height: 900), CGSize(width: 1267, height: 900), CGSize(width: 1800, height: 1000), CGSize(width: 1440, height: 900)] {
             window.window.setContentSize(size)
             try await eventuallyOnMain("the Settings host to adopt its resized width") {
@@ -164,12 +164,12 @@ struct ProjectBrowserControlTests {
             let resizedTable = try frame("Sites with cookies")
             #expect(abs(resizedTable.width - (size.width - 312)) <= 1, "Browser follows the available width after a resize")
             #expect(abs(resizedTable.minX - 272) <= 1)
-            #expect(abs(try frame("Back to Projects").minX - resizedTable.minX) <= 1)
+            #expect(abs(try frame("Back to Spaces").minX - resizedTable.minX) <= 1)
         }
         ThemeStore.shared.textScale = 1.3
         window.layout()
         #expect(abs(try frame("Sites with cookies").width - 1128) <= 1)
-        let back = try ControlPress.press("Back to Projects", under: window.host)
+        let back = try ControlPress.press("Back to Spaces", under: window.host)
         #expect(back.isEnabled)
         try await eventuallyOnMain("return to the full-width Projects list") { vm.projects.selected == nil }
         window.layout()
@@ -236,7 +236,7 @@ struct ProjectBrowserControlTests {
         #expect(await store.httpCookieStore.allCookies().count == 2)
         window.layout()
         let confirmationNodes = AccessibilityNode.all(under: window.host)
-        #expect(!confirmationNodes.contains { $0.label == "Back to Shepherd" || $0.label == "Project category Instructions" || $0.label == "Clear cookies for two.test" })
+        #expect(!confirmationNodes.contains { $0.label == "Back to Shepherd" || $0.label == "Space category Instructions" || $0.label == "Clear cookies for two.test" })
         let labels = confirmationNodes.compactMap(\.label).joined(separator: " ")
         #expect(!["private-name", "private-value", "secret-name", "secret-value"].contains { labels.contains($0) })
         try ControlPress.press("Cancel", under: window.host)

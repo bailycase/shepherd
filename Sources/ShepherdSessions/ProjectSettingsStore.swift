@@ -169,7 +169,7 @@ public final class ProjectSettingsStore: @unchecked Sendable {
         let spaces = Dictionary(state.spaces.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let tabs = Dictionary(state.tabs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var entries = state.spaces.filter { !$0.hidden }.map { ($0.path, $0.name) }
-        for agent in state.agents where agent.designID == nil {
+        for agent in state.agents where agent.designID == nil && agent.coordinatorFor == nil {
             guard let tab = tabs[agent.tabID], let pane = agent.paneID.flatMap({ tab.layout.leaf(withID: $0) })
                     ?? tab.layout.leaves.first(where: { $0.agentID == agent.id }) else { continue }
             let space = spaces[agent.spaceID]
@@ -234,7 +234,7 @@ public final class ProjectSettingsStore: @unchecked Sendable {
                   let line = data.split(separator: 10).first,
                   let object = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any],
                   object["type"] as? String == "session", let cwd = object["cwd"] as? String,
-                  cwd.hasPrefix("/"), !cwd.hasPrefix(historyURL.deletingLastPathComponent().path + "/") else { continue }
+                  cwd.hasPrefix("/"), !PiHome.canonical(cwd).hasPrefix(PiHome.canonical(historyURL.deletingLastPathComponent().path) + "/") else { continue }
             entries.append((cwd, (cwd as NSString).lastPathComponent))
         }
         try rememberEntries(entries, updateExisting: false)
@@ -251,7 +251,7 @@ public final class ProjectSettingsStore: @unchecked Sendable {
         let managed = historyURL.deletingLastPathComponent().resolvingSymlinksInPath().path
         let protectedRoots = [home.appendingPathComponent(".pi"), home.appendingPathComponent(".agents"),
                               home.appendingPathComponent(".config")]
-            + ["instructions", "pi", "skills", "designs", "design-systems"].map {
+            + ["instructions", "pi", "skills", "designs", "design-systems", "logical-projects"].map {
                 URL(fileURLWithPath: managed).appendingPathComponent($0)
             } + globalDirectories() + [systems].compactMap { $0 }
         let protected = protectedRoots.flatMap { root in

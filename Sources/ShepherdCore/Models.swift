@@ -11,6 +11,7 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
     /// project, so its agent lives here, and startup keeps its agents (unlike automation runs).
     /// Decodes false from older files, and is written only when true.
     public var holdsDesigns: Bool
+    public var holdsProjects: Bool
     /// The user hid this project from the sidebar's project tree (its menu's Hide from Sidebar;
     /// the + beside Projects brings it back). Its threads stay in the palette and Activity. Not
     /// `hidden`, which marks the reserved spaces. Decodes false from older files, and is written
@@ -27,6 +28,7 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
         path: String,
         hidden: Bool = false,
         holdsDesigns: Bool = false,
+        holdsProjects: Bool = false,
         sidebarHidden: Bool = false,
         parentID: SpaceID? = nil,
         parentIsExplicit: Bool = false
@@ -36,6 +38,7 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
         self.path = path
         self.hidden = hidden
         self.holdsDesigns = holdsDesigns
+        self.holdsProjects = holdsProjects
         self.sidebarHidden = sidebarHidden
         self.parentID = parentID
         self.parentIsExplicit = parentIsExplicit
@@ -47,10 +50,10 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
     }
 
     /// The reserved automations space: hidden, and not the designs'.
-    public var holdsAutomations: Bool { hidden && !holdsDesigns }
+    public var holdsAutomations: Bool { hidden && !holdsDesigns && !holdsProjects }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, path, hidden, holdsDesigns, sidebarHidden, parentID, parentIsExplicit
+        case id, name, path, hidden, holdsDesigns, holdsProjects, sidebarHidden, parentID, parentIsExplicit
     }
 
     public init(from decoder: Decoder) throws {
@@ -60,6 +63,7 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
         path = try c.decode(String.self, forKey: .path)
         hidden = try c.decodeIfPresent(Bool.self, forKey: .hidden) ?? false
         holdsDesigns = try c.decodeIfPresent(Bool.self, forKey: .holdsDesigns) ?? false
+        holdsProjects = try c.decodeIfPresent(Bool.self, forKey: .holdsProjects) ?? false
         sidebarHidden = try c.decodeIfPresent(Bool.self, forKey: .sidebarHidden) ?? false
         parentID = try c.decodeIfPresent(SpaceID.self, forKey: .parentID)
         parentIsExplicit = try c.decodeIfPresent(Bool.self, forKey: .parentIsExplicit) ?? false
@@ -72,6 +76,7 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
         try c.encode(path, forKey: .path)
         try c.encode(hidden, forKey: .hidden)
         if holdsDesigns { try c.encode(holdsDesigns, forKey: .holdsDesigns) }
+        if holdsProjects { try c.encode(holdsProjects, forKey: .holdsProjects) }
         if sidebarHidden { try c.encode(sidebarHidden, forKey: .sidebarHidden) }
         try c.encodeIfPresent(parentID, forKey: .parentID)
         if parentIsExplicit { try c.encode(parentIsExplicit, forKey: .parentIsExplicit) }
@@ -173,6 +178,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     /// The design this agent draws (the Design tool): its extension and skill load with it.
     /// Decodes nil from older state files; startup clears it when the design is gone.
     public var designID: DesignID?
+    public var coordinatorFor: ProjectID?
     /// The design references handed to this agent's thread (`DesignGrant`): what its design_get
     /// may read. Persisted; decodes empty from older state files. A design's agent holds none.
     public var designGrants: [DesignGrant]
@@ -203,6 +209,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         waitingReason: String? = nil,
         checkout: AgentCheckout? = nil,
         designID: DesignID? = nil,
+        coordinatorFor: ProjectID? = nil,
         designGrants: [DesignGrant] = [],
         serviceTier: ServiceTier = .standard,
         goalState: String? = nil
@@ -225,6 +232,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         self.waitingReason = waitingReason
         self.checkout = checkout
         self.designID = designID
+        self.coordinatorFor = coordinatorFor
         self.designGrants = designGrants
         self.serviceTier = serviceTier
         self.goalState = goalState
@@ -238,7 +246,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case id, name, spaceID, tabID, paneID, status, model, thinkingLevel, nameIsFinal
-        case piSessionID, worktreeBranch, worktreeBase, worktreePath, lastActiveAt, waitingOn, waitingReason, checkout, designID, runtime
+        case piSessionID, worktreeBranch, worktreeBase, worktreePath, lastActiveAt, waitingOn, waitingReason, checkout, designID, coordinatorFor, runtime
         case designGrants, serviceTier, goalState
     }
 
@@ -271,6 +279,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         checkout = try c.decodeIfPresent(AgentCheckout.self, forKey: .checkout)
         // Absent before the Design tool.
         designID = try c.decodeIfPresent(DesignID.self, forKey: .designID)
+        coordinatorFor = try c.decodeIfPresent(ProjectID.self, forKey: .coordinatorFor)
         // Absent before design references.
         designGrants = try c.decodeIfPresent([DesignGrant].self, forKey: .designGrants) ?? []
         // Absent before service tiers; a tier this build does not know (a newer build's) reads
@@ -301,6 +310,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         try c.encodeIfPresent(waitingReason, forKey: .waitingReason)
         try c.encodeIfPresent(checkout, forKey: .checkout)
         try c.encodeIfPresent(designID, forKey: .designID)
+        try c.encodeIfPresent(coordinatorFor, forKey: .coordinatorFor)
         if !designGrants.isEmpty { try c.encode(designGrants, forKey: .designGrants) }
         if serviceTier != .standard { try c.encode(serviceTier, forKey: .serviceTier) }
         try c.encodeIfPresent(goalState, forKey: .goalState)
@@ -327,13 +337,16 @@ public struct AgentCheckout: Codable, Hashable, Sendable {
 /// started. The automation persists; its agent is ordinary and ephemeral.
 public struct Automation: Codable, Hashable, Sendable, Identifiable {
     public var id: AutomationID
+    /// Owning logical Project, not a Space. Missing in older records means unscoped.
+    public var projectID: ProjectID?
     /// Sidebar row title ("pr-watch #4821").
     public var name: String
     /// The opening prompt its agent is launched with.
     public var prompt: String
     /// Working directory the agent runs in; resolved to a space at start.
     public var cwd: String
-    /// Enabled automations auto-start their agent on app launch.
+    /// Enabled unscoped automations auto-start on app launch. Project-owned automations
+    /// require an explicit admitted Project action; enabling or resuming never starts one.
     public var enabled: Bool
     /// The agent currently running this automation, nil when stopped.
     /// Cleared at server startup (sessions die with the app) unless the
@@ -346,9 +359,11 @@ public struct Automation: Codable, Hashable, Sendable, Identifiable {
         prompt: String,
         cwd: String,
         enabled: Bool = true,
-        agentID: AgentID? = nil
+        agentID: AgentID? = nil,
+        projectID: ProjectID? = nil
     ) {
         self.id = id
+        self.projectID = projectID
         self.name = name
         self.prompt = prompt
         self.cwd = cwd
@@ -508,18 +523,22 @@ public struct ShepherdState: Codable, Hashable, Sendable {
     public var agents: [Agent]
     public var automations: [Automation]
     public var designs: [Design]
+    public var projects: [Project]
+    public var projectExecutions: [ProjectExecutionReceipt]
 
     public init(spaces: [Space] = [], tabs: [Tab] = [], agents: [Agent] = [], automations: [Automation] = [],
-                designs: [Design] = []) {
+                designs: [Design] = [], projects: [Project] = [], projectExecutions: [ProjectExecutionReceipt] = []) {
         self.spaces = spaces
         self.tabs = tabs
         self.agents = agents
         self.automations = automations
         self.designs = designs
+        self.projects = projects
+        self.projectExecutions = projectExecutions
     }
 
     private enum CodingKeys: String, CodingKey {
-        case spaces, tabs, agents, automations, designs
+        case spaces, tabs, agents, automations, designs, projects, projectExecutions
     }
 
     public init(from decoder: Decoder) throws {
@@ -531,6 +550,8 @@ public struct ShepherdState: Codable, Hashable, Sendable {
         automations = try c.decodeIfPresent([Automation].self, forKey: .automations) ?? []
         // Absent before the Design tool.
         designs = try c.decodeIfPresent([Design].self, forKey: .designs) ?? []
+        projects = try c.decodeIfPresent([Project].self, forKey: .projects) ?? []
+        projectExecutions = try c.decodeIfPresent([ProjectExecutionReceipt].self, forKey: .projectExecutions) ?? []
         // `subagents` in older state.json files is ignored: Shepherd-owned children
         // are ephemeral runtime records, never persisted app entities.
     }
