@@ -83,6 +83,7 @@ struct ThreadJumpPressTests {
                         "following": deck.tailGuard.following, "rows": deck.store.rows.count,
                         "guardEnabled": deck.tailGuard.enabled, "guardActive": deck.tailGuard.active,
                         "guardAttempts": deck.tailGuard.attempts, "guardRepairing": deck.tailGuard.repairing,
+                        "requiresNativeRows": deck.tailGuard.requiresNativeRows, "nativeRowsInView": deck.tailGuard.rowsInView,
                         "visible": deck.tailGuard.visible,
                         "pageFrame": NSStringFromRect(deck.page.frame)]
                     if let scroll = deck.scrollView {

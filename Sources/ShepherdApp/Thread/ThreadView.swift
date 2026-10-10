@@ -128,6 +128,10 @@ struct ThreadView: View {
                             }
                             .id(row.id)
                             .background {
+                                ThreadTailGuard.RowProbe(guardian: tailGuard, rowID: row.id)
+                                    .accessibilityHidden(true)
+                            }
+                            .background {
                                 if row.id == (historyAnchor.rowID ?? rows.first?.id) {
                                     ThreadHistoryAnchor.Probe(anchor: historyAnchor, rowID: row.id)
                                         .onGeometryChange(for: CGFloat.self) { $0.frame(in: .scrollView).minY } action: { _ in
@@ -170,8 +174,8 @@ struct ThreadView: View {
                 .modifier(ComposerInsetPadding(inset: composerInset))
                 // A margin rather than padding so scrollTo(.top) keeps the 28pt above a turn.
                 .contentMargins(.top, AppLayout.threadTop, for: .scrollContent)
-                // Which rows are in view, for `ThreadTailGuard`: nothing, or not the tail while
-                // following it, is a view the lazy stack stranded.
+                // Target IDs are only candidates: `ThreadTailGuard` also checks native row placement
+                // before accepting cached visibility as proof that the transcript contains content.
                 .onScrollTargetVisibilityChange(idType: String.self, threshold: 0) { tailGuard.targets($0) }
                 .onChange(of: rows.first?.id) { _, first in
                     historyAnchor.prepended(firstID: first, session: store.sessionKey, active: active) { id in
@@ -333,6 +337,7 @@ struct ThreadView: View {
     /// What the tail guard reads when a check comes due, refreshed by every render and never
     /// observed.
     private func keepTail(_ proxy: ScrollViewProxy) {
+        tailGuard.requiresNativeRows = true
         tailGuard.bottomID = Self.bottomID
         tailGuard.active = active
         tailGuard.following = follower.sticky
