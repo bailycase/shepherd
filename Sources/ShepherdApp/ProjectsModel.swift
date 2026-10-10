@@ -95,7 +95,7 @@ final class ProjectsModel {
     var selectedFile: ProjectFile?
     var savedNotice: String {
         if category == .mcp { return "Saved to the project folder. MCP changes apply to new threads." }
-        if selectedFile?.path == ".pi/settings.json" {
+        if selectedFile?.path == ".shepherd/settings.json" {
             return selectedFile?.exists == true
                 ? "Saved to the project folder. Start or restart the agent to apply Pi settings."
                 : "Save project settings, then start or restart the agent to apply them."
@@ -113,7 +113,7 @@ final class ProjectsModel {
     var projectCodemode: CodemodeChoice {
         get { codemodeChoice }
         set {
-            guard fileLoaded, selectedFile?.path == ".pi/settings.json", selected?.unavailable == nil, !saving else { return }
+            guard fileLoaded, selectedFile?.path == ".shepherd/settings.json", selected?.unavailable == nil, !saving else { return }
             do {
                 let settings = try codemodeSettings()
                 let enabled: Bool? = newValue == .inherit ? nil : newValue == .on
@@ -133,7 +133,7 @@ final class ProjectsModel {
     }
 
     private func deriveCodemode() {
-        guard selectedFile?.path == ".pi/settings.json" else { codemodeChoice = .inherit; codemodeProblem = nil; return }
+        guard selectedFile?.path == ".shepherd/settings.json" else { codemodeChoice = .inherit; codemodeProblem = nil; return }
         do {
             let settings = try codemodeSettings()
             _ = try PiCodemode.setting(nil, in: settings)
@@ -146,7 +146,7 @@ final class ProjectsModel {
     private(set) var mcp = ProjectMCPConfiguration()
 
     func deriveMCP() {
-        mcp = ProjectMCPConfiguration(text: draft, path: selectedFile?.path ?? ".pi/mcp.json", host: selected?.host.name ?? "This Mac",
+        mcp = ProjectMCPConfiguration(text: draft, path: selectedFile?.path ?? ".shepherd/mcp.json", host: selected?.host.name ?? "This Mac",
                                       signedIn: mcpSignedIn, canSignIn: selected?.host.supportsMCP == true, projectTrusted: mcpProjectTrusted)
     }
     private(set) var tokenText = "empty"

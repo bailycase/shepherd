@@ -23,7 +23,7 @@ things like skills, will only be installed under shepherds application support f
 Shepherd's pi reads skills from that folder alone: pi's own discovery of `$HOME/.agents/skills` is
 turned off by a filter in its settings ([pi-home.md](pi-home.md) › Only its own home), and it loads
 no packages. So the page lists every skill an agent outside a repository gets, and the / menu
-lists nothing the page doesn't. A repository's own skills (`.pi/skills`, `.agents/skills`, once
+lists nothing the page doesn't. A repository's own skills (`.shepherd/skills`, `.agents/skills`, once
 it's trusted) load only in its threads, and Settings is global, so the page says so rather than
 listing them. Skills an extension adds while it runs (`resources_discover`) aren't known without
 running it, so they show only in a thread's / menu.

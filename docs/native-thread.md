@@ -594,7 +594,7 @@ draw no context meter.
   next reply: then `estimate` stands in (pi's `estimatedTokensAfter` for a compaction this host
   saw, else the host's own sizing) and `before` is the size it replaced.
 - **The auto-compact mark** is `window − compaction.reserveTokens`, from pi's settings as pi
-  resolves them (`PiConfig.compactionSettings`: the project's `.pi/settings.json` over the agent
+  resolves them (`PiConfig.compactionSettings`: the project's `.shepherd/settings.json` over the agent
   directory's, a `modelOverrides` entry for the model over both, 16,384 by default), read once per
   model and never written. `autoCompact` is `get_state`'s `autoCompactionEnabled`; `keepRecent` is
   `keepRecentTokens` (20,000 by default).

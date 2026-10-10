@@ -25,6 +25,34 @@ struct EngineSmokeTests {
     /// Through Shepherd's real launcher in a scratch Shepherd home: pi never sees the
     /// `NODE_OPTIONS` it was started with, and an RPC `bash` command finds `pi` at the launcher
     /// and gets that `NODE_OPTIONS` back (`restore-env.sh`, through `shellCommandPrefix`).
+    @Test func projectDiscoveryUsesShepherdAndPreservesTrustAndTheGlobalPiEnvironmentName() async throws {
+        let engine = try #require(EngineSmoke.engine)
+        let scratch = try makeScratchDirectory("eng")
+        let home = scratch.appendingPathComponent("home"), project = scratch.appendingPathComponent("project")
+        let fm = FileManager.default
+        for folder in [home, project.appendingPathComponent(".pi/extensions"), project.appendingPathComponent(".shepherd/extensions")] {
+            try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        }
+        for (folder, name) in [(".pi", "legacy"), (".shepherd", "shepherd")] {
+            let marker = scratch.appendingPathComponent(name).path
+            let source = "import fs from 'node:fs'; export default function(pi) { pi.on('session_start', () => fs.writeFileSync(\(String(reflecting: marker)), 'loaded')); }"
+            try source.write(to: project.appendingPathComponent("\(folder)/extensions/probe.ts"), atomically: true, encoding: .utf8)
+        }
+        let environment = ["HOME": home.path, "TMPDIR": scratch.path, "PATH": "/usr/bin:/bin", "PI_CODING_AGENT_DIR": home.path, "PI_OFFLINE": "1"]
+        for trust in ["--no-approve", "--approve"] {
+            let process = try RPCProcess(executable: engine.node.path, arguments: [engine.entry.path, "--mode", "rpc", "--no-session", trust], directory: project, environment: environment)
+            defer { process.stop() }
+            let response = try await process.request(["type": "get_state"])
+            #expect(response["success"] as? Bool == true, "\(process.errors)")
+            #expect(!fm.fileExists(atPath: scratch.appendingPathComponent("legacy").path))
+            #expect(fm.fileExists(atPath: scratch.appendingPathComponent("shepherd").path) == (trust == "--approve"))
+        }
+        let script = "const p = await import(\(String(reflecting: engine.packageDirectory.appendingPathComponent("dist/index.js").path))); console.log(p.CONFIG_DIR_NAME); console.log(p.getAgentDir());"
+        let result = try EngineSmoke.runTool(engine.node.path, ["--input-type=module", "-e", script], environment: environment)
+        #expect(result.status == 0, "\(result.output)")
+        #expect(result.output.contains(".shepherd\n") && result.output.contains(home.path), "\(result.output)")
+    }
+
     @Test func throughTheLauncherBashFindsPiThereAndGetsTheStashedNodeOptionsBack() async throws {
         let engine = try #require(EngineSmoke.engine)
         try await EngineSmoke.runThroughLauncher(engine: engine)

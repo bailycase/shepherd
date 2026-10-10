@@ -884,6 +884,7 @@ public final class SessionServer: @unchecked Sendable {
                 try acquireOwnershipOnQueue()
                 try bindOnQueue()
                 store.load()
+                projects.migrateExistingProjectConfiguration(in: store.state)
                 projects.remember(store.state)
                 runLog.reload()
             }
@@ -2804,6 +2805,24 @@ public final class SessionServer: @unchecked Sendable {
             routeProjectRequest(.refresh, agentID: agentID, requestID: id, client: client)
         case .addChildProject(let id, let agentID, let parentPath, let path, let name, let create):
             routeProjectRequest(.child(parentPath: parentPath, path: path, name: name, create: create), agentID: agentID, requestID: id, client: client)
+        case .prepareProjectConfiguration(let id, _, let cwd):
+            guard cwd.hasPrefix("/"), cwd.utf8.count <= 4096, !cwd.contains("\0") else {
+                reply(.error(id: id, code: "invalid", message: "An absolute project directory is required."), to: client)
+                return
+            }
+            Task { [weak self, weak client, projects] in
+                let result: ExtensionReply
+                do {
+                    try await projects.prepareProjectConfiguration(for: cwd)
+                    result = .ok(id: id)
+                } catch {
+                    result = .error(id: id, code: "config_migration", message: "Project configuration migration failed. The original .pi configuration is unchanged. Check the project's files and retry.")
+                }
+                self?.queue.async { [weak self, weak client] in
+                    guard let self, let client, self.clients[client.fd] === client else { return }
+                    self.reply(result, to: client)
+                }
+            }
         case .listAgents(let id, let agentID):
             guard !refusesDesignPeer(id: id, sender: agentID, client: client) else { return }
             routeAgentPeerRequest(.list(agentID: agentID), requestID: id, client: client)
@@ -5626,7 +5645,8 @@ public final class SessionServer: @unchecked Sendable {
     /// warning that it found no such session, and will start a new one under its id, then stops it
     /// before it writes anything, and its agent waits (`NativeStartProblem.Kind.resumedAsNew`).
     public func createSession(params: CreateSessionParams, resuming: String? = nil) async throws -> SessionInfo {
-        try await enqueue {
+        if params.runtime == .rpc { try await projects.prepareProjectConfiguration(for: params.cwd) }
+        return try await enqueue {
             try self.makeSessionOnQueue(params: params, resuming: resuming)
         }
     }

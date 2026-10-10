@@ -64,7 +64,7 @@ Settings > Subagents manages the same Markdown definitions. Both use the exporte
 `shepherd-children-config.ts` and pi's frontmatter parser, not a second YAML implementation.
 
 Only `<Shepherd support>/pi/agents` supplies definitions. Pi's `getAgentDir()` is pinned by
-Shepherd's launcher. Project `.pi/agents`, project `.agents`, the user's `~/.agents`, package
+Shepherd's launcher. Project `.shepherd/agents`, project `.agents`, the user's `~/.agents`, package
 agent directories, extra-directory environment variables, and settings overrides are not read. The
 retired discovery preference is ignored. This replaces the former multi-source discovery
 policy. There is no automatic import or migration from those folders.

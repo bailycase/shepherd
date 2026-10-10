@@ -3,7 +3,7 @@ import ShepherdProtocol
 
 /// The one piece of MCP that runs in an agent's pi: registers the servers of a repo's `.mcp.json`
 /// with pi's own MCP while Settings ▸ MCP servers ▸ Also use a repo's .mcp.json is on
-/// (docs/mcp.md). pi reads only `.pi/mcp.json`, and only in a project it trusts.
+/// (docs/mcp.md). pi reads only `.shepherd/mcp.json`, and only in a project it trusts.
 enum MCPProjectExtension {
     static func installedPath() throws -> String {
         let directory = ShepherdPaths.supportDirectory()
@@ -20,7 +20,7 @@ enum MCPProjectExtension {
     static let extensionSource = #"""
         // @ts-nocheck -- loaded by pi/jiti; this project intentionally has no Node TS workspace.
         // Shepherd's repo MCP extension: Settings ▸ MCP servers ▸ Also use a repo's .mcp.json. pi's own MCP reads the
-        // servers Shepherd derives from the user's file and a trusted project's .pi/mcp.json, never a repo's .mcp.json (the
+        // servers Shepherd derives from the user's file and a trusted project's .shepherd/mcp.json, never a repo's .mcp.json (the
         // file Claude Code, Cursor and VS Code share). With the switch on, this registers that file's servers for the
         // session with pi.registerMcpServer, reached through tool_search like the page's own; a server of the same name in
         // the user's file wins. It runs no server, speaks no MCP, reads nothing of the Keychain and writes nothing: pi's MCP

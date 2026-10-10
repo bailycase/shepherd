@@ -503,7 +503,10 @@ def make_engine(contents):
     packages.update({f"node_modules/{path}/": (release.pi_engine.module_name(path), module["version"])
                      for path, module in pin["modules"].items()})
     for folder, (name, version) in packages.items():
-        files[f"{engine}/{folder}package.json"] = json.dumps({"name": name, "version": version}).encode()
+        manifest = {"name": name, "version": version}
+        if not folder:
+            manifest["piConfig"] = {"name": "pi", "configDir": ".shepherd"}
+        files[f"{engine}/{folder}package.json"] = json.dumps(manifest).encode()
     for name in (release.pi_engine.ENTRY, "dist/index.js") + release.pi_engine.LICENSES:
         files[f"{engine}/{name}"] = b"x"
     for module, required in release.pi_engine.MODULE_REQUIRED.items():

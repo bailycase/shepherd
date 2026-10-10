@@ -139,6 +139,37 @@ enum ChildrenExtension {
 
         // A fork is the active branch through the last complete tool batch. In-flight
         // tool calls and their partial results are omitted, including the spawning call.
+        // One authenticated host fence for both fresh starts and resumes. Standalone Pi has no host.
+        export function prepareProjectConfiguration(cwd, env = process.env) {
+          if (!env.SHEPHERD_SOCKET && !env.SHEPHERD_AGENT_ID) return Promise.resolve();
+          if (!env.SHEPHERD_SOCKET || !env.SHEPHERD_AGENT_ID) return Promise.reject(Error("Shepherd project migration host is unavailable"));
+          return new Promise((resolve, reject) => {
+            const socket = net.createConnection(env.SHEPHERD_SOCKET);
+            let buffer = "", settled = false;
+            const finish = (error) => {
+              if (settled) return;
+              settled = true; clearTimeout(timer); socket.destroy();
+              error ? reject(error) : resolve();
+            };
+            const timer = setTimeout(() => finish(Error("Shepherd project migration timed out; retry the child")), 45_000);
+            socket.setEncoding("utf8");
+            socket.on("connect", () => socket.write(JSON.stringify({ type: "prepareProjectConfiguration", id: 1, agentID: env.SHEPHERD_AGENT_ID, cwd }) + "\n"));
+            socket.on("data", (chunk) => {
+              buffer += chunk;
+              if (buffer.length > 1_048_576) return finish(Error("Invalid project migration reply"));
+              const end = buffer.indexOf("\n");
+              if (end < 0) return;
+              try {
+                const reply = JSON.parse(buffer.slice(0, end));
+                if (reply.id !== 1 || reply.type !== "ok") return finish(Error(reply.message || "Project migration was refused"));
+                finish();
+              } catch { finish(Error("Invalid project migration reply")); }
+            });
+            socket.on("error", () => finish(Error("Shepherd project migration host is unavailable")));
+            socket.on("close", () => finish(Error("Shepherd project migration host disconnected")));
+          });
+        }
+
         export function forkSession(manager, cwd, file) {
           const branch = structuredClone(manager.getBranch());
           let cut = branch.length;
@@ -677,7 +708,10 @@ enum ChildrenExtension {
           }
           async function stop(run, reason = "Cancelled") {
             if (run.stopping) return run.stopping;
-            if (!run.proc) return;
+            if (!run.proc) {
+              if (run.preparing) run.cancelled = true;
+              return;
+            }
             abortRelays(run);
             run.cancelled = true; run.paused = false; run.error = reason; run.state = "running";
             run.stopping = (async () => {
@@ -814,9 +848,14 @@ enum ChildrenExtension {
             }
           }
           async function launch(run, message, signal) {
+            run.cancelled = false; run.preparing = true;
+            await prepareProjectConfiguration(run.cwd);
             signal?.throwIfAborted();
+            if (!current(run) || runs.get(run.id) !== run || run.cancelled) throw Error("Parent session ended or dispatch cancelled");
             const inherited = await childUserExtensions(run.cwd);
             signal?.throwIfAborted();
+            if (!current(run) || runs.get(run.id) !== run || run.cancelled) throw Error("Parent session ended or dispatch cancelled");
+            run.preparing = false;
             run.pending = new Map(); run.exited = false; run.cancelled = false; run.settled = false;
             run.paused = false;
             run.stopping = undefined; run.output = ""; run.error = undefined; run.stderr = ""; run.lastStop = undefined; run.availableTools = undefined;
@@ -853,6 +892,7 @@ enum ChildrenExtension {
             }
             run.token = randomUUID();
             try {
+              if (!current(run) || runs.get(run.id) !== run || signal?.aborted) throw Error("Parent session ended or dispatch cancelled");
               atomic(path.join(leaseDir, "owner.json"), { pid: process.pid, token: run.token });
               run.proc = spawn(process.execPath, [script, ...args], { cwd: run.cwd, env, detached: false, stdio: ["pipe", "pipe", "pipe"] });
             } catch (error) { releaseWriter(run); throw error; }
@@ -1088,6 +1128,12 @@ enum ChildrenExtension {
               if (params.agent && params.role) throw Error("Pass either an agent profile or a role, not both: agent and role name the same thing (role is an alias for agent). Use agent for a profile from shepherd_child_agents, or role for one of the default files (scout, reviewer, planner, worker).");
               const cwd = fs.realpathSync(path.resolve(ctx.cwd, params.cwd ?? "."));
               if (!fs.statSync(cwd).isDirectory()) throw new Error("Child cwd must be a directory");
+              const startingOwner = owner;
+              await prepareProjectConfiguration(cwd);
+              signal?.throwIfAborted();
+              if (!active || owner !== startingOwner) throw Error("Parent session ended or dispatch cancelled");
+              capacity();
+              if (runs.size >= MAX_RUNS) throw new Error("64 retained children reached; start a new parent session");
               const targetContext = childTargetContext(ctx, cwd);
               const catalog = discoverChildAgents(targetContext, defaults.scope);
               const name = params.agent ?? params.role ?? "worker";

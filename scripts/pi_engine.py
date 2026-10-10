@@ -414,6 +414,9 @@ def build_tree(pin: dict, downloads: dict) -> dict[str, bytes]:
     if set(pin["modules"]) != expected:
         raise EngineError(f"SDK modules differ from pi's shrinkwrap: missing {sorted(expected - set(pin['modules']))}, "
                           f"extra {sorted(set(pin['modules']) - expected)}")
+    # Keep Pi's environment names; only Shepherd's project configuration directory changes.
+    manifest.setdefault("piConfig", {}).update(name="pi", configDir=".shepherd")
+    pi["package.json"] = (json.dumps(manifest, indent=2) + "\n").encode()
     for relative, data in pi.items():
         tree[f"{ENGINE}/{relative}"] = data
 
@@ -559,6 +562,13 @@ def verify(root: str, pin: dict | None = None) -> list[str]:
     if not os.path.isdir(engine):
         return problems + [f"{ENGINE} is missing"]
     problems += _package_version(engine, pin["pi"]["name"], pin["pi"]["version"], ENGINE)
+    try:
+        with open(os.path.join(engine, "package.json"), encoding="utf-8") as f:
+            config = json.load(f).get("piConfig", {})
+        if config.get("name") != "pi" or config.get("configDir") != ".shepherd":
+            problems.append("piConfig must keep name pi and use project configDir .shepherd")
+    except (OSError, ValueError):
+        pass  # The package check above reports an unreadable manifest.
     for entry in (ENTRY, "dist/index.js"):
         if not os.path.isfile(os.path.join(engine, entry)):
             problems.append(f"{ENGINE}/{entry} is missing")
