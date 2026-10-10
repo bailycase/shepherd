@@ -4,6 +4,8 @@
 
   "ask"    emits a confirm extension_ui_request and waits for the response
   "hang"   never responds (timeout path)
+  "preflight-compact" compacts before answering a prompt, held by preflight-go then
+           preflight-reply; add "-refuse" for a late refusal instead of a started turn
   "die"    exits 3 without responding
   "big"    emits one record over 1 MiB, then a normal event
   "stderr" writes a line to stderr
@@ -320,6 +322,17 @@ def streaming_turn(prompt, slow=False):
     emit({"type": "agent_settled"}, terminator=b"\r\n")
 
 
+def compact_preflight(cmd):
+    context_session()
+    compaction("threshold", None, gate="preflight-go")
+    wait_for_file("preflight-reply")
+    refused = cmd["message"].endswith("-refuse")
+    respond(cmd, "prompt", success=not refused, data=None if refused else {"disposition": "started"},
+            error="refused by the stub" if refused else None)
+    if not refused:
+        streaming_turn(cmd["message"])
+
+
 def compaction(reason, instructions, will_retry=False, keep=2, gate=None):
     """pi's compaction: the summary replaces all but the last `keep` messages. As in pi's list, the
     summary comes first, then what it kept, with their own timestamps; `will_retry` is an overflow
@@ -327,7 +340,7 @@ def compaction(reason, instructions, will_retry=False, keep=2, gate=None):
     emit({"type": "compaction_start", "reason": reason})
     if gate:
         # The summary takes pi a model call: the host reads the history it has so far meanwhile.
-        wait_for_file(gate)
+        wait_for_file(gate, timeout=90)
     if instructions and "hold" in instructions:
         wait_for_file("compact-done")
     conversation = [m for m in MESSAGES if m.get("role") != "system"]
@@ -1169,6 +1182,9 @@ for raw in sys.stdin.buffer:
             emit({"type": "agent_settled"})
     elif t == "prompt":
         message = cmd.get("message", "")
+        if message.startswith("preflight-compact"):
+            threading.Thread(target=compact_preflight, args=(cmd,), daemon=True).start()
+            continue
         if "blocked-model" in message:
             blocked_model_inputs += 1
             if message == "blocked-model-once" and blocked_model_inputs > 1:
