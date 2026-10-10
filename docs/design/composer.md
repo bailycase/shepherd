@@ -112,7 +112,8 @@ metrics (the boards draw the Design tool's composers at their own scale).
 
 - **Idle:** Send. The placeholder is "Follow up, or / for commands…" ("Follow up…" when pi
   reports no commands), or "Describe the task, or / for commands…" on a fresh agent.
-- **Running:** Stop (⌘.) while the field is empty; with a draft, Stop outlined and Send. The
+- **Running:** Stop (⌘.) while the composer has no input at all (no words, and no attached image,
+  file, design reference or page element); with any of them, Stop outlined and Send. The
   field keeps the idle placeholder (the Running board's "Queue a follow-up — sent when the turn ends"
   is a departure; see the table). Send's tooltip names both ways, queueing first:
   "Queue (↩) · Steer now (⌘↩)".
@@ -410,7 +411,10 @@ a docked pane it narrows to the card. They share one anatomy (NWComposer › Men
   menu keeps keyboard focus), but they read as buttons to VoiceOver. A row never wraps: what does
   not fit truncates.
 - ↑↓ move, ⏎ chooses, Esc closes and returns focus to the field, and a click anywhere outside
-  the menu and the card closes it (the click still lands where it was aimed). No footers; the
+  the menu closes it (the click still lands where it was aimed). Only the control that opens a menu (the
+  model chip, the context ring, Send) is inside it, and it toggles the menu itself. A click in the
+  field, on Attach or on blank space in the control row closes it. The slash and @ menus are the
+  field's own, so the field keeps them. No footers; the
   only key hints are the slash menu's ⏎ and the model picker's chord.
 
 - **Slash menu** (`NWSlashMenu`; SlashMenu): opens when the draft is "/…" with no space yet (or

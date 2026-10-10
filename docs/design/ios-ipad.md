@@ -128,7 +128,8 @@ selected thread, or the Overview when none is. Other screens push over the detai
   Changes pane; while the review docks or the subagent inspector shows it is lit (a
   `runningTint` fill, its glyph in `running`) and reads Hide side pane, which closes that pane
   (`threadSidePaneOpen`). Then Stop (`stop.fill` in `failed`, while pi runs or asks; iPadSteer
-  and iPadQueue draw it) and •••. Subagents is in the ••• menu (while the thread has runs), a
+  and iPadQueue draw it) and •••. The card's corner is Stop as well while pi runs and the field and
+  attachments are empty, as on the Mac. Subagents is in the ••• menu (while the thread has runs), a
   card's Open and the footer's link. The ••• menu: Refresh, Subagents, Show or Hide Terminal
   (the terminal has no header button), Open in new window, and the agent actions (rename, move,
   delete).
