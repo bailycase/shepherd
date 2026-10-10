@@ -74,6 +74,7 @@ function script(dir) {
       // The scenarios below start a helper whose design call Shepherd holds, then act on it a prompt at a time, so
       // the test (not a timer) says when the helper's call is in flight.
       const held = /native-[0-9a-f-]{36}/.exec(JSON.stringify(body.messages))?.[0];
+      // These scenarios explicitly fetch the result; a failure must not start a competing parent turn.
       if (text === "HOLD") return steps.length === 0 ? { toolCalls: [start("HOLD board C.dc.html", { delivery: "report" })] } : { text: "started" };
       if (text === "RESULT") return steps.length === 0 ? { toolCalls: [{ name: "shepherd_child_result", args: { id: held } }] } : { text: "read" };
       if (text === "CANCEL") {

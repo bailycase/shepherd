@@ -1,0 +1,91 @@
+{
+  "version": "1.0.0",
+  "files": [
+    {
+      "path": "dist/core/resource-loader.js",
+      "before": "710e367e37c40df9f8f0239ebee6955e0a971a028d20467024bf4ea9ff55a42a",
+      "after": "a1a6dcb7b0ba5e15aa44909ec9b2717fb8c00924a20dc1b40e658081d33147cc",
+      "edits": [
+        {
+          "old": "    async loadProjectTrustExtensions() {",
+          "new": "    // Shepherd: reparse skills without reloading executable extensions or settings.\n    refreshSkills() {\n        const previous = JSON.stringify(this.getSkills());\n        const metadata = new Map(this.resourceMetadataByPath);\n        let paths = this.lastSkillPaths;\n        if (!this.noSkills) {\n            const manager = this.packageManager;\n            const accumulator = manager.createAccumulator();\n            const global = this.settingsManager.getGlobalSettings();\n            const project = this.settingsManager.getProjectSettings();\n            const projectBase = join(this.cwd, CONFIG_DIR_NAME);\n            manager.resolveLocalEntries(project.skills ?? [], \"skills\", accumulator.skills,\n                { source: \"local\", scope: \"project\", origin: \"top-level\" }, projectBase);\n            manager.resolveLocalEntries(global.skills ?? [], \"skills\", accumulator.skills,\n                { source: \"local\", scope: \"user\", origin: \"top-level\" }, this.agentDir);\n            manager.addAutoDiscoveredResources(accumulator, global, project, this.agentDir, projectBase);\n            // Keep startup precedence: CLI extension resources, ranked local/package\n            // resources, explicit --skill paths, then extension-discovered paths.\n            const prefix = [], suffix = [];\n            for (const path of this.lastSkillPaths) {\n                const info = this.resourceMetadataByPath.get(path);\n                if (info?.scope === \"temporary\") prefix.push(path);\n                else if (info?.origin === \"package\") manager.addResource(accumulator.skills, path, info, true);\n                else if (this.extensionSkillSourceInfos.has(path) || (info?.source !== \"auto\" && info?.source !== \"local\")) suffix.push(path);\n            }\n            const resources = manager.toResolvedPaths(accumulator).skills;\n            for (const resource of resources) metadata.set(resource.path, resource.metadata);\n            paths = this.mergePaths(prefix, [...resources.filter(r => r.enabled).map(r => this.mapSkillPath(r, metadata)), ...this.additionalSkillPaths, ...suffix]);\n        }\n        this.updateSkillsFromPaths(paths, metadata);\n        return previous !== JSON.stringify(this.getSkills());\n    }\n    async loadProjectTrustExtensions() {"
+        },
+        {
+          "old": "    // Shepherd: reparse skills without reloading executable extensions or settings.",
+          "new": "    getSkillWatchPaths() {\n        return [...(this.noSkills ? [] : this.packageManager.getSkillWatchPaths()),\n            ...this.lastSkillPaths, ...this.additionalSkillPaths, ...this.extensionSkillSourceInfos.keys()]\n            .map(path => this.resolveResourcePath(path));\n    }\n    // Shepherd: reparse skills without reloading executable extensions or settings."
+        }
+      ]
+    },
+    {
+      "path": "dist/core/agent-session.js",
+      "before": "476722dd363a0347049d450b5a0c67386cf156ecae2b039676962aa00a857161",
+      "after": "5075c356727c1370cc7b4d75a17bf9d5ddf82d8d9bfa4edd5187c8285387529b",
+      "edits": [
+        {
+          "old": "    async reload(options) {",
+          "new": "    refreshSkills() {\n        if (!this.isIdle) throw new Error(\"skills_busy\");\n        if (typeof this._resourceLoader.refreshSkills !== \"function\") throw new Error(\"skills_refresh_unsupported\");\n        const changed = this._resourceLoader.refreshSkills();\n        if (changed) this._rebuildSystemPrompt(this.getActiveToolNames());\n        return { changed };\n    }\n    async reload(options) {"
+        }
+      ]
+    },
+    {
+      "path": "dist/modes/rpc/rpc-mode.js",
+      "before": "631697cd35928fc827f4a423538c43ff227b8cbf63c2a2f11060616f55eba6db",
+      "after": "6b364eaf366cf321c24ec8b481cf2cd4306927560cd73bc9c8abf8110327b5a7",
+      "edits": [
+        {
+          "old": "    // Handle a single command",
+          "new": "    let skillsInvalidated = false;\n    let skillRefreshPrompts = 0;\n    // Handle a single command"
+        },
+        {
+          "old": "        switch (command.type) {",
+          "new": "        switch (command.type) {\n            case \"refresh_skills\": {\n                if (skillRefreshPrompts || !session.isIdle) return error(id, \"refresh_skills\", \"skills_busy\");\n                const result = session.refreshSkills();\n                skillsInvalidated = false;\n                return success(id, \"refresh_skills\", result);\n            }"
+        },
+        {
+          "old": "                let preflightSucceeded = false;",
+          "new": "                let preflightSucceeded = false;\n                skillRefreshPrompts++;"
+        },
+        {
+          "old": "                });\n                return undefined;",
+          "new": "                }).finally(() => {\n                    skillRefreshPrompts--;\n                    if (!skillRefreshPrompts && skillsInvalidated) output({ type: \"skills_changed\" });\n                });\n                return undefined;"
+        },
+        {
+          "old": "import * as crypto from \"node:crypto\";",
+          "new": "import { watchSkillPaths } from \"../../core/shepherd-skill-watch.js\";\nimport * as crypto from \"node:crypto\";"
+        },
+        {
+          "old": "    let unsubscribe;",
+          "new": "    let stopSkillWatch;\n    let unsubscribe;"
+        },
+        {
+          "old": "        unsubscribe?.();\n        unsubscribeBackpressure?.();\n        unsubscribe = session.subscribe((event) => {",
+          "new": "        stopSkillWatch?.();\n        stopSkillWatch = watchSkillPaths(session.resourceLoader.getSkillWatchPaths?.() ?? [],\n            () => { skillsInvalidated = true; output({ type: \"skills_changed\" }); },\n            error => output({ type: \"skills_watch_error\", error: String(error.message ?? error) }));\n        // Initial reconciliation closes the discovery-to-watch startup window.\n        output({ type: \"skills_changed\" });\n        unsubscribe?.();\n        unsubscribeBackpressure?.();\n        unsubscribe = session.subscribe((event) => {"
+        },
+        {
+          "old": "        await runtimeHost.dispose();",
+          "new": "        stopSkillWatch?.();\n        await runtimeHost.dispose();"
+        }
+      ]
+    },
+    {
+      "path": "dist/core/package-manager.js",
+      "before": "cfd718348caadc3b74df206e9af417afb9f409cdd7b508891eb7608c21fade80",
+      "edits": [
+        {
+          "old": "    async resolve(onMissing) {",
+          "new": "    getSkillWatchPaths() {\n        const global = this.settingsManager.getGlobalSettings();\n        const project = this.settingsManager.getProjectSettings();\n        const projectBase = join(this.cwd, CONFIG_DIR_NAME);\n        const paths = [];\n        const add = (root, settings, base) => {\n            // Skip wholly excluded automatic roots, notably Shepherd's user ~/.agents filter.\n            if ((settings.skills ?? []).some(entry => entry.startsWith(\"+\")) ||\n                isEnabledByOverrides(join(root, \"__shepherd_watch__\", \"SKILL.md\"), settings.skills ?? [], base)) paths.push(root);\n        };\n        add(join(this.agentDir, \"skills\"), global, this.agentDir);\n        const userAgents = join(getHomeDir(), \".agents\", \"skills\");\n        add(userAgents, global, dirname(userAgents));\n        if (this.settingsManager.isProjectTrusted()) {\n            add(join(projectBase, \"skills\"), project, projectBase);\n            for (const dir of collectAncestorAgentsSkillDirs(this.cwd)) {\n                if (resolve(dir) !== resolve(userAgents)) add(dir, project, dirname(dir));\n            }\n        }\n        for (const [settings, base] of [[global, this.agentDir], [project, projectBase]]) {\n            for (const entry of splitPatterns(settings.skills ?? []).plain) paths.push(this.resolvePathFromBase(entry, base));\n        }\n        return paths;\n    }\n    async resolve(onMissing) {"
+        },
+        {
+          "old": "function collectSkillEntries(dir, mode, ignoreMatcher, rootDir) {",
+          "new": "export { addIgnoreRules as addSkillWatchIgnoreRules };\nfunction collectSkillEntries(dir, mode, ignoreMatcher, rootDir) {"
+        }
+      ],
+      "after": "edc0f0b76dcd1b689c68b08d4ec8867d0942e88e1e0824b2eb2e0d7446591b7f"
+    },
+    {
+      "path": "dist/core/shepherd-skill-watch.js",
+      "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "after": "6847c462930774a253e23b32dfbae8b03e1413c624f80561a46e4d0f12ca36c0",
+      "source": "skill-watch.js"
+    }
+  ]
+}

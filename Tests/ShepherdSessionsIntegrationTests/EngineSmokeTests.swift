@@ -17,6 +17,15 @@ import ShepherdTestSupport
 @Suite("The bundled pi engine, run", .integrationTimeLimit,
        .enabled(if: EngineSmoke.engine != nil, "set SHEPHERD_ENGINE_SMOKE to a built Shepherd.app or a staged engine"))
 struct EngineSmokeTests {
+    @Test func skillsRefreshPreservesTrustHistoryAndExtensionsAndRefusesBusyPreflight() throws {
+        let engine = try #require(EngineSmoke.engine)
+        let script = EngineSmoke.repository.appendingPathComponent("Tests/Extensions/engine-live-skills.mjs")
+        let result = try EngineSmoke.runTool(engine.node.path, ["--test", script.path], environment: [
+            "PI_PACKAGE_DIR": engine.packageDirectory.path,
+        ])
+        #expect(result.status == 0, "\(result.output)")
+    }
+
     @Test func itAnswersOverRPCLoadsATypeScriptExtensionAndRunsBashInItsOwnHome() async throws {
         let engine = try #require(EngineSmoke.engine)
         try await EngineSmoke.run(node: engine.node, engine: engine)

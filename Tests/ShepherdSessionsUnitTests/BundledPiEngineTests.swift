@@ -38,7 +38,7 @@ struct BundledPiEngineTests {
         #expect(engine.node == contents.appendingPathComponent("Helpers/node"))
         #expect(engine.packageDirectory.standardizedFileURL == contents.appendingPathComponent("Resources/pi-engine").standardizedFileURL)
         #expect(engine.command == [contents.appendingPathComponent("Helpers/node").path,
-                                   contents.appendingPathComponent("Resources/pi-engine/dist/bundle/cli.js").path])
+                                   contents.appendingPathComponent("Resources/pi-engine/dist/cli.js").path])
         #expect(engine.version == "1.0.0")
         #expect(BundledPiEngine(app: contents.deletingLastPathComponent()) == engine)
     }

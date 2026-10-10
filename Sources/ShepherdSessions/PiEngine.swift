@@ -5,7 +5,7 @@ import Foundation
 /// home (`PiHome`) execs `command`, and `PiLaunch` builds every line that starts the launcher.
 ///
 /// In the app it is the engine inside the bundle (`BundledPiEngine`): node at
-/// `Contents/Helpers/node` running pi's `dist/bundle/cli.js`. It never falls back to a `pi` or
+/// `Contents/Helpers/node` running pi's `dist/cli.js`. It never falls back to a `pi` or
 /// `node` on PATH: a missing engine keeps its expected paths, and the launcher says it's missing.
 /// Debug builds (`swift test`, the Dev scheme) honour `SHEPHERD_PI_ENGINE`: one executable that
 /// takes pi's arguments, which the tests point at a stand-in so that no test reaches a real pi.
@@ -80,13 +80,13 @@ public struct PiEngine: Equatable, Sendable {
 }
 
 /// The engine Shepherd ships inside the app: Node at `Contents/Helpers/node` and pi's package at
-/// `Contents/Resources/pi-engine`, started as `node <package>/dist/bundle/cli.js`.
+/// `Contents/Resources/pi-engine`, started as `node <package>/dist/cli.js`.
 /// `scripts/pi_engine.py` stages that layout and the Mac target's "Embed pi engine" phase copies
 /// it in (`Tests/Release` holds the two to these paths).
 public struct BundledPiEngine: Equatable, Sendable {
     public static let nodePath = "Helpers/node"
     public static let packagePath = "Resources/pi-engine"
-    public static let entryPath = "dist/bundle/cli.js"
+    public static let entryPath = "dist/cli.js"
     /// The bundle's library entry, which Shepherd's own scripts import (the skills reader).
     public static let libraryPath = "dist/bundle/index.js"
 
