@@ -73,7 +73,7 @@ struct ComposerActionAndDismissTests {
         }
     }
 
-    /// Words, then an attached image alone: each is input, so the corner is Send beside an outlined Stop.
+    /// Words, then an attached image alone: each is input, so the corner is Send, and there is no second Stop.
     @MainActor
     static func queueing() async throws {
         AccessibilityNode.enable()
@@ -84,7 +84,7 @@ struct ComposerActionAndDismissTests {
 
         thread.store.draft = "also check the tests"
         try await eventuallyOnMain("Send to take the corner") { thread.window.layout(); return Self.labels(thread).contains("Send") }
-        #expect(Self.labels(thread).contains("Stop"), "Stop steps aside, outlined, rather than going away")
+        #expect(!Self.labels(thread).contains("Stop"), "Send is the one action: no Stop beside it")
         let send = try thread.window.press("Send")
         #expect(send.isEnabled)
         try await eventuallyOnMain("the message to be queued, not sent as a steer") {
@@ -96,7 +96,7 @@ struct ComposerActionAndDismissTests {
         let image = ImageAttachment(name: "shot.png", image: NativeImage(mimeType: "image/png", data: Data([1, 2, 3])))
         thread.input.attachments.add([(image.name, image)])
         try await eventuallyOnMain("Send to stay with only an image") { thread.window.layout(); return Self.labels(thread).contains("Send") }
-        #expect(Self.labels(thread).contains("Stop"))
+        #expect(!Self.labels(thread).contains("Stop"), "an image is input: Send alone")
     }
 
     @MainActor
@@ -176,24 +176,24 @@ extension ComposerActionAndDismissTests {
         try await eventuallyOnMain("the store to be running") { thread.store.running }
         try await expect(["Stop"], "a turn starts: Stop")
 
-        // Whitespace is not input: the host would not send it, so Send has nothing and Stop stays.
+        // Whitespace is not input: the host would not send it, so the corner stays Stop.
         thread.store.draft = "  \n\t "
         try await Task.sleep(for: .milliseconds(150))
         try await expect(["Stop"], "only whitespace: still Stop")
 
         thread.store.draft = "also this"
-        try await expect(["Stop", "Send"], "words: Stop steps aside, Send takes the corner")
+        try await expect(["Send"], "words: the corner is Send, no second Stop")
         thread.store.draft = ""
         try await expect(["Stop"], "words cleared: Stop is back in the corner")
 
         let image = ImageAttachment(name: "shot.png", image: NativeImage(mimeType: "image/png", data: Data([1, 2, 3])))
         thread.input.attachments.add([(image.name, image)])
-        try await expect(["Stop", "Send"], "an attachment is input")
+        try await expect(["Send"], "an attachment is input: Send alone")
         thread.input.attachments.remove(image.id)
         try await expect(["Stop"], "attachment removed: Stop again")
 
         thread.store.draft = "typed"
-        try await expect(["Stop", "Send"], "typed again")
+        try await expect(["Send"], "typed again")
         await thread.setRunning(false)
         try await eventuallyOnMain("the turn to settle idle") { !thread.store.running }
         try await expect(["Send"], "the turn ended with words typed: Send alone")

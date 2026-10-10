@@ -274,10 +274,12 @@ follows the Mac's rules (Thread) with the phone's measures below.
   (MobileQuestion). The boards dropped the turn and context counts and the clock for it, and so
   does the app; the word stays whole. Trailing, the thread's
   options (•••: Refresh, Subagents while the thread has runs, Terminal, then Rename…, Move up and
-  Move down, and Delete agent… or Delete worktree agent…) at rest; while the agent runs, Stop (a
-  `failed` stop square, "Stop agent" to VoiceOver) takes its place. The app keeps ••• beside Stop,
-  and keeps Stop while pi asks. The composer's corner is Stop too while the agent runs and the
-  field and attachments are empty (the app's addition, as on the Mac).
+  Move down, and Delete agent… or Delete worktree agent…) at rest; ••• stays at rest and
+  while the agent runs: Stop is no longer in the header (the user's decision, 2026-10-10: the Send
+  button is the stop button while the thread is active and nothing is typed). The composer's corner
+  is Stop while the agent runs and the field and attachments are empty, and Send with any input.
+  While pi asks, the question replaces the composer, so the header keeps a Stop (`failed` stop
+  square, "Stop agent" to VoiceOver), the one way to refuse the question.
 - **Column:** 20pt from the header, 16pt sides, 22pt between turns, 12pt between a turn's parts
   (`MobileLayout.turnItemSpacing`). The app pads the column 16pt at the top and spaces turns 24pt
   (`MobileLayout.turnSpacing`, `NW.Space.xxl`).
@@ -459,8 +461,8 @@ next step. Steer now on a row and Steer all now are the same interrupt.
   question used, were pruned: a subagent asks its parent). pi's question has no
   Dismiss: **Stop** refuses it.
 - **While pi asks** the header shows "Needs you" with a glowing dot and no Stop or •••. The app
-  keeps both: Stop is how a question is refused (the host cancels the questions pi waits on, then
-  stops the turn), as on the Mac.
+  keeps ••• and a Stop (shown only while pi asks): Stop is how a question is refused (the host
+  cancels the questions pi waits on, then stops the turn), as ⌘. is on the Mac.
 - **Not built yet:** "Something else…" for pi's own select (MobileQuestion draws it): pi's select
   takes only an offered option, so it waits for the picker block's `allowOther`.
 - **After:** the thread keeps the record where pi asked (Composer, questions, and menus ›

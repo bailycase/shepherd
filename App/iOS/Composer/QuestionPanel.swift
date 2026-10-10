@@ -6,7 +6,7 @@ import ShepherdRemote
 /// pi's question in the composer's place (MobileQuestion, iPadQuestion boards), so a blocked agent
 /// is always answerable. It follows the question dock's rules (docs/design/composer.md ›
 /// Questions; `NativeQuestionPrompt`, as the Mac's dock does): numbered options to pick, then
-/// Answer; a yes or a no that answers on a tap; an open question's field. Answer is the only button: Stop in the thread's header refuses pi's
+/// Answer; a yes or a no that answers on a tap; an open question's field. Answer is the only button: Stop in the thread's header (shown while pi asks) refuses pi's
 /// question, and hiding (the grabber, or iPad's Hide the question) folds it without answering.
 struct QuestionPanel: View {
     let prompt: NativeQuestionPrompt
