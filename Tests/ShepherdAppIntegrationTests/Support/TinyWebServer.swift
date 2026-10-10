@@ -54,7 +54,7 @@ final class TinyWebServer: @unchecked Sendable {
 
     func url(_ path: String) -> URL { URL(string: origin + path)! }
 
-    func start() async throws {
+    func start(diagnostic: (@Sendable (String) -> Void)? = nil) async throws {
         listener.newConnectionHandler = { [self] connection in
             connections.withValue { $0.append(connection) }
             connection.start(queue: .global())
@@ -64,16 +64,22 @@ final class TinyWebServer: @unchecked Sendable {
             listener.stateUpdateHandler = { [listener] state in
                 switch state {
                 case .ready:
+                    diagnostic?("web-listener.ready")
                     listener.stateUpdateHandler = nil
                     continuation.resume()
                 case .failed(let error):
+                    diagnostic?("web-listener.failed")
                     listener.stateUpdateHandler = nil
                     continuation.resume(throwing: error)
-                default:
-                    break
+                case .setup: diagnostic?("web-listener.setup")
+                case .waiting: diagnostic?("web-listener.waiting")
+                case .cancelled: diagnostic?("web-listener.cancelled")
+                @unknown default: diagnostic?("web-listener.unknown")
                 }
             }
+            diagnostic?("web-listener.start.before")
             listener.start(queue: .global())
+            diagnostic?("web-listener.start.after")
         }
         port = listener.port?.rawValue ?? 0
     }
