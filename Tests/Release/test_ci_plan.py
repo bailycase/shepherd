@@ -62,6 +62,8 @@ class AffectedTestsTests(unittest.TestCase):
                            local + "fileprivate enum OtherSuite { @Test func works() {} }\n",
                            local + "    struct SharedFixture {}\n",
                            local + "nonisolated(unsafe) var shared = 0\n",
+                           local + "infix operator <+> : AdditionPrecedence\n",
+                           local + "precedencegroup SharedPrecedence { higherThan: AdditionPrecedence }\n",
                            local + '/* struct Unfinished { */\n',
                            local + 'private let complicated = #"\\#(Shared(\"nested\"))"#\n',
                            local + "struct\nUnfamiliar {}\n",
