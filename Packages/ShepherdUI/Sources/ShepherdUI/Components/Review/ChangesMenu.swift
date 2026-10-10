@@ -129,6 +129,7 @@ public struct NWChangesMenuRow: View {
     }
 
     public var body: some View {
+        let _ = NWRenderProbe.tick("changes.menu.row")
         let nw = Color.nw
         HStack(spacing: 9) {
             Group {

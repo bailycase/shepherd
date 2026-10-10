@@ -86,7 +86,11 @@ one. The New agent sheet (⇧⌘T) stays for its directory and base fields.
   when the chosen project is a git checkout on this Mac or on a host that makes worktrees, **New
   worktree** with its switch and "Keeps the checkout clean. Merge it from Review.". The board draws
   no worktree control, so it lives in the chip's menu: its branch is generated and its base resolved
-  per Settings ▸ Worktrees, as the New agent sheet does. A project on this Mac has a context menu
+  per Settings ▸ Worktrees, as the New agent sheet does. With the switch on, for a project on this Mac, a **Base** row follows it (the branch in mono
+  11, "Default" until one is picked) and opens the Changes pane's base picker
+  (`WorktreeBasePicker`: search, every branch, the checked-out one included). Send branches from the pick and records it;
+  nothing picked leaves Settings ▸ Worktrees in charge, and a host's project has no row
+  ([ThreadControlsFixes](boards/ThreadControlsFixes.md)). A project on this Mac has a context menu
   with what the sidebar's space rows offered: Rename…, New Worktree… and Import Existing Worktree…
   (git checkouts), and Remove Space…; the palette offers Rename space… and Remove space… for the
   chosen project while the page shows. A host's project offers New Agent with Options….

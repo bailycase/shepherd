@@ -204,9 +204,11 @@ public struct ChangesBaseOption: Identifiable, Equatable, Sendable {
 }
 
 /// The picker's branches: the default base, then recents, then every other branch by last
-/// commit; the checked-out branch is not a base. `query` filters by name, ignoring case.
-public func changesBaseOptions(_ branches: ChangesBranches, selected: String?, query: String = "") -> [ChangesBaseOption] {
-    let current = Set(branches.branches.filter(\.isCurrent).map(\.name))
+/// commit; the checked-out branch is not a base to compare against, but it is one to branch from
+/// (`includeCurrent`, the new-worktree chooser). `query` filters by name, ignoring case.
+public func changesBaseOptions(_ branches: ChangesBranches, selected: String?, query: String = "",
+                               includeCurrent: Bool = false) -> [ChangesBaseOption] {
+    let current = includeCurrent ? [] : Set(branches.branches.filter(\.isCurrent).map(\.name))
     let worktrees = Set(branches.branches.filter { $0.worktree != nil }.map(\.name))
     let known = Set(branches.branches.map(\.name))
     var order: [String] = []
