@@ -20,6 +20,6 @@ User requirements in this conversation:
 
 Render the real Extensions page with Design tool enabled, in light and dark appearances and at text scales 1.0 and 1.3. There is no permission control in any state. Test the accessibility tree for its absence and the neighboring switches' presence.
 
-Test cross-thread delivery and deletion with a legacy `never` preference. Test cancellation before the deletion claim and identity validation. No approval buttons remain to press.
+Test cross-thread delivery and deletion with a legacy `never` preference. Test cancellation before the deletion claim and identity validation. No approval buttons remain to press. Press each retained extension switch off and on through off-screen ControlPress, assert its setting and desktop hit area, and verify Design references disappears when the Design tool is off.
 
 Departures: none.

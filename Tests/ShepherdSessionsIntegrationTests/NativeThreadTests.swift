@@ -685,19 +685,25 @@ struct NativeThreadTests {
         let op = UUID()
         let answer = NativeThreadRequest.subagentCommand(expectedSessionID: s.piSessionID, generation: s.generation, operationID: op,
                                                          runID: "native-2", action: .message, text: "Replace everywhere", mode: .steer)
-        async let outcome = pi.request(answer)
-        guard case .childCommand(let id, "native-2", .message, "Replace everywhere", .steer) = try await children.reply() else {
-            Issue.record("expected the childCommand frame"); return
+        // Separate scopes retire each async-let allocation before the next request phase.
+        // The Swift 6.3 test runner aborted in this test's async-let teardown.
+        do {
+            async let outcome = pi.request(answer)
+            guard case .childCommand(let id, "native-2", .message, "Replace everywhere", .steer) = try await children.reply() else {
+                Issue.record("expected the childCommand frame"); return
+            }
+            try children.send(.childCommandResult(id: id, error: nil))
+            #expect(try await outcome == .accepted(operationID: op))
         }
-        try children.send(.childCommandResult(id: id, error: nil))
-        #expect(try await outcome == .accepted(operationID: op))
         #expect(try await pi.request(answer) == .accepted(operationID: op), "a retry replays without a second frame")
         #expect(pi.stdin("prompt").isEmpty)
 
-        async let failing = pi.request(.subagentCommand(expectedSessionID: s.piSessionID, generation: s.generation, operationID: UUID(), runID: "native-3", action: .resume))
-        guard case .childCommand(let failID, "native-3", .resume, nil, nil) = try await children.reply() else { Issue.record("expected resume"); return }
-        try children.send(.childCommandResult(id: failID, error: "Child is not paused"))
-        #expect(try await failing == .failure(code: "child_command_failed", message: "Child is not paused"))
+        do {
+            async let failing = pi.request(.subagentCommand(expectedSessionID: s.piSessionID, generation: s.generation, operationID: UUID(), runID: "native-3", action: .resume))
+            guard case .childCommand(let failID, "native-3", .resume, nil, nil) = try await children.reply() else { Issue.record("expected resume"); return }
+            try children.send(.childCommandResult(id: failID, error: "Child is not paused"))
+            #expect(try await failing == .failure(code: "child_command_failed", message: "Child is not paused"))
+        }
     }
 
     @Test func subagentCommandsAreValidatedBeforeTheSocket() async throws {

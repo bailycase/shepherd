@@ -33,6 +33,7 @@ struct PeerApprovalFlowTests {
 
     @MainActor
     static func messagingWithoutApproval() async throws {
+        AccessibilityNode.enable()
         let app = try AppHarness()
         defer { app.stop() }
         app.defaults.set("never", forKey: "shepherd.pi.agentMessages")
@@ -66,6 +67,7 @@ struct PeerApprovalFlowTests {
         AccessibilityNode.enable()
         let app = try AppHarness()
         defer { app.stop() }
+        app.settings.designToolEnabled = true
         let window = OffscreenWindow(size: CGSize(width: 900, height: 1400), dark: true,
                                      ScrollView { ExtensionsSettings(settings: app.settings).padding(32) }
                                          .background(Color.nw.bgWindow))
@@ -75,6 +77,27 @@ struct PeerApprovalFlowTests {
         #expect(labels.contains("Terminals and agent tools") && labels.contains("Diff review tool"))
         #expect(!labels.contains("Agent-to-agent messages") && !labels.contains("Allow interactive threads"))
         #expect(!SettingsSection.extensions.items.contains("Agent-to-agent messages"))
+        let switches: [(String, ReferenceWritableKeyPath<AppSettings, Bool>)] = [
+            ("Terminals and agent tools", \.piPanesExtension),
+            ("Diff review tool", \.piReviewExtension),
+            ("MCP servers", \.piMCPExtension),
+            ("Browser tools", \.piBrowserExtension),
+            ("Design references", \.piDesignReferences),
+        ]
+        for (label, key) in switches {
+            let initial = app.settings[keyPath: key]
+            let pressed = try window.press(label, role: ControlRole.checkBox)
+            #expect(ControlPress.undersized([pressed], minimum: .desktop).isEmpty)
+            #expect(app.settings[keyPath: key] == !initial)
+            window.layout()
+            try window.press(label, role: ControlRole.checkBox)
+            #expect(app.settings[keyPath: key] == initial)
+            window.layout()
+        }
+        app.settings.designToolEnabled = false
+        try await eventuallyOnMain("Design references to leave the accessibility tree") {
+            !window.controls().contains { $0.label == "Design references" }
+        }
     }
 
 }

@@ -121,7 +121,8 @@ final class ThreadTailGuard {
     }
 
     private var hasRows: Bool { !rowIDs.isEmpty }
-    private var tailInView: Bool { visible.contains(bottomID) }
+    // A cached lazy-stack marker cannot override geometry that puts the answer below view.
+    private var tailInView: Bool { visible.contains(bottomID) && distance <= Self.band }
     /// Completion can evict the live turn's prompt from the history page and replace its reply ID.
     /// A cached target for that old reply is no more evidence of content than the clear marker.
     var rowsInView: Bool { !rowIDs.isDisjoint(with: visible) }

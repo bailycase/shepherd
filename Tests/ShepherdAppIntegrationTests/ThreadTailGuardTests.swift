@@ -110,6 +110,27 @@ struct ThreadTailGuardTests {
         #expect(abs(rig.gap) <= ThreadTailGuard.slack)
     }
 
+    @Test func aCachedBottomMarkerCannotLeaveAFollowingThreadFarFromItsTail() async throws {
+        let rig = Rig()
+        defer { rig.close() }
+        let land = rig.guardian.land
+        rig.guardian.land = {
+            land()
+            rig.scrollToEnd()
+            rig.guardian.distance = rig.gap
+            rig.guardian.targets(["row", "thread-bottom"])
+        }
+        rig.clip.scroll(to: NSPoint(x: 0, y: rig.clip.bounds.origin.y - 834))
+        rig.scroll.reflectScrolledClipView(rig.clip)
+        // Completion cached both a current row and the marker while the actual answer lay below.
+        rig.guardian.distance = rig.gap
+        rig.guardian.targets(["row", "thread-bottom"])
+        try await eventuallyOnMain("the cached marker to stop masking a missing final answer", timeout: .seconds(3)) {
+            rig.landings > 0 && abs(rig.gap) <= ThreadTailGuard.slack
+        }
+        #expect(rig.landings == 1)
+    }
+
     @Test func aFittingBlankDocumentRebuildsOnceAfterBoundedScrollingFails() async throws {
         let rig = Rig()
         defer { rig.close() }
