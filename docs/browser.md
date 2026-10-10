@@ -657,6 +657,7 @@ mark the tab for `opened`. Nothing else needs a change; the host cannot tell the
   on the user's next message; the dot; adopting the host's page; supersede between two viewers; a
   viewer that leaves; the grace; a reconnect; an older host), and `RemoteBrowserDrivePolicyTests`
   (the refusals end to end: a private address, every scheme, a hostname resolving to this Mac's own
-  loopback, a port this Mac's program holds, the cap on ports, a redirect, an iframe and a script's
+  loopback, a port this Mac's program holds, the cap on ports with successful loads, a refused
+  host connection failing navigation while retaining its port, a redirect, an iframe and a script's
   navigation to a private address, a page the user opened on their own network never read back).
   Previews: `browserRemoteAgentIsUsingIt`, `browserRemoteAgentOpenedATab`, `browserRemoteSuperseded`.
