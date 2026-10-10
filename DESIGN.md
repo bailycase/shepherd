@@ -183,7 +183,8 @@ status color, a raw color, or a raw glyph name.
 
 ## Interaction and keyboard
 
-- The keyboard is first-class, and the fast path never needs a dialog. Every action is a
+- The keyboard is first-class, and the fast path never needs a dialog. The workplace menu's ↑↓
+  navigation includes its visible Base row, and Return opens the branch picker. Every action is a
   menu-bar item. A chord lives in `KeybindingsStore` and nowhere else. A hint is never shown
   for a chord that isn't wired.
 - A rebound chord must include ⌘ and avoid ⌘1–9, ⌘, and the plain system chords. A chord the
