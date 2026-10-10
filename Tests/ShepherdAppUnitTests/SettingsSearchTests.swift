@@ -87,15 +87,18 @@ struct SettingsSearchTests {
         ("filter subagents", .subagents, ["Filter subagents"]),
         ("profiles", .subagents, ["New subagent"]),
         ("restore defaults", .subagents, ["Restore defaults"]),
-        ("agent-to-agent", .extensions, ["Agent-to-agent messages"]),
-        ("agent_send", .extensions, ["Agent-to-agent messages"]),
-        ("approve", .extensions, ["Agent-to-agent messages"]),
-        ("spawn", .extensions, ["Agent-to-agent messages"]),
         ("claude desktop", .mcp, ["Import…"]),
         (".mcp.json", .mcp, ["Also use a repo’s .mcp.json"]),
     ] as [(String, SettingsSection, [String])])
     func rowsMatchByTitleOrKeyword(query: String, section: SettingsSection, rows: [String]) {
         #expect(section.matches(for: query) == rows)
+    }
+
+    @Test func peerPermissionsAreNotListedOrFoundBySearch() {
+        for section in SettingsSection.allCases {
+            #expect(!section.items.contains("Agent-to-agent messages"))
+            #expect(!section.matches(for: "agent-to-agent").contains("Agent-to-agent messages"))
+        }
     }
 
     /// Naming the page lists everything on it.

@@ -439,25 +439,29 @@ struct ExtensionSocketTests {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
         h.server.setAgentMessagePolicy(.always)
-        let peer = AgentPeerInfo(id: AgentID(rawValue: "a2"), name: "worker", status: "working", cwd: "/tmp", isSelf: false)
+        let space = Fixture.space(path: h.dir.path)
+        let lead = Fixture.agent(in: space, name: "lead")
+        let worker = Fixture.agent(in: space, name: "worker", status: .working)
+        try await h.seed(Fixture.workspace([lead, worker], space: space))
+        let (sender, target) = (lead.agent.id, worker.agent.id)
+        let peer = AgentPeerInfo(id: target, name: "worker", status: "working", cwd: space.path, isSelf: false)
         let seen = Locked<[AgentPeerRequest]>([])
         h.server.onAgentPeerRequest = { request, respond in
             seen.withValue { $0.append(request) }
             if case .list = request { respond(.agents([peer])) } else { respond(.ok) }
         }
-        let (sender, target) = (AgentID(rawValue: "a1"), AgentID(rawValue: "a2"))
         let client = try ExtensionClient(path: h.socketPath)
 
         try client.send(.listAgents(id: 1, agentID: sender))
         #expect(try await client.reply() == .agents(id: 1, agents: [peer]))
         try client.send(.sendToAgent(id: 2, agentID: sender, targetAgentID: target, text: "CI is green", delivery: delivery))
         #expect(try await client.reply() == .ok(id: 2))
-        try client.send(.spawnAgent(id: 3, agentID: sender, cwd: "/tmp/repo", prompt: "do the thing"))
+        try client.send(.spawnAgent(id: 3, agentID: sender, cwd: space.path, prompt: "do the thing"))
         #expect(try await client.reply() == .ok(id: 3))
         #expect(seen.current == [
             .list(agentID: sender),
             .send(agentID: sender, targetAgentID: target, text: "CI is green", delivery: delivery),
-            .spawn(agentID: sender, cwd: "/tmp/repo", prompt: "do the thing"),
+            .spawn(agentID: sender, cwd: space.path, prompt: "do the thing"),
         ])
     }
 
