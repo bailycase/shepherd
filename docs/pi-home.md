@@ -185,7 +185,10 @@ one of them) and exports each variable the launcher set aside, as it was — so 
 `NODE_EXTRA_CA_CERTS` exactly as the user had it, never Shepherd's keychain export.
 
 The sign-in bridge (`PiSignIn.swift`) runs the engine's node directly, not through the launcher,
-so it carries the same fallback itself (`PiLaunch.clearedEnvironment`). Settings ▸ MCP servers runs
+so it carries the same fallback itself (`PiLaunch.clearedEnvironment`). Releasing a bridge or
+reaching stdout/stderr EOF removes its pipe readers, including when the process exits after the
+owner is gone. Empty EOF callbacks must not consume worker threads used to decode agent history.
+Settings ▸ MCP servers runs
 pi's own `mcp` subcommands through the launcher (`PiLaunch.mcp`: `list --json`, `login`, `logout`,
 from inside the home): the launcher passes `mcp` on as the engine's first argument, with no `-e` before
 it (pi finds a subcommand only there), after refusing `mcp add` and `mcp remove`.

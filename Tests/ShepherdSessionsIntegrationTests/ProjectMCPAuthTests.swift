@@ -170,7 +170,9 @@ struct ProjectMCPAuthTests {
           }};
         }
         """.utf8).write(to: sdk)
-        return PiSetup(engine: .init(command: ["/usr/bin/false"], packageDirectory: package.path, version: "test", node: .onPath("node")),
+        // Resolve before the login shell runs the host's PATH-resetting startup files.
+        let node = try #require(TestNode.url)
+        return PiSetup(engine: .init(command: ["/usr/bin/false"], packageDirectory: package.path, version: "test", node: .executable(node.path)),
                        home: directory.appendingPathComponent("pi"), userHome: directory.path)
     }
 }

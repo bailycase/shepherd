@@ -213,6 +213,8 @@ each rule. Add a budget with any new long list.
 - Rows are plain `Equatable` values. Closures stay out of `==`, highlight and selection arrive as
   a `Bool`, and hover lives in the row. Stores derive rows once per change, never in `body`.
 - Hidden agents stay out of the visible one's updates (switching is a visibility flip).
+- Paging older thread rows completes pending native layout before measuring its viewport anchor.
+- A cached visible bottom marker never overrides a following thread's measured gap from its tail.
 - Motion no one sees costs nothing (`nwMotionPaused`). Detail:
   [performance](docs/design/performance.md).
 
