@@ -27,8 +27,9 @@ runs:
         echo "$toolchain"
         echo "version=$(shasum -a 256 <<<"$toolchain" | cut -c1-12)" >> "$GITHUB_OUTPUT"
 
-    # Hosted runners start empty. A pull request may restore its base branch's cache, but
-    # never saves one. The self-hosted checkout uses its existing .build instead.
+    # Hosted PR caches stay in their merge ref: later heads of that PR can reuse them,
+    # not its base or siblings. A trusted branch dispatch can seed nightly for new PRs.
+    # The self-hosted checkout uses its existing .build instead.
     - name: Restore dependency and build caches
       id: cache
       if: runner.environment == 'github-hosted'
@@ -39,6 +40,13 @@ runs:
         restore-keys: |
           spm-${{ runner.os }}-${{ steps.swift.outputs.version }}-${{ hashFiles('Package.resolved') }}-
           spm-${{ runner.os }}-${{ steps.swift.outputs.version }}-
+
+    - name: Report the restored build cache
+      shell: bash
+      env:
+        MATCHED_KEY: ${{ steps.cache.outputs.cache-matched-key }}
+      run: |
+        printf 'Swift build cache matched key: %s\n' "${MATCHED_KEY:-none (cold or persistent local build)}"
 
     # Validate after restoring too. Keep dependency checkouts and verified pi downloads when
     # the toolchain changes or clean=true, but never keep products from the old build.
@@ -75,8 +83,11 @@ runs:
           ln -sfn "$PWD/$d/Sparkle.framework" "$d/PackageFrameworks/Sparkle.framework"
         done
 
-    - name: Save the hosted branch build
-      if: runner.environment == 'github-hosted' && github.event_name == 'push' && steps.cache.outputs.cache-hit != 'true'
+    - name: Save the hosted build
+      if: >-
+        runner.environment == 'github-hosted' && steps.cache.outputs.cache-hit != 'true' &&
+        ((github.event_name == 'pull_request' && github.ref == format('refs/pull/{0}/merge', github.event.pull_request.number)) ||
+         ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref_type == 'branch'))
       uses: actions/cache/save@v4
       with:
         path: .build
