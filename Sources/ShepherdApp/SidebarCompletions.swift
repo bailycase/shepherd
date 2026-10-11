@@ -28,7 +28,7 @@ struct SidebarCompletions: Equatable {
         }
         let runs = Dictionary(source.openRuns.values.compactMap { run in run.agentID.map { ($0, run) } },
                               uniquingKeysWith: { first, _ in first })
-        for agent in source.local.agents where !source.local.isDesignAgent(agent) {
+        for agent in source.local.agents where source.local.isOrdinaryThread(agent) {
             let settled = runs[agent.id]?.settledAt
             observe(.local(agent.id), finished: agent.status == .done || (agent.status == .idle && settled != nil),
                     activity: agent.lastActiveAt, completedAt: agent.lastActiveAt ?? settled.map { $0 * 1000 }
@@ -41,7 +41,7 @@ struct SidebarCompletions: Equatable {
                 return true
             }
             let catchUp = !connected.contains(host.id) || endpoints[host.id] != nextEndpoints[host.id]
-            for agent in host.state.agents where !host.state.isDesignAgent(agent) {
+            for agent in host.state.agents where host.state.isOrdinaryThread(agent) {
                 observe(.remote(.init(hostID: host.id, agentID: agent.id)), finished: agent.status == .done,
                         activity: agent.lastActiveAt, completedAt: agent.lastActiveAt, catchUp: catchUp)
             }

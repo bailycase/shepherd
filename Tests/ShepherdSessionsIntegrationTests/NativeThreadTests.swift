@@ -49,14 +49,19 @@ struct NativeThreadTests {
         let idle = try await pi.ready()
         _ = try await pi.send("slow", from: idle)
 
-        let partial = try await pi.snapshot("the first deltas") { $0.provisional.first?.blocks.first?.text == "Hello line\u{2028}sep" }
+        let partial = try await pi.snapshot("the first deltas") {
+            $0.provisional.first(where: { $0.role == "assistant" })?.blocks.first?.text == "Hello line\u{2028}sep"
+        }
+        let user = try #require(partial.provisional.first { $0.role == "user" })
+        #expect(user.blocks.first?.text == "slow")
+        #expect(user.operationID != nil, "The consumed user message keeps its send identity")
         #expect(partial.running)
-        #expect(partial.provisional.first?.status == "streaming")
+        #expect(partial.provisional.first(where: { $0.role == "assistant" })?.status == "streaming")
         #expect(partial.revision > idle.revision)
 
         pi.release(1)
         let tooling = try await pi.snapshot("the running tool") { $0.provisional.contains { $0.toolCallID == "call_abc123" && $0.status == "running" } }
-        #expect(tooling.provisional.first?.status == "toolUse")
+        #expect(tooling.provisional.first(where: { $0.role == "assistant" })?.status == "toolUse")
         let tool = try #require(tooling.provisional.first { $0.toolCallID == "call_abc123" })
         #expect(tool.status == "running" && tool.argumentsText == #"{"command":"ls"}"#)
         let toolStarted = try #require(tool.startedAt)
@@ -64,7 +69,8 @@ struct NativeThreadTests {
         pi.release(2)
         let done = try await pi.snapshot("the settled history") { !$0.running && $0.provisional.isEmpty && $0.messages.count == 5 }
         #expect(done.messages.map(\.role) == ["user", "assistant", "user", "assistant", "toolResult"])
-        #expect(done.messages.map(\.entryID) == ["user:1733234567890", "assistant:1733234567891", "m:2", "m:3", "t:call_abc123"])
+        #expect(done.messages.map(\.entryID) == ["user:1733234567890", "assistant:1733234567891", user.entryID, "m:3", "t:call_abc123"])
+        #expect(done.messages[2].operationID == user.operationID)
         #expect(done.messages[4].blocks.first?.text == "total 48\n")
         #expect(done.messages[4].startedAt == toolStarted, "history keeps the start time the host observed")
     }
@@ -685,19 +691,25 @@ struct NativeThreadTests {
         let op = UUID()
         let answer = NativeThreadRequest.subagentCommand(expectedSessionID: s.piSessionID, generation: s.generation, operationID: op,
                                                          runID: "native-2", action: .message, text: "Replace everywhere", mode: .steer)
-        async let outcome = pi.request(answer)
-        guard case .childCommand(let id, "native-2", .message, "Replace everywhere", .steer) = try await children.reply() else {
-            Issue.record("expected the childCommand frame"); return
+        // Separate scopes retire each async-let allocation before the next request phase.
+        // The Swift 6.3 test runner aborted in this test's async-let teardown.
+        do {
+            async let outcome = pi.request(answer)
+            guard case .childCommand(let id, "native-2", .message, "Replace everywhere", .steer) = try await children.reply() else {
+                Issue.record("expected the childCommand frame"); return
+            }
+            try children.send(.childCommandResult(id: id, error: nil))
+            #expect(try await outcome == .accepted(operationID: op))
         }
-        try children.send(.childCommandResult(id: id, error: nil))
-        #expect(try await outcome == .accepted(operationID: op))
         #expect(try await pi.request(answer) == .accepted(operationID: op), "a retry replays without a second frame")
         #expect(pi.stdin("prompt").isEmpty)
 
-        async let failing = pi.request(.subagentCommand(expectedSessionID: s.piSessionID, generation: s.generation, operationID: UUID(), runID: "native-3", action: .resume))
-        guard case .childCommand(let failID, "native-3", .resume, nil, nil) = try await children.reply() else { Issue.record("expected resume"); return }
-        try children.send(.childCommandResult(id: failID, error: "Child is not paused"))
-        #expect(try await failing == .failure(code: "child_command_failed", message: "Child is not paused"))
+        do {
+            async let failing = pi.request(.subagentCommand(expectedSessionID: s.piSessionID, generation: s.generation, operationID: UUID(), runID: "native-3", action: .resume))
+            guard case .childCommand(let failID, "native-3", .resume, nil, nil) = try await children.reply() else { Issue.record("expected resume"); return }
+            try children.send(.childCommandResult(id: failID, error: "Child is not paused"))
+            #expect(try await failing == .failure(code: "child_command_failed", message: "Child is not paused"))
+        }
     }
 
     @Test func subagentCommandsAreValidatedBeforeTheSocket() async throws {

@@ -222,7 +222,7 @@ extension ShepherdViewModel {
     func remoteContentRows(query: String, excluding existing: Set<String>) async -> [PaletteItem] {
         var rows: [PaletteItem] = []
         for connection in remoteHosts.connections where connection.phase == .connected && connection.supportsInspection {
-            for agent in connection.state.agents where !connection.state.isDesignAgent(agent) {
+            for agent in connection.state.agents where connection.state.isOrdinaryThread(agent) {
                 if Task.isCancelled { return [] }
                 let id = "remoteAgent.\(connection.id.uuidString).\(agent.id.rawValue)"
                 guard !existing.contains(id) else { continue }

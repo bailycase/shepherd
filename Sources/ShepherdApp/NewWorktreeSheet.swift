@@ -21,6 +21,9 @@ struct NewWorktreeSheet: View {
     @State private var baseResolved = false
     @State private var errorText: String?
     @State private var creating = false
+    @State private var choosing = false
+    /// The base came from the picker, so creating fetches it as the default is.
+    @State private var picked = false
     @FocusState private var branchFocused: Bool
 
     private var trimmedBranch: String {
@@ -46,6 +49,17 @@ struct NewWorktreeSheet: View {
                     TextField("Base", text: $base, prompt: Text("resolving…").foregroundStyle(Color.nw.textTertiary))
                         .textFieldStyle(.nw(mono: true))
                         .frame(maxWidth: AppLayout.baseFieldMaxWidth)
+                    SheetLinkButton(label: "Choose…") { choosing = true }
+                        .disabled(creating)
+                        .popover(isPresented: $choosing, arrowEdge: .bottom) {
+                            WorktreeBasePicker(vm: vm, repo: space.path, selected: base.isEmpty ? nil : base) { branch in
+                                base = branch
+                                self.picked = true
+                                baseNote = "chosen"
+                                baseResolved = true
+                                choosing = false
+                            } close: { choosing = false }
+                        }
                     Text(baseNote)
                         .font(.nw(.caption))
                         .foregroundStyle(Color.nw.textTertiary)
@@ -95,8 +109,11 @@ struct NewWorktreeSheet: View {
         let resolution = await Task.detached(priority: .userInitiated) {
             GitWorktree.resolveBase(repo: repo, mode: mode, fetchFirst: fetchFirst)
         }.value
-        if base.isEmpty { base = resolution.display }
-        baseNote = resolution.note
+        // A branch the user chose (or typed) while this resolved keeps its own note.
+        if base.isEmpty {
+            base = resolution.display
+            baseNote = resolution.note
+        }
         baseResolved = true
     }
 
@@ -108,6 +125,7 @@ struct NewWorktreeSheet: View {
         let branch = trimmedBranch
         // The base field is the start point — empty falls back to git's HEAD default.
         let trimmedBase = base.trimmingCharacters(in: .whitespaces)
+        let fetchPicked = picked && vm.settings.worktreeFetchBeforeCreate
 
         Task {
             // Worktree first, off the main thread: a failure (branch exists, bad base) must
@@ -115,7 +133,8 @@ struct NewWorktreeSheet: View {
             let path: String
             do {
                 path = try await Task.detached(priority: .userInitiated) {
-                    try GitWorktree.add(repo: repo, branch: branch, from: trimmedBase.isEmpty ? nil : trimmedBase)
+                    GitWorktree.fetchPicked(repo: repo, base: trimmedBase, fetchFirst: fetchPicked)
+                    return try GitWorktree.add(repo: repo, branch: branch, from: trimmedBase.isEmpty ? nil : trimmedBase)
                 }.value
             } catch {
                 errorText = error.localizedDescription

@@ -112,7 +112,7 @@ struct QueueStackIntegrationTests {
         let cardTop = thread.size.height - inset
         let above = CGRect(x: 0, y: 0, width: thread.size.width, height: cardTop - NWComposerMetrics.focusRing - 1)
         let before = FrameTimer.capture(thread.window, above)
-        let send = try #require(thread.sendButton, "Send stands beside an outlined Stop while pi works with a draft")
+        let send = try #require(thread.sendButton, "Send is the one action, and takes a right-click, while pi works with a draft")
 
         send.rightMouseDown(with: QueueThread.rightClick)
         try await thread.settle()

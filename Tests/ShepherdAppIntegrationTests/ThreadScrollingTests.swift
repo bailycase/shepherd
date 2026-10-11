@@ -142,7 +142,7 @@ private final class ThreadHarness {
     }
 
     /// The rendered label's viewport position, independent of lazy document-height estimates.
-    func position(of text: String) throws -> CGFloat? {
+    func position(of text: String, diagnoseMissing: Bool = false) throws -> CGFloat? {
         window.layout()
         let host = window.host
         let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
@@ -152,8 +152,13 @@ private final class ThreadHarness {
         try request.useCPUForTests()
         request.usesLanguageCorrection = false
         try VNImageRequestHandler(cgImage: image).perform([request])
-        return request.results?.first { $0.topCandidates(1).first?.string == text }
+        let result = request.results?.first { $0.topCandidates(1).first?.string == text }
             .map { (1 - $0.boundingBox.midY) * host.bounds.height }
+        if diagnoseMissing && result == nil {
+            let recognized = (request.results ?? []).prefix(16).compactMap { $0.topCandidates(1).first?.string }
+            print("Paging label '\(text)' missing: visible OCR=\(recognized), clip=\(scrollView.contentView.bounds), document=\(String(describing: scrollView.documentView?.bounds)), insets=\(scrollView.contentInsets), model messages=\(store.messages.count), requests=\(olderRequests), loading=\(store.loadingOlder)")
+        }
+        return result
     }
 
     /// The wheel monitor's real input path, followed by its native clip-view movement.
@@ -453,7 +458,7 @@ struct ThreadScrollingTests {
 
         try await thread.settle()
         #expect(thread.distanceFromBottom >= detached - 2, "growth yanked a detached reader back down")
-        try await eventuallyOnMain("the jump pill to show", poll: .milliseconds(150)) { thread.showsJumpPill }
+        try await eventuallyOnMain("the jump pill to show", poll: .milliseconds(500)) { thread.showsJumpPill }
     }
 
     /// ⌥⌘↑ from the tail to a turn just over the follower's threshold above it: the jump's
@@ -486,12 +491,12 @@ struct ThreadScrollingTests {
         defer { thread.close() }
         try await thread.waitUntilReady()
         try await thread.detach()
-        try await eventuallyOnMain("the jump pill to show", poll: .milliseconds(150)) { thread.showsJumpPill }
+        try await eventuallyOnMain("the jump pill to show", poll: .milliseconds(500)) { thread.showsJumpPill }
 
         if how == "command" { try await thread.jumpDownToTheTail() } else { thread.scrollToEnd() }
 
         try await eventuallyOnMain("the view to return to the tail") { thread.isPinned }
-        try await eventuallyOnMain("the pill to go away", poll: .milliseconds(150)) { !thread.showsJumpPill }
+        try await eventuallyOnMain("the pill to go away", poll: .milliseconds(500)) { !thread.showsJumpPill }
         await thread.publish(ThreadHarness.snapshot(count: 34, running: true, revision: 2, paragraphs: 20))
         try await eventuallyOnMain("growth to be followed again") { thread.isPinned }
     }
@@ -540,7 +545,7 @@ struct ThreadScrollingTests {
         try await thread.settle()
 
         #expect(thread.distanceFromBottom >= detached - 2, "the queued message's delivery pulled the reader to the tail")
-        try await eventuallyOnMain("the jump pill to show for the new output", poll: .milliseconds(150)) { thread.showsJumpPill }
+        try await eventuallyOnMain("the jump pill to show for the new output", poll: .milliseconds(500)) { thread.showsJumpPill }
     }
 
     /// ⌥⌘↑ with pi idle: the rows the jump reveals are measured on the way, which grows the
@@ -559,7 +564,7 @@ struct ThreadScrollingTests {
         let before = thread.distanceFromBottom
         #expect(before > NativeScrollFollower.threshold, "the second jump stays detached")
         await thread.publish(ThreadHarness.snapshot(count: 32, running: false, revision: 2, paragraphs: 20))
-        try await eventuallyOnMain("the jump pill to show for the new turn", poll: .milliseconds(150)) { thread.showsJumpPill }
+        try await eventuallyOnMain("the jump pill to show for the new turn", poll: .milliseconds(500)) { thread.showsJumpPill }
     }
 
     @Test func steeringFromEarlierHistoryReturnsToTheTailBeforeDelivery() async throws {
@@ -596,7 +601,9 @@ struct ThreadScrollingTests {
         }
         try await eventuallyOnMain("the visible top to request history") { thread.olderReply != nil }
         try await thread.settle()
-        let before = try #require(try thread.position(of: "Question 2"))
+        let before = try #require(try thread.position(of: "Question 2", diagnoseMissing: true))
+        let beforeClip = thread.scrollView.contentView.bounds
+        let beforeDocument = thread.scrollView.documentView?.bounds
         var page = ThreadHarness.snapshot(count: 12, running: false, prefix: "older", paragraphs: 7)
         for index in page.messages.indices where page.messages[index].role == "user" {
             page.messages[index].blocks = [NativeThreadBlock(kind: .text, text: "Older question \(index)")]
@@ -611,7 +618,11 @@ struct ThreadScrollingTests {
         try await thread.settle()
 
         #expect(thread.olderRequests == 1)
-        let after = try #require(try thread.position(of: "Question 2"))
+        let drawn = try thread.position(of: "Question 2", diagnoseMissing: true)
+        if drawn == nil || abs((drawn ?? before) - before) >= 2 {
+            print("Paging before/after: label=\(before)/\(String(describing: drawn)), clip=\(beforeClip)/\(thread.scrollView.contentView.bounds), document=\(String(describing: beforeDocument))/\(String(describing: thread.scrollView.documentView?.bounds))")
+        }
+        let after = try #require(drawn)
         #expect(abs(after - before) < 2, "prepending moved the visible turn from \(before) to \(after)")
     }
 

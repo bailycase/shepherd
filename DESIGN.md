@@ -32,9 +32,18 @@ Every decision has to pass one test: does this help one person supervise ten wor
 - An agent has a short task title it gave itself (`Fix plan mode`), a workplace, and a
   lifecycle: working, needs you, done, failed, idle. It renders only as a native thread.
 - Terminals are tabs under a thread, one terminal per tab. No splits, no global shells.
+- **Spaces and Projects.** A Space is the folder a thread runs in (what the app used to call a "Project").
+  A Project is the new feature above Spaces and owns the word. Copy never calls a folder a project. The
+  [ProjectLead boards](docs/design/boards/SpacesTerminology.md) are the spec for Projects; the user's only
+  approved changes to them are macOS-only hosts (no Linux) and the Activity sidebar's Designs group first,
+  above Needs you. Activity then reads Designs, Needs you, Working, Done, Projects, Recents.
 - Copy says "the agent", never "pi". The exception is where the user's own pi is the subject
   (Settings ▸ Pi, Sign-in).
 - Missions and the Artifacts and Files tabs are not built. Nothing shows or links to them.
+- Projects are an experiment, off by default (Settings ▸ Experiments ▸ Projects). Off removes the Projects group
+  (header, New project chip, rows) from both sidebars, and every way to open New project or a Project page. Spaces and
+  ordinary threads are untouched. Off closes only Project navigation and keeps the projects, their files and drafts; on
+  shows them again and reopens or resumes nothing.
 - Goals are an experiment, off by default (Settings ▸ Experiments). They have no time or token
   budgets. Turning them off pauses active goals and never clears them. Turning them back on
   never resumes work by itself.
@@ -58,9 +67,11 @@ What follows from them:
   pane borrow it (`.nwFloatShadow`) only while they float. No vibrancy, translucency or gradients.
 - **Honest affordances.** Never draw a control that does nothing, a shortcut that isn't wired,
   or sample data in place of real data. Hide what is unsupported, or say why.
-- **No permission model.** Never invent approval UI for what an agent runs. A question from pi
-  or an extension is a question, with the answers the asker offered. The one approval Shepherd
-  asks for is an agent acting on another thread (`PeerApprovalDialog`, `PeerDeleteDialog`).
+- **Keep the reader's position.** Growth and completion follow the tail only while the reader
+  follows it. A live reply shrinking does not move a detached reader to the tail.
+- **No permission model.** Agent tool calls open no approval UI, including cross-thread calls and
+  deletion. Questions retain the answers the asker offered. There is no agent-to-agent permission
+  row in Settings, and legacy permission choices have no effect.
 - **Status is a dot or glyph plus a word.** `AgentState` colors every status surface. Color is
   never the only signal.
 - **Lantern means you.** Amber marks the primary action and what needs you. Running blue marks
@@ -92,7 +103,7 @@ The macOS Settings board set (`docs/design/boards/Settings*.png`, `SignIn*.png`;
 Settings", revision 1083) is the source of truth for every Settings page.
 
 - **Navigation** is one flat list on `bgBase`, in the boards' order: Appearance, Terminal,
-  Agents, Subagents, Worktrees, Projects, Sign-in, Pi, Instructions, Skills, Extensions, Slash
+  Agents, Subagents, Worktrees, Spaces, Sign-in, Pi, Instructions, Skills, Extensions, Slash
   commands, MCP servers, Remote, Keyboard, Advanced, Experiments. No nested rows. Sign-in
   carries a lantern dot while a sign-in needs the user. The footer reads
   "Shepherd x.y.z · agent x.y.z", and "· pi x.y.z" on Pi.
@@ -102,12 +113,19 @@ Settings", revision 1083) is the source of truth for every Settings page.
 - **Pi** is Shepherd's pi, then **From pi**: the source, what was brought over, the copies and
   the imported extensions.
 - **Subagents** lists the definition files, then the native subagent switches and defaults.
-- **Extensions** holds the bundled extension switches and Agent-to-agent messages.
+- **Extensions** holds the bundled extension switches. Peer tools have no separate permission row.
 - **Slash commands**: off disables a command entirely, in the menu and when typed.
-- **Projects** reuses the shared MCP server cards, forms and OAuth sheet. Authentication runs on
-  the selected host and opens the viewer's browser. Native MCP shows Pi's project approval apart
-  from saved credentials, and asks for explicit confirmation of executable project resources
-  before approving them on that host ([Project MCP](docs/design/project-mcp.md)).
+- **Spaces** (the old folder-based "Projects"; the name now belongs to the new Projects feature) reuses the shared MCP server cards, forms and OAuth sheet. Authentication runs on
+  the selected host and opens the viewer's browser. Native MCP shows Pi's space approval apart
+  from saved credentials, and asks for explicit confirmation of executable space resources
+  before approving them on that host ([Space MCP](docs/design/project-mcp.md)).
+- Local spaces offer [Add child space](docs/design/child-projects.md) from Settings' existing
+  Add subspace action and the sidebar space menu. The shared dialog creates an empty folder
+  or registers an existing descendant. Child spaces nest under their main space in the
+  sidebar, with their threads indented again; parent collapse hides the whole group. Remove
+  Space… confirms registration/session removal while preserving local folders and child spaces.
+  Rename Space… changes only the display name. Tool-driven parent edits change both space
+  trees without changing folders or configuration inheritance; moving/copying data is explicit.
 - Sliders show the bare number the board draws ("100", "232", "12.5"). VoiceOver reads the unit.
 
 Detail: [settings.md](docs/design/settings.md) and its `settings-*` files.
@@ -176,7 +194,8 @@ status color, a raw color, or a raw glyph name.
 
 ## Interaction and keyboard
 
-- The keyboard is first-class, and the fast path never needs a dialog. Every action is a
+- The keyboard is first-class, and the fast path never needs a dialog. The workplace menu's ↑↓
+  navigation includes its visible Base row, and Return opens the branch picker. Every action is a
   menu-bar item. A chord lives in `KeybindingsStore` and nowhere else. A hint is never shown
   for a chord that isn't wired.
 - A rebound chord must include ⌘ and avoid ⌘1–9, ⌘, and the plain system chords. A chord the
@@ -206,6 +225,10 @@ each rule. Add a budget with any new long list.
 - Rows are plain `Equatable` values. Closures stay out of `==`, highlight and selection arrive as
   a `Bool`, and hover lives in the row. Stores derive rows once per change, never in `body`.
 - Hidden agents stay out of the visible one's updates (switching is a visibility flip).
+- Paging older thread rows completes pending native layout before measuring its viewport anchor.
+- A cached visible bottom marker never overrides a following thread's measured gap from its tail.
+  Cached current-row IDs require a live, nonhidden native row probe intersecting the Mac viewport;
+  physical placement is not proof of compositor paint.
 - Motion no one sees costs nothing (`nwMotionPaused`). Detail:
   [performance](docs/design/performance.md).
 
@@ -239,7 +262,7 @@ More: [docs/design/verifying.md](docs/design/verifying.md).
 | Thread, composer, queue, subagents | [thread.md](docs/design/thread.md), [composer.md](docs/design/composer.md), [queue.md](docs/design/queue.md), [subagents.md](docs/design/subagents.md) |
 | Side pane, terminal, palette, dialogs | [side-pane-changes.md](docs/design/side-pane-changes.md), [side-pane-browser.md](docs/design/side-pane-browser.md), [terminal.md](docs/design/terminal.md), [dialogs-and-palette.md](docs/design/dialogs-and-palette.md) |
 | Settings | [settings.md](docs/design/settings.md), [settings-pi.md](docs/design/settings-pi.md), [settings-projects.md](docs/design/settings-projects.md), [settings-subagents.md](docs/design/settings-subagents.md), [codemode-settings.md](docs/design/codemode-settings.md) |
-| Projects in Settings | [project-browser.md](docs/design/project-browser.md), [project-mcp.md](docs/design/project-mcp.md), [project-instructions.md](docs/design/project-instructions.md) |
+| Spaces in Settings | [project-browser.md](docs/design/project-browser.md), [project-mcp.md](docs/design/project-mcp.md), [project-instructions.md](docs/design/project-instructions.md) |
 | Controls, status pieces, keyboard, accessibility | [components.md](docs/design/components.md), [keyboard-and-accessibility.md](docs/design/keyboard-and-accessibility.md) |
 | iPhone or iPad | `ios-*.md` in [docs/design/](docs/design/README.md), and [docs/ios](docs/ios/README.md) |
 | Notifications, Live Activities | [notifications.md](docs/design/notifications.md) |

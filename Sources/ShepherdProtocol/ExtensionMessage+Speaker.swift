@@ -15,7 +15,7 @@ extension ExtensionMessage {
         switch self {
         case .setAgentStatus(let agentID, _), .setAgentName(let agentID, _, _), .setAgentSession(let agentID, _),
              .setAgentChildren(let agentID, _), .notify(let agentID, _, _), .helloAgent(let agentID),
-             .helloChildren(let agentID),
+             .helloChildren(let agentID, _), .childScope(_, let agentID, _, _), .prepareProjectConfiguration(_, let agentID, _),
              .listPanes(_, let agentID), .openPane(_, let agentID, _, _, _, _), .closePane(_, let agentID, _),
              .focusPane(_, let agentID, _), .sendPaneInput(_, let agentID, _, _, _), .readPane(_, let agentID, _),
              .requestReview(_, let agentID, _, _),
@@ -29,7 +29,10 @@ extension ExtensionMessage {
              .designCommentReply(_, let agentID, _, _, _), .designSystemRead(_, let agentID, _, _),
              .designSystemWrite(_, let agentID, _, _), .designProposeComments(_, let agentID, _, _, _),
              .designGet(_, let agentID, _, _), .designNote(_, let agentID, _, _),
-             .helloBrowser(let agentID), .browser(_, let agentID, _):
+             .editProject(_, let agentID, _, _), .deleteProject(_, let agentID, _),
+             .addChildProject(_, let agentID, _, _, _, _),
+             .registerProject(_, let agentID, _, _), .refreshProjects(_, let agentID),
+             .projectPublish(_, let agentID, _), .projectRuntime(_, let agentID, _, _, _), .helloBrowser(let agentID), .browser(_, let agentID, _):
             return agentID
         case .childCommandResult,
              .createAutomation, .listAutomations, .updateAutomation, .deleteAutomation, .startAutomation, .stopAutomation:
@@ -42,10 +45,10 @@ extension ExtensionMessage {
     /// children, notify, the hellos, an agent's answer to a relayed request, and a cancellation).
     public var replyID: Int? {
         switch self {
-        case .listPanes(let id, _), .openPane(let id, _, _, _, _, _), .closePane(let id, _, _),
+        case .childScope(let id, _, _, _), .listPanes(let id, _), .openPane(let id, _, _, _, _, _), .closePane(let id, _, _),
              .focusPane(let id, _, _), .sendPaneInput(let id, _, _, _, _), .readPane(let id, _, _),
              .requestReview(let id, _, _, _),
-             .suggestInstruction(let id, _, _, _, _),
+             .suggestInstruction(let id, _, _, _, _), .prepareProjectConfiguration(let id, _, _),
              .listAgents(let id, _), .sendToAgent(let id, _, _, _, _), .spawnAgent(let id, _, _, _),
              .coordinateAgent(let id, _, _, _),
              .createAutomation(let id, _, _, _, _, _), .listAutomations(let id), .updateAutomation(let id, _, _, _, _, _),
@@ -57,7 +60,10 @@ extension ExtensionMessage {
              .designCommentReply(let id, _, _, _, _), .designSystemRead(let id, _, _, _),
              .designSystemWrite(let id, _, _, _), .designProposeComments(let id, _, _, _, _),
              .designGet(let id, _, _, _), .designNote(let id, _, _, _),
-             .browser(let id, _, _):
+             .editProject(let id, _, _, _), .deleteProject(let id, _, _),
+             .addChildProject(let id, _, _, _, _, _),
+             .registerProject(let id, _, _, _), .refreshProjects(let id, _),
+             .projectPublish(let id, _, _), .projectRuntime(let id, _, _, _, _), .browser(let id, _, _):
             return id
         case .setAgentStatus, .setAgentName, .setAgentSession, .setAgentChildren, .notify, .helloAgent, .helloChildren,
              .childCommandResult, .agentResponse, .cancelAgentRequest, .helloBrowser:

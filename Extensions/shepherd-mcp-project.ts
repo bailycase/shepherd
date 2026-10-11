@@ -1,6 +1,6 @@
 // @ts-nocheck -- loaded by pi/jiti; this project intentionally has no Node TS workspace.
 // Shepherd's repo MCP extension: Settings ▸ MCP servers ▸ Also use a repo's .mcp.json. pi's own MCP reads the
-// servers Shepherd derives from the user's file and a trusted project's .pi/mcp.json, never a repo's .mcp.json (the
+// servers Shepherd derives from the user's file and a trusted project's .shepherd/mcp.json, never a repo's .mcp.json (the
 // file Claude Code, Cursor and VS Code share). With the switch on, this registers that file's servers for the
 // session with pi.registerMcpServer, reached through tool_search like the page's own; a server of the same name in
 // the user's file wins. It runs no server, speaks no MCP, reads nothing of the Keychain and writes nothing: pi's MCP

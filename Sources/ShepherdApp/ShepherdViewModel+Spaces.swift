@@ -1,5 +1,6 @@
 import Foundation
 import ShepherdCore
+import ShepherdProtocol
 
 /// Space lifecycle from the sidebar's context menu.
 @MainActor
@@ -13,8 +14,13 @@ extension ShepherdViewModel {
               state.spaces[index].name != trimmed else { return }
         state.spaces[index].name = trimmed
         sessions.stateDidChange(state)
-        let space = state.spaces[index]
-        enqueuePersistence("rename space") { try await $0.updateSpace(space) }
+        enqueuePersistence("rename space") { _ = try await $0.editProject(id, edit: ProjectEdit(name: trimmed)) }
+        let committed = persistenceTail
+        Task { @MainActor [weak self] in
+            await committed?.value
+            guard let self, let projects = self.madeProjects else { return }
+            await projects.load(self.projectsSources, force: true)
+        }
     }
 
     /// Delete a space and everything in it (agents, layouts, sessions). Spaces nested under it by path are independent

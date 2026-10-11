@@ -5,6 +5,8 @@ import ShepherdUI
 /// Activity groups are view state, not part of the host's workspace or wire protocol.
 enum SidebarActivitySection: String, CaseIterable, Hashable {
     case done, pinned, needsYou, working, recents, designs
+    /// The new Projects (ProjectLead boards). Its rows are `SidebarLogicalProject`s, not thread rows.
+    case projects
 
     var title: String {
         switch self {
@@ -14,6 +16,7 @@ enum SidebarActivitySection: String, CaseIterable, Hashable {
         case .done: "Done"
         case .recents: "Recents"
         case .designs: "Designs"
+        case .projects: "Projects"
         }
     }
 }
@@ -22,38 +25,57 @@ enum SidebarActivitySection: String, CaseIterable, Hashable {
 enum SidebarActivityItem: Identifiable, Equatable {
     case header(SidebarActivitySection, count: Int, collapsed: Bool)
     case row(SidebarListRow)
+    case project(SidebarLogicalProject)
 
     var id: AnyHashable {
         switch self {
         case .header(let section, _, _): AnyHashable("header.\(section.rawValue)")
         case .row(let row): AnyHashable(row.id)
+        case .project(let project): AnyHashable(project.ref)
         }
     }
 }
 
 extension SidebarLists {
+    /// The board's order (ProjectLead-Activity with the user's override): Designs first, then Needs you,
+    /// Working, Done, Projects, Recents. Pinned is not drawn by the board; it is a state the user
+    /// opts into, so it follows Done and never displaces a drawn group. Projects are not thread rows;
+    /// `items(collapsed:projects:)` places them after Done and Pinned, before Recents.
     var sections: [(section: SidebarActivitySection, rows: [SidebarListRow])] {
-        [(.done, done), (.pinned, pinned), (.needsYou, needsYou), (.working, working), (.recents, recents), (.designs, designs)]
+        [(.designs, designs), (.needsYou, needsYou), (.working, working), (.done, done), (.pinned, pinned), (.recents, recents)]
     }
 
     func visibleRows(collapsed: Set<SidebarActivitySection>) -> [SidebarListRow] {
         sections.flatMap { collapsed.contains($0.section) ? [] : $0.rows }
     }
 
-    func items(collapsed: Set<SidebarActivitySection>) -> [SidebarActivityItem] {
-        sections.flatMap { section, rows -> [SidebarActivityItem] in
+    func items(collapsed: Set<SidebarActivitySection>, projects: [SidebarLogicalProject] = [], showsProjects: Bool = true) -> [SidebarActivityItem] {
+        func block(_ section: SidebarActivitySection, _ rows: [SidebarListRow]) -> [SidebarActivityItem] {
             guard !rows.isEmpty else { return [] }
             let folded = collapsed.contains(section)
-            return [.header(section, count: rows.count, collapsed: folded)]
-                + (folded ? [] : rows.map(SidebarActivityItem.row))
+            return [.header(section, count: rows.count, collapsed: folded)] + (folded ? [] : rows.map(SidebarActivityItem.row))
         }
+        var items: [SidebarActivityItem] = []
+        for (section, rows) in sections {
+            // Projects sit between Done (and Pinned) and Recents, whether or not there are any: the
+            // header and its New project chip are the way to make the first one.
+            if section == .recents, showsProjects { items += projectBlock(projects, collapsed: collapsed) }
+            items += block(section, rows)
+        }
+        if showsProjects, !sections.contains(where: { $0.section == .recents }) { items += projectBlock(projects, collapsed: collapsed) }
+        return items
+    }
+
+    private func projectBlock(_ projects: [SidebarLogicalProject], collapsed: Set<SidebarActivitySection>) -> [SidebarActivityItem] {
+        let folded = collapsed.contains(.projects)
+        return [.header(.projects, count: projects.count, collapsed: folded)] + (folded ? [] : projects.map(SidebarActivityItem.project))
     }
 }
 
 @MainActor
 extension ShepherdViewModel {
     var sidebarActivityItems: [SidebarActivityItem] {
-        presentedSidebarLists.items(collapsed: collapsedActivitySections)
+        presentedSidebarLists.items(collapsed: collapsedActivitySections, projects: sidebarLogicalProjects, showsProjects: projectsEnabled)
     }
 
     func toggleActivitySection(_ section: SidebarActivitySection) {

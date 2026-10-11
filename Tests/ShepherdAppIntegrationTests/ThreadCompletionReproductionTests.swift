@@ -68,27 +68,29 @@ struct ThreadCompletionReproductionTests {
             await deck.store.refresh()
             let prefix = "\(native ? "anchored" : "scrolling")-\(turn)"
             var recognizedFinal = false
+            var lastImage: CGImage?
             do {
                 // Recovery walks the lazy stack in multiple steps. Wait on compositor pixels,
                 // not a fixed delay or forced layouts that could repair the view for the test.
                 try await eventuallyOnMain("\(prefix) to paint its final answer", poll: .milliseconds(100)) {
                     let image = try ThreadWindowCapture.image(deck.window.window)
+                    lastImage = image
                     recognizedFinal = try recognizedText(image).contains { $0.contains("worker has finished") }
                     return recognizedFinal
                 }
             } catch is WaitTimeout { }
-            _ = try capture(deck, to: directory.appendingPathComponent(prefix + ".png"))
-            print("COMPLETION \(prefix): rows=\(deck.store.rows.count), targets=\(deck.tailGuard.visible), following=\(deck.tailGuard.following), attempts=\(deck.tailGuard.attempts), repairing=\(deck.tailGuard.repairing), rowsInView=\(deck.tailGuard.rowsInView), \(deck.reading.map(String.init(describing:)) ?? "no scroll view"), answer=\(recognizedFinal)")
+            _ = try capture(deck, image: #require(lastImage), to: directory.appendingPathComponent(prefix + ".png"), placement: !recognizedFinal)
+            print("COMPLETION \(prefix): rows=\(deck.store.rows.count), targets=\(deck.tailGuard.visible), following=\(deck.tailGuard.following), attempts=\(deck.tailGuard.attempts), repairing=\(deck.tailGuard.repairing), rowsInView=\(deck.tailGuard.rowsInView), reportedDistance=\(deck.tailGuard.distance), \(deck.reading.map(String.init(describing:)) ?? "no scroll view"), answer=\(recognizedFinal)")
             guard recognizedFinal else {
                 // Save what the user would try next as evidence, not as a way to pass the test.
                 deck.scroll(by: -500)
                 try await Task.sleep(for: .seconds(1))
-                _ = try capture(deck, to: directory.appendingPathComponent(prefix + "-scrolled.png"))
+                _ = try capture(deck, to: directory.appendingPathComponent(prefix + "-scrolled.png"), placement: true)
                 deck.hide()
                 try await Task.sleep(for: .milliseconds(100))
                 deck.show()
                 try await Task.sleep(for: .seconds(1))
-                _ = try capture(deck, to: directory.appendingPathComponent(prefix + "-reshown.png"))
+                _ = try capture(deck, to: directory.appendingPathComponent(prefix + "-reshown.png"), placement: true)
                 Issue.record("Completion did not paint its final answer; see \(directory.path)/\(prefix).png")
                 return
             }
@@ -150,16 +152,49 @@ struct ThreadCompletionReproductionTests {
             try await eventuallyOnMain("the completed host snapshot reaches the thread") {
                 !store.running && store.messages.contains { $0.blocks.contains { $0.text.hasPrefix("Reply to " + prompt) } }
             }
-            try await Task.sleep(for: .seconds(1))
             let prefix = "workspace-\(Int(size.width))-\(turn)"
-            let bitmap = NSBitmapImageRep(cgImage: try ThreadWindowCapture.image(window.window))
-            try #require(bitmap.representation(using: .png, properties: [:])).write(to: directory.appendingPathComponent(prefix + ".png"))
-            let text = try recognizedText(#require(bitmap.cgImage))
-            let painted = text.contains {
-                let letters = $0.lowercased().filter { $0.isLetter || $0.isNumber }
-                return letters.contains("completiontrial") || letters.contains("letval") || letters.contains("paragraph")
+            var lastImage: CGImage?
+            var lastOCR: [String] = []
+            var painted = false
+            do {
+                // Store completion precedes painting; observe pixels without forcing layout.
+                try await eventuallyOnMain("\(prefix) to paint its completed answer", poll: .milliseconds(100)) {
+                    let image = try ThreadWindowCapture.image(window.window)
+                    lastImage = image
+                    lastOCR = try recognizedText(image)
+                    painted = lastOCR.contains {
+                        let letters = $0.lowercased().filter { $0.isLetter || $0.isNumber }
+                        return letters.contains("completiontrial") || letters.contains("letval") || letters.contains("paragraph")
+                    }
+                    return painted
+                }
+            } catch is WaitTimeout { }
+            // Read native geometry only; forcing layout here would hide the failed paint boundary.
+            var scrolls: [[String: Any]] = []
+            func inspect(_ view: NSView) {
+                if let scroll = view as? NSScrollView {
+                    let clip = scroll.contentView.bounds
+                    let height = scroll.documentView?.bounds.height ?? 0
+                    scrolls.append([
+                        "class": String(describing: type(of: scroll)),
+                        "clip": [clip.origin.x, clip.origin.y, clip.width, clip.height],
+                        "documentHeight": height, "bottomInset": scroll.contentInsets.bottom,
+                        "endDistance": height - (clip.origin.y + clip.height - scroll.contentInsets.bottom),
+                        "hidden": scroll.isHiddenOrHasHiddenAncestor, "alpha": scroll.alphaValue
+                    ])
+                }
+                view.subviews.forEach(inspect)
             }
-            print("WORKSPACE \(prefix): rows=\(store.rows.count), children=\(store.subagents.count), painted=\(painted)")
+            if let content = window.window.contentView { inspect(content) }
+            let diagnostic: [String: Any] = [
+                "lastOCR": lastOCR, "scrolls": scrolls,
+                "lastAssistantID": store.messages.last { $0.role == "assistant" }?.entryID ?? "none"
+            ]
+            try JSONSerialization.data(withJSONObject: diagnostic, options: [.prettyPrinted, .sortedKeys])
+                .write(to: directory.appendingPathComponent(prefix + ".json"))
+            let bitmap = NSBitmapImageRep(cgImage: try #require(lastImage))
+            try #require(bitmap.representation(using: .png, properties: [:])).write(to: directory.appendingPathComponent(prefix + ".png"))
+            print("WORKSPACE \(prefix): rows=\(store.rows.count), messages=\(store.messages.count), running=\(store.running), ready=\(store.ready), children=\(store.subagents.count), mountedTabs=\(vm.mountedTabs.count), painted=\(painted)")
             guard painted else {
                 Issue.record("The real workspace did not paint its completed answer; see \(directory.path)/\(prefix).png")
                 return
@@ -184,9 +219,17 @@ struct ThreadCompletionReproductionTests {
         #expect(text.contains { $0.contains("Paragraph") || $0.contains("value") || $0.contains("Key point") })
     }
 
-    private func capture(_ deck: Flow.Deck, to path: URL) throws -> CGImage {
-        let bitmap = NSBitmapImageRep(cgImage: try ThreadWindowCapture.image(deck.window.window))
+    private func capture(_ deck: Flow.Deck, image: CGImage? = nil, to path: URL, placement: Bool = false) throws -> CGImage {
+        let bitmap = NSBitmapImageRep(cgImage: try image ?? ThreadWindowCapture.image(deck.window.window))
         try #require(bitmap.representation(using: .png, properties: [:])).write(to: path)
+        if placement, let scroll = deck.scrollView {
+            var evidence = ThreadWindowCapture.placement(of: deck.page, in: scroll)
+            evidence["reading"] = deck.reading.map(String.init(describing:)) ?? "no scroll view"
+            evidence["targets"] = deck.tailGuard.visible
+            evidence["following"] = deck.tailGuard.following
+            try JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys])
+                .write(to: path.deletingPathExtension().appendingPathExtension("json"))
+        }
         return try #require(bitmap.cgImage)
     }
 

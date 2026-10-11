@@ -3,7 +3,7 @@ import ShepherdCore
 import ShepherdUI
 
 /// Settings ▸ Extensions (SettingsExtensions, SettingsPiDesignReferences): the pi extensions Shepherd
-/// bundles, a switch each, and who may act on other threads.
+/// bundles, with a switch for each. Peer tools need no separate permission setting.
 struct ExtensionsSettings: View {
     @Bindable var settings: AppSettings
 
@@ -14,16 +14,6 @@ struct ExtensionsSettings: View {
                 SettingsRow(title: "Terminals and agent tools",
                             subtitle: "Let agents open and drive terminals, message or spawn agents, manage automations and send notifications.") {
                     SettingsSwitch(label: "Terminals and agent tools", isOn: $settings.piPanesExtension)
-                }
-                SettingsRow(title: "Agent-to-agent messages",
-                            subtitle: "Whether an agent may message, steer, read or start another thread. Ask me opens a dialog each time. Automations can't answer one, so they need Always allow.") {
-                    NWPopupMenu(settings.agentMessages.title, minWidth: AppLayout.settingsPopupWidth) {
-                        ForEach(AgentMessagePolicy.allCases, id: \.self) { choice in
-                            Button(choice.title) { settings.agentMessages = choice }
-                        }
-                    }
-                    .accessibilityLabel("Agent-to-agent messages")
-                    .disabled(!settings.piPanesExtension)
                 }
                 SettingsRow(title: "Diff review tool", subtitle: "Let agents open the review pane with `review_diff`.") {
                     SettingsSwitch(label: "Diff review tool", isOn: $settings.piReviewExtension)

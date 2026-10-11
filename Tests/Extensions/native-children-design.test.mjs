@@ -1,3 +1,4 @@
+import { projectConfigHost } from "./fixtures/project-config-host.mjs";
 // A design agent's helpers use its design tools through it, with real processes: a real parent pi loads the design
 // extension and the children extension against a stand-in Shepherd socket, and starts real helper pis whose
 // (fake-provider) model calls design_read and board_edit. The helpers have none of the parent's identity; every
@@ -34,7 +35,9 @@ async function shepherd(dir) {
     const lines = children.jsonLines((frame) => {
       frames.push({ ...frame, connection });
       const reply = (body) => socket.write(JSON.stringify({ id: frame.id, ...body }) + "\n");
-      if (frame.type === "designRead" && !frame.path) {
+      if (frame.type === "prepareProjectConfiguration") {
+        socket.write(JSON.stringify({ type: "ok", id: frame.id }) + "\n");
+      } else if (frame.type === "designRead" && !frame.path) {
         reply({ type: "design", snapshot: { designID: "d1", revision, index: { v: 3, title: "Checkout", boards: {}, order: [] }, boards: {} } });
       } else if (frame.type === "designRead") {
         reply({ type: "designBoard", board: { path: frame.path, source: BOARD, sha256: "aa", revision } });
@@ -74,7 +77,8 @@ function script(dir) {
       // The scenarios below start a helper whose design call Shepherd holds, then act on it a prompt at a time, so
       // the test (not a timer) says when the helper's call is in flight.
       const held = /native-[0-9a-f-]{36}/.exec(JSON.stringify(body.messages))?.[0];
-      if (text === "HOLD") return steps.length === 0 ? { toolCalls: [start("HOLD board C.dc.html")] } : { text: "started" };
+      // These scenarios explicitly fetch the result; a failure must not start a competing parent turn.
+      if (text === "HOLD") return steps.length === 0 ? { toolCalls: [start("HOLD board C.dc.html", { delivery: "report" })] } : { text: "started" };
       if (text === "RESULT") return steps.length === 0 ? { toolCalls: [{ name: "shepherd_child_result", args: { id: held } }] } : { text: "read" };
       if (text === "CANCEL") {
         if (steps.length === 0) return { toolCalls: [{ name: "shepherd_child_cancel", args: { id: held } }] };
@@ -123,7 +127,8 @@ function startParent({ dir, home, socketPath, design }) {
       const before = settled(), id = `p-${++sequence}`;
       proc.stdin.write(JSON.stringify({ id, type: "prompt", message }) + "\n");
       await until(() => events.some((event) => event.id === id && event.type === "response"), 30000);
-      assert(events.find((event) => event.id === id && event.type === "response").success, `prompt refused: ${stderr}`);
+      const response = events.find((event) => event.id === id && event.type === "response");
+      assert(response.success, `prompt refused: ${response.error ?? "unknown error"}; ${stderr}`);
       await until(() => settled() > before, 90000);
     },
     async round() {
@@ -276,6 +281,7 @@ test("a helper killed outright takes the design call it had in flight with it", 
 
 test("a parent that draws no design refuses a profile's design tools before anything starts", { timeout: 120000 }, async () => {
   const dir = tempDir("design-none");
+  const migrationHost = await projectConfigHost(path.join(dir, "s"));
   const home = scratchHome(dir);
   fs.mkdirSync(path.join(home, "agents"));
   fs.writeFileSync(path.join(home, "agents", "design-editor.md"), PROFILE);
@@ -288,5 +294,6 @@ test("a parent that draws no design refuses a profile's design tools before anyt
       assert.deepEqual(await h.call("result", {}), [], "no helper was made");
     } finally { await h.shutdown(); }
   });
+  await migrationHost.close();
   fs.rmSync(dir, { recursive: true, force: true });
 });

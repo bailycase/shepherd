@@ -39,7 +39,7 @@ Read from pi 1.0's docs (`.build/pi-engine/Resources/pi-engine/docs/mcp.md`) and
 by `pi-mcp.test.mjs`.
 
 **Files and trust.** pi reads `<agent dir>/mcp.json` (Shepherd's home, because `PI_CODING_AGENT_DIR` is its
-own) and, only in a project pi trusts, `<project>/.pi/mcp.json`. No flag or variable names another file,
+own) and, only in a space pi trusts, `<project>/.shepherd/mcp.json`. No flag or variable names another file,
 so Shepherd cannot point pi at `~/.config/mcp/mcp.json`: the file in the home is derived. The format is
 `{"mcpServers": {name: entry}}`. Names are `[A-Za-z0-9_-]+`; two names that differ only by `-` and `_` are
 one server. A bad entry is reported and skipped, the others run. pi never reads `~/.pi` here: its home is
@@ -113,10 +113,10 @@ it reports `needs-auth`; `pi mcp logout` deletes the entry. `oauth` also takes `
 (a `${VAR}` or `!command` works), `callbackPort`, `scope` and `authServerMetadataUrl`. Only HTTP servers
 with no `Authorization` header use it.
 
-Settings > Projects > MCP servers also offers Sign in and Sign out for both project file
+Settings > Spaces > MCP servers also offers Sign in and Sign out for both space file
 formats, using the same sheet as global settings. Add and sign in saves first. A host-owned
 SDK bridge loads only the selected HTTP entry and uses pi's native OAuth implementation,
-without changing global configuration, loading project extensions or calling a model.
+without changing global configuration, loading space extensions or calling a model.
 Tokens stay in that host's pi home, available to its threads; the viewer receives only status.
 Remote sign-in opens the viewer's browser. A loopback-only listener accepts the pending
 callback path and state, then returns the redirect to the host. Pi verifies state and PKCE.
@@ -127,14 +127,14 @@ sixteen retained results bound the work. Login-shell-only variables in shared-fi
 after an explicit sign-in; status checks do not start a shell just to expand them. Cancel, navigation, disconnection and host shutdown close pending work. Restart never
 resumes it. Remote hosts advertise `projects.mcp.v1`; older hosts require an update.
 
-### Project approval and thread loading
+### Space approval and thread loading
 
-Saving configuration or signing in does not approve a project. The OAuth bridge explicitly
-loads one selected entry, so it can save credentials even while Pi blocks `.pi/mcp.json` in
-RPC threads. The project page labels that state "Credentials saved", not a live connection.
+Saving configuration or signing in does not approve a space. The OAuth bridge explicitly
+loads one selected entry, so it can save credentials even while Pi blocks `.shepherd/mcp.json` in
+RPC threads. The space page labels that state "Credentials saved", not a live connection.
 
-For `.pi/mcp.json`, the page checks the selected host's Pi trust decision separately. An
-undecided or denied folder shows "Project configuration blocked" and "Trust this project…".
+For `.shepherd/mcp.json`, the page checks the selected host's Pi trust decision separately. An
+undecided or denied folder shows "Space configuration blocked" and "Trust this space…".
 The confirmation explains that trust also allows executable extensions, settings, skills, MCP
 commands and configured package installation. It approves only the selected canonical folder
 through Pi's `ProjectTrustStore` in `<support>/pi/trust.json`, with Pi's interprocess locking.
@@ -146,7 +146,7 @@ approval or an "always" default.
 
 The check and save use the bundled SDK without creating a Pi session, loading project
 resources, connecting MCP servers or calling a provider. They have a ten-second deadline.
-Normal new-thread startup then resolves the saved decision, loads `.pi/mcp.json` through
+Normal new-thread startup then resolves the saved decision, loads `.shepherd/mcp.json` through
 `builtin:mcp`, and registers tools after connection. Deferred tools are available through
 `builtin:tool-search` and codemode's `ALL_TOOLS`. Existing threads need restarting. MCP must
 also be enabled under Settings > Pi > Bundled extensions. Approval permits loading, but does
@@ -160,7 +160,7 @@ The shared `.mcp.json` file keeps its separate "Also use a repo's .mcp.json" opt
 `ProjectMCPTrustTests` uses the bundled Pi RPC startup and a local scripted provider and MCP
 server. It verifies that undecided resources stay blocked, approval registers a deferred tool
 that search discovers and codemode calls, siblings stay blocked, and home protection wins
-over saved approval and the global default. All homes, credentials and project data are scratch.
+over saved approval and the global default. All homes, credentials and space data are scratch.
 `ProjectMCPTrustPreviewTests` renders only when `SHEPHERD_PREVIEW_DIR` is set, like the other
 preview suites. Normal CI runs the protocol capability checks without rendering screenshots.
 
@@ -238,8 +238,8 @@ Shepherd's own deferred tools (the browser, other-thread, automation and review 
 Deferred tools), so with Settings ▸ Agents ▸ Defer rarely used tools on a thread's or an automation's launch has
 `-e builtin:tool-search` even with MCP off (it wins over the home's `-builtin:tool-search`, like MCP's). A design's agent, a
 native subagent, a draft and the model catalog do not (`--no-extensions` or no flag). Native codemode
-defaults on for primary agents, with a global switch and trusted-project override. To keep a project's
-`.pi/mcp.json` server reachable when codemode is off, set its `exposure` to `deferred` or `direct`.
+defaults on for primary agents, with a global switch and trusted-space override. To keep a space's
+`.shepherd/mcp.json` server reachable when codemode is off, set its `exposure` to `deferred` or `direct`.
 
 **A repo's `.mcp.json`** (Settings ▸ MCP servers ▸ Also use a repo's .mcp.json, off by default): with
 the switch on, `shepherd-mcp-project.ts` registers the servers of the `.mcp.json` found at the agent's

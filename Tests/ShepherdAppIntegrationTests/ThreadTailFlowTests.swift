@@ -205,9 +205,9 @@ struct ThreadTailFlowTests {
     /// What the window showed in one frame.
     struct State: CustomStringConvertible {
         var reading: Fx.Reading?
-        /// Pixels in the thread's own area (above the composer) unlike its background.
-        var ink: Int
-        var description: String { "\(ink) px drawn; \(reading.map(String.init(describing:)) ?? "no scroll view")" }
+        /// Whether the thread's own area (above the composer) contains pixels unlike its background.
+        var hasInk: Bool
+        var description: String { "\(hasInk ? "content drawn" : "blank"); \(reading.map(String.init(describing:)) ?? "no scroll view")" }
     }
 
     @MainActor
@@ -264,10 +264,10 @@ struct ThreadTailFlowTests {
                               insetTop: scroll.contentInsets.top, insetBottom: scroll.contentInsets.bottom)
         }
 
-        /// Draws the thread's own area, above the composer, and counts the pixels unlike its
+        /// Draws the thread's own area, above the composer, and checks for pixels unlike its
         /// background.
         func state() -> State {
-            guard let scroll = scrollView else { return State(reading: nil, ink: 0) }
+            guard let scroll = scrollView else { return State(reading: nil, hasInk: false) }
             let reading = self.reading
             var region = scroll.convert(scroll.bounds, to: page)
             region.size.height = max(1, region.height - (reading?.insetBottom ?? 0) - 24)
@@ -276,17 +276,20 @@ struct ThreadTailFlowTests {
                                           bytesPerRow: 0, bitsPerPixel: 0)!
             bitmap.size = region.size
             page.cacheDisplay(in: region, to: bitmap)
+            return State(reading: reading, hasInk: Self.hasInk(bitmap))
+        }
+
+        static func hasInk(_ bitmap: NSBitmapImageRep) -> Bool {
             let p = UnsafeBufferPointer(start: bitmap.bitmapData!, count: bitmap.bytesPerPlane)
             let (r, g, b) = (Int(p[0]), Int(p[1]), Int(p[2]))
-            var ink = 0
             for y in 0..<bitmap.pixelsHigh {
                 let row = y * bitmap.bytesPerRow
                 for x in 0..<bitmap.pixelsWide {
                     let i = row + x * 4
-                    if abs(Int(p[i]) - r) > 12 || abs(Int(p[i + 1]) - g) > 12 || abs(Int(p[i + 2]) - b) > 12 { ink += 1 }
+                    if abs(Int(p[i]) - r) > 12 || abs(Int(p[i + 1]) - g) > 12 || abs(Int(p[i + 2]) - b) > 12 { return true }
                 }
             }
-            return State(reading: reading, ink: ink)
+            return false
         }
 
         var seconds: Double {
@@ -299,16 +302,16 @@ struct ThreadTailFlowTests {
             var longest = 0.0
             var start: Double?
             for entry in timeline {
-                if entry.state.ink == 0 { start = start ?? entry.t; longest = max(longest, entry.t - start!) } else { start = nil }
+                if !entry.state.hasInk { start = start ?? entry.t; longest = max(longest, entry.t - start!) } else { start = nil }
             }
             return longest
         }
 
         /// How long the thread has drawn nothing up to now (0 when it draws).
         var currentBlank: Double {
-            guard let last = timeline.last, last.state.ink == 0 else { return 0 }
+            guard let last = timeline.last, !last.state.hasInk else { return 0 }
             var start = last.t
-            for entry in timeline.reversed() { if entry.state.ink == 0 { start = entry.t } else { break } }
+            for entry in timeline.reversed() { if !entry.state.hasInk { start = entry.t } else { break } }
             return last.t - start
         }
 
@@ -329,7 +332,7 @@ struct ThreadTailFlowTests {
         /// tail where SwiftUI says the bottom marker is in view, or where the numbers agree.
         func atTail(_ state: State) -> Bool {
             guard let reading = state.reading else { return false }
-            return state.ink > 0 && (tailGuard.visible.contains(ThreadView.bottomID)
+            return state.hasInk && (tailGuard.visible.contains(ThreadView.bottomID)
                 || (reading.distance >= -2 && reading.distance <= NativeScrollFollower.threshold))
         }
 
@@ -361,8 +364,8 @@ struct ThreadTailFlowTests {
             // A frame can fall in a flash of blank the guard is still noticing (anchored, in a short
             // window): the thread has to draw again within a few seconds, not in every frame.
             let deadline = ContinuousClock.now + .seconds(8)
-            repeat { try await pass(.milliseconds(50)) } while (timeline.last?.state.ink ?? 0) == 0 && ContinuousClock.now < deadline
-            #expect((timeline.last?.state.ink ?? 0) > 0, "the thread ended the sequence drawing nothing")
+            repeat { try await pass(.milliseconds(50)) } while timeline.last?.state.hasInk != true && ContinuousClock.now < deadline
+            #expect(timeline.last?.state.hasInk == true, "the thread ended the sequence drawing nothing")
             #expect(NWRenderProbe.count("thread.tailRepair") <= budget, "the guard put the thread back \(NWRenderProbe.count("thread.tailRepair")) times")
             if TimingTests.enabled {
                 #expect(longestBlank < ThreadTailFlowTests.blankLimit, "the thread drew nothing for \(longestBlank) s (\(timeline.count) frames)")
@@ -479,6 +482,25 @@ struct ThreadTailFlowTests {
     }
 
     // MARK: Opening
+
+    @Test func theBlankProbeRequiresOneRGBChannelBeyondItsThreshold() throws {
+        let bitmap = try #require(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 3, pixelsHigh: 2,
+                                                  bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                                                  isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 16, bitsPerPixel: 32))
+        let pixels = try #require(bitmap.bitmapData)
+        pixels.update(repeating: 128, count: bitmap.bytesPerPlane)
+        #expect(!Deck.hasInk(bitmap))
+        pixels[12] = 255 // Row padding is not content.
+        pixels[27] = 255 // Alpha alone is not content.
+        #expect(!Deck.hasInk(bitmap))
+        for channel in 0..<3 {
+            for (difference, expected) in [(-13, true), (-12, false), (12, false), (13, true)] {
+                pixels[24 + channel] = UInt8(128 + difference) // Last pixel, not an early-row shortcut.
+                #expect(Deck.hasInk(bitmap) == expected)
+                pixels[24 + channel] = 128
+            }
+        }
+    }
 
     struct OpeningCase: Sendable, CustomTestStringConvertible {
         var size: CGSize

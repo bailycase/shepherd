@@ -26,7 +26,7 @@ struct NewThreadPage: View {
     /// Where the field's caret is, for ⌫ at the start of the words (not observed).
     @State private var caret = ComposerCaret()
 
-    private enum Menu: Equatable { case place, models, settings }
+    private enum Menu: Equatable { case place, base, models, settings }
 
     /// `settingsOpen` starts with the model-settings popover open, for the preview renders.
     init(vm: ShepherdViewModel, chrome: PageHeaderChrome, settingsOpen: Bool = false) {
@@ -204,7 +204,7 @@ struct NewThreadPage: View {
             draft.attach(providers)
             return true
         }
-        .background { ComposerMenuRegion(dismissal: dismissal) }
+        .background { if mentionShown { ComposerMenuRegion(dismissal: dismissal) } }
         .overlay(alignment: .bottomLeading) { menus }
         .overlay(alignment: .bottomLeading) { mentionMenu }
     }
@@ -252,12 +252,14 @@ struct NewThreadPage: View {
                 NWModelSettingsLabel(model: summary.name, thinking: summary.thinking, fast: summary.fast)
             }
             .buttonStyle(.nwComposerChip(active: menu == .settings || menu == .models))
+            .background { ComposerMenuRegion(dismissal: dismissal) }
             .help("Model settings: \(draft.model)")
             .accessibilityLabel("Model settings: \(draft.model.isEmpty ? "default model" : draft.model)")
             .accessibilityValue(summary.value)
             Spacer(minLength: NW.Space.m)
             Button { toggle(.place) } label: { NWPlaceChipLabel(project: chip.project, host: chip.host) }
-                .buttonStyle(.nwComposerChip(active: menu == .place))
+                .buttonStyle(.nwComposerChip(active: menu == .place || menu == .base))
+                .background { ComposerMenuRegion(dismissal: dismissal) }
                 .help(draft.worktree ? "In a new worktree of \(chip.project) on \(chip.host)" : "\(chip.project) on \(chip.host)")
         }
     }
@@ -271,6 +273,15 @@ struct NewThreadPage: View {
             switch menu {
             case .place:
                 placeMenu.nwTransition(.overlay, anchor: .topLeading)
+            case .base:
+                if let space = draft.place.flatMap({ place in vm.state.spaces.first { $0.id == place.space } }) {
+                    WorktreeBasePicker(vm: vm, repo: space.path, selected: draft.worktreeBase) { base in
+                        draft.worktreeBase = base
+                        menu = nil
+                        composing = true
+                    } close: { menu = .place }
+                    .nwTransition(.overlay, anchor: .topLeading)
+                }
             case .models:
                 if let picker {
                     ModelPicker(state: picker, maxHeight: NWComposerMetrics.modelPickerMaxHeight) { id in
@@ -318,7 +329,8 @@ struct NewThreadPage: View {
         let offers = draft.offersWorktree(vm)
         return NWPlaceMenu(
             sections: NewThreadPlaces.sections(hosts, chosen: draft.place),
-            worktree: offers ? NWPlaceWorktree(isOn: draft.worktree, caption: NewThreadRules.worktreeCaption(base: "")) : nil,
+            worktree: offers ? NWPlaceWorktree(isOn: draft.worktree, caption: NewThreadRules.worktreeCaption(base: draft.worktreeBase ?? ""),
+                                               base: draft.place?.host == nil ? draft.worktreeBase ?? "Default" : nil) : nil,
             onChoose: { option in
                 if let place = NewThreadPlaces.place(option) { draft.choose(host: place.host, space: place.space, vm: vm) }
                 menu = nil
@@ -329,6 +341,7 @@ struct NewThreadPage: View {
                 if let host = NewThreadPlaces.host(of: section) { vm.remoteSpacePickerHostID = host } else { vm.addSpaceFromPanel() }
             },
             onWorktree: { draft.worktree = $0 },
+            onChooseBase: { menu = .base },
             onClose: { menu = nil; composing = true }
         ) { option in
             ProjectMenu(vm: vm, place: NewThreadPlaces.place(option))

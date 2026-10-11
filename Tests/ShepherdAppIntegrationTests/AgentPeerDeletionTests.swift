@@ -6,9 +6,8 @@ import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
 
-/// An agent's `agent_delete` over the real extension socket: the request waits in the Delete
-/// agent dialog, only its destructive button deletes, and deleting follows Delete Agent, so
-/// the target's processes stop while its worktree and branch stay.
+/// An agent's deletion over the real extension socket needs no UI confirmation.
+/// Delete Agent stops the target's processes while preserving its worktree and branch.
 @Suite("Peer deletion", .mainActorExclusive)
 @MainActor
 struct AgentPeerDeletionTests {
@@ -28,6 +27,7 @@ struct AgentPeerDeletionTests {
     /// uncommitted work in its checkout.
     private func makeScene() async throws -> Scene {
         let app = try AppHarness()
+        app.defaults.set("never", forKey: "shepherd.pi.agentMessages")
         let sandbox = try WorktreeSandbox()
         let checkout = try GitWorktree.add(repo: sandbox.repo.path, branch: "worktree/keep-this")
         try "keep work".write(toFile: checkout + "/uncommitted.txt", atomically: true, encoding: .utf8)
@@ -52,91 +52,10 @@ struct AgentPeerDeletionTests {
         scene.sandbox.remove()
     }
 
-    private func awaitDialog(_ vm: ShepherdViewModel) async throws -> ShepherdViewModel.PeerDeleteConfirmation {
-        try await eventuallyOnMain("the Delete agent dialog") { vm.peerDeleteConfirmation != nil }
-        return try #require(vm.peerDeleteConfirmation)
-    }
-
-    private func allAlive(_ scene: Scene) async -> Bool {
-        for session in scene.sessions where await scene.app.server.sessionInfo(sessionID: session)?.isAlive != true { return false }
-        return true
-    }
-
-    @Test func aDeletionRequestWaitsForTheUserAndCancelKeepsTheAgent() async throws {
-        let scene = try await makeScene()
-        defer { stop(scene) }
-
-        try scene.requester.requestDeletion(id: 1, of: scene.target.agent.id)
-        let dialog = try await awaitDialog(scene.vm)
-
-        #expect(dialog.agent.name == "target agent" && dialog.senderName == "requesting agent")
-        #expect(scene.app.server.state.agents.count == 2)
-        #expect(await allAlive(scene))
-        scene.vm.cancelPeerDeletion(requestID: dialog.requestID)
-        #expect(try await scene.requester.reply() == .agentResult(id: 1, result: .init(text: "user cancelled deletion; agent kept", code: "cancelled")))
-        #expect(scene.vm.peerDeleteConfirmation == nil)
-        #expect(scene.app.server.state.agents.count == 2)
-    }
-
-    /// The sheet's binding: a dismissal that is not the destructive button is a Cancel, so the
-    /// requesting agent always hears back.
-    @Test func dismissingTheDialogCountsAsCancel() async throws {
-        let scene = try await makeScene()
-        defer { stop(scene) }
-        try scene.requester.requestDeletion(id: 1, of: scene.target.agent.id)
-        _ = try await awaitDialog(scene.vm)
-
-        scene.vm.peerDeleteItem = nil
-
-        guard case .agentResult(1, let result) = try await scene.requester.reply() else { Issue.record("no answer"); return }
-        #expect(result.code == "cancelled")
-        #expect(scene.app.server.state.agents.count == 2)
-    }
-
-    /// Cancelling the tool revokes the dialog's token: the dialog closes, and buttons captured
-    /// by it neither delete nor dismiss the dialog of a newer request.
-    @Test func aCancelledRequestClosesTheDialogAndItsStaleButtonsDoNothing() async throws {
-        let scene = try await makeScene()
-        defer { stop(scene) }
-        try scene.requester.requestDeletion(id: 2, of: scene.target.agent.id)
-        let revoked = try await awaitDialog(scene.vm).requestID
-
-        try scene.requester.cancel(id: 2)
-        #expect(try await scene.requester.reply() == .agentResult(id: 2, result: .init(text: "request cancelled", code: "cancelled")))
-        try await eventuallyOnMain("the dialog to close") { scene.vm.peerDeleteConfirmation == nil }
-        #expect(await !scene.app.server.claimAgentDeletion(revoked))
-
-        try scene.requester.requestDeletion(id: 3, of: scene.target.agent.id)
-        let current = try await awaitDialog(scene.vm).requestID
-        #expect(current != revoked)
-        await scene.vm.confirmPeerDeletion(requestID: revoked)
-        scene.vm.cancelPeerDeletion(requestID: revoked)
-        #expect(scene.vm.peerDeleteConfirmation?.requestID == current)
-        #expect(scene.app.server.state.agents.count == 2)
-        #expect(await allAlive(scene))
-    }
-
-    @Test func anotherRequestWhileTheDialogIsUpIsBusy() async throws {
-        let scene = try await makeScene()
-        defer { stop(scene) }
-        try scene.requester.requestDeletion(id: 1, of: scene.target.agent.id)
-        let first = try await awaitDialog(scene.vm)
-
-        try scene.requester.requestDeletion(id: 2, of: scene.target.agent.id)
-
-        #expect(try await scene.requester.reply() == .agentResult(
-            id: 2, result: .init(text: "another deletion is awaiting user confirmation", code: "busy")))
-        #expect(scene.vm.peerDeleteConfirmation?.requestID == first.requestID)
-    }
-
-    /// Confirming is the dialog's destructive button, never an extension boolean.
-    @Test func confirmingDeletesThroughDeleteAgentAndKeepsTheWorktree() async throws {
+    @Test func deletingIgnoresLegacyPermissionsNeedsNoConfirmationAndKeepsTheWorktree() async throws {
         let scene = try await makeScene()
         defer { stop(scene) }
         try scene.requester.requestDeletion(id: 3, of: scene.target.agent.id)
-        let dialog = try await awaitDialog(scene.vm)
-
-        await scene.vm.confirmPeerDeletion(requestID: dialog.requestID)
 
         guard case .agentResult(3, let result) = try await scene.requester.reply() else { Issue.record("no answer"); return }
         #expect(result.code == nil)

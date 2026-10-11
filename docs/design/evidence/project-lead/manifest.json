@@ -1,0 +1,258 @@
+[
+  {
+    "file": "board-started-dark.png",
+    "sha256": "5a86c970dc9aa3e8948dd1f3ac3e888e84587aaeaf6f7082ff6ceae5417ced84",
+    "pixels": [
+      3200,
+      1800
+    ]
+  },
+  {
+    "file": "board-started-light.png",
+    "sha256": "0f12d4c6daf240a362cb6d819cb3cb82e2687b5663bf4a95d5369070ef31e75e",
+    "pixels": [
+      3200,
+      1800
+    ]
+  },
+  {
+    "file": "board-thread-running-dark.png",
+    "sha256": "123136eeaed9bf71d3019aa597936f6ee170c5bbb2a7dfb87c5458bbe3b92a8e",
+    "pixels": [
+      3200,
+      1800
+    ]
+  },
+  {
+    "file": "board-thread-running-light.png",
+    "sha256": "11dccc49abab5e3b78965fe311d89654f441bdd79db352fd062e64d591db5221",
+    "pixels": [
+      3200,
+      1800
+    ]
+  },
+  {
+    "file": "board-paused-dark.png",
+    "sha256": "10745d294329959f7af9f41ed1e19ebe0b6da6d515e886079f8704213a2611a5",
+    "pixels": [
+      3200,
+      1800
+    ]
+  },
+  {
+    "file": "board-paused-light.png",
+    "sha256": "63440d4e198dd081ae3f8be97ac11aaaeeb77d3a7a1d0423c179cac9a5ca782b",
+    "pixels": [
+      3200,
+      1800
+    ]
+  },
+  {
+    "file": "board-question-dark.png",
+    "sha256": "cf92d396c649efcfc133162e01e9dbd139702b54235b4b403817a48b4188800e",
+    "pixels": [
+      3200,
+      1800
+    ]
+  },
+  {
+    "file": "board-question-light.png",
+    "sha256": "2ae95a79ec5bbe9a47d0e0893625d74a06f603450e9d09d63e414671560b235f",
+    "pixels": [
+      3200,
+      1800
+    ]
+  },
+  {
+    "file": "board-resolved-dark.png",
+    "sha256": "b0503f3d9c49c4d7ef4788d6f1557299c125cd711e7d235d6ac5084e8f5bfbaf",
+    "pixels": [
+      3200,
+      1800
+    ]
+  },
+  {
+    "file": "board-resolved-light.png",
+    "sha256": "d7302a03a38f1aa181dbae635b10c9fe0b7796fa8404bbe667d7ccfb8fab700e",
+    "pixels": [
+      3200,
+      1800
+    ]
+  },
+  {
+    "file": "lead-new-project-empty-dark.png",
+    "sha256": "f84c7b8aa6471ffb3b4eb0a24bc6d9805c0d2fbde868d9832ef6f504ebee0256",
+    "pixels": [
+      1120,
+      1280
+    ]
+  },
+  {
+    "file": "lead-new-project-empty-light.png",
+    "sha256": "4be14913dd7bb974ac1ae03e4d61d7f8632f27a0e87a2b3d68ab8f1f1cdf9dc2",
+    "pixels": [
+      1120,
+      1280
+    ]
+  },
+  {
+    "file": "lead-new-project-filled-dark.png",
+    "sha256": "8f639c689bd9b1971de241afdd691bb007265741cae639ccce9bca515c52f6cd",
+    "pixels": [
+      1120,
+      1280
+    ]
+  },
+  {
+    "file": "lead-new-project-filled-light.png",
+    "sha256": "9a91beb027774c6b5957c7c681c81fe93f5c95138dad470a759164e2f216854f",
+    "pixels": [
+      1120,
+      1280
+    ]
+  },
+  {
+    "file": "lead-adds-space-dark.png",
+    "sha256": "db9bd885268ccf50b4947eb6b47667bf437f21c4d9e23197bd5056fb1abbeeda",
+    "pixels": [
+      3200,
+      1800
+    ]
+  },
+  {
+    "file": "lead-adds-space-light.png",
+    "sha256": "6631eb67bd974ca1b9d0370c92f33e430c982e0c71ff1dd01f3548d52c6420f8",
+    "pixels": [
+      3200,
+      1800
+    ]
+  },
+  {
+    "file": "board-overview-bare-dark.png",
+    "sha256": "33bbde371a5545400621bc3fe6e578b04d81632d0005a708d85607f8470bc6c0",
+    "pixels": [
+      3200,
+      1800
+    ]
+  },
+  {
+    "file": "board-overview-bare-light.png",
+    "sha256": "b1d673e4b3f22702ae0559c75eab39e54115693c787af7d5f581cc7ca9f60f13",
+    "pixels": [
+      3200,
+      1800
+    ]
+  },
+  {
+    "file": "board-long-chips-narrow-x1.3-dark.png",
+    "sha256": "c27cc6614d13bc4c1dfce9c25ba51d6f57ebf02cf3378bb1cc8a75371bb4677e",
+    "pixels": [
+      2000,
+      1800
+    ]
+  },
+  {
+    "file": "board-long-chips-narrow-x1.3-light.png",
+    "sha256": "852e85ff6bfbb5cc36b9fe4b75c05b27ab12a0ccb792785441c89a41cea3b97e",
+    "pixels": [
+      2000,
+      1800
+    ]
+  },
+  {
+    "file": "settings-general-normal-dark.png",
+    "sha256": "54793b87927c343150bf0730ba50453953d2d9452dbd300ead4853cc73db6acf",
+    "pixels": [
+      2416,
+      1800
+    ]
+  },
+  {
+    "file": "settings-general-normal-light.png",
+    "sha256": "eedd0654eb39db619631f84624f48e2707759255c1f1da2ea56a274a44b0544a",
+    "pixels": [
+      2416,
+      1800
+    ]
+  },
+  {
+    "file": "settings-spaces-normal-dark.png",
+    "sha256": "d3cd79c06d22702e468e0ce103df868d0c5e362d276163c09961bb636d29b0d5",
+    "pixels": [
+      2416,
+      1800
+    ]
+  },
+  {
+    "file": "settings-spaces-normal-light.png",
+    "sha256": "5d8da2c49751bb7b4c75fe1a69b91798242da27a4c2fdf6c6313ae1e3ad55dd0",
+    "pixels": [
+      2416,
+      1800
+    ]
+  },
+  {
+    "file": "settings-memory-normal-dark.png",
+    "sha256": "ead3c5420c09218c93f0d4a3ab50df4d580ebc7423324e90d1c30258e6095946",
+    "pixels": [
+      2416,
+      1800
+    ]
+  },
+  {
+    "file": "settings-memory-normal-light.png",
+    "sha256": "69536f15cdd1d5514d5adbbc1167504781567fcac4cd71925bf1b0cebd0c287b",
+    "pixels": [
+      2416,
+      1800
+    ]
+  },
+  {
+    "file": "settings-automations-normal-dark.png",
+    "sha256": "676a33f6748f556d0f2a0a072d7def6c6405a2c481e7cea6be4a045762f026bb",
+    "pixels": [
+      2416,
+      1800
+    ]
+  },
+  {
+    "file": "settings-automations-normal-light.png",
+    "sha256": "546072b9ef175fdae71e4c960dc8ccabdc692ddbd79f26396718a1f7aa4b7b08",
+    "pixels": [
+      2416,
+      1800
+    ]
+  },
+  {
+    "file": "settings-experiments-projects-off-dark.png",
+    "sha256": "135a5d121bcde5970c39f2dfa2b244374c9326c7d7ac4d4f0f63a821cf21f0c0",
+    "pixels": [
+      2880,
+      2462
+    ]
+  },
+  {
+    "file": "settings-experiments-projects-off-light.png",
+    "sha256": "c1ff6c9e906d7f75cc0cc3b47c8c9c75091c33175728179902236b7f680f6942",
+    "pixels": [
+      2880,
+      2462
+    ]
+  },
+  {
+    "file": "settings-experiments-projects-on-dark.png",
+    "sha256": "c5d458bbd14b210a5642a8e03a6fe64031d277f1908662d87c83ba966270068a",
+    "pixels": [
+      2880,
+      2462
+    ]
+  },
+  {
+    "file": "settings-experiments-projects-on-light.png",
+    "sha256": "f25c758907b7a06b3acfa52690f2f04d0affa43c0f1fd7e843744d915c553c3d",
+    "pixels": [
+      2880,
+      2462
+    ]
+  }
+]

@@ -1,3 +1,4 @@
+import { projectConfigHost } from "./fixtures/project-config-host.mjs";
 // What a native helper is launched with (the exact `-e` and `SHEPHERD_*`, the managed CLIProxyAPI provider among
 // them) and what it says when a role, profile or model can't be used. Real pi processes against a local fake
 // provider: no model call. A real helper on the managed provider is in native-children.test.mjs.
@@ -12,6 +13,11 @@ const PARENT = (dir, home) => ({
   HOME: dir, PI_CODING_AGENT_DIR: home, PI_OFFLINE: "1", SHEPHERD_CLIPROXYAPI_CONFIG: undefined,
   SHEPHERD_NATIVE_CHILDREN: "1", SHEPHERD_AGENT_ID: "fixture", SHEPHERD_SOCKET: path.join(dir, "shepherd.sock"), SHEPHERD_EXT_CHILDREN: childrenSource,
 });
+async function withParent(dir, home, fn) {
+  const host = await projectConfigHost(path.join(dir, "shepherd.sock"));
+  try { return await withEnv(PARENT(dir, home), fn); }
+  finally { await host.close(); }
+}
 const put = (file, text) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, text); };
 const run = (dir, extra = {}) => ({ id: "native-x", dir, sessionFile: path.join(dir, "session.jsonl"), model: "cliproxyapi/m", thinking: "off",
   tools: ["read", "grep"], systemPromptMode: "append", inheritProjectContext: true, skills: [], extensions: [], ...extra });
@@ -101,7 +107,7 @@ test("a helper whose home has no connection exits on a cliproxyapi model, and th
     const home = scratchHome(dir, { port });
     // The parent's registry lists the proxy's model (its launcher loaded the provider); the helper's own pi,
     // with no connection file in the home, has only the fixture provider and refuses the --model.
-    await withEnv(PARENT(dir, home), async () => {
+    await withParent(dir, home, async () => {
       const h = await harness(dir, { models: [{ provider: "fixture", id: "fixture" }, { provider: "cliproxyapi", id: "fixture-model" }] });
       try {
         await assert.rejects(h.call("start", { task: "x", role: "scout", model: "cliproxyapi/fixture-model", mission: false }), (error) => {
@@ -123,7 +129,7 @@ test("a model the helper's own catalog lacks names the providers the helper has"
   const port = await fixture.listen();
   try {
     const home = scratchHome(dir, { port });
-    await withEnv(PARENT(dir, home), async () => {
+    await withParent(dir, home, async () => {
       const h = await harness(dir, { models: [{ provider: "fixture", id: "fixture" }, { provider: "fixture", id: "parent-only-model" }] });
       try {
         // Pi takes the id as a custom model and starts; its catalog never lists it.
@@ -141,7 +147,7 @@ test("agent and role together are refused, naming what to pass", async () => {
   const dir = tempDir("both");
   try {
     const home = scratchHome(dir);
-    await withEnv(PARENT(dir, home), async () => {
+    await withParent(dir, home, async () => {
       const h = await harness(dir);
       try {
         await assert.rejects(h.call("start", { task: "x", agent: "scout", role: "worker" }),
@@ -158,7 +164,7 @@ test("an unknown role lists the roles and the discovered profiles, and suggests 
     const home = scratchHome(dir);
     put(path.join(home, "agents", "design-composer-editor.md"), "---\nname: design-composer-editor\ndescription: edits boards\ntools: [read]\n---\nEdit boards.\n");
     put(path.join(home, "agents", "notes.md"), "---\nname: notes\ndescription: takes notes\ntools: [read]\n---\nTake notes.\n");
-    await withEnv(PARENT(dir, home), async () => {
+    await withParent(dir, home, async () => {
       const h = await harness(dir);
       try {
         await assert.rejects(h.call("start", { task: "x", role: "design-editor" }), (error) => {
@@ -179,7 +185,7 @@ test("a model whose provider isn't loaded fails at the start, says which provide
     const home = scratchHome(dir);
     put(path.join(home, "agents", "design-composer-editor.md"), "---\nname: design-composer-editor\ndescription: edits boards\nmodel: cpa/gpt-6-astra\ntools: [read]\n---\nEdit boards.\n");
     const models = [{ provider: "fixture", id: "fixture" }, { provider: "cliproxyapi", id: "gpt-6-astra" }, { provider: "cliproxyapi", id: "claude-sonnet-5" }];
-    await withEnv(PARENT(dir, home), async () => {
+    await withParent(dir, home, async () => {
       const h = await harness(dir, { models });
       try {
         // A profile names it: the message names the profile, once, before anything launches.

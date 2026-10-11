@@ -60,19 +60,19 @@ struct ProjectsPreviewTests {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try Data(text.utf8).write(to: url)
         }
-        try write(acme, ".pi/mcp.json", #"{"mcpServers":{"linear":{},"sentry":{}}}"#)
-        try write(frontend, ".pi/mcp.json", #"{"mcpServers":{"vercel":{}}}"#)
+        try write(acme, ".shepherd/mcp.json", #"{"mcpServers":{"linear":{},"sentry":{}}}"#)
+        try write(frontend, ".shepherd/mcp.json", #"{"mcpServers":{"vercel":{}}}"#)
         try write(backend, "AGENTS.md", "# Backend\n")
         try write(admin, "AGENTS.md", "# Admin\n")
-        for skill in ["ledger", "refunds", "release"] { try write(payments, ".pi/skills/\(skill)/SKILL.md", "# \(skill)\n") }
-        try write(payments, ".pi/mcp.json", #"{"mcpServers":{"stripe":{},"docs":{}}}"#)
+        for skill in ["ledger", "refunds", "release"] { try write(payments, ".shepherd/skills/\(skill)/SKILL.md", "# \(skill)\n") }
+        try write(payments, ".shepherd/mcp.json", #"{"mcpServers":{"stripe":{},"docs":{}}}"#)
         let spaces = [Space(name: "acme", path: acme.path), Space(name: "frontend", path: frontend.path),
                       Space(name: "backend", path: backend.path), Space(name: "admin", path: admin.path),
                       Space(name: "payments", path: payments.path)]
         try await world.local.server.putState(ShepherdState(spaces: spaces))
         world.vm.adopt(world.local.server.state)
         let daemon = URL(fileURLWithPath: world.remote.server.pi.userHome).appendingPathComponent("srv/daemon")
-        try write(daemon, ".pi/settings.json", #"{"extensions":["./a.ts","./b.ts"]}"#)
+        try write(daemon, ".shepherd/settings.json", #"{"extensions":["./a.ts","./b.ts"]}"#)
         try await world.remote.server.putState(ShepherdState(spaces: [Space(name: "daemon", path: daemon.path)]))
         try await eventuallyOnMain("the host's project") { world.vm.remoteHosts.connections.first?.state.spaces.count == 1 }
         await world.vm.projects.load(world.vm.projectsSources, force: true)
@@ -181,7 +181,7 @@ struct ProjectsPreviewTests {
         defer { world.stop() }
         let model = world.vm.projects
         let project = try #require(model.rows.first { $0.project.name == "payments" && $0.host.id == "local" })
-        let settings = URL(fileURLWithPath: project.project.directory).appendingPathComponent(".pi/settings.json")
+        let settings = URL(fileURLWithPath: project.project.directory).appendingPathComponent(".shepherd/settings.json")
         if state == "missing" { try FileManager.default.removeItem(at: settings) }
         else if state == "invalid" { try "{ broken".write(to: settings, atomically: true, encoding: .utf8) }
         else {
@@ -217,7 +217,7 @@ struct ProjectsPreviewTests {
             await model.save()
         } else {
             try FileManager.default.removeItem(at: file)
-            try FileManager.default.createSymbolicLink(at: file, withDestinationURL: file.deletingLastPathComponent().appendingPathComponent(".pi/settings.json"))
+            try FileManager.default.createSymbolicLink(at: file, withDestinationURL: file.deletingLastPathComponent().appendingPathComponent(".shepherd/settings.json"))
             let selectedFile = try #require(model.selectedFile)
             await model.read(selectedFile)
         }
@@ -243,7 +243,7 @@ struct ProjectsPreviewTests {
         await model.open(project)
         if state == "missing-skill" { await model.navigate(.category(.skills)) }
         else if state == "missing-file" {
-            let file = try #require(model.files.first { $0.path == ".pi/APPEND_SYSTEM.md" })
+            let file = try #require(model.files.first { $0.path == ".shepherd/APPEND_SYSTEM.md" })
             await model.read(file)
         } else if state == "conflict" || state == "unsafe-file" {
             try await editExternalFile(state, model: model, project: project)
@@ -303,19 +303,19 @@ final class ProjectsPreviewWorld {
                 try Data("# Personal instructions\n".utf8).write(to: global)
                 let parent = home.appendingPathComponent("code/AGENTS.md")
                 try Data("# Parent guidance\n".utf8).write(to: parent)
-                try file(localSpaces[0], ".pi/skills/payments-tests/SKILL.md", "# Payments tests\nRun make test.\n")
-                try file(localSpaces[0], ".pi/skills/release/SKILL.md", "# Release checks\nRead the release docs.\n")
-                try file(localSpaces[0], ".pi/extensions/ledger.ts", "export default function ledger() {}\n")
+                try file(localSpaces[0], ".shepherd/skills/payments-tests/SKILL.md", "# Payments tests\nRun make test.\n")
+                try file(localSpaces[0], ".shepherd/skills/release/SKILL.md", "# Release checks\nRead the release docs.\n")
+                try file(localSpaces[0], ".shepherd/extensions/ledger.ts", "export default function ledger() {}\n")
             }
             for name in ["design-review", "useful-tests"] {
-                try file(localSpaces[0], ".pi/skills/\(name)/SKILL.md", "---\nname: \(name)\ndescription: Project-only guidance\n---\n\n# \(name)\n\nRead the project's instructions.\n")
+                try file(localSpaces[0], ".shepherd/skills/\(name)/SKILL.md", "---\nname: \(name)\ndescription: Project-only guidance\n---\n\n# \(name)\n\nRead the project's instructions.\n")
             }
-            try file(localSpaces[1], ".pi/skills/mobile/SKILL.md", "# Mobile project\nUse the native client.\n")
-            try file(localSpaces[0], ".pi/settings.json", "{\n  \"thinkingLevel\": \"high\"\n}\n")
-            try file(localSpaces[0], ".pi/mcp.json", detail ? "{\"mcpServers\":{\"docs\":{},\"ledger\":{}}}" : "{\n  \"mcpServers\": {\"docs\": {\"url\": \"https://example.invalid/mcp\"}}\n}\n")
-            try file(localSpaces[0], ".pi/extensions/project.ts", "// A project extension is edited, never executed, by this page.\nexport default function project() {}\n")
-            try file(remoteSpaces[0], ".pi/settings.json", "{\"extensions\":[\"./one.ts\",\"./two.ts\",\"./three.ts\"]}")
-            for space in [remoteSpaces[0], remoteSpaces[2]] { try file(space, ".pi/mcp.json", "{\"mcpServers\":{\"docs\":{},\"tools\":{}}}") }
+            try file(localSpaces[1], ".shepherd/skills/mobile/SKILL.md", "# Mobile project\nUse the native client.\n")
+            try file(localSpaces[0], ".shepherd/settings.json", "{\n  \"thinkingLevel\": \"high\"\n}\n")
+            try file(localSpaces[0], ".shepherd/mcp.json", detail ? "{\"mcpServers\":{\"docs\":{},\"ledger\":{}}}" : "{\n  \"mcpServers\": {\"docs\": {\"url\": \"https://example.invalid/mcp\"}}\n}\n")
+            try file(localSpaces[0], ".shepherd/extensions/project.ts", "// A project extension is edited, never executed, by this page.\nexport default function project() {}\n")
+            try file(remoteSpaces[0], ".shepherd/settings.json", "{\"extensions\":[\"./one.ts\",\"./two.ts\",\"./three.ts\"]}")
+            for space in [remoteSpaces[0], remoteSpaces[2]] { try file(space, ".shepherd/mcp.json", "{\"mcpServers\":{\"docs\":{},\"tools\":{}}}") }
             let system = dir.appendingPathComponent("design-systems/dashboard/system.json")
             try FileManager.default.createDirectory(at: system.deletingLastPathComponent(), withIntermediateDirectories: true)
             try JSONEncoder().encode(DesignSystemInfo(namespace: "dashboard", title: "Dashboard", createdAt: 0, spaceID: localSpaces[0].id)).write(to: system)

@@ -175,6 +175,14 @@ struct ExtensionIdentityTests {
             .cancelAgentRequest(id: 90, agentID: victim),
         ]
         let requests: [ExtensionMessage] = [
+            .childScope(id: 997, agentID: victim, sessionID: "forged", userTimestamp: 1),
+            .projectRuntime(id: 998, agentID: victim, projectID: ProjectID(), expectedRevision: 0, request: .read),
+            .projectPublish(id: 999, agentID: victim, request: .eligibility),
+            .registerProject(id: 1000, agentID: victim, path: "/tmp/project", name: "Space"),
+            .refreshProjects(id: 1001, agentID: victim),
+            .editProject(id: 1002, agentID: victim, projectID: SpaceID(), request: ProjectEdit(name: "Changed")),
+            .deleteProject(id: 1003, agentID: victim, projectID: SpaceID()),
+            .addChildProject(id: 1004, agentID: victim, parentPath: "/tmp/project", path: "/tmp/project/child", name: "Child", create: true),
             .listPanes(id: 1, agentID: victim),
             .openPane(id: 2, agentID: victim, axis: .horizontal, cwd: nil, relativeTo: nil, command: "true"),
             .closePane(id: 3, agentID: victim, paneID: PaneID()),
@@ -191,6 +199,7 @@ struct ExtensionIdentityTests {
             .designRead(id: 14, agentID: victim, designID: design, path: nil),
             .designWriteBoard(id: 15, agentID: victim, designID: design, path: "A.dc.html", source: "<x-dc></x-dc>", baseRevision: nil),
             .designUpdateIndex(id: 16, agentID: victim, designID: design, changes: .object([:]), baseRevision: nil),
+            .prepareProjectConfiguration(id: 117, agentID: victim, cwd: "/project"),
             .designComments(id: 17, agentID: victim, designID: design),
             .designCommentReply(id: 18, agentID: victim, designID: design, commentID: UUID().uuidString, text: "ok"),
             .designSystemRead(id: 19, agentID: victim, designID: design, namespace: nil),
@@ -208,15 +217,14 @@ struct ExtensionIdentityTests {
             .designRender(id: 30, agentID: victim, designID: design, request: DesignRenderRequest(path: "A.dc.html")),
             .designExtract(id: 31, agentID: victim, designID: design, request: DesignExtractRequest(path: "A.dc.html", element: "4", piece: "Card")),
         ]
-        // Every kind of message that names an agent as its actor (39 of the protocol's 46; the other
-        // seven name none) is in one of the two lists.
+        // Exercise actor-bound frames, including native child scope authorization and the migration fence.
         func kind(_ message: ExtensionMessage) throws -> String {
             let object = try JSONSerialization.jsonObject(with: NDJSON.encode(message)) as? [String: Any]
             return try #require(object?["type"] as? String)
         }
         #expect((quiet + requests).allSatisfy { $0.speaksFor == victim })
         #expect(requests.allSatisfy { $0.replyID != nil } && quiet.allSatisfy { $0.replyID == nil })
-        #expect(Set(try (quiet + requests).map(kind)).count == 39)
+        #expect(Set(try (quiet + requests).map(kind)).count == 48)
 
         let client = try ExtensionClient(path: h.socketPath)
         for message in quiet + requests { try client.send(message) }

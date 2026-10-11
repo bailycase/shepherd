@@ -69,7 +69,7 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .copyDesignReference: return "Copy Design Reference"
         case .focusAddressBar: return "Focus Address Bar"
         case .selectElement: return "Select an Element"
-        case .saveProjectFile: return "Save Project File"
+        case .saveProjectFile: return "Save Space File"
         }
     }
 

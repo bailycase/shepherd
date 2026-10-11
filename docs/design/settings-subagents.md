@@ -38,7 +38,7 @@ wide one: 40pt sides, 44pt top, no 720pt cap.
 ## Ownership
 
 Only `<Shepherd support>/pi/agents` supplies named definitions. Do not read user `.agents`, project
-`.agents` or `.pi/agents`, package agent directories, extra-directory environment variables, or
+`.agents` or `.shepherd/agents`, package agent directories, extra-directory environment variables, or
 third-party subagent settings overrides. Seed the existing scout, reviewer, planner and worker once without
 overwriting existing files. Persist completion of seeding so deletes survive relaunch. Restoring
 defaults is an explicit action. Existing custom files already in the owned folder stay in place.

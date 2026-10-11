@@ -8,7 +8,7 @@ import ShepherdTestSupport
 /// Live agent coordination over the extension socket (`agent_read`, `agent_steer`,
 /// `agent_interrupt`, `agent_wait`, `agent_delete`): the server relays each request to the
 /// target's registered panes connection under its own token and correlates the answer back to
-/// the caller's id. Deletion never reaches the target; it waits for the app's confirmation.
+/// the caller's id. Deletion reaches the app, never the target's extension.
 @Suite("Agent coordination", .integrationTimeLimit)
 struct AgentCoordinationTests {
     /// Two agents in one space, "lead" and "worker", each with its own layout. The relay is what
@@ -214,12 +214,11 @@ struct AgentCoordinationTests {
 
         try caller.send(.coordinateAgent(id: 12, agentID: lead.id, targetAgentID: worker.id, request: .init(operation: .delete)))
 
-        #expect(try await caller.reply() == .agentResult(id: 12, result: .init(text: "native confirmation unavailable", code: "unsupported")))
+        #expect(try await caller.reply() == .agentResult(id: 12, result: .init(text: "agent deletion unavailable", code: "unsupported")))
         #expect(h.server.state.agents.map(\.id) == [lead.id, worker.id])
     }
 
-    /// Deletion goes to the app (never the target's extension) under a token only a confirmed
-    /// dialog can claim, once; the app's outcome answers the caller.
+    /// Deletion goes to the app under a token it claims once; its outcome answers the caller.
     @Test func aDeletionAsksTheAppAndItsOutcomeAnswersTheCaller() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
@@ -235,14 +234,13 @@ struct AgentCoordinationTests {
         let pending = try #require(asked.current.first)
         guard case .delete(lead.id, worker.id, let token) = pending.request else { Issue.record("unexpected \(pending.request)"); return }
         #expect(await h.server.claimAgentDeletion(token))
-        #expect(await !h.server.claimAgentDeletion(token), "a confirmation is claimed once")
+        #expect(await !h.server.claimAgentDeletion(token), "a deletion is claimed once")
         pending.respond(.ok)
         guard case .agentResult(13, let result) = try await caller.reply() else { Issue.record("missing deletion result"); return }
         #expect(result.code == nil && result.text.contains("worktree and branch kept"))
     }
 
-    /// Cancel, a disconnect, or a failed deletion reach the app as a lapsed token: the dialog
-    /// closes and a late confirmation can no longer delete.
+    /// Cancellation or disconnection lapses the token; a late claim cannot delete.
     @Test func aCancelledDeletionLapsesItsTokenAndClosesTheDialog() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
@@ -260,14 +258,14 @@ struct AgentCoordinationTests {
         try caller.send(.cancelAgentRequest(id: 14, agentID: lead.id))
 
         #expect(try await caller.reply() == .agentResult(id: 14, result: .init(text: "request cancelled", code: "cancelled")))
-        try await eventually("the dialog to be told") { lapsed.current == [token] }
+        try await eventually("the app to hear the cancellation") { lapsed.current == [token] }
         #expect(await !h.server.claimAgentDeletion(token))
 
         try caller.send(.coordinateAgent(id: 15, agentID: lead.id, targetAgentID: worker.id, request: .init(operation: .delete)))
         try await eventually("the app to be asked again") { asked.current.count == 2 }
         guard case .delete(_, _, let second) = asked.current[1] else { Issue.record("not a deletion"); return }
         caller.closeConnection()
-        try await eventually("the dialog to be told of the disconnect") { lapsed.current == [token, second] }
+        try await eventually("the app to hear the disconnect") { lapsed.current == [token, second] }
         #expect(await !h.server.claimAgentDeletion(second))
     }
 }

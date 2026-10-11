@@ -20,6 +20,14 @@ public enum NWGlyph: CaseIterable, Sendable {
     case automation
     /// A remote host: Settings and the command palette's outward radio waves.
     case remoteConnection
+    /// A popup's up-down pair (ProjectLead-Settings*, the Settings boards' dropdowns): the outline chevrons, never `chevron.down`.
+    case popupChevrons
+    /// A file: the Project task card's file chip and the Files tab's rows (ProjectLead-Question, -Started), outline `doc.text`.
+    case document
+    /// A settled step, task or thread (ProjectLead-Resolved): the outline `checkmark.circle`, never the filled one.
+    case resolved
+    /// A step the worker marked failed. The boards draw none; it is the resolved glyph's outline circle with a cross.
+    case failedStep
 
     /// The SF Symbol that draws it, fill variant included.
     public var symbolName: String {
@@ -27,6 +35,10 @@ public enum NWGlyph: CaseIterable, Sendable {
         case .fastBolt: "bolt.fill"
         case .automation: "bolt"
         case .remoteConnection: "dot.radiowaves.left.and.right"
+        case .popupChevrons: "chevron.up.chevron.down"
+        case .document: "doc.text"
+        case .resolved: "checkmark.circle"
+        case .failedStep: "xmark.circle"
         }
     }
 

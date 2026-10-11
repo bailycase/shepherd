@@ -30,6 +30,19 @@ struct ThreadPreviewTests {
         }
     }
 
+    /// Empty, idle and long store-driven threads in both appearances and supported text scales.
+    @Test func threadHistoryLayoutMatrix() async throws {
+        for (name, snapshot) in [("empty", Threads.empty), ("idle", ActivityThreads.idle),
+                                 ("long", ActivityThreads.long)] {
+            let fixture = ThreadFixture(snapshot)
+            defer { fixture.store.stop() }
+            try await Preview.renderMatrix("thread-history-\(name)", size: CGSize(width: 1180, height: 900),
+                                           ready: { fixture.store.ready }) {
+                fixture.thread()
+            }
+        }
+    }
+
     /// Main board: explored / edited / tests-and-build lines and the changes card, at rest (the
     /// footer and the prompt's time wait for the pointer).
     @Test func threadActivityIdle() async throws {

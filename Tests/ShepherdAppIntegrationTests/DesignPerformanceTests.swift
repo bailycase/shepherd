@@ -127,27 +127,29 @@ struct DesignPerformanceTests {
 
     /// One board changing on a canvas of 172: that board's frame redraws once and one snapshot is
     /// taken, whether it drew from a snapshot or a live view.
-    @Test(arguments: [false, true])
-    func oneBoardChangingRedrawsThatBoardAlone(live: Bool) async throws {
+    @Test func oneBoardChangingRedrawsThatBoardAlone() async throws {
         let app = try AppHarness()
         defer { app.stop() }
         let (_, window, screen, host) = try await openLargeCanvas(app)
         defer { window.close() }
         let design = screen.designID
-        let target = try #require(screen.visibleBoards.first { host.liveBoards.contains($0) == live })
-        let board = try #require(Self.boards.first { $0.path == target.rawValue })
-        let snapshots = host.snapshotsTaken
+        // Both kinds of rewrite can use one canvas; select and measure each independently.
+        for live in [false, true] {
+            let target = try #require(screen.visibleBoards.first { host.liveBoards.contains($0) == live })
+            let board = try #require(Self.boards.first { $0.path == target.rawValue })
+            let snapshots = host.snapshotsTaken
 
-        let counts = try await ListPerf.countingAsync {
-            let written = try await app.server.writeDesignBoard(design, path: target, source: DesignFixtures.source(board, note: "changed"))
-            try await eventuallyOnMain("\(target) to show the change", timeout: .seconds(30)) {
+            let counts = try await ListPerf.countingAsync {
+                let written = try await app.server.writeDesignBoard(design, path: target, source: DesignFixtures.source(board, note: "changed"))
+                try await eventuallyOnMain("\(target) to show the change", timeout: .seconds(30)) {
+                    window.layout()
+                    return screen.snapshot?.boards[target] == written.sha256 && host.isDrawn([target]) && host.snapshotsTaken > snapshots
+                }
                 window.layout()
-                return screen.snapshot?.boards[target] == written.sha256 && host.isDrawn([target]) && host.snapshotsTaken > snapshots
             }
-            window.layout()
+            #expect(counts["design.board", default: 0] == 1, "live=\(live): \(counts)")
+            #expect(host.snapshotsTaken == snapshots + 1, "live=\(live)")
         }
-        #expect(counts["design.board", default: 0] == 1, "\(counts)")
-        #expect(host.snapshotsTaken == snapshots + 1)
     }
 
     /// Selecting an element on a live board, and the pointer ringing one, draw rings over the

@@ -40,7 +40,7 @@ enum NewThreadPlaces {
     static func chip(_ hosts: [Host], chosen: NewThreadPlace?) -> (project: String, host: String) {
         guard let chosen, let host = hosts.first(where: { $0.id == chosen.host }),
               let space = host.spaces.first(where: { $0.id == chosen.space }) else {
-            return ("Choose a project", hosts.first?.name ?? thisMac)
+            return ("Choose a space", hosts.first?.name ?? thisMac)
         }
         return (space.name, host.name)
     }
@@ -82,11 +82,11 @@ enum NewThreadPlaces {
     /// designs, and reach this Mac's threads only (docs/designs.md › Design references). `host` is
     /// nil for This Mac.
     static func referencesRefusal(count: Int, host: UUID?) -> String? {
-        count > 0 && host != nil ? referencesNote + " Remove them, or choose a project on this Mac." : nil
+        count > 0 && host != nil ? referencesNote + " Remove them, or choose a space on this Mac." : nil
     }
 
     /// What the @ picker says, and Send's tooltip, for a project on another host.
-    static let referencesNote = "Design references go to projects on this Mac."
+    static let referencesNote = "Design references go to spaces on this Mac."
 
     /// Why the attached images cannot go with a new thread there, or nil: a host from before
     /// `createAgentImagesCapability` would drop them, and one send takes only so much. `host` is
@@ -118,8 +118,13 @@ final class NewThreadState {
     var referenceError: String?
     /// The @ picker's and the chips' state, made as the page opens, while the Design tool is on.
     var referenceChips: DesignReferenceChips?
-    private(set) var place: NewThreadPlace?
+    /// A new project (chosen, or the fallback when the chosen one is gone) drops the worktree base
+    /// picked in the last one: a branch of one repository means nothing in another.
+    private(set) var place: NewThreadPlace? { didSet { if place != oldValue { worktreeBase = nil } } }
     var worktree = false
+    /// The branch a new worktree on this Mac starts from, picked in the workplace menu; nil lets
+    /// Settings ▸ Worktrees decide. A host's projects keep the base the host resolves.
+    var worktreeBase: String?
     /// The model, thinking and speed the thread starts with; a blank model is the target's default.
     private(set) var model = ""
     private(set) var thinking: ThinkingLevel = .medium
@@ -315,7 +320,7 @@ final class NewThreadState {
         let space = place?.space
         Task {
             do {
-                guard let space else { throw RemoteHostClientError.rejected(code: "no_space", message: "Choose a project first") }
+                guard let space else { throw RemoteHostClientError.rejected(code: "no_space", message: "Choose a space first") }
                 let options = try await vm.remoteHosts.creationOptions(hostID: host, spaceID: space, cwd: nil, fetchFirst: nil)
                 guard defaultsRequest == request else { return }
                 if !edited.model { model = options.model ?? "" }
@@ -361,7 +366,7 @@ final class NewThreadState {
     /// Why Send is unavailable; nil when it can send.
     func blocker(_ vm: ShepherdViewModel) -> String? {
         if starting { return "Starting…" }
-        guard let place else { return "Add a project to start a thread." }
+        guard let place else { return "Add a space to start a thread." }
         if let host = place.host {
             guard let connection = vm.remoteHosts.connections.first(where: { $0.id == host }), connection.phase == .connected else {
                 return "That host is offline."
@@ -381,6 +386,7 @@ final class NewThreadState {
         let submittedImages = attachments.ids
         let submittedReferences = references
         let submittedWorktree = worktree
+        let submittedBase = worktreeBase
         let text = submittedPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let chosenModel = model.trimmingCharacters(in: .whitespaces)
         let level = thinkingLevel(vm)
@@ -395,7 +401,7 @@ final class NewThreadState {
             do {
                 if let host = place.host {
                     guard let space = vm.remoteHosts.connections.first(where: { $0.id == host })?.state.spaces
-                        .first(where: { $0.id == place.space }) else { throw AgentStartFailure(message: "That project is gone.") }
+                        .first(where: { $0.id == place.space }) else { throw AgentStartFailure(message: "That space is gone.") }
                     var base: RemoteCreationOptions?
                     if useWorktree {
                         base = try await vm.remoteHosts.creationOptions(hostID: host, spaceID: space.id, cwd: space.path, fetchFirst: nil)
@@ -407,7 +413,7 @@ final class NewThreadState {
                         worktreeBase: base?.base, worktreeFetchFirst: base?.fetchFirst, initialImages: images, serviceTier: tier)
                 } else {
                     guard let space = vm.state.spaces.first(where: { $0.id == place.space }) else {
-                        throw AgentStartFailure(message: "That project is gone.")
+                        throw AgentStartFailure(message: "That space is gone.")
                     }
                     // Design pieces go in the message the thread starts with, which the host sends once
                     // pi serves (`deliverOpeningDesignReferences`); the prompt waits for it, with the images.
@@ -427,7 +433,13 @@ final class NewThreadState {
                         let branch = GitWorktree.generatedBranch()
                         let mode = vm.settings.worktreeBaseMode
                         let fetch = vm.settings.worktreeFetchBeforeCreate
+                        let chosen = submittedBase
                         let (path, base) = try await Task.detached(priority: .userInitiated) { () -> (String, String) in
+                            // A picked branch is the start point as it is; otherwise Settings resolves one.
+                            if let chosen {
+                                GitWorktree.fetchPicked(repo: repo, base: chosen, fetchFirst: fetch)
+                                return (try GitWorktree.add(repo: repo, branch: branch, from: chosen), chosen)
+                            }
                             let resolution = GitWorktree.resolveBase(repo: repo, mode: mode, fetchFirst: fetch)
                             return (try GitWorktree.add(repo: repo, branch: branch, from: resolution.startPoint), resolution.display)
                         }.value
@@ -444,6 +456,7 @@ final class NewThreadState {
                 let sent = Set(submittedReferences.map(\.id))
                 references.removeAll { sent.contains($0.id) }
                 if worktree == submittedWorktree { worktree = false }
+                if worktreeBase == submittedBase { worktreeBase = nil }
             } catch RemoteHostClientError.rejected(_, let message) {
                 self.error = message
             } catch {

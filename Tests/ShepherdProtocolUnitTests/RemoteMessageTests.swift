@@ -27,14 +27,15 @@ enum RemoteSamples {
         title: "", body: "", draftsMessage: false, agentWorking: false, blocked: "HEAD is detached.")
 
     static let state: ShepherdState = {
-        let space = Space(name: "demo", path: "/tmp/demo")
+        let parent = Space(name: "parent", path: "/elsewhere")
+        let space = Space(name: "demo", path: "/tmp/demo", parentID: parent.id, parentIsExplicit: true)
         let pane = LeafPane(cwd: "/tmp/demo")
         let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
         // The live fields ride the wire (state.json drops `waitingOn` and `waitingReason`; a remote
         // client needs them).
         let agent = Agent(name: "pi-1", spaceID: space.id, tabID: tab.id, paneID: pane.id, status: .blocked,
                           lastActiveAt: 1_790_000_000_000, waitingOn: "Which base?", waitingReason: "base?")
-        return ShepherdState(spaces: [space], tabs: [tab], agents: [agent])
+        return ShepherdState(spaces: [space, parent], tabs: [tab], agents: [agent])
     }()
 
     static let agentQueries: [RemoteAgentQuery] = [
@@ -216,14 +217,14 @@ enum RemoteSamples {
 
     static let hostSettings = HostSettings(
         shepherdVersion: "0.4.2", piVersion: "0.87.1", defaultModel: "anthropic/claude-opus", defaultThinking: .high,
-        queueDelivery: .oneAtATime, goalCrossProviderEvaluation: true, goalsEnabled: true,
+        queueDelivery: .oneAtATime, goalCrossProviderEvaluation: true, goalsEnabled: true, projectsEnabled: true,
         worktreeBase: .head, fetchBeforeCreating: false, mergePRAutomatically: true, mergeMethod: .rebase,
         bundledExtensions: [HostSettings.BundledExtension(id: "panes", name: "Panes and agent tools", on: true),
                             HostSettings.BundledExtension(id: "review", name: "Diff review tool", on: false)],
         installedExtensions: ["npm:@example/pi-tools@1.0.0"], updatePiDaily: true)
     static let hostSettingChanges: [HostSettingChange] = [
         .defaultModel("openai/gpt-5"), .defaultModel(nil), .defaultThinking(.low), .queueDelivery(.all),
-        .goalCrossProviderEvaluation(true), .goalCrossProviderEvaluation(false), .goalsEnabled(true), .goalsEnabled(false),
+        .goalCrossProviderEvaluation(true), .goalCrossProviderEvaluation(false), .goalsEnabled(true), .goalsEnabled(false), .projectsEnabled(true), .projectsEnabled(false),
         .worktreeBase(.fresh), .fetchBeforeCreating(true), .commitRemainingWork(false), .generatePRDescriptions(false),
         .deleteLocalBranch(false), .mergePRAutomatically(false), .mergeMethod(.squash),
         .bundledExtension(id: "review", on: true), .updatePiDaily(false), .updateExtensionsDaily(true),
@@ -288,16 +289,17 @@ struct RemoteRequestTests {
         switch request {
         case .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
              .closePane, .resizePaneSplit, .listDir, .listModels, .addSpace, .createAgent, .upload,
-             .creationOptions, .agentQuery, .agentAction, .automation, .instructions, .suggestions, .hostSettings, .skills, .projects, .design,
-             .tunnel, .browserClaim, .browserRelease, .browserAnswer:
+             .creationOptions, .agentQuery, .agentAction, .automation, .instructions, .suggestions, .hostSettings, .skills, .projects, .logicalProjects, .projectExecution, .design,
+             .logicalProjectRuntime, .tunnel, .browserClaim, .browserRelease, .browserAnswer:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 30
+    static let caseCount = 33
 
     static let samples: [RemoteRequest] = [
+        .logicalProjectRuntime(id: 81, request: .action(projectID: ProjectID(), expectedRevision: 1, request: .read)),
         .nativeThread(id: 80, agentID: S.agent, request: .snapshot(expectedSessionID: "s", beforeEntryID: "m:3", afterRevision: 9)),
-        .hello(id: 2, token: "", clientName: "Baily's MacBook \"Pro\"", protocolVersion: 99),
+        .hello(id: 2, token: "", clientName: "Alex's MacBook \"Pro\"", protocolVersion: 99),
         .hello(id: 9, token: "t", clientName: "Mac", protocolVersion: 1, capabilities: RemoteProtocol.clientCapabilities),
         .stateFetch(id: 3),
         .attach(id: 4, sessionID: S.session, cols: 120, rows: 40, viewportGeneration: 2),
@@ -325,6 +327,8 @@ struct RemoteRequestTests {
         .hostSettings(id: 27, request: .change(.bundledExtension(id: "review", on: true))),
         .skills(id: 29, request: .install(repo: "anthropics/skills", paths: ["skills/pdf"], commit: nil, invocation: nil)),
         .projects(id: 30, request: .list()),
+        .logicalProjects(id: 31, request: .list),
+        .projectExecution(id: 33, request: .execute(ProjectExecutionWireTests.assignment)),
         .design(id: 31, request: .boards(designID: RemoteDesignSamples.design, paths: nil, knownShas: [:])),
         .tunnel(.open(tunnel: 7, agentID: S.agent, port: 5173)),
         .browserClaim(id: 33, agentID: S.agent),
@@ -455,8 +459,12 @@ struct RemoteRequestTests {
         // Older clients list no capabilities: the host reads them as not knowing its queue.
         (#"{"type":"hello","id":1,"token":"t","clientName":"old","protocolVersion":1}"#,
          .hello(id: 1, token: "t", clientName: "old", protocolVersion: 1, capabilities: nil)),
+        (#"{"type":"hello","id":1,"token":"t","clientName":"legacy","protocolVersion":1,"capabilities":["projects.v1"]}"#,
+         .hello(id: 1, token: "t", clientName: "legacy", protocolVersion: 1, capabilities: ["projects.v1"])),
+        (#"{"type":"hello","id":1,"token":"t","clientName":"current","protocolVersion":1,"capabilities":["projects.v2"]}"#,
+         .hello(id: 1, token: "t", clientName: "current", protocolVersion: 1, capabilities: ["projects.v2"])),
     ])
-    func olderClientShapesDecodeWithDefaults(json: String, expected: RemoteRequest) throws {
+    func clientShapesDecodeWithDefaults(json: String, expected: RemoteRequest) throws {
         #expect(try Wire.decode(RemoteRequest.self, json) == expected)
     }
 
@@ -478,14 +486,15 @@ struct RemoteReplyTests {
         switch reply {
         case .nativeThread, .uploadResult, .creationOptions, .helloOk, .agentResult, .ok, .paneOpened, .error,
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
-             .agentCreated, .automationResult, .instructions, .suggestions, .hostSettings, .skills, .projects, .design, .designChanged,
-             .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive:
+             .agentCreated, .automationResult, .instructions, .suggestions, .hostSettings, .skills, .projects, .logicalProjects, .projectExecution, .projectExecutionChanged, .design, .designChanged,
+             .logicalProjectRuntime, .capabilitiesChanged, .tunnel, .browserClaimed, .browserDrive:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 29
+    static let caseCount = 33
 
     static let samples: [RemoteReply] = [
+        .logicalProjectRuntime(id: 81, result: .project(Project(name: "Owner"))),
         .nativeThread(id: 80, result: .accepted(operationID: S.op)),
         .uploadResult(id: 51, result: .complete(path: "/host/private/image.png")),
         .creationOptions(id: 52, options: RemoteCreationOptions(base: "origin/main", note: "cached", fetchFirst: false,
@@ -514,6 +523,9 @@ struct RemoteReplyTests {
         .hostSettings(id: 28, settings: S.hostSettings),
         .skills(id: 30, result: .skills(S.skills)),
         .projects(id: 31, result: .listing(ProjectListing(projects: []))),
+        .logicalProjects(id: 32, result: .projects([])),
+        .projectExecution(id: 33, result: .init(receipt: .init(key: ProjectExecutionWireTests.key, phase: .cancelled))),
+        .projectExecutionChanged(key: ProjectExecutionWireTests.key, revision: 2),
         .design(id: 32, result: .ok),
         .designChanged(designID: RemoteDesignSamples.design, revision: 8, commentsRevision: 2),
         .capabilitiesChanged(capabilities: [RemoteProtocol.designsCapability]),
@@ -603,6 +615,22 @@ struct RemoteReplyTests {
         json["goalsEnabled"] = NSNull()
         #expect(try JSONDecoder().decode(HostSettings.self, from: JSONSerialization.data(withJSONObject: json)) == expected)
         #expect(!HostSettings().goalsEnabled)
+    }
+
+    @Test func legacyOrNullProjectsExperimentSettingsAlwaysDefaultOff() throws {
+        var json = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(RemoteSamples.hostSettings)) as? [String: Any])
+        json.removeValue(forKey: "projectsEnabled")
+        var expected = RemoteSamples.hostSettings
+        expected.projectsEnabled = false
+        #expect(try JSONDecoder().decode(HostSettings.self, from: JSONSerialization.data(withJSONObject: json)) == expected)
+        json["projectsEnabled"] = NSNull()
+        #expect(try JSONDecoder().decode(HostSettings.self, from: JSONSerialization.data(withJSONObject: json)) == expected)
+        #expect(!HostSettings().projectsEnabled)
+        var settings = HostSettings()
+        settings.apply(.projectsEnabled(true))
+        #expect(settings.projectsEnabled)
+        settings.apply(.projectsEnabled(false))
+        #expect(settings == HostSettings())
     }
 
     /// A change applies to the one setting it names; a bundled extension the host doesn't have
@@ -765,6 +793,9 @@ struct RemoteProtocolConstantTests {
 
     @Test func hostAdvertisesEveryNamedCapabilityOnce() {
         let named = [
+            RemoteProtocol.logicalProjectsCapability, RemoteProtocol.logicalProjectAutomationsCapability,
+            RemoteProtocol.logicalProjectRuntimeCapability, RemoteProtocol.projectExecutionCapability,
+            RemoteProtocol.projectPlacementCapability, RemoteProtocol.logicalProjectFilesCapability, RemoteProtocol.projectWorkerCapability, RemoteProtocol.projectMessageImagesCapability, RemoteProtocol.projectPublicationsCapability,
             RemoteProtocol.nativeThreadCapability, RemoteProtocol.nativeThreadV2Capability,
             RemoteProtocol.nativeThreadStartingCapability, RemoteProtocol.nativeQueueCapability,
             RemoteProtocol.pasteCapability, RemoteProtocol.paneControlCapability,
@@ -779,14 +810,14 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.nativeContextCapability,
             RemoteProtocol.createAgentImagesCapability,
             RemoteProtocol.instructionsCapability, RemoteProtocol.suggestionsCapability,
-            RemoteProtocol.hostSettingsCapability, RemoteProtocol.skillsCapability, RemoteProtocol.projectsCapability, RemoteProtocol.projectDetailsCapability,
+            RemoteProtocol.hostSettingsCapability, RemoteProtocol.skillsCapability, RemoteProtocol.projectsV2Capability, RemoteProtocol.projectDetailsCapability,
             RemoteProtocol.projectMCPCapability, RemoteProtocol.projectTrustCapability, RemoteProtocol.piSkillsCapability,
             RemoteProtocol.terminalControlCapability,
             RemoteProtocol.designContextCapability,
             RemoteProtocol.nativeRetryCapability,
             RemoteProtocol.nativeInterruptCapability, RemoteProtocol.browserTunnelCapability, RemoteProtocol.browserDriveCapability,
             RemoteProtocol.nativeServiceTierCapability, RemoteProtocol.createAgentServiceTierCapability,
-            RemoteProtocol.nativeGoalCapability, RemoteProtocol.goalExperimentCapability,
+            RemoteProtocol.nativeGoalCapability, RemoteProtocol.goalExperimentCapability, RemoteProtocol.projectsExperimentCapability,
             // Offered only while the host's Design tool is on (SessionServer.setDesignsServed).
             RemoteProtocol.designsCapability, RemoteProtocol.designMarkupCapability, RemoteProtocol.designDeleteCapability,
         ]
@@ -796,6 +827,12 @@ struct RemoteProtocolConstantTests {
 
     /// Capability strings are negotiated with older peers; they must never be renamed.
     @Test func capabilityStringsAreStable() {
+        #expect(RemoteProtocol.logicalProjectsCapability == "logicalProjects.v1")
+        #expect(RemoteProtocol.projectMessageImagesCapability == "logicalProjectRuntime.images.v1")
+        #expect(RemoteProtocol.projectsCapability == "projects.v1")
+        #expect(RemoteProtocol.projectsV2Capability == "projects.v2")
+        #expect(RemoteProtocol.clientCapabilities.contains(RemoteProtocol.projectsV2Capability))
+        #expect(!RemoteProtocol.capabilities.contains(RemoteProtocol.projectsCapability))
         #expect(RemoteProtocol.projectTrustCapability == "projects.trust.v1")
         #expect(RemoteProtocol.nativeThreadCapability == "native.thread.v1")
         #expect(RemoteProtocol.nativeThreadV2Capability == "native.thread.v2")

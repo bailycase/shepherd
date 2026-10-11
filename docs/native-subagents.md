@@ -39,6 +39,14 @@ parent launch.
 Concurrency is shared across direct calls and workflows. A parent retains up to 64 child records
 and 32 workflows, and runs at most four workflows at once.
 
+Project coordinators and workers do **not** register child/workflow tools or commands, locally
+or remotely. They cannot start, resume or message helpers; workers do coding work directly and
+report extra work to the coordinator for visible Project threads under Threads at once. Manual
+turns in a Project-launched process remain restricted. Ordinary non-Project threads retain the
+runtime described here. Existing scope/Stop/drain machinery remains for activation identity,
+publication fencing and legacy-controller cleanup, not new admission.
+[Project policy and compatibility](project-execution.md#helpers-and-scoped-cancellation).
+
 ## Profiles and discovery
 
 For model, thinking, and context, the most specific source wins: the explicit call, then the
@@ -64,7 +72,7 @@ Settings > Subagents manages the same Markdown definitions. Both use the exporte
 `shepherd-children-config.ts` and pi's frontmatter parser, not a second YAML implementation.
 
 Only `<Shepherd support>/pi/agents` supplies definitions. Pi's `getAgentDir()` is pinned by
-Shepherd's launcher. Project `.pi/agents`, project `.agents`, the user's `~/.agents`, package
+Shepherd's launcher. Project `.shepherd/agents`, project `.agents`, the user's `~/.agents`, package
 agent directories, extra-directory environment variables, and settings overrides are not read. The
 retired discovery preference is ignored. This replaces the former multi-source discovery
 policy. There is no automatic import or migration from those folders.
@@ -139,6 +147,9 @@ in Settings instead. Third-party settings do not affect native definitions.
 
 Children report asynchronously. There is no standalone `shepherd_child_wait` tool. Start the
 children, do independent work, then end your turn when only dependent work remains. The default
+Tests that drive the parent through explicit prompts use `delivery: "report"` for held children,
+so an automatic completion turn cannot race the next prompt. Automatic continuation is tested separately.
+
 `delivery: "continue"` resumes an idle parent on completion; `delivery: "report"` stores the result
 without starting another parent turn. Do not poll `shepherd_child_result` instead of ending the
 turn. Use it to inspect a run or recover a result. For a group that must finish before dependent

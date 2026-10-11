@@ -3,26 +3,13 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdSessions
 
-/// Peer threads: agents listing, messaging, spawning, and asking to delete other top-level
-/// agents. Messages go through the target's live panes extension; a deletion waits for the
-/// user's answer in `PeerDeleteDialog` and then follows the normal Delete Agent path.
+/// Peer threads: agents listing, messaging, spawning and deleting other top-level agents.
+/// Messages use the target's live panes extension; deletion follows the normal Delete Agent path.
 @MainActor
 extension ShepherdViewModel {
     func installAgentPeerControl() {
-        // The server enforces Settings ▸ Pi ▸ Agent-to-agent messages; it asks until it is told.
-        server.setAgentMessagePolicy(settings.agentMessages)
-        settings.onAgentMessagesChange = { [weak server] policy in server?.setAgentMessagePolicy(policy) }
-        server.onAgentPeerCancellation = { [weak self] token in
-            MainActor.assumeIsolated {
-                if self?.peerDeleteConfirmation?.requestID == token {
-                    self?.peerDeleteConfirmation = nil
-                }
-                self?.peerApprovals.removeAll { $0.requestID == token }
-            }
-        }
-        server.onAgentApprovalRequest = { [weak self] prompt in
-            MainActor.assumeIsolated { self?.peerApprovals.append(prompt) }
-        }
+        // Agent tools need no permission setting or approval UI. Ignore legacy stored choices.
+        server.setAgentMessagePolicy(.always)
         server.onAgentPeerRequest = { [weak self] request, respond in
             MainActor.assumeIsolated {
                 guard let self else {
@@ -41,7 +28,7 @@ extension ShepherdViewModel {
         }
 
         // A design's agent is no thread: it has no peers, and no thread reaches it.
-        guard !state.isDesignAgent(sender) else {
+        guard state.isOrdinaryThread(sender) else {
             respond(.failed(code: "not_a_thread", message: "a design's agent does not coordinate with threads"))
             return
         }
@@ -59,8 +46,8 @@ extension ShepherdViewModel {
                 respond(.failed(code: "no_such_agent", message: "unknown agent \(targetAgentID)"))
                 return
             }
-            guard !state.isDesignAgent(target) else {
-                respond(.failed(code: "not_a_thread", message: "\(target.name) draws a design; it is not a thread"))
+            guard state.isOrdinaryThread(target) else {
+                respond(.failed(code: "not_a_thread", message: "\(target.name) is not an ordinary thread"))
                 return
             }
             // The target's panes extension adds report-only context or sends a user task.
@@ -81,16 +68,17 @@ extension ShepherdViewModel {
                 respond(.failed(code: "no_such_agent", message: "target no longer exists"))
                 return
             }
-            guard !state.isDesignAgent(target) else {
-                respond(.failed(code: "not_a_thread", message: "\(target.name) draws a design; it is not a thread"))
+            guard state.isOrdinaryThread(target) else {
+                respond(.failed(code: "not_a_thread", message: "\(target.name) is not an ordinary thread"))
                 return
             }
-            guard peerDeleteConfirmation == nil else {
-                respond(.failed(code: "busy", message: "another deletion is awaiting user confirmation"))
-                return
+            Task { @MainActor in
+                // Claim before deleting so a cancelled or expired request cannot act later.
+                guard await server.claimAgentDeletion(requestID) else { return }
+                deleteAgent(target.id) { error in
+                    respond(error.map { .failed(code: "delete_failed", message: String(describing: $0)) } ?? .ok)
+                }
             }
-            peerDeleteConfirmation = PeerDeleteConfirmation(requestID: requestID, agent: target,
-                                                          senderName: sender.name, respond: respond)
 
         case .spawn(_, let cwd, let prompt):
             let expanded = (cwd as NSString).expandingTildeInPath
@@ -134,7 +122,7 @@ extension ShepherdViewModel {
 
     /// What agent_list shows `sender`: every thread, and no design's agent.
     static func peerInfos(in state: ShepherdState, sender: AgentID) -> [AgentPeerInfo] {
-        state.agents.filter { !state.isDesignAgent($0) }.map { agent in
+        state.agents.filter { state.isOrdinaryThread($0) }.map { agent in
             AgentPeerInfo(
                 id: agent.id,
                 name: agent.name,
@@ -145,39 +133,5 @@ extension ShepherdViewModel {
         }
     }
 
-    /// The approval dialog's buttons, and nothing else: the answer goes to the server, which does the
-    /// call (or refuses it) when it claims the token, so a call that already lapsed is never done.
-    /// "Allow for this thread" also takes what the same agent has waiting off the queue: the server
-    /// does those calls too and tells the app (`onAgentPeerCancellation`).
-    func answerPeerApproval(_ requestID: String, _ decision: AgentApprovalDecision) {
-        guard peerApprovals.contains(where: { $0.requestID == requestID }) else { return }
-        peerApprovals.removeAll { $0.requestID == requestID }
-        Task { _ = await server.resolveAgentApproval(requestID, decision) }
-    }
 
-    /// What `PeerApprovalDialog` shows for `prompt`, from the names and folders held now.
-    func peerApprovalPresentation(_ prompt: AgentApprovalPrompt) -> PeerApprovalPresentation {
-        PeerApprovalPresentation.make(prompt, in: state, waiting: max(0, peerApprovals.count - 1))
-    }
-
-    func cancelPeerDeletion(requestID: String) {
-        guard let confirmation = peerDeleteConfirmation,
-              confirmation.requestID == requestID else { return }
-        peerDeleteConfirmation = nil
-        confirmation.respond(.failed(code: "cancelled", message: "user cancelled deletion; agent kept"))
-    }
-
-    /// The dialog's destructive button, and nothing else: it dismisses the dialog, claims the
-    /// request (a timed-out or cancelled one can no longer delete), waits `dismissal` so the
-    /// sheet is gone before a layout is torn down, then deletes through Delete Agent.
-    func confirmPeerDeletion(requestID: String, dismissal: Duration = .zero) async {
-        guard let confirmation = peerDeleteConfirmation,
-              confirmation.requestID == requestID else { return }
-        peerDeleteConfirmation = nil
-        guard await server.claimAgentDeletion(confirmation.requestID) else { return }
-        if dismissal > .zero { try? await Task.sleep(for: dismissal) }
-        deleteAgent(confirmation.agent.id) { error in
-            confirmation.respond(error.map { .failed(code: "delete_failed", message: String(describing: $0)) } ?? .ok)
-        }
-    }
 }

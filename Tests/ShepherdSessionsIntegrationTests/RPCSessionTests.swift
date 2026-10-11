@@ -44,6 +44,8 @@ struct RPCSessionTests {
             case .agentStart: "agent_start"
             case .agentEnd: "agent_end"
             case .agentSettled: "agent_settled"
+            case .skillsChanged: "skills_changed"
+            case .skillsWatchError: "skills_watch_error"
             case .turnStart: "turn_start"
             case .turnEnd: "turn_end"
             case .messageStart: "message_start"
@@ -129,7 +131,7 @@ struct RPCSessionTests {
         try await h.waitFor("agent_settled")
 
         #expect(h.types() == [
-            "agent_start", "turn_start", "message_start",
+            "agent_start", "turn_start", "message_start", "message_end", "message_start",
             "message_update", "message_update", "message_update", "message_update", "message_update",
             "message_update", "message_update",
             "message_end", "tool_execution_start", "tool_execution_end", "turn_end",
@@ -140,6 +142,24 @@ struct RPCSessionTests {
             text += delta.delta ?? ""
         }
         #expect(text == "Hello line\u{2028}sep world")
+    }
+
+    @Test func historyDecodeStillProgressesAfterSignInBridgesAreReleased() async throws {
+        for _ in 0..<64 {
+            var bridge: PiSignInBridge? = PiSignInBridge(line: PiLaunch.Line(
+                script: #"printf '{"type":"ready"}\n'; IFS= read -r reply"#))
+            let replies = bridge!.replies
+            var iterator = replies.makeAsyncIterator()
+            #expect(await iterator.next() == .ready)
+            bridge?.close()
+            bridge = nil
+        }
+        let h = try Harness(env: ["STUB_PI_HISTORY_BYTES": String(2 * 1024 * 1024)])
+        defer { h.stop() }
+        let response = await h.request(.getMessages)
+        let value = try response.get()
+        #expect(value.success)
+        #expect(value.messages?.count == 12)
     }
 
     /// A record long enough to decode off the queue keeps its place in line: what pi wrote after
@@ -168,7 +188,7 @@ struct RPCSessionTests {
 
         release.signal()
         try await h.waitFor("agent_settled")
-        #expect(order.current == ["history:12", "prompt", "agent_start", "turn_start", "message_start"]
+        #expect(order.current == ["history:12", "prompt", "agent_start", "turn_start", "message_start", "message_end", "message_start"]
             + Array(repeating: "message_update", count: 7)
             + ["message_end", "tool_execution_start", "tool_execution_end", "turn_end", "unknown:stub_unmodelled_event", "agent_end", "agent_settled"])
     }

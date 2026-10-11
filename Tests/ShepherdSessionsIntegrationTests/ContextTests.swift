@@ -21,7 +21,7 @@ struct ContextTests {
     @Test func theSnapshotCarriesPisTotalAndTheHostsSplit() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
-        let settings = h.dir.appendingPathComponent(".pi")
+        let settings = h.dir.appendingPathComponent(".shepherd")
         try FileManager.default.createDirectory(at: settings, withIntermediateDirectories: true)
         try Data(#"{"compaction":{"reserveTokens":20000,"keepRecentTokens":15000}}"#.utf8).write(to: settings.appendingPathComponent("settings.json"))
         let pi = try await PiAgent.launch(on: h)

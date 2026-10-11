@@ -229,7 +229,7 @@ extension ShepherdViewModel {
         defer { startingCheckoutUsers.removeValue(forKey: reservation) }
         let cwd = (config.workingDirectory as NSString).expandingTildeInPath
         let name = config.initialName ?? Self.provisionalName(for: config.initialPrompt)
-        let agentID = AgentID()
+        let agentID = config.reservedAgentID ?? AgentID()
         let opening = OpeningPrompt(config.initialPrompt, images: config.initialImages, agentID: agentID)
         if opening != nil || config.openingReferencesPending {
             sidebarPreparingOpeningTurns.insert(agentID)
@@ -257,7 +257,7 @@ extension ShepherdViewModel {
             // Provisional: pi's namer replaces it with a real title from the
             // agent's opening prompt, whether that prompt came from the sheet
             // or was typed into the TUI afterwards (⌘N). A design names itself.
-            nameIsFinal: config.designID != nil,
+            nameIsFinal: config.designID != nil || config.coordinatorFor != nil,
             piSessionID: config.piSessionID,
             worktreeBranch: config.worktreeBranch,
             worktreeBase: config.worktreeBase,
@@ -265,6 +265,7 @@ extension ShepherdViewModel {
             // A new agent leads its activity group.
             lastActiveAt: SessionServer.nowMilliseconds(),
             designID: config.designID,
+            coordinatorFor: config.coordinatorFor,
             serviceTier: config.serviceTier ?? settings.defaultServiceTier
         )
 

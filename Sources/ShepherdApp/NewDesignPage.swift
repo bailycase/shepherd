@@ -23,6 +23,7 @@ struct NewDesignPage: View {
     @State private var picking = false
     @State private var menu: ChipMenu?
     @State private var picker: ModelPickerState?
+    @State private var dismissal = ComposerMenuDismissal()
 
     private enum ChipMenu: Equatable { case models, settings }
 
@@ -72,6 +73,12 @@ struct NewDesignPage: View {
         .background(Color.nw.bgWindow)
         .nwAnimation(.content, value: draft.notice)
         .onChange(of: draft.focusRequest, initial: true) { composing = true }
+        .onChange(of: menu != nil, initial: true) { _, open in
+            let menu = $menu
+            dismissal.dismiss = { menu.wrappedValue = nil }
+            dismissal.watch(open)
+        }
+        .onDisappear { dismissal.watch(false) }
         .task { await vm.loadDesignSystems() }
         .fileImporter(isPresented: $picking, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in
             guard case .success(let urls) = result else { return }
@@ -131,6 +138,7 @@ struct NewDesignPage: View {
                                      thinking: draft.thinkingLevels().isEmpty ? nil : draft.thinking.clamped(to: draft.thinkingLevels()).title)
             }
             .buttonStyle(.nwComposerChip(active: menu == .settings || menu == .models))
+            .background { ComposerMenuRegion(dismissal: dismissal) }
             .help(draft.model.isEmpty ? "Model settings: the default" : "Model settings: \(draft.model)")
             Spacer(minLength: NW.Space.m)
             if draft.starting {
@@ -188,6 +196,7 @@ struct NewDesignPage: View {
             }
         }
         .fixedSize()
+        .background { ComposerMenuRegion(dismissal: dismissal) }
         .alignmentGuide(.bottom) { $0[.top] - AppLayout.menuGap }
         .nwAnimation(.overlay, value: menu)
     }
