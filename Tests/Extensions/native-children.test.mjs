@@ -25,7 +25,7 @@ const jiti = createJiti(import.meta.url, { alias: {
 } });
 const source = path.join(root, "Extensions/shepherd-children.ts");
 const mod = await jiti.import(source);
-const { SessionManager } = await import(path.join(pkg, "dist/index.js"));
+const { SessionManager, ProjectTrustStore, CONFIG_DIR_NAME } = await import(path.join(pkg, "dist/index.js"));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function until(fn, timeout = 15000) { const end = Date.now() + timeout; while (!await fn()) { if (Date.now() > end) throw Error("Timed out waiting for condition"); await sleep(30); } }
 const live = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
@@ -272,18 +272,113 @@ test("unchanged children are deduplicated but heartbeat until the list clears", 
   }
 });
 
+test("delayed project preparation preserves fresh child admission limits", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-admission-")), saved = { ...process.env };
+  const provider = fixtureServer();
+  await new Promise((resolve) => provider.server.listen(0, "127.0.0.1", resolve));
+  let h, host;
+  const sockets = new Set(), gates = [];
+  try {
+    process.env.HOME = dir; process.env.PI_CODING_AGENT_DIR = path.join(dir, "config");
+    process.env.PI_OFFLINE = "1"; process.env.SHEPHERD_CHILD_CONCURRENCY = "1";
+    process.env.SHEPHERD_NATIVE_CHILDREN = "1"; process.env.SHEPHERD_AGENT_ID = "fixture";
+    process.env.SHEPHERD_SOCKET = path.join(dir, "s.sock"); process.env.SHEPHERD_EXT_CHILDREN = source;
+    delete process.env.SHEPHERD_CLIPROXYAPI_CONFIG;
+    fs.mkdirSync(process.env.PI_CODING_AGENT_DIR);
+    fs.writeFileSync(path.join(process.env.PI_CODING_AGENT_DIR, "models.json"), JSON.stringify({ providers: { fixture: {
+      baseUrl: `http://127.0.0.1:${provider.server.address().port}/v1`, api: "openai-completions", apiKey: "local-fixture-not-secret",
+      models: [{ id: "fixture", name: "fixture", reasoning: false, input: ["text"], contextWindow: 64000, maxTokens: 1024,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }],
+    } } }));
+    let requests = 0;
+    host = net.createServer((socket) => {
+      sockets.add(socket); socket.on("error", () => {});
+      socket.on("data", mod.jsonLines((frame) => {
+        if (frame.type !== "prepareProjectConfiguration") return;
+        const answer = () => socket.write(JSON.stringify({ type: "ok", id: frame.id }) + "\n");
+        if (++requests <= 2) gates.push(answer); else answer();
+      }, assert.fail));
+    });
+    await new Promise((resolve) => host.listen(process.env.SHEPHERD_SOCKET, resolve));
+    h = await harness(dir);
+    const pending = Promise.allSettled(["one", "two"].map((task) => h.call("start", { task, role: "scout", mission: false })));
+    await until(() => gates.length === 2);
+    gates.forEach((answer) => answer());
+    const results = await pending;
+    assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+    const rejected = results.find((result) => result.status === "rejected");
+    assert.match(rejected.reason.message, /children are already active/);
+    const accepted = results.find((result) => result.status === "fulfilled").value;
+    assert.equal((await h.settled(accepted.id)).state, "complete");
+    assert.equal(provider.requests.length, 1, "only the admitted child launches and calls the fixture provider");
+    assert.equal(h.entries.filter((entry) => entry.customType === "shepherd-child").length, 1);
+  } finally {
+    await h?.shutdown(); for (const socket of sockets) socket.destroy();
+    if (host) await new Promise((resolve) => host.close(resolve));
+    await new Promise((resolve) => provider.server.close(resolve));
+    for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
+    Object.assign(process.env, saved); fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("migration fences reject starts and resumes without spawning after parent shutdown", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-fence-")), saved = { ...process.env };
+  let h, server;
+  const sockets = new Set();
+  try {
+    process.env.HOME = dir; process.env.PI_CODING_AGENT_DIR = path.join(dir, "config");
+    process.env.SHEPHERD_NATIVE_CHILDREN = "1"; process.env.SHEPHERD_AGENT_ID = "fixture";
+    process.env.SHEPHERD_SOCKET = path.join(dir, "s.sock"); process.env.SHEPHERD_EXT_CHILDREN = source;
+    fs.mkdirSync(process.env.PI_CODING_AGENT_DIR);
+    let requests = 0, held, mode = "refuse";
+    server = net.createServer((socket) => {
+      sockets.add(socket); socket.on("error", () => {});
+      socket.on("data", mod.jsonLines((frame) => {
+        if (frame.type !== "prepareProjectConfiguration") return;
+        requests++;
+        if (requests === 1) socket.write(JSON.stringify({ type: "ok", id: frame.id }) + "\n");
+        else if (mode === "refuse") socket.write(JSON.stringify({ type: "error", id: frame.id, message: "migration refused" }) + "\n");
+        else held = () => socket.write(JSON.stringify({ type: "ok", id: frame.id }) + "\n");
+      }, assert.fail));
+    });
+    await new Promise((resolve) => server.listen(process.env.SHEPHERD_SOCKET, resolve));
+    h = await harness(dir);
+    await assert.rejects(h.call("start", { task: "never spawn", role: "scout", mission: false }), /migration refused/);
+    const [run] = await h.call("result", {});
+    assert.equal(run.state, "failed");
+    const sessionFile = h.entries.find((entry) => entry.customType === "shepherd-child" && entry.data.id === run.id).data.sessionFile;
+    assert(!fs.existsSync(path.join(path.dirname(sessionFile), "writer")), "refused start never acquires a writer or process");
+    mode = "hold";
+    const resumed = h.call("resume", { id: run.id, message: "still never spawn" });
+    await until(() => held);
+    await h.shutdown(); held();
+    await assert.rejects(resumed, /Parent session ended/);
+    assert(!fs.existsSync(path.join(path.dirname(sessionFile), "writer")), "late migration reply cannot spawn after shutdown");
+  } finally {
+    await h?.shutdown(); for (const socket of sockets) socket.destroy();
+    if (server) await new Promise((resolve) => server.close(resolve));
+    for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
+    Object.assign(process.env, saved); fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("managed CLIProxyAPI reaches native starts, resumes and workflow children without parent controls", { timeout: 30000 }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-managed-child-"));
   const saved = { ...process.env };
   const { server, requests, authorizations } = fixtureServer();
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
-  let h;
+  let h, migrationHost;
   try {
     process.env.HOME = dir;
     process.env.PI_CODING_AGENT_DIR = path.join(dir, "pi");
     process.env.PI_OFFLINE = "1";
     process.env.SHEPHERD_NATIVE_CHILDREN = "1"; process.env.SHEPHERD_AGENT_ID = "fixture";
     process.env.SHEPHERD_SOCKET = path.join(dir, "absent.sock"); process.env.SHEPHERD_EXT_CHILDREN = source;
+    migrationHost = net.createServer((socket) => socket.on("data", mod.jsonLines((frame) => {
+      if (frame.type === "prepareProjectConfiguration") socket.write(JSON.stringify({ type: "ok", id: frame.id }) + "\n");
+    }, () => {})));
+    await new Promise((r) => migrationHost.listen(process.env.SHEPHERD_SOCKET, r));
+    migrationHost.unref();
     fs.mkdirSync(process.env.PI_CODING_AGENT_DIR);
     // PiHome installs this provider outside user extension discovery and passes its config path.
     process.env.SHEPHERD_CLIPROXYAPI_CONFIG = path.join(process.env.PI_CODING_AGENT_DIR, "shepherd-cliproxyapi.json");
@@ -326,6 +421,7 @@ test("managed CLIProxyAPI reaches native starts, resumes and workflow children w
     assert(requests.every((r) => (r.tools ?? []).every((t) => ["read", "shepherd_parent_message"].includes(t.function.name))));
   } finally {
     await h?.shutdown();
+    if (migrationHost) await new Promise((r) => migrationHost.close(r));
     await new Promise((r) => server.close(r));
     for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
     Object.assign(process.env, saved);
@@ -355,9 +451,13 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, async reporting, r
   fs.writeFileSync(path.join(dir, ".pi", "extensions", "poison.ts"), `throw new Error("project discovery escaped");`);
   // Stand-in for Shepherd's extension socket: accepts the children control channel (helloChildren)
   // and lets the test drive childCommand frames the way the native thread cards do.
-  const control = { sockets: [], frames: [] };
+  const control = { sockets: [], frames: [], prepare: (frame, socket) => {
+    const legacy = path.join(frame.cwd, ".pi"), destination = path.join(frame.cwd, CONFIG_DIR_NAME);
+    if (CONFIG_DIR_NAME !== ".pi" && fs.existsSync(legacy) && !fs.existsSync(destination)) fs.cpSync(legacy, destination, { recursive: true });
+    socket.write(JSON.stringify({ type: "ok", id: frame.id }) + "\n");
+  } };
   const controlServer = net.createServer((socket) => {
-    socket.on("data", mod.jsonLines((frame) => { control.frames.push(frame); if (frame.type === "helloChildren") control.sockets.push(socket); }, () => {}));
+    socket.on("data", mod.jsonLines((frame) => { control.frames.push(frame); if (frame.type === "helloChildren") control.sockets.push(socket); if (frame.type === "prepareProjectConfiguration") control.prepare(frame, socket); }, () => {}));
     socket.on("error", () => {});
   });
   await new Promise((r) => controlServer.listen(process.env.SHEPHERD_SOCKET, r));
@@ -376,6 +476,18 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, async reporting, r
     assert.equal(ticks.active.size, 0, "an idle parent with no runs never ticks");
     await until(() => control.sockets.length === 1);
     assert.equal(control.frames[0].agentID, "fixture");
+    // Alternate target skills exist only in legacy config until the host fence copies it.
+    const alternate = path.join(dir, "alternate");
+    fs.mkdirSync(path.join(alternate, ".pi", "skills", "migrated"), { recursive: true });
+    fs.writeFileSync(path.join(alternate, ".pi", "skills", "migrated", "SKILL.md"), "---\nname: migrated\ndescription: migration fixture\n---\nMIGRATED_SKILL_SENTINEL\n");
+    new ProjectTrustStore(process.env.PI_CODING_AGENT_DIR).set(fs.realpathSync(alternate), true);
+    fs.mkdirSync(path.join(process.env.PI_CODING_AGENT_DIR, "agents"), { recursive: true });
+    fs.writeFileSync(path.join(process.env.PI_CODING_AGENT_DIR, "agents", "migration.md"), "---\nname: migration\ndescription: migration fixture\ntools: read\nskills: migrated\n---\nRead only.\n");
+    const migrated = await h.call("start", { agent: "migration", cwd: alternate, task: "migrated skill", mission: false });
+    assert.equal((await h.settled(migrated.id)).state, "complete");
+    const migratedRun = h.entries.find((entry) => entry.customType === "shepherd-child" && entry.data.id === migrated.id).data;
+    assert.deepEqual(migratedRun.skills, [path.join(fs.realpathSync(alternate), CONFIG_DIR_NAME, "skills", "migrated", "SKILL.md")], "legacy skill must be discovered before the run's launch arguments are saved");
+    fs.unlinkSync(path.join(process.env.PI_CODING_AGENT_DIR, "agents", "migration.md"));
     // An arbitrary provider exists only in a configured user extension. Children must load
     // it without granting the unrelated tool that the same extension registers.
     const extensionDir = path.join(process.env.PI_CODING_AGENT_DIR, "extensions");
@@ -568,15 +680,29 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, async reporting, r
     assert(fs.readFileSync(firstFile, "utf8").includes("fleet answer"));
     const askDir = path.dirname(asked.sessionFile), askStatus = () => JSON.parse(fs.readFileSync(path.join(askDir, "status.json")));
     fs.writeFileSync(path.join(askDir, "control", "steer-requests", "answer.json"), JSON.stringify({ message: "inspector answer" }));
-    await until(() => askStatus().controlRequestID === "answer" && askStatus().controlNotice === "reply accepted or queued");
+    try {
+      await until(() => askStatus().controlRequestID === "answer" && askStatus().controlNotice === "reply accepted or queued");
+    } catch (error) {
+      const { state, controlRequestID, controlNotice } = askStatus();
+      console.error(JSON.stringify({ phase: "first-inspector-answer", state, controlRequestID, controlNotice,
+        requests: fs.readdirSync(path.join(askDir, "control", "steer-requests")), activeTicks: ticks.active.size }));
+      throw error;
+    }
     await h.settled(ask.id);
     assert(fs.readFileSync(asked.sessionFile, "utf8").includes("inspector answer"));
     assert.equal((await h.call("result", {id: ask.id})).needsReply, false);
     // Resume saves running state before Pi acknowledges the new prompt.
     fs.writeFileSync(path.join(askDir, "control", "steer-requests", "second-answer.json"), JSON.stringify({ message: "SLOW second inspector answer" }));
-    await until(() => askStatus().state === "running");
-    assert.equal(askStatus().controlRequestID, "answer", "launch must not publish the new request ID with the previous acceptance");
-    await until(() => askStatus().controlRequestID === "second-answer" && askStatus().controlNotice === "reply accepted or queued");
+    try {
+      await until(() => askStatus().state === "running");
+      assert.equal(askStatus().controlRequestID, "answer", "launch must not publish the new request ID with the previous acceptance");
+      await until(() => askStatus().controlRequestID === "second-answer" && askStatus().controlNotice === "reply accepted or queued");
+    } catch (error) {
+      const { state, controlRequestID, controlNotice } = askStatus();
+      console.error(JSON.stringify({ phase: "second-inspector-answer", state, controlRequestID, controlNotice,
+        requests: fs.readdirSync(path.join(askDir, "control", "steer-requests")) }));
+      throw error;
+    }
     await h.settled(ask.id);
     assert(fs.readFileSync(asked.sessionFile, "utf8").includes("second inspector answer"));
     // What the user sent (a card, the inspector, the fleet view) is recorded beside the session;
@@ -754,6 +880,8 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, async reporting, r
       const delivered = (await rpc("get_messages")).messages.filter((m) => m.customType === "shepherd-child");
       assert.equal(delivered.length, 1, "real Pi boundary delivers unread completion once");
       assert.equal(delivered[0].display, false);
+      assert.equal(delivered[0].role, "custom", "child continuation is native custom metadata, never a consumed user turn");
+      assert(!actualEvents.some(e => e.type === "message_start" && e.message?.role === "user" && JSON.stringify(e.message.content).includes("Use this result to continue")), "continuation must not invalidate the native user scope");
       assert(actualEvents.some((e) => e.type === "extension_ui_request" && e.message === "fixture-child-boundary"),
         "completion must use the real actionable boundary while the parent works");
       assert(requests.slice(prior).some((r) => JSON.stringify(r.messages.at(-1)).includes("Use this result to continue")),
@@ -917,12 +1045,48 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, async reporting, r
   }
 });
 
+test("Project coordinator and worker launches register no child/workflow tools, commands or revival hooks", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-project-")), saved = { ...process.env };
+  try {
+    Object.assign(process.env, { HOME: dir, PI_CODING_AGENT_DIR: path.join(dir, "config"), PI_OFFLINE: "1",
+      SHEPHERD_NATIVE_CHILDREN: "1", SHEPHERD_AGENT_ID: "fixture",
+      SHEPHERD_PROJECT_CONTEXT: JSON.stringify({ projectID: "project" }),
+      SHEPHERD_SOCKET: path.join(dir, "s.sock"), SHEPHERD_EXT_CHILDREN: source });
+    delete process.env.SHEPHERD_CHILD;
+    for (const coordinator of ["0", "1"]) {
+      process.env.SHEPHERD_PROJECT_COORDINATOR = coordinator;
+      const tools = new Map(), commands = new Map(), hooks = new Map();
+      mod.default({ registerTool: tool => tools.set(tool.name, tool),
+        registerCommand: (name, command) => commands.set(name, command), on: (name, hook) => hooks.set(name, hook) });
+      assert.equal(tools.size, 0, "getAllTools/executeTool (including codemode) cannot find unregistered helpers");
+      assert.equal(commands.size, 0, "slash commands cannot revive old children/workflows");
+      assert.equal(hooks.size, 0, "manual turns and restored sessions cannot reopen child admission");
+    }
+    delete process.env.SHEPHERD_PROJECT_CONTEXT;
+    process.env.SHEPHERD_PROJECT_COORDINATOR = "0";
+    const ordinary = await harness(dir);
+    try {
+      for (const name of ["shepherd_child_start", "shepherd_child_resume", "shepherd_child_message", "shepherd_workflow"]) {
+        assert(ordinary.tools.has(name), `${name} remains registered in ordinary threads`);
+      }
+    } finally { await ordinary.shutdown(); }
+  } finally {
+    for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
+    Object.assign(process.env, saved); fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("the global instructions copied into Shepherd's pi home reach a child that keeps project context, and never one that doesn't", { timeout: 90000 }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-your-pi-child-"));
   const { server, requests } = fixtureServer();
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   const sockets = new Set();
-  const control = net.createServer((socket) => { sockets.add(socket); socket.on("error", () => {}); });
+  const control = net.createServer((socket) => {
+    sockets.add(socket); socket.on("error", () => {});
+    socket.on("data", mod.jsonLines((frame) => {
+      if (frame.type === "prepareProjectConfiguration") socket.write(JSON.stringify({ type: "ok", id: frame.id }) + "\n");
+    }, () => {}));
+  });
   const saved = { ...process.env };
   let h;
   try {

@@ -33,7 +33,7 @@ in UserDefaults under `shepherd.keybindings`).
 | ⌘N · ⇧⌘T · ⇧⌘N | New thread (the page) · new agent with options… · new space… |
 | ⌘R · ⇧⌘W | Rename agent · delete agent |
 | ⌘K | Command palette |
-| ⌘↓ · ⌘↑ | Next · previous agent in the sidebar (Needs you, Pinned, then Recents; organized by project, the open projects' threads) |
+| ⌘↓ · ⌘↑ | Next · previous agent in the sidebar (Needs you, Pinned, then Recents; organized by space, the open spaces' threads) |
 | ⌘D · ⌘W | New terminal (a new tab) · close terminal |
 | ⇧⌘] · ⇧⌘[ | Next · previous terminal (tab), wrapping while the panel shows |
 | ⌘J · ⇧⌘↩ | Show or hide the terminal panel, opening a terminal when there is none · maximize or restore it |
@@ -49,16 +49,15 @@ in UserDefaults under `shepherd.keybindings`).
 Fixed chords:
 
 - ⌘1–9 select the first nine rows of Pinned, then Recents, in the order they are drawn (organized
-  by project, the first nine threads of the open projects; hold ⌘ to see them). Pin and Unpin
-  have no chord: they are in the row and thread menus and ⌘K. With the project tree focused, ← closes a project and →
-  opens it; ⌥-click opens or closes every project. ⌃⇧1–9 jumped between the tree's
+  by space, the first nine threads of the open spaces; hold ⌘ to see them). Pin and Unpin
+  have no chord: they are in the row and thread menus and ⌘K. With the space tree focused, ← closes a space and →
+  opens it; ⌥-click opens or closes every space. ⌃⇧1–9 jumped between the tree's
   machine sections and went with them: a focused terminal keeps them now.
 - ⌃1 shows the side pane's Changes tab (View › Changes) and ⌃2 its Browser (View › Browser); ⌃3–⌃4
   wait for its other tabs. Settings ▸ Keyboard lists them under Fixed, and Ghostty leaves them to
   the app (`appOwnedChords`).
 - ⌘, opens Settings, and ⌘F searches it.
-- ⏎ confirms and ⎋ cancels in sheets. A sheet that asks to allow an agent to act
-  (`PeerApprovalDialog`) has no ⏎ default, so a Return typed as it opens allows nothing; ⎋ is its Deny.
+- ⏎ confirms and ⎋ cancels in user-invoked sheets. Agent tool calls open no approval sheets.
 - In the composer, ↩ sends (while pi works, it queues or steers per Settings) and ⇧↩ or ⌥↩ inserts a
   newline. `/` at the start opens the command list, and Esc closes a menu, then the command list,
   then stops pi while it works.

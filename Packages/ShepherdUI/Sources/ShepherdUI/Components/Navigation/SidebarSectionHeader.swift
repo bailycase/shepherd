@@ -42,10 +42,12 @@ public struct NWSidebarSectionHeader: View {
     let pulse: Bool
     let toggle: () -> Void
     let markAllSeen: (() -> Void)?
+    /// A text chip trailing the title ("New project"), in the same pill as Mark all seen.
+    let chip: (title: String, action: () -> Void)?
     @Environment(\.nwDensity) private var density
 
     public init(_ title: String, count: Int, isExpanded: Bool, attention: Bool = false, pulse: Bool = false,
-                toggle: @escaping () -> Void, markAllSeen: (() -> Void)? = nil) {
+                toggle: @escaping () -> Void, markAllSeen: (() -> Void)? = nil, chip: (title: String, action: () -> Void)? = nil) {
         self.title = title
         self.count = count
         self.isExpanded = isExpanded
@@ -53,6 +55,7 @@ public struct NWSidebarSectionHeader: View {
         self.pulse = pulse
         self.toggle = toggle
         self.markAllSeen = markAllSeen
+        self.chip = chip
     }
 
     public var body: some View {
@@ -97,6 +100,7 @@ public struct NWSidebarSectionHeader: View {
             .buttonStyle(NWPlainPressStyle())
             .accessibilityLabel("\(title), \(count), \(isExpanded ? "expanded" : "collapsed")\(pulse && !isExpanded ? ", running" : "")")
             .accessibilityAddTraits(.isHeader)
+            if let chip { NWSidebarHeaderChip(chip.title, action: chip.action) }
             if let markAllSeen {
                 Button(action: markAllSeen) {
                     Text("Mark all seen")

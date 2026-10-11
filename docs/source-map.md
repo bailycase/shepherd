@@ -108,8 +108,8 @@ Sources/
                        client; the drive's claims and routing are in SessionServer: a viewer that
                        owns an agent's browser is handed its requests), AutomationRunLog (each automation's runs), PTYSession,
                        SessionScreen (SwiftTerm), StateStore,
-                       PaneRequest (terminal/review/automation requests + outcomes), AgentApprovals (the gate's
-                       rules, "Allow for this thread"), AgentMessageFraming (the header a recipient reads), RemoteFileUpload,
+                       PaneRequest (terminal/review/automation requests + outcomes), AgentApprovals (legacy access-policy
+                       APIs; no approval queues), AgentMessageFraming (the header a recipient reads), RemoteFileUpload,
                        PiEngine (which pi runs; BundledPiEngine, the one the app ships),
                        PiHome (Shepherd's pi home: the launcher, restore-env.sh, its settings),
                        PiCompactionThreshold (Settings ▸ Agents ▸ Compact at, as pi's per-model
@@ -252,8 +252,8 @@ Sources/
       lists, their rows and switches),
       Thread/SlashLogin (/login and /logout), Thread/ThreadAuthNotice (waiting, not signed in)
     Themes (ThemeManager, ShepherdTheme), ShepherdThemeMarker, ShellIntegration, ComponentGallery
-    RemoteHostStore, AgentPeers (+ the approval queue), PeerApproval and PeerApprovalDialog (an agent's call
-      on another thread, waiting for the user), AgentNotifications, ChildRuns, PiSessionFile (+ adoption from
+    RemoteHostStore, AgentPeers (cross-thread tools, without approval modals),
+      AgentNotifications, ChildRuns, PiSessionFile (+ adoption from
       your pi), AppUpdater (Sparkle: UpdateChannel, UpdateChannelStore, ChannelDelegate),
       NightlyMovedNotice
     Status/Namer/Panes/Review/Subagents/Children/Inspect/Instructions/Design/MCPProjectExtension.swift
@@ -352,16 +352,11 @@ Tests/
                           and element-ids.json (WebKit's numbering of each board's elements)
   DesignSurfaceKitIntegrationTests/Fixtures/  a small design (loops, conditionals, an import)
   Release/                Python tests for scripts/release.py and the CI helpers
-  ci-suite-times.json     each suite's seconds on a CI runner, which the shards are cut from
   ShepherdIOSChecks/      the iOS client's scripts
 scripts/               release.py (the release workflow's rules), sign-app.sh (release
                        signing), sync-embedded-extension.py, context_budget.py (what a thread's
                        first request carries, and its ceilings in context-budget.json),
-                       ci_mtimes.py (CI's incremental builds),
-                       ci_impact.py (the lane and the fast lane's suites), ci_shards.py (equal
-                       shards from Tests/ci-suite-times.json), ci_run_tests.py (a shard under a
-                       watchdog, failed tests retried once), ci_testlog.py (test output reader),
-                       ci_report.py (the one tracking issue),
+                       ci_plan.py (Swift path selection and native test-filter validation),
                        pi_engine.py + pi-engine-pin.json (stage and verify the pi engine),
                        sign-engine.sh (node, with the engine's entitlements), check_pr_body.py
                        (the pr-body workflow: what a UI or autonomous-feature PR body must say)

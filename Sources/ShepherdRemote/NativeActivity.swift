@@ -339,6 +339,10 @@ public struct NativeActivityCall: Equatable, Sendable, Identifiable {
     public var stopped: Bool
     public var startedAt: Double?
     public var endedAt: Double?
+    /// The typed Project reference the owner attached to this call's result (never read from its text). nil for every other call.
+    public var projectAction: NativeProjectAction?
+    /// This call's explicit, redacted worker plan; display only, never Project authority.
+    public var projectPlan: NativeProjectPlan?
     /// Saved output (text blocks joined): the source for Copy Output and the full-output sheet.
     public var output: String
     /// The first lines a finished call expands to, and how many lines there are in all.
@@ -409,6 +413,8 @@ extension NativeActivityCall {
         self.stopped = stopped
         self.startedAt = message.startedAt
         self.endedAt = running ? nil : message.timestamp
+        self.projectAction = message.projectAction
+        self.projectPlan = NativeProjectPlan(message)
         self.output = output
         self.outputHead = running ? [] : lines.prefix(Self.outputHeadLines).map(String.init)
         self.outputLineCount = lineCount
@@ -713,7 +719,10 @@ public struct NativeActivityBurst: Equatable, Sendable, Identifiable {
 public func nativeActivityBursts(_ calls: [NativeActivityCall]) -> [NativeActivityBurst] {
     var groups: [[NativeActivityCall]] = []
     for call in calls {
-        if call.state == .done, !call.stopped, let last = groups.last?.last, last.state == .done, !last.stopped, last.kind == call.kind,
+        // Each typed Project reference or explicit plan update owns its own card.
+        if call.state == .done, !call.stopped, call.projectAction == nil, call.projectPlan == nil,
+           let last = groups.last?.last, last.state == .done, !last.stopped,
+           last.projectAction == nil, last.projectPlan == nil, last.kind == call.kind,
            (call.kind != .other && call.kind != .browser) || last.name == call.name, call.kind != .lookedAt || last.designRef == call.designRef {
             groups[groups.count - 1].append(call)
         } else {

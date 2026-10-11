@@ -67,6 +67,10 @@ struct Composer: View {
     var hidesNotSignedIn = false
     /// `/login` and `/logout`: Shepherd's own commands, for this Mac's agents (nil elsewhere).
     var slashLogin: SlashLoginActions? = nil
+    /// A Project's conversation: a send goes through the Project's revision-checked runtime (the host refuses a raw
+    /// native send to a coordinator), and nothing else changes. nil for every ordinary thread.
+    @Environment(\.projectComposerSend) private var projectSend
+    @Environment(\.projectWorkerThread) private var workerStyle
     /// The thread's design references (the @ picker, a pasted reference, the chips); nil where
     /// none reach: a design's chat, another host's thread, the Design tool off.
     @Environment(\.designReferences) private var references
@@ -159,7 +163,11 @@ struct Composer: View {
     private var canSend: Bool {
         active && store.acceptsSend && (store.hasDraft || !input.attachments.isEmpty)
     }
-    private var canAttach: Bool { store.supportedActions.contains("sendImages") }
+    /// ProjectLead-Started/-ThreadRunning draw the conversation's empty composer as the disabled arrow while the coordinator works: Stop
+    /// there would also pause the Project (Esc included). Worker and ordinary threads keep Stop.
+    private var projectConversation: Bool { projectSend != nil }
+    /// A Project's composer asks the Project's owner (it exists before the first coordinator); every other thread asks its own.
+    private var canAttach: Bool { projectSend?.carriesImages ?? store.supportedActions.contains("sendImages") }
     /// pi answers `/name` prompts itself; the list comes from its command registry. Its skills'
     /// commands stay out unless Settings ▸ Skills lists them.
     private var commands: [NativeCommand] {
@@ -299,6 +307,8 @@ struct Composer: View {
                         .nwTransition(.list, edge: .bottom)
                 }
             }
+            // A Project's strip ("2 of 3 done · 1 needs you") sits over the card, as the board draws it.
+            if let dock = projectSend?.dock { dock().nwTransition(.list, edge: .bottom) }
             // The subagents and "Up next" grow upward from the card, which never moves.
             if store.hasGoal || showsTray || queueStack.isVisible {
                 ComposerDock(tray: store.tray, trayState: trayState, runs: store.subagents, actions: subagents,
@@ -333,7 +343,7 @@ struct Composer: View {
                     card
                 }
             }
-                .background { ComposerMenuRegion(dismissal: dismissal) }
+                .background { if openMenu == .slash || openMenu == .mention { ComposerMenuRegion(dismissal: dismissal) } }
                 .background { ComposerWindowReader(monitor: keyMonitor) }
                 .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(Self.threadSpace)).minY } action: { cardTop = $0 }
                 .onGeometryChange(for: Bool.self) { proxy in
@@ -415,8 +425,9 @@ struct Composer: View {
             try? await Task.sleep(for: Self.startingDelay(blank: store.session == nil, delay: startingDelay))
             if !Task.isCancelled { startingShown = true }
         }
-        .frame(maxWidth: AppLayout.threadMaxWidth)
-        .padding(.horizontal, gutter)
+        .frame(maxWidth: projectSend?.columnWidth ?? AppLayout.threadMaxWidth)
+        .padding(.leading, workerStyle?.gutter ?? gutter)
+        .padding(.trailing, (workerStyle?.gutter ?? gutter) + (workerStyle?.composerTrailing ?? 0))
         .padding(.bottom, AppLayout.composerBottom)
         .frame(maxWidth: .infinity)
         .background(alignment: .top) {
@@ -625,12 +636,17 @@ struct Composer: View {
         } field: {
             field.nwEntrance(.content)
         } controls: {
-            ComposerControls(model: controlsModel, actions: controlsActions, store: store, directory: directory, showChanges: showChanges).equatable()
+            ComposerControls(model: controlsModel, actions: controlsActions, store: store, directory: directory, showChanges: showChanges,
+                             dismissal: dismissal).equatable()
         }
         .coordinateSpace(.named(Self.cardSpace))
+        .environment(\.nwComposerControlsInset, projectSend != nil || workerStyle != nil
+                     ? NWComposerControlsInset(top: NWLeadMetrics.composerControlsTop, bottom: NWLeadMetrics.composerControlsBottom) : nil)
     }
 
     private var placeholder: String {
+        if let projectSend { return projectSend.placeholder }
+        if let workerStyle { return workerStyle.placeholder }
         if designChat { return "Describe a change, or click something on the canvas to comment…" }
         if !hasTurns { return "Describe the task, or / for commands…" }
         return commands.isEmpty ? "Follow up…" : "Follow up, or / for commands…"
@@ -752,7 +768,8 @@ struct Composer: View {
             }
             .onKeyPress(.escape) {
                 switch ComposerEscape(menuOpen: menu != nil, commandsOpen: commandQuery != nil || loginQuery != nil || mentionShown,
-                                      canStop: running && dialogs.isEmpty && active && store.supports("abort")) {
+                                      canStop: running && dialogs.isEmpty && active && store.supports("abort")
+                                          && !(projectConversation && !store.hasDraft && input.attachments.isEmpty)) {
                 case .closeMenu: menu = nil
                 case .dismissCommands where mentionShown && commandQuery == nil && loginQuery == nil:
                     mentions.dismissed = store.draft
@@ -779,7 +796,7 @@ struct Composer: View {
     private var controlsModel: ComposerControlsModel {
         let working = running
         let draftEmpty = !store.hasDraft && input.attachments.isEmpty
-        let stops = working && draftEmpty
+        let stops = NativeSendChoice.stopsInPlaceOfSend(running: working, hasInput: !draftEmpty) && !projectConversation
         return ComposerControlsModel(
             active: active, canAttach: canAttach, attachFull: input.attachments.isFull,
             model: store.model, modelChangeable: store.supportedActions.contains("setModel"),
@@ -787,11 +804,10 @@ struct Composer: View {
             thinking: store.thinking, thinkingShown: thinkingAvailable, thinkingEnabled: store.supports("setThinking"),
             speed: store.serviceTier, speedShown: store.offersServiceTier, speedEnabled: store.supports("setServiceTier"),
             branch: branch,
-            startingShown: startingShown, busy: store.busy, stops: stops, beside: working && !draftEmpty && !store.busy,
+            startingShown: startingShown, busy: store.busy, stops: stops, sendMenu: working && !draftEmpty && !store.busy,
             sendRinged: menu == .send, contextOpen: menu == .context,
-            stopEnabled: active && store.supports("abort"),
             actionEnabled: stops ? active && store.supports("abort") : canSend,
-            stopHelp: stopHelp, actionHelp: stops ? stopHelp : sendHelp(working: working))
+            actionHelp: stops ? stopHelp : sendHelp(working: working))
     }
 
     /// What the row's controls do. Each reads the store and the composer's own state as it runs,
@@ -928,6 +944,25 @@ struct Composer: View {
         // `/login …` typed out and sent: Sign-in opens; nothing reaches pi.
         if slashLogin != nil, let command = SlashLogin.parse(store.draft) {
             openLogin(command)
+            return
+        }
+        if let projectSend {
+            // The Project's own send. No delivery choice: the project runtime queues, orders and (while paused) holds the message,
+            // and reports it back through the Project record. The images on the card go with it, and only the ones submitted are
+            // cleared once the runtime accepts; a refusal keeps the draft and every image.
+            let text = store.draft.trimmingCharacters(in: .whitespacesAndNewlines)
+            let images = input.attachments.images
+            let submitted = input.attachments.ids
+            guard !text.isEmpty || !images.isEmpty else { return }
+            Task {
+                if await projectSend.send(text, images) {
+                    store.draft = ""
+                    for id in submitted { input.attachments.remove(id) }
+                } else if !images.isEmpty, let why = projectSend.refusal() {
+                    // The composer's own failed line says why the images (and words) were kept.
+                    input.attachments.reject(why)
+                }
+            }
             return
         }
         let images = input.attachments.images
@@ -1080,7 +1115,7 @@ struct Composer: View {
     /// Dropped or pasted images become attachments through the same resize rules as terminal
     /// drops (longest edge 2000px, JPEG stays JPEG, everything else PNG).
     private func attach(_ providers: [NSItemProvider]) {
-        input.attach(providers, store: store, localFiles: allowsLocalFiles)
+        input.attach(providers, store: store, localFiles: allowsLocalFiles, imagesSupported: projectSend?.carriesImages)
     }
 }
 
@@ -1106,15 +1141,13 @@ struct ComposerControlsModel: Equatable {
     var branch: AgentBranchLabel?
     var startingShown: Bool
     var busy: Bool
-    /// Stop takes the corner: pi works and the field is empty.
+    /// The one action is Stop: pi works and the composer has no input.
     var stops: Bool
-    /// Stop stands aside outlined: pi works, with a draft to send.
-    var beside: Bool
+    /// Send opens its menu on a right-click or a hold: pi works and there is input to send.
+    var sendMenu: Bool
     var sendRinged: Bool
     var contextOpen: Bool
-    var stopEnabled: Bool
     var actionEnabled: Bool
-    var stopHelp: String
     var actionHelp: String
 }
 
@@ -1144,6 +1177,9 @@ struct ComposerControls: View, Equatable {
     let store: NativeThreadStore
     var directory: String? = nil
     var showChanges: (() -> Void)? = nil
+    /// Marks the controls that open a menu, so a click on one is its own and never a click away.
+    /// A constant of the composer, outside `==`.
+    var dismissal: ComposerMenuDismissal? = nil
 
     @Environment(\.nwComposerSize) private var size
 
@@ -1165,6 +1201,7 @@ struct ComposerControls: View, Equatable {
                 HStack(spacing: NW.Space.s) {
                     ContextMeterButton(store: store, expanded: model.contextOpen, toggle: actions.context)
                         .equatable()
+                        .background { if let dismissal { ComposerMenuRegion(dismissal: dismissal) } }
                         .onGeometryChange(for: CGFloat.self) { proxy in
                             (proxy.bounds(of: .named(Composer.cardSpace))?.width ?? 0)
                                 - proxy.frame(in: .named(Composer.cardSpace)).maxX
@@ -1204,6 +1241,7 @@ struct ComposerControls: View, Equatable {
                                      changeable: model.modelChangeable || model.thinkingShown || model.speedShown)
             }
             .buttonStyle(.nwComposerChip(active: model.modelsOpen))
+            .background { if let dismissal { ComposerMenuRegion(dismissal: dismissal) } }
             .disabled(!model.modelEnabled && !(model.thinkingShown && model.thinkingEnabled) && !(model.speedShown && model.speedEnabled))
             .help("Model settings: \(name)")
             .accessibilityLabel("Model settings: \(name)")
@@ -1227,16 +1265,12 @@ struct ComposerControls: View, Equatable {
     }
 
     /// Send and Stop are one button that morphs; the spinner cross-fades over it while pi
-    /// accepts a message. While pi works with a draft, Stop steps aside outlined and Send takes
-    /// the corner; right-clicking or holding Send then opens the Send menu.
+    /// accepts a message. While pi works it is Stop with nothing to send and Send with input
+    /// (words, files, images, references, elements); then right-clicking or holding Send opens
+    /// the Send menu. There is no second Stop.
     private var primary: some View {
-        let beside = model.beside
+        let sendMenu = model.sendMenu
         return HStack(spacing: NW.Space.s) {
-            if beside {
-                NWComposerActionButton(.stop, outlined: true, enabled: model.stopEnabled, action: actions.stop)
-                    .help(model.stopHelp)
-                    .nwTransition(.content)
-            }
             ZStack {
                 if model.busy {
                     ProgressView().progressViewStyle(.nwSpinner(color: Color.nw.textTertiary))
@@ -1247,17 +1281,17 @@ struct ComposerControls: View, Equatable {
                     NWComposerActionButton(model.stops ? .stop : .send, ringed: model.sendRinged, enabled: model.actionEnabled,
                                            action: model.stops ? actions.stop : actions.send)
                     .help(model.actionHelp)
-                    .overlay { if beside { SecondaryClick(action: actions.sendMenu) } }
+                    .background { if let dismissal, model.sendRinged { ComposerMenuRegion(dismissal: dismissal) } }
+                    .overlay { if sendMenu { SecondaryClick(action: actions.sendMenu) } }
                     .simultaneousGesture(LongPressGesture(minimumDuration: AppLayout.sendHoldDelay / .seconds(1)).onEnded { _ in
-                        guard beside else { return }
+                        guard sendMenu else { return }
                         actions.holdSend()
-                    }, isEnabled: beside)
+                    }, isEnabled: sendMenu)
                     .nwTransition(.content)
                 }
             }
         }
         .nwAnimation(.content, value: model.busy)
-        .nwAnimation(.content, value: beside)
     }
 }
 
@@ -1561,9 +1595,10 @@ struct SecondaryClick: NSViewRepresentable {
 // MARK: Menu dismissal
 
 /// Closes the composer's open menu on a click anywhere in its window outside the menu and the
-/// card it grows from, the way a transient popover closes; the click still lands where it was
-/// aimed. A click in the card is the card's own: a chip toggles its menu, and the field keeps
-/// the slash menu its draft opened.
+/// regions that own it, the way a transient popover closes; the click still lands where it was
+/// aimed. The control that opens a menu (the model chip, the context ring, Send) is part of it, and
+/// toggles it itself; the card also owns the slash and @ menus its draft opened. A click anywhere
+/// else, the field and the other controls included, closes a chip's menu.
 @MainActor
 final class ComposerMenuDismissal {
     var dismiss: () -> Void = {}

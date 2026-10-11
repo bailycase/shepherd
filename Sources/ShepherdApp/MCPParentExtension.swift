@@ -2,7 +2,7 @@ import Foundation
 import ShepherdProtocol
 
 /// A subproject's share of its parent's MCP servers (Settings ▸ Projects, parents and subprojects;
-/// docs/mcp.md): registers the parent's `.pi/mcp.json` servers with pi's own MCP, in a project pi
+/// docs/mcp.md): registers the parent's `.shepherd/mcp.json` servers with pi's own MCP, in a project pi
 /// trusts. Loaded only for an agent whose project sits inside another project's folder.
 enum MCPParentExtension {
     static func installedPath() throws -> String {
@@ -20,12 +20,12 @@ enum MCPParentExtension {
     static let extensionSource = #"""
         // @ts-nocheck -- loaded by pi/jiti; this project intentionally has no Node TS workspace.
         // Shepherd's subproject MCP extension (Settings ▸ Projects, parents and subprojects; docs/mcp.md): a project inside another
-        // project's folder shares the parent's MCP servers. pi reads `.pi/mcp.json` only in the folder it runs in, so this reads the
+        // project's folder shares the parent's MCP servers. pi reads `.shepherd/mcp.json` only in the folder it runs in, so this reads the
         // parent's file, the folder Shepherd names in SHEPHERD_PARENT_PROJECT, and registers its servers for the session with
-        // pi.registerMcpServer. The subproject's own `.pi/mcp.json` and the user's `mcp.json` are pi's own configuration, which wins
+        // pi.registerMcpServer. The subproject's own `.shepherd/mcp.json` and the user's `mcp.json` are pi's own configuration, which wins
         // over a registered server of the same name, so the subproject's own entry overrides the parent's.
         //
-        // Only from a parent pi trusts: its servers run commands. pi's own check passes a subproject with no `.pi` of its own (it
+        // Only from a parent pi trusts: its servers run commands. pi's own check passes a subproject with no `.shepherd` of its own (it
         // has nothing to trust), so the parent's decision is read from pi's trust store, which a saved decision on a folder above
         // also answers. The home folder is never a parent: its `.pi` is the user's own pi. It runs no server, speaks no MCP and
         // writes nothing.
@@ -53,7 +53,7 @@ enum MCPParentExtension {
           return !!value && typeof value === "object" && !Array.isArray(value);
         }
 
-        /** The parent's servers as its `.pi/mcp.json` holds them, or none when it has no such file, or the session runs outside it. */
+        /** The parent's servers as its `.shepherd/mcp.json` holds them, or none when it has no such file, or the session runs outside it. */
         export function parentServers(parent: string | undefined, cwd: string): Record<string, unknown> {
           if (!parent || !path.isAbsolute(parent)) return {};
           const root = path.resolve(parent);
@@ -61,7 +61,7 @@ enum MCPParentExtension {
           // The parent holds the subproject, never the other way round, and a project is not its own parent.
           if (here === root || !here.startsWith(root + path.sep)) return {};
           try {
-            const parsed = JSON.parse(fs.readFileSync(path.join(root, ".pi", "mcp.json"), "utf8"));
+            const parsed = JSON.parse(fs.readFileSync(path.join(root, ".shepherd", "mcp.json"), "utf8"));
             return isObject(parsed) && isObject(parsed.mcpServers) ? parsed.mcpServers : {};
           } catch {
             return {};

@@ -23,7 +23,8 @@ extension ShepherdViewModel {
     /// Whether an agent's turns and questions post as a thread's. A design's agent never does:
     /// its chat is the design's, and every banner here words and acts on a thread.
     static func notifiesAsThread(_ agentID: AgentID, in state: ShepherdState) -> Bool {
-        !state.isDesignAgent(agentID)
+        guard let agent = state.agents.first(where: { $0.id == agentID }) else { return !state.isDesignAgent(agentID) }
+        return state.isOrdinaryThread(agent)
     }
 
     /// A local agent's status report: a turn that finished (with its closing line) or failed,
@@ -124,7 +125,7 @@ extension ShepherdViewModel {
                 notifications.remove([AgentBanners.identifier("offline", offline)])
             }
             guard connection.phase == .connected else { continue }
-            for agent in connection.state.agents where !connection.state.isDesignAgent(agent) {
+            for agent in connection.state.agents where connection.state.isOrdinaryThread(agent) {
                 let ref = RemoteAgentRef(hostID: connection.id, agentID: agent.id)
                 let target = BannerTarget.remote(ref)
                 live.insert(ref)

@@ -36,6 +36,7 @@ struct RPCWireTests {
         (.getMessages, nil, #"{"type":"get_messages"}"#),
         (.getSessionStats, nil, #"{"type":"get_session_stats"}"#),
         (.getCommands, nil, #"{"type":"get_commands"}"#),
+        (.refreshSkills, nil, #"{"type":"refresh_skills"}"#),
         (.setModel(provider: "anthropic", modelId: "claude-sonnet-4"), nil,
          #"{"type":"set_model","provider":"anthropic","modelId":"claude-sonnet-4"}"#),
         (.setThinkingLevel(level: "high"), nil, #"{"type":"set_thinking_level","level":"high"}"#),
@@ -241,6 +242,8 @@ struct RPCWireTests {
     static let simpleEvents: [(String, RPCEvent)] = [
         (#"{"type":"agent_start"}"#, .agentStart),
         (#"{"type":"agent_settled"}"#, .agentSettled),
+        (#"{"type":"skills_changed"}"#, .skillsChanged),
+        (#"{"type":"skills_watch_error","error":"fixture failure"}"#, .skillsWatchError("fixture failure")),
         (#"{"type":"turn_start"}"#, .turnStart),
         (#"{"type":"agent_end"}"#, .agentEnd(messages: [], willRetry: false)),
         (#"{"type":"agent_end","messages":[{"role":"assistant","content":"done"}],"willRetry":true}"#,

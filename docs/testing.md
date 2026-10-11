@@ -38,7 +38,13 @@ stores crashed macOS 26's bundle-less test runner; the bundled app still uses pe
   itself calls `useRealPeerCheck()` and runs stub pis (`ExtensionIdentityTests`).
   Its default `PiSetup.app` shares the process's scratch session home. A test asserting an exact
   Projects listing passes a `PiSetup` with a per-test home: listing intentionally imports old
-  session headers, including those other suites left in a shared home.
+  session headers, including those other suites left in a shared home. `RemoteHost(pi:)` takes
+  the same per-test setup when asserting an exact remote Projects listing; the cutover imports
+  legacy session headers at startup, before a test adds its workspace. A test-owned
+  `ProjectSettingsStore` uses a separate registry path from the live server's `projects.json`
+  so its worker cannot race the server's startup migration. `AppHarness` instead
+  defaults to a per-harness pi home (removed by `stop()`), isolating session history and pi
+  settings across app suites; pass `pi: .app` explicitly when testing process-home sharing.
 - `StubPi.command`: runs `Resources/stub-pi.py`, a scripted `pi --mode rpc` driven by prompt
   keywords (`ask`, `select`, `hang`, `die`, `big`, `slow`, `widgets`, `fill`, `newsession`, …).
   `speak` (and `STUB_PI_SPEAK`, or `speak` in `stub-pi-startup.json`) has it talk on the
@@ -63,7 +69,10 @@ stores crashed macOS 26's bundle-less test runner; the bundled app still uses pe
 - `LoopbackServer` and `DevServerFixture`: a server on the loopback and an ephemeral port standing in
   for a host's dev server in tunnel tests (HTTP GET and a POST of any size with its SHA-256, a
   WebSocket echo, an echo, a firehose, one that never reads), IPv4 or IPv6, or on a chosen address
-  or port. Every tunnel and forwarder test uses it, never the network.
+  or port. Every tunnel and forwarder test uses it, never the network. Browser port-quota
+  coverage loads the live fixture and claims each viewer port before choosing the next. A
+  separate refused-connection test checks that failed navigation retains its claimed port;
+  quota coverage does not depend on eight WebKit connection failures reaching callbacks.
 - `ScrollTrace` (`ShepherdAppIntegrationTests/Support`): a thread's scroll view recorded as it
   changes (offset, content height, insets, stamped with the test's step), with the states a display
   could draw (one per run-loop turn) kept apart from every change in between. Read a scroll rule
@@ -75,10 +84,45 @@ stores crashed macOS 26's bundle-less test runner; the bundled app still uses pe
   `tools:N` prompt makes N tool calls that wait for `tool-<k>` files).
 - `eventually("what", …)` and `eventuallyOnMain`: named 10 ms polls that throw `WaitTimeout`
   saying what never happened. Never sleep a fixed amount; wait on a callback or `eventually`.
-  Keep timeouts generous (they default to 30 s), but make the happy path fast. Completion probes
+  Keep timeouts generous (they default to 30 s), but make the happy path fast. Disclosure controls
+  update model state before SwiftUI finishes updating its accessibility tree: wait for a nested
+  row to disappear or reappear before asserting its visibility or pressing it; layout alone is
+  not that boundary (`NestedProjectsFlowTests`). Completion probes
   wait for the final text in WindowServer pixels without forcing layout; the guard's multi-step
-  recovery is not guaranteed to finish in a fixed one-second delay. Turn-navigation probes wait
-  for the viewport to land above the bottom band, not merely for the navigation intent to detach
+  recovery is not guaranteed to finish in a fixed one-second delay. The real-workspace completion
+  probe saves its last polled image on success or timeout, so failure evidence is the pixels that
+  failed the paint condition. Failed Swift CI runs include these completion PNGs and the matrix's
+  blank-transcript captures beside the
+  complete log in the seven-day `ci-swift-test-log` artifact. Each workspace image also has
+  passive JSON evidence for the last OCR result and native scroll geometry. Capturing it does
+  not force layout or change the paint assertion. The completion matrix's `scrolledReplyCollapses`
+  case retains its exact compositor image, passive pre-replacement, post-refresh and final
+  native geometry/row/anchor snapshots, and `ScrollTrace` in that same artifact directory,
+  in both native modes. It does not materialize rows, move the reader or alter recovery time.
+  The remote-browser reconnect scenario emits generic monotonic markers across fixture
+  startup, handshake/workspace readiness, web-listener states, browser-store creation,
+  ownership, reconnect, extension request/result and cleanup. Other fixture users keep the
+  optional diagnostics off. Markers contain no host, token, URL or response values. These
+  captures diagnose hosted failures; they are not rendering or cancellation fixes.
+  Jump-opening and standalone completion failures also record native text-field frames in the
+  clip view, ancestor opacity/hidden state and logical visible-row IDs. Records omit text and
+  inspect the existing view tree without layout, scrolling or AppKit setters. Native field detail
+  is capped at 512 records with 24 ancestors each; traversal stops at 4,096 views and reports
+  whether it reached that bound. Document and hosting-root field captures remain separate.
+  Fresh-process Jump probes retain the original giant-history independent and sequential tests,
+  then vary one input at a time: accessibility activation timing, width, height or content mix.
+  Every comparison checks painted content
+  and the same real press action. Passing comparison cases do not replace original failures.
+  The completion matrix combines the identical tool-only and empty-final-reply scenarios into
+  `toolOnlyWithEmptyFinalReply`, retaining both native modes (40 parameter cases instead of 42).
+  Tail-flow's blank probe stops at the first RGB channel differing from the background by more
+  than 12; it reports content present or blank, not a pixel count. Its capture region, layout calls,
+  sampling intervals and assertions are unchanged; a tiny bitmap check pins the threshold and
+  excludes alpha and row padding. Passive completion evidence reuses the exact last image checked
+  by OCR instead of taking another capture. These changes retain every observation interval,
+  both native modes, giant histories, all 54 real-workspace completion cycles, and the repair,
+  reader-detachment and hidden-thread checks.
+  Turn-navigation probes wait for the viewport to land above the bottom band, not merely for the navigation intent to detach
   following while its first animated frames are still at the tail. The off-screen scroll harness
   declares wheel intent through the same `ThreadInput.readerScrolled(upward:)` method as the native
   monitor before moving the clip view. A clip-view movement without that signal is layout, not
@@ -93,7 +137,9 @@ stores crashed macOS 26's bundle-less test runner; the bundled app still uses pe
     without having hung.
 - `.serialized` orders the tests inside its own suite and nothing more. It does not isolate a
   suite from any other: every suite of a target (with SwiftPM's native build system, of every
-  target) shares one process.
+  target) shares one process. `RPCSessionTests.historyDecodeStillProgressesAfterSignInBridgesAreReleased`
+  releases sign-in bridges before requesting a 2 MiB history response; abandoned EOF readers
+  must not starve the utility queue that decodes it. Full sessions runs protect this ordering.
 
 **Process-wide state is set once, never by a test.** Tests never call `setenv`, `unsetenv`,
 `signal`, `chdir`, or `umask`, or change any other global that a concurrent test could observe.
@@ -110,7 +156,11 @@ stores crashed macOS 26's bundle-less test runner; the bundled app still uses pe
   `bin/` first on `PATH`, holding stand-ins for `gh` and `pi` that refuse to run, and the scratch
   `ZDOTDIR`'s `.zshenv` and `.zlogin` keep it first in every zsh a test starts. Without them, a
   login shell from a minimal environment (Xcode, launchd) reaches the user's own `gh` and `pi`,
-  because the system startup files rebuild PATH. The root is removed at exit.
+  because the system startup files rebuild PATH. Normal scratch interactive zsh shells also
+  unset `GLOBAL_RCS`, preventing a machine's later global completion/security prompts from
+  consuming the fixture's commands. Local scratch startup files still run; noninteractive
+  login shells and opt-in live-model runs retain global startup coverage. The root is removed
+  at exit. `TerminalSessionTests` checks both interactive and noninteractive modes.
 - The app's engine in a test is `SHEPHERD_PI_ENGINE`, set to `bin/pi-engine`, which refuses to
   run until a test installs the stub over it. No app-level test reaches pi through PATH, and
   nothing a test does may write into `pi-agent/` ("your pi"; `PiHomeLaunchTests` checks it stays
@@ -205,6 +255,8 @@ extension tests, on every bump (docs/pi-engine.md › Bumping the pin).
   Counts hold on a slow or busy runner; timing budgets do not, so don't add those. Two thread
   budgets differ on macOS 26 (CI) and in Xcode 26 builds whatever the speed, so there they run
   as known issues.
+- The new-worktree base picker is lazy over a repository with 300 branches (`changes.menu.row`, the
+  Changes menus' row probe): opening and scrolling build only the rows in its 300pt list.
 - Goal clock budgets assert that local card/header ticks redraw only their timeline content.
   Five accounting snapshots must redraw no composer bodies/chips, queue bodies/rows or thread
   bodies/row builders. Shared docks read cached goal presence/identity, not the full goal.
@@ -212,7 +264,8 @@ extension tests, on every bump (docs/pi-engine.md › Bumping the pin).
   six web views open (five live, one rasterizing), panning recycles them, and one board changing
   redraws one frame (`design.board`) with one snapshot; a Tweak drag redraws no frame and its
   release only the tweaked board's; a board dragged redraws only its own frame, once per step. The Designs grid's and the Comments tab's budgets are in
-  `ListPerformanceTests` (`design.card`, `design.comment`).
+  `ListPerformanceTests` (`design.card`, `design.comment`). Snapshot and live rewrites share one
+  fresh canvas but reset target selection, redraw counts and the snapshot baseline between cases.
 - `SHEPHERD_PERF_REPORT=1 swift test --filter ListPerformanceReport` prints each list's timings
   against large fixtures (`Support/ListFixtures.swift`). `ListPerf` times a change's update,
   layout, and display, and scrolls a list a step at a time by moving its clip view.
@@ -248,7 +301,13 @@ pointing at a Pi package with its modular `dist/index.js` and dependencies. The 
 now provides those too. Nothing looks pi up on PATH. They isolate `HOME` and use a local fake
 provider. `test_pi_engine_sdk.py` checks SDK imports/session creation against the staged engine
 in CI and the signed app during release. The native child extension tests exercise Shepherd-owned
-children and workflows with a loopback provider. See [pi-engine.md](pi-engine.md).
+children and workflows with a loopback provider. CI caps Node file workers at two so real-pi
+fixtures do not start one lane per available CPU. Every extension file still runs.
+The session publication regression delays stat work,
+then creates and atomically replaces its snapshot without a readiness sleep. Both updates must
+publish within the same five-second deadline. Startup checks stop after 30 checks or 30 seconds.
+Tests hit both bounds and verify ordinary file-change handling continues afterward, alongside
+restart replacement, idle coalescing and shutdown cleanup. See [pi-engine.md](pi-engine.md).
 `native-children.smoke.mjs` is an opt-in real-model smoke (`PI_SMOKE_MODEL`).
 `Tests/ShepherdIOSChecks` holds the iOS client's scripts ([docs/ios/VALIDATION.md](ios/VALIDATION.md)).
 
@@ -301,6 +360,11 @@ be tested has not tried this. `ModelSettingsPopoverTests` is the worked example,
   }
   ```
 
+- **Prove the scenario reached its end.** `processExitsWith: .success` also passes a child that exited early with status 0.
+  Run the body with `completingScenario` (it prints a sentinel after the last statement) and check the parent with
+  `expectScenarioCompleted`, observing `\.standardOutputContent`. A native `Menu` is chosen with
+  `NativeMenuChoice.choose` (the real `accessibilityPerformShowMenu` and `NSMenu` item action). It leaves the menu's tracking open
+  (`NSMenu.cancelTracking()` ends the process with status 0), so a scenario chooses one menu item and reads the saved state after.
 - **Press by label:** `window.press("Fast", in: "Speed")` (a group's label scopes the search),
   `press("Edit", nth: 1)` among equals, `press("Open", role: ControlRole.popUpButton)`. It returns
   the `Control` (role, label, value, frame, enabled). A missing label, a disabled or hidden
@@ -317,6 +381,9 @@ be tested has not tried this. `ModelSettingsPopoverTests` is the worked example,
   `SubagentReplyTests` presses a tray row that way. A pointer's hover button is not in the tree,
   so what it reaches is the same closure the action runs.
 - A control that is not drawn in a state is not in the tree: assert its absence with `controls()`.
+- Combined SwiftUI rows differ between supported SDKs. `LogicalProjectConversationTests` matches
+  the complete macOS 26 combined label or macOS 27 separate state label, and retains its exact
+  row-count and bubble-alignment checks. Diagnose the actual tree before changing those selectors.
 
 **Which tier a change needs:**
 
@@ -388,14 +455,14 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
   bound to its thread speaks for the agent it was launched for; each message's `speaksFor` and `replyID`
   against its wire form (`ExtensionMessageTests`). Check the check has teeth by making it allow
   everything: these tests must fail.
-- **Agent-to-agent approvals:** `AgentApprovalTests` (the server, over the real socket) for each
-  setting (Ask parks, Always allow goes through, Never refuses with no dialog), each gated call
-  (send, spawn, read, steer, interrupt), every way a wait ends (allow once, allow for this thread,
-  deny, timeout, cancel, disconnect, Never) and that only an allow does the call, once; "Allow for
-  this thread" forgotten when the pi restarts or the setting changes; an automation run under Ask
-  refused; nothing a socket message sends answers a dialog (`ExtensionIdentityTests` also counts
-  the dialogs a process claiming another agent opened: none). `PeerApprovalFlowTests` presses each
-  button of the dialog and reads what reached the asking agent and the target.
+- **Agent-to-agent calls:** `AgentApprovalTests` verifies operations proceed without approval UI,
+  internal server-policy APIs still work, validation rejects invalid requests, and cancellation
+  revokes unclaimed deletion tokens. `PeerApprovalFlowTests` checks messages ignore legacy
+  permission choices, reach the target without a sheet, and leave no permission row in Settings.
+  It presses every retained extension switch off and on through off-screen ControlPress, verifies
+  the setting and desktop hit area, and checks the Design references row's visibility gate.
+  `AgentPeerDeletionTests` verifies immediate deletion stops the target's processes and preserves
+  its checkout, branch and uncommitted files.
 - **Changes:** every scope on a scratch repository, the proof that reading changes leaves the
   index, HEAD, refs, the stash, `.git` and every file alone, and Undo, Redo and the refusal on a
   turn the stub pi made.
@@ -435,6 +502,11 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
   (420pt), the narrowest thread column (400pt) and a phone's, at text scales 1 and 1.3, and an
   opened activity line fits too (`ThreadFitTests`: nothing is drawn in the thread's right gutter).
   A row that cannot shrink widens the stack every row shares and runs the whole thread off its pane.
+- **Composer menus:** `ComposerMenuTests` checks all window widths without moving the card,
+  transcript inset or scroll position, and keeps the menu anchored above the card. Settings-menu
+  height uses `ModelCatalog.settingsModels` with the fixture catalog, current model and
+  `RecentModels.load()`, plus the All models row: a previous model choice can add a second quick
+  choice. Thinking-segment wrapping uses the same row count, not a wider bounds tolerance.
 - **App logic:** keybindings (defaults, validation, stored overrides for removed actions
   ignored), palette and settings search, workspace selection and parking, sidebar ordering and
   reveal, pinned threads (their order, persistence and pruning, Needs you winning, the digits),
@@ -444,101 +516,194 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
   the nightly notice armed once), the support directory and listener port per edition, and the
   release rules (every trigger, feed routing, the legacy aliases, every feed item arm64 only).
 
-CI (`.github/workflows/ci.yml`) has two lanes, and its `plan` job (`scripts/ci_impact.py`) picks
-one and writes into the run's summary which suites run and why. `CI` is the one check to require:
-it passes when every job the plan asked for did (a job the plan skipped counts as passing). There
-are no workflow path filters, because a filtered-out workflow never reports `CI`. Tests that
-depend on the machine's speed skip on CI (`CI=true`).
+CI (`.github/workflows/ci.yml`) is one Swift job beside two Ubuntu ones. `CI` is the one check
+to require: it passes when every job passed or was skipped on purpose. There are no workflow
+path filters, because a filtered-out workflow never reports `CI`; the `plan` job
+(`scripts/ci_plan.py`) decides instead, and a pull request that touches only docs, templates,
+the iOS client, `Extensions/`, `Tests/Extensions/`, `Tests/Release/` or the release scripts runs
+no Swift (the extension tests and release rules always run). The RPC fixture decodes stdout
+and stderr with Node's streaming UTF-8 decoder; `rpc-harness.test.mjs` splits emoji at each
+byte boundary through the actual reader. The codemode excerpt test compares every persisted
+output, not only the first call. Tests that depend on the machine's
+speed skip on CI (`CI=true`, `.timingSensitive`).
 
-- **Fast lane**, every pull request into `nightly`: the unit tier (seconds), a smoke set (`SMOKE`),
-  and the integration suites the changed paths can affect, in one to four `macos-26` shards
-  (about 200 s of tests each). The impact map (`RULES` and `AREAS` in `scripts/ci_impact.py`) is
-  explicit and conservative; the first rule a path matches decides it:
-  - Docs, `*.md`, `Extensions/` (node tests, and `Tests/Release`'s check that each embedded copy
-    equals its canonical file), `Tests/Extensions/`, `Tests/Release/`, `scripts/`, `App/iOS/` and
-    the release workflow run no Swift at all; the extension tests and release rules always run.
-  - A path with an owner (the thread and composer, Browser, Design tool, review and worktrees,
-    terminals, sidebar and workspace, Settings and pi, automations and hosts) runs that area's
-    suites. A changed test file runs the suites it declares, a test helper or fixture its whole
-    target. A ShepherdApp file no area owns runs the app's whole integration tier: the server's and
-    the design renderer's integration tests cannot depend on it.
-  - Anything shared, or any path the map doesn't know, runs everything: ShepherdCore,
-    ShepherdProtocol, ShepherdRemote, ShepherdSessions' core files (SessionServer, RPC, PTY, pi
-    launch), `Package.swift` and `Package.resolved`, the Xcode project, test support, CI itself.
-  - Add the `full-ci` label to a pull request, or run the workflow by hand (`gh workflow run ci.yml
-    --ref <branch> -f lane=full`), to run everything. `-f lane=fast -f base=nightly` runs the fast
-    lane's choice for a branch. Adding any other label also starts a run (a workflow cannot filter
-    on a label's name), but every job in it is skipped and it cancels nothing; GitHub shows its
-    skipped checks beside the real ones, and a skipped check passes. `Tests/Release/test_ci_impact.py`
-    fails when a pattern matches no suite or no file, so a rename cannot silently narrow a rule.
-- **Full lane**, pushes to `nightly` and `master`, pull requests into `master` or labelled
-  `full-ci`, the daily run and manual runs: every suite, in four shards. `Tests/ci-suite-times.json`
-  holds each suite's seconds; `scripts/ci_shards.py` assigns suites longest first, each to the
-  lightest shard, and a suite the file doesn't know goes to the lightest shard (the summary says
-  so). Every shard computes the same cut from `swift test list` and checks it is a partition, and
-  fails if it ran another number of tests than it was given, or none. Each shard builds on its own
-  (see Caches). The file lags the tests a little by design; regenerate it from a full run now and
-  then: `gh run download <run> -p 'ci-results-swift-*' -D /tmp/t && python3 scripts/ci_shards.py
-  record /tmp/t/*/suite-times.json`, and commit it (the new numbers are blended halfway into the
-  old).
-- **Flaky tests:** when a shard fails, `scripts/ci_run_tests.py` reruns only the failed tests once
-  (`--filter` of their ids, still serially). A test that passes the second time is flaky: a
-  `::warning::`, a row in the step summary and `flaky.json` in the shard's `ci-results-*`
-  artifact. One that fails again fails the shard. Nothing is retried after a build failure, a
-  crash, the watchdog, an issue the list cannot attribute to a test, or more than eight failing
-  tests. The extension tests are retried by name the same way. Every failure also gets an
-  `::error file=,line=` annotation and a row in the summary, and the shard's full log is the
-  `ci-logs-*` artifact. A flaky test is a bug to fix, not a pass to ignore: the tracking issue
-  (below) counts the runs each one was flaky in, and a test flaky in nearly every run fails its
-  first attempt almost every time and passes alone, which points at the test (its order, state it
-  shares, a wait that assumes an idle machine) before the machine.
-- **The daily run and the tracking issue:** the full lane runs daily on `nightly` with each shard's
-  tests three times (a test that fails some passes is flaky; `schedule` fires only from the
-  default branch's copy of the workflow, so it starts once `master` has this file, and until then
-  `gh workflow run ci.yml --ref nightly -f lane=flake-hunt` does the same). After a full lane on
-  `nightly` or `master`, `scripts/ci_report.py` keeps one issue labelled `ci-health`: a comment
-  per red run with its failing tests, a table of flaky tests in the body (counts kept across runs
-  in a hidden JSON block), a comment when green returns. It reopens a closed issue, never closes
-  one and never opens a second.
-- **Serial within a shard:** on the shared 3-core runner, a parallel run queued tests behind one
-  another's main-thread work until their waits ran out. A watchdog ends a test host that stops
-  making progress after 2.5 times its shard's recorded seconds (at least 8 minutes), after
-  sampling its stacks.
+- **The Swift lanes** (`swift tests (<lane>)`) each run `swift build --build-tests` on top of
+  the last cached build, then one `swift test --no-parallel --skip-build --filter` invocation.
+  Full coverage uses four separate GitHub-hosted Macs, at most four at once. Affected suites
+  and UI diagnostics use one `selected` lane. Each lane retains the 60-minute ceiling, so the
+  full Swift matrix is bounded at 240 runner-minutes. Repeated cold compilation can cost more
+  runner time than one build; each lane reuses the existing trusted cache when available.
+  The job stages pi and puts its checksum-pinned Node on `GITHUB_PATH`
+  before tests. MCP auth fixtures resolve `TestNode.url` before their login shell resets PATH;
+  they run the installed pinned executable, not a different system Node or a missing bare name.
+  The serial setting prevents Swift 6.3 from launching every process,
+  socket and server test together. A full parallel self-hosted run timed out unrelated tests
+  and aborted after 51 seconds. The app suites also retain `.mainActorExclusive`. There is no
+  retry: a test that fails is red, and a flaky test is a bug to fix in the test. The full
+  `swift test` stdout and stderr stream live through `tee` to `$RUNNER_TEMP/swift-test.log`;
+  `pipefail` preserves native failures (and fails if the log cannot be written). The full
+  native log is uploaded on success or failure (`ci-swift-test-log-<lane>`), retained for seven
+  days alongside the native inventory and that lane's selected IDs.
+  Headers report the restored cache's matched key, native test IDs listed before filtering,
+  flags and validated selection. Swift's exit status decides the result, never sample failure
+  text printed by tests of the app's log reader. Failed UI tests report
+  settle call sites and RGB-change bounds, clipboard selection and a fresh named-board control,
+  terminal marker coordinates, paging geometry and hidden-spinner state. They retain their
+  assertions and deadlines, and log no raw terminal output or user clipboard contents.
+  Settle failures report wake-up, layout and capture durations separately; a delayed timer
+  and a slow render are not a reason to change pixel comparisons. The terminal fixture builds
+  its output marker with `printf`, so a command echo or shell error cannot satisfy the output
+  check, regardless of the visible screen's cursor position.
+- **Which tests run:** ordinary PRs into `nightly` retain every unit suite, three cheap startup
+  and identity suites, and the feature suites affected by changed paths. The mandatory integration
+  set is `StartupTests`, `ExtensionIdentityTests` and `ThreadStartupTests`. Browser changes run
+  browser UI, remote/tunnel and MCP callback coverage, not thread-completion stress tests.
+  Thread and layout changes still run hidden-layout, completion-painting and scroll regressions.
+  Rules combine when a feature such as code highlighting has several consumers. Embedded
+  extension changes keep RPC child-command and identity-flow checks.
+  A changed suite-local test file selects its declared suite names, not its filename or whole
+  module. Adding a browser regression no longer selects every app integration test. Non-private
+  helpers, references from other test files, nested support files, deletions and unfamiliar
+  declarations keep the whole test module. Shared contracts, server core, shared test support,
+  CI changes and unknown paths run all tests. PRs into `master`,
+  `master` pushes, daily/manual runs and the `full-ci` label also run all tests. Clearly non-Swift
+  PRs still skip Swift, including docs-only `master` PRs. No tests or assertions are removed.
+  The planner emits regexes for known feature groups and escaped suite declarations, and
+  `swift test list --skip-build` must find a native test ID for every selected pattern before
+  `--filter` runs it. A renamed or empty selection fails instead of passing a zero-test gate.
+  Full runs partition the native inventory into completion/browser, remaining thread,
+  app-feature and other lanes. The app-feature lane covers composer, design, review, worktree,
+  new-thread and list-performance suites. Every unclaimed suite or new target enters `other`;
+  the whole Sessions integration target stays there to preserve process-lifetime ordering.
+  Each lane validates that every native ID belongs to exactly one lane and no lane is empty.
+  There is no runtime duration database or adaptive scheduler. A lane failure does not cancel
+  the other lanes; the aggregate `CI` requires their success whenever Swift was planned.
+  Every job checks out the immutable event SHA, including scheduled master runs.
+  Label changes reevaluate `full-ci`. Closing a PR supersedes its old run through native concurrency; the closing run
+  skips planning and every dependent job, releasing the self-hosted runner without new tests.
+- **Where it runs:** GitHub-hosted `macos-26` is the default. A self-hosted Mac must have
+  isolated resources before the repository variable `SHEPHERD_SELFHOSTED_ENABLED` is set to
+  `true`; GitHub compares strings without case. Missing, empty or non-true values stay hosted,
+  including UI diagnostics.
+  Separate macOS accounts, nice values and background priority do not cap a build's aggregate
+  memory or protect other apps from exhaustion. The shared Mac's runner is disabled in launchd
+  and stays offline; do not enable it merely to restore faster builds.
+  Full lanes always use GitHub-hosted Macs, even if self-hosted is enabled. For the single
+  selected lane only, an opted-in same-repository pull request authored by account ID `19316389`
+  (Baily) or `3370624` (Josh), triggered by the same account, can run on the self-hosted Mac (the runner's
+  sole custom label, `shepherd-release`). The native `runs-on` expression checks `github.workflow_ref`
+  against this repository's `ci.yml` at the pull request's merge ref before checkout; checkout
+  code and plan outputs cannot change its decision. Everything else (forks, unknown actors, a
+  rerun by the other maintainer, `master` pushes, the daily run, manual runs) runs on
+  `macos-26`. An explicit maintainer branch dispatch with `diagnostics=ui` is the only manual
+  exception; it uses the same actor, triggering-actor and workflow-identity fence. Its aggregate
+  check is named `UI diagnostics`, so it cannot replace the required `CI` check. The planner
+  validates its fixed menu, clipboard, pane, paging and idle-cost filters against native test IDs.
+  Self-hosted test jobs require the build account's `gui/<uid>` launchd domain and their own
+  Aqua bootstrap context before checkout or compilation. A system runner service cannot use
+  the account's pasteboard merely because the account is logged in. Use its per-user runner
+  agent and keep the account logged in; locking or disconnecting Screen Sharing is fine,
+  logging out takes the runner offline. Fast User Switching preserves other sessions.
+  The preflight fails with an actionable error; it never logs in an account or takes focus.
+  Names alone grant no trust; `Tests/Release/test_ci_runner.py` exercises both
+  allowed IDs and each rejected condition without contacting GitHub. The job references
+  `SELFHOSTED_HOSTNAME` in its env to mask the machine name in the runner's setup log.
+  This is routing, not a platform security boundary: a pull request runs its own copy of the
+  workflow and can edit the guard. Keep GitHub's `all_external_contributors` approval policy;
+  no workflow guard replaces it.
+- **The persistent build:** on the self-hosted runner the checkout, `.build` and the pi engine's
+  downloads (`.build/pi-engine-cache`) stay on disk between jobs, so a run is an incremental
+  build plus the tests. Measure cold and warm runs before assigning a time budget. The
+  runner's hooks leave `build/` and `.build/` alone and remove them only when the disk is under
+  40 GiB (a clean build follows); a job never starts under 20 GiB. The swift-build action
+  records the toolchain and SwiftPM flags that built `.build` (`.build/ci-toolchain`) and starts
+  over when Xcode, the SDK or those flags change, or when a manual run asks for `clean`. Checkout disables ignored-file cleanup
+  on the self-hosted runner and retains no repository credentials. SwiftPM's native build system
+  reruns a target only when a *direct* dependency's module changes, so a change to
+  `ShepherdCore` could leave `ShepherdProtocolUnitTests` (which calls it through
+  `ShepherdProtocol`) compiled against the old one; the action removes `swift-version-*.txt`,
+  an input of every compile command, before each build so every target's driver runs and
+  recompiles what any module it loaded changed. Swift 6.3 or newer must support
+  `-enable-incremental-file-hashing`: test builds enable it so a fresh checkout's timestamps
+  do not alone invalidate identical source contents. Native listing and test commands receive
+  the same flags. Content changes still invalidate dependents; source timestamps are never
+  restored. This does not apply to the release's whole-module optimization build.
+  Hosted runners start empty and restore `.build` from the Actions cache instead, keyed on the OS, toolchain/flags,
+  `Package.resolved` and commit, with toolchain/lock and toolchain prefix fallbacks. After a
+  successful build, hosted PR merge-ref runs and trusted branch pushes/manual dispatches save
+  on an exact-key miss; scheduled and unsupported events do not save. Restore is optional:
+  a missing or evicted cache leaves a normal cold build, never a test bypass.
+  GitHub isolates PR saves to `refs/pull/<number>/merge`: a same-head rerun or changed head of
+  that same PR can reuse them, but its base and sibling PRs cannot. New PRs into `nightly`
+  use a visible base-branch cache. The separate `Build cache` workflow compiles test products
+  after a Nightly change to Swift inputs, fixtures or the build action, without running tests or
+  delaying release publication. It runs only on `macos-26`, has a 25-minute limit, and a newer
+  push cancels an obsolete cache build. Missing or failed baselines still allow ordinary cold CI.
+  `ci_cache.py` defaults to a dry run. The trusted Nightly job deletes only recognized caches
+  for closed PRs before building, then retains the two newest Nightly baselines per cache family.
+  Open PRs, unknown keys and other refs are untouched. Each cleanup allows at most 20 deletions,
+  500 inventory entries and three minutes, with a 30-second API-request deadline. Errors stop
+  cleanup; retention never deletes release assets or changes checks, and logs omit cache values.
+  New caches remain subject to the existing Git-metadata guard. No Mini access is involved.
+  Keep caches credential-free: retain checkout's `persist-credentials: false` and public,
+  lock-pinned dependencies; never add repository `.git`, user homes, auth or global Git config
+  paths. After each successful hosted build (including cache hits), an inline stdlib Python
+  guard checks `.build`'s `config`/`config.worktree` files, covering bare dependency repositories
+  and checkout `.git` metadata before cache save. Credential/helper, extra-header and cookie
+  directives (even empty), credentialed HTTP URLs, token query parameters and Git includes
+  fail closed. Unreadable files or metadata pointers outside `.build` also fail. Ordinary plugin
+  source symlinks remain valid; submodule Git pointers must name inspected metadata inside
+  the build root without external symlinks. Logs contain only a generic reason or checked-file count,
+  never config values or paths. `test_ci_workflow.py` executes that actual guard against scratch
+  public and fake-credential configs. This is local Git-metadata evidence only, not proof that
+  a whole hosted archive is credential-free; hosted runtime validation and a private archive
+  audit remain necessary before claiming a verified warm baseline.
+- **Nightly publication** runs no test suites on push. Its release workflow skips the Python
+  test preflight but keeps signing, notarization and artifact verification. Required PR checks
+  still apply before merging. With self-hosted builds disabled, Nightly builds on GitHub
+  immediately without dispatching a local helper. When enabled, CI and release compete for
+  the one runner; a release waits up to fifteen minutes before hosted fallback ([releases](releases.md)).
+- **The steer-send soak** runs the real-host send/scroll scenario once on CI, retaining every
+  assertion. Local timing-enabled runs repeat it five times; `SHEPHERD_TIMING_TESTS=1` restores
+  that repetition on CI too. No thread suite is excluded because it contains known issues.
+  `ThreadTailGuardTests` keeps a cached bottom marker visible with an 834pt measured gap and
+  requires the final landing. Current-row visibility alone cannot suppress bounded repair.
+  Its native-placement cases keep current-row and bottom IDs cached with zero end-distance in an
+  off-screen AppKit window: hidden, hidden-ancestor, offviewport, dead and missing markers must
+  exhaust eight attempts and rebuild once. A physically visible marker ends repair without a
+  rebuild; removed IDs lose their registry entries. Guard-only cases still use independent target
+  inputs. These are placement regressions, not proof of compositor paint or hosted recovery.
+  The child-command routing test retires its success-phase async-let before starting the
+  failure phase, keeping the same assertions without overlapping cleanup allocations.
+  The paging regression checks both success and failure without moving the original visible
+  turn. Anchor correction completes pending native layout before reading its final position.
+  `threadHistoryLayoutMatrix` renders real store-driven empty, idle and long threads in both
+  appearances and at text scales 1 and 1.3.
+  Scroll tests still inspect rendered text and pill pixels. Only repeated whole-window pill OCR
+  polls use a 500 ms interval; position assertions and timeouts are unchanged.
+- **The daily run** tests `master` on `macos-26`; `gh workflow run ci.yml --ref <branch>` runs
+  the same by hand (`-f clean=true` builds from scratch).
+  `gh workflow run ci.yml --ref <branch> -f diagnostics=ui` collects focused failures in the
+  self-hosted runner context only when explicitly enabled, otherwise on GitHub, without
+  rerunning all suites or changing PR coverage. Its fixed, native-ID-validated selection includes
+  menus, code blocks, pane controls, paging, idle checks, both completion suites, Jump controls,
+  tail-guard placement cases and remote browser drive. Diagnostics preserve every original assertion.
+  With self-hosted disabled, a trusted
+  `gh workflow run ci.yml --ref nightly -f diagnostics=ui` also seeds Nightly's hosted cache:
+  it still builds all test products and runs the existing validated UI diagnostics, reporting
+  only `UI diagnostics`, never the required `CI` check. There is no new warmup job or mode.
+  The warm five-minute goal remains unmet: the reported PR #240 cold baseline was an 838-second
+  SwiftPM build including dependency fetch, followed by about 35 minutes for 5,527 serial tests.
+  Caching addresses build reuse, not that test duration. The successful #251 native log took
+  2,157.991 seconds. Its suite timings assign about 521, 513, 460 and 663 seconds to the four
+  fixed lanes. Those sums are a sizing estimate, not a hosted parallel benchmark, and exclude
+  queues, builds and transfers. No test exclusions are added.
 - **Release rules** run on `ubuntu-latest` (stdlib Python): the release workflow's, the CI
-  helpers', the docs' and the embedded extensions'. **Extension tests** run there too, with Node
-  24 and the modular pi package version from `scripts/pi-engine-pin.json`, installed with
-  lifecycle scripts disabled.
-- **Caches:** dependency checkouts (keyed on `Package.resolved`) and build products (one entry per
-  commit, restored from the nearest earlier one) are cached apart. `scripts/ci_mtimes.py` puts
-  each unchanged source's saved mtime back after checkout, so a restored build compiles only
-  what changed. SwiftPM's native build system reruns a target only when a *direct* dependency's
-  module changes, so a change to `ShepherdCore` could leave `ShepherdProtocolUnitTests` (which
-  calls it through `ShepherdProtocol`) compiled against the old one: undefined symbols at link,
-  or wrong field offsets that link fine. It reproduces locally with the native build system,
-  cache or not. The action therefore removes the restored `swift-version-*.txt`, an input of
-  every compile command, so each target's driver runs and recompiles what any module it loaded
-  changed (a few seconds when nothing did). A link that still fails with undefined symbols and no
-  other error (`scripts/ci_stale_link.py`, tested in `Tests/Release`) gets a `::warning::` and
-  one rebuild from scratch that keeps the dependency checkouts; a compile error fails at once.
-  Every shard builds for itself: it restores the newest entry of its branch (the base branch's, for
-  a pull request) and compiles what changed, a minute or two for a typical change and seven for a
-  change to ShepherdCore. That measured quicker than a build job the shards wait for, by over a
-  minute. A push to `nightly` or `master` also saves: its last shard saves both caches under the
-  commit right after building and before its tests, so every pull request into that branch finds a
-  warm entry. Pull requests save nothing. The first full run of each UTC day, a manual `clean` run
-  and the daily run start from scratch instead: the `build` job builds once, saves and writes the
-  day's marker, and every shard restores that build whole (`shared_build: true` or `false` forces
-  either way). A shard that restores its own commit's build skips `swift build`. Run the workflow
-  by hand with `clean` to ignore the build cache. A corrupt cache: bump `CACHE_EPOCH` in the action
-  to orphan every entry, build and dependencies, or clear one ref's with `gh cache delete --all
-  --ref refs/pull/N/merge` (or `refs/heads/<branch>`).
-- **Checking a CI change:** a pull request's run exercises the pull request's copy of the workflow
-  and is cold ("Cache not found") until `nightly` holds an entry for the same toolchain and
-  epoch, and it saves nothing, so it cannot show an incremental build. Before merging, run the
-  workflow by hand on the branch (`-f lane=full`), let it finish (a second run on the same ref
-  cancels the first), push a small source change, and run it again: its shards restore the first
-  run's entry by prefix, "Restore source mtimes" reports about as many new or changed files as the
-  push touched, and the build compiles only their modules. A rerun of an unchanged commit is an
-  exact hit. `-f lane=fast -f base=<the commit before the change>` shows the impact map's choice
-  for it, with the build restored from the branch's own entry. A branch's caches are visible to
-  that branch alone (and to pull requests into it), so a probe branch needs a run of its own first.
+  workflow's and plan's, the docs' and the embedded extensions'. **Extension tests** run there
+  too, with Node 24 and the modular pi package version from `scripts/pi-engine-pin.json`,
+  installed with lifecycle scripts disabled and cached on the pin.
+- **Checking a CI change:** a pull request's run exercises the pull request's copy of the
+  workflow. On the self-hosted runner, push a small source change and read the build step: it
+  records the work required by changed source and module inputs. A corrupt persistent build:
+  run the workflow by hand with `clean`, or remove `.build` in the idle runner's checkout as the
+  build account.

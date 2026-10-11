@@ -4,16 +4,16 @@ import ShepherdProtocol
 
 @Suite("Project settings protocol")
 struct ProjectsProtocolTests {
-    @Test(arguments: [RemoteProjectsRequest.mcp(directory: "/host/repo", file: ".pi/mcp.json", action: .credentials),
-                      .mcp(directory: "/host/repo", file: ".pi/mcp.json", action: .approveProject),
-                      .mcp(directory: "/host/repo", file: ".pi/mcp.json", action: .login(server: "issues")),
+    @Test(arguments: [RemoteProjectsRequest.mcp(directory: "/host/repo", file: ".shepherd/mcp.json", action: .credentials),
+                      .mcp(directory: "/host/repo", file: ".shepherd/mcp.json", action: .approveProject),
+                      .mcp(directory: "/host/repo", file: ".shepherd/mcp.json", action: .login(server: "issues")),
                       .mcp(directory: "/host/repo", file: ".mcp.json", action: .logout(server: "issues")),
-                      .mcp(directory: "/host/repo", file: ".pi/mcp.json", action: .poll(id: UUID())),
-                      .mcp(directory: "/host/repo", file: ".pi/mcp.json", action: .cancel(id: UUID())),
-                      .mcp(directory: "/host/repo", file: ".pi/mcp.json", action: .complete(id: UUID(), redirectURL: "http://127.0.0.1:1234/callback?code=test&state=test")),
+                      .mcp(directory: "/host/repo", file: ".shepherd/mcp.json", action: .poll(id: UUID())),
+                      .mcp(directory: "/host/repo", file: ".shepherd/mcp.json", action: .cancel(id: UUID())),
+                      .mcp(directory: "/host/repo", file: ".shepherd/mcp.json", action: .complete(id: UUID(), redirectURL: "http://127.0.0.1:1234/callback?code=test&state=test")),
                       RemoteProjectsRequest.list(), .list(offset: 64), .files(directory: "/host/repo"),
                       .context(directory: "/host/repo"), .open(directory: "/host/repo", file: "AGENTS.md"),
-                      .read(directory: "/host/repo", file: ".pi/settings.json"),
+                      .read(directory: "/host/repo", file: ".shepherd/settings.json"),
                       .save(directory: "/host/repo", file: "AGENTS.md", text: "new", expected: nil),
                       .save(directory: "/host/repo", file: "AGENTS.md", text: "new", expected: "old")])
     func eachRequestRoundTrips(_ request: RemoteProjectsRequest) throws {

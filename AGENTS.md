@@ -104,7 +104,7 @@ swift build                                   # every package target
 swift test --filter UnitTests                 # fast tier: seconds
 swift test --filter IntegrationTests          # real server, stub pi, git, off-screen windows
 SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter PreviewTests   # PNG of every surface
-CI=true swift test --no-parallel              # what CI's full lane runs (four shards, timing tests skipped)
+CI=true swift test                            # what CI runs, timing tests skipped
 PI_PACKAGE_DIR="$(npm root -g)/@earendil-works/pi-coding-agent" node --test Tests/Extensions/*.test.mjs
 python3 -m unittest discover -s Tests/Release # release rules, docs size and link guards
 python3 scripts/sync-embedded-extension.py <swift-file> <static-name> <Extensions/file>
@@ -114,8 +114,8 @@ python3 scripts/design_section.py "<board or heading>"   # one spec from docs/de
 Run the Mac app from `Shepherd.xcodeproj` (scheme `Shepherd (Dev)`, My Mac); there is no
 `swift run` path. Schemes, support folders, the pi engine and Nightly:
 [docs/build-and-run.md](docs/build-and-run.md).
-A pull request into `nightly` runs CI's fast lane, a pull request into `master` or labelled
-`full-ci` the full one; a docs-only change runs no Swift tests ([docs/testing.md](docs/testing.md)).
+Nightly PRs run unit, smoke and affected suites; shared/unknown paths and master run all.
+Docs alone run no Swift; `nightly` ships without tests ([docs/testing.md](docs/testing.md)).
 
 ## Map
 
@@ -177,9 +177,9 @@ Each is one line here; the full rule is in [docs/rules.md](docs/rules.md) under 
   last terminal closes the panel. (Agents drive their own terminals)
 - Browser tools act only on their own thread's page; page text is untrusted; the user's click takes
   the page over. (Browser tools act only on their own thread's page)
-- Agents act on other threads only as the user allows (Settings ▸ Pi ▸ Agent-to-agent messages,
-  default Ask me), enforced by the server, never the extension; agents never delete each other on
-  their own: `agent_delete` opens `PeerDeleteDialog`. (Agents act on other threads only as the user allows)
+- Peer tools have no approval modals or permission setting. The server checks identity and validates
+  requests; deletion claims its token and keeps worktrees and branches.
+  (Peer tools have no approval UI or permission setting)
 - Shepherd does not nest agents: subagents are display state, never persisted, with no sidebar rows.
   A subagent never asks the user: its question goes to its parent, which answers it or asks the user
   in its own thread, so a child's question marks no row and posts no notification.

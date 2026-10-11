@@ -19,6 +19,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 import urllib.parse
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -258,6 +259,64 @@ class RouteTests(unittest.TestCase):
 
 
 class FeedTests(unittest.TestCase):
+    def test_snapshot_inputs_use_cli_string_ids_and_reject_unknown_or_malformed_rows(self):
+        metadata = {"assets": [{"name": "Shepherd.dmg", "id": "RA_kwDOFixture1", "size": 123,
+                               "updatedAt": "2026-10-10T00:00:00Z", "digest": "sha256:" + "a" * 64}]}
+        row = release.archive_input("v1.0.0", "Shepherd.dmg", metadata)
+        self.assertEqual(row["id"], "RA_kwDOFixture1")
+        bad_rows = [None, [], {}, {**row, "unknown": True}, {**row, "tag": "unknown"},
+                    {**row, "tag": "v1.0.0\n"}, {**row, "asset": "Shepherd-Nightly.dmg"},
+                    {**row, "id": 123}, {**row, "id": ""}, {**row, "size": True},
+                    {**row, "updatedAt": "not a timestamp"}, {**row, "updatedAt": "2026-99-99T00:00:00Z"},
+                    {**row, "digest": "not a digest"}]
+        with tempfile.TemporaryDirectory() as root:
+            snapshot = Path(root) / "snapshot.jsonl"
+            casts, pages = Path(root) / "casts", Path(root) / "pages"
+            for rows in ([bad] for bad in bad_rows):
+                with self.subTest(rows=rows):
+                    snapshot.write_text("".join(json.dumps(r) + "\n" for r in rows))
+                    with self.assertRaises(ValueError):
+                        release.changed_feeds(str(snapshot), str(casts), str(pages))
+                    self.assertFalse(casts.exists())
+            snapshot.write_text((json.dumps(row) + "\n") * 2)
+            with self.assertRaisesRegex(ValueError, "duplicate"):
+                release.changed_feeds(str(snapshot), str(casts), str(pages))
+            self.assertFalse(casts.exists())
+
+    def test_generator_inputs_track_only_sparkle_pin_and_public_key_not_other_package_or_plist_fields(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "App").mkdir()
+            (root / ".github/workflows").mkdir(parents=True)
+            (root / ".github/workflows/release.yml").write_text("fixture publisher")
+            snapshot = root / "snapshot.jsonl"
+            snapshot.write_text("")
+            pages, casts = root / "pages", root / "casts"
+            pages.mkdir()
+            pins = {"pins": [{"identity": "sparkle", "state": {"revision": "a" * 40}}]}
+            info = {"SUPublicEDKey": "fixture-public-key", "CFBundleName": "Shepherd"}
+            def select():
+                (root / "Package.resolved").write_text(json.dumps(pins))
+                (root / "App/Info.plist").write_bytes(plistlib.dumps(info))
+                result = subprocess.run([sys.executable, os.path.join(ROOT, "scripts/release.py"),
+                    "changed-feeds", str(snapshot), str(casts), str(pages)], cwd=root,
+                    capture_output=True, text=True, check=True, timeout=5)
+                return result.stdout.splitlines()
+            self.assertEqual(len(select()), 3)
+            for spec in release.FEEDS:
+                (casts / spec.dir).mkdir()
+                (casts / spec.dir / "appcast.xml").write_text(feed())
+            release.publish(str(casts), str(pages))
+            self.assertEqual(select(), [])
+            pins["pins"].append({"identity": "unrelated", "state": {"revision": "b" * 40}})
+            info["CFBundleName"] = "Unrelated plist change"
+            self.assertEqual(select(), [])
+            pins["pins"][0]["state"]["revision"] = "c" * 40
+            self.assertEqual(len(select()), 3)
+            release.publish(str(casts), str(pages))
+            info["SUPublicEDKey"] = "changed-public-key"
+            self.assertEqual(len(select()), 3)
+
     def test_every_feed_has_its_gh_pages_name_and_channel_tag(self):
         self.assertEqual(
             [(f.dir, f.file, f.channel, f.app) for f in release.FEEDS],
@@ -503,7 +562,10 @@ def make_engine(contents):
     packages.update({f"node_modules/{path}/": (release.pi_engine.module_name(path), module["version"])
                      for path, module in pin["modules"].items()})
     for folder, (name, version) in packages.items():
-        files[f"{engine}/{folder}package.json"] = json.dumps({"name": name, "version": version}).encode()
+        manifest = {"name": name, "version": version}
+        if not folder:
+            manifest["piConfig"] = {"name": "pi", "configDir": ".shepherd"}
+        files[f"{engine}/{folder}package.json"] = json.dumps(manifest).encode()
     for name in (release.pi_engine.ENTRY, "dist/index.js") + release.pi_engine.LICENSES:
         files[f"{engine}/{name}"] = b"x"
     for module, required in release.pi_engine.MODULE_REQUIRED.items():
@@ -518,6 +580,15 @@ def make_engine(contents):
 
 
 class VerifyAppTests(unittest.TestCase):
+    def setUp(self):
+        # These are synthetic engine files, not pi's bytes. Patch integrity is exercised by
+        # test_pi_engine; keep the app identity/architecture fixture's pin unpatched.
+        pin = release.pi_engine.load_pin()
+        pin.pop("patch", None)
+        patched = patch.object(release.pi_engine, "load_pin", return_value=pin)
+        patched.start()
+        self.addCleanup(patched.stop)
+
     def make_app(self, root, product, engine=True, **info):
         path = os.path.join(root, product)
         os.makedirs(os.path.join(path, "Contents", "MacOS"))
@@ -748,24 +819,24 @@ class ContractTests(unittest.TestCase):
                 self.assertEqual(self.setting(self.target_configuration(name), "ARCHS"), "arm64")
 
     def test_the_release_builds_arm64_only_and_thins_what_came_prebuilt_before_verifying(self):
-        workflow = self.read(".github", "workflows", "release.yml")
+        workflow = self.read(".github", "workflows", "release-build.yml")
         build = workflow.split("      - name: Build ${{ env.APP_NAME }}\n", 1)[1].split("\n      - ", 1)[0]
         # SwiftPM package targets take no target settings: only the command line reaches them.
         self.assertIn("ARCHS=arm64 \\\n", build)
         self.assertIn("-onlyUsePackageVersionsFromResolvedFile", build)
-        self.assertIn("key: xcode-${{ runner.os }}-${{ env.CONFIGURATION }}-${{ steps.xcode.outputs.version }}-${{ github.sha }}", workflow)
+        self.assertIn("key: xcode-${{ runner.os }}-${{ env.CONFIGURATION }}-${{ steps.xcode.outputs.version }}-", workflow)
         self.assertNotIn("x86_64", workflow)
         thin = workflow.index('python3 scripts/release.py thin-app "$PRODUCTS/$PRODUCT"')
         self.assertLess(workflow.index("      - name: Build ${{ env.APP_NAME }}"), thin)
         self.assertLess(thin, workflow.index("scripts/release.py verify-app"))
 
-    def test_expected_asset_download_failures_stop_before_feed_generation(self):
+    def test_missing_expected_assets_stop_snapshot_selection(self):
         workflow = self.read(".github", "workflows", "release.yml")
         start = workflow.index('          while read -r tag asset archive feeds; do')
         end = workflow.index('          done < "$RUNNER_TEMP/routes"', start)
         loop = '\n'.join(line[10:] for line in workflow[start:end].splitlines()) + '\ndone < "$RUNNER_TEMP/routes"\n'
         for tag, asset, available, download_status, expected in [
-            ("v1.0.0", "Shepherd.dmg", True, 23, 23),
+            ("v1.0.0", "Shepherd.dmg", True, 0, 0),
             ("v1.0.0", "Shepherd.dmg", False, 0, 1),
             ("nightly-old", "Shepherd-Nightly.dmg", False, 0, 0),
         ]:
@@ -773,7 +844,9 @@ class ContractTests(unittest.TestCase):
                 root = Path(directory)
                 (root / "routes").write_text(f"{tag} {asset} archive.dmg stable\n")
                 (root / "staged-tags").write_text("")
-                metadata = json.dumps({"isDraft": False, "assets": [{"name": asset}] if available else []})
+                metadata = json.dumps({"isDraft": False, "assets": [
+                    {"name": asset, "id": "RA_kwDOFixture1", "size": 123, "updatedAt": "2026-10-10T00:00:00Z"}]
+                    if available else []})
                 (root / "scripts").mkdir()
                 for name in ("release.py", "pi_engine.py"):
                     shutil.copyfile(os.path.join(ROOT, "scripts", name), root / "scripts" / name)
@@ -827,22 +900,21 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(scheme.find("ProfileAction").get("shouldUseLaunchSchemeArgsEnv"), "YES")
 
     def test_extension_failures_gate_ci_with_the_pinned_pi_package(self):
-        # The workflow's shape (its jobs, the gate, the helpers it runs) is checked in test_ci_workflow.py;
-        # this keeps the extension job's own rules: the pinned package, no scripts, no leniency, and a
-        # failed extension test failing the gate.
+        # The workflow's shape (its jobs, the gate) is checked in test_ci_workflow.py; this keeps the
+        # extension job's own rules: the pinned package, no scripts, no leniency, and a failed
+        # extension test failing the gate.
         workflow = self.read(".github", "workflows", "ci.yml")
-        job = workflow.split("\n  extensions:\n", 1)[1].split("\n  build:\n", 1)[0]
+        job = workflow.split("\n  extensions:\n", 1)[1].split("\n  tests:\n", 1)[0]
         self.assertIn('scripts/pi-engine-pin.json', job)
         self.assertIn('--ignore-scripts', job)
-        self.assertIn('scripts/ci_run_tests.py node', job)
-        self.assertIn('["node", "--test"', self.read("scripts", "ci_run_tests.py"))
+        self.assertIn('node --test --test-concurrency=2 --test-reporter=spec Tests/Extensions/*.test.mjs', job)
         self.assertNotIn('continue-on-error', job)
-        aggregate = workflow.split("\n  ci:\n", 1)[1].split("\n  # ", 1)[0]
-        self.assertIn('needs: [plan, release-rules, extensions, build, tests]', aggregate)
+        aggregate = workflow.split("\n  ci:\n", 1)[1]
+        self.assertIn('needs: [plan, release-rules, extensions, tests]', aggregate)
         gate = aggregate.split("      - run: |\n", 1)[1]
         script = "\n".join(line[10:] for line in gate.splitlines())
         for extension_status in ("success", "failure", "cancelled", "skipped"):
-            results = f"success success {extension_status} skipped success"
+            results = f"success success {extension_status} success"
             result = subprocess.run(["bash", "-c", script], env={"RESULTS": results, "PATH": os.environ["PATH"]},
                                     capture_output=True, timeout=5)
             self.assertEqual(result.returncode == 0, extension_status in ("success", "skipped"))

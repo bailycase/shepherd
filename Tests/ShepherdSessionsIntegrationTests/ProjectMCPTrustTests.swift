@@ -24,7 +24,7 @@ struct ProjectMCPTrustTests {
         let setup = PiSetup(engine: .bundled(engine), home: root.appendingPathComponent("support/pi"), userHome: userHome.path)
         let service = ProjectMCPService(pi: setup)
         await #expect(throws: ProjectFileError.self) {
-            _ = try await service.request(directory: project.path, file: ".pi/mcp.json", text: "{}", action: .approveProject,
+            _ = try await service.request(directory: project.path, file: ".shepherd/mcp.json", text: "{}", action: .approveProject,
                                           owner: nil, canonicalDirectory: canonical)
         }
         #expect(!files.fileExists(atPath: setup.home.appendingPathComponent("trust.json").path))
@@ -40,7 +40,7 @@ struct ProjectMCPTrustTests {
         let userHome = root.appendingPathComponent("home")
         let home = PiHome(directory: root.appendingPathComponent("support/pi"), engine: .bundled(engine), userHome: userHome.path)
         let files = FileManager.default
-        let config = project.appendingPathComponent(".pi")
+        let config = project.appendingPathComponent(".shepherd")
         try files.createDirectory(at: config, withIntermediateDirectories: true)
         let log = root.appendingPathComponent("mcp-calls.jsonl")
         let marker = root.appendingPathComponent("project-extension-ran")
@@ -58,7 +58,7 @@ struct ProjectMCPTrustTests {
         let store = fixture.host.server.projects
         _ = try await store.request(.files(directory: project.path), state: state)
         func approval(_ action: ProjectMCPAction, directory: URL = project) async throws -> ProjectMCPResult {
-            guard case .mcp(let result) = try await store.request(.mcp(directory: directory.path, file: ".pi/mcp.json", action: action), state: state) else {
+            guard case .mcp(let result) = try await store.request(.mcp(directory: directory.path, file: ".shepherd/mcp.json", action: action), state: state) else {
                 throw ProjectFileError("protocol", "Expected MCP reply")
             }
             return result
@@ -118,7 +118,7 @@ struct ProjectMCPTrustTests {
         _ = try await client.connect(host: "127.0.0.1", port: port,
             token: String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines), clientName: "mcp-approval-test")
         #expect(client.capabilities.contains(RemoteProtocol.projectTrustCapability))
-        guard case .mcp(let approvalResult) = try await client.projects(.mcp(directory: project.path, file: ".pi/mcp.json", action: .approveProject)) else {
+        guard case .mcp(let approvalResult) = try await client.projects(.mcp(directory: project.path, file: ".shepherd/mcp.json", action: .approveProject)) else {
             Issue.record("Expected project approval reply"); return
         }
         #expect(approvalResult.projectTrusted == true)
@@ -135,15 +135,15 @@ struct ProjectMCPTrustTests {
 
         // A fresh project is still undecided, even after another project's approval.
         let sibling = root.appendingPathComponent("sibling")
-        try files.createDirectory(at: sibling.appendingPathComponent(".pi"), withIntermediateDirectories: true)
-        try JSONSerialization.data(withJSONObject: mcp).write(to: sibling.appendingPathComponent(".pi/mcp.json"))
+        try files.createDirectory(at: sibling.appendingPathComponent(".shepherd"), withIntermediateDirectories: true)
+        try JSONSerialization.data(withJSONObject: mcp).write(to: sibling.appendingPathComponent(".shepherd/mcp.json"))
         let other = try await probeTools(thread(in: sibling))
         #expect(output(other, tool: "codemode").contains("\"mcpNames\":[]"))
 
         // Even a saved home approval plus Pi's global "always" default cannot override
         // Shepherd's --no-approve protection. All files here are isolated scratch data.
-        try files.createDirectory(at: userHome.appendingPathComponent(".pi"), withIntermediateDirectories: true)
-        try JSONSerialization.data(withJSONObject: mcp).write(to: userHome.appendingPathComponent(".pi/mcp.json"))
+        try files.createDirectory(at: userHome.appendingPathComponent(".shepherd"), withIntermediateDirectories: true)
+        try JSONSerialization.data(withJSONObject: mcp).write(to: userHome.appendingPathComponent(".shepherd/mcp.json"))
         try JSONSerialization.data(withJSONObject: [project.path: true, PiHome.canonical(userHome.path): true])
             .write(to: home.directory.appendingPathComponent("trust.json"))
         var settings = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: home.settings)) as? [String: Any])

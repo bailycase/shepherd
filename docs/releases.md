@@ -9,12 +9,17 @@ breaking changes), one logical change per commit, with no AI or attribution line
 
 `nightly` is the integration branch. Feature branches (`feat/…`, `fix/…`) come off it and merge
 back through a PR with a merge commit (`--no-ff`). Every push to `nightly` ships a Shepherd
-Nightly build. CI runs the fast lane on pull requests into `nightly`, and the full lane after a
-push to `nightly` or `master` (docs/testing.md).
+Nightly build. Nightly pushes build and publish without running tests, including the release
+test preflight. Signing, notarization and artifact verification still run. CI tests pull requests
+and pushes to `master`; its daily run also tests `master` (docs/testing.md). A separate hosted
+`Build cache` workflow compiles reusable test products on relevant Nightly pushes without
+running tests. Release jobs do not depend on it. It maintains bounded retention of recognized
+Actions caches, not release artifacts; an unavailable cache leaves normal cold builds.
 
 ## Releases
 
-One workflow (`.github/workflows/release.yml`) ships two Mac apps and the iOS client's TestFlight builds. Its rules live in
+The Release workflow (`.github/workflows/release.yml`) ships two Mac apps and the iOS client's TestFlight builds.
+Its build-only helper (`.github/workflows/release-build.yml`) shares Mac packaging between Self-hosted and hosted runners. Its rules live in
 `scripts/release.py` (tested in `Tests/Release`); the YAML only runs them. A `plan` job decides
 from the pushed ref what to build, and the build job is skipped when the answer is nothing.
 Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
@@ -85,8 +90,10 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   Releases upload as drafts, including `shepherd-appcast.json` eligibility metadata, and become
   public only after their required assets exist. Publication ignores drafts, excludes marked
   ad-hoc releases, and refuses malformed present metadata. Unmarked historical releases retain
-  their legacy eligibility. The publisher resolves Sparkle from the pinned package versions;
-  it needs the Sparkle key and repository write token, not the Developer ID certificate.
+  their legacy eligibility. The publisher fetches only Sparkle's manifest at the exact revision
+  in `Package.resolved`, then lets SwiftPM resolve and checksum-verify its binary tools in a
+  temporary package directory. It never resolves Shepherd's terminal/parser dependency graph.
+  It needs the Sparkle key and repository write token, not the Developer ID certificate.
 - **Two apps, never each other's updates.** Shepherd Nightly has its own bundle id, name
   (`Shepherd Nightly.app`), DMG and feed, and every feed carries one app only. Sparkle is not
   the boundary: its installer picks the new app in an archive by the host's *file name* first
@@ -104,7 +111,7 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
 - **One EdDSA key** (`SPARKLE_PRIVATE_KEY`, `SUPublicEDKey`) signs both apps.
 - **Legacy feeds for installed builds.** Shepherd builds from before the split read
   `appcast-rc.xml` (allowing Sparkle channel `rc`) or `appcast-nightly.xml` (allowing
-  `nightly`, or no channel at all in the first nightly builds). Every run still writes both, as
+  `nightly`, or no channel at all in the first nightly builds). Both stay published as
   the beta feed with its items untagged: Sparkle shows default-channel items whatever a build
   allows. So those installs update to a Shepherd beta or stable (never Shepherd Nightly), and
   that build's launch migration moves them to Beta. Keep writing them while such installs may
@@ -157,15 +164,98 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
     rejects ad-hoc frameworks, which have no Team ID.
   - Shipped binaries are stripped (`strip -S -x`). Their dSYMs go on each release as
     `Shepherd-dSYMs.zip` or `Shepherd-Nightly-dSYMs.zip`.
-- **Appcasts** are rebuilt by the serialized publication job from all completed eligible
-  releases, keeping the four newest completed nightlies: one `generate_appcast` per feed
-  directory, written to a fixed name (`-o`; left alone it names the file after the app's
+- **Appcasts** are reconciled by the serialized publication job against all completed eligible
+  releases in its snapshot, keeping the four newest completed nightlies. Every candidate's
+  eligibility metadata is checked even when its feed is unchanged; the triggering tag never
+  limits the snapshot, so a coalesced publisher catches up other completed channels too.
+  Only changed feeds download their full archive history and run `generate_appcast`; unchanged
+  feeds and legacy aliases keep their exact published bytes. The publisher's `appcast-inputs.json`
+  on gh-pages records each feed's opaque CLI string archive IDs, sizes, update timestamps/digests
+  and output hashes. Unknown, malformed or duplicate snapshot rows fail before feed selection.
+  It is committed with the feeds, not used by clients. Missing/old records initialize all feeds;
+  missing or edited outputs regenerate their feed (including beta's aliases). Changes to the
+  release script/workflow, Sparkle's pin or source public key also invalidate the record;
+  unrelated package pins and plist fields do not.
+  There is no archive or private-key cache. Snapshot selection, downloads and per-feed
+  generation/delta upload durations are logged separately; hosted measurements must establish
+  any speed improvement. Each changed directory is written to a fixed name (`-o`; left alone it names the file after the app's
   `SUFeedURL`). Deltas go to the feed's newest release, renamed without spaces
   (`Shepherd Nightly63-61.delta` → `Shepherd-Nightly63-61.delta`), because GitHub rewrites
   spaces in asset names. Only after the feed push succeeds (or nothing changed) does that job
   prune older completed nightlies from its frozen snapshot; drafts and releases completed during
   publication are never pruned. Failed acquisition, metadata validation, generation or pushing
   prunes nothing. A skipped publisher (no Sparkle key) prunes nothing either.
+- **Nightly builds on GitHub unless self-hosted is explicitly enabled.** The repository variable
+  `SHEPHERD_SELFHOSTED_ENABLED` must equal `true` to opt in, using GitHub's case-insensitive
+  string comparison for every routing decision. Otherwise the selector immediately
+  chooses hosted without dispatching or waiting for a local helper; direct local helper calls
+  also skip before scheduling the Mac. Keep the shared Mac's runner disabled in launchd until
+  builds have isolated resources. A separate account or reduced CPU priority cannot protect
+  Kubernetes and other apps from build memory exhaustion.
+  When enabled, Release's Ubuntu orchestrator dispatches the build-only helper on `nightly`,
+  targeting the existing `shepherd-selfhosted` runner's sole custom label, `shepherd-release`.
+  No PAT or PR execution is involved. The optional
+  `SELFHOSTED_HOSTNAME` secret masks the machine name in the runner's built-in setup log;
+  public workflow labels and errors use generic self-hosted names. It is a log-masking value,
+  not an authentication credential. Existing logs and Git history are not rewritten. Stable/beta and TestFlight remain hosted. Both Mac attempts check out
+  the exact Release source SHA and use its run number, plan, signing identities, entitlements
+  and notarization policy; the dispatched helper's own run number is never a shipped build number.
+  - `scripts/release_runner.py` allows fifteen minutes for dispatch discovery and queueing
+    (a queued local build is usually waiting behind a pull request's CI on the same runner),
+    sixty minutes for local execution, two minutes for cancellation acknowledgement, and polls
+    every fifteen seconds. Each API request has a ten-second timeout; the Ubuntu job has an
+    eighty-minute outer bound. The build jobs also have a sixty-minute execution limit.
+    Job timeouts alone do not bound a queued offline runner. There is one dispatch and at most
+    one hosted fallback, not a retry loop.
+  - A completed local build failure/timeout permits fallback. An expired queue/execution bound
+    first cancels the isolated helper run and waits for API status `completed`; accepting the
+    cancellation request alone is insufficient. If cancellation returns HTTP 409 because the
+    worker completed between GET and POST, monitoring and cleanup re-fetch its state: confirmed
+    success follows the normal package checks, confirmed build failure follows the fallback
+    guards, and an unknown/nonterminal response fails closed. Unknown dispatch identity/state, API errors,
+    unacknowledged cancellation, an explicit cancellation or an invalid successful package
+    fail closed, without fallback. If success races cancellation, a confirmed successful local
+    package is still preferred; neither build can publish.
+  - The helper validates its active Release parent/attempt and Nightly-only dispatch before
+    scheduling Self-hosted, again on runner entry, and before accessing signing credentials.
+    Re-running the helper is refused. Parent cancellation best-effort cancels its helper;
+    if the parent disappears before cleanup, a late queued helper refuses the inactive
+    parent, and already-running work is bounded and cannot publish. Re-running Release uses
+    a new attempt identity and retains the existing published-tag/build-number protection.
+  - Each successful attempt uploads a required DMG, eligibility metadata and a manifest
+    binding its checksum to the parent run/attempt, source SHA, build number and planned
+    tag/version, plus optional dSYMs. The single hosted Release publisher downloads only the
+    selected attempt's artifact and verifies that manifest before any tag/release mutation.
+    Fallback never reacts to publication/appcast failure or partial success: existing draft-first
+    release publication, immutable tags and the serialized appcast job remain the boundary.
+    The appcast job requires a successful selected release and checks cancellation explicitly;
+    skipping the unused build path must not suppress publication through implicit `success()`.
+  - Self-hosted keeps DerivedData and verified pi downloads between jobs. Checkout preserves
+    ignored build outputs but no Git credentials. The build marker combines Xcode, Swift, SDK,
+    shared library source and package/project/engine inputs. Changing any of those discards
+    products but keeps package downloads, preventing reuse across a transitive model/ABI change.
+    Changes confined to ShepherdApp can build incrementally. Hosted cache restores use the same
+    marker inputs. Both the app and DMG still wait for notarization acceptance and receive
+    stapled tickets before package provenance is recorded.
+  - Self-hosted uses a temporary signing keychain with a random password, preserves/restores the
+    exact existing user keychain search list and removes imported certificate/notary files in
+    an `always()` cleanup step, including after failure/cancellation. Forced runner termination
+    can prevent cleanup: inspect the runner's job temp directory before reusing a killed worker.
+    No installed app, runner registration, permanent keychain or user application data is changed.
+  - **Rollout prerequisite:** GitHub requires a dispatch workflow to exist on the repository's
+    default branch (`master`) even when dispatch targets `nightly`. Preparing these files does
+    not enable Self-hosted routing until `release-build.yml` has been separately authorized and
+    landed there. Bootstrap only the shared worker and its orchestrator script on `master`,
+    preserving that branch's existing release workflow and signing/feed contracts. The owner
+    approves the bootstrap and live rollout separately; merging the Nightly PR alone is not
+    enough. Absent dispatch support, selection fails closed rather than bypassing its fence.
+    Review requests are manual. The repository has no `CODEOWNERS` file, so workflow,
+    release/signing and engine changes do not automatically request Baily or Josh to review.
+    Nightly still requires `CI` and `PR body`, with no required approvals or code-owner review.
+  - **Decisions:** the default bounds above, fail-closed uncertain state, hosted-only publication,
+    ephemeral keychain handling are deliberate. Tests use
+    fake GitHub states, scratch packages/keychains and the existing fake publication shell;
+    local tests cannot establish GitHub's live cancellation or cross-run artifact semantics.
 - **Building Shepherd Nightly locally:** the `Shepherd (Nightly)` scheme, or
   `xcodebuild -scheme 'Shepherd (Nightly)' -configuration Nightly …` as the workflow does.
 - **Enhanced Security** is set on the Mac target only, because at project level it would push

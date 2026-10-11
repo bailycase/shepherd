@@ -48,7 +48,7 @@ then everything.
 | Unit | `swift test --filter UnitTests` | Pure logic: no processes, sockets, windows, git, or sleeps. Seconds for the whole tier. |
 | Integration | `swift test --filter IntegrationTests` | A real `SessionServer` (`ScratchServer`), the scripted stub pi (`StubPi.command`), git scratch repos, off-screen windows. Waits are named `eventually(...)` polls, never fixed sleeps. |
 | Previews | `SHEPHERD_PREVIEW_DIR=/tmp/previews swift test --filter PreviewTests` | Offscreen renders of every surface, in light and dark, written as PNGs. Skipped without the variable. |
-| Everything | `swift test` | All of the above, in parallel. CI runs them serially, in shards: the suites a change can affect on a pull request into `nightly`, every suite after a merge ([docs/testing.md](docs/testing.md)). |
+| Everything | `swift test` | All of the above, in parallel. CI runs one serial process: unit, smoke and affected suites for ordinary `nightly` PRs, all suites for shared changes and `master` ([docs/testing.md](docs/testing.md)). |
 | Extensions | `PI_PACKAGE_DIR=<installed pi package> node --test Tests/Extensions/*.test.mjs` | The bundled pi extensions, against a local fake provider. |
 | Release rules | `python3 -m unittest discover -s Tests/Release` | `scripts/release.py`: what each tag or push builds, which feeds each release lands in, and its agreement with the Xcode project and the apps. CI runs it too. |
 
@@ -106,10 +106,20 @@ Fill in the [pull request template](.github/pull_request_template.md). It asks f
 - for a feature that acts on its own, its bounds, where its data goes, what a restart and Stop do
   to it, and the decisions you made unasked ([docs/rules.md](docs/rules.md))
 
-CI runs a fast lane on a pull request into `nightly`: every unit test, a smoke set, and the
-integration suites your changed paths can affect (the run's summary says which and why). Add the
-`full-ci` label to run everything. A test that fails and then passes on its retry is reported as
-flaky, not hidden: fix it or say why you can't.
+CI runs unit suites, three startup/identity checks and feature-related suites for ordinary
+`nightly` PRs. A suite-local regression selects its declared suite instead of its whole test
+module; shared fixtures and unknown source paths stay broad. Shared contracts, server core,
+CI changes, `master`, daily runs and `full-ci` run all suites across four separate hosted Macs,
+serial within each lane. All session integration suites stay together; unknown suites enter the
+remainder lane. Affected suites and UI diagnostics retain one lane. No tests are removed.
+Full lanes always use GitHub's macOS runners. For selected maintainer PRs and Nightly releases,
+`SHEPHERD_SELFHOSTED_ENABLED=true` can explicitly enable an isolated self-hosted Mac. The shared Mac stays offline to protect other apps. Docs alone run no Swift. A test that fails is red:
+there is no retry, so a flaky test is a bug to fix in the test. A push to `nightly` builds and
+ships without tests. Require `CI`, not the manual `UI diagnostics` check. With self-hosted
+builds disabled, a trusted Nightly dispatch with `diagnostics=ui` can seed the hosted cache
+without changing PR coverage or Nightly push behavior. PR cache saves serve only that same
+PR, not its base or siblings; reseed Nightly when the toolchain or resolved lock changes.
+Cache reuse does not establish the unmet warm five-minute test goal ([docs/testing.md](docs/testing.md)).
 
 Don't claim checks passed unless you ran them and saw the result.
 

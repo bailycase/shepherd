@@ -10,8 +10,8 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 const REQUEST_TIMEOUT_MS = 15_000;
-// A call that touches another thread may wait for the user's approval (up to 120 s on the host).
-const APPROVAL_TIMEOUT_MS = 130_000;
+// Thread creation and process teardown may take longer than a normal peer request.
+const PEER_TIMEOUT_MS = 130_000;
 
 interface Reply {
   type: string;
@@ -409,18 +409,99 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     on ? { exposure: "deferred" as const, namespace } : {};
   const line = (on: boolean, snippet: string) => (on ? undefined : snippet);
 
+  // Project history is not sidebar registration. These requests go through the live app.
+  const PROJECTS = {
+    name: "shepherd_projects",
+    description: "register, edit, remove, and refresh local Shepherd spaces",
+    instructions: "Use project_register, project_add_child, project_edit, project_delete or project_refresh when the user requests space management. Never edit projects.json or state.json to manage registrations. Folder moves and copies require an explicit user request; editing organization alone never moves data.",
+  };
+  if (!isAutomationAgent) pi.registerTool({
+    name: "project_register",
+    label: "Register Space",
+    description: "Register an existing local directory in Shepherd's live sidebar with a display name, when requested by the user. Does not create files, start threads, select a space, or grant space trust. Absolute paths and ~/ paths are accepted. Duplicate canonical paths return the existing registration unchanged. Returns JSON {space, created}; space contains the canonical id, name and path. Preserve folder-name spelling for name unless the user explicitly requests a different display name. A successful reply follows live UI adoption. Requires a Shepherd build with space tools.",
+    ...later(DEFER, PROJECTS),
+    promptSnippet: line(DEFER, "Register an existing space directory in Shepherd's live sidebar"),
+    parameters: Type.Object({
+      path: Type.String({ description: "Existing readable directory on this Mac, absolute or ~/" }),
+      name: Type.String({ description: "Display name, 1–256 characters, no control characters" }),
+    }),
+    async execute(_id, args) {
+      const reply = await request({ type: "registerProject", path: args.path, name: args.name });
+      return text(JSON.stringify({ space: reply.space, created: reply.created }));
+    },
+  });
+  if (!isAutomationAgent) pi.registerTool({
+    name: "project_add_child",
+    label: "Add Child Space",
+    description: "When requested by the user, create an empty direct child folder or register an existing descendant of a local parent space. Set create:true to create a folder if missing, false to require an existing folder. A unique existing capitalization match is reused with its actual folder spelling. Canonical paths must stay inside parentPath. Never overwrites a folder or link, initializes Git, or starts a thread. Returns JSON {space, created}; created means a new registration. Creation errors leave existing files untouched. If registration fails after creation, the folder remains; retry with create:false. Requires a Shepherd build with child space tools.",
+    ...later(DEFER, PROJECTS),
+    promptSnippet: line(DEFER, "Create or register a child space folder inside a parent space"),
+    parameters: Type.Object({
+      parentPath: Type.String({ description: "Existing parent space directory, absolute or ~/" }),
+      path: Type.String({ description: "Child directory, absolute or ~/; creation must be directly inside parentPath" }),
+      name: Type.String({ description: "Display name, 1–256 characters, no control characters" }),
+      create: Type.Boolean({ description: "true: create a new empty folder; false: register an existing folder" }),
+    }),
+    async execute(_id, args) {
+      const reply = await request({ type: "addChildProject", parentPath: args.parentPath, path: args.path, name: args.name, create: args.create });
+      return text(JSON.stringify({ space: reply.space, created: reply.created }));
+    },
+  });
+  if (!isAutomationAgent) pi.registerTool({
+    name: "project_edit",
+    label: "Edit Space",
+    description: "Edit a local registered space's display name or parent without changing folders. projectID comes from registration results; sending only projectID inspects the registration or returns no_such_project. Omit parentProjectID to preserve organization; empty string makes it top-level. Only when the user explicitly requests a physical move/copy, set folderAction and destinationPath. Both refuse spaces in use, linked worktrees, and existing destinations. Copy keeps the source and its registrations, then registers the copied root with a new ID and created:true. Move requires the same filesystem; related empty space registrations follow the moved folder. Returns JSON {space,created} after live UI adoption. Failures describe any remaining folder effects; do not blindly retry.",
+    ...later(DEFER, PROJECTS),
+    promptSnippet: line(DEFER, "Edit a space name or parent without moving folders unless explicitly requested"),
+    parameters: Type.Object({
+      projectID: Type.String({ description: "Registered local space's id (its space.id)" }),
+      name: Type.Optional(Type.String({ description: "New display name; does not rename the directory" })),
+      parentProjectID: Type.Optional(Type.String({ description: "New parent's space ID, or empty string for top-level; omit to preserve" })),
+      folderAction: Type.Optional(Type.Union([Type.Literal("none"), Type.Literal("move"), Type.Literal("copy")], { description: "Defaults to none. move/copy require an explicit user request." })),
+      destinationPath: Type.Optional(Type.String({ description: "Unused absolute destination folder, required only for explicit move/copy" })),
+    }),
+    async execute(_id, args) {
+      const reply = await request({ type: "editProject", projectID: args.projectID, request: { name: args.name, parentProjectID: args.parentProjectID, folderAction: args.folderAction ?? "none", destinationPath: args.destinationPath } }, undefined, PEER_TIMEOUT_MS);
+      return text(JSON.stringify({ space: reply.space, created: reply.created }));
+    },
+  });
+  if (!isAutomationAgent) pi.registerTool({
+    name: "project_delete",
+    label: "Remove Space",
+    description: "Ask Shepherd to show its Remove space confirmation for a local registration, only when the user requests removal. Does not delete a folder or bypass confirmation. Confirming stops that space's agents and removes its registration; child spaces, folders, files and saved conversations remain. Returns JSON {projectID,status:'confirmation_required'} when the dialog is requested, NOT proof that the space was removed. The user may cancel.",
+    ...later(DEFER, PROJECTS),
+    promptSnippet: line(DEFER, "Request confirmation to remove a space registration, never its folder"),
+    parameters: Type.Object({ projectID: Type.String({ description: "Registered local space's id (its space.id)" }) }),
+    async execute(_id, args) {
+      await request({ type: "deleteProject", projectID: args.projectID });
+      return text(JSON.stringify({ projectID: args.projectID, status: "confirmation_required" }));
+    },
+  });
+  if (!isAutomationAgent) pi.registerTool({
+    name: "project_refresh",
+    label: "Refresh Spaces",
+    description: "Refresh Shepherd's live sidebar from registered spaces and reload the Spaces settings list without restarting. Does not import cached projects.json entries into the sidebar, reload state.json, discard editor drafts, select spaces, or register directories. Returns JSON {refreshed:true} after UI adoption and list reload. Requires a Shepherd build with space tools.",
+    ...later(DEFER, PROJECTS),
+    promptSnippet: line(DEFER, "Refresh Shepherd's live spaces without restarting"),
+    parameters: Type.Object({}),
+    async execute() {
+      await request({ type: "refreshProjects" });
+      return text(JSON.stringify({ refreshed: true }));
+    },
+  });
+
   // ---- peer threads --------------------------------------------------------
   // Every tool here that touches another thread is for what the user asked for in this
-  // conversation, and Shepherd can ask the user to approve each call (Settings ▸ Pi ▸ Agent-to-agent
-  // messages). The words say so first, because a model reads them before it acts. Authorization
+  // conversation. Calls need no approval dialog or permission setting. The words say so first,
+  // because a model reads them before it acts. Authorization
   // is the host's: nothing here decides whether a call is allowed.
 
   const ONLY_WHEN_ASKED =
     "Only when the user explicitly asks you to, in this conversation. Never on your own initiative: " +
     "not to report status, ask for help, hand off work, share findings or coordinate. If unsure, don't. ";
-  const APPROVAL =
-    "Shepherd may ask the user to approve this call. If it comes back not approved or turned off, " +
-    "stop: do not retry, and do not look for another way to reach the thread.";
+  const ACCESS_POLICY =
+    "No approval dialog is shown. If the host refuses the call, stop: do not retry, " +
+    "and do not look for another way to reach the thread.";
   // The same lines on every tool that touches another thread: pi writes a repeated line once.
   const PEER_GUIDELINES = [
     "Use agent_send, agent_steer, agent_interrupt, agent_read and agent_spawn only when the user explicitly " +
@@ -465,7 +546,7 @@ export default function shepherdPanes(pi: ExtensionAPI) {
       "Sends a message to another agent thread. delivery task (default) asks it to do work: it starts " +
       "an idle agent or queues a follow-up while busy. delivery report is hidden context only, and " +
       "never starts or queues a turn. The other thread sees an agent's message, not the user's. " +
-      APPROVAL + " Dispatch is not confirmation of acceptance or consumption.",
+      ACCESS_POLICY + " Dispatch is not confirmation of acceptance or consumption.",
     promptSnippet: line(deferPeers, "Message another agent thread, only when the user explicitly asked you to"),
     ...later(deferPeers, PEERS),
     promptGuidelines: PEER_GUIDELINES,
@@ -478,7 +559,7 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     async execute(_toolCallId, params, signal) {
       const delivery = params.delivery ?? "task";
       await request({ type: "sendToAgent", targetAgentID: params.agentID, text: params.text, delivery },
-        signal, APPROVAL_TIMEOUT_MS);
+        signal, PEER_TIMEOUT_MS);
       return text(`${delivery} dispatch requested for agent ${params.agentID}; acceptance and consumption are not confirmed`);
     },
   });
@@ -493,7 +574,7 @@ export default function shepherdPanes(pi: ExtensionAPI) {
       "branch, not streaming text. Thinking, images, hidden entries, and tool arguments are omitted. Returns " +
       "entry IDs, nextCursor and truncation flags. Defaults to the latest 20 entries; after reads forward. " +
       "Per-entry text is capped at 4000 characters, total at 48 KiB. A cursor from another branch is an " +
-      "error. " + APPROVAL,
+      "error. " + ACCESS_POLICY,
     promptGuidelines: PEER_GUIDELINES,
     ...later(deferPeers, PEERS),
     parameters: Type.Object({
@@ -503,7 +584,7 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     }),
     async execute(_id, params, signal) {
       const reply = await request({ type: "coordinateAgent", targetAgentID: params.agentID,
-        request: { operation: "read", after: params.after, limit: params.limit } }, signal, APPROVAL_TIMEOUT_MS);
+        request: { operation: "read", after: params.after, limit: params.limit } }, signal, PEER_TIMEOUT_MS);
       return text(reply.result?.text ?? "no messages");
     },
   });
@@ -516,13 +597,13 @@ export default function shepherdPanes(pi: ExtensionAPI) {
       "Wrong: redirecting another thread because you think it is off track. Right: the user said \"tell " +
       "the worker thread to stop using the old API now\". Steers another live agent: the message lands at " +
       "its next step, or starts an idle one. Reports requested, not accepted or consumed. Cannot target " +
-      "yourself. " + APPROVAL,
+      "yourself. " + ACCESS_POLICY,
     promptGuidelines: PEER_GUIDELINES,
     ...later(deferPeers, PEERS),
     parameters: Type.Object({ agentID: Type.String(), text: Type.String({ minLength: 1, maxLength: 32768 }) }),
     async execute(_id, params, signal) {
       const reply = await request({ type: "coordinateAgent", targetAgentID: params.agentID,
-        request: { operation: "steer", text: params.text } }, signal, APPROVAL_TIMEOUT_MS);
+        request: { operation: "steer", text: params.text } }, signal, PEER_TIMEOUT_MS);
       return text(reply.result?.text ?? "steering dispatch requested");
     },
   });
@@ -535,13 +616,13 @@ export default function shepherdPanes(pi: ExtensionAPI) {
       "Wrong: stopping another thread because it seems stuck or slow. Right: the user said \"stop the " +
       "migration thread\". Best-effort cancellation of another live agent's current turn. Does not confirm " +
       "it stopped; tools must cooperate. Also cancels a pending retry or compaction; messages already " +
-      "queued stay queued. Cannot target yourself. " + APPROVAL,
+      "queued stay queued. Cannot target yourself. " + ACCESS_POLICY,
     promptGuidelines: PEER_GUIDELINES,
     ...later(deferPeers, PEERS),
     parameters: Type.Object({ agentID: Type.String() }),
     async execute(_id, params, signal) {
       const reply = await request({ type: "coordinateAgent", targetAgentID: params.agentID,
-        request: { operation: "interrupt" } }, signal, APPROVAL_TIMEOUT_MS);
+        request: { operation: "interrupt" } }, signal, PEER_TIMEOUT_MS);
       return text(reply.result?.text ?? "cancellation requested");
     },
   });
@@ -590,9 +671,8 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     label: "Request Agent Deletion",
     description:
       "Only when the user explicitly asks you to delete another agent. Never on your own initiative, " +
-      "never to tidy up. Asks the real user in Shepherd's native confirmation to delete another agent and " +
-      "terminate all its auxiliary processes. No agent-supplied approval is accepted. Cancel or a 120-second " +
-      "confirmation timeout keeps it intact. Keeps worktrees and branches. Cannot delete yourself.",
+      "never to tidy up. Deletes another agent and terminates all its auxiliary processes immediately, " +
+      "without confirmation. Keeps worktrees and branches. Cannot delete yourself. " + ACCESS_POLICY,
     ...later(deferPeers, PEERS),
     parameters: Type.Object({ agentID: Type.String() }),
     async execute(_id, params, signal) {
@@ -611,7 +691,7 @@ export default function shepherdPanes(pi: ExtensionAPI) {
       "starting a thread to run tests or look into a side question. Right: the user said \"open a thread " +
       "in ~/src/api and have it fix the build\". Starts a new top-level agent thread in Shepherd with an " +
       "opening prompt, visible in the sidebar like any user-created agent. Returns the new agent's id. " +
-      APPROVAL,
+      "No confirmation or separate permission setting is required.",
     promptSnippet: line(deferPeers, "Start a new agent thread, only when the user explicitly asked you to"),
     ...later(deferPeers, PEERS),
     promptGuidelines: PEER_GUIDELINES,
@@ -621,7 +701,7 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     }),
     async execute(_toolCallId, params, signal) {
       const reply = await request({ type: "spawnAgent", cwd: params.cwd, prompt: params.prompt },
-        signal, APPROVAL_TIMEOUT_MS);
+        signal, PEER_TIMEOUT_MS);
       const spawned = reply.agents?.[0];
       if (!spawned) return text("spawned agent thread");
       return text(`spawned agent ${spawned.id} (${spawned.name}) in ${spawned.cwd}`);

@@ -3,7 +3,7 @@
 pi loads the copies the app writes from `static let … = #\"\"\" … \"\"\"#` literals, so a literal that
 drifts from its canonical file ships a bug. ShepherdAppUnitTests (EmbeddedExtensionTests) checks the
 same pairs in Swift; this runs without a build, which lets a change to Extensions/ alone skip the
-Swift jobs (scripts/ci_impact.py) without losing the check. Edit one with
+Swift job (scripts/ci_plan.py) without losing the check. Edit one with
 scripts/sync-embedded-extension.py. Run: python3 -m unittest discover -s Tests/Release -v
 """
 import os
@@ -68,7 +68,7 @@ class EmbeddedExtensionTests(unittest.TestCase):
         )
 
     def test_the_canonical_files_are_the_twenty_five_the_app_embeds(self):
-        self.assertEqual(len(canonical_files()), 25, "a new canonical file needs an embedded copy and a row in EmbeddedExtensionTests")
+        self.assertEqual(len(canonical_files()), 26, "a new canonical file needs an embedded copy and a row in EmbeddedExtensionTests")
 
 
 if __name__ == "__main__":

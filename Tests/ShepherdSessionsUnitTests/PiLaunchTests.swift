@@ -115,7 +115,7 @@ struct PiEngineTests {
     /// and never becomes a `pi` or `node` looked up on PATH.
     @Test func aMissingEngineIsNeverLookedUpOnPath() {
         let contents = "/nonexistent/Shepherd.app/Contents"
-        #expect(Self.missing.command == ["\(contents)/Helpers/node", "\(contents)/Resources/pi-engine/dist/bundle/cli.js"])
+        #expect(Self.missing.command == ["\(contents)/Helpers/node", "\(contents)/Resources/pi-engine/dist/cli.js"])
         #expect(Self.missing.packageDirectory == "\(contents)/Resources/pi-engine")
         #expect(Self.missing.node == .executable("\(contents)/Helpers/node"))
         #expect(Self.missing.version == nil)

@@ -9,6 +9,38 @@ import ShepherdUI
 @Suite("Project MCP approval previews", .mainActorExclusive, .enabled(if: Preview.enabled))
 @MainActor
 struct ProjectMCPTrustPreviewTests {
+    @Test func legacyRemoteNativeConfigurationRendersItsSelectedPathAndStates() async throws {
+        let project = ProjectSummary(directory: "/remote/project", name: "legacy project", displayPath: "~/project", summary: "MCP")
+        let host = ProjectsHost(id: "legacy-remote", name: "build-01", known: [])
+        let file = ProjectFile(path: ".pi/mcp.json", category: .mcp, exists: true)
+        var text = #"{"mcpServers":{"issues":{"url":"https://issues.example.invalid/mcp","enabled":false}}}"#
+        var trusted = false
+        let model = ProjectsModel { _, request in
+            switch request {
+            case .list: return .listing(.init(projects: [project]))
+            case .files: return .files([file])
+            case .context: return .context(.init())
+            case .read: return .text(.init(file: file, text: text))
+            case .mcp: return .mcp(.init(projectTrusted: trusted))
+            default: throw ProjectFileError("fixture", "Unexpected preview request")
+            }
+        }
+        await model.load([host]); await model.open(.init(host: host, project: project)); await model.navigate(.category(.mcp))
+        func render(_ state: String) async throws {
+            try await Preview.renderMatrix("project-mcp-legacy-remote-" + state, size: CGSize(width: 1040, height: 900)) {
+                ProjectMCPSettings(model: model, initiallyExpanded: "issues").padding(NW.Space.xxl)
+                    .frame(width: 1040, height: 900).background(Color.nw.bgWindow)
+            }
+        }
+        try await render("blocked-disabled")
+        text = "{}"; trusted = true
+        await model.navigate(.file(file))
+        try await render("approved-empty")
+        text = #"{"mcpServers":{"issues":{"url":"https://issues.example.invalid/"# + String(repeating: "long-path/", count: 16) + #"","enabled":true}}}"#
+        await model.navigate(.file(file))
+        try await render("approved-long")
+    }
+
     @Test func everyApprovalAndCredentialStateRendersFromProjectRequests() async throws {
         let world = try await ProjectsPreviewWorld(detail: true)
         defer { world.stop() }

@@ -91,7 +91,8 @@ final class ThreadInput {
         focusRequest += 1
     }
 
-    func attach(_ providers: [NSItemProvider], store: NativeThreadStore, localFiles: Bool) {
+    /// `imagesSupported` overrides the thread's own `sendImages` (a Project's owner decides before it has a coordinator).
+    func attach(_ providers: [NSItemProvider], store: NativeThreadStore, localFiles: Bool, imagesSupported: Bool? = nil) {
         guard available else { return }
         attachments.clearError()
         let generation = generation
@@ -99,15 +100,15 @@ final class ThreadInput {
         Task {
             let urls = await AppImageDrop.resolve(providers)
             guard available, self.generation == generation, store.sessionKey == session else { return }
-            add(urls: urls, store: store, localFiles: localFiles)
+            add(urls: urls, store: store, localFiles: localFiles, imagesSupported: imagesSupported)
         }
     }
 
-    func add(urls: [URL], store: NativeThreadStore, localFiles: Bool) {
+    func add(urls: [URL], store: NativeThreadStore, localFiles: Bool, imagesSupported: Bool? = nil) {
         var rejection: String?
         for url in urls {
             if let image = ImageAttachment(url: url) {
-                guard store.supportedActions.contains("sendImages") else {
+                guard imagesSupported ?? store.supportedActions.contains("sendImages") else {
                     rejection = "This agent does not support image attachments."
                     continue
                 }
@@ -145,11 +146,12 @@ struct ThreadInputDrop: ViewModifier {
     @Bindable var input: ThreadInput
     let store: NativeThreadStore
     let localFiles: Bool
+    var imagesSupported: Bool? = nil
 
     func body(content: Content) -> some View {
         content.onDrop(of: [.image, .fileURL], isTargeted: $input.dropTargeted) { providers in
             guard input.available else { return false }
-            input.attach(providers, store: store, localFiles: localFiles)
+            input.attach(providers, store: store, localFiles: localFiles, imagesSupported: imagesSupported)
             return true
         }
     }

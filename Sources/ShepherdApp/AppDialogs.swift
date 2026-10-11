@@ -46,6 +46,22 @@ struct AppDialogs: ViewModifier {
                 FinalizeWorktreeSheet(vm: vm, agent: request.agent, space: request.space)
                     .dialogSheetFrame()
             }
+            .sheet(item: $vm.addingChildProject) { model in
+                ChildProjectSheet(model: model, dismiss: { vm.addingChildProject = nil })
+            }
+            .sheet(item: $vm.assigningProjectTask) { shown in
+                // Same guard as the New project sheet below: a dismissing sheet must not write its last draft back.
+                if let ref = vm.selectedLogicalProject {
+                    AssignProjectTaskSheet(vm: vm, ref: ref, draft: Binding(get: { vm.assigningProjectTask ?? shown }, set: { if vm.assigningProjectTask != nil { vm.assigningProjectTask = $0 } }),
+                                           dismiss: { vm.assigningProjectTask = nil })
+                        .dialogSheetFrame()
+                }
+            }
+            .sheet(item: Binding(get: { vm.projectsEnabled ? vm.newLogicalProject : nil }, set: { vm.newLogicalProject = $0 })) { shown in
+                // A dismissing sheet writes its last value back; only write while a draft exists, so turning Projects off (which clears it) stays cleared.
+                NewProjectSheet(vm: vm, draft: Binding(get: { vm.newLogicalProject ?? shown }, set: { if vm.newLogicalProject != nil { vm.newLogicalProject = $0 } }),
+                                dismiss: { vm.newLogicalProject = nil })
+            }
             .sheet(item: $vm.spacePickerTarget) { target in
                 spacePicker(target)
                     .dialogSheetFrame()
@@ -71,13 +87,7 @@ struct AppDialogs: ViewModifier {
                     .dialogSheetFrame()
             }
             .sheet(item: $vm.spaceRenameSpace) { space in
-                RenameDialog(title: "Rename space", caption: "Sidebar label only — the folder on disk is not renamed.",
-                             name: space.name) { name in
-                    vm.renameSpace(space.id, to: name)
-                    vm.spaceRenameTarget = nil
-                } onCancel: {
-                    vm.spaceRenameTarget = nil
-                }
+                ProjectRenameDialog(vm: vm, space: space)
             }
             .sheet(item: $vm.agentRenameAgent) { agent in
                 RenameDialog(title: "Rename agent", name: agent.name) { name in
@@ -93,27 +103,6 @@ struct AppDialogs: ViewModifier {
             }
             .sheet(item: $vm.spaceDeleteSpace) { space in
                 SpaceDeleteDialog(vm: vm, space: space)
-            }
-            .sheet(item: $vm.peerDeleteItem) { confirmation in
-                let agent = confirmation.agent
-                PeerDeleteDialog(
-                    requester: confirmation.senderName,
-                    agent: agent.name,
-                    space: vm.state.spaces.first { $0.id == agent.spaceID }?.name,
-                    branch: agent.worktreeBranch,
-                    directory: vm.state.tabs.first { $0.id == agent.tabID }?.layout.leaves.first { $0.agentID == agent.id }
-                        .map { ($0.cwd as NSString).abbreviatingWithTildeInPath },
-                    delete: {
-                        // Deleting tears down a mounted layout: the sheet finishes dismissing first.
-                        Task { await vm.confirmPeerDeletion(requestID: confirmation.requestID, dismissal: .milliseconds(300)) }
-                    },
-                    cancel: { vm.cancelPeerDeletion(requestID: confirmation.requestID) }
-                )
-            }
-            .sheet(item: $vm.peerApprovalItem) { prompt in
-                PeerApprovalDialog(presentation: vm.peerApprovalPresentation(prompt)) { vm.answerPeerApproval(prompt.requestID, $0) }
-                    .dialogSheetFrame()
-                    .interactiveDismissDisabled()
             }
             .sheet(item: $vm.designDeleteRequest) { request in
                 DeleteDesignDialog(words: request.words, delete: { vm.confirmDesignDelete(request) },
@@ -266,75 +255,29 @@ struct WorktreeDeleteDialog: View {
     }
 }
 
-/// An agent's `agent_delete`: only the user can approve it, here. Cancel, or no answer before
-/// the request times out, keeps the agent; approving deletes it like Delete Agent, keeping its
-/// worktree and branch. Its branch, else its directory, tells it apart from agents sharing its
-/// name.
-struct PeerDeleteDialog: View {
-    let requester: String
-    let agent: String
-    var space: String?
-    var branch: String?
-    var directory: String?
-    let delete: () -> Void
-    let cancel: () -> Void
 
-    var body: some View {
-        DialogSheet(
-            title: "Delete agent",
-            subtitle: "Another agent asks you to delete this one. If you don't answer within two minutes, it is kept.",
-            actions: [
-                DialogAction("Cancel", kind: .cancel, action: cancel),
-                DialogAction("Delete agent", kind: .destructive, action: delete),
-            ]
-        ) {
-            SheetRow("Agent") {
-                Text(agent)
-                    .nwText(.ui)
-                    .foregroundStyle(Color.nw.textPrimary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .help(agent)
-            }
-            if let branch {
-                SheetRow("Branch") { mono(branch) }
-            } else if let directory {
-                SheetRow("Directory") { mono(directory) }
-            }
-            if let space {
-                SheetRow("Space") {
-                    Text(space)
-                        .nwText(.ui)
-                        .foregroundStyle(Color.nw.textSecondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-            }
-            SheetRow("Asked by") {
-                Text(requester)
-                    .nwText(.ui)
-                    .foregroundStyle(Color.nw.textSecondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
-            DialogBanner(title: "Stops the agent and everything it started",
-                         message: "Its session ends mid-turn and its terminals close."
-                             + (branch == nil ? "" : " Its worktree and branch are kept."))
-        }
+struct ProjectRenameDialog: View {
+    var vm: ShepherdViewModel
+    let space: Space
+    @State var error: String?
+
+    static func problem(_ name: String) -> String? {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !name.isEmpty && name.count <= 256 && name.rangeOfCharacter(from: .controlCharacters) == nil
+            ? nil : "Use a name of 1–256 characters without control characters."
     }
 
-    private func mono(_ text: String) -> some View {
-        Text(text)
-            .font(.nw(.mono))
-            .foregroundStyle(Color.nw.textSecondary)
-            .lineLimit(1)
-            .truncationMode(.middle)
-            .help(text)
-            .textSelection(.enabled)
+    var body: some View {
+        RenameDialog(title: "Rename space", caption: error ?? "Display name only. The folder name and location stay unchanged.", name: space.name) { name in
+            let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let problem = Self.problem(name) { error = problem; return }
+            vm.renameSpace(space.id, to: name)
+            vm.spaceRenameTarget = nil
+        } onCancel: { vm.spaceRenameTarget = nil }
     }
 }
 
-/// Remove Space: always confirmed, since it stops the space's agents.
+/// Remove Project: always confirmed, since it stops the project's agents.
 struct SpaceDeleteDialog: View {
     var vm: ShepherdViewModel
     let space: Space
@@ -344,7 +287,7 @@ struct SpaceDeleteDialog: View {
         DialogSheet(
             title: "Remove space",
             subtitle: "Removes \(space.name) from the sidebar and stops its \(count) agent\(count == 1 ? "" : "s"). "
-                + "Conversations stay on disk; the checkout is untouched. Nested project spaces are separate and survive.",
+                + "The local folder and all its files are kept. Saved conversations and space history remain. Child spaces stay registered.",
             actions: [
                 DialogAction("Cancel", kind: .cancel) { vm.spaceDeleteTarget = nil },
                 DialogAction("Remove space", kind: .destructive) {

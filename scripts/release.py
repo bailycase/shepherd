@@ -22,13 +22,15 @@ usage:
   release.py route                      tags on stdin (newest first) -> "tag asset archive feeds"
   release.py latest <feed>              tags on stdin (newest first) -> the newest tag in <feed>
   release.py feeds                      "dir channel" per feed generate_appcast builds
-  release.py appcast-asset <tag> <asset> <release.json> <policy.json|->
+  release.py appcast-asset <tag> <asset> <release.json> <policy.json|-> [snapshot.jsonl]
                                        stage/skip a completed release (invalid metadata fails)
+  release.py changed-feeds <snapshot.jsonl> <casts> <pages>
+                                       select changed inputs/outputs; stage publication record
   release.py fix-urls <appcast> <dir>   point a feed's archives at their per-tag release assets
   release.py deltas <dir> <tag>         name a feed's deltas for upload to <tag> and point the
                                         feed at them; prints the files to upload
-  release.py publish <casts> <pages>    write every gh-pages feed, legacy aliases included, each
-                                        item marked Apple silicon only
+  release.py publish <casts> <pages>    write selected gh-pages feeds and legacy aliases, each
+                                        item marked Apple silicon only; preserve unchanged bytes
   release.py thin-app <app>             thin every universal Mach-O in a built app to arm64:
                                         prebuilt frameworks (Sparkle) ship universal
   release.py verify-app <app> <app-key> [version]  check a built app is the app it claims to be,
@@ -45,6 +47,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import json
 import os
 import plistlib
@@ -57,6 +60,7 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ElementTree
 from dataclasses import dataclass
+from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pi_engine  # noqa: E402  (beside this file; the tests load this one by path)
@@ -277,6 +281,102 @@ def appcast_asset(tag: str, asset: str, metadata: dict, policy: dict | None) -> 
     raise ValueError(f"Missing expected {asset} on {tag}")
 
 
+APPCAST_STATE = "appcast-inputs.json"  # Publisher bookkeeping, not consumed by Sparkle.
+
+
+def archive_input(tag: str, asset: str, metadata: dict) -> dict:
+    """Ignore mutable download counts and delta assets; replacement DMGs must invalidate."""
+    entries = [entry for entry in metadata["assets"] if entry["name"] == asset]
+    if len(entries) != 1:
+        raise ValueError("expected exactly one archive")
+    entry = entries[0]
+    row = {"tag": tag, "asset": asset,
+           **{key: entry.get(key) for key in ("id", "size", "updatedAt", "digest")}}
+    validate_archive_input(row)
+    return row
+
+
+def validate_archive_input(row: dict) -> None:
+    """The gh CLI exposes opaque string asset IDs (not REST's numeric IDs)."""
+    if (not isinstance(row, dict)
+            or set(row) != {"tag", "asset", "id", "size", "updatedAt", "digest"}
+            or not isinstance(row["tag"], str) or row["tag"] != row["tag"].strip()
+            or not route(row["tag"])
+            or row["asset"] != route(row["tag"])[0]
+            or not isinstance(row["id"], str) or not row["id"]
+            or not row["id"].isprintable() or any(c.isspace() for c in row["id"])
+            or type(row["size"]) is not int or row["size"] <= 0
+            or not isinstance(row["updatedAt"], str)
+            or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z", row["updatedAt"])
+            or (row["digest"] is not None and (not isinstance(row["digest"], str)
+                or not re.fullmatch(r"sha256:[0-9a-f]{64}", row["digest"])))):
+        raise ValueError("invalid appcast archive input")
+    datetime.fromisoformat(row["updatedAt"].replace("Z", "+00:00"))
+
+
+def file_digest(path: str) -> str:
+    with open(path, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+
+def feed_files(feed: Feed) -> list[str]:
+    return [feed.file] + [file for file, source in LEGACY_ALIASES if source == feed.dir]
+
+
+def changed_feeds(snapshot: str, casts: str, pages: str) -> list[Feed]:
+    """Compare all eligible inputs, not the trigger tag or Sparkle's truncated item list.
+
+    The record and feed byte hashes are committed together. Missing/old bookkeeping rebuilds
+    all feeds; a missing or edited output rebuilds its feed and aliases. No archives/keys cached.
+    """
+    with open(snapshot, encoding="utf-8") as f:
+        inputs = [json.loads(line) for line in f]
+    seen = set()
+    for row in inputs:
+        validate_archive_input(row)
+        if row["tag"] in seen:
+            raise ValueError("duplicate appcast archive input")
+        seen.add(row["tag"])
+    with open("Package.resolved", encoding="utf-8") as f:
+        pins = [p["state"] for p in json.load(f)["pins"] if p["identity"] == "sparkle"]
+    if len(pins) != 1:
+        raise ValueError("expected one pinned Sparkle revision")
+    with open("App/Info.plist", "rb") as f:
+        public_key = plistlib.load(f)["SUPublicEDKey"]
+    # Conservatively invalidate on publisher code changes; unrelated package pins and plist
+    # settings do not affect generation. Other scripts are not inputs to this publisher.
+    generator = {"rules": [file_digest(__file__), file_digest(".github/workflows/release.yml")],
+                 "sparkle": pins[0], "public_key": public_key}
+    previous = {}
+    try:
+        with open(os.path.join(pages, APPCAST_STATE), encoding="utf-8") as f:
+            previous = json.load(f)
+    except (FileNotFoundError, ValueError):
+        pass
+    if not isinstance(previous, dict) or previous.get("generator") != generator:
+        previous = {}
+    old_feeds = previous.get("feeds", {})
+    if not isinstance(old_feeds, dict):
+        old_feeds = {}
+    state = {"generator": generator, "feeds": {}}
+    changed = []
+    for feed in FEEDS:
+        archives = [row for row in inputs if feed.dir in route(row["tag"])[2]]
+        before = old_feeds.get(feed.dir, {})
+        if not isinstance(before, dict):
+            before = {}
+        hashes = {file: file_digest(os.path.join(pages, file))
+                  for file in feed_files(feed) if os.path.isfile(os.path.join(pages, file))}
+        if (before.get("inputs") != archives or before.get("files") != hashes
+                or len(hashes) != len(feed_files(feed))):
+            changed.append(feed)
+        state["feeds"][feed.dir] = {"inputs": archives, "files": hashes}
+    state["changed"] = [feed.dir for feed in changed]
+    os.makedirs(casts, exist_ok=True)
+    _write(os.path.join(casts, APPCAST_STATE), json.dumps(state, sort_keys=True) + "\n")
+    return changed
+
+
 def staged_archive(asset: str, tag: str) -> str:
     """generate_appcast needs unique archive names in a directory: Shepherd.dmg of v1.2.3 is
     staged as Shepherd-v1.2.3.dmg. fix_urls maps it back to download/v1.2.3/Shepherd.dmg."""
@@ -362,20 +462,41 @@ def arm64_problems(xml: str) -> list[str]:
 
 
 def publish(casts: str, pages: str) -> list[str]:
-    """Copies each generated feed to its gh-pages name, every item marked Apple silicon only,
-    and writes the legacy aliases."""
-    written = []
+    """Validate all feeds, then write regenerated feeds/aliases and their input record.
+    Unchanged feeds retain their exact bytes. The caller commits all outputs in one push."""
+    state_path = os.path.join(casts, APPCAST_STATE)
+    state = None
+    if os.path.isfile(state_path):
+        with open(state_path, encoding="utf-8") as f:
+            state = json.load(f)
+    selected = state.pop("changed") if state is not None else [feed.dir for feed in FEEDS]
     generated = {}
     # Validate every input before changing any published feed.
     for feed in FEEDS:
-        with open(os.path.join(casts, feed.dir, "appcast.xml"), encoding="utf-8") as f:
-            generated[feed.dir] = require_arm64(f.read())
-    for feed in FEEDS:
-        _write(os.path.join(pages, feed.file), generated[feed.dir])
-        written.append(feed.file)
-    for file, source in LEGACY_ALIASES:
-        _write(os.path.join(pages, file), untag(generated[source]))
-        written.append(file)
+        path = os.path.join(casts, feed.dir, "appcast.xml")
+        if feed.dir not in selected:
+            for file in feed_files(feed):
+                existing = os.path.join(pages, file)
+                if file_digest(existing) != state["feeds"][feed.dir]["files"].get(file):
+                    raise ValueError("preserved feed changed during publication")
+                with open(existing, encoding="utf-8") as f:
+                    if arm64_problems(f.read()):
+                        raise ValueError("preserved feed does not require arm64")
+            continue
+        with open(path, encoding="utf-8") as f:
+            generated[feed.file] = require_arm64(f.read())
+        for file, source in LEGACY_ALIASES:
+            if source == feed.dir:
+                generated[file] = untag(generated[feed.file])
+    for file, xml in generated.items():
+        _write(os.path.join(pages, file), xml)
+    written = list(generated)
+    if state is not None:
+        for feed in FEEDS:
+            state["feeds"][feed.dir]["files"] = {
+                file: file_digest(os.path.join(pages, file)) for file in feed_files(feed)}
+        _write(os.path.join(pages, APPCAST_STATE), json.dumps(state, sort_keys=True) + "\n")
+        written.append(APPCAST_STATE)
     return written
 
 
@@ -858,15 +979,23 @@ def main(argv: list[str]) -> int:
             if routed:
                 asset, archive, feeds = routed
                 print(tag, asset, archive, ",".join(feeds))
-    elif command == "appcast-asset" and len(args) == 4:
-        tag, asset, metadata_path, policy_path = args
+    elif command == "appcast-asset" and len(args) in (4, 5):
+        tag, asset, metadata_path, policy_path = args[:4]
         with open(metadata_path, encoding="utf-8") as f:
             metadata = json.load(f)
         policy = None
         if policy_path != "-":
             with open(policy_path, encoding="utf-8") as f:
                 policy = json.load(f)
-        print("stage" if appcast_asset(tag, asset, metadata, policy) else "skip")
+        stage = appcast_asset(tag, asset, metadata, policy)
+        if stage and len(args) == 5:
+            row = archive_input(tag, asset, metadata)
+            with open(args[4], "a", encoding="utf-8") as f:
+                f.write(json.dumps(row, sort_keys=True) + "\n")
+        print("stage" if stage else "skip")
+    elif command == "changed-feeds" and len(args) == 3:
+        for feed in changed_feeds(*args):
+            print(feed.dir, feed.channel or "-")
     elif command == "latest" and len(args) == 1:
         tag = latest(args[0], _tags_from_stdin())
         if tag:
