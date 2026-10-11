@@ -109,10 +109,11 @@ Fill in the [pull request template](.github/pull_request_template.md). It asks f
 CI runs unit suites, three startup/identity checks and feature-related suites for ordinary
 `nightly` PRs. A suite-local regression selects its declared suite instead of its whole test
 module; shared fixtures and unknown source paths stay broad. Shared contracts, server core,
-CI changes, `master`, daily runs and `full-ci` run all suites. No tests are removed.
-Builds use GitHub's macOS runner unless
-`SHEPHERD_SELFHOSTED_ENABLED=true` explicitly enables an isolated self-hosted Mac for maintainer
-PRs and Nightly releases. The shared Mac stays offline to protect other apps. Docs alone run no Swift. A test that fails is red:
+CI changes, `master`, daily runs and `full-ci` run all suites across four separate hosted Macs,
+serial within each lane. All session integration suites stay together; unknown suites enter the
+remainder lane. Affected suites and UI diagnostics retain one lane. No tests are removed.
+Full lanes always use GitHub's macOS runners. For selected maintainer PRs and Nightly releases,
+`SHEPHERD_SELFHOSTED_ENABLED=true` can explicitly enable an isolated self-hosted Mac. The shared Mac stays offline to protect other apps. Docs alone run no Swift. A test that fails is red:
 there is no retry, so a flaky test is a bug to fix in the test. A push to `nightly` builds and
 ships without tests. Require `CI`, not the manual `UI diagnostics` check. With self-hosted
 builds disabled, a trusted Nightly dispatch with `diagnostics=ui` can seed the hosted cache
