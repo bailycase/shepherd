@@ -1,9 +1,9 @@
 name: CI
 
-# One Swift job, hosted by default. Self-hosted is opt-in only on a resource-isolated Mac:
-# a separate account cannot protect other apps from build memory pressure. When enabled,
-# maintainer PRs and explicit UI diagnostics can reuse its persistent build. Diagnostics
-# report `UI diagnostics`, never `CI`. Other checks run on Ubuntu.
+# Full Swift coverage runs in four isolated hosted lanes, serial within each lane.
+# Affected suites and UI diagnostics use one lane. Self-hosted remains opt-in only on a
+# resource-isolated Mac; separate accounts cannot contain build memory pressure.
+# Diagnostics report `UI diagnostics`, never `CI`. Other checks run on Ubuntu.
 #
 # There are no path filters here: a filtered-out workflow never reports the `CI` check, so the
 # plan step decides instead, and `CI` always reports. A change to docs alone runs no Swift.
@@ -50,11 +50,12 @@ jobs:
     outputs:
       swift: ${{ steps.plan.outputs.swift }}
       filters: ${{ steps.plan.outputs.filters }}
+      lanes: ${{ steps.plan.outputs.lanes }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ github.event_name == 'schedule' && 'master' || '' }}
+          ref: ${{ github.sha }}
       - name: Plan
         id: plan
         env:
@@ -83,7 +84,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'schedule' && 'master' || '' }}
+          ref: ${{ github.sha }}
       - run: python3 -m unittest discover -s Tests/Release
 
   extensions:
@@ -94,7 +95,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'schedule' && 'master' || '' }}
+          ref: ${{ github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -115,13 +116,18 @@ jobs:
         run: node --test --test-concurrency=2 --test-reporter=spec Tests/Extensions/*.test.mjs
 
   tests:
-    name: swift tests
+    name: swift tests (${{ matrix.lane }})
     needs: plan
     if: ${{ needs.plan.outputs.swift == 'true' }}
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        lane: ${{ fromJSON(needs.plan.outputs.lanes) }}
     # Native metadata fence, evaluated before checkout; plan outputs cannot grant local access.
     # Custom label only: the runner has no default self-hosted/OS labels.
     runs-on: >-
-      ${{ vars.SHEPHERD_SELFHOSTED_ENABLED == 'true' && github.triggering_actor == github.actor &&
+      ${{ matrix.lane == 'selected' && vars.SHEPHERD_SELFHOSTED_ENABLED == 'true' && github.triggering_actor == github.actor &&
           (github.actor_id == '19316389' || github.actor_id == '3370624') &&
           github.workflow_ref == format('{0}/.github/workflows/ci.yml@{1}', github.repository, github.ref) &&
           ((github.event_name == 'pull_request' &&
@@ -149,7 +155,7 @@ jobs:
           fi
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'schedule' && 'master' || '' }}
+          ref: ${{ github.sha }}
           clean: ${{ runner.environment != 'self-hosted' }}
           persist-credentials: false
       - uses: ./.github/actions/swift-build
@@ -159,23 +165,25 @@ jobs:
         run: |
           python3 scripts/pi_engine.py stage
           echo "$PWD/.build/pi-engine/Helpers" >> "$GITHUB_PATH"
-      # Swift 6.3's single test process otherwise launches every server/process case together,
-      # exhausting local resources and timing out unrelated tests. Keep the established CI order.
+      # Each lane gets its own hosted VM. Never run process/server/UI tests concurrently
+      # within that VM: it exhausts resources and times out unrelated tests.
       - name: Run tests
         env:
           CI: "true"
           SWIFT_FILTERS: ${{ needs.plan.outputs.filters }}
+          SWIFT_LANE: ${{ matrix.lane }}
         run: |
           set -o pipefail
-          filters=()
           swift test list --skip-build $SWIFTPM_FLAGS > "$RUNNER_TEMP/swift-tests.txt"
           printf 'Native test IDs listed (before filtering): %s\n' "$(wc -l < "$RUNNER_TEMP/swift-tests.txt")"
-          if [ "$SWIFT_FILTERS" != '[]' ]; then
+          if [ "$SWIFT_LANE" != selected ]; then
+            [ "$SWIFT_FILTERS" = '[]' ]
+            filter=$(python3 scripts/ci_plan.py --lane "$RUNNER_TEMP/swift-tests.txt" "$SWIFT_LANE")
+          else
             filter=$(python3 scripts/ci_plan.py --validate "$RUNNER_TEMP/swift-tests.txt" "$SWIFT_FILTERS")
-            filters=(--filter "$filter")
           fi
-          printf 'Swift test flags: --no-parallel --skip-build %s; selection: %s\n' "$SWIFTPM_FLAGS" "${filter:-all native tests}"
-          swift test --no-parallel --skip-build $SWIFTPM_FLAGS "${filters[@]}" 2>&1 | tee "$RUNNER_TEMP/swift-test.log"
+          printf 'Swift test flags: --no-parallel --skip-build %s; selection: %s\n' "$SWIFTPM_FLAGS" "$filter"
+          swift test --no-parallel --skip-build $SWIFTPM_FLAGS --filter "$filter" 2>&1 | tee "$RUNNER_TEMP/swift-test.log"
       - name: Collect completion evidence
         if: ${{ failure() }}
         run: |
@@ -188,9 +196,11 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: ci-swift-test-log
+          name: ci-swift-test-log-${{ matrix.lane }}
           path: |
             ${{ runner.temp }}/swift-test.log
+            ${{ runner.temp }}/swift-tests.txt
+            ${{ runner.temp }}/swift-selected-tests.txt
             ${{ runner.temp }}/shepherd-completion-repro
             ${{ runner.temp }}/shepherd-completion-matrix
           retention-days: 7
@@ -205,9 +215,15 @@ jobs:
     timeout-minutes: 5
     env:
       RESULTS: ${{ join(needs.*.result, ' ') }}
+      SWIFT_REQUIRED: ${{ needs.plan.outputs.swift }}
+      SWIFT_RESULT: ${{ needs.tests.result }}
     steps:
       - run: |
           echo "job results: $RESULTS"
+          if [ "$SWIFT_REQUIRED" = true ] && [ "$SWIFT_RESULT" != success ]; then
+            echo '::error::required Swift lanes did not all succeed'
+            exit 1
+          fi
           for result in $RESULTS; do
             case "$result" in success|skipped) ;; *) echo "::error::a job ended $result"; exit 1 ;; esac
           done
