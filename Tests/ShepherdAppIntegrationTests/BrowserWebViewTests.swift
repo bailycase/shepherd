@@ -238,6 +238,25 @@ struct BrowserWebViewTests {
         }
     }
 
+    /// A fresh process has never initialized WebKit by opening a page or creating a store.
+    @Test(.enabled(if: persistentTestsEnabled, "run scripts/test-browser-persistence.py on macOS 27+"))
+    func deletingAnUnopenedProjectDoesNotCrashWebKit() async throws {
+        await #expect(processExitsWith: .success) {
+            await recordingErrors { try await Self.deleteUnopenedProject() }
+        }
+    }
+
+    private static func deleteUnopenedProject() async throws {
+        try requireScratchHome()
+        let project = Fixture.space("unopened", path: "/projects/unopened")
+        let sessions = BrowserSessions(dataStores: .persistent)
+        sessions.prune(state: Fixture.state(spaces: [project], agents: []))
+        sessions.prune(state: ShepherdState())
+        // A second removal on WebKit's serial IO queue waits for the first callback,
+        // without opening a store (which would hide missing WebKit initialization).
+        _ = try? await WKWebsiteDataStore.remove(forIdentifier: UUID())
+    }
+
     private nonisolated static var persistentTestsEnabled: Bool {
         ProcessInfo.processInfo.environment["SHEPHERD_BROWSER_TEST_HOME"] != nil
             && ProcessInfo.processInfo.isOperatingSystemAtLeast(OperatingSystemVersion(majorVersion: 27, minorVersion: 0, patchVersion: 0))
