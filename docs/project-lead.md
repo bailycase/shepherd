@@ -83,6 +83,8 @@ concurrency limits still bound coordination; this feature makes no strict dollar
   Existing Space configuration and filesystem ancestry rules remain unchanged.
 - Settings separates the conversation model from the default task-thread model. New task
   threads receive project instructions in addition to the selected Space's instructions.
+  Both model menus are disabled until the owner's catalog has loaded, so a choice is never
+  offered from an empty list; an empty catalog still enables them with only Default.
 - Threads at once is a host-enforced project limit across all participating hosts, not a
   suggestion in the coordinator's prompt. Offline work must not be assumed finished merely
   because a connection disappeared.

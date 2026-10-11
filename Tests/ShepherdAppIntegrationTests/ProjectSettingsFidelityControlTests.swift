@@ -154,6 +154,19 @@ struct ProjectSettingsFidelityControlTests {
         }, "\(help) is a popup")
     }
 
+    /// Presses a control once the page draws it enabled. A saved edit reaches the owner's state before the page's own request returns and
+    /// frees the Project (`busy`), so the next control is drawn disabled until then; the rendered state is what a person waits on.
+    fileprivate static func press(_ window: OffscreenWindow, _ label: String, role: String = ControlRole.button) async throws {
+        try await eventuallyOnMain("\(label) is enabled") { window.controls().first { $0.label == label }?.isEnabled == true }
+        try window.press(label, role: role)
+    }
+
+    /// A popup once the page draws it enabled. The model popups stay disabled, offering only Default, until the owner's catalog has loaded.
+    fileprivate static func enabledPopup(_ window: OffscreenWindow, _ help: String) async throws -> AccessibilityNode {
+        try await eventuallyOnMain("\(help) is enabled") { window.layout(); return (try? popup(window, help).isEnabled) == true }
+        return try popup(window, help)
+    }
+
     /// A scratch owner with one Project open on its settings page (1208 x 900, the main column of the boards' window).
     fileprivate static func page(spaces: [Space] = [], name: String = "Sample App", goal: String = "", linked: [Space] = [], tab: LogicalProjectSettingsTab = .general,
                                  settings change: ((inout LogicalProjectSettings) -> Void)? = nil,
@@ -205,7 +218,7 @@ struct ProjectSettingsFidelityControlTests {
             near(pause.frame.height, 28, "Pause's height"); near(pause.frame.width, 57.9, "Pause's width", tolerance: 1)
             near(delete.frame.height, 28, "Delete…'s height"); near(delete.frame.width, 68.1, "Delete…'s width", tolerance: 1)
             for name in ["Conversation model", "Thread model", "Threads at once"] {
-                let node = try popup(window, name)
+                let node = try await enabledPopup(window, name)
                 near(node.frame.height, 32, "\(name)'s height")
                 #expect(node.isEnabled, "\(name) is enabled")
                 #expect(node.frame.height >= HitArea.desktop.minimum, "\(name) clears the 24pt hit area")
@@ -221,18 +234,18 @@ struct ProjectSettingsFidelityControlTests {
             #expect(words.contains { $0.contains("branches and PRs are untouched.") })
 
             // Pause and Resume send setPaused; the button and its help change with the state.
-            try window.press("Pause")
+            try await press(window, "Pause")
             try await eventuallyOnMain("paused") { current().paused }
             try await eventuallyOnMain("Resume shows") { window.layout(); return window.element("Resume") != nil }
             let resume = try control(window, "Resume")
             #expect(ControlPress.undersized([resume], minimum: .desktop).isEmpty)
-            try window.press("Resume")
+            try await press(window, "Resume")
             try await eventuallyOnMain("resumed") { !current().paused }
 
             // Delete… opens the confirmation (which says the files stay); Cancel keeps the project; confirming removes only the record.
             let kept = app.dir.appendingPathComponent("logical-projects/\(id.rawValue)")
             try await eventuallyOnMain("Delete… is back") { window.layout(); return window.element("Delete…") != nil }
-            try window.press("Delete…")
+            try await press(window, "Delete…")
             try await eventuallyOnMain("confirmation") { window.layout(); return window.window.attachedSheet?.contentView != nil }
             let sheet = try need(window.window.attachedSheet?.contentView)
             sheet.layoutSubtreeIfNeeded()
@@ -240,7 +253,7 @@ struct ProjectSettingsFidelityControlTests {
             try ControlPress.press("Cancel", under: sheet)
             try await eventuallyOnMain("cancel closes") { window.window.attachedSheet == nil }
             #expect(app.server.state.projects.count == 1)
-            try window.press("Delete…")
+            try await press(window, "Delete…")
             try await eventuallyOnMain("confirmation again") { window.layout(); return window.window.attachedSheet?.contentView != nil }
             try ControlPress.press("Delete project", under: try need(window.window.attachedSheet?.contentView))
             try await eventuallyOnMain("record removed") { app.server.state.projects.isEmpty }
@@ -263,7 +276,7 @@ struct ProjectSettingsFidelityControlTests {
         case .conversationModel:
             try await page { app, _, window, _ in
                 try await eventuallyOnMain("the page") { window.layout(); return window.element("Pause") != nil }
-                let offered = try await NativeMenuChoice.choose(try need(catalog.first), from: try popup(window, "Conversation model"))
+                let offered = try await NativeMenuChoice.choose(try need(catalog.first), from: try await enabledPopup(window, "Conversation model"))
                 #expect(offered == ["Default"] + catalog, "the owner's own catalog, Default first: \(offered)")
                 try await eventuallyOnMain("conversation model saved") { app.server.state.projects[0].settings.conversationModel == catalog.first }
                 #expect(app.server.state.projects[0].settings.threadModel == nil, "choosing the conversation model leaves the thread model alone")
@@ -271,14 +284,14 @@ struct ProjectSettingsFidelityControlTests {
         case .threadModel:
             try await page(settings: { $0.conversationModel = catalog.first }) { app, _, window, _ in
                 try await eventuallyOnMain("the page") { window.layout(); return window.element("Pause") != nil }
-                _ = try await NativeMenuChoice.choose(try need(catalog.last), from: try popup(window, "Thread model"))
+                _ = try await NativeMenuChoice.choose(try need(catalog.last), from: try await enabledPopup(window, "Thread model"))
                 try await eventuallyOnMain("thread model saved") { app.server.state.projects[0].settings.threadModel == catalog.last }
                 #expect(app.server.state.projects[0].settings.conversationModel == catalog.first, "choosing the thread model leaves the conversation model alone")
             }
         case .defaultModel:
             try await page(settings: { $0.conversationModel = catalog.first }) { app, _, window, _ in
                 try await eventuallyOnMain("the page") { window.layout(); return window.element("Pause") != nil }
-                _ = try await NativeMenuChoice.choose("Default", from: try popup(window, "Conversation model"))
+                _ = try await NativeMenuChoice.choose("Default", from: try await enabledPopup(window, "Conversation model"))
                 try await eventuallyOnMain("Default clears it") { app.server.state.projects[0].settings.conversationModel == nil }
             }
         case .addSpace:
@@ -297,7 +310,7 @@ struct ProjectSettingsFidelityControlTests {
                 // The toggle first, then the one menu.
                 let toggle = try control(window, "The project can add spaces")
                 #expect(ControlPress.undersized([toggle], minimum: .desktop).isEmpty, "the switch is \(toggle.frame.size)")
-                try window.press("The project can add spaces", role: toggle.role)
+                try await press(window, "The project can add spaces", role: toggle.role)
                 try await eventuallyOnMain("toggle saved") { app.server.state.projects[0].settings.canRequestSpaceLinks == false }
                 try await eventuallyOnMain("Hosts is a popup") { window.layout(); return (try? popup(window, "Hosts").isEnabled) == true }
                 let saved = app.server.state.projects[0].settings
@@ -398,7 +411,7 @@ struct ProjectSettingsFidelityControlTests {
         near(remove.frame.height, 28, "Remove's height"); near(remove.frame.width, 69.2, "Remove's width", tolerance: 1)
         #expect(ControlPress.undersized([remove], minimum: .desktop).isEmpty, "Remove is \(remove.frame.size)")
         near(try popup(window, "Hosts").frame.height, 32, "Hosts' height")
-        try window.press("Remove research")
+        try await press(window, "Remove research")
         try await eventuallyOnMain("unlinked") { current().linkedSpaces.map(\.spaceID) == [spaces[0].id] }
         try await eventuallyOnMain("Add a space… is enabled again") { window.layout(); return (try? popup(window, "Add a space…").isEnabled) == true }
         near(try popup(window, "Add a space…").frame.height, 32, "Add a space…'s height")
@@ -409,7 +422,7 @@ struct ProjectSettingsFidelityControlTests {
         let forget = try control(window, "Forget: Use simple tags for bookmarks.")
         near(forget.frame.height, 28, "Forget's height"); near(forget.frame.width, 60.2, "Forget's width", tolerance: 1)
         #expect(ControlPress.undersized([forget], minimum: .desktop).isEmpty, "Forget is \(forget.frame.size)")
-        try window.press("Forget: Use simple tags for bookmarks.")
+        try await press(window, "Forget: Use simple tags for bookmarks.")
         try await eventuallyOnMain("forgotten") { current().memory.count == 1 }
 
         // Automations: the switch is a real toggle that enables through the owner, and it never runs anything.
@@ -420,7 +433,7 @@ struct ProjectSettingsFidelityControlTests {
                 "caption: \(words.filter { $0.contains("Scan") })")
         let run = try control(window, "Run Weekly reading review")
         #expect(ControlPress.undersized([run], minimum: .desktop).isEmpty, "the switch is \(run.frame.size)")
-        try window.press("Run Weekly reading review", role: run.role)
+        try await press(window, "Run Weekly reading review", role: run.role)
         try await eventuallyOnMain("enabled") { app.server.state.automations.first { $0.id == automation }?.enabled == true }
         #expect(app.server.state.agents.isEmpty && app.server.state.automations.first?.agentID == nil, "enabling starts nothing")
     }
@@ -457,18 +470,23 @@ struct ProjectSettingsFidelityControlTests {
             #expect(window.element("Save") == nil && window.element("Revert") == nil, "neither shows while the text is saved")
             try type("Project instructions", "Ask before money moves.", under: window.host)
             try await eventuallyOnMain("Save and Revert appear") { window.layout(); return window.element("Save") != nil && window.element("Revert") != nil }
+            // The goal's save is still returning to the page; Save and Revert are drawn disabled until it has.
+            try await eventuallyOnMain("Save and Revert are enabled") {
+                window.controls().filter { ["Save", "Revert"].contains($0.label ?? "") }.filter(\.isEnabled).count == 2
+            }
             for name in ["Save", "Revert"] {
                 let control = try need(window.controls().first { $0.label == name })
-                #expect(control.isEnabled && ControlPress.undersized([control], minimum: .desktop).isEmpty, "\(name) is \(control.frame.size)")
+                #expect(control.isEnabled, "\(name) is drawn disabled")
+                #expect(ControlPress.undersized([control], minimum: .desktop).isEmpty, "\(name) is \(control.frame.size), under the 24pt hit area")
                 near(control.frame.height, 28, "\(name)'s height")
             }
-            try window.press("Revert")
+            try await press(window, "Revert")
             try await eventuallyOnMain("Revert hides both") { window.layout(); return window.element("Save") == nil }
             #expect(current().settings.instructions.isEmpty, "Revert saved nothing")
             try type("Project instructions", "Ask before money moves.", under: window.host)
             try await eventuallyOnMain("Save is back") { window.layout(); return window.element("Save") != nil }
             let beforeSave = current().revision
-            try window.press("Save")
+            try await press(window, "Save")
             try await eventuallyOnMain("instructions saved") { current().settings.instructions == "Ask before money moves." }
             #expect(current().revision > beforeSave)
             try await eventuallyOnMain("Save hides once saved") { window.layout(); return window.element("Save") == nil }
@@ -526,9 +544,9 @@ struct ProjectSettingsFidelityControlTests {
         let extents = (page.map { "\($0.label?.prefix(14) ?? "?") x \(Int($0.frame.minX - frame.minX))..\(Int($0.frame.maxX - frame.minX))" }) + ["WIDE:"] + rows
         #expect(outside.isEmpty, "window \(frame.minX)..\(frame.maxX) (w \(frame.width)), host \(window.host.frame.width): \(extents)")
         // And it is still a working switch and a working Remove, by press.
-        try window.press("The project can add spaces", role: toggle.role)
+        try await press(window, "The project can add spaces", role: toggle.role)
         try await eventuallyOnMain("toggle saved") { app.server.state.projects[0].settings.canRequestSpaceLinks == false }
-        try window.press(remove)
+        try await press(window, remove)
         try await eventuallyOnMain("removed from its own host") { app.server.state.projects[0].linkedSpaces.isEmpty }
     }
 
@@ -606,17 +624,17 @@ struct ProjectSettingsFidelityControlTests {
         // The host the owner no longer lists is an honest row, not this Mac's or another host's Space, and its Remove unlinks only it.
         let goneRemove = "Remove A space on a host that is not connected on an unknown host"
         try await eventuallyOnMain("the disconnected host's row") { window.layout(); return window.element(goneRemove) != nil }
-        try window.press(goneRemove)
+        try await press(window, goneRemove)
         try await eventuallyOnMain("disconnected link removed") { !current().linkedSpaces.contains { $0.spaceID == lost.id } }
         #expect(current().linkedSpaces.count == 3, "the other three links stay")
         // Remove on the remote row removes only that destination's link.
-        try window.press("Remove library-api on demo-mac")
+        try await press(window, "Remove library-api on demo-mac")
         try await eventuallyOnMain("remote link removed") { !current().linkedSpaces.contains { $0.spaceID == shared && $0.destination == host } }
         #expect(current().linkedSpaces.contains { $0.spaceID == shared && $0.destination == .local }, "this Mac's link with the same SpaceID stays")
         #expect(current().linkedSpaces.contains { $0.spaceID == other.id && $0.destination == host }, "the other remote link stays")
         // And the local row removes only the local pair.
         try await eventuallyOnMain("local row still drawn") { window.layout(); return window.element("Remove library") != nil }
-        try window.press("Remove library")
+        try await press(window, "Remove library")
         try await eventuallyOnMain("local link removed") { !current().linkedSpaces.contains { $0.spaceID == shared } }
         #expect(current().linkedSpaces.map(\.spaceID) == [other.id] && current().linkedSpaces[0].destination == host)
     }

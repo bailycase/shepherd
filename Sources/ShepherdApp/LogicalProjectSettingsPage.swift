@@ -41,7 +41,8 @@ struct LogicalProjectSettingsPage: View {
     var vm: ShepherdViewModel
     let ref: LogicalProjectRef
     let project: Project
-    @State private var models: [String] = []
+    /// nil until the owner has answered (an empty answer is a catalog with nothing in it).
+    @State private var models: [String]?
     @State private var confirmingDelete = false
 
     private var tab: LogicalProjectSettingsTab { vm.logicalProjectSettingsTab }
@@ -112,7 +113,7 @@ private struct LogicalProjectGeneralTab: View {
     var vm: ShepherdViewModel
     let ref: LogicalProjectRef
     let project: Project
-    let models: [String]
+    let models: [String]?
     @Binding var confirmingDelete: Bool
     @State private var goal = ""
     @State private var loaded: UInt64?
@@ -140,14 +141,14 @@ private struct LogicalProjectGeneralTab: View {
                         .onSubmit(commitText)
                 }
                 ProjectSettingsRow(title: "Conversation model", subtitle: "Plans the work and talks with you.") {
-                    ProjectModelField(label: "Conversation model", current: settings.conversationModel, choices: models,
-                                      disabled: saving) { choice in
+                    ProjectModelField(label: "Conversation model", current: settings.conversationModel, choices: models ?? [],
+                                      disabled: saving || models == nil) { choice in
                         Task { _ = await model.saveSettings(ref) { $0.conversationModel = choice } }
                     }
                 }
                 ProjectSettingsRow(title: "Thread model", subtitle: "Each thread uses it unless the task says otherwise.") {
-                    ProjectModelField(label: "Thread model", current: settings.threadModel, choices: models,
-                                      disabled: saving) { choice in
+                    ProjectModelField(label: "Thread model", current: settings.threadModel, choices: models ?? [],
+                                      disabled: saving || models == nil) { choice in
                         Task { _ = await model.saveSettings(ref) { $0.threadModel = choice } }
                     }
                 }
