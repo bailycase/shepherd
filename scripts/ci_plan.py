@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Select native Swift test filters for ordinary nightly PRs; shared/unknown paths run all.
 
-ci_plan.py changed.txt [--full | --ui-diagnostics] prints GitHub outputs, swift and filters.
+ci_plan.py changed.txt [--full | --ui-diagnostics] prints swift, filters and lanes outputs.
 ci_plan.py --validate test-list.txt '<filters JSON>' checks native matches and prints a regex.
+ci_plan.py --lane test-list.txt <lane> validates full coverage and prints the lane's regex.
+Both validation modes record selected IDs beside the inventory as swift-selected-tests.txt.
 """
 from __future__ import annotations
 
@@ -42,6 +44,16 @@ APP = r"^ShepherdAppIntegrationTests\."
 SES = r"^ShepherdSessionsIntegrationTests\."
 PREVIEW = r"^ShepherdPreviewTests\."
 ROOT = Path(__file__).resolve().parents[1]
+
+# Fixed groups from successful full-run timings. Unknown suites go to other, never disappear.
+# ponytail: group costs can drift; rebalance from completed logs, not an adaptive scheduler.
+# Keep the entire Sessions target together: its process-lifetime regressions depend on ordering.
+FULL_LANES = {
+    "completion-browser": APP + r"(?:ThreadCompletion|Browser|RemoteBrowser)",
+    "thread": APP + r"Thread(?!Completion)",
+    "app-features": APP + r"(?:Composer|Design|Review|GitDiff|GitWorktree|FinalizeWorktree|RemoteWorktree|Worktree|NewThread|ListPerformance)",
+}
+FULL_LANES["other"] = r"^(?!(?:" + "|".join(FULL_LANES.values()) + "))"
 
 # Short, conservative feature rules. A path not claimed here or by a module below runs all.
 AREAS = (
@@ -205,10 +217,33 @@ def validated_filter(test_ids: list[str], filters: list[str]) -> str:
     return "|".join(f"(?:{pattern})" for pattern in filters)
 
 
+def validated_lane(test_ids: list[str], lane: str) -> str:
+    if lane not in FULL_LANES:
+        raise ValueError(f"unknown full-test lane {lane!r}")
+    if not test_ids or len(set(test_ids)) != len(test_ids) or any("/" not in name for name in test_ids):
+        raise ValueError("native test inventory is empty, duplicated or malformed")
+    counts = dict.fromkeys(FULL_LANES, 0)
+    for test_id in test_ids:
+        matches = [name for name, pattern in FULL_LANES.items() if re.search(pattern, test_id)]
+        if len(matches) != 1:
+            raise ValueError(f"native test must belong to exactly one lane: {test_id!r}")
+        counts[matches[0]] += 1
+    if not all(counts.values()):
+        raise ValueError(f"full-test lane matched no native tests: {counts}")
+    return FULL_LANES[lane]
+
+
 def main(argv: list[str]) -> int:
     try:
-        if len(argv) == 4 and argv[1] == "--validate":
-            print(validated_filter(Path(argv[2]).read_text().splitlines(), json.loads(argv[3])))
+        if len(argv) == 4 and argv[1] in ("--lane", "--validate"):
+            inventory = Path(argv[2])
+            test_ids = inventory.read_text().splitlines()
+            pattern = (validated_lane(test_ids, argv[3]) if argv[1] == "--lane"
+                       else validated_filter(test_ids, json.loads(argv[3])))
+            selected = [name for name in test_ids if re.search(pattern, name)]
+            inventory.with_name("swift-selected-tests.txt").write_text("\n".join(selected) + "\n")
+            print(f"Native selection: {len(selected)} of {len(test_ids)} IDs", file=sys.stderr)
+            print(pattern)
             return 0
         if len(argv) not in (2, 3) or (len(argv) == 3 and argv[2] not in ("--full", "--ui-diagnostics")):
             sys.stderr.write(__doc__)
@@ -217,6 +252,8 @@ def main(argv: list[str]) -> int:
         print("swift=" + str(affects_swift(paths)).lower())
         filters = UI_DIAGNOSTICS if argv[-1] == "--ui-diagnostics" else filters_for(paths, full=len(argv) == 3)
         print("filters=" + json.dumps(filters if affects_swift(paths) else [], separators=(",", ":")))
+        print("lanes=" + json.dumps(list(FULL_LANES) if affects_swift(paths) and not filters else ["selected"],
+                                    separators=(",", ":")))
         return 0
     except (OSError, ValueError, re.error) as error:
         sys.stderr.write(f"CI planning failed: {error}\n")
