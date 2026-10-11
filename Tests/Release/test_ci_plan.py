@@ -3,6 +3,7 @@ import re
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -138,6 +139,44 @@ class AffectedTestsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "no native tests matched"):
             ci_plan.validated_filter(["ShepherdCoreUnitTests.AgentTests/id()"],
                                      [r"^ShepherdAppIntegrationTests\.RemovedTests[./]"])
+
+
+class FullLaneTests(unittest.TestCase):
+    def test_full_lanes_cover_each_native_id_once_and_keep_suites_and_sessions_together(self):
+        expected = {
+            "completion-browser": ["ShepherdAppIntegrationTests.ThreadCompletionMatrixTests/run()",
+                                   "ShepherdAppIntegrationTests.ThreadCompletionMatrixTests.Nested/run()",
+                                   "ShepherdAppIntegrationTests.BrowserWebViewTests/run()"],
+            "thread": ["ShepherdAppIntegrationTests.ThreadTailFlowTests/run()",
+                       "ShepherdAppIntegrationTests.ThreadNewUnknownTests/run()"],
+            "app-features": ["ShepherdAppIntegrationTests.ComposerMenuTests/run()",
+                             "ShepherdAppIntegrationTests.WorktreeBaseOfflineTests/run()"],
+            "other": ["ShepherdAppIntegrationTests.UnknownSuite/run()",
+                      "ShepherdSessionsIntegrationTests.PiSignInBridgeTests/run()",
+                      "ShepherdSessionsIntegrationTests.RPCSessionTests/run()",
+                      "ShepherdSessionsIntegrationTests.FutureSuite.Nested/run()",
+                      "ShepherdPreviewTests.ThreadPreviewTests/run()",
+                      "ShepherdCoreUnitTests.StateTests/run()",
+                      "NewModule.UnfamiliarSuite/run()", "NewModule/freeFunction()"],
+        }
+        ids = [name for names in expected.values() for name in names]
+        for lane, names in expected.items():
+            pattern = ci_plan.validated_lane(ids, lane)
+            self.assertEqual([name for name in ids if re.search(pattern, name)], names)
+
+    def test_bad_inventories_empty_lanes_and_overlap_fail_before_running_any_test(self):
+        ids = ["ShepherdAppIntegrationTests.ThreadCompletionMatrixTests/run()",
+               "ShepherdAppIntegrationTests.ThreadTailFlowTests/run()",
+               "ShepherdAppIntegrationTests.ComposerMenuTests/run()",
+               "UnknownModule.Suite/run()"]
+        for inventory, lane in (([], "other"), (ids + ids, "other"),
+                                (ids + ["unparseable output"], "other"),
+                                (ids[:-1], "other"), (ids, "typo")):
+            with self.subTest(inventory=inventory, lane=lane), self.assertRaises(ValueError):
+                ci_plan.validated_lane(inventory, lane)
+        with patch.dict(ci_plan.FULL_LANES, {"other": ".*"}):
+            with self.assertRaisesRegex(ValueError, "exactly one lane"):
+                ci_plan.validated_lane(ids, "other")
 
 
 if __name__ == "__main__":

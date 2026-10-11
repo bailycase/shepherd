@@ -527,9 +527,13 @@ byte boundary through the actual reader. The codemode excerpt test compares ever
 output, not only the first call. Tests that depend on the machine's
 speed skip on CI (`CI=true`, `.timingSensitive`).
 
-- **The Swift job** (`swift tests`) is `swift build --build-tests` on top of the last build, then
-  `swift test --no-parallel --skip-build`, once, with a 60-minute ceiling for a cold hosted
-  build and full suite. The job stages pi and puts its checksum-pinned Node on `GITHUB_PATH`
+- **The Swift lanes** (`swift tests (<lane>)`) each run `swift build --build-tests` on top of
+  the last cached build, then one `swift test --no-parallel --skip-build --filter` invocation.
+  Full coverage uses four separate GitHub-hosted Macs, at most four at once. Affected suites
+  and UI diagnostics use one `selected` lane. Each lane retains the 60-minute ceiling, so the
+  full Swift matrix is bounded at 240 runner-minutes. Repeated cold compilation can cost more
+  runner time than one build; each lane reuses the existing trusted cache when available.
+  The job stages pi and puts its checksum-pinned Node on `GITHUB_PATH`
   before tests. MCP auth fixtures resolve `TestNode.url` before their login shell resets PATH;
   they run the installed pinned executable, not a different system Node or a missing bare name.
   The serial setting prevents Swift 6.3 from launching every process,
@@ -538,7 +542,8 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
   retry: a test that fails is red, and a flaky test is a bug to fix in the test. The full
   `swift test` stdout and stderr stream live through `tee` to `$RUNNER_TEMP/swift-test.log`;
   `pipefail` preserves native failures (and fails if the log cannot be written). The full
-  native log is uploaded on success or failure (`ci-swift-test-log`), retained for seven days.
+  native log is uploaded on success or failure (`ci-swift-test-log-<lane>`), retained for seven
+  days alongside the native inventory and that lane's selected IDs.
   Headers report the restored cache's matched key, native test IDs listed before filtering,
   flags and validated selection. Swift's exit status decides the result, never sample failure
   text printed by tests of the app's log reader. Failed UI tests report
@@ -566,8 +571,15 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
   The planner emits regexes for known feature groups and escaped suite declarations, and
   `swift test list --skip-build` must find a native test ID for every selected pattern before
   `--filter` runs it. A renamed or empty selection fails instead of passing a zero-test gate.
-  There are no duration estimates, shards or retry/report databases. Label changes reevaluate
-  `full-ci`. Closing a PR supersedes its old run through native concurrency; the closing run
+  Full runs partition the native inventory into completion/browser, remaining thread,
+  app-feature and other lanes. The app-feature lane covers composer, design, review, worktree,
+  new-thread and list-performance suites. Every unclaimed suite or new target enters `other`;
+  the whole Sessions integration target stays there to preserve process-lifetime ordering.
+  Each lane validates that every native ID belongs to exactly one lane and no lane is empty.
+  There is no runtime duration database or adaptive scheduler. A lane failure does not cancel
+  the other lanes; the aggregate `CI` requires their success whenever Swift was planned.
+  Every job checks out the immutable event SHA, including scheduled master runs.
+  Label changes reevaluate `full-ci`. Closing a PR supersedes its old run through native concurrency; the closing run
   skips planning and every dependent job, releasing the self-hosted runner without new tests.
 - **Where it runs:** GitHub-hosted `macos-26` is the default. A self-hosted Mac must have
   isolated resources before the repository variable `SHEPHERD_SELFHOSTED_ENABLED` is set to
@@ -576,8 +588,9 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
   Separate macOS accounts, nice values and background priority do not cap a build's aggregate
   memory or protect other apps from exhaustion. The shared Mac's runner is disabled in launchd
   and stays offline; do not enable it merely to restore faster builds.
-  When opted in, a same-repository pull request authored by account ID `19316389` (Baily) or
-  `3370624` (Josh), triggered by the same account, can run on the self-hosted Mac (the runner's
+  Full lanes always use GitHub-hosted Macs, even if self-hosted is enabled. For the single
+  selected lane only, an opted-in same-repository pull request authored by account ID `19316389`
+  (Baily) or `3370624` (Josh), triggered by the same account, can run on the self-hosted Mac (the runner's
   sole custom label, `shepherd-release`). The native `runs-on` expression checks `github.workflow_ref`
   against this repository's `ci.yml` at the pull request's merge ref before checkout; checkout
   code and plan outputs cannot change its decision. Everything else (forks, unknown actors, a
@@ -681,9 +694,10 @@ speed skip on CI (`CI=true`, `.timingSensitive`).
   only `UI diagnostics`, never the required `CI` check. There is no new warmup job or mode.
   The warm five-minute goal remains unmet: the reported PR #240 cold baseline was an 838-second
   SwiftPM build including dependency fetch, followed by about 35 minutes for 5,527 serial tests.
-  Caching addresses build reuse, not that test duration. Complete hosted success/failure logs
-  must profile the remaining cost before a future resource-isolated static-partition lane;
-  portability and coverage need proof first. No matrix, sharding or test exclusions are added.
+  Caching addresses build reuse, not that test duration. The successful #251 native log took
+  2,157.991 seconds. Its suite timings assign about 521, 513, 460 and 663 seconds to the four
+  fixed lanes. Those sums are a sizing estimate, not a hosted parallel benchmark, and exclude
+  queues, builds and transfers. No test exclusions are added.
 - **Release rules** run on `ubuntu-latest` (stdlib Python): the release workflow's, the CI
   workflow's and plan's, the docs' and the embedded extensions'. **Extension tests** run there
   too, with Node 24 and the modular pi package version from `scripts/pi-engine-pin.json`,
