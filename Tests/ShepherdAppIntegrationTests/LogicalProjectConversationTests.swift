@@ -732,7 +732,11 @@ private static func chipsAndLinks() async throws {
         }
         try await eventuallyOnMain("the draft cleared, so the person knows it was accepted") { store.draft.isEmpty }
         // It is still represented: the person's own words are in the conversation, with the state said once, in the thread's own style.
-        try await eventuallyOnMain("the held message is drawn with its state") { noteCount("Sends when the project resumes") == 1 }
+        try await window.diagnosing(stores: [store], needles: ["Sends when the project resumes", "send me later"], extra: {
+            ["held=\(heldNow().map { "\($0.text) | \($0.note)" }) projectMessages=\((r.vm.logicalProjects.project(r.ref)?.messages ?? []).map { "\($0.text) \($0.phase)" })"]
+        }) {
+            try await eventuallyOnMain("the held message is drawn with its state") { noteCount("Sends when the project resumes") == 1 }
+        }
         #expect(heldNow().map(\.text) == ["send me later"], "its own words are what is held")
         #expect(noteCount("Sends when the project resumes") == 1, "it is drawn once")
         // Resume: the owner delivers it once; the held row gives way to the transcript's own bubble. Never two.
@@ -920,11 +924,15 @@ private static func chipsAndLinks() async throws {
         if case .person(let kept) = segments.last { #expect(kept.bubbles.map(\.text) == ["use the blue theme"]) } else { Issue.record("the person's words lost their bubble") }
         // Drawn: the assignment is one left-aligned text node the column's width, and the person's words are a bubble (a combined, unlabeled
         // element, narrower than the column) that ends on the column's trailing edge.
-        try await eventuallyOnMain("both are drawn") {
-            window.layout()
-            let nodes = window.elements()
-            guard let prose = nodes.first(where: { $0.role == "AXStaticText" && $0.value == "Build the reading widget" }) else { return false }
-            return nodes.contains { $0.role == "AXUnknown" && ($0.label ?? "").isEmpty && abs($0.frame.maxX - prose.frame.maxX) < 1 && $0.frame.width < prose.frame.width / 2 }
+        try await window.diagnosing(stores: [store], needles: ["Build the reading widget", "use the blue theme"], extra: {
+            ["segments=\(segments)"]
+        }) {
+            try await eventuallyOnMain("both are drawn") {
+                window.layout()
+                let nodes = window.elements()
+                guard let prose = nodes.first(where: { $0.role == "AXStaticText" && $0.value == "Build the reading widget" }) else { return false }
+                return nodes.contains { $0.role == "AXUnknown" && ($0.label ?? "").isEmpty && abs($0.frame.maxX - prose.frame.maxX) < 1 && $0.frame.width < prose.frame.width / 2 }
+            }
         }
         let nodes = window.elements()
         let prose = try #require(nodes.first { $0.role == "AXStaticText" && $0.value == "Build the reading widget" })
