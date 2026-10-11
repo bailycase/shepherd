@@ -102,6 +102,9 @@ enum BrowserDataStores: Sendable {
         guard self == .persistent,
               Self.usesIdentifiedStores(osVersion: ProcessInfo.processInfo.operatingSystemVersion,
                                        bundleIdentifier: Bundle.main.bundleIdentifier) else { return }
+        // The class-level removal API does not initialize WebKit's main run loop. Deleting
+        // an unopened project's store can crash its IO callback unless a store did so first.
+        _ = WKWebsiteDataStore.default()
         Self.remove(identifier, tries: 10)
     }
 
