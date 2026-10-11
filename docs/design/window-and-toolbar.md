@@ -115,7 +115,7 @@
     trailing corner, ringed 2pt in `bgWindow` (`NWToggleBadge`), and its tip (Side pane).
   - the options menu (`NWOptionsMenu`, "Thread options"): Refresh Thread, then Rename… and Pin or
     Unpin (`pin`, `pin.slash`; the sidebar row menu's item) after a divider. Pin is offered where
-    the Activity sidebar shows pins, never for an automation's run or in the project tree.
+    the Activity sidebar shows pins, never for an automation's run or in the space tree.
 - **Where the count comes from** (`Agent.checkout`, live state the host broadcasts, so a remote
   viewer's chip matches): the host reads each local agent's checkout with one `git
   --no-optional-locks status --porcelain=v2 --branch -z --untracked-files=all` off the main thread

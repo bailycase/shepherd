@@ -205,6 +205,43 @@ struct AgentLaunchCommandTests {
         )
     }
 
+    @Test(arguments: [ProjectExecutionReceipt.Phase.reserved, .sendReserved, .sent, .waiting, .interruptPending, .settled, .cancelled, .failed, .unknown])
+    func retainedRemoteMembershipRestrictsFreshLaunchesWithoutReplayingInactivePayload(phase: ProjectExecutionReceipt.Phase) throws {
+        let worker = AgentID(), key = ProjectExecutionKey(ownerID: UUID(), projectID: .init(), operationID: UUID())
+        let assignment = ProjectExecutionAssignment(key: key, taskID: .init(), reservedWorkerID: worker,
+            executorSpaceID: .init(), title: "private title", prompt: "private prompt", goal: "private goal",
+            instructions: "private instructions", memory: "private memory")
+        var state = ShepherdState()
+        state.projectExecutions = [.init(key: key, assignment: assignment, phase: phase, admittedAt: 1)]
+        let context = try #require(state.projectContext(for: worker))
+        #expect(context.id == key.projectID && context.ownerID == key.ownerID)
+        #expect(context.tasks.first?.workerAgentID == worker)
+        #expect(context.tasks.first?.operationID == key.operationID)
+        if phase.active {
+            #expect(context.goal == assignment.goal && context.settings.instructions == assignment.instructions)
+            #expect(context.memory.first?.text == assignment.memory && context.tasks.first?.prompt == assignment.prompt)
+            #expect(context.tasks.first?.phase == .running)
+        } else {
+            #expect(context.paused && context.goal.isEmpty && context.settings.instructions.isEmpty && context.memory.isEmpty)
+            #expect(context.tasks.first?.prompt.isEmpty == true)
+            #expect(context.tasks.first?.phase == (phase == .unknown ? .unknown : phase == .failed ? .failed : .settled))
+            #expect(!String(decoding: try JSONEncoder().encode(context), as: UTF8.self).contains("private"))
+        }
+        let launch = try StatusExtension.command(home: Self.home, cwd: "/tmp/project", agentID: worker,
+            piSessionID: "fresh-session", socketPath: "/tmp/shepherd.sock", extensionPath: "/tmp/status.ts",
+            panesExtensionPath: "/tmp/panes.ts", reviewExtensionPath: nil, subagentsExtensionPath: nil,
+            childrenExtensionPath: "/tmp/children.ts",
+            projectContext: ("/tmp/project-context.ts", try ProjectContextExtension.context(context), false),
+            model: nil, thinking: nil)
+        #expect(launch.env["SHEPHERD_PROJECT_CONTEXT"] == "{\"projectID\":\"\(key.projectID)\"}")
+        #expect(launch.env["SHEPHERD_PROJECT_COORDINATOR"] == "0")
+        #expect(launch.argv.joined(separator: " ").contains("/tmp/project-context.ts"))
+        #expect(state.projectExecutions.first?.phase == phase, "Context construction grants no execution or resume authority")
+        #expect(state.projectContext(for: AgentID()) == nil, "Unrelated threads do not inherit retained membership")
+        state.projectExecutions.removeAll()
+        #expect(state.projectContext(for: worker) == nil, "No permanent product flag survives removal of ownership records")
+    }
+
     /// The line itself is `PiLaunch.agent`'s (pinned in `PiLaunchTests`).
     @Test func aBareAgentIsJustPiOverRPCWithTheStatusExtension() throws {
         let bare = command()

@@ -55,7 +55,7 @@ struct RemoveProjectTests {
                                    VStack { SidebarProjectMenu(vm: vm, project: project) })
         defer { menu.close() }
         menu.layout()
-        try menu.press("Remove Project…")
+        try menu.press("Remove Space…")
         #expect(vm.spaceDeleteTarget == target.id)
         try await eventuallyOnMain("remove confirmation") { window.window.attachedSheet?.contentView != nil }
         let first = try #require(window.window.attachedSheet?.contentView)
@@ -72,10 +72,10 @@ struct RemoveProjectTests {
         defer { settingsAction.close() }
         try await eventuallyOnMain("settings registrations loaded") { vm.projects.visible.count == 3 }
         settingsAction.layout()
-        try ControlPress.perform("Remove Project…", onLabelContaining: "Open \(target.name)", under: settingsAction.host)
+        try ControlPress.perform("Remove Space…", onLabelContaining: "Open \(target.name)", under: settingsAction.host)
         try await eventuallyOnMain("remove confirmation again") { window.window.attachedSheet?.contentView != nil }
         let second = try #require(window.window.attachedSheet?.contentView)
-        let remove = try ControlPress.press("Remove project", under: second)
+        let remove = try ControlPress.press("Remove space", under: second)
         #expect(ControlPress.undersized([remove], minimum: .desktop).isEmpty)
         try await eventuallyOnMain("project removed and persisted") {
             !app.server.state.spaces.contains { $0.id == target.id } && !vm.state.spaces.contains { $0.id == target.id }

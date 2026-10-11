@@ -123,7 +123,7 @@ extension ShepherdViewModel {
         }.first
     }
 
-    /// Hosts neither connected nor connecting: More ▸ Hosts says how many, as the Hosts page does.
+    /// Hosts neither connected nor connecting, as the Hosts page counts them: the palette's "Open Hosts" says how many.
     var offlineHostCount: Int {
         remoteHosts.connections.count { HostsPageModel.isOffline($0.phase) }
     }
@@ -133,22 +133,15 @@ extension ShepherdViewModel {
     /// The page the main column shows: the one picked, else New thread when no thread is on
     /// screen (nothing selected, or nothing left to select).
     var shownDestination: MainDestination? {
-        if let destination { return destination }
+        if let destination, projectsEnabled || !isProjectDestination { return destination }
         guard selectedRemoteAgent == nil else { return nil }
         return activeTabID == nil ? .newThread : nil
     }
 
-    /// A destination row: its page (a remote thread on screen leaves it), More's disclosure, or
-    /// Extensions, which is Settings ▸ Extensions.
+    /// A destination row: its page (a remote thread on screen leaves it).
     func openSidebarDestination(_ target: SidebarDerivation.Destination.Target) {
         switch target {
         case .page(let page): openDestination(page)
-        case .more: moreOpen.toggle()
-        case .extensions:
-            settingsSection = .extensions
-            showSettings = true
-        case .designSystems:
-            openDesignSystems()
         }
     }
 
@@ -157,10 +150,10 @@ extension ShepherdViewModel {
     func openDestination(_ page: MainDestination) {
         // The Design tool's pages exist only while its experiment is on.
         if page == .designs || page == .newDesign || page == .designSystem, !designToolEnabled { return }
-        if page == .designSystem, !moreOpen { moreOpen = true }
         // New thread opens in the project of the thread on screen, remote ones included.
         if page == .newThread { newThread.prepare(for: self) }
-        if page == .hosts, !moreOpen { moreOpen = true }
+        // A project's page needs one picked; `openLogicalProject` sets it before this runs.
+        if (page == .project || page == .projectSettings), selectedLogicalProject == nil || !projectsEnabled { return }
         if selectedRemoteAgent != nil {
             remoteInspectingAgent = nil
             selectedRemoteAgent = nil

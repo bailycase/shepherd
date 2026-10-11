@@ -96,6 +96,7 @@ enum StatusExtension {
         mcp: MCPLaunch? = nil,
         browserExtensionPath: String? = nil,
         contextExtensionPath: String? = nil,
+        projectContext: (path: String, json: String, coordinator: Bool)? = nil,
         deferTools: Bool = false,
         userHome: String = NSHomeDirectory(),
         model: String?,
@@ -110,11 +111,16 @@ enum StatusExtension {
         // Deferred tools are loaded with pi's tool_search. With MCP on the launch already has it; without, it is the one built-in to add.
         let toolSearch = deferTools && mcp == nil ? ["builtin:tool-search"] : []
         // Child result delivery must run before the goal's final-settlement evaluator.
-        let extensions = [extensionPath, ServiceTierExtension.path(in: home), instructions?.extensionPath, panesExtensionPath, reviewExtensionPath, subagentsExtensionPath,
+        var extensions = [extensionPath, ServiceTierExtension.path(in: home), instructions?.extensionPath, panesExtensionPath, reviewExtensionPath, subagentsExtensionPath,
                           childrenExtensionPath, GoalExtension.path(in: home), namerExtensionPath, design?.extensionPath, designReferences?.extensionPath,
                           browserExtensionPath].compactMap { $0 } + (mcp?.extensions ?? toolSearch) + [contextExtensionPath].compactMap { $0 }
+        if let projectContext {
+            if projectContext.coordinator { extensions = [extensionPath, ServiceTierExtension.path(in: home)] }
+            extensions.append(projectContext.path)
+        }
         let line = try PiLaunch.agent(home: home, cwd: cwd, sessionID: piSessionID, model: model, thinking: thinking?.rawValue,
-                                      extensions: extensions, untrustedProject: PiLaunch.isHomeFolder(cwd, userHome: userHome))
+                                      extensions: extensions, untrustedProject: PiLaunch.isHomeFolder(cwd, userHome: userHome),
+                                      coordinator: projectContext?.coordinator == true)
         var env = [
             "SHEPHERD_AGENT_ID": agentID.rawValue,
             "SHEPHERD_SOCKET": socketPath,
@@ -159,6 +165,14 @@ enum StatusExtension {
         // Always override an inherited opt-in; absence would leak the app's launch environment.
         env["SHEPHERD_GOAL_MODELS"] = goalCrossProviderEvaluation
             ? "anthropic/claude-haiku-4-5,openai/gpt-5.1-codex-mini,google/gemini-2.5-flash" : ""
+        if let projectContext {
+            env["SHEPHERD_PROJECT_CONTEXT"] = projectContext.json
+            env["SHEPHERD_PROJECT_COORDINATOR"] = projectContext.coordinator ? "1" : "0"
+            if projectContext.coordinator {
+                for key in ["SHEPHERD_EXT_PANES", "SHEPHERD_NATIVE_CHILDREN", "SHEPHERD_EXT_CHILDREN", "SHEPHERD_EXT_BROWSER", "SHEPHERD_DEFER_TOOLS", "SHEPHERD_EXT_GOAL"] { env[key] = "" }
+                env["SHEPHERD_GOALS_ENABLED"] = "0"
+            }
+        }
         if let model { env["SHEPHERD_MODEL"] = model }
         return SessionCommand(argv: line.argv, env: env)
     }

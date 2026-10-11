@@ -22,10 +22,10 @@ final class PreviewWorkspace {
     var dir: URL { scratch.dir }
 
     /// Settings ▸ Pi shows `yourPi` (a fixture: never this machine's pi, nor a read of the scratch one).
-    init(modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels }, mcp: MCPStore? = nil,
+    init(dir: URL? = nil, modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels }, mcp: MCPStore? = nil,
          yourPi: YourPiSurvey = PreviewYourPi.imported) throws {
         try PreviewEnvironment.install()
-        scratch = try ScratchServer(modelCatalog: modelCatalog)
+        scratch = try ScratchServer(dir: dir, modelCatalog: modelCatalog)
         settings = AppSettings(store: defaults)
         // Never ask a real model to write a PR description while rendering the finalize sheet.
         settings.worktreeGeneratePRDescription = false
@@ -41,7 +41,7 @@ final class PreviewWorkspace {
             yourPi: YourPiModel(pi: scratch.server.pi, survey: yourPi)
         )
         // The boards' footer, never this machine's user and name.
-        vm.sidebarFooterIdentity = ("Baily", SidebarDerivation.footerDetail(computerName: "build-01"))
+        vm.sidebarFooterIdentity = ("Alex", SidebarDerivation.footerDetail(computerName: "demo-mac"))
     }
 
     /// Replaces the server's workspace and waits for the view model to adopt it.

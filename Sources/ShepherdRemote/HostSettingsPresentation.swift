@@ -47,7 +47,7 @@ public enum HostSettingsPresentation {
         case "browser": "Lets agents open, read, click through and photograph pages in their thread's Browser on the host."
         case "context": "Clips one huge tool result and, as the context fills, replaces the oldest tool output, file contents, reasoning and screenshots with a line saying what they were. The thread keeps all of it."
         case "deferTools": "Keeps the browser, other-thread, automation and review tools out of every request until the model asks for one with a tool search."
-        case "codemode": "Lets the agent batch tool calls with JavaScript, up to 128 calls and five minutes per script. Direct classifier and image-model calls are disabled. Projects can override this default. Applies when agents start or restart."
+        case "codemode": "Lets the agent batch tool calls with JavaScript, up to 128 calls and five minutes per script. Direct classifier and image-model calls are disabled. Spaces can override this default. Applies when agents start or restart."
         default: nil
         }
     }

@@ -141,7 +141,7 @@ struct ChildProjectTests {
         defer { window.close() }
         try await eventuallyOnMain("settings parent row") { vm.projects.visible.count == 1 }
         window.layout()
-        let add = try window.press("Add subproject to Parent")
+        let add = try window.press("Add subspace to Parent")
         #expect(ControlPress.undersized([add], minimum: .desktop).isEmpty)
         try await eventuallyOnMain("child sheet from Settings") { window.window.attachedSheet?.contentView != nil }
         let content = try #require(window.window.attachedSheet?.contentView)
@@ -164,7 +164,7 @@ struct ChildProjectTests {
                                    VStack { SidebarProjectMenu(vm: vm, project: row) })
         defer { menu.close() }
         menu.layout()
-        try menu.press("Add Child Project…")
+        try menu.press("Add Child Space…")
         #expect(vm.addingChildProject?.parentPath == parent.path)
         #expect(vm.addingChildProject?.parentName == parent.name)
         vm.addingChildProject = nil
@@ -226,7 +226,7 @@ struct ChildProjectTests {
         try ControlPress.press("Choose", under: content)
         try await eventuallyOnMain("chosen folder") { !model.browsing && model.folder.hasSuffix("/child") }
         window.layout()
-        let add = try window.press("Add project")
+        let add = try window.press("Add space")
         #expect(ControlPress.undersized([add], minimum: .desktop).isEmpty)
         try await eventuallyOnMain("existing child registered") { dismissed }
         #expect(vm.state.spaces.count == 2)

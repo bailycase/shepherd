@@ -55,6 +55,13 @@ struct RemoteHostClientTests {
         #expect(shown.designs.map(\.id) == (serves ? [designID] : []))
     }
 
+    @Test func projectWorkerRequestsRefuseOldOwnersBeforeSending() async {
+        let client = RemoteHostClient()
+        #expect(await code {
+            _ = try await client.projectRuntime(.worker(projectID: ProjectID(), taskID: ProjectTaskID(), request: .snapshot()))
+        } == "update_required")
+    }
+
     @Test func aNewClientAdvertisesNoCapabilities() {
         #expect(RemoteHostClient().capabilities.isEmpty)
     }

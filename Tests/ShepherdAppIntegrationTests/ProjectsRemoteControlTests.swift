@@ -75,7 +75,7 @@ struct ProjectsRemoteControlTests {
         try await eventuallyOnMain("the host-only save") { !model.saving && !model.dirty && model.notice != nil }
         #expect(try String(contentsOf: remoteRoot.appendingPathComponent("AGENTS.md"), encoding: .utf8) == text)
         #expect(try String(contentsOf: localRoot.appendingPathComponent("AGENTS.md"), encoding: .utf8) == "Local instructions\n")
-        try window.press("Project category MCP servers")
+        try window.press("Space category MCP servers")
         try await eventuallyOnMain("remote project MCP cards") {
             window.layout()
             return model.fileLoaded && window.element("remote-tools, Not checked yet") != nil

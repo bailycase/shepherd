@@ -19,6 +19,7 @@ struct AppSettingsTests {
         #expect(settings.namingModel.isEmpty, "session naming starts on Automatic")
         #expect(!settings.goalCrossProviderEvaluation, "cross-provider goal checks require consent")
         #expect(!settings.goalsEnabled, "Goals is an opt-in experiment")
+        #expect(!settings.projectsEnabled, "Projects is an opt-in experiment")
         #expect(settings.piPanesExtension && settings.piReviewExtension && settings.piDesignReferences)
         #expect(settings.subagentDisplay && settings.piNativeSubagents)
         #expect(settings.piBrowserExtension, "Browser tools are on by default")
@@ -81,6 +82,23 @@ struct AppSettingsTests {
         #expect(changes == [true, false, true, false])
         #expect(!settings.goalsEnabled && !AppSettings(store: store).goalsEnabled)
         #expect(store.object(forKey: AppSettings.Key.goalsEnabled) == nil)
+    }
+
+    @Test func theProjectsExperimentPersistsAndResetTurnsItOffThroughTheLiveCallback() {
+        let store = Fixture.defaults()
+        let settings = AppSettings(store: store)
+        var changes: [Bool] = []
+        settings.onProjectsChange = { changes.append($0) }
+        settings.projectsEnabled = true
+        settings.projectsEnabled = true
+        #expect(AppSettings(store: store).projectsEnabled)
+        settings.projectsEnabled = false
+        #expect(!AppSettings(store: store).projectsEnabled)
+        settings.projectsEnabled = true
+        settings.resetToDefaults()
+        #expect(changes == [true, false, true, false])
+        #expect(!settings.projectsEnabled && !AppSettings(store: store).projectsEnabled)
+        #expect(store.object(forKey: AppSettings.Key.projectsEnabled) == nil)
     }
 
     @Test func crossProviderConsentPersistsOptOutAndReset() {

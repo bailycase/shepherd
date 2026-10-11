@@ -13,7 +13,7 @@ import ShepherdSessions
 
 extension ShepherdViewModel {
     /// The words a system build's agent starts from.
-    static let systemBuildBrief = "Build a design system from this project: read its tokens file, its component templates and a "
+    static let systemBuildBrief = "Build a design system from this space: read its tokens file, its component templates and a "
         + "few pages (read only), write the system with system_write, and tell me what doesn't match."
 
     var designSystemReader: DesignSystemReader {
@@ -51,8 +51,6 @@ extension ShepherdViewModel {
     /// A build's page: its agent's layout (a fresh agent when it is gone).
     func openSystemBuild(_ id: DesignID) {
         lastDesignSystem = .build(id)
-        // Its sidebar row is More ▸ Design systems, as Hosts is.
-        if !moreOpen { moreOpen = true }
         openDesign(id)
     }
 

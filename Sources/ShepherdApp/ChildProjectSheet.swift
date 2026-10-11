@@ -24,9 +24,9 @@ final class ChildProjectModel: Identifiable {
         self.register = register
     }
 
-    var actionTitle: String { create ? "Create and add" : "Add project" }
+    var actionTitle: String { create ? "Create and add" : "Add space" }
     var canSubmit: Bool { !busy && !folder.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-    var status: String { error ?? (busy ? "Adding project…" : create ? "Creates a folder if missing; reuses an existing matching folder." : "The folder must be inside the parent project.") }
+    var status: String { error ?? (busy ? "Adding space…" : create ? "Creates a folder if missing; reuses an existing matching folder." : "The folder must be inside the parent space.") }
 
     func submit() async -> Bool {
         guard canSubmit else { return false }
@@ -57,7 +57,7 @@ struct ChildProjectSheet: View {
     private enum Field: Hashable { case folder, name }
 
     var body: some View {
-        NWDialog("Add child project", message: "\(model.parentName)\n\(model.parentPath)") {
+        NWDialog("Add child space", message: "\(model.parentName)\n\(model.parentPath)") {
             SheetRow("Folder source") {
                 NWSegmentedPicker("Folder source", selection: $model.create,
                                   options: [(true, "New folder"), (false, "Existing folder")])

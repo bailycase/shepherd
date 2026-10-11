@@ -290,8 +290,8 @@ struct DesignSystemContent: View, Equatable {
                 Button("Re-sync", systemImage: "arrow.clockwise") { resync(namespace) }
                     .buttonStyle(.nw(.secondary))
                     .disabled(!model.canResync || model.syncing)
-                    .help(model.canResync ? "Read \(namespace)'s stylesheets again from its project"
-                          : "Nothing to read again: it names no stylesheets, or its project is gone")
+                    .help(model.canResync ? "Read \(namespace)'s stylesheets again from its space"
+                          : "Nothing to read again: it names no stylesheets, or its space is gone")
             }
         }
     }

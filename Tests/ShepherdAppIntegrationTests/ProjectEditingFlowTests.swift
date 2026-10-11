@@ -122,7 +122,7 @@ struct ProjectEditingFlowTests {
             let project = try #require(vm.presentedSidebarTree.compactMap { if case .project(let row) = $0, row.space == space.id { row } else { nil } }.first)
             let menu = OffscreenWindow(size: CGSize(width: 550, height: 500), dark: true, VStack { SidebarProjectMenu(vm: vm, project: project) })
             menu.layout()
-            try menu.press("Rename Project…")
+            try menu.press("Rename Space…")
             try await eventuallyOnMain("rename dialog") { window.window.attachedSheet?.contentView != nil }
             let cancelSheet = try #require(window.window.attachedSheet?.contentView)
             try ControlPress.press("Cancel", under: cancelSheet)
@@ -133,7 +133,7 @@ struct ProjectEditingFlowTests {
             defer { settings.close() }
             try await eventuallyOnMain("settings rows") { vm.projects.visible.count == 2 }
             settings.layout()
-            try ControlPress.perform("Rename Project…", onLabelContaining: "Open \(space.name)", under: settings.host)
+            try ControlPress.perform("Rename Space…", onLabelContaining: "Open \(space.name)", under: settings.host)
             try await eventuallyOnMain("rename from Settings") { window.window.attachedSheet?.contentView != nil }
             let content = try #require(window.window.attachedSheet?.contentView)
             func field(_ view: NSView) -> NSTextField? {

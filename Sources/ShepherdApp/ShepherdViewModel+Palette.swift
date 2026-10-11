@@ -22,9 +22,9 @@ extension ShepherdViewModel {
         if shownDestination == .newThread, let place = newThread.place, place.host == nil,
            let space = state.spaces.first(where: { $0.id == place.space }) {
             items.append(PaletteItem(id: "action.renameSpace", kind: .action("renameSpace"), section: .commands,
-                                     title: "Rename project…", subtitle: space.name, icon: "pencil"))
+                                     title: "Rename space…", subtitle: space.name, icon: "pencil"))
             items.append(PaletteItem(id: "action.removeSpace", kind: .action("removeSpace"), section: .commands,
-                                     title: "Remove project…", subtitle: space.name, icon: "trash"))
+                                     title: "Remove space…", subtitle: space.name, icon: "trash"))
         }
         items.append(PaletteItem(id: "action.newAgentOptions", kind: .action("newAgentOptions"), section: .commands,
                                  title: "New agent with options…", shortcut: keys.display(.newAgentOptions),
@@ -42,6 +42,15 @@ extension ShepherdViewModel {
                                  shortcut: keys.display(.toggleSidebar), icon: "sidebar.left"))
         items.append(PaletteItem(id: "action.settings", kind: .action("settings"), section: .commands,
                                  title: "Settings…", shortcut: "⌘,", icon: "gearshape"))
+        // The pages the boards' sidebar no longer lists (it draws New thread, Designs and Automations only).
+        items.append(PaletteItem(id: "action.openHosts", kind: .action("openHosts"), section: .commands, title: "Open Hosts",
+                                 subtitle: offlineHostCount > 0 ? "\(offlineHostCount) offline" : nil, icon: "display"))
+        if designToolEnabled {
+            items.append(PaletteItem(id: "action.openDesignSystems", kind: .action("openDesignSystems"), section: .commands,
+                                     title: "Open Design systems", icon: "paintpalette"))
+        }
+        items.append(PaletteItem(id: "action.openExtensions", kind: .action("openExtensions"), section: .commands,
+                                 title: "Open Extensions", icon: "puzzlepiece.extension"))
         for target in remoteWorktreeOperationIDs.keys {
             items.append(PaletteItem(id: "operation.\(target.hostID).\(target.agentID)",
                                      kind: .remoteOperation(hostID: target.hostID, agentID: target.agentID),
@@ -81,7 +90,7 @@ extension ShepherdViewModel {
 
         // Subagents, live and recent: a thread's, never a design's agent's.
         for (agentID, children) in childRuns.rows {
-            guard let agent = state.agents.first(where: { $0.id == agentID }), !state.isDesignAgent(agent) else { continue }
+            guard let agent = state.agents.first(where: { $0.id == agentID }), state.isOrdinaryThread(agent) else { continue }
             for child in children {
                 items.append(PaletteItem(id: "child.\(child.id)", kind: .child(agentID: agentID, child: child),
                                          section: .subagents, title: child.label,
@@ -115,7 +124,7 @@ extension ShepherdViewModel {
                                      title: agent.name, subtitle: context, icon: "bubble.left"))
         }
         for connection in remoteHosts.connections where connection.phase == .connected {
-            for agent in connection.state.agents where !connection.state.isDesignAgent(agent) {
+            for agent in connection.state.agents where connection.state.isOrdinaryThread(agent) {
                 items.append(PaletteItem(id: "remoteAgent.\(connection.id.uuidString).\(agent.id.rawValue)",
                                          kind: .remoteAgent(hostID: connection.id, agentID: agent.id), section: .agents,
                                          title: agent.name, subtitle: connection.config.name, icon: "bubble.left"))
@@ -226,7 +235,7 @@ extension ShepherdViewModel {
     }
 
     static func paletteSearchTargets(in state: ShepherdState) -> [(id: AgentID, piSessionID: String, cwd: String)] {
-        state.agents.filter { !state.isDesignAgent($0) }.map { agent in
+        state.agents.filter { state.isOrdinaryThread($0) }.map { agent in
             let cwd = state.tabs.first { $0.id == agent.tabID }?.layout.firstLeaf.cwd
                 ?? state.spaces.first { $0.id == agent.spaceID }?.path
                 ?? NSHomeDirectory()
@@ -241,7 +250,7 @@ extension ShepherdViewModel {
             let id = "agent.\(match.agentID.rawValue)"
             guard !existing.contains(id),
                   let agent = state.agents.first(where: { $0.id == match.agentID }),
-                  !state.isDesignAgent(agent) else { return nil }
+                  state.isOrdinaryThread(agent) else { return nil }
             let space = state.spaces.first { $0.id == agent.spaceID }
             return PaletteItem(
                 id: "fuzzy.\(match.agentID.rawValue)",
@@ -285,6 +294,11 @@ extension ShepherdViewModel {
             case "fastMode": toggleFastMode()
             case "toggleSidebar": toggleSidebar()
             case "settings": showSettings = true
+            case "openHosts": openDestination(.hosts)
+            case "openDesignSystems": openDesignSystems()
+            case "openExtensions":
+                settingsSection = .extensions
+                showSettings = true
             case "reviewDiff": openUserReview()
             case "reviewPR": openUserPRReview()
             case "toggleTerminal": toggleTerminalPanel()

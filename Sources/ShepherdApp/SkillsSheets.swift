@@ -1015,7 +1015,7 @@ private struct SkillPreviewCard: View {
         let nw = Color.nw
         VStack(spacing: 0) {
             HStack(spacing: NW.Space.m) {
-                Image(systemName: "doc.text")
+                Image(systemName: NWGlyph.document.symbolName)
                     .font(.nwSans(AppLayout.skillsMetaSize))
                     .foregroundStyle(nw.textTertiary)
                     .accessibilityHidden(true)

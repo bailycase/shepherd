@@ -80,9 +80,9 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | SettingsAppearance | [settings](settings.md), [foundations](foundations.md) | Settings › Appearance; Density and row settings | Built |
 | SettingsAgents | [settings](settings.md), [codemode-settings](codemode-settings.md) | Settings › Agents | Built |
 | SettingsWorktrees | [settings](settings.md) | Settings › Worktrees | Built |
-| SettingsProjects | [settings-projects](settings-projects.md), [project-mcp](project-mcp.md) | Settings > Projects | Built |
-| ProjectInstructions | [project-instructions](project-instructions.md) | Settings > Projects > Instructions | Built |
-| ProjectBrowser | [project-browser](project-browser.md) | Settings > Projects > Browser | Built |
+| SettingsProjects | [settings-projects](settings-projects.md), [project-mcp](project-mcp.md) | Settings > Spaces | Built |
+| ProjectInstructions | [project-instructions](project-instructions.md) | Settings > Spaces > Instructions | Built |
+| ProjectBrowser | [project-browser](project-browser.md) | Settings > Spaces > Browser | Built |
 | SubagentsSettings | [settings-subagents](settings-subagents.md) | Settings › Subagents | Built |
 | SubagentEdit | [settings-subagents](settings-subagents.md) | Settings › Subagents › Edit form | Built |
 | SettingsPi | [settings-pi](settings-pi.md) | Settings › Pi | Built (departures) |
@@ -332,7 +332,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | [side-pane-artifacts](side-pane-artifacts.md) | Read only when asked to build the Artifacts or Files tabs. |
 | [side-pane-browser](side-pane-browser.md) | Read when you change the Browser tab or how an agent drives it. |
 | [side-pane-changes](side-pane-changes.md) | Read when you change the Changes pane, a diff, a review comment, or the subagent inspector. |
-| [sidebar](sidebar.md) | Read when you change the sidebar: its rows, Needs you, Pinned, Recents or Projects. |
+| [sidebar](sidebar.md) | Read when you change the sidebar: its rows, Needs you, Pinned, Recents or Spaces. |
 | [child-projects](child-projects.md) | Read when you change the create-or-add child-project dialog or its entry points. |
 | [subagents](subagents.md) | Read when you change the subagent tray, its cards, or its record lines in a thread. |
 | [terminal](terminal.md) | Read when you change a terminal tab, the panel under a thread, or ⌘J and ⌘D. |

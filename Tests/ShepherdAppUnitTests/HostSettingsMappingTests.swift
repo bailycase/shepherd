@@ -119,7 +119,7 @@ struct HostSettingsMappingTests {
     /// Every change the protocol names reaches the setting it names, as the snapshot reads back.
     @Test(arguments: [
         HostSettingChange.defaultThinking(.low), .goalCrossProviderEvaluation(true), .goalCrossProviderEvaluation(false),
-        .goalsEnabled(true), .goalsEnabled(false),
+        .goalsEnabled(true), .goalsEnabled(false), .projectsEnabled(true), .projectsEnabled(false),
         .fetchBeforeCreating(false), .commitRemainingWork(false),
         .generatePRDescriptions(false), .deleteLocalBranch(false), .mergePRAutomatically(true),
         .bundledExtension(id: "review", on: false), .bundledExtension(id: "nativeSubagents", on: false), .bundledExtension(id: "context", on: false),

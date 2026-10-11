@@ -13,6 +13,8 @@ typealias Tab = ShepherdCore.Tab
 struct NewAgentConfig {
     var spaceID: SpaceID
     var workingDirectory: String
+    var reservedAgentID: AgentID? = nil
+    var coordinatorFor: ProjectID? = nil
     var model: String?
     var thinking: ThinkingLevel
     var initialPrompt: String?
@@ -60,13 +62,13 @@ struct AgentStartFailure: Error, CustomStringConvertible {
 @Observable
 final class ShepherdViewModel {
     var state: ShepherdState
+    @ObservationIgnored lazy var projectCoordinator = ProjectCoordinatorController(vm: self)
     var selectedSpaceID: SpaceID?
     var selectedAgentID: AgentID?
     /// The page the main column shows in place of a thread (New thread, Automations, Hosts);
     /// nil while a thread shows. Picking a row clears it. Ephemeral, like all selection state.
     var destination: MainDestination?
     /// The sidebar's More is open, showing Hosts and Extensions. Ephemeral.
-    var moreOpen = false
     /// Activity groups, cached on their source, pins and seen completion generations.
     @ObservationIgnored var sidebarListsCache: (source: SidebarSource, pins: SidebarPins, seen: [SidebarRowID: Int], lists: SidebarLists)?
     var sidebarCompletions = SidebarCompletions()
@@ -429,6 +431,30 @@ final class ShepherdViewModel {
     /// overlay but naturally resets when Shepherd restarts.
     var settingsSection: SettingsSection = .appearance
     @ObservationIgnored var madeProjects: ProjectsModel?
+    @ObservationIgnored var madeLogicalProjects: LogicalProjectsModel?
+    /// The Project whose page or settings the main column shows (ProjectLead boards). Ephemeral.
+    var selectedLogicalProject: LogicalProjectRef?
+    var logicalProjectSettingsTab: LogicalProjectSettingsTab = .general
+    /// The New project sheet's draft while it is up.
+    var newLogicalProject: NewLogicalProjectDraft?
+    /// A Project with no conversation yet draws the shared thread over these (never polled: no host to ask).
+    /// The task open in the Project page's right pane.
+    var logicalProjectPaneTask: ProjectTaskID?
+    /// A published file the person pressed in a task card, with the Project it belongs to: the Files tab of THAT Project previews it
+    /// (through the owner) and clears this. Another Project's page never takes it.
+    var logicalProjectPaneFile: (ref: LogicalProjectRef, file: ProjectTaskFile)?
+    /// The Threads pane beside the conversation: open unless the person closed it with Overview or its close button.
+    var logicalProjectPaneOpen = true
+    /// The pane's own view state: its tab, a text filter over the tasks, which groups to show, and the wide layout.
+    var logicalProjectPaneTab: LogicalProjectPaneTab = .threads
+    var logicalProjectPaneQuery = ""
+    var logicalProjectPaneSearching = false
+    var logicalProjectPaneFilter: Set<ProjectTaskGroup> = []
+    var logicalProjectPaneExpanded = false
+    /// The New thread sheet over a Project (assign a task into one of its Spaces).
+    var assigningProjectTask: AssignProjectTaskDraft?
+    @ObservationIgnored let emptyProjectConversation = NativeThreadStore()
+    @ObservationIgnored let emptyProjectInput = ThreadInput()
     @ObservationIgnored var madeProjectCookies: ProjectCookiesModel?
     @ObservationIgnored var madeSubagentDefinitions: SubagentDefinitionsModel?
     var subagentDefinitions: SubagentDefinitionsModel {
@@ -650,6 +676,7 @@ final class ShepherdViewModel {
             self?.remoteDesignChanged(RemoteDesignRef(hostID: host, designID: design), revision: revision, comments: comments)
         }
         self.remoteHosts.onProjectionChanged = { [weak self] in
+            self?.refreshProjectHosts()
             guard let self else { return }
             self.reconcileSidebarCompletions()
             self.notifyRemote()
@@ -717,6 +744,11 @@ final class ShepherdViewModel {
         // Agents drive their thread's Browser page.
         installBrowserAgentControl()
         installRemoteBrowserDrive()
+        server.setProjectsEnabled(self.settings.projectsEnabled)
+        self.settings.onProjectsChange = { [weak server, weak self] on in
+            server?.setProjectsEnabled(on)
+            self?.projectsExperimentChanged()
+        }
         // Host role: bind the remote listener at VM creation, not from a
         // window's .task — a restored-minimized or slow-to-render window
         // must not leave a host Mac unreachable. The TCP listener is
@@ -872,6 +904,8 @@ final class ShepherdViewModel {
                 self.checkouts?.refresh(id)
             }
         }
+        installProjectRuntime()
+        installProjectExecution()
         // The first launch of a build with Shepherd's own pi: restored agents (and automations)
         // wait until the copy from the user's pi is over, and, when no provider can start them,
         // until the welcome step closes (docs/design/dialogs-and-palette.md › Dialogs and sheets › Bringing over your pi).
@@ -1097,9 +1131,10 @@ final class ShepherdViewModel {
         // agent shown before it comes back, else the most recently active on this Mac; with no
         // agents at all, the New thread page shows. A page the user opened stays.
         if selectedAgent == nil, destination == nil, selectedRemoteAgent == nil {
-            let live = Set(state.agents.map(\.id))
+            let live = Set(state.agents.filter { $0.coordinatorFor == nil }.map(\.id))
             if let next = selectionHistory.last(where: live.contains) ?? launchAgentID,
-               let agent = state.agents.first(where: { $0.id == next }) {
+               let agent = state.agents.first(where: { $0.id == next && $0.coordinatorFor == nil }),
+               !state.projectExecutions.contains(where: { $0.assignment?.reservedWorkerID == next }) || selectionHistory.contains(next) {
                 willOpenSidebarThread(design(drawnBy: agent).map { .design($0.id) } ?? .local(agent.id))
                 selectedAgentID = agent.id
                 selectedSpaceID = agent.spaceID

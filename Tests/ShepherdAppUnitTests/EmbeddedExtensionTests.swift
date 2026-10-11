@@ -35,6 +35,7 @@ struct EmbeddedExtensionTests {
         "shepherd-mcp-parent.ts": MCPParentExtension.extensionSource,
         "shepherd-browser.ts": BrowserExtension.extensionSource,
         "shepherd-context.ts": ContextExtension.extensionSource,
+        "shepherd-project-context.ts": ProjectContextExtension.extensionSource,
         // Not an extension: Settings ▸ Pi ▸ Sign-in runs it with node to sign Shepherd's pi in.
         "shepherd-sign-in.mjs": PiSignInScript.source,
         "shepherd-project-mcp-sign-in.mjs": ProjectMCPScript.source,

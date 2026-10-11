@@ -26,17 +26,18 @@ struct SidebarActivityTests {
             let lists = SidebarDerivation.lists(SidebarSource(
                 local: ShepherdState(spaces: [space], agents: [pin, idle, asking, working, done], designs: [design]), designs: true),
                 pins: SidebarPins([.local(pin.id)]))
-            #expect(lists.sections.map(\.section) == [.done, .pinned, .needsYou, .working, .recents, .designs])
-            #expect(lists.all.map(\.title) == ["done", "pinned", "asking", "working", "idle", "Dashboard"])
-            #expect(lists.items(collapsed: []).first == .header(.done, count: 1, collapsed: false))
+            #expect(lists.sections.map(\.section) == [.designs, .needsYou, .working, .done, .pinned, .recents])
+            #expect(lists.all.map(\.title) == ["Dashboard", "asking", "working", "done", "pinned", "idle"], "Designs, Needs you, Working, Done, Pinned, Recents")
+            #expect(lists.items(collapsed: []).first == .header(.designs, count: 1, collapsed: false))
             #expect(Set(lists.all.map(\.id)).count == 6)
             #expect(lists.pinned.first?.leading == .dot(AgentState(status)))
             let items = lists.items(collapsed: [.working, .recents, .designs])
-            #expect(items.count == 9, "six headers, three visible rows")
-            #expect(lists.visibleRows(collapsed: [.working, .recents, .designs]).map(\.title) == ["done", "pinned", "asking"])
+            #expect(items.count == 10, "six thread headers plus Projects, three visible rows")
+            #expect(lists.visibleRows(collapsed: [.working, .recents, .designs]).map(\.title) == ["asking", "done", "pinned"], "a folded Designs leaves no rows")
             #expect(lists.shortcutRows(collapsed: [.working, .recents, .designs]).map(\.title) == ["done", "pinned"])
         }
-        #expect(SidebarLists().items(collapsed: Set(SidebarActivitySection.allCases)).isEmpty)
+        // Nothing but the Projects header remains when every thread group is empty: it carries New project.
+        #expect(SidebarLists().items(collapsed: Set(SidebarActivitySection.allCases)) == [.header(.projects, count: 0, collapsed: true)])
     }
 
     @Test func completionGenerationsIgnoreRepeatedDoneAndRefusedSendButCountAnotherTurn() throws {

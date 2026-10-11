@@ -220,19 +220,6 @@ struct DesignSystemPageTests {
 
     // MARK: The sidebar
 
-    @Test func designSystemsSitsUnderMoreBetweenHostsAndExtensionsWhileTheToolIsOn() {
-        let off = SidebarDerivation.destinations(shown: nil, moreOpen: true, offlineHosts: 0, newThreadChord: "⌘N")
-        #expect(off.map(\.title) == ["New thread", "Automations", "More", "Hosts", "Extensions"])
-        let on = SidebarDerivation.destinations(shown: .designSystem, moreOpen: true, offlineHosts: 0, newThreadChord: "⌘N", designs: true)
-        #expect(on.map(\.title) == ["New thread", "Designs", "Automations", "More", "Hosts", "Design systems", "Extensions"])
-        let row = on[5]
-        #expect(row.target == .designSystems && row.icon == .symbol("paintpalette") && row.child && row.selected)
-        #expect(!on[1].selected, "a system's page is not the Designs page")
-        let build = SidebarDerivation.destinations(shown: nil, moreOpen: true, offlineHosts: 0, newThreadChord: "⌘N", designs: true,
-                                                   systemShown: true)
-        #expect(build[5].selected, "a build's page is a system's page")
-    }
-
     @Test func aSystemBuildHasNoRecentsRowAndNeitherDoesItsAgent() {
         var builder = Fixture.agent("dashboard-web", in: Self.web).agent
         let build = Design(name: "dashboard-web", agentID: builder.id, createdAt: 1, buildsSystem: true, sourceSpaceID: Self.web.id)

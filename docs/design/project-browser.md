@@ -1,25 +1,25 @@
-# Projects > Browser
+# Spaces > Browser
 
-> Read when: changing project cookie settings, site filtering or clearing controls.
+> Read when: changing space cookie settings, site filtering or clearing controls.
 
 User board `ProjectBrowser.dc.html`, revision 572. Saved as
 [ProjectBrowser.png](boards/ProjectBrowser.png). It overrides older per-thread cookie docs.
 
 ## Implementation checklist
 
-- Reuse the project header and Settings navigation. Add Browser after MCP servers. The active
+- Reuse the space header and Settings navigation. Add Browser after MCP servers. The active
   Browser tab has a 2pt lantern underline. Body fills the remaining width with 40pt side
   gutters, page top 36pt, header height 128pt and body groups 24pt apart. The 232pt navigation
   includes its divider. The user's full-width Settings request supersedes the board's 860pt
   cap. At 1440pt, content starts at x=272 and spans 1128pt. There is no editor or right-hand
   context column in this tab.
 - Heading "Browser cookies", 15pt semibold. Explanation 13.5pt with 1.55 line height, maximum
-  620pt width. Real project name replaces the board's sample name. Exact explanation:
+  620pt width. Real space name replaces the board's sample name. Exact explanation:
   "Browser tabs in all threads and worktrees for <name> share cookies on this Mac. Other
-  projects use separate cookies."
+  spaces use separate cookies."
 - Trailing "This Mac only" badge. Supplied computer vector, `NWGlyph.Settings.computer`,
   12pt, 11.5pt text, horizontal 8pt and
-  vertical 6pt insets, 6pt radius, lineSubtle border. This is the viewer Mac even when the project
+  vertical 6pt insets, 6pt radius, lineSubtle border. This is the viewer Mac even when the space
   lives on a remote host. Cookies never go through the remote protocol.
 - Toolbar: Filter sites search field, 260pt wide and 32pt high, 13pt text, supplied 14pt search vector,
   10pt horizontal inset, 7pt radius, bgRaised, lineStrong border. Then actual total site/cookie
@@ -46,10 +46,10 @@ User board `ProjectBrowser.dc.html`, revision 572. Saved as
   window width. Quiet destructive text mixes 80% failed with text-primary; confirmation fill
   mixes 75% failed with text-on-lantern. Cancel changes no cookie. Clear deletes
   cookies only, not localStorage or cache, and then reloads counts. Status stays on this page.
-- BrowserSessions owns WebKit calls in BrowserHost.swift. Use the same cached project store as
+- BrowserSessions owns WebKit calls in BrowserHost.swift. Use the same cached space store as
   thread pages, keyed by stable SpaceID and configured remote hostID. Cookie domain grouping
   and site deletion use the same normalization, including leading-dot and case handling.
-  Tests seed the real store, use AX controls and verify another project and storage survive.
+  Tests seed the real store, use AX controls and verify another space and storage survive.
 - Render populated, empty, filtered, long domains, site/all confirmations, clearing/error,
   success and unavailable states in light/dark and text scale 1.3. Capture the running Dev app.
 
@@ -60,7 +60,7 @@ preserve the board's text positions. Borders and table rules use 1pt CSS widths 
 
 ## Decisions
 
-Site totals describe the whole project store, independent of the text filter. Clear all clears
+Site totals describe the whole space store, independent of the text filter. Clear all clears
 that store, not only the filtered rows. Sites sort by count descending, then domain. Only sites
 and counts leave BrowserHost's cookie APIs.
 
