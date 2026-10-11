@@ -249,9 +249,9 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
     preserving that branch's existing release workflow and signing/feed contracts. The owner
     approves the bootstrap and live rollout separately; merging the Nightly PR alone is not
     enough. Absent dispatch support, selection fails closed rather than bypassing its fence.
-    `.github/CODEOWNERS` names `@bailycase` and `@jhartzell` for workflows, release/signing
-    scripts and engine staging inputs; the owner must enable required code-owner reviews in
-    branch protection to enforce those assignments.
+    Review requests are manual. The repository has no `CODEOWNERS` file, so workflow,
+    release/signing and engine changes do not automatically request Baily or Josh to review.
+    Nightly still requires `CI` and `PR body`, with no required approvals or code-owner review.
   - **Decisions:** the default bounds above, fail-closed uncertain state, hosted-only publication,
     ephemeral keychain handling are deliberate. Tests use
     fake GitHub states, scratch packages/keychains and the existing fake publication shell;
