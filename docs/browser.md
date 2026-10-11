@@ -101,6 +101,9 @@ The app uses WebKit's identified persistent website data stores on every support
 Space IDs survive Shepherd restarts, so saved cookies and local storage survive too. Deleting a
 thread closes its page but keeps the space's data, even when it has no threads left. Removing the
 space or its configured remote host removes its store. Disconnecting a host does not clear it.
+Before removal, `BrowserDataStores.remove` initializes WebKit through its default store. WebKit's
+class-level removal API does not do this itself and can crash on its IO callback when no browser
+has opened yet. Space pages still use their identified stores, never the default store.
 Automation runs use the space containing their folder; a thread outside any space keeps an
 isolated store. Every agent in a space can use that space's logged-in accounts.
 
@@ -124,7 +127,7 @@ from authorizing a clear, and the confirmation hides and disables the page behin
 Only the bundle-less macOS 26 test runner keeps the temporary-store crash workaround. Ordinary
 tests use in-memory stores. `python3 scripts/test-browser-persistence.py` runs the disk tests in a
 scratch home on macOS 27+, including separate writer and reader processes to check restart
-persistence. The macOS 26 bundled-app path needs verification on a Mac running that version.
+persistence and a fresh-process check for deleting a project before opening any browser. The macOS 26 bundled-app path needs verification on a Mac running that version.
 
 ## The switch
 
