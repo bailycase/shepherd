@@ -85,9 +85,9 @@ class WorkflowShapeTests(unittest.TestCase):
             self.assertIn("needs: plan", JOBS[job])
         self.assertIn("github.event.action != 'closed'", JOBS["ci"])
 
-    def test_the_scheduled_run_tests_master(self):
+    def test_every_job_uses_the_same_immutable_event_commit_including_the_master_schedule(self):
         for name in ("plan", "release-rules", "extensions", "tests"):
-            self.assertIn("ref: ${{ github.event_name == 'schedule' && 'master' || '' }}", JOBS[name], name)
+            self.assertIn("ref: ${{ github.sha }}", JOBS[name], name)
 
     def test_ci_is_the_one_gate_and_it_waits_for_every_job_that_can_fail_a_run(self):
         gate = JOBS["ci"]
@@ -97,12 +97,14 @@ class WorkflowShapeTests(unittest.TestCase):
 
     def test_the_gate_passes_for_success_and_skipped_and_fails_for_anything_else(self):
         script = run_script(JOBS["ci"])
-        for results, passes in (("success success success success", True),
-                                ("success success success skipped", True),
-                                ("success failure success success", False),
-                                ("success success success cancelled", False),
-                                ("failure skipped skipped skipped", False)):
-            done = subprocess.run(["bash", "-c", script], env={"RESULTS": results, "PATH": os.environ["PATH"]},
+        for results, required, swift, passes in (("success success success success", "true", "success", True),
+                                                ("success success success skipped", "false", "skipped", True),
+                                                ("success success success skipped", "true", "skipped", False),
+                                                ("success failure success success", "true", "success", False),
+                                                ("success success success cancelled", "true", "cancelled", False),
+                                                ("failure skipped skipped skipped", "", "skipped", False)):
+            done = subprocess.run(["bash", "-c", script], env={"RESULTS": results, "PATH": os.environ["PATH"],
+                                                              "SWIFT_REQUIRED": required, "SWIFT_RESULT": swift},
                                   capture_output=True, text=True, timeout=10)
             self.assertEqual(done.returncode == 0, passes, results)
 
@@ -121,13 +123,16 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertIn("clean: ${{ runner.environment != 'self-hosted' }}", checkout)
         self.assertIn("persist-credentials: false", checkout)
 
-    def test_the_swift_job_is_one_incremental_build_and_one_swift_test(self):
+    def test_each_isolated_lane_builds_once_and_runs_serially_without_cancelling_other_lanes(self):
         tests = JOBS["tests"]
         self.assertIn("uses: ./.github/actions/swift-build", tests)
         self.assertIn("python3 scripts/pi_engine.py stage", tests)
         self.assertRegex(tests, r"swift test --no-parallel --skip-build \$SWIFTPM_FLAGS")
-        self.assertNotIn("matrix:", tests)
-        self.assertNotIn("shard", tests)
+        self.assertIn("matrix:", tests)
+        self.assertIn("lane: ${{ fromJSON(needs.plan.outputs.lanes) }}", tests)
+        self.assertIn("max-parallel: 4", tests)
+        self.assertIn("fail-fast: false", tests)
+        self.assertIn("name: ci-swift-test-log-${{ matrix.lane }}", tests)
         self.assertIn('CI: "true"', tests)
         upload = tests.split("- name: Upload the log", 1)[1]
         self.assertIn("if: ${{ always() }}", upload, "keep native profiling evidence on green and red runs")
@@ -144,8 +149,10 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertNotIn("|| true", copy)
         self.assertNotIn("TMPDIR=", tests, "the tests keep the runner's short socket-safe temp directory")
         self.assertIn("if: ${{ always() }}", upload, "green profiling logs and red pixel evidence share one artifact")
-        self.assertIn("name: ci-swift-test-log", upload)
-        self.assertIn("path: |\n            ${{ runner.temp }}/swift-test.log\n            ${{ runner.temp }}/shepherd-completion-repro\n            ${{ runner.temp }}/shepherd-completion-matrix", upload)
+        self.assertIn("name: ci-swift-test-log-${{ matrix.lane }}", upload)
+        for file in ("swift-test.log", "swift-tests.txt", "swift-selected-tests.txt",
+                     "shepherd-completion-repro", "shepherd-completion-matrix"):
+            self.assertIn("${{ runner.temp }}/" + file, upload)
         self.assertIn("retention-days: 7", upload)
         self.assertIn("if-no-files-found: ignore", upload)
 
@@ -449,6 +456,9 @@ class PlanTests(unittest.TestCase):
                 fields = dict(line.split("=", 1) for line in output.read_text().splitlines())
                 self.assertEqual(fields["swift"], swift)
                 self.assertEqual(bool(json.loads(fields["filters"])), selected)
+                lanes = json.loads(fields["lanes"])
+                self.assertEqual(lanes, ["selected"] if swift == "false" or selected else list(ci_plan.FULL_LANES))
+                self.assertLessEqual(len(lanes), 4)
 
     def test_manual_diagnostics_are_fixed_validated_filters_and_never_named_ci(self):
         self.assertIn("options: [none, ui]", WORKFLOW)
@@ -485,6 +495,7 @@ class PlanTests(unittest.TestCase):
                 fields = dict(line.split("=", 1) for line in output.read_text().splitlines())
                 self.assertEqual(fields["swift"], "true")
                 self.assertEqual(json.loads(fields["filters"]), expected)
+                self.assertEqual(json.loads(fields["lanes"]), ["selected"] if expected else list(ci_plan.FULL_LANES))
 
     def test_full_mode_on_the_workflow_and_filters_are_passed_as_data(self):
         plan = JOBS["plan"]
@@ -493,7 +504,7 @@ class PlanTests(unittest.TestCase):
         self.assertIn("args=(--full)", plan)
         tests = JOBS["tests"]
         self.assertIn("swift test list --skip-build", tests)
-        self.assertIn('filters=(--filter "$filter")', tests)
+        self.assertIn('--filter "$filter"', tests)
         self.assertNotIn("eval ", tests)
 
     def test_filtered_workflow_uses_native_ids_and_keeps_process_errors(self):
@@ -508,19 +519,52 @@ class PlanTests(unittest.TestCase):
             with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
                 result = subprocess.run(["bash", "-e", "-c", fixture + script], cwd=ROOT,
                                         env={**os.environ, "RUNNER_TEMP": directory, "SWIFTPM_FLAGS": "",
-                                             "STATUS": str(status), "SWIFT_FILTERS": '["^Module\\\\."]'},
+                                             "STATUS": str(status), "SWIFT_FILTERS": '["^Module\\\\."]',
+                                             "SWIFT_LANE": "selected"},
                                         capture_output=True, text=True, timeout=5)
                 self.assertEqual(result.returncode, status, result.stderr)
                 self.assertIn("native filtered run", result.stdout)
                 self.assertEqual((Path(directory) / "swift-test.log").read_text(), "native filtered run\n")
+                self.assertEqual((Path(directory) / "swift-selected-tests.txt").read_text(), "Module.Suite/a()\n")
         with tempfile.TemporaryDirectory() as directory:
             result = subprocess.run(["bash", "-e", "-c", fixture + script], cwd=ROOT,
                                     env={**os.environ, "RUNNER_TEMP": directory, "SWIFTPM_FLAGS": "",
-                                         "STATUS": "0", "SWIFT_FILTERS": '["missing"]'},
+                                         "STATUS": "0", "SWIFT_FILTERS": '["missing"]', "SWIFT_LANE": "selected"},
                                     capture_output=True, text=True, timeout=5)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("no native tests matched", result.stderr)
             self.assertFalse((Path(directory) / "swift-test.log").exists())
+
+    def test_full_workflow_lanes_record_complete_unique_coverage_and_preserve_native_failures(self):
+        script = run_script(JOBS["tests"].split("- name: Run tests", 1)[1])
+        expected = {
+            "completion-browser": ["ShepherdAppIntegrationTests.ThreadCompletionMatrixTests/run()"],
+            "thread": ["ShepherdAppIntegrationTests.ThreadTailFlowTests/run()"],
+            "app-features": ["ShepherdAppIntegrationTests.ComposerMenuTests/run()"],
+            "other": ["NewTarget.Suite/run()", "ShepherdSessionsIntegrationTests.RPCSessionTests/run()"],
+        }
+        ids = [name for names in expected.values() for name in names]
+        fixture = '''swift() {
+          if [ "$2" = list ]; then printf '%s\\n' "$TEST_IDS"; return 0; fi
+          printf '%s\\n' "$@" > "$RUNNER_TEMP/args"
+          echo 'native lane run'; return "$STATUS"
+        }
+        '''
+        for lane, selected in expected.items():
+            for status in (0, 1, 23, 134):
+                with self.subTest(lane=lane, status=status), tempfile.TemporaryDirectory() as directory:
+                    result = subprocess.run(["bash", "-eu", "-c", fixture + script], cwd=ROOT,
+                                            env={**os.environ, "RUNNER_TEMP": directory, "SWIFTPM_FLAGS": "",
+                                                 "TEST_IDS": "\n".join(ids), "SWIFT_FILTERS": "[]",
+                                                 "SWIFT_LANE": lane, "STATUS": str(status)},
+                                            capture_output=True, text=True, timeout=5)
+                    self.assertEqual(result.returncode, status, result.stderr)
+                    root = Path(directory)
+                    self.assertEqual((root / "swift-selected-tests.txt").read_text().splitlines(), selected)
+                    args = (root / "args").read_text().splitlines()
+                    pattern = args[args.index("--filter") + 1]
+                    self.assertEqual([name for name in ids if re.search(pattern, name)], selected)
+                    self.assertEqual((root / "swift-test.log").read_text(), "native lane run\n")
 
     def test_missing_gui_session_fails_before_compiling_or_testing_on_the_mini(self):
         step = JOBS["tests"].split("- name: Require a logged-in build account for AppKit tests", 1)[1].split("- uses:", 1)[0]
@@ -564,15 +608,16 @@ class PlanTests(unittest.TestCase):
         }\n'''
         for status in (0, 1, 23, 134):
             with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
-                result = subprocess.run(["bash", "-e", "-c", fixture + script],
+                result = subprocess.run(["bash", "-e", "-c", fixture + script], cwd=ROOT,
                                         env={**os.environ, "RUNNER_TEMP": directory,
-                                             "SWIFTPM_FLAGS": "", "STATUS": str(status), "SWIFT_FILTERS": "[]"},
+                                             "SWIFTPM_FLAGS": "", "STATUS": str(status),
+                                             "SWIFT_FILTERS": '["^Module\\\\."]', "SWIFT_LANE": "selected"},
                                         capture_output=True, text=True, timeout=5)
                 self.assertEqual(result.returncode, status, result.stderr)
                 self.assertIn("Test run with 5 tests failed", result.stdout)
                 self.assertIn("fixture stderr", result.stdout)
                 self.assertIn("Native test IDs listed (before filtering): 1", result.stdout)
-                self.assertIn("selection: all native tests", result.stdout)
+                self.assertIn(r"selection: (?:^Module\.)", result.stdout)
                 self.assertEqual((Path(directory) / "swift-test.log").read_text(),
                                  "Test run with 5 tests failed after 1 second with 1 issue.\nfixture stderr\n")
 
@@ -580,9 +625,9 @@ class PlanTests(unittest.TestCase):
         script = run_script(JOBS["tests"].split("- name: Run tests", 1)[1])
         fixture = 'swift() { echo "Module.Suite/a()"; }; tee() { command tee "$@"; return 7; };\n'
         with tempfile.TemporaryDirectory() as directory:
-            result = subprocess.run(["bash", "-e", "-c", fixture + script],
+            result = subprocess.run(["bash", "-e", "-c", fixture + script], cwd=ROOT,
                                     env={**os.environ, "RUNNER_TEMP": directory,
-                                         "SWIFTPM_FLAGS": "", "SWIFT_FILTERS": "[]"},
+                                         "SWIFTPM_FLAGS": "", "SWIFT_FILTERS": '["^Module\\\\."]', "SWIFT_LANE": "selected"},
                                     capture_output=True, text=True, timeout=5)
             self.assertEqual(result.returncode, 7, result.stderr)
             self.assertEqual((Path(directory) / "swift-test.log").read_text(), "Module.Suite/a()\n")
