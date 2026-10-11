@@ -381,6 +381,9 @@ be tested has not tried this. `ModelSettingsPopoverTests` is the worked example,
   `SubagentReplyTests` presses a tray row that way. A pointer's hover button is not in the tree,
   so what it reaches is the same closure the action runs.
 - A control that is not drawn in a state is not in the tree: assert its absence with `controls()`.
+- Combined SwiftUI rows differ between supported SDKs. `LogicalProjectConversationTests` matches
+  the complete macOS 26 combined label or macOS 27 separate state label, and retains its exact
+  row-count and bubble-alignment checks. Diagnose the actual tree before changing those selectors.
 
 **Which tier a change needs:**
 

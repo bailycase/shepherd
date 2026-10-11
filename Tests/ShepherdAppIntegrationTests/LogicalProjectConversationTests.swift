@@ -715,7 +715,10 @@ private static func chipsAndLinks() async throws {
         }
         func noteCount(_ note: String) -> Int {
             window.layout()
-            return window.elements().filter { ($0.label ?? $0.value ?? "") == note }.count
+            // macOS 26 combines the words and state into one label; 27 exposes the state alone.
+            // Match either complete label, not a substring that could count unrelated prose.
+            let labels = [note, "send me later, \(note)"]
+            return window.elements().filter { labels.contains($0.label ?? $0.value ?? "") }.count
         }
         // Pause through the real control, then send through the real composer: the owner accepts and holds it.
         try window.press("Project settings")
@@ -922,8 +925,8 @@ private static func chipsAndLinks() async throws {
         #expect(segments.count == 2, "assignment then the person: \(segments)")
         if case .assignment(let words) = segments.first { #expect(words == "Build the reading widget") } else { Issue.record("the assignment is not first and plain") }
         if case .person(let kept) = segments.last { #expect(kept.bubbles.map(\.text) == ["use the blue theme"]) } else { Issue.record("the person's words lost their bubble") }
-        // Drawn: the assignment is one left-aligned text node the column's width, and the person's words are a bubble (a combined, unlabeled
-        // element, narrower than the column) that ends on the column's trailing edge.
+        // Drawn: the assignment spans the column and the person's narrower bubble ends on its trailing edge.
+        // macOS 26 labels the combined bubble with its text; macOS 27 leaves that same element unlabeled.
         try await window.diagnosing(stores: [store], needles: ["Build the reading widget", "use the blue theme"], extra: {
             ["segments=\(segments)"]
         }) {
@@ -931,7 +934,10 @@ private static func chipsAndLinks() async throws {
                 window.layout()
                 let nodes = window.elements()
                 guard let prose = nodes.first(where: { $0.role == "AXStaticText" && $0.value == "Build the reading widget" }) else { return false }
-                return nodes.contains { $0.role == "AXUnknown" && ($0.label ?? "").isEmpty && abs($0.frame.maxX - prose.frame.maxX) < 1 && $0.frame.width < prose.frame.width / 2 }
+                return nodes.contains {
+                    $0.role == "AXUnknown" && ["", "use the blue theme"].contains($0.label ?? "")
+                        && abs($0.frame.maxX - prose.frame.maxX) < 1 && $0.frame.width < prose.frame.width / 2
+                }
             }
         }
         let nodes = window.elements()
