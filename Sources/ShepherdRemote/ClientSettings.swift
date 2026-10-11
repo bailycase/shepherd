@@ -125,6 +125,7 @@ public final class ClientHostSettings {
 
     private func show(_ change: HostSettingChange, on host: SettingsHost) -> Bool {
         if case .goalsEnabled = change, !host.serves(RemoteProtocol.goalExperimentCapability) { return false }
+        if case .projectsEnabled = change, !host.serves(RemoteProtocol.projectsExperimentCapability) { return false }
         guard !forgotten.contains(host.id), case .loaded(var settings)? = loaded[host.id] else { return false }
         settings.apply(change)
         loaded[host.id] = .loaded(settings)
@@ -290,7 +291,7 @@ public final class ClientInstructions {
                                           keptDifferent: false, syncedAt: syncedAt[host.id], now: now)
     }
 
-    /// "Save to all hosts", "Save", "Save to build-01".
+    /// "Save to all hosts", "Save", "Save to demo-mac".
     public func saveTitle(in hosts: [SettingsHost], selectedHost: UUID? = nil) -> String {
         if sameEverywhere {
             let targets = hosts.filter { files(of: $0) != .unsupported }.count
@@ -313,7 +314,7 @@ public final class ClientInstructions {
         }
     }
 
-    /// With Same on every host on, each host's state in one line ("Studio, build-01 synced ·
+    /// With Same on every host on, each host's state in one line ("Studio, demo-mac synced ·
     /// horizon when it's back"); per host, nil.
     public func syncLine(in hosts: [SettingsHost]) -> String? {
         guard sameEverywhere, let reference = reference(in: hosts), let snapshot = files(of: reference).snapshot else { return nil }

@@ -117,9 +117,9 @@ struct NewThreadDesignTests {
 
     // MARK: Starting
 
-    /// ("tools:0" makes the stub run a turn as pi does, streaming the user's message first, which
-    /// is what binds the message to the pieces the host kept and so draws its chip; a message of a
-    /// design alone has no word for it, and the stub streams nothing.)
+    /// (The stub streams the user's message first, as pi does, in every turn, which is what binds the message to the pieces the
+    /// host kept and so draws its chip: a message of a design alone gets its chip too. Before the stub streamed the message in its
+    /// default turn, only a "tools:0" turn did, and a design alone had no chip.)
     @Test(arguments: [(Piece.board, "tools:0 Build the pay button"), (.design, ""), (.element, "tools:0 Match this button")])
     func aDesignAttachedOnTheNewThreadPageStartsTheThreadWithItsFence(piece: Piece, typed: String) async throws {
         let w = try await Self.workspace()
@@ -167,7 +167,7 @@ struct NewThreadDesignTests {
         #expect(words == (typed.isEmpty ? "1 design reference attached." : typed + "\n\n1 design reference attached."))
 
         // The thread draws the chip, not the string, and the agent may read the copy.
-        #expect(opening.drawnAsChip == !typed.isEmpty)
+        #expect(opening.drawnAsChip)
         if opening.drawnAsChip {
             let bubble = try #require(nativeUserBubbles(opening.user).first)
             #expect(bubble.references.map(\.ref) == [record.ref] && !bubble.text.contains(DesignReference.scheme))

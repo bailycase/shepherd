@@ -652,7 +652,7 @@ claude.ai is still checked against).
   files) from the project (`sourceSpaceID`: the system keeps its source repo, for Re-sync),
   named after it, and starts its agent in the designs space, working in the project's folder,
   with Settings' default model
-  and these words: "Build a design system from this project: read its tokens file, its component
+  and these words: "Build a design system from this space: read its tokens file, its component
   templates and a few pages (read only), write the system with system_write, and tell me what
   doesn't match." A project that has a build opens it instead. A build has no card and no Recents
   row; its system (the one whose `ownerDesignID` is the build) is its page.
@@ -1607,7 +1607,7 @@ the words in `DesignLifecycle.swift`, the views in `DesignLifecycleViews.swift`)
   to Designs if it showed the design, the design and its agent leave every surface at once, and
   the toast says "Deleted Checkout funnel dashboard." with Undo until the host lets it go (nothing
   counts down). Undo restores it and starts its agent's pi again. A failure brings it back and the
-  toast says why, with Try again ("build-01, where it’s saved, didn’t answer, so it’s back." for a
+  toast says why, with Try again ("demo-mac, where it’s saved, didn’t answer, so it’s back." for a
   host's design).
 - **Quitting** within the undo window completes the deletion: state.json no longer lists the
   design, and quitting (or the next launch, after a crash) removes the set-aside folder. There is

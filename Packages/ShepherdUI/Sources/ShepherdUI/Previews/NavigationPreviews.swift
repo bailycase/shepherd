@@ -28,7 +28,7 @@ private let started = Date().addingTimeInterval(-41 * 60)
                     }
                     .padding(.horizontal, NWSidebarMetrics.listInset)
                 } footer: {
-                    NWSidebarFooter(name: "Baily", detail: "This Mac · build-01") {}
+                    NWSidebarFooter(name: "Alex", detail: "This Mac · demo-mac") {}
                 }
                 .frame(width: 232, height: 600)
                 .nwBorder(.nw.lineSubtle, radius: NW.Radius.m)
@@ -38,12 +38,12 @@ private let started = Date().addingTimeInterval(-41 * 60)
     }
 }
 
-#Preview("Sidebar — Projects") {
+#Preview("Sidebar — Spaces") {
     NWPreviewBoth {
         HStack(alignment: .top, spacing: NW.Space.xl) {
             ForEach([NWDensity.standard, .compact]) { density in
                 VStack(alignment: .leading, spacing: NWSidebarMetrics.rowSpacing) {
-                    NWProjectsHeader { Button("Add Project…") {} }
+                    NWProjectsHeader("Spaces") { Button("Show shepherd") {} }
                     NWProjectRow("shepherd", count: 3, expanded: true, toggle: {}, newThread: {}) { Button("Hide from Sidebar") {} }
                     NWSidebarRow("Dock review pane", state: .attention, accessory: .reason("approve plan"), nested: true)
                     NWSidebarRow("Investigate SwiftUI live preview", state: .running, selected: true,

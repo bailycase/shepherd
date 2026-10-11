@@ -58,3 +58,29 @@ public func recordingErrors(sourceLocation: SourceLocation = #_sourceLocation, _
         Issue.record(error, sourceLocation: sourceLocation)
     }
 }
+
+/// What `completingScenario` writes to the child's stdout once its body has returned.
+private let scenarioCompleteLine = "SHEPHERD-SCENARIO-COMPLETE\n"
+
+/// `recordingErrors`, then a sentinel on stdout after the body's last statement. `processExitsWith: .success` also counts a child that
+/// exited early with status 0 (a menu's `cancelTracking()` did that), so a scenario that must reach its end is checked with
+/// `expectScenarioCompleted`:
+///
+///     let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
+///         await completingScenario { try await Self.pausing() }
+///     }
+///     expectScenarioCompleted(result)
+public func completingScenario(sourceLocation: SourceLocation = #_sourceLocation, _ body: () async throws -> Void) async {
+    var completed = false
+    await recordingErrors(sourceLocation: sourceLocation) {
+        try await body()
+        completed = true
+    }
+    if completed { FileHandle.standardOutput.write(Data(scenarioCompleteLine.utf8)) }
+}
+
+/// Records an issue unless the child printed the sentinel, i.e. ran its body to the end without an early exit.
+public func expectScenarioCompleted(_ result: ExitTest.Result?, sourceLocation: SourceLocation = #_sourceLocation) {
+    let output = String(decoding: result?.standardOutputContent ?? [], as: UTF8.self)
+    #expect(output.contains(scenarioCompleteLine), "the scenario exited before its last statement", sourceLocation: sourceLocation)
+}

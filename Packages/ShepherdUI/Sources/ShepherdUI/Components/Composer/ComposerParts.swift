@@ -74,6 +74,21 @@ public struct NWComposerCommandsLabel: View {
     }
 }
 
+/// Space above and below the controls row where a board sets it differently from the ordinary composer's (ProjectLead).
+public struct NWComposerControlsInset: Equatable, Sendable {
+    public var top: CGFloat
+    public var bottom: CGFloat
+
+    public init(top: CGFloat, bottom: CGFloat) {
+        self.top = top
+        self.bottom = bottom
+    }
+}
+
+extension EnvironmentValues {
+    @Entry public var nwComposerControlsInset: NWComposerControlsInset? = nil
+}
+
 /// The composer card (NWComposer board): `bgRaised`, a 1px strong line, radius 8. While the
 /// field has focus (or a menu is open, or a drop hovers) the line turns `textTertiary` with a
 /// 3pt `bgSelected` ring. Top: attachments; then the field (it grows to 8 lines); then one row
@@ -83,6 +98,7 @@ public struct NWComposer<Top: View, Field: View, Controls: View>: View {
     let top: Top
     let field: Field
     let controls: Controls
+    @Environment(\.nwComposerControlsInset) private var controlsInset
 
     public init(isFocused: Bool, @ViewBuilder top: () -> Top, @ViewBuilder field: () -> Field,
                 @ViewBuilder controls: () -> Controls) {
@@ -109,7 +125,8 @@ public struct NWComposer<Top: View, Field: View, Controls: View>: View {
                 .padding(EdgeInsets(top: NW.Space.l, leading: 14, bottom: NW.Space.xs, trailing: 14))
                 .frame(minHeight: NWComposerMetrics.fieldMinHeight, alignment: .topLeading)
             HStack(spacing: NW.Space.xxs) { controls }
-                .padding(EdgeInsets(top: NW.Space.xs, leading: NW.Space.s, bottom: NW.Space.s, trailing: NW.Space.s))
+                .padding(EdgeInsets(top: controlsInset?.top ?? NW.Space.xs, leading: NW.Space.s,
+                                    bottom: controlsInset?.bottom ?? NW.Space.s, trailing: NW.Space.s))
         }
         .background(nw.bgRaised, in: shape)
         // As the card eases to a new height (a question taking the field's place, attachments

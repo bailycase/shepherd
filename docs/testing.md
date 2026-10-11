@@ -360,6 +360,11 @@ be tested has not tried this. `ModelSettingsPopoverTests` is the worked example,
   }
   ```
 
+- **Prove the scenario reached its end.** `processExitsWith: .success` also passes a child that exited early with status 0.
+  Run the body with `completingScenario` (it prints a sentinel after the last statement) and check the parent with
+  `expectScenarioCompleted`, observing `\.standardOutputContent`. A native `Menu` is chosen with
+  `NativeMenuChoice.choose` (the real `accessibilityPerformShowMenu` and `NSMenu` item action). It leaves the menu's tracking open
+  (`NSMenu.cancelTracking()` ends the process with status 0), so a scenario chooses one menu item and reads the saved state after.
 - **Press by label:** `window.press("Fast", in: "Speed")` (a group's label scopes the search),
   `press("Edit", nth: 1)` among equals, `press("Open", role: ControlRole.popUpButton)`. It returns
   the `Control` (role, label, value, frame, enabled). A missing label, a disabled or hidden
@@ -376,6 +381,9 @@ be tested has not tried this. `ModelSettingsPopoverTests` is the worked example,
   `SubagentReplyTests` presses a tray row that way. A pointer's hover button is not in the tree,
   so what it reaches is the same closure the action runs.
 - A control that is not drawn in a state is not in the tree: assert its absence with `controls()`.
+- Combined SwiftUI rows differ between supported SDKs. `LogicalProjectConversationTests` matches
+  the complete macOS 26 combined label or macOS 27 separate state label, and retains its exact
+  row-count and bubble-alignment checks. Diagnose the actual tree before changing those selectors.
 
 **Which tier a change needs:**
 

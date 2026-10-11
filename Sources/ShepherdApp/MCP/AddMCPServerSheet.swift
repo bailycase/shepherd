@@ -102,7 +102,7 @@ struct AddMCPServerSheet: View {
     }
     private var credentialNote: String {
         project == nil ? "Secrets stay in Keychain, never in the JSON file."
-            : "Values are saved in this project file. Use ${VAR} to read a secret from the host's environment."
+            : "Values are saved in this space file. Use ${VAR} to read a secret from the host's environment."
     }
 
     var body: some View {
@@ -475,7 +475,7 @@ struct AddMCPServerSheet: View {
                         }
                         .foregroundStyle(nw.textSecondary)
                     } else if row.secret {
-                        SecureField("Value", text: $row.value, prompt: Text(project == nil ? "Stored in Keychain" : "Saved in project file"))
+                        SecureField("Value", text: $row.value, prompt: Text(project == nil ? "Stored in Keychain" : "Saved in space file"))
                             .accessibilityLabel("Value")
                             .textFieldStyle(.plain)
                             .font(.nwMono(AppLayout.mcpNoteSize))

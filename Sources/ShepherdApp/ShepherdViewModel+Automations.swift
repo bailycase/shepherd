@@ -25,6 +25,16 @@ extension ShepherdViewModel {
 
     private func handleAutomationRequest(_ request: AutomationRequest) async -> AutomationOutcome {
         do {
+            // Legacy requests carry no Project revision or authenticated Project scope.
+            let target: AutomationID?
+            switch request {
+            case .create(let automation, _): target = automation.id
+            case .list: target = nil
+            case .update(let id, _, _, _, _), .delete(let id), .start(let id), .stop(let id): target = id
+            }
+            if let target, server.state.automations.contains(where: { $0.id == target && $0.projectID != nil }) {
+                return .failed(code: "project_scope", message: "Use the Project's revision-checked automation controls.")
+            }
             switch request {
             case .create(let automation, let start):
                 try await server.addAutomation(automation)
@@ -89,6 +99,9 @@ extension ShepherdViewModel {
         guard let previous = state.automations.first(where: { $0.id == id }) else {
             throw AgentStartFailure(message: "automation no longer exists")
         }
+        guard previous.projectID == nil else {
+            throw LogicalProjectsError("project_scope", "Use the Project's revision-checked run action.")
+        }
         guard startingAutomations.insert(id).inserted else {
             throw AgentStartFailure(message: "\(previous.name) is already running")
         }
@@ -97,6 +110,17 @@ extension ShepherdViewModel {
             startingAutomations.remove(id)
             cancelledAutomationStarts.remove(id)
         }
+        try await server.beginAutomationStart(id)
+        do {
+            try await startUnscopedAutomation(id, previous: previous)
+            await server.endAutomationStart(id)
+        } catch {
+            await server.endAutomationStart(id)
+            throw error
+        }
+    }
+
+    private func startUnscopedAutomation(_ id: AutomationID, previous: Automation) async throws {
         let settled = try await settledRun(of: previous)
         guard !cancelledAutomationStarts.contains(id),
               let automation = state.automations.first(where: { $0.id == id }), automation.agentID == settled else { return }
@@ -160,15 +184,24 @@ extension ShepherdViewModel {
         return agentID
     }
 
-    /// Stop an automation's run by deleting its agent (the automation itself
-    /// stays saved; deleteAgent clears the back-reference server-side).
+    /// Stop an unscoped run. Project-owned runs require the owner's revision-checked service,
+    /// even when a sidebar menu was opened before its association reached the view model.
     func stopAutomation(_ id: AutomationID) {
+        let automation = server.state.automations.first { $0.id == id }
+        guard automation?.projectID == nil else {
+            remoteActionError = "Use the Project's revision-checked automation controls."
+            return
+        }
         if startingAutomations.contains(id) { cancelledAutomationStarts.insert(id) }
-        guard let agentID = state.automations.first(where: { $0.id == id })?.agentID else { return }
+        guard let agentID = automation?.agentID else { return }
         deleteAgent(agentID)
     }
 
     func deleteAutomation(_ id: AutomationID) {
+        guard server.state.automations.first(where: { $0.id == id })?.projectID == nil else {
+            remoteActionError = "Use the Project's revision-checked automation settings."
+            return
+        }
         stopAutomation(id)
         Task { @MainActor in
             try? await server.removeAutomation(id)
@@ -180,7 +213,7 @@ extension ShepherdViewModel {
     /// adopted. Runs died with the previous app instance; enabled means the
     /// user wants the watch standing.
     func autoStartAutomations() {
-        let pending = state.automations.filter { $0.enabled && $0.agentID == nil }
+        let pending = state.automations.filter { $0.projectID == nil && $0.enabled && $0.agentID == nil }
         guard !pending.isEmpty else { return }
         Task { @MainActor in
             for automation in pending {

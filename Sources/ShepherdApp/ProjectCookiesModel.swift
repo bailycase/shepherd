@@ -41,13 +41,13 @@ struct ProjectCookieScope: Hashable {
         guard force || scope != target else { return }
         revision += 1; let token = revision
         scope = target; sites = []; pending = nil; notice = nil; error = nil; derive()
-        guard let target else { loading = false; error = "This project is no longer available on the selected host."; return }
+        guard let target else { loading = false; error = "This space is no longer available on the selected host."; return }
         loading = true
         do {
             let result = try await read(target)
             guard token == revision, !Task.isCancelled else { return }
             sites = sorted(result); derive()
-        } catch { if token == revision { self.error = "Could not read project cookies on this Mac. Try again." } }
+        } catch { if token == revision { self.error = "Could not read space cookies on this Mac. Try again." } }
         if token == revision { loading = false }
     }
 
@@ -69,7 +69,7 @@ struct ProjectCookieScope: Hashable {
                 sites = sorted(result); derive()
                 let removed = site.map { site in !result.contains { $0.site == site } } ?? result.isEmpty
                 if removed {
-                    notice = site.map { "Cleared cookies for \($0) in this project on this Mac." } ?? "Cleared all cookies for this project on this Mac."
+                    notice = site.map { "Cleared cookies for \($0) in this space on this Mac." } ?? "Cleared all cookies for this space on this Mac."
                     break
                 }
                 if attempt == 19 { notice = "Cookies cleared. Open pages may have created new cookies."; break }

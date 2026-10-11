@@ -13,10 +13,10 @@ Code: `Extensions/shepherd-panes.ts` defines the tools. `SessionServer` enforces
 relays requests and owns cancellation tokens. `AgentApprovals.swift` retains the server access-policy API;
 `AgentPeers.swift` handles listing, messaging, creation and deletion.
 
-## Project registration and refresh
+## Space registration and refresh
 
-The same bundled extension exposes five local project tools, deferred through `tool_search`
-by default. Use them when the user requests project management. They are not installed
+The same bundled extension exposes five local space tools, deferred through `tool_search`
+by default. Use them when the user requests space management. They are not installed
 in automation or design agents and do not use the peer-thread approval setting.
 
 | Tool | Arguments | Successful text result, JSON |
@@ -30,13 +30,13 @@ in automation or design agents and do not use the peer-thread approval setting.
 `project_register` accepts an existing readable directory on the local Mac. `path` must be
 absolute or start with `~/`. The host resolves symlinks and dot segments. `name` is trimmed,
 must contain 1–256 characters, and cannot contain control characters. No Git repository is
-required. Registration uses the same state mutation and notifications as Add Project, inserts
+required. Registration uses the same state mutation and notifications as Add Space, inserts
 a new space at the top, and persists it in `state.json`. A matching canonical path returns the
 existing space with `created: false`, preserving its name, position, ID, and hidden flags.
-Settings' Add Project uses the same validated registration path.
+Settings' Add Space uses the same validated registration path.
 
 `project_refresh` adopts the live server state into the sidebar and forces the existing
-Projects settings list to reload. Neither tool selects a project, starts a thread, creates
+Spaces settings list to reload. Neither tool selects a space, starts a thread, creates
 folders, grants project trust, or replaces an unsaved editor draft. A successful reply follows
 live UI adoption and list reload. `projects.json` is cached directory history, not sidebar
 registration. Refresh neither imports it into spaces nor rereads `state.json` over live state.
@@ -54,7 +54,7 @@ are absolute or `~/` paths. It never initializes Git, creates intermediate direc
 starts a thread. `created` describes the registration, not the folder. If folder creation
 succeeds but registration fails, the folder remains and the error names it. Retry with
 `create: false`. No automatic deletion or rollback removes user files. The UI exposes this
-same operation in [Add child project](design/child-projects.md). Newly registered children keep
+same operation in [Add child space](design/child-projects.md). Newly registered children keep
 an explicit relationship to the selected registered parent; duplicates keep their prior relationship.
 
 `project_edit` uses a registration's `space.id`, returned by `project_register` or
@@ -62,7 +62,7 @@ an explicit relationship to the selected registered parent; duplicates keep thei
 the current registration; `no_such_project` means it is no longer registered. By default, `folderAction`
 is `"none"`. `name` changes only the display name. `parentProjectID` changes the display
 parent, or makes it top-level when the value is an empty string; omitting it preserves the
-existing relationship. Parents must be registered local projects. Cycles and more than 16
+existing relationship. Parents must be registered local spaces. Cycles and more than 16
 levels are refused. Both sidebar and Settings follow the explicit hierarchy. Paths, files,
 agent working directories, and actual instruction/MCP inheritance stay unchanged.
 
@@ -70,14 +70,14 @@ Only when the user explicitly requests a filesystem operation, supply `folderAct
 or `"copy"` and an unused absolute `destinationPath`. A destination with `"none"` is an error.
 The tool does not infer permission from a parent change.
 
-- Move uses a same-filesystem, no-overwrite rename. It preserves project IDs and updates paths
+- Move uses a same-filesystem, no-overwrite rename. It preserves space IDs and updates paths
   for registered descendants. It never silently falls back to copy-and-delete across volumes.
 - Copy preserves the original folder and registrations, and registers the copied root with a
   new ID and `created: true`. It does not duplicate descendant registrations. Other edits
   return `created: false`. Configuration, absolute path references, and symlinks are not rewritten.
   Callers must check external consumers before an explicit transfer; it is not a repository migration.
 - Both operations refuse folders with registered threads/tabs, live processes, automations,
-  or design references; stop/remove those references first and call from another project.
+  or design references; stop/remove those references first and call from another space.
   Linked Git worktrees/submodules, protected runtime/auth/system folders, and existing
   destinations are refused. Inspection is capped at 50,000 entries, 2 GiB, and 15 seconds.
   Filesystem calls may still wait on a slow volume. Workspace writes and new sessions are
@@ -88,10 +88,10 @@ The tool does not infer permission from a parent change.
   no recovery deletes files. A timeout is not proof of failure: inspect source, destination,
   and registrations before retrying. A restart never resumes a transfer automatically.
 
-`project_delete` requests the existing Remove project dialog. It does not directly delete a
+`project_delete` requests the existing Remove space dialog. It does not directly delete a
 registration, stop agents, or remove files. The response says confirmation is required; the
 user may cancel. Confirming removes that registration and its own sessions, retains children
-as separate projects, and keeps folders, files, saved conversations, and project history.
+as separate spaces, and keeps folders, files, saved conversations, and space history.
 
 The extension socket verifies the caller's agent identity. Invalid input, an unavailable app,
 a failed state write, or a failed reload returns a tool error, not success. A reload can fail
@@ -199,6 +199,14 @@ an agent's name comes from its first prompt. A `report` is hidden context under 
 Agent tools act without approval modals or a separate Settings permission row. The app ignores
 legacy `shepherd.pi.agentMessages` values and permits peer calls, including automation reports.
 The extension still tells agents to use peer tools only when the user explicitly asks.
+
+A Project coordinator uses only its typed Project assignment tools, never arbitrary peer threads
+or helpers. Assigned workers retain the existing peer/automation restriction so helpers cannot
+bypass Threads at once, but can use bounded native subagents through their task-scoped controller.
+That permission comes from the local executing host's current native turn, not an owner heartbeat;
+a disconnected owner cannot assign new work, while an already assigned remote worker can finish.
+Manual turns after settlement/deletion use ordinary helper semantics. See
+[Project helper cancellation](project-execution.md#helpers-and-scoped-cancellation).
 
 The server checks process identity and validates every request. Unknown targets, self-control,
 invalid folders and empty steering text remain errors. Design agents cannot use or receive peer

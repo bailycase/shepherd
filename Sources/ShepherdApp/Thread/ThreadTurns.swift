@@ -147,6 +147,11 @@ struct AgentTurn: View, Equatable {
     /// The turn's footer (its time, Copy and Retry) ends it; an answer inside a design comment's
     /// card has none (DZCanvas).
     var footer = true
+    /// What a Project conversation's typed references resolve to now. Part of equality: a task that resolves, finishes or goes redraws
+    /// its card, though the turn's own messages did not change. Empty in every ordinary thread.
+    var cards: [ProjectActionResolver.Card?] = []
+    @Environment(\.projectActionCards) private var projectCards
+    @Environment(\.projectWorkerThread) private var workerStyle
     @State private var openThinking: Set<String> = []
     @State private var shown = TurnShown()
     @State private var hover: MessageHover
@@ -155,7 +160,8 @@ struct AgentTurn: View, Equatable {
     init(presentation: NativeTurnPresentation, live: Bool, subagents: TurnSubagents = TurnSubagents(),
          subagentActions: SubagentActions? = nil, startedAt: Double? = nil, retry: (() -> Void)? = nil, review: ((String) -> Void)? = nil,
          recordedTurn: ChangesTurn? = nil, turnActions: TurnChangesActions? = nil,
-         thinking: Bool = false, arriving: Bool = false, settled: Bool = true, footer: Bool = true, hover: MessageHover? = nil) {
+         thinking: Bool = false, arriving: Bool = false, settled: Bool = true, footer: Bool = true,
+         cards: [ProjectActionResolver.Card?] = [], hover: MessageHover? = nil) {
         self.presentation = presentation
         self.live = live
         self.subagents = subagents
@@ -169,6 +175,7 @@ struct AgentTurn: View, Equatable {
         self.arriving = arriving
         self.settled = settled
         self.footer = footer
+        self.cards = cards
         _hover = State(initialValue: hover ?? MessageHover())
     }
 
@@ -182,7 +189,7 @@ struct AgentTurn: View, Equatable {
     static func == (lhs: AgentTurn, rhs: AgentTurn) -> Bool {
         lhs.presentation == rhs.presentation && lhs.live == rhs.live && lhs.subagents == rhs.subagents
             && lhs.startedAt == rhs.startedAt && lhs.thinking == rhs.thinking && lhs.recordedTurn == rhs.recordedTurn
-            && lhs.footer == rhs.footer
+            && lhs.footer == rhs.footer && lhs.cards == rhs.cards
             && (lhs.turnActions == nil) == (rhs.turnActions == nil)
             && (lhs.retry == nil) == (rhs.retry == nil) && (lhs.review == nil) == (rhs.review == nil)
             && (lhs.subagentActions == nil) == (rhs.subagentActions == nil)
@@ -195,13 +202,13 @@ struct AgentTurn: View, Equatable {
     var body: some View {
         let _ = NWRenderProbe.tick("thread.agentTurn")
         let entering = (shown.appeared || arriving) && settled
-        VStack(alignment: .leading, spacing: AppLayout.turnItemSpacing) {
+        VStack(alignment: .leading, spacing: projectCards != nil || workerStyle != nil ? NWLeadMetrics.turnGap : AppLayout.turnItemSpacing) {
             ForEach(presentation.items) { item in
                 // Activity lines make their own entrances as they stream in. Live thinking
                 // carries on the thread's live line, so it never enters.
                 switch item {
                 case .activity(_, let bursts):
-                    ActivityLinesView(bursts: bursts, review: review, entering: entering).equatable()
+                    ActivityLinesView(bursts: bursts, review: review, entering: entering, cards: projectCards, planCallID: planCallID).equatable()
                 case .thinking(_, _, _, _, true, _):
                     itemView(item)
                 default:
@@ -210,11 +217,13 @@ struct AgentTurn: View, Equatable {
             }
             // Between tools the turn ends in "Thinking…", which passes from the thread's tail into
             // the reply unchanged: it never enters.
-            if thinking { NWThinking.live() }
+            if thinking { liveLine }
             if !live, !presentation.items.isEmpty {
                 Group {
                     if let changes = cardChanges { changesCard(changes) }
-                    if footer, !presentation.endsInError { turnFooter }
+                    // The ProjectLead boards draw no footer under the coordinator's replies (a hidden one still reserves 40pt of the
+                    // column); worker threads and every ordinary thread keep theirs.
+                    if footer, projectCards == nil, !presentation.endsInError { turnFooter }
                 }
                 .nwArrival(entering, .list, edge: .bottom)
             }
@@ -223,6 +232,20 @@ struct AgentTurn: View, Equatable {
         .messageHover(hover)
         .accessibilityElement(children: .contain)
         .onAppear { shown.appeared = true }
+    }
+
+    /// "Thinking…", or in a Project thread its typed status line (ProjectRunStatus).
+    @ViewBuilder private var liveLine: some View {
+        if projectCards != nil || workerStyle != nil { ProjectLiveLine(startedAt: startedAt, justAssigned: ProjectRunStatus.justAssigned(presentation)) } else { NWThinking.live() }
+    }
+
+    /// The call that carries this turn's latest explicit plan: the Steps card is drawn there and nowhere else.
+    private var planCallID: String? {
+        guard presentation.latestProjectPlan != nil else { return nil }
+        for case .activity(_, let bursts) in presentation.items.reversed() {
+            if let call = bursts.reversed().lazy.flatMap({ $0.calls.reversed() }).first(where: { $0.projectPlan != nil }) { return call.id }
+        }
+        return nil
     }
 
     /// A failed request rises in like a row; everything else streaming in just fades.
@@ -240,9 +263,13 @@ struct AgentTurn: View, Equatable {
             .equatable()
         case .prose(_, _, let blocks, let openFence):
             // The fence a streaming reply is writing is colored as it grows, not on every chunk.
-            Prose(blocks: blocks, writingFence: live && openFence).equatable()
+            Prose(blocks: blocks, maxWidth: projectCards != nil || workerStyle != nil ? NWLeadMetrics.columnWidth : AppLayout.proseMaxWidth, writingFence: live && openFence).equatable()
         case .activity(_, let bursts):
-            ActivityLinesView(bursts: bursts, review: review).equatable()
+            ActivityLinesView(bursts: bursts, review: review, cards: projectCards, planCallID: planCallID).equatable()
+        case .subagents where projectCards != nil || workerStyle != nil:
+            // A Project's agents delegate through ordinary Project threads, never subagents, and a Project thread has no inspector:
+            // the record line would be a control that opens nothing.
+            EmptyView()
         case .subagents(_, let lines):
             // Where they started, and where they finished: both open the first run in the
             // inspector, whose ‹ › browse the rest. Adjacent, they sit together as activity

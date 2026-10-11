@@ -94,7 +94,7 @@ public struct NWSkillFileChip: View {
 
     private var symbol: String {
         switch kind {
-        case .file: "doc.text"
+        case .file: NWGlyph.document.symbolName
         case .code: "curlybraces"
         case .folder: "folder"
         }
