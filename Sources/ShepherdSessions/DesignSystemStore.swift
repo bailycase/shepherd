@@ -388,7 +388,19 @@ public final class DesignSystemStore: @unchecked Sendable {
             guard DesignSystemFile.isPath(path), path != DesignSystemFile.tokens else { throw DesignSystemError.invalidFile(path) }
             switch value {
             case .null: removals.insert(path)
-            case .string(let text): writes[path] = Data(text.utf8)
+            case .string(let text):
+                guard !DesignSystemFile.isFont(path) else { throw DesignSystemError.invalidFile(path) }
+                if path.hasSuffix(DesignPath.fileExtension) {
+                    guard DesignPath.systemComponent("ds/\(namespace)/\(path)") != nil else { throw DesignSystemError.invalidFile(path) }
+                    _ = try DesignBoardCheck.check(text)
+                }
+                writes[path] = Data(text.utf8)
+            case .object(let object):
+                guard DesignSystemFile.isFont(path), object.count == 1, let encoded = object["base64"]?.stringValue,
+                      let data = Data(base64Encoded: encoded), Self.isFontData(data, path: path) else {
+                    throw DesignSystemError.invalidFile(path)
+                }
+                writes[path] = data
             default: throw DesignSystemError.invalidFile(path)
             }
         }
@@ -467,6 +479,17 @@ public final class DesignSystemStore: @unchecked Sendable {
         if synced { info.syncedAt = now }
         if changed || described || synced || !exists { try saveInfo(info) }
         return (try summaryOnQueue(namespace), changed || described || !exists, notes)
+    }
+
+    private static func isFontData(_ data: Data, path: String) -> Bool {
+        let signature = Array(data.prefix(4))
+        switch URL(fileURLWithPath: path).pathExtension.lowercased() {
+        case "woff2": return signature == Array("wOF2".utf8)
+        case "woff": return signature == Array("wOFF".utf8)
+        case "otf": return signature == Array("OTTO".utf8)
+        case "ttf": return signature == [0, 1, 0, 0] || signature == Array("true".utf8)
+        default: return false
+        }
     }
 
     private func loadOnQueue(_ namespace: String) throws -> (DesignSystemSummary, [String: Data]) {

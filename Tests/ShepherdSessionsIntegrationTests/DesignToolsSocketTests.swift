@@ -132,10 +132,54 @@ struct DesignToolsSocketTests {
         try agent.send(.designRender(id: 1, agentID: drawer, designID: design, request: DesignRenderRequest(
             path: "A.dc.html", width: 390, scale: 2, props: .object(["density": .string("compact")]))))
         guard case .designRendered(1, let text, let image) = try await agent.reply() else { Issue.record("no picture"); return }
-        #expect(text == "A.dc.html · 390×844 at 2x" && image == png())
+        #expect(text == "A.dc.html · 390×844 at 2x · revision \(try await h.server.designSnapshot(design).revision)" && image == png())
         let seen = try #require(job.current)
         #expect(seen.designID == design && seen.path == T.a && seen.request.scale == 2 && seen.request.props == .object(["density": .string("compact")]))
         #expect(seen.files.boards == [T.a] && seen.files.sources[T.a]?.contains("Pay now") == true, "the files the renderer needs, read by the host")
+    }
+
+    @Test func rendererConsoleSecretsAreRedactedBeforeTheToolReply() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let (design, _, _) = try await workspace(h)
+        h.server.onDesignRender = { _, respond in
+            let output = "console.log: api_key=abcdefghijklmnop"
+            respond(.success(.init(image: BrowserImage(data: "iVBORw0KGgo=", mimeType: "image/png"),
+                text: output, diagnostics: [output])))
+        }
+        let rendered = try await h.server.renderDesignBoard(design, request: .init(path: "A.dc.html"))
+        #expect(rendered.text.contains("[redacted]") && !rendered.text.contains("abcdefghijklmnop"))
+        #expect(rendered.diagnostics == ["console.log: [redacted]"])
+    }
+
+    @Test func aRenderRetriesWhenAWriteFinishesWhileThePreviousRevisionIsDrawing() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let (design, _, _) = try await workspace(h)
+        let seen = Locked<[String]>([])
+        let server = h.server
+        h.server.onDesignRender = { job, respond in
+            let answer = Locked(respond)
+            let attempt = seen.withValue { sources -> Int in
+                sources.append(job.files.sources[T.a] ?? "")
+                return sources.count
+            }
+            if attempt == 1 {
+                MainActor.assumeIsolated {
+                    Task { @MainActor in
+                        do {
+                            _ = try await server.writeDesignBoards(design, sources: [T.a: T.board("New revision")])
+                            answer.withValue { $0(.success(.init(image: BrowserImage(data: "iVBORw0KGgo=", mimeType: "image/png"), text: "old"))) }
+                        } catch { answer.withValue { $0(.failure(.init(code: "test_failed", message: String(describing: error)))) } }
+                    }
+                }
+            } else {
+                answer.withValue { $0(.success(.init(image: BrowserImage(data: "iVBORw0KGgo=", mimeType: "image/png"), text: "latest"))) }
+            }
+        }
+        let rendered = try await h.server.renderDesignBoard(design, request: .init(path: "A.dc.html"))
+        #expect(rendered.text.hasPrefix("latest · revision "))
+        #expect(seen.current.count == 2 && seen.current[1].contains("New revision"))
     }
 
     @Test func aRenderTheAppRefusesIsAnsweredWithItsOwnCodeAndWords() async throws {

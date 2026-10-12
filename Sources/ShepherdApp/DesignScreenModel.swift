@@ -337,7 +337,13 @@ final class DesignScreenModel {
         for (path, board) in next.index.boards {
             guard let sha = next.boards[path] else { continue }
             let tweaks = next.index.tweaks(for: path)
-            let pieces = usage.dependencies(of: path).compactMap { piece in next.boards[piece].map { "\(piece.rawValue):\($0)" } }
+            let pieces = usage.dependencies(of: path).compactMap { piece -> String? in
+                if let sha = next.boards[piece] { return "\(piece.rawValue):\(sha)" }
+                guard DesignPath.systemComponent(piece.rawValue) != nil else { return nil }
+                let namespace = piece.rawValue.split(separator: "/")[1]
+                let installed = next.index.designSystems?.first { $0.namespace == String(namespace) }
+                return "\(piece.rawValue):\(installed?.extra["version"]?.stringValue ?? String(next.revision))"
+            }
             boards[path] = DesignHost.Board(size: CGSize(width: board.w, height: board.h), sha: sha,
                                             props: tweaks.isEmpty ? nil : DesignTweakModel.json(.object(tweaks)),
                                             deps: pieces.isEmpty ? nil : pieces.joined(separator: ","))

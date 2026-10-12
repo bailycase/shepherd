@@ -258,6 +258,8 @@ enum DesignSpecimenBoard {
     }
 
     static func source(specimen: String, title: String, stylesheet: Bool, background: String?, stylesheetPath: String = "tokens.css") -> String {
+        // A DC specimen already owns its template, props and logic. Never nest it inside another x-dc.
+        if DesignTemplate(board: specimen) != nil { return specimen }
         let fill = background.flatMap(DesignSystemPresentation.hex).map { "background: \($0); " } ?? ""
         let document = DesignSpecimenDocument(specimen)
         return """
