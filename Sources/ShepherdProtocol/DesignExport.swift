@@ -1,7 +1,36 @@
 import Foundation
+import ShepherdCore
+
+/// Agent export, using the same formats and board selection as the save-panel exporter.
+public struct DesignExportRequest: Hashable, Sendable, Codable {
+    public var format: DesignExportFormat
+    public var paths: [String]?
+
+    public init(format: DesignExportFormat, paths: [String]? = nil) {
+        self.format = format
+        self.paths = paths
+    }
+}
+
+public struct DesignExportJob: Sendable {
+    public var designID: DesignID
+    public var request: DesignExportRequest
+    public var files: DesignExportFiles
+    public var destination: URL
+    public var deadline: Date?
+
+    public init(designID: DesignID, request: DesignExportRequest, files: DesignExportFiles, destination: URL, deadline: Date? = nil) {
+        self.designID = designID
+        self.request = request
+        self.files = files
+        self.destination = destination
+        self.deadline = deadline
+    }
+}
+
 
 /// What Export writes a design's boards as (DZExport's format cards).
-public enum DesignExportFormat: String, CaseIterable, Hashable, Sendable {
+public enum DesignExportFormat: String, CaseIterable, Hashable, Sendable, Codable {
     case html, zip, pdf, png
 
     public var title: String { rawValue.uppercased() }
@@ -122,12 +151,10 @@ public enum DesignBundle {
     /// the sibling `Card.dc.html`.
     public static func imports(in source: String, of path: DesignPath) -> [DesignPath] {
         let text = source as NSString
-        let folder = path.rawValue.split(separator: "/").dropLast().joined(separator: "/")
         var found: [DesignPath] = []
         for match in importPattern.matches(in: source, range: NSRange(location: 0, length: text.length)) {
             let name = text.substring(with: match.range(at: 2))
-            let raw = (folder.isEmpty ? "" : folder + "/") + name + DesignPath.fileExtension
-            if let imported = DesignPath(raw), imported != path, !found.contains(imported) { found.append(imported) }
+            if let imported = DesignImports.resolve(name: name, from: path), imported != path, !found.contains(imported) { found.append(imported) }
         }
         return found
     }

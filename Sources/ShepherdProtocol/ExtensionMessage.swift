@@ -133,12 +133,13 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     case designCheckpoint(id: Int, agentID: AgentID, designID: DesignID, request: DesignCheckpointRequest)
     /// `board_render`: the board drawn by the app and answered as an image (`designRendered`).
     case designRender(id: Int, agentID: AgentID, designID: DesignID, request: DesignRenderRequest)
+    case designExport(id: Int, agentID: AgentID, designID: DesignID, request: DesignExportRequest)
     /// `board_extract`: an element of a board becomes a piece and an import takes its place, as one
     /// change (`DesignExtractRequest`). Answered with `designExtracted`.
     case designExtract(id: Int, agentID: AgentID, designID: DesignID, request: DesignExtractRequest)
     /// `canvas_update`: a JSON merge patch for the design's canvas.json (`DesignIndex.merging`).
     /// Answered with `designWritten`.
-    case designUpdateIndex(id: Int, agentID: AgentID, designID: DesignID, changes: JSONValue, baseRevision: UInt64?)
+    case designUpdateIndex(id: Int, agentID: AgentID, designID: DesignID, changes: JSONValue, baseRevision: UInt64?, options: DesignCanvasOptions? = nil)
     /// `comment_list`: the design's comments (`ExtensionReply.designComments`).
     case designComments(id: Int, agentID: AgentID, designID: DesignID)
     /// `comment_reply`: the design agent's answer under a comment's pin, once the change it asked
@@ -199,7 +200,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case prompt, enabled, start, automationID, targetAgentID, request, requestID, result, delivery
         case error
         case line, reason, file
-        case designID, path, source, baseRevision, changes, commentID, edits, tokens, query
+        case designID, path, source, baseRevision, changes, commentID, edits, tokens, query, options
         case namespace, system
         case call, proposals
         case what
@@ -216,7 +217,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case listAgents, sendToAgent, spawnAgent, coordinateAgent, agentResponse, cancelAgentRequest
         case suggestInstruction
         case designRead, designWriteBoard, designEditBoard, designUpdateIndex, designComments, designCommentReply
-        case designEditBoards, designSearch, designCheckpoint, designRender, designExtract
+        case designEditBoards, designSearch, designCheckpoint, designRender, designExport, designExtract
         case designSystemRead, designSystemWrite, designProposeComments
         case designGet, designNote
         case helloBrowser, browser
@@ -476,6 +477,9 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
                 designID: try c.decode(DesignID.self, forKey: .designID),
                 request: try c.decode(DesignRenderRequest.self, forKey: .request)
             )
+        case .designExport:
+            self = .designExport(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID),
+                                 designID: try c.decode(DesignID.self, forKey: .designID), request: try c.decode(DesignExportRequest.self, forKey: .request))
         case .designExtract:
             self = .designExtract(
                 id: try c.decode(Int.self, forKey: .id),
@@ -489,7 +493,8 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
                 agentID: try c.decode(AgentID.self, forKey: .agentID),
                 designID: try c.decode(DesignID.self, forKey: .designID),
                 changes: try c.decode(JSONValue.self, forKey: .changes),
-                baseRevision: try c.decodeIfPresent(UInt64.self, forKey: .baseRevision)
+                baseRevision: try c.decodeIfPresent(UInt64.self, forKey: .baseRevision),
+                options: try c.decodeIfPresent(DesignCanvasOptions.self, forKey: .options)
             )
         case .designComments:
             self = .designComments(
@@ -794,19 +799,26 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(agentID, forKey: .agentID)
             try c.encode(designID, forKey: .designID)
             try c.encode(request, forKey: .request)
+        case .designExport(let id, let agentID, let designID, let request):
+            try c.encode(Kind.designExport, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(designID, forKey: .designID)
+            try c.encode(request, forKey: .request)
         case .designExtract(let id, let agentID, let designID, let request):
             try c.encode(Kind.designExtract, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(agentID, forKey: .agentID)
             try c.encode(designID, forKey: .designID)
             try c.encode(request, forKey: .request)
-        case .designUpdateIndex(let id, let agentID, let designID, let changes, let baseRevision):
+        case .designUpdateIndex(let id, let agentID, let designID, let changes, let baseRevision, let options):
             try c.encode(Kind.designUpdateIndex, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(agentID, forKey: .agentID)
             try c.encode(designID, forKey: .designID)
             try c.encode(changes, forKey: .changes)
             try c.encodeIfPresent(baseRevision, forKey: .baseRevision)
+            try c.encodeIfPresent(options, forKey: .options)
         case .designComments(let id, let agentID, let designID):
             try c.encode(Kind.designComments, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -1223,6 +1235,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     case designCheckpoints(id: Int, result: DesignCheckpointResult)
     /// A `designRender`'s picture of the board, and the words that go with it.
     case designRendered(id: Int, text: String, image: BrowserImage)
+    case designExported(id: Int, path: String)
     /// A `designExtract`'s piece, the boards it changed, and what it left alone.
     case designExtracted(id: Int, result: DesignExtractResult)
     /// A `designComments`: every comment of the design, open and resolved, with their revision.
@@ -1253,7 +1266,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case type, id, code, message, panes, pane, paneID, lines, automations, agents, text, delivery
         case runID, action, mode, scope, deadline
         case outcome
-        case snapshot, board, replaced
+        case snapshot, board, replaced, path
         case comments, comment
         case listing, system
         case proposals
@@ -1267,7 +1280,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case ok, error, panes, paneOpened, paneContent, reviewResult, automations, agents, message
         case suggestion
         case design, designBoard, designWritten, designEdited, designComments, designComment
-        case designBatchEdited, designSearchResult, designCheckpoints, designRendered, designExtracted
+        case designBatchEdited, designSearchResult, designCheckpoints, designRendered, designExported, designExtracted
         case designSystems, designSystem, designSystemWritten, designProposals
         case designReference, designNote
         case browserResult, projectRuntime, projectPublish
@@ -1400,6 +1413,8 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
                 text: try c.decode(String.self, forKey: .text),
                 image: try c.decode(BrowserImage.self, forKey: .image)
             )
+        case .designExported:
+            self = .designExported(id: try c.decode(Int.self, forKey: .id), path: try c.decode(String.self, forKey: .path))
         case .designExtracted:
             self = .designExtracted(
                 id: try c.decode(Int.self, forKey: .id),
@@ -1567,6 +1582,10 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
             try c.encode(id, forKey: .id)
             try c.encode(text, forKey: .text)
             try c.encode(image, forKey: .image)
+        case .designExported(let id, let path):
+            try c.encode(Kind.designExported, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(path, forKey: .path)
         case .designExtracted(let id, let result):
             try c.encode(Kind.designExtracted, forKey: .type)
             try c.encode(id, forKey: .id)

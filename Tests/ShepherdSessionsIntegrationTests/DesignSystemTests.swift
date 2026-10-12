@@ -88,6 +88,32 @@ struct DesignSystemTests {
                           sources: ["web/static/tokens.css"], install: install, baseRevision: base)
     }
 
+    @Test func bundledFontBytesAndDCComponentsSurviveSystemInstallationAndExportInputs() async throws {
+        let w = try await workspace()
+        defer { w.h.stop() }
+        var system = Self.write()
+        let bytes = Data("wOF2font-bytes".utf8)
+        system.files?["fonts/Face.woff2"] = .object(["base64": .string(bytes.base64EncodedString())])
+        system.files?["components/Card.dc.html"] = .string(DesignToolsStoreTests.board("System card"))
+        _ = try await w.h.server.writeDesignSystem(system, for: w.design)
+        let project = try #require(w.h.server.designs.projectFolder(for: w.design))
+        #expect(try Data(contentsOf: project.appendingPathComponent("ds/acme-web/fonts/Face.woff2")) == bytes)
+        let path = DesignToolsStoreTests.a
+        let source = DesignToolsStoreTests.board(#"<dc-import name="ds/acme-web/components/Card"></dc-import>"#)
+        let write = try await w.h.server.writeDesignBoard(w.design, path: path, source: source)
+        #expect(write.report?.missingImports.isEmpty == true)
+        let files = try await w.h.server.designs.exportFiles(w.design, boards: [path])
+        #expect(files.support["ds/acme-web/fonts/Face.woff2"] == bytes)
+        #expect(files.support["ds/acme-web/components/Card.dc.html"] != nil)
+        let before = DesignTests.contents(of: project)
+        do {
+            _ = try await w.h.server.writeDesignSystem(.init(namespace: "acme-web",
+                files: ["fonts/Bad.woff2": .object(["base64": .string(Data("not-a-font".utf8).base64EncodedString())])], install: true), for: w.design)
+            Issue.record("invalid font bytes installed")
+        } catch { #expect(String(describing: error).contains("Bad.woff2")) }
+        #expect(DesignTests.contents(of: project) == before)
+    }
+
     @Test func anAgentBuildsASystemFromItsProjectAndInstallsItInItsDesign() async throws {
         let w = try await workspace()
         defer { w.h.stop() }

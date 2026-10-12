@@ -29,8 +29,9 @@ public enum DesignImports {
         let segments = name.split(separator: "/", omittingEmptySubsequences: false)
         guard segments.allSatisfy(DesignPath.isSegment) else { return nil }
         let folder = board.rawValue.split(separator: "/", omittingEmptySubsequences: false).dropLast().joined(separator: "/")
-        let raw = (folder.isEmpty ? "" : folder + "/") + name + DesignPath.fileExtension
-        return DesignPath(raw)
+        // ds/ names always start at the project root, even from a nested board.
+        let raw = (name.hasPrefix("ds/") || folder.isEmpty ? "" : folder + "/") + name + DesignPath.fileExtension
+        return DesignPath(raw) ?? DesignPath.systemComponent(raw)
     }
 
     /// A `<dc-import>` as the board's text says it, before its name is resolved against a board.
