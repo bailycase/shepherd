@@ -14,7 +14,7 @@ public struct NWBranchGlyph: View {
     }
 
     public var body: some View {
-        Image(systemName: "arrow.triangle.branch")
+        Image(systemName: NWGlyph.gitBranch.symbolName)
             .font(.system(size: size - 3, weight: .medium))
             .foregroundStyle(color ?? state.color)
             .frame(width: size, height: size)

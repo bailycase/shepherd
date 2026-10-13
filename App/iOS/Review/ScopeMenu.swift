@@ -61,9 +61,9 @@ struct ChangesScopeMenu<Label: View>: View {
                     if let stat = statText(option) { Text(stat) }
                     if option.selected { Image(systemName: "checkmark") }
                 }
-                Button("Compare against…", systemImage: "arrow.triangle.branch", action: pickBase)
+                Button("Compare against…", systemImage: NWGlyph.gitBranch.symbolName, action: pickBase)
             } label: {
-                SwiftUI.Label(option.title, systemImage: "arrow.triangle.branch")
+                SwiftUI.Label(option.title, systemImage: NWGlyph.gitBranch.symbolName)
                 if let detail = option.detail { Text(detail) }
             }
         default:
@@ -97,7 +97,7 @@ struct ChangesScopeMenu<Label: View>: View {
         case .lastTurn: "clock.arrow.circlepath"
         case .uncommitted, .unstaged, .staged: "pencil"
         case .commits: "point.3.connected.trianglepath.dotted"
-        case .branch: "arrow.triangle.branch"
+        case .branch: NWGlyph.gitBranch.symbolName
         case .pullRequest: "arrow.triangle.pull"
         }
     }
@@ -122,7 +122,7 @@ struct ChangesTitle: View {
             VStack(spacing: NW.Space.xxs) {
                 Text("Changes").font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary).lineLimit(1)
                 HStack(spacing: NW.Space.xs) {
-                    Image(systemName: store.usesChanges ? scopeSymbol : "arrow.triangle.branch").imageScale(.small)
+                    Image(systemName: store.usesChanges ? scopeSymbol : NWGlyph.gitBranch.symbolName).imageScale(.small)
                     Text(store.scopeTitle).lineLimit(1).truncationMode(.middle)
                     Image(systemName: "chevron.down").imageScale(.small)
                 }
@@ -140,7 +140,7 @@ struct ChangesTitle: View {
         case .commits?: "point.3.connected.trianglepath.dotted"
         case .pullRequest?: "arrow.triangle.pull"
         case .uncommitted?, .unstaged?, .staged?: "pencil"
-        default: "arrow.triangle.branch"
+        default: NWGlyph.gitBranch.symbolName
         }
     }
 }
@@ -208,7 +208,7 @@ struct ChangesBasePicker: View {
     private func row(_ option: ChangesBaseOption) -> some View {
         let nw = Color.nw
         return HStack(spacing: NW.Space.m) {
-            Image(systemName: "arrow.triangle.branch").foregroundStyle(nw.textSecondary).accessibilityHidden(true)
+            Image(systemName: NWGlyph.gitBranch.symbolName).foregroundStyle(nw.textSecondary).accessibilityHidden(true)
             Text(option.name).font(.nw(.code)).foregroundStyle(nw.textPrimary).lineLimit(1).truncationMode(.middle)
             Spacer(minLength: NW.Space.s)
             if let tag = option.tag { Text(tag).font(.nw(.mono)).foregroundStyle(nw.textTertiary) }

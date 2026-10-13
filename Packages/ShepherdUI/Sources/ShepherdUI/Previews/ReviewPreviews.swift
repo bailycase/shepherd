@@ -85,7 +85,7 @@ private enum ReviewSample {
                                  trailing: .stat(added: 12, removed: 3)) {}
                 NWChangesMenuDivider()
                 NWChangesMenuRow("Uncommitted", systemImage: "pencil", trailing: .stat(added: 33, removed: 11)) {}
-                NWChangesMenuRow("Branch", subtitle: "agent/refund-events vs origin/main", systemImage: "arrow.triangle.branch",
+                NWChangesMenuRow("Branch", subtitle: "agent/refund-events vs origin/main", systemImage: NWGlyph.gitBranch.symbolName,
                                  trailing: .stat(added: 200, removed: 8), checked: true) {}
             }
             NWChangesMenu(width: NWChangesMenuMetrics.optionsWidth) {

@@ -220,7 +220,7 @@ private struct NewThreadForm: View {
             model.panel = pad ? .worktree : .workspace
         } label: {
             HStack(spacing: NW.Space.s) {
-                Image(systemName: "arrow.triangle.branch")
+                Image(systemName: NWGlyph.gitBranch.symbolName)
                     .font(.nw(.caption))
                     .accessibilityHidden(true)
                 Text(text)
