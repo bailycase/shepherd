@@ -85,6 +85,25 @@ struct DesignSystemFlowTests {
         return (vm, space)
     }
 
+    @Test func withoutUserSystemsANewDesignStartsOnABlankCanvas() async throws {
+        try StubPi.installAsEngine()
+        let app = try AppHarness()
+        defer { app.stop() }
+        app.settings.designToolEnabled = true
+        let vm = try await app.start(with: Fixture.state(spaces: [], agents: []))
+        await vm.loadDesignSystems()
+        #expect(vm.designSystems.summaries.isEmpty)
+        vm.openNewDesign()
+        #expect(vm.newDesign.systemToInstall(vm) == nil)
+        vm.newDesign.brief = "A blank settings page"
+        vm.newDesign.send(vm)
+        try await eventuallyOnMain("the blank design to open") { vm.shownDesign != nil && !vm.newDesign.starting }
+        let design = try #require(vm.shownDesign)
+        #expect(design.systemNamespace == nil)
+        let snapshot = try await app.server.designSnapshot(design.id)
+        #expect(snapshot.index.designSystems?.isEmpty != false)
+    }
+
     /// What the build's agent does once it has read the project: system_write over the
     /// extension socket, as its design's agent.
     private func writeSystem(_ app: AppHarness, agent: AgentID, design: DesignID) async throws -> DesignSystemWriteResult {

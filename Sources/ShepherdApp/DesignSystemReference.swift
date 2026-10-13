@@ -184,9 +184,7 @@ struct DesignSystemReference: Equatable {
 /// The page's authored words: the design's own copy for the built-in system (DesignSystemPage).
 /// Everything that is a count or a value is derived instead.
 enum DesignSystemCopy {
-    /// What this page calls the built-in system, as the boards do. The system's registered title
-    /// (`NightWatchSystem.title`, "Night Watch") is stored in designs that install it and is not changed; the
-    /// Designs page, New design's card and the system's menu still use it.
+    /// Authored name for the legacy built-in reference page, now exercised only by test fixtures.
     static let name = "Shepherd UI"
 
     static let tagline = "The app’s own components and tokens. Quiet chrome around agents at work."
