@@ -658,6 +658,11 @@ claude.ai is still checked against).
 
 ### In the app
 
+- **The built-in system's page** is `DesignSystemReferencePage`, not the page below: Shepherd UI's colors
+  (dark and light side by side, with the text tokens' contrast), type, spacing, radii, sizes and the
+  component catalog, as read-only tables (docs/design/design-tool-references.md › The Shepherd UI page).
+  A system built from a repository keeps the page described below.
+
 - **The catalog** (`DesignSystemCatalog`, owned by the view model) holds the host's systems as
   last read: each one's record and counts, and its tokens, README and file list. It reads them
   again when the server says one changed (`onDesignSystemsChanged`: a write, a re-sync) and when

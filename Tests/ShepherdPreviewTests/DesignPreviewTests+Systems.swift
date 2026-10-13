@@ -192,15 +192,59 @@ extension DesignPreviewTests {
         }
     }
 
-    /// Night Watch on the Design systems page: generated from ShepherdUI's tokens, with no chat.
+    /// The built-in Shepherd UI system on its page (DesignSystemPage and its eight sibling boards), from the real
+    /// tokens Night Watch generates, with a design drawn in it so the contents menu lists one. Rendered at both
+    /// text scales, light and dark, and tall enough to show every card.
     @Test func designSystemNightWatch() async throws {
         let (workspace, _, _) = try await systemWorkspace(written: false)
         defer { workspace.stop() }
         let vm = workspace.vm
+        var design = Design(name: "Refund ledger", createdAt: 3_000, boardCount: 4)
+        design.systemNamespace = NightWatchSystem.namespace
+        _ = try await workspace.server.createDesign(design)
+        vm.adopt(workspace.server.state)
+        await vm.loadDesignSystems()
         vm.openDesignSystem("night-watch")
         #expect(vm.shownDestination == .designSystem)
-        try await Preview.render("page-design-system-night-watch", size: Self.systemPageSize) {
+        let page = vm.designSystemPage(.system("night-watch"))
+        let reference = try #require(page.reference)
+        #expect(reference.used.map(\.name) == ["Refund ledger"])
+        try await Preview.renderMatrix("page-design-system-night-watch", size: CGSize(width: Self.systemPageSize.width, height: 8200)) {
             DesignSystemDestination(vm: vm)
+        }
+    }
+
+    /// The contents menu open (DesignSystemMenu), with the page behind it and with enough designs in the system that
+    /// the menu has to scroll in a short window.
+    @Test func designSystemContentsMenu() async throws {
+        let (workspace, _, _) = try await systemWorkspace(written: false)
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        for index in 1...2 {
+            var design = Design(name: index == 1 ? "Refund ledger" : "Checkout funnel dashboard", createdAt: Double(3_000 + index), boardCount: 3 + index)
+            design.systemNamespace = NightWatchSystem.namespace
+            _ = try await workspace.server.createDesign(design)
+        }
+        vm.adopt(workspace.server.state)
+        await vm.loadDesignSystems()
+        vm.openDesignSystem("night-watch")
+        let page = vm.designSystemPage(.system("night-watch"))
+        let reference = try #require(page.reference)
+        try await Preview.renderMatrix("page-design-system-menu", size: CGSize(width: Self.systemPageSize.width, height: 700)) {
+            DesignSystemReferencePage(vm: vm, model: page, reference: reference, menuOpen: true)
+        }
+        // Twelve designs in a short window: the list scrolls rather than running off the page.
+        for index in 3...12 {
+            var design = Design(name: "Design number \(index) with a rather long name that must truncate", createdAt: Double(3_000 + index), boardCount: index)
+            design.systemNamespace = NightWatchSystem.namespace
+            _ = try await workspace.server.createDesign(design)
+        }
+        vm.adopt(workspace.server.state)
+        await vm.loadDesignSystems()
+        let many = vm.designSystemPage(.system("night-watch"))
+        #expect(many.reference?.used.count == 12)
+        try await Preview.renderMatrix("page-design-system-menu-overflow", size: CGSize(width: Self.systemPageSize.width, height: 480)) {
+            DesignSystemReferencePage(vm: vm, model: many, reference: try! #require(many.reference), menuOpen: true)
         }
     }
 
