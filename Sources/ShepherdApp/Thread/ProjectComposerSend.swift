@@ -31,6 +31,23 @@ struct ProjectComposerSend {
     var runtimeOperations: Set<UUID> = []
     /// The column's width: a Project's conversation is 680pt (ProjectLead boards), not an ordinary thread's 820.
     var columnWidth: CGFloat = NWLeadMetrics.columnWidth
+    /// The conversation's main model. The same chip and picker as any thread; see `ProjectConversationModel`.
+    var model: ProjectConversationModel? = nil
+}
+
+/// The Project's conversation model as the composer's model chip shows and sets it. Before the first message there is no coordinator
+/// to ask, so `pending` is true and the chip reads and writes the Project's `conversationModel` setting, which the launch then uses.
+/// Once the coordinator exists the setting is saved FIRST and the thread's own `setModel` runs only after the owner accepted it, so the
+/// live model and the one a relaunch uses never disagree; a refused save changes nothing and says why.
+struct ProjectConversationModel {
+    /// The Project's saved conversation model, else the app's default; nil when neither is named.
+    var current: String?
+    /// No coordinator yet: the thread cannot take `setModel`, the setting is the only place to put the choice.
+    var pending: Bool
+    /// Saves the pick as the Project's conversation model; true only when the owner accepted it. Nothing else changes the model before it does.
+    var choose: (String) async -> Bool
+    /// What the chip says while no model is named: the launch will use the default.
+    static let defaultName = "Default model"
 }
 
 extension EnvironmentValues {

@@ -88,6 +88,12 @@ extension PreviewTests {
         }
         if sample == "empty" { state = ShepherdState() }
         try await workspace.seed(state)
+        // Projects sit under Designs and above every thread group; two Projects, one a long name.
+        vm.settings.projectsEnabled = true
+        for name in ["Sample App", sample == "long" ? "A project whose name is far longer than the sidebar is wide" : "Latency budget"] {
+            _ = try await workspace.server.logicalProjects(.create(projectID: ProjectID(), name: name, goal: "", linkedSpaceIDs: []))
+        }
+        try await eventuallyOnMain("the projects arrive") { vm.state.projects.count == 2 }
         if sample != "empty" {
             vm.pinThread(.local(agents[2].id))
             var time = Date().addingTimeInterval(-40)
