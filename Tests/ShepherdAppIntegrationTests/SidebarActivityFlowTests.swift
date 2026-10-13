@@ -319,7 +319,23 @@ struct SidebarActivityFlowTests {
         #expect(vm.sidebarActivityItems.contains(.header(.done, count: 1, collapsed: false)))
         let window = OffscreenWindow(size: CGSize(width: 232, height: 650), dark: true, SidebarView(vm: vm).nwDensity(density))
         defer { window.close() }
-        // Projects has no rows in this fixture (its own tests press it); every other group has one.
+        vm.settings.projectsEnabled = true
+        // Projects sit right under Designs and above Needs you, Working, Done and Pinned, drawn in that order from the real window.
+        try await eventuallyOnMain("the Projects header") { window.layout(); return window.controls().contains { $0.label?.hasPrefix("Projects") == true } }
+        // Accessibility frames are in screen coordinates, where y grows upward: the higher row has the larger y.
+        func top(_ prefix: String) -> CGFloat? { window.controls().first { $0.label?.hasPrefix(prefix) == true }?.frame.maxY }
+        let order = try ["Designs", "Projects", "Needs you", "Working", "Done", "Pinned"].map { try #require(top($0), "\($0) is drawn") }
+        #expect(order == order.sorted(by: >), "Designs, Projects, Needs you, Working, Done, Pinned from the top: \(order)")
+        // Its header is a real control: it folds and opens the group, and the folded group still sits above the threads.
+        let projects = try #require(window.controls().first { $0.label?.hasPrefix("Projects") == true && $0.label?.contains("expanded") == true })
+        #expect(projects.frame.height >= HitArea.desktop.minimum)
+        try window.press(try #require(projects.label))
+        #expect(vm.collapsedActivitySections.contains(.projects))
+        try await eventuallyOnMain("the folded Projects header") { window.layout(); return window.controls().contains { $0.label?.hasPrefix("Projects") == true && $0.label?.contains("collapsed") == true } }
+        #expect(try #require(top("Projects")) > #require(top("Needs you")), "folded, Projects still sit above Needs you")
+        try window.press(try #require(window.controls().first { $0.label?.hasPrefix("Projects") == true && $0.label?.contains("collapsed") == true }?.label))
+        #expect(!vm.collapsedActivitySections.contains(.projects))
+        // Every other group has one row in this fixture.
         for section in SidebarActivitySection.allCases where section != .projects {
             try await eventuallyOnMain("\(section.title) disclosure") { window.layout(); return window.controls().contains { $0.label == "\(section.title), 1, expanded" } }
             let control = try window.press("\(section.title), 1, expanded")
