@@ -157,11 +157,12 @@ struct Composer: View {
     // Each reads the store's own property for it, never the snapshot, so a streamed chunk
     // leaves the composer alone.
     private var errored: Bool { store.loadError != nil }
+    @Environment(\.presentImages) private var presentImages
     private var running: Bool { store.running }
     private var dialogs: [NativeThreadDialog] { errored ? [] : store.dialogs }
     /// While pi starts, a send waits for it behind the spinner.
     private var canSend: Bool {
-        active && store.acceptsSend && (store.hasDraft || !input.attachments.isEmpty)
+        active && store.acceptsSend && (store.hasDraft || !input.attachments.isEmpty) && input.attachments.oversize == nil
     }
     /// ProjectLead-Started/-ThreadRunning draw the conversation's empty composer as the disabled arrow while the coordinator works: Stop
     /// there would also pause the Project (Esc included). Worker and ordinary threads keep Stop.
@@ -235,7 +236,7 @@ struct Composer: View {
 
     /// What sits above the card: a banner, the notice, extension widgets, the queue.
     private var accessories: [String] {
-        let banner = store.startProblem.map { !(hidesNotSignedIn && $0.kind == .notSignedIn) } == true ? "cannotStart" : store.loadError != nil ? "lost" : input.attachments.error != nil ? "attachment" : referenceError != nil ? "reference" : store.notice != nil ? "notice" : nil
+        let banner = store.startProblem.map { !(hidesNotSignedIn && $0.kind == .notSignedIn) } == true ? "cannotStart" : store.loadError != nil ? "lost" : referenceError != nil ? "reference" : store.notice != nil ? "notice" : nil
         return [banner].compactMap { $0 } + store.widgets.map(\.id) + (queueStack.isVisible ? ["queue"] : [])
             + (showsTray ? ["tray"] : []) + (store.hasGoal ? ["goal"] : [])
     }
@@ -303,9 +304,6 @@ struct Composer: View {
                         .buttonStyle(.nw(.secondary, size: .s))
                 }
                 .nwTransition(.list, edge: .bottom)
-            } else if let attachmentError = input.attachments.error {
-                NWBanner(.failed, title: attachmentError)
-                    .nwTransition(.list, edge: .bottom)
             } else if let referenceError {
                 NWBanner(.failed, title: referenceError) {
                     Button("Dismiss") { self.referenceError = nil }.buttonStyle(.nw(.ghost, size: .s))
@@ -325,6 +323,8 @@ struct Composer: View {
                         .nwTransition(.list, edge: .bottom)
                 }
             }
+            // The images waiting to send, with what keeps Send held (ThreadImagesComposer).
+            ComposerImageStrip(attachments: input.attachments, open: openAttachment, remove: { input.attachments.remove($0) })
             // A Project's strip ("2 of 3 done · 1 needs you") sits over the card, as the board draws it.
             if let dock = projectSend?.dock { dock().nwTransition(.list, edge: .bottom) }
             // The subagents and "Up next" grow upward from the card, which never moves.
@@ -625,6 +625,13 @@ struct Composer: View {
         .nwAnimation(.overlay, value: menu == .context)
     }
 
+    /// A chip's thumbnail: the images waiting, full size, with the one pressed showing.
+    private func openAttachment(_ attachment: ImageAttachment) {
+        let all = input.attachments.items
+        presentImages(ImageViewerState(images: all.map(ViewerImage.init), index: all.firstIndex { $0.id == attachment.id } ?? 0,
+                                           origin: "Waiting to send"))
+    }
+
     private var card: some View {
         // The context details float over the thread without the card taking focus's look.
         let focused = composing || (active && input.dropTargeted) || (menuOpen && menu != .context)
@@ -644,12 +651,6 @@ struct Composer: View {
                 NWAttachmentChip(file.name, thumbnail: nil) { store.detachFile(file.id) }
                     .help(file.path)
                     .nwTransition(.list, edge: .leading)
-            }
-            ForEach(input.attachments.items) { attachment in
-                NWAttachmentChip(attachment.name, thumbnail: attachment.thumbnail) {
-                    input.attachments.remove(attachment.id)
-                }
-                .nwTransition(.list, edge: .leading)
             }
         } field: {
             field.nwEntrance(.content)

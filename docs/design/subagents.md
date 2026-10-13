@@ -1,6 +1,6 @@
 # Subagents
 
-> Read when you change the subagent tray, its cards, or its record lines in a thread.
+> Read when you change the subagent tray, its cards, its record lines in a thread, or the side pane's Subagents tab.
 
 Subagents live in a **tray above the composer** while they run (SubagentTray, NWAgents;
 Subagents, SubagentsDone, SubagentsQueue): one row each, steered, stopped or opened from there,
@@ -140,6 +140,46 @@ parent's answer all draw as `queued`; a subagent never draws `attention`, which 
   so the host can deliver the user's next turn. User input takes priority over result-only
   continuation at the settlement boundary. Questions expose attempt-specific IDs for stale-answer
   refusal; delivery remains best-effort, not a durable exactly-once mailbox.
+- **The Subagents tab** (SubagentList; design saved as `docs/design/boards/SubagentList.png`): the side pane's
+  third tab (`arrow.triangle.branch`, ⌃3, after Changes and the Browser), the whole thread's runs where the
+  tray holds only the current turn's. A remote thread has it too, from its own store; a host with no subagent
+  control still lists the runs. `SubagentListPresentation` derives the list once per change of the runs
+  (`SubagentListTab`: a lazy stack with one view per head and per row; the budget is `NWRenderProbe`
+  "subagents.listRow"). The rows are `nativeTrayRow`'s, so a run reads alike in both places, and the sections are
+  `nativeRunSections`' (this turn's runs, and any earlier run still live; every other run). Sizes are the
+  board's own CSS, in tokens: 12pt padding and gaps, an 8pt trailing edge, 52pt rows, `ui` names, `caption` detail lines (the board's CSS token), `micro`
+  mono for the role, tally, diff and time. The board's *picture* draws the sample detail line 209pt wide where `caption`
+  draws 200 (about 12pt type); the CSS is the source of truth and the build follows it, so a detail line reads about 4% narrower
+  than the picture. The head bands and the lines are the picture's heights (`NWSubagentListMetrics.line`: Geist's natural 1.2
+  leading in whole points), where the ramp's styles run 1.3 and 1.35.
+  - **Summary:** "5 subagents" in `.nw(.ui, .semibold)` `textPrimary`, then the tally in `micro` mono `textTertiary`, every
+    part quiet (the board colors none): "1 running · 1 waiting on parent · 2 done · 1 stopped", live phases first,
+    then done, failed, stopped. A run that finished stopped (`state == "stopped"`) says "stopped", an errored one
+    "failed"; the tray's own tally says "failed" for both.
+  - **Section heads:** "This turn" with "started 2:41 PM" (when its first run began), "Earlier in this thread" with
+    "1:58 PM" (when the first of them began). A section with no runs is not drawn.
+  - **A row** (52pt minimum; a hairline above): the state (the tray's mark: a 7pt `NWStatusDot`, a `done` checkmark, a `failed`
+    cross), the name over the detail, the role beside the name, the diff stat, the time in a 30pt column (`NWElapsedText`), and
+    a 10pt `chevron.right`. The detail is the tray's words: "Editing NativeThreadPresentation.swift", "asked the parent:
+    Rename the new token names, or replace the old ones everywhere?", the first sentence of what it did, the reason it
+    failed (`failed`) without its exit code. Both sections read in spawn order, as the board's do.
+  - **What it does:** a row is one button that opens its run in the inspector over the pane, with the run's own controls
+    (Steer or Reply, Pause or Continue, Stop, Re-run, Fork); the list draws no other control and adds none to a row's
+    menu or VoiceOver actions. The inspector's ✕ goes back to the tab the pane was on.
+  - **The tab's dot is a status** (the user's decision, 2026-10-13: "it should mean still working, green dot means done"; the
+    board draws a blue dot on this tab and says nothing more). It is `NWSidePaneTab.status`, drawn as a 6pt dot after the count in
+    the `AgentState` color (`color`, no tint or alpha), apart from `news`, the dot pi sets when it opens something in Changes or the
+    Browser, which is unchanged. `SidePaneTabs.subagents` derives it from the runs: **running** (blue) while any run is live, which
+    includes one queued, paused or waiting on its parent; else **failed** (`failed` color) when any run failed or was stopped, so a
+    run that did not succeed is never drawn as done; else **done** (green). Viewing the tab does not clear it: it stays as long
+    as the state does. No runs, no tab and no dot. VoiceOver reads it with the count ("5, Running"). Failed and stopped drawing
+    red is the agent's reading of "green means done", not the user's words; it follows the existing `AgentState` rule that only
+    `done` is green.
+  - **Decided by the agent, not drawn by the board, not approved by the user:** the tab appears only once the thread has a run (⌃3
+    and View › Subagents beep before that); an open tab with no runs says "No subagents" (or "Loading the thread…" before the thread
+    has loaded), centered in `textSecondary` at `ui` size with 32pt around it: the board's CSS has an empty-state rule
+    (`.sl-empty`) but draws no such state, so the layout follows that rule and the words are the app's; the earlier section reads
+    oldest first, where the touch client lists earlier runs newest first.
 - **Not built yet: a queued message addressed to a subagent** (SubagentsQueue, SubagentTray ›
   DockStack: a queued row's "worker" tag). The queue carries no recipient, and no board draws how
   one is chosen.

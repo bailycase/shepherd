@@ -240,12 +240,16 @@ Image drafts belong to the thread, so switching remote threads or parking a term
 layout does not discard them. A successful send removes only its submitted image IDs; images
 added while it waits remain for the next message. Images are resized on the
 way in (longest edge 2000px), at most four per message and 2 MiB each, and shown as
-`NWAttachmentChip`s in the row above the field (NWComposer, "with attachment"): 26pt, a
+`NWAttachmentChip`s (ThreadImagesComposer) in a row **above the card**, 6pt apart, wrapping: 26pt, a
 `lineStrong` line at radius 6, a 20pt thumbnail (radius 4) 3pt from the leading edge, 6pt, the
-file name in Geist 12 `textPrimary` (truncating in the middle), and a small `textTertiary` ✕
-that removes it ("Remove <name>" to VoiceOver). Problems show as a `failed` banner above the card:
-"At most 4 images per message.", "<name> is not an image Shepherd can attach.", or "<name> is
-over 2 MiB after resizing."
+file name in Geist 12 `textPrimary` (truncating in the middle), its size in `micro` mono
+`textTertiary` ("1.4 MB"), and a small `textTertiary` ✕ that removes it ("Remove <name>" to
+VoiceOver). The thumbnail opens the image full size ("Open <name>"; [thread-images](thread-images.md)).
+An image over 2 MB after resizing stays: its chip's line and size ("3.1 MB · over 2 MB") turn `failed`,
+the line under the chips says "<name> is over 2 MB after resizing. Remove it or send a smaller
+one.", and Send, ↩ and ⌘↩ are held until it is removed (the New thread and New design pages hold
+the same way, with the same words as their blocker). Other problems show in the same line:
+"At most 4 images per message." and "<name> is not an image Shepherd can attach.".
 
 **The element chip** (`NWElementChip`; PaneBrowser's composer): an element picked in the Browser
 (Side pane: Browser) waits in the same row, after any design references: 26pt, padding 0×8,

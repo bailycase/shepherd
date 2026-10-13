@@ -272,6 +272,9 @@ public struct NativeUserBubble: Equatable, Identifiable, Sendable {
     /// as a chip on a sent bubble (the user's decision, 2026-09-29), so `text` keeps
     /// `BrowserElementFence.humanLine` in full, as if no client drew a chip for them.
     public var elements: [BrowserElement] = []
+    /// The images it carries, when the host names every one of them (`images` is how many it carried either way): a client
+    /// that can draw them fetches each (`NativeThreadImages`), and any other keeps the "Image" chips.
+    public var imageRefs: [NativeImageRef] = []
 }
 
 public func nativeUserBubbles(_ message: NativeThreadMessage) -> [NativeUserBubble] {
@@ -283,17 +286,24 @@ public func nativeUserBubbles(_ message: NativeThreadMessage) -> [NativeUserBubb
         // (a message carrying them is delivered alone).
         let line = DesignReferenceFence.humanLine(count: references.count)
         let carrier = references.isEmpty ? nil : parts.lastIndex { $0.text.hasSuffix(line) } ?? parts.count - 1
+        // The message's images in the order its parts carried them; only when they add up.
+        var refs = message.blocks.compactMap(\.image)
+        let everyOneNamed = refs.count == message.blocks.count { $0.kind == .unsupportedImage } && refs.count == parts.reduce(0) { $0 + $1.images }
         return parts.enumerated().map { index, part in
             let last = index == parts.count - 1
+            let mine = everyOneNamed ? Array(refs.prefix(part.images)) : []
+            if everyOneNamed { refs.removeFirst(min(part.images, refs.count)) }
             return NativeUserBubble(id: "\(message.entryID)/\(index)", text: part.text, sentAt: part.sentAt,
                                     images: part.images, pending: pending, references: index == carrier ? references : [],
-                                    elements: last ? elements : [])
+                                    elements: last ? elements : [], imageRefs: mine)
         }
     }
     let text = message.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n")
+    let images = message.blocks.count { $0.kind == .unsupportedImage }
+    let refs = message.blocks.compactMap(\.image)
     return [NativeUserBubble(id: message.entryID, text: text, sentAt: message.timestamp,
-                             images: message.blocks.count { $0.kind == .unsupportedImage }, pending: pending, references: references,
-                             elements: elements)]
+                             images: images, pending: pending, references: references,
+                             elements: elements, imageRefs: refs.count == images ? refs : [])]
 }
 
 /// Turns keep their identity while pi persists them: a user turn is its first message (or the
