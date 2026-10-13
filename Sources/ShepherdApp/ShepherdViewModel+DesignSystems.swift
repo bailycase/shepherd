@@ -8,7 +8,7 @@ import ShepherdSessions
 // page, and "Build one from a repo". A system an agent builds from a repository belongs to a
 // design made for it (`Design.buildsSystem`): its page is that design agent's layout, with the
 // agent's report in its chat, so opening it is a visibility flip like any design. Every other
-// system (Night Watch, one a canvas's agent wrote) opens as the Design systems page, without a
+// system without a build agent opens as the Design systems page, without a
 // chat. The repository is only read.
 
 extension ShepherdViewModel {
@@ -55,7 +55,7 @@ extension ShepherdViewModel {
     }
 
     /// More ▸ Design systems: the system page opened last, else the first system built here, else
-    /// the first listed (Night Watch).
+    /// the first listed. With no systems, it opens the Designs page.
     func openDesignSystems() {
         guard designToolEnabled else { return }
         switch lastDesignSystem {

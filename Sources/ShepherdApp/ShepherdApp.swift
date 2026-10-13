@@ -140,8 +140,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
 
         QuitConfirmation.shared.watchForPowerOff()
-
-        SessionServer.shared.designSystems.register(NightWatchSystem.builtIn())
     }
 
     /// Agents keep running with the window closed; only Quit stops them.
