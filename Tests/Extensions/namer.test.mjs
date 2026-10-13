@@ -32,22 +32,32 @@ test("only the current session's detached naming result is reported, including s
   await new Promise((resolve) => server.listen(socketPath, resolve));
   const env = { SHEPHERD_AGENT_ID: "fixture", SHEPHERD_SOCKET: socketPath, SHEPHERD_NEEDS_NAME: "1" };
   const saved = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]));
-  const handlers = new Map(), completions = [];
+  const handlers = new Map(), completions = [], contexts = [];
   Object.assign(process.env, env);
   try { install({ on: (event, handler) => handlers.set(event, handler) }); }
   finally { for (const [k, v] of Object.entries(saved)) v === undefined ? delete process.env[k] : process.env[k] = v; }
   const model = { provider: "fixture", id: "fixture" };
   const ctx = (id) => ({ model, sessionManager: { getSessionId: () => id, getSessionName: () => undefined,
-    getEntries: () => [{ type: "message", message: { role: "user", content: `Task ${id}` } }] },
+    getEntries: () => [{ type: "message", message: { role: "user", content: `Task ${id}` } },
+      { type: "message", message: { role: "assistant", content: [{ type: "text", text: `Reply ${id}` }] } }] },
     modelRegistry: { getAvailable: () => [model], find: () => undefined, hasConfiguredAuth: () => true,
-      complete: () => new Promise((resolve) => completions.push(resolve)) } });
+      complete: (_m, context) => { contexts.push(context.messages[0].content[0].text); return new Promise((resolve) => completions.push(resolve)); } } });
+  const reply = (text) => ({ messages: [{ role: "user", content: "Task a" }, { role: "assistant", content: [{ type: "text", text }] }] });
   const finish = (index, title) => completions[index]({ content: [{ type: "toolCall", name: "propose_title", arguments: { title } }] });
   const waitFrames = async (n) => { while (frames.length < n) await new Promise((resolve) => { received = resolve; }); };
   try {
     handlers.get("session_start")({ reason: "startup" }, ctx("a"));
     handlers.get("before_agent_start")({ prompt: "Task a" }, ctx("a"));
+    // Naming waits for the first run to end, then reads the agent's reply too.
+    assert.equal(completions.length, 0);
+    handlers.get("agent_end")(reply("Fixed the sidebar badge"), ctx("a"));
+    handlers.get("before_agent_start")({ prompt: "Second" }, ctx("a"));
+    handlers.get("agent_end")(reply("Again"), ctx("a"));
+    assert.equal(completions.length, 1);
+    assert.match(contexts[0], /Task a[\s\S]*Fixed the sidebar badge/);
     handlers.get("session_start")({ reason: "resume" }, ctx("b"));
     assert.equal(completions.length, 2);
+    assert.match(contexts[1], /Task b[\s\S]*Reply b/);
     finish(0, "Stale A"); await turn();
     finish(1, "Current B");
     await waitFrames(1);
