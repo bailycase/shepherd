@@ -55,6 +55,27 @@ struct DesignToolsSocketTests {
         #expect(listed.checkpoints.map(\.name) == ["before", "before restore before"])
     }
 
+    @Test func internalWritesSkipRenderingWhileAgentWritesReturnRuntimeLint() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let (design, drawer, _) = try await workspace(h)
+        let rendered = Locked<[String]>([])
+        h.server.onDesignRender = { job, respond in
+            rendered.withValue { $0.append(job.path.rawValue) }
+            respond(.success(.init(image: BrowserImage(data: "iVBORw0KGgo=", mimeType: "image/png"),
+                                  text: "rendered", diagnostics: ["layout: example warning"])))
+        }
+        let source = T.board("<p>Internal</p>")
+        let internalWrite = try await h.server.writeDesignBoard(design, path: T.a, source: source)
+        #expect(internalWrite.report?.runtimeLint == nil && rendered.current.isEmpty)
+        let agent = try ExtensionClient(path: h.socketPath)
+        try agent.send(.designWriteBoard(id: 1, agentID: drawer, designID: design, path: "A.dc.html",
+                                        source: T.board("<p>Agent</p>"), baseRevision: nil, tokens: nil))
+        guard case .designWritten(1, let result) = try await agent.reply() else { Issue.record("no write result"); return }
+        #expect(result.report?.runtimeLint == ["layout: example warning"])
+        #expect(rendered.current == ["A.dc.html"])
+    }
+
     @Test func theWriteToolsTakeATokensModeAndAnswerWithAReport() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }

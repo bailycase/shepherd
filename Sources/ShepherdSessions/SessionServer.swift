@@ -3257,18 +3257,18 @@ public final class SessionServer: @unchecked Sendable {
         case .designWriteBoard(let id, let agentID, let designID, let path, let source, let baseRevision, let tokens):
             designRequest(id: id, agentID: agentID, designID: designID, path: path, client: client) { server, path in
                 guard let path else { throw DesignStoreError.invalidPath("", .empty) }
-                let result = try await server.writeDesignBoard(designID, path: path, source: source, baseRevision: baseRevision, tokens: tokens)
+                let result = try await server.writeDesignBoard(designID, path: path, source: source, baseRevision: baseRevision, tokens: tokens, runtimeLint: true)
                 return .designWritten(id: id, result: result)
             }
         case .designEditBoard(let id, let agentID, let designID, let path, let edits, let baseRevision, let tokens):
             designRequest(id: id, agentID: agentID, designID: designID, path: path, client: client) { server, path in
                 guard let path else { throw DesignStoreError.invalidPath("", .empty) }
-                let edited = try await server.editDesignBoard(designID, path: path, edits: edits, baseRevision: baseRevision, tokens: tokens)
+                let edited = try await server.editDesignBoard(designID, path: path, edits: edits, baseRevision: baseRevision, tokens: tokens, runtimeLint: true)
                 return .designEdited(id: id, result: edited.result, replaced: edited.replaced)
             }
         case .designEditBoards(let id, let agentID, let designID, let request):
             designRequest(id: id, agentID: agentID, designID: designID, path: nil, client: client) { server, _ in
-                .designBatchEdited(id: id, result: try await server.editDesignBoards(designID, request: request))
+                .designBatchEdited(id: id, result: try await server.editDesignBoards(designID, request: request, runtimeLint: true))
             }
         case .designSearch(let id, let agentID, let designID, let query):
             designRequest(id: id, agentID: agentID, designID: designID, path: nil, client: client) { server, _ in
@@ -3289,7 +3289,7 @@ public final class SessionServer: @unchecked Sendable {
             }
         case .designExtract(let id, let agentID, let designID, let request):
             designRequest(id: id, agentID: agentID, designID: designID, path: request.path, client: client) { server, _ in
-                .designExtracted(id: id, result: try await server.extractDesignPiece(designID, request: request))
+                .designExtracted(id: id, result: try await server.extractDesignPiece(designID, request: request, runtimeLint: true))
             }
         case .designUpdateIndex(let id, let agentID, let designID, let changes, let baseRevision, let options):
             designRequest(id: id, agentID: agentID, designID: designID, path: nil, client: client) { server, _ in
@@ -5363,13 +5363,14 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Writes a board's whole source (`DesignBoardCheck` first), when the design is still at
     /// `baseRevision` (nil: whatever it is at). A write that changes the files moves the design
-    /// up Recents and broadcasts.
+    /// up Recents and broadcasts. Agent tools request runtime lint after commit; internal writes
+    /// do not trigger offscreen rendering or contend with the live canvas.
     public func writeDesignBoard(_ designID: DesignID, path: DesignPath, source: String,
-                                 baseRevision: UInt64? = nil, tokens: DesignTokenMode? = nil) async throws -> DesignWriteResult {
+                                 baseRevision: UInt64? = nil, tokens: DesignTokenMode? = nil, runtimeLint: Bool = false) async throws -> DesignWriteResult {
         guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
         var result = try await designs.writeBoard(designID, path: path, source: source, baseRevision: baseRevision, tokens: tokens)
         try await enqueue { try self.commitDesignWrite(designID, result) }
-        if result.changed {
+        if runtimeLint && result.changed {
             let lint = await lintDesignBoard(designID, path: path, revision: result.revision)
             result.report?.runtimeLint = lint
         }
@@ -5380,11 +5381,11 @@ public final class SessionServer: @unchecked Sendable {
     /// and writes the result as `writeDesignBoard` does (`DesignStore.editBoard`): the same
     /// checks, kept version, revision and one broadcast.
     public func editDesignBoard(_ designID: DesignID, path: DesignPath, edits: [DesignBoardEdit],
-                                baseRevision: UInt64? = nil, tokens: DesignTokenMode? = nil) async throws -> DesignBoardEdited {
+                                baseRevision: UInt64? = nil, tokens: DesignTokenMode? = nil, runtimeLint: Bool = false) async throws -> DesignBoardEdited {
         guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
         var edited = try await designs.editBoard(designID, path: path, edits: edits, baseRevision: baseRevision, tokens: tokens)
         try await enqueue { try self.commitDesignWrite(designID, edited.result) }
-        if edited.result.changed {
+        if runtimeLint && edited.result.changed {
             let lint = await lintDesignBoard(designID, path: path, revision: edited.result.revision)
             edited.result.report?.runtimeLint = lint
         }
@@ -5393,10 +5394,11 @@ public final class SessionServer: @unchecked Sendable {
 
     /// `boards_edit`: the request's edits applied to each board it names, and every board that
     /// changed written as one change (`DesignStore.editBoards`): one revision, one broadcast.
-    public func editDesignBoards(_ designID: DesignID, request: DesignBatchEditRequest) async throws -> DesignBatchResult {
+    public func editDesignBoards(_ designID: DesignID, request: DesignBatchEditRequest, runtimeLint: Bool = false) async throws -> DesignBatchResult {
         guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
         var batch = try await designs.editBoards(designID, request: request)
         try await enqueue { try self.commitDesignWrite(designID, batch.result) }
+        guard runtimeLint else { return batch }
         let end = Date().addingTimeInterval(60)
         for slot in batch.boards.indices where batch.boards[slot].status == .edited {
             guard let path = DesignPath(batch.boards[slot].path) else { continue }
@@ -5426,11 +5428,11 @@ public final class SessionServer: @unchecked Sendable {
 
     /// `board_extract`: an element becomes a piece and an import takes its place, with exact copies
     /// elsewhere, as one change (`DesignStore.extract`).
-    public func extractDesignPiece(_ designID: DesignID, request: DesignExtractRequest) async throws -> DesignExtractResult {
+    public func extractDesignPiece(_ designID: DesignID, request: DesignExtractRequest, runtimeLint: Bool = false) async throws -> DesignExtractResult {
         guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
         var extracted = try await designs.extract(designID, request: request)
         try await enqueue { try self.commitDesignWrite(designID, extracted.result) }
-        if extracted.result.changed {
+        if runtimeLint && extracted.result.changed {
             let end = Date().addingTimeInterval(60)
             let paths = [request.path, extracted.piece] + extracted.boards.map(\.path)
             for raw in Set(paths).sorted() {
