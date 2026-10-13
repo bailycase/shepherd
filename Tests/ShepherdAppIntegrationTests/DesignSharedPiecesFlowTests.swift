@@ -113,9 +113,10 @@ struct DesignSharedPiecesFlowTests {
         let edited = try await app.server.editDesignBoard(design.id, path: Self.cardPath, edits: [DesignBoardEdit(find: "#ff0000", replace: "#00ff00")])
         #expect(edited.result.changed)
 
-        try await eventuallyOnMain("both importers to redraw green", timeout: .seconds(30)) {
+        // Each board snapshot finishes independently, including the shared piece's own board.
+        try await eventuallyOnMain("the piece and both importers to redraw green", timeout: .seconds(30)) {
             window.layout()
-            return [Self.home, Self.menu].allSatisfy { color(host, $0).map { near($0, (0, 255, 0)) } == true }
+            return [Self.cardPath, Self.home, Self.menu].allSatisfy { color(host, $0).map { near($0, (0, 255, 0)) } == true }
         }
         #expect(color(host, Self.cardPath).map { near($0, (0, 255, 0)) } == true, "the piece itself")
         #expect(host.tokens[Self.plain] == plainToken, "a board that imports nothing is not redrawn")
