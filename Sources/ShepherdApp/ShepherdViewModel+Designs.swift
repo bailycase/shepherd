@@ -379,7 +379,7 @@ final class NewDesignState {
     }
 
     /// The system a new design starts in: the most recently changed one built here, else the
-    /// first built in (Night Watch).
+    /// first registered built-in, if a caller explicitly supplied one. The app bundles none.
     static func defaultSystem(in systems: [DesignSystemSummary]) -> DesignSystemSummary? {
         systems.filter { !$0.builtIn }.max { $0.info.updatedAt < $1.info.updatedAt } ?? systems.first(where: \.builtIn)
     }
