@@ -21,13 +21,13 @@ struct ExtensionMessageTests {
              .coordinateAgent, .agentResponse, .cancelAgentRequest, .createAutomation, .listAutomations,
              .updateAutomation, .deleteAutomation, .startAutomation, .stopAutomation, .suggestInstruction,
              .designRead, .designWriteBoard, .designEditBoard, .designUpdateIndex, .designComments, .designCommentReply,
-             .designEditBoards, .designSearch, .designCheckpoint, .designRender, .designExtract,
+             .designEditBoards, .designSearch, .designCheckpoint, .designRender, .designExport, .designExtract,
              .designSystemRead, .designSystemWrite, .designProposeComments, .designGet, .designNote,
              .projectPublish, .projectRuntime, .helloBrowser, .browser, .registerProject, .refreshProjects, .addChildProject, .editProject, .deleteProject:
             return Wire.caseName(message)
         }
     }
-    static let caseCount = 55
+    static let caseCount = 56
     static let design = DesignID(rawValue: "d1")
 
     static let samples: [ExtensionMessage] = [
@@ -95,7 +95,9 @@ struct ExtensionMessageTests {
             elementClass: "chip", usages: "Card", paths: ["A.dc.html"], limit: 10)),
         .designCheckpoint(id: 47, agentID: agent, designID: design, request: DesignCheckpointRequest(action: .restore, name: "before chip move")),
         .designRender(id: 48, agentID: agent, designID: design, request: DesignRenderRequest(
-            path: "A.dc.html", width: 390, height: 844, scale: 2, props: .object(["density": .string("compact")]))),
+            path: "A.dc.html", width: 390, height: 844, scale: 2, props: .object(["density": .string("compact")]),
+            interactions: [.init(action: .click, selector: "#save"), .init(action: .type, selector: "input", text: "Research")])) ,
+        .designExport(id: 50, agentID: agent, designID: design, request: .init(format: .zip, paths: ["A.dc.html"])),
         .designExtract(id: 49, agentID: agent, designID: design, request: DesignExtractRequest(
             path: "A.dc.html", element: "A.dc.html#4:0/1", piece: "Card", props: [.init(name: "label", text: "Pay “now”")],
             size: DesignBoardCheck.Size(width: 320, height: 120), frame: .init(x: 0, y: 1_000, w: 320, h: 120, title: "Card", page: "p1"),
@@ -104,7 +106,7 @@ struct ExtensionMessageTests {
             "title": .string("Checkout funnel"),
             "boards": .object(["A.dc.html": .object(["x": .number(0), "y": .number(0), "w": .number(1280), "h": .number(800)]),
                                "C.dc.html": .null]),
-        ]), baseRevision: nil),
+        ]), baseRevision: nil, options: .init(dryRun: true, allowDeletePages: true, removeSystems: ["old-system"])),
         .designComments(id: 24, agentID: agent, designID: design),
         .designCommentReply(id: 25, agentID: agent, designID: design, commentID: "7A1C2E7B-39F5-4B0C-9A40-0E8B1F3C5D21",
                             text: "Done on A and A · phone.\nWant counts too?"),
@@ -387,12 +389,12 @@ struct ExtensionReplyTests {
         case .parentInput, .childCommand, .childScope, .projectChildren, .ok, .error, .panes, .paneOpened, .paneContent, .reviewResult, .automations,
              .agents, .message, .agentRequest, .agentResult, .suggestion, .design, .designBoard, .designWritten, .designEdited,
              .designComments, .designComment, .designSystems, .designSystem, .designSystemWritten, .designProposals,
-             .designBatchEdited, .designSearchResult, .designCheckpoints, .designRendered, .designExtracted,
+             .designBatchEdited, .designSearchResult, .designCheckpoints, .designRendered, .designExported, .designExtracted,
              .projectPublish, .projectRuntime, .designReference, .designNote, .browserResult, .projectResult:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 37
+    static let caseCount = 38
     static let system = DesignSystemSummary(
         info: DesignSystemInfo(namespace: "acme-web", title: "acme-web", revision: 3, createdAt: 1_000, updatedAt: 2_000,
                                syncedAt: 2_000, ownerDesignID: DesignID(rawValue: "d1"), spaceID: SpaceID(rawValue: "s1"),
@@ -492,6 +494,7 @@ struct ExtensionReplyTests {
             pruned: ["oldest"], write: DesignWriteResult(revision: 6, changed: true, title: nil, boardCount: 3),
             restored: ["A.dc.html"], recreated: ["B.dc.html"], removed: ["C.dc.html"])),
         .designRendered(id: 41, text: "A.dc.html at 1280×800, 2x", image: BrowserImage(data: "iVBORw0KGgo=", mimeType: "image/png")),
+        .designExported(id: 42, path: "/scratch/design/exports/unique/A.png"),
         .designExtracted(id: 42, result: DesignExtractResult(
             result: DesignWriteResult(revision: 10, changed: true, title: "Checkout funnel", boardCount: 5), piece: "Card.dc.html",
             importTag: #"<dc-import name="Card" hint-size="320px,120px" label="Pay now"></dc-import>"#,

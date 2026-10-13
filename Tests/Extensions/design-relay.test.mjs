@@ -12,8 +12,8 @@ const design = await jiti.import(path.join(root, "Extensions/shepherd-design.ts"
 const KEY = Symbol.for("shepherd.design.relay.v1");
 const TITLE = "shepherd-relay:v1:";
 const RELAYED = [
-  "board_edit", "board_extract", "board_render", "board_search", "board_write", "boards_edit", "canvas_update", "checkpoint_create",
-  "checkpoint_list", "comment_list", "design_check", "design_read", "system_read", "system_write",
+  "board_edit", "board_extract", "board_interact", "board_render", "board_search", "board_write", "boards_edit", "canvas_update", "checkpoint_create",
+  "checkpoint_list", "comment_list", "design_check", "design_export", "design_read", "system_read", "system_write",
 ];
 
 function fakePi() {
@@ -292,7 +292,7 @@ test("without a live design agent a relayed call is refused, and the parent's pr
   await withRelay(() => null, async ({ relay }) => {
     assert.equal(children.designToolsProblem(["design_read", "board_edit", "system_write"], relay), undefined);
     assert.match(children.designToolsProblem(["design_read", "comment_reply", "markup_propose", "checkpoint_restore"], relay),
-      /^comment_reply, markup_propose, checkpoint_restore can't be relayed to a helper: the design agent answers .* restores checkpoints itself.* Relayed: design_read, design_check, system_read, comment_list, board_write, board_edit, boards_edit, board_search, board_render, board_extract, checkpoint_create, checkpoint_list, canvas_update, system_write\.$/);
+      /^comment_reply, markup_propose, checkpoint_restore can't be relayed to a helper: the design agent answers .* restores checkpoints itself.* Relayed: design_read, design_check, system_read, comment_list, board_write, board_edit, boards_edit, board_search, board_render, board_interact, design_export, board_extract, checkpoint_create, checkpoint_list, canvas_update, system_write\.$/);
     const partial = { tools: new Map([["design_read", {}]]) };
     assert.match(children.designToolsProblem(["design_read", "board_edit"], partial), /^board_edit isn't available/);
   });
