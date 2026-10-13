@@ -51,6 +51,17 @@ them still uses ordinary thread navigation. A new operation can explicitly conti
 task's existing worker under the proof/fences below. It does not create worktrees or implement
 a separate follow-up launcher.
 
+## Coordinator startup
+
+The first Project message durably reserves its coordinator ID before directory preparation and
+app launch. Project conversation retrieval reports the existing `native_starting` state during
+that reservation gap; it never treats the reservation as an already persisted ordinary Agent.
+Ordinary native retrieval still refuses nonexistent agents. A coordinator launch failure pauses
+the Project and clears the matching reservation only if no Agent was persisted. Failures after
+Agent persistence retain its identity and history. Both paths retain the queued message and its
+operation ID; explicit Resume retries startup and delivers that original operation once, never
+an automatic retry or replacement message.
+
 ## Durability and evidence
 
 `ShepherdState.projectExecutions` decodes empty for older state files. Each receipt keeps the

@@ -101,6 +101,31 @@ struct LogicalProjectConversationTests {
         expectScenarioCompleted(result)
     }
 
+    @Test func theConversationComposerPicksTheMainModelBeforeTheFirstMessageAndShowsNoBranch() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.modelAndBranch() } }
+        expectScenarioCompleted(result)
+    }
+
+    @Test func aConversationModelTheOwnerLacksFailsTheLaunchAndTheComposerNeverReportsALostConnection() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.unavailableModel() } }
+        expectScenarioCompleted(result)
+    }
+
+    @Test func aPickOnARunningCoordinatorIsSavedAndThenSetOnItsRealNativeThread() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.liveModelPick() } }
+        expectScenarioCompleted(result)
+    }
+
+    @Test func aCoordinatorWhoseCreationIsHeldIsStartingNotALostConnectionAndThenTheThreadIsReady() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.heldCreation() } }
+        expectScenarioCompleted(result)
+    }
+
+    @Test func aRefusedModelSaveChangesNeitherTheChipNorTheLiveModelAndSaysSo() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.refusedModelSave() } }
+        expectScenarioCompleted(result)
+    }
+
     @Test func theCoordinatorAppearsInNoOrdinaryThreadList() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.hidden() } }
         expectScenarioCompleted(result)
@@ -1097,5 +1122,244 @@ private static func chipsAndLinks() async throws {
         #expect(!r.vm.sidebarTree.projects.flatMap(\.rows).contains { $0.id == .local(coordinator) }, "not in the Spaces tree")
         #expect(!r.vm.canPin(.local(coordinator)), "not pinnable")
         #expect(r.vm.selectedAgentID != coordinator, "never selected as an ordinary thread")
+    }
+
+    // MARK: Model and branch
+
+    /// The standard composer on a Project: before the first message its chip names the Project's conversation model and picking one
+    /// saves it as the Project's setting (the launch's model); the control row draws no branch.
+    private static func modelAndBranch() async throws {
+        let r = try await rig()
+        defer { r.app.stop() }
+        r.vm.openLogicalProject(r.ref)
+        let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
+        defer { window.close() }
+        try await eventuallyOnMain("the empty project's model chip") {
+            window.layout(); return window.controls().contains { $0.label?.hasPrefix("Model settings:") == true }
+        }
+        #expect(r.app.server.state.projects.first?.settings.conversationModel == nil)
+        let chip = try #require(window.controls().first { $0.label?.hasPrefix("Model settings:") == true })
+        #expect(chip.isEnabled, "the model is settable before a coordinator exists")
+        #expect(ControlPress.undersized([chip], minimum: .desktop).isEmpty, "the chip is \(chip.frame.size)")
+        try window.press(try #require(chip.label))
+        // The popover lists the owner's catalog, and its first model row is the pick (its row says which model: "claude-opus-4-5").
+        let choice = "anthropic/claude-opus-4-5"
+        try await eventuallyOnMain("the popover lists the owner's models") { window.layout(); return window.element("Model, thinking and speed") != nil }
+        try window.press("All models…")
+        try await eventuallyOnMain("the full picker") { window.layout(); return window.element("Choose a model") != nil }
+        try window.press(choice)
+        try await eventuallyOnMain("the pick is the Project's conversation model") {
+            r.app.server.state.projects.first?.settings.conversationModel == choice
+        }
+        try await eventuallyOnMain("the chip names it") { window.layout(); return window.element("Model settings: \(choice)") != nil
+            || window.controls().contains { $0.label?.hasPrefix("Model settings:") == true && $0.label?.contains("Default") == false } }
+        #expect(!window.elements().contains { $0.label?.localizedCaseInsensitiveContains("branch") == true || $0.label?.localizedCaseInsensitiveContains("worktree") == true },
+                "a Project's composer draws no branch")
+    }
+
+    /// The launch itself refuses a model the owner does not list, and a Project whose conversation model is one pauses with the page
+    /// still showing the ready composer: the reserved coordinator ID has no agent behind it, and the thread must not ask the server
+    /// about it ("native_unavailable: The agent no longer exists." drawn as "Lost connection to the agent process.").
+    private static func unavailableModel() async throws {
+        let r = try await rig()
+        defer { r.app.stop() }
+        let launch = ProjectRuntimeLaunch(projectID: r.project.id, agentID: AgentID(), spaceID: r.space.id, cwd: r.space.path,
+                                          name: r.project.name, model: "nowhere/not-a-model", coordinator: true)
+        do {
+            _ = try await r.vm.projectCoordinator.launch(launch)
+            Issue.record("a model the owner does not list launched")
+        } catch {
+            #expect(String(describing: error).contains("not available"), "the refusal says why: \(error)")
+        }
+        #expect(r.vm.state.agents.isEmpty, "a refused launch creates no agent")
+
+        #expect(await r.vm.logicalProjects.saveSettings(r.ref) { $0.conversationModel = "nowhere/not-a-model" })
+        r.vm.openLogicalProject(r.ref)
+        let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
+        defer { window.close() }
+        _ = await r.vm.logicalProjects.sendMessage(r.ref, text: "hello")
+        try await eventuallyOnMain("the failed launch pauses the Project") { r.app.server.state.projects.first?.paused == true }
+        try await Task.sleep(for: .seconds(1))
+        window.layout()
+        #expect(r.vm.state.agents.isEmpty, "no coordinator was created")
+        #expect(!window.elements().contains { $0.label?.contains("Lost connection") == true || $0.label?.contains("no longer exists") == true },
+                "the page draws no lost connection for an agent that was never created")
+        #expect(window.controls().contains { $0.label == "Resume" }, "the pause is shown with its Resume")
+        #expect(window.element("Message the agent") != nil, "and the composer stays")
+    }
+
+    /// A pick is saved as the Project's model first and nothing else changes until the owner accepts it. The owner refuses here (the Project
+    /// is gone under the open composer), so the chip keeps the model it had and the composer says why. The live `setModel` that follows an
+    /// accepted save on a running coordinator is not driven here: the stub engine's coordinator thread never reports ready in this rig.
+    private static func refusedModelSave() async throws {
+        let r = try await rig()
+        defer { r.app.stop() }
+        r.vm.openLogicalProject(r.ref)
+        let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
+        defer { window.close() }
+        try await eventuallyOnMain("the model chip") { window.layout(); return window.controls().contains { $0.label == "Model settings: Default model" && $0.isEnabled } }
+        // The page holds the owner's last answer, then the owner deletes the Project under it: every save is refused from here on.
+        #expect(await r.vm.logicalProjects.saveSettings(r.ref) { $0.maxConcurrentWorkers = 2 })
+        let shown = try #require(r.app.server.state.projects.first)
+        _ = try await r.app.server.logicalProjects(.delete(projectID: shown.id, expectedRevision: shown.revision))
+        try await eventuallyOnMain("the owner has no project") { r.app.server.state.projects.isEmpty }
+        try await eventuallyOnMain("the chip is still offered") { window.layout(); return window.controls().contains { $0.label == "Model settings: Default model" && $0.isEnabled } }
+        try window.press("Model settings: Default model")
+        try await eventuallyOnMain("the popover") { window.layout(); return window.element("All models…") != nil }
+        try window.press("All models…")
+        try await eventuallyOnMain("the full picker") { window.layout(); return window.element("Choose a model") != nil }
+        try window.press("anthropic/claude-opus-4-5")
+        try await eventuallyOnMain("the refusal is reported") { r.vm.logicalProjects.failure != nil }
+        try await eventuallyOnMain("the composer says the model was not saved") {
+            window.layout(); return window.elements().contains { $0.label?.contains(r.vm.logicalProjects.failure?.message ?? "\u{0}") == true }
+        }
+        #expect(window.element("Model settings: Default model") != nil, "the chip still names the model it had")
+        #expect(window.element("Model settings: anthropic/claude-opus-4-5") == nil, "and never the one that was refused")
+        // The refusal as drawn: the composer's own failed banner, in both appearances and at both text scales, from this real refusal.
+        if let directory = ProcessInfo.processInfo.environment["SHEPHERD_PREVIEW_DIR"] {
+            let original = ThemeStore.shared.textScale
+            defer { ThemeStore.shared.textScale = original }
+            for (dark, scale) in [(true, CGFloat(1)), (false, 1), (true, 1.3), (false, 1.3)] {
+                window.window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+                window.host.appearance = window.window.appearance
+                ThemeStore.shared.textScale = scale
+                window.layout()
+                try await Task.sleep(for: .milliseconds(300)); window.layout()
+                let bitmap = try #require(window.host.bitmapImageRepForCachingDisplay(in: window.host.bounds))
+                window.host.cacheDisplay(in: window.host.bounds, to: bitmap)
+                let name = "project-model-save-refused\(scale == 1 ? "" : "-x1.3")-\(dark ? "dark" : "light").png"
+                try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+                try #require(bitmap.representation(using: .png, properties: [:])).write(to: URL(fileURLWithPath: directory).appendingPathComponent(name))
+            }
+        }
+    }
+
+    /// A served coordinator thread (a scripted host that records every request and applies a model or level as the real one does,
+    /// `ComposerThread`'s way) under the Project's own composer wiring. A pick is saved as the Project's conversation model FIRST and
+    /// only then reaches the thread as a native `setModel`; a refused save sends none. A level goes to the thread as `setThinking`.
+    private static func liveModelPick() async throws {
+        AccessibilityNode.enable()
+        try StubPi.installAsEngine()
+        let models = ModelCatalogFixture.entries
+        var snapshot = ComposerThread.snapshot(messages: 2, commands: [], model: "anthropic/claude-opus-4-5")
+        snapshot.thinkingLevels = ["off", "low", "medium", "high"]
+        let store = NativeThreadStore()
+        let input = ThreadInput()
+        let requests = Locked<[NativeThreadRequest]>([])
+        let saved = Locked<[String]>([])
+        let accept = Locked(true)
+        let host = Locked(snapshot)
+        let request: NativeThreadStore.Request = { value in
+            requests.withValue { $0.append(value) }
+            switch value {
+            case .send(_, _, let operation, _, _, _, _, _, _): return .accepted(operationID: operation)
+            case .setModel(_, _, let operation, let model):
+                #expect(accept.current && saved.current == [model, model], "the accepted Project save precedes the native setModel")
+                host.withValue { $0.model = model; $0.revision += 1 }
+                return .accepted(operationID: operation)
+            case .setThinking(_, _, let operation, let level):
+                host.withValue { $0.thinking = level; $0.revision += 1 }
+                return .accepted(operationID: operation)
+            default: return .snapshot(value: host.current)
+            }
+        }
+        let send = ProjectComposerSend(
+            placeholder: "Ask Sample App a question or start a task\u{2026}", send: { _, _ in true },
+            model: ProjectConversationModel(current: nil, pending: false, choose: { id in
+                saved.withValue { $0.append(id) }
+                return accept.current
+            }))
+        let window = OffscreenWindow(size: CGSize(width: 1000, height: 700), dark: true)
+        defer { window.close() }
+        window.show(AnyView(ThreadView(store: store, active: true, isFocused: false, request: request, commandKey: nil, agentName: "Sample App",
+                                       listModels: { ModelCatalog(models) }, retainedInput: input)
+            .environment(\.projectComposerSend, send)))
+        try await eventuallyOnMain("the thread to load") { store.ready }
+        let chip = "Model settings: anthropic/claude-opus-4-5"
+        try await eventuallyOnMain("the idle thread's model chip") { window.layout(); return window.controls().contains { $0.label == chip && $0.isEnabled } }
+        #expect(!window.elements().contains { $0.label?.localizedCaseInsensitiveContains("branch") == true }, "no branch beside the chip")
+        func settings() async throws { try window.press(chip); try await eventuallyOnMain("the popover") { window.layout(); return window.element("All models\u{2026}") != nil } }
+
+        let pick = "anthropic/claude-3-5-haiku-20241022"
+        let row = "\(pick), \(try #require(ModelCatalog(models).model(pick)).thinking)"
+        func pickFromFullPicker() async throws {
+            try window.press("All models\u{2026}")
+            try await eventuallyOnMain("one enabled model row in the full picker") {
+                let groups = window.elements().filter { $0.role == ControlRole.group && $0.label == "Choose a model" }
+                let choices = ControlPress.controls(in: "Choose a model", under: window.host).filter { $0.role == ControlRole.button && $0.label == row }
+                return groups.count == 1 && choices.count == 1 && choices[0].isEnabled && !choices[0].frame.isEmpty
+            }
+            try window.press(row, in: "Choose a model")
+        }
+
+        // A refused save: the thread is never told, the chip keeps its model.
+        accept.withValue { $0 = false }
+        try await settings()
+        try await pickFromFullPicker()
+        try await eventuallyOnMain("the save was attempted") { saved.current == [pick] }
+        try await eventuallyOnMain("the refused pick closes the full picker") { window.element("Choose a model") == nil }
+        #expect(!requests.current.contains { if case .setModel = $0 { true } else { false } }, "a refused save sends the thread no setModel")
+        #expect(store.model == "anthropic/claude-opus-4-5")
+
+        // An accepted save: the Project's setting first, then the thread's own native setModel, and the chip follows.
+        accept.withValue { $0 = true }
+        try await eventuallyOnMain("the chip is offered again") { window.layout(); return window.controls().contains { $0.label == chip && $0.isEnabled } }
+        try await settings()
+        try await pickFromFullPicker()
+        try await eventuallyOnMain("the thread was sent setModel for the pick") {
+            requests.current.contains { if case .setModel(_, _, _, let model) = $0 { model == pick } else { false } }
+        }
+        #expect(saved.current == [pick, pick], "saved before each attempt: \(saved.current)")
+        try await eventuallyOnMain("the thread reports the new model") { store.model == pick }
+        try await eventuallyOnMain("the chip names it") { window.layout(); return window.element("Model settings: \(pick)") != nil }
+
+        // Thinking is the thread's own setting: a level goes to it as setThinking, with the popover open.
+        try window.press("Model settings: \(pick)")
+        try await eventuallyOnMain("the popover with levels") { window.layout(); return !window.buttons(in: "Thinking").isEmpty }
+        try window.press("High", in: "Thinking")
+        try await eventuallyOnMain("the thread was sent setThinking high") {
+            requests.current.contains { if case .setThinking(_, _, _, let level) = $0 { level == "high" } else { false } }
+        }
+        try await eventuallyOnMain("the thread reports high") { store.thinking == "high" }
+    }
+
+    /// The coordinator's ID is reserved before its agent exists. With the app's real launch held there, the page's own request closure
+    /// (the one a person's screen uses) must answer "starting", never "The agent no longer exists" drawn as a lost connection; once the
+    /// launch is released the agent is created and the very same page's thread becomes ready.
+    private static func heldCreation() async throws {
+        let r = try await rig()
+        defer { r.app.stop() }
+        let launch = try #require(r.app.server.onProjectRuntimeLaunch)
+        let held = Locked<(ProjectRuntimeLaunch, @Sendable (Result<AgentID, Error>) -> Void)?>(nil)
+        r.app.server.onProjectRuntimeLaunch = { request, done in held.withValue { $0 = (request, done) } }
+        r.vm.openLogicalProject(r.ref)
+        let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
+        defer { window.close() }
+        #expect(await r.vm.logicalProjects.sendMessage(r.ref, text: "hello"))
+        try await eventuallyOnMain("the launch is held with the coordinator reserved and no agent") { held.current != nil }
+        let reserved = try #require(r.app.server.state.projects.first?.coordinatorAgentID)
+        #expect(r.vm.state.agents.isEmpty, "the agent does not exist yet")
+        try await eventuallyOnMain("the page mounts the reserved coordinator's thread") {
+            window.layout(); return r.vm.logicalProjects.project(r.ref)?.coordinatorAgentID == reserved
+        }
+        // Give the page's own loop time to pull while the creation is held.
+        try await Task.sleep(for: .seconds(2)); window.layout()
+        let store = r.vm.threadStores.store(for: reserved)
+        #expect(store.loadError == nil, "no error while the creation is held: \(store.loadError ?? "-")")
+        #expect(!window.elements().contains { $0.label?.contains("Lost connection") == true || $0.label?.contains("no longer exists") == true },
+                "the page draws no lost connection while the agent is being created")
+        #expect(window.element("Message the agent") != nil, "and the composer stays")
+
+        // Release the real launch: the agent is created and the page's thread becomes ready on it.
+        let (request, done) = try #require(held.current)
+        r.app.server.onProjectRuntimeLaunch = launch
+        Task { do { done(.success(try await r.vm.projectCoordinator.launch(request))) } catch { done(.failure(error)) } }
+        try await eventuallyOnMain("the coordinator is created") { r.vm.state.agents.contains { $0.id == reserved } }
+        // This rig's window re-mounts the page's thread as the agent appears, so the store is run on the same owner path, as the other scenarios do.
+        let server = r.vm.server, projectID = r.project.id
+        Task { await store.run(request: { try await server.projectConversation(projectID, request: $0) }) }
+        try await eventuallyOnMain("the page's thread is ready on it", timeout: .seconds(40)) {
+            window.layout(); return store.ready && store.loadError == nil
+        }
     }
 }
