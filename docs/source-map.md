@@ -166,15 +166,16 @@ Sources/
       branch and changed files, read off the main thread), AppCommands (menus, MenuState),
       AppDialogs (every sheet)
     The side pane's Browser (docs/design/side-pane-browser.md › Side pane: Browser): BrowserHost (the only WebKit
-      import: each thread's page, its data store, BrowserPageView), BrowserPane (the tab: toolbar,
-      Nothing open, viewport menu, popover, console drawer, BrowserKeys), BrowserModel (pure: the
+      import: each tab's page, its shared data store, BrowserPageView), BrowserTabs (the thread's
+      transient pages, independent user/agent targets and shared operation queue), BrowserPane (the
+      strip/list, notices, toolbar, Nothing open, viewport menu, popover, console drawer, BrowserKeys), BrowserModel (pure: the
       address, viewports, dev servers, script messages, the console log), BrowserScripts (the
       page's scripts), ShepherdViewModel+Browser (Start, Add to message, Copy selector, a remote
       viewer's Start on this host), BrowserRemote (a remote thread's page: its host, the ports it
       forwards, the host's dev servers and Start, and its claim on the agent's browser; docs/browser.md
       › Remote).
       The agent's tools on it (docs/browser.md): BrowserAgentRules (pure: the URL policy, take over,
-      the card's words, results, keys, the screenshot clamp), BrowserAgentScript (read, click, type
+      the bar's words, results, keys, the screenshot clamp), BrowserAgentScript (read, click, type
       in Shepherd's content world), BrowserDriver (each tool against the page; no WebKit),
       ShepherdViewModel+BrowserAgent (serves the server's requests, the tab's dot), BrowserExtension
       (the embedded shepherd-browser.ts). A remote thread's agent drives the viewer's page the same
@@ -280,7 +281,8 @@ Packages/
                                      (NWBrowserToolbar, NWBrowserAddressField, NWBrowserEmpty,
                                      NWViewportMenu, NWElementPopover, NWElementChip,
                                      NWConsoleBar, NWConsoleRow, NWAgentRing, NWAgentPointer,
-                                     NWAgentCard, NWBrowserAgentOverlay, NWPaneTabTip, NWBrowserNotice), DesignTool
+                                     NWBrowserAgentOverlay, NWPaneTabTip, NWBrowserNotice, NWBrowserTabStrip,
+                                     NWBrowserTabMenu, NWBrowserTabsNote, NWAgentBar, NWAgentElsewhere), DesignTool
                                      (NWDesignCanvas, NWBoardFrame, NWCanvasToolbar,
                                      NWDesignCard, NWDesignSystemChip, NWDesignHeader,
                                      NWCommentPin, NWCommentThread, NWCommentCard,
@@ -326,8 +328,9 @@ Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free)
                           Settings ▸ MCP servers ▸ Also use a repo's .mcp.json is on; docs/mcp.md
   shepherd-browser.ts     browser_open, browser_read, browser_click, browser_type, browser_press,
                           browser_scroll, browser_wait, browser_screenshot, browser_console,
-                          browser_eval, browser_back, browser_forward and browser_reload, on the
-                          thread's own Browser page only, `deferred` in a thread; see docs/browser.md
+                          browser_eval, browser_back, browser_forward, browser_reload, browser_tabs,
+                          browser_new_tab, browser_select_tab and browser_close_tab, on the thread's
+                          own Browser tabs only, `deferred` in a thread; see docs/browser.md
   shepherd-service-tier.ts  adds service_tier to the agent's own provider requests while its thread
                           is on Fast (the Speed control), from the agent's tier file; see
                           docs/service-tier.md

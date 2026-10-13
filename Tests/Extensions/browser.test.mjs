@@ -29,10 +29,11 @@ const { default: install } = await jiti.import(extensionFile);
 const KEYS = ["SHEPHERD_EXT_BROWSER", "SHEPHERD_AGENT_ID", "SHEPHERD_SOCKET", "SHEPHERD_CHILD", "SHEPHERD_DESIGN_ID", "SHEPHERD_DEFER_TOOLS"];
 
 const TOOLS = [
+  "browser_tabs", "browser_new_tab", "browser_select_tab", "browser_close_tab",
   "browser_open", "browser_read", "browser_click", "browser_type", "browser_press", "browser_scroll", "browser_wait",
   "browser_screenshot", "browser_console", "browser_eval", "browser_back", "browser_forward", "browser_reload",
 ];
-const WITH_NOTE = ["browser_open", "browser_click", "browser_type", "browser_press", "browser_scroll", "browser_eval",
+const WITH_NOTE = ["browser_new_tab", "browser_open", "browser_click", "browser_type", "browser_press", "browser_scroll", "browser_eval",
   "browser_back", "browser_forward", "browser_reload"];
 
 function withEnv(values, body) {
@@ -134,6 +135,21 @@ async function withBrowser(answer, body, env = {}) {
 
 const ok = (text) => ({ type: "browserResult", text });
 
+test("tab tools and optional targets write thread-local requests", async () => {
+  await withBrowser(() => ok("done"), async ({ shepherd, run }) => {
+    await run("browser_tabs");
+    await run("browser_new_tab", { url: "https://example.com", note: "docs" });
+    await run("browser_select_tab", { tabID: "t1" });
+    await run("browser_close_tab", { tabID: "t1" });
+    await run("browser_read", { tab: "t2" });
+    assert.deepEqual(shepherd.requests().map(({ frame }) => frame.request), [
+      { action: "tabs" }, { action: "newTab", url: "https://example.com", note: "docs" },
+      { action: "selectTab", tabID: "t1" }, { action: "closeTab", tabID: "t1" },
+      { action: "tab", tabID: "t2", request: { action: "read" } },
+    ]);
+  });
+});
+
 test("without its environment, in a native subagent or in a design's agent, the extension registers nothing and connects to nothing", async () => {
   const shepherd = await startShepherd(() => null);
   try {
@@ -171,7 +187,7 @@ test("without its environment, in a native subagent or in a design's agent, the 
   }
 });
 
-test("a configured extension registers thirteen tools and connects only when one is called", async () => {
+test("a configured extension registers browser tools and connects only when one is called", async () => {
   await withBrowser(() => null, async ({ pi, shepherd }) => {
     assert.deepEqual([...pi.tools.keys()], TOOLS);
     assert.deepEqual(Object.keys(pi.handlers), ["session_shutdown"]);
