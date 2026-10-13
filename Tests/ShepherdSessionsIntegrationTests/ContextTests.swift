@@ -65,7 +65,9 @@ struct ContextTests {
 
         FileManager.default.createFile(atPath: h.dir.appendingPathComponent("compact-done").path, contents: nil)
         let done = try await pi.snapshot("the compaction in history") { s in
-            s.context?.compacting == nil && s.messages.contains { $0.role == "compactionSummary" } && s.provisional.isEmpty
+            // History and stats refresh separately. Wait for the post-compaction stats too.
+            s.context?.compacting == nil && s.context?.tokens == nil
+                && s.messages.contains { $0.role == "compactionSummary" } && s.provisional.isEmpty
         }
         let summary = try #require(done.messages.first { $0.role == "compactionSummary" })
         #expect(summary.compaction?.reason == .manual && summary.compaction?.tokensBefore == 60_000 && summary.compaction?.tokensAfter == 23_000)
