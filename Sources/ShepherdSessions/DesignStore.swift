@@ -332,6 +332,45 @@ public final class DesignStore: @unchecked Sendable {
         }
     }
 
+    /// Git replaces the design's files (a pull, a merge commit) as one step of the store's queue,
+    /// so no board write lands half way through it. What changed is kept as each board's next
+    /// version, and the revision moves once; the store reads the design again after.
+    func replaceFromGit<T>(_ id: DesignID, _ body: @escaping () throws -> T) async throws -> T {
+        try await run {
+            let before = (try? self.load(id)).map { loaded -> [DesignPath: String] in
+                var design = loaded
+                return (try? self.files(of: id, &design)) ?? [:]
+            } ?? [:]
+            // Keep what each board held, so an unwanted pull can be undone board by board.
+            var kept: [DesignPath: Data] = [:]
+            for path in before.keys { if let data = try? Data(contentsOf: self.fileURL(id, path)) { kept[path] = data } }
+            let value = try body()
+            self.forget(id)
+            var design = try self.load(id)
+            let after = try self.files(of: id, &design)
+            for (path, hash) in before where after[path] != nil && after[path] != hash {
+                if let data = kept[path] { _ = try? self.keepVersionData(id, path, data) }
+            }
+            try self.commit(&design, id)
+            return value
+        }
+    }
+
+    /// `keepVersion` for content already read (the board as it was before git replaced it).
+    private func keepVersionData(_ id: DesignID, _ path: DesignPath, _ data: Data) throws {
+        let folder = try versionsFolder(id, path)
+        let existing = try versionsOnQueue(id, path)
+        let number = (existing.last?.version.number ?? 0) + 1
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try data.write(to: folder.appendingPathComponent("\(number).dc.html"), options: .atomic)
+        for old in existing.dropLast(max(0, DesignBoardVersion.kept - 1)) { try? FileManager.default.removeItem(at: old.url) }
+    }
+
+    /// What the store remembers of a design goes; it reads the folder again on next touch.
+    func forgetOnQueue(_ id: DesignID) async {
+        _ = try? await run { self.forget(id) }
+    }
+
     /// Queue: what the store remembers of a design, dropped when its folder moves or goes.
     func forget(_ id: DesignID) {
         loaded[id] = nil

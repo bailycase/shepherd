@@ -260,6 +260,9 @@ public final class SessionServer: @unchecked Sendable {
     /// `onThreadRevision`: on the main actor, at most once per display frame, every design revised
     /// while one delivery waits riding it. A hint to pull the design's snapshot, not state.
     public var onDesignRevision: ((DesignID) -> Void)?
+    /// A design's Git state changed (a commit, a pull, the merge's phase): the app reads it
+    /// again (`designGitState`). On the main actor.
+    public var onDesignGitChanged: ((DesignID) -> Void)?
     /// An agent's pi finished a tool call (its name). The app reads the agent's checkout again
     /// after calls that may have changed files. Delivered on the main actor.
     public var onAgentToolFinished: ((AgentID, String) -> Void)?
@@ -411,6 +414,15 @@ public final class SessionServer: @unchecked Sendable {
         let token: UUID
     }
     private var pendingDesignDeletions: [DesignID: PendingDesignDeletion] = [:]
+    /// Git sharing (SessionServer+DesignGit): git runs here, never on the server's queue.
+    let designGitQueue = DispatchQueue(label: "shepherd.designs.git", qos: .userInitiated)
+    /// Each design's pull that needs a merge, while it is handled. Server queue; never persisted
+    /// (a restart never resumes a merge: its copy is dropped at launch).
+    var designGitMerges: [DesignID: DesignGitMergeRun] = [:]
+    /// Each design's last failed push, until the next push or commit. Server queue.
+    var designGitPushFailures: [DesignID: String] = [:]
+    /// The merge turn's time limit (`DesignGitMergeLimits.turnTimeout`; tests lower it).
+    var designGitMergeTimeout: TimeInterval = DesignGitMergeLimits.turnTimeout
     /// Skills requests fetch from git, so they run here, one at a time, never on the server's
     /// queue.
     private let skillsQueue = DispatchQueue(label: "shepherd.skills", qos: .userInitiated)
@@ -948,6 +960,8 @@ public final class SessionServer: @unchecked Sendable {
         // A design deleted in its undo window before a crash (state.json no longer lists it), and
         // an import a crash left staged.
         designs.removeLeftovers()
+        // A Git merge copy is never resumed after a restart.
+        DesignGit.dropLeftoverMergeCopies(in: designs.directory)
         try queue.sync { try startOnQueue(missingDesigns: missingDesigns) }
         countDesignBoards()
         // Copies of design references whose agent or grant is gone (a send the app quit during).
@@ -4355,6 +4369,9 @@ public final class SessionServer: @unchecked Sendable {
         hopToMain { [weak self] in self?.onStateChanged?(committedState) }
     }
 
+    /// `noteAgentSend` for the Git merge's turn (SessionServer+DesignGit).
+    func noteAgentSendForGit(_ agentID: AgentID) { noteAgentSend(agentID) }
+
     /// Server queue: a message was sent to the agent, which moves it up Recents.
     private func noteAgentSend(_ agentID: AgentID) {
         guard let index = store.state.agents.firstIndex(where: { $0.id == agentID }) else { return }
@@ -6012,6 +6029,9 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// `commitDesignWrite` for git's replacement of a design's files (SessionServer+DesignGit).
+    func commitDesignWriteForGit(_ designID: DesignID, _ result: DesignWriteResult) throws { try commitDesignWrite(designID, result) }
+
     /// Server queue: what a write to a design's files changes in its record. A new title is
     /// persisted; the board count and `lastActiveAt` are live, like an agent's status.
     private func commitDesignWrite(_ designID: DesignID, _ result: DesignWriteResult) throws {
@@ -6275,12 +6295,14 @@ public final class SessionServer: @unchecked Sendable {
             }
             thread.onUserMessageConsumed = { [weak serverWeak, weak thread] operation, entry in
                 guard let server = serverWeak, let thread, let agentID = server.agentID(forSession: sid) else { return }
+                server.designMergeMessageConsumed(agentID: agentID, operation: operation)
                 server.projectChildUserStarted(agentID: agentID, thread: thread, operation: operation)
                 if let operation { server.projectPromptStarted(agentID: agentID, deliveryID: operation) }
                 server.executionUserStarted(agentID: agentID, session: thread.piSessionID, generation: thread.generation, operation: operation, entryID: entry)
             }
             thread.onActualTurnSettled = { [weak serverWeak, weak thread] in
                 guard let server = serverWeak, let thread, let agentID = server.agentID(forSession: sid) else { return }
+                server.designMergeTurnSettled(agentID: agentID, thread: thread)
                 server.projectWorkerSettled(agentID: agentID)
                 server.executionSettled(agentID: agentID, thread: thread)
             }
@@ -6626,6 +6648,7 @@ public final class SessionServer: @unchecked Sendable {
         if let agent = agentID(forSession: sessionID) {
             projectRuntimeExited(agentID: agent)
             executionExited(agentID: agent)
+            designMergeAgentExited(agentID: agent)
         }
         ShepherdLog.info("session \(sessionID) exited (code \(code.map(String.init) ?? "signal"))")
         if let record = startRecords.removeValue(forKey: sessionID), record.keepsAgent {
