@@ -1254,6 +1254,7 @@ private static func chipsAndLinks() async throws {
             switch value {
             case .send(_, _, let operation, _, _, _, _, _, _): return .accepted(operationID: operation)
             case .setModel(_, _, let operation, let model):
+                #expect(accept.current && saved.current == [model, model], "the accepted Project save precedes the native setModel")
                 host.withValue { $0.model = model; $0.revision += 1 }
                 return .accepted(operationID: operation)
             case .setThinking(_, _, let operation, let level):
@@ -1279,16 +1280,24 @@ private static func chipsAndLinks() async throws {
         #expect(!window.elements().contains { $0.label?.localizedCaseInsensitiveContains("branch") == true }, "no branch beside the chip")
         func settings() async throws { try window.press(chip); try await eventuallyOnMain("the popover") { window.layout(); return window.element("All models\u{2026}") != nil } }
 
+        let pick = "anthropic/claude-3-5-haiku-20241022"
+        let row = "\(pick), \(try #require(ModelCatalog(models).model(pick)).thinking)"
+        func pickFromFullPicker() async throws {
+            try window.press("All models\u{2026}")
+            try await eventuallyOnMain("one enabled model row in the full picker") {
+                let groups = window.elements().filter { $0.role == ControlRole.group && $0.label == "Choose a model" }
+                let choices = ControlPress.controls(in: "Choose a model", under: window.host).filter { $0.role == ControlRole.button && $0.label == row }
+                return groups.count == 1 && choices.count == 1 && choices[0].isEnabled && !choices[0].frame.isEmpty
+            }
+            try window.press(row, in: "Choose a model")
+        }
+
         // A refused save: the thread is never told, the chip keeps its model.
         accept.withValue { $0 = false }
         try await settings()
-        try window.press("All models\u{2026}")
-        try await eventuallyOnMain("the full picker") { window.layout(); return window.element("Choose a model") != nil }
-        let pick = "anthropic/claude-3-5-haiku-20241022"
-        let row = try #require(window.controls().first { $0.label?.hasPrefix(pick) == true }?.label)
-        try window.press(row)
+        try await pickFromFullPicker()
         try await eventuallyOnMain("the save was attempted") { saved.current == [pick] }
-        try await Task.sleep(for: .milliseconds(300))
+        try await eventuallyOnMain("the refused pick closes the full picker") { window.element("Choose a model") == nil }
         #expect(!requests.current.contains { if case .setModel = $0 { true } else { false } }, "a refused save sends the thread no setModel")
         #expect(store.model == "anthropic/claude-opus-4-5")
 
@@ -1296,9 +1305,7 @@ private static func chipsAndLinks() async throws {
         accept.withValue { $0 = true }
         try await eventuallyOnMain("the chip is offered again") { window.layout(); return window.controls().contains { $0.label == chip && $0.isEnabled } }
         try await settings()
-        try window.press("All models\u{2026}")
-        try await eventuallyOnMain("the full picker again") { window.layout(); return window.element("Choose a model") != nil }
-        try window.press(try #require(window.controls().first { $0.label?.hasPrefix(pick) == true }?.label))
+        try await pickFromFullPicker()
         try await eventuallyOnMain("the thread was sent setModel for the pick") {
             requests.current.contains { if case .setModel(_, _, _, let model) = $0 { model == pick } else { false } }
         }
