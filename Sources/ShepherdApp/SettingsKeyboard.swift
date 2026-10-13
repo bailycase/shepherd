@@ -21,7 +21,7 @@ struct KeyboardSettings: View {
         ("Window", [.toggleSidebar, .toggleRightPane]),
         ("Terminal", [.newTerminal, .closeTerminal, .nextTerminal, .previousTerminal,
                       .toggleTerminal, .maximizeTerminal]),
-        ("Browser", [.focusAddressBar, .selectElement]),
+        ("Browser", [.focusAddressBar, .selectElement, .browserNewTab]),
         ("Designs", [.importDesign, .implementInThread, .copyDesignReference]),
     ]
 
