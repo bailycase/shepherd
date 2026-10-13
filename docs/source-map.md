@@ -203,8 +203,7 @@ Sources/
       DesignExportSheet (DZExport's sheet over the window, its model), DesignLifecycle (the menus,
       dialogs and toast of deleting and importing, as values) and DesignLifecycleViews, DesignTweak (the Tweak tab's controls, pure), DesignTweakModel (its writes,
       one per gesture, Reset and Undo), DesignTweakPane, DesignProjectTokens (the
-      custom properties a design agent's folder declares), NightWatchSystem (Night Watch as a
-      built-in design system, from ShepherdUI's tokens), DesignSystemCatalog (the host's systems
+      custom properties a design agent's folder declares), DesignSystemCatalog (the host's systems
       as last read), DesignSystemPageModel (DZSystem as values; specimen boards), DesignSystemPage
       (the Design systems page, a build's layout beside its chat, the header),
       ShepherdViewModel+DesignReferences (a design piece handed to a thread: pinned, attached,
