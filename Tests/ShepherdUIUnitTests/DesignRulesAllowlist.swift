@@ -29,12 +29,7 @@ enum DesignRuleAllowlist {
 
     private static let chevrons = "Predates NWGlyph.popupChevrons: the up-down popup chevrons as a plain symbol string. Pass NWGlyph.popupChevrons when the file is next changed."
 
-    private static let branch = "Predates NWGlyph.gitBranch: the branch glyph as a plain symbol string in Sources/ShepherdApp. Pass NWGlyph.gitBranch.symbolName and delete this entry (left by the Git design UI change, which does not edit Sources/)."
-
     static let entries: [DesignRuleException] = [
-        .init(.rawGlyphName, "Sources/ShepherdApp/SkillsSheets.swift", 1, branch),
-        .init(.rawGlyphName, "Sources/ShepherdApp/ChangesMenus.swift", 1, branch),
-        .init(.rawGlyphName, "Sources/ShepherdApp/ShepherdViewModel+Palette.swift", 1, branch),
         // Raw colors: each is something other than app chrome, or a known fix.
         .init(.rawColor, "App/iOS/DesignPad/PadDesignMarkup.swift", 1, "Flattens an exported drawing onto a white page: image content, not chrome."),
         .init(.rawColor, "App/iOS/Designs/DesignHost.swift", 1, "Builds a UIColor from a pixel sampled from a board's snapshot: content, not chrome."),

@@ -65,6 +65,9 @@ struct ThreadView: View {
     @Environment(\.projectComposerSend) private var projectSend
     @Environment(\.projectActionCards) private var projectActionCards
     @Environment(\.projectWorkerThread) private var workerStyle
+    /// A design's Git merge, in its chat (GitDesignMerge): the card after the last turn, and the
+    /// intro in an empty chat of a design opened from Git.
+    @Environment(\.designGitChat) private var designGitChat
     /// A Project conversation or one of its worker threads: the boards space the column at 16pt, not an ordinary thread's 28 and 14.
     private var leadColumn: Bool { projectSend != nil || workerStyle != nil }
     private var userOrigins: ProjectUserOrigins {
@@ -127,7 +130,11 @@ struct ThreadView: View {
                     // every streamed chunk): turns that arrive make their own entrance.
                     LazyVStack(alignment: .leading, spacing: leadColumn ? NWLeadMetrics.turnGap : AppLayout.turnSpacing) {
                         notices
-                        if rows.isEmpty { if let project = projectSend?.emptyState { project() } else { emptyState } }
+                        if rows.isEmpty {
+                            if let project = projectSend?.emptyState { project() }
+                            else if designGitChat?.opened == true { NWGitDesignIntro() }
+                            else { emptyState }
+                        }
                         if projectSend != nil || workerStyle != nil, let at = rows.first?.turn.messages.first?.timestamp ?? rows.first?.startedAt { NWLeadDaySeparator(word: FleetFinishedDay.dayTitle(Date(timeIntervalSince1970: at / 1000), now: Date())) }
                         ForEach(rows) { row in
                             let _ = NWRenderProbe.tick("thread.rowBuilder")
@@ -163,6 +170,11 @@ struct ThreadView: View {
                         if let authNotice {
                             ThreadAuthNoticeView(notice: authNotice, actions: authActions)
                                 .id(ThreadAuthNotice.rowID)
+                        }
+                        if let git = designGitChat, let phase = git.phase {
+                            NWGitMergeCard(phase: phase, review: git.review, retry: git.retry)
+                                .equatable()
+                                .id(DesignGitChat.rowID)
                         }
                         Color.clear.frame(height: 1).id(Self.bottomID)
                     }

@@ -25,6 +25,8 @@ public enum NWGitMetrics {
     public static let buttonHeight: CGFloat = 32
     public static let smallButtonHeight: CGFloat = 28
     public static let rowHeight: CGFloat = 40
+    /// The panel's least height in a short window (it scrolls inside).
+    public static let panelMinHeight: CGFloat = 240
     public static let commitLines = 2
     /// The mono a body line sets a name or hash in (the board's `.mono` span at 13.5).
     public static let bodyMono: CGFloat = 13.5
@@ -140,6 +142,8 @@ private struct GitField: View {
                 .frame(minHeight: M.fieldHeight)
                 .background(Color.nw.bgSunken, in: shape)
                 .nwBorder(Color.nw.lineStrong, in: shape)
+                // The app's focus ring, for keyboard focus only (as `NWLeadFieldStyle` draws it).
+                .nwFocusRing(radius: NW.Radius.m)
                 .disabled(!enabled)
                 .nwEnabledOpacity(enabled)
                 .onSubmit(submit)
@@ -166,6 +170,8 @@ private struct GitErrorBox: View {
         .background(AgentState.failed.tint ?? Color.clear, in: RoundedRectangle(cornerRadius: NW.Radius.s))
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isStaticText)
+        // The board's role=alert: VoiceOver reads it as it appears.
+        .onAppear { AccessibilityNotification.Announcement("\(error.title). \(error.detail)").post() }
     }
 }
 
@@ -474,11 +480,13 @@ public struct NWGitPanel: View {
         // Whole when it fits, else its middle scrolls between the header and the footer.
         Group {
             if maxHeight.isFinite {
+                // Its own height when that fits (the board's card hugs its content), else capped.
                 ViewThatFits(in: .vertical) {
                     card(scrolling: false)
                     card(scrolling: true)
                 }
                 .frame(maxHeight: maxHeight)
+                .fixedSize(horizontal: false, vertical: true)
             } else {
                 card(scrolling: false)
             }

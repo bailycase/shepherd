@@ -43,11 +43,10 @@ public enum DesignGitMergeLimits {
 public enum DesignGitMergeBrief {
     public static let request = "Resolve this Git merge. Keep both changes and check the design. Don't commit or push."
 
+    /// What pi reads ahead of `request`, in the design-git fence (the thread shows only the request).
     public static func text(copy: URL, conflicts: [String], ours: DesignGitStatus.Commit, theirs: DesignGitStatus.Commit) -> String {
         let files = conflicts.isEmpty ? "Git merged every file; check the result." : conflicts.map { "- \($0)" }.joined(separator: "\n")
         return """
-        \(request)
-
         Shepherd prepared a merge copy of this design at \(copy.path). Git merged what it could; the files below still hold conflict markers (<<<<<<<, |||||||, =======, >>>>>>>), with the merge base between ||||||| and =======.
         \(files)
 
@@ -263,7 +262,8 @@ extension SessionServer {
                 next.deadline = Date().addingTimeInterval(DesignGitMergeLimits.turnTimeout)
                 self.designGitMerges[designID] = next
                 self.noteAgentSendForGit(agent.id)
-                thread.send(id: operation, text: brief, delivery: .followUp, images: [], alone: true) { result in
+                thread.send(id: operation, text: DesignGitMergeBrief.request, delivery: .followUp, images: [], alone: true,
+                    context: DesignGitFence.fenced(brief)) { result in
                     if case .failure(_, let message) = result {
                         self.queue.async {
                             if self.designGitMerges[designID]?.operationID == operation {
@@ -327,11 +327,13 @@ extension SessionServer {
     // MARK: The merge turn's end
 
     /// Server queue: the design agent's run settled. A merge turn ends here: the copy is checked
-    /// and the merge is ready, or failed with why. Stopped stays stopped.
+    /// and the merge is ready, or failed with why. A turn the user stopped (the composer's Stop,
+    /// as the board draws it) is Stopped; stopped stays stopped.
     func designMergeTurnSettled(agentID: AgentID, thread: RPCThreadState) {
         guard let (designID, run) = designGitMerges.first(where: { $0.value.agentID == agentID && $0.value.merge.phase == .running }),
               run.turnStarted else { return }
         let failed = thread.runFailed
+        // Stop on the composer during the merge turn: the merge reads Stopped, as its own Stop does.
         let stopped = thread.stopRequested
         guard let folder = designs.folder(for: designID) else { return }
         designGitMerges[designID]?.operationID = nil

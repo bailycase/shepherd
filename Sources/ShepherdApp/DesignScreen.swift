@@ -18,9 +18,13 @@ struct DesignLayoutView: View {
         let _ = NWRenderProbe.tick("layout.design")
         HStack(spacing: 0) {
             DesignCanvasPane(screen: vm.designScreen(designID), vm: vm, designName: vm.design(designID)?.name ?? "")
+                // The canvas's Git notices (Opened from Git, Pull paused) at its top center.
+                .overlay { DesignGitCanvasLayer(vm: vm, designID: designID, part: .notices) }
             DesignChatPane(vm: vm, screen: vm.designScreen(designID), model: model, thread: thread)
                 .frame(width: AppLayout.designChatWidth)
         }
+        // The Git panel hangs under the toolbar's chip, over the canvas and the chat (GitDesignChanges).
+        .overlay { DesignGitCanvasLayer(vm: vm, designID: designID, part: .panel) }
         .onChange(of: model.isVisible, initial: true) { vm.designVisibility(designID, visible: model.isVisible) }
         // The toolbar's chip draws the design's system from the catalog.
         .task { if !vm.designSystems.loaded { await vm.loadDesignSystems() } }
@@ -191,6 +195,9 @@ struct DesignChatPane: View {
                         designChat: true)
                     .environment(\.designCommentCards, screen.commentCards)
                     .nwComposerSize(.compact)
+                    // The Git merge's card after the last turn (GitDesignMerge); the agent's own
+                    // words and activity are the thread's rows.
+                    .modifier(DesignGitChatEnvironment(vm: vm, designID: screen.designID))
                     .opacity(chat ? 1 : 0)
                     .allowsHitTesting(chat)
                     .accessibilityHidden(!chat)
@@ -265,12 +272,18 @@ struct DesignToolbar: View, Equatable {
     /// design). `jumpOpen` lights its ring while the card is up.
     var jump: (() -> Void)?
     var jumpOpen = false
+    /// The Git chip (DesignGitStatus); nil where the design can't be shared from here (another
+    /// host's design).
+    var git: DesignGitPresentation.Chip?
+    var gitOpen = false
+    var pressGit: () -> Void = {}
 
     nonisolated static func == (a: Self, b: Self) -> Bool {
         a.name == b.name && a.system == b.system && a.swatches == b.swatches && (a.openSystem == nil) == (b.openSystem == nil)
             && a.leadingInset == b.leadingInset && (a.showSidebar == nil) == (b.showSidebar == nil)
             && a.screen.map(ObjectIdentifier.init) == b.screen.map(ObjectIdentifier.init) && (a.export == nil) == (b.export == nil)
             && a.menu == b.menu && (a.jump == nil) == (b.jump == nil) && a.jumpOpen == b.jumpOpen
+            && a.git == b.git && a.gitOpen == b.gitOpen
     }
 
     var body: some View {
@@ -290,6 +303,9 @@ struct DesignToolbar: View, Equatable {
                     }
                 }
                 .accessibilityLabel("Page")
+            }
+            if let git {
+                NWDesignGitChip(label: git.label, tone: git.tone, hint: git.hint, isOpen: gitOpen, action: pressGit)
             }
             if let system {
                 NWDesignSystemChip(system, colors: swatches.map { Color(light: $0.light, dark: $0.dark) }, action: openSystem)
