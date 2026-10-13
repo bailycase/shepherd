@@ -44,12 +44,19 @@ struct SidebarAutomationsControlTests {
         #expect(vm.selectedAgentID == run.agent.id)
 
         // The header folds the group: its count stays, its row goes.
-        try window.press("Automations, 1, expanded")
-        ListPerf.settle(window)
+        let collapse = try window.press("Automations, 1, expanded")
+        #expect(ControlPress.undersized([collapse], minimum: .desktop).isEmpty)
         #expect(vm.collapsedActivitySections.contains(.automations))
-        #expect(!window.controls().contains { $0.label?.hasPrefix("nightly-deps") == true })
-        try window.press("Automations, 1, collapsed")
-        ListPerf.settle(window)
+        try await eventuallyOnMain("the folded automation row to leave the accessibility tree") {
+            !window.controls().contains { $0.label?.hasPrefix("nightly-deps") == true }
+                && window.controls().contains { $0.label == "Automations, 1, collapsed" }
+        }
+        let expand = try window.press("Automations, 1, collapsed")
+        #expect(ControlPress.undersized([expand], minimum: .desktop).isEmpty)
         #expect(!vm.collapsedActivitySections.contains(.automations))
+        try await eventuallyOnMain("the expanded automation row to return to the accessibility tree") {
+            window.controls().contains { $0.label?.hasPrefix("nightly-deps") == true }
+                && window.controls().contains { $0.label == "Automations, 1, expanded" }
+        }
     }
 }

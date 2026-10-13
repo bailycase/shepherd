@@ -44,11 +44,12 @@ struct RemoteAutomationsTests {
         let runAgent = try #require(host.state.automations.first?.agentID)
         let hidden = try #require(host.state.spaces.first { $0.hidden })
         #expect(host.state.agents.first { $0.id == runAgent }?.spaceID == hidden.id, "a run lives in the hidden space")
-        // The run is in Recents with its bolt; the hidden space is never a project to start in.
+        // The run has its own Automations group and bolt; the hidden space is never a project to start in.
         let ref = RemoteAgentRef(hostID: connection.id, agentID: runAgent)
-        try await eventuallyOnMain("the run to reach Recents") {
-            vm.sidebarLists.recents.contains { $0.id == .remote(ref) && $0.leading == .glyph("bolt", attention: false) }
+        try await eventuallyOnMain("the run to reach Automations") {
+            vm.sidebarLists.automations.contains { $0.id == .remote(ref) && $0.leading == .glyph("bolt", attention: false) }
         }
+        #expect(!(vm.sidebarLists.working + vm.sidebarLists.done + vm.sidebarLists.recents).contains { $0.id == .remote(ref) })
         #expect(!NewThreadState.hosts(vm).contains { $0.id == connection.id && $0.spaces.contains { $0.id == hidden.id } })
 
         vm.openDestination(.automations)
@@ -56,7 +57,7 @@ struct RemoteAutomationsTests {
         #expect(vm.selectedRemoteAgent == ref && vm.shownDestination == nil, "the page's run opens its thread")
         vm.selectSidebarRow(.remote(ref))
         #expect(vm.selectedRemoteAgent == ref)
-        #expect(vm.presentedSidebarLists.recents.first { $0.id == .remote(ref) }?.selected == true)
+        #expect(vm.presentedSidebarLists.automations.first { $0.id == .remote(ref) }?.selected == true)
 
         vm.performRemoteAutomation(key, .stop)
         try await eventuallyOnMain("the run's agent to go") {
