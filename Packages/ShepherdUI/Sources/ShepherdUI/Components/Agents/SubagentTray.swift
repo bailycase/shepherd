@@ -340,18 +340,7 @@ public struct NWSubagentTrayRow: View {
     }
 
     @ViewBuilder private func stateMark(_ m: NWSubagentTrayMetrics) -> some View {
-        Group {
-            switch run.state {
-            case .done:
-                Image(systemName: "checkmark").font(.system(size: m.stateSlot - 4, weight: .semibold)).foregroundStyle(Color.nw.done)
-            case .failed:
-                Image(systemName: "xmark").font(.system(size: m.stateSlot - 5, weight: .semibold)).foregroundStyle(Color.nw.failed)
-            default:
-                NWStatusDot(run.state, size: NWSubagentTrayMetrics.dotSize)
-            }
-        }
-        .frame(width: m.stateSlot)
-        .accessibilityHidden(true)
+        NWSubagentStateMark(run.state, slot: m.stateSlot)
     }
 
     @ViewBuilder private func line(_ m: NWSubagentTrayMetrics) -> some View {
@@ -419,6 +408,39 @@ public struct NWSubagentTrayRow: View {
                 nw.running.frame(width: NWSubagentTrayMetrics.selectionRule)
             }
         }
+    }
+}
+
+/// A run's state in its slot: a 7pt dot, or a `done` checkmark or a `failed` cross once finished
+/// (the tray's rows and the Subagents tab's).
+struct NWSubagentStateMark: View {
+    let state: AgentState
+    let slot: CGFloat
+    /// The mark's own width, where a design gives it one narrower than the slot (the list's 7pt dot).
+    let width: CGFloat
+    /// The finished glyphs' base size, where a design draws them larger than the tray's (the list's).
+    let glyph: CGFloat?
+
+    init(_ state: AgentState, slot: CGFloat, width: CGFloat? = nil, glyph: CGFloat? = nil) {
+        self.state = state
+        self.slot = slot
+        self.width = width ?? slot
+        self.glyph = glyph
+    }
+
+    var body: some View {
+        Group {
+            switch state {
+            case .done:
+                Image(systemName: "checkmark").font(.system(size: glyph ?? slot - 4, weight: .semibold)).foregroundStyle(Color.nw.done)
+            case .failed:
+                Image(systemName: "xmark").font(.system(size: glyph ?? slot - 5, weight: .semibold)).foregroundStyle(Color.nw.failed)
+            default:
+                NWStatusDot(state, size: NWSubagentTrayMetrics.dotSize)
+            }
+        }
+        .frame(width: width)
+        .accessibilityHidden(true)
     }
 }
 

@@ -172,14 +172,23 @@ public struct NWAttachmentChip: View {
     let thumbnail: Image?
     let size: Size
     let remove: (() -> Void)?
+    let detail: String?
+    let problem: Bool
+    let open: (() -> Void)?
 
     /// `thumbnail` shows an image's preview in place of the file glyph; `remove` adds the
-    /// remove button.
-    public init(_ name: String, prefix: String? = nil, thumbnail: Image? = nil, size: Size = .regular, remove: (() -> Void)? = nil) {
+    /// remove button. `detail` is a mono size after the name ("1.4 MB"); `problem` draws the
+    /// chip and its detail in `failed` ("3.1 MB · over 2 MB"); `open` makes the thumbnail a
+    /// button that opens the image full size.
+    public init(_ name: String, prefix: String? = nil, thumbnail: Image? = nil, size: Size = .regular, detail: String? = nil,
+                problem: Bool = false, open: (() -> Void)? = nil, remove: (() -> Void)? = nil) {
         self.name = name
         self.prefix = prefix
         self.thumbnail = thumbnail
         self.size = size
+        self.detail = detail
+        self.problem = problem
+        self.open = open
         self.remove = remove
     }
 
@@ -189,13 +198,24 @@ public struct NWAttachmentChip: View {
         let side = compact ? NWQueueMetrics.chipThumbnail : NWThreadMetrics.attachmentThumbnail
         HStack(spacing: compact ? NW.Space.xs : NW.Space.s) {
             if let thumbnail {
-                thumbnail
+                let picture = thumbnail
                     .resizable()
                     .aspectRatio(contentMode: .fill)
                     .frame(width: side, height: side)
                     .background(nw.bgSunken)
                     .clipShape(RoundedRectangle(cornerRadius: compact ? NWQueueMetrics.chipThumbnailRadius : NW.Radius.xs))
-                    .accessibilityHidden(true)
+                if let open {
+                    // The picture stays the board's 20pt; the press area is the Mac's 24pt.
+                    Button(action: open) { picture }
+                        .buttonStyle(.plain)
+                        .frame(width: NW.Height.controlS, height: NW.Height.controlS)
+                        .contentShape(Rectangle())
+                        .padding(.horizontal, -NW.Space.xxs)
+                        .nwFocusRing(radius: NW.Radius.xs)
+                        .accessibilityLabel("Open \(name)")
+                } else {
+                    picture.accessibilityHidden(true)
+                }
             } else {
                 Image(systemName: compact ? "photo" : "doc")
                     .font(.system(size: compact ? 11 : 10, weight: .medium))
@@ -210,20 +230,25 @@ public struct NWAttachmentChip: View {
             .font(.nwSans(compact ? 11 : 12))
             .lineLimit(1)
             .truncationMode(.middle)
+            if let detail {
+                Text(detail).font(.nw(.micro)).foregroundStyle(problem ? nw.failed : nw.textTertiary).lineLimit(1)
+            }
             if let remove {
                 Button(action: remove) {
                     Image(systemName: "xmark").font(.system(size: 8, weight: .semibold)).foregroundStyle(nw.textTertiary)
-                        .frame(width: 14, height: 14)
+                        .frame(width: NW.Height.controlS, height: NW.Height.controlS)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                // The x is drawn 14pt; its press area is the Mac's 24pt, so it takes the room its padding left.
+                .padding(.horizontal, -NW.Space.xs)
                 .accessibilityLabel("Remove \(name)")
             }
         }
         .padding(.leading, thumbnail == nil ? (compact ? NW.Space.s : NW.Space.m) : 3)
         .padding(.trailing, compact ? NW.Space.s : remove == nil && thumbnail != nil ? NW.Space.xs : NW.Space.m)
         .frame(height: compact ? NWQueueMetrics.chipHeight : NWThreadMetrics.attachmentHeight)
-        .nwBorder(nw.lineStrong, radius: compact ? NW.Radius.xs : NW.Radius.s)
+        .nwBorder(problem ? nw.failed : nw.lineStrong, radius: compact ? NW.Radius.xs : NW.Radius.s)
         .fixedSize(horizontal: compact, vertical: false)
         .accessibilityElement(children: .contain)
     }

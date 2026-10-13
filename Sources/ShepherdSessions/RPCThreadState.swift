@@ -31,7 +31,7 @@ final class RPCThreadState {
     static let widgetAggregateBytes = 32 * 1024
     static let operationTableSize = 256
     static let supportedActions = ["send", "abort", "answer", "setModel", "setThinking", "sendImages", "subagents", "queue", "compact", "designContext",
-                                   "designReferences", "browserElements", "retry", "interrupt", "setServiceTier"]
+                                   "designReferences", "browserElements", "retry", "interrupt", "setServiceTier", "images"]
     /// pi answers `compact` only once the summary is written, which takes as long as a reply.
     static let compactTimeout: TimeInterval = 600
     /// Bytes of a child session file the transcript reader will scan (tail); older is unreachable.
@@ -756,6 +756,12 @@ final class RPCThreadState {
                 return
             }
             completion(snapshot(beforeEntryID: beforeEntryID))
+        case .image(let expectedSessionID, let imageID, let offset):
+            guard expectedSessionID == piSessionID else {
+                completion(.failure(code: "stale_session", message: "Refresh the thread before acting."))
+                return
+            }
+            serveImage(imageID, offset: offset, completion: completion)
         case .subagentTranscript(let expectedSessionID, let runID, let beforeEntryID):
             guard expectedSessionID == piSessionID else {
                 completion(.failure(code: "stale_session", message: "Refresh the thread before acting."))
@@ -1005,8 +1011,42 @@ final class RPCThreadState {
             compact(instructions: instructions, operationID: operationID, completion: completion)
         case .retry(_, _, _, let entryID):
             retryTurn(entryID: entryID, operationID: operationID, completion: completion)
-        case .snapshot, .subagentTranscript:
+        case .snapshot, .subagentTranscript, .image:
             completion(.failure(code: "invalid", message: "Not an action."))
+        }
+    }
+
+    // MARK: - Images
+
+    /// One piece of an image pi saved in this thread, read from pi's own history for this agent. Nothing a client sends names a
+    /// file: the id must match an image in the history as it is now. Server queue in, server queue out: the scan, the hash, the
+    /// base64 and the header read of a megabytes-long history run on a utility queue, and the answer is given only if the session
+    /// is still the one asked about.
+    private func serveImage(_ imageID: String, offset: Int, completion: @escaping (NativeThreadResult) -> Void) {
+        guard ThreadImages.parse(imageID) != nil, offset >= 0 else {
+            completion(.failure(code: NativeImageCode.unknown, message: "That image is not in this thread."))
+            return
+        }
+        let generation = generation
+        let sessionID = piSessionID
+        let stale = NativeThreadResult.failure(code: "stale_session", message: "Refresh the thread before acting.")
+        session.request(.getMessages, timeout: 30) { [weak self] result in
+            guard let self, generation == self.generation else { completion(stale); return }
+            guard case .success(let response) = result, response.success, let messages = response.messages else {
+                completion(.failure(code: NativeImageCode.unknown, message: "The thread's history could not be read."))
+                return
+            }
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                let found = ThreadImages.find(imageID, in: messages)
+                let chunk = found.flatMap { ThreadImages.chunk(imageID, mimeType: $0.mimeType, data: $0.data, offset: offset) }
+                guard let self else { completion(stale); return }
+                self.queue.async { [weak self] in
+                    guard let self, generation == self.generation, sessionID == self.piSessionID else { completion(stale); return }
+                    if let chunk { completion(.imageChunk(value: chunk)); return }
+                    completion(.failure(code: NativeImageCode.unknown,
+                                        message: found == nil ? "That image is not in this thread." : "That part of the image is past its end."))
+                }
+            }
         }
     }
 
@@ -1211,8 +1251,28 @@ final class RPCThreadState {
                          done: ((Result<RPCResponse, RPCError>) -> Void)? = nil) {
         let generation = generation
         session.request(.getMessages, timeout: timeout) { [weak self] result in
+            // A history with images costs a header read and a SHA-256 each. That work is done here, off the thread's queue, into a
+            // table built from exactly these messages; the projection on the thread's queue only looks entries up. A history with
+            // no images goes straight on.
+            if let self, case .success(let response) = result, response.success, let messages = response.messages,
+               ThreadImages.hasImages(messages) {
+                DispatchQueue.global(qos: .utility).async { [weak self] in
+                    let table = ThreadImages.table(for: messages)
+                    self?.queue.async { [weak self] in
+                        self?.finishRefresh(result, generation: generation, bootstrapAttempt: bootstrapAttempt, images: table, done: done)
+                    }
+                }
+                return
+            }
+            self?.finishRefresh(result, generation: generation, bootstrapAttempt: bootstrapAttempt, images: [:], done: done)
+        }
+    }
+
+    private func finishRefresh(_ result: Result<RPCResponse, RPCError>, generation: String, bootstrapAttempt: Int?,
+                               images: [String: ThreadImages.Meta], done: ((Result<RPCResponse, RPCError>) -> Void)?) {
+        do {
             defer { done?(result) }
-            guard let self, generation == self.generation else { return }
+            guard generation == self.generation else { return }
             let superseded = bootstrapAttempt.map { $0 != self.bootstrapAttempts } ?? false
             // A failed history fetch must not lock out snapshots, Send, or Stop forever.
             // Reset already discarded the old session; serve the new one as incomplete, as
@@ -1233,7 +1293,7 @@ final class RPCThreadState {
             self.historyUnread = false
             self.liveLeftOut = 0
             let history = Self.projectHistory(self.markingStopped(messages),
-                                              sentReferences: self.origins.compactMapValues(\.references)) { value, message in
+                                              sentReferences: self.origins.compactMapValues(\.references), images: images) { value, message in
                 if message.role == "compactionSummary", let summary = message.summary,
                    let note = self.compactionNotes.last(where: { $0.summary == summary }) {
                     value.compaction?.reason = note.reason
@@ -2134,6 +2194,7 @@ final class RPCThreadState {
     static func projectHistory(
         _ messages: [RPCMessage],
         sentReferences: [String: [String]] = [:],
+        images: [String: ThreadImages.Meta] = [:],
         adjust: (inout NativeThreadMessage, RPCMessage) -> Void = { _, _ in }
     ) -> [NativeThreadMessage] {
         var arguments: [String: JSONValue] = [:]
@@ -2144,19 +2205,27 @@ final class RPCThreadState {
                 if let time = message.timestamp { callTimes[id] = time }
             }
         }
-        var seen: [String: Int] = [:]
-        return chronological(messages).enumerated().flatMap { index, message -> [NativeThreadMessage] in
-            // pi's structured system prompt rides in the message list; the thread never shows it.
-            if message.role == "system" { return [] }
-            if message.role == "custom" && message.display != true { return [] }
-            if message.role == "custom" && message.customType == "shepherd-child" { return [] }
+        return shownHistory(messages).flatMap { entryID, message -> [NativeThreadMessage] in
             let args = message.role == "toolResult" ? message.toolCallId.flatMap { arguments[$0] } : nil
-            let entryID = historyEntryID(message, index: index, seen: &seen)
-            var value = project(entryID: entryID, message: message, args: args, sentReferences: sentReferences[entryID])
+            var value = project(entryID: entryID, message: message, args: args, sentReferences: sentReferences[entryID], images: images)
             if let id = message.toolCallId, message.role == "toolResult" { value.startedAt = callTimes[id] }
             adjust(&value, message)
             if let origin = value.origin { value.origin = clipped(origin) }
             return [value] + nestedRows(message, parentEntryID: entryID, adjust: adjust)
+        }
+    }
+
+    /// The messages history shows, in order, each with the entry id history gives it. The one place that decides which messages
+    /// are hidden and how the rest are numbered: `projectHistory` and `ThreadImages.find` both read it, so an image id the
+    /// snapshot offered always finds its message again (a hidden message with a repeated timestamp cannot shift the numbers).
+    static func shownHistory(_ messages: [RPCMessage]) -> [(entryID: String, message: RPCMessage)] {
+        var seen: [String: Int] = [:]
+        return chronological(messages).enumerated().compactMap { index, message in
+            // pi's structured system prompt rides in the message list; the thread never shows it.
+            if message.role == "system" { return nil }
+            if message.role == "custom" && message.display != true { return nil }
+            if message.role == "custom" && message.customType == "shepherd-child" { return nil }
+            return (historyEntryID(message, index: index, seen: &seen), message)
         }
     }
 
@@ -2241,7 +2310,11 @@ final class RPCThreadState {
     /// A user message's design references fence comes off (its records become the message's
     /// `designReferences`) only when `sentReferences` names every copy it carries: a message the
     /// user sent in this thread. Otherwise it stays, as text.
-    static func project(entryID: String, message: RPCMessage, args: JSONValue? = nil, sentReferences: [String]? = nil) -> NativeThreadMessage {
+    /// `images` is what `ThreadImages.table(for:)` read of the history this message is in, keyed by entry and position. The projection only
+    /// looks an image up: it never decodes or hashes one (it runs on the thread's queue), and an image with no entry, as in a live row, whose
+    /// id history does not yet number, is named by nothing and stays the "Image" chip until the history is read again.
+    static func project(entryID: String, message: RPCMessage, args: JSONValue? = nil, sentReferences: [String]? = nil,
+                        images: [String: ThreadImages.Meta] = [:]) -> NativeThreadMessage {
         // A bounded 20 × 500 worker plan plus its arguments can exceed the ordinary 16 KiB
         // row (JSON escapes use six bytes). Keep the full report within the existing frame budget.
         var remaining = message.role == "toolResult" && message.toolName == "project_plan" ? 128 * 1024 : textLimit
@@ -2265,6 +2338,7 @@ final class RPCThreadState {
         // A design view record the viewer's message carried is pi's to read, not the thread's.
         var fenced = message.role == "user"
         var goalDetailsAdded = false
+        var imageIndex = 0
         for block in message.content {
             if result.blocks.count >= 128 || remaining == 0 {
                 truncated = true
@@ -2320,7 +2394,17 @@ final class RPCThreadState {
                 // what a reader sees is normalized, the growing text as much as the settled one.
                 result.blocks.append(NativeThreadBlock(kind: .thinking, text: clip(RPCContentBlock.normalizedThinking(text))))
             case .image:
-                result.blocks.append(NativeThreadBlock(kind: .unsupportedImage, text: clip("[Image unavailable in native thread]")))
+                // Metadata only, never the bytes: the client fetches them (`NativeThreadRequest.image`).
+                var block = NativeThreadBlock(kind: .unsupportedImage, text: clip("[Image unavailable in native thread]"))
+                if let meta = images[ThreadImages.key(entryID: entryID, index: imageIndex)] {
+                    block.imageID = ThreadImages.id(entryID: entryID, index: imageIndex, meta: meta)
+                    block.mimeType = meta.mimeType
+                    block.width = meta.width
+                    block.height = meta.height
+                    block.byteCount = meta.byteCount
+                }
+                imageIndex += 1
+                result.blocks.append(block)
             case .toolCall:
                 // The tool row (name, arguments, result) is the call's surface; dumping the
                 // call JSON as prose duplicated it.

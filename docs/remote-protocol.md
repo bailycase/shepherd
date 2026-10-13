@@ -20,7 +20,9 @@
     `NativeThreadDelivery.steer` stays on the wire for older clients and that fallback), and an
     agent's service tier (`setServiceTier`, the snapshot's
     `serviceTier` and `serviceTiers`; no Speed control from a host without it) behind
-    `native.serviceTier.v1`
+    `native.serviceTier.v1`, and the images pi saved in a thread (the snapshot names each, bounded
+    metadata only; `NativeThreadRequest.image` returns it in 256 KiB pieces, from pi's own history for
+    that agent and session) behind `native.images.v1`
   - conversation goals behind `native.goal.v1`: optional snapshot `goal`, live-only fleet
     `goalState`, and `NativeThreadRequest.goal` for set, edit, pause, resume, clear and confirm.
     Pause/Resume/Confirm require the displayed goal ID, revision and state in addition to the
