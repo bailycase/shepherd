@@ -306,8 +306,10 @@ struct SidebarActivityFlowTests {
         let space = Fixture.space("workspace", path: app.dir.path)
         let fixtures = [Fixture.agent("pinned", in: space), Fixture.agent("asking", in: space, order: 1, status: .blocked),
                         Fixture.agent("working", in: space, order: 2),
-                        Fixture.agent("finished", in: space, order: 3, status: .done), Fixture.agent("idle", in: space, order: 4)]
+                        Fixture.agent("finished", in: space, order: 3, status: .done), Fixture.agent("idle", in: space, order: 4),
+                        Fixture.agent("nightly", in: space, order: 5)]
         var state = Fixture.state(spaces: [space], agents: fixtures)
+        state.automations = [Automation(name: "nightly", prompt: "p", cwd: app.dir.path, agentID: fixtures[5].agent.id)]
         state.designs = [Design(name: "Dashboard", createdAt: 1, lastActiveAt: 2, boardCount: 4)]
         let vm = try await app.start(with: state)
         vm.settings.designToolEnabled = true
