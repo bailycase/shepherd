@@ -80,6 +80,7 @@ struct ThreadView: View {
     var retainedTailGuard: ThreadTailGuard? = nil
     /// Whether the scroll view keeps the tail itself (`ThreadTailAnchor.isNative`); a test drives either.
     var nativeTail = ThreadTailAnchor.isNative
+    @Environment(\.presentImages) private var presentImages
     @State private var fallbackInput = ThreadInput()
     private var input: ThreadInput { retainedInput ?? fallbackInput }
     @State private var fallbackTailGuard = ThreadTailGuard()
@@ -312,6 +313,18 @@ struct ThreadView: View {
         // The tray's controls: it changes only when the thread is switched to or away from (and
         // when the host's support does), and redraws the tray's rows.
         .environment(\.threadActionsEnabled, active && store.supports("subagents"))
+        // The images the host names, fetched on demand; pressing one opens the viewer (set once per window).
+        .environment(\.threadImages, store.supportedActions.contains("images") ? store.images : nil)
+        .transformEnvironment(\.viewImages) { opener in
+            let present = presentImages
+            let images = store.supportedActions.contains("images") ? store.images : nil
+            let add: ((ViewerImage) -> Void)? = { [input] image in
+                input.add(images: [image], store: store)
+            }
+            opener = ThreadImageOpener { set, index in
+                present(ImageViewerState(set: set, index: index, images: images, addToMessage: add))
+            }
+        }
         .foregroundStyle(Color.nw.textPrimary)
         .tint(Color.nw.running)
         .background { ThreadInputBackground(input: input) }

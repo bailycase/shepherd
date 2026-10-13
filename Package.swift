@@ -123,7 +123,8 @@ let package = Package(
         .target(name: "ShepherdTestKit", dependencies: ["ShepherdTestIsolation"], path: "Tests/ShepherdTestKit"),
         .target(
             name: "ShepherdTestSupport",
-            dependencies: ["ShepherdCore", "ShepherdProtocol", "ShepherdRemote", "ShepherdSessions", "ShepherdTestKit"],
+            dependencies: ["ShepherdCore", "ShepherdProtocol", "ShepherdRemote", "ShepherdSessions", "ShepherdTestKit",
+                           .product(name: "ShepherdUI", package: "ShepherdUI")],
             path: "Tests/ShepherdTestSupport",
             resources: [.copy("Resources/stub-pi.py"), .copy("Resources/fake-pi-sdk.mjs")]
         ),

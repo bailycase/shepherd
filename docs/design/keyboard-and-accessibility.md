@@ -44,7 +44,7 @@ in UserDefaults under `shepherd.keybindings`).
 | ⌥⌘↑ · ⌥⌘↓ | Previous · next turn |
 | ⌘I | Inspect subagent |
 | ⌘↩ | Steer now while pi works (↩ queues), and steer a focused queued message now; composer only, no menu item |
-| ⌘L · ⇧⌘C | The Browser's address field · Select an element; while a thread's Browser is on screen, no menu item |
+| ⌘L · ⇧⌘C · ⌘T | The Browser's address field · Select an element · a new tab; while a thread's Browser is on screen, no menu item |
 
 Fixed chords:
 
@@ -53,8 +53,8 @@ Fixed chords:
   have no chord: they are in the row and thread menus and ⌘K. With the space tree focused, ← closes a space and →
   opens it; ⌥-click opens or closes every space. ⌃⇧1–9 jumped between the tree's
   machine sections and went with them: a focused terminal keeps them now.
-- ⌃1 shows the side pane's Changes tab (View › Changes) and ⌃2 its Browser (View › Browser); ⌃3–⌃4
-  wait for its other tabs. Settings ▸ Keyboard lists them under Fixed, and Ghostty leaves them to
+- ⌃1 shows the side pane's Changes tab (View › Changes), ⌃2 its Browser (View › Browser) and ⌃3 its Subagents
+  (View › Subagents); ⌃4 waits for its other tab. Settings ▸ Keyboard lists them under Fixed, and Ghostty leaves them to
   the app (`appOwnedChords`).
 - ⌘, opens Settings, and ⌘F searches it.
 - ⏎ confirms and ⎋ cancels in user-invoked sheets. Agent tool calls open no approval sheets.

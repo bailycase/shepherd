@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import ShepherdProtocol
 import Testing
@@ -47,8 +48,6 @@ struct ComposerAttachmentsTests {
     }
 
     static let refusals: [Refusal] = [
-        Refusal(name: "big.png", attachment: image("big.png", bytes: NativeImage.maxBytes + 1).attachment,
-                message: "big.png is over 2 MiB after resizing."),
         Refusal(name: "notes.txt", attachment: nil, message: "notes.txt is not an image Shepherd can attach."),
     ]
 
@@ -76,6 +75,32 @@ struct ComposerAttachmentsTests {
         attachments.removeAll()
         #expect(attachments.isEmpty)
     }
+
+    // ThreadImagesComposer: an image over the limit stays as a red chip and holds Send, instead of vanishing.
+    @Test func anImageOverTheLimitStaysAndHoldsSendUntilItIsRemoved() throws {
+        var attachments = ComposerAttachments()
+        attachments.add([Self.image("a.png"), Self.image("big.png", bytes: NativeImage.maxBytes + 1)])
+        #expect(attachments.items.map(\.name) == ["a.png", "big.png"])
+        #expect(attachments.oversize?.name == "big.png")
+        #expect(attachments.error == "big.png is over 2 MB after resizing. Remove it or send a smaller one.")
+        attachments.remove(try #require(attachments.oversize).id)
+        #expect(attachments.oversize == nil && attachments.error == nil)
+    }
+
+    @Test func aRefusalOutranksTheHeldSendLine() {
+        var attachments = ComposerAttachments()
+        attachments.add([Self.image("big.png", bytes: NativeImage.maxBytes + 1), ("notes.txt", nil)])
+        #expect(attachments.error == "notes.txt is not an image Shepherd can attach.")
+        attachments.clearError()
+        #expect(attachments.error?.hasPrefix("big.png is over") == true)
+    }
+
+    @Test func aChipSaysItsSizeAndWhenItIsOver() throws {
+        let fine = try #require(Self.image("a.png", bytes: 1_400_000).attachment)
+        let big = try #require(Self.image("b.png", bytes: 3_100_000).attachment)
+        #expect(fine.sizeLabel == "1.4 MB" && !fine.isOversize)
+        #expect(big.sizeLabel == "3.1 MB · over 2 MB" && big.isOversize)
+    }
 }
 
 /// Whether the New thread page's images can go where the thread would start: This Mac and a
@@ -97,5 +122,86 @@ struct NewThreadImagesTests {
     ] as [([NativeImage], String?, Bool, String?)])
     func imagesGoWhereTheOpeningPromptCanTakeThem(images: [NativeImage], host: String?, takesImages: Bool, refusal: String?) {
         #expect(NewThreadPlaces.imagesRefusal(images, host: host.map { ($0, takesImages) }) == refusal)
+    }
+}
+
+@MainActor
+@Suite("Image viewer")
+struct ImageViewerStateTests {
+    static func images(_ count: Int) -> [ViewerImage] {
+        (0..<count).map { ViewerImage(attachment: ImageAttachment(name: "\($0).png", image: NativeImage(mimeType: "image/png", data: Data(count: 1_400_000)),
+                                                                 pixels: CGSize(width: 1170, height: 2532))) }
+    }
+
+    @Test func itCountsAndStopsAtTheEnds() {
+        let state = ImageViewerState(images: Self.images(2), origin: "Sent by you")
+        #expect(state.position == "1 of 2" && !state.hasPrevious && state.hasNext)
+        state.previous()
+        #expect(state.current?.name == "0.png")
+        state.next(); state.next()
+        #expect(state.current?.name == "1.png" && state.position == "2 of 2" && !state.hasNext)
+    }
+
+    @Test func oneImageHasNoPositionOrArrows() {
+        let state = ImageViewerState(images: Self.images(1), origin: "Sent by you")
+        #expect(state.position == nil && !state.hasPrevious && !state.hasNext)
+    }
+
+    @Test func anIndexOutsideTheImagesOpensTheFirst() {
+        #expect(ImageViewerState(images: Self.images(2), index: 9, origin: "").current?.name == "0.png")
+        #expect(ImageViewerState(images: [], origin: "").current == nil)
+    }
+
+    @Test func theBarSaysSizeFormatAndSize() throws {
+        let image = try #require(Self.images(1).first)
+        #expect(image.facts == "1170 × 2532 · PNG · 1.4 MB")
+    }
+
+    // The picture is decoded once, when the viewer's value is made, and only if the header says it is a sane raster.
+    @Test func theViewerDecodesOnceAndRefusesWhatIsNotARasterImage() throws {
+        let png = try #require(NSBitmapImageRep(data: NSImage(size: NSSize(width: 4, height: 4), flipped: false) { NSColor.red.setFill(); $0.fill(); return true }.tiffRepresentation!)?
+            .representation(using: .png, properties: [:]))
+        let good = ViewerImage(attachment: ImageAttachment(name: "a.png", image: NativeImage(mimeType: "image/png", data: png)))
+        #expect(good.picture != nil)
+        #expect(ViewerImage(attachment: ImageAttachment(name: "b.png", image: NativeImage(mimeType: "image/png", data: Data(count: 64)))).picture == nil)
+        #expect(ViewerImage.decode(Data("<html></html>".utf8)) == nil)
+        #expect(ViewerImage.acceptedSize(Data("<html></html>".utf8)) == nil)
+    }
+
+    /// A flat image of `side` × `side` pixels, small on disk (a flat colour compresses to almost nothing).
+    static func flat(_ side: Int, type: NSBitmapImageRep.FileType = .png) throws -> Data {
+        try #require(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: side, pixelsHigh: side, bitsPerSample: 8, samplesPerPixel: 4,
+                                      hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)?
+            .representation(using: type, properties: [:]))
+    }
+
+    /// The viewer holds the one bound the host and client hold, `NativeImage.maxPixels` (4096 × 4096): an image the thread accepted is
+    /// drawn, including one between the viewer's old 2400² limit and that bound, and one past it is refused from its header.
+    @Test func theViewerDrawsWhatTheThreadAcceptsUpToTheSharedBound() throws {
+        let between = try Self.flat(3000)
+        #expect(3000 * 3000 > 2400 * 2400 && 3000 * 3000 <= NativeImage.maxPixels)
+        #expect(between.count <= NativeImage.maxBytes)
+        #expect(ViewerImage.acceptedSize(between) == CGSize(width: 3000, height: 3000))
+        #expect(ViewerImage.decode(between) != nil, "an accepted image is displayed, not unavailable")
+        let atBound = try Self.flat(4096)
+        #expect(ViewerImage.acceptedSize(atBound) == CGSize(width: 4096, height: 4096) && ViewerImage.decode(atBound) != nil)
+        let over = try Self.flat(4097)
+        #expect(over.count <= NativeImage.maxBytes && ViewerImage.acceptedSize(over) == nil && ViewerImage.decode(over) == nil,
+                "4097² is over the bound: refused from its header")
+    }
+
+    /// A transcript thumbnail never decodes the whole bitmap: ImageIO scales while it decodes.
+    @Test func aThumbnailIsDecodedNoLargerThanItsBox() throws {
+        let big = try Self.flat(4000)
+        let thumb = try #require(ViewerImage.thumbnail(big, longestSide: 768))
+        let rep = try #require(thumb.representations.first)
+        #expect(max(rep.pixelsWide, rep.pixelsHigh) <= 768, "decoded at \(rep.pixelsWide) × \(rep.pixelsHigh)")
+        #expect(ViewerImage.thumbnail(try Self.flat(4097), longestSide: 768) == nil)
+    }
+
+    /// A type the thread does not offer is refused by what the bytes are, not by what they are called.
+    @Test func theViewerRefusesATypeItDoesNotOffer() throws {
+        let tiff = try Self.flat(8, type: .tiff)
+        #expect(ViewerImage.acceptedSize(tiff) == nil && ViewerImage.decode(tiff) == nil)
     }
 }

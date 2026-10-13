@@ -6,7 +6,7 @@
 `Components/Navigation/Sidebar.swift`): the sidebar every Mac board draws (NWNavigation, and the
 sidebars of Main, Running, NavNewThread, NavAutomations and NavHosts). 232pt on `bgBase` by
 default, and it keeps its width when the side pane opens. Top to bottom: the top bar, the
-destinations, Designs, Needs you, Working, Done, Projects, Recents, and the footer. Pinned, which the board
+destinations, Designs, Projects, Needs you, Working, Done, Pinned, Recents, and the footer. Pinned, which the board
 does not draw, follows Done and never displaces a drawn group. The user moved the Designs group to the top
 (an override of ProjectLead-Activity, which draws it last). Projects are the new feature
 ([project-lead.md](../project-lead.md)); the Projects group always shows, with a "New project" chip, and
@@ -106,7 +106,7 @@ yet, so they are hidden until built. There is no More row: the command palette o
   - **Performance:** the lists derive once per change (`SidebarDerivation.lists` takes the pins
     with the source); a pin change redraws the moved row and both groups' count headers. A status
     report on a pinned thread redraws only its row (`ListPerformanceTests`).
-- **Working**: unpinned running threads and live automation runs, most recently active first.
+- **Working**: unpinned running threads, most recently active first. An automation's run is never here (see Automations).
   A thread with a live, unpaused child stays here even after its own turn becomes idle or done,
   on this Mac and connected hosts. Its dot and accessibility label say running, and project-tree
   rollups use the same presentation. A child's question never puts the thread in Needs you.
@@ -125,8 +125,17 @@ yet, so they are hidden until built. There is no More row: the command palette o
   Local rows draw a 28 × 12 blue sparkline from their last ten measured tool-completion rates.
   Before the first tool event it is flat, never a decorative waveform. Remote rows retain their
   host tag because the remote protocol carries no tool-activity samples.
+- **Automations** (the user's request, words only: no board draws it): a group of its own, between Pinned and Recents,
+  holding every automation run of This Mac and of each connected host, live, settled or stopped, most recently active
+  first. A run waiting on you stays in Needs you. Runs never mix with threads in Working, Done or Recents. Rows are
+  the run's own (`bolt`, state word or elapsed time, a host's tag), and open its thread; Stop, Run Now and Delete
+  stay on the This Mac row's menu. The header is the usual disclosure (folded in `collapsedActivitySections`), has
+  no digit or Mark all seen, and the group is omitted while there are no runs. The Automations destination above
+  still opens the page that manages definitions. The project tree is unchanged: a run sits in its folder's project.
+  **Decision, not user approved:** settled and stopped runs stay in the group (only a run waiting on you leaves it, for Needs you).
+  Showing live runs only is a one-line filter if the user prefers it.
 - **Done**: the first activity group when nonempty, above Pinned, Needs you and Working.
-  It contains unpinned finished, unseen threads and settled automation runs. Opening one keeps it
+  It contains unpinned finished, unseen threads. Opening one keeps it
   here while read. Opening the same thread or a destination page changes nothing; opening a
   different thread marks the previous completion seen and moves it to Recents. A later completed
   turn returns it to Done. "Mark all seen" clears every current Done row, including the selected

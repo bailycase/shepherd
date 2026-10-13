@@ -206,11 +206,12 @@ final class BrowserRemote {
         guard let session else { return }
         if session.notice?.message == Self.supersededMessage { session.dismissNotice() }
         session.handBack()
-        guard !session.hasPage, let address, BrowserDriveURL.offered(address) != nil, let url = URL(string: address) else { return }
-        Task { @MainActor [weak self] in
-            guard let self, let session = self.session, !session.hasPage else { return }
+        guard let page = session.tabs.agentTarget, !page.hasPage, let address,
+              BrowserDriveURL.offered(address) != nil, let url = URL(string: address) else { return }
+        Task { @MainActor [weak self, weak page] in
+            guard let self, let page, !page.tabClosed, !page.hasPage else { return }
             if case .refused = await self.policy.verdict(for: url) { return }
-            if !session.hasPage { session.load(url) }
+            if !page.tabClosed, !page.hasPage { page.load(url) }
         }
     }
 
