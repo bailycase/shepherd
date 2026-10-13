@@ -268,7 +268,8 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | DZStart | [design-tool](design-tool.md) | Design tool › New design | Built, without Capture a page, From a screenshot and "/ commands" |
 | DZCanvas | [design-tool](design-tool.md) | Design tool › A design: canvas and chat, Comments | Partly built: header, canvas, board frames, Chat, comments; not actions, Tweak |
 | DZTweak | [design-tool-references](design-tool-references.md) | Design tool › Tweak | Not built yet |
-| DZSystem | [design-tool-references](design-tool-references.md) | Design tool › Design systems | Not built yet |
+| DZSystem | [design-tool-references](design-tool-references.md) | Design tool › Design systems | Built, as the Design systems page and a build's layout |
+| DesignSystemPage, DesignSystemLight, DesignSystemMenu, DesignSystemColors, DesignSystemColorsLight, DesignSystemType, DesignSystemSpacing, DesignSystemSizes, DesignSystemComponents | [design-tool-references](design-tool-references.md) | Design tool › The Shepherd UI page | Built for the built-in system, read-only; other differences are in known-gaps |
 | DZExport | [design-tool-references](design-tool-references.md) | Design tool › Export and share | Partly built: the sheet, its formats and Attach to a thread; not the live link or Attach to a mission |
 | DesignLifecycleStates | [design-tool-references](design-tool-references.md) | Design tool › Delete and import | Built, but for the Recents row's outline while its menu is open |
 | DesignCardMenu, DesignRecentsMenu, DesignToolbarMenu | [design-tool-references](design-tool-references.md) | Design tool › Delete and import (a design's menu) | Built, as native menus |
