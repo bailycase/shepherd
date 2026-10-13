@@ -413,6 +413,16 @@ what stands behind it:
   always sent, and a tool the model rarely needs to one registered `deferred` (Deferred tools) to one
   that is always declared.
 
+## Design runtime tools
+
+`board_interact` adds 314 tokens of tool definition and `design_export` adds 166, measured with
+`python3 scripts/context_budget.py --scenario design --tools` on the staged engine. Both register
+only for design agents, so ordinary threads and automations pay none of that cost. Interaction
+stays direct because checking rendered controls is part of editing. Export is occasional, but
+current design launches do not provide deferred tool discovery, so it stays direct too. Neither
+change raises the ordinary-thread ceilings. Their registry verdicts are in
+`Tests/Extensions/context-tools.json`.
+
 ## The guard
 
 `scripts/context-budget.json` holds the numbers someone last decided were right: a ceiling per row

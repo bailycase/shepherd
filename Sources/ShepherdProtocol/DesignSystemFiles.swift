@@ -13,7 +13,12 @@ public enum DesignSystemFile {
     public static let info = "system.json"
 
     /// The kinds of file a system holds: text a board can load or a reader can read.
-    public static let extensions: Set<String> = ["json", "css", "js", "md", "html", "svg", "txt"]
+    public static let fontExtensions: Set<String> = ["woff2", "woff", "ttf", "otf"]
+    public static let extensions: Set<String> = Set(["json", "css", "js", "md", "html", "svg", "txt"]).union(fontExtensions)
+
+    public static func isFont(_ path: String) -> Bool {
+        fontExtensions.contains(URL(fileURLWithPath: path).pathExtension.lowercased())
+    }
     public static let maxFiles = 64
     /// Each file fits the extension socket's frame.
     public static let maxFileBytes = 900_000
@@ -187,7 +192,7 @@ public struct DesignSystemWrite: Hashable, Sendable, Codable {
     public var title: String?
     /// tokens.json as JSON: Shepherd's schema, or a canvas's own shape.
     public var tokens: JSONValue?
-    /// Other files by path: text to write, or null to remove.
+    /// Other files by path: text, null to remove, or {"base64": "..."} for a bundled font.
     public var files: [String: JSONValue]?
     /// The project's stylesheets the tokens were read from, relative to the project: what
     /// Re-sync reads again.

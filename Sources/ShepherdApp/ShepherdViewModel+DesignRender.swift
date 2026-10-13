@@ -7,6 +7,22 @@ import ShepherdProtocol
 
 extension ShepherdViewModel {
     func installDesignRenderHandler() {
+        server.onDesignExport = { [weak self] job, respond in
+            MainActor.assumeIsolated {
+                guard let self else {
+                    respond(.failure(DesignRenderFailure(code: "export_unavailable", message: "The workspace is gone.")))
+                    return
+                }
+                Task { @MainActor in
+                    do {
+                        try await self.designRendering.exportAgent(job)
+                        respond(.success(()))
+                    } catch {
+                        respond(.failure(DesignRenderFailure(code: "export_failed", message: String(describing: error))))
+                    }
+                }
+            }
+        }
         server.onDesignRender = { [weak self] job, respond in
             MainActor.assumeIsolated {
                 guard let self else {

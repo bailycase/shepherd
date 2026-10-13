@@ -56,6 +56,9 @@ extension SessionServer {
     func deliverProjectAnswers(_ id: ProjectID) {
         guard projectsEnabled, let p = store.state.projects.first(where: { $0.id == id }), !p.paused, projectRunStarts[id] != nil else { return }
         for task in p.tasks {
+            // The executor's durable Resume must finish before answer admission. Otherwise
+            // Resume can invalidate a paused answer's save while the owner pump sends it.
+            if task.executionAssignment != nil, task.executionReceipt?.ownerPaused == true { continue }
             guard let pending = task.pendingAnswer, pending.phase == .queued,
                   projectAnswersInFlight.insert(task.id).inserted else { continue }
             changeRuntimeProject(id, { p in

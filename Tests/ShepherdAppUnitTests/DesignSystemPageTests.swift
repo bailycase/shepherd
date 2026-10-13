@@ -168,6 +168,18 @@ struct DesignSystemPageTests {
 
     // MARK: Specimens
 
+    @Test func aDCSpecimenKeepsItsOwnTemplatePropsStylesAndLogic() {
+        let source = """
+            <!doctype html><html><head><script src="./support.js"></script><link rel="stylesheet" href="../tokens.css"></head>
+            <body><x-dc><button onClick="{{save}}">{{label}}</button></x-dc>
+            <script type="text/x-dc" data-dc-script data-props='{"label":"Save"}'>
+            class Component extends DCLogic { renderVals() { return { save: () => this.setState({saved:true}) }; } }
+            </script></body></html>
+            """
+        #expect(DesignSpecimenBoard.source(specimen: source, title: "Form", stylesheet: true,
+            background: "#ffffff", stylesheetPath: "../tokens.css") == source)
+    }
+
     @Test func aSpecimenIsABoardOfTheTilesSizeInTheSystem() throws {
         let files: [String: Data] = [
             "tokens.css": Data(":root{}".utf8),
