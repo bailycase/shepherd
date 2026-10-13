@@ -265,6 +265,13 @@ final class FixtureHost: @unchecked Sendable {
             mutation("tunnel")
             if case .open(let tunnel, _, _) = frame { return [.tunnel(.close(tunnel: tunnel, code: BrowserTunnelCode.unsupported))] }
             return []
+        case .projects(let id, _), .logicalProjectRuntime(let id, _):
+            // Projects are not drawn by any fixture screen: a request is refused rather than served.
+            mutation("projects")
+            return [.error(id: id, code: "fixture", message: refused)]
+        case .browserClaim, .browserRelease, .browserAnswer:
+            mutation("browser")
+            return []
         case .hello, .stateFetch, .listModels, .listDir, .creationOptions, .agentQuery:
             return nil
         }
