@@ -762,7 +762,8 @@ struct QueueTests {
 /// The reported bug, end to end: a message whose run adds more than a page of history must
 /// not stay drawn at the tail after later replies. The host now shows pi's user message where
 /// pi read it, and the store drops its echo at the host's next snapshot instead of waiting to
-/// find the text on the newest page.
+/// find the text on the newest page. The prompt stays in the thread where pi read it, above the
+/// reply: the store joins the pages between when the newest page starts inside the turn.
 @Suite("Queue and steer in the store", .mainActorExclusive)
 @MainActor
 struct QueueStoreTests {
@@ -781,12 +782,17 @@ struct QueueStoreTests {
 
         store.draft = "tools:30 ye"
         await store.send()
+        // Its saved reply, not a reply left from before the send.
         try await eventuallyOnMain("the run to settle") {
-            store.snapshot?.running == false && store.messages.last?.role == "assistant" && store.olderCursor != nil
+            store.snapshot?.running == false
+                && store.messages.last.map { $0.role == "assistant" && $0.blocks.contains { $0.text.hasPrefix("Reply to tools:30") } } == true
         }
         #expect(store.pending.isEmpty)
         #expect(store.displayedMessages.last?.role == "assistant")
-        #expect(!store.displayedMessages.contains { $0.role == "user" && $0.blocks.first?.text == "tools:30 ye" },
-                "the prompt is on an older page now, not drawn at the tail")
+        let shown = store.displayedMessages
+        let prompts = shown.indices.filter { shown[$0].role == "user" && shown[$0].blocks.first?.text == "tools:30 ye" }
+        #expect(prompts.count == 1, "the prompt is drawn once")
+        #expect(prompts.first.map { prompt in shown[(prompt + 1)...].contains { $0.toolName != nil || $0.role == "toolResult" } } == true,
+                "the prompt opens its turn, above its calls and reply, never drawn at the tail")
     }
 }
