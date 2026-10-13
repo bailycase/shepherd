@@ -394,7 +394,8 @@ notified and open their own with ⇧⌘B.
 **Agent names settle once.** A new agent wears its opening prompt (truncated by
 `ShepherdViewModel.provisionalName`) with `nameIsFinal == false`. Only such agents get the namer
 extension (`SHEPHERD_NEEDS_NAME=1`). When the first run ends it proposes a title from the opening prompt and the agent's last reply
-(so a terse prompt like "fix this" still gets a specific name), and the server
+(so a terse prompt like "fix this" still gets a specific name), told not to reuse the other
+threads' names (the same `listAgents` request `agent_list` makes, best effort with a 1.5 s cap), and the server
 applies it once, setting `nameIsFinal`. A manual rename also sets it.
 
 - `setAgentName` never overwrites a final name.
