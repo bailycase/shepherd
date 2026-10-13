@@ -37,7 +37,7 @@ import SwiftUI
                 Button("Over the thread") {}.buttonStyle(.nw(.secondary))
                 Button("Open") {}.buttonStyle(.nw(.ghost))
             }
-            NWAttentionCard(symbol: "arrow.triangle.branch", origin: "Subagent · Restyle native UI", title: "reviewer asks",
+            NWAttentionCard(symbol: NWGlyph.gitBranch.symbolName, origin: "Subagent · Restyle native UI", title: "reviewer asks",
                             question: "Two token names collide. Rename the new ones, or replace the old ones everywhere?",
                             message: "Tokens.textSecondary", selected: true) {
                 Button("Open") {}.buttonStyle(.nw(.secondary))
@@ -102,7 +102,7 @@ import SwiftUI
 #Preview("Needs you items") {
     NWPreviewBoth {
         VStack(spacing: NW.Space.xxs) {
-            NWAttentionCard(symbol: "arrow.triangle.branch", origin: "Subagent · Restyle native UI", title: "reviewer asks",
+            NWAttentionCard(symbol: NWGlyph.gitBranch.symbolName, origin: "Subagent · Restyle native UI", title: "reviewer asks",
                             question: "Rename the new ones, or replace the old ones?", since: Date().addingTimeInterval(-120),
                             selected: true, style: .item) { EmptyView() }
             NWAttentionCard(symbol: nil, origin: "Thread", title: "Dock review pane", question: "Plan ready to approve",

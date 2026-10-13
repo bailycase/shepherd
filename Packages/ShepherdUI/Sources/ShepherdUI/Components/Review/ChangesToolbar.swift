@@ -24,7 +24,7 @@ public enum NWChangesScopeGlyph: Sendable {
         case .uncommitted: "pencil"
         case .staged: "tray"
         case .commits: "smallcircle.filled.circle"
-        case .branch: "arrow.triangle.branch"
+        case .branch: NWGlyph.gitBranch.symbolName
         case .pullRequest: "arrow.triangle.pull"
         case .reference: "number"
         }
