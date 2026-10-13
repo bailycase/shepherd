@@ -307,6 +307,31 @@ final class BrowserSession {
     static let world = WKContentWorld.world(name: "shepherd-browser")
 
     let agentID: AgentID
+    let tabID = UUID()
+    var tabSource: BrowserTabSource = .user
+    var tabUnseen = false
+    private(set) var tabClosed = false
+    private(set) var tabTitle = "New tab"
+    @ObservationIgnored weak var tabGroup: BrowserTabs?
+    @ObservationIgnored private var ownedTabs: BrowserTabs?
+    var tabs: BrowserTabs {
+        if let tabGroup { return tabGroup }
+        if let ownedTabs { return ownedTabs }
+        let tabs = BrowserTabs(root: self)
+        ownedTabs = tabs
+        tabGroup = tabs
+        return tabs
+    }
+
+    func makeTab(source: BrowserTabSource) -> BrowserSession {
+        let page = BrowserSession(agentID: agentID, dataStores: dataStores, remote: remote,
+                                  websiteDataStore: websiteDataStore ?? webView?.configuration.websiteDataStore)
+        page.tabSource = source
+        page.devServers = devServers
+        page.onUserInput = onUserInput
+        return page
+    }
+
     @ObservationIgnored let dataStores: BrowserDataStores
     @ObservationIgnored private let websiteDataStore: WKWebsiteDataStore?
     /// A remote thread's page: which host it is on and how its ports are forwarded. Nil for a
@@ -368,6 +393,7 @@ final class BrowserSession {
     @ObservationIgnored var operationTail: Task<Void, Never>?
     /// Moves when the agent gives up its queued requests (`abandonQueued`).
     @ObservationIgnored var operationEpoch = 0
+    @ObservationIgnored var activeOperationEpoch: Int?
     /// How long a call into the page may take before the driver gives up on it (tests shorten it).
     @ObservationIgnored var scriptDeadline = BrowserLimits.scriptSeconds
     /// The same for a script the agent's `browser_eval` runs.
@@ -415,6 +441,7 @@ final class BrowserSession {
         self.dataStores = dataStores
         self.remote = remote
         self.websiteDataStore = websiteDataStore
+            ?? remote.map { dataStores.store(forRemote: $0.ref) } ?? dataStores.store(for: agentID)
     }
 
     var hasPage: Bool { url != nil }
@@ -526,8 +553,15 @@ final class BrowserSession {
 
     /// The agent is gone: the page stops, and a remote page lets go of its ports.
     func close() {
-        stopWaiting()
+        ownedTabs?.closeAll()
+        closePage()
         remote?.release()
+    }
+
+    func closePage() {
+        tabClosed = true
+        operationEpoch &+= 1
+        stopWaiting()
         expiry?.cancel()
         observations.removeAll()
         webView?.stopLoading()
@@ -627,6 +661,11 @@ final class BrowserSession {
 
     /// The user sent the thread a message: the agent has the page back.
     func handBack() {
+        if let ownedTabs { ownedTabs.handBack() }
+        else { handBackPage() }
+    }
+
+    func handBackPage() {
         presence.handBack()
         if userHasControl { userHasControl = false }
         syncOverlay()
@@ -844,8 +883,9 @@ final class BrowserSession {
 
     // MARK: The web view
 
-    private func makeWebView() -> WKWebView {
-        let configuration = WKWebViewConfiguration()
+    private func makeWebView(configuration supplied: WKWebViewConfiguration? = nil) -> WKWebView {
+        let configuration = supplied ?? WKWebViewConfiguration()
+        configuration.userContentController = WKUserContentController()
         configuration.websiteDataStore = websiteDataStore
             ?? remote.map { dataStores.store(forRemote: $0.ref) } ?? dataStores.store(for: agentID)
         let delegate = Delegate(session: self)
@@ -866,6 +906,9 @@ final class BrowserSession {
         view.uiDelegate = delegate
         view.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         observations = [
+            view.observe(\.title, options: [.new]) { [weak self] view, _ in
+                MainActor.assumeIsolated { self?.sync(view) }
+            },
             view.observe(\.url, options: [.new]) { [weak self] view, _ in
                 MainActor.assumeIsolated { self?.sync(view) }
             },
@@ -885,6 +928,9 @@ final class BrowserSession {
     }
 
     private func sync(_ view: WKWebView) {
+        let title = view.title.map { BrowserNote.clip($0, to: 200) }.flatMap { $0.isEmpty ? nil : $0 }
+            ?? BrowserAddress.display(view.url).map { $0.host + $0.path } ?? "New tab"
+        if tabTitle != title { tabTitle = title }
         if let current = view.url, current != url {
             url = current
         } else if view.url == nil, let blocked = blockedNavigation, blocked.url == url {
@@ -1077,11 +1123,26 @@ final class BrowserSession {
 
         // MARK: UI: a page has no way to put anything in front of the user or the agent
 
-        /// A link that opens a new window opens here.
+        /// A new window is a tab, retaining WebKit's supplied configuration and opener semantics.
         func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                      for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-            if navigationAction.targetFrame == nil { webView.load(navigationAction.request) }
-            return nil
+            MainActor.assumeIsolated {
+                guard let session, navigationAction.targetFrame == nil else { return nil }
+                let tabs = session.tabs
+                let agentIsActing = session.agentOverlay != nil || session.hostRequestsInFlight > 0
+                guard let page = tabs.add(source: .link, select: !agentIsActing) else {
+                    // At the bound, the normal navigation policy still checks this request.
+                    webView.load(navigationAction.request)
+                    return nil
+                }
+                page.hostGuard = session.hostGuard
+                page.hostGuardUntil = session.hostGuardUntil
+                if session.hostRequestsInFlight > 0 {
+                    page.hostGuardUntil = Date().addingTimeInterval(BrowserRequest.maxWaitSeconds + BrowserSession.hostGuardLinger)
+                }
+                tabs.notice = .popup
+                return page.makeWebView(configuration: configuration)
+            }
         }
 
         /// Alerts are accepted; confirms and prompts are dismissed. Each is told to the agent.
