@@ -46,9 +46,13 @@ struct UserTurn: View, Equatable {
         var references: [DesignReferenceRecord] = []
         /// The page elements it carries, as chips beside the references.
         var elements: [BrowserElement] = []
+        /// The images it carries, when the host names every one: thumbnails above the bubble. Otherwise `images` chips.
+        var imageRefs: [NativeImageRef] = []
     }
 
     let bubbles: [Bubble]
+    /// How many images the host named across the turn's bubbles.
+    private var sentImages: Int { bubbles.reduce(0) { $0 + $1.imageRefs.count } }
     /// "From the queue · N" above the bubbles, when the queue delivered them.
     var fromQueue: Int?
     /// Follows the last time and always shows: "from parent" in a child's transcript.
@@ -62,7 +66,7 @@ struct UserTurn: View, Equatable {
             Bubble(text: bubble.references.isEmpty ? bubble.text
                        : DesignReferenceFence.withoutHumanLine(bubble.text, count: bubble.references.count),
                    images: bubble.images, caption: bubble.sentAt.map { nativeClockText($0) }, pending: bubble.pending,
-                   references: bubble.references, elements: bubble.elements)
+                   references: bubble.references, elements: bubble.elements, imageRefs: bubble.imageRefs)
         }, fromQueue: turn.fromQueue, hover: hover)
     }
 
@@ -100,13 +104,25 @@ struct UserTurn: View, Equatable {
                     let last = index == bubbles.count - 1
                     // No board draws a sent message's page elements as chips (the user's decision,
                     // 2026-09-29): only the composer's chip and the queue row's stand for them.
-                    NWUserBubble(bubble.text, attachments: Array(repeating: "Image", count: bubble.images),
-                                 timestamp: bubble.caption, note: last ? note : nil, revealed: hover.hovering) {
-                        if !bubble.references.isEmpty { SentReferenceChips(records: bubble.references) }
+                    VStack(alignment: .trailing, spacing: NW.Space.s) {
+                        // The images it carries, above its words (ThreadImagesSent), when the host names each of them.
+                        if !bubble.imageRefs.isEmpty {
+                            SentImages(refs: bubble.imageRefs, names: bubble.imageRefs.indices.map { "Image \($0 + 1)" }, origin: "Sent by you")
+                        }
+                        NWUserBubble(bubble.text, attachments: bubble.imageRefs.isEmpty ? Array(repeating: "Image", count: bubble.images) : [],
+                                     timestamp: bubble.caption, note: last ? note : nil, revealed: hover.hovering) {
+                            if !bubble.references.isEmpty { SentReferenceChips(records: bubble.references) }
+                        }
                     }
-                        .opacity(bubble.pending ? 0.7 : 1)
-                        .nwAnimation(.hover, value: bubble.pending)
+                    .opacity(bubble.pending ? 0.7 : 1)
+                    .nwAnimation(.hover, value: bubble.pending)
                 }
+            }
+            // The neutral count of the images the turn carries (ThreadImagesSent), from the images the host actually named; a turn whose images it
+            // did not name keeps its "Image" chips and says nothing here. No verb: pi's saved image has no file name and no producer.
+            if sentImages > 0 {
+                NWActivityLine(kind: .images, label: nativeCount(sentImages, "image"), meta: "")
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
@@ -281,6 +297,13 @@ struct AgentTurn: View, Equatable {
             }
         case .goalRecord(_, let text):
             GoalRecordLine(text: text)
+        case .images(_, let images):
+            // What the agent made or a tool returned, where it happened (ThreadImagesReceived): the neutral count, then the pictures.
+            VStack(alignment: .leading, spacing: NW.Space.m) {
+                NWActivityLine(kind: .images, label: nativeCount(images.count, "image"), meta: "")
+                ReceivedImages(refs: images)
+            }
+            .frame(maxWidth: AppLayout.proseMaxWidth, alignment: .leading)
         case .note(_, let text):
             Text(text).font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
                 .lineLimit(3).truncationMode(.tail).help(text).textSelection(.enabled)

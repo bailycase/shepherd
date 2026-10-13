@@ -60,6 +60,8 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | --- | --- | --- | --- |
 | Main | [thread](thread.md), [composer](composer.md), [window-and-toolbar](window-and-toolbar.md) | Thread; Composer, questions, and menus; Toolbar (breadcrumb, branch chip, side-pane button) | Built |
 | Running | [thread](thread.md), [composer](composer.md) | Thread (A turn while pi works); Composer, questions, and menus | Built |
+| ThreadImagesComposer, ThreadImageOpen | [thread-images](thread-images.md), [composer](composer.md) | Composer chips, full-size viewer | Built |
+| ThreadImagesSent, ThreadImagesReceived | [thread-images](thread-images.md) | Sent and received thumbnails | Built (Mac, a host with `native.images.v1`; phone and iPad draw the count) |
 | Goal card | [thread](thread.md) | Goal card | Partial (long-condition truncation and edit surfaces await user decisions in PR #189) |
 | MobileGoal | [thread](thread.md) | Goal card | Partial (same pending decisions) |
 | iPadGoal | [thread](thread.md) | Goal card | Partial (same pending decisions) |
@@ -293,6 +295,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | NWAgents, NWAgentsLight | [subagents](subagents.md), [ios-ipad-pages](ios-ipad-pages.md), [missions](missions.md) | Subagents; Side pane › Subagent inspector; Mission components | Built |
 | ChangesStates | [ios-ipad-pages](ios-ipad-pages.md), [thread](thread.md), [settings](settings.md) | Side pane › Changes; Thread › Changes card; Keyboard | Partial |
 | SubagentTray | [subagents](subagents.md), [ios-iphone](ios-iphone.md), [ios-ipad](ios-ipad.md) | Subagents; iPhone: Subagents; iOS: iPad › Subagents | Partial |
+| SubagentList | [subagents](subagents.md) | Subagents › The Subagents tab | Built (Mac: the side pane's third tab, current and earlier runs, each opening the inspector; the tab's dot is the run status the user chose (blue working, green done); not iPad, whose side pane has no tabs) |
 | NWSwift, NWSwiftLight | [theme](theme.md) | Theme model › Building on ShepherdUI | Partial |
 | MXVocab, MXVocabLight | [missions](missions.md) | Missions › Missions: the map | Not built yet |
 | NWMissions, NWMissionsLight | [missions](missions.md) | Missions (Missions: shared parts and the screens that use them) | Not built yet |

@@ -63,6 +63,8 @@ struct NativeThreadWireTests {
         .retry(expectedSessionID: "s", generation: "g", operationID: op, entryID: "user:1733234570000#1"),
         .setServiceTier(expectedSessionID: "s", generation: "g", operationID: op, tier: "fast"),
         .setServiceTier(expectedSessionID: "s", generation: "g", operationID: op, tier: "standard"),
+        .image(expectedSessionID: "s", imageID: "user:1733234570000|0|0123456789abcdef", offset: 0),
+        .image(expectedSessionID: "s", imageID: "t:call_1|1|fedcba9876543210", offset: 262_144),
         .send(expectedSessionID: "s", generation: "g", operationID: op, text: "taller", delivery: .followUp,
               designContext: NativeDesignContext(DesignViewRecord(
                 visibleBoards: ["A.dc.html"], selectedBoards: ["A.dc.html"], selected: [DesignElementID("A.dc.html#5:1/1/0")!],
@@ -127,6 +129,16 @@ struct NativeThreadWireTests {
             supportedActions: ["send", "setServiceTier"], dialogsSupported: true, dialogs: [], messages: [], provisional: [], clipped: false,
             runtime: "rpc", serviceTier: "standard", serviceTiers: [])),
         .accepted(operationID: op),
+        .imageChunk(value: NativeImageChunk(imageID: "user:1|0|0123456789abcdef", mimeType: "image/png", totalBytes: 300_000, offset: 0,
+                                            data: Data([0x89, 0x50, 0x4E, 0x47]))),
+        .failure(code: NativeImageCode.unknown, message: "That image is not in this thread."),
+        .snapshot(value: NativeThreadSnapshot(
+            piSessionID: "s", generation: "g", revision: 14, running: false, supportedActions: ["send", "images"], dialogsSupported: true,
+            dialogs: [], messages: [NativeThreadMessage(entryID: "user:1", role: "user", blocks: [
+                NativeThreadBlock(kind: .text, text: "look"),
+                NativeThreadBlock(kind: .unsupportedImage, text: "[Image unavailable in native thread]", imageID: "user:1|0|0123456789abcdef",
+                                  mimeType: "image/png", width: 1170, height: 2532, byteCount: 1_400_000)])],
+            provisional: [], clipped: false, runtime: "rpc")),
         .unchanged(piSessionID: "s", generation: "g", revision: 3),
         .failure(code: "stale_session", message: "refresh"),
         .failure(code: NativeThreadCode.starting, message: "pi is starting."),
@@ -507,5 +519,43 @@ struct NativeImageLimitTests {
     ])
     func oneSendTakesFourImagesOfTwoMiBAndFiveInAll(sizes: [Int], type: String, fits: Bool) {
         #expect(NativeImage.fitOneSend(Self.images(sizes, type: type)) == fits)
+    }
+
+    // MARK: Images (v5)
+
+    /// A snapshot from before images names none: its block decodes with every image field nil, and a block that names
+    /// none encodes no image key at all, so an older client reads it unchanged.
+    @Test func anImageBlockFromAnOlderHostNamesNoImage() throws {
+        let old = #"{"kind":"unsupportedImage","text":"[Image unavailable in native thread]"}"#
+        let block = try Wire.decode(NativeThreadBlock.self, old)
+        #expect(block.image == nil && block.imageID == nil && block.width == nil)
+        let plain = try Wire.object(NativeThreadBlock(kind: .unsupportedImage, text: "x"))
+        #expect(Set(plain.keys) == ["kind", "text"])
+    }
+
+    @Test func aNamedImageIsOnlyMetadataAndStaysSmall() throws {
+        let block = NativeThreadBlock(kind: .unsupportedImage, text: "[Image unavailable in native thread]", imageID: "user:1|0|0123456789abcdef",
+                                      mimeType: "image/png", width: 1170, height: 2532, byteCount: 1_400_000)
+        #expect(block.image == NativeImageRef(id: "user:1|0|0123456789abcdef", mimeType: "image/png", width: 1170, height: 2532, byteCount: 1_400_000))
+        #expect(try NDJSON.encode(RemoteReply.nativeThread(id: 1, result: .snapshot(value: Self.imageSnapshot(block)))).count < 2_000)
+    }
+
+    static func imageSnapshot(_ block: NativeThreadBlock) -> NativeThreadSnapshot {
+        NativeThreadSnapshot(piSessionID: "s", generation: "g", revision: 1, running: false, supportedActions: ["images"], dialogsSupported: true,
+                             dialogs: [], messages: [NativeThreadMessage(entryID: "user:1", role: "user", blocks: [block])], provisional: [], clipped: false)
+    }
+
+    /// A full piece of the largest image the thread offers still fits one frame, with the envelope.
+    @Test func aFullChunkFitsTheFrame() throws {
+        let chunk = NativeImageChunk(imageID: String(repeating: "x", count: 120), mimeType: "image/jpeg", totalBytes: NativeImage.maxBytes,
+                                     offset: NativeImage.maxBytes - NativeImage.chunkBytes, data: Data(repeating: 0xFF, count: NativeImage.chunkBytes))
+        let frame = try NDJSON.encode(RemoteReply.nativeThread(id: 9, result: .imageChunk(value: chunk)))
+        #expect(frame.count - 1 <= NDJSON.maxPayloadBytes)
+        #expect(frame.count < NDJSON.maxPayloadBytes / 2, "base64 of 256 KiB is about 350 KB")
+    }
+
+    @Test func theImageCapabilityIsAdvertised() {
+        #expect(RemoteProtocol.nativeImagesCapability == "native.images.v1")
+        #expect(RemoteProtocol.capabilities.contains(RemoteProtocol.nativeImagesCapability))
     }
 }

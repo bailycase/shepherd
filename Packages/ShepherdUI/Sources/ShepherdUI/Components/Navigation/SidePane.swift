@@ -205,19 +205,23 @@ public struct NWSidePaneTab: Identifiable, Equatable, Sendable {
     public let count: Int?
     /// pi opened something there that you haven't looked at.
     public let news: Bool
+    /// What the tab's work is doing (Subagents: running, done, failed), as a dot in the state's color after the count.
+    /// Unlike `news` it is not looked at and cleared: it stays as long as the state does.
+    public let status: AgentState?
     /// The chord that selects it ("⌃1").
     public let shortcut: String?
     /// What pi opened there, said briefly under the tab while it is news ("Agent opened
     /// localhost:5173/checkout"); nil says nothing.
     public let tip: NWSidePaneTabTip?
 
-    public init(id: String, title: String, systemImage: String, count: Int? = nil, news: Bool = false, shortcut: String? = nil,
-                tip: NWSidePaneTabTip? = nil) {
+    public init(id: String, title: String, systemImage: String, count: Int? = nil, news: Bool = false, status: AgentState? = nil,
+                shortcut: String? = nil, tip: NWSidePaneTabTip? = nil) {
         self.id = id
         self.title = title
         self.systemImage = systemImage
         self.count = count
         self.news = news
+        self.status = status
         self.shortcut = shortcut
         self.tip = tip
     }
@@ -321,6 +325,11 @@ public struct NWSidePaneTabs<Options: View>: View {
                             .frame(width: NWSidePaneMetrics.tabDot, height: NWSidePaneMetrics.tabDot)
                             .accessibilityHidden(true)
                     }
+                    if let status = tab.status {
+                        Circle().fill(status.color)
+                            .frame(width: NWSidePaneMetrics.tabDot, height: NWSidePaneMetrics.tabDot)
+                            .accessibilityHidden(true)
+                    }
                 }
                 .foregroundStyle(isSelected || hovering ? nw.textPrimary : nw.textSecondary)
                 .padding(.horizontal, showsLabel ? NWSidePaneMetrics.tabPadding : NWSidePaneMetrics.narrowTabPadding)
@@ -334,7 +343,8 @@ public struct NWSidePaneTabs<Options: View>: View {
             .nwAnimation(.hover, value: hovering)
             .nwHelp(tab.title, shortcut: tab.shortcut)
             .accessibilityLabel(tab.title)
-            .accessibilityValue([tab.count.map { "\($0)" }, tab.news ? "the agent opened something" : nil].compactMap { $0 }.joined(separator: ", "))
+            .accessibilityValue([tab.count.map { "\($0)" }, tab.news ? "the agent opened something" : nil, tab.status?.label]
+                .compactMap { $0 }.joined(separator: ", "))
             .accessibilityAddTraits(isSelected ? .isSelected : [])
             .overlay(alignment: .topLeading) {
                 if tab.news, let tip = tab.tip, tipShown || hovering {

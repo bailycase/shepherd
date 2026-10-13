@@ -45,6 +45,9 @@ public struct NativeTurnPresentation: Equatable, Sendable {
         /// lines do (SubagentsDone).
         case subagents(id: String, lines: [NativeSubagentRecordLine])
         case note(id: String, text: String)
+        /// Images a tool returned (a screenshot, a chart), where the call ended: the host names each one and a client fetches it
+        /// (`NativeThreadImages`). A client that cannot draw them shows how many.
+        case images(id: String, images: [NativeImageRef])
         /// Goal set and completion checks divide stretches of automatic work.
         case goalRecord(id: String, text: String)
         /// A failed request to the model, pi's automatic retries of it merged in. `final` when it
@@ -63,7 +66,7 @@ public struct NativeTurnPresentation: Equatable, Sendable {
 
         public var id: String {
             switch self {
-            case .thinking(let id, _, _, _, _, _), .prose(let id, _, _, _), .subagents(let id, _), .note(let id, _), .goalRecord(let id, _), .error(let id, _, _, _),
+            case .thinking(let id, _, _, _, _, _), .prose(let id, _, _, _), .subagents(let id, _), .note(let id, _), .images(let id, _), .goalRecord(let id, _), .error(let id, _, _, _),
                  .steer(let id, _, _, _), .activity(let id, _), .retrying(let id, _): id
             case .compaction(let row): "compaction:" + row.id
             case .question(let row): "question:" + row.id
@@ -125,6 +128,7 @@ public func nativeTurnPresentation(
         case prose(String, streaming: Bool)
         case tool(NativeThreadMessage)
         case note(String)
+        case images([NativeImageRef])
         case goalRecord(String)
         /// Consecutive failed requests: pi's automatic retries of one.
         case error([NativeThreadMessage])
@@ -162,6 +166,8 @@ public func nativeTurnPresentation(
         }
         if message.toolName != nil || message.role == "toolResult" {
             raw.append(.tool(message))
+            let refs = message.blocks.compactMap(\.image)
+            if !refs.isEmpty { raw.append(.images(refs)) }
             continue
         }
         if message.role == "assistant", message.status == "error" {
@@ -174,7 +180,13 @@ public func nativeTurnPresentation(
             case .thinking:
                 raw.append(.thinking(block.text, message.thinkingSeconds, message: message.entryID,
                                      since: message.status == "streaming" ? message.timestamp : nil))
-            case .unsupportedImage: raw.append(.note("Image attached"))
+            case .unsupportedImage:
+                // An image the host names is drawn; one it does not offer stays the quiet note.
+                if let ref = block.image {
+                    if case .images(let refs)? = raw.last { raw[raw.count - 1] = .images(refs + [ref]) } else { raw.append(.images([ref])) }
+                } else {
+                    raw.append(.note("Image attached"))
+                }
             case .text:
                 if message.role == "assistant" || message.role == "user" {
                     raw.append(.prose(block.text, streaming: message.status == "streaming" && index == message.blocks.count - 1
@@ -303,6 +315,9 @@ public func nativeTurnPresentation(
         case .note(let text):
             flushStretch()
             items.append(.note(id: nextID("note"), text: text))
+        case .images(let refs):
+            flushStretch()
+            items.append(.images(id: nextID("images"), images: refs))
         case .error(let tries):
             flushStretch()
             items.append(.error(id: nextID("error"), error: errors.error(tries), final: false, folded: true))

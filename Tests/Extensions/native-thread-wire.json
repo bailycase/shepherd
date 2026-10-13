@@ -831,7 +831,7 @@
                   "ref": "shepherd-design-ref://local/d1/A.dc.html#2:0/1@23",
                   "design": "Checkout funnel dashboard",
                   "board": "A.dc.html",
-                  "boardTitle": "A · Funnel first",
+                  "boardTitle": "A \u00b7 Funnel first",
                   "element": "A.dc.html#2:0/1",
                   "elementLabel": "Checkout funnel",
                   "revision": 23,
@@ -985,6 +985,33 @@
             "standard",
             "fast"
           ]
+        }
+      }
+    }
+  },
+  {
+    "type": "nativeThread",
+    "id": 31,
+    "agentID": "agent",
+    "request": {
+      "image": {
+        "expectedSessionID": "session",
+        "imageID": "user:1733234570000|0|0123456789abcdef",
+        "offset": 262144
+      }
+    }
+  },
+  {
+    "type": "nativeThread",
+    "id": 31,
+    "result": {
+      "imageChunk": {
+        "value": {
+          "imageID": "user:1733234570000|0|0123456789abcdef",
+          "mimeType": "image/png",
+          "totalBytes": 300000,
+          "offset": 262144,
+          "data": "iVBORw0KGgo="
         }
       }
     }

@@ -420,6 +420,7 @@ final class NewDesignState {
     func blocker(_ vm: ShepherdViewModel) -> String? {
         if starting { return "Starting…" }
         if brief.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Describe the design first." }
+        if let big = attachments.oversize { return ComposerAttachments.oversizeMessage(big.name) }
         return NewThreadPlaces.imagesRefusal(attachments.images, host: nil)
     }
 
