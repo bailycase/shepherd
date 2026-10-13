@@ -32,6 +32,9 @@ Every decision has to pass one test: does this help one person supervise ten wor
 - An agent has a short task title it gave itself (`Fix plan mode`), a workplace, and a
   lifecycle: working, needs you, done, failed, idle. It renders only as a native thread.
 - Terminals are tabs under a thread, one terminal per tab. No splits, no global shells.
+- Browser pages are tabs within the thread's Browser pane, capped at eight. The agent's target
+  is independent of the user's selected tab. User boards BrowserTabsAgent through BrowserTabsTwo
+  are the spec ([Browser](docs/design/side-pane-browser.md)); tabs never restore after a restart.
 - **Spaces and Projects.** A Space is the folder a thread runs in (what the app used to call a "Project").
   A Project is the new feature above Spaces and owns the word. Copy never calls a folder a project. The
   [ProjectLead boards](docs/design/boards/SpacesTerminology.md) are the spec for Projects; the user's only

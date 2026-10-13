@@ -15,6 +15,7 @@ public enum NativeBrowserActivity {
     public static let tools: Set<String> = [
         "browser_open", "browser_read", "browser_click", "browser_type", "browser_press", "browser_scroll", "browser_wait",
         "browser_screenshot", "browser_console", "browser_eval", "browser_back", "browser_forward", "browser_reload",
+        "browser_tabs", "browser_new_tab", "browser_select_tab", "browser_close_tab",
     ]
 
     /// "click", "open": the calls list's kind column.
@@ -52,6 +53,10 @@ public enum NativeBrowserActivity {
     /// The line while the call runs: "Opening localhost:5173/checkout in Browser".
     public static func running(tool: String, subject: String?) -> String {
         switch tool {
+        case "browser_new_tab": return "Opening a new tab in Browser"
+        case "browser_tabs": return "Listing browser tabs"
+        case "browser_select_tab": return "Selecting the agent's browser tab"
+        case "browser_close_tab": return "Closing a browser tab"
         case "browser_open": return "Opening \(subject ?? "a page") in Browser"
         case "browser_read": return "Reading the page"
         case "browser_click": return "Clicking" + (subject.map { " “\($0)”" } ?? "")
@@ -72,6 +77,10 @@ public enum NativeBrowserActivity {
     /// One finished call: "Opened localhost:5173/checkout in Browser", "Clicked “Pay $148.00”".
     public static func done(tool: String, subject: String?) -> String {
         switch tool {
+        case "browser_new_tab": return "Opened a new tab in Browser"
+        case "browser_tabs": return "Listed browser tabs"
+        case "browser_select_tab": return "Selected the agent's browser tab"
+        case "browser_close_tab": return "Closed a browser tab"
         case "browser_open": return "Opened \(subject ?? "a page") in Browser"
         case "browser_read": return "Read the page"
         case "browser_click": return "Clicked" + (subject.map { " “\($0)”" } ?? " an element")
@@ -92,6 +101,10 @@ public enum NativeBrowserActivity {
     /// Consecutive calls of one tool as one line: "Clicked 3 elements", "Read the page 4 times".
     public static func merged(tool: String, count: Int) -> String {
         switch tool {
+        case "browser_new_tab": return "Opened \(count) tabs in Browser"
+        case "browser_tabs": return "Listed browser tabs \(count) times"
+        case "browser_select_tab": return "Selected the agent's browser tab \(count) times"
+        case "browser_close_tab": return "Closed \(count) browser tabs"
         case "browser_open": return "Opened \(count) pages in Browser"
         case "browser_read": return "Read the page \(count) times"
         case "browser_click": return "Clicked \(count) elements"

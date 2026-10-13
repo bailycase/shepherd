@@ -585,8 +585,8 @@ extension TerminalConfiguration {
         "shift+cmd+i",
         // ⌃1–3: the side pane's Changes, Browser and Subagents tabs (⌃4 waits for its other tabs).
         "ctrl+one", "ctrl+physical:one", "ctrl+two", "ctrl+physical:two", "ctrl+three", "ctrl+physical:three",
-        // ⌘L the Browser's address bar · ⇧⌘C select an element.
-        "cmd+l", "shift+cmd+c",
+        // ⌘L the Browser's address bar · ⇧⌘C select an element · ⌘T a new Browser tab.
+        "cmd+l", "shift+cmd+c", "cmd+t",
         // ⌘1–9: the first nine Recents rows.
         "cmd+one", "cmd+two", "cmd+three", "cmd+four", "cmd+five",
         "cmd+six", "cmd+seven", "cmd+eight", "cmd+nine",

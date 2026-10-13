@@ -4022,6 +4022,10 @@ public final class SessionServer: @unchecked Sendable {
             browserOwners.drop(agent: agentID)
             return false
         }
+        guard !request.isTabManagement || owner.clientCapabilities.contains(RemoteProtocol.browserTabsCapability) else {
+            reply(.error(id: requestID, code: "unavailable", message: "The viewer showing this browser does not support tabs. Update that viewer or release its browser claim."), to: client)
+            return true
+        }
         nextDriveToken += 1
         let token = nextDriveToken
         driveRequests[token] = DriveRequest(asker: client, requestID: requestID, agentID: agentID, ownerFD: ownerFD)

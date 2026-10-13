@@ -37,10 +37,10 @@ enum SidebarActivityItem: Identifiable, Equatable {
 }
 
 extension SidebarLists {
-    /// The board's order (ProjectLead-Activity with the user's override): Designs first, then Needs you,
-    /// Working, Done, Projects, Recents. Pinned is not drawn by the board; it is a state the user
-    /// opts into, so it follows Done and never displaces a drawn group. Projects are not thread rows;
-    /// `items(collapsed:projects:)` places them after Done and Pinned, before Recents.
+    /// The user's order: Designs first, then Projects, then Needs you, Working, Done, Pinned, Recents. Pinned is not
+    /// drawn by the board; it is a state the user opts into, so it follows Done. Projects are not thread rows;
+    /// `items(collapsed:projects:)` places their group right after Designs (or first when there are none), so no
+    /// thread's status, attention or pin moves it, as no thread's status moves Designs.
     var sections: [(section: SidebarActivitySection, rows: [SidebarListRow])] {
         [(.designs, designs), (.needsYou, needsYou), (.working, working), (.done, done), (.pinned, pinned), (.recents, recents)]
     }
@@ -57,12 +57,11 @@ extension SidebarLists {
         }
         var items: [SidebarActivityItem] = []
         for (section, rows) in sections {
-            // Projects sit between Done (and Pinned) and Recents, whether or not there are any: the
-            // header and its New project chip are the way to make the first one.
-            if section == .recents, showsProjects { items += projectBlock(projects, collapsed: collapsed) }
             items += block(section, rows)
+            // Projects follow Designs and sit above every thread group, whether or not there are any: the header and its
+            // New project chip are the way to make the first one.
+            if section == .designs, showsProjects { items += projectBlock(projects, collapsed: collapsed) }
         }
-        if showsProjects, !sections.contains(where: { $0.section == .recents }) { items += projectBlock(projects, collapsed: collapsed) }
         return items
     }
 

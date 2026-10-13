@@ -76,7 +76,8 @@ struct ConversationThread: View {
 
     var body: some View {
         ThreadView(store: store, active: true, isFocused: true, request: request, commandKey: nil, agentName: project.name,
-                   allowsLocalFiles: ref.home == .local, retainedInput: agent.map { vm.threadStores.input(for: $0) } ?? vm.emptyProjectInput)
+                   listModels: ownerModels, allowsLocalFiles: ref.home == .local,
+                   retainedInput: agent.map { vm.threadStores.input(for: $0) } ?? vm.emptyProjectInput)
             .environment(\.projectComposerSend, composerSend)
             .environment(\.nwUserBubbleMetrics, .lead)   // the boards' bubble: 520pt measure, 12 / 16 padding
             .environment(\.nwProseHalfLeading, true)     // and CSS's half-leading above and below a paragraph's lines
@@ -86,6 +87,16 @@ struct ConversationThread: View {
                 ProjectTaskLinks.open(url, in: vm, project: projectID, presentation: presentation) ? .handled : .systemAction
             })
             .id(agent?.rawValue ?? "empty")
+    }
+
+    /// The owner's own model catalog for a remote Project (this Mac's, when nil), as a remote thread's picker lists.
+    private var ownerModels: (() async -> ModelCatalog)? {
+        guard case .host(let host) = ref.home else { return nil }
+        return { [vm] in
+            guard let listing = try? await vm.remoteHosts.listModels(hostID: host) else { return .empty }
+            let allLevels = vm.remoteHosts.connections.first { $0.id == host }?.supportsAllThinkingLevels ?? false
+            return await ModelCatalog.derive(listing, hostTakesAllLevels: allLevels)
+        }
     }
 
     /// The coordinator's thread: this Mac's own store for a local Project, a store read through the OWNER for a remote one (its
@@ -112,13 +123,18 @@ struct ConversationThread: View {
             // No coordinator exists until the first message: the thread is an empty, ready one (no turns, nothing that can be
             // steered), so the composer shows and no connection is claimed lost. It accepts a send, which is the Project's own
             // (the store's `send` is never called); images are the Project owner's to carry (`ProjectComposerSend.carriesImages`).
-            let empty = NativeThreadSnapshot(piSessionID: "project-empty", generation: "0", revision: 0, running: false,
-                                             supportedActions: ["send"], dialogsSupported: true, dialogs: [], messages: [],
-                                             provisional: [], clipped: false, runtime: "rpc")
-            return { _ in .snapshot(value: empty) }
+            return { _ in .snapshot(value: Self.emptySnapshot) }
         }
-        return { [vm] in try await vm.server.nativeThread(agentID: agent, request: $0) }
+        // The owner's own Project path, the one a remote Project reads through: the coordinator's ID is reserved before its agent is
+        // created, and only this path answers that gap with `native_starting` (the thread then waits quietly). The ordinary native
+        // dispatcher refuses an agent it does not hold as "no longer exists", which the thread would draw as a lost connection. A
+        // deleted Project or a failed launch still answers with its real error, never a healthy empty thread.
+        return { [vm, projectID = ref.id] in try await vm.server.projectConversation(projectID, request: $0) }
     }
+
+    private static let emptySnapshot = NativeThreadSnapshot(piSessionID: "project-empty", generation: "0", revision: 0, running: false,
+                                                            supportedActions: ["send"], dialogsSupported: true, dialogs: [], messages: [],
+                                                            provisional: [], clipped: false, runtime: "rpc")
 
     /// The typed results the transcript draws inline. Each is resolved against the owner's CURRENT project here: the task or the
     /// proposal must still exist, and the reference's own project must be this one. A gone task or a consumed proposal draws nothing.
@@ -160,7 +176,11 @@ struct ConversationThread: View {
                 let consumed = Set((store.messages + store.pending + store.rows.flatMap(\.turn.messages)).compactMap { $0.operationID })
                 return ProjectHeldMessages.held(messages: project.messages, paused: project.paused, consumed: consumed)
             },
-            runtimeOperations: Set(project.messages.filter { $0.source != nil }.flatMap { [$0.id] + [$0.nativeDeliveryID].compactMap { $0 } }))
+            runtimeOperations: Set(project.messages.filter { $0.source != nil }.flatMap { [$0.id] + [$0.nativeDeliveryID].compactMap { $0 } }),
+            model: ProjectConversationModel(
+                current: project.settings.conversationModel ?? (ref.home == .local ? vm.settings.agentDefaults.model : nil),
+                pending: agent == nil,
+                choose: { [vm, ref] id in await vm.logicalProjects.saveSettings(ref) { $0.conversationModel = id } }))
     }
 }
 

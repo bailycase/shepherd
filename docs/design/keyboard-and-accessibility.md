@@ -44,7 +44,7 @@ in UserDefaults under `shepherd.keybindings`).
 | ⌥⌘↑ · ⌥⌘↓ | Previous · next turn |
 | ⌘I | Inspect subagent |
 | ⌘↩ | Steer now while pi works (↩ queues), and steer a focused queued message now; composer only, no menu item |
-| ⌘L · ⇧⌘C | The Browser's address field · Select an element; while a thread's Browser is on screen, no menu item |
+| ⌘L · ⇧⌘C · ⌘T | The Browser's address field · Select an element · a new tab; while a thread's Browser is on screen, no menu item |
 
 Fixed chords:
 

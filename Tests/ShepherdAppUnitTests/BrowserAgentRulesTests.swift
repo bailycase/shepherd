@@ -103,13 +103,17 @@ struct BrowserAgentRulesTests {
 
     private static let observations: [BrowserRequest] = [
         .read(selector: nil, maxChars: nil), .wait(text: "x", ref: nil, gone: false, ms: nil, timeout: nil),
-        .screenshot(ref: nil), .console(clear: false),
+        .screenshot(ref: nil), .console(clear: false), .tabs,
+        .tab(id: "00000000-0000-0000-0000-000000000001", request: .read(selector: nil, maxChars: nil)),
     ]
     private static let actions: [BrowserRequest] = [
         .open(url: "http://localhost:1/", note: nil), .click(ref: "e1", double: false, note: nil),
         .type(ref: "e1", text: "x", clear: false, submit: false, note: nil), .press(key: "Enter", note: nil),
         .scroll(direction: "down", amount: nil, ref: nil, note: nil), .eval(expression: "1", note: nil),
         .back(note: nil), .forward(note: nil), .reload(note: nil),
+        .newTab(url: nil, note: nil),
+        .selectTab(id: "00000000-0000-0000-0000-000000000001"), .closeTab(id: "00000000-0000-0000-0000-000000000001"),
+        .tab(id: "00000000-0000-0000-0000-000000000001", request: .eval(expression: "1", note: nil)),
     ]
 
     @Test func everyActionIsRefusedWhileTheUserHasControlAndEveryReadingIsNot() {

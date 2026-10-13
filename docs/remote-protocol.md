@@ -178,6 +178,13 @@
     browser.md › Remote › What a host's agent can make this Mac do; SECURITY.md). A claim ends with
     the viewer's tab out of sight for 30 s, its connection, or a newer claim. A client or host without
     the capability keeps PR 3a's two pages.
+  - `browser.tabs.v1` extends those browser-drive requests with `tabs`, `newTab`, `selectTab`,
+    `closeTab`, and `tab`, a wrapper with a tab ID and one page request. Both hosts and Mac viewers
+    advertise it. A host refuses tab-management and targeted requests with `unavailable` when the
+    owning viewer does not list it, rather than sending an undecodable push. Legacy untargeted page
+    requests still work. The target is thread-local, independent of the user's selected tab, with
+    at most eight live tabs and no restart restoration. A remote tab list masks titles and URLs
+    of pages outside `BrowserViewerPolicy`.
 
   Capabilities gate newer features. The client falls back (raw bracketed paste) or refuses (terminal
   control) against older hosts. A host answers an authenticated request it cannot decode (a kind

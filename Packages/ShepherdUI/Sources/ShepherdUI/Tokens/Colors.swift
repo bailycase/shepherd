@@ -39,6 +39,10 @@ public final class NWPalette: Sendable {
     public let projectCookieConfirmHover: Color
     public let projectCookieConfirmTextHover: Color
     public let projectCookieShade: Color
+    /// A Browser tab's tile for a site the board colors by brand (BrowserTabsTwo, -Full): violet and
+    /// orange, the same in both appearances. The board's other tiles are `running` and `done`.
+    public let tabTileViolet: Color
+    public let tabTileOrange: Color
     public let projectEditorBackground: Color
     public let projectEditorHeader: Color
     public let projectMarkdownHeading: Color
@@ -171,6 +175,8 @@ public final class NWPalette: Sendable {
         let shadeDark = HexColor(d.bgBase) ?? HexColor(red: 1, green: 0, blue: 1)
         projectCookieShade = Color(light: HexColor(red: shadeLight.red, green: shadeLight.green, blue: shadeLight.blue, alpha: 0.65),
                                    dark: HexColor(red: shadeDark.red, green: shadeDark.green, blue: shadeDark.blue, alpha: 0.65))
+        tabTileViolet = theme.id == "night-watch" ? Color(light: "#635bff", dark: "#635bff") : syn(\.keyword)
+        tabTileOrange = theme.id == "night-watch" ? Color(light: "#f46800", dark: "#f46800") : role(\.lantern)
         projectEditorBackground = theme.id == "night-watch" ? Color(light: l.bgSunken, dark: "#111316") : bgSunken
         projectEditorHeader = theme.id == "night-watch" ? Color(light: l.bgRaised, dark: "#15171a") : bgRaised
         projectMarkdownHeading = theme.id == "night-watch" ? Color(light: ls.type, dark: "#79aaff") : syn(\.type)
