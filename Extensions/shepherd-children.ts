@@ -321,7 +321,7 @@ const RELAY_KEY = Symbol.for("shepherd.design.relay.v1");
 // every board, siblings' work included, so none of the three is ever relayed.
 const DESIGN_RELAYED = [
   "design_read", "design_check", "system_read", "comment_list", "board_write", "board_edit", "boards_edit", "board_search",
-  "board_render", "board_extract", "checkpoint_create", "checkpoint_list", "canvas_update", "system_write",
+  "board_render", "board_interact", "design_export", "board_extract", "checkpoint_create", "checkpoint_list", "canvas_update", "system_write",
 ];
 const DESIGN_TOOLS = [...DESIGN_RELAYED, "comment_reply", "markup_propose", "checkpoint_restore"];
 const RELAY_TITLE = "shepherd-relay:v1:";

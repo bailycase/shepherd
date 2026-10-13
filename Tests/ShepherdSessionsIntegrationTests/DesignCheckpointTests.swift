@@ -143,7 +143,7 @@ struct DesignCheckpointTests {
         #expect(h.broadcasts.current.isEmpty)
     }
 
-    @Test func aRestoreNeverTouchesCommentsOrInstalledSystems() async throws {
+    @Test func aRestoreKeepsCommentsAndRestoresOnlyInstalledSystemCopies() async throws {
         let (h, design) = try await serverWithComment()
         defer { h.stop() }
         let comment = try await h.server.designComments(design.id).comments[0]
@@ -160,8 +160,12 @@ struct DesignCheckpointTests {
 
         _ = try await checkpoint(h, design, .restore, "before")
         let after = try await h.server.designSnapshot(design.id)
-        #expect(after.index.designSystems == installed, "a system installed since the checkpoint stays installed")
-        #expect(t.files(h, design).filter { $0.key.hasPrefix("ds/") } == ds && !ds.isEmpty, "its files are untouched")
+        #expect(after.index.designSystems?.isEmpty != false, "the checkpoint restores its empty installed-system set")
+        #expect(t.files(h, design).filter { $0.key.hasPrefix("ds/") }.isEmpty && !ds.isEmpty)
+        #expect(try await h.server.designSystems.read("acme").summary.namespace == "acme", "the shared registry is never reverted")
+        _ = try await checkpoint(h, design, .restore, "before restore before")
+        #expect(try await h.server.designSnapshot(design.id).index.designSystems == installed)
+        #expect(t.files(h, design).filter { $0.key.hasPrefix("ds/") } == ds, "undo restores the exact displaced copies")
         let commentsAfter = try await h.server.designComments(design.id)
         #expect(commentsAfter.comments.count == commentsBefore.comments.count)
         let kept = try #require(commentsAfter.comments.first)

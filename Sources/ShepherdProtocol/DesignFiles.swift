@@ -1,9 +1,22 @@
 import Foundation
 import ShepherdCore
 
-/// A design's files as its host has them at one revision: the index and every board file under
-/// `project/` (listed or not, as the Design format shows them) with its SHA-256, so a reader
-/// fetches only boards whose hash changed.
+/// Nonhidden regular project files and bytes against their existing storage limits.
+public struct DesignUsage: Hashable, Sendable, Codable {
+    public var files: Int
+    public var fileLimit: Int
+    public var bytes: Int
+    public var byteLimit: Int
+
+    public init(files: Int, fileLimit: Int, bytes: Int, byteLimit: Int) {
+        self.files = files
+        self.fileLimit = fileLimit
+        self.bytes = bytes
+        self.byteLimit = byteLimit
+    }
+}
+
+/// The index and every board file's SHA-256 at one revision, so readers fetch only changed boards.
 public struct DesignSnapshot: Hashable, Sendable, Codable {
     public var designID: DesignID
     /// Moves with every change to the design's files; a write naming an older one is refused.
@@ -11,15 +24,17 @@ public struct DesignSnapshot: Hashable, Sendable, Codable {
     public var index: DesignIndex
     /// Each board file's SHA-256, lower-case hex.
     public var boards: [DesignPath: String]
+    public var usage: DesignUsage?
 
-    public init(designID: DesignID, revision: UInt64, index: DesignIndex, boards: [DesignPath: String]) {
+    public init(designID: DesignID, revision: UInt64, index: DesignIndex, boards: [DesignPath: String], usage: DesignUsage? = nil) {
         self.designID = designID
         self.revision = revision
         self.index = index
         self.boards = boards
+        self.usage = usage
     }
 
-    private enum CodingKeys: String, CodingKey { case designID, revision, index, boards }
+    private enum CodingKeys: String, CodingKey { case designID, revision, index, boards, usage }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -27,6 +42,7 @@ public struct DesignSnapshot: Hashable, Sendable, Codable {
         revision = try c.decode(UInt64.self, forKey: .revision)
         index = try c.decode(DesignIndex.self, forKey: .index)
         boards = try Self.decodePathMap(c.decode([String: String].self, forKey: .boards), in: c, key: .boards)
+        usage = try c.decodeIfPresent(DesignUsage.self, forKey: .usage)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -35,6 +51,7 @@ public struct DesignSnapshot: Hashable, Sendable, Codable {
         try c.encode(revision, forKey: .revision)
         try c.encode(index, forKey: .index)
         try c.encode(Dictionary(uniqueKeysWithValues: boards.map { ($0.key.rawValue, $0.value) }), forKey: .boards)
+        try c.encodeIfPresent(usage, forKey: .usage)
     }
 
     private static func decodePathMap(_ raw: [String: String], in c: KeyedDecodingContainer<CodingKeys>, key: CodingKeys) throws -> [DesignPath: String] {
@@ -83,9 +100,12 @@ public struct DesignWriteResult: Hashable, Sendable, Codable {
     /// What the write left in the board (`DesignBoardReport`); nil for an index update, and for
     /// a write the store didn't report on (a Tweak, an undo).
     public var report: DesignBoardReport?
+    /// A canvas patch's deletion plan, including dry runs. Nil on older replies.
+    public var canvasPlan: DesignCanvasPlan?
 
     public init(revision: UInt64, changed: Bool, sha256: String? = nil, created: Bool? = nil,
-                warnings: [DesignBoardCheck.Warning] = [], title: String?, boardCount: Int, report: DesignBoardReport? = nil) {
+                warnings: [DesignBoardCheck.Warning] = [], title: String?, boardCount: Int, report: DesignBoardReport? = nil,
+                canvasPlan: DesignCanvasPlan? = nil) {
         self.revision = revision
         self.changed = changed
         self.sha256 = sha256
@@ -94,6 +114,7 @@ public struct DesignWriteResult: Hashable, Sendable, Codable {
         self.title = title
         self.boardCount = boardCount
         self.report = report
+        self.canvasPlan = canvasPlan
     }
 }
 
