@@ -2,8 +2,8 @@ import SwiftUI
 
 // The Browser while the agent is using it (PaneStates › BrowserPane · the agent is using it, and
 // SidePaneTabs · the agent opened a tab): a `running` ring inset the page, a pointer where pi
-// points, and a floating card under the toolbar with Take over. All of it is drawn over the page by
-// the app, never in it. The app supplies the words and the pointer's place.
+// points; the words and Take over are the bar under the page (BrowserTabs.swift). All of it is drawn
+// over or under the page by the app, never in it. The app supplies the words and the pointer's place.
 
 public enum NWBrowserAgentMetrics {
     /// The ring inset the page.
@@ -13,7 +13,7 @@ public enum NWBrowserAgentMetrics {
     public static let pointerHeight: CGFloat = 20
     /// Where the arrow's tip is inside the glyph's box.
     public static let pointerTip = CGPoint(x: 2, y: 2)
-    /// The card sits this far from the pane's sides and under the toolbar.
+    /// The notice card sits this far from the pane's sides and under the toolbar.
     public static let cardInset: CGFloat = NW.Space.l
     public static let cardGlyph: CGFloat = 12
     public static let cardGap: CGFloat = 10
@@ -68,60 +68,15 @@ struct NWAgentPointerShape: Shape {
     }
 }
 
-/// "Agent is clicking through checkout" with Take over (PaneStates › BrowserPane · the agent is
-/// using it): `bgRaised`, radius 12, a `running` line and the popover's shadow; padding 8, 12 on
-/// the leading side; the words in `ui` after a 12pt `running` glyph; Take over a secondary `s`
-/// button with a glyph.
-public struct NWAgentCard: View {
-    let note: String
-    let takeOver: () -> Void
-
-    public init(note: String, takeOver: @escaping () -> Void) {
-        self.note = note
-        self.takeOver = takeOver
-    }
-
-    public static let glyph = "hand.raised"
-
-    public var body: some View {
-        let nw = Color.nw
-        HStack(spacing: NWBrowserAgentMetrics.cardGap) {
-            Image(systemName: Self.glyph)
-                .font(.system(size: NWBrowserAgentMetrics.cardGlyph))
-                .foregroundStyle(nw.running)
-                .accessibilityHidden(true)
-            Text("Agent is \(note)")
-                .font(.nw(.ui, weight: .regular))
-                .foregroundStyle(nw.textPrimary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Button(action: takeOver) {
-                Label("Take over", systemImage: Self.glyph)
-            }
-            .buttonStyle(.nw(.secondary, size: .s))
-            .fixedSize()
-        }
-        .padding(.leading, NWBrowserAgentMetrics.cardLeading)
-        .padding([.vertical, .trailing], NWBrowserAgentMetrics.cardOther)
-        .nwPopover(radius: NW.Radius.l, line: nw.running)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Agent is \(note)")
-    }
-}
-
-/// The ring, the pointer and the card over the page area. `pointer` is where the last action
-/// pointed, in this view's own points; nil draws none. Only the card takes clicks: everything else
-/// reaches the page, and a click there is the user taking it back.
+/// The ring and the pointer over the page area. `pointer` is where the last action pointed, in
+/// this view's own points; nil draws none. The words and Take over are `NWAgentBar`, under the
+/// page (BrowserTabsAgent). Nothing here takes a click: it all reaches the page, and a click there
+/// is the user taking it back.
 public struct NWBrowserAgentOverlay: View {
-    let note: String
     let pointer: CGPoint?
-    let takeOver: () -> Void
 
-    public init(note: String, pointer: CGPoint?, takeOver: @escaping () -> Void) {
-        self.note = note
+    public init(pointer: CGPoint?) {
         self.pointer = pointer
-        self.takeOver = takeOver
     }
 
     public var body: some View {
@@ -132,11 +87,8 @@ public struct NWBrowserAgentOverlay: View {
                     .offset(x: pointer.x - NWBrowserAgentMetrics.pointerTip.x, y: pointer.y - NWBrowserAgentMetrics.pointerTip.y)
                     .nwTransition(.overlay, edge: .top)
             }
-            NWAgentCard(note: note, takeOver: takeOver)
-                .padding(.horizontal, NWBrowserAgentMetrics.cardInset)
-                .padding(.top, NWBrowserAgentMetrics.cardInset)
-                .frame(maxWidth: .infinity, alignment: .top)
         }
+        .allowsHitTesting(false)
         .nwAnimation(.overlay, value: pointer)
     }
 }

@@ -101,6 +101,31 @@ struct BrowserDriveHostTests {
         #expect(s.asked.current.map(\.0) == [s.b.id])
     }
 
+    @Test func tabRequestsRequireATabCapableViewerAndRoundTripThroughOne() async throws {
+        let s = try await setup()
+        defer { s.stop() }
+        let old = try await s.host.raw(authenticated: false)
+        try await old.hello(token: s.host.token,
+            capabilities: RemoteProtocol.clientCapabilities.filter { $0 != RemoteProtocol.browserTabsCapability })
+        try await claim(old, s.a)
+        let agent = try s.extensionClient()
+        try agent.send(.browser(id: 1, agentID: s.a.id, request: .tabs))
+        guard case .error(1, "unavailable", _) = try await agent.reply() else {
+            Issue.record("an old viewer was sent a request it cannot decode"); return
+        }
+        let current = try await s.viewer()
+        try await claim(current, s.a)
+        let requests: [BrowserRequest] = [.tabs, .newTab(url: nil, note: nil), .selectTab(id: "t"), .closeTab(id: "t"),
+            .tab(id: "t", request: .read(selector: nil, maxChars: nil))]
+        for (index, request) in requests.enumerated() {
+            try agent.send(.browser(id: index + 2, agentID: s.a.id, request: request))
+            guard case .request(let token, _, let received) = try await current.nextDrive() else { Issue.record("no tab request"); return }
+            #expect(received == request)
+            try current.send(.browserAnswer(requestToken: token, outcome: .text("tab result")))
+            #expect(try await agent.reply() == .browserResult(id: index + 2, text: "tab result", image: nil))
+        }
+    }
+
     @Test func aFailureTheViewerReportsReachesTheAgentWithItsCode() async throws {
         let s = try await setup()
         defer { s.stop() }
