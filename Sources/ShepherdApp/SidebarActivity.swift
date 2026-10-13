@@ -5,6 +5,8 @@ import ShepherdUI
 /// Activity groups are view state, not part of the host's workspace or wire protocol.
 enum SidebarActivitySection: String, CaseIterable, Hashable {
     case done, pinned, needsYou, working, recents, designs
+    /// Runs of automations (This Mac's and each host's) that are not waiting on the user: they never mix with threads.
+    case automations
     /// The new Projects (ProjectLead boards). Its rows are `SidebarLogicalProject`s, not thread rows.
     case projects
 
@@ -16,6 +18,7 @@ enum SidebarActivitySection: String, CaseIterable, Hashable {
         case .done: "Done"
         case .recents: "Recents"
         case .designs: "Designs"
+        case .automations: "Automations"
         case .projects: "Projects"
         }
     }
@@ -38,11 +41,11 @@ enum SidebarActivityItem: Identifiable, Equatable {
 
 extension SidebarLists {
     /// The board's order (ProjectLead-Activity with the user's override): Designs first, then Needs you,
-    /// Working, Done, Projects, Recents. Pinned is not drawn by the board; it is a state the user
+    /// Working, Done, Automations, Projects, Recents. Pinned is not drawn by the board; it is a state the user
     /// opts into, so it follows Done and never displaces a drawn group. Projects are not thread rows;
     /// `items(collapsed:projects:)` places them after Done and Pinned, before Recents.
     var sections: [(section: SidebarActivitySection, rows: [SidebarListRow])] {
-        [(.designs, designs), (.needsYou, needsYou), (.working, working), (.done, done), (.pinned, pinned), (.recents, recents)]
+        [(.designs, designs), (.needsYou, needsYou), (.working, working), (.done, done), (.pinned, pinned), (.automations, automations), (.recents, recents)]
     }
 
     func visibleRows(collapsed: Set<SidebarActivitySection>) -> [SidebarListRow] {

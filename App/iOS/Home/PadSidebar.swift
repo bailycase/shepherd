@@ -72,6 +72,26 @@ struct PadSidebar: View {
                         .contextMenu { OpenInNewWindowButton(thread: item.ref.agentRef) }
                     }
                 }
+                // Automation runs have their own group, never among Recents; its header opens the Automations screen.
+                // A run waiting on you is in Needs you above, once: it is not counted or drawn here as well.
+                let waiting = Set(model.needsYou.map(\.ref))
+                let runs = model.automations.filter { row in row.run.map { !waiting.contains($0) } ?? false }
+                if !runs.isEmpty {
+                    SidebarHeader(title: "Automations", count: runs.count, hint: "Opens Automations") {
+                        navigator.open(.home(.automations))
+                    }
+                    ForEach(runs) { row in
+                        if let run = row.run {
+                            Button { navigator.open(.thread(run.agentRef)) } label: {
+                                AutomationRow(row: row, selected: run.agentRef == selected)
+                                    .equatable()
+                                    .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
+                            }
+                            .buttonStyle(.nwRow(radius: NW.Radius.m))
+                            .contextMenu { OpenInNewWindowButton(thread: run.agentRef) }
+                        }
+                    }
+                }
                 if !recents.isEmpty {
                     SidebarHeader(title: "Recents")
                     ForEach(recents) { recent in
@@ -151,11 +171,12 @@ private struct SidebarItem: View {
     }
 }
 
-/// A section's head in the sidebar; Needs you's opens the inbox.
+/// A section's head in the sidebar; Needs you's opens the inbox, Automations' its screen.
 private struct SidebarHeader: View {
     let title: String
     var attention = false
     var count: Int?
+    var hint = "Opens Needs you"
     var action: (() -> Void)?
 
     var body: some View {
@@ -167,7 +188,9 @@ private struct SidebarHeader: View {
         if let action {
             Button(action: action) { header.contentShape(Rectangle()) }
                 .buttonStyle(.plain)
-                .accessibilityHint("Opens Needs you")
+                .accessibilityLabel(count.map { "\(title), \($0)" } ?? title)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityHint(hint)
         } else {
             header
         }

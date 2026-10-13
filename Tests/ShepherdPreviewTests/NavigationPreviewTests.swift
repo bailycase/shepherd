@@ -49,7 +49,12 @@ extension PreviewTests {
         agents.append(run); tabs.append(runTab)
         let automation = Automation(name: "Merge PR #24 after CI", prompt: "watch", cwd: workspace.dir.path, enabled: false,
                                     agentID: run.id)
-        try await workspace.seed(ShepherdState(spaces: [space, other, runs], tabs: tabs, agents: agents, automations: [automation]))
+        // A live run with a long name beside the settled one: the Automations group holds both.
+        var (live, liveTab) = try await workspace.agent("Watch the nightly dependency audit and report every advisory that touches a shipped target", in: runs, order: 1, status: .working)
+        live.lastActiveAt = now - 20_000
+        agents.append(live); tabs.append(liveTab)
+        let liveAutomation = Automation(name: "nightly-deps", prompt: "watch", cwd: workspace.dir.path, agentID: live.id)
+        try await workspace.seed(ShepherdState(spaces: [space, other, runs], tabs: tabs, agents: agents, automations: [automation, liveAutomation]))
         let vm = workspace.vm
         vm.selectAgent(agents[3].id)
         vm.statusSince[agents[0].id] = Date().addingTimeInterval(-8 * 60)

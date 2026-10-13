@@ -48,6 +48,6 @@ struct SpacesTerminologyTests {
     /// The user's amendment to ProjectLead-Activity: Designs leads the Activity groups.
     @Test func activityGroupsPutDesignsFirst() {
         let order = SidebarLists().sections.map(\.section)
-        #expect(order == [.designs, .needsYou, .working, .done, .pinned, .recents])
+        #expect(order == [.designs, .needsYou, .working, .done, .pinned, .automations, .recents])
     }
 }
