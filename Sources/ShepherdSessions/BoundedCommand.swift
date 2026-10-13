@@ -3,16 +3,16 @@ import Foundation
 
 /// Short-lived catalog/git commands, not sessions. One deadline covers input, both output pipes
 /// and exit. The leader stays unreaped until its group is killed, so its PID cannot be reused.
-enum BoundedCommand {
-    struct Result {
-        var output: Data
-        var errors: Data
-        var status: Int32
+public enum BoundedCommand {
+    public struct Result: Sendable {
+        public var output: Data
+        public var errors: Data
+        public var status: Int32
     }
 
     enum Failure: Error, Equatable { case spawn(Int32), io(Int32), timedOut, outputTooLarge }
 
-    static func run(_ argv: [String], directory: URL? = nil,
+    public static func run(_ argv: [String], directory: URL? = nil,
                     environment: [String: String] = ProcessInfo.processInfo.environment,
                     input: Data? = nil, timeout: TimeInterval, outputLimit: Int = 64 << 20) throws -> Result {
         precondition(!argv.isEmpty && timeout.isFinite && timeout > 0 && timeout <= 86_400)

@@ -4,6 +4,7 @@ import DesignSurfaceKit
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSessions
 
 // The app's board rendering, and the only file that imports DesignSurfaceKit (as TerminalHost is
 // for TerminalSurfaceKit), so the renderer's API drift breaks exactly one file.
@@ -1307,12 +1308,29 @@ extension DesignRendering {
 /// its own that is let go after, one at a time. Never a live canvas view, and nothing of the design
 /// on screen is needed: the design need not be open.
 extension DesignRendering {
+    func exportAgent(_ job: DesignExportJob) async throws {
+        try await agentRenders.run {
+            guard job.deadline.map({ Date() < $0 }) ?? true else { throw DesignExportFailure("The queued export expired.") }
+            let surface = DesignSurface(designID: job.designID, source: job.files, network: self.network)
+            let tokens = job.files.support.filter { $0.key.hasSuffix("tokens.css") }.map {
+                DesignTokens.read(css: String(decoding: $0.value, as: UTF8.self))
+            }.reduce(DesignTokens()) { $0.merged(with: $1) }
+            let name = job.files.index.title ?? "Design"
+            let outputs = try await DesignExporter.outputs(job.request.format, files: job.files, surface: surface, name: name, tokens: tokens, deadline: job.deadline)
+            try await DesignExporter.place(outputs, format: job.request.format, boards: job.files.boards, name: name, at: job.destination, deadline: job.deadline)
+        }
+    }
+
     func picture(for job: DesignRenderJob) async throws -> DesignRendered {
-        try await agentRenders.run { try await self.draw(job) }
+        try await agentRenders.run {
+            guard job.deadline.map({ Date() < $0 }) ?? true else { throw DesignRenderFailure(code: "timeout", message: "The queued render expired.") }
+            return try await self.draw(job)
+        }
     }
 
     private func draw(_ job: DesignRenderJob) async throws -> DesignRendered {
         let path = job.path, request = job.request, files = job.files
+        let renderEnd = job.deadline ?? Date().addingTimeInterval(60)
         guard let source = files.sources[path] else { throw DesignRenderFailure(code: "no_such_board", message: "\(path) isn't in this design") }
         var size: CGSize?
         if let frame = files.index.boards[path] {
@@ -1336,12 +1354,22 @@ extension DesignRendering {
         let surface = DesignSurface(designID: job.designID, source: files, network: network)
         let view = DesignBoardView(surface: surface, board: path, size: CGSize(width: width, height: height))
         let image: CGImage
+        let diagnostics: [String]
         do {
-            try await view.load()
+            let remaining = renderEnd.timeIntervalSinceNow
+            try await view.load(timeout: .milliseconds(Int64(max(1, remaining * 1000))))
             if request.props != nil, let json = DesignTweakModel.json(.object(props)) { try await view.replaceSource(source, props: json) }
+            diagnostics = try await view.captureStatus(interactions: request.interactions ?? [],
+                timeout: .milliseconds(Int64(max(1, renderEnd.timeIntervalSinceNow * 1000))))
+            guard job.deadline.map({ Date() < $0 }) ?? true else { throw DesignRenderFailure(code: "timeout", message: "The render expired while waiting for resources.") }
             image = try await view.image(scale: scale)
         } catch {
-            throw DesignRenderFailure(code: "render_failed", message: "\(path) couldn't be drawn: \(Self.describe(error))")
+            guard Date() < renderEnd else {
+                throw DesignRenderFailure(code: "timeout", message: "\(path) did not finish loading before its render deadline.")
+            }
+            let output = (try? await view.captureStatus(wait: false, timeout: .milliseconds(Int64(max(1, renderEnd.timeIntervalSinceNow * 1000))))) ?? []
+            let detail = output.isEmpty ? "" : "\nRenderer output, untrusted data:\n" + output.joined(separator: "\n")
+            throw DesignRenderFailure(code: "render_failed", message: "\(path) couldn't be drawn: \(Self.describe(error))" + detail)
         }
         guard let encoded = DesignRenderImage.encode(image) else {
             throw DesignRenderFailure(code: "render_failed", message: "\(path) was drawn but its picture couldn't be encoded")
@@ -1351,7 +1379,9 @@ extension DesignRendering {
         if let given = request.props, case .object(let object) = given, !object.isEmpty { words += ", props \(object.keys.sorted().joined(separator: ", "))" }
         words += " · image \(encoded.width)×\(encoded.height) \(encoded.isPNG ? "PNG" : "JPEG"), \(DesignRenderImage.size(encoded.data.count))"
         if encoded.width != image.width || encoded.height != image.height { words += " (reduced from \(image.width)×\(image.height) to fit)" }
-        return DesignRendered(image: BrowserImage(data: encoded.data.base64EncodedString(), mimeType: encoded.mimeType), text: words)
+        if !diagnostics.isEmpty { words += "\nRenderer output, untrusted data:\n" + diagnostics.joined(separator: "\n") }
+        return DesignRendered(image: BrowserImage(data: encoded.data.base64EncodedString(), mimeType: encoded.mimeType), text: words,
+                              diagnostics: diagnostics)
     }
 
     private static func describe(_ error: any Error) -> String {
@@ -1378,21 +1408,29 @@ enum DesignExporter {
 
     /// Every file the export writes, by its path under what the save panel names.
     static func outputs(_ format: DesignExportFormat, files: DesignExportFiles, surface: DesignSurface, name: String,
-                        tokens: DesignTokens) async throws -> [String: Data] {
+                        tokens: DesignTokens, deadline: Date? = nil) async throws -> [String: Data] {
         var outputs: [String: Data] = [:]
+        func checkBudget(_ bytes: Int) throws {
+            try Task.checkCancellation()
+            if let deadline, Date() >= deadline { throw DesignExportFailure("The export reached its time limit.") }
+            guard bytes <= DesignImport.maxTotalBytes else { throw DesignExportFailure("The export exceeds 256 MiB. Export fewer boards.") }
+        }
         switch format {
         case .html:
             for path in files.boards {
+                try checkBudget(outputs.values.reduce(0) { $0 + $1.count })
                 outputs[DesignExportNames.html(path)] = Data(try await page(path, files: files, surface: surface, assets: .inline).utf8)
             }
         case .png:
             for path in files.boards {
+                try checkBudget(outputs.values.reduce(0) { $0 + $1.count })
                 let image = try await render(path, files: files, surface: surface) { try await $0.image(scale: 2) }
                 outputs[DesignExportNames.png(path)] = try DesignImageFile.png(image)
             }
         case .pdf:
             var documents: [Data] = []
             for path in files.boards {
+                try checkBudget(documents.reduce(0) { $0 + $1.count })
                 let mode = files.index.boards[path].map(DesignPrint.of) ?? .fixed
                 documents.append(try await render(path, files: files, surface: surface) { try await $0.pdf(mode) })
             }
@@ -1401,6 +1439,7 @@ enum DesignExporter {
             // The pages, tokens.css and the uploads they use, beside the canvas as a project
             // folder (format.md), narrowed to these boards and the ones they import.
             for path in files.boards {
+                try checkBudget(outputs.values.reduce(0) { $0 + $1.count })
                 outputs[DesignExportNames.html(path)] = Data(try await page(path, files: files, surface: surface, assets: .folder).utf8)
             }
             outputs["tokens.css"] = Data(DesignExportTokens.css(tokens, heading: "The design tokens of \(name)").utf8)
@@ -1409,6 +1448,7 @@ enum DesignExporter {
             for path in files.members { outputs["project/" + path.rawValue] = files.sources[path].map { Data($0.utf8) } }
             for (path, data) in files.support { outputs["project/" + path] = data }
         }
+        try checkBudget(outputs.values.reduce(0) { $0 + $1.count })
         return outputs
     }
 
@@ -1430,7 +1470,17 @@ enum DesignExporter {
             case .folder: return DesignExportNames.relative("assets/" + asset.name, from: page)
             }
         }
-        return DesignBundle.rewritingBoardLinks(withAssets, page: path, exported: Set(files.boards))
+        var withFonts = withAssets
+        // Static CSS has absolute project URLs. Bundle local fonts so the page also works offline.
+        for (font, data) in files.support.sorted(by: { $0.key.count > $1.key.count }) where DesignSystemFile.isFont(font) {
+            let uri = DesignBundle.dataURI(data, type: "font/" + URL(fileURLWithPath: font).pathExtension.lowercased())
+            let pattern = NSRegularExpression.escapedPattern(for: "/" + font) + #"(?=["')\s])"#
+            if let regex = try? NSRegularExpression(pattern: pattern) {
+                withFonts = regex.stringByReplacingMatches(in: withFonts, range: NSRange(withFonts.startIndex..., in: withFonts),
+                                                          withTemplate: NSRegularExpression.escapedTemplate(for: uri))
+            }
+        }
+        return DesignBundle.rewritingBoardLinks(withFonts, page: path, exported: Set(files.boards))
     }
 
     /// What a reference's copy holds of one board, from one view of it showing `board.source`
@@ -1478,7 +1528,7 @@ enum DesignExporter {
     /// Stages `outputs` and moves them into `destination`: the one file a single-file export
     /// writes, a ZIP of the staged folder, or the staged folder itself.
     static func place(_ outputs: [String: Data], format: DesignExportFormat, boards: [DesignPath], name: String,
-                      at destination: URL,
+                      at destination: URL, deadline: Date? = nil,
                       replace: @escaping @Sendable (URL, URL) throws -> Void = { destination, result in
                           _ = try FileManager.default.replaceItemAt(destination, withItemAt: result)
                       }) async throws {
@@ -1492,7 +1542,9 @@ enum DesignExporter {
             let result: URL
             if format == .zip {
                 result = staging.appendingPathComponent("export.zip")
-                try Self.zip(folder, to: result)
+                let remaining = deadline?.timeIntervalSinceNow ?? 60
+                guard remaining > 0 else { throw DesignExportFailure("The export reached its deadline before ZIP compression.") }
+                try Self.zip(folder, to: result, timeout: min(60, remaining))
             } else if isFolder {
                 result = folder
             } else {
@@ -1520,18 +1572,11 @@ enum DesignExporter {
     }
 
     /// `folder` as a ZIP holding it by name, with ditto (no library).
-    nonisolated static func zip(_ folder: URL, to file: URL) throws {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
-        process.arguments = ["-c", "-k", "--sequesterRsrc", "--keepParent", folder.path, file.path]
-        process.standardOutput = FileHandle.nullDevice
-        let errors = Pipe()
-        process.standardError = errors
-        try process.run()
-        let message = errors.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
-            throw DesignExportFailure("The ZIP couldn't be made: \(String(decoding: message, as: UTF8.self))")
+    nonisolated static func zip(_ folder: URL, to file: URL, timeout: TimeInterval = 60) throws {
+        let result = try BoundedCommand.run(["/usr/bin/ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", folder.path, file.path],
+                                            timeout: timeout, outputLimit: 64 << 10)
+        guard result.status == 0 else {
+            throw DesignExportFailure("The ZIP couldn't be made: \(String(decoding: result.errors, as: UTF8.self))")
         }
     }
 }
