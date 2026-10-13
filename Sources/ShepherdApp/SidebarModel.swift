@@ -93,17 +93,19 @@ struct SidebarLists: Equatable {
     /// Idle and seen threads, most recently active first (`Agent.lastActiveAt`).
     var recents: [SidebarListRow] = []
     var designs: [SidebarListRow] = []
+    /// Automation runs not waiting on the user, most recently active first; one waiting on you is in Needs you.
+    var automations: [SidebarListRow] = []
     /// Every row once, Needs you's first and the rest most recently active first, pinned or
     /// not: what a launch shows and the New thread page's Continue card read. Unmarked, as derived.
     var activity: [SidebarListRow] = []
 
     var all: [SidebarListRow] { sections.flatMap(\.rows) }
 
-    /// Needs you and Designs have no digit; folded groups have no visible hint or target.
+    /// Needs you, Designs and Automations have no digit; folded groups have no visible hint or target.
     var shortcutRows: [SidebarListRow] { shortcutRows(collapsed: []) }
 
     func shortcutRows(collapsed: Set<SidebarActivitySection>) -> [SidebarListRow] {
-        sections.filter { $0.section != .needsYou && $0.section != .designs && !collapsed.contains($0.section) }
+        sections.filter { ![.needsYou, .designs, .automations].contains($0.section) && !collapsed.contains($0.section) }
             .flatMap(\.rows)
     }
 
@@ -112,7 +114,7 @@ struct SidebarLists: Equatable {
         var lists = self
         let digits = shortcuts ? Dictionary(uniqueKeysWithValues: shortcutRows(collapsed: collapsed).prefix(9).enumerated()
             .map { ($0.element.id, "⌘\($0.offset + 1)") }) : [:]
-        for path in [\SidebarLists.pinned, \.needsYou, \.working, \.done, \.recents, \.designs] {
+        for path in [\SidebarLists.pinned, \.needsYou, \.working, \.done, \.recents, \.designs, \.automations] {
             for index in lists[keyPath: path].indices {
                 let id = lists[keyPath: path][index].id
                 lists[keyPath: path][index].selected = id == selected
@@ -265,6 +267,7 @@ enum SidebarDerivation {
                 if seen[entry.row.id] == entry.row.completion { lists.recents.append(entry.row) }
                 else { lists.done.append(entry.row) }
             case .designs: lists.designs.append(entry.row)
+            case .automations: lists.automations.append(entry.row)
             // A thread row is never a Project; Projects are listed from `state.projects`.
             case .recents, .pinned, .projects: lists.recents.append(entry.row)
             }
@@ -340,7 +343,7 @@ enum SidebarDerivation {
         }
         let finished = !needsYou && !cannotStart && !waiting && (agent.status == .done || (automation != nil && !live && run?.settledAt != nil))
         let section: SidebarActivitySection = needsYou ? .needsYou : waiting || cannotStart ? .recents
-            : live || agent.status == .working ? .working : finished ? .done : .recents
+            : automation != nil ? .automations : live || agent.status == .working ? .working : finished ? .done : .recents
         return SidebarListRow(
             id: .local(agent.id), title: agent.name, leading: leading,
             accessory: accessory, hasGoal: agent.goalState != nil,
@@ -378,7 +381,7 @@ enum SidebarDerivation {
         return SidebarListRow(
             id: .remote(RemoteAgentRef(hostID: host.id, agentID: agent.id)), title: agent.name, leading: leading,
             accessory: accessory, hasGoal: agent.goalState != nil,
-            section: host.offline ? .recents : needsYou ? .needsYou : agent.status == .working ? .working
+            section: needsYou ? .needsYou : automation ? .automations : host.offline ? .recents : agent.status == .working ? .working
                 : agent.status == .done ? .done : .recents,
             completion: agent.status == .done ? 1 : nil,
             offline: host.offline, help: host.offline ? "\(help) · \(host.name) is offline" : help,

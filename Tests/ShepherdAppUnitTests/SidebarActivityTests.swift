@@ -26,7 +26,7 @@ struct SidebarActivityTests {
             let lists = SidebarDerivation.lists(SidebarSource(
                 local: ShepherdState(spaces: [space], agents: [pin, idle, asking, working, done], designs: [design]), designs: true),
                 pins: SidebarPins([.local(pin.id)]))
-            #expect(lists.sections.map(\.section) == [.designs, .needsYou, .working, .done, .pinned, .recents])
+            #expect(lists.sections.map(\.section) == [.designs, .needsYou, .working, .done, .pinned, .automations, .recents])
             #expect(lists.all.map(\.title) == ["Dashboard", "asking", "working", "done", "pinned", "idle"], "Designs, Needs you, Working, Done, Pinned, Recents")
             #expect(lists.items(collapsed: []).first == .header(.designs, count: 1, collapsed: false))
             #expect(Set(lists.all.map(\.id)).count == 6)
@@ -117,9 +117,9 @@ struct SidebarActivityTests {
         #expect(lists.pinned.first?.leading == .dot(.running))
         #expect(lists.pinned.first?.completion == nil)
         #expect(lists.needsYou.map(\.id) == [.local(blocked.id)], "only the parent's own question needs the user")
-        #expect(lists.working.map(\.id) == [.local(run.id)])
-        #expect(lists.working.first?.accessibilityLabel == "automation, automation, running")
-        #expect(lists.done.isEmpty)
+        #expect(lists.automations.map(\.id) == [.local(run.id)], "a run is in Automations, not Working")
+        #expect(lists.automations.first?.accessibilityLabel == "automation, automation, running")
+        #expect(lists.working.isEmpty && lists.done.isEmpty)
         let tree = SidebarDerivation.tree(source, options: SidebarTreeOptions())
         #expect(tree.projects.first?.rollup == .waiting)
         #expect(tree.projects.first?.rows.first(where: { $0.id == .local(parent.id) })?.leading == .dot(.running))
@@ -171,7 +171,7 @@ struct SidebarActivityTests {
         var completions = SidebarCompletions()
         completions.reconcile(source, endpoints: [:])
         source.completions = completions.records
-        #expect(SidebarDerivation.lists(source).done.first?.accessory == .age(since: Date(timeIntervalSince1970: 12)))
+        #expect(SidebarDerivation.lists(source).automations.first?.accessory == .age(since: Date(timeIntervalSince1970: 12)))
         source.local.agents[0].status = .working
         completions.reconcile(source, endpoints: [:])
         source.local.agents[0].status = .done
