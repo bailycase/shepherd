@@ -429,7 +429,8 @@ struct DesignReferenceIntegrationTests {
         guard case .updatedSince = await h.server.designReferenceFreshness(agentID: pi.agent.id, payloadID: copy.payload.id) else {
             Issue.record("sent page membership change was missed"); return
         }
-        _ = try await h.server.updateDesignIndex(id, patch: .object(["pages": .array([.object(["id": .string("other")])])]))
+        _ = try await h.server.updateDesignIndex(id, patch: .object(["pages": .array([.object(["id": .string("other")])])]),
+                                               options: .init(allowDeletePages: true))
         #expect(await h.server.designReferenceFreshness(picked.reference) == .deleted)
         #expect(await h.server.designReferenceFreshness(agentID: pi.agent.id, payloadID: copy.payload.id) == .deleted)
     }
@@ -443,7 +444,8 @@ struct DesignReferenceIntegrationTests {
             .object(["id": .string("flows")]), .object(["id": .string("empty"), "name": .string("Empty page")])])]))
         let picked = try await h.server.pinDesignReference(DesignReference(designID: id, page: "empty")!)
         #expect(picked.outline.boards == 0 && picked.outline.boardCount == 0 && picked.pageTitle == "Empty page")
-        _ = try await h.server.updateDesignIndex(id, patch: .object(["pages": .array([.object(["id": .string("flows")])])]))
+        _ = try await h.server.updateDesignIndex(id, patch: .object(["pages": .array([.object(["id": .string("flows")])])]),
+                                               options: .init(allowDeletePages: true))
         #expect(await h.server.designReferenceFreshness(picked.reference) == .deleted)
         _ = try await send(pi, "tools:0 empty page", references: [picked.reference], from: try await pi.ready())
         let record = try #require(lastRecord(pi))

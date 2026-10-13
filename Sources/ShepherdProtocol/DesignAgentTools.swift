@@ -158,13 +158,16 @@ public struct DesignCheckpointInfo: Hashable, Sendable, Codable {
     public var bytes: Int
     /// The design's revision when it was saved.
     public var revision: UInt64
+    /// Installed copies restored by this checkpoint. Nil for legacy board-only checkpoints.
+    public var systems: [String]?
 
-    public init(name: String, createdAt: Double, boards: Int, bytes: Int, revision: UInt64) {
+    public init(name: String, createdAt: Double, boards: Int, bytes: Int, revision: UInt64, systems: [String]? = nil) {
         self.name = name
         self.createdAt = createdAt
         self.boards = boards
         self.bytes = bytes
         self.revision = revision
+        self.systems = systems
     }
 }
 
@@ -237,7 +240,61 @@ public struct DesignCheckpointResult: Hashable, Sendable, Codable {
     }
 }
 
+public struct DesignCanvasPlan: Hashable, Sendable, Codable {
+    public var dryRun: Bool
+    public var removedPages: [String]
+    public var removedBoards: [String]
+    public var removedSystems: [String]
+    public var used: Int
+    public var limit: Int
+
+    public init(dryRun: Bool, removedPages: [String], removedBoards: [String], removedSystems: [String], used: Int, limit: Int) {
+        self.dryRun = dryRun
+        self.removedPages = removedPages
+        self.removedBoards = removedBoards
+        self.removedSystems = removedSystems
+        self.used = used
+        self.limit = limit
+    }
+}
+
+/// Safety controls for a canvas merge patch. Omitted controls never authorize page deletion.
+public struct DesignCanvasOptions: Hashable, Sendable, Codable {
+    public var dryRun: Bool
+    public var allowDeletePages: Bool
+    /// Explicitly remove only these uninstalled system copies.
+    public var removeSystems: [String]
+
+    public init(dryRun: Bool = false, allowDeletePages: Bool = false, removeSystems: [String] = []) {
+        self.dryRun = dryRun
+        self.allowDeletePages = allowDeletePages
+        self.removeSystems = removeSystems
+    }
+
+    private enum CodingKeys: String, CodingKey { case dryRun, allowDeletePages, removeSystems }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        dryRun = try c.decodeIfPresent(Bool.self, forKey: .dryRun) ?? false
+        allowDeletePages = try c.decodeIfPresent(Bool.self, forKey: .allowDeletePages) ?? false
+        removeSystems = try c.decodeIfPresent([String].self, forKey: .removeSystems) ?? []
+    }
+}
+
 // MARK: - board_render
+
+public struct DesignInteraction: Hashable, Sendable, Codable {
+    public enum Action: String, Hashable, Sendable, Codable { case click, type }
+    public var action: Action
+    public var selector: String
+    public var text: String?
+
+    public init(action: Action, selector: String, text: String? = nil) {
+        self.action = action
+        self.selector = selector
+        self.text = text
+    }
+    public static let maxSteps = 16
+}
 
 /// `board_render`: a board drawn by the app, for the agent to look at.
 public struct DesignRenderRequest: Hashable, Sendable, Codable {
@@ -249,19 +306,23 @@ public struct DesignRenderRequest: Hashable, Sendable, Codable {
     public var scale: Double?
     /// Props for this drawing, over the ones Tweak holds for the board.
     public var props: JSONValue?
+    /// A sequence on one isolated real renderer, starting from the board's initial state.
+    public var interactions: [DesignInteraction]?
 
-    public init(path: String, width: Int? = nil, height: Int? = nil, scale: Double? = nil, props: JSONValue? = nil) {
+    public init(path: String, width: Int? = nil, height: Int? = nil, scale: Double? = nil, props: JSONValue? = nil,
+                interactions: [DesignInteraction]? = nil) {
         self.path = path
         self.width = width
         self.height = height
         self.scale = scale
         self.props = props
+        self.interactions = interactions
     }
 
     public static let widthRange = 40...8000
     public static let scaleRange: ClosedRange<Double> = 1...2
 
-    private enum CodingKeys: String, CodingKey { case path, width, height, scale, props }
+    private enum CodingKeys: String, CodingKey { case path, width, height, scale, props, interactions }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -270,6 +331,7 @@ public struct DesignRenderRequest: Hashable, Sendable, Codable {
         height = try c.decodeIfPresent(Int.self, forKey: .height)
         scale = try c.decodeIfPresent(Double.self, forKey: .scale)
         props = try c.decodeIfPresent(JSONValue.self, forKey: .props)
+        interactions = try c.decodeIfPresent([DesignInteraction].self, forKey: .interactions)
     }
 }
 
@@ -280,12 +342,14 @@ public struct DesignRenderJob: Sendable {
     public var path: DesignPath
     public var request: DesignRenderRequest
     public var files: DesignExportFiles
+    public var deadline: Date?
 
-    public init(designID: DesignID, path: DesignPath, request: DesignRenderRequest, files: DesignExportFiles) {
+    public init(designID: DesignID, path: DesignPath, request: DesignRenderRequest, files: DesignExportFiles, deadline: Date? = nil) {
         self.designID = designID
         self.path = path
         self.request = request
         self.files = files
+        self.deadline = deadline
     }
 }
 
@@ -306,9 +370,11 @@ public struct DesignRenderFailure: Error, Hashable, Sendable, CustomStringConver
 public struct DesignRendered: Hashable, Sendable {
     public var image: BrowserImage
     public var text: String
+    public var diagnostics: [String]
 
-    public init(image: BrowserImage, text: String) {
+    public init(image: BrowserImage, text: String, diagnostics: [String] = []) {
         self.image = image
         self.text = text
+        self.diagnostics = diagnostics
     }
 }

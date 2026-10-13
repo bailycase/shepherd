@@ -92,9 +92,12 @@ extension ShepherdViewModel {
         }
     }
 
-    /// New design (the page's button, "Start a design"): the brief, ready to type into.
-    func openNewDesign() {
+    /// New design (the page's button, "Start a design"): the brief, ready to type into. `system` is the design
+    /// system the page it was pressed on is showing: the draft draws in it rather than in the default, which is the
+    /// system built from a project when there is one. Nil keeps what the draft had picked.
+    func openNewDesign(system: String? = nil) {
         newDesign.prepare(for: self)
+        if let system { newDesign.choose(system: system) }
         openDestination(.newDesign)
         newDesign.focusRequest += 1
     }

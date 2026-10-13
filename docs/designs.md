@@ -219,11 +219,13 @@ that folder.
 | `board_edit(path, edits, baseRevision?, tokens?)` | `designEditBoard` | `designEdited` | `editDesignBoard`: `edits` (`[{find, replace, all?}]`, at most 64) applied in order to the board's text as the design store holds it now, then the same checks and atomic write as `board_write`, as one step of the store's queue (below). The result is `board_write`'s (revision, warnings, report), with how many matches each edit replaced |
 | `boards_edit(paths?, edits?, boards?, atomic?, dry_run?, checkpoint?, tokens?, baseRevision?)` | `designEditBoards` | `designBatchEdited` | The same edits on many boards as one change, each reported (below) |
 | `board_search(text? regex? scope? tag? attribute? value? class? usages? paths? limit?)` | `designSearch` | `designSearchResult` | Text, structure or a piece's usages across the boards, with element ids (below) |
-| `board_render(path, width?, height?, scale?, props?)` | `designRender` | `designRendered` | A picture of a board as the app draws it (below) |
+| `board_render(path, width?, height?, scale?, props?)` | `designRender` | `designRendered` | A picture of the latest revision with loading, runtime and console diagnostics |
+| `board_interact(path, interactions, width?, height?, scale?, props?)` | `designRender` | `designRendered` | Clicks and types on rendered DOM controls, then returns a picture and diagnostics |
+| `design_export(format, paths?)` | `designExport` | `designExported` | HTML, PNG, PDF or ZIP in a new design-owned exports folder |
 | `board_extract(path, element, piece, props?, size?, frame?, copies?, checkpoint?)` | `designExtract` | `designExtracted` | An element lifted into a shared piece (Shared pieces, below) |
 | `checkpoint_create(name)`, `checkpoint_list()`, `checkpoint_restore(name)` | `designCheckpoint` | `designCheckpoints` | Named copies of every board and the canvas (Checkpoints, below) |
-| `canvas_update(changes, baseRevision?)` | `designUpdateIndex` | `designWritten` | `updateDesignIndex` with `changes` as the merge patch |
-| `design_check(path?, snap?)` | `designSystemRead` (`snap`: `designEditBoards` first) | `designSystems` | In the extension: every hex color (in style attributes, style and script blocks, `data-props`, SVG paint) and every px size in spacing, radius and type that the design's installed systems don't hold (their colors and dark values, spacing, radii and type sizes), else that no CSS custom property in its working folder declares, with the board and lines it is on and the nearest token. Its first line is "Checked against <system or project> · N off-system values" |
+| `canvas_update(changes, baseRevision?, dry_run?, allow_delete_pages?, remove_systems?)` | `designUpdateIndex` | `designWritten` | `updateDesignIndex` with `changes` as the merge patch |
+| `design_check(path?, snap?, baseline_revision?)` | `designSystemRead` (`snap`: `designEditBoards` first) | `designSystems` | In the extension: every hex color (in style attributes, style and script blocks, `data-props`, SVG paint) and every px size in spacing, radius and type that the design's installed systems don't hold (their colors and dark values, spacing, radii and type sizes), else that no CSS custom property in its working folder declares, with the board and lines it is on and the nearest token. Its first line is "Checked against <system or project> · N off-system values" |
 | `comment_list(all?)` | `designComments` | `designComments` | The viewer's open comments (all of them with `all`), oldest first: id, number, state and whose turn it is (one the agent answered "waits on the viewer"), element id and name, and each one's words and replies, fenced as data |
 | `comment_reply(id, text)` | `designCommentReply` | `designComment` | An answer under a comment's pin (`replyToDesignComment`, author `agent`). No message resolves a comment: only the viewer does. A second answer in a row, with no reply from the viewer between, is kept but its result says to take anything further to the chat |
 | `markup_propose(proposals)` | `designProposeComments` | `designProposals` | Comments proposed from the viewer's Pencil markup, one per mark: each element checked against its board's source (`invalid_markup` otherwise), named `<call id>#<n>`, its card's name the element's `data-el` name else its words, then kept as comments at once, all or none, sent nowhere. The result lists them for the agent and ends with their JSON between `markup-proposals` markers, all inside the data fence, for the chat (Pencil markup, below) |
@@ -346,9 +348,9 @@ helpers (Helpers, below) except `checkpoint_restore`.
 
 ### Checkpoints
 
-A checkpoint is a named copy of every board and canvas.json, kept in the design's folder
+A checkpoint is a named copy of every board, canvas.json and every installed system copy under `ds/`, kept in the design's folder
 (`checkpoints/<the first 12 bytes of the lower-cased name's SHA-256, in hex>/` with `manifest.json`, `canvas.json`
-and `boards/…`, beside `versions/` and `pins/`), so a sweeping change by an agent can be taken
+and `boards/…` plus `ds/…`, beside `versions/` and `pins/`), so a sweeping change by an agent can be taken
 back whole.
 
 - **Names** are 1 to 60 characters of letters, digits, spaces and `_ - . , ' ( ) # + :`, not case
@@ -359,14 +361,27 @@ back whole.
   is `checkpoint_too_large`.
 - **Restore is ONE change** (`restoreCheckpoint`, one `commit`): boards written since are put
   back, boards deleted since are made again, boards added since are removed, and canvas.json is
-  put back with the design's installed `designSystems` as they are now. It first saves the design
+  put back with the saved installed `designSystems` and their exact files. Older checkpoints without a system-file manifest leave current installed systems alone. It first saves the design
   as "before restore <name>", so a restore can itself be undone by restoring that. Every board
   that changed keeps what it held as a version.
 - **Never touched:** comments (their anchors are found again in the restored boards, or
-  detached, as for any write) and installed design systems (`project/ds/`).
+  detached, as for any write) and the shared design-system registry. Restoring installed copies never overwrites shared systems.
 - **Not exported.** A checkpoint is not part of Export, a ZIP or a duplicate (Duplicate copies the
   design's canvas, boards, systems and uploads, as before); it is the agent's working history, like
   a board's versions.
+
+### Renderer and storage checks
+
+- Renders capture a revision-consistent file set and retry at most three times when the design changes during drawing. One 60-second deadline covers retries. Captures wait up to three seconds for imports, styles, fonts and images, then list anything still loading. Runtime errors and console output are untrusted data, capped at 64 messages of 1,000 characters.
+- `board_interact` accepts 1 to 16 click/type steps, each with a unique CSS selector. Typing replaces an input or textarea value through its native setter and dispatches input/change events. Hidden, covered, disabled and read-only controls are refused. These are DOM interactions in a fresh renderer, not trusted OS input or changes to canvas source.
+- Changed agent-tool board writes return advisory renderer lint. Internal storage and canvas writes keep static validation but do not start a runtime render. It checks unknown DC props, reserved `name` props, unbound event handlers, clipping and sibling overlap. Layout checks inspect at most 256 elements and report truncation. Intentional overlaps can also produce warnings. A render failure does not undo a committed source write. Revision pushes are scheduled at commit, before lint completes, so a subscriber may receive the new revision before the write returns.
+- Canvas deletions, system installation and checkpoint restoration retain displaced files until the revision commits. Failed commits roll back boards, canvas and system copies. Failed rollbacks keep their recovery directory.
+- `canvas_update(dry_run: true)` validates and returns a deletion plan without changing files or revision. Removing existing pages requires `allow_delete_pages: true`. `remove_systems` removes only explicit, safe namespace folders uninstalled in the resulting index. It never deletes shared systems or follows symlinks.
+- A full `design_check()` retains a session-local baseline by revision. `baseline_revision` shows only colors and sizes absent from that board in the earlier check. The cache holds at most 20 revisions and 10,000 values per revision; unavailable baselines fail explicitly. It does not reconstruct historical revisions or survive restart.
+- `design_export` uses the existing exporter and a fresh `exports/<uuid>/` folder under the design. It never overwrites an earlier export or writes into a repository. Agent exports have the same 60-second deadline and a 256 MiB output budget.
+- Systems accept validated `.dc.html` components in their ordinary files map. Boards import them with `name="ds/<namespace>/components/Card"`, rooted at the design even from nested boards. The system page draws DC specimens directly, without nesting their document inside another component.
+- `system_write.files` accepts font objects such as `{"fonts/Face.woff2":{"base64":"..."}}`. WOFF2, WOFF, TrueType and OpenType signatures are checked, using the existing system file and total-size bounds. Installed fonts travel with checkpoints and ZIPs; standalone HTML embeds their local URLs as data URIs. Agent font writes also obey the extension socket's 1 MiB frame limit, including base64 and JSON overhead.
+- Snapshot usage counts every nonhidden regular project file except the device-owned runtime, including installed systems, against the existing 512-file and 1 GB project limits. `design_read()` reports usage. The current canvas has no info panel, so this change adds no new panel or replacement chrome.
 
 ### Helpers
 
@@ -642,6 +657,11 @@ claude.ai is still checked against).
   systems"); `system_write` reads "Used system" with its namespace.
 
 ### In the app
+
+- **The built-in system's page** is `DesignSystemReferencePage`, not the page below: Shepherd UI's colors
+  (dark and light side by side, with the text tokens' contrast), type, spacing, radii, sizes and the
+  component catalog, as read-only tables (docs/design/design-tool-references.md › The Shepherd UI page).
+  A system built from a repository keeps the page described below.
 
 - **The catalog** (`DesignSystemCatalog`, owned by the view model) holds the host's systems as
   last read: each one's record and counts, and its tokens, README and file list. It reads them

@@ -212,6 +212,10 @@
     try {
       if (!link.sheet || String(link.href).indexOf(location.protocol) !== 0) return null;
       var text = Array.prototype.map.call(link.sheet.cssRules, function (rule) { return rule.cssText; }).join('\n');
+      // Preserve a stylesheet's URL base when its rules move into the exported document.
+      text = text.replace(/url\(\s*(["']?)(.*?)\1\s*\)/gi, function (match, quote, value) {
+        try { return 'url(' + JSON.stringify(new URL(value, link.href).href) + ')'; } catch (_) { return match; }
+      });
       var style = document.createElement('style');
       style.textContent = text;
       return style;

@@ -58,6 +58,14 @@ public struct DesignPath: Hashable, Comparable, Sendable, CustomStringConvertibl
         self = path
     }
 
+    /// Import-only path for a component in an installed system. It is never a canvas board.
+    public static func systemComponent(_ raw: String) -> DesignPath? {
+        let parts = raw.split(separator: "/", maxSplits: 2).map(String.init)
+        guard parts.count == 3, parts[0] == "ds", isSystemNamespace(parts[1]),
+              raw.utf8.count <= maxLength, raw.hasSuffix(fileExtension), DesignSystemFile.isPath(parts[2]) else { return nil }
+        return DesignPath(rawValue: raw)
+    }
+
     private init(rawValue: String) {
         self.rawValue = rawValue
     }

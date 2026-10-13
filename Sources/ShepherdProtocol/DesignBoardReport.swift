@@ -109,11 +109,14 @@ public struct DesignBoardReport: Hashable, Sendable, Codable {
     public var offSystem: [DesignTokenFinding]
     /// Values a snap replaced.
     public var snapped: [DesignTokenReplacement]
+    /// Runtime checks after a committed write. Nil means an older host did not run them.
+    public var runtimeLint: [String]?
 
     public init(created: Bool, bytes: Int, delta: Int? = nil, imbalance: DesignMarkupImbalance? = nil, roots: Int = 1,
                 root: DesignBoardCheck.Size? = nil, preview: DesignBoardCheck.Size? = nil, frame: DesignBoardCheck.Size? = nil,
                 diff: DesignTextDiff? = nil, missingImports: [String] = [], tokenSource: String? = nil,
                 offSystem: [DesignTokenFinding] = [], snapped: [DesignTokenReplacement] = []) {
+        self.runtimeLint = nil
         self.created = created
         self.bytes = bytes
         self.delta = delta
