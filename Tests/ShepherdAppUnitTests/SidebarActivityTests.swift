@@ -33,11 +33,36 @@ struct SidebarActivityTests {
             #expect(lists.pinned.first?.leading == .dot(AgentState(status)))
             let items = lists.items(collapsed: [.working, .recents, .designs])
             #expect(items.count == 10, "six thread headers plus Projects, three visible rows")
+            // Projects sit directly after Designs and above every thread group, whatever the pinned thread's status.
+            let headers = lists.items(collapsed: []).compactMap { item -> SidebarActivitySection? in if case .header(let section, _, _) = item { section } else { nil } }
+            #expect(headers == [.designs, .projects, .needsYou, .working, .done, .pinned, .recents], "the group order: \(headers)")
             #expect(lists.visibleRows(collapsed: [.working, .recents, .designs]).map(\.title) == ["asking", "done", "pinned"], "a folded Designs leaves no rows")
             #expect(lists.shortcutRows(collapsed: [.working, .recents, .designs]).map(\.title) == ["done", "pinned"])
         }
         // Nothing but the Projects header remains when every thread group is empty: it carries New project.
         #expect(SidebarLists().items(collapsed: Set(SidebarActivitySection.allCases)) == [.header(.projects, count: 0, collapsed: true)])
+    }
+
+    /// Projects stay above Needs you, Working and Pinned however the threads are placed: with a Project needing attention or not, with
+    /// threads in every status, with no Designs (Projects first), with none of them, and with Projects off (no group at all).
+    @Test func projectsStayAboveEveryThreadGroupInEveryMix() {
+        let space = Fixture.space("workspace")
+        var asking = Fixture.agent("asking", in: space).agent
+        asking.status = .blocked
+        asking.waitingOn = "Approve?"
+        var working = Fixture.agent("working", in: space).agent
+        working.status = .working
+        let pinned = Fixture.agent("pinned", in: space).agent
+        let design = Design(name: "Dashboard", createdAt: 1, lastActiveAt: 2, boardCount: 4)
+        func order(_ agents: [Agent], designs: [Design], pins: SidebarPins = SidebarPins([]), projects: Bool = true) -> [SidebarActivitySection] {
+            let lists = SidebarDerivation.lists(SidebarSource(local: ShepherdState(spaces: [space], agents: agents, designs: designs), designs: !designs.isEmpty), pins: pins)
+            return lists.items(collapsed: [], showsProjects: projects).compactMap { item in if case .header(let section, _, _) = item { section } else { nil } }
+        }
+        let pins = SidebarPins([.local(pinned.id)])
+        #expect(order([asking, working, pinned], designs: [design], pins: pins) == [.designs, .projects, .needsYou, .working, .pinned])
+        #expect(order([asking, working, pinned], designs: [], pins: pins) == [.projects, .needsYou, .working, .pinned], "no Designs: Projects lead")
+        #expect(order([], designs: []) == [.projects], "an empty sidebar still has the Projects group and its New project chip")
+        #expect(order([asking, working], designs: [design], projects: false) == [.designs, .needsYou, .working], "Projects off draws no group")
     }
 
     @Test func completionGenerationsIgnoreRepeatedDoneAndRefusedSendButCountAnotherTurn() throws {
