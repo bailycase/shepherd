@@ -172,6 +172,7 @@ extension DesignViewRecord {
     private static func strippingDesignFence(from message: String, references: Bool) -> String {
         if let comment = DesignCommentFence.parse(message) { return String(comment.text) }
         if let markup = DesignMarkupFence.parse(message) { return String(markup.text) }
+        if let git = DesignGitFence.parse(message) { return String(git.text) }
         if references, let parsed = DesignReferenceFence.parse(message) { return String(parsed.text) }
         let head = preamble + "\n<design-data nonce=\""
         guard message.hasPrefix(head) else { return message }

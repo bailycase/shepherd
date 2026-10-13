@@ -512,7 +512,7 @@ extension RPCThreadState {
     /// always goes first, so words that start with "/" stay words.
     static func prompt(_ text: String, context: String?) -> String {
         guard let context, !text.hasPrefix("/") || DesignCommentFence.opens(context) || DesignMarkupFence.opens(context)
-            || DesignReferenceFence.opens(context) || BrowserElementFence.opens(context) else { return text }
+            || DesignReferenceFence.opens(context) || BrowserElementFence.opens(context) || DesignGitFence.opens(context) else { return text }
         return context + text
     }
 

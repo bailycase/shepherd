@@ -122,7 +122,8 @@ and a system's screen (its counts, colors, type and steps as rows).
 - **Header** (the toolbar row, 52pt on the board as on every toolbar board; see Toolbar):
   "Designs" in `title` at 24pt leading padding, a spacer, a 220pt filter field (`NWSearchField`;
   the board: 28pt, radius 6, a 1px `lineSubtle` line, a 12pt glass and "Filter designs" in 12
-  `textTertiary`), and the primary **New design** (`plus`, `.buttonStyle(.nw(.primary))`,
+  `textTertiary`), **Open from Git** (secondary, before New design; GitDesignOpen, below), and the
+  primary **New design** (`plus`, `.buttonStyle(.nw(.primary))`,
   28pt). 12pt between them, 16pt trailing padding.
 - **Content**: 20×24 padding, 26pt between sections. Each section has a plain label in 12
   medium `textTertiary` ("Recent designs", "Design systems"), 12pt above its grid.
@@ -225,7 +226,8 @@ are off the tokens). Opening a design fills the main column: the header, then th
   `textTertiary`, "/", the design's name in 13 semibold); a spacer; the **design system chip**;
   **Present** (`play.fill`, a 28pt icon button, "Present"); and **Export**
   (`square.and.arrow.up`, a 28pt secondary button). 12pt between the header's groups, 8pt
-  between the trailing controls. A canvas with more than one page adds its **pages menu**
+  between the trailing controls. The **Git chip** (Sharing with Git, below) sits before the
+  design system chip. A canvas with more than one page adds its **pages menu**
   before the chip (not drawn: `NWPopupMenu` with the page shown, each page by name, the current
   one checked).
 - **Present** (decision 11, until Present mode is drawn): the board picked last (else the one
@@ -357,6 +359,50 @@ page, and nothing here adds a control the user has to learn.
 - **Not drawn here:** a Components page, a piece's usage list (the agent finds usages with
   `board_search`), and the iPhone and iPad (a remote design draws no usage label, its pieces
   redraw only when the viewer's board reloads).
+
+## Sharing with Git (GitDesignPublish … GitDesignMergeReview)
+
+**Mac: built** (`NWDesignGitChip`, `NWGitShareSheet`, `NWGitOpenSheet`, `NWGitPanel`,
+`NWGitMergeDialog`, `NWGitMergeCard`, `NWGitDesignIntro`, `NWGitCanvasNotice` in
+`Components/DesignTool/GitSharing.swift`; the app's side is `DesignGitModel`,
+`DesignGitPresentation` and `DesignGitChat`). Boards: `docs/design/boards/GitDesign*.png`. The
+engine is docs/designs.md › Sharing with Git. Not built: iPhone and iPad.
+
+- **The chip** (DesignGitStatus): 30pt, 12pt padding, radius 6, `bgRaised` (`bgSelected` while
+  its panel is open) with a 1px `lineStrong` line; `arrow.triangle.branch` (`NWGlyph.gitBranch`)
+  14pt, the label in `ui`, `chevron.down` 10pt. Its label and tone, most urgent first: Pull paused
+  (a merge waits, stopped or failed; `lantern` text), Merging (running), Merge ready (`lantern`
+  text), Offline (`textSecondary`), "N changes" (`textPrimary`), Pull N (running), Push N
+  (`textPrimary`), Up to date (done). Before the design is shared it reads **Share with Git**
+  and opens the share sheet; while a pull waits on a merge it opens the merge dialog; otherwise
+  it opens the panel and fetches once.
+- **Share with Git** (Git 1): 620pt sheet on the scrim. Repository URL (mono field, "SSH or HTTPS
+  Git URL"), what goes in the repository (three ticked rows, the board count trailing in mono),
+  the private-content note, First commit (prefilled "Add <design name> design"), the footnote,
+  Cancel and **Create commit & push** (disabled until both fields have text; "Sharing…" while it
+  runs). A refusal shows the alert box with git's reason and leaves the sheet up.
+- **Open from Git** (Git 2): 560pt sheet: the URL field, "Uses your configured Git credentials. No
+  folder setup needed.", Cancel and **Clone & open** ("Retry clone" after a failure, "Cloning…"
+  while it runs). The design opens with the **Opened from Git** toast (Git 3: boards, system,
+  open comments) at the canvas's top center, and its empty chat shows the intro ("No agent has
+  started").
+- **The panel** (Git 4, GitDesignChanges): 500pt, top trailing over the canvas, 12pt in from its
+  edges, scrolling inside when the window is short. Header (branch in mono, `owner/repo`, close),
+  the sync line and Pull (enabled only for a clean working copy with incoming commits), the
+  notice (offline, drawing, push failed, merge resolved), Local changes (rows of letter, file,
+  board name; the selected row's committed and working text side by side), Commit message,
+  **Commit locally** and **Commit & push**, the incoming commit, Push or Retry push, the
+  footnote "Git only shares what you commit and push. Shepherd never pushes automatically.", and
+  Copy repository URL.
+- **Pull needs a merge** (Git 5): 672pt dialog with both commits side by side, **Keep working
+  locally** and **Resolve with agent**; **Pull paused** sits on the canvas until dismissed.
+- **The merge in the chat** (Git 6): the request is the user's bubble ("Resolve this Git merge…");
+  the agent's words and tools are its own rows; `NWGitMergeCard` follows the last turn: Resolving
+  the merge, Merge ready to review (**Review merge** opens the panel), Merge stopped or Couldn't
+  finish the merge (**Try again with agent**). The composer's Stop stops the merge.
+- **Review merge** (Git 7): the panel in its merge mode: "Merge prepared · not committed", the
+  agent-resolved notice, the merge's files with your version beside the merge result, **Commit
+  merge locally** and **Commit merge & push**.
 
 ## Comments (DZCanvas, DZTweak, NWDesignTool)
 

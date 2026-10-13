@@ -17,6 +17,7 @@ struct DesignsDestination: View {
             setFilter: { vm.designsPageFilter = $0 },
             open: { vm.openDesign($0) },
             create: { vm.openNewDesign() },
+            openGit: { vm.openDesignGitOpen() },
             openSystem: { target in
                 switch target {
                 case .system(let namespace): vm.openDesignSystem(namespace)
@@ -43,6 +44,8 @@ struct DesignsPageActions {
     var setFilter: (String) -> Void
     var open: (DesignID) -> Void
     var create: () -> Void
+    /// Open from Git (GitDesignOpen): clone a shared design into Designs.
+    var openGit: () -> Void = {}
     var openSystem: (DesignSystemTarget) -> Void = { _ in }
     /// "Build one from a repo" in a project.
     var build: (SpaceID) -> Void = { _ in }
@@ -70,6 +73,8 @@ struct DesignsPage: View {
         VStack(spacing: 0) {
             DestinationPageHeader(title: "Designs", chrome: chrome) {
                 NWPageFilterField("Filter designs", text: Binding(get: { filter }, set: actions.setFilter))
+                Button("Open from Git", action: actions.openGit)
+                    .buttonStyle(.nw(.secondary))
                 Button("New design", systemImage: "plus", action: actions.create)
                     .buttonStyle(.nw(.primary))
             }
