@@ -14,7 +14,8 @@ import Testing
 /// composer's `ComposerAttachments` through `ComposerImageStrip`, and `ImageViewerState` through
 /// `NWImageViewer`, in both appearances at text scale 1 and 1.3. The pictures are real PNGs the
 /// test draws, so the thumbnails and the size labels come from bytes, not from board strings.
-@Suite("Thread images previews", .mainActorExclusive)
+@Suite("Thread images previews", .mainActorExclusive,
+       .enabled(if: Preview.enabled && !Preview.liveModel, "set SHEPHERD_PREVIEW_DIR (without SHEPHERD_LIVE_MODEL) to render previews"))
 @MainActor
 struct ThreadImagesPreviewTests {
     /// A tall phone-shaped picture, as bytes and as the image the chip decodes.
