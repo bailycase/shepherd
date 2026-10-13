@@ -5,7 +5,7 @@
 **Browser** (PaneBrowser, PaneStates › Browser; `BrowserPane.swift`, the page in
 `BrowserHost.swift` (the only app file that imports WebKit), its rules in `BrowserModel.swift`, the
 page's scripts in `BrowserScripts.swift`; parts in ShepherdUI `Components/Browser/Browser.swift`):
-a thread's own web page, beside it. The Browser tab (`globe`, ⌃2) follows Changes. A remote thread
+a thread's own web page, beside it. The Browser tab (`globe`, ⌃2) follows Changes (Subagents, ⌃3, follows it). A remote thread
 has it too, when its host carries Browser tunnels (Remote threads, below); an older host shows
 Changes alone.
 

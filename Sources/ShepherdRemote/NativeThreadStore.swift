@@ -303,6 +303,9 @@ public final class NativeThreadStore {
     @ObservationIgnored private var echoAccepted: [String: Int] = [:]
     /// Images this client queued, by queued message id: the host keeps only their names.
     @ObservationIgnored private var sentImages: [UUID: [NativeImage]] = [:]
+    /// The images pi saved in this thread, fetched on demand from the host (`NativeThreadImages`). Not observed: a view
+    /// that wants one asks, and holds what it got.
+    @ObservationIgnored public let images = NativeThreadImages()
     @ObservationIgnored private var presentationCache: [String: (key: PresentationKey, value: NativeTurnPresentation)] = [:]
     /// The machine the agent runs on ("build-01"), named in its errors' Details. Set by the
     /// thread's owner.
@@ -712,6 +715,7 @@ public final class NativeThreadStore {
         suspend()
         let run = epoch
         self.request = request
+        images.configure(sessionID: snapshot?.piSessionID, fetch: request)
         if let preview, snapshot == nil {
             Task { [weak self] in
                 guard let value = await preview(), let self, self.epoch == run else { return }
@@ -810,6 +814,8 @@ public final class NativeThreadStore {
         recentRequest = UUID()
         historyEpoch = UUID()
         request = nil
+        // Pieces still being asked for stop; the ones held stay for the next poll.
+        images.cancelAll()
         catchUp = nil
         // The starting limit counts from the next answer.
         startingSince = nil
@@ -887,6 +893,7 @@ public final class NativeThreadStore {
                     if loadingOlder { loadingOlder = false }
                 }
                 if value != snapshot { snapshot = value }
+                images.configure(sessionID: value.piSessionID, fetch: request)
                 if previewing { previewing = false }
                 if !ready { ready = true }
                 endStarting()

@@ -162,7 +162,7 @@ Sources/
       Pin, Unpin and where they are offered; SidebarProjectsView and
       SidebarProjectsModel: the tree organized by project), NewThreadPage (+
       NewThreadModel), ThreadHeader, WorkspaceView, WorkspaceSelection (+ MainDestination),
-      RightPaneSplit and SidePane (the side pane and its tabs), CheckoutMonitor (each agent's
+      RightPaneSplit and SidePane (the side pane and its tabs; `Thread/SubagentListTab` and `SubagentListPresentation` are its Subagents tab), CheckoutMonitor (each agent's
       branch and changed files, read off the main thread), AppCommands (menus, MenuState),
       AppDialogs (every sheet)
     The side pane's Browser (docs/design/side-pane-browser.md › Side pane: Browser): BrowserHost (the only WebKit

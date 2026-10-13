@@ -571,6 +571,50 @@ and persists `Agent.serviceTier` before it answers. Gated by `setServiceTier` in
 from an older host's snapshot and refuses the request there). `NativeThreadStore.offersServiceTier`
 is the client's rule for drawing the control: the action and more than one tier.
 
+## Images
+
+pi saves every image in its own session: a user message's and a tool result's `image` blocks are written
+whole to the session file, and `get_messages` returns them (checked against the staged engine's
+`SessionManager`, user and tool-result images, byte for byte). So **the host stores nothing**: it names an
+image in the snapshot and reads its bytes from pi's history when asked. It never relies on a client's memory of
+what it sent (`sentImages`) or on the original file.
+
+- **Snapshots carry metadata only.** An `unsupportedImage` block gains `imageID`, `mimeType`, `width`, `height`
+  and `byteCount` (`NativeThreadBlock`; all absent from an older host, and for an image the thread does not
+  offer: over `NativeImage.maxBytes`, over `NativeImage.maxPixels`, or not png, jpeg, gif or webp, or whose bytes
+  are not the type the block says). `kind` stays `unsupportedImage`, so an older client draws the chip it always did.
+- **The id** is `entry|index|sha256`: the history entry (numbered by `RPCThreadState.shownHistory`, the one list
+  both the snapshot and the lookup read), the position among that message's images, and the image's **whole**
+  SHA-256 in hex. `find` hashes the bytes it is about to serve and refuses any whose hash is not the id's, so an id
+  never serves bytes it did not name. **There is no cache**: an identity that is not the whole content's hash is not an
+  identity, so nothing is remembered between histories.
+- **Where the work runs.** Reading a header and hashing an image is megabytes of work. A history refresh does it
+  off the thread's queue, once, into a table built from exactly those messages (`ThreadImages.table(for:)`), and the
+  projection on the thread's queue only looks entries up (`projectHistory(images:)`). A live tool result's image is
+  projected with no table: it is the chip until the turn ends and history is read again, when it is named. An image
+  request does its scan, decode and hash on a utility queue too, and answers only if the session is still the one
+  asked about.
+- **`NativeThreadRequest.image(expectedSessionID, imageID, offset)`** answers `imageChunk` (`imageID`, `mimeType`,
+  `totalBytes`, `offset`, `data`): at most `NativeImage.chunkBytes` (256 KiB, base64 about 350 KB, well under the
+  1 MiB frame), from `offset`. The host asks pi for its history again (`get_messages`) for this agent and session,
+  finds the one image, and serves a piece. Failures: `stale_session` (another session), `unknown_image` (no such
+  image, a piece past the end, a negative offset, a made-up id). A client names no path.
+- **Gated** by `images` in `supportedActions` and, remotely, `native.images.v1`. `RemoteHostClient` strips the
+  action from an older host's snapshot and refuses the request there ("Update Shepherd on the host to see this
+  thread's images."), so such a host's thread keeps its chips.
+- **The client** (`NativeThreadStore.images`, `NativeThreadImages`) asks piece by piece, checks every piece
+  (same image, in order, at most a chunk, an offered type, a total within the limit, a total that does not change)
+  and ends the fetch on any that fails. At most four fetches run at once, one image on its way is shared by every
+  asker, the held images are bounded (24 MiB, least recently used first), a new session drops them, and a thread
+  that leaves the screen cancels what is under way.
+- **Sending is unchanged**: images are still resized to 2000 px, at most four, 2 MiB each, 5 MiB together; the
+  user's own file is never rewritten.
+- **Presentation.** A user message's `NativeUserBubble.imageRefs` (only when the host names every image of the
+  message, in the order its queue parts carried them), and an agent's or a tool's images as one
+  `NativeTurnPresentation.Item.images` where they happened. An image the host does not name stays the note it
+  was ("Image attached"). The Mac draws them ([thread-images](design/thread-images.md)); the phone and iPad draw
+  the count for now.
+
 ## Goals
 
 The snapshot's optional `goal` is the live projection of a session-persisted conversation goal.
