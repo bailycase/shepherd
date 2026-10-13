@@ -141,7 +141,7 @@ Changes alone.
   `bgRaised`, radius 12, a `lantern` line, 12pt from the pane's sides) says why. A port a page names is
   held until the thread or its host goes away. **The agent drives this page**, on a host that offers
   `browser.drive.v1` (the agent is using it, below): the tab on screen claims the agent's browser on the
-  host, and the agent's tools run on this Mac's page, with the ring, the pointer, the card and Take
+  host, and the agent's tools run on this Mac's page, with the ring, the pointer, the bar and Take
   over; the claim is let go 30 seconds after the tab is out of sight, and another Mac that claims the
   browser takes it (this tab's notice card says so, and showing the tab again takes it back). A tab
   with nothing open opens the page the agent left on the host (cookies are not carried over), and a
@@ -150,32 +150,69 @@ Changes alone.
   that host's own loopback ports and public addresses here, never this Mac's network (docs/browser.md
   › Remote). On an older host the agent drives the host's own page, which this tab does not show, and
   the dot and the tip stay off (a review pi opens on a host is likewise the host's view state).
+- **Tabs** (BrowserTabsAgent, -Elsewhere, -Full, -Opened, -Popup, -Two, saved in `docs/design/boards/`;
+  `NWBrowserTabStrip`, `NWBrowserTabMenu`, `NWBrowserTabsNote`, `NWAgentBar`, `NWAgentElsewhere` in ShepherdUI
+  `Components/Browser/BrowserTabs.swift`; checklist in `docs/design/boards/BrowserTabs-checklist.md`; the pane
+  is `BrowserPane.swift` over `BrowserTabs`: the strip, the list, the toolbar, the page and the console are
+  `tabs.selectedPage`; the remote claim is the root's). ⌘T (`browserNewTab`, scoped to the Browser, in
+  `appOwnedChords`) opens a tab and focuses its address field.
+  - **Tile:** a 12pt tile with the first letter of the page's site name (the label before its public suffix:
+    "stripe" for docs.stripe.com, "localhost" for localhost, "·" for no page). Loopback is `running`; every
+    other site gets `done`, `tabTileViolet` (#635bff) or `tabTileOrange` (#f46800) by a fixed hash of its site
+    name, so a site keeps its color. The boards color by brand and letter by the page's own name ("A" for Acme
+    payments). The user approved site initials and stable themed colors rather than adding icon fetching.
+  - **Strip:** 38pt under the pane's tabs, 8pt side padding, a hairline beneath. Tabs are 26pt, radius 6, 2pt apart,
+    64 to 200pt wide: a 12pt tile with the page's first letter (radius 4, Geist 8 semibold, a theme role chosen
+    from the host, not the site's brand color), the title in `ui` (selected: `textPrimary`, medium, `bgSelected`;
+    others `textSecondary`; hover `bgHover`), and a close `xmark` (10pt, 24pt hit) on the selected tab, on hover,
+    and on every tab while there are four or fewer. Then New tab (`plus`) and All tabs (`chevron.down`), 24pt
+    `nwIcon`. New tab is disabled at the cap, with the tooltip "This thread has the most tabs it keeps". The tab
+    the agent is using swaps its tile for a 12pt spinner; a page the agent opened and nobody has looked at has a
+    6pt `running` dot after its title (VoiceOver: "Refund overview, new"). The tooltip is the address, then
+    "opened by the agent" or "opened by a link".
+  - **List** (All tabs, 260pt popover, 12pt from the pane's side, 4pt under the strip): a row per tab with a check
+    leading, the title in `ui` over the address in mono 10.5 `textTertiary`, and "Agent" or "Link" trailing; a
+    divider; "Close other tabs" (disabled with one tab); and "N of 8 tabs · sign-ins shared across the space" in
+    mono 10.5. Rows keep their height; the list scrolls past 420pt.
+  - **Note** under the strip (`bgSunken`, hairline beneath, 12pt sides): a 13pt glyph, the words in `caption`, an
+    optional action and Dismiss. "The agent opened <title> in a new tab." with **Show it** (`globe`), "A link
+    opened a new window. Shepherd opened it as a tab." (`globe`), and "This thread has 8 tabs, the most it keeps.
+    New links open in this tab." (`exclamationmark.triangle`).
+  - **Agent bar:** while the agent uses the shown page, a 32pt bar over the console (`runningTint`, a hairline
+    above, an 11pt spinner, "Agent is filling the checkout form", Take over) replaces the floating card the
+    earlier board drew under the toolbar (see "The agent is using it", below); the ring and pointer stay. While the agent works in a tab
+    that is not shown, "Agent is in Checkout" (secondary `s`, a spinner) sits over the page's lower trailing
+    corner and shows that tab when pressed. The thread's own notice (another Mac took the agent's browser) stays
+    in view on whichever tab is shown.
 - **Not built yet:** Throttle to 3G (see the departures), and Split below and the pane's own window
   (below).
-- **The agent is using it** (`NWAgentRing`, `NWAgentPointer`, `NWAgentCard`, `NWBrowserAgentOverlay`
-  in ShepherdUI `Components/Browser/BrowserAgent.swift`; PaneStates › BrowserPane · the agent is
+- **The agent is using it** (`NWAgentRing`, `NWAgentPointer`, `NWBrowserAgentOverlay` in ShepherdUI
+  `Components/Browser/BrowserAgent.swift`, and `NWAgentBar` in `BrowserTabs.swift`; BrowserTabsAgent, the
+  board that replaced PaneStates › BrowserPane · the agent is
   using it; docs/browser.md): the agent drives the same page you see, through its `browser_*` tools
   (on its own thread's page; on a remote thread, the page this Mac shows, through a claim). While a tool runs, and for four seconds after the
-  last (a run of tools keeps it up), the pane draws over the page, natively and never in it:
+  last (a run of tools keeps it up), the pane draws over and under the page, natively and never in it:
   - a 2pt `running` ring inset the page area (above the console drawer, below the toolbar), and
     an 18pt `running` pointer glyph (the board's arrow, a white edge) at the last click's or
     typing's target, following the page's zoom;
-  - a floating card 12pt from the pane's sides and under the toolbar (`bgRaised`, radius 12, a
-    1px `running` line, the popover shadow; padding 8, 12 on the leading side, 10pt between): a
-    12pt `running` glyph, "Agent is clicking through checkout" (`ui`, one line, truncating) and
-    **Take over** (secondary `s`, with a hand glyph).
+  - a full-width bar under the page and above the console drawer, 32pt (`NWAgentBar`: `runningTint`, a
+    hairline above, 12pt leading and 6pt trailing padding, 8pt between): an 11pt `running` spinner, "Agent
+    is filling the checkout form" (`caption`, one line, truncating) and **Take over** (secondary `s`, with
+    a hand glyph). It is the page's own: it shows only while the tab on screen is the one the agent is using;
+    while the agent works in another tab, "Agent is in Checkout" (`NWAgentElsewhere`) sits over the page's
+    lower trailing corner and shows that tab when pressed. The ring and pointer take no clicks.
   - The words are the tool's optional `note` ("clicking through checkout"), else derived from the
     action and its target: `clicking “Pay $148.00”`, `double-clicking …`, `typing in “Email”`,
     `pressing Enter`, `scrolling down`, `opening localhost:5173`, `reading the page`, `waiting for
     “Order placed”`, `taking a screenshot`, `running a script`, `going back`. Every tool shows the
-    card (the board draws the click only); a note is cut at 60 characters.
-  - **Take over:** the card's button, or the user's own click or key in the page while the card is
-    up (a trusted event: the agent's dispatched events are not). The ring, pointer and card go, and
+    bar (the board draws one phrase only); a note is cut at 60 characters.
+  - **Take over:** the bar's button, or the user's own click or key in the page while the bar is
+    up (a trusted event: the agent's dispatched events are not). The ring, pointer and bar go, and
     the agent's clicks, typing, keys, scrolling, navigation and scripts are refused
     (`taken_over`, "The user took over the browser. Wait for their next message before acting on
     it; browser_read, browser_screenshot and browser_console still work.") until the user sends
     that thread another message; reading, waiting, screenshots and the console still work and
-    show no card. Only the card takes clicks: the rest of the overlay lets the page have them.
+    show no bar. Only the bar's button takes clicks: the ring and pointer let the page have them.
   - The page keeps running when nothing shows it (a hidden pane, another tab or thread): it moves
     into an off-screen window and never reloads.
 - **In the thread**, pi's browser work reads as activity lines with the globe (NWActivityLine
