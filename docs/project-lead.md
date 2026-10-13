@@ -66,7 +66,7 @@ folder-based UI becomes Spaces before the new Projects UI uses that name.
   Host names, capacities, connection states and platform labels come from actual host data,
   never from the board's examples.
 - The user moved Designs to the top of Activity content, below fixed navigation. The order is
-  Designs, Needs you, Working, Done, Projects, Recents.
+  Designs, Projects, Needs you, Working, Done, Pinned, Recents.
 - Project coordinators and workers delegate only through Project threads, not subagents. The
   subagent-count controls shown in the boards are omitted.
 - Settings > Experiments > Projects gates the feature and defaults off. Disabling it preserves
@@ -561,6 +561,16 @@ The page is the shared thread over the coordinator's own native store (`ThreadVi
 copied transcript. Only the composer's **send** and **placeholder** differ (`ProjectComposerSend`, an environment value around the thread):
 a send uses one operation identity per text-and-images submission, so a retry never delivers twice. While paused a message
 is accepted and held by the runtime (queued, not delivered), and Resume is a real control until the owner acknowledges the interruption.
+
+**Model and branch.** The conversation's composer is the standard one, with its model chip and the same All models… picker (a remote
+Project lists its owner's catalog). The chip names the Project's `conversationModel`, else the app's default model. A pick saves that
+setting FIRST (`ProjectConversationModel.choose`, a revision-checked settings write), and only when the owner accepts it does a running
+coordinator's own `setModel` follow, so the live model and the one a relaunch uses never disagree. A refused save leaves the chip as it
+was and says why on the composer's own failed line. Before the first message there is no coordinator, so the setting is the only
+place the pick can go, and the launch reads it. A Project conversation and its worker threads draw no branch or worktree chip: the runtime
+places the work in the Project's linked Spaces. (Reported 2026-10-13: starting a Project showed "Lost connection to the agent process.
+native_unavailable: The agent no longer exists." with a model chip that could not be changed. The screenshot was a temporary file and is
+not kept; the cause and fix are in `docs/project-execution.md`, Coordinator startup.)
 
 - **Right pane:** Waiting on you, Working and Resolved groups from `Project.tasks`; a row's detail is the worker's own question (waiting) or
   its latest native activity (running); ages come from the task's own clock. Opening a row shows the worker's **ordinary** thread with its
