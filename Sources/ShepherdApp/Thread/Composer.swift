@@ -157,15 +157,34 @@ struct Composer: View {
     // Each reads the store's own property for it, never the snapshot, so a streamed chunk
     // leaves the composer alone.
     private var errored: Bool { store.loadError != nil }
+    @Environment(\.presentImages) private var presentImages
     private var running: Bool { store.running }
     private var dialogs: [NativeThreadDialog] { errored ? [] : store.dialogs }
     /// While pi starts, a send waits for it behind the spinner.
     private var canSend: Bool {
-        active && store.acceptsSend && (store.hasDraft || !input.attachments.isEmpty)
+        active && store.acceptsSend && (store.hasDraft || !input.attachments.isEmpty) && input.attachments.oversize == nil
     }
     /// ProjectLead-Started/-ThreadRunning draw the conversation's empty composer as the disabled arrow while the coordinator works: Stop
     /// there would also pause the Project (Esc included). Worker and ordinary threads keep Stop.
     private var projectConversation: Bool { projectSend != nil }
+    /// The model the chip names. A Project's conversation has no thread to ask before its first message, so it names the Project's own.
+    private var modelName: String? {
+        store.model ?? projectSend?.model.map { $0.current ?? ProjectConversationModel.defaultName }
+    }
+    private var modelPending: Bool { projectSend?.model?.pending == true }
+    private var modelSettable: Bool { store.supports("setModel") || modelPending }
+    /// A pick. An ordinary thread sets its own model. A Project's conversation saves the Project's setting FIRST, and the thread's live model
+    /// changes only once the owner accepted it, so the two never disagree; a refusal leaves the chip as it was and shows why.
+    private func pickModel(_ id: String) {
+        guard let choose = projectSend?.model?.choose else { Task { await store.setModel(id) }; return }
+        Task {
+            guard await choose(id) else {
+                referenceError = projectSend?.refusal() ?? "The model could not be saved. Try again."
+                return
+            }
+            if store.supports("setModel") { await store.setModel(id) }
+        }
+    }
     /// A Project's composer asks the Project's owner (it exists before the first coordinator); every other thread asks its own.
     private var canAttach: Bool { projectSend?.carriesImages ?? store.supportedActions.contains("sendImages") }
     /// pi answers `/name` prompts itself; the list comes from its command registry. Its skills'
@@ -217,7 +236,7 @@ struct Composer: View {
 
     /// What sits above the card: a banner, the notice, extension widgets, the queue.
     private var accessories: [String] {
-        let banner = store.startProblem.map { !(hidesNotSignedIn && $0.kind == .notSignedIn) } == true ? "cannotStart" : store.loadError != nil ? "lost" : input.attachments.error != nil ? "attachment" : referenceError != nil ? "reference" : store.notice != nil ? "notice" : nil
+        let banner = store.startProblem.map { !(hidesNotSignedIn && $0.kind == .notSignedIn) } == true ? "cannotStart" : store.loadError != nil ? "lost" : referenceError != nil ? "reference" : store.notice != nil ? "notice" : nil
         return [banner].compactMap { $0 } + store.widgets.map(\.id) + (queueStack.isVisible ? ["queue"] : [])
             + (showsTray ? ["tray"] : []) + (store.hasGoal ? ["goal"] : [])
     }
@@ -285,9 +304,6 @@ struct Composer: View {
                         .buttonStyle(.nw(.secondary, size: .s))
                 }
                 .nwTransition(.list, edge: .bottom)
-            } else if let attachmentError = input.attachments.error {
-                NWBanner(.failed, title: attachmentError)
-                    .nwTransition(.list, edge: .bottom)
             } else if let referenceError {
                 NWBanner(.failed, title: referenceError) {
                     Button("Dismiss") { self.referenceError = nil }.buttonStyle(.nw(.ghost, size: .s))
@@ -307,6 +323,8 @@ struct Composer: View {
                         .nwTransition(.list, edge: .bottom)
                 }
             }
+            // The images waiting to send, with what keeps Send held (ThreadImagesComposer).
+            ComposerImageStrip(attachments: input.attachments, open: openAttachment, remove: { input.attachments.remove($0) })
             // A Project's strip ("2 of 3 done · 1 needs you") sits over the card, as the board draws it.
             if let dock = projectSend?.dock { dock().nwTransition(.list, edge: .bottom) }
             // The subagents and "Up next" grow upward from the card, which never moves.
@@ -542,7 +560,7 @@ struct Composer: View {
                     menu = nil
                     composing = true
                     RecentModels.record(model, thread: agentName)
-                    Task { await store.setModel(model) }
+                    pickModel(model)
                 } close: { menu = nil; composing = true }
                 .equatable()
                 .nwTransition(.overlay, anchor: .bottomLeading)
@@ -550,13 +568,13 @@ struct Composer: View {
             if menu == .settings {
                 NWModelSettings(models: settingsModels, thinking: thinkingAvailable ? thinkingOptions : [],
                                 currentThinking: store.thinking, speeds: store.offersServiceTier ? speedOptions : [],
-                                currentSpeed: store.serviceTier.rawValue, modelEnabled: store.supports("setModel"),
+                                currentSpeed: store.serviceTier.rawValue, modelEnabled: modelSettable,
                                 thinkingEnabled: store.supports("setThinking"), speedEnabled: store.supports("setServiceTier"), maxHeight: room,
                                 chooseModel: { model in
                                     menu = nil
                                     composing = true
                                     RecentModels.record(model.id, thread: agentName)
-                                    Task { await store.setModel(model.id) }
+                                    pickModel(model.id)
                                 }, chooseThinking: { level in Task { await store.setThinking(level) } },
                                 chooseSpeed: { id in
                                     if let tier = ServiceTier(rawValue: id) { Task { await store.setServiceTier(tier) } }
@@ -607,6 +625,13 @@ struct Composer: View {
         .nwAnimation(.overlay, value: menu == .context)
     }
 
+    /// A chip's thumbnail: the images waiting, full size, with the one pressed showing.
+    private func openAttachment(_ attachment: ImageAttachment) {
+        let all = input.attachments.items
+        presentImages(ImageViewerState(images: all.map(ViewerImage.init), index: all.firstIndex { $0.id == attachment.id } ?? 0,
+                                           origin: "Waiting to send"))
+    }
+
     private var card: some View {
         // The context details float over the thread without the card taking focus's look.
         let focused = composing || (active && input.dropTargeted) || (menuOpen && menu != .context)
@@ -626,12 +651,6 @@ struct Composer: View {
                 NWAttachmentChip(file.name, thumbnail: nil) { store.detachFile(file.id) }
                     .help(file.path)
                     .nwTransition(.list, edge: .leading)
-            }
-            ForEach(input.attachments.items) { attachment in
-                NWAttachmentChip(attachment.name, thumbnail: attachment.thumbnail) {
-                    input.attachments.remove(attachment.id)
-                }
-                .nwTransition(.list, edge: .leading)
             }
         } field: {
             field.nwEntrance(.content)
@@ -799,11 +818,12 @@ struct Composer: View {
         let stops = NativeSendChoice.stopsInPlaceOfSend(running: working, hasInput: !draftEmpty) && !projectConversation
         return ComposerControlsModel(
             active: active, canAttach: canAttach, attachFull: input.attachments.isFull,
-            model: store.model, modelChangeable: store.supportedActions.contains("setModel"),
-            modelEnabled: store.supports("setModel"), modelsOpen: menu == .models || menu == .settings,
+            model: modelName, modelChangeable: store.supportedActions.contains("setModel") || modelPending,
+            modelEnabled: modelSettable, modelsOpen: menu == .models || menu == .settings,
             thinking: store.thinking, thinkingShown: thinkingAvailable, thinkingEnabled: store.supports("setThinking"),
             speed: store.serviceTier, speedShown: store.offersServiceTier, speedEnabled: store.supports("setServiceTier"),
-            branch: branch,
+            // A Project's conversation and its threads show no branch: the Project's work is placed in its Spaces by the runtime.
+            branch: projectSend != nil || workerStyle != nil ? nil : branch,
             startingShown: startingShown, busy: store.busy, stops: stops, sendMenu: working && !draftEmpty && !store.busy,
             sendRinged: menu == .send, contextOpen: menu == .context,
             actionEnabled: stops ? active && store.supports("abort") : canSend,
@@ -862,9 +882,9 @@ struct Composer: View {
 
     /// The picker's list is made here, as it opens, so its first frame has everything.
     private func openModels() {
-        guard store.supports("setModel") else { NSSound.beep(); return }
+        guard modelSettable else { NSSound.beep(); return }
         guard menu != .models else { menu = nil; return }
-        picker = ModelPickerState(catalog: catalog, recent: RecentModels.load().map(\.id), current: store.model,
+        picker = ModelPickerState(catalog: catalog, recent: RecentModels.load().map(\.id), current: store.model ?? projectSend?.model?.current,
                                   currentLevels: store.snapshot?.thinkingLevels)
         dismissCommands()
         menu = .models
@@ -892,7 +912,7 @@ struct Composer: View {
 
     /// Current model first, then one recent model. Never offer a stale unavailable model.
     private var settingsModels: [NWModelOption] {
-        ModelCatalog.settingsModels(catalog: catalog, current: store.model, recent: RecentModels.load().map(\.id),
+        ModelCatalog.settingsModels(catalog: catalog, current: store.model ?? projectSend?.model?.current, recent: RecentModels.load().map(\.id),
                                     currentOffersFast: store.offersServiceTier)
     }
 

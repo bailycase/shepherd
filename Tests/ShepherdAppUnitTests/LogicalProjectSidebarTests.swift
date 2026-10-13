@@ -29,22 +29,22 @@ struct LogicalProjectSidebarTests {
             local: ShepherdState(spaces: [space], agents: [asking, working, done, idle], designs: [design]), designs: true))
     }
 
-    /// The final board order with the user's override: Designs, Needs you, Working, Done, Projects, Recents.
-    @Test func activityListsDesignsNeedsYouWorkingDoneProjectsRecents() {
+    /// The user's order: Designs, Projects, Needs you, Working, Done, Recents (Pinned after Done).
+    @Test func activityListsDesignsProjectsNeedsYouWorkingDoneRecents() {
         let items = lists().items(collapsed: [], projects: [project("Sample App")])
         let headers = items.compactMap { item -> SidebarActivitySection? in
             if case .header(let section, _, _) = item { section } else { nil }
         }
-        #expect(headers == [.designs, .needsYou, .working, .done, .projects, .recents])
+        #expect(headers == [.designs, .projects, .needsYou, .working, .done, .recents])
     }
 
-    @Test func projectsSitBetweenDoneAndRecentsEvenWithNone() {
+    @Test func projectsSitUnderDesignsAboveEveryThreadGroupEvenWithNone() {
         let items = lists().items(collapsed: [], projects: [])
         let headers = items.compactMap { item -> (SidebarActivitySection, Int)? in
             if case .header(let section, let count, _) = item { (section, count) } else { nil }
         }
         let index = try! #require(headers.firstIndex { $0.0 == .projects })
-        #expect(headers[index - 1].0 == .done && headers[index + 1].0 == .recents)
+        #expect(headers[index - 1].0 == .designs && headers[index + 1].0 == .needsYou)
         #expect(headers[index].1 == 0, "the header and its New project chip are how the first one is made")
     }
 
@@ -70,8 +70,9 @@ struct LogicalProjectSidebarTests {
         let headers = lists.items(collapsed: [], projects: [project("P")]).compactMap { item -> SidebarActivitySection? in
             if case .header(let section, _, _) = item { section } else { nil }
         }
-        #expect(headers == [.working, .pinned, .projects, .recents].filter { headers.contains($0) })
-        #expect(headers.firstIndex(of: .projects)! > headers.firstIndex(of: .working)!)
+        #expect(headers == [.projects, .working, .pinned, .recents].filter { headers.contains($0) })
+        #expect(headers.firstIndex(of: .projects)! < headers.firstIndex(of: .working)!, "Projects stay above Working and Pinned")
+        #expect(headers.firstIndex(of: .projects)! < headers.firstIndex(of: .pinned)!)
     }
 
     @Test func aFoldedProjectsGroupKeepsItsCountAndHidesItsRows() {

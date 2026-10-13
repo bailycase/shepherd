@@ -224,6 +224,10 @@ private struct SubagentTurnItem: View {
             EmptyView()
         case .goalRecord(_, let text):
             GoalRecordLine(text: text)
+        case .images(_, let images):
+            // The phone and the iPad do not draw a thread's images yet: how many, as the note it replaced said.
+            Text(images.count == 1 ? "Image attached" : "\(images.count) images attached").font(.nw(.caption))
+                .foregroundStyle(Color.nw.textTertiary)
         case .note(_, let text):
             Text(text).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary).lineLimit(3)
         case .error(_, let error, _, let folded):

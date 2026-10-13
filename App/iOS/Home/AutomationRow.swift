@@ -7,11 +7,12 @@ import ShepherdRemote
 /// the Automations screen (automations track) is where they are managed.
 struct AutomationRow: View, Equatable {
     let row: FleetAutomationRow
+    var selected = false
 
     var body: some View {
         NWListRow(row.name, subtitle: "\(row.stateWord) · \(row.place)", subtitleTone: tone,
                   leading: row.run == nil ? .symbol("bolt") : .state(state), trailing: row.hostTag.map { .host($0) } ?? .none,
-                  chevron: row.run != nil, dimmed: row.offline || !row.enabled)
+                  chevron: row.run != nil, selected: selected, dimmed: row.offline || !row.enabled)
             .accessibilityHint(row.run == nil ? "" : "Opens its run")
     }
 

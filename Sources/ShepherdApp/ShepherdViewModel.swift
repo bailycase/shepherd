@@ -474,6 +474,16 @@ final class ShepherdViewModel {
     var showComponentGallery = false
     /// ⌘K command palette visibility.
     var showCommandPalette = false
+    /// An image open full size (ThreadImageOpen); nil when none is.
+    var imageViewer: ImageViewerState?
+    /// Reveal in Finder and Copy for the viewer; a test replaces them.
+    @ObservationIgnored var imageViewerActions = ImageViewerActions()
+
+    /// Closes the viewer and stops what it was still fetching.
+    func closeImageViewer() {
+        imageViewer?.close()
+        imageViewer = nil
+    }
     var agentRenameTarget: AgentID?
     /// True while ⌘ has been held ~250ms — sidebar rows show their ⌘1–9 keycaps.
     var showAgentShortcutBadges = false

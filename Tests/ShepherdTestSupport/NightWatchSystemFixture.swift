@@ -4,15 +4,13 @@ import ShepherdProtocol
 import ShepherdSessions
 import ShepherdUI
 
-/// Night Watch as a built-in design system (docs/designs.md › Design systems): generated from
-/// ShepherdUI's own tokens, so a design can be drawn in Shepherd's look. Every `ThemeColors`
-/// and `SyntaxColors` role in both variants, the type ramp, the space and radius scales, and
-/// the two faces. It is read-only and never synced; the app hands it to the server at launch.
-enum NightWatchSystem {
-    static let namespace = "night-watch"
-    static let title = "Night Watch"
+/// A synthetic built-in system for reference-page tests and previews only.
+/// The app no longer ships or registers a Night Watch design system.
+public enum NightWatchSystem {
+    public static let namespace = "night-watch"
+    public static let title = "Night Watch"
 
-    static func tokens(_ theme: ThemeDefinition = .nightWatch) -> DesignSystemTokens {
+    public static func tokens(_ theme: ThemeDefinition = .nightWatch) -> DesignSystemTokens {
         var tokens = DesignSystemTokens(name: title, namespace: namespace)
         tokens.colors = roles(theme.light.colors, theme.dark.colors, prefix: "")
             + roles(theme.light.syntax, theme.dark.syntax, prefix: "syn-")
@@ -52,7 +50,7 @@ enum NightWatchSystem {
         }
     }
 
-    static func kebab(_ name: String) -> String {
+    public static func kebab(_ name: String) -> String {
         var out = ""
         for character in name {
             if character.isUppercase {
@@ -78,7 +76,7 @@ enum NightWatchSystem {
         }
     }
 
-    static func readme(_ tokens: DesignSystemTokens) -> String {
+    public static func readme(_ tokens: DesignSystemTokens) -> String {
         """
         # Night Watch
 
@@ -100,7 +98,7 @@ enum NightWatchSystem {
         """ + "\n"
     }
 
-    static func builtIn(_ theme: ThemeDefinition = .nightWatch) -> DesignSystemStore.BuiltIn {
+    public static func builtIn(_ theme: ThemeDefinition = .nightWatch) -> DesignSystemStore.BuiltIn {
         let tokens = tokens(theme)
         var files: [String: Data] = [
             DesignSystemFile.stylesheet: Data(tokens.css().utf8),

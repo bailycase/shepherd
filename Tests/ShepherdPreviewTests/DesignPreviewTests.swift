@@ -66,12 +66,11 @@ struct DesignPreviewTests {
         let (workspace, _, _) = try await designWorkspace()
         defer { workspace.stop() }
         let vm = workspace.vm
-        workspace.server.designSystems.register(NightWatchSystem.builtIn())
         vm.openNewDesign()
         await vm.loadDesignSystems()
         #expect(vm.shownDestination == .newDesign)
         #expect(vm.newDesign.blocker(vm) == "Describe the design first.", "no project to pick")
-        #expect(vm.newDesign.systemToInstall(vm) == "night-watch", "with none built here, Night Watch")
+        #expect(vm.newDesign.systemToInstall(vm) == nil, "with no user systems, start on a blank canvas")
         try await Preview.render("app-window-new-design", size: Self.windowSize) {
             RootView(vm: vm)
         }

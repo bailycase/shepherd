@@ -60,6 +60,8 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | --- | --- | --- | --- |
 | Main | [thread](thread.md), [composer](composer.md), [window-and-toolbar](window-and-toolbar.md) | Thread; Composer, questions, and menus; Toolbar (breadcrumb, branch chip, side-pane button) | Built |
 | Running | [thread](thread.md), [composer](composer.md) | Thread (A turn while pi works); Composer, questions, and menus | Built |
+| ThreadImagesComposer, ThreadImageOpen | [thread-images](thread-images.md), [composer](composer.md) | Composer chips, full-size viewer | Built |
+| ThreadImagesSent, ThreadImagesReceived | [thread-images](thread-images.md) | Sent and received thumbnails | Built (Mac, a host with `native.images.v1`; phone and iPad draw the count) |
 | Goal card | [thread](thread.md) | Goal card | Partial (long-condition truncation and edit surfaces await user decisions in PR #189) |
 | MobileGoal | [thread](thread.md) | Goal card | Partial (same pending decisions) |
 | iPadGoal | [thread](thread.md) | Goal card | Partial (same pending decisions) |
@@ -125,7 +127,13 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | NavDesigns | [pages](pages.md), [design-tool](design-tool.md) | Designs page; Design tool › Designs | Built (Mac, behind the Design tool experiment; systems as names only) |
 | NavAutomations | [pages](pages.md), [sidebar](sidebar.md) | Automations page; Sidebar (no When, Next or tabs: departures) | Built |
 | NavHosts | [pages](pages.md), [sidebar](sidebar.md), [settings](settings.md) | Hosts page; Sidebar; Settings › Remote (no daemon, Load or disk use: departures) | Built |
-| PaneBrowser | [side-pane-browser](side-pane-browser.md) | Side pane: Browser | Partial (local threads: the page, toolbar, viewport, Select an element, composer chip, console, the agent using it and its thread lines; remote threads: the same page through the tunnel, its host chip and Start on the host, and the agent on the host driving it, with the card, Take over, the dot and its tip; not Throttle to 3G) |
+| PaneBrowser | [side-pane-browser](side-pane-browser.md) | Side pane: Browser | Partial (local and remote pages, tab strip/list, toolbar, viewport, Select an element, composer chip, console, agent bar, Take over and activity tips; not Throttle to 3G) |
+| BrowserTabsAgent | [side-pane-browser](side-pane-browser.md) | Side pane: Browser | Built; site initials and 24pt close targets approved |
+| BrowserTabsElsewhere | [side-pane-browser](side-pane-browser.md) | Side pane: Browser | Built; site initials and 24pt close targets approved |
+| BrowserTabsFull | [side-pane-browser](side-pane-browser.md) | Side pane: Browser | Built; site initials and 24pt close targets approved |
+| BrowserTabsOpened | [side-pane-browser](side-pane-browser.md) | Side pane: Browser | Built; site initials and 24pt close targets approved |
+| BrowserTabsPopup | [side-pane-browser](side-pane-browser.md) | Side pane: Browser | Built; site initials and 24pt close targets approved |
+| BrowserTabsTwo | [side-pane-browser](side-pane-browser.md) | Side pane: Browser | Built; site initials and 24pt close targets approved |
 | PaneArtifacts | [ios-ipad-pages](ios-ipad-pages.md) | Side pane (Artifacts) | Not built yet |
 | PaneArtifactEdit | [side-pane-artifacts](side-pane-artifacts.md) | Side pane (Artifacts › Editing in place) | Not built yet |
 | PaneFiles | [ios-ipad-pages](ios-ipad-pages.md) | Side pane (Files) | Not built yet |
@@ -293,6 +301,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | NWAgents, NWAgentsLight | [subagents](subagents.md), [ios-ipad-pages](ios-ipad-pages.md), [missions](missions.md) | Subagents; Side pane › Subagent inspector; Mission components | Built |
 | ChangesStates | [ios-ipad-pages](ios-ipad-pages.md), [thread](thread.md), [settings](settings.md) | Side pane › Changes; Thread › Changes card; Keyboard | Partial |
 | SubagentTray | [subagents](subagents.md), [ios-iphone](ios-iphone.md), [ios-ipad](ios-ipad.md) | Subagents; iPhone: Subagents; iOS: iPad › Subagents | Partial |
+| SubagentList | [subagents](subagents.md) | Subagents › The Subagents tab | Built (Mac: the side pane's third tab, current and earlier runs, each opening the inspector; the tab's dot is the run status the user chose (blue working, green done); not iPad, whose side pane has no tabs) |
 | NWSwift, NWSwiftLight | [theme](theme.md) | Theme model › Building on ShepherdUI | Partial |
 | MXVocab, MXVocabLight | [missions](missions.md) | Missions › Missions: the map | Not built yet |
 | NWMissions, NWMissionsLight | [missions](missions.md) | Missions (Missions: shared parts and the screens that use them) | Not built yet |

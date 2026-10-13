@@ -99,18 +99,18 @@ private struct RemoteAddressPreview: View {
             }
             .padding(28)
             .padding(.top, 44)
-            NWBrowserAgentOverlay(note: "clicking through checkout", pointer: CGPoint(x: 176, y: 214), takeOver: {})
+            NWBrowserAgentOverlay(pointer: CGPoint(x: 176, y: 214))
         }
         .frame(width: 440, height: 340)
         .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
     }
 }
 
-#Preview("Browser — the agent's card, long note") {
+#Preview("Browser — the agent's bar, long note") {
     NWPreviewBoth {
         VStack(alignment: .leading, spacing: NW.Space.l) {
-            NWAgentCard(note: "clicking through checkout", takeOver: {})
-            NWAgentCard(note: "typing in “Card number” and checking that every field on the page took its value", takeOver: {})
+            NWAgentBar(note: "clicking through checkout", takeOver: {})
+            NWAgentBar(note: "typing in “Card number” and checking that every field on the page took its value", takeOver: {})
         }
         .frame(width: 420)
     }
