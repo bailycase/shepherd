@@ -15,7 +15,7 @@ extension ShepherdViewModel {
         // The host's own address for the agent's page, for a viewer that claims it to open.
         server.onBrowserPageURL = { [weak self] agentID in
             MainActor.assumeIsolated {
-                guard let session = self?.browsers.existing(agentID), let url = session.url,
+                guard let session = self?.browsers.existing(agentID), let url = session.tabs.agentTarget?.url,
                       BrowserDriveURL.offered(url.absoluteString) != nil else { return nil }
                 return url.absoluteString
             }
@@ -36,7 +36,7 @@ extension ShepherdViewModel {
             Task { @MainActor [weak self] in
                 let outcome = await session.performFromHost(request, policy: remote.policy)
                 client.browserAnswer(token: token, outcome: outcome)
-                if case .open = request, case .result = outcome, let url = session.url { self?.agentOpenedPage(session, url) }
+                if request.opensPage, case .result = outcome, let url = session.tabs.agentTarget?.url { self?.agentOpenedPage(session, url) }
             }
         case .abandoned:
             browsers.existing(ref)?.abandonQueued()
