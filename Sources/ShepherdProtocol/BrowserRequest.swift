@@ -9,7 +9,28 @@ import Foundation
 /// but the ones the action needs (`{"action":"click","ref":"e12","double":true}`). Free-text
 /// parameters stay strings (`direction`, `key`) so a bad one is answered `invalid` rather than
 /// dropped as undecodable.
-public enum BrowserRequest: Codable, Hashable, Sendable {
+public indirect enum BrowserRequest: Codable, Hashable, Sendable {
+    case tabs
+    case newTab(url: String?, note: String?)
+    case selectTab(id: String)
+    case closeTab(id: String)
+    /// One explicit page target, never another tab-management request.
+    case tab(id: String, request: BrowserRequest)
+
+    public var isTabManagement: Bool {
+        switch self {
+        case .tabs, .newTab, .selectTab, .closeTab, .tab: true
+        default: false
+        }
+    }
+
+    public var opensPage: Bool {
+        switch self {
+        case .open, .newTab: true
+        case .tab(_, let request): request.opensPage
+        default: false
+        }
+    }
     /// Load a page (http, https or about:blank) and wait for it to finish.
     case open(url: String, note: String?)
     /// A text snapshot of the page (or of `selector`'s element) with a ref for every element the
@@ -46,16 +67,22 @@ public enum BrowserRequest: Codable, Hashable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case action, url, note, selector, maxChars, ref, double, text, clear, submit
-        case key, direction, amount, gone, ms, timeout, expression
+        case key, direction, amount, gone, ms, timeout, expression, tabID, request
     }
 
     /// The wire name of the action.
     public enum Action: String, Codable, CaseIterable, Sendable {
         case open, read, click, type, press, scroll, wait, screenshot, console, eval, back, forward, reload
+        case tabs, newTab, selectTab, closeTab, tab
     }
 
     public var action: Action {
         switch self {
+        case .tabs: .tabs
+        case .newTab: .newTab
+        case .selectTab: .selectTab
+        case .closeTab: .closeTab
+        case .tab: .tab
         case .open: .open
         case .read: .read
         case .click: .click
@@ -78,7 +105,9 @@ public enum BrowserRequest: Codable, Hashable, Sendable {
         case .open(_, let note), .click(_, _, let note), .type(_, _, _, _, let note), .press(_, let note),
              .scroll(_, _, _, let note), .eval(_, let note), .back(let note), .forward(let note), .reload(let note):
             note
-        case .read, .wait, .screenshot, .console:
+        case .newTab(_, let note): note
+        case .tab(_, let request): request.note
+        case .read, .wait, .screenshot, .console, .tabs, .selectTab, .closeTab:
             nil
         }
     }
@@ -87,8 +116,9 @@ public enum BrowserRequest: Codable, Hashable, Sendable {
     /// other action is refused (`taken_over`).
     public var isObservation: Bool {
         switch self {
-        case .read, .wait, .screenshot, .console: true
-        case .open, .click, .type, .press, .scroll, .eval, .back, .forward, .reload: false
+        case .read, .wait, .screenshot, .console, .tabs: true
+        case .tab(_, let request): request.isObservation
+        case .open, .click, .type, .press, .scroll, .eval, .back, .forward, .reload, .newTab, .selectTab, .closeTab: false
         }
     }
 
@@ -96,6 +126,17 @@ public enum BrowserRequest: Codable, Hashable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let note = try c.decodeIfPresent(String.self, forKey: .note)
         switch try c.decode(Action.self, forKey: .action) {
+        case .tabs: self = .tabs
+        case .newTab: self = .newTab(url: try c.decodeIfPresent(String.self, forKey: .url), note: note)
+        case .selectTab: self = .selectTab(id: try c.decode(String.self, forKey: .tabID))
+        case .closeTab: self = .closeTab(id: try c.decode(String.self, forKey: .tabID))
+        case .tab:
+            let nested = try c.superDecoder(forKey: .request)
+            let action = try nested.container(keyedBy: CodingKeys.self).decode(Action.self, forKey: .action)
+            guard ![Action.tab, .tabs, .newTab, .selectTab, .closeTab].contains(action) else {
+                throw DecodingError.dataCorruptedError(forKey: .request, in: c, debugDescription: "Tab targets accept only a page action")
+            }
+            self = .tab(id: try c.decode(String.self, forKey: .tabID), request: try BrowserRequest(from: nested))
         case .open:
             self = .open(url: try c.decode(String.self, forKey: .url), note: note)
         case .read:
@@ -138,6 +179,15 @@ public enum BrowserRequest: Codable, Hashable, Sendable {
         try c.encode(action, forKey: .action)
         try c.encodeIfPresent(note, forKey: .note)
         switch self {
+        case .tabs: break
+        case .newTab(let url, _): try c.encodeIfPresent(url, forKey: .url)
+        case .selectTab(let id), .closeTab(let id): try c.encode(id, forKey: .tabID)
+        case .tab(let id, let request):
+            guard !request.isTabManagement else {
+                throw EncodingError.invalidValue(request, .init(codingPath: encoder.codingPath, debugDescription: "Tab targets accept only a page action"))
+            }
+            try c.encode(id, forKey: .tabID)
+            try c.encode(request, forKey: .request)
         case .open(let url, _):
             try c.encode(url, forKey: .url)
         case .read(let selector, let maxChars):

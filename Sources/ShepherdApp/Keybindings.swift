@@ -33,8 +33,9 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
     case implementInThread, copyDesignReference
     /// Scoped to a thread's Browser tab while it shows (PaneStates › Keyboard): the address field
     /// (⌘L) and Select an element (⇧⌘C). The Browser and a design's canvas never share a screen,
-    /// so ⇧⌘C here never meets the canvas's Copy reference.
-    case focusAddressBar, selectElement
+    /// so ⇧⌘C here never meets the canvas's Copy reference. ⌘T opens a new Browser tab
+    /// (BrowserTabs boards); ⇧⌘T is New Agent with Options, so the two never meet.
+    case focusAddressBar, selectElement, browserNewTab
     case saveProjectFile
 
     var id: String { rawValue }
@@ -69,6 +70,7 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .copyDesignReference: return "Copy Design Reference"
         case .focusAddressBar: return "Focus Address Bar"
         case .selectElement: return "Select an Element"
+        case .browserNewTab: return "New Browser Tab"
         case .saveProjectFile: return "Save Space File"
         }
     }
@@ -86,7 +88,7 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         switch self {
         case .alternateSend, .cycleThinkingLevel: .composer
         case .implementInThread, .copyDesignReference: .canvas
-        case .focusAddressBar, .selectElement: .browser
+        case .focusAddressBar, .selectElement, .browserNewTab: .browser
         default: .app
         }
     }
@@ -142,6 +144,8 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         // PaneStates › Keyboard: ⌘L the address bar, ⇧⌘C select an element.
         case .focusAddressBar: return KeyChord(key: "l", command: true)
         case .selectElement: return KeyChord(key: "c", command: true, shift: true)
+        // BrowserTabs boards: the New tab button's ⌘T.
+        case .browserNewTab: return KeyChord(key: "t", command: true)
         case .saveProjectFile: return KeyChord(key: "s", command: true)
         }
     }

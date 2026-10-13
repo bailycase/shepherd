@@ -19,7 +19,7 @@ struct KeybindingsTests {
         (.toggleSidebar, "⇧⌘S"), (.toggleRightPane, "⇧⌘B"), (.modelPicker, "⇧⌘M"),
         (.stopAgent, "⌘."), (.previousTurn, "⌥⌘↑"), (.nextTurn, "⌥⌘↓"), (.inspectSubagent, "⌘I"),
         (.alternateSend, "⌘↩"), (.cycleThinkingLevel, "⇧⇥"), (.importDesign, "⇧⌘I"), (.implementInThread, "⌘↩"), (.copyDesignReference, "⇧⌘C"),
-        (.focusAddressBar, "⌘L"), (.selectElement, "⇧⌘C"),
+        (.focusAddressBar, "⌘L"), (.selectElement, "⇧⌘C"), (.browserNewTab, "⌘T"),
     ])
     func defaultsMatchTheDesignTable(action: ShortcutAction, display: String) {
         let keys = KeybindingsStore(store: Fixture.defaults())
@@ -58,7 +58,10 @@ struct KeybindingsTests {
     /// share a chord, and a rebound Browser chord is unbound in a terminal beside it.
     @Test func theBrowsersChordsAreScopedApartFromTheCanvas() {
         let keys = KeybindingsStore(store: Fixture.defaults())
-        #expect(ShortcutAction.selectElement.scope == .browser && ShortcutAction.focusAddressBar.scope == .browser)
+        #expect(ShortcutAction.selectElement.scope == .browser && ShortcutAction.focusAddressBar.scope == .browser
+                && ShortcutAction.browserNewTab.scope == .browser)
+        #expect(ShortcutAction.browserNewTab.reachesPastTerminals, "a focused terminal lets ⌘T through")
+        #expect(keys.validate(ShortcutAction.newAgentOptions.defaultChord, for: .browserNewTab) == .conflict(.newAgentOptions))
         #expect(!ShortcutAction.selectElement.sharesScope(with: .copyDesignReference))
         #expect(ShortcutAction.selectElement.sharesScope(with: .alternateSend))
         #expect(keys.validate(ShortcutAction.alternateSend.defaultChord, for: .focusAddressBar) == .conflict(.alternateSend))
