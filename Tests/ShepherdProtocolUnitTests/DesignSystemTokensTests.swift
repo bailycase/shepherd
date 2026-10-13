@@ -157,7 +157,7 @@ struct DesignSystemTokensTests {
 
     @Test(arguments: [
         ("tokens.css", true), ("components/Button.html", true), ("api/components/Button.md", true), ("bundle.js", true),
-        ("system.json", false), ("../x.css", false), ("/abs.css", false), ("a\\b.css", false), ("fonts/Inter.woff2", false),
+        ("system.json", false), ("../x.css", false), ("/abs.css", false), ("a\\b.css", false), ("fonts/Inter.woff2", true), ("fonts/Inter.ttf", true), ("components/Button.dc.html", true),
         (".hidden.css", false), ("noextension", false),
     ])
     func filesASystemHolds(_ path: String, _ ok: Bool) {

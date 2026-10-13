@@ -123,6 +123,51 @@ struct DesignExportFlowTests {
 
     // MARK: The sheet
 
+    @Test func theAgentExportWritesANewDesignOwnedFolderAndNeverOverwritesThePreviousExport() async throws {
+        let w = try await workspace()
+        defer { w.app.stop() }
+        let request = DesignExportRequest(format: .html, paths: ["Hero.dc.html"])
+        let first = try await w.app.server.exportDesign(w.design.id, request: request)
+        let second = try await w.app.server.exportDesign(w.design.id, request: request)
+        #expect(first != second)
+        let page = try String(contentsOf: first, encoding: .utf8)
+        #expect(page.contains("Badge") && !page.contains("shepherd-dc") && !page.contains("<dc-import"))
+        let designFolder = try #require(w.app.server.designs.folder(for: w.design.id))
+        #expect(first.path.hasPrefix(designFolder.appendingPathComponent("exports").path + "/"))
+    }
+
+    @Test func standaloneHtmlCarriesABundledFontWithoutNeedingTheSystemFolder() async throws {
+        let w = try await workspace()
+        defer { w.app.stop() }
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let font = try Data(contentsOf: root.appendingPathComponent("Packages/ShepherdUI/Sources/ShepherdUI/Resources/Fonts/Geist-Regular.otf"))
+        let project = try #require(w.app.server.designs.projectFolder(for: w.design.id))
+        let system = project.appendingPathComponent("ds/acme", isDirectory: true)
+        try FileManager.default.createDirectory(at: system.appendingPathComponent("fonts"), withIntermediateDirectories: true)
+        try font.write(to: system.appendingPathComponent("fonts/Geist.otf"))
+        try Data("@font-face{font-family:Bundled;src:url('fonts/Geist.otf')}body{font-family:Bundled}".utf8).write(to: system.appendingPathComponent("tokens.css"))
+        let path = try DesignPath.validate("Hero.dc.html")
+        let source = Self.hero.replacingOccurrences(of: "</head>", with: "<link rel=\"stylesheet\" href=\"ds/acme/tokens.css\"></head>")
+        _ = try await w.app.server.writeDesignBoards(w.design.id, sources: [path: source])
+        let result = try await w.app.server.exportDesign(w.design.id, request: .init(format: .html, paths: [path.rawValue]))
+        let page = try String(contentsOf: result, encoding: .utf8)
+        #expect(page.contains("data:font/otf;base64," + font.base64EncodedString()))
+        #expect(!page.contains("/ds/acme/fonts/Geist.otf"))
+    }
+
+    @Test func aQueuedExportPastItsDeadlineWritesNothing() async throws {
+        let w = try await workspace()
+        defer { w.app.stop() }
+        let files = try await w.app.server.designs.exportFiles(w.design.id, boards: [try DesignPath.validate("Hero.dc.html")])
+        let destination = w.out.appendingPathComponent("expired.html")
+        do {
+            try await w.vm.designRendering.exportAgent(.init(designID: w.design.id, request: .init(format: .html),
+                files: files, destination: destination, deadline: .distantPast))
+            Issue.record("an expired export wrote files")
+        } catch { #expect(String(describing: error).contains("expired")) }
+        #expect(!FileManager.default.fileExists(atPath: destination.path))
+    }
+
     @Test func theSheetOpensTickedFromTheCanvasSelectionOrWithEveryBoard() async throws {
         let w = try await workspace()
         defer { w.app.stop() }

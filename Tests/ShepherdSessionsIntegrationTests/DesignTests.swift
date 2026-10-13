@@ -536,7 +536,15 @@ struct DesignTests {
         let (h, design, _) = try await serverWithDesign()
         defer { h.stop() }
         let pushes = Locked<[UInt64]>([])
-        h.server.onDesignRevision = { _ in pushes.withValue { $0.append(DispatchTime.now().uptimeNanoseconds) } }
+        let observedRevision = Locked<UInt64>(0)
+        let server = h.server
+        h.server.onDesignRevision = { id in
+            pushes.withValue { $0.append(DispatchTime.now().uptimeNanoseconds) }
+            Task {
+                let revision = try await server.designSnapshot(id).revision
+                observedRevision.withValue { $0 = max($0, revision) }
+            }
+        }
         h.server.watchDesignRevisions(of: [design.id])
         let first = try await h.server.writeDesignBoard(design.id, path: try Self.path("A.dc.html"), source: Self.board())
         var last = first
@@ -544,9 +552,10 @@ struct DesignTests {
             last = try await h.server.writeDesignBoard(design.id, path: try Self.path("A.dc.html"),
                                                        source: Self.board(extra: "<p>\(index)</p>"))
         }
-        // The last write committed before it returned, so a push after this moment carries it.
-        let end = DispatchTime.now().uptimeNanoseconds
-        try await eventually("the burst's last push") { (pushes.current.last ?? 0) >= end }
+        // Lint can finish after the commit's push. Verify the revision received through a push,
+        // rather than requiring a redundant notification after the write returns.
+        let finalRevision = last.revision
+        try await eventually("the burst's final revision") { observedRevision.current >= finalRevision }
         let times = pushes.current
         #expect(UInt64(times.count) <= last.revision - first.revision + 1)
         let span = Double((times.last ?? 0) - (times.first ?? 0)) / 1_000_000

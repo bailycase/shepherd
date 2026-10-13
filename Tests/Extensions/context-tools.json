@@ -264,6 +264,7 @@
         "boards_edit",
         "board_search",
         "board_render",
+        "board_interact",
         "board_extract",
         "canvas_update",
         "design_check",
@@ -281,7 +282,14 @@
       "verdicts": {
         "design": "keep"
       },
-      "reason": "What a design's agent draws and edits with; no other agent gets them."
+      "reason": "What a design's agent draws, tests and edits with; no other agent gets them. board_interact exercises actual rendered state."
+    },
+    {
+      "tools": ["design_export"],
+      "group": "design",
+      "extension": "shepherd-design.ts",
+      "verdicts": { "design": "keep" },
+      "reason": "A design-only export step. Design launches do not provide deferred tool discovery, so keep its 166-token definition direct; it adds nothing to ordinary threads or automations."
     },
     {
       "tools": [

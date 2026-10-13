@@ -69,9 +69,33 @@
     return error.name && error.name !== 'Error' ? error.name + ': ' + text : text;
   }
 
+  var diagnostics = [];
+  var diagnosticKeys = new Set();
+  function diagnostic(kind, message) {
+    var text = String(message).slice(0, 1000);
+    var key = kind + ': ' + text;
+    if (diagnosticKeys.has(key) || diagnostics.length >= 64) return;
+    diagnosticKeys.add(key);
+    diagnostics.push({ kind: kind, message: text });
+  }
+
   function report(phase, error) {
+    diagnostic(phase, describe(error));
     emit('error', { phase: phase, message: describe(error) });
   }
+  ['log', 'info', 'warn', 'error', 'debug'].forEach(function (level) {
+    var original = console[level];
+    console[level] = function () {
+      var values = Array.prototype.map.call(arguments, function (value) {
+        try { return typeof value === 'string' ? value : JSON.stringify(value); } catch (_) { return String(value); }
+      });
+      diagnostic('console.' + level, values.join(' '));
+      if (original) original.apply(console, arguments);
+    };
+  });
+  window.addEventListener('error', function (event) { diagnostic('script', event.message); });
+  window.addEventListener('unhandledrejection', function (event) { diagnostic('promise', describe(event.reason)); });
+  if (document.fonts) document.fonts.addEventListener('loadingerror', function () { diagnostic('font', 'one or more fonts failed to load'); });
 
   // MARK: Reading a board
 
@@ -339,7 +363,7 @@
         if (node.tagName === 'LINK' && node.rel === 'stylesheet') {
           var loaded = new Promise(function (resolve) {
             node.addEventListener('load', resolve, { once: true });
-            node.addEventListener('error', resolve, { once: true });
+            node.addEventListener('error', function () { diagnostic('stylesheet', 'failed to load ' + node.href); resolve(); }, { once: true });
           });
           pendingStylesheets.add(loaded);
           loaded.then(function (promise) { pendingStylesheets.delete(promise); }.bind(null, loaded));
@@ -436,6 +460,7 @@
       // Only a function bound from renderVals() handles an event; handler text never runs.
       var event = EVENTS[name];
       if (event && typeof value === 'function') props[event] = value;
+      else diagnostic('lint', element.name + '#' + element.tid + ': unbound handler ' + name);
       return;
     }
     if (name === 'style') {
@@ -628,7 +653,7 @@
     if (typeof name !== 'string' || !/^[A-Za-z0-9_][A-Za-z0-9_.-]*(\/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$/.test(name)) return null;
     if (name.indexOf('..') >= 0) return null;
     var url;
-    try { url = new URL(name + '.dc.html', from); } catch (_) { return null; }
+    try { url = new URL((name.indexOf('ds/') === 0 ? '/project/' : '') + name + '.dc.html', from); } catch (_) { return null; }
     if (url.protocol !== location.protocol || url.host !== location.host || url.pathname.indexOf('/project/') !== 0) return null;
     url.hash = '';
     url.search = '';
@@ -650,7 +675,7 @@
       var template = compileTemplate(board.fragment);
       compiled.Component[DEFINITION] = { template: template, url: url };
       hoistHelmet('import:' + url, template.helmets, false);
-      imports.set(url, { state: 'ready', Component: compiled.Component });
+      imports.set(url, { state: 'ready', Component: compiled.Component, props: board.props || {} });
     }).catch(function (error) {
       report('import', error);
       imports.set(url, { state: 'failed' });
@@ -687,6 +712,7 @@
     if (!entry || entry.state !== 'ready') {
       return h('div', { 'data-dc-owner': owner, 'data-dc-placeholder': '', style: hintBox(props.hint) });
     }
+    checkProps(props.childProps, entry.props, url);
     return h(Frame.Provider, { value: { owner: owner, chain: frame.chain.concat(url), url: url } },
       h(entry.Component, props.childProps));
   }
@@ -812,9 +838,12 @@
       var value = attr.parts ? evaluate(attr.parts, scope) : attr.value;
       if (name === 'style') { style = value; return; }
       if (name === 'key' || name === 'ref' || name === 'dangerouslysetinnerhtml') return;
-      var prop = name === 'class' ? 'className' : name === 'for' ? 'htmlFor' : camelCase(name);
+      var prop = name === 'class' ? 'className' : name === 'for' ? 'htmlFor' : (EVENTS[name] || camelCase(name));
       // Only a function from renderVals() handles an event; handler text never runs.
-      if (/^on[A-Z]/.test(prop) && typeof value !== 'function') return;
+      if (/^on[A-Z]/.test(prop) && typeof value !== 'function') {
+        diagnostic('lint', String(path) + ': unbound handler ' + prop);
+        return;
+      }
       childProps[prop] = value;
     });
     return h(GlobalSlot, {
@@ -945,6 +974,7 @@
     }
     var nextProps = current.props;
     if (typeof props === 'string') nextProps = tweaksObject(props);
+    checkProps(nextProps, board.props, boardKey());
     Component[DEFINITION] = { template: template, url: location.href };
     hoistHelmet('board', template.helmets, true);
     if (board.title != null) document.title = board.title;
@@ -959,6 +989,16 @@
     }
     emit('rendered');
     return { ok: true };
+  }
+
+  function checkProps(props, declared, owner) {
+    if (Object.prototype.hasOwnProperty.call(declared || {}, 'name')) diagnostic('lint', owner + ': name is reserved for import routing; rename the prop');
+    Object.keys(props || {}).forEach(function (name) {
+      if (name === 'name') diagnostic('lint', owner + ': name is reserved for dc-import routing; rename the prop');
+      if (name !== '$preview' && !Object.prototype.hasOwnProperty.call(declared || {}, name)) {
+        diagnostic('lint', owner + ': unknown prop ' + name);
+      }
+    });
   }
 
   function tweaksObject(json) {
@@ -1055,7 +1095,9 @@
     }).then(function (read) {
       var board = readBoard(read[0]);
       if (!board) throw new Error('the board has no <x-dc> template');
-      mount(board, tweaksIn(read[1]));
+      var tweaks = tweaksIn(read[1]);
+      checkProps(tweaks, board.props, boardKey());
+      mount(board, tweaks);
       var preview = board.props && board.props.$preview;
       return settle().then(function () {
         var size = preview && typeof preview.width === 'number' && typeof preview.height === 'number'
@@ -1068,7 +1110,88 @@
     });
   }
 
-  var api = Object.freeze({ replaceSource: replaceSource, previewStyle: previewStyle, endPreview: endPreview, setProps: setProps });
+  /** Captures use a bounded wait, then say exactly which resources have not settled. */
+  async function captureStatus(wait) {
+    if (wait !== false) await settle();
+    await Promise.race([new Promise(function (resolve) { requestAnimationFrame(function () { requestAnimationFrame(resolve); }); }),
+      new Promise(function (resolve) { setTimeout(resolve, 250); })]);
+    var loading = [];
+    imports.forEach(function (entry, url) { if (entry.state === 'loading') loading.push('import ' + url); });
+    if (pendingStylesheets.size) loading.push(pendingStylesheets.size + ' stylesheets');
+    if (document.fonts && document.fonts.status === 'loading') loading.push('fonts');
+    Array.prototype.forEach.call(document.images, function (image) {
+      if (!image.complete) loading.push('image ' + image.currentSrc);
+      else if (image.currentSrc && !image.naturalWidth) diagnostic('image', 'failed to load ' + image.currentSrc);
+    });
+    layoutLint();
+    return { loading: loading.slice(0, 64), diagnostics: diagnostics.slice() };
+  }
+
+  function layoutLint() {
+    // ponytail: examine at most 256 rendered elements, use spatial indexing if larger boards need exhaustive lint.
+    var all = document.querySelectorAll('[data-dc-tid], [data-dc-owner]');
+    if (all.length > 256) diagnostic('layout', 'lint inspected the first 256 elements only');
+    var nodes = Array.prototype.slice.call(all, 0, 256);
+    nodes.forEach(function (node) {
+      var box = node.getBoundingClientRect();
+      if (!box.width || !box.height || getComputedStyle(node).visibility === 'hidden') return;
+      var label = node.getAttribute('data-el') || node.getAttribute('aria-label') || node.tagName.toLowerCase() + '#' + (node.getAttribute('data-dc-tid') || node.getAttribute('data-dc-owner'));
+      var ownStyle = getComputedStyle(node);
+      if ((/^(hidden|clip)$/.test(ownStyle.overflowX) && node.scrollWidth > node.clientWidth + 1) ||
+          (/^(hidden|clip)$/.test(ownStyle.overflowY) && node.scrollHeight > node.clientHeight + 1)) diagnostic('layout', label + ' clips its content');
+      for (var parent = node.parentElement; parent; parent = parent.parentElement) {
+        var style = getComputedStyle(parent), bounds = parent.getBoundingClientRect();
+        var clipX = /^(hidden|clip)$/.test(style.overflowX), clipY = /^(hidden|clip)$/.test(style.overflowY);
+        if ((clipX && (box.left < bounds.left - 1 || box.right > bounds.right + 1)) ||
+            (clipY && (box.top < bounds.top - 1 || box.bottom > bounds.bottom + 1))) {
+          diagnostic('layout', label + ' is clipped by ' + parent.tagName.toLowerCase());
+          break;
+        }
+      }
+      // Parent/child containment is normal. Sibling overlaps are advisory, including intentional overlays.
+      if (node.children.length) return;
+      for (var sibling = node.nextElementSibling; sibling; sibling = sibling.nextElementSibling) {
+        if (nodes.indexOf(sibling) < 0 || sibling.children.length) continue;
+        if (getComputedStyle(sibling).visibility === 'hidden') continue;
+        var other = sibling.getBoundingClientRect();
+        if (Math.min(box.right, other.right) - Math.max(box.left, other.left) > 1 &&
+            Math.min(box.bottom, other.bottom) - Math.max(box.top, other.top) > 1) {
+          diagnostic('layout', label + ' overlaps sibling ' + sibling.tagName.toLowerCase());
+        }
+      }
+    });
+  }
+
+  async function interact(steps) {
+    if (!Array.isArray(steps) || steps.length > 16) throw new Error('interaction takes at most 16 steps');
+    for (var step of steps) {
+      var nodes = document.querySelectorAll(step.selector);
+      if (nodes.length !== 1) throw new Error('selector must match one element: ' + step.selector);
+      var node = nodes[0], box = node.getBoundingClientRect(), style = getComputedStyle(node);
+      if (!box.width || !box.height || style.visibility === 'hidden' || style.pointerEvents === 'none' || node.matches(':disabled') || node.closest('[inert], [aria-disabled="true"]')) throw new Error('element is hidden or disabled');
+      var hit = document.elementFromPoint(Math.max(0, Math.min(innerWidth - 1, box.left + box.width / 2)), Math.max(0, Math.min(innerHeight - 1, box.top + box.height / 2)));
+      if (hit && hit !== node && !node.contains(hit)) throw new Error('element is covered by another element');
+      if (step.action === 'click') {
+        if (typeof node.click !== 'function') throw new Error('element cannot be clicked');
+        node.click();
+      } else if (step.action === 'type') {
+        if (typeof step.text !== 'string' || step.text.length > 10000) throw new Error('text is at most 10000 characters');
+        var prototype = node instanceof HTMLInputElement ? HTMLInputElement.prototype : node instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : null;
+        var setter = prototype && Object.getOwnPropertyDescriptor(prototype, 'value').set;
+        if (!setter || node.readOnly) throw new Error('element is not an editable input or textarea');
+        setter.call(node, step.text);
+        node.dispatchEvent(new Event('input', { bubbles: true }));
+        node.dispatchEvent(new Event('change', { bubbles: true }));
+      } else throw new Error('interaction action must be click or type');
+      await Promise.race([new Promise(function (resolve) { requestAnimationFrame(resolve); }),
+        new Promise(function (resolve) { setTimeout(resolve, 250); })]);
+      await settle();
+    }
+    return captureStatus();
+  }
+
+  var api = Object.freeze({ replaceSource: replaceSource, previewStyle: previewStyle, endPreview: endPreview, setProps: setProps,
+    captureStatus: captureStatus, interact: interact });
   Object.defineProperty(window, '__shepherdDC', { value: api, writable: false, configurable: false, enumerable: false });
 
   if (document.readyState === 'loading') {

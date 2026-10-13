@@ -417,6 +417,7 @@ test("design_check with snap asks Shepherd to snap the board first, then checks 
           snapped: [{ from: "#3a56d4", to: "var(--accent)", line: 3, token: "#3056d3" }] } }], dryRun: false, atomic: false, blocked: false } };
     }
     if (frame.type === "designSystemRead") return { type: "designSystems", listing: { systems: [], installed: [{ namespace: "acme", shepherd: true, tokens: { colors: [{ name: "--accent", value: "#3056d3" }] } }] } };
+    if (frame.type === "designRead" && !frame.path) return { type: "design", snapshot: { designID: "d1", revision: 10, index: { boards: {} }, boards: { "A.dc.html": "a" } } };
     if (frame.type === "designRead") return { type: "designBoard", board: { path: frame.path, source: board.replace("#3a56d4", "var(--accent)"), sha256: "a", revision: 10 } };
     return null;
   };
@@ -427,6 +428,32 @@ test("design_check with snap asks Shepherd to snap the board first, then checks 
     assert.match(fence(textOf(out)), /^A\.dc\.html: Snapped to tokens: #3a56d4 → var\(--accent\) \(line 3\)$/m);
     assert.match(textOf(out), /Checked against acme · 0 off-system values/);
     await assert.rejects(pi.tools.get("design_check").execute("t2", { snap: true }, undefined, undefined, { cwd: os.tmpdir() }), /snap works on one board.*invalid_edit/);
+  });
+});
+
+test("design_check baselines omit existing values, keep new ones, and refuse unavailable revisions", async () => {
+  let revision = 7;
+  let source = '<x-dc><div style="color:#aabbcc;padding:7px"></div></x-dc>';
+  await withDesign((frame) => {
+    if (frame.type === "designSystemRead") return { type: "designSystems", listing: { systems: [], installed: [
+      { namespace: "acme", shepherd: true, tokens: { colors: [{ name: "--accent", value: "#000000" }], spacing: [{ name: "--space-4", px: 4 }] } }
+    ] } };
+    if (frame.type === "designRead" && !frame.path) return { type: "design", snapshot: {
+      designID: "d1", revision, index: { boards: { "A.dc.html": {} }, order: ["A.dc.html"] }, boards: { "A.dc.html": "sha" },
+    } };
+    if (frame.type === "designRead") return { type: "designBoard", board: { path: frame.path, source, revision } };
+    return null;
+  }, async (pi) => {
+    const tool = pi.tools.get("design_check");
+    await tool.execute("baseline", {}, undefined, undefined, { cwd: os.tmpdir() });
+    revision = 8;
+    source = '<x-dc><div style="color:#aabbcc;padding:7px;border-color:#ddeeff;gap:13px"></div></x-dc>';
+    const result = await tool.execute("check", { baseline_revision: 7 }, undefined, undefined, { cwd: os.tmpdir() });
+    assert.match(textOf(result), /new values since revision 7/);
+    assert.match(textOf(result), /#ddeeff/);
+    assert.match(textOf(result), /13px/);
+    assert.doesNotMatch(textOf(result), /#aabbcc|7px/);
+    await assert.rejects(tool.execute("missing", { baseline_revision: 1 }, undefined, undefined, { cwd: os.tmpdir() }), /baseline_unavailable/);
   });
 });
 
