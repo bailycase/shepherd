@@ -54,7 +54,10 @@ struct DesignExtractStoreTests {
         #expect(extracted.result.changed && extracted.result.revision == before + 1 && extracted.piece == "Card.dc.html")
         #expect(extracted.importTag == #"<dc-import name="Card" hint-size="320px,120px" label="Pay now"></dc-import>"#)
         #expect(extracted.boards.map(\.path) == ["B.dc.html"] && extracted.boards.first?.count == 1)
-        #expect(extracted.skipped.isEmpty && extracted.warnings.isEmpty)
+        #expect(extracted.skipped.isEmpty)
+        #expect(extracted.warnings == ["A.dc.html", "B.dc.html", "Card.dc.html"].map {
+            "\($0): Runtime lint unavailable: Shepherd can't draw boards right now."
+        })
 
         let a = try await h.server.designBoard(design.id, path: T.a).source
         let b = try await h.server.designBoard(design.id, path: T.b).source
