@@ -181,7 +181,11 @@ Undo is still saving waits for it.
 
 ## The Shepherd UI page (DesignSystemPage and its eight sibling boards)
 
-**Built on the Mac** for the built-in system only (`DesignSystemReferencePage`, `DesignSystemReference`;
+**Removed from the shipped catalog.** Shepherd no longer bundles or registers Night Watch.
+This reference page remains covered by a synthetic system in tests and previews, not a system
+users can install. User-built and imported systems keep the normal Design systems page below.
+
+**Historical implementation** for the built-in system only (`DesignSystemReferencePage`, `DesignSystemReference`;
 checklist [DesignSystem-checklist](boards/DesignSystem-checklist.md); boards `DesignSystemPage`, `Light`, `Menu`,
 `Colors`, `ColorsLight`, `Type`, `Spacing`, `Sizes`, `Components` in `docs/design/boards/`). Every other system
 keeps the Design systems page below. The page is read-only: the boards' Edit icon per token, editable values, "+ Add"
@@ -206,11 +210,10 @@ boards are open, in known-gaps.md.
 - **Components** lists `NWComponentCatalog.entries`: live ShepherdUI views, drawn as pictures (no press, one
   accessibility element named "<Name> specimen"), with an All groups popup that filters by group. The count is the
   catalog's; adding a component is one entry.
-- **Where each number comes from**: tokens from `NightWatchSystem.tokens()`; sizes from `NWSettingsControlMetrics`,
+- **Where each number comes from**: test-only tokens from `ShepherdTestSupport.NightWatchSystem.tokens()`; sizes from `NWSettingsControlMetrics`,
   `NW.Height.row`, `AppLayout.settingsNavWidth`, `threadMaxWidth` and `proseMaxWidth`; the component count from the
   catalog; Used by from the designs whose `systemNamespace` is the system. Authored copy (tagline, lead, Principles,
-  Voice, group hints, radius uses) is `DesignSystemCopy`. The provenance note says only what the server enforces: built in
-  from the app's Night Watch tokens at launch, read-only, never synced from a project. The board's "Made in Shepherd chat UI"
+  Voice, group hints, radius uses) is `DesignSystemCopy`. The provenance note says only what the server enforces: generated from Night Watch tokens in test fixtures, read-only, never synced from a project. The board's "Made in Shepherd chat UI"
   is not shown.
 - **Kept from the app, not drawn**: the ••• menu (Open, Duplicate as a New System, Delete Design System… off).
 - **Name**: the page says "Shepherd UI" (`DesignSystemCopy.name`). The system's registered title, "Night Watch", is stored in
