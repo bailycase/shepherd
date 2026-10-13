@@ -136,7 +136,7 @@ Of an ordinary thread's tool definitions, 4.4k are kept and 4.9k deferred.
 | `shepherd_child_agents` … `shepherd_child_resume` (7) | 1,164 | keep | keep | keep | Delegating to a helper is how a thread keeps a big search out of its own context (For agents), so these stay direct (the user's call); a design's agent relays its tools through them. |
 | `shepherd_workflow` | 385 | keep | keep | keep | A scripted run of helpers: the heaviest single description for the rarest use. Kept with the other native subagent tools; the first to defer if the budget needs it. |
 | `shepherd_mission` | 0 | **drop** | **drop** | **drop** | Missions are deferred and no screen shows them. The 0 is its size now: it was about 470 tokens with its parameters on the two tools above. |
-| `browser_open` … `browser_reload` (13) | 2,182 | defer | defer | · | The thread's own Browser page: 13 tools, 233 tokens of tool-list lines and 5 prompt rules in every thread, and most threads never open a page. |
+| `browser_open` … `browser_reload`, `browser_tabs`, `browser_new_tab`, `browser_select_tab`, `browser_close_tab` (17) | 3,362 | defer | defer | · | The thread's own Browser tabs. Definitions stay out of ordinary requests until the browser family is loaded. The four tab tools cost 426 tokens together; optional targeting adds schema cost to page tools. |
 | `tool_search` | 159 | keep | keep | keep | pi's own tool search: it loads the tools of the MCP servers left on Search (docs/mcp.md) and the deferred Shepherd tools above. With the server list it adds to the prompt, 206 tokens while a server is on Search. A server set to Direct declares its own `mcp__<server>__<tool>` tools instead (the user's, so not rows here); the Context card groups them as MCP. |
 | `design_get`, `design_note` | 476 | keep | · | · | Registered only once the thread holds a design reference. |
 | `suggest_instruction` | 0 | keep | keep | · | Registered only while Settings ▸ Experiments ▸ Suggested instructions is on for the kind of agent. |
@@ -176,8 +176,11 @@ Shepherd uses the native factory with direct model APIs disabled, a five-minute 
 
 Settings ▸ Agents ▸ Context ▸ **Defer rarely used tools** (on by default; a client lists it among a host's
 switches, id `deferTools`) keeps the tools marked **defer** above out of every request until the model loads
-them: the browser's 13, the 8 that reach other threads, the 6 automation tools and `review_diff`, 4.9k
-tokens of definitions and 0.4k of tool-list lines. While it is on, the app starts a thread's or an
+them: the browser's 17, the 8 that reach other threads, the 6 automation tools and `review_diff`.
+Browser tabs increase the browser family's loaded definitions from 2,182 to 3,362 estimated tokens,
+measured with `context_budget.py --tools` against the staged engine. The four tab-management definitions
+cost 426 tokens; page-target schemas and descriptions account for the rest of the increase. These
+schemas still cost zero before the browser family is loaded. While it is on, the app starts a thread's or an
 automation's pi (never a design's agent's) with `SHEPHERD_DEFER_TOOLS=1` and pi's `-e builtin:tool-search`,
 even with MCP off; the extensions then register those tools `deferred`. Off, every tool registers direct as
 before. A running agent follows at its next launch.

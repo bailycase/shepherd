@@ -24,6 +24,8 @@ struct BrowserRequestTests {
             .scroll(direction: "down", amount: 1, ref: "e1", note: "n"), .wait(text: "x", ref: "e1", gone: true, ms: 1, timeout: 1),
             .screenshot(ref: "e1"), .console(clear: true), .eval(expression: "1", note: "n"),
             .back(note: "n"), .forward(note: "n"), .reload(note: "n"),
+            .tabs, .newTab(url: "http://a.b", note: "n"), .selectTab(id: "t"), .closeTab(id: "t"),
+            .tab(id: "t", request: .read(selector: nil, maxChars: nil)),
         ]
         for request in requests {
             let keys = Set(try Wire.object(request).keys)
@@ -39,6 +41,21 @@ struct BrowserRequestTests {
         #expect(throws: DecodingError.self) { try Wire.decode(BrowserRequest.self, json) }
     }
 
+    @Test func tabRequestsRoundTripAndNestedTabTargetsAreRefused() throws {
+        let samples: [BrowserRequest] = [.tabs, .newTab(url: "https://example.com", note: "docs"),
+            .newTab(url: nil, note: nil), .selectTab(id: "t"), .closeTab(id: "t"),
+            .tab(id: "t", request: .click(ref: "e1", double: false, note: nil))]
+        for sample in samples {
+            #expect(try JSONDecoder().decode(BrowserRequest.self, from: JSONEncoder().encode(sample)) == sample)
+        }
+        #expect(try Wire.decode(BrowserRequest.self, #"{"action":"tab","tabID":"t","request":{"action":"read"}}"#)
+            == .tab(id: "t", request: .read(selector: nil, maxChars: nil)))
+        #expect(!BrowserRequest.tab(id: "t", request: .eval(expression: "1", note: nil)).isObservation)
+        #expect(throws: DecodingError.self) {
+            try Wire.decode(BrowserRequest.self, #"{"action":"tab","tabID":"t","request":{"action":"tab","tabID":"t","request":{"action":"tabs"}}}"#)
+        }
+    }
+
     @Test func aRequestTakesWhatAToolWritesByHand() throws {
         #expect(try Wire.decode(BrowserRequest.self, #"{"action":"scroll","ref":"e4"}"#)
             == .scroll(direction: nil, amount: nil, ref: "e4", note: nil))
@@ -49,12 +66,14 @@ struct BrowserRequestTests {
     }
 
     @Test func onlyTheReadingsWorkAfterATakeOver() {
-        let readings: Set<BrowserRequest.Action> = [.read, .wait, .screenshot, .console]
+        let readings: Set<BrowserRequest.Action> = [.read, .wait, .screenshot, .console, .tabs, .tab]
         let samples: [BrowserRequest] = [
             .open(url: "u", note: nil), .read(selector: nil, maxChars: nil), .click(ref: "e", double: false, note: nil),
             .type(ref: "e", text: "", clear: false, submit: false, note: nil), .press(key: "k", note: nil),
             .scroll(direction: "up", amount: nil, ref: nil, note: nil), .wait(text: "t", ref: nil, gone: false, ms: nil, timeout: nil),
             .screenshot(ref: nil), .console(clear: false), .eval(expression: "1", note: nil), .back(note: nil), .forward(note: nil), .reload(note: nil),
+            .tabs, .newTab(url: nil, note: nil), .selectTab(id: "t"), .closeTab(id: "t"),
+            .tab(id: "t", request: .read(selector: nil, maxChars: nil)),
         ]
         #expect(Set(samples.map(\.action)) == Set(BrowserRequest.Action.allCases))
         for request in samples { #expect(request.isObservation == readings.contains(request.action), "\(request.action)") }

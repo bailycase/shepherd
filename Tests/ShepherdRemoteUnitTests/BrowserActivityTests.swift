@@ -117,7 +117,8 @@ struct BrowserActivityTests {
     }
 
     @Test func onlyTheBrowsersToolsAreTheBrowsers() {
-        #expect(NativeBrowserActivity.tools.count == 13)
+        #expect(NativeBrowserActivity.tools.count == 17)
+        #expect(NativeBrowserActivity.done(tool: "browser_new_tab", subject: nil) == "Opened a new tab in Browser")
         #expect(NativeBrowserActivity.isBrowserTool("browser_click") && !NativeBrowserActivity.isBrowserTool("browser_teleport"))
         #expect(NativeBrowserActivity.isBrowserTool("pane_open") == false)
         #expect(NativeBrowserActivity.action("browser_click") == "click")
