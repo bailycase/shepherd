@@ -22,6 +22,10 @@ extension BrowserSession {
     /// Serves `request`, after the requests before it. Never throws: a failure is an outcome. A
     /// request still waiting its turn when the agent gives up (`abandonQueued`) is not run.
     func perform(_ request: BrowserRequest, origin: BrowserOrigin = .local) async -> BrowserOutcome {
+        await tabs.perform(request, origin: origin)
+    }
+
+    func performPage(_ request: BrowserRequest, origin: BrowserOrigin = .local) async -> BrowserOutcome {
         let previous = operationTail
         let epoch = operationEpoch
         let work = Task { @MainActor () -> BrowserOutcome in
@@ -38,18 +42,25 @@ extension BrowserSession {
     /// The agent's connection went away with requests in flight (Stop): the ones not yet started
     /// never run, so a click queued behind a long wait does not fire after the user stopped the agent.
     func abandonQueued() {
-        operationEpoch &+= 1
+        tabs.operationEpoch &+= 1
+        for page in tabs.pages { page.operationEpoch &+= 1 }
     }
 
     /// The user has taken over since this request began (it waited for a page, or for the request
     /// before it): an acting request that is about to act is refused.
     private func refusedByTakeOver() -> BrowserStep? {
-        presence.userHasControl ? .fail(code: "taken_over", message: BrowserAgentPresence.takenOverMessage) : nil
+        if tabClosed || activeOperationEpoch.map({ $0 != operationEpoch }) == true {
+            return .fail(code: "cancelled", message: "The browser request was cancelled.")
+        }
+        return presence.userHasControl ? .fail(code: "taken_over", message: BrowserAgentPresence.takenOverMessage) : nil
     }
 
     // MARK: One request
 
     private func run(_ request: BrowserRequest, origin: BrowserOrigin) async -> BrowserOutcome {
+        guard !tabClosed else { return .failure(code: "cancelled", message: "The tab was closed.") }
+        activeOperationEpoch = operationEpoch
+        defer { activeOperationEpoch = nil }
         guard presence.permits(request) else {
             return .failure(code: "taken_over", message: BrowserAgentPresence.takenOverMessage)
         }
@@ -62,8 +73,13 @@ extension BrowserSession {
         // An agent on the thread's host drives a page on this Mac: what it may read, act on or open
         // stays off this Mac's own network (BrowserHostDrive.swift).
         if case .host(let guardian) = origin {
+            let validatedURL = currentURL
+            let validatedNavigation = navigationSerial
             let target = BrowserHostGuard.historyStep(of: request).flatMap { historyTarget($0) }
-            if let refusal = await guardian.refusal(for: request, page: currentURL, historyTarget: target) { return refusal }
+            if let refusal = await guardian.refusal(for: request, page: validatedURL, historyTarget: target) { return refusal }
+            guard currentURL == validatedURL, navigationSerial == validatedNavigation else {
+                return .failure(code: "page_changed", message: "The page changed while the browser request was being checked. Read the page again.")
+            }
             hostGuard = guardian
             forgetUserApprovals()
             blockedNavigation = nil
@@ -80,14 +96,20 @@ extension BrowserSession {
         if let ref = BrowserRequestCheck.ref(of: request), webView != nil {
             target = await peek(ref)
         }
+        guard !tabClosed, activeOperationEpoch == operationEpoch else {
+            return .failure(code: "cancelled", message: "The browser request was cancelled.")
+        }
         agentBegan(note: BrowserNote.phrase(for: request, target: target))
         defer { agentEnded() }
         let idleNavigations = events.navigations
         let step = await dispatch(request)
+        guard !tabClosed, activeOperationEpoch == operationEpoch else {
+            return .failure(code: "cancelled", message: "The browser request was cancelled.")
+        }
         let outcome = finish(step, idleNavigations: idleNavigations)
         // The page is where it is now: nothing of it (its title, its address, its text) goes to a
         // host's agent unless it is an address the agent may be shown.
-        if case .host(let guardian) = origin, case .result = outcome, let refusal = await guardian.pageRefusal(currentURL) { return refusal }
+        if case .host(let guardian) = origin, let refusal = await guardian.pageRefusal(currentURL) { return refusal }
         return outcome
     }
 
@@ -107,6 +129,8 @@ extension BrowserSession {
 
     private func dispatch(_ request: BrowserRequest) async -> BrowserStep {
         switch request {
+        case .tabs, .newTab, .selectTab, .closeTab, .tab:
+            return .fail(code: "invalid", message: "Tab management must run through the thread's tab collection.")
         case .open(let text, _): return await open(text)
         case .read(let selector, let maxChars): return await read(selector: selector, maxChars: maxChars)
         case .click(let ref, let double, _): return await click(ref, double: double)
@@ -398,6 +422,9 @@ extension BrowserSession {
         let deadline = ContinuousClock.now + .milliseconds(Int(timeout * 1000))
         let begun = ContinuousClock.now
         while ContinuousClock.now < deadline {
+            if tabClosed || activeOperationEpoch.map({ $0 != operationEpoch }) == true {
+                return .blocked(code: "cancelled", message: "The browser request was cancelled.")
+            }
             if let blocked = blockedNavigation { return .blocked(code: blocked.code, message: blocked.message) }
             if navigationSerial > serial {
                 switch loadState {
@@ -416,7 +443,8 @@ extension BrowserSession {
     /// A page that is still loading is waited for (at most 10 seconds) before it is read or acted on.
     private func waitUntilSettled() async {
         let deadline = ContinuousClock.now + .seconds(10)
-        while loadState == .loading, ContinuousClock.now < deadline { await pause(25) }
+        while loadState == .loading, !tabClosed, activeOperationEpoch == operationEpoch,
+              ContinuousClock.now < deadline { await pause(25) }
     }
 
     /// After a click, a key or a submit: a navigation it caused starts a moment later and is waited
@@ -515,7 +543,14 @@ enum BrowserRequestCheck {
             if expression.count > BrowserRequest.maxExpressionLength { return "the expression is longer than \(BrowserRequest.maxExpressionLength) characters." }
         case .open(let url, _):
             if url.isEmpty { return BrowserURLPolicy.Refusal.empty.message }
-        case .read, .screenshot, .console, .back, .forward, .reload:
+        case .tab(let id, let inner):
+            if UUID(uuidString: id) == nil || inner.isTabManagement { return "Invalid tab target." }
+            return problem(with: inner)
+        case .selectTab(let id), .closeTab(let id):
+            if UUID(uuidString: id) == nil { return "Invalid tab ID." }
+        case .newTab(let url, _):
+            if let url, url.isEmpty { return BrowserURLPolicy.Refusal.empty.message }
+        case .read, .screenshot, .console, .back, .forward, .reload, .tabs:
             break
         }
         return nil

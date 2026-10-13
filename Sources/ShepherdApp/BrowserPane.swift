@@ -4,107 +4,259 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
 
-/// A local thread's Browser tab (PaneBrowser, PaneStates › Browser): the toolbar, the page (or
-/// Nothing open), the viewport menu, a picked element's popover, and the console drawer. The page
-/// is the session's own web view (`BrowserPageView`), so switching tabs or threads never reloads it.
+/// A thread's Browser tab (PaneBrowser, BrowserTabs boards): the tab strip, a note, the toolbar, the
+/// page (or Nothing open), the viewport menu, a picked element's popover, the agent's bar and the
+/// console drawer. `session` is the thread's root page: it owns the remote claim (`browserPaneAppeared`)
+/// and the tabs; the strip, toolbar, page and console are the tab on screen, `tabs.selectedPage`.
+/// Each page is a session with its own web view, so switching tabs or threads never reloads one.
 struct BrowserPane: View {
     var vm: ShepherdViewModel
     let session: BrowserSession
     let store: NativeThreadStore
-    /// The layout is on screen: ⌘L and ⇧⌘C are the Browser's.
+    /// The layout is on screen: ⌘L, ⌘T and ⇧⌘C are the Browser's.
     let active: Bool
     @State private var address = ""
+    @State private var listOpen: Bool
+    /// ⌘T or New tab made a page that has no address yet: focus its field once it is the one shown.
+    @State private var focusNewTab = false
     @FocusState private var addressFocused: Bool
 
+    init(vm: ShepherdViewModel, session: BrowserSession, store: NativeThreadStore, active: Bool, listOpen: Bool = false) {
+        self.vm = vm
+        self.session = session
+        self.store = store
+        self.active = active
+        _listOpen = State(initialValue: listOpen)
+    }
+
+    private var tabs: BrowserTabs { session.tabs }
+    private var page: BrowserSession { tabs.selectedPage }
+
     var body: some View {
+        let page = page
         VStack(spacing: 0) {
-            toolbar
+            tabStrip
+            tabsNote
+            // The list hangs under the note (or the strip), over the toolbar and the page (BrowserTabsFull).
+            VStack(spacing: 0) {
+            toolbar(page)
             ZStack(alignment: .topTrailing) {
-                if session.hasPage {
-                    BrowserPageArea(vm: vm, session: session)
+                if page.hasPage {
+                    BrowserPageArea(vm: vm, session: page)
+                        .id(page.tabID)
                 } else {
-                    empty
+                    empty(page)
                 }
-                if session.menuOpen { viewportMenu }
-                // A remote page's port that can't be forwarded here: why nothing loaded.
-                if let notice = session.notice {
-                    NWBrowserNotice(message: notice.message, dismiss: { session.dismissNotice() })
+                if page.menuOpen { viewportMenu(page) }
+                // Why nothing loaded (a remote page's port that can't be forwarded here), or that another
+                // Mac took the agent's browser. The thread's own notice belongs to the root, so it stays in
+                // view whichever tab is shown, and it is dismissed on the page that holds it.
+                if let (owner, notice) = visibleNotice(page) {
+                    NWBrowserNotice(message: notice.message, dismiss: { owner.dismissNotice() })
                         .padding(NW.Space.l)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                         .nwTransition(.overlay, edge: .top)
                 }
+                // The agent works in a tab that is not the one shown.
+                if let other = tabs.agentPage, other !== page {
+                    NWAgentElsewhere(title: other.tabTitle) { tabs.select(other.tabID) }
+                        .padding(NW.Space.l)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                        .nwTransition(.overlay, edge: .bottom)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .nwAnimation(.overlay, value: session.menuOpen)
-            .nwAnimation(.overlay, value: session.notice)
-            if session.hasPage {
-                BrowserConsoleDrawer(console: session.console, open: session.consoleOpen) { session.consoleOpen.toggle() }
+            .nwAnimation(.overlay, value: page.menuOpen)
+            .nwAnimation(.overlay, value: visibleNotice(page)?.1)
+            .nwAnimation(.overlay, value: tabs.agentPage?.tabID)
+            if let agent = page.agentOverlay {
+                NWAgentBar(note: agent.note, takeOver: { vm.takeOverBrowser(page) })
+                    .nwTransition(.overlay, edge: .bottom)
             }
+            if page.hasPage {
+                BrowserConsoleDrawer(console: page.console, open: page.consoleOpen) { page.consoleOpen.toggle() }
+            }
+            }
+            .overlay { if listOpen { tabList } }
         }
+        .nwAnimation(.overlay, value: page.agentOverlay != nil)
         .background {
-            BrowserKeys(active: active, focusAddress: { session.focusAddress() }, select: { session.toggleSelecting() })
+            BrowserKeys(active: active, focusAddress: { page.focusAddress() }, select: { page.toggleSelecting() }, newTab: { newTab() })
         }
         // A remote thread's dev servers come from its host, so they are asked for again when it connects.
-        .task(id: session.remote?.isConnected) { vm.loadDevServers(session) }
+        .task(id: TabLoad(tab: page.tabID, connected: session.remote?.isConnected)) { vm.loadDevServers(page) }
         // On a remote thread the tab on screen claims the agent's browser on the host, and lets it go
-        // a while after it goes out of sight (docs/browser.md › Remote).
+        // a while after it goes out of sight (docs/browser.md › Remote). The claim is the thread's, so
+        // it is the root's, whichever tab is shown.
         .onAppear { vm.browserPaneAppeared(session) }
         .onDisappear { vm.browserPaneDisappeared(session) }
-        .onChange(of: session.addressFocusRequests) { _, _ in
-            session.menuOpen = false
+        .onChange(of: page.addressFocusRequests) { old, new in
+            guard new != old else { return }
+            page.menuOpen = false
             addressFocused = true
         }
+        .onChange(of: page.tabID) { _, _ in
+            // Another tab: whatever was being typed belongs to the one left, and a field that was
+            // already being edited keeps its focus through the change, so its text is set here.
+            listOpen = false
+            addressFocused = false
+            address = BrowserAddress.editingText(page.url)
+            if focusNewTab {
+                focusNewTab = false
+                addressFocused = true
+            }
+        }
         .onChange(of: addressFocused) { _, focused in
-            if focused { address = BrowserAddress.editingText(session.url) }
+            if focused { address = BrowserAddress.editingText(page.url) }
         }
     }
 
-    private var toolbar: some View {
-        let display = BrowserAddress.display(session.url)
-        let state = NWBrowserToolbarState(canGoBack: session.canGoBack, canGoForward: session.canGoForward, canReload: session.hasPage,
-                                          isLoading: session.isLoading, selecting: session.selecting, viewportMenuOpen: session.menuOpen,
-                                          canOpenExternally: session.hasPage)
+    /// The page's own notice, else the thread's (the root's) while another tab is shown.
+    private func visibleNotice(_ page: BrowserSession) -> (BrowserSession, BrowserNotice)? {
+        if let notice = page.notice { return (page, notice) }
+        if page !== session, let notice = session.notice { return (session, notice) }
+        return nil
+    }
+
+    private struct TabLoad: Equatable {
+        let tab: UUID
+        let connected: Bool?
+    }
+
+    private func newTab() {
+        listOpen = false
+        focusNewTab = true
+        if tabs.newTab() == nil { focusNewTab = false }
+    }
+
+    // MARK: Tabs
+
+    private var tabStrip: some View {
+        let items = tabs.pages.map(\.tabItem)
+        return NWBrowserTabStrip(items: items, selection: page.tabID, canAdd: tabs.canAdd, listOpen: listOpen,
+                                 newShortcut: vm.keybindings.display(.browserNewTab),
+                                 actions: .init(select: { tabs.select($0) }, close: { tabs.close($0) }, new: { newTab() },
+                                                toggleList: { listOpen.toggle() }))
+            .nwAnimation(.list, value: items)
+    }
+
+    @ViewBuilder private var tabsNote: some View {
+        if let notice = tabs.notice {
+            NWBrowserTabsNote(message: notice.words, glyph: notice.glyph, dismiss: { tabs.dismissNotice() })
+                .nwTransition(.overlay, edge: .top)
+        } else if let opened = tabs.openedPage {
+            NWBrowserTabsNote(message: "The agent opened \(opened.tabTitle) in a new tab.",
+                              action: .init("Show it") { tabs.showOpenedPage() }, dismiss: { tabs.dismissNotice() })
+                .nwTransition(.overlay, edge: .top)
+        }
+    }
+
+    private var tabList: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture { listOpen = false }
+                .accessibilityHidden(true)
+            NWBrowserTabMenu(items: tabs.pages.map(\.tabItem), selection: page.tabID, maxTabs: BrowserTabs.maxTabs,
+                             select: { tabs.select($0); listOpen = false },
+                             closeOthers: { tabs.closeOthers(); listOpen = false })
+                .padding(.top, AppLayout.browserMenuDrop)
+                .padding(.trailing, NW.Space.m)
+                .nwTransition(.overlay, edge: .top)
+        }
+        .onKeyPress(.escape) {
+            listOpen = false
+            return .handled
+        }
+    }
+
+    // MARK: The page
+
+    private func toolbar(_ page: BrowserSession) -> some View {
+        let display = BrowserAddress.display(page.url)
+        let state = NWBrowserToolbarState(canGoBack: page.canGoBack, canGoForward: page.canGoForward, canReload: page.hasPage,
+                                          isLoading: page.isLoading, selecting: page.selecting, viewportMenuOpen: page.menuOpen,
+                                          canOpenExternally: page.hasPage)
         return NWBrowserToolbar(state: state, selectShortcut: vm.keybindings.display(.selectElement), actions: .init(
-            back: { session.goBack() }, forward: { session.goForward() }, reload: { session.reload() },
-            select: { session.toggleSelecting() }, viewport: { session.menuOpen.toggle() },
-            openExternally: { vm.openInDefaultBrowser(session) })) {
-            NWBrowserAddressField(host: display?.host, path: display?.path, hostChip: session.hostChip, text: $address,
+            back: { page.goBack() }, forward: { page.goForward() }, reload: { page.reload() },
+            select: { page.toggleSelecting() }, viewport: { page.menuOpen.toggle() },
+            openExternally: { vm.openInDefaultBrowser(page) })) {
+            NWBrowserAddressField(host: display?.host, path: display?.path, hostChip: page.hostChip, text: $address,
                                   isFocused: $addressFocused,
                                   submit: {
-                                      if session.open(address: address) { addressFocused = false }
+                                      if page.open(address: address) { addressFocused = false }
                                   },
                                   cancel: { addressFocused = false })
                 .nwHelp("Search or enter a URL", shortcut: vm.keybindings.display(.focusAddressBar))
         }
     }
 
-    private var empty: some View {
-        let servers = session.devServers ?? []
-        return NWBrowserEmpty(message: BrowserEmptyWords.message(waiting: session.waitingFor),
-                              servers: servers.map { $0.item(startTitle: session.startTitle) }, openShortcut: vm.keybindings.display(.focusAddressBar),
+    private func empty(_ page: BrowserSession) -> some View {
+        let servers = page.devServers ?? []
+        return NWBrowserEmpty(message: BrowserEmptyWords.message(waiting: page.waitingFor),
+                              servers: servers.map { $0.item(startTitle: page.startTitle) }, openShortcut: vm.keybindings.display(.focusAddressBar),
                               start: { item in
                                   guard let server = servers.first(where: { $0.id == item.id }) else { return }
-                                  vm.startDevServer(server, in: session)
+                                  vm.startDevServer(server, in: page)
                               },
-                              openURL: { session.focusAddress() })
+                              openURL: { page.focusAddress() })
     }
 
-    private var viewportMenu: some View {
+    private func viewportMenu(_ page: BrowserSession) -> some View {
         ZStack(alignment: .topTrailing) {
             Color.clear
                 .contentShape(Rectangle())
-                .onTapGesture { session.menuOpen = false }
+                .onTapGesture { page.menuOpen = false }
                 .accessibilityHidden(true)
-            NWViewportMenu(options: BrowserViewport.allCases.map(\.option), selection: session.viewport.rawValue, dark: session.dark,
-                           choose: { option in session.viewport = BrowserViewport(rawValue: option.id) ?? .fit },
-                           toggleDark: { session.dark.toggle() })
+            NWViewportMenu(options: BrowserViewport.allCases.map(\.option), selection: page.viewport.rawValue, dark: page.dark,
+                           choose: { option in page.viewport = BrowserViewport(rawValue: option.id) ?? .fit },
+                           toggleDark: { page.dark.toggle() })
                 .padding(.top, AppLayout.browserMenuDrop)
                 .padding(.trailing, AppLayout.browserMenuTrailing)
                 .nwTransition(.overlay, edge: .top)
         }
         .onKeyPress(.escape) {
-            session.menuOpen = false
+            page.menuOpen = false
             return .handled
+        }
+    }
+}
+
+@MainActor
+extension BrowserTabNotice {
+    /// What the note under the strip says.
+    var words: String {
+        switch self {
+        case .popup: "A link opened a new window. Shepherd opened it as a tab."
+        case .cap: "This thread has \(BrowserTabs.maxTabs) tabs, the most it keeps. New links open in this tab."
+        }
+    }
+
+    var glyph: String {
+        switch self {
+        case .popup: NWBrowserTabsNote.globeGlyph
+        case .cap: NWBrowserTabsNote.capGlyph
+        }
+    }
+}
+
+extension BrowserSession {
+    /// The page as the strip and the list draw it: its title, its address, and the tile of its site.
+    var tabItem: NWBrowserTabItem {
+        let display = BrowserAddress.display(url)
+        let host = display?.host ?? ""
+        return NWBrowserTabItem(id: tabID, title: tabTitle, address: display.map { $0.host + $0.path } ?? "",
+                                letter: NWBrowserTabTint.initial(host: host), tint: .forHost(host), source: tabSource.item,
+                                agentActive: agentOverlay != nil, unseen: tabUnseen)
+    }
+}
+
+private extension BrowserTabSource {
+    var item: NWBrowserTabSource {
+        switch self {
+        case .user: .user
+        case .agent: .agent
+        case .link: .link
         }
     }
 }
@@ -163,13 +315,11 @@ private struct BrowserPageArea: View {
                         }
                         .nwTransition(.overlay, edge: .leading)
                 }
-                // The agent is using the page: the ring, its pointer and the card. Native and over
-                // the page, never in it; only the card takes clicks.
+                // The agent is using the page: the ring and its pointer. Native and over the page, never
+                // in it, and they take no clicks. The words and Take over are the bar under the page.
                 if let agent = session.agentOverlay {
                     NWBrowserAgentOverlay(
-                        note: agent.note,
-                        pointer: agent.pointer.map { CGPoint(x: origin.x + $0.x * layout.zoom, y: origin.y + $0.y * layout.zoom) },
-                        takeOver: { vm.takeOverBrowser(session) })
+                        pointer: agent.pointer.map { CGPoint(x: origin.x + $0.x * layout.zoom, y: origin.y + $0.y * layout.zoom) })
                         .frame(width: geo.size.width, height: geo.size.height)
                         .nwTransition(.overlay)
                 }
@@ -224,12 +374,13 @@ struct BrowserConsoleLines: View, Equatable {
     }
 }
 
-/// ⌘L and ⇧⌘C while the Browser shows on screen, whatever has the keyboard in the window (the
+/// ⌘L, ⇧⌘C and ⌘T while the Browser shows on screen, whatever has the keyboard in the window (the
 /// composer, the page, a terminal): the Browser's scope in `KeybindingsStore`.
 struct BrowserKeys: NSViewRepresentable {
     let active: Bool
     let focusAddress: () -> Void
     let select: () -> Void
+    let newTab: () -> Void
 
     func makeNSView(context: Context) -> Watcher { Watcher() }
 
@@ -237,6 +388,7 @@ struct BrowserKeys: NSViewRepresentable {
         view.active = active
         view.focusAddress = focusAddress
         view.select = select
+        view.newTab = newTab
     }
 
     static func dismantleNSView(_ view: Watcher, coordinator: ()) {
@@ -247,6 +399,7 @@ struct BrowserKeys: NSViewRepresentable {
         var active = false
         var focusAddress: () -> Void = {}
         var select: () -> Void = {}
+        var newTab: () -> Void = {}
         private var monitor: Any?
 
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -278,6 +431,10 @@ struct BrowserKeys: NSViewRepresentable {
             }
             if keys.chord(for: .selectElement).matches(event) {
                 select()
+                return true
+            }
+            if keys.chord(for: .browserNewTab).matches(event) {
+                newTab()
                 return true
             }
             return false

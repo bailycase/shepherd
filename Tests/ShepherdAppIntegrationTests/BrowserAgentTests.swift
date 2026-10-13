@@ -398,7 +398,8 @@ struct BrowserAgentTests {
     @Test func historyNeverLandsOnAPageTheUserOpenedByHand() async throws {
         let (session, server) = try await start()
         defer { server.stop(); session.close() }
-        // The app's own load (the address field's) may open a page the agent's open never could.
+        // In an existing agent tab, the user's address field may open a page the agent never could.
+        try await opened(session, server, "/checkout")
         session.load(try #require(URL(string: "data:text/html,<title>byhand</title>hi")))
         try await eventuallyOnMain("the hand-opened page") { session.pageTitle == "byhand" && !session.isLoading }
         try await opened(session, server, "/terms")
@@ -498,9 +499,9 @@ struct BrowserAgentTests {
         let apply = try ref(in: snapshot, "Apply promo")
         let waiting = Task { await session.perform(.wait(text: "never appears", ref: nil, gone: false, ms: nil, timeout: 20)) }
         try await eventuallyOnMain("the wait to run") { session.agentOverlay?.note == "waiting for “never appears”" }
-        let before = session.operationTail
+        let before = session.tabs.operationTail
         let queued = Task { await session.perform(.click(ref: apply, double: false, note: nil)) }
-        try await eventuallyOnMain("the click to queue behind it") { session.operationTail != before }
+        try await eventuallyOnMain("the click to queue behind it") { session.tabs.operationTail != before }
         session.abandonQueued()
         let started = ContinuousClock.now
         let (first, second) = (await waiting.value, await queued.value)
