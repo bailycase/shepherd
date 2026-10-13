@@ -337,7 +337,9 @@ struct ThreadImagesTests {
         let idle = try await pi.ready()
         _ = try await pi.send("project-action", from: idle)
         // While the tool is live (the stub holds the turn until released): its row carries the image block and names nothing.
-        let live = try await pi.snapshot("the live tool row") { s in s.provisional.contains { $0.toolName == "chart" || $0.role == "toolResult" } }
+        let live = try await pi.snapshot("the live tool result image") { s in
+            s.provisional.contains { $0.role == "toolResult" && $0.blocks.contains { $0.kind == .unsupportedImage } }
+        }
         let liveBlocks = live.provisional.filter { $0.role == "toolResult" }.flatMap(\.blocks).filter { $0.kind == .unsupportedImage }
         #expect(!liveBlocks.isEmpty && liveBlocks.allSatisfy { $0.imageID == nil }, "a live row names no image yet: \(liveBlocks)")
         #expect(seen.all.isEmpty, "projecting the live image read nothing on any queue: \(seen.all)")
