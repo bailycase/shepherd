@@ -662,6 +662,12 @@ extension NativeActivityCall {
             let subject = NativeMCPActivity.subjectKeys.compactMap(string).first
                 .flatMap { $0.split(whereSeparator: \.isNewline).first.map(String.init) }
             detail = [parts?.server, subject].compactMap { $0 }.joined(separator: " · ")
+        case _ where NativeProjectToolActivity.isTool(name):
+            // A Project tool's result is JSON for the model: the line says what it did from the call's typed arguments and result, and the
+            // JSON stays in the expanded output.
+            kind = .other
+            detail = failed ? "" : NativeProjectToolActivity.subject(name, arguments: args, output: running ? "" : output)
+            if failed { failure = NativeProjectToolActivity.failureMessage(output) }
         default:
             kind = .other
             detail = ["command", "path", "query", "url", "pattern"].compactMap(string).first ?? firstLine
@@ -791,7 +797,9 @@ private func progressiveLabel(_ call: NativeActivityCall) -> String {
     case .checked: return "Checking the boards"
     case .lookedAt: return "Looking at a design"
     case .browser: return NativeBrowserActivity.running(tool: call.name, subject: call.detail.isEmpty ? nil : call.detail)
-    case .other: return NativeMCPActivity.running(call.name, tool: call.label) ?? "Running \(call.label)"
+    case .other:
+        if NativeProjectToolActivity.isTool(call.name) { return NativeProjectToolActivity.running(call.name, subject: call.detail) }
+        return NativeMCPActivity.running(call.name, tool: call.label) ?? "Running \(call.label)"
     }
 }
 
@@ -824,7 +832,9 @@ private func failedLabel(_ call: NativeActivityCall) -> String {
     case .checked: return "Check failed"
     case .lookedAt: return "Couldn’t read the design"
     case .browser: return NativeBrowserActivity.failed(tool: call.name)
-    case .other: return NativeMCPActivity.failed(call.name, tool: call.label) ?? "\(call.label) failed"
+    case .other:
+        if NativeProjectToolActivity.isTool(call.name) { return NativeProjectToolActivity.failed(call.name) }
+        return NativeMCPActivity.failed(call.name, tool: call.label) ?? "\(call.label) failed"
     }
 }
 
@@ -851,7 +861,9 @@ private func stoppedLabel(_ call: NativeActivityCall) -> String {
     case .checked: return "Check stopped"
     case .lookedAt: return "Design read stopped"
     case .browser: return NativeBrowserActivity.stopped(tool: call.name)
-    case .other: return NativeMCPActivity.stopped(call.name, tool: call.label) ?? "\(call.label) stopped"
+    case .other:
+        if NativeProjectToolActivity.isTool(call.name) { return NativeProjectToolActivity.stopped(call.name) }
+        return NativeMCPActivity.stopped(call.name, tool: call.label) ?? "\(call.label) stopped"
     }
 }
 
@@ -903,6 +915,7 @@ private func doneWords(_ calls: [NativeActivityCall]) -> (String, [String]) {
         }
         return (NativeBrowserActivity.merged(tool: first.name, count: calls.count), [duration].compactMap { $0 })
     case .other:
+        if let words = NativeProjectToolActivity.done(calls, duration: duration) { return words }
         if let words = NativeMCPActivity.done(calls, duration: duration) { return words }
         let label = calls.count == 1 ? "Used \(first.label)" : "Used \(first.label) \(calls.count) times"
         return (label, (calls.count == 1 ? [first.detail] : []) + [duration].compactMap { $0 })
