@@ -148,7 +148,10 @@ final class ProjectCoordinatorController {
         return try await vm.startAgent(NewAgentConfig(spaceID: request.spaceID, workingDirectory: request.cwd,
                                                      reservedAgentID: request.agentID,
                                                      coordinatorFor: request.coordinator ? request.projectID : nil,
-                                                     model: request.model, thinking: .medium, initialPrompt: nil,
+                                                     // The coordinator's own choice for a task, else the owner's default level.
+                                                     model: request.model,
+                                                     thinking: request.thinking.flatMap(ThinkingLevel.init(rawValue:)) ?? vm.settings.agentDefaults.thinking,
+                                                     initialPrompt: nil,
                                                      initialName: request.name), selectAfter: false, focusWindow: false)
     }
 }

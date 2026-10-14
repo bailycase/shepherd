@@ -164,6 +164,10 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
     rejects ad-hoc frameworks, which have no Team ID.
   - Shipped binaries are stripped (`strip -S -x`). Their dSYMs go on each release as
     `Shepherd-dSYMs.zip` or `Shepherd-Nightly-dSYMs.zip`.
+  - Optional Sentry crash reporting embeds public `SHEPHERD_SENTRY_DSN` from repository variables.
+    `SENTRY_ORG`, `SENTRY_PROJECT` and secret `SENTRY_AUTH_TOKEN` enable bounded, checksum-pinned
+    CLI symbol upload before stripping. Missing configuration skips it; failure warns without
+    blocking publication. Setup, privacy and removal: [diagnostics](diagnostics.md).
 - **Appcasts** are reconciled by the serialized publication job against all completed eligible
   releases in its snapshot, keeping the four newest completed nightlies. Every candidate's
   eligibility metadata is checked even when its feed is unchanged; the triggering tag never

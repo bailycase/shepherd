@@ -15,6 +15,7 @@ struct LogicalProjectSpacesTab: View {
     let project: Project
 
     @State private var hostOptions: [ProjectHostOption]?
+    @State private var choosingFolder = false
     private var model: LogicalProjectsModel { vm.logicalProjects }
     private var ownerName: String { vm.ownerName(of: ref.home) }
     private var saving: Bool { model.busy.contains(ref.id) }
@@ -56,6 +57,11 @@ struct LogicalProjectSpacesTab: View {
             }
         }
         .task(id: ref) { hostOptions = await model.hostOptions(ref.home) }
+        .sheet(isPresented: $choosingFolder) {
+            ProjectFolderPicker(vm: vm, route: vm.projectFolderRoute(ref.home), chosen: { space in _ = await model.link(ref, space: space) },
+                                close: { choosingFolder = false })
+                .dialogSheetFrame()
+        }
     }
 
     /// Where threads may run, from the owner's own host list. Choosing one saves the policy against the revision shown; nothing
@@ -140,10 +146,14 @@ struct LogicalProjectSpacesTab: View {
             ForEach(addable) { choice in
                 Button(choice.title) { Task { _ = await model.link(ref, space: choice.space.id, host: choice.host) } }
             }
+            // With nothing left to pick (a new profile has no Spaces at all) the menu still offers a folder, as the board does.
+            if !addable.isEmpty { Divider() }
+            let route = vm.projectFolderRoute(ref.home)
+            Button(route.menuTitle) { choosingFolder = true }.disabled(!route.isAvailable)
         }
-        .disabled(addable.isEmpty || saving)
+        .disabled(saving)
         .accessibilityLabel("Add a space…")
-        .help(addable.isEmpty ? "Every space on \(ownerName) and its hosts is already added." : "Add a space…")
+        .help("Add a space…")
     }
 }
 

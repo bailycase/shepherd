@@ -67,6 +67,14 @@ test('real extension tools use correlated owner requests and refresh memory each
     assert.deepEqual(retry.details, assigned.details);
     const followed = await tools.get('project_follow_up').execute('follow-call', { expectedRevision: 8, taskID: 'argument-is-not-identity', text: 'Continue' });
     assert.equal(followed.details.taskID, 'server-followup');
+    // The coordinator's per-task model and thinking reach the owner unchanged; omitted, they are absent.
+    await tools.get('project_assign').execute('effort-call', { expectedRevision: 8, spaceID: 'space', title: 'Hard', prompt: 'Debug it', model: 'provider/big', thinking: 'high' });
+    const effort = calls.findLast(call => call.request.assign);
+    assert.equal(effort.request.assign.model, 'provider/big');
+    assert.equal(effort.request.assign.thinking, 'high');
+    assert.equal(calls.find(call => call.request.assign).request.assign.thinking, undefined);
+    assert.equal(calls.find(call => call.request.followUp).request.followUp.thinking, undefined);
+    assert.ok(tools.get('project_assign').parameters.properties.thinking.anyOf.some(level => level.const === 'xhigh'));
     const proposed = await tools.get('project_propose_space').execute('proposal-call', { expectedRevision: 8, spaceID: 'space' });
     assert.equal(proposed.details.proposalID, 'server-proposal');
     assert.equal(proposed.details.taskID, undefined);
@@ -100,7 +108,7 @@ test('real extension tools use correlated owner requests and refresh memory each
     const unmatched = await tools.get('project_assign').execute('unmatched-call', parameters);
     assert.deepEqual(unmatched.details, { projectID: 'project', revision: 8 }, 'no receipt means no invented action identity');
     const assigns = calls.filter(call => call.request.assign);
-    assert.equal(assigns.length, 3);
+    assert.equal(assigns.length, 4, 'call-123 twice, effort-call, unmatched-call');
     assert.equal(assigns[0].request.assign.operationID, assigns[1].request.assign.operationID);
     assert.equal(assigns[0].expectedRevision, 8);
     assert.deepEqual(assigns[0].request.assign.host, parameters.host);
@@ -108,7 +116,7 @@ test('real extension tools use correlated owner requests and refresh memory each
     assert.equal(assigns[0].projectID, 'project');
     // Worker launch policy needs no owner heartbeat and survives settled/manual turns.
     process.env.SHEPHERD_PROJECT_COORDINATOR = '0'; process.env.SHEPHERD_AGENT_ID = 'worker'; hooks.clear();
-    install({ on: (name, hook) => hooks.set(name, hook), registerTool: tool => assert.ok(['project_publish', 'project_plan'].includes(tool.name), 'workers get no coordinator tools') });
+    install({ on: (name, hook) => hooks.set(name, hook), registerTool: tool => assert.ok(['project_publish', 'project_plan', 'project_question'].includes(tool.name), 'workers get no coordinator tools') });
     project.tasks = [{ workerAgentID: 'worker', phase: 'running' }];
     for (const phase of ['running', 'settled', 'unknown']) {
       project.tasks[0].phase = phase;
@@ -118,7 +126,7 @@ test('real extension tools use correlated owner requests and refresh memory each
         assert.equal((await hooks.get('tool_call')({ toolName })).block, true);
       }
       assert.equal(calls.length, before, 'no owner request: even offline/deleted Project launches stay restricted until relaunch');
-      for (const toolName of ['read', 'edit', 'write', 'bash', 'grep', 'find', 'ls', 'project_plan', 'project_publish']) {
+      for (const toolName of ['read', 'edit', 'write', 'bash', 'grep', 'find', 'ls', 'project_plan', 'project_publish', 'project_question']) {
         assert.equal(await hooks.get('tool_call')({ toolName }), undefined, 'direct coding remains available');
       }
     }
@@ -179,7 +187,7 @@ test('worker plan is a bounded pure current-turn report with persisted v1 output
     Object.assign(process.env, { SHEPHERD_PROJECT_CONTEXT: '{"projectID":"project"}', SHEPHERD_AGENT_ID: 'worker', SHEPHERD_PROJECT_COORDINATOR: '0', SHEPHERD_SOCKET: '/no-plan-socket' });
     // No hooks fire and no owner exists: registration is static and execution needs no authority.
     install({ on() {}, registerTool: tool => tools.set(tool.name, tool) });
-    assert.deepEqual([...tools.keys()], ['project_plan', 'project_publish']);
+    assert.deepEqual([...tools.keys()], ['project_question', 'project_plan', 'project_publish']);
     const plan = tools.get('project_plan');
     assert.equal(plan.parameters.properties.steps.maxItems, 20);
     assert.equal(plan.parameters.properties.steps.items.properties.text.maxLength, 500);

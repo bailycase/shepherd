@@ -53,7 +53,17 @@ struct LogicalProjectSettingsPage: View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: NW.Space.xl) {
                 VStack(alignment: .leading, spacing: NW.Space.s) {
-                    Text(project.name).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary).lineLimit(1)
+                    // The project's name leads back to its page (not on the boards; the user asked for a way back).
+                    Button { vm.openLogicalProject(ref) } label: {
+                        HStack(spacing: NW.Space.xs) {
+                            NWGlyph.Settings.back.image.accessibilityHidden(true)
+                            Text(project.name).lineLimit(1)
+                        }
+                        .frame(minHeight: NW.Height.controlS)  // the desktop's 24pt hit area
+                    }
+                    .buttonStyle(.nwLink(color: Color.nw.textTertiary, font: .nw(.caption)))
+                    .nwHelp("Back to \(project.name)")
+                    .accessibilityLabel("Back to \(project.name)")
                     Text("Project settings")
                         .font(.nw(.title))
                         .foregroundStyle(Color.nw.textPrimary)

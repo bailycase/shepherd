@@ -32,12 +32,10 @@ public enum NWProjectSettingsMetrics {
 
     /// Geist 13 in a 32pt control, 12pt before the value and 36pt after it, where the chevrons sit.
     public static let popupTrailing: CGFloat = 36
-    /// The up-down chevrons: the board puts a 12pt glyph box at the top of a 25.28pt line box centered on the control, so the mark's
-    /// middle sits 6.6pt above the control's middle and 16.6pt from its right edge (measured on the 2x board's Add a space…: a 7 x 9pt
-    /// mark). The SF Symbol's own ink is 6.5 x 9.4pt, the one difference from the board's SVG.
+    /// The up-down chevrons, centered on the control as the boards' CSS places them (`top: 50%; translateY(-50%)`), 16.6pt from its
+    /// right edge. The SF Symbol's own ink is 6.5 x 9.4pt, the one difference from the board's SVG.
     public static let chevronBox: CGFloat = 12
     public static let chevronTrailing: CGFloat = 10.45
-    public static let chevronLift: CGFloat = 7
     public static let chevronSize: CGFloat = 10
 
     // MARK: Fields
@@ -206,7 +204,6 @@ public struct NWProjectSettingsPopup<Content: View>: View {
                         .foregroundStyle(nw.textTertiary)
                         .frame(width: M.chevronBox, height: M.chevronBox)
                         .padding(.trailing, M.chevronTrailing)
-                        .offset(y: -M.chevronLift)
                         .accessibilityHidden(true)
                 }
                 .nwBorder(nw.lineStrong, radius: S.radius, width: M.line)

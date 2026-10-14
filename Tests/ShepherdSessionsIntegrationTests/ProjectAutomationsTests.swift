@@ -100,7 +100,7 @@ struct ProjectAutomationsTests {
         let restarted = try ScratchServer(dir: host.dir)
         restarted.server.setProjectsEnabled(true)
         defer { restarted.stop() }
-        #expect(restarted.server.state.projects.first?.paused == true)
+        #expect(restarted.server.state.projects.first?.paused == false, "Resumed before the restart, it stays resumed and runs nothing")
         #expect(restarted.server.state.automations.first?.projectID == p.id)
         #expect(restarted.server.state.automations.first?.agentID == nil)
         #expect(await restarted.server.listSessions().isEmpty)

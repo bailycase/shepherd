@@ -359,15 +359,16 @@ struct ProjectPlacementFlowTests {
         try await eventuallyOnMain("executor finishes while owner is stopped") { r.executor.server.state.projectExecutions.allSatisfy { $0.phase == .settled } }
         #expect(r.executor.server.state.projectExecutions.count == 3)
         try r.owner.server.start()
-        #expect(r.project.paused)
+        // A restart starts nothing and pauses nothing: queued work waits for the person's next action.
+        #expect(!r.project.paused)
         r.owner.server.reconcileProjectExecutions(host: r.host)
         try await eventuallyOnMain("read-only reconciliation after restart") { r.project.tasks.filter { $0.phase == .settled }.count == 3 }
-        #expect(r.project.paused && r.project.tasks.last?.phase == .queued)
+        #expect(!r.project.paused && r.project.tasks.last?.phase == .queued)
         #expect(r.project.tasks.compactMap(\.executionAssignment) == assignments)
         #expect(r.executor.server.state.projectExecutions.count == 3)
         #expect(r.executor.server.state.projectExecutions.allSatisfy { $0.ownerPaused != true })
         try await r.perform(.resume)
-        try await eventuallyOnMain("only explicit Resume dispatches queued work") { r.project.tasks.last?.phase == .settled }
+        try await eventuallyOnMain("only an explicit action dispatches queued work") { r.project.tasks.last?.phase == .settled }
         #expect(r.executor.server.state.projectExecutions.count == 4)
     }
 

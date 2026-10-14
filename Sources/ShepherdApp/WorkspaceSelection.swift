@@ -96,8 +96,12 @@ struct WorkspaceSelection {
     /// layout mounting later lands in its place without moving the others.
     var mountedTabs: [Tab] {
         let active = activeTabID
+        // A Project coordinator's thread is drawn only by its Project page. Mounted here too it would be a second, hidden
+        // `ThreadView` on the same store, whose `suspend()` ends the page's poll: the first reply never shows until you leave and return.
+        let coordinatorTabs = Set(state.agents.filter { state.isProjectCoordinator($0) }.map(\.tabID))
         return Self.stable(state.tabs.filter { tab in
-            tab.id == active || (!parkedTabIDs.contains(tab.id) && !pendingMountTabIDs.contains(tab.id))
+            !coordinatorTabs.contains(tab.id)
+                && (tab.id == active || (!parkedTabIDs.contains(tab.id) && !pendingMountTabIDs.contains(tab.id)))
         }, in: state)
     }
 

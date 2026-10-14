@@ -57,7 +57,7 @@ struct ProjectRuntimeRevocationTests {
         #expect(rig.host.server.state.projects.first?.tasks.first?.operationID == task.operationID)
     }
 
-    @Test func coordinatorExitMakesAcceptedUnconsumedMessageUnknownAndNewMessageCanRunAfterResume() async throws {
+    @Test func coordinatorExitMakesAcceptedUnconsumedMessageUnknownAndTheNextMessageRelaunchesIt() async throws {
         let rig = try Rig(); defer { rig.stop() }
         let p = try await rig.create(), operation = UUID()
         let sent = try await rig.perform(p.id, .message(operationID: operation, text: "tools:0 hold-start"))
@@ -70,15 +70,17 @@ struct ProjectRuntimeRevocationTests {
         await rig.host.server.stopKeepingAgent(sessionID: old.sessionID)
         try await rig.host.waitForExit(old.sessionID)
         try await eventually("coordinator exit preserves unknown delivery") {
-            rig.host.server.state.projects.first?.paused == true && rig.host.server.state.projects.first?.messages.first?.phase == .unknown
+            rig.host.server.state.projects.first?.messages.first?.phase == .unknown
         }
+        // The lead's pi exiting never pauses the Project: the next message relaunches it, and the unknown one is not resent.
+        #expect(rig.host.server.state.projects.first?.paused == false)
         #expect(rig.host.server.state.projects.first?.messages.first?.id == operation)
-        _ = try await rig.perform(p.id, .resume)
         _ = try await rig.perform(p.id, .message(operationID: UUID(), text: "new assigned message"))
         try await eventually("new message delivered without replaying unknown input") {
             rig.host.server.state.projects.first?.messages.last?.phase == .delivered
         }
         #expect(rig.host.server.state.projects.first?.messages.first?.phase == .unknown)
+        #expect(rig.host.server.state.projects.first?.messages.first?.failureDetail == nil)
         #expect(rig.agents.current[coordinator]?.stdin("prompt").compactMap { $0["message"] as? String } == ["tools:0 hold-start", "new assigned message"])
     }
 }

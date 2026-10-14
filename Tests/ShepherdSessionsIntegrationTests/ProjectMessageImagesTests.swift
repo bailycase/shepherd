@@ -137,10 +137,9 @@ struct ProjectMessageImagesTests {
         #expect(rig.host.server.state.projects.first?.messages.first?.phase == .delivering)
         rig.host.server.onProjectRuntimeLaunch = nil; rig.host.stop(keepFiles: true)
         let restarted = try Rig(dir: rig.host.dir); defer { restarted.stop() }
-        #expect(restarted.host.server.state.projects.first?.paused == true)
+        #expect(restarted.host.server.state.projects.first?.paused == false)
         #expect(restarted.host.server.state.projects.first?.messages.first?.phase == .unknown)
         #expect(await restarted.host.server.listSessions().isEmpty)
-        _ = try await restarted.perform(p.id, .resume)
         _ = try await restarted.perform(p.id, .message(operationID: UUID(), text: "new human message"))
         let new = try await coordinator(restarted, p.id)
         // The resumed coordinator uses the same scratch log file, which retains its old send.
