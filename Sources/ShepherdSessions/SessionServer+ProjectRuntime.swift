@@ -74,7 +74,12 @@ extension SessionServer {
         if case .proposeSpace(let op, _, _, _) = request, current.spaceProposals.contains(where: { $0.operationID == op }) { return current }
         if case .remember(let op, _, _) = request, current.memoryOperations.contains(op) || current.memory.contains(where: { $0.id.rawValue == op.uuidString.lowercased() }) { return current }
         if case .decideSpace(let proposal, _, _) = request, current.spaceProposals.contains(where: { $0.id == proposal && $0.phase != .pending }) { return current }
-        guard current.revision == expectedRevision else { throw LogicalProjectsError("stale_project", "Refresh the Project before trying again.") }
+        // A new thread, a remembered fact or a Space request only adds a record under its own operation identity, so it needs no
+        // whole-Project revision: the coordinator's parallel calls in one turn all land instead of all but one going stale.
+        let additive: Bool
+        switch request { case .assign, .remember, .proposeSpace: additive = true; default: additive = false }
+        let fence: UInt64? = additive ? nil : expectedRevision
+        guard additive || current.revision == expectedRevision else { throw LogicalProjectsError("stale_project", "Refresh the Project before trying again.") }
         if case .conversation = request {
             return try await enqueue {
                 try admission()
@@ -126,7 +131,7 @@ extension SessionServer {
         let acceptedImages = inputRefs
         let acceptedSpace = approvedSpace
         let project: Project
-        do { project = try await updateRuntimeProject(id, expectedRevision: expectedRevision, expectedEpoch: epoch, revalidate: admission) { p in
+        do { project = try await updateRuntimeProject(id, expectedRevision: fence, expectedEpoch: epoch, revalidate: admission) { p in
             try admission()
             if let coordinator {
                 guard !p.paused, p.coordinatorAgentID == coordinator, self.projectRunStarts[id] != nil,

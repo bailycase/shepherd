@@ -413,6 +413,24 @@ struct ProjectRuntimeTests {
         #expect(rig.host.server.state.projects.first?.paused == false)
     }
 
+    /// A coordinator's parallel `project_assign` calls in one turn read one revision; each adds its own task, so none is refused
+    /// as stale and Threads at once runs them together (three start, the fourth queues).
+    @Test func parallelAssignmentsFromOneRevisionAllLand() async throws {
+        let rig = try Rig(); defer { rig.stop() }
+        let project = try await rig.create(), space = try #require(project.linkedSpaces.first?.spaceID)
+        let revision = project.revision
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for i in 0..<4 {
+                group.addTask { _ = try await rig.host.server.projectRuntime(project.id, expectedRevision: revision,
+                    request: .assign(operationID: UUID(), spaceID: space, title: "Task \(i)", prompt: "slow")) }
+            }
+            try await group.waitForAll()
+        }
+        try await eventually("three run together") { rig.agents.current.count == 3 }
+        #expect(rig.host.server.state.projects.first?.tasks.count == 4)
+        for pi in rig.agents.current.values { pi.release(1); pi.release(2) }
+    }
+
     /// The coordinator chooses a task's thinking level; a follow-up can change it, and the worker's pi is set to it before the prompt.
     @Test func aTasksThinkingLevelIsTheCoordinatorsChoice() async throws {
         let rig = try Rig(); defer { rig.stop() }
