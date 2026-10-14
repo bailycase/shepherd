@@ -184,13 +184,11 @@ struct ProjectRuntimeTests {
         let expiredStart = Date().addingTimeInterval(-600)
         try await rig.host.server.enqueue {
             rig.host.server.projectRunStarts[project.id] = expiredStart
-            rig.host.server.projectActivations[project.id] = 11
         }
         done(.failure(WireError("launch refused")))
         try await eventually("failure synchronously revokes run but retains launch fence") {
             try await rig.host.server.enqueue {
                 rig.host.server.projectRunStarts[project.id] == nil
-                    && rig.host.server.projectActivations[project.id] == nil
                     && rig.host.server.projectLaunches.contains(launch.agentID)
                     && rig.host.server.projectRuntimeWriterBusy
             }
@@ -215,10 +213,8 @@ struct ProjectRuntimeTests {
         #expect(rig.host.server.state.projects.first?.messages.map(\.id) == [original, concurrent])
         rig.host.server.onProjectRuntimeLaunch = launcher
         _ = try await rig.perform(project.id, .resume)
-        let (started, activations) = try await rig.host.server.enqueue {
-            (rig.host.server.projectRunStarts[project.id], rig.host.server.projectActivations[project.id])
-        }
-        #expect(try #require(started) > expiredStart && activations == 0)
+        let started = try await rig.host.server.enqueue { rig.host.server.projectRunStarts[project.id] }
+        #expect(try #require(started) > expiredStart)
         try await eventually("both retained operations delivered once after fresh Resume") {
             rig.host.server.state.projects.first?.messages.allSatisfy { $0.phase == .delivered } == true
         }
@@ -405,19 +401,36 @@ struct ProjectRuntimeTests {
         #expect(rig.host.server.state.projects.first?.tasks.first?.workerAgentID == pi.agent.id)
     }
 
-    @Test func theDefaultActivationCapLeavesTheThirteenthAssignmentQueuedAndManualThreadsUsable() async throws {
+    /// Projects never pause on their own: thirteen assignments (past the old twelve-activation bound) all run, a few at a time.
+    @Test func manyAssignmentsAllRunAndTheProjectNeverPausesItself() async throws {
         let rig = try Rig(); defer { rig.stop() }
         let project = try await rig.create(), space = try #require(project.linkedSpaces.first?.spaceID)
         for i in 0..<13 { _ = try await rig.perform(project.id, .assign(operationID: UUID(), spaceID: space, title: "Task \(i)", prompt: "hello")) }
-        try await eventually("default activation bound") { rig.host.server.state.projects.first?.paused == true }
-        #expect(rig.agents.current.count <= 12)
-        #expect(rig.host.server.state.projects.first?.tasks.filter { $0.phase == .queued }.count == 1, "Exactly twelve reservations hit the default cap")
-        let pi = try #require(rig.agents.current.values.first)
-        try await eventually("limit interruption acknowledged") { rig.host.server.state.projects.first?.interruptPending == false }
-        let before = try await pi.snapshot("ordinary worker idle") { !$0.running }
-        let promptsBefore = pi.stdin("prompt").count
-        #expect(try await pi.send("manual after bound", from: before).failureCode == nil)
-        try await pi.waitForStdin("prompt", count: promptsBefore + 1)
+        try await eventually("all thirteen settled") { rig.host.server.state.projects.first?.tasks.filter { $0.phase == .settled }.count == 13 }
+        #expect(rig.agents.current.count == 13)
+        #expect(rig.host.server.state.projects.first?.paused == false)
+    }
+
+    /// The coordinator chooses a task's thinking level; a follow-up can change it, and the worker's pi is set to it before the prompt.
+    @Test func aTasksThinkingLevelIsTheCoordinatorsChoice() async throws {
+        let rig = try Rig(); defer { rig.stop() }
+        let project = try await rig.create(), space = try #require(project.linkedSpaces.first?.spaceID)
+        await #expect(throws: LogicalProjectsError.self) {
+            try await rig.perform(project.id, .assign(operationID: UUID(), spaceID: space, title: "Bad", prompt: "hello", thinking: "extreme"))
+        }
+        await #expect(throws: LogicalProjectsError.self) {
+            try await rig.perform(project.id, .assign(operationID: UUID(), spaceID: space, title: "Bad", prompt: "hello", model: "nobody/unlisted"))
+        }
+        _ = try await rig.perform(project.id, .assign(operationID: UUID(), spaceID: space, title: "Hard", prompt: "hello", thinking: "high"))
+        try await eventually("settled") { rig.host.server.state.projects.first?.tasks.first?.phase == .settled }
+        let task = try #require(rig.host.server.state.projects.first?.tasks.first)
+        #expect(task.thinking == "high")
+        let pi = try #require(rig.agents.current[task.workerAgentID])
+        #expect(pi.stdin("set_thinking_level").last?["level"] as? String == "high")
+        _ = try await rig.perform(project.id, .followUp(taskID: task.id, operationID: UUID(), text: "hello", thinking: "low"))
+        try await eventually("follow-up settled") { pi.stdin("prompt").count == 2 && rig.host.server.state.projects.first?.tasks.first?.phase == .settled }
+        #expect(rig.host.server.state.projects.first?.tasks.first?.thinking == "low")
+        #expect(pi.stdin("set_thinking_level").last?["level"] as? String == "low")
     }
 
     @Test func anExitedWorkerFailsItsAssignmentRatherThanHoldingTheQueueForever() async throws {
@@ -446,20 +459,14 @@ struct ProjectRuntimeTests {
         #expect(rig.host.server.state.projects.first?.tasks.contains { $0.phase == .queued } == true)
     }
 
-    @Test func launchFailuresFreeSlotsWithoutRetryAndRunBoundsReallyPause() async throws {
+    @Test func launchFailuresFreeSlotsWithoutRetryAndNeverPauseTheProject() async throws {
         let rig = try Rig(); defer { rig.stop() }
         rig.host.server.onProjectRuntimeLaunch = { _, done in done(.failure(WireError("launch refused"))) }
         let project = try await rig.create(), space = try #require(project.linkedSpaces.first?.spaceID)
         _ = try await rig.perform(project.id, .assign(operationID: UUID(), spaceID: space, title: "Fail", prompt: "hello"))
         try await eventually("failed reservation") { rig.host.server.state.projects.first?.tasks.first?.phase == .failed }
         #expect(rig.host.server.state.projects.first?.tasks.first?.error == "launch refused")
-        rig.host.server.projectActivationLimit = 0
-        _ = try await rig.perform(project.id, .resume)
-        try await eventually("activation pause persisted") { rig.host.server.state.projects.first?.paused == true && rig.host.server.state.projects.first?.interruptPending == false }
-        rig.host.server.projectActivationLimit = 12
-        rig.host.server.projectRunSeconds = 0
-        _ = try await rig.perform(project.id, .resume)
-        try await eventually("time pause persisted") { rig.host.server.state.projects.first?.paused == true }
+        #expect(rig.host.server.state.projects.first?.paused == false)
         #expect(await rig.host.server.listSessions().isEmpty)
     }
 }

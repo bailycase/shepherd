@@ -43,7 +43,9 @@ final class ProjectExecutionController {
         }
         return try await vm.startAgent(NewAgentConfig(spaceID: space.id, workingDirectory: space.path,
                                                      reservedAgentID: assignment.reservedWorkerID,
-                                                     model: assignment.model, thinking: .medium, initialPrompt: nil,
+                                                     model: assignment.model,
+                                                     thinking: assignment.thinking.flatMap(ThinkingLevel.init(rawValue:)) ?? vm.settings.agentDefaults.thinking,
+                                                     initialPrompt: nil,
                                                      initialName: assignment.title), selectAfter: false, focusWindow: false)
     }
 }
