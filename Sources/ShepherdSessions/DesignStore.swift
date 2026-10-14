@@ -147,6 +147,8 @@ public final class DesignStore: @unchecked Sendable {
     var loaded: [DesignID: Loaded] = [:]
     /// Each design's comments.json as last read or written. Queue-confined.
     private var commentFiles: [DesignID: DesignComments] = [:]
+    /// Each shared design's Git `user.name`, read once (`gitAuthorName`). Queue-confined.
+    private var gitAuthorNames: [DesignID: String?] = [:]
     /// Each served file's hash, while its size and modification time hold. Queue-confined.
     private struct ServedHash {
         var size: Int
@@ -270,6 +272,8 @@ public final class DesignStore: @unchecked Sendable {
         try await run {
             guard let folder = self.folder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
             self.forget(id)
+            // A shared design's repository lives beside the designs (`DesignGit`): it goes too.
+            DesignGit.removeRepository(of: folder)
             guard FileManager.default.fileExists(atPath: folder.path) else { return }
             do { try FileManager.default.removeItem(at: folder) } catch {
                 throw DesignStoreError.io("could not delete design \(id): \(error.localizedDescription)")
@@ -325,6 +329,7 @@ public final class DesignStore: @unchecked Sendable {
         try await run {
             guard let staged = self.stagedFolder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
             self.forget(id)
+            if let folder = self.folder(for: id) { DesignGit.removeRepository(of: folder) }
             guard FileManager.default.fileExists(atPath: staged.path) else { return }
             do { try FileManager.default.removeItem(at: staged) } catch {
                 throw DesignStoreError.io("could not delete design \(id): \(error.localizedDescription)")
@@ -332,8 +337,48 @@ public final class DesignStore: @unchecked Sendable {
         }
     }
 
+    /// Git replaces the design's files (a pull, a merge commit) as one step of the store's queue,
+    /// so no board write lands half way through it. What changed is kept as each board's next
+    /// version, and the revision moves once; the store reads the design again after.
+    func replaceFromGit<T>(_ id: DesignID, _ body: @escaping () throws -> T) async throws -> T {
+        try await run {
+            let before = (try? self.load(id)).map { loaded -> [DesignPath: String] in
+                var design = loaded
+                return (try? self.files(of: id, &design)) ?? [:]
+            } ?? [:]
+            // Keep what each board held, so an unwanted pull can be undone board by board.
+            var kept: [DesignPath: Data] = [:]
+            for path in before.keys { if let data = try? Data(contentsOf: self.fileURL(id, path)) { kept[path] = data } }
+            let value = try body()
+            self.forget(id)
+            var design = try self.load(id)
+            let after = try self.files(of: id, &design)
+            for (path, hash) in before where after[path] != nil && after[path] != hash {
+                if let data = kept[path] { _ = try? self.keepVersionData(id, path, data) }
+            }
+            try self.commit(&design, id)
+            return value
+        }
+    }
+
+    /// `keepVersion` for content already read (the board as it was before git replaced it).
+    private func keepVersionData(_ id: DesignID, _ path: DesignPath, _ data: Data) throws {
+        let folder = try versionsFolder(id, path)
+        let existing = try versionsOnQueue(id, path)
+        let number = (existing.last?.version.number ?? 0) + 1
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try data.write(to: folder.appendingPathComponent("\(number).dc.html"), options: .atomic)
+        for old in existing.dropLast(max(0, DesignBoardVersion.kept - 1)) { try? FileManager.default.removeItem(at: old.url) }
+    }
+
+    /// What the store remembers of a design goes; it reads the folder again on next touch.
+    func forgetOnQueue(_ id: DesignID) async {
+        _ = try? await run { self.forget(id) }
+    }
+
     /// Queue: what the store remembers of a design, dropped when its folder moves or goes.
     func forget(_ id: DesignID) {
+        gitAuthorNames[id] = nil
         loaded[id] = nil
         commentFiles[id] = nil
         servedHashes[id] = nil
@@ -844,13 +889,15 @@ public final class DesignStore: @unchecked Sendable {
         var shas: [DesignPath: String] = [:]
         var changed: [(path: DesignPath, data: Data)] = []
         var created: Set<DesignPath> = []
+        let usage = projectUsage(id)
+        var extraBytes = 0
         for (path, source) in sources.sorted(by: { $0.key < $1.key }) {
             let data = Data(source.utf8)
             let sha = Self.sha256(data)
             shas[path] = sha
             guard files[path] != sha else { continue }
             if files[path] == nil {
-                guard files.count + created.count < Self.maxFiles else { throw DesignStoreError.tooManyFiles }
+                guard usage.files + created.count < Self.maxFiles else { throw DesignStoreError.tooManyFiles }
                 let stem = path.stem.lowercased()
                 let others = Set(files.keys).union(design.index.boards.keys).union(created)
                 if let other = others.sorted().first(where: { $0 != path && $0.stem.lowercased() == stem }) {
@@ -858,8 +905,11 @@ public final class DesignStore: @unchecked Sendable {
                 }
                 created.insert(path)
             }
+            let oldBytes = (try? FileManager.default.attributesOfItem(atPath: self.fileURL(id, path).path)[.size] as? NSNumber)?.intValue ?? 0
+            extraBytes += data.count - oldBytes
             changed.append((path, data))
         }
+        guard usage.bytes + extraBytes <= usage.byteLimit else { throw DesignStoreError.io("the design exceeds its 1 GB project size limit") }
         guard !changed.isEmpty else {
             return Written(result: DesignWriteResult(revision: design.revision, changed: false, warnings: warnings,
                                                      title: design.index.title, boardCount: design.index.boards.count),
@@ -972,7 +1022,7 @@ public final class DesignStore: @unchecked Sendable {
     /// Applies a canvas_update (`DesignIndex.merging`) when the design is still at
     /// `baseRevision` (nil: any). Boards it adds or changes need their files; boards it removes
     /// lose theirs. Problems the index already had don't block it; new ones do.
-    func updateIndex(_ id: DesignID, patch: JSONValue, baseRevision: UInt64?) async throws -> DesignWriteResult {
+    func updateIndex(_ id: DesignID, patch: JSONValue, baseRevision: UInt64?, options: DesignCanvasOptions? = nil) async throws -> DesignWriteResult {
         try await run {
             var design = try self.load(id)
             try Self.compare(baseRevision, design.revision)
@@ -980,9 +1030,24 @@ public final class DesignStore: @unchecked Sendable {
             do { merged = try design.index.merging(patch) } catch {
                 throw DesignStoreError.invalidIndex([String(describing: error)])
             }
-            if merged == design.index {
-                return DesignWriteResult(revision: design.revision, changed: false, title: merged.title,
-                                         boardCount: merged.boards.count)
+            let options = options ?? DesignCanvasOptions()
+            let removedPages = Set((design.index.pages ?? []).map(\.id)).subtracting((merged.pages ?? []).map(\.id)).sorted()
+            guard removedPages.isEmpty || options.allowDeletePages || options.dryRun else {
+                throw DesignStoreError.invalidIndex(["this patch deletes pages \(removedPages.joined(separator: ", ")); use dry_run to inspect it, then allow_delete_pages to confirm"])
+            }
+            guard let project = self.projectFolder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
+            let installed = Set((merged.designSystems ?? []).compactMap(\.namespace))
+            var systemFolders: [URL] = []
+            for namespace in Set(options.removeSystems).sorted() {
+                guard DesignPath.isSystemNamespace(namespace), !installed.contains(namespace) else {
+                    throw DesignStoreError.invalidIndex(["\(namespace) must be a valid, uninstalled system namespace before its ds/ folder can be removed"])
+                }
+                let folder = project.appendingPathComponent("ds/" + namespace, isDirectory: true)
+                guard Self.isInside(Self.deepestExisting(folder), project),
+                      folder.standardizedFileURL.path == folder.resolvingSymlinksInPath().standardizedFileURL.path else {
+                    throw DesignStoreError.io("ds/\(namespace) is a linked folder")
+                }
+                if FileManager.default.fileExists(atPath: folder.path) { systemFolders.append(folder) }
             }
             let known = Set(design.index.problems())
             let problems = merged.problems().filter { !known.contains($0) }
@@ -993,6 +1058,38 @@ public final class DesignStore: @unchecked Sendable {
                 throw DesignStoreError.missingBoardFile(path)
             }
             let removed = design.index.boards.keys.filter { merged.boards[$0] == nil }
+            let used = self.projectUsage(id).files
+                - removed.filter { files[$0] != nil }.count
+                - systemFolders.reduce(0) { $0 + self.systemFiles($1).count }
+            let plan = DesignCanvasPlan(dryRun: options.dryRun, removedPages: removedPages,
+                                        removedBoards: removed.map(\.rawValue).sorted(),
+                                        removedSystems: systemFolders.map(\.lastPathComponent), used: used, limit: Self.maxFiles)
+            if options.dryRun || (merged == design.index && systemFolders.isEmpty) {
+                return DesignWriteResult(revision: design.revision, changed: false, title: merged.title,
+                                         boardCount: merged.boards.count, canvasPlan: plan)
+            }
+            let originalCanvas = try Data(contentsOf: self.indexURL(id))
+            let cleanup = project.deletingLastPathComponent().appendingPathComponent(".cleanup-\(UUID().uuidString)", isDirectory: true)
+            var displaced: [(original: URL, backup: URL)] = []
+            var committed = false
+            defer {
+                if !committed {
+                    try? originalCanvas.write(to: self.indexURL(id), options: .atomic)
+                    for item in displaced.reversed() { try? FileManager.default.moveItem(at: item.backup, to: item.original) }
+                }
+                if committed || displaced.allSatisfy({ !FileManager.default.fileExists(atPath: $0.backup.path) }) {
+                    try? FileManager.default.removeItem(at: cleanup)
+                }
+            }
+            if !systemFolders.isEmpty {
+                try FileManager.default.createDirectory(at: cleanup, withIntermediateDirectories: true)
+                for folder in systemFolders {
+                    let backup = cleanup.appendingPathComponent("systems/" + folder.lastPathComponent)
+                    try FileManager.default.createDirectory(at: backup.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try FileManager.default.moveItem(at: folder, to: backup)
+                    displaced.append((folder, backup))
+                }
+            }
             do {
                 try merged.encoded().write(to: self.indexURL(id), options: .atomic)
             } catch {
@@ -1000,17 +1097,27 @@ public final class DesignStore: @unchecked Sendable {
             }
             // Only files the store found inside the design: never one through a linked folder.
             for path in removed where files[path] != nil {
-                if let url = try? self.fileURL(id, path) { try? FileManager.default.removeItem(at: url) }
-                if let versions = try? self.versionsFolder(id, path) { try? FileManager.default.removeItem(at: versions) }
+                let url = try self.fileURL(id, path)
+                let backup = cleanup.appendingPathComponent("boards/" + path.rawValue)
+                try FileManager.default.createDirectory(at: backup.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try FileManager.default.moveItem(at: url, to: backup)
+                displaced.append((url, backup))
+                if let versions = try? self.versionsFolder(id, path), FileManager.default.fileExists(atPath: versions.path) {
+                    let saved = cleanup.appendingPathComponent("versions/" + UUID().uuidString)
+                    try FileManager.default.createDirectory(at: saved.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try FileManager.default.moveItem(at: versions, to: saved)
+                    displaced.append((versions, saved))
+                }
                 files[path] = nil
             }
             design.index = merged
             design.files = files
             try self.commit(&design, id)
+            committed = true
             // A removed board's comments have nothing left to pin to.
             for path in removed { self.reanchorComments(id, board: path, source: nil) }
             return DesignWriteResult(revision: design.revision, changed: true, title: merged.title,
-                                     boardCount: merged.boards.count)
+                                     boardCount: merged.boards.count, canvasPlan: plan)
         }
     }
 
@@ -1024,7 +1131,8 @@ public final class DesignStore: @unchecked Sendable {
             var files = try self.files(of: id, &design)
             guard design.index.boards[path] != nil else { throw DesignStoreError.noSuchBoard(path) }
             guard files[path] != nil else { throw DesignStoreError.missingBoardFile(path) }
-            guard files.count < Self.maxFiles else { throw DesignStoreError.tooManyFiles }
+            let usage = self.projectUsage(id)
+            guard usage.files < Self.maxFiles else { throw DesignStoreError.tooManyFiles }
             let taken = Set(files.keys).union(design.index.boards.keys)
             guard let copy = DesignIndex.duplicatePath(for: path, taken: taken),
                   let next = design.index.duplicating(path, as: copy) else {
@@ -1037,6 +1145,7 @@ public final class DesignStore: @unchecked Sendable {
             do { data = try Data(contentsOf: self.fileURL(id, path)) } catch {
                 throw DesignStoreError.io("could not read \(path): \(error.localizedDescription)")
             }
+            guard usage.bytes + data.count <= usage.byteLimit else { throw DesignStoreError.io("the design exceeds its 1 GB project size limit") }
             try self.writeFile(id, copy, data)
             do {
                 try next.encoded().write(to: self.indexURL(id), options: .atomic)
@@ -1322,9 +1431,20 @@ public final class DesignStore: @unchecked Sendable {
             let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
             var removed: [String] = []
             for name in names.sorted() where [Self.stagedPrefix, Self.importPrefix, Self.unzipPrefix].contains(where: name.hasPrefix) {
+                // A deletion that never finished: its repository (beside the designs) goes too.
+                if name.hasPrefix(Self.stagedPrefix) {
+                    DesignGit.removeRepository(of: directory.appendingPathComponent(String(name.dropFirst(Self.stagedPrefix.count))))
+                }
                 if (try? FileManager.default.removeItem(at: directory.appendingPathComponent(name, isDirectory: true))) != nil {
                     removed.append(name)
                 }
+            }
+            // A repository whose design is gone (a crash between the two): nothing uses it.
+            let repositories = directory.appendingPathComponent(DesignGitRunner.repositoriesName, isDirectory: true)
+            for id in (try? FileManager.default.contentsOfDirectory(atPath: repositories.path)) ?? []
+            where !FileManager.default.fileExists(atPath: directory.appendingPathComponent(id).path)
+                && !FileManager.default.fileExists(atPath: directory.appendingPathComponent(Self.stagedPrefix + id).path) {
+                try? FileManager.default.removeItem(at: repositories.appendingPathComponent(id, isDirectory: true))
             }
             return removed
         }
@@ -1512,7 +1632,10 @@ public final class DesignStore: @unchecked Sendable {
             var sources: [DesignPath: String] = [:]
             let members = DesignBundle.members(boards) { path in
                 if let known = sources[path] { return known }
-                guard files[path] != nil, let data = try? Data(contentsOf: project.appendingPathComponent(path.rawValue)) else { return nil }
+                let url = project.appendingPathComponent(path.rawValue)
+                guard files[path] != nil || DesignPath.systemComponent(path.rawValue) != nil,
+                      Self.isInside(url, project), url.standardizedFileURL.path == url.resolvingSymlinksInPath().standardizedFileURL.path,
+                      let data = try? Data(contentsOf: url), data.count <= DesignBoardCheck.maxBytes else { return nil }
                 let text = String(decoding: data, as: UTF8.self)
                 sources[path] = text
                 return text
@@ -1528,7 +1651,7 @@ public final class DesignStore: @unchecked Sendable {
                 let relative = String(resolved.dropFirst(root.count))
                 let values = try? url.resourceValues(forKeys: Set(keys))
                 guard values?.isRegularFile == true, values?.isSymbolicLink != true, relative != "canvas.json",
-                      !relative.hasSuffix(DesignPath.fileExtension), url.lastPathComponent != "support.js",
+                      (!relative.hasSuffix(DesignPath.fileExtension) || relative.hasPrefix("ds/")), url.lastPathComponent != "support.js",
                       relative.split(separator: "/").allSatisfy({ DesignImport.isSegment(String($0)) }),
                       let size = values?.fileSize, size <= DesignImport.maxFileBytes, total + size <= DesignImport.maxTotalBytes,
                       let data = try? Data(contentsOf: url) else { continue }
@@ -1586,36 +1709,71 @@ public final class DesignStore: @unchecked Sendable {
             let known = Set(design.index.problems())
             let problems = next.problems().filter { !known.contains($0) }
             guard problems.isEmpty else { throw DesignStoreError.invalidIndex(problems) }
-            let boards = try self.files(of: id, &design)
-            let others = self.systemFileCount(project, excluding: namespace)
-            guard boards.count + others + files.count + 1 <= Self.maxFiles else { throw DesignStoreError.tooManyFiles }
+            let usage = self.projectUsage(id)
+            let existing = self.systemFiles(folder)
+            guard usage.files - existing.count + files.count <= Self.maxFiles else { throw DesignStoreError.tooManyFiles }
+            let oldBytes = existing.reduce(0) { sum, path in
+                sum + ((try? FileManager.default.attributesOfItem(atPath: folder.appendingPathComponent(path).path)[.size] as? NSNumber)?.intValue ?? 0)
+            }
+            guard usage.bytes - oldBytes + files.values.reduce(0, { $0 + $1.count }) <= usage.byteLimit else { throw DesignSystemError.tooLarge(namespace) }
             guard Self.isInside(Self.deepestExisting(folder), project) else {
                 throw DesignStoreError.io("ds/\(namespace) leads outside the design")
             }
+            for (path, data) in files {
+                let url = folder.appendingPathComponent(path)
+                guard DesignSystemFile.isPath(path), data.count <= DesignSystemFile.maxFileBytes,
+                      Self.isInside(Self.deepestExisting(url), project),
+                      url.standardizedFileURL.path == url.resolvingSymlinksInPath().standardizedFileURL.path else {
+                    throw DesignSystemError.invalidFile(path)
+                }
+            }
             let manager = FileManager.default
+            let originalCanvas = try Data(contentsOf: self.indexURL(id))
+            let staging = project.deletingLastPathComponent().appendingPathComponent(".install-\(UUID().uuidString)")
+            let replacement = staging.appendingPathComponent("new")
+            let backup = staging.appendingPathComponent("old")
+            var movedOriginal = false
+            var published = false
+            var committed = false
+            defer {
+                var recovered = true
+                if !committed {
+                    do {
+                        if published { try manager.removeItem(at: folder) }
+                        if movedOriginal { try manager.moveItem(at: backup, to: folder) }
+                        try originalCanvas.write(to: self.indexURL(id), options: .atomic)
+                    } catch { recovered = false }
+                }
+                if committed || recovered { try? manager.removeItem(at: staging) }
+            }
             do {
-                try manager.createDirectory(at: folder, withIntermediateDirectories: true)
+                try manager.createDirectory(at: staging, withIntermediateDirectories: true)
+                if manager.fileExists(atPath: folder.path) { try manager.copyItem(at: folder, to: replacement) }
+                else { try manager.createDirectory(at: replacement, withIntermediateDirectories: true) }
                 for (path, data) in files.sorted(by: { $0.key < $1.key }) {
-                    guard DesignSystemFile.isPath(path) else { throw DesignSystemError.invalidFile(path) }
-                    let url = folder.appendingPathComponent(path)
-                    // Checked before anything is made, so a link under ds/ never has a folder made through it.
-                    guard Self.isInside(Self.deepestExisting(url.deletingLastPathComponent()), folder) else {
-                        throw DesignSystemError.invalidFile(path)
-                    }
+                    let url = replacement.appendingPathComponent(path)
                     try manager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-                    if (try? Data(contentsOf: url)) != data { try data.write(to: url, options: .atomic) }
+                    try data.write(to: url, options: .atomic)
                 }
-                for stale in self.systemFiles(folder) where files[stale] == nil {
-                    try? manager.removeItem(at: folder.appendingPathComponent(stale))
+                for stale in existing where files[stale] == nil { try manager.removeItem(at: replacement.appendingPathComponent(stale)) }
+                try manager.createDirectory(at: folder.deletingLastPathComponent(), withIntermediateDirectories: true)
+                if manager.fileExists(atPath: folder.path) {
+                    try manager.moveItem(at: folder, to: backup)
+                    movedOriginal = true
                 }
+                try manager.moveItem(at: replacement, to: folder)
+                published = true
                 try next.encoded().write(to: self.indexURL(id), options: .atomic)
+                design.index = next
+                try self.commit(&design, id)
+                committed = true
             } catch let error as DesignSystemError {
+                throw error
+            } catch let error as DesignStoreError {
                 throw error
             } catch {
                 throw DesignStoreError.io("could not install \(namespace): \(error.localizedDescription)")
             }
-            design.index = next
-            try self.commit(&design, id)
             return DesignWriteResult(revision: design.revision, changed: true, title: next.title, boardCount: next.boards.count)
         }
     }
@@ -1665,7 +1823,7 @@ public final class DesignStore: @unchecked Sendable {
     }
 
     /// The files under a system's folder in a design, by path relative to it.
-    private func systemFiles(_ folder: URL) -> [String] {
+    func systemFiles(_ folder: URL) -> [String] {
         let root = folder.resolvingSymlinksInPath().path + "/"
         var out: [String] = []
         let walker = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles])
@@ -1677,11 +1835,30 @@ public final class DesignStore: @unchecked Sendable {
         return out
     }
 
-    /// How many files the design's `ds/` holds outside `namespace`'s folder.
-    private func systemFileCount(_ project: URL, excluding namespace: String) -> Int {
-        let ds = project.appendingPathComponent("ds", isDirectory: true)
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: ds.path)) ?? []
-        return names.filter { $0 != namespace }.reduce(0) { $0 + systemFiles(ds.appendingPathComponent($1, isDirectory: true)).count }
+    /// A lossless checkpoint of installed copies, never the shared system registry.
+    func checkpointSystemFiles(_ id: DesignID, index: DesignIndex) throws -> [String: Data] {
+        guard let project = projectFolder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
+        var result: [String: Data] = [:]
+        for namespace in Set((index.designSystems ?? []).compactMap(\.namespace)).sorted() {
+            guard DesignPath.isSystemNamespace(namespace) else { throw DesignSystemError.invalidNamespace(namespace) }
+            let folder = project.appendingPathComponent("ds/" + namespace, isDirectory: true)
+            guard folder.standardizedFileURL.path == folder.resolvingSymlinksInPath().standardizedFileURL.path else {
+                throw DesignSystemError.invalidFile("ds/" + namespace)
+            }
+            for path in systemFiles(folder) {
+                let url = folder.appendingPathComponent(path)
+                guard DesignSystemFile.isPath(path), url.standardizedFileURL.path == url.resolvingSymlinksInPath().standardizedFileURL.path else {
+                    throw DesignSystemError.invalidFile(path)
+                }
+                let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+                guard size <= DesignSystemFile.maxFileBytes,
+                      result.values.reduce(0, { $0 + $1.count }) + size <= checkpointCaps.bytes else {
+                    throw DesignSystemError.tooLarge(path)
+                }
+                result["ds/\(namespace)/\(path)"] = try Data(contentsOf: url)
+            }
+        }
+        return result
     }
 
     // MARK: Serving files (remote)
@@ -1881,7 +2058,7 @@ public final class DesignStore: @unchecked Sendable {
                                         label: template.labels[draft.tid],
                                         target: draft.target.flatMap(DesignViewRecord.label),
                                         rect: draft.rect.flatMap { $0.isValid ? $0 : nil },
-                                        text: text, author: .user, createdAt: date)
+                                        text: text, author: .user, authorName: self.gitAuthorName(id), createdAt: date)
             file.comments.append(comment)
             try self.saveComments(&file, id)
             return comment
@@ -1936,7 +2113,8 @@ public final class DesignStore: @unchecked Sendable {
                                             label: template.labels[draft.tid],
                                             target: draft.target.flatMap(DesignViewRecord.label),
                                             rect: draft.rect.flatMap { $0.isValid ? $0 : nil },
-                                            text: text, author: .user, createdAt: date, proposal: draft.proposal)
+                                            text: text, author: .user, authorName: self.gitAuthorName(id), createdAt: date,
+                                            proposal: draft.proposal)
                 file.comments.append(comment)
                 result.append(comment)
                 added.insert(comment.id)
@@ -2071,7 +2249,8 @@ public final class DesignStore: @unchecked Sendable {
             guard file.comments[index].replies.count < DesignComment.maxReplies else {
                 throw DesignStoreError.invalidComment("a comment keeps at most \(DesignComment.maxReplies) replies")
             }
-            file.comments[index].replies.append(DesignCommentReply(author: author, text: text, createdAt: date))
+            file.comments[index].replies.append(DesignCommentReply(author: author, authorName: author == .user ? self.gitAuthorName(id) : nil,
+                                                                   text: text, createdAt: date))
             try self.saveComments(&file, id)
             return file.comments[index]
         }
@@ -2098,6 +2277,20 @@ public final class DesignStore: @unchecked Sendable {
             try self.saveComments(&file, id)
             return file.comments[index]
         }
+    }
+
+    /// Queue: the user's Git name on a design shared through Git (its repository's `user.name`,
+    /// as git reads it), so a coworker who pulls the comment sees who wrote it; nil for a design
+    /// that isn't shared. Read once per design.
+    private func gitAuthorName(_ id: DesignID) -> String? {
+        if let known = gitAuthorNames[id] { return known }
+        guard let folder = folder(for: id) else { return nil }
+        let git = DesignGitRunner(folder: folder)
+        guard git.isShared else { return nil }
+        let name = (try? git.text(["config", "user.name"]))?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let kept = name.flatMap { $0.isEmpty ? nil : String($0.prefix(80)) }
+        gitAuthorNames[id] = kept
+        return kept
     }
 
     /// The design's comments.json; an empty one when there is none yet.
@@ -2163,7 +2356,27 @@ public final class DesignStore: @unchecked Sendable {
     private func snapshotOnQueue(_ id: DesignID) throws -> DesignSnapshot {
         var design = try load(id)
         let files = try files(of: id, &design)
-        return DesignSnapshot(designID: id, revision: design.revision, index: design.index, boards: files)
+        return DesignSnapshot(designID: id, revision: design.revision, index: design.index, boards: files,
+                              usage: projectUsage(id))
+    }
+
+    func projectUsage(_ id: DesignID) -> DesignUsage {
+        var count = 0, bytes = 0
+        if let project = projectFolder(for: id) {
+            let keys: [URLResourceKey] = [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]
+            let walker = FileManager.default.enumerator(at: project, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles])
+            while let url = walker?.nextObject() as? URL {
+                guard let values = try? url.resourceValues(forKeys: Set(keys)), values.isSymbolicLink != true else {
+                    walker?.skipDescendants()
+                    continue
+                }
+                guard values.isRegularFile == true, Self.isInside(url, project), url.lastPathComponent != "support.js" else { continue }
+                count += 1
+                bytes += values.fileSize ?? 0
+            }
+        }
+        let usage = DesignUsage(files: count, fileLimit: Self.maxFiles, bytes: bytes, byteLimit: Int(DesignImport.maxProjectBytes))
+        return usage
     }
 
     /// The design as the store knows it, read from disk on first touch.
@@ -2209,9 +2422,10 @@ public final class DesignStore: @unchecked Sendable {
     /// Bumps the revision, keeps it on disk (so a base from before a relaunch still compares),
     /// and remembers the design.
     func commit(_ design: inout Loaded, _ id: DesignID) throws {
-        design.revision += 1
+        let revision = design.revision + 1
+        try writeRevision(revision, of: id)
+        design.revision = revision
         loaded[id] = design
-        try writeRevision(design.revision, of: id)
     }
 
     private func writeRevision(_ revision: UInt64, of id: DesignID) throws {

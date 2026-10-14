@@ -209,7 +209,11 @@
         "browser_eval",
         "browser_back",
         "browser_forward",
-        "browser_reload"
+        "browser_reload",
+        "browser_tabs",
+        "browser_new_tab",
+        "browser_select_tab",
+        "browser_close_tab"
       ],
       "group": "browser",
       "extension": "shepherd-browser.ts",
@@ -217,7 +221,7 @@
         "thread": "defer",
         "automation": "defer"
       },
-      "reason": "The thread's own Browser page: 13 tools, 2.2k tokens and 233 of tool-list lines, and most threads never open a page. Deferred in a thread and an automation; a design's agent has no Browser."
+      "reason": "The thread's own Browser tabs: 17 tools, deferred together in threads and automations. Tab management and optional page targeting add no definitions to ordinary requests; loading browser tools brings in their full schemas. A design's agent has no Browser. See docs/context-budget.md for measured cost."
     },
     {
       "tools": [
@@ -264,6 +268,7 @@
         "boards_edit",
         "board_search",
         "board_render",
+        "board_interact",
         "board_extract",
         "canvas_update",
         "design_check",
@@ -281,7 +286,14 @@
       "verdicts": {
         "design": "keep"
       },
-      "reason": "What a design's agent draws and edits with; no other agent gets them."
+      "reason": "What a design's agent draws, tests and edits with; no other agent gets them. board_interact exercises actual rendered state."
+    },
+    {
+      "tools": ["design_export"],
+      "group": "design",
+      "extension": "shepherd-design.ts",
+      "verdicts": { "design": "keep" },
+      "reason": "A design-only export step. Design launches do not provide deferred tool discovery, so keep its 166-token definition direct; it adds nothing to ordinary threads or automations."
     },
     {
       "tools": [

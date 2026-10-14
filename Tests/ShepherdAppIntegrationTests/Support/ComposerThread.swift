@@ -18,8 +18,6 @@ final class ComposerThread {
     let window: OffscreenWindow
     /// The composer's images, held here so a test can attach one.
     let input = ThreadInput()
-    /// The image viewer, held here so a test can stub what its buttons reach outside the app.
-    let viewer = ImageViewerModel()
     let size: CGSize
     private(set) var snapshot: NativeThreadSnapshot
     /// Every request the thread sent its host, in order (its pulls included).
@@ -64,22 +62,14 @@ final class ComposerThread {
             default: return .snapshot(value: self.snapshot)
             }
         }
-        hosted = { [store, input = self.input, viewer = self.viewer, commands = self.commands] in
-            AnyView(ThreadView(store: store, active: true, isFocused: focused, request: request, commandKey: Self.key, listModels: { ModelCatalog(models) }, retainedInput: input, retainedViewer: viewer)
+        hosted = { [store, input = self.input, commands = self.commands] in
+            AnyView(ThreadView(store: store, active: true, isFocused: focused, request: request, commandKey: Self.key, listModels: { ModelCatalog(models) }, retainedInput: input)
                 .environment(\.threadCommands, commands)
-                .modifier(ImageViewerLayer(model: viewer))
                 .environment(\.designReferences, designReferences)
                 // Without motion, a change's first frame is all of its work.
                 .transaction { if !animated { $0.disablesAnimations = true } })
         }
         window.show(hosted())
-    }
-
-    /// The host takes images, as a pi that supports `sendImages` does.
-    func addImageSupport() async {
-        snapshot.supportedActions.append("sendImages")
-        snapshot.revision += 1
-        await store.refresh(fresh: true)
     }
 
     /// A new `ThreadView` on the same store, as the workspace remounts a remote agent's thread:

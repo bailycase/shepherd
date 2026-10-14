@@ -2,7 +2,6 @@ import Foundation
 import Observation
 import Testing
 import ShepherdProtocol
-import ShepherdTestKit
 @testable import ShepherdRemote
 
 /// A scripted host for `NativeThreadStore`. Snapshot requests serve `snapshot` unless a result
@@ -875,40 +874,6 @@ struct NativeThreadStoreTests {
         #expect(try #require(host.actions.first).images == (attached ? [NativeImage(mimeType: "image/png", data: Data([1]))] : []))
     }
 
-    /// ThreadImagesSent: the thread draws the thumbnails of what was sent, which only this client still has. The echo
-    /// carries one image block per image and its bubble names the send, so the bytes the store kept (with their file
-    /// names) are found by that id; a message from another client has no id and keeps its "Image" chips.
-    @Test func aSentImageIsFoundAgainFromItsEchoAndKeepsItsName() async throws {
-        let (store, host, task) = await started(F.snapshot(actions: ["send", "sendImages"]))
-        defer { task.cancel() }
-        host.acceptAll()
-        let images = [NativeImage(mimeType: "image/png", data: Data([1]), name: "a.png"),
-                      NativeImage(mimeType: "image/jpeg", data: Data([2, 2]), name: "b.jpg")]
-        store.draft = "look"
-        await store.send(images: images)
-        let bubble = try #require(store.turns.last { $0.isUser }?.bubbles.last)
-        #expect(bubble.images == 2 && bubble.text == "look")
-        #expect(store.queuedImages(try #require(bubble.operationID)) == images)
-        #expect(store.queuedImages(UUID()).isEmpty)
-        let other = nativeUserBubbles(NativeThreadMessage(entryID: "u", role: "user", blocks: [
-            NativeThreadBlock(kind: .text, text: "x"), NativeThreadBlock(kind: .unsupportedImage, text: "")]))
-        #expect(other.first?.images == 1 && other.first?.operationID == nil)
-    }
-
-    @Test func onlyTheLatestSendsKeepTheirImageBytes() async throws {
-        let (store, host, task) = await started(F.snapshot(actions: ["send", "sendImages"]))
-        defer { task.cancel() }
-        host.acceptAll()
-        var ids: [UUID] = []
-        for index in 0..<40 {
-            store.draft = "m\(index)"
-            await store.send(images: [NativeImage(mimeType: "image/png", data: Data([UInt8(index)]), name: "\(index).png")])
-            ids.append(try #require(store.turns.last { $0.isUser }?.bubbles.last?.operationID))
-        }
-        #expect(store.queuedImages(ids[0]).isEmpty, "the oldest send's bytes are dropped")
-        #expect(store.queuedImages(ids[39]).first?.name == "39.png")
-    }
-
     @Test(arguments: [false, true])
     func imagesAloneSendOnlyWhenTheHostAcceptsImages(supported: Bool) async throws {
         let (store, host, task) = await started(F.snapshot(actions: supported ? ["send", "sendImages"] : ["send"]))
@@ -1165,104 +1130,6 @@ struct NativeThreadStoreTests {
         #expect(host.actions.last == .subagentTranscript(expectedSessionID: "s", runID: "r", beforeEntryID: "a"))
     }
 
-    /// A message this client did not send (or sent before it restarted) has no bytes here: the store asks the host for
-    /// previews once, keeps them small and bounded, and answers per picture. An older host (no `savedImages`) is never asked.
-    @Test func previewsOfASavedMessageAreAskedOnceAndKept() async throws {
-        let message = NativeThreadMessage(entryID: "user:1", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "see"),
-                                          NativeThreadBlock(kind: .unsupportedImage, text: "x"), NativeThreadBlock(kind: .unsupportedImage, text: "x")])
-        let (store, host, task) = await started(F.snapshot(actions: ["send", "savedImages"], messages: [message]))
-        defer { task.cancel() }
-        let previews = [NativeImage(mimeType: "image/png", data: Data([1])), NativeImage(mimeType: "image/png", data: Data(count: NativeImage.previewBytes + 1))]
-        host.action = { _ in .images(value: previews) }
-        let bubble = try #require(store.turns.last { $0.isUser }?.bubbles.last)
-        #expect(bubble.entryID == "user:1" && bubble.images == 2 && store.savedImage(entryID: "user:1", index: 0) == nil)
-        await store.loadSavedImages(entryID: "user:1")
-        await store.loadSavedImages(entryID: "user:1")
-        #expect(host.actions == [.images(expectedSessionID: "s", entryID: "user:1")], "asked once")
-        #expect(store.savedImage(entryID: "user:1", index: 0) == previews[0])
-        #expect(store.savedImage(entryID: "user:1", index: 1) == nil, "one over the preview bound is never kept")
-        #expect(store.savedPreviewRevision == 1)
-    }
-
-    /// The original is read in slices and put back together exactly; a slice that does not follow, a total over the send limit,
-    /// or a changed session ends it with nil, and nothing is kept.
-    @Test func aSavedOriginalIsReadInSlicesAndRefusedWhenTheyDoNotFollow() async {
-        // A real picture (the pixel policy reads its header) with trailing bytes after IEND, to take three slices.
-        let picture = TestPNG.zeros(width: 64, height: 64)
-        let original = picture + Data((0..<(2 * NativeImage.chunkBytes + 5 - picture.count)).map { UInt8($0 % 241) })
-        let (store, host, task) = await started(F.snapshot(actions: ["send", "savedImages"]))
-        defer { task.cancel() }
-        host.action = { request in
-            guard case .imageChunk(_, _, _, let offset) = request else { return .failure(code: "x", message: "no") }
-            let end = min(original.count, offset + NativeImage.chunkBytes)
-            return .imageChunk(value: NativeImageChunk(mimeType: "image/png", total: original.count, offset: offset, data: original[offset..<end]))
-        }
-        #expect(await store.savedOriginal(entryID: "u", index: 0) == NativeImage(mimeType: "image/png", data: original))
-        #expect(host.actions.count == 3, "three slices of at most \(NativeImage.chunkBytes) bytes")
-        host.action = { _ in .imageChunk(value: NativeImageChunk(mimeType: "image/png", total: 10, offset: 7, data: Data([1]))) }
-        #expect(await store.savedOriginal(entryID: "u", index: 0) == nil, "a slice that is not the next one")
-        host.action = { _ in .imageChunk(value: NativeImageChunk(mimeType: "image/png", total: NativeImage.maxBytes + 1, offset: 0, data: Data([1]))) }
-        #expect(await store.savedOriginal(entryID: "u", index: 0) == nil, "over the send limit")
-    }
-
-    /// A host that trickles one byte at a time, or sends short non-final slices, is refused before it can cost millions of
-    /// requests; so is one that never ends within the nine slices an original can take.
-    @Test func aHostThatTricklesOrNeverEndsIsRefused() async {
-        let (store, host, task) = await started(F.snapshot(actions: ["send", "savedImages"]))
-        defer { task.cancel() }
-        host.action = { request in
-            guard case .imageChunk(_, _, _, let offset) = request else { return .failure(code: "x", message: "no") }
-            return .imageChunk(value: NativeImageChunk(mimeType: "image/png", total: NativeImage.maxBytes, offset: offset, data: Data([1])))
-        }
-        #expect(await store.savedOriginal(entryID: "u", index: 0) == nil, "a one-byte slice that is not the last")
-        #expect(host.actions.count == 1, "stopped at the first")
-        host.action = { request in
-            guard case .imageChunk(_, _, _, let offset) = request else { return .failure(code: "x", message: "no") }
-            return .imageChunk(value: NativeImageChunk(mimeType: "image/png", total: NativeImage.maxBytes, offset: offset, data: Data(count: NativeImage.chunkBytes)))
-        }
-        #expect(await store.savedOriginal(entryID: "u", index: 0) == nil, "full slices that would reach the total are over the max")
-        #expect(host.actions.count <= 1 + NativeImage.maxChunks)
-    }
-
-    /// An original or a preview that arrives after the thread's session ID, or only its generation, changed is dropped, and what
-    /// the old session cached is forgotten.
-    @Test func repliesThatCrossASessionOrGenerationChangeAreDropped() async {
-        for change in ["session", "generation"] {
-            let message = NativeThreadMessage(entryID: "user:1", role: "user", blocks: [NativeThreadBlock(kind: .unsupportedImage, text: "x")])
-            let (store, host, task) = await started(F.snapshot(actions: ["send", "savedImages"], messages: [message]))
-            defer { task.cancel() }
-            let png = Data([1, 2, 3])
-            host.action = { request in
-                switch request {
-                case .images: return .images(value: [NativeImage(mimeType: "image/png", data: png)])
-                case .imageChunk: return .imageChunk(value: NativeImageChunk(mimeType: "image/png", total: 3, offset: 0, data: png))
-                default: return .failure(code: "x", message: "no")
-                }
-            }
-            await store.loadSavedImages(entryID: "user:1")
-            #expect(store.savedImage(entryID: "user:1", index: 0) != nil)
-            // The thread moves to a new session (or generation) while a read is in flight.
-            host.onRequest = { [host] request in
-                guard case .imageChunk = request else { return }
-                host.snapshot = F.snapshot(session: change == "session" ? "s2" : "s", generation: change == "generation" ? "g2" : "g", revision: 5,
-                                           actions: ["send", "savedImages"], messages: [message])
-                Task { @MainActor in await store.refresh() }
-            }
-            let original = Task { await store.savedOriginal(entryID: "user:1", index: 0) }
-            #expect(await original.value == nil, "\(change): the old session's reply is not an original here")
-            await store.refresh()
-            #expect(store.savedImage(entryID: "user:1", index: 0) == nil, "\(change): the old session's previews are forgotten")
-            #expect(!store.hasAskedForSavedImages("user:1"))
-        }
-    }
-
-    @Test func aHostWithoutSavedImagesIsNotAsked() async {
-        let (store, host, task) = await started(F.snapshot(actions: ["send"]))
-        defer { task.cancel() }
-        await store.loadSavedImages(entryID: "user:1")
-        #expect(host.actions.isEmpty)
-    }
-
     // MARK: History
 
     @Test func olderPagesPrependWithoutDuplicates() async {
@@ -1286,6 +1153,61 @@ struct NativeThreadStoreTests {
         host.snapshot = F.snapshot(revision: 2, messages: [m3, F.assistant("four", id: "m4")], olderCursor: "m3")
         await store.refresh()
         #expect(store.messages.map(\.entryID) == ["m1", "m2", "m3", "m4"])
+    }
+
+    /// A long turn finishes: its calls move from the live rows into saved history at once, and the
+    /// host's page of the newest 50 messages now starts inside the turn, with no message in common
+    /// with what the thread showed. The thread keeps what it had (the prompt, the history above it)
+    /// and joins the page on where the turn's saved copy starts, instead of shrinking to the page.
+    @Test func aFinishedTurnWhosePageStartsInsideItKeepsTheHistoryAboveIt() async {
+        let old = F.assistant("earlier answer", id: "m0")
+        let prompt = F.user("run the checks", id: "u1")
+        var live = F.snapshot(running: true, messages: [old, prompt],
+                              provisional: (0..<60).map { F.tool("bash", id: "provisional:tool:c\($0)", callID: "c\($0)") },
+                              olderCursor: "m0")
+        live.revision = 2
+        let (store, host, task) = await started(live)
+        defer { task.cancel() }
+        #expect(store.rows.map(\.id) == ["m0", "u1", "u1/reply"])
+
+        // pi settled: 60 calls and the answer are saved, the newest 50 of them fill the page, and
+        // the page before it holds the prompt.
+        let calls = (0..<59).map { F.tool("bash", id: "t:c\($0)", callID: "c\($0)") }
+        let newest = F.snapshot(revision: 3, messages: Array(calls[10...]) + [F.assistant("all done", id: "a1")], olderCursor: "t:c10")
+        host.snapshot = newest
+        host.next = [.success(.snapshot(value: newest)),
+                     .success(.snapshot(value: F.snapshot(revision: 3, messages: [old, prompt] + calls[..<10], olderCursor: "m0")))]
+        await store.refresh()
+
+        #expect(host.requests.last == .snapshot(expectedSessionID: "s", beforeEntryID: "t:c10"))
+
+        #expect(store.messages.first?.entryID == "m0", "the history above the finished turn stays")
+        #expect(store.rows.map(\.id) == ["m0", "u1", "u1/reply"], "the prompt and its reply keep their rows")
+        #expect(store.messages.last?.entryID == "a1")
+        #expect(store.olderCursor == "m0", "older pages still load from the top of what the thread shows")
+    }
+
+    /// Joining is bounded: a page that never meets the thread loads at most `joinPageLimit` older
+    /// pages, and a page request that fails leaves the thread on the pages it has, as before.
+    @Test(arguments: [true, false])
+    func joiningAFinishedTurnsPageIsBounded(failing: Bool) async {
+        let (store, host, task) = await started(F.snapshot(messages: [F.user("go", id: "u1")], olderCursor: "u1"))
+        defer { task.cancel() }
+        var page = 0
+        host.next = [.success(.snapshot(value: F.snapshot(revision: 2, messages: [F.assistant("done", id: "p0")], olderCursor: "p0")))]
+        host.onRequest = { request in
+            guard case .snapshot(_, let before?, _) = request else { return }
+            page += 1
+            host.next.append(failing ? .success(.failure(code: "x", message: "gone"))
+                : .success(.snapshot(value: F.snapshot(revision: 2, messages: [F.assistant("older", id: "p\(page)")], olderCursor: "p\(page)"))))
+            _ = before
+        }
+        await store.refresh()
+
+        #expect(page == (failing ? 1 : NativeThreadStore.joinPageLimit))
+        #expect(store.messages.last?.entryID == "p0")
+        #expect(store.messages.count == (failing ? 1 : NativeThreadStore.joinPageLimit + 1))
+        #expect(store.olderCursor == (failing ? "p0" : "p\(NativeThreadStore.joinPageLimit)"))
     }
 
     @Test func aStaleCursorResetsHistoryFromAFreshSnapshot() async {

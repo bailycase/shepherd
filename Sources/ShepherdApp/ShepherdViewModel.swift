@@ -103,6 +103,13 @@ final class ShepherdViewModel {
     let newDesign = NewDesignState()
     /// The Export sheet over a design (DZExport), while it is up.
     var designExport: DesignExportModel?
+    /// Share with Git (GitDesignPublish) and Open from Git (GitDesignOpen), while one is up.
+    var designGitShare: DesignGitShareModel?
+    var designGitOpen: DesignGitOpenModel?
+    /// The design whose pull needs a merge, while its dialog (GitDesignConflict) is up.
+    var designGitMergeDialog: DesignID?
+    /// Each design's Git state, made the first time its chip shows (DesignGitModel).
+    @ObservationIgnored var designGitStates: [DesignID: DesignGitDesignState] = [:]
     /// Jump to a board (JumpInContext) over the design on screen, while it is up.
     var designJump: DesignJumpModel?
     /// The boards each design opened lately, for the jump card's Recent section. Kept in the
@@ -423,8 +430,6 @@ final class ShepherdViewModel {
     /// Whether the in-window settings surface is visible.
     /// The workspace column's size and window, kept current without redrawing anything.
     @ObservationIgnored let workspaceColumn = LiveResizeColumn()
-    /// The one image viewer, over the workspace column (`ImageViewerLayer`): a thread's images open in it.
-    @ObservationIgnored let imageViewer = ImageViewerModel()
     /// The column's size when the side pane last covered the window: hidden layouts keep it
     /// while it does (`isSidePaneWide`).
     @ObservationIgnored var wideFrozenSize: CGSize?
@@ -469,6 +474,16 @@ final class ShepherdViewModel {
     var showComponentGallery = false
     /// ⌘K command palette visibility.
     var showCommandPalette = false
+    /// An image open full size (ThreadImageOpen); nil when none is.
+    var imageViewer: ImageViewerState?
+    /// Reveal in Finder and Copy for the viewer; a test replaces them.
+    @ObservationIgnored var imageViewerActions = ImageViewerActions()
+
+    /// Closes the viewer and stops what it was still fetching.
+    func closeImageViewer() {
+        imageViewer?.close()
+        imageViewer = nil
+    }
     var agentRenameTarget: AgentID?
     /// True while ⌘ has been held ~250ms — sidebar rows show their ⌘1–9 keycaps.
     var showAgentShortcutBadges = false
@@ -655,7 +670,14 @@ final class ShepherdViewModel {
         }
         // A design on screen pulls what changed as the agent draws.
         server.onDesignRevision = { [weak self] designID in
-            MainActor.assumeIsolated { self?.designRevised(designID) }
+            MainActor.assumeIsolated {
+                self?.designRevised(designID)
+                // A board write changes the Git panel's file list.
+                if self?.designGitStates[designID]?.state != nil { self?.refreshDesignGit(designID) }
+            }
+        }
+        server.onDesignGitChanged = { [weak self] designID in
+            MainActor.assumeIsolated { if self?.designGitStates[designID] != nil { self?.refreshDesignGit(designID) } }
         }
         // A system an agent wrote, or a re-sync, reaches its page and cards.
         server.onDesignSystemsChanged = { [weak self] in

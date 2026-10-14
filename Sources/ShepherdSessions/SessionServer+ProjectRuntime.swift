@@ -237,7 +237,8 @@ extension SessionServer {
             else {
                 let startsRun: Bool
                 switch request { case .message, .assign, .followUp, .resume: startsRun = true; default: startsRun = false }
-                if self.projectRunStarts[id] == nil, startsRun {
+                if self.projectRunStarts[id] == nil, startsRun,
+                   project.coordinatorAgentID.map({ !self.projectLaunches.contains($0) }) ?? true {
                     let started = Date(), epoch = self.logicalProjectEpoch
                     self.projectRunStarts[id] = started; self.projectActivations[id] = 0
                     let agents = project.tasks.map(\.workerAgentID) + [project.coordinatorAgentID].compactMap { $0 }
@@ -373,11 +374,18 @@ extension SessionServer {
     }
 
     public func projectConversation(_ id: ProjectID, request: NativeThreadRequest) async throws -> NativeThreadResult {
-        let agent = try await enqueue { () throws -> AgentID in
+        let agent = try await enqueue { () throws -> AgentID? in
             let p = try self.runtimeProject(id)
-            guard let agent = p.coordinatorAgentID, self.store.state.agents.contains(where: { $0.id == agent && $0.coordinatorFor == id }) else { throw LogicalProjectsError("no_conversation", "Send the first Project message.") }
-            return agent
+            guard let agent = p.coordinatorAgentID else { throw LogicalProjectsError("no_conversation", "Send the first Project message.") }
+            if self.store.state.agents.contains(where: { $0.id == agent && $0.coordinatorFor == id }) { return agent }
+            // The durable reservation precedes directory preparation and the app's addAgent.
+            guard !p.paused, self.projectRunStarts[id] != nil,
+                  self.projectLaunches.contains(agent) || self.projectPumps.contains(id) else {
+                throw LogicalProjectsError("no_conversation", "Send the first Project message.")
+            }
+            return nil
         }
+        guard let agent else { return .failure(code: NativeThreadCode.starting, message: "The agent is starting.") }
         return try await nativeThread(agentID: agent, request: request)
     }
 
@@ -608,15 +616,30 @@ extension SessionServer {
         let epoch = logicalProjectEpoch
         hopToMain { start(launch) { result in self.queue.async {
             guard self.logicalProjectEpoch == epoch else { return }
-            self.projectLaunches.remove(launch.agentID)
             if case .failure(let error) = result {
+                if launch.coordinator,
+                   self.store.state.projects.first(where: { $0.id == launch.projectID })?.coordinatorAgentID == launch.agentID {
+                    self.projectRunStarts[launch.projectID] = nil
+                    self.projectActivations[launch.projectID] = nil
+                }
+                // Keep the launch fence until the asynchronous failure write revokes durable admission.
                 self.changeRuntimeProject(launch.projectID, { p in
+                    if launch.coordinator, p.coordinatorAgentID != launch.agentID { return }
                     if let i = p.tasks.firstIndex(where: { $0.workerAgentID == launch.agentID }) { p.tasks[i].phase = .failed; p.tasks[i].error = String(describing: error); p.tasks[i].revision += 1 }
-                    if launch.coordinator { p.paused = true }
-                }) { p in
-                    if p.paused { self.finishProjectInterruption(p.id) } else { self.pumpProject(p.id) }
+                    if launch.coordinator {
+                        p.paused = true; p.interruptPending = true
+                        // Keep existing history after a session failure, but retire an uncreated reservation.
+                        if p.coordinatorAgentID == launch.agentID,
+                           !self.store.state.agents.contains(where: { $0.id == launch.agentID }) {
+                            p.coordinatorAgentID = nil
+                        }
+                    }
+                }, failed: { _ in self.projectLaunches.remove(launch.agentID) }) { p in
+                    self.projectLaunches.remove(launch.agentID)
+                    if p.paused { self.interruptProject(p.id) } else { self.pumpProject(p.id) }
                 }
             } else {
+                self.projectLaunches.remove(launch.agentID)
                 if self.store.state.projects.first(where: { $0.id == launch.projectID })?.paused == true { self.interruptProject(launch.projectID) }
                 else { self.projectRuntimeReady(agentID: launch.agentID) }
             }

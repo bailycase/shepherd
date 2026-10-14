@@ -47,7 +47,8 @@ extension DesignStore {
         design = try load(id)
         let files = try self.files(of: id, &design)
         let report = DesignBoardReporter.report(path: path, old: old, new: source, frame: design.index.boards[path],
-                                                boards: Set(files.keys), tokens: tokens.isEmpty ? nil : tokens, enforcement: enforcement)
+                                                boards: Set(files.keys).union(try checkpointSystemFiles(id, index: design.index).keys.compactMap(DesignPath.systemComponent)),
+                                                tokens: tokens.isEmpty ? nil : tokens, enforcement: enforcement)
         return (written, report)
     }
 
@@ -338,7 +339,14 @@ extension DesignStore {
                 imports[path] = DesignImports.references(raw, of: path)
             }
             self.importsBySHA[id] = cache.filter { live.contains($0.key) }
-            let index = DesignUsageIndex.build(imports: imports, boards: Set(files.keys))
+            var known = Set(files.keys)
+            for (raw, data) in try self.checkpointSystemFiles(id, index: design.index) {
+                guard let path = DesignPath.systemComponent(raw) else { continue }
+                known.insert(path)
+                imports[path] = DesignBoardTree(source: String(decoding: data, as: UTF8.self))
+                    .map { DesignImports.references(in: $0, of: path) } ?? []
+            }
+            let index = DesignUsageIndex.build(imports: imports, boards: known)
             self.usageIndexes[id] = (design.revision, index)
             return index
         }
@@ -365,6 +373,8 @@ extension DesignStore {
         var revision: UInt64
         var boards: [String]
         var bytes: Int
+        var systemFiles: [String]?
+        var systems: [String]?
     }
 
     private struct StoredCheckpoint {
@@ -374,7 +384,7 @@ extension DesignStore {
 
         var info: DesignCheckpointInfo {
             DesignCheckpointInfo(name: manifest.name, createdAt: manifest.createdAt, boards: manifest.boards.count, bytes: manifest.bytes,
-                                 revision: manifest.revision)
+                                 revision: manifest.revision, systems: manifest.systems)
         }
     }
 
@@ -431,16 +441,24 @@ extension DesignStore {
         }
         guard let canvas = try? Data(contentsOf: indexURL(id)) else { throw DesignStoreError.io("could not read canvas.json") }
         total += canvas.count
+        let systems = try checkpointSystemFiles(id, index: design.index)
+        total += systems.values.reduce(0) { $0 + $1.count }
         guard total <= checkpointCaps.bytes else { throw DesignStoreError.checkpointTooLarge(total) }
 
         let root = try checkpointsFolder(id)
         let staging = root.appendingPathComponent(".new-\(UUID().uuidString)", isDirectory: true)
         let manifest = CheckpointManifest(name: name, createdAt: (now.timeIntervalSince1970 * 1000).rounded(), revision: design.revision,
-                                          boards: boards.map(\.path.rawValue), bytes: total)
+                                          boards: boards.map(\.path.rawValue), bytes: total, systemFiles: systems.keys.sorted(),
+                                          systems: (design.index.designSystems ?? []).compactMap(\.namespace).sorted())
         do {
             try FileManager.default.createDirectory(at: staging.appendingPathComponent("boards", isDirectory: true), withIntermediateDirectories: true)
             for (path, data) in boards {
                 let url = staging.appendingPathComponent("boards", isDirectory: true).appendingPathComponent(path.rawValue)
+                try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try data.write(to: url)
+            }
+            for (path, data) in systems {
+                let url = staging.appendingPathComponent(path)
                 try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try data.write(to: url)
             }
@@ -464,14 +482,13 @@ extension DesignStore {
             try? FileManager.default.removeItem(at: staging)
             throw DesignStoreError.io("could not save the checkpoint: \(error.localizedDescription)")
         }
-        return (DesignCheckpointInfo(name: name, createdAt: manifest.createdAt, boards: boards.count, bytes: total, revision: design.revision), pruned)
+        return (DesignCheckpointInfo(name: name, createdAt: manifest.createdAt, boards: boards.count, bytes: total, revision: design.revision, systems: manifest.systems), pruned)
     }
 
     /// Puts every board and canvas.json back to what the checkpoint holds, as one revision, after
     /// saving the design as `before restore <name>` so a restore can be undone. The design's
-    /// installed systems (`designSystems` in canvas.json, and `ds/`) and its comments are not part
-    /// of a checkpoint and are left alone, apart from comments finding their elements again on
-    /// boards whose content changed (and detaching from boards the restore removed). A board
+    /// installed system copies are restored, while the shared registry stays unchanged. Comments
+    /// find their elements again on boards whose content changed and detach from removed boards. A board
     /// written after the checkpoint is removed; one deleted since is made again.
     func restoreCheckpoint(_ id: DesignID, name raw: String) async throws -> DesignCheckpointResult {
         try await run {
@@ -485,18 +502,49 @@ extension DesignStore {
             }
             var held: [DesignPath: Data] = [:]
             for raw in target.manifest.boards {
-                guard let path = DesignPath(raw),
-                      let data = try? Data(contentsOf: target.folder.appendingPathComponent("boards", isDirectory: true).appendingPathComponent(raw)) else {
+                let url = target.folder.appendingPathComponent("boards", isDirectory: true).appendingPathComponent(raw)
+                guard let path = DesignPath(raw), Self.isInside(url, target.folder),
+                      url.standardizedFileURL.path == url.resolvingSymlinksInPath().standardizedFileURL.path,
+                      let data = try? Data(contentsOf: url) else {
                     throw DesignStoreError.io("the checkpoint \"\(name)\" is damaged: \(raw) is missing")
                 }
                 held[path] = data
             }
-            guard let canvasData = try? Data(contentsOf: target.folder.appendingPathComponent("canvas.json")),
+            let canvasURL = target.folder.appendingPathComponent("canvas.json")
+            guard canvasURL.standardizedFileURL.path == canvasURL.resolvingSymlinksInPath().standardizedFileURL.path,
+                  let canvasData = try? Data(contentsOf: canvasURL),
                   var index = try? DesignIndex.decode(canvasData) else {
                 throw DesignStoreError.io("the checkpoint \"\(name)\" is damaged: its canvas.json can't be read")
             }
-            // Installing a system is the design's own change, never a checkpoint's.
-            index.designSystems = design.index.designSystems
+            var heldSystems: [String: Data] = [:]
+            if let paths = target.manifest.systemFiles {
+                for raw in paths {
+                    let parts = raw.split(separator: "/", maxSplits: 2).map(String.init)
+                    guard parts.count == 3, parts[0] == "ds", DesignPath.isSystemNamespace(parts[1]),
+                          DesignSystemFile.isPath(parts[2]) else { throw DesignSystemError.invalidFile(raw) }
+                    let url = target.folder.appendingPathComponent(raw)
+                    guard Self.isInside(url, target.folder),
+                          url.standardizedFileURL.path == url.resolvingSymlinksInPath().standardizedFileURL.path,
+                          let data = try? Data(contentsOf: url) else {
+                        throw DesignStoreError.io("the checkpoint \"\(name)\" is damaged: \(raw) is missing or linked")
+                    }
+                    heldSystems[raw] = data
+                }
+            } else {
+                // Old checkpoints contain no system copies, so preserve their historical behavior.
+                index.designSystems = design.index.designSystems
+            }
+            if target.manifest.systemFiles != nil, let project = self.projectFolder(for: id) {
+                let current = Set((design.index.designSystems ?? []).compactMap(\.namespace))
+                let restored = Set((index.designSystems ?? []).compactMap(\.namespace))
+                for namespace in restored.subtracting(current) {
+                    guard !FileManager.default.fileExists(atPath: project.appendingPathComponent("ds/" + namespace).path) else {
+                        throw DesignStoreError.invalidCheckpoint("ds/\(namespace) is an uninstalled leftover. Remove it explicitly with canvas_update before restoring.")
+                    }
+                }
+            }
+            let currentSystems = try self.checkpointSystemFiles(id, index: design.index)
+            let systemsChanged = target.manifest.systemFiles != nil && heldSystems != currentSystems
             index = index.inSync()
             var files = try self.files(of: id, &design)
             var restored: [DesignPath] = [], recreated: [DesignPath] = []
@@ -504,7 +552,7 @@ extension DesignStore {
                 if files[path] == nil { recreated.append(path) } else if files[path] != Self.sha256(data) { restored.append(path) }
             }
             let removed = files.keys.filter { held[$0] == nil }.sorted()
-            if restored.isEmpty, recreated.isEmpty, removed.isEmpty, index == design.index {
+            if restored.isEmpty, recreated.isEmpty, removed.isEmpty, index == design.index, !systemsChanged {
                 let write = DesignWriteResult(revision: design.revision, changed: false, title: design.index.title, boardCount: design.index.boards.count)
                 return DesignCheckpointResult(action: .restore, checkpoints: try self.storedCheckpoints(id).map(\.info), checkpoint: target.info,
                                               write: write)
@@ -517,15 +565,83 @@ extension DesignStore {
                 attempt += 1
             }
             let auto = try self.createCheckpointOnQueue(id, name: autoName, protecting: target.token)
+            let originalCanvas = try Data(contentsOf: self.indexURL(id))
+            let originalSources = try Dictionary(uniqueKeysWithValues: (restored + removed).map {
+                ($0, try Data(contentsOf: self.fileURL(id, $0)))
+            })
+            var changedBoards: [DesignPath] = []
+            var systemStaging: URL?
+            var systemProject: URL?
+            var moved: [String] = []
+            var committed = false
+            defer {
+                var recovered = true
+                if !committed {
+                    for path in changedBoards.reversed() {
+                        do {
+                            if let data = originalSources[path] { try self.writeFile(id, path, data) }
+                            else { try FileManager.default.removeItem(at: self.fileURL(id, path)) }
+                        } catch { recovered = false }
+                    }
+                    do { try originalCanvas.write(to: self.indexURL(id), options: .atomic) } catch { recovered = false }
+                }
+                if let staging = systemStaging, let project = systemProject {
+                    if !committed {
+                        for namespace in moved.reversed() {
+                            let destination = project.appendingPathComponent("ds/" + namespace)
+                            let backup = staging.appendingPathComponent("old/" + namespace)
+                            do {
+                                if FileManager.default.fileExists(atPath: destination.path) { try FileManager.default.removeItem(at: destination) }
+                                if FileManager.default.fileExists(atPath: backup.path) { try FileManager.default.moveItem(at: backup, to: destination) }
+                            } catch { recovered = false }
+                        }
+                    }
+                    // Failed rollbacks keep their original copies in the recovery folder.
+                    if committed || recovered { try? FileManager.default.removeItem(at: staging) }
+                }
+            }
 
+            if target.manifest.systemFiles != nil {
+                guard let project = self.projectFolder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
+                let namespaces = Set((design.index.designSystems ?? []).compactMap(\.namespace))
+                    .union((index.designSystems ?? []).compactMap(\.namespace))
+                // Stage before replacing anything, and retain the displaced copies on failure.
+                let staging = try self.checkpointsFolder(id).appendingPathComponent(".restore-\(UUID().uuidString)", isDirectory: true)
+                try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+                systemStaging = staging
+                systemProject = project
+                for (raw, data) in heldSystems {
+                    let url = staging.appendingPathComponent("new/" + raw)
+                    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try data.write(to: url)
+                }
+                for namespace in namespaces.sorted() {
+                    let destination = project.appendingPathComponent("ds/" + namespace)
+                    guard DesignPath.isSystemNamespace(namespace), Self.isInside(Self.deepestExisting(destination), project),
+                          destination.standardizedFileURL.path == destination.resolvingSymlinksInPath().standardizedFileURL.path else {
+                        throw DesignSystemError.invalidFile(namespace)
+                    }
+                    let backup = staging.appendingPathComponent("old/" + namespace)
+                    try FileManager.default.createDirectory(at: backup.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    if FileManager.default.fileExists(atPath: destination.path) { try FileManager.default.moveItem(at: destination, to: backup) }
+                    moved.append(namespace)
+                    let replacement = staging.appendingPathComponent("new/ds/" + namespace)
+                    if FileManager.default.fileExists(atPath: replacement.path) {
+                        try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+                        try FileManager.default.moveItem(at: replacement, to: destination)
+                    }
+                }
+            }
             for path in recreated + restored {
                 guard let data = held[path] else { continue }
                 if files[path] != nil { _ = try self.keepVersion(id, path) }
                 try self.writeFile(id, path, data)
+                changedBoards.append(path)
                 files[path] = Self.sha256(data)
             }
             for path in removed {
-                if let url = try? self.fileURL(id, path) { try? FileManager.default.removeItem(at: url) }
+                try FileManager.default.removeItem(at: self.fileURL(id, path))
+                changedBoards.append(path)
                 files[path] = nil
             }
             do { try index.encoded().write(to: self.indexURL(id), options: .atomic) } catch {
@@ -534,6 +650,7 @@ extension DesignStore {
             design.index = index
             design.files = files
             try self.commit(&design, id)
+            committed = true
             for path in restored + recreated {
                 if let data = held[path] { self.reanchorComments(id, board: path, source: String(decoding: data, as: UTF8.self)) }
             }

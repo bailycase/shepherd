@@ -179,6 +179,51 @@ Undo is still saving waits for it.
   10pt swatch (radius 3) and the token's name in mono 11.5. Selected: a 1px `running` line on
   `runningTint`; otherwise a 1px `lineSubtle` line.
 
+## The Shepherd UI page (DesignSystemPage and its eight sibling boards)
+
+**Removed from the shipped catalog.** Shepherd no longer bundles or registers Night Watch.
+This reference page remains covered by a synthetic system in tests and previews, not a system
+users can install. User-built and imported systems keep the normal Design systems page below.
+
+**Historical implementation** for the built-in system only (`DesignSystemReferencePage`, `DesignSystemReference`;
+checklist [DesignSystem-checklist](boards/DesignSystem-checklist.md); boards `DesignSystemPage`, `Light`, `Menu`,
+`Colors`, `ColorsLight`, `Type`, `Spacing`, `Sizes`, `Components` in `docs/design/boards/`). Every other system
+keeps the Design systems page below. The page is read-only: the boards' Edit icon per token, editable values, "+ Add"
+per card are not drawn (the user's decision, 2026-10-13: read-only, no new write contract). The other differences from the
+boards are open, in known-gaps.md.
+
+- **Header**: the breadcrumb (nib, "Design systems" back to the Designs page, "/", the system's name), then Dark |
+  Light (`NWSegmentedPicker`), **New design** (primary, `vm.openNewDesign(system:)` with the system the page shows, so the draft draws in it and not in
+  the default, which is a system built from a project when there is one) and the More menu. Dark | Light sets the
+  page's own appearance (view state, not persisted, never the app's theme); both color columns stay drawn.
+- **Contents** (`list.bullet`, a bordered 28pt button 16pt from the corner): a 224pt `nwPopover` with the system's
+  name as a section label, then Overview, Principles, Voice, Colors, Typography, Spacing, Corner radius, Size and
+  Components with their counts, then a hairline and **Used by**, the designs drawn in the system with their board
+  counts. A part scrolls to its card; a design opens.
+- **Column** 960 wide, 24 between parts: the hero (256pt, `bgBase`, radius 12, the name at 64 bold, six tiles of the
+  lantern, running, done, raised, lantern tint and failed roles), the lead and a provenance note, Principles, Voice,
+  then a card each for Colors (groups Surfaces, Lines, Text, Brand and state, Syntax; Name | Dark | Light), Typography
+  (Display, Text, Mono; a tag "Geist · 28 / 600"), Spacing, Corner radius, Size and Components.
+- **Values** are read-only chips (28pt, `bgSunken`, `lineStrong`, radius 6; a 16pt swatch for a color; mono). A
+  light value sits on a light chip on the dark page. The three text tokens carry their contrast against
+  `--bg-window` of the same variant: a check at 4.5:1 or more in `done`, a warning triangle below it in `lanternText`.
+- **Components** lists `NWComponentCatalog.entries`: live ShepherdUI views, drawn as pictures (no press, one
+  accessibility element named "<Name> specimen"), with an All groups popup that filters by group. The count is the
+  catalog's; adding a component is one entry.
+- **Where each number comes from**: test-only tokens from `ShepherdTestSupport.NightWatchSystem.tokens()`; sizes from `NWSettingsControlMetrics`,
+  `NW.Height.row`, `AppLayout.settingsNavWidth`, `threadMaxWidth` and `proseMaxWidth`; the component count from the
+  catalog; Used by from the designs whose `systemNamespace` is the system. Authored copy (tagline, lead, Principles,
+  Voice, group hints, radius uses) is `DesignSystemCopy`. The provenance note says only what the server enforces: generated from Night Watch tokens in test fixtures, read-only, never synced from a project. The board's "Made in Shepherd chat UI"
+  is not shown.
+- **Kept from the app, not drawn**: the ••• menu (Open, Duplicate as a New System, Delete Design System… off).
+- **Name**: the page says "Shepherd UI" (`DesignSystemCopy.name`). The system's registered title, "Night Watch", is stored in
+  designs that install it and is not changed.
+- **Catalog coverage**: one entry per component the Component Gallery draws from literals (buttons, status, fields,
+  selection, containers, the palette card, the design system chip). The other `NW*` views are drawn by a domain's own
+  `#Preview` from that domain's data and are not listed. The boards say 193; the page says the catalog's own count.
+- **Contents menu**: as tall as its content up to the room under its button, then it scrolls, so the last of many designs
+  stays reachable in a short window.
+
 ## Design systems (DZSystem)
 
 **Built on the Mac** (`DesignSystemPage`; docs/designs.md › Design systems › In the app). A system

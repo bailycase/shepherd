@@ -322,7 +322,11 @@ events come out on stdout, one record per LF.
     beside a full queue rehashes and measures only the message it grew (and the snapshot's small
     fixed part).
   - History pages hold 50 entries, walked with `olderCursor`. A stale cursor gets
-    `stale_cursor`.
+    `stale_cursor`. A turn's calls are live rows until pi saves them, so when a turn longer than a
+    page finishes, the newest page starts inside it and shares no message with what the client
+    showed. The store then loads the pages between (`NativeThreadStore.joining`, at most
+    `joinPageLimit`, 20) until they meet the thread, so the prompt and the history above it stay
+    (`ThreadLongTurnHistoryTests`). Without that the thread shrank to the turn's last reply.
   - A history entry's id names its message, not its place in pi's list
     (`RPCThreadState.historyEntryID`): a tool result is its call (`t:<call id>`), anything else
     `<role>:<ms>` from pi's timestamp, with `#<n>` on a repeat. So a message keeps its id across
@@ -571,6 +575,50 @@ and persists `Agent.serviceTier` before it answers. Gated by `setServiceTier` in
 from an older host's snapshot and refuses the request there). `NativeThreadStore.offersServiceTier`
 is the client's rule for drawing the control: the action and more than one tier.
 
+## Images
+
+pi saves every image in its own session: a user message's and a tool result's `image` blocks are written
+whole to the session file, and `get_messages` returns them (checked against the staged engine's
+`SessionManager`, user and tool-result images, byte for byte). So **the host stores nothing**: it names an
+image in the snapshot and reads its bytes from pi's history when asked. It never relies on a client's memory of
+what it sent (`sentImages`) or on the original file.
+
+- **Snapshots carry metadata only.** An `unsupportedImage` block gains `imageID`, `mimeType`, `width`, `height`
+  and `byteCount` (`NativeThreadBlock`; all absent from an older host, and for an image the thread does not
+  offer: over `NativeImage.maxBytes`, over `NativeImage.maxPixels`, or not png, jpeg, gif or webp, or whose bytes
+  are not the type the block says). `kind` stays `unsupportedImage`, so an older client draws the chip it always did.
+- **The id** is `entry|index|sha256`: the history entry (numbered by `RPCThreadState.shownHistory`, the one list
+  both the snapshot and the lookup read), the position among that message's images, and the image's **whole**
+  SHA-256 in hex. `find` hashes the bytes it is about to serve and refuses any whose hash is not the id's, so an id
+  never serves bytes it did not name. **There is no cache**: an identity that is not the whole content's hash is not an
+  identity, so nothing is remembered between histories.
+- **Where the work runs.** Reading a header and hashing an image is megabytes of work. A history refresh does it
+  off the thread's queue, once, into a table built from exactly those messages (`ThreadImages.table(for:)`), and the
+  projection on the thread's queue only looks entries up (`projectHistory(images:)`). A live tool result's image is
+  projected with no table: it is the chip until the turn ends and history is read again, when it is named. An image
+  request does its scan, decode and hash on a utility queue too, and answers only if the session is still the one
+  asked about.
+- **`NativeThreadRequest.image(expectedSessionID, imageID, offset)`** answers `imageChunk` (`imageID`, `mimeType`,
+  `totalBytes`, `offset`, `data`): at most `NativeImage.chunkBytes` (256 KiB, base64 about 350 KB, well under the
+  1 MiB frame), from `offset`. The host asks pi for its history again (`get_messages`) for this agent and session,
+  finds the one image, and serves a piece. Failures: `stale_session` (another session), `unknown_image` (no such
+  image, a piece past the end, a negative offset, a made-up id). A client names no path.
+- **Gated** by `images` in `supportedActions` and, remotely, `native.images.v1`. `RemoteHostClient` strips the
+  action from an older host's snapshot and refuses the request there ("Update Shepherd on the host to see this
+  thread's images."), so such a host's thread keeps its chips.
+- **The client** (`NativeThreadStore.images`, `NativeThreadImages`) asks piece by piece, checks every piece
+  (same image, in order, at most a chunk, an offered type, a total within the limit, a total that does not change)
+  and ends the fetch on any that fails. At most four fetches run at once, one image on its way is shared by every
+  asker, the held images are bounded (24 MiB, least recently used first), a new session drops them, and a thread
+  that leaves the screen cancels what is under way.
+- **Sending is unchanged**: images are still resized to 2000 px, at most four, 2 MiB each, 5 MiB together; the
+  user's own file is never rewritten.
+- **Presentation.** A user message's `NativeUserBubble.imageRefs` (only when the host names every image of the
+  message, in the order its queue parts carried them), and an agent's or a tool's images as one
+  `NativeTurnPresentation.Item.images` where they happened. An image the host does not name stays the note it
+  was ("Image attached"). The Mac draws them ([thread-images](design/thread-images.md)); the phone and iPad draw
+  the count for now.
+
 ## Goals
 
 The snapshot's optional `goal` is the live projection of a session-persisted conversation goal.
@@ -699,34 +747,6 @@ queue, with no socket, TCP, or authentication involved. An authenticated remote 
 same `NativeThreadRequest` inside `RemoteRequest.nativeThread` and gets the same result; only the
 transport differs.
 
-- **Sent images in the thread:** `NativeThreadStore` keeps the bytes and names of the last 32 sends that carried
-  images, by operation id (`queuedImages(_:)`, also the queued message's id), and the optimistic echo has one
-  `unsupportedImage` block per image. A send still waiting in the queue is never forgotten however many sends
-  follow it: every trim (after a send is accepted and on each queue derivation) protects the ids of the derived
-  queue, the host's snapshot queue and every pending overlay, and the send being recorded. `NativeUserBubble.operationID`
-  (the saved message's `operationID`, a queued part's id, or the echo's own) finds the bytes, so `UserTurn` draws
-  thumbnails above the bubble. The thumbnails are decoded per thread (`SentImageThumbnails`, owned by `ThreadView`,
-  at most 32 sends) and hold only the small thumbnails: a viewer entry names the send and image index, and the
-  bytes are read from the store when the image is opened. A message this client did not send, or sent before a restart,
-  has no bytes here: the client asks the host once per message with `NativeThreadRequest.images(expectedSessionID:entryID:)`
-  (`native.images.v1`, `savedImages` in `supportedActions`), answered by `NativeThreadResult.images`. pi's session still holds
-  the pictures (its JSONL and `get_messages` keep the base64), so the host reads them from `get_messages` on demand, serves
-  each as it is when it is at most `NativeImage.previewBytes` (160 KiB) and else as a JPEG scaled down until it is, and keeps
-  nothing. At most 4 previews, so a reply stays under one 1 MiB frame; snapshots never carry image bytes. Only the message's
-  first 4 picture blocks are decoded; the work runs off the server queue (utility queue, at most 2 reads in flight per
-  thread, "busy" beyond) and the session and generation are checked again when it comes back (`stale_session`). The
-  original, for Copy, Add to message and Show in Finder, is read when the viewer opens a saved image:
-  `NativeThreadRequest.imageChunk(expectedSessionID:entryID:index:offset:)` answers a raw slice of at most
-  `NativeImage.chunkBytes` (255 KiB, a multiple of 3), so an original of up to `NativeImage.maxBytes` (2 MiB) takes at
-  most 9 requests, each under one frame; the host keeps nothing between them (`too_large` over 2 MiB, `invalid` for a bad
-  offset). The reader takes no more than `NativeImage.maxChunks` (9) slices, and a non-final slice must be full size (a host
-  trickling bytes is refused after the first); it compares the session ID *and* generation after every await and drops a
-  reply that crossed a change (the store also forgets its saved previews when either changes). Pixels are bounded by the
-  header, not the byte count: a picture over `NativeImage.maxPixels` (64 MP, an 8000 × 8000 picture or a 21000 × 3000
-  panorama) is neither previewed nor served (`too_many_pixels`), and the viewer's decode, thumbnails and Copy refuse it
-  before decoding. The viewer cancels the read on step or close and disables those three actions ("Loading the original…",
-  "Couldn’t load the original") until it lands: no export ever uses the lossy preview. The store keeps the
-  previews of the last 16 messages (`savedImage(entryID:index:)`); an older host leaves the "Image" chips.
 - **Size limits:** a request must be under 64 KiB, or 12 MiB when it carries images. Larger
   requests get `native_limit`. Remote requests are also bound by the 1 MiB TCP frame, so
   `RemoteHostClient` rejects larger image sends before sending.
@@ -828,7 +848,8 @@ output grows.
   stays ready and running, with the same rows and pages of history, so showing it again is a
   flip that rebuilds the thread and its composer once. The first pull after (`run`) merges the
   newest page onto the history already loaded, as any poll does; another session or
-  generation, or a page with no overlap, starts over. That pull also marks where the thread
+  generation starts over, and so does a page that still has no overlap after the store loaded
+  up to 20 older pages to join it. That pull also marks where the thread
   caught up (`catchUp`, with `threadVersion` and `chromeVersion`, none of them observed), in the
   same update: what it brought back lands without motion (`CatchUpGate`), and what arrives
   after moves as usual. `stop` is the teardown (an error, a pruned agent, a view that went

@@ -17,7 +17,7 @@ enum ContextToolGroups {
     private static let piTools: Set<String> = ["read", "bash", "edit", "write", "grep", "find", "ls", "powershell"]
     private static let mcpResourceTools: Set<String> = ["list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"]
     private static let designTools: Set<String> = [
-        "design_get", "design_note", "design_read", "board_write", "board_edit", "boards_edit", "board_search", "board_render", "board_extract",
+        "design_get", "design_note", "design_read", "board_write", "board_edit", "boards_edit", "board_search", "board_render", "board_interact", "design_export", "board_extract",
         "canvas_update", "design_check", "comment_list", "comment_reply", "system_read", "system_write", "checkpoint_create",
         "checkpoint_list", "checkpoint_restore", "markup_propose",
     ]

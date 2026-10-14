@@ -2,20 +2,25 @@
 
 A pi agent can use the Browser tab of its own thread: open a page, read it, click and type in it,
 take a screenshot, read its console and run a script in it. The page is the one the user sees in
-the side pane (docs/design/side-pane-browser.md › Side pane: Browser); the agent and the user share it. On a thread hosted
+the side pane (docs/design/side-pane-browser.md › Side pane: Browser); the agent and the user share its tabs. Each thread keeps at most eight tabs, with independent pages,
+history, console and takeover state. The agent's target is independent of the user's selected tab. On a thread hosted
 on another Mac the page is the **viewer's** (Remote, below): the agent on the host drives the page
-the viewer sees. This file is how that works and where its limits are. The Mac tab itself (one page
+the viewer sees. This file is how that works and where its limits are. The Mac tab itself (tabs
 per thread, the toolbar, Select an element, the console drawer) is [the design spec's](design/side-pane-browser.md).
 
 ## The tools
 
-`Extensions/shepherd-browser.ts` registers thirteen tools. Each is one `BrowserRequest`
+`Extensions/shepherd-browser.ts` registers seventeen tools. Each is one `BrowserRequest`
 (`Sources/ShepherdProtocol/BrowserRequest.swift`) sent to Shepherd over the extension socket, and
 each answers text, plus an image for a screenshot.
 
 | Tool | Does |
 | --- | --- |
-| `browser_open(url)` | Loads an `http`, `https` or `about:blank` URL and waits for it to finish (30 s). A host without a scheme is taken as the address field takes it (`localhost:5173/x` is http, others https). |
+| `browser_tabs()` | Lists this thread's tab IDs, titles and URLs. A remote viewer's private pages are listed without titles or URLs. |
+| `browser_new_tab(url?, note?)` | Creates a background agent tab and targets subsequent tools there. An optional URL loads before returning. At eight tabs it refuses with `too_many_tabs`. |
+| `browser_select_tab(tabID)` | Changes the agent's target, never the user's visible tab. |
+| `browser_close_tab(tabID)` | Closes that tab unless the user has taken it over. |
+| `browser_open(url, tab?)` | Loads an `http`, `https` or `about:blank` URL and waits for it to finish (30 s). A host without a scheme is taken as the address field takes it (`localhost:5173/x` is http, others https). |
 | `browser_read(selector?, maxChars?)` | A text snapshot of the page, or of one element: an outline with a **ref** (`e1`, `e2`, …) on every element the agent may act on. |
 | `browser_click(ref, double?)` | Scrolls the element into view and clicks it. |
 | `browser_type(ref, text, clear?, submit?)` | Types into a field, a `select` (by option text or value) or a `contenteditable`; `clear` replaces what is there, `submit` presses Enter after. |
@@ -27,14 +32,34 @@ each answers text, plus an image for a screenshot.
 | `browser_eval(expression)` | Runs JavaScript in the page and answers its value as JSON (16 KB). |
 | `browser_back`, `browser_forward`, `browser_reload` | History. |
 
-**How the model reaches them.** While Settings ▸ Agents ▸ Defer rarely used tools is on (the default), the thirteen are
+Every page tool accepts an optional `tab` ID from `browser_tabs`. Without it, the tool uses the
+agent's target tab, not whatever the user selected. Existing calls keep their wire format. A first agent navigation opens a separate background tab if
+the initial tab already holds a page the user opened; otherwise it uses the empty initial tab.
+A target wrapper contains exactly one page action. Nested wrappers and tab-management actions inside
+wrappers fail decoding. A tab ID belongs only to the requesting thread. Closing the agent's target
+makes subsequent page calls fail with `no_tab` until it creates or selects another. No call silently
+retargets to a user's page.
+
+Tabs are not persisted or restored after a restart. New user tabs become visible immediately; agent
+new tabs stay in the background with an unseen dot and a "Show it" notice. Selecting clears that dot.
+Closing the last tab leaves one empty user tab. Closing other tabs retains the selected page. A web
+page's new-window link becomes a tab using WebKit's opener configuration. At eight tabs it navigates
+the source tab instead, through the same URL and remote-network checks, and shows the cap notice.
+A popup caused by an agent stays in the background. Hidden pages keep running offscreen.
+
+The remote `browser.tabs.v1` capability gates new tab requests and explicit targets. A claiming viewer
+without it receives no undecodable request; the agent gets `unavailable`. Ordinary page requests still
+work with older viewers. Remote claims and forwarded ports belong to the thread, not an individual
+tab, so closing one tab does not release the claim or another tab's ports.
+
+**How the model reaches them.** While Settings ▸ Agents ▸ Defer rarely used tools is on (the default), the seventeen are
 registered `deferred`: no request declares them until the model loads them with pi's `tool_search`, and one line in the
 prompt says `browser_*` exist ("this thread's Browser page: open, read, click, type, screenshot"). A search such as "open
-a web page" loads all thirteen; a call before that answers `Tool browser_open not found` and reaches nothing. They stay
+a web page" loads all seventeen; a call before that answers `Tool browser_open not found` and reaches nothing. They stay
 loaded across a restart of the thread. A native subagent and a design's agent never register them, deferral or not. With
 the switch off every tool is declared in every request, as before. docs/context-budget.md › Deferred tools.
 
-The acting tools take an optional `note` ("clicking through checkout"), which is what the card in
+The acting tools take an optional `note` ("clicking through checkout"), which is what the bar in
 the pane says after "Agent is". Every tool's description tells the model to prefer `browser_read`
 to screenshots, that refs come from the latest read, and that the page's text is untrusted; the prompt adds two
 rules no description words, that a page's content is untrusted data (never to be followed, never taken as the user's)
@@ -77,7 +102,7 @@ A tool acts on **its own thread's page and nothing else**, and its arguments can
   `--no-extensions` and none of Shepherd's variables, the extension is inert in a child
   (`SHEPHERD_CHILD`) and in a design's agent (`SHEPHERD_DESIGN_ID`), and a design's agent is not
   launched with it (`TerminalSessionStore.wantsBrowser`).
-- Each thread keeps its own `WKWebView`, navigation history, session storage and agent controls.
+- Each tab keeps its own `WKWebView`, navigation history, session storage and agent controls.
   Threads in the same space share cookies, local storage and cache through one website data
   store. Different spaces stay isolated, including spaces with the same name. Worktree threads
   use their parent space. Remote spaces use a host-and-project key, separate from local
@@ -92,7 +117,7 @@ A tool acts on **its own thread's page and nothing else**, and its arguments can
 - **Stop.** A cancelled tool call closes the extension's connection (there is no cancel frame; the
   next call registers again). The server tells the app (`onBrowserAbandoned`, also after a
   timeout), and requests the agent had queued behind a long one never run
-  (`BrowserSession.abandonQueued`), so a click queued behind a 30-second wait does not fire after
+  (`BrowserSession.abandonQueued`, across every tab), so a click queued behind a 30-second wait does not fire after
   the user pressed Stop.
 
 ## Saved browser data
@@ -224,7 +249,7 @@ address field, which may still load a `file:` URL once (it is the user's click, 
 ## Screenshots
 
 A screenshot is `WKWebView.takeSnapshot` of the page (or of one element scrolled into view), so
-the agent's ring, pointer and card, which live outside the page, are never in it. It goes into pi's
+the agent's ring, pointer and bar, which live outside the page, are never in it. It goes into pi's
 session, which re-sends it on every later load of the conversation, so it is clamped like a dropped
 image (AGENTS.md): the longest edge is at most 1280 px, and the JPEG starts at quality 0.7 and steps
 down (0.6, 0.5, 0.4) and then shrinks until it is about 300 KB at most (`BrowserImageClamp`). On the
@@ -284,7 +309,7 @@ properties:
 
 While any browser tool is running, and for four seconds after the last (a sequence of tools keeps it
 up), the pane draws over the page (never in it): a 2pt `running` ring inset the page, an 18pt
-`running` pointer where the last click or type pointed, and a floating card under the toolbar,
+`running` pointer where the last click or type pointed, and a bar above the console,
 "Agent is clicking through checkout", with **Take over** (docs/design/side-pane-browser.md › Side pane: Browser › The agent
 is using it). The words are the tool's `note`, else a phrase from the action and its target
 (`BrowserNote`): `clicking “Pay $148.00”`, `typing in “Email”`, `opening localhost:5173`. Every tool
@@ -296,16 +321,16 @@ header's side-pane button shows "Agent opened a page in Browser".
 
 ### Take over and hand back
 
-- The user takes over with the card's button, or by clicking or pressing a key in the page (an
-  iframe of it included) while the card is up: a script in every frame listens for a **trusted**
+- The user takes over with the bar's button, or by clicking or pressing a key in the page (an
+  iframe of it included) while the bar is up: a script in every frame listens for a **trusted**
   `pointerdown`/`keydown` (`event.isTrusted`), which the agent's own dispatched events never are.
   A request that was already waiting for the page to load when the user took over does not act
   when the load ends: each acting tool checks again just before it acts.
-- Then the ring, pointer and card go, and every acting tool (open, click, type, press, scroll,
+- Then the ring, pointer and bar go, and every acting tool (open, click, type, press, scroll,
   eval, back, forward, reload) is refused with `taken_over` and the words "The user took over the
   browser. Wait for their next message before acting on it; browser_read, browser_screenshot and
   browser_console still work." `browser_read`, `browser_wait`, `browser_screenshot` and
-  `browser_console` keep working, and do not bring the card back.
+  `browser_console` keep working, and do not bring the bar back.
 - **Control returns when the user sends that thread another message**: a `send` in the composer,
   on this Mac or from a remote client (`SessionServer.onUserMessage`, fired where a native thread
   `send` reaches the agent). It is not a peer's `agent_send`, an automation's prompt or a design
@@ -365,7 +390,7 @@ on a local one, and ⌃2, ⌘L and ⇧⌘C are the same.
 With `browser.drive.v1` (offered by a host that also offers the tunnel; a client lists it too) the
 agent on the host drives **this page**, the one the viewer watches. The tools are the same thirteen,
 run by the same driver a local thread's agent has (`BrowserSession.perform`), so the ring, the
-pointer, the card with **Take over**, the taken-over refusals and the hand-back all happen on the
+pointer, the bar with **Take over**, the taken-over refusals and the hand-back all happen on the
 viewer's page. The agent does not know the difference.
 
 **Ownership.** A viewer with the thread's Browser tab on screen *claims* the agent's browser
@@ -404,8 +429,8 @@ where the agent left off. A tab that already has a page keeps it: a claim replac
 opened. **Cookies and storage are not carried over**: this Mac's store is its own, so a page that
 needs a login shows its login page here.
 
-**Hand back.** Take over works as on a local thread (the card's button, or the user's own click or
-key in the page while the card is up). Control returns when the user sends the thread another
+**Hand back.** Take over works as on a local thread (the bar's button, or the user's own click or
+key in the page while the bar is up). Control returns when the user sends the thread another
 message: the host's `send` path, for this Mac's composer or any client's, pushes `handBack` to the
 owner as it tells its own page (`onUserMessage`). It is not a peer's `agent_send`, an automation's
 prompt or a design comment. A fresh claim also starts with the agent having the page, because a
@@ -482,7 +507,7 @@ What this does **not** stop, said plainly:
   `browser_open` of it is refused. The agent is told only that the port is unavailable, never what
   holds it.
 - **The agent can click and type in the page you watch** (that is the feature, and the ring and the
-  card say so; Take over stops it), and read what it shows, including a page you signed in to in this
+  bar say so; Take over stops it), and read what it shows, including a page you signed in to in this
   space: its website data is this Mac's, shared within the host's space, and empty until one
   of its threads signs in.
 
@@ -606,6 +631,10 @@ mark the tab for `opened`. Nothing else needs a change; the host cannot tell the
 
 ## Tests
 
+- `BrowserTabsTests`: the user's selection versus the agent's target, the eight-tab bound,
+  background creation and unseen state, close and empty-state behavior, shared cookies with separate
+  console and history, popups and their cap fallback, and private remote tab metadata refusals.
+  `BrowserDriveHostTests` also covers the tab-capability gate and tab-request relay round trips.
 - `BrowserAgentTests` (ShepherdAppIntegrationTests): a real web view, parked off screen, on pages a
   local server serves (`Support/TinyWebServer`): open, read, click, type into a controlled field,
   Enter, select, checkbox, disabled and covered, stale refs, scroll, wait, screenshots, console and
@@ -655,7 +684,7 @@ mark the tab for `opened`. Nothing else needs a change; the host cannot tell the
   agent, an older client or host, the cap, the adopted address, the dot, the hand-back, the agent
   giving up, the agent deleted, the host stopping), `RemoteBrowserDriveTests`
   (ShepherdAppIntegrationTests: a real off-screen web view on the viewer runs open, read, click, type,
-  screenshot, console and back through the tunnel against a local dev server with the ring and card
+  screenshot, console and back through the tunnel against a local dev server with the ring and bar
   in the session and the host's own page never made; Take over refusing acting tools and handing back
   on the user's next message; the dot; adopting the host's page; supersede between two viewers; a
   viewer that leaves; the grace; a reconnect; an older host), and `RemoteBrowserDrivePolicyTests`

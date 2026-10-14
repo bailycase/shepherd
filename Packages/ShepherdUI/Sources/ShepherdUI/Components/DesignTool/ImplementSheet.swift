@@ -384,7 +384,7 @@ public struct NWImplementBranchLine: View {
         let nw = Color.nw
         let M = NWImplementMetrics.self
         HStack(spacing: NW.Space.s) {
-            Image(systemName: "arrow.triangle.branch").font(.system(size: M.branchSize - 1))
+            Image(systemName: NWGlyph.gitBranch.symbolName).font(.system(size: M.branchSize - 1))
             Text(words)
             if let branch { Text(branch).font(.nwMono(M.branchMonoSize)).foregroundStyle(nw.textSecondary).lineLimit(1) }
         }

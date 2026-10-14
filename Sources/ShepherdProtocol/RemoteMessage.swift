@@ -31,7 +31,7 @@ public enum RemoteProtocol {
     /// And it runs an agent's browser tools on its own page when the host asks
     /// (`browserDriveCapability`), which a host asks only of a client that lists it.
     /// Space editing understands both legacy .pi and current .shepherd inventories (`projectsV2Capability`).
-    public static let clientCapabilities = [projectPublicationsCapability, projectWorkerCapability, projectPlacementCapability, logicalProjectRuntimeCapability, projectExecutionCapability, nativeQueueCapability, thinkingLevelsCapability, designsCapability, browserTunnelCapability, browserDriveCapability, projectsV2Capability]
+    public static let clientCapabilities = [browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectPlacementCapability, logicalProjectRuntimeCapability, projectExecutionCapability, nativeQueueCapability, thinkingLevelsCapability, designsCapability, browserTunnelCapability, browserDriveCapability, projectsV2Capability]
     public static let version = 1
     /// A host's final reply to a `hello` whose token it refused; it closes the connection after.
     public static let unauthorizedCode = "unauthorized"
@@ -115,8 +115,8 @@ public enum RemoteProtocol {
     /// offers (`NativeThreadSnapshot.serviceTier`, `serviceTiers`). An older host has neither, and
     /// a client draws no Speed control there.
     public static let nativeServiceTierCapability = "native.serviceTier.v1"
-    /// The host answers `NativeThreadRequest.images`: previews of the pictures in a saved message, so a client that did not
-    /// send them (another client, or after a restart) draws them. An older host has none, and the client draws chips.
+    /// The host serves the images pi saved in a thread (`NativeThreadRequest.image`) and names them in its snapshots
+    /// (`NativeThreadBlock.imageID`). An older host sends only the "Image" chip, and a client draws that.
     public static let nativeImagesCapability = "native.images.v1"
     public static let nativeGoalCapability = "native.goal.v1"
     /// Live Settings ▸ Experiments ▸ Goals control on this host.
@@ -127,7 +127,9 @@ public enum RemoteProtocol {
     public static let projectExecutionCapability = "logicalProjects.execution.v1"
     public static let logicalProjectRuntimeCapability = "logicalProjectRuntime.v1"
     public static let projectMessageImagesCapability = "logicalProjectRuntime.images.v1"
-    public static let capabilities = [projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectTrustCapability, skillsCapability, piSkillsCapability, createAgentImagesCapability, terminalControlCapability, designContextCapability, designsCapability, designMarkupCapability, designDeleteCapability, nativeRetryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability]
+    public static let browserTabsCapability = "browser.tabs.v1"
+
+    public static let capabilities = [browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectTrustCapability, skillsCapability, piSkillsCapability, createAgentImagesCapability, terminalControlCapability, designContextCapability, designsCapability, designMarkupCapability, designDeleteCapability, nativeRetryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)

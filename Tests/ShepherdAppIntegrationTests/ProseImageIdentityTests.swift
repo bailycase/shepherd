@@ -64,7 +64,7 @@ private final class SourceState {
 private struct ImageFixture: View {
     let state: SourceState
     var body: some View {
-        NWProseImageGroup(images: [NWProseImage(alt: "image", source: state.source)])
+        NWProseImageView(image: NWProseImage(alt: "image", source: state.source))
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

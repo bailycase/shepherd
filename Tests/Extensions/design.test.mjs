@@ -141,8 +141,8 @@ test("without its design, socket or agent the extension registers nothing", () =
 test("a design's agent gets the design and comment tools", async () => {
   await withDesign(() => null, async (pi) => {
     assert.deepEqual([...pi.tools.keys()].sort(),
-      ["board_edit", "board_extract", "board_render", "board_search", "board_write", "boards_edit", "canvas_update", "checkpoint_create",
-        "checkpoint_list", "checkpoint_restore", "comment_list", "comment_reply", "design_check", "design_read", "markup_propose",
+      ["board_edit", "board_extract", "board_interact", "board_render", "board_search", "board_write", "boards_edit", "canvas_update", "checkpoint_create",
+        "checkpoint_list", "checkpoint_restore", "comment_list", "comment_reply", "design_check", "design_export", "design_read", "markup_propose",
         "system_read", "system_write"]);
   });
 });
@@ -370,7 +370,7 @@ test("design_check flags a stray hex and a size off the scale, and names the nea
     assert.match(text, /2 boards against 6 custom properties in src\/styles\/tokens\.css\./);
     assert.match(text, /A\.dc\.html:\n- #4f46e6 ×1 · A\.dc\.html:11 \(nearest --accent #4f46e5\)\n- 18px ×1 · A\.dc\.html:11 \(nearest --space-4 16px\)/);
     assert.doesNotMatch(text, /B\.dc\.html:/, "a board with nothing off-system isn't listed");
-    assert.deepEqual(all.details, { system: "acme-web", offSystem: 2, boards: 2 });
+    assert.deepEqual(all.details, { revision: 4, system: "acme-web", offSystem: 2, boards: 2 });
 
     const one = await tool.execute("t2", { path: "B.dc.html" }, undefined, undefined, { cwd: project });
     assert.equal(firstLine(one), "Checked against acme-web · 0 off-system values");
@@ -682,7 +682,7 @@ test("design_check checks against the installed system and names each value's bo
     assert.match(text, /<design-data nonce="[0-9a-f]+">\nA\.dc\.html:\n- #4338ca/);
     assert.doesNotMatch(text, /delete the repo/);
     assert.doesNotMatch(text, /#e2e8f0|#ffffff|26px|8px ×/, "a dark value, a canvas-named color, a type size and a radius are on the system");
-    assert.deepEqual(result.details, { system: "acme-web", offSystem: 2, boards: 1 });
+    assert.deepEqual(result.details, { revision: 4, system: "acme-web", offSystem: 2, boards: 1 });
   });
 });
 

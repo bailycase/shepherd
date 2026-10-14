@@ -1,5 +1,4 @@
 import Foundation
-import ImageIO
 
 public enum NativeThreadRequest: Codable, Hashable, Sendable {
     case snapshot(expectedSessionID: String? = nil, beforeEntryID: String? = nil, afterRevision: UInt64? = nil)
@@ -43,19 +42,13 @@ public enum NativeThreadRequest: Codable, Hashable, Sendable {
     /// raw `ServiceTier` the snapshot's `serviceTiers` lists ("standard", "fast"). Gated by
     /// `setServiceTier` in `supportedActions` and, remotely, `native.serviceTier.v1`.
     case setServiceTier(expectedSessionID: String, generation: String, operationID: UUID, tier: String)
+    /// v5: one 256 KiB piece of an image pi saved in this thread (`NativeThreadBlock.imageID`), from byte
+    /// `offset`. Gated by `images` in `supportedActions` and, remotely, `native.images.v1`. The host reads
+    /// the image from pi's own history for this agent and session, never from a path a client names.
+    case image(expectedSessionID: String, imageID: String, offset: Int)
     /// Goal controls execute even during work or evaluation; fenced by the displayed goal revision.
     case goal(expectedSessionID: String, generation: String, operationID: UUID, action: NativeGoalAction,
               expectedGoalID: String? = nil, expectedGoalRevision: Int? = nil, expectedGoalState: NativeGoalState? = nil)
-
-    /// v5: the pictures of one saved message (`entryID`, a history entry id), as previews the host makes small enough for
-    /// one frame. pi's saved message keeps the pictures but the thread's blocks never carry them, so a client that did not
-    /// send them (another client, or itself after a restart) asks here, in the order of the message's
-    /// `unsupportedImage` blocks. Gated by `native.images.v1`; answered with `.images`.
-    case images(expectedSessionID: String, entryID: String)
-    /// v5: one slice of the original of the `index`th picture of a saved message (`NativeImage.chunkBytes` at most, from byte
-    /// `offset`), so a client reads an original of up to `NativeImage.maxBytes` in at most 9 requests, each under one frame.
-    /// The host keeps nothing between them. Gated by `native.images.v1`; answered with `.imageChunk`.
-    case imageChunk(expectedSessionID: String, entryID: String, index: Int, offset: Int)
 
     public var images: [NativeImage] {
         if case .send(_, _, _, _, _, let images, _, _, _) = self { return images ?? [] }
@@ -103,32 +96,19 @@ public struct NativeImage: Codable, Hashable, Sendable {
     /// One send's images together: base64-expanded, one prompt line stays under RPCSession's
     /// 8 MiB stdin queue.
     public static let maxBytesPerSend = 5 * 1024 * 1024
-    /// A host's preview of a saved image (`NativeThreadRequest.images`): at most `maxPerSend` of them, base64-expanded,
-    /// stay under the 1 MiB frame (4 × 160 KiB × 4/3 = 853 KiB).
-    public static let previewBytes = 160 * 1024
-    /// One slice of an original (`NativeThreadRequest.imageChunk`): a multiple of 3, so a slice is whole base64 groups;
-    /// base64-expanded it stays under 350 KB, far under the 1 MiB frame.
-    public static let chunkBytes = 87_040 * 3
-    /// Most slices an original takes: `maxBytes` over `chunkBytes`, rounded up. A reader asks for no more.
-    public static let maxChunks = (maxBytes + chunkBytes - 1) / chunkBytes
-    /// The most pixels a picture may hold to be previewed, decoded or copied (a few compressed bytes can promise gigapixels).
-    /// 64 MP is an 8000 × 8000 image or a 21000 × 3000 panorama, far above the 2000 px a send is resized to.
-    public static let maxPixels = 64_000_000
+    /// The most bytes one `.image` reply carries: base64 of it stays far under `NDJSON.maxPayloadBytes` (1 MiB).
+    public static let chunkBytes = 256 * 1024
+    /// The most pixels the thread offers or draws (4096 × 4096): a bigger one is a chip, never a bitmap.
+    public static let maxPixels = 16 * 1024 * 1024
+    /// The raster types the thread offers.
+    public static let threadMimeTypes: Set<String> = ["image/png", "image/jpeg", "image/gif", "image/webp"]
 
-    /// A picture's pixel size from its header (the first bytes are enough), without decoding it; nil when it has none.
-    public static func pixelSize(of data: Data, partial: Bool = false) -> (width: Int, height: Int)? {
-        let source = CGImageSourceCreateIncremental(nil)
-        CGImageSourceUpdateData(source, data as CFData, !partial)
-        guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-              let width = properties[kCGImagePropertyPixelWidth] as? Int, let height = properties[kCGImagePropertyPixelHeight] as? Int
-        else { return nil }
-        return (width, height)
-    }
-
-    /// Whether the header promises no more than `maxPixels`. A picture with no readable header is not within the policy.
-    public static func withinPixelPolicy(_ data: Data, partial: Bool = false) -> Bool {
-        guard let size = pixelSize(of: data, partial: partial) else { return false }
-        return size.width > 0 && size.height > 0 && size.width <= maxPixels / size.height
+    /// Whether `width` × `height` pixels are a size the thread draws: both positive, and their product within `maxPixels`. The
+    /// product is taken with overflow detection, so a hostile pair (a host's metadata, an image header) cannot wrap past the bound.
+    public static func fitsPixelBound(width: Int, height: Int) -> Bool {
+        guard width > 0, height > 0 else { return false }
+        let (product, overflow) = width.multipliedReportingOverflow(by: height)
+        return !overflow && product <= maxPixels
     }
 
     /// What one send takes: the count, each image's size and type, and their total.
@@ -146,21 +126,6 @@ public struct NativeImage: Codable, Hashable, Sendable {
         self.mimeType = mimeType
         self.data = data
         self.name = name
-    }
-}
-
-/// One slice of a saved picture's original: `data` is bytes `offset ..< offset + data.count` of `total` bytes.
-public struct NativeImageChunk: Codable, Hashable, Sendable {
-    public var mimeType: String
-    public var total: Int
-    public var offset: Int
-    public var data: Data
-
-    public init(mimeType: String, total: Int, offset: Int, data: Data) {
-        self.mimeType = mimeType
-        self.total = total
-        self.offset = offset
-        self.data = data
     }
 }
 
@@ -500,10 +465,35 @@ public enum NativeThreadResult: Codable, Hashable, Sendable {
     case failure(code: String, message: String)
     /// v2: one transcript page for `.subagentTranscript`. `olderCursor` is the first entry's id.
     case transcript(value: NativeSubagentTranscript)
-    /// v5: the previews `NativeThreadRequest.images` asked for (empty when the message has none).
-    case images(value: [NativeImage])
-    /// v5: the slice `NativeThreadRequest.imageChunk` asked for.
+    /// v5: one piece of an image for `.image`.
     case imageChunk(value: NativeImageChunk)
+}
+
+/// One piece of an image the host read from pi's saved thread (`NativeThreadRequest.image`). The client
+/// asks again from `offset + data.count` until it holds `totalBytes`.
+public struct NativeImageChunk: Codable, Hashable, Sendable {
+    public var imageID: String
+    public var mimeType: String
+    public var totalBytes: Int
+    public var offset: Int
+    public var data: Data
+
+    public init(imageID: String, mimeType: String, totalBytes: Int, offset: Int, data: Data) {
+        self.imageID = imageID
+        self.mimeType = mimeType
+        self.totalBytes = totalBytes
+        self.offset = offset
+        self.data = data
+    }
+}
+
+/// Why an image could not be had; the codes of a `.failure` to `NativeThreadRequest.image`. They travel
+/// between hosts and clients, so they never change.
+public enum NativeImageCode {
+    /// The id names no image in this thread now: it is another thread's, the history moved on, or it is made up.
+    public static let unknown = "unknown_image"
+    /// The image is not one the thread offers (over `NativeImage.maxBytes` or `NativeImage.maxPixels`, or not a raster type).
+    public static let unsupported = "image_unsupported"
 }
 
 /// Failure codes a thread's availability is reported with, as `NativeThreadResult.failure` or
@@ -805,10 +795,57 @@ public struct NativeThreadBlock: Codable, Hashable, Sendable {
     public enum Kind: String, Codable, Hashable, Sendable { case text, thinking, unsupportedImage }
     public var kind: Kind
     public var text: String
+    /// An `unsupportedImage` pi saved and the host can serve: its id for `NativeThreadRequest.image`, and what the
+    /// snapshot may say of it without the bytes. All nil from an older host, and for an image the thread does not
+    /// offer (too big, not a raster type): the block is then the "Image" chip it always was.
+    public var imageID: String?
+    public var mimeType: String?
+    public var width: Int?
+    public var height: Int?
+    public var byteCount: Int?
 
-    public init(kind: Kind, text: String) {
+    public init(kind: Kind, text: String, imageID: String? = nil, mimeType: String? = nil, width: Int? = nil, height: Int? = nil,
+                byteCount: Int? = nil) {
         self.kind = kind
         self.text = text
+        self.imageID = imageID
+        self.mimeType = mimeType
+        self.width = width
+        self.height = height
+        self.byteCount = byteCount
+    }
+
+    /// The image this block stands for, when the host offers it.
+    public var image: NativeImageRef? {
+        guard kind == .unsupportedImage, let imageID, let mimeType else { return nil }
+        return NativeImageRef(id: imageID, mimeType: mimeType, width: width, height: height, byteCount: byteCount)
+    }
+}
+
+/// An image in a thread, as a snapshot names it: enough to lay out its place before any byte arrives.
+public struct NativeImageRef: Hashable, Sendable, Identifiable {
+    public var id: String
+    public var mimeType: String
+    public var width: Int?
+    public var height: Int?
+    public var byteCount: Int?
+
+    public init(id: String, mimeType: String, width: Int? = nil, height: Int? = nil, byteCount: Int? = nil) {
+        self.id = id
+        self.mimeType = mimeType
+        self.width = width
+        self.height = height
+        self.byteCount = byteCount
+    }
+
+    /// "PNG", "JPEG".
+    public var format: String {
+        switch mimeType {
+        case "image/jpeg": "JPEG"
+        case "image/gif": "GIF"
+        case "image/webp": "WebP"
+        default: "PNG"
+        }
     }
 }
 

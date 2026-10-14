@@ -20,12 +20,9 @@
     `NativeThreadDelivery.steer` stays on the wire for older clients and that fallback), and an
     agent's service tier (`setServiceTier`, the snapshot's
     `serviceTier` and `serviceTiers`; no Speed control from a host without it) behind
-    `native.serviceTier.v1`
-  - previews of the pictures in a saved user message (`NativeThreadRequest.images`, answered by
-    `NativeThreadResult.images`; `savedImages` in `supportedActions`) behind `native.images.v1`: at
-    most 4 previews of at most 160 KiB each, so the reply stays under one 1 MiB frame; no snapshot
-    carries image bytes; `NativeThreadRequest.imageChunk` / `NativeThreadResult.imageChunk` read one original in
-    slices of at most 255 KiB (under the frame cap) for Copy, Add to message and Show in Finder
+    `native.serviceTier.v1`, and the images pi saved in a thread (the snapshot names each, bounded
+    metadata only; `NativeThreadRequest.image` returns it in 256 KiB pieces, from pi's own history for
+    that agent and session) behind `native.images.v1`
   - conversation goals behind `native.goal.v1`: optional snapshot `goal`, live-only fleet
     `goalState`, and `NativeThreadRequest.goal` for set, edit, pause, resume, clear and confirm.
     Pause/Resume/Confirm require the displayed goal ID, revision and state in addition to the
@@ -181,6 +178,13 @@
     browser.md › Remote › What a host's agent can make this Mac do; SECURITY.md). A claim ends with
     the viewer's tab out of sight for 30 s, its connection, or a newer claim. A client or host without
     the capability keeps PR 3a's two pages.
+  - `browser.tabs.v1` extends those browser-drive requests with `tabs`, `newTab`, `selectTab`,
+    `closeTab`, and `tab`, a wrapper with a tab ID and one page request. Both hosts and Mac viewers
+    advertise it. A host refuses tab-management and targeted requests with `unavailable` when the
+    owning viewer does not list it, rather than sending an undecodable push. Legacy untargeted page
+    requests still work. The target is thread-local, independent of the user's selected tab, with
+    at most eight live tabs and no restart restoration. A remote tab list masks titles and URLs
+    of pages outside `BrowserViewerPolicy`.
 
   Capabilities gate newer features. The client falls back (raw bracketed paste) or refuses (terminal
   control) against older hosts. A host answers an authenticated request it cannot decode (a kind

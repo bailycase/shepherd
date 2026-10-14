@@ -347,6 +347,12 @@ agent and its auxiliary processes while the app runs, and quitting the app termi
     to another branch (a feature branch tracking origin/main never pushes to main). A pull request pushes the branch (a new `shepherd/<slug>` branch,
     made with `git switch -c`, when on the default branch) and runs `gh pr create`.
   - It holds the checkout in `hostBusyWorktrees` while it runs, like Finalize.
+- **A shared design's own repository** (`DesignGit`, [docs/designs.md](designs.md) › Sharing
+  with Git): only `<designs>/.git/<id>/` in Shepherd's storage, never a user's checkout. Share
+  with Git (an empty remote), Open from Git (a clone into Designs), the fetch when the Git panel
+  opens, Commit, Commit & push, Push, Pull (fast-forward only) and Commit merge, each a press;
+  never forced, never on a timer. The merge copy (`.git-merge/`) is the design agent's to edit and
+  is removed at launch.
 - **Working-tree snapshots of the Changes engine** (`ChangesService`, [docs/changes.md](changes.md)):
   deliberate and invisible. To compare the working tree (and to record where an agent's turn
   started and ended) the engine runs `git add -A` and `git write-tree` against an index file of
@@ -393,11 +399,13 @@ notified and open their own with ⇧⌘B.
 
 **Agent names settle once.** A new agent wears its opening prompt (truncated by
 `ShepherdViewModel.provisionalName`) with `nameIsFinal == false`. Only such agents get the namer
-extension (`SHEPHERD_NEEDS_NAME=1`). It proposes a title on the first turn, and the server
+extension (`SHEPHERD_NEEDS_NAME=1`). When the first run ends it proposes a title from the opening prompt and the agent's last reply
+(so a terse prompt like "fix this" still gets a specific name), told not to reuse the other
+threads' names (the same `listAgents` request `agent_list` makes, best effort with a 1.5 s cap), and the server
 applies it once, setting `nameIsFinal`. A manual rename also sets it.
 
 - `setAgentName` never overwrites a final name.
-- Naming never blocks pi's first turn: the namer runs detached and swallows every failure.
+- Naming never blocks pi: the namer runs detached and swallows every failure.
 - Agents from a pre-autoname `state.json` decode as final.
 - A `setAgentSession` that moves an agent to a *different* pi session (`/new`, `/resume`) clears
   `nameIsFinal`, because the old name described the old conversation.

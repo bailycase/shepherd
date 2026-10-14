@@ -30,13 +30,6 @@ extension View {
     }
 }
 
-extension UserTurn.Bubble {
-    /// Only images, all drawn as thumbnails: no empty bubble under them.
-    var imagesOnly: Bool {
-        text.isEmpty && references.isEmpty && !sent.isEmpty
-    }
-}
-
 /// The user's turn: one `NWUserBubble` per message, each with its time beneath while the turn
 /// is hovered. Messages the queue delivered together open with "From the queue · N", one bubble
 /// per message with the time it was sent. A send pi has not read yet stands at 70%. No speaker
@@ -46,9 +39,6 @@ struct UserTurn: View, Equatable {
     struct Bubble: Equatable {
         var text: String
         var images: Int
-        /// The images this client sent with it and still holds, drawn as thumbnails above the bubble. Fewer than `images`
-        /// (none, from another client or before a restart) leaves the bubble's "Image" chips.
-        var sent: [SentImage] = []
         /// The time: "2:41 PM", or "10:58" in a child's transcript.
         var caption: String?
         var pending: Bool
@@ -56,10 +46,13 @@ struct UserTurn: View, Equatable {
         var references: [DesignReferenceRecord] = []
         /// The page elements it carries, as chips beside the references.
         var elements: [BrowserElement] = []
+        /// The images it carries, when the host names every one: thumbnails above the bubble. Otherwise `images` chips.
+        var imageRefs: [NativeImageRef] = []
     }
 
     let bubbles: [Bubble]
-    @Environment(\.threadImageViewer) private var viewer
+    /// How many images the host named across the turn's bubbles.
+    private var sentImages: Int { bubbles.reduce(0) { $0 + $1.imageRefs.count } }
     /// "From the queue · N" above the bubbles, when the queue delivered them.
     var fromQueue: Int?
     /// Follows the last time and always shows: "from parent" in a child's transcript.
@@ -67,21 +60,13 @@ struct UserTurn: View, Equatable {
     @State private var hover: MessageHover
 
     /// A thread's user turn: each bubble with its own time.
-    init(turn: NativeTurn, store: NativeThreadStore? = nil, thumbnails: SentImageThumbnails? = nil, hover: MessageHover? = nil) {
-        let thumbnails = thumbnails ?? SentImageThumbnails()
+    init(turn: NativeTurn, hover: MessageHover? = nil) {
         self.init(bubbles: turn.bubbles.map { bubble in
             // Its chips stand for the line saying how many references went with it.
             Bubble(text: bubble.references.isEmpty ? bubble.text
                        : DesignReferenceFence.withoutHumanLine(bubble.text, count: bubble.references.count),
-                   images: bubble.images,
-                   // This client's own bytes first; else the host's previews of the saved message.
-                   sent: store.map { store in
-                       let own = bubble.operationID.map { thumbnails.images(for: $0, in: store) } ?? []
-                       if own.count == bubble.images { return own }
-                       return bubble.entryID.map { thumbnails.images(entry: $0, offset: bubble.imageOffset, count: bubble.images, in: store) } ?? []
-                   } ?? [],
-                   caption: bubble.sentAt.map { nativeClockText($0) }, pending: bubble.pending,
-                   references: bubble.references, elements: bubble.elements)
+                   images: bubble.images, caption: bubble.sentAt.map { nativeClockText($0) }, pending: bubble.pending,
+                   references: bubble.references, elements: bubble.elements, imageRefs: bubble.imageRefs)
         }, fromQueue: turn.fromQueue, hover: hover)
     }
 
@@ -120,23 +105,24 @@ struct UserTurn: View, Equatable {
                     // No board draws a sent message's page elements as chips (the user's decision,
                     // 2026-09-29): only the composer's chip and the queue row's stand for them.
                     VStack(alignment: .trailing, spacing: NW.Space.s) {
-                        // The images lead the message, above its bubble, as the board draws them (ThreadImagesSent).
-                        if !bubble.sent.isEmpty {
-                            NWSentImages(bubble.sent.compactMap(\.forView)) { viewer?.open(bubble.sent.map(\.entry), at: $0) }
+                        // The images it carries, above its words (ThreadImagesSent), when the host names each of them.
+                        if !bubble.imageRefs.isEmpty {
+                            SentImages(refs: bubble.imageRefs, names: bubble.imageRefs.indices.map { "Image \($0 + 1)" }, origin: "Sent by you")
                         }
-                        if !bubble.imagesOnly {
-                            NWUserBubble(bubble.text, attachments: Array(repeating: "Image", count: bubble.sent.isEmpty ? bubble.images : 0),
-                                         timestamp: bubble.caption, note: last ? note : nil, revealed: hover.hovering) {
-                                if !bubble.references.isEmpty { SentReferenceChips(records: bubble.references) }
-                            }
-                            .opacity(bubble.pending ? 0.7 : 1)
-                        } else if let caption = bubble.caption {
-                            Text(caption).font(.nw(.micro, weight: .regular)).foregroundStyle(Color.nw.textTertiary)
-                                .opacity(hover.hovering ? 1 : 0).nwAnimation(.hover, value: hover.hovering)
+                        NWUserBubble(bubble.text, attachments: bubble.imageRefs.isEmpty ? Array(repeating: "Image", count: bubble.images) : [],
+                                     timestamp: bubble.caption, note: last ? note : nil, revealed: hover.hovering) {
+                            if !bubble.references.isEmpty { SentReferenceChips(records: bubble.references) }
                         }
                     }
+                    .opacity(bubble.pending ? 0.7 : 1)
                     .nwAnimation(.hover, value: bubble.pending)
                 }
+            }
+            // The neutral count of the images the turn carries (ThreadImagesSent), from the images the host actually named; a turn whose images it
+            // did not name keeps its "Image" chips and says nothing here. No verb: pi's saved image has no file name and no producer.
+            if sentImages > 0 {
+                NWActivityLine(kind: .images, label: nativeCount(sentImages, "image"), meta: "")
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
@@ -311,6 +297,13 @@ struct AgentTurn: View, Equatable {
             }
         case .goalRecord(_, let text):
             GoalRecordLine(text: text)
+        case .images(_, let images):
+            // What the agent made or a tool returned, where it happened (ThreadImagesReceived): the neutral count, then the pictures.
+            VStack(alignment: .leading, spacing: NW.Space.m) {
+                NWActivityLine(kind: .images, label: nativeCount(images.count, "image"), meta: "")
+                ReceivedImages(refs: images)
+            }
+            .frame(maxWidth: AppLayout.proseMaxWidth, alignment: .leading)
         case .note(_, let text):
             Text(text).font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
                 .lineLimit(3).truncationMode(.tail).help(text).textSelection(.enabled)

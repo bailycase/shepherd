@@ -56,7 +56,7 @@ extension ShepherdViewModel {
                                      kind: .remoteOperation(hostID: target.hostID, agentID: target.agentID),
                                      section: .commands, title: "Check remote worktree operation",
                                      subtitle: remoteHosts.connections.first { $0.id == target.hostID }?.config.name,
-                                     icon: "arrow.triangle.branch"))
+                                     icon: NWGlyph.gitBranch.symbolName))
         }
 
         // This thread: what can be done to the agent on screen.

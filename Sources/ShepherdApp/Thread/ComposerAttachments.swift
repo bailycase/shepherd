@@ -3,7 +3,6 @@ import AppKit
 import UniformTypeIdentifiers
 import ShepherdProtocol
 import ShepherdRemote
-import ShepherdUI
 
 /// Images waiting in a composer (a thread's, or the New thread page's) and the rules a send
 /// takes: at most `NativeImage.maxPerSend`, each a raster image of at most `NativeImage.maxBytes`
@@ -12,11 +11,17 @@ import ShepherdUI
 /// they get here. Pure: only `add(urls:)` reads files.
 struct ComposerAttachments: Equatable {
     private(set) var items: [ImageAttachment] = []
-    /// Why the last add left something out, for the composer's `failed` line.
-    private(set) var error: String?
-    /// A thread's composer keeps an image over the limit as a chip marked "over 2 MB" and blocks Send until it is removed
-    /// (ThreadImagesComposer); the New thread page leaves it out and says so.
-    var keepsOversized = false
+    /// Why the last add left something out.
+    private var rejection: String?
+    /// The composer's `failed` line: why the last add left something out, else what keeps Send
+    /// held. An image over the limit stays as a red chip (ThreadImagesComposer) until it is removed.
+    var error: String? { rejection ?? oversize.map { Self.oversizeMessage($0.name) } }
+    /// The first image over `NativeImage.maxBytes`: Send waits until it is removed.
+    var oversize: ImageAttachment? { items.first { $0.isOversize } }
+
+    static func oversizeMessage(_ name: String) -> String {
+        "\(name) is over \(NativeImage.maxBytes / 1024 / 1024) MB after resizing. Remove it or send a smaller one."
+    }
 
     var isEmpty: Bool { items.isEmpty }
     var isFull: Bool { items.count >= NativeImage.maxPerSend }
@@ -25,31 +30,15 @@ struct ComposerAttachments: Equatable {
     var images: [NativeImage] { items.map(\.image) }
 
     /// Adds what fits, in order. A nil attachment is a file that is not an image.
-    /// The first reason these images cannot be sent as they are: one over the limit after resizing, or all together over
-    /// what one send carries. Nil when they can go. It follows the chips, so removing the culprit clears it.
-    var problem: String? {
-        if let big = items.first(where: \.tooLarge) {
-            return "\(big.name) is over \(NWByteText.limit(mebibytes: NativeImage.maxBytes / 1024 / 1024)) after resizing. Remove it or send a smaller one."
-        }
-        guard items.reduce(0, { $0 + $1.image.data.count }) <= NativeImage.maxBytesPerSend else {
-            return "The images come to over \(NWByteText.limit(mebibytes: NativeImage.maxBytesPerSend / 1024 / 1024)) together. Remove one to send."
-        }
-        return nil
-    }
-
     mutating func add(_ candidates: [(name: String, attachment: ImageAttachment?)]) {
-        error = nil
+        rejection = nil
         for candidate in candidates {
             guard !isFull else {
-                error = "At most \(NativeImage.maxPerSend) images per message."
+                rejection = "At most \(NativeImage.maxPerSend) images per message."
                 return
             }
             guard let attachment = candidate.attachment else {
-                error = "\(candidate.name) is not an image Shepherd can attach."
-                continue
-            }
-            guard attachment.image.data.count <= NativeImage.maxBytes || keepsOversized else {
-                error = "\(candidate.name) is over \(NativeImage.maxBytes / 1024 / 1024) MiB after resizing."
+                rejection = "\(candidate.name) is not an image Shepherd can attach."
                 continue
             }
             items.append(attachment)
@@ -61,10 +50,8 @@ struct ComposerAttachments: Equatable {
         add(urls.map { ($0.lastPathComponent, ImageAttachment(url: $0)) })
     }
 
-    /// Removing a chip also drops the last refusal: it was about the add, and the line then reads the chips.
     mutating func remove(_ id: UUID) {
         items.removeAll { $0.id == id }
-        error = nil
     }
 
     /// Sent: the images went with the message.
@@ -73,10 +60,10 @@ struct ComposerAttachments: Equatable {
     }
 
     mutating func clearError() {
-        error = nil
+        rejection = nil
     }
 
-    mutating func reject(_ message: String) { error = message }
+    mutating func reject(_ message: String) { rejection = message }
 }
 
 /// Shared by a thread's input paths; only the composer observes attachments and focus
@@ -84,7 +71,7 @@ struct ComposerAttachments: Equatable {
 @MainActor
 @Observable
 final class ThreadInput {
-    var attachments = ComposerAttachments(keepsOversized: true)
+    var attachments = ComposerAttachments()
     var dropTargeted = false
     private(set) var focusRequest = 0
     var available = false {
@@ -120,6 +107,19 @@ final class ThreadInput {
             guard available, self.generation == generation, store.sessionKey == session else { return }
             add(urls: urls, store: store, localFiles: localFiles, imagesSupported: imagesSupported)
         }
+    }
+
+    /// An image from the thread (the viewer's Add to message) goes in the composer like a dropped one: the same limits, no file.
+    func add(images: [ViewerImage], store: NativeThreadStore) {
+        guard store.supportedActions.contains("sendImages") else {
+            attachments.reject("This agent does not support image attachments.")
+            return
+        }
+        attachments.add(images.map { image in
+            (image.name, ImageAttachment(name: image.name, image: NativeImage(mimeType: image.mimeType, data: image.data, name: image.name),
+                                         thumbnail: image.picture.map { Image(nsImage: $0) }, pixels: image.pixels))
+        })
+        focus()
     }
 
     func add(urls: [URL], store: NativeThreadStore, localFiles: Bool, imagesSupported: Bool? = nil) {
@@ -182,12 +182,26 @@ struct ImageAttachment: Identifiable, Equatable {
     let name: String
     let image: NativeImage
     let thumbnail: Image?
+    /// The file it was read from, when it came from one: Show in Finder opens it.
+    let source: URL?
+    /// Pixels, for the viewer's "1170 × 2532".
+    let pixels: CGSize?
 
-    init(id: UUID = UUID(), name: String, image: NativeImage, thumbnail: Image? = nil) {
+    init(id: UUID = UUID(), name: String, image: NativeImage, thumbnail: Image? = nil, source: URL? = nil, pixels: CGSize? = nil) {
         self.id = id
         self.name = name
         self.image = image
         self.thumbnail = thumbnail
+        self.source = source
+        self.pixels = pixels
+    }
+
+    var isOversize: Bool { image.data.count > NativeImage.maxBytes }
+
+    /// "1.4 MB", and "3.1 MB · over 2 MB" for an image Send cannot take.
+    var sizeLabel: String {
+        let size = ByteCountFormatter.string(fromByteCount: Int64(image.data.count), countStyle: .file)
+        return isOversize ? "\(size) · over \(NativeImage.maxBytes / 1024 / 1024) MB" : size
     }
 
     /// nil when the file is not a raster image.
@@ -195,47 +209,14 @@ struct ImageAttachment: Identifiable, Equatable {
         guard let type = UTType(filenameExtension: url.pathExtension.lowercased()), type.conforms(to: .image),
               let data = try? Data(contentsOf: url), NSBitmapImageRep(data: data) != nil else { return nil }
         let mimeType = type == .jpeg ? "image/jpeg" : type == .gif ? "image/gif" : type == .webP ? "image/webp" : "image/png"
-        self.init(name: url.lastPathComponent, image: NativeImage(mimeType: mimeType, data: data, name: url.lastPathComponent),
-                  thumbnail: NSImage(data: data).map { Image(nsImage: $0) })
-    }
-
-    var tooLarge: Bool { image.data.count > NativeImage.maxBytes }
-    /// "1.4 MB", and "3.1 MB · over 2 MB" when it cannot go.
-    var sizeText: String {
-        let size = NWByteText.string(image.data.count)
-        return tooLarge ? "\(size) · over \(NWByteText.limit(mebibytes: NativeImage.maxBytes / 1024 / 1024))" : size
+        let rep = NSBitmapImageRep(data: data)
+        self.init(name: url.lastPathComponent, image: NativeImage(mimeType: mimeType, data: data),
+                  thumbnail: NSImage(data: data).map { Image(nsImage: $0) }, source: url,
+                  pixels: rep.map { CGSize(width: $0.pixelsWide, height: $0.pixelsHigh) })
     }
 
     /// The thumbnail is derived from `image`, so identity and bytes say everything.
     static func == (a: ImageAttachment, b: ImageAttachment) -> Bool {
         a.id == b.id && a.name == b.name && a.image == b.image
-    }
-}
-
-/// The images waiting in a composer, in a row above the card, and under it the one line that says why they cannot go
-/// (ThreadImagesComposer): a chip is the file's thumbnail, name and size with a remove ×; one over the limit has a `failed`
-/// line and "3.1 MB · over 2 MB". The line is the last add's refusal, else the first problem the chips themselves have.
-struct ComposerImageStrip: View {
-    let attachments: ComposerAttachments
-    let remove: (UUID) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: NW.Space.s) {
-            if !attachments.isEmpty {
-                NWFlowLayout(spacing: NW.Space.s, lineSpacing: NW.Space.s) {
-                    ForEach(attachments.items) { attachment in
-                        NWAttachmentChip(attachment.name, thumbnail: attachment.thumbnail, detail: attachment.sizeText,
-                                         problem: attachment.tooLarge) { remove(attachment.id) }
-                            .nwTransition(.list, edge: .leading)
-                    }
-                }
-            }
-            if let line = attachments.error ?? attachments.problem {
-                Text(line).font(.nw(.caption)).foregroundStyle(AgentState.failed.textColor)
-                    .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .contain)
     }
 }

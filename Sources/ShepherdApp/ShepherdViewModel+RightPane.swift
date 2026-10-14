@@ -3,20 +3,24 @@ import AppKit
 import Observation
 import ShepherdCore
 import ShepherdRemote
+import ShepherdUI
 
 /// A tab of the side pane beside a thread (docs/design/side-pane-changes.md › Side pane). Only the tabs Shepherd has
 /// are here; Artifacts and Files join as cases when they are built, each with its content in
-/// `SidePaneView` and its ⌃ digit following its place.
+/// `SidePaneView` and its ⌃ digit following its place. Subagents (SubagentList) is last for now.
 enum SidePaneTab: String, CaseIterable, Hashable, Sendable {
     case changes
     /// A thread's Browser (PaneBrowser): a local thread's, or a remote one's whose host carries
     /// tunnels (`browser.tunnel.v1`).
     case browser
+    /// Every subagent of the thread, this turn's and the earlier ones (SubagentList).
+    case subagents
 
     var title: String {
         switch self {
         case .changes: "Changes"
         case .browser: "Browser"
+        case .subagents: "Subagents"
         }
     }
 
@@ -24,16 +28,18 @@ enum SidePaneTab: String, CaseIterable, Hashable, Sendable {
         switch self {
         case .changes: "plus.forwardslash.minus"
         case .browser: "globe"
+        case .subagents: NWGlyph.gitBranch.symbolName
         }
     }
 
-    /// The tabs a thread's pane shows: Changes, and the Browser where the thread has one (a remote
-    /// thread's host that carries no tunnels has none).
+    /// The tabs a thread's pane shows: Changes, the Browser where the thread has one (a remote
+    /// thread's host that carries no tunnels has none), and Subagents.
     static func tabs(browser: Bool) -> [SidePaneTab] {
-        browser ? allCases : [.changes]
+        browser ? allCases : [.changes, .subagents]
     }
 
-    /// Its fixed chord: ⌃1 for the first tab, and so on (⌃1–4 are the pane's).
+    /// Its fixed chord: ⌃1 for the first tab, and so on (⌃1–4 are the pane's). A tab keeps its digit when
+    /// the Browser is out (a host with no tunnels), so ⌃3 is always Subagents.
     var digit: Int { (Self.allCases.firstIndex(of: self) ?? 0) + 1 }
     var shortcutDisplay: String { "⌃\(digit)" }
 
@@ -42,6 +48,8 @@ enum SidePaneTab: String, CaseIterable, Hashable, Sendable {
         switch self {
         case .changes: "Agent opened a review in Changes"
         case .browser: "Agent opened a page in Browser"
+        // Nothing marks this tab as news: the dot is pi opening something, and a subagent opens nothing in the pane.
+        case .subagents: "Agent started a subagent"
         }
     }
 }
@@ -117,7 +125,7 @@ extension ShepherdViewModel {
         panes.clearNews(owner, shown)
         switch shown {
         case .changes: ensureReview(owner)
-        case .browser: break
+        case .browser, .subagents: break
         }
     }
 
@@ -182,12 +190,19 @@ extension ShepherdViewModel {
     }
 
     /// The tabs `owner`'s pane shows: a remote thread has the Browser only while its host carries
-    /// tunnels (an older host has none, as before).
+    /// tunnels (an older host has none, as before), and Subagents only once the thread has a run.
     func sidePaneTabs(for owner: SidePaneOwner) -> [SidePaneTab] {
+        let hasRuns: Bool
+        let browser: Bool
         switch owner {
-        case .local: SidePaneTab.tabs(browser: true)
-        case .remote(let ref): SidePaneTab.tabs(browser: remoteHosts.connections.first { $0.id == ref.hostID }?.supportsBrowser == true)
+        case .local(let id):
+            hasRuns = threadStores.existing(for: id)?.subagents.isEmpty == false
+            browser = true
+        case .remote(let ref):
+            hasRuns = remoteThreadStores.existing(for: ref)?.subagents.isEmpty == false
+            browser = remoteHosts.connections.first { $0.id == ref.hostID }?.supportsBrowser == true
         }
+        return SidePaneTab.tabs(browser: browser).filter { $0 != .subagents || hasRuns }
     }
 
     /// The header button's state for `owner` (`SidePaneTab.button`).

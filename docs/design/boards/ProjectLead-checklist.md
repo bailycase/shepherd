@@ -152,7 +152,7 @@ used in this review is in `/tmp/ui-final` (70 PNGs): `lead-started`, `lead-quest
 
 | Surface | Built from real data | Open differences (named, not accepted) |
 | --- | --- | --- |
-| Sidebar, Activity | Designs, Needs you, Working, Done, Projects, Recents; Pinned after Done; "New project" chip; Project rows with the supplied glyph, summary `N needs you` / `N working` counted from tasks | Row summary tone and spacing are measured; the chip and header text weights match. 2x pixel diff not zero (system font substitution below) |
+| Sidebar, Activity | Designs, Projects, Needs you, Working, Done, Pinned, Recents (the user moved Projects up, above every thread group); "New project" chip; Project rows with the supplied glyph, summary `N needs you` / `N working` counted from tasks | Row summary tone and spacing are measured; the chip and header text weights match. 2x pixel diff not zero (system font substitution below) |
 | Sidebar, Spaces mode | Projects `+` above Spaces; Project rows with count (open threads) and a lantern dot; selected Project lists its task threads indented with `answer` | The Spaces rows' needs-you dot (existing behaviour the board does not draw) |
 | New project sheet | Real create with chosen Spaces | First-pass sizes; re-measured against `03-ProjectNew.html` in a later pass (see the latest pass below) |
 | Overview (Empty) | Name, goal, Spaces row, Instructions row, Suggestions (fill the composer; send nothing) in the shared thread's empty state | Spacing measured; the 12pt radius and 34/29pt rows match |

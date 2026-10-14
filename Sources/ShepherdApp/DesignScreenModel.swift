@@ -337,7 +337,13 @@ final class DesignScreenModel {
         for (path, board) in next.index.boards {
             guard let sha = next.boards[path] else { continue }
             let tweaks = next.index.tweaks(for: path)
-            let pieces = usage.dependencies(of: path).compactMap { piece in next.boards[piece].map { "\(piece.rawValue):\($0)" } }
+            let pieces = usage.dependencies(of: path).compactMap { piece -> String? in
+                if let sha = next.boards[piece] { return "\(piece.rawValue):\(sha)" }
+                guard DesignPath.systemComponent(piece.rawValue) != nil else { return nil }
+                let namespace = piece.rawValue.split(separator: "/")[1]
+                let installed = next.index.designSystems?.first { $0.namespace == String(namespace) }
+                return "\(piece.rawValue):\(installed?.extra["version"]?.stringValue ?? String(next.revision))"
+            }
             boards[path] = DesignHost.Board(size: CGSize(width: board.w, height: board.h), sha: sha,
                                             props: tweaks.isEmpty ? nil : DesignTweakModel.json(.object(tweaks)),
                                             deps: pieces.isEmpty ? nil : pieces.joined(separator: ","))
@@ -776,11 +782,24 @@ final class DesignScreenModel {
         Dictionary(comments.map { ($0.id, card($0, now: now)) }, uniquingKeysWith: { _, later in later })
     }
 
-    /// "on A · Checkout funnel", "You · 2m", and a detached comment's "element changed".
+    /// Who wrote a comment or reply, as the cards say it: "You" for this Mac's user (no name, or
+    /// their own Git name), the design agent, or a coworker by the Git name they committed it with.
+    static func authorName(_ author: DesignCommentAuthor, name: String?, me: String?) -> String {
+        if author == .agent { return "Design agent" }
+        guard let name, !name.isEmpty, name != me else { return "You" }
+        return name
+    }
+
+    /// This Mac's user's Git name, as comments on a shared design record it; nil when unknown.
+    static let gitUserName: String? = DesignGitIdentity.userName()
+
+    /// "on A · Checkout funnel", "You · 2m" (or a coworker's name), and a detached comment's
+    /// "element changed".
     static func card(_ comment: DesignComment, now: Date = Date()) -> DesignCommentCardValue {
         let board = nativeBoardName(comment.board.rawValue)
         let target = comment.target.map { "\(board) · \($0)" } ?? board
-        let meta = ["You · \(nwCommentAge(since: comment.createdAt, now: now))", comment.detached ? "element changed" : nil]
+        let who = authorName(comment.author, name: comment.authorName, me: gitUserName)
+        let meta = ["\(who) · \(nwCommentAge(since: comment.createdAt, now: now))", comment.detached ? "element changed" : nil]
             .compactMap { $0 }.joined(separator: " · ")
         return DesignCommentCardValue(id: comment.id, number: comment.number, target: target, meta: meta, text: comment.text)
     }

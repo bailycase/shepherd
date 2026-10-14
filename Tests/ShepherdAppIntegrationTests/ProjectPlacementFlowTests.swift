@@ -441,7 +441,8 @@ struct ProjectPlacementFlowTests {
         }
     }
 
-    @Test func viewerAnswerInTheWorkerPaneWaitsForOwnerResume() async throws {
+    @Test(arguments: [false, true])
+    func viewerAnswerInTheWorkerPaneWaitsForOwnerResume(delayExecutorResume: Bool) async throws {
         let r = try Rig(); defer { r.stop() }; try await r.start()
         try await r.assign("ask")
         try await eventuallyOnMain("worker asks a question") { r.project.tasks.first?.phase == .waiting }
@@ -456,7 +457,32 @@ struct ProjectPlacementFlowTests {
         }
         #expect(r.project.tasks.first?.pendingAnswer?.phase == .queued)
         #expect(r.executor.server.state.projectExecutions.first?.phase == .waiting)
+        let placement = try #require(r.owner.server.onProjectPlacement)
+        let resume = Locked<(@Sendable () -> Void)?>(nil)
+        let answers = Locked(0)
+        r.owner.server.onProjectPlacement = { host, request, done in
+            if delayExecutorResume, case .resume = request {
+                resume.withValue { $0 = { placement(host, request, done) } }
+            } else {
+                if case .answer = request { answers.withValue { $0 += 1 } }
+                placement(host, request, done)
+            }
+        }
         try await r.perform(.resume)
+        if delayExecutorResume {
+            try await eventuallyOnMain("executor Resume held") { resume.current != nil }
+            let owner = r.owner.server, projectID = r.projectID
+            // Drain the owner pump and its durable answer staging, not a wall-clock delay.
+            try await eventuallyAsync("owner answer pump drained while executor remains paused") {
+                try await owner.enqueue { @Sendable in
+                    !owner.projectPumps.contains(projectID) && !owner.projectAnswersInFlight.contains(task.id)
+                }
+            }
+            #expect(answers.current == 0, "An answer must not race the executor's durable Resume")
+            #expect(r.project.tasks.first?.pendingAnswer?.phase == .queued)
+            let releaseResume = try #require(resume.current)
+            releaseResume()
+        }
         do {
             try await eventuallyOnMain("queued answer consumed after resume") { r.project.tasks.first?.phase == .settled }
         } catch {

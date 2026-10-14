@@ -14,8 +14,9 @@ public struct NWActivityLine: View {
     /// `drew` and `checked` are the design agent's verbs ("Drew 4 boards", "Checked against
     /// acme-web"): the nib and the shield. `lookedAtDesign` is a thread reading a design piece it
     /// was sent ("Looked at Checkout funnel dashboard › A · Funnel first"): the nib too. `browser`
-    /// is an agent using its thread's Browser ("Opened localhost:5173/checkout in Browser"): the globe.
-    public enum Kind: Sendable { case explore, edit, run, subagents, drew, checked, lookedAtDesign, lookedAtImage, madeImage, returnedImage, browser, other }
+    /// is an agent using its thread's Browser ("Opened localhost:5173/checkout in Browser"): the globe. `images` is the neutral count of the
+    /// images a message or a tool result carries ("2 images", ThreadImagesSent and ThreadImagesReceived): the `photo` glyph.
+    public enum Kind: Sendable { case explore, edit, run, subagents, drew, checked, lookedAtDesign, browser, images, other }
 
     public enum Status: Equatable, Sendable {
         case done
@@ -71,11 +72,11 @@ public struct NWActivityLine: View {
         case .explore: "magnifyingglass"
         case .edit: "pencil"
         case .run: "terminal"
-        case .subagents: "arrow.triangle.branch"
+        case .subagents: NWGlyph.gitBranch.symbolName
         case .drew, .lookedAtDesign: "pencil.tip"
-        case .lookedAtImage, .madeImage, .returnedImage: "photo"
         case .checked: "checkmark.shield"
         case .browser: "globe"
+        case .images: "photo"
         case .other: "wrench.adjustable"
         }
     }

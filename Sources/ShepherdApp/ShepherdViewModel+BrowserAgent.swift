@@ -39,7 +39,7 @@ extension ShepherdViewModel {
         let session = browsers.session(for: agentID)
         Task { @MainActor [weak self] in
             let outcome = await session.perform(request)
-            if case .open = request, case .result = outcome, let url = session.url {
+            if request.opensPage, case .result = outcome, let url = session.tabs.agentTarget?.url {
                 self?.agentOpenedPage(session, url)
                 // The thread's viewers on other Macs mark its Browser tab too (nobody owns the agent's
                 // browser here, or the request would not have come to this page).
