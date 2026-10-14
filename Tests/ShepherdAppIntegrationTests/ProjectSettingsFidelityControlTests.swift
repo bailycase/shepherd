@@ -306,7 +306,7 @@ struct ProjectSettingsFidelityControlTests {
             try await pageWithSpaces(tab: .spaces) { app, vm, window, id, spaces in
                 try await eventuallyOnMain("Spaces") { window.layout(); return window.element("Remove \(spaces[0].name)") != nil }
                 let choices = try await NativeMenuChoice.choose(spaces[1].name, from: try popup(window, "Add a space…"))
-                #expect(choices == [spaces[1].name], "the menu offers the owner's unlinked Spaces: \(choices)")
+                #expect(choices == [spaces[1].name, "Choose folder…"], "the menu offers the owner's unlinked Spaces, then a folder: \(choices)")
                 try await eventuallyOnMain("linked on the owner") {
                     Set(app.server.state.projects[0].linkedSpaces.map(\.spaceID)) == Set(spaces.map(\.id))
                 }
@@ -623,7 +623,7 @@ struct ProjectSettingsFidelityControlTests {
         if adding {
             // Add offers the other host's other Space by its destination, and not the pairs that are already linked.
             let offered = try await NativeMenuChoice.choose("reports on demo-mac", from: try popup(window, "Add a space…"))
-            #expect(offered == ["reports on demo-mac"], "only unlinked (destination, SpaceID) pairs are offered: \(offered)")
+            #expect(offered == ["reports on demo-mac", "Choose folder…"], "only unlinked (destination, SpaceID) pairs are offered: \(offered)")
             try await eventuallyOnMain("linked on the chosen host") { current().linkedSpaces.contains { $0.spaceID == other.id && $0.destination == host } }
             #expect(!current().linkedSpaces.contains { $0.spaceID == other.id && $0.destination == .local }, "never linked on this Mac")
             #expect(current().linkedSpaces.filter { $0.spaceID == shared }.count == 2, "the existing links stay")

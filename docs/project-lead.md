@@ -576,7 +576,11 @@ creates no thread, session or process and fakes no conversation, task or send.
   **Project settings** tabs. They are not the global Settings > Spaces table.
 - **General:** Goal, Conversation and Thread model (the owner's real catalog; "Default" clears the choice), Threads
   at once 1...6 (default 3), Pause or Resume, Delete. **Spaces:** the linked Spaces (owner-relative), Add a space,
-  Remove, and "The project can add spaces" (`canRequestSpaceLinks`). **Memory:** the instructions with a counter read
+  Remove, and "The project can add spaces" (`canRequestSpaceLinks`). Add a space… (here and in New project) always ends
+  with "Choose folder…", so a fresh profile with no Spaces is never a dead end: the owner's directory picker ("Add to
+  project") registers the folder as a Space on the OWNER without opening a thread, or reuses the Space already at that
+  path (`spaceForProject(at:)`), and links it. A remote owner's folders are listed on that host ("Choose folder on
+  <host>…"), never this Mac's; a disconnected owner's item is disabled (`ProjectFolderRoute`). **Memory:** the instructions with a counter read
   from the text and `Project.maximumInstructionsLength` (16,000), and Forget. **Automations:** an honest empty
   state, because an `Automation` has no project link yet.
 - **Revisions:** every action carries the revision it was shown. A `stale_project`, `workspace_changed` or
