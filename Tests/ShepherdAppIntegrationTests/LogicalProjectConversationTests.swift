@@ -1343,6 +1343,8 @@ private static func chipsAndLinks() async throws {
         // Answer while paused through the card's own option button: the owner holds it, and no second active answer remains.
         try window.press("ALPHA")
         try await eventuallyOnMain("the owner holds the answer") { r.app.server.state.projects.first?.tasks.first?.pendingAnswer != nil }
+        // The view model's copy of the Project lags the owner's; read the row only once it has the held answer too.
+        try await eventuallyOnMain("the app sees the held answer") { r.vm.state.projects.first?.tasks.first?.pendingAnswer != nil }
         let held = ProjectPagePresentation(try #require(r.vm.state.projects.first)).rows[0]
         #expect(held.answerHeld && held.lead == "Answer queued" && held.id == task.id)
         try await eventuallyOnMain("the card is gone once its answer is held") { window.layout(); return footer() == nil }
