@@ -590,6 +590,9 @@ creates no thread, session or process and fakes no conversation, task or send.
   <host>…"), never this Mac's; a disconnected owner's item is disabled (`ProjectFolderRoute`). **Memory:** the instructions with a counter read
   from the text and `Project.maximumInstructionsLength` (16,000), and Forget. **Automations:** an honest empty
   state, because an `Automation` has no project link yet.
+- **A resolved task's thread** in the pane draws no composer at all (`ProjectWorkerThreadStyle.composerHidden`), not a
+  disabled one: the footer card ("This thread is resolved.", Reopen) stands in and the transcript reaches the pane's
+  bottom. Reopen brings the steering composer back.
 - **Revisions:** every action carries the revision it was shown. A `stale_project`, `workspace_changed` or
   `no_such_project` refusal re-reads the owner, shows its message and never replays the edit. An older answer
   never replaces a newer record; the owner's pushed state wins at the same revision.

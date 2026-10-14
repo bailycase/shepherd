@@ -136,6 +136,11 @@ struct LogicalProjectConversationTests {
         expectScenarioCompleted(result)
     }
 
+    @Test func aResolvedWorkersThreadDrawsNoComposerUntilItIsReopened() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.resolvedHasNoComposer() } }
+        expectScenarioCompleted(result)
+    }
+
     @Test func theCoordinatorAppearsInNoOrdinaryThreadList() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.hidden() } }
         expectScenarioCompleted(result)
@@ -1262,6 +1267,38 @@ private static func chipsAndLinks() async throws {
         #expect(await vm.logicalProjects.sendMessage(ref, text: "Reply with exactly READY2"))
         try await eventuallyOnMain("the coordinator's pi serves its thread") { window.layout(); return store.ready && !store.offline }
         try await eventuallyOnMain("the message is delivered") { app.server.state.projects.first?.messages.last?.phase == .delivered }
+    }
+
+    // MARK: A resolved worker
+
+    /// A real worker settles; its thread in the pane shows the steering composer. Marking it resolved removes the composer entirely
+    /// (the footer card and Reopen stand in): absent, not disabled. Reopen brings it back.
+    private static func resolvedHasNoComposer() async throws {
+        let r = try await rig()
+        defer { r.app.stop() }
+        _ = try await r.vm.projectCoordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
+                                                      request: .assign(operationID: UUID(), spaceID: r.space.id, title: "Publish file", prompt: "hello"))
+        try await eventuallyOnMain("the worker's turn ends") { r.app.server.state.projects.first?.tasks.first?.phase == .settled }
+        let task = try #require(r.app.server.state.projects.first?.tasks.first)
+        r.vm.openLogicalProject(r.ref)
+        r.vm.logicalProjectPaneTask = task.id
+        let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
+        defer { window.close() }
+        // The conversation's composer is in the left column; the worker's is in the pane on the right.
+        func paneComposers() -> Int {
+            let paneLeft = window.window.frame.maxX - NWLeadMetrics.paneWidth
+            return window.elements().filter { $0.label == "Message the agent" && $0.frame.minX > paneLeft }.count
+        }
+        try await eventuallyOnMain("the settled worker's thread shows its steering composer") {
+            window.layout(); return window.element("Mark resolved") != nil && paneComposers() == 1
+        }
+        try window.press("Mark resolved")
+        try await eventuallyOnMain("resolved on the owner") { r.app.server.state.projects.first?.tasks.first?.phase == .resolved }
+        try await eventuallyOnMain("the resolved footer is drawn") { window.layout(); return window.controls().contains { $0.label == "Reopen" } }
+        #expect(paneComposers() == 0, "the resolved worker draws no composer: absent, not disabled")
+        try window.press("Reopen")
+        try await eventuallyOnMain("reopened on the owner") { r.app.server.state.projects.first?.tasks.first?.phase == .settled }
+        try await eventuallyOnMain("the composer is back") { window.layout(); return paneComposers() == 1 }
     }
 
     // MARK: Hidden coordinator
