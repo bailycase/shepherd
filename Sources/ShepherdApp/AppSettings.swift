@@ -84,6 +84,7 @@ final class AppSettings {
         static let sidebarStyle = "shepherd.sidebar.style"
         static let sidebarGroupByHost = "shepherd.sidebar.groupByHost"
         static let sidebarKeepIdleDays = "shepherd.sidebar.keepIdleDays"
+        static let shareDiagnostics = "shepherd.diagnostics.enabled"
         static let remoteListenerEnabled = "shepherd.remote.listener"
         static let remoteListenerPort = "shepherd.remote.listenerPort"
         static let worktreeBaseMode = "shepherd.worktree.baseMode"
@@ -106,7 +107,7 @@ final class AppSettings {
             childConcurrency, childModel, childThinking, childContext,
             uiDensity, uiTextScale, sidebarWidth, sidebarRowDensity,
             sidebarStyle, sidebarGroupByHost, sidebarKeepIdleDays,
-            remoteListenerEnabled, remoteListenerPort,
+            shareDiagnostics, remoteListenerEnabled, remoteListenerPort,
             worktreeBaseMode, worktreeFetchBeforeCreate,
             worktreeAutoCommit, worktreeGeneratePRDescription,
             worktreeDeleteLocalBranch, worktreeAutoMergePR,
@@ -146,6 +147,15 @@ final class AppSettings {
     var terminalFontSize: Double {
         didSet { store.set(terminalFontSize, forKey: Key.terminalFontSize) }
     }
+
+    var shareDiagnostics: Bool {
+        didSet {
+            store.set(shareDiagnostics, forKey: Key.shareDiagnostics)
+            if shareDiagnostics != oldValue { onDiagnosticsChange?(shareDiagnostics) }
+        }
+    }
+
+    @ObservationIgnored var onDiagnosticsChange: ((Bool) -> Void)?
 
     /// Empty means "whatever pi picks" — Shepherd never invents a model id.
     var defaultModel: String {
@@ -529,6 +539,7 @@ final class AppSettings {
         sidebarGroupByHost = store.bool(forKey: Key.sidebarGroupByHost)
         let keep = store.object(forKey: Key.sidebarKeepIdleDays) as? Int
         sidebarKeepIdleDays = keep.flatMap { Self.sidebarKeepIdleChoices.contains($0) ? $0 : nil } ?? Defaults.sidebarKeepIdleDays
+        shareDiagnostics = store.bool(forKey: Key.shareDiagnostics)
         remoteListenerEnabled = store.bool(forKey: Key.remoteListenerEnabled)
         let port = store.integer(forKey: Key.remoteListenerPort)
         remoteListenerPort = (port > 0 && port <= 65535) ? port : Int(edition.defaultRemoteListenerPort)
@@ -590,6 +601,7 @@ final class AppSettings {
         goalsEnabled = false
         projectsEnabled = false
         goalCrossProviderEvaluation = false
+        shareDiagnostics = false
         namingModel = ""
         skillsInSlashMenu = Defaults.skillsInSlashMenu
         hiddenSlashCommands = []

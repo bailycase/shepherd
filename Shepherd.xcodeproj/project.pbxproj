@@ -498,6 +498,7 @@
 				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
 				SDKROOT = macosx;
 				SHEPHERD_APPCAST = appcast.xml;
+				SHEPHERD_SENTRY_DSN = "";
 				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
@@ -544,6 +545,7 @@
 				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
 				SDKROOT = macosx;
 				SHEPHERD_APPCAST = appcast.xml;
+				SHEPHERD_SENTRY_DSN = "";
 				SWIFT_VERSION = 6.0;
 			};
 			name = Release;
@@ -590,6 +592,7 @@
 				RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION = NO;
 				SDKROOT = macosx;
 				SHEPHERD_APPCAST = "appcast-shepherd-nightly.xml";
+				SHEPHERD_SENTRY_DSN = "";
 				SWIFT_VERSION = 6.0;
 			};
 			name = Nightly;
