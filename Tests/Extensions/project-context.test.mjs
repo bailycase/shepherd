@@ -116,7 +116,7 @@ test('real extension tools use correlated owner requests and refresh memory each
     assert.equal(assigns[0].projectID, 'project');
     // Worker launch policy needs no owner heartbeat and survives settled/manual turns.
     process.env.SHEPHERD_PROJECT_COORDINATOR = '0'; process.env.SHEPHERD_AGENT_ID = 'worker'; hooks.clear();
-    install({ on: (name, hook) => hooks.set(name, hook), registerTool: tool => assert.ok(['project_publish', 'project_plan'].includes(tool.name), 'workers get no coordinator tools') });
+    install({ on: (name, hook) => hooks.set(name, hook), registerTool: tool => assert.ok(['project_publish', 'project_plan', 'project_question'].includes(tool.name), 'workers get no coordinator tools') });
     project.tasks = [{ workerAgentID: 'worker', phase: 'running' }];
     for (const phase of ['running', 'settled', 'unknown']) {
       project.tasks[0].phase = phase;
@@ -126,7 +126,7 @@ test('real extension tools use correlated owner requests and refresh memory each
         assert.equal((await hooks.get('tool_call')({ toolName })).block, true);
       }
       assert.equal(calls.length, before, 'no owner request: even offline/deleted Project launches stay restricted until relaunch');
-      for (const toolName of ['read', 'edit', 'write', 'bash', 'grep', 'find', 'ls', 'project_plan', 'project_publish']) {
+      for (const toolName of ['read', 'edit', 'write', 'bash', 'grep', 'find', 'ls', 'project_plan', 'project_publish', 'project_question']) {
         assert.equal(await hooks.get('tool_call')({ toolName }), undefined, 'direct coding remains available');
       }
     }
@@ -187,7 +187,7 @@ test('worker plan is a bounded pure current-turn report with persisted v1 output
     Object.assign(process.env, { SHEPHERD_PROJECT_CONTEXT: '{"projectID":"project"}', SHEPHERD_AGENT_ID: 'worker', SHEPHERD_PROJECT_COORDINATOR: '0', SHEPHERD_SOCKET: '/no-plan-socket' });
     // No hooks fire and no owner exists: registration is static and execution needs no authority.
     install({ on() {}, registerTool: tool => tools.set(tool.name, tool) });
-    assert.deepEqual([...tools.keys()], ['project_plan', 'project_publish']);
+    assert.deepEqual([...tools.keys()], ['project_question', 'project_plan', 'project_publish']);
     const plan = tools.get('project_plan');
     assert.equal(plan.parameters.properties.steps.maxItems, 20);
     assert.equal(plan.parameters.properties.steps.items.properties.text.maxLength, 500);
