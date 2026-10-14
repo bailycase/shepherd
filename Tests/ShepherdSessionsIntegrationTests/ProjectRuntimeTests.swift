@@ -429,6 +429,8 @@ struct ProjectRuntimeTests {
         #expect(task.thinking == "high")
         let pi = try #require(rig.agents.current[task.workerAgentID])
         #expect(pi.stdin("set_thinking_level").last?["level"] as? String == "high")
+        // A resolved thread still takes a follow-up, which reopens it (as a finished thread does in Claude's Projects).
+        _ = try await rig.perform(project.id, .resolve(taskID: task.id))
         _ = try await rig.perform(project.id, .followUp(taskID: task.id, operationID: UUID(), text: "hello", thinking: "low"))
         try await eventually("follow-up settled") { pi.stdin("prompt").count == 2 && rig.host.server.state.projects.first?.tasks.first?.phase == .settled }
         #expect(rig.host.server.state.projects.first?.tasks.first?.thinking == "low")
