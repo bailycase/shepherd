@@ -371,7 +371,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                     "Also use a repo’s .mcp.json": ["project", "repository", ".mcp.json"]]
         case .remote: ["Hosts": ["vpn", "tailscale", "ssh"], "Listener": ["port", "serve"]]
         case .keyboard: ["Shortcuts": ["hotkey", "keybinding", "chord", "steer", "queue"]]
-        case .advanced: ["Update channel": ["beta", "nightly", "sparkle"], "Workspace state": ["state.json"], "Share crash diagnostics": ["sentry", "telemetry", "privacy", "errors"]]
+        case .advanced: ["Update channel": ["beta", "nightly", "sparkle"], "Workspace state": ["state.json"], "Share crash diagnostics": ["telemetry", "privacy", "errors"]]
         case .experiments: ["Projects": ["coordinate", "project work", "new project"],
                             "Suggested instructions": ["lessons", "learned"], "Learn from": ["threads", "automations"],
                             "Design tool": ["designs", "boards", "mockups"]]
