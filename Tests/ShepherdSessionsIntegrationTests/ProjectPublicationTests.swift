@@ -204,7 +204,8 @@ struct ProjectPublicationTests {
             rig.host.server.state.projects.first?.artifacts.first?.state == .ready
         }
         #expect(rig.host.server.state.projects.first?.artifacts.last?.state == .staged)
-        #expect(rig.host.server.state.projects.first?.paused == true)
+        // A restart runs nothing and never pauses: the worker's publication eligibility is gone with its turn (below).
+        #expect(rig.host.server.state.projects.first?.paused == false)
         #expect(try await rig.host.server.projectPublish(task.workerAgentID, request: .eligibility).active == false)
         #expect(!FileManager.default.fileExists(atPath: rig.host.dir.appendingPathComponent("logical-projects/\(project.id)/staged.txt").path))
         guard case .files(let listing) = try await rig.host.server.logicalProjects(.files(projectID: project.id, path: "")) else { throw WireError("files") }
@@ -300,7 +301,7 @@ struct ProjectPublicationTests {
         #expect(pi.stdin("prompt").count == 1)
         if restart {
             rig.owner.server.stop(); try rig.owner.server.start()
-            #expect(rig.owner.server.state.projects.first?.paused == true)
+            #expect(rig.owner.server.state.projects.first?.paused == false, "A restart never pauses a Project")
         }
         let replacement = ProjectHostReference.remote(hostID: hostID, bindingID: UUID())
         rig.owner.server.setProjectExecutionSpaces([replacement: [space]])
