@@ -598,6 +598,13 @@ creates no thread, session or process and fakes no conversation, task or send.
   paused "Your answer waits until you resume." Once the owner holds an answer (queued for Resume, or on its way) the card goes,
   the row says "Answer queued", and the pane's own question dock stays visible but offers no second answer
   (`ProjectTaskRow.answerHeld`).
+- **Project tool calls** read as words in a thread's activity lines, from the call's typed arguments and the tool's own result
+  (`NativeProjectToolActivity`), never its JSON: "Published verification.txt", "Staged report.md · waiting for the owner" (a
+  result that is not `ready`), "Read the project · 2 threads", "Inspected a thread · <title>", "Started thread <title> · <model> ·
+  <thinking>" and "Sent a follow-up to <title> · <thinking>" (the coordinator's own choice, absent when it chose none),
+  "Waiting for your answer · <question>" then "Asked a question · <question> · <answer>" or "Question cancelled", and a
+  refusal's own `message`. A result that does not parse says only what the tool was; the raw arguments and output stay in the
+  expanded details (Show Call, Copy Output).
 - **Revisions:** every action carries the revision it was shown. A `stale_project`, `workspace_changed` or
   `no_such_project` refusal re-reads the owner, shows its message and never replays the edit. An older answer
   never replaces a newer record; the owner's pushed state wins at the same revision.
