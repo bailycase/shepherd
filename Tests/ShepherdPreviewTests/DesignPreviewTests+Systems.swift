@@ -192,24 +192,116 @@ extension DesignPreviewTests {
         }
     }
 
-    /// The built-in Shepherd UI system on its page (DesignSystemPage and its eight sibling boards), from the real
-    /// tokens Night Watch generates, with a design drawn in it so the contents menu lists one. Rendered at both
-    /// text scales, light and dark, and tall enough to show every card.
-    @Test func designSystemNightWatch() async throws {
+    /// Shepherd UI as the user's system holds it, written as a design's agent writes it: Night Watch's values in
+    /// light and dark, steps that say what they are for, the page copy its tokens.json carries, and components, three
+    /// of them with a specimen. What the boards draw for it comes from this write, never from strings in a view.
+    static func shepherdUIWrite() throws -> DesignSystemWrite {
+        var tokens = NightWatchSystem.tokens()
+        tokens.name = "Shepherd UI"
+        tokens.namespace = "shepherd-ui"
+        let uses = ["--radius-xs": "pills, keycaps", "--radius-s": "buttons, fields, rows", "--radius-m": "cards, composer, code",
+                    "--radius-l": "popovers, sheets"]
+        tokens.radii = tokens.radii.map { step in
+            var step = step
+            step.extra["use"] = uses[step.name].map(JSONValue.string)
+            return step
+        }
+        let specimens: [(name: String, group: String, html: String)] = [
+            ("SettingsButton", "Settings", """
+                <div style="display:flex;gap:8px;align-items:center"><span style="height:28px;padding:0 12px;border-radius:6px;\
+                background:var(--lantern);color:var(--text-on-lantern);font:500 13px Geist,system-ui;display:flex;align-items:center">\
+                Start the agent</span><span style="height:28px;padding:0 12px;border-radius:6px;border:1px solid var(--line-strong);\
+                color:var(--text-primary);font:500 13px Geist,system-ui;display:flex;align-items:center">Review</span></div>
+                """),
+            ("StatusBadge", "Chat & agents", """
+                <div style="display:flex;gap:8px"><span style="padding:2px 8px;border-radius:4px;background:var(--done-tint);\
+                color:var(--done);font:500 12px Geist,system-ui">Done</span><span style="padding:2px 8px;border-radius:4px;\
+                background:var(--failed-tint);color:var(--failed);font:500 12px Geist,system-ui">Failed</span></div>
+                """),
+            ("SettingsField", "Settings", """
+                <span style="width:220px;height:28px;border-radius:6px;border:1px solid var(--line-strong);background:var(--bg-sunken);\
+                color:var(--text-tertiary);font:13px Geist,system-ui;display:flex;align-items:center;padding:0 10px;\
+                box-sizing:border-box">Search settings</span>
+                """),
+        ]
+        tokens.components = specimens.map { item in
+            DesignSystemTokens.Component(name: item.name, specimen: "components/\(item.name).html", export: "Shepherd.\(item.name)",
+                                         extra: ["group": .string(item.group)])
+        } + ["AttachButton", "ThreadComposer", "SidebarRow"].map { DesignSystemTokens.Component(name: $0, export: "Shepherd.\($0)") }
+        tokens.extra["page"] = .object([
+            "tagline": .string("The app’s own components and tokens. Quiet chrome around agents at work."),
+            "summary": .string("Shepherd UI is what the Shepherd app draws with: the colors, type and spacing of its native views, "
+                + "and the components every board in this design imports. A board links its tokens and bundle once, then draws a "
+                + "component by name."),
+            "source": .string("Made in Shepherd chat UI from the app’s Night Watch values. Not read from a repository, so there is "
+                + "nothing to re-sync."),
+            "principles": .array([
+                ["Readable measure.", "The thread column is at most 820pt and agent prose 640pt."],
+                ["Shape, not labels.", "No speaker labels or avatars: your turn is a bubble, the agent’s is unboxed prose."],
+                ["Lantern means you.", "Amber marks the primary action and what needs you. Running blue marks work, links and focus."],
+            ].map { .object(["lead": .string($0[0]), "text": .string($0[1])]) }),
+            "voice": .object([
+                "lead": .string("Write like an engineer handing over work: plain, specific and short. The agent does things; "
+                    + "Shepherd reports them."),
+                "examples": .array([["The agent needs an answer about the retry schedule.", "pi is waiting for your input!"],
+                                    ["Tests failed twice. Open the log?", "Oops! Something went wrong."]]
+                    .map { .object(["say": .string($0[0]), "avoid": .string($0[1])]) }),
+                "rules": .array([.string("Sentence case in drawn UI, Title Case in native menus."),
+                                 .string("Status is a dot or glyph plus a word. Color is never the only signal.")]),
+            ]),
+            "sizes": .array([["control", "32px", "Buttons and popups"], ["row", "28px", "Sidebar and list rows"],
+                             ["thread", "820px", "Thread column, most"]]
+                .map { .object(["name": .string($0[0]), "value": .string($0[1]), "use": .string($0[2])]) }),
+        ])
+        var files: [String: JSONValue] = ["README.md": .string("# Shepherd UI\n")]
+        for item in specimens { files["components/\(item.name).html"] = .string(item.html + "\n") }
+        return DesignSystemWrite(namespace: "shepherd-ui", title: "Shepherd UI", tokens: tokens.json, files: files)
+    }
+
+    /// Shepherd UI on its page (DesignSystemPage and its eight sibling boards): written as a design's agent writes
+    /// it, with a design drawn in it so the contents menu lists one. Rendered at both text scales, light and dark,
+    /// and tall enough to show every card, its specimens drawn by the board renderer.
+    @Test func designSystemShepherdUI() async throws {
         let (workspace, _, _) = try await systemWorkspace(written: false)
         defer { workspace.stop() }
         let vm = workspace.vm
+        let owner = Design(name: "Shepherd chat UI", createdAt: 2_500, boardCount: 104)
+        _ = try await workspace.server.createDesign(owner)
+        _ = try await workspace.server.writeDesignSystem(try Self.shepherdUIWrite(), for: owner.id)
         var design = Design(name: "Refund ledger", createdAt: 3_000, boardCount: 4)
-        design.systemNamespace = NightWatchSystem.namespace
+        design.systemNamespace = "shepherd-ui"
         _ = try await workspace.server.createDesign(design)
         vm.adopt(workspace.server.state)
         await vm.loadDesignSystems()
-        vm.openDesignSystem("night-watch")
+        vm.openDesignSystem("shepherd-ui")
         #expect(vm.shownDestination == .designSystem)
-        let page = vm.designSystemPage(.system("night-watch"))
+        let page = vm.designSystemPage(.system("shepherd-ui"))
         let reference = try #require(page.reference)
         #expect(reference.used.map(\.name) == ["Refund ledger"])
-        try await Preview.renderMatrix("page-design-system-night-watch", size: CGSize(width: Self.systemPageSize.width, height: 8200)) {
+        #expect(reference.componentTotal == 6 && reference.components.count == 3)
+        await vm.loadDesignSpecimens("shepherd-ui")
+        let specimens = vm.designRendering.specimens
+        try await Preview.renderMatrix("page-design-system-shepherd-ui", size: CGSize(width: Self.systemPageSize.width, height: 7600), ready: {
+            reference.components.allSatisfy { specimens.image("shepherd-ui", $0.id) != nil }
+        }) {
+            DesignSystemDestination(vm: vm)
+        }
+    }
+
+    /// A system built from a project on the same page: acme-web, no page copy, light values only, and Re-sync.
+    @Test func designSystemProjectPage() async throws {
+        let (workspace, _, _) = try await systemWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        vm.shownDesignSystem = "acme-web"
+        vm.openDestination(.designSystem)
+        let page = vm.designSystemPage(.system("acme-web"))
+        #expect(page.reference != nil && page.canResync)
+        await vm.loadDesignSpecimens("acme-web")
+        let specimens = vm.designRendering.specimens
+        try await Preview.renderMatrix("page-design-system-acme-web", size: CGSize(width: Self.systemPageSize.width, height: 3200), ready: {
+            (0..<6).allSatisfy { specimens.image("acme-web", $0) != nil }
+        }) {
             DesignSystemDestination(vm: vm)
         }
     }
@@ -220,15 +312,18 @@ extension DesignPreviewTests {
         let (workspace, _, _) = try await systemWorkspace(written: false)
         defer { workspace.stop() }
         let vm = workspace.vm
+        let owner = Design(name: "Shepherd chat UI", createdAt: 2_500, boardCount: 104)
+        _ = try await workspace.server.createDesign(owner)
+        _ = try await workspace.server.writeDesignSystem(try Self.shepherdUIWrite(), for: owner.id)
         for index in 1...2 {
             var design = Design(name: index == 1 ? "Refund ledger" : "Checkout funnel dashboard", createdAt: Double(3_000 + index), boardCount: 3 + index)
-            design.systemNamespace = NightWatchSystem.namespace
+            design.systemNamespace = "shepherd-ui"
             _ = try await workspace.server.createDesign(design)
         }
         vm.adopt(workspace.server.state)
         await vm.loadDesignSystems()
-        vm.openDesignSystem("night-watch")
-        let page = vm.designSystemPage(.system("night-watch"))
+        vm.openDesignSystem("shepherd-ui")
+        let page = vm.designSystemPage(.system("shepherd-ui"))
         let reference = try #require(page.reference)
         try await Preview.renderMatrix("page-design-system-menu", size: CGSize(width: Self.systemPageSize.width, height: 700)) {
             DesignSystemReferencePage(vm: vm, model: page, reference: reference, menuOpen: true)
@@ -236,12 +331,12 @@ extension DesignPreviewTests {
         // Twelve designs in a short window: the list scrolls rather than running off the page.
         for index in 3...12 {
             var design = Design(name: "Design number \(index) with a rather long name that must truncate", createdAt: Double(3_000 + index), boardCount: index)
-            design.systemNamespace = NightWatchSystem.namespace
+            design.systemNamespace = "shepherd-ui"
             _ = try await workspace.server.createDesign(design)
         }
         vm.adopt(workspace.server.state)
         await vm.loadDesignSystems()
-        let many = vm.designSystemPage(.system("night-watch"))
+        let many = vm.designSystemPage(.system("shepherd-ui"))
         #expect(many.reference?.used.count == 12)
         try await Preview.renderMatrix("page-design-system-menu-overflow", size: CGSize(width: Self.systemPageSize.width, height: 480)) {
             DesignSystemReferencePage(vm: vm, model: many, reference: try! #require(many.reference), menuOpen: true)
