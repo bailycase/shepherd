@@ -34,6 +34,11 @@ extension RPCThreadState {
             completion(.failure(code: "not_latest", message: "Only the latest turn can be retried. Refresh the thread."))
             return
         }
+        // A Git merge turn runs only through its own bounded, checked attempt (Try again with agent).
+        if Self.isGitMergeTurn(history[index]) {
+            completion(.failure(code: "git_merge", message: "Use Try again with agent to retry the merge."))
+            return
+        }
         let command = "/\(Self.retryCommand) \(at)"
         stopRequested = false
         dispatches.append(Dispatch(id: operationID, text: command, parts: nil, items: [], expectsMessage: false))
@@ -68,6 +73,11 @@ extension RPCThreadState {
             }
         }
         if let beforePrompt { beforePrompt(send) } else { send() }
+    }
+
+    /// The user message Shepherd sent for a design's Git merge (`DesignGitMergeBrief.request`).
+    static func isGitMergeTurn(_ message: NativeThreadMessage) -> Bool {
+        message.blocks.contains { $0.kind == .text && $0.text == DesignGitMergeBrief.request }
     }
 
     /// The latest turn's user message: `entryID` in history, with no user message after it but

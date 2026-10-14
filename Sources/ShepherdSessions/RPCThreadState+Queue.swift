@@ -757,6 +757,21 @@ extension RPCThreadState {
         } else { abort(false) }
     }
 
+    /// Ends pi's run as Stop does, except the queue is not paused: what the user queued during it
+    /// runs next, as after any turn. For a run Shepherd started on its own behalf and bounds (a
+    /// design's Git merge turn), never for the user's Stop.
+    func abortRunKeepingQueue(_ done: @escaping () -> Void) {
+        refuseDialogs()
+        stopRequested = true
+        cancelPreparingPrompts()
+        clearPiQueue { [weak self] steering, followUp, _ in
+            guard let self else { done(); return }
+            self.reclaim(steering: steering, followUp: followUp)
+            self.commit()
+            self.session.request(.abort) { _ in done() }
+        }
+    }
+
     /// `agent_settled`: pi is idle. Prompts it accepted but never started are over; steering it
     /// never read (queued after its last look) is reclaimed; then the queue goes.
     func settled() {

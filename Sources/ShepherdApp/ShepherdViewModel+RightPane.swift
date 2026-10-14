@@ -3,6 +3,7 @@ import AppKit
 import Observation
 import ShepherdCore
 import ShepherdRemote
+import ShepherdUI
 
 /// A tab of the side pane beside a thread (docs/design/side-pane-changes.md › Side pane). Only the tabs Shepherd has
 /// are here; Artifacts and Files join as cases when they are built, each with its content in
@@ -27,7 +28,7 @@ enum SidePaneTab: String, CaseIterable, Hashable, Sendable {
         switch self {
         case .changes: "plus.forwardslash.minus"
         case .browser: "globe"
-        case .subagents: "arrow.triangle.branch"
+        case .subagents: NWGlyph.gitBranch.symbolName
         }
     }
 

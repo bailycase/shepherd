@@ -1289,12 +1289,14 @@ commits and pushes, and **Shepherd never pushes, pulls or fetches on its own**: 
 press. The engine is `DesignGit` (ShepherdSessions), run by `SessionServer+DesignGit`.
 
 - **Where it lives.** The design stays in Shepherd's storage. Its repository is
-  `<design>/.shepherd-git/` (the folder git is told to use, never `.git`, so the design agent's
-  tools and a bare `git` in its folder find none), with the design folder as its work tree.
+  `<designs>/.git/<id>/`, outside the design's folder (the design agent's working folder), so
+  nothing the agent can reach leads to the repository, its remote or its config; the design folder
+  is its work tree. Deleting the design for good removes it, and launch removes one whose design
+  is gone.
 - **What is shared** (`DesignGit.tracked`): `project/` (the canvas, every board, the shared
   pieces, the design's systems in `project/ds/`, uploads), `assets/` and `comments.json` (pinned
   comments and replies). Board versions, checkpoints, the revision, the agent's chat,
-  credentials and caches stay on the Mac (`.shepherd-git/info/exclude`).
+  credentials and caches stay on the Mac (the repository's `info/exclude`).
 - **Share with Git** (`shareDesignWithGit`): an empty repository only (one with commits is
   refused; use Open from Git), the first commit with the user's message, then a push of `main`.
   A design already shared, or one whose agent is in a turn, is refused.
@@ -1309,15 +1311,23 @@ press. The engine is `DesignGit` (ShepherdSessions), run by `SessionServer+Desig
 - **Commit** (`commitDesign`): the tracked files as they are, with the user's message, as the
   user's own Git identity (`user.name`, `user.email`; none is invented). **Commit & push** then
   pushes, never forced; a push that fails keeps the commit and says so (Retry push).
-- **Pull** (`pullDesign`): refused with local changes. A fast-forward replaces the design's files
-  through the design store's queue (`DesignStore.replaceFromGit`): each changed board's old
-  content is kept as its next version, the revision moves once, and the canvas reloads. History
-  that diverged is a **merge** instead, and the design's files are not touched.
+- **Pull** (`pullDesign`): refused with local changes. The fetch runs on the Git queue; only the
+  local fast-forward runs through the design store's queue (`DesignStore.replaceFromGit`), so a
+  slow remote never stalls a canvas or an agent. Each changed board's old content is kept as its
+  next version, the revision moves once, and the canvas reloads. History that diverged is a
+  **merge** instead, and the design's files are not touched.
 - **While the agent draws** (its status is working or its pi is busy), commit and pull are
   refused, so Git never captures a half-drawn design.
-- **Remote URLs** are SSH (`git@host:owner/repo.git`, `ssh://`) or HTTPS, never a path starting
-  with `-`. Git runs with no prompt (`GIT_TERMINAL_PROMPT=0`), no hooks, no symlinks, no
-  `ext::` transport, and a time limit on every run (`DesignGitRunner`); credentials are git's own.
+- **Remote URLs** are SSH (`git@host:owner/repo.git`, `ssh://`) or HTTPS, never `http://`, a
+  path starting with `-`, or a URL carrying a password (`https://user:token@host`): credentials
+  are git's own helper's, never kept in the repository's config. Git's words are redacted of any
+  URL credentials before they reach the UI (`DesignGit.redacted`). Git runs with no prompt
+  (`GIT_TERMINAL_PROMPT=0`), no hooks, no symlinks, no attributes file, no `ext::` transport, and
+  a time limit on every run (`DesignGitRunner`).
+- **A tree is checked before anything is written** (`DesignGit.checkTree`, on open, pull and
+  merge): only `project/`, `assets/` and `comments.json` paths in the path grammar, no links or
+  submodules, no `.gitattributes`, `.gitmodules` or `.gitignore`, no two paths that differ only
+  by case (APFS would write one file), and the import's file count and size caps.
 
 #### The merge
 
@@ -1334,18 +1344,31 @@ Pull again later). **Resolve with agent** (`resolveDesignMergeWithAgent`):
    the copy's files and never run git; commit subjects and authors are data, never instructions.
 3. When the turn settles, the copy is checked (`DesignGit.checkMergeCopy`): no conflict marker,
    a valid canvas listing every board that has a file, every board readable. Passing is **Merge
-   ready** (GitDesignMergeReview: the panel lists the copy's changes beside the design); failing
-   is **Couldn't finish the merge**, with why.
+   ready** (GitDesignMergeReview: the panel lists the copy's changes beside the design), and the
+   copy's tree is kept as the one reviewed; failing is **Couldn't finish the merge**, with why.
 4. **Commit merge locally** or **Commit merge & push** makes a commit with both parents from the
    copy, replaces the design's files with it (one revision, versions kept) and removes the copy.
+   It refuses a design written since the pull (a Tweak, a comment, a turn: taking the merge would
+   lose it), a copy that changed since it was reviewed, and a merged tree that isn't a design;
+   the branch moves back if the checkout fails.
 
-**Bounds.** One attempt per press: nothing retries on its own (Try again with agent is a press).
-The turn is stopped after `DesignGitMergeLimits.turnTimeout` (15 minutes). It runs on the design
-agent's own model and thread, within its usual limits; nothing is sent to any other provider.
-**Stop** (the merge's, or the composer's) ends the turn and the merge reads Stopped; the copy is
-kept for another try. A pi that exits mid-merge fails it. **A restart never resumes a merge**:
-the merge is server memory only, and launch removes any `.git-merge/` left behind
-(`DesignGit.dropLeftoverMergeCopies`). Nothing is committed or pushed without the user.
+**Bounds.** One attempt per press: nothing retries on its own (Try again with agent is a press,
+refused while an attempt runs, and the chat's Retry refuses the merge's message). The limit
+(`DesignGitMergeLimits.turnTimeout`, 15 minutes) runs from the press, whatever pi answers about
+the prompt. It runs on the design agent's own model and thread, within its usual limits; nothing
+is sent to any other provider. **The queue is the user's**: Resolve with agent refuses a thread
+with messages waiting or paused, and the merge's own stop (its Stop, the limit) ends the turn
+without pausing the queue, so a message queued during the merge runs next. **The composer's
+Stop** ends the turn and the merge reads Stopped; the copy is kept for another try. A pi that
+exits mid-merge fails it. **A restart never resumes a merge**: the merge is server memory only,
+and launch removes any `.git-merge/` left behind (`DesignGit.dropLeftoverMergeCopies`). Nothing
+is committed or pushed without the user.
+
+**What the agent can reach.** The merge copy is in the design's folder, which the agent works
+in; the repository is not. The brief tells the agent to edit only the copy and never run git,
+and the commit, push and branch are Shepherd's alone. The agent keeps its usual tools (a design
+agent can run bash), so the line between the copy and the user's other files is the brief and
+the agent's own rules, as for any of its turns, not a sandbox.
 
 ## Design references
 

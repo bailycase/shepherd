@@ -53,14 +53,45 @@ struct DesignGitTests {
         #expect(files.contains("project/canvas.json") && files.contains("project/A.dc.html"))
         #expect(!files.contains { $0.hasPrefix("versions/") || $0 == "revision" || $0.hasPrefix("pins/") || $0.hasPrefix("checkpoints/") })
         #expect(try git(["log", "-1", "--format=%s", "main"], in: remote).trimmingCharacters(in: .whitespacesAndNewlines) == "Add checkout funnel design")
-        // No .git the design agent could find from its working folder.
+        // Nothing in the design's folder (its agent's working folder) leads to the repository.
         let folder = try #require(h.server.designs.folder(for: design.id))
-        #expect(!FileManager.default.fileExists(atPath: folder.appendingPathComponent(".git").path))
+        let inside = try FileManager.default.contentsOfDirectory(atPath: folder.path)
+        #expect(!inside.contains { $0.hasPrefix(".git") || $0.hasPrefix(".shepherd") }, "found \(inside)")
+        #expect(FileManager.default.fileExists(atPath: DesignGitRunner.repository(of: folder).appendingPathComponent("HEAD").path))
+        // Deleting the design takes its repository with it.
+        try await h.server.designs.delete(design.id)
+        #expect(!FileManager.default.fileExists(atPath: DesignGitRunner.repository(of: folder).path))
 
-        // A repository with commits is refused, and a second share too.
+    }
+
+    @Test func aSecondShareIsRefused() async throws {
+        let (h, design) = try await authorWithDesign()
+        defer { h.stop() }
+        let remote = try emptyRemote()
+        _ = try await h.server.shareDesignWithGit(design.id, url: remote.path, message: "Add")
         await #expect(throws: DesignGitError.alreadyShared) {
             try await h.server.shareDesignWithGit(design.id, url: remote.path, message: "Again")
         }
+    }
+
+    @Test(arguments: [
+        ("https://baily:ghp_secret@github.com/acme/design.git", false),
+        ("http://github.com/acme/design.git", false),
+        ("--upload-pack=touch /tmp/x", false),
+        ("ext::sh -c touch% /tmp/x", false),
+        ("https://github.com/acme/design.git", true),
+        ("https://baily@github.com/acme/design.git", true),
+        ("git@github.com:acme/design.git", true),
+        ("ssh://git@gitlab.example.com/team/design.git", true),
+    ])
+    func onlySSHOrHTTPSURLsWithoutAPasswordAreAccepted(url: String, accepted: Bool) {
+        #expect(DesignGit.isRemoteURL(url) == accepted)
+    }
+
+    @Test func gitsWordsNeverCarryCredentialsFromAURL() {
+        #expect(DesignGit.redacted("fatal: unable to access 'https://baily:ghp_secret@github.com/acme/design.git/': 403")
+                == "fatal: unable to access 'https://github.com/acme/design.git/': 403")
+        #expect(DesignGit.redacted("fatal: repository 'ssh://git@host/x' not found") == "fatal: repository 'ssh://host/x' not found")
     }
 
     @Test func shareRefusesARepositoryWithCommitsAndLeavesTheDesignUnshared() async throws {
@@ -106,8 +137,13 @@ struct DesignGitTests {
         // A URL that isn't a repository leaves nothing behind.
         await #expect(throws: DesignGitError.self) { try await coworker.server.openDesignFromGit("/nowhere/at/all.git") }
         #expect(coworker.server.state.designs.count == 1)
-        let leftovers = try FileManager.default.contentsOfDirectory(atPath: coworker.server.designs.directory.path).filter { $0.hasPrefix(".") }
+        let directory = coworker.server.designs.directory
+        let leftovers = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+            .filter { $0.hasPrefix(".") && $0 != DesignGitRunner.repositoriesName }
         #expect(leftovers.isEmpty)
+        // Only the opened design's repository is kept; the failed clone made none.
+        let repositories = try FileManager.default.contentsOfDirectory(atPath: directory.appendingPathComponent(DesignGitRunner.repositoriesName).path)
+        #expect(repositories == [opened.id.rawValue])
     }
 
     @Test func aRepositoryThatIsNotADesignIsRefused() async throws {
@@ -128,6 +164,25 @@ struct DesignGitTests {
         try git(["push", "-q", second.path, "HEAD:refs/heads/main"], in: linked)
         await #expect(throws: DesignGitError.notADesign("project/A.dc.html is a link or a submodule")) {
             try await h.server.openDesignFromGit(second.path)
+        }
+        // A filter driver's attributes, or two names one file on APFS, are refused before checkout.
+        let attributes = try makeScratchRepo(files: ["project/canvas.json": #"{"title":"x","boards":{}}"#,
+                                                     "project/.gitattributes": "*.json filter=evil\n"])
+        let third = try emptyRemote()
+        try git(["push", "-q", third.path, "HEAD:refs/heads/main"], in: attributes)
+        await #expect(throws: DesignGitError.self) { try await h.server.openDesignFromGit(third.path) }
+        let cased = try makeScratchRepo(files: ["project/canvas.json": #"{"title":"x","boards":{}}"#,
+                                                "project/a.dc.html": "a", "project/sub/b.dc.html": "b"])
+        // Git on a case-insensitive disk can't make the twin in a work tree; write it to the index.
+        let twin = try makeScratchDirectory("twin").appendingPathComponent("A.dc.html")
+        try Data("A".utf8).write(to: twin)
+        let blob = try git(["hash-object", "-w", twin.path], in: cased).trimmingCharacters(in: .whitespacesAndNewlines)
+        try git(["update-index", "--add", "--cacheinfo", "100644,\(blob),project/A.dc.html"], in: cased)
+        try git(["commit", "-qm", "twin"], in: cased)
+        let fourth = try emptyRemote()
+        try git(["push", "-q", fourth.path, "HEAD:refs/heads/main"], in: cased)
+        await #expect(throws: DesignGitError.notADesign("project/a.dc.html differs from another file only by case")) {
+            try await h.server.openDesignFromGit(fourth.path)
         }
         #expect(h.server.state.designs.isEmpty)
     }
@@ -256,6 +311,15 @@ struct DesignGitTests {
         let review = try #require(try await author.server.designGitState(design.id))
         #expect(review.merge?.phase == .ready && review.mergeFiles.map(\.path) == ["project/A-phone.dc.html"])
 
+        // A write to the design while the merge waited would be lost by taking the merge: refused.
+        let a = try DesignPath.validate("A.dc.html")
+        let aSource = try await author.server.designBoard(design.id, path: a).source
+        _ = try await author.server.writeDesignBoard(design.id, path: a, source: aSource + "\n", baseRevision: nil)
+        await #expect(throws: DesignGitError.changedDuringMerge) {
+            try await author.server.commitDesignMerge(design.id, message: "Merge", push: false)
+        }
+        #expect(try await author.server.designBoard(design.id, path: a).source == aSource + "\n", "the write is kept")
+        _ = try await author.server.writeDesignBoard(design.id, path: a, source: aSource, baseRevision: nil)
         let committed = try await author.server.commitDesignMerge(design.id, message: "Merge phone labels with absolute counts", push: true)
         #expect(committed.status.isClean && committed.status.ahead == 0 && committed.status.behind == 0)
         #expect(try await author.server.designBoard(design.id, path: phone).source == resolved)
@@ -327,7 +391,12 @@ struct DesignGitTests {
         try await h.server.resolveDesignMergeWithAgent(design.id)
         #expect(try await h.server.designGitState(design.id)?.merge?.phase == .running)
         let brief = try await agent.waitForStdin("prompt")
-        #expect((brief["message"] as? String)?.hasPrefix(DesignGitMergeBrief.request) == true)
+        let message = try #require(brief["message"] as? String)
+        // pi reads Shepherd's brief in its fence, then the request; the thread shows only the request.
+        let fenced = try #require(DesignGitFence.parse(message))
+        #expect(fenced.text == DesignGitMergeBrief.request)
+        #expect(fenced.brief.contains(DesignGit.mergeCopyName) && fenced.brief.contains("Never run git"))
+        #expect(DesignViewRecord.strippingFence(from: message) == DesignGitMergeBrief.request)
         // The tool never finishes: only the limit ends the turn.
         try await eventually("the limit to stop the merge") { (try? await h.server.designGitState(design.id))?.merge?.phase == .stopped }
         #expect(try await h.server.designGitState(design.id)?.merge?.reason?.contains("limit") == true)
@@ -355,6 +424,91 @@ struct DesignGitTests {
         _ = try await agent.waitForStdin("prompt", count: 2)
         await h.server.stopDesignMerge(design.id)
         try await eventually("the second turn to stop") { h.server.rpcThread(forAgent: agent.agent.id)?.piBusy == false }
+    }
+
+    @Test func theComposersStopDuringTheMergeTurnReadsStopped() async throws {
+        let (h, agent, design, _, _) = try await mergeWorkspace(oursSubject: "Mine tools:1")
+        defer { h.stop() }
+        try await h.server.resolveDesignMergeWithAgent(design.id)
+        _ = try await agent.waitForStdin("prompt")
+        try await eventually("the merge turn to run") { h.server.rpcThread(forAgent: agent.agent.id)?.piBusy == true }
+        // The chat's own Stop (not the merge's): the merge reads Stopped, never Failed or Ready.
+        let s = try await agent.snapshot()
+        _ = try await agent.request(.abort(expectedSessionID: s.piSessionID, generation: s.generation, operationID: UUID()))
+        try await eventually("the merge to read stopped") { (try? await h.server.designGitState(design.id))?.merge?.phase == .stopped }
+    }
+
+    @Test func piExitingMidMergeFailsTheMergeAndLeavesTheDesign() async throws {
+        let (h, agent, design, _, _) = try await mergeWorkspace(oursSubject: "Mine tools:1")
+        defer { h.stop() }
+        try await h.server.resolveDesignMergeWithAgent(design.id)
+        _ = try await agent.waitForStdin("prompt")
+        h.server.killSession(agent.sessionID)
+        try await eventually("the merge to fail") { (try? await h.server.designGitState(design.id))?.merge?.phase == .failed }
+        let a = try DesignPath.validate("A.dc.html")
+        #expect(try await h.server.designBoard(design.id, path: a).source.contains("<!-- me -->"))
+    }
+
+    @Test func aSecondPressWhileTheMergeRunsIsRefusedAndLeavesTheCopy() async throws {
+        let (h, agent, design, _, _) = try await mergeWorkspace(oursSubject: "Mine tools:1")
+        defer { h.stop() }
+        try await h.server.resolveDesignMergeWithAgent(design.id)
+        _ = try await agent.waitForStdin("prompt")
+        let folder = try #require(h.server.designs.folder(for: design.id))
+        let marker = folder.appendingPathComponent(DesignGit.mergeCopyName).appendingPathComponent("project/agent-was-here.dc.html")
+        try Data("x".utf8).write(to: marker)
+        await #expect(throws: DesignGitError.merging) { try await h.server.resolveDesignMergeWithAgent(design.id) }
+        #expect(FileManager.default.fileExists(atPath: marker.path), "the copy the agent edits is not rebuilt")
+        #expect(agent.stdin("prompt").count == 1, "one attempt per press")
+        await h.server.stopDesignMerge(design.id)
+    }
+
+    @Test func aMessageQueuedDuringTheMergeRunsAfterTheLimitStopsIt() async throws {
+        let (h, agent, design, _, _) = try await mergeWorkspace(oursSubject: "Mine tools:1")
+        defer { h.stop() }
+        await h.server.setDesignMergeTimeoutForTests(1)
+        try await h.server.resolveDesignMergeWithAgent(design.id)
+        _ = try await agent.waitForStdin("prompt")
+        try await eventually("the merge turn to run") { h.server.rpcThread(forAgent: agent.agent.id)?.piBusy == true }
+        // The user queues a message while the merge runs: the limit's stop doesn't pause it.
+        let s = try await agent.snapshot()
+        _ = try await agent.send("after the merge", from: s)
+        try await eventually("the limit to stop the merge") { (try? await h.server.designGitState(design.id))?.merge?.phase == .stopped }
+        _ = try await agent.waitForStdin("prompt", count: 2)
+        #expect(agent.stdin("prompt").last?["message"] as? String == "after the merge")
+    }
+
+    @Test func resolveWithAgentNeverSendsAPausedQueue() async throws {
+        let (h, agent, design, _, _) = try await mergeWorkspace(oursSubject: "Mine")
+        defer { h.stop() }
+        // A message waits in a paused queue (the user stopped a turn): the merge leaves it theirs.
+        let s = try await agent.ready()
+        _ = try await agent.send("hold-start tools:1", from: s)
+        try await eventually("the turn to start") { h.server.rpcThread(forAgent: agent.agent.id)?.piBusy == true }
+        let busy = try await agent.snapshot()
+        _ = try await agent.send("waiting for me", from: busy)
+        _ = try await agent.request(.abort(expectedSessionID: busy.piSessionID, generation: busy.generation, operationID: UUID()))
+        try Data().write(to: h.dir.appendingPathComponent("start"))
+        try await eventually("the turn to stop") { h.server.rpcThread(forAgent: agent.agent.id)?.piBusy == false }
+        await #expect(throws: DesignGitError.self) { try await h.server.resolveDesignMergeWithAgent(design.id) }
+        #expect(try await h.server.designGitState(design.id)?.merge?.phase == .conflict)
+        #expect(!agent.stdin("prompt").contains { ($0["message"] as? String)?.contains("waiting for me") == true })
+    }
+
+    @Test func theMergeMessageIsNotRetriedOutsideItsBoundedAttempt() async throws {
+        let (h, agent, design, _, _) = try await mergeWorkspace(oursSubject: "Mine")
+        defer { h.stop() }
+        try await h.server.resolveDesignMergeWithAgent(design.id)
+        try await eventually("the merge turn to end") { (try? await h.server.designGitState(design.id))?.merge?.phase == .failed }
+        // The chat's Retry on the merge's message would run the brief with no limit and no check.
+        let s = try await agent.snapshot("the merge message") { snapshot in
+            snapshot.messages.contains { $0.role == "user" && $0.blocks.contains { $0.text == DesignGitMergeBrief.request } }
+        }
+        let entry = try #require(s.messages.last { $0.role == "user" }?.entryID)
+        let result = try await agent.request(.retry(expectedSessionID: s.piSessionID, generation: s.generation, operationID: UUID(), entryID: entry))
+        guard case .failure(let code, _) = result else { Issue.record("retry was accepted: \(result)"); return }
+        #expect(code == "git_merge")
+        #expect(agent.stdin("prompt").count == 1)
     }
 
     @Test func aMergeTurnThatLeavesConflictMarkersFails() async throws {
