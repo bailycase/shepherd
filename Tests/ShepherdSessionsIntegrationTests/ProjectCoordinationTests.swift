@@ -75,7 +75,7 @@ struct ProjectCoordinationTests {
         rig.host.server.onProjectRuntimeLaunch = nil; rig.host.stop(keepFiles: true)
         let restarted = try Rig(dir: rig.host.dir); defer { restarted.stop() }
         #expect(restarted.host.server.state.projects.first?.messages.last?.phase == .unknown)
-        #expect(restarted.host.server.state.projects.first?.paused == true)
+        #expect(restarted.host.server.state.projects.first?.paused == false)
         #expect(await restarted.host.server.listSessions().isEmpty)
     }
 
