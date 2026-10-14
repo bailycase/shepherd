@@ -209,7 +209,8 @@ struct BrowserTunnelHostTests {
         defer { deaf.stop() }
         let client = try await host.raw()
         for tunnel in 1...6 { #expect(try await client.open(tunnel, agent: host.agent, port: deaf.port) == .opened(tunnel: tunnel)) }
-        #expect(open.current == 6 && host.server.browserTunnelCount == 6)
+        // Connected tunnels can be acknowledged before the loopback server schedules its handlers.
+        try await eventually("all six sockets to be accepted") { open.current == 6 && host.server.browserTunnelCount == 6 }
         client.closeConnection()
         try await eventually("the host to close every socket") { open.current == 0 && host.server.browserTunnelCount == 0 }
     }
