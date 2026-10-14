@@ -1,0 +1,141 @@
+import Foundation
+import Sentry
+import ShepherdTestKit
+import Testing
+@testable import ShepherdApp
+
+@Suite("Shepherd diagnostics")
+struct ShepherdDiagnosticsTests {
+    @Test @MainActor func consentDefaultsOffPersistsAndResetRevokesIt() {
+        let defaults = ScratchDefaults()
+        let settings = AppSettings(store: defaults)
+        var changes: [Bool] = []
+        settings.onDiagnosticsChange = { changes.append($0) }
+        #expect(!settings.shareDiagnostics)
+        settings.shareDiagnostics = true
+        settings.shareDiagnostics = true
+        #expect(AppSettings(store: defaults).shareDiagnostics)
+        settings.resetToDefaults()
+        #expect(!AppSettings(store: defaults).shareDiagnostics)
+        #expect(changes == [true, false])
+    }
+
+    @Test func consentAndTheDailyCapSurviveRestartsAndReenabling() {
+        let defaults = ScratchDefaults()
+        let gate = DiagnosticsGate(store: defaults)
+        let now = Date(timeIntervalSince1970: 100 * 86_400)
+        #expect(!gate.accept(now: now))
+        gate.setEnabled(true)
+        for _ in 0..<DiagnosticsGate.dailyLimit { #expect(gate.accept(now: now)) }
+        #expect(!gate.accept(now: now))
+        gate.setEnabled(false)
+        #expect(!gate.accept(now: now.addingTimeInterval(86_400)))
+        let restarted = DiagnosticsGate(store: defaults)
+        restarted.setEnabled(true)
+        #expect(!restarted.accept(now: now))
+        #expect(restarted.accept(now: now.addingTimeInterval(86_400)))
+    }
+
+    @Test func onlyConfiguredHostedHTTPSProjectsAreAccepted() {
+        let valid = "https://publickey@o123.ingest.us.sentry.io/456"
+        #expect(ShepherdDiagnostics.dsn(valid) == valid)
+        for invalid in [nil, "", "$(SHEPHERD_SENTRY_DSN)", "http://key@o1.ingest.sentry.io/1",
+                        "https://key:secret@o1.ingest.sentry.io/1", "https://key@example.com/1",
+                        "https://key@o1.ingest.sentry.io/1?token=secret", "https://o1.ingest.sentry.io/1"] as [String?] {
+            #expect(ShepherdDiagnostics.dsn(invalid) == nil)
+        }
+    }
+
+    @Test func theSDKOnlyCollectsBoundedCrashDiagnostics() {
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.invalidateAndCancel() }
+        let options = ShepherdDiagnostics.makeOptions(dsn: "https://key@o1.ingest.sentry.io/1",
+                                                       cache: URL(fileURLWithPath: "/unused"), session: session)
+        #expect(options.maxCacheItems == 10 && options.maxBreadcrumbs == 32)
+        #expect(!options.sendDefaultPii && !options.enableMemoryIntrospection)
+        #expect(!options.enableAutoBreadcrumbTracking && !options.enableNetworkBreadcrumbs)
+        #expect(!options.enableAutoSessionTracking && !options.enableCaptureFailedRequests)
+        #expect(!options.enableMetricKit && !options.enableLogs && !options.enableMetrics)
+        #expect(!options.enableAutoPerformanceTracing && options.tracesSampleRate == 0)
+        #expect(options.enableCrashHandler && options.enableUncaughtNSExceptionReporting)
+        #expect(options.urlSession === session)
+    }
+
+    @Test func deepStacksKeepTheCrashingFramesAndCrashingThreads() {
+        let frames = (0..<300).map { index in
+            let frame = Frame()
+            frame.instructionAddress = String(index)
+            return frame
+        }
+        let source = Event(level: .fatal)
+        source.stacktrace = SentryStacktrace(frames: frames, registers: [:])
+        source.threads = (0..<150).map { index in
+            let thread = SentryThread(threadId: NSNumber(value: index))
+            thread.crashed = NSNumber(value: index == 149)
+            return thread
+        }
+        let clean = ShepherdDiagnostics.sanitized(source)
+        #expect(clean.stacktrace?.frames.count == 256)
+        #expect(clean.stacktrace?.frames.last?.instructionAddress == "299")
+        #expect(clean.threads?.count == 128)
+        #expect(clean.threads?.first?.threadId == 149)
+    }
+
+    @Test func privateEventContentIsDroppedButCrashAddressesAndImageIDsSurvive() throws {
+        let secret = "PRIVATE_PROMPT_API_KEY_PATH"
+        let source = Event(level: .fatal)
+        source.message = SentryMessage(formatted: secret)
+        source.extra = ["prompt": secret]
+        source.serverName = secret
+        source.user = User(userId: secret)
+        source.context = ["os": ["version": "26.0", "private": secret],
+                          "device": ["model": "Mac14,2", "name": secret],
+                          "app": ["app_name": secret]]
+        source.tags = ["arbitrary": secret, "shepherd.installation": secret]
+        let frame = Frame()
+        frame.instructionAddress = "0x1234"
+        frame.imageAddress = "0x1000"
+        frame.function = "Shepherd.render"
+        frame.package = "/Users/\(secret)/Shepherd"
+        frame.vars = ["prompt": secret]
+        frame.contextLine = secret
+        let stack = SentryStacktrace(frames: [frame], registers: ["x0": secret])
+        let exception = Exception(value: secret, type: "EXC_BAD_ACCESS")
+        exception.stacktrace = stack
+        let mechanism = Mechanism(type: "mach")
+        mechanism.data = ["reason": secret]
+        mechanism.desc = secret
+        mechanism.handled = false
+        exception.mechanism = mechanism
+        source.exceptions = [exception, Exception(value: secret, type: secret)]
+        let thread = SentryThread(threadId: 1)
+        thread.name = secret
+        thread.stacktrace = stack
+        thread.crashed = true
+        source.threads = [thread]
+        let image = DebugMeta()
+        image.debugID = "12345678-1234-1234-1234-123456789ABC"
+        image.codeFile = "/Users/\(secret)/Shepherd"
+        image.imageAddress = "0x1000"
+        source.debugMeta = [image]
+        let unsafe = Breadcrumb(level: .info, category: "http")
+        unsafe.message = secret
+        let safe = Breadcrumb(level: .info, category: "shepherd")
+        safe.message = "process.exited"
+        safe.setData(value: Int32(1), key: "exit_code")
+        safe.setData(value: secret, key: "prompt")
+        source.breadcrumbs = [unsafe, safe]
+
+        let clean = ShepherdDiagnostics.sanitized(source)
+        let json = try JSONSerialization.data(withJSONObject: clean.serialize())
+        #expect(!String(decoding: json, as: UTF8.self).contains(secret))
+        #expect(clean.exceptions?.first?.type == "EXC_BAD_ACCESS")
+        #expect(clean.exceptions?.last?.type == "Native crash")
+        #expect(clean.exceptions?.first?.stacktrace?.frames.first?.instructionAddress == "0x1234")
+        #expect(clean.debugMeta?.first?.debugID == image.debugID)
+        #expect(clean.debugMeta?.first?.codeFile == "Shepherd")
+        #expect(clean.breadcrumbs?.count == 1)
+        #expect(clean.breadcrumbs?.first?.data?["exit_code"] as? Int32 == 1)
+        #expect(clean.context?["os"]?["version"] as? String == "26.0")
+    }
+}
