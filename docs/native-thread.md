@@ -322,7 +322,11 @@ events come out on stdout, one record per LF.
     beside a full queue rehashes and measures only the message it grew (and the snapshot's small
     fixed part).
   - History pages hold 50 entries, walked with `olderCursor`. A stale cursor gets
-    `stale_cursor`.
+    `stale_cursor`. A turn's calls are live rows until pi saves them, so when a turn longer than a
+    page finishes, the newest page starts inside it and shares no message with what the client
+    showed. The store then loads the pages between (`NativeThreadStore.joining`, at most
+    `joinPageLimit`, 20) until they meet the thread, so the prompt and the history above it stay
+    (`ThreadLongTurnHistoryTests`). Without that the thread shrank to the turn's last reply.
   - A history entry's id names its message, not its place in pi's list
     (`RPCThreadState.historyEntryID`): a tool result is its call (`t:<call id>`), anything else
     `<role>:<ms>` from pi's timestamp, with `#<n>` on a repeat. So a message keeps its id across
@@ -844,7 +848,8 @@ output grows.
   stays ready and running, with the same rows and pages of history, so showing it again is a
   flip that rebuilds the thread and its composer once. The first pull after (`run`) merges the
   newest page onto the history already loaded, as any poll does; another session or
-  generation, or a page with no overlap, starts over. That pull also marks where the thread
+  generation starts over, and so does a page that still has no overlap after the store loaded
+  up to 20 older pages to join it. That pull also marks where the thread
   caught up (`catchUp`, with `threadVersion` and `chromeVersion`, none of them observed), in the
   same update: what it brought back lands without motion (`CatchUpGate`), and what arrives
   after moves as usual. `stop` is the teardown (an error, a pruned agent, a view that went

@@ -733,8 +733,8 @@ struct ThreadTailFlowTests {
     }
 
     /// A long live turn settles into the host's 50-message history window. Its prompt falls out
-    /// of that window, so the reply changes identity and height while the completed workers stay
-    /// above the composer.
+    /// of that window; the store joins the page before it, so the prompt and its reply keep their
+    /// rows and identity while the completed workers stay above the composer.
     @Test(arguments: sizes)
     func aLongTurnSettlingIntoPagedHistoryWithFinishedWorkersKeepsTheTranscript(size: CGSize) async throws {
         try await Self.withDeck(size: size) { deck in
@@ -765,7 +765,7 @@ struct ThreadTailFlowTests {
                 }
             }
             try await eventuallyOnMain("the turn to settle") { !deck.store.running }
-            #expect(deck.store.rows.count == 1, "the history window no longer contains the prompt")
+            #expect(deck.store.rows.suffix(2).map(\.id) == ["long-u", "long-u/reply"], "the prompt and its reply keep their rows")
             #expect(deck.store.tray != nil)
             try await deck.expectTail("the long turn and workers finished")
         }
@@ -802,10 +802,10 @@ struct ThreadTailFlowTests {
                 live.append(Fx.reply("worker-final-\(turn)", "Both reviews are complete.", at: at + 64_000))
                 await deck.publish(running: false, provisional: live)
                 try await deck.pass(.milliseconds(500))
-                let liveIDs = Set(deck.store.rows.map(\.id))
+                let liveIDs = deck.store.rows.map(\.id)
                 await deck.publish(running: false, provisional: []) { $0.all += live }
-                #expect(deck.store.rows.count == 1, "the saved page starts inside the completed turn")
-                #expect(deck.store.rows.allSatisfy { !liveIDs.contains($0.id) }, "saved history replaces the live reply's ID")
+                // The saved page starts inside the completed turn; the store joins the page before it.
+                #expect(deck.store.rows.map(\.id) == liveIDs, "saved history keeps the turn's rows and their identity")
                 try await deck.expectTail("workers and turn \(turn) complete", holding: .milliseconds(300))
             }
         }

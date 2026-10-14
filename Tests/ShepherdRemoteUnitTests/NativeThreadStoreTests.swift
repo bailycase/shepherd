@@ -1155,6 +1155,61 @@ struct NativeThreadStoreTests {
         #expect(store.messages.map(\.entryID) == ["m1", "m2", "m3", "m4"])
     }
 
+    /// A long turn finishes: its calls move from the live rows into saved history at once, and the
+    /// host's page of the newest 50 messages now starts inside the turn, with no message in common
+    /// with what the thread showed. The thread keeps what it had (the prompt, the history above it)
+    /// and joins the page on where the turn's saved copy starts, instead of shrinking to the page.
+    @Test func aFinishedTurnWhosePageStartsInsideItKeepsTheHistoryAboveIt() async {
+        let old = F.assistant("earlier answer", id: "m0")
+        let prompt = F.user("run the checks", id: "u1")
+        var live = F.snapshot(running: true, messages: [old, prompt],
+                              provisional: (0..<60).map { F.tool("bash", id: "provisional:tool:c\($0)", callID: "c\($0)") },
+                              olderCursor: "m0")
+        live.revision = 2
+        let (store, host, task) = await started(live)
+        defer { task.cancel() }
+        #expect(store.rows.map(\.id) == ["m0", "u1", "u1/reply"])
+
+        // pi settled: 60 calls and the answer are saved, the newest 50 of them fill the page, and
+        // the page before it holds the prompt.
+        let calls = (0..<59).map { F.tool("bash", id: "t:c\($0)", callID: "c\($0)") }
+        let newest = F.snapshot(revision: 3, messages: Array(calls[10...]) + [F.assistant("all done", id: "a1")], olderCursor: "t:c10")
+        host.snapshot = newest
+        host.next = [.success(.snapshot(value: newest)),
+                     .success(.snapshot(value: F.snapshot(revision: 3, messages: [old, prompt] + calls[..<10], olderCursor: "m0")))]
+        await store.refresh()
+
+        #expect(host.requests.last == .snapshot(expectedSessionID: "s", beforeEntryID: "t:c10"))
+
+        #expect(store.messages.first?.entryID == "m0", "the history above the finished turn stays")
+        #expect(store.rows.map(\.id) == ["m0", "u1", "u1/reply"], "the prompt and its reply keep their rows")
+        #expect(store.messages.last?.entryID == "a1")
+        #expect(store.olderCursor == "m0", "older pages still load from the top of what the thread shows")
+    }
+
+    /// Joining is bounded: a page that never meets the thread loads at most `joinPageLimit` older
+    /// pages, and a page request that fails leaves the thread on the pages it has, as before.
+    @Test(arguments: [true, false])
+    func joiningAFinishedTurnsPageIsBounded(failing: Bool) async {
+        let (store, host, task) = await started(F.snapshot(messages: [F.user("go", id: "u1")], olderCursor: "u1"))
+        defer { task.cancel() }
+        var page = 0
+        host.next = [.success(.snapshot(value: F.snapshot(revision: 2, messages: [F.assistant("done", id: "p0")], olderCursor: "p0")))]
+        host.onRequest = { request in
+            guard case .snapshot(_, let before?, _) = request else { return }
+            page += 1
+            host.next.append(failing ? .success(.failure(code: "x", message: "gone"))
+                : .success(.snapshot(value: F.snapshot(revision: 2, messages: [F.assistant("older", id: "p\(page)")], olderCursor: "p\(page)"))))
+            _ = before
+        }
+        await store.refresh()
+
+        #expect(page == (failing ? 1 : NativeThreadStore.joinPageLimit))
+        #expect(store.messages.last?.entryID == "p0")
+        #expect(store.messages.count == (failing ? 1 : NativeThreadStore.joinPageLimit + 1))
+        #expect(store.olderCursor == (failing ? "p0" : "p\(NativeThreadStore.joinPageLimit)"))
+    }
+
     @Test func aStaleCursorResetsHistoryFromAFreshSnapshot() async {
         let (store, host, task) = await started(F.snapshot(messages: [hi], olderCursor: "a"))
         defer { task.cancel() }

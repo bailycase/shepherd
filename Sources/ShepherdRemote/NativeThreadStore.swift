@@ -876,9 +876,14 @@ public final class NativeThreadStore {
             switch result {
             case .snapshot(let value) where value.startProblem != nil:
                 noteStartProblem(value.startProblem!)
-            case .snapshot(let value):
+            case .snapshot(var value):
                 let sameSession = previous?.piSessionID == value.piSessionID && previous?.generation == value.generation
                 if sameSession, let previous, value.revision < previous.revision { return }
+                if !resetHistory, sameSession, value.olderCursor != nil, let first = value.messages.first,
+                   !messages.contains(where: { $0.entryID == first.entryID }) {
+                    value = await joining(value, request: request)
+                    guard !Task.isCancelled, epoch == run, recentRequest == ticket else { return }
+                }
                 settlePending(value, sameSession: sameSession, pull: pull)
                 settleRunning(value.running, catchingUp: catchUp == nil)
                 if !resetHistory, sameSession, value.olderCursor != nil,
@@ -1053,6 +1058,30 @@ public final class NativeThreadStore {
         guard epoch == run else { return false }
         busy = false
         return started && ready
+    }
+
+    /// At most this many older pages join a newest page to the thread: a finished turn of up to
+    /// 1,000 messages keeps the thread whole.
+    static let joinPageLimit = 20
+
+    /// The newest page can start past the end of what the thread holds: a long turn's calls are
+    /// live rows until pi saves them, and once it finishes the page holds only its newest messages.
+    /// Taking that page as the thread would drop the turn's prompt and everything above it, and
+    /// give the reply a new identity, until the reader scrolled up for older pages. This loads the
+    /// pages between, until they meet what the thread holds or the session's start, at most
+    /// `joinPageLimit`; past that the thread starts over from the pages it loaded.
+    private func joining(_ value: NativeThreadSnapshot, request: Request) async -> NativeThreadSnapshot {
+        let held = Set(messages.map(\.entryID))
+        var value = value
+        for _ in 0..<Self.joinPageLimit {
+            guard let cursor = value.olderCursor, !value.messages.contains(where: { held.contains($0.entryID) }),
+                  case .snapshot(let page)? = try? await request(.snapshot(expectedSessionID: value.piSessionID, beforeEntryID: cursor)),
+                  page.piSessionID == value.piSessionID, page.generation == value.generation else { break }
+            let ids = Set(value.messages.map(\.entryID))
+            value.messages = page.messages.filter { !ids.contains($0.entryID) } + value.messages
+            value.olderCursor = page.olderCursor
+        }
+        return value
     }
 
     public func loadOlder() async {
