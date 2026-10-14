@@ -187,10 +187,12 @@ struct LogicalProjectPane: View {
 
     private var pausedFooter: some View {
         NWLeadFooterCard(title: "The project is paused.", action: "Resume",
-                         enabled: !vm.logicalProjects.busy.contains(ref.id) && !project.interruptPending) {
+                         enabled: !vm.logicalProjects.busy.contains(ref.id) && !project.interruptPending,
+                         height: NWLeadMetrics.pausedFooterHeight) {
             Task { _ = await vm.logicalProjects.setPaused(ref, false) }
         }
-        .padding(NWLeadMetrics.footerInset)
+        .padding(.horizontal, NWLeadMetrics.pausedFooterMargin)
+        .padding(.bottom, NWLeadMetrics.pausedFooterMargin)
     }
 
     /// "29m", "2h", "3d": minutes, hours or days since the task settled.
