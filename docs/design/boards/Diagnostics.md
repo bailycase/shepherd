@@ -1,6 +1,8 @@
 # Diagnostics setting
 
-The user approved an opt-in Sentry integration behind a removable Shepherd-owned wrapper.
+The user approved opt-in crash reporting behind a removable Shepherd-owned wrapper.
+All app-authored diagnostics copy and search terms are provider-neutral. Technical integration
+names and user-configured MCP server names are unchanged.
 No image was supplied. This checklist extends SettingsAdvanced using its existing components.
 
 - Group order: Files, Updates, Diagnostics, Reset.
