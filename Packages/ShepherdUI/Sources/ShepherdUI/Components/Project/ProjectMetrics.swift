@@ -226,6 +226,10 @@ public enum NWLeadMetrics {
     /// The pane's footer card ("The project is paused." / "This thread is resolved."): 50pt, 8pt radius.
     public static let footerHeight: CGFloat = 50
     public static let footerInset: CGFloat = 16
+    /// The paused footer alone (ProjectLead-PausedV2): margin 0 / 8 / 8 (no top), padding 8 / 12 / 8 / 8, a 1pt line around a 28pt
+    /// button, so 46pt outer, 8pt from the sides and the bottom. The resolved footer keeps `footerInset` and `footerHeight`.
+    public static let pausedFooterHeight: CGFloat = 46
+    public static let pausedFooterMargin: CGFloat = NW.Space.m
     public static let footerGlyph: CGFloat = 14
 
     /// A worker's thread in the pane: prose and its composer sit 16pt in from the pane's left edge; the composer card ends 16pt

@@ -146,6 +146,11 @@ struct LogicalProjectConversationTests {
         expectScenarioCompleted(result)
     }
 
+    @Test func thePausedFooterMatchesItsSourceGeometryAndTheResolvedFooterKeepsItsOwn() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.footerGeometry() } }
+        expectScenarioCompleted(result)
+    }
+
     @Test func theCoordinatorAppearsInNoOrdinaryThreadList() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.hidden() } }
         expectScenarioCompleted(result)
@@ -1350,6 +1355,46 @@ private static func chipsAndLinks() async throws {
         }
         try await eventuallyOnMain("the pane's dock is drawn") { window.layout(); return !paneOptions().isEmpty }
         #expect(paneOptions().allSatisfy { !$0.isEnabled }, "no second answer is offered while the owner holds one: \(paneOptions().map { "\($0.label ?? "") \($0.isEnabled)" })")
+    }
+
+    // MARK: Footer geometry
+
+    /// ProjectLead-PausedV2's footer: 8pt from the pane's sides and bottom (margin 0 / 8 / 8) around a 46pt card (padding 8, a 28pt
+    /// button, a 1pt line). The resolved footer is its own wrapper (12 / 16 / 16) and keeps its 50pt card.
+    private static func footerGeometry() async throws {
+        let r = try await rig()
+        defer { r.app.stop() }
+        _ = try await r.vm.projectCoordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
+                                                      request: .assign(operationID: UUID(), spaceID: r.space.id, title: "Publish file", prompt: "hello"))
+        try await eventuallyOnMain("the worker settles") { r.app.server.state.projects.first?.tasks.first?.phase == .settled }
+        let task = try #require(r.app.server.state.projects.first?.tasks.first)
+        let paused = try #require(r.app.server.state.projects.first)
+        _ = try await r.vm.projectCoordinator.perform(projectID: paused.id, expectedRevision: paused.revision, request: .pause)
+        try await eventuallyOnMain("paused and acknowledged") { r.app.server.state.projects.first?.paused == true && r.app.server.state.projects.first?.interruptPending == false }
+        r.vm.openLogicalProject(r.ref)
+        let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
+        defer { window.close() }
+        try await eventuallyOnMain("the paused footer is drawn in the pane") {
+            window.layout(); return window.elements().contains { ($0.value ?? $0.label ?? "") == "The project is paused." }
+        }
+        let paneRight = window.window.frame.maxX, paneBottom = window.window.frame.minY
+        let resume = try #require(window.controls().filter { $0.label == "Resume" }.max { $0.frame.minX < $1.frame.minX }?.frame)
+        // The button sits 8pt in from the card's right edge, and the card 8pt in from the pane's edge: 16 from the window's right.
+        #expect(abs(paneRight - resume.maxX - (NWLeadMetrics.pausedFooterMargin + NW.Space.m)) <= 1.5, "Resume ends \(paneRight - resume.maxX) from the pane's edge")
+        // The card is 46 tall around the 28pt button (8 above and below), 8 from the bottom: the button's bottom is 16 from the window's.
+        #expect(abs(resume.minY - paneBottom - (NWLeadMetrics.pausedFooterMargin + NW.Space.m)) <= 1.5, "Resume sits \(resume.minY - paneBottom) above the bottom")
+        #expect(NWLeadMetrics.pausedFooterHeight == 46 && NWLeadMetrics.pausedFooterHeight < NWLeadMetrics.footerHeight)
+
+        // The resolved footer is unchanged: its own 16pt inset and 50pt card.
+        _ = try await r.vm.projectCoordinator.perform(projectID: paused.id, expectedRevision: try #require(r.app.server.state.projects.first).revision, request: .resume)
+        r.vm.logicalProjectPaneTask = task.id
+        try await eventuallyOnMain("resumed") { r.app.server.state.projects.first?.paused == false }
+        try await eventuallyOnMain("the worker detail opens") { window.layout(); return window.element("Mark resolved") != nil }
+        try window.press("Mark resolved")
+        try await eventuallyOnMain("the resolved footer is drawn") { window.layout(); return window.elements().contains { ($0.value ?? $0.label ?? "") == "This thread is resolved." } }
+        let reopen = try #require(window.controls().first { $0.label == "Reopen" }?.frame)
+        #expect(abs(paneRight - reopen.maxX - (NWLeadMetrics.footerInset + NW.Space.m)) <= 1.5, "Reopen ends \(paneRight - reopen.maxX) from the pane's edge")
+        #expect(abs(reopen.minY - paneBottom - (NWLeadMetrics.footerInset + (NWLeadMetrics.footerHeight - 28) / 2)) <= 2, "Reopen sits \(reopen.minY - paneBottom) above the bottom")
     }
 
     // MARK: Hidden coordinator
