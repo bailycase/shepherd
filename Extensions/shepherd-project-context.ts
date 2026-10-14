@@ -67,6 +67,22 @@ export default function projectContext(pi: ExtensionAPI) {
   // bound worker role; availability is not authority. Publication proves live native scope;
   // a plan is only a report in the current native turn, including later manual turns.
   if (!coordinator) {
+      // A thread asks the person through the native dialog: the owner marks the task Waiting on you, wakes the coordinator, and an
+      // answer from the thread, the pane or the conversation reaches this call. A helper child has no person to ask.
+      if (process.env.SHEPHERD_CHILD !== "1") pi.registerTool({
+        name: "project_question", label: "ask a question", exposure: "model-only",
+        description: "Ask the person a blocking question when the task cannot proceed safely without their decision. Give 1–16 distinct options for a choice, or omit options for free text. Question ≤2000 UTF-8 bytes, each option ≤256. Omit secrets. Cancellation is not an answer or permission.",
+        parameters: Type.Object({ question: Type.String({ minLength: 1, maxLength: 2000, pattern: "\\S" }), options: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 256, pattern: "\\S" }), { minItems: 1, maxItems: 16, uniqueItems: true })) }, { additionalProperties: false }),
+        async execute(_call, { question, options }, signal, _update, ctx) {
+          if (Buffer.byteLength(question) > 2000 || options?.some(option => Buffer.byteLength(option) > 256)) {
+            return { content: [{ type: "text", text: "Question exceeds 2000 UTF-8 bytes or an option exceeds 256." }], details: {}, isError: true };
+          }
+          if (!ctx.hasUI) return { content: [{ type: "text", text: "Native question UI unavailable; no answer received." }], details: {}, isError: true };
+          const answer = options ? await ctx.ui.select(question, options, { signal }) : await ctx.ui.input(question, undefined, { signal });
+          const cancelled = signal?.aborted || answer === undefined;
+          return { content: [{ type: "text", text: JSON.stringify(cancelled ? { cancelled: true } : { answer }) }], details: {} };
+        },
+      });
       pi.registerTool({
         name: "project_plan", label: "update plan",
         description: "Report the current turn's full ordered plan (1–20 steps, text ≤500 characters). Use pending/current/done/failed explicitly. Display only, never proof of publication or Project authority. Omit secrets.",
