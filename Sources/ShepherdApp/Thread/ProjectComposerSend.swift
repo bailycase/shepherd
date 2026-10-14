@@ -139,6 +139,9 @@ struct ProjectWorkerThreadStyle: Equatable {
     /// (ProjectLead-ThreadRunning: prose x 1137...1584, card 1137...1568 in a pane 1121...1600).
     var gutter: CGFloat = NWLeadMetrics.paneThreadGutter
     var composerTrailing: CGFloat = NWLeadMetrics.paneComposerTrailing
+    /// A resolved task takes no more messages: its thread draws no composer at all (the footer card with Reopen stands in), and the
+    /// transcript reaches the bottom of the pane.
+    var composerHidden = false
 }
 
 /// How a Project's conversation draws a Project tool's typed result inline (ProjectLead-Started / -AddsSpace): a task card or the
