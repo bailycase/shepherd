@@ -25,6 +25,10 @@ public struct ProjectTask: Codable, Hashable, Sendable, Identifiable {
     public var executionReceipt: ProjectExecutionReceipt?
     public var title: String
     public var prompt: String
+    /// The model and thinking level the coordinator chose for this task (`project_assign`, `project_follow_up`); nil takes
+    /// the Project's thread model and the owner's default thinking.
+    public var model: String?
+    public var thinking: String?
     public var phase: Phase
     public var revision: UInt64
     public var error: String?
@@ -34,9 +38,9 @@ public struct ProjectTask: Codable, Hashable, Sendable, Identifiable {
 
     public init(id: ProjectTaskID = .init(), operationID: UUID, workerAgentID: AgentID = .init(),
                 spaceID: SpaceID, title: String, prompt: String, phase: Phase = .queued, revision: UInt64 = 1,
-                host: ProjectHostReference? = nil) {
+                host: ProjectHostReference? = nil, model: String? = nil, thinking: String? = nil) {
         self.id = id; self.operationID = operationID; self.workerAgentID = workerAgentID
-        self.host = host
+        self.host = host; self.model = model; self.thinking = thinking
         self.spaceID = spaceID; self.title = title; self.prompt = prompt; self.phase = phase; self.revision = revision
     }
 }
@@ -65,6 +69,8 @@ public struct ProjectMessage: Codable, Hashable, Sendable, Identifiable {
     public var text: String
     public var phase: Phase
     public var source: ProjectEventSource?
+    /// Redacted native refusal detail for a known failed send, never proof of an unknown outcome.
+    public var failureDetail: String?
     /// Only the owner's human `.message` admission sets this; legacy/synthetic messages are ineligible.
     public var humanSubmitted: Bool?
     public var answerReceipts: [ProjectChatAnswerReceipt]?

@@ -660,6 +660,7 @@ final class ShepherdViewModel {
         // And each revision pi reaches after, within a frame: the server pushes the threads on
         // screen (those whose poll loop runs), and the store pulls at most every
         // `NativeThreadStore.pushedPullSpacing`. The polls stay as the fallback.
+        threadStores.configure = { [weak self] agent, store in store.offline = self?.coordinatorHeldOff(agent) ?? false }
         threadStores.onLiveChange = { [weak self] live in
             guard let self else { return }
             sessions.watchThreadRevisions(of: live.union(sidebarOpeningTurns))
@@ -1118,7 +1119,14 @@ final class ShepherdViewModel {
         let runs = server.openAutomationRuns
         if runs != openAutomationRuns { openAutomationRuns = runs }
         reconcileSidebarCompletions()
-        threadStores.prune(live: Set(state.agents.map(\.id)))
+        // A Project's coordinator ID is recorded before its agent is registered, while its page already holds the store: keep it.
+        threadStores.prune(live: Set(state.agents.map(\.id)).union(state.projects.compactMap(\.coordinatorAgentID)))
+        // The owner's state, not a page's lifetime, says whether a coordinator's pi is held off on purpose: every adoption restates it.
+        for agent in state.projects.compactMap(\.coordinatorAgentID) {
+            guard let store = threadStores.existing(for: agent) else { continue }
+            let held = coordinatorHeldOff(agent)
+            if store.offline != held { store.offline = held }
+        }
         browsers.prune(state: state)
         notifyLocalQuestions()
         checkouts?.sync(agents: state.agents.map(\.id))

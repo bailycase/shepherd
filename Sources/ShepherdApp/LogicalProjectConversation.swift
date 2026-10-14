@@ -75,7 +75,7 @@ struct ConversationThread: View {
     }
 
     var body: some View {
-        ThreadView(store: store, active: true, isFocused: true, request: request, commandKey: nil, agentName: project.name,
+        ThreadView(store: store, active: true, isFocused: true, request: request, preview: preview, commandKey: nil, agentName: project.name,
                    listModels: ownerModels, allowsLocalFiles: ref.home == .local,
                    retainedInput: agent.map { vm.threadStores.input(for: $0) } ?? vm.emptyProjectInput)
             .environment(\.projectComposerSend, composerSend)
@@ -87,6 +87,23 @@ struct ConversationThread: View {
                 ProjectTaskLinks.open(url, in: vm, project: projectID, presentation: presentation) ? .handled : .systemAction
             })
             .id(agent?.rawValue ?? "empty")
+            // This Mac's own coordinator is held off by the view model from the owner's state (`coordinatorHeldOff`), on every adoption and
+            // when its store is made. A remote owner's store is told here, from the Project it pushed (this Mac cannot see the owner's
+            // processes: a pi the owner runs still serves, and a served snapshot is ready whatever `offline` says).
+            .onChange(of: agent != nil && ProjectComposerSend.isOffline(paused: project.paused, messages: project.messages, coordinatorLive: false),
+                      initial: true) { _, offline in
+                if ref.home != .local { store.offline = offline }
+            }
+    }
+
+    /// A local coordinator's saved history, read from pi's session file while its pi is not running (a relaunched Project's coordinator
+    /// is not launched until a message is sent), as an ordinary thread does. A remote owner serves its own.
+    private var preview: NativeThreadStore.Preview? {
+        // The owner's own snapshot, not the view model's observed state: the page must not re-pick its store when the agent changes.
+        let owner = vm.server.state
+        guard let agent, case .local = ref.home, let record = owner.agents.first(where: { $0.id == agent }), let paneID = record.paneID,
+              let pane = owner.tabs.first(where: { $0.id == record.tabID })?.layout.leaf(withID: paneID) else { return nil }
+        return PiSessionFile.previewLoader(sessionID: record.effectivePiSessionID, cwd: pane.cwd, sessionsRoot: vm.server.pi.sessionsRoot)
     }
 
     /// The owner's own model catalog for a remote Project (this Mac's, when nil), as a remote thread's picker lists.
@@ -167,7 +184,7 @@ struct ConversationThread: View {
             dock: (presentation.summary != nil || !offers.isEmpty) ? { [vm, ref] in
                 AnyView(VStack(spacing: NWLeadMetrics.dockGap) {
                     ForEach(offers) { proposal in SpaceOffer(vm: vm, ref: ref, proposal: proposal) }
-                    ForEach(questions) { task in TaskQuestion(vm: vm, ref: ref, task: task) }
+                    ForEach(questions) { task in TaskQuestion(vm: vm, ref: ref, task: task, paused: project.paused) }
                     if let summary = presentation.summary { ProjectSummaryStrip(summary: summary) }
                 })
             } : nil,
@@ -209,6 +226,13 @@ struct TaskQuestion: View {
     var vm: ShepherdViewModel
     let ref: LogicalProjectRef
     let task: ProjectTaskRow
+    var paused = false
+
+    /// What happens to a reply, truthfully: the worker is blocked on this question (nothing is guessed), and while the Project is
+    /// paused an answer is held by the owner until Resume.
+    static func footer(title: String, paused: Bool) -> String {
+        paused ? "Or just reply in chat. Your answer waits until you resume." : "Or just reply in chat. \(title) is waiting for your answer."
+    }
 
     var body: some View {
         let store = vm.projectWorkerStore(ref.home, task.workerAgentID)
@@ -228,7 +252,7 @@ struct TaskQuestion: View {
         NWLeadQuestionCard(
                 question: prompt.question,
                 options: prompt.options.map { NWLeadQuestionCard.Option(id: $0.number, title: $0.title, detail: $0.detail, recommended: $0.recommended) },
-                footer: "Or just reply in chat. \(task.title) keeps going on its best guess until you answer.",
+                footer: Self.footer(title: task.title, paused: paused),
                 enabled: store.supports("answer") && prompt.blocked == nil && !vm.logicalProjects.busy.contains(ref.id)) { option in
                     guard let reply = prompt.dialogAnswer(.option(prompt.options.first { $0.number == option.id } ?? prompt.options[0])) else { return }
                     let request = NativeThreadRequest.answer(expectedSessionID: session.piSessionID, generation: session.generation,

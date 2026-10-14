@@ -12,6 +12,7 @@ struct NewProjectSheet: View {
     @Binding var draft: NewLogicalProjectDraft
     let dismiss: () -> Void
     @State private var failure: String?
+    @State private var choosingFolder = false
     @FocusState private var nameFocused: Bool
 
     private var spaces: [Space] { vm.linkableLogicalProjectSpaces }
@@ -68,6 +69,12 @@ struct NewProjectSheet: View {
         // field takes focus when the person clicks it, and an editable control behaves as it does anywhere else.
         .onAppear { if draft.name.isEmpty { nameFocused = true } }
         .nwAnimation(.disclosure, value: failure)
+        .sheet(isPresented: $choosingFolder) {
+            // One owner today: This Mac. The folder becomes a Space here, and the new project links it with its first request.
+            ProjectFolderPicker(vm: vm, route: .thisMac, chosen: { space in if !draft.spaces.contains(space) { draft.spaces.append(space) } },
+                                close: { choosingFolder = false })
+                .dialogSheetFrame()
+        }
     }
 
     // MARK: Parts
@@ -132,11 +139,15 @@ struct NewProjectSheet: View {
             ForEach(addable) { space in
                 Button(space.name) { draft.spaces.append(space.id) }
             }
+            // A fresh profile has no Spaces: the menu still offers a folder (ProjectLead-AddsSpace), registered and added in one step.
+            if addable.isEmpty { Button("No spaces to choose from yet") {}.disabled(true) }
+            Divider()
+            Button(ProjectFolderRoute.thisMac.menuTitle) { choosingFolder = true }
         }
         .padding(.vertical, -NWProjectSettingsMetrics.popupSlotMargin)
-        .disabled(addable.isEmpty)
+        .disabled(draft.creating)
         .accessibilityLabel("Add a space…")
-        .help(addable.isEmpty ? (spaces.isEmpty ? "Add a space in Settings ▸ Spaces first." : "Every space is already added.") : "Add a space…")
+        .help(addable.isEmpty && !spaces.isEmpty ? "Every space is already added. Choose a folder to add another." : "Add a space…")
     }
 
     private var footer: some View {

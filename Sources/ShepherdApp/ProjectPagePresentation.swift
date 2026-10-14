@@ -44,6 +44,8 @@ struct ProjectTaskRow: Identifiable, Equatable {
     /// The operations that delivered the coordinator's assignment to the worker: its first user message carries one, which is how
     /// the worker thread tells the assignment from a person's own steering message.
     let assignmentOperations: Set<UUID>
+    /// The owner already holds the person's answer to this task's question (any phase of it but delivered).
+    var answerHeld = false
 }
 
 /// A Project's page state: its counts and rows, never computed in a view body.
@@ -153,6 +155,7 @@ struct ProjectPagePresentation: Equatable {
         return ProjectTaskRow(id: task.id, title: task.title, group: group, phase: task.phase, detail: detail, lead: lead,
                               workerAgentID: task.workerAgentID, spaceID: task.spaceID, revision: task.revision,
                               canResolve: task.phase == .settled, canReopen: task.phase == .resolved, settledAt: task.settledAt, files: files,
-                              assignmentOperations: Set([task.operationID] + [task.nativeDeliveryID].compactMap { $0 }))
+                              assignmentOperations: Set([task.operationID] + [task.nativeDeliveryID].compactMap { $0 }),
+                              answerHeld: task.pendingAnswer != nil)
     }
 }

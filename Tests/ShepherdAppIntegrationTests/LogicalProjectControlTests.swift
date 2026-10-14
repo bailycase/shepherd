@@ -23,6 +23,21 @@ struct LogicalProjectControlTests {
         expectScenarioCompleted(result)
     }
 
+    @Test func aFreshProfileWithNoSpacesOffersChooseFolderInNewProjectAndItOpensThePicker() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.firstFolderInNewProject() } }
+        expectScenarioCompleted(result)
+    }
+
+    @Test func aFreshProfileWithNoSpacesOffersChooseFolderInProjectSettingsAndItOpensThePicker() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.firstFolderInSettings() } }
+        expectScenarioCompleted(result)
+    }
+
+    @Test func addToProjectRegistersTheFolderAsASpaceLinksItAndReusesARegisteredOne() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.folderPicker() } }
+        expectScenarioCompleted(result)
+    }
+
     @Test func theOverviewsRowsAndSuggestionsArePressableAtEveryStateOfARealProject() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.overview() } }
         expectScenarioCompleted(result)
@@ -128,6 +143,130 @@ struct LogicalProjectControlTests {
         try await eventuallyOnMain("the Spaces tab opens") { vm.logicalProjectSettingsTab == .spaces }
     }
 
+    // MARK: First folder (ProjectLead-AddsSpace: choose a folder, then Add to project)
+
+    private static func addSpaceMenu(under host: NSView) throws -> AccessibilityNode {
+        try #require(AccessibilityNode.all(under: host).first { node in
+            node.role == ControlRole.menuButton && (node.object.perform(NSSelectorFromString("accessibilityHelp"))?.takeUnretainedValue() as? String)?.contains("Add a space") == true
+                || node.role == ControlRole.menuButton && node.label == "Add a space…"
+        }, "Add a space… is a popup")
+    }
+
+    /// Types `folder` into the picker's Path field as a person would, waits for its listing, then presses its primary button.
+    private static func pickFolder(_ folder: URL, in picker: NSView) async throws {
+        // The picker's path field carries no label: it is the one text field in the dialog.
+        let field = try #require(AccessibilityNode.all(under: picker).first { $0.role == "AXTextField" })
+        _ = field.object.perform(NSSelectorFromString("setAccessibilityValue:"), with: folder.path)
+        func nativeField(_ view: NSView) -> NSTextField? {
+            if let text = view as? NSTextField, text.stringValue == folder.path { return text }
+            return view.subviews.compactMap(nativeField).first
+        }
+        let text = field.object as? NSTextField ?? (field.object as? NSCell)?.controlView as? NSTextField ?? nativeField(picker)
+        text?.delegate?.controlTextDidChange?(Notification(name: NSControl.textDidChangeNotification, object: text))
+        picker.layoutSubtreeIfNeeded()
+        try await eventuallyOnMain("the picker lists the folder's parent and offers Add to project") {
+            picker.layoutSubtreeIfNeeded()
+            return AccessibilityNode.all(under: picker).contains { $0.label == folder.lastPathComponent }
+                && ControlPress.controls(in: picker).first { $0.label == "Add to project" }?.isEnabled == true
+        }
+        try ControlPress.press("Add to project", under: picker)
+    }
+
+    /// A new profile has no Spaces. The menu used to be disabled, a dead end; it offers a folder. The scenario ends with the picker open:
+    /// `NativeMenuChoice` leaves the menu's tracking open, and closing a sheet under it can end the test process (docs/testing.md), so
+    /// what "Add to project" does is `folderPicker`'s.
+    private static func firstFolderInNewProject() async throws {
+        AccessibilityNode.enable()
+        let app = try AppHarness()
+        app.settings.projectsEnabled = true
+        defer { app.stop() }
+        let vm = try await app.start(with: ShepherdState(spaces: []))
+        #expect(vm.linkableLogicalProjectSpaces.isEmpty, "cold: no registered Space")
+        vm.showNewProject()
+        let window = OffscreenWindow(size: CGSize(width: 1100, height: 850), dark: true, RootView(vm: vm))
+        defer { window.close() }
+        try await eventuallyOnMain("the sheet") { window.layout(); return window.window.attachedSheet?.contentView != nil }
+        let sheet = try #require(window.window.attachedSheet?.contentView)
+        sheet.layoutSubtreeIfNeeded()
+        let menu = try addSpaceMenu(under: sheet)
+        #expect(menu.isEnabled, "the menu is not a dead end with no Spaces")
+        let offered = try await NativeMenuChoice.choose("Choose folder…", from: menu, includingUnshownWindows: true)
+        #expect(offered == ["No spaces to choose from yet", "Choose folder…"], "\(offered)")
+        try await eventuallyOnMain("the folder picker opens over the sheet") {
+            guard let picker = window.window.attachedSheet?.attachedSheet?.contentView else { return false }
+            return ControlPress.controls(in: picker).contains { $0.label == "Add to project" }
+                && AccessibilityNode.all(under: picker).contains { ($0.value ?? $0.label ?? "") == "Add a space on this Mac" }
+        }
+        #expect(app.server.state.spaces.isEmpty && vm.newLogicalProject?.spaces.isEmpty == true, "opening the picker registers nothing")
+    }
+
+    /// The same from Project settings' Spaces tab with no Space at all.
+    private static func firstFolderInSettings() async throws {
+        AccessibilityNode.enable()
+        let app = try AppHarness()
+        app.settings.projectsEnabled = true
+        defer { app.stop() }
+        let vm = try await app.start(with: ShepherdState())
+        let id = ProjectID()
+        guard case .project(let project) = try await app.server.logicalProjects(.create(projectID: id, name: "Sample App", goal: "", linkedSpaceIDs: [])) else {
+            throw ControlTestError("no project")
+        }
+        try await eventuallyOnMain("adopted") { vm.state.projects.first?.revision == project.revision }
+        vm.openLogicalProjectSettings(LogicalProjectRef(home: .local, id: id), tab: .spaces)
+        let window = OffscreenWindow(size: CGSize(width: 1208, height: 900), dark: true, RootView(vm: vm))
+        defer { window.close() }
+        try await eventuallyOnMain("the empty Spaces tab") {
+            window.layout(); return window.elements().contains { ($0.value ?? $0.label ?? "").hasPrefix("No spaces yet") }
+        }
+        let menu = try addSpaceMenu(under: window.host)
+        #expect(menu.isEnabled, "the menu is not a dead end with no Spaces")
+        let offered = try await NativeMenuChoice.choose("Choose folder…", from: menu, includingUnshownWindows: true)
+        #expect(offered == ["Choose folder…"], "\(offered)")
+        try await eventuallyOnMain("the folder picker opens") {
+            guard let picker = window.window.attachedSheet?.contentView else { return false }
+            return ControlPress.controls(in: picker).contains { $0.label == "Add to project" }
+        }
+        #expect(app.server.state.spaces.isEmpty)
+    }
+
+    /// The picker both menus open (`ProjectFolderPicker`), pressed as a person does: "Add to project" registers the folder as a visible
+    /// Space without opening a thread and hands it over (Project settings links it); a folder that is already a Space is reused.
+    private static func folderPicker() async throws {
+        AccessibilityNode.enable()
+        let app = try AppHarness()
+        app.settings.projectsEnabled = true
+        defer { app.stop() }
+        let first = app.dir.appendingPathComponent("api"), second = app.dir.appendingPathComponent("web")
+        for url in [first, second] { try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true) }
+        let vm = try await app.start(with: ShepherdState())
+        let id = ProjectID()
+        guard case .project(let project) = try await app.server.logicalProjects(.create(projectID: id, name: "Sample App", goal: "", linkedSpaceIDs: [])) else {
+            throw ControlTestError("no project")
+        }
+        try await eventuallyOnMain("adopted") { vm.state.projects.first?.revision == project.revision }
+        let ref = LogicalProjectRef(home: .local, id: id)
+        let destination = vm.shownDestination
+        func pick(_ folder: URL) async throws {
+            let window = OffscreenWindow(size: CGSize(width: 700, height: 600), dark: true,
+                                         ProjectFolderPicker(vm: vm, route: .thisMac, chosen: { space in _ = await vm.logicalProjects.link(ref, space: space) }, close: {}))
+            defer { window.close() }
+            try await pickFolder(folder, in: window.host)
+        }
+        try await pick(first)
+        try await eventuallyOnMain("registered and linked") {
+            let state = app.server.state
+            return state.spaces.count == 1 && state.projects.first?.linkedSpaces.map(\.spaceID) == state.spaces.map(\.id)
+        }
+        let space = try #require(app.server.state.spaces.first)
+        #expect(canonical(URL(fileURLWithPath: space.path)) == canonical(first) && !space.hidden && space.name == "api")
+        #expect(app.server.state.projects.first?.linkedSpaces.first?.provenance == .user)
+        #expect(vm.shownDestination == destination, "adding the folder opens no thread")
+        try await pick(second)
+        try await eventuallyOnMain("a second Space is linked") { app.server.state.spaces.count == 2 && app.server.state.projects.first?.linkedSpaces.count == 2 }
+        let again = await vm.spaceForProject(at: first)
+        #expect(again == space.id && app.server.state.spaces.count == 2, "a registered folder is reused, not duplicated")
+    }
+
     // MARK: New project
 
     private static func create() async throws {
@@ -185,7 +324,7 @@ struct LogicalProjectControlTests {
             node.role == ControlRole.menuButton && (node.object.perform(NSSelectorFromString("accessibilityHelp"))?.takeUnretainedValue() as? String) == "Add a space…"
         }, "Add a space… is a popup")
         let offered = try await NativeMenuChoice.choose("sample-app-api", from: addSpace)
-        #expect(offered == ["sample-app-api"], "the menu offers the owner's real Spaces: \(offered)")
+        #expect(offered == ["sample-app-api", "Choose folder…"], "the menu offers the owner's real Spaces, then a folder: \(offered)")
         try await eventuallyOnMain("the chosen Space reaches the draft") { vm.newLogicalProject?.spaces == [space.id] }
         sheet.layoutSubtreeIfNeeded()
         try await eventuallyOnMain("Create is enabled once Name is filled") {

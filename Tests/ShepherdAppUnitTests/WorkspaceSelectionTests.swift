@@ -48,6 +48,18 @@ struct WorkspaceSelectionTests {
         #expect(orders.allSatisfy { $0 == w.stableOrder })
     }
 
+    /// A Project coordinator's thread belongs to its Project page alone. A hidden second host on the same store suspended the
+    /// page's poll, so the first reply showed only after leaving the project and coming back.
+    @Test func aProjectCoordinatorsLayoutIsNeverMounted() {
+        let w = Workspace()
+        var coordinator = w.b.agent
+        coordinator.coordinatorFor = ProjectID()
+        let state = ShepherdState(spaces: [w.home, w.other], tabs: [w.c.tab, w.b.tab, w.a.tab], agents: [w.a.agent, coordinator, w.c.agent])
+        var selection = WorkspaceSelection(state: state, selectedSpaceID: w.home.id, selectedAgentID: nil)
+        selection.destination = .project
+        #expect(selection.mountedTabs.map(\.id) == [w.a.tab.id, w.c.tab.id])
+    }
+
     /// A page (New thread, Automations, Hosts) hides every layout and keeps every one mounted,
     /// in the same order: leaving it is a flip back, never a remount.
     @Test(arguments: MainDestination.allCases)
