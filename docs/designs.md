@@ -1332,8 +1332,10 @@ press. The engine is `DesignGit` (ShepherdSessions), run by `SessionServer+Desig
 #### The merge
 
 A pull whose history diverged answers `DesignGitMerge` (GitDesignConflict): your local commit and
-the incoming one, each with its files. **Keep working locally** drops it (both commits stay;
-Pull again later). **Resolve with agent** (`resolveDesignMergeWithAgent`):
+the incoming one, each with its files. **Keep working locally** closes the dialog and the merge
+waits (the chip reads Pull paused and opens the dialog again; the canvas says Pull paused).
+**Drop merge**, in the dialog, lets it go (`keepDesignLocal`: both commits stay; Pull again
+later). **Resolve with agent** (`resolveDesignMergeWithAgent`):
 
 1. Shepherd prepares a merge copy in `<design>/.git-merge/` with `git merge-tree`: what git merged
    cleanly, and conflict markers (with the merge base) where it couldn't.
@@ -1363,6 +1365,11 @@ Stop** ends the turn and the merge reads Stopped; the copy is kept for another t
 exits mid-merge fails it. **A restart never resumes a merge**: the merge is server memory only,
 and launch removes any `.git-merge/` left behind (`DesignGit.dropLeftoverMergeCopies`). Nothing
 is committed or pushed without the user.
+
+**Comment authors.** A comment or reply made on a shared design records its author's Git
+`user.name` (`authorName`, read once per design from git), so after a pull each card names who
+wrote it; the viewer's own (their name, or none) reads "You" and the design agent's "Design
+agent". A comment made before the design was shared has no name.
 
 **What the agent can reach.** The merge copy is in the design's folder, which the agent works
 in; the repository is not. The brief tells the agent to edit only the copy and never run git,

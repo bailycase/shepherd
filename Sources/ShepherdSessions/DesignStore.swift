@@ -147,6 +147,8 @@ public final class DesignStore: @unchecked Sendable {
     var loaded: [DesignID: Loaded] = [:]
     /// Each design's comments.json as last read or written. Queue-confined.
     private var commentFiles: [DesignID: DesignComments] = [:]
+    /// Each shared design's Git `user.name`, read once (`gitAuthorName`). Queue-confined.
+    private var gitAuthorNames: [DesignID: String?] = [:]
     /// Each served file's hash, while its size and modification time hold. Queue-confined.
     private struct ServedHash {
         var size: Int
@@ -376,6 +378,7 @@ public final class DesignStore: @unchecked Sendable {
 
     /// Queue: what the store remembers of a design, dropped when its folder moves or goes.
     func forget(_ id: DesignID) {
+        gitAuthorNames[id] = nil
         loaded[id] = nil
         commentFiles[id] = nil
         servedHashes[id] = nil
@@ -2055,7 +2058,7 @@ public final class DesignStore: @unchecked Sendable {
                                         label: template.labels[draft.tid],
                                         target: draft.target.flatMap(DesignViewRecord.label),
                                         rect: draft.rect.flatMap { $0.isValid ? $0 : nil },
-                                        text: text, author: .user, createdAt: date)
+                                        text: text, author: .user, authorName: self.gitAuthorName(id), createdAt: date)
             file.comments.append(comment)
             try self.saveComments(&file, id)
             return comment
@@ -2110,7 +2113,8 @@ public final class DesignStore: @unchecked Sendable {
                                             label: template.labels[draft.tid],
                                             target: draft.target.flatMap(DesignViewRecord.label),
                                             rect: draft.rect.flatMap { $0.isValid ? $0 : nil },
-                                            text: text, author: .user, createdAt: date, proposal: draft.proposal)
+                                            text: text, author: .user, authorName: self.gitAuthorName(id), createdAt: date,
+                                            proposal: draft.proposal)
                 file.comments.append(comment)
                 result.append(comment)
                 added.insert(comment.id)
@@ -2245,7 +2249,8 @@ public final class DesignStore: @unchecked Sendable {
             guard file.comments[index].replies.count < DesignComment.maxReplies else {
                 throw DesignStoreError.invalidComment("a comment keeps at most \(DesignComment.maxReplies) replies")
             }
-            file.comments[index].replies.append(DesignCommentReply(author: author, text: text, createdAt: date))
+            file.comments[index].replies.append(DesignCommentReply(author: author, authorName: author == .user ? self.gitAuthorName(id) : nil,
+                                                                   text: text, createdAt: date))
             try self.saveComments(&file, id)
             return file.comments[index]
         }
@@ -2272,6 +2277,20 @@ public final class DesignStore: @unchecked Sendable {
             try self.saveComments(&file, id)
             return file.comments[index]
         }
+    }
+
+    /// Queue: the user's Git name on a design shared through Git (its repository's `user.name`,
+    /// as git reads it), so a coworker who pulls the comment sees who wrote it; nil for a design
+    /// that isn't shared. Read once per design.
+    private func gitAuthorName(_ id: DesignID) -> String? {
+        if let known = gitAuthorNames[id] { return known }
+        guard let folder = folder(for: id) else { return nil }
+        let git = DesignGitRunner(folder: folder)
+        guard git.isShared else { return nil }
+        let name = (try? git.text(["config", "user.name"]))?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let kept = name.flatMap { $0.isEmpty ? nil : String($0.prefix(80)) }
+        gitAuthorNames[id] = kept
+        return kept
     }
 
     /// The design's comments.json; an empty one when there is none yet.

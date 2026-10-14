@@ -24,9 +24,16 @@ final class DesignGitDesignState {
     var preview: NWGitPanelState.Preview?
     /// The last time the remote was reached, kept across a failed fetch (Offline · last checked).
     var lastChecked: Double?
-    /// "Pull paused" and "Opened from Git" on the canvas, until dismissed.
-    var pausedNoticeDismissed = false
+    /// "Opened from Git" on the canvas, until dismissed.
     var openedNotice: String?
+    /// The chip's trailing edge, from the window's: the panel's trailing edge lines up with it.
+    private(set) var chipTrailing: CGFloat = 0
+
+    func placeChip(trailing: CGFloat) {
+        if chipTrailing != trailing { chipTrailing = trailing }
+    }
+    /// A Git action's failure, in the panel's notice (never a modal).
+    var failure: String?
 
     func set(_ next: DesignGitState?) {
         if state != next { state = next }
@@ -88,12 +95,23 @@ extension ShepherdViewModel {
 
     // MARK: The chip
 
-    /// The chip's press: Share with Git before the design is shared; the merge dialog while a
-    /// pull waits on it; else the panel (fetching first, so its sync line is current).
+    /// The chip's press, as the board's chip goes (DesignGitStatus): Share with Git before the
+    /// design is shared; Pull paused (a merge waiting, stopped or failed) opens the merge dialog;
+    /// Merging shows the chat, where the agent works; else the panel (fetching first, so its
+    /// sync line is current), in its merge mode once the merge is ready.
     func pressDesignGitChip(_ id: DesignID) {
         let git = designGit(id)
         guard let state = git.state else { openDesignGitShare(id); return }
-        if state.merge?.phase == .conflict { designGitMergeDialog = id; return }
+        switch state.merge?.phase {
+        case .conflict?, .stopped?, .failed?:
+            designGitMergeDialog = id
+            return
+        case .running?:
+            designScreens[id]?.paneTab = .chat
+            return
+        case .ready?, nil:
+            break
+        }
         git.panelOpen.toggle()
         if git.panelOpen {
             if git.selected == nil {
@@ -131,7 +149,8 @@ extension ShepherdViewModel {
         guard let git = designGitStates[id], let state = git.state else { return nil }
         return DesignGitPresentation.panel(.init(state: state, drawing: designAgentDrawing(id), working: git.working,
                                                  selected: git.selected, preview: git.preview,
-                                                 boards: designScreens[id]?.snapshot?.index.boards ?? [:], lastChecked: git.lastChecked))
+                                                 boards: designScreens[id]?.snapshot?.index.boards ?? [:], lastChecked: git.lastChecked,
+                                                 failure: git.failure, hasMessage: !git.message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
     }
 
     // MARK: Share
@@ -199,10 +218,8 @@ extension ShepherdViewModel {
     func commitDesignGit(_ id: DesignID, push: Bool) {
         let git = designGit(id)
         let message = git.message.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !git.working, !message.isEmpty else {
-            if message.isEmpty { remoteActionError = "Write a commit message first." }
-            return
-        }
+        // The commit buttons are disabled while the message is empty.
+        guard !git.working, !message.isEmpty else { return }
         let merging = git.state?.merge?.phase == .ready
         runDesignGit(id) { server in
             let state = merging ? try await server.commitDesignMerge(id, message: message, push: push)
@@ -228,16 +245,16 @@ extension ShepherdViewModel {
         Task {
             defer { git.working = false }
             do {
+                git.failure = nil
                 switch try await server.pullDesign(id) {
                 case .needsMerge:
                     git.panelOpen = false
-                    git.pausedNoticeDismissed = false
                     designGitMergeDialog = id
                 case .updated, .upToDate: break
                 }
                 git.set(try await server.designGitState(id))
             } catch {
-                remoteActionError = Self.message(error)
+                git.failure = Self.message(error)
             }
         }
     }
@@ -250,11 +267,12 @@ extension ShepherdViewModel {
         Task {
             defer { git.working = false }
             do {
+                git.failure = nil
                 _ = try await body(server)
+                // A push that failed shows as the panel's push-failed state, with Retry push.
                 git.set(try await server.designGitState(id))
-                if let failed = git.state?.status.pushFailed { remoteActionError = "Couldn't push: \(failed)" }
             } catch {
-                remoteActionError = Self.message(error)
+                git.failure = Self.message(error)
             }
         }
     }
@@ -267,7 +285,14 @@ extension ShepherdViewModel {
 
     // MARK: The merge
 
+    /// Keep working locally (GitDesignConflict's close): the dialog goes; the merge waits, the
+    /// chip reads Pull paused and the canvas says so until the user resolves it or drops it.
     func keepDesignGitLocal(_ id: DesignID) {
+        designGitMergeDialog = nil
+    }
+
+    /// Drop the merge (the panel's, while it waits): both commits stay; Pull again later.
+    func dropDesignGitMerge(_ id: DesignID) {
         designGitMergeDialog = nil
         Task {
             await server.keepDesignLocal(id)
@@ -279,12 +304,16 @@ extension ShepherdViewModel {
     /// shows it; the dialog goes.
     func resolveDesignGitMerge(_ id: DesignID) {
         designGitMergeDialog = nil
+        designGit(id).failure = nil
         let server = server
         Task {
             do {
                 try await server.resolveDesignMergeWithAgent(id)
+                designScreens[id]?.paneTab = .chat
             } catch {
-                remoteActionError = Self.message(error)
+                designGit(id).failure = Self.message(error)
+                // The dialog comes back with why, so the merge isn't left without a way on.
+                designGitMergeDialog = id
             }
             refreshDesignGit(id)
         }
@@ -334,6 +363,8 @@ struct DesignGitSheetsOverlay: View {
             if let model = vm.designGitShare {
                 DesignGitShareSheetHost(model: model, close: { if !model.working { vm.designGitShare = nil } },
                                         share: { vm.runDesignGitShare(model) })
+                    // Never taller than the window: its middle scrolls instead.
+                    .padding(.vertical, NW.Space.xl)
                     .accessibilityAddTraits(.isModal)
                     .nwTransition(.overlay, anchor: .center)
             } else if let model = vm.designGitOpen {
@@ -350,7 +381,9 @@ struct DesignGitSheetsOverlay: View {
                     .nwTransition(.content)
                 NWGitMergeDialog(branch: status.branch, upstream: status.upstream,
                                  local: DesignGitPresentation.commit(merge.ours, local: true), incoming: DesignGitPresentation.commit(merge.theirs),
-                                 keepLocal: { vm.keepDesignGitLocal(id) }, resolve: { vm.resolveDesignGitMerge(id) })
+                                 failure: vm.designGitStates[id]?.failure ?? merge.reason,
+                                 keepLocal: { vm.keepDesignGitLocal(id) }, resolve: { vm.resolveDesignGitMerge(id) },
+                                 drop: { vm.dropDesignGitMerge(id) })
                     .accessibilityAddTraits(.isModal)
                     .nwTransition(.overlay, anchor: .center)
                     .onExitCommand { vm.designGitMergeDialog = nil }
@@ -400,11 +433,14 @@ struct DesignGitCanvasLayer: View {
             GeometryReader { geo in
                 ZStack(alignment: .topTrailing) {
                     if git.panelOpen, let panel = vm.designGitPanel(designID) {
+                        // Under the chip (GitDesignChanges): its trailing edge lines up with the
+                        // chip's, 4pt below the toolbar, never past the window's edges.
+                        let trailing = min(max(NW.Space.l, git.chipTrailing), max(NW.Space.l, geo.size.width - NWGitMetrics.panelWidth - NW.Space.l))
                         DesignGitPanelHost(git: git, panel: panel,
-                                           maxHeight: max(NWGitMetrics.panelMinHeight, geo.size.height - 2 * NW.Space.l),
+                                           maxHeight: max(NWGitMetrics.panelMinHeight, geo.size.height - NW.Space.xs - NW.Space.l),
                                            vm: vm, designID: designID)
-                            .padding(.top, NW.Space.l)
-                            .padding(.trailing, NW.Space.l)
+                            .padding(.top, NW.Space.xs)
+                            .padding(.trailing, trailing)
                             .nwTransition(.overlay, anchor: .topTrailing)
                     }
                 }
@@ -413,18 +449,25 @@ struct DesignGitCanvasLayer: View {
             .allowsHitTesting(git.panelOpen)
             .nwAnimation(.overlay, value: git.panelOpen)
         case .notices:
-            VStack(spacing: NW.Space.m) {
+            // As the boards place them: Pull paused at the canvas's bottom leading corner (16pt
+            // in, 80pt up, over the canvas toolbar); the Opened from Git toast at its bottom
+            // center, 24pt up. Pull paused stays while the merge waits; the toast until dismissed.
+            ZStack {
+                if [.conflict, .stopped, .failed].contains(git.state?.merge?.phase) {
+                    NWGitCanvasNotice(.paused, title: "Pull paused",
+                                      detail: "Your work is safe. Resolve overlapping changes before updating the canvas.")
+                        .padding(.leading, NW.Space.xl)
+                        .padding(.bottom, NWGitMetrics.pausedBottom)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                }
                 if let detail = git.openedNotice {
                     NWGitCanvasNotice(.opened, title: "Opened from Git", detail: detail, dismiss: { git.openedNotice = nil })
-                }
-                if [.conflict, .stopped, .failed].contains(git.state?.merge?.phase), !git.pausedNoticeDismissed {
-                    NWGitCanvasNotice(.paused, title: "Pull paused",
-                                      detail: "Your work is safe. Resolve overlapping changes before updating the canvas.",
-                                      dismiss: { git.pausedNoticeDismissed = true })
+                        .padding(.bottom, NWGitMetrics.toastBottom)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                        .nwTransition(.sheet, edge: .bottom)
                 }
             }
-            .padding(.top, NW.Space.l)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .nwAnimation(.sheet, value: git.openedNotice)
         }
     }
 }

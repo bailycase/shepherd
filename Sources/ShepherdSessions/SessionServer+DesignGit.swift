@@ -386,7 +386,9 @@ extension SessionServer {
                     self.designGitMerges[designID]?.merge.phase = .ready
                 } else {
                     self.designGitMerges[designID]?.merge.phase = .failed
-                    self.designGitMerges[designID]?.merge.reason = "I couldn't verify the merge: \(problems.prefix(3).joined(separator: "; ")). "
+                    // Files by their names in the design ("A-phone.dc.html"), not the repository's paths.
+                    let shown = problems.prefix(3).map { $0.replacingOccurrences(of: "project/", with: "") }
+                    self.designGitMerges[designID]?.merge.reason = "I couldn't verify the merge: \(shown.joined(separator: "; ")). "
                         + "Your original design and both commits are unchanged."
                 }
                 self.designGitChanged(designID)

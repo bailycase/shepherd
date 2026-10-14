@@ -130,7 +130,11 @@ struct DesignGitTests {
         #expect(coworker.server.state.agents.isEmpty, "opening does not start an agent")
         let snapshot = try await coworker.server.designSnapshot(opened.id)
         #expect(snapshot.index.boards.count == DesignFixtures.checkout.count)
-        #expect(try await coworker.server.designComments(opened.id).comments.map(\.text) == ["Show the absolute counts next to the percentages."])
+        let pulled = try await coworker.server.designComments(opened.id).comments
+        #expect(pulled.map(\.text) == ["Show the absolute counts next to the percentages."])
+        // Written after the design was shared? No: before. Its author has no name (it reads "You"
+        // to its author). A comment made on the shared design carries the Git name.
+        #expect(pulled.first?.authorName == nil)
         let state = try #require(try await coworker.server.designGitState(opened.id))
         #expect(state.status.branch == "main" && state.status.isClean && state.status.behind == 0)
 
@@ -196,13 +200,20 @@ struct DesignGitTests {
         defer { coworker.stop() }
         let opened = try await coworker.server.openDesignFromGit(remote.path)
 
+        // A comment on the shared design carries its author's Git name, so the coworker sees who wrote it.
+        let phoneSource = try await author.server.designBoard(design.id, path: try DesignPath.validate("A-phone.dc.html")).source
+        let phoneElement = try #require(DesignTemplate(board: phoneSource)?.elements.first { $0.parent != nil })
+        let named = try await author.server.addDesignComment(design.id, draft: DesignCommentDraft(
+            board: try DesignPath.validate("A-phone.dc.html"), tid: phoneElement.tid, path: phoneElement.path, text: "Shorter labels here."))
+        #expect(named.comment.authorName == "Baily")
+
         // The author changes a board: a local change, then Commit & push.
         let a = try DesignPath.validate("A.dc.html")
         let before = try await author.server.designBoard(design.id, path: a).source
         _ = try await author.server.writeDesignBoard(design.id, path: a, source: before.replacingOccurrences(of: "</x-dc>", with: "<!-- counts --></x-dc>"),
                                                      baseRevision: nil)
         let dirty = try #require(try await author.server.designGitState(design.id))
-        #expect(dirty.status.files.map(\.path) == ["project/A.dc.html"] && dirty.status.files.first?.letter == "M")
+        #expect(dirty.status.files.map(\.path) == ["comments.json", "project/A.dc.html"])
         await #expect(throws: DesignGitError.nothingToCommit) {
             try await author.server.commitDesign(design.id, message: "   ", push: true)
         }
@@ -219,6 +230,7 @@ struct DesignGitTests {
         #expect(try await coworker.server.pullDesign(opened.id) == .updated)
         try await eventually("the pull's revision push") { pushes.current >= 1 }
         #expect(try await coworker.server.designBoard(opened.id, path: a).source.contains("<!-- counts -->"))
+        #expect(try await coworker.server.designComments(opened.id).comments.contains { $0.authorName == "Baily" && $0.text == "Shorter labels here." })
         #expect(try await coworker.server.designSnapshot(opened.id).revision == revision + 1)
         #expect(try await coworker.server.designVersions(opened.id, path: a).count == 1, "the pulled-over board's old content is a version")
         #expect(try await coworker.server.pullDesign(opened.id) == .upToDate)

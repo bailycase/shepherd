@@ -29,7 +29,7 @@ struct DesignGitControlTests {
         }
     }
 
-    @Test func aPullThatNeedsAMergeShowsTheDialogAndKeepWorkingLocallyLeavesTheDesign() async {
+    @Test func aPullThatNeedsAMergeShowsTheDialogAndKeepWorkingLocallyLeavesTheMergeWaiting() async {
         await #expect(processExitsWith: .success) {
             await recordingErrors { try await Self.mergeDialog() }
         }
@@ -140,8 +140,10 @@ struct DesignGitControlTests {
         try await eventuallyOnMain("the panel") { chrome.element("Git changes for this design") != nil }
         try await eventuallyOnMain("the changed file") { chrome.elements().contains { $0.label?.contains("A.dc.html") == true } }
         let state = o.vm.designGit(o.design.id)
-        #expect(chrome.controls().first { $0.label == "Commit & push" }?.isEnabled == true)
+        // Commit waits for a message; written, it enables.
+        #expect(chrome.controls().first { $0.label == "Commit & push" }?.isEnabled == false)
         state.message = "Show absolute counts in the checkout funnel"
+        try await eventuallyOnMain("Commit & push to enable") { chrome.controls().first { $0.label == "Commit & push" }?.isEnabled == true }
         try chrome.press("Commit & push")
         try await eventuallyOnMain("the commit to reach the remote", timeout: .seconds(60)) {
             (try? git(["log", "-1", "--format=%s", "main"], in: remote).trimmingCharacters(in: .whitespacesAndNewlines))
@@ -218,9 +220,18 @@ struct DesignGitControlTests {
         try await eventuallyOnMain("the dialog's buttons") { chrome.controls().contains { $0.label == "Keep working locally" } }
         #expect(chrome.elements().contains { $0.label == "Pull needs a merge" })
         #expect(chrome.controls().contains { $0.label == "Resolve with agent" })
+        // Keep working locally closes the dialog (the board's close): the merge waits, the chip says Pull paused.
         try chrome.press("Keep working locally")
         try await eventuallyOnMain("the dialog to close") { o.vm.designGitMergeDialog == nil }
-        try await eventuallyOnMain("the merge to go", timeout: .seconds(30)) { o.vm.designGit(o.design.id).state?.merge == nil }
+        #expect(o.vm.designGit(o.design.id).state?.merge?.phase == .conflict)
+        try await eventuallyOnMain("the chip to say the pull is paused") { chrome.controls().contains { ($0.label ?? "").hasPrefix("main · Pull paused") } }
         #expect(try await o.app.server.designBoard(o.design.id, path: phone).source == mine, "Shepherd has not changed your design files")
+        // The chip opens the dialog again; Drop merge lets the merge go, both commits kept.
+        try chrome.press(try #require(chrome.controls().first { ($0.label ?? "").hasPrefix("main · Pull paused") }?.label))
+        try await eventuallyOnMain("the dialog again") { o.vm.designGitMergeDialog == o.design.id }
+        try await eventuallyOnMain("Drop merge") { chrome.controls().contains { $0.label == "Drop merge" } }
+        try chrome.press("Drop merge")
+        try await eventuallyOnMain("the merge to go", timeout: .seconds(30)) { o.vm.designGit(o.design.id).state?.merge == nil }
+        #expect(try await o.app.server.designBoard(o.design.id, path: phone).source == mine)
     }
 }
