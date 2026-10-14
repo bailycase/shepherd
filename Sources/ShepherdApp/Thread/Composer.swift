@@ -345,7 +345,7 @@ struct Composer: View {
             Group {
                 if let dialog = dialogs.first, let session = store.session, let questionKey {
                     QuestionDock(prompt: NativeQuestionPrompt(dialog: dialog), count: dialogs.count,
-                                 enabled: active && store.supports("answer"), hidden: questionHiding.isHidden(questionKey),
+                                 enabled: active && store.supports("answer") && workerStyle?.answerHeld != true, hidden: questionHiding.isHidden(questionKey),
                                  focused: active && isFocused) { answer in
                         guard let reply = NativeQuestionPrompt(dialog: dialog).dialogAnswer(answer) else { return }
                         Task {

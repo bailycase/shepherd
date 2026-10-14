@@ -191,6 +191,22 @@ struct ProjectPagePresentationTests {
         #expect(!ProjectComposerSend.isOffline(paused: false, messages: [message(.delivered)], coordinatorLive: true))
     }
 
+    /// The question card told people the worker "keeps going on its best guess", which is false for a blocking native question and
+    /// for a paused project (the owner holds the answer until Resume).
+    @Test func theQuestionFootersCopyIsTruthfulWhileRunningAndWhilePaused() {
+        #expect(TaskQuestion.footer(title: "Question check", paused: false) == "Or just reply in chat. Question check is waiting for your answer.")
+        #expect(TaskQuestion.footer(title: "Question check", paused: true) == "Or just reply in chat. Your answer waits until you resume.")
+        for paused in [false, true] { #expect(!TaskQuestion.footer(title: "X", paused: paused).contains("best guess")) }
+    }
+
+    @Test func aTaskWithAHeldAnswerSaysSoAndIsMarkedSoItsDockOffersNoSecondAnswer() {
+        var asking = task("Asking", .waiting, question: "Pick")
+        #expect(page([asking]).rows[0].answerHeld == false)
+        asking.pendingAnswer = ProjectQuestionAnswer(operationID: UUID(), sessionID: "s", generation: "g", dialogID: "d", request: Data("x".utf8), phase: .queued)
+        let row = page([asking], paused: true).rows[0]
+        #expect(row.answerHeld && row.lead == "Answer queued" && row.detail == "Sends when the project resumes.")
+    }
+
     @Test func theSentenceUnderWelcomeBackReadsTheCounts() {
         #expect(page([]).status == "Nothing running yet.")
         #expect(page([task("A", .running), task("B", .running), task("C", .queued)]).status == "3 threads are working.")

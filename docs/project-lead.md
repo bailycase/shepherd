@@ -593,6 +593,11 @@ creates no thread, session or process and fakes no conversation, task or send.
 - **A resolved task's thread** in the pane draws no composer at all (`ProjectWorkerThreadStyle.composerHidden`), not a
   disabled one: the footer card ("This thread is resolved.", Reopen) stands in and the transcript reaches the pane's
   bottom. Reopen brings the steering composer back.
+- **A worker's question card** above the conversation's composer is truthful: the worker is blocked on a native question, so its
+  footer says "<thread> is waiting for your answer." (never that it "keeps going on its best guess"), and while the Project is
+  paused "Your answer waits until you resume." Once the owner holds an answer (queued for Resume, or on its way) the card goes,
+  the row says "Answer queued", and the pane's own question dock stays visible but offers no second answer
+  (`ProjectTaskRow.answerHeld`).
 - **Revisions:** every action carries the revision it was shown. A `stale_project`, `workspace_changed` or
   `no_such_project` refusal re-reads the owner, shows its message and never replays the edit. An older answer
   never replaces a newer record; the owner's pushed state wins at the same revision.

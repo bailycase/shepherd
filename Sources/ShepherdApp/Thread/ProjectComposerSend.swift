@@ -142,6 +142,9 @@ struct ProjectWorkerThreadStyle: Equatable {
     /// A resolved task takes no more messages: its thread draws no composer at all (the footer card with Reopen stands in), and the
     /// transcript reaches the bottom of the pane.
     var composerHidden = false
+    /// The owner already holds an answer to this worker's question (queued for Resume, or on its way): the thread's own question dock
+    /// stays visible but offers no second answer, so two active buttons never compete.
+    var answerHeld = false
 }
 
 /// How a Project's conversation draws a Project tool's typed result inline (ProjectLead-Started / -AddsSpace): a task card or the
