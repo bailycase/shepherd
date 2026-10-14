@@ -342,7 +342,8 @@ struct WorkspaceHeaderView: View {
                               jumpOpen: vm.designJump?.design == design.id,
                               git: DesignGitPresentation.chip(vm.designGit(design.id).state, drawing: false),
                               gitOpen: vm.designGit(design.id).panelOpen,
-                              pressGit: { vm.pressDesignGitChip(design.id) })
+                              pressGit: { vm.pressDesignGitChip(design.id) },
+                              placeGit: { vm.designGit(design.id).placeChip(trailing: $0) })
                     .equatable()
                     .id(agent.id)
             } else if let agent = vm.selectedAgent, vm.activeTabID == agent.tabID,

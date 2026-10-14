@@ -137,10 +137,12 @@ struct DesignCommentPopover: View {
         } else if let comment = screen.openThread {
             let now = Date()
             NWCommentThread(
-                author: "You", age: nwCommentAge(since: comment.createdAt, now: now),
+                author: DesignScreenModel.authorName(comment.author, name: comment.authorName, me: DesignScreenModel.gitUserName),
+                age: nwCommentAge(since: comment.createdAt, now: now),
                 note: comment.detached ? "element changed" : nil, text: comment.text,
                 entries: comment.replies.map { reply in
-                    NWCommentEntry(id: reply.id.uuidString, author: reply.author == .agent ? "Design agent" : "You",
+                    NWCommentEntry(id: reply.id.uuidString,
+                                   author: DesignScreenModel.authorName(reply.author, name: reply.authorName, me: DesignScreenModel.gitUserName),
                                    age: nwCommentAge(since: reply.createdAt, now: now), text: reply.text)
                 },
                 reply: $screen.replyText,
@@ -277,6 +279,8 @@ struct DesignToolbar: View, Equatable {
     var git: DesignGitPresentation.Chip?
     var gitOpen = false
     var pressGit: () -> Void = {}
+    /// Where the chip ends, from the window's trailing edge: the panel hangs under it.
+    var placeGit: (CGFloat) -> Void = { _ in }
 
     nonisolated static func == (a: Self, b: Self) -> Bool {
         a.name == b.name && a.system == b.system && a.swatches == b.swatches && (a.openSystem == nil) == (b.openSystem == nil)
@@ -306,6 +310,11 @@ struct DesignToolbar: View, Equatable {
             }
             if let git {
                 NWDesignGitChip(label: git.label, tone: git.tone, hint: git.hint, isOpen: gitOpen, action: pressGit)
+                    .onGeometryChange(for: CGFloat.self) { proxy in
+                        let frame = proxy.frame(in: .named("root-layout"))
+                        let window = proxy.bounds(of: .named("root-layout"))?.width ?? frame.maxX
+                        return max(0, (window - frame.maxX).rounded())
+                    } action: { placeGit($0) }
             }
             if let system {
                 NWDesignSystemChip(system, colors: swatches.map { Color(light: $0.light, dark: $0.dark) }, action: openSystem)

@@ -12,7 +12,7 @@ import Testing
 /// the share sheet, the panel with a board changed, an incoming commit, the merge dialog and
 /// Pull paused, and the Designs page with Open from Git.
 extension DesignPreviewTests {
-    @Test(arguments: ["share", "changes", "incoming", "conflict", "running", "ready"])
+    @Test(arguments: ["share", "changes", "incoming", "conflict", "running", "ready", "paused"])
     func designGit(_ state: String) async throws {
         let (workspace, checkout, agent) = try await designWorkspace()
         defer { workspace.stop() }
@@ -58,7 +58,11 @@ extension DesignPreviewTests {
                 if state != "incoming" {
                     _ = try await server.writeDesignBoard(checkout.id, path: phone, source: base.replacingOccurrences(of: ">Step 1</div>", with: ">Checkout started · 12,904</div>"),
                                                           baseRevision: nil)
-                    _ = try await server.commitDesign(checkout.id, message: "Show absolute counts in the checkout funnel", push: false)
+                    // "tools:1" in the subject reaches the merge brief: the stub's turn then holds on a tool, so
+                    // the running state is what the capture shows.
+                    let subject = state == "running" ? "Show absolute counts in the checkout funnel tools:1"
+                        : "Show absolute counts in the checkout funnel"
+                    _ = try await server.commitDesign(checkout.id, message: subject, push: false)
                     guard case .needsMerge = try await server.pullDesign(checkout.id) else { Issue.record("no merge"); return }
                 }
             }
@@ -73,6 +77,9 @@ extension DesignPreviewTests {
             if state == "changes" { vm.selectDesignGitFile(checkout.id, path: "project/A.dc.html") }
         case "conflict":
             vm.designGitMergeDialog = checkout.id
+        case "paused":
+            // Keep working locally: the dialog closed, the merge waits; the chip and canvas say so.
+            break
         case "running":
             await server.setDesignMergeTimeoutForTests(600)
             try await server.resolveDesignMergeWithAgent(checkout.id)
@@ -92,11 +99,41 @@ extension DesignPreviewTests {
             vm.selectDesignGitFile(checkout.id, path: "project/A-phone.dc.html")
         default: break
         }
-        _ = agent
         try await Preview.renderMatrix("app-window-design-git-\(state)", size: Self.windowSizeForJump,
                                        scales: state == "changes" ? [1, 1.3] : [1], ready: {
             screen.isDrawn && (state != "changes" || git.preview != nil)
                 && (state == "share" || git.state != nil)
+                && (state != "running" || (vm.server.rpcThread(forAgent: agent.id)?.piBusy == true && git.state?.merge?.phase == .running))
+        }) {
+            RootView(vm: vm)
+        }
+    }
+
+    @Test func designGitOpened() async throws {
+        let (workspace, checkout, _) = try await designWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        let server = workspace.server
+        let config = try #require(ProcessInfo.processInfo.environment["GIT_CONFIG_GLOBAL"])
+        _ = try? git(["config", "--file", config, "user.name", "Baily"], in: workspace.dir)
+        _ = try? git(["config", "--file", config, "user.email", "baily@example.com"], in: workspace.dir)
+        let remote = try makeScratchDirectory("remote").appendingPathComponent("checkout-design.git")
+        _ = try git(["init", "-q", "--bare", "-b", "main", remote.path], in: remote.deletingLastPathComponent())
+        _ = try await server.shareDesignWithGit(checkout.id, url: remote.path, message: "Add checkout funnel design")
+        // Open from Git, as the coworker presses it: the toast, and a chat whose agent hasn't started.
+        vm.openDesignGitOpen()
+        let model = try #require(vm.designGitOpen)
+        model.repository = remote.path
+        vm.runDesignGitOpen(model)
+        try await eventuallyOnMain("the clone to open", timeout: .seconds(60)) {
+            vm.designGitOpen == nil && vm.state.designs.count == 3
+        }
+        let opened = try #require(vm.state.designs.first { $0.id != checkout.id && $0.name == checkout.name })
+        let screen = vm.designScreen(opened.id)
+        try await eventuallyOnMain("the opened design's agent", timeout: .seconds(60)) { vm.design(opened.id)?.agentID != nil }
+        await screen.refresh()
+        try await Preview.renderMatrix("app-window-design-git-opened", size: Self.windowSizeForJump, scales: [1], ready: {
+            screen.isDrawn && vm.designGit(opened.id).state != nil && vm.designGit(opened.id).openedNotice != nil
         }) {
             RootView(vm: vm)
         }

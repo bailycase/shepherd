@@ -47,10 +47,19 @@ enum DesignGitPresentation {
         let file = shown(path)
         if file == "canvas.json" { return "Board placement" }
         if file == "comments.json" { return "Pinned comments" }
-        if let board = boards.first(where: { $0.key.rawValue == file })?.value { return board.title ?? file }
+        if let board = boards.first(where: { $0.key.rawValue == file })?.value { return boardName(board.title) ?? file }
         if file.hasPrefix("ds/") { return "Design system" }
         if file.hasPrefix("assets/") || file.hasPrefix("_ds/") { return "Asset" }
         return ""
+    }
+
+    /// A board's title as the panel names it: "A · Funnel first" is "Funnel first", "A · phone"
+    /// is "Phone" (the letter is in the file's name beside it).
+    static func boardName(_ title: String?) -> String? {
+        guard let title, !title.isEmpty else { return nil }
+        let name = title.components(separatedBy: " · ").dropFirst().joined(separator: " · ")
+        let shown = name.isEmpty ? title : name
+        return shown.prefix(1).uppercased() + shown.dropFirst()
     }
 
     /// The remote as the panel's header shows it: `acme/checkout-design` from either URL form.
@@ -78,6 +87,10 @@ enum DesignGitPresentation {
         var preview: NWGitPanelState.Preview?
         var boards: [DesignPath: DesignIndex.Board]
         var lastChecked: Double?
+        /// The last Git action's failure, shown in the panel's notice.
+        var failure: String? = nil
+        /// A commit message is written: the commit buttons wait for one.
+        var hasMessage = true
     }
 
     /// The Git panel (GitDesignChanges): one of its modes, from the engine's state.
@@ -105,19 +118,23 @@ enum DesignGitPresentation {
             sync = "Remote is up to date"; syncTone = .done
         }
         let canPull = incoming && !drawing && !input.working && !s.offline
-        let pullHint: String? = canPull ? "Pull the new commit and reload the design"
+        let pullHint: String = canPull ? "Pull the new commit and reload the design"
             : drawing ? "Wait for the design agent to finish this turn"
-            : s.behind > 0 && !s.isClean ? "Commit local changes before pulling" : nil
+            : s.offline ? "Reconnect before pulling"
+            : !s.isClean ? "Commit local changes before pulling"
+            : "Nothing to pull"
 
         var notice: NWGitPanelState.Notice?
-        if s.offline {
+        if let failure = input.failure {
+            notice = .init(title: "Git couldn't finish", text: failure, tone: .attention)
+        } else if s.offline {
             notice = .init(title: "You can keep working offline", text: "Save or commit locally. Reconnect before pulling or pushing.", tone: .attention)
         } else if drawing {
             notice = .init(title: "Design agent is drawing",
                            text: "Commit and pull are paused until the current turn finishes, so Git doesn't capture a half-drawn design.", tone: .attention)
         } else if reviewing {
             notice = .init(title: "Agent resolved the merge",
-                           text: "Boards, canvas and imports pass the checks. The merge commit keeps both parents.", tone: .done)
+                           text: "Boards and canvas pass the checks. The merge commit keeps both parents.", tone: .done)
         } else if failed {
             notice = .init(title: "Your commit is safe on this Mac",
                            text: "The remote could not be reached. Check your connection and Git access, then try pushing again.", tone: .attention)
@@ -135,7 +152,8 @@ enum DesignGitPresentation {
                             files: rows, selected: input.selected.map(shown), preview: input.preview,
                             localTitle: reviewing ? "Commit merge locally" : "Commit locally",
                             pushTitle: reviewing ? "Commit merge & push" : "Commit & push",
-                            canCommit: !blocked && !rows.isEmpty, canPush: !blocked && !rows.isEmpty && !s.offline)
+                            canCommit: !blocked && !rows.isEmpty && input.hasMessage,
+                            canPush: !blocked && !rows.isEmpty && input.hasMessage && !s.offline)
         }
         let incomingCard = incoming ? s.incoming.map {
             NWGitPanelState.Incoming(subject: $0.subject, author: $0.author, hash: $0.hash, files: $0.files.map(shown))
@@ -151,7 +169,7 @@ enum DesignGitPresentation {
         switch merge?.phase {
         case .running?: .running
         case .ready?: .ready
-        case .stopped?: .stopped
+        case .stopped?: .stopped(merge?.reason)
         case .failed?: .failed(merge?.reason)
         case .conflict?, nil: nil
         }
@@ -171,9 +189,9 @@ enum DesignGitPresentation {
     /// changed, else the file's first line of text.
     static func preview(path: String, before: String?, after: String?, boards: [DesignPath: DesignIndex.Board], merge: Bool) -> NWGitPanelState.Preview {
         // The board's own title ("A · Funnel first"), else the file.
-        let name = label(path, boards: boards)
+        let board = boards.first { $0.key.rawValue == shown(path) }?.value.title
         let (a, b) = firstDifference(before ?? "", after ?? "")
-        return NWGitPanelState.Preview(title: name.isEmpty ? shown(path) : name,
+        return NWGitPanelState.Preview(title: board ?? shown(path),
                                        beforeTitle: merge ? "Your version" : "Committed", before: before == nil ? "New file" : a,
                                        afterTitle: merge ? "Merge result" : "Working copy", after: after == nil ? "Deleted" : b)
     }

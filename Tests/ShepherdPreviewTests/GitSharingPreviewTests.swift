@@ -4,7 +4,9 @@ import Testing
 
 /// Git sharing for designs (GitDesignPublish, -Open, -Coworker, -Changes, -Conflict, -Merge,
 /// -MergeReview, DesignGitStatus): every component in each state the boards draw, light and dark
-/// at text scale 1 and 1.3, on the window fill the boards draw them over.
+/// at text scale 1 and 1.3, on the window fill the boards draw them over. A catalog of the
+/// components with the boards' sample values; what the app really says in each state is rendered
+/// from the real server and git in `DesignPreviewTests+Git` (app-window-design-git-*).
 @Suite("Git sharing previews", .serialized, .mainActorExclusive,
        .enabled(if: Preview.enabled && !Preview.liveModel, "set SHEPHERD_PREVIEW_DIR (without SHEPHERD_LIVE_MODEL) to render previews"))
 @MainActor
@@ -106,7 +108,7 @@ struct GitSharingPreviewTests {
             return (.init(branch: "main", repository: repo, sync: "Merge prepared · not committed", syncTone: .attention, canPull: false,
                           pullHint: "Commit local changes before pulling",
                           notice: .init(title: "Agent resolved the merge",
-                                        text: "Kept your counts and Sam's phone labels. Boards, canvas and imports pass the checks. The merge commit keeps both parents.", tone: .done),
+                                        text: "Boards and canvas pass the checks. The merge commit keeps both parents.", tone: .done),
                           changes: changes(merge: true), incoming: nil, pushTitle: nil, working: false), "Merge phone labels with absolute counts")
         default:
             return (.init(branch: "main", repository: repo, sync: "Remote is up to date", syncTone: .done, canPull: false,
@@ -140,11 +142,12 @@ struct GitSharingPreviewTests {
     }
 
     @Test func mergeCards() async throws {
-        try await render("merge-card", size: CGSize(width: 760, height: 900)) {
+        try await render("merge-card", size: CGSize(width: 760, height: 1040)) {
             VStack(alignment: .leading, spacing: NW.Space.xxl) {
                 NWGitMergeCard(phase: .running)
                 NWGitMergeCard(phase: .ready, review: {})
-                NWGitMergeCard(phase: .stopped, retry: {})
+                NWGitMergeCard(phase: .stopped(nil), retry: {})
+                NWGitMergeCard(phase: .stopped("The merge took longer than its limit and was stopped."), retry: {})
                 NWGitMergeCard(phase: .failed("I couldn't verify the merged phone board. Your original design and both commits are unchanged."), retry: {})
             }
         }
@@ -158,6 +161,7 @@ struct GitSharingPreviewTests {
         try await render("notices", size: CGSize(width: 640, height: 280)) {
             VStack(alignment: .leading, spacing: NW.Space.xl) {
                 NWGitCanvasNotice(.opened, title: "Opened from Git", detail: "4 boards · acme-web · 2 comments", dismiss: {})
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 NWGitCanvasNotice(.paused, title: "Pull paused", detail: "Your work is safe. Resolve overlapping changes before updating the canvas.")
             }
         }

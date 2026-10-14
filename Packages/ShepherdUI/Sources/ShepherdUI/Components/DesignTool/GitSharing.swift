@@ -34,6 +34,14 @@ public enum NWGitMetrics {
     public static let noticeGlyph: CGFloat = 14
     public static let noticeSpacing: CGFloat = 12
     public static let noticeMaxWidth: CGFloat = 520
+    /// Pull paused at most this wide, at the canvas's bottom leading corner.
+    public static let pausedMaxWidth: CGFloat = 720
+    /// The canvas notices' place: the toast 24pt above the canvas's bottom, Pull paused 80pt.
+    public static let toastBottom: CGFloat = 24
+    public static let pausedBottom: CGFloat = 80
+    /// The toast's shadow (the board's `0 8px 24px bgBase`).
+    public static let toastShadowRadius: CGFloat = 12
+    public static let toastShadowY: CGFloat = 8
     public static let dismissGlyph: CGFloat = 10
     /// A card's lines on the merge dialog and the chat card.
     public static let introSpacing = NW.Space.l
@@ -230,6 +238,29 @@ public struct NWGitShareSheet: View {
             }
             .padding(.vertical, NW.Space.xl).padding(.horizontal, NW.Space.xxl)
             .overlay(alignment: .bottom) { NWHairline() }
+            // Whole when it fits; in a short window (or at a large text size) the middle scrolls
+            // between the header and the buttons, which stay in reach.
+            ViewThatFits(in: .vertical) {
+                shareBody
+                ScrollView { shareBody }
+            }
+            HStack(spacing: NW.Space.m) {
+                Spacer(minLength: 0)
+                Button("Cancel", action: close).buttonStyle(.nw(.ghost, size: .l)).keyboardShortcut(.cancelAction)
+                Button(working ? "Sharing…" : "Create commit & push", action: share)
+                    .buttonStyle(.nw(.primary, size: .l)).keyboardShortcut(.defaultAction).disabled(!canShare)
+            }
+            .padding(.vertical, NW.Space.xl).padding(.horizontal, NW.Space.xxl)
+            .overlay(alignment: .top) { NWHairline() }
+        }
+        .frame(width: M.shareWidth)
+        .nwPopover(radius: NW.Radius.l)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Share with Git")
+        .accessibilityAddTraits(.isModal)
+    }
+
+    private var shareBody: some View {
             VStack(alignment: .leading, spacing: NW.Space.xl) {
                 Text("Share this design through a Git repository. Your coworkers can open the same canvas in Shepherd. Shepherd manages the local copy for everyone.")
                     .nwText(.body).foregroundStyle(Color.nw.textSecondary)
@@ -244,19 +275,6 @@ public struct NWGitShareSheet: View {
                 if let error { GitErrorBox(error: error) }
             }
             .padding(NW.Space.xxl)
-            HStack(spacing: NW.Space.m) {
-                Spacer(minLength: 0)
-                Button("Cancel", action: close).buttonStyle(.nw(.ghost, size: .l)).keyboardShortcut(.cancelAction)
-                Button(working ? "Sharing…" : "Create commit & push", action: share)
-                    .buttonStyle(.nw(.primary, size: .l)).keyboardShortcut(.defaultAction).disabled(!canShare)
-            }
-            .padding(.vertical, NW.Space.xl).padding(.horizontal, NW.Space.xxl)
-            .overlay(alignment: .top) { NWHairline() }
-        }
-        .frame(width: M.shareWidth)
-        .nwPopover(radius: NW.Radius.l)
-        .accessibilityElement(children: .contain)
-        .accessibilityAddTraits(.isModal)
     }
 
     private func submitIfValid() { if canShare { share() } }
@@ -339,6 +357,7 @@ public struct NWGitOpenSheet: View {
         .frame(width: M.openWidth)
         .nwPopover(radius: NW.Radius.l)
         .accessibilityElement(children: .contain)
+        .accessibilityLabel("Open from Git")
         .accessibilityAddTraits(.isModal)
     }
 }
@@ -559,7 +578,7 @@ public struct NWGitPanel: View {
         HStack(spacing: NW.Space.m) {
             Button("Copy repository URL", action: copyURL).buttonStyle(.nw(.ghost, size: .m))
             Spacer(minLength: 0)
-            Text("Managed by Shepherd").font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+            Text("Managed by Shepherd").font(.nw(.caption)).foregroundStyle(Color.nw.textSecondary)
         }
         .padding(.vertical, NW.Space.l).padding(.horizontal, NW.Space.xl)
         .overlay(alignment: .top) { NWHairline() }
@@ -642,7 +661,8 @@ public struct NWGitPanel: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
         .nwCard(radius: NW.Radius.m, fill: Color.nw.bgWindow)
-        .accessibilityElement(children: .combine)
+        // A named group whose texts (committed and working) VoiceOver still reads.
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("Selected change preview")
     }
 
@@ -697,15 +717,22 @@ public struct NWGitMergeDialog: View {
     let incoming: NWGitMergeCommit
     let keepLocal: () -> Void
     let resolve: () -> Void
+    /// Why the last attempt didn't start or finish, shown above the buttons.
+    let failure: String?
+    /// Drops the waiting merge (both commits stay; Pull again later). Not on the board: the way
+    /// out of a merge the user won't resolve now, offered once it is waiting.
+    let drop: (() -> Void)?
 
-    public init(branch: String, upstream: String, local: NWGitMergeCommit, incoming: NWGitMergeCommit,
-                keepLocal: @escaping () -> Void, resolve: @escaping () -> Void) {
+    public init(branch: String, upstream: String, local: NWGitMergeCommit, incoming: NWGitMergeCommit, failure: String? = nil,
+                keepLocal: @escaping () -> Void, resolve: @escaping () -> Void, drop: (() -> Void)? = nil) {
         self.branch = branch
         self.upstream = upstream
         self.local = local
         self.incoming = incoming
+        self.failure = failure
         self.keepLocal = keepLocal
         self.resolve = resolve
+        self.drop = drop
     }
 
     private func mono(_ text: String) -> Text { Text(text).font(.nwMono(M.bodyMono)) }
@@ -734,10 +761,17 @@ public struct NWGitMergeDialog: View {
                 Text("The agent uses a merge copy and your current model and limits. Both original commits stay available. No commit or push without you.")
                     .nwText(.caption).foregroundStyle(Color.nw.textSecondary).fixedSize(horizontal: false, vertical: true)
                     .gitBox(padding: EdgeInsets(top: NW.Space.l, leading: NW.Space.xl, bottom: NW.Space.l, trailing: NW.Space.xl))
+                if let failure {
+                    GitErrorBox(error: NWGitSheetError(title: "Couldn't start the merge", detail: failure))
+                }
             }
             .padding(NW.Space.xxl)
             HStack(spacing: NW.Space.m) {
                 Button("Keep working locally", action: keepLocal).buttonStyle(.nw(.ghost, size: .l)).keyboardShortcut(.cancelAction)
+                if let drop {
+                    Button("Drop merge", action: drop).buttonStyle(.nw(.ghost, size: .l))
+                        .help("Stop waiting on this merge. Both commits stay; pull again later.")
+                }
                 Spacer(minLength: NW.Space.m)
                 Button("Resolve with agent", systemImage: "pencil.tip", action: resolve)
                     .buttonStyle(.nw(.primary, size: .l)).keyboardShortcut(.defaultAction)
@@ -748,6 +782,7 @@ public struct NWGitMergeDialog: View {
         .frame(width: M.dialogWidth)
         .nwPopover(radius: NW.Radius.l)
         .accessibilityElement(children: .contain)
+        .accessibilityLabel("Pull needs a merge")
         .accessibilityAddTraits(.isModal)
     }
 
@@ -772,7 +807,8 @@ public struct NWGitMergeDialog: View {
 
 // MARK: Chat
 
-public enum NWGitMergePhase: Equatable, Sendable { case running, ready, stopped, failed(String?) }
+/// The merge's phase in the chat. Stopped carries why when Shepherd stopped it (its time limit).
+public enum NWGitMergePhase: Equatable, Sendable { case running, ready, stopped(String? = nil), failed(String?) }
 
 /// The merge's card in the design chat (Git 6/7; GitDesignShell's agentCopy).
 public struct NWGitMergeCard: View, Equatable {
@@ -800,7 +836,7 @@ public struct NWGitMergeCard: View, Equatable {
     private var line: String? {
         switch phase {
         case .running, .ready: nil
-        case .stopped: "Your original design and both commits are still available. The merge copy was not applied."
+        case .stopped(let why): (why.map { $0 + " " } ?? "") + "Your original design and both commits are still available. The merge copy was not applied."
         case .failed(let reason): reason
         }
     }
@@ -830,6 +866,9 @@ public struct NWGitMergeCard: View, Equatable {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.updatesFrequently)
+        // The board's role=status: a new phase is announced as it lands.
+        .onChange(of: title, initial: false) { _, now in AccessibilityNotification.Announcement(now).post() }
     }
 }
 
@@ -870,16 +909,21 @@ public struct NWGitCanvasNotice: View {
     }
 
     public var body: some View {
+        // The boards' status pill: 12×16 padding, radius m, a 1px lineStrong line on bgRaised, the
+        // title then the detail in `ui`. The toast (Opened from Git) carries the done check and a
+        // shadow; Pull paused sits flat with the title in lantern text and the detail in primary.
         HStack(spacing: M.noticeSpacing) {
             if kind == .opened {
                 Image(systemName: "checkmark").font(.system(size: M.noticeGlyph, weight: .medium))
                     .foregroundStyle(AgentState.done.color).accessibilityHidden(true)
             }
-            (Text(title).foregroundStyle(kind == .paused ? AgentState.attention.textColor : Color.nw.textPrimary)
-                + Text("  ") + Text(detail).foregroundStyle(Color.nw.textSecondary))
-                .nwText(.body)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(alignment: .firstTextBaseline, spacing: M.noticeSpacing) {
+                Text(title).foregroundStyle(kind == .paused ? AgentState.attention.textColor : Color.nw.textPrimary)
+                Text(detail).foregroundStyle(kind == .paused ? Color.nw.textPrimary : Color.nw.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .font(.nw(.ui))
+            .accessibilityElement(children: .combine)
             if let dismiss {
                 Button(action: dismiss) { Image(systemName: "xmark").font(.system(size: M.dismissGlyph, weight: .medium)) }
                     .buttonStyle(.nwIcon(size: NW.Height.controlS))
@@ -888,9 +932,12 @@ public struct NWGitCanvasNotice: View {
             }
         }
         .padding(.vertical, NW.Space.l).padding(.horizontal, NW.Space.xl)
-        .frame(maxWidth: M.noticeMaxWidth)
-        .fixedSize(horizontal: false, vertical: true)
-        .nwPopover(radius: NW.Radius.l)
-        .accessibilityElement(children: .combine)
+        .frame(maxWidth: kind == .paused ? M.pausedMaxWidth : nil, alignment: .leading)
+        .fixedSize(horizontal: kind == .opened, vertical: true)
+        .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.m))
+        .nwBorder(Color.nw.lineStrong, in: RoundedRectangle(cornerRadius: NW.Radius.m))
+        .shadow(color: kind == .opened ? Color.nw.bgBase : .clear, radius: M.toastShadowRadius, y: M.toastShadowY)
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.updatesFrequently)
     }
 }

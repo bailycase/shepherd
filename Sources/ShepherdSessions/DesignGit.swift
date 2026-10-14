@@ -97,6 +97,8 @@ public enum DesignGitError: Error, Equatable, Sendable, CustomStringConvertible 
     case invalidURL
     case remoteNotEmpty
     case unavailable(String)
+    /// Share with Git couldn't reach or push to the repository.
+    case shareFailed(String)
     case notADesign(String)
     case dirty
     case nothingToCommit
@@ -119,6 +121,7 @@ public enum DesignGitError: Error, Equatable, Sendable, CustomStringConvertible 
         case .invalidURL: "Enter an SSH or HTTPS Git URL."
         case .remoteNotEmpty: "That repository already has commits. Use an empty repository, or open it with Open from Git."
         case .unavailable(let why): "Check the repository URL and your Git access, then try again. Nothing was cloned. (\(why))"
+        case .shareFailed(let why): "Check the repository URL and your Git access, then try again. Nothing was pushed. (\(why))"
         case .notADesign(let why): "That repository doesn't hold a Shepherd design: \(why)"
         case .dirty: "Commit local changes before pulling."
         case .nothingToCommit: "There's nothing to commit."
@@ -136,11 +139,22 @@ public enum DesignGitError: Error, Equatable, Sendable, CustomStringConvertible 
     /// The board's error box title for a failed open or share.
     public var title: String {
         switch self {
-        case .unavailable, .invalidURL: "Repository unavailable"
+        case .unavailable, .shareFailed, .invalidURL: "Repository unavailable"
         case .remoteNotEmpty: "Repository isn't empty"
         case .notADesign: "Not a Shepherd design"
         default: "Git couldn't finish"
         }
+    }
+}
+
+/// This Mac's Git identity, as a shared design's comments record their author.
+public enum DesignGitIdentity {
+    /// The user's Git `user.name` (global config); nil when it has none. Blocks briefly: read it
+    /// once, off any server queue.
+    public static func userName() -> String? {
+        let name = (try? SkillsGit.run(["config", "--global", "user.name"], in: nil, timeout: 5))
+            .map { String(decoding: $0, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) }
+        return name.flatMap { $0.isEmpty ? nil : $0 }
     }
 }
 
@@ -329,7 +343,7 @@ enum DesignGit {
         // Refuse a repository that has commits before anything is written here.
         let heads: Data
         do { heads = try DesignGitRunner.run(["ls-remote", "--heads", "--", url], in: nil, network: true) } catch DesignGitError.git(let why) {
-            throw DesignGitError.unavailable(why)
+            throw DesignGitError.shareFailed(why)
         }
         guard heads.isEmpty else { throw DesignGitError.remoteNotEmpty }
         do {
@@ -342,7 +356,7 @@ enum DesignGit {
             guard hasIdentity(git) else { throw DesignGitError.noIdentity }
             try git.run(["commit", "-q", "--no-verify", "-m", message])
             do { try git.run(["push", "-q", "-u", "origin", "main"], network: true) } catch DesignGitError.git(let why) {
-                throw DesignGitError.unavailable(why)
+                throw DesignGitError.shareFailed(why)
             }
         } catch {
             try? FileManager.default.removeItem(at: git.gitDirectory)

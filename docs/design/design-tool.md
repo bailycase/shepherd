@@ -384,18 +384,21 @@ engine is docs/designs.md › Sharing with Git. Not built: iPhone and iPad.
 - **Open from Git** (Git 2): 560pt sheet: the URL field, "Uses your configured Git credentials. No
   folder setup needed.", Cancel and **Clone & open** ("Retry clone" after a failure, "Cloning…"
   while it runs). The design opens with the **Opened from Git** toast (Git 3: boards, system,
-  open comments) at the canvas's top center, and its empty chat shows the intro ("No agent has
-  started").
-- **The panel** (Git 4, GitDesignChanges): 500pt, top trailing over the canvas, 12pt in from its
-  edges, scrolling inside when the window is short. Header (branch in mono, `owner/repo`, close),
+  open comments) at the canvas's bottom center, and its empty chat shows the intro ("No agent has
+  started"). Comment cards name a coworker by their Git name; the viewer's own read "You".
+- **The panel** (Git 4, GitDesignChanges): 500pt, hung 4pt under the chip with its trailing edge
+  on the chip's (never past the window's edges), scrolling inside when the window is short. Header (branch in mono, `owner/repo`, close),
   the sync line and Pull (enabled only for a clean working copy with incoming commits), the
-  notice (offline, drawing, push failed, merge resolved), Local changes (rows of letter, file,
+  notice (offline, drawing, push failed, merge resolved, or "Git couldn't finish" with git's
+  reason after a failed pull, commit or push), Local changes (rows of letter, file,
   board name; the selected row's committed and working text side by side), Commit message,
-  **Commit locally** and **Commit & push**, the incoming commit, Push or Retry push, the
+  **Commit locally** and **Commit & push** (disabled until the message has text), the incoming commit, Push or Retry push, the
   footnote "Git only shares what you commit and push. Shepherd never pushes automatically.", and
   Copy repository URL.
 - **Pull needs a merge** (Git 5): 672pt dialog with both commits side by side, **Keep working
-  locally** and **Resolve with agent**; **Pull paused** sits on the canvas until dismissed.
+  locally** (closes it; the merge waits), **Drop merge** (not on the board: lets the merge go)
+  and **Resolve with agent**; a failed start shows its reason above the buttons. While the merge
+  waits, **Pull paused** sits at the canvas's bottom leading corner and the chip opens the dialog.
 - **The merge in the chat** (Git 6): the request is the user's bubble ("Resolve this Git merge…");
   the agent's words and tools are its own rows; `NWGitMergeCard` follows the last turn: Resolving
   the merge, Merge ready to review (**Review merge** opens the panel), Merge stopped or Couldn't

@@ -52,7 +52,7 @@ struct DesignGitPresentationTests {
                                                       boards: [try! DesignPath.validate("A.dc.html"): board], lastChecked: nil))
         #expect(panel.branch == "main" && panel.repository == "acme/checkout-design")
         #expect(panel.sync == "Remote is up to date" && panel.syncTone == .done && !panel.canPull)
-        #expect(panel.pullHint == nil)
+        #expect(panel.pullHint == "Commit local changes before pulling", "Pull says why it can't go")
         let changes = try! #require(panel.changes)
         #expect(changes.title == "Local changes" && changes.note == "Saved on this Mac. Not shared yet.")
         #expect(changes.files.map(\.id) == ["A.dc.html", "canvas.json"])
@@ -60,6 +60,21 @@ struct DesignGitPresentationTests {
         #expect(changes.selected == "A.dc.html")
         #expect(changes.localTitle == "Commit locally" && changes.pushTitle == "Commit & push" && changes.canCommit && changes.canPush)
         #expect(panel.notice == nil && panel.incoming == nil && panel.pushTitle == nil)
+    }
+
+    @Test func theCommitButtonsWaitForAMessageAndAFailureShowsInTheNotice() {
+        let state = DesignGitState(status: Self.status(files: [.init(path: "project/A.dc.html", letter: "M")]))
+        let empty = DesignGitPresentation.panel(.init(state: state, drawing: false, working: false, selected: nil, preview: nil, boards: [:],
+                                                      lastChecked: nil, failure: nil, hasMessage: false))
+        #expect(empty.changes?.canCommit == false && empty.changes?.canPush == false)
+        let failed = DesignGitPresentation.panel(.init(state: state, drawing: false, working: false, selected: nil, preview: nil, boards: [:],
+                                                       lastChecked: nil, failure: "Commit local changes before pulling.", hasMessage: true))
+        #expect(failed.notice == .init(title: "Git couldn't finish", text: "Commit local changes before pulling.", tone: .attention))
+    }
+
+    @Test(arguments: [("A · Funnel first", "Funnel first"), ("A · phone", "Phone"), ("Checkout", "Checkout"), ("", nil)] as [(String, String?)])
+    func aFileIsNamedByItsBoardsTitleWithoutItsLetter(title: String, name: String?) {
+        #expect(DesignGitPresentation.boardName(title) == name)
     }
 
     @Test func whileTheAgentDrawsCommitAndPullWait() {
@@ -139,7 +154,7 @@ struct DesignGitPresentationTests {
         (DesignGitMerge.Phase.conflict, nil),
         (.running, NWGitMergePhase.running),
         (.ready, .ready),
-        (.stopped, .stopped),
+        (.stopped, .stopped(nil)),
     ] as [(DesignGitMerge.Phase, NWGitMergePhase?)])
     func theChatShowsTheMergeOnlyOnceItIsTheAgents(phase: DesignGitMerge.Phase, card: NWGitMergePhase?) {
         #expect(DesignGitPresentation.mergePhase(Self.merge(phase)) == card)
