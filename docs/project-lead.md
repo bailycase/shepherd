@@ -341,6 +341,17 @@ coordinator's layout (`WorkspaceSelection.mountedTabs`): its thread is drawn onl
 page, and a second, hidden `ThreadView` on the same store would suspend the page's poll, so the
 first reply would show only after leaving the Project and coming back.
 
+The owner records `coordinatorAgentID` before it registers the agent, so `threadStores.prune` keeps the
+store for that ID too. A relaunch leaves the coordinator's pi off, and the owner starts it only for a
+message it can deliver: the page reads the saved history from pi's session file
+(`PiSessionFile.previewLoader`, as an ordinary thread does) and the composer stays usable. While no
+coordinator pi runs and no message is queued or in flight (or the Project is paused), the store is
+`offline` (`ProjectComposerSend.isOffline`, restated by the view model on every adoption and when a
+store is made): `native_starting` is then the expected answer, so the composer never says "Starting
+the agent" and no "has not started after a minute" error appears. Resume alone launches nothing; the
+next message does, and its start is the ordinary, timed warm-up. A remote owner's page sets
+`offline` from the Project it pushed; a served snapshot is ready whatever `offline` says.
+
 The coordinator's pi launches with `--no-builtin-tools` (`PiLaunch.agent(coordinator:)`), never
 `--no-tools`: pi's `--no-tools` empties the tool allowlist, which also drops the `project_*` tools
 its Project extension registers, leaving the coordinator with none.

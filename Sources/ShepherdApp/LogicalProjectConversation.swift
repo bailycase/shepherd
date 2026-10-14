@@ -75,7 +75,7 @@ struct ConversationThread: View {
     }
 
     var body: some View {
-        ThreadView(store: store, active: true, isFocused: true, request: request, commandKey: nil, agentName: project.name,
+        ThreadView(store: store, active: true, isFocused: true, request: request, preview: preview, commandKey: nil, agentName: project.name,
                    listModels: ownerModels, allowsLocalFiles: ref.home == .local,
                    retainedInput: agent.map { vm.threadStores.input(for: $0) } ?? vm.emptyProjectInput)
             .environment(\.projectComposerSend, composerSend)
@@ -87,6 +87,23 @@ struct ConversationThread: View {
                 ProjectTaskLinks.open(url, in: vm, project: projectID, presentation: presentation) ? .handled : .systemAction
             })
             .id(agent?.rawValue ?? "empty")
+            // This Mac's own coordinator is held off by the view model from the owner's state (`coordinatorHeldOff`), on every adoption and
+            // when its store is made. A remote owner's store is told here, from the Project it pushed (this Mac cannot see the owner's
+            // processes: a pi the owner runs still serves, and a served snapshot is ready whatever `offline` says).
+            .onChange(of: agent != nil && ProjectComposerSend.isOffline(paused: project.paused, messages: project.messages, coordinatorLive: false),
+                      initial: true) { _, offline in
+                if ref.home != .local { store.offline = offline }
+            }
+    }
+
+    /// A local coordinator's saved history, read from pi's session file while its pi is not running (a relaunched Project's coordinator
+    /// is not launched until a message is sent), as an ordinary thread does. A remote owner serves its own.
+    private var preview: NativeThreadStore.Preview? {
+        // The owner's own snapshot, not the view model's observed state: the page must not re-pick its store when the agent changes.
+        let owner = vm.server.state
+        guard let agent, case .local = ref.home, let record = owner.agents.first(where: { $0.id == agent }), let paneID = record.paneID,
+              let pane = owner.tabs.first(where: { $0.id == record.tabID })?.layout.leaf(withID: paneID) else { return nil }
+        return PiSessionFile.previewLoader(sessionID: record.effectivePiSessionID, cwd: pane.cwd, sessionsRoot: vm.server.pi.sessionsRoot)
     }
 
     /// The owner's own model catalog for a remote Project (this Mac's, when nil), as a remote thread's picker lists.
