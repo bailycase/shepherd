@@ -80,6 +80,7 @@ struct ProjectRuntimeRevocationTests {
             rig.host.server.state.projects.first?.messages.last?.phase == .delivered
         }
         #expect(rig.host.server.state.projects.first?.messages.first?.phase == .unknown)
+        #expect(rig.host.server.state.projects.first?.messages.first?.failureDetail == nil)
         #expect(rig.agents.current[coordinator]?.stdin("prompt").compactMap { $0["message"] as? String } == ["tools:0 hold-start", "new assigned message"])
     }
 }

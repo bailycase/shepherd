@@ -385,7 +385,14 @@ outcome stays unknown rather than replaying on reconnect or restart. Native `.ac
 NOT mean delivered: a message advances only when its exact native prompt starts/gets consumed.
 A definite pre-send cancellation retains the message/assignment and records a new native
 `nativeDeliveryID`; its public operation identity stays unchanged. Definite refusal fails instead
-of occupying an unknown slot. Text admission matches native trimmed-nonempty, 16 KiB UTF-8 limits;
+of occupying an unknown slot (and never pauses the Project). Failed message receipts retain optional
+`failureDetail` from the actual native refusal, redacted with `NativeRedaction.projectData`, made
+printable and bounded to 4 KiB before persistence (`executionText`, again in model-facing reads). Legacy
+receipts decode without a detail. Cancelled/unknown deliveries carry no refusal detail; dispatch and
+confirmed consumption clear it. A human resend uses a new message identity, with no stale detail,
+while the historical failed receipt stays inspectable. Neither a refusal nor an unknown outcome
+authorizes automatic replay. The held message's note adds the detail after "Not delivered." (a
+record without one keeps the generic line; an unknown outcome never shows detail). Text admission matches native trimmed-nonempty, 16 KiB UTF-8 limits;
 the Instructions editor's independent character counter does not change.
 
 ### Pause, restart and deletion

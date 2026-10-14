@@ -219,7 +219,11 @@ enum ProjectHeldMessages {
             case .queued: note = paused ? "Sends when the project resumes" : "Waiting to send"
             case .delivering: note = "Sending"
             case .unknown: note = "Delivery unconfirmed. Send it again to retry."
-            case .failed: note = "Not delivered. Send it again to retry."
+            case .failed:
+                // The owner's own redacted words for a definite refusal; an older record has none, and an unknown outcome never gets one.
+                let reason = message.failureDetail?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let sentence = reason.last.map { ".!?".contains($0) } == false ? reason + "." : reason
+                note = reason.isEmpty ? "Not delivered. Send it again to retry." : "Not delivered. \(sentence) Send it again to retry."
             case .delivered: return nil
             }
             return ProjectHeldMessage(id: message.id, text: message.text, note: note)
