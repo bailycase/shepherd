@@ -42,7 +42,8 @@ public enum PiLaunch {
         var script = "cd -- \(quoted(cwd)) && exec \(quoted(home.launcher.path)) --mode rpc --session-dir \(quoted(sessionDirectory))"
             + " --session-id \(quoted(sessionID))"
         if untrustedProject || coordinator { script += " --no-approve" }
-        if coordinator { script += " --no-tools --no-extensions --no-skills --no-prompt-templates --no-context-files" }
+        // `--no-tools` would also drop the Project tools its extension registers; built-ins only.
+        if coordinator { script += " --no-builtin-tools --no-extensions --no-skills --no-prompt-templates --no-context-files" }
         if let model { script += " --model \(quoted(model))" }
         if let thinking { script += " --thinking \(quoted(thinking))" }
         for path in extensions { script += " -e \(quoted(path))" }
