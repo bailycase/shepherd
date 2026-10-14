@@ -475,9 +475,6 @@ public final class SessionServer: @unchecked Sendable {
     var projectPumps: Set<ProjectID> = []
     var projectPumpAgain: Set<ProjectID> = []
     var projectRunStarts: [ProjectID: Date] = [:]
-    var projectActivations: [ProjectID: Int] = [:]
-    var projectRunSeconds: TimeInterval = 600
-    var projectActivationLimit = 12
     public var onProjectExecutionLaunch: (@Sendable (ProjectExecutionAssignment, @escaping @Sendable (Result<AgentID, Error>) -> Void) -> Void)?
     var executionPending: Set<ProjectExecutionKey> = []
     var executionWorkers: Set<AgentID> = []
@@ -1321,7 +1318,6 @@ public final class SessionServer: @unchecked Sendable {
         projectStartedPrompts.removeAll()
         currentProjectChildScope.removeAll(); projectChildAdmitted.removeAll(); projectChildClosed.removeAll()
         projectChildDrained.removeAll(); projectChildDraining.removeAll(); projectChildStopped.removeAll(); projectChildTakenOver.removeAll()
-        projectActivations.removeAll()
         pendingDesignDeletions.removeAll()
         for session in sessions.values {
             session.shutdown()
@@ -1472,13 +1468,12 @@ public final class SessionServer: @unchecked Sendable {
         }
         if queuePausedExecutionAnswer(agentID: agentID, request: request, completion: { completion(.result($0)) }) { return }
         if queuePausedProjectAnswer(agentID: agentID, request: request, completion: { completion(.result($0)) }) { return }
-        if let projectID = agent.coordinatorFor {
+        // Stop on the coordinator ends its current turn only; the Project keeps running (only Pause pauses it).
+        if agent.coordinatorFor != nil {
             switch request {
             case .send, .retry, .compact, .subagentCommand, .goal, .queue:
                 completion(.failure(code: "project_control", message: "Use the revision-checked Project controls for coordinated messages."))
                 return
-            case .abort(let expected, let generation, _):
-                if let thread = rpcThread(forAgent: agentID), thread.piSessionID == expected, thread.generation == generation { stopProjectRun(projectID) }
             default: break
             }
         }
@@ -3066,7 +3061,9 @@ public final class SessionServer: @unchecked Sendable {
                     switch result {
                     case .success(let project):
                         let spaces = self.store.state.spaces.filter { space in !space.hidden && project.linkedSpaces.contains { $0.spaceID == space.id && $0.destination == .local } }
-                        self.reply(.projectRuntime(id: id, project: project, spaces: spaces), to: client)
+                        // Only the coordinator chooses a task's model, so only its replies carry the owner's model list.
+                        let models = project.coordinatorAgentID == agentID ? self.modelListing().models : []
+                        self.reply(.projectRuntime(id: id, project: project, spaces: spaces, models: models), to: client)
                     case .failure(let error): self.reply(.error(id: id, code: (error as? LogicalProjectsError)?.code ?? "project_failed", message: String(describing: error)), to: client)
                     }
                 }
@@ -4202,7 +4199,7 @@ public final class SessionServer: @unchecked Sendable {
     private func replyID(_ message: ExtensionReply) -> Int {
         switch message {
         case .parentInput: return 0
-        case .projectPublish(let id, _), .childScope(let id, _, _), .projectChildren(let id, _, _), .projectRuntime(let id, _, _), .childCommand(let id, _, _, _, _), .ok(let id), .projectResult(let id, _, _),
+        case .projectPublish(let id, _), .childScope(let id, _, _), .projectChildren(let id, _, _), .projectRuntime(let id, _, _, _), .childCommand(let id, _, _, _, _), .ok(let id), .projectResult(let id, _, _),
              .error(let id, _, _),
              .panes(let id, _),
              .paneOpened(let id, _),
@@ -4468,7 +4465,6 @@ public final class SessionServer: @unchecked Sendable {
         }
         for old in before.projects where !state.projects.contains(where: { $0.id == old.id }) {
             projectRunStarts[old.id] = nil
-            projectActivations[old.id] = nil
             for agent in old.tasks.map(\.workerAgentID) + [old.coordinatorAgentID].compactMap({ $0 }) {
                 projectPromptInFlight[agent] = nil
                 projectStartedPrompts.remove(agent)

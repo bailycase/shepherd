@@ -1257,7 +1257,8 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     case designNote(id: Int, note: DesignThreadNote)
     /// A `browser` request's answer: text, and for a screenshot an image (`BrowserOutcome`).
     case browserResult(id: Int, text: String, image: BrowserImage?)
-    case projectRuntime(id: Int, project: Project, spaces: [Space] = [])
+    /// `models`: what this owner can run, so a coordinator can choose a task's model (`project_assign`).
+    case projectRuntime(id: Int, project: Project, spaces: [Space] = [], models: [String] = [])
     case projectPublish(id: Int, result: ProjectPublicationResult)
 
     private enum CodingKeys: String, CodingKey {
@@ -1270,7 +1271,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case comments, comment
         case listing, system
         case proposals
-        case answer, note, project, spaces
+        case answer, note, project, spaces, models
         case image
     }
 
@@ -1463,7 +1464,9 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case .projectPublish:
             self = .projectPublish(id: try c.decode(Int.self, forKey: .id), result: try c.decode(ProjectPublicationResult.self, forKey: .result))
         case .projectRuntime:
-            self = .projectRuntime(id: try c.decode(Int.self, forKey: .id), project: try c.decode(Project.self, forKey: .project), spaces: try c.decodeIfPresent([Space].self, forKey: .spaces) ?? [])
+            self = .projectRuntime(id: try c.decode(Int.self, forKey: .id), project: try c.decode(Project.self, forKey: .project),
+                                   spaces: try c.decodeIfPresent([Space].self, forKey: .spaces) ?? [],
+                                   models: try c.decodeIfPresent([String].self, forKey: .models) ?? [])
         case .browserResult:
             self = .browserResult(
                 id: try c.decode(Int.self, forKey: .id),
@@ -1626,9 +1629,10 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
             try c.encode(Kind.projectPublish, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(result, forKey: .result)
-        case .projectRuntime(let id, let project, let spaces):
+        case .projectRuntime(let id, let project, let spaces, let models):
             try c.encode(Kind.projectRuntime, forKey: .type)
             try c.encode(id, forKey: .id); try c.encode(project, forKey: .project); try c.encode(spaces, forKey: .spaces)
+            if !models.isEmpty { try c.encode(models, forKey: .models) }
         case .browserResult(let id, let text, let image):
             try c.encode(Kind.browserResult, forKey: .type)
             try c.encode(id, forKey: .id)

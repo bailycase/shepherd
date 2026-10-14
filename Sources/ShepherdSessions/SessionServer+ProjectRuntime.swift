@@ -61,7 +61,7 @@ extension SessionServer {
                                                 taskID: task, eventID: event, replyID: reply, answer: answer)
         }
         if case .message(let op, _, _) = request, current.messages.contains(where: { $0.id == op }) { return current }
-        if case .assign(let op, let space, let title, let prompt, let host) = request,
+        if case .assign(let op, let space, let title, let prompt, let host, _, _) = request,
            let existing = current.tasks.first(where: { $0.operationID == op || $0.previousOperations?.contains(op) == true }) {
             guard existing.spaceID == space, existing.destination == (host ?? .local),
                   existing.operationID != op || (existing.title == title && existing.prompt == prompt) else {
@@ -69,7 +69,7 @@ extension SessionServer {
             }
             return current
         }
-        if case .followUp(_, let op, _) = request, current.tasks.contains(where: { $0.operationID == op || $0.previousOperations?.contains(op) == true }) { return current }
+        if case .followUp(_, let op, _, _, _) = request, current.tasks.contains(where: { $0.operationID == op || $0.previousOperations?.contains(op) == true }) { return current }
         if case .resolve(let task, let op?) = request, current.tasks.contains(where: { $0.id == task && $0.resolutionOperations?.contains(op) == true }) { return current }
         if case .proposeSpace(let op, _, _, _) = request, current.spaceProposals.contains(where: { $0.operationID == op }) { return current }
         if case .remember(let op, _, _) = request, current.memoryOperations.contains(op) || current.memory.contains(where: { $0.id.rawValue == op.uuidString.lowercased() }) { return current }
@@ -140,10 +140,11 @@ extension SessionServer {
                 message.humanSubmitted = true
                 p.messages.append(message)
                 if !p.paused, p.coordinatorAgentID == nil { p.coordinatorAgentID = AgentID() }
-            case .assign(let op, let space, let title, let prompt, let host):
+            case .assign(let op, let space, let title, let prompt, let host, let model, let thinking):
                 try self.validateProjectPlacement(p, host: host ?? .local, spaceID: space)
-                p.tasks.append(.init(operationID: op, spaceID: space, title: title, prompt: prompt, host: host))
-            case .followUp(let task, let op, let text):
+                p.tasks.append(.init(operationID: op, spaceID: space, title: title, prompt: prompt, host: host,
+                                     model: try self.projectTaskModel(model), thinking: try Self.projectTaskThinking(thinking)))
+            case .followUp(let task, let op, let text, let model, let thinking):
                 guard let i = p.tasks.firstIndex(where: { $0.id == task }), p.tasks[i].phase == .settled,
                       (p.tasks[i].previousOperations?.count ?? 0) < 31 else { throw LogicalProjectsError("conflict", "Follow-up requires settled work; steer active work in its ordinary thread.") }
                 try self.validateProjectPlacement(p, host: p.tasks[i].destination, spaceID: p.tasks[i].spaceID)
@@ -151,6 +152,9 @@ extension SessionServer {
                 p.tasks[i].previousOperations = (p.tasks[i].previousOperations ?? []) + [p.tasks[i].operationID]
                 p.tasks[i].operationID = op; p.tasks[i].nativeDeliveryID = nil; p.tasks[i].childScopeEpoch = nil
                 p.tasks[i].prompt = text; p.tasks[i].phase = .queued; p.tasks[i].revision += 1
+                // A follow-up keeps the task's earlier choice unless the coordinator names a new one.
+                if let model { p.tasks[i].model = try self.projectTaskModel(model) }
+                if let thinking { p.tasks[i].thinking = try Self.projectTaskThinking(thinking) }
                 p.tasks[i].settledAt = nil; p.tasks[i].error = nil; p.tasks[i].question = nil; p.tasks[i].pendingAnswer = nil
             case .resolve(let task, _), .reopen(let task):
                 guard let i = p.tasks.firstIndex(where: { $0.id == task }) else { throw LogicalProjectsError("no_such_task", "Task no longer exists.") }
@@ -233,20 +237,16 @@ extension SessionServer {
                     self.currentProjectChildScope[task.workerAgentID] = scope
                 }
             }
-            if project.paused { self.projectRunStarts[id] = nil; self.projectActivations[id] = nil; self.interruptProject(id) }
+            if project.paused { self.projectRunStarts[id] = nil; self.interruptProject(id) }
             else {
                 let startsRun: Bool
                 switch request { case .message, .assign, .followUp, .resume: startsRun = true; default: startsRun = false }
                 if self.projectRunStarts[id] == nil, startsRun,
                    project.coordinatorAgentID.map({ !self.projectLaunches.contains($0) }) ?? true {
-                    let started = Date(), epoch = self.logicalProjectEpoch
-                    self.projectRunStarts[id] = started; self.projectActivations[id] = 0
+                    // A run lasts until the person pauses it (or the app quits): no time or activation limit pauses it.
+                    self.projectRunStarts[id] = Date()
                     let agents = project.tasks.map(\.workerAgentID) + [project.coordinatorAgentID].compactMap { $0 }
                     self.projectInterrupts.subtract(agents); self.projectInterruptAcknowledged.subtract(agents)
-                    self.queue.asyncAfter(deadline: .now() + self.projectRunSeconds) { [weak self] in
-                        guard let self, self.logicalProjectEpoch == epoch, self.projectRunStarts[id] == started else { return }
-                        self.stopProjectRun(id)
-                    }
                 }
                 if case .resume = request { self.resumeProjectPlacements(id) }
                 self.pumpProject(id)
@@ -430,7 +430,7 @@ extension SessionServer {
     }
 
     func stopProjectRun(_ id: ProjectID) {
-        projectRunStarts[id] = nil; projectActivations[id] = nil
+        projectRunStarts[id] = nil
         changeRuntimeProject(id, { $0.paused = true; $0.interruptPending = true }) { _ in self.interruptProject(id) }
         interruptProject(id)
     }
@@ -535,8 +535,7 @@ extension SessionServer {
     }
 
     private func activeProject(_ id: ProjectID) -> Project? {
-        guard projectsEnabled, let p = store.state.projects.first(where: { $0.id == id }), !p.paused, let started = projectRunStarts[id] else { return nil }
-        guard Date().timeIntervalSince(started) < projectRunSeconds, (projectActivations[id] ?? 0) < projectActivationLimit else { stopProjectRun(id); return nil }
+        guard projectsEnabled, let p = store.state.projects.first(where: { $0.id == id }), !p.paused, projectRunStarts[id] != nil else { return nil }
         return p
     }
 
@@ -598,13 +597,13 @@ extension SessionServer {
             }
             try await enqueue {
                 guard self.activeProject(id) != nil else { return }
-                self.projectActivations[id, default: 0] += 1
                 if let assigned = reserved.tasks.first(where: { $0.id == task.id }), let assignment = assigned.executionAssignment {
                     self.requestProjectPlacement(assigned, request: .execute(assignment)); return
                 }
                 guard let space = self.store.state.spaces.first(where: { $0.id == task.spaceID && !$0.hidden }) else { return }
                 if self.rpcThread(forAgent: task.workerAgentID)?.isServable == true { self.projectRuntimeReady(agentID: task.workerAgentID) }
-                else { self.launchProject(.init(projectID: id, agentID: task.workerAgentID, spaceID: space.id, cwd: space.path, name: task.title, model: reserved.settings.threadModel, coordinator: false)) }
+                else { self.launchProject(.init(projectID: id, agentID: task.workerAgentID, spaceID: space.id, cwd: space.path, name: task.title,
+                                                model: task.model ?? reserved.settings.threadModel, thinking: task.thinking, coordinator: false)) }
             }
         }
         try await enqueue { for task in self.store.state.projects.first(where: { $0.id == id })?.tasks ?? [] where task.phase == .reserved && task.executionAssignment == nil { self.projectRuntimeReady(agentID: task.workerAgentID) } }
@@ -620,7 +619,6 @@ extension SessionServer {
                 if launch.coordinator,
                    self.store.state.projects.first(where: { $0.id == launch.projectID })?.coordinatorAgentID == launch.agentID {
                     self.projectRunStarts[launch.projectID] = nil
-                    self.projectActivations[launch.projectID] = nil
                 }
                 // Keep the launch fence until the asynchronous failure write revokes durable admission.
                 self.changeRuntimeProject(launch.projectID, { p in
@@ -676,7 +674,8 @@ extension SessionServer {
                     return
                 }
                 self.projectStartedPrompts.remove(agentID)
-                self.dispatchProjectInput(projectID: p.id, thread: thread, model: project.settings.threadModel,
+                let current = project.tasks.first(where: { $0.id == task.id }) ?? task
+                self.dispatchProjectInput(projectID: p.id, thread: thread, model: current.model ?? project.settings.threadModel, thinking: current.thinking,
                     request: .send(expectedSessionID: session, generation: thread.generation, operationID: task.nativeDeliveryID ?? task.operationID, text: task.prompt, delivery: .followUp)) { result in
                     if case .failure(let code, let message) = result {
                         if code != "outcome_unknown" { self.projectPromptInFlight[agentID] = nil }
@@ -722,8 +721,8 @@ extension SessionServer {
                         if code == "send_cancelled" { p.messages[i].nativeDeliveryID = nextDelivery }
                     }
                 }) { p in
-                    if code != "send_cancelled" { self.stopProjectRun(projectID) }
-                    else if p.paused { self.finishProjectInterruption(projectID) }
+                    // A failed delivery is reported on the message; it never pauses the Project.
+                    if p.paused { self.finishProjectInterruption(projectID) }
                     else { self.pumpProject(projectID) }
                 }
             }
@@ -738,7 +737,6 @@ extension SessionServer {
                 let images: [NativeImage]
                 do { images = try loaded.get() }
                 catch { completed(.failure(code: "project_image_unavailable", message: "Project input images are unavailable. Nothing was sent without them.")); return }
-                self.projectActivations[projectID, default: 0] += 1
                 self.projectStartedPrompts.remove(agentID)
                 self.dispatchProjectInput(projectID: projectID, thread: thread, model: current.settings.conversationModel,
                     request: .send(expectedSessionID: session, generation: generation, operationID: message.nativeDeliveryID ?? message.id,
@@ -755,7 +753,7 @@ extension SessionServer {
     }
 
     /// Model preferences apply to the next admitted native turn, never to an extra provider call.
-    func dispatchProjectInput(projectID: ProjectID, thread: RPCThreadState, model: String?, request: NativeThreadRequest,
+    func dispatchProjectInput(projectID: ProjectID, thread: RPCThreadState, model: String?, thinking: String? = nil, request: NativeThreadRequest,
                               completion: @escaping (NativeThreadResult) -> Void) {
         let send = {
             guard self.projectsEnabled, self.store.state.projects.first(where: { $0.id == projectID })?.paused == false,
@@ -770,11 +768,19 @@ extension SessionServer {
         guard !thread.piBusy, thread.items.isEmpty else {
             completion(.failure(code: "send_cancelled", message: "Project delivery waits for ordinary native work.")); return
         }
+        // The task's thinking level follows its model: pi clamps a level the model lacks.
+        let withThinking = {
+            if let thinking, thinking != thread.thinking, let session = thread.piSessionID {
+                thread.handle(.setThinking(expectedSessionID: session, generation: thread.generation, operationID: UUID(), level: thinking)) { result in
+                    if case .accepted = result { send() } else { completion(result) }
+                }
+            } else { send() }
+        }
         if let model, model != thread.model, let session = thread.piSessionID {
             thread.handle(.setModel(expectedSessionID: session, generation: thread.generation, operationID: UUID(), model: model)) { result in
-                if case .accepted = result { send() } else { completion(result) }
+                if case .accepted = result { withThinking() } else { completion(result) }
             }
-        } else { send() }
+        } else { withThinking() }
     }
 
     func projectPromptStarted(agentID: AgentID, deliveryID: UUID) {
@@ -793,10 +799,10 @@ extension SessionServer {
     func projectRuntimeExited(agentID: AgentID) {
         guard (try? requireStarted()) != nil, let p = store.state.projects.first(where: { $0.coordinatorAgentID == agentID || $0.tasks.contains { $0.workerAgentID == agentID && $0.phase.occupiesSlot } }) else { return }
         projectPromptInFlight[agentID] = nil; projectStartedPrompts.remove(agentID)
-        if p.coordinatorAgentID == agentID { projectRunStarts[p.id] = nil; projectActivations[p.id] = nil }
+        // The coordinator's pi exiting never pauses the Project: the next message relaunches it (`pumpProjectWork`). A message
+        // whose delivery was in flight stays `unknown`; nothing is resent on its own.
         changeRuntimeProject(p.id, { p in
             if p.coordinatorAgentID == agentID {
-                p.paused = true
                 for i in p.messages.indices where p.messages[i].phase == .delivering { p.messages[i].phase = .unknown }
             }
             if let i = p.tasks.firstIndex(where: { $0.workerAgentID == agentID && $0.phase.occupiesSlot }) {
