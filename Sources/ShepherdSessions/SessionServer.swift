@@ -1192,16 +1192,26 @@ public final class SessionServer: @unchecked Sendable {
                         let staleCoordinator = state.projects[i].coordinatorAgentID.map { id in
                             !state.agents.contains { $0.id == id }
                         } ?? false
-                        if !state.projects[i].paused || staleCoordinator || state.projects[i].interruptPending
+                        // A restart resumes no work, and never pauses a Project either: nothing runs until the person's next
+                        // message starts it again. A Project the person paused stays paused.
+                        if staleCoordinator || state.projects[i].interruptPending
                             || state.projects[i].tasks.contains(where: { $0.phase.occupiesSlot || $0.pendingAnswer?.phase == .queued || $0.pendingAnswer?.phase == .delivering })
                             || state.projects[i].messages.contains(where: { $0.phase == .delivering }) {
-                            state.projects[i].paused = true
                             if staleCoordinator { state.projects[i].coordinatorAgentID = nil }
                             state.projects[i].revision += 1
                         }
                         state.projects[i].interruptPending = false
                         for t in state.projects[i].tasks.indices where state.projects[i].tasks[t].phase.occupiesSlot {
-                            state.projects[i].tasks[t].phase = .unknown
+                            // A local thread's pi died with the app, so it is not running: it settles as interrupted, frees its
+                            // slot, and can be followed up. Another host's thread may still run there; its receipt reconciles it.
+                            if state.projects[i].tasks[t].executionAssignment == nil {
+                                state.projects[i].tasks[t].phase = .settled
+                                state.projects[i].tasks[t].settledAt = Date().timeIntervalSince1970 * 1000
+                                state.projects[i].tasks[t].question = nil
+                                state.projects[i].tasks[t].error = "Interrupted when Shepherd quit. Its conversation is as it was; follow up to continue."
+                            } else {
+                                state.projects[i].tasks[t].phase = .unknown
+                            }
                             state.projects[i].tasks[t].revision += 1
                         }
                         for t in state.projects[i].tasks.indices where state.projects[i].tasks[t].pendingAnswer?.phase == .queued || state.projects[i].tasks[t].pendingAnswer?.phase == .delivering {

@@ -358,7 +358,7 @@ struct ProjectRuntimeTests {
         try await eventually("retained message after resume") { rig.agents.current[coordinator]?.stdin("prompt").count == 2 }
     }
 
-    @Test func restartKeepsUnknownWorkersPausedAndDeletionPreservesOrdinaryThreads() async throws {
+    @Test func restartSettlesInterruptedLocalWorkersWithoutPausingAndDeletionPreservesOrdinaryThreads() async throws {
         let rig = try Rig()
         let project = try await rig.create(), space = try #require(project.linkedSpaces.first?.spaceID)
         _ = try await rig.perform(project.id, .assign(operationID: UUID(), spaceID: space, title: "Work", prompt: "hang"))
@@ -369,7 +369,9 @@ struct ProjectRuntimeTests {
         let restarted = try ScratchServer(dir: rig.host.dir); defer { restarted.stop() }
         restarted.server.setProjectsEnabled(true)
         let saved = try #require(restarted.server.state.projects.first)
-        #expect(saved.paused && saved.tasks.first?.phase == .unknown)
+        // The worker's pi died with the app: its task settles as interrupted (freeing its slot for a follow-up), and nothing pauses.
+        #expect(!saved.paused && saved.tasks.first?.phase == .settled)
+        #expect(saved.tasks.first?.error?.contains("Interrupted") == true)
         #expect(await restarted.server.listSessions().isEmpty)
         _ = try await restarted.server.logicalProjects(.delete(projectID: project.id, expectedRevision: saved.revision))
         #expect(restarted.server.state.agents.contains { $0.id == worker })
