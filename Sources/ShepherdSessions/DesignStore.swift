@@ -270,6 +270,8 @@ public final class DesignStore: @unchecked Sendable {
         try await run {
             guard let folder = self.folder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
             self.forget(id)
+            // A shared design's repository lives beside the designs (`DesignGit`): it goes too.
+            DesignGit.removeRepository(of: folder)
             guard FileManager.default.fileExists(atPath: folder.path) else { return }
             do { try FileManager.default.removeItem(at: folder) } catch {
                 throw DesignStoreError.io("could not delete design \(id): \(error.localizedDescription)")
@@ -325,6 +327,7 @@ public final class DesignStore: @unchecked Sendable {
         try await run {
             guard let staged = self.stagedFolder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
             self.forget(id)
+            if let folder = self.folder(for: id) { DesignGit.removeRepository(of: folder) }
             guard FileManager.default.fileExists(atPath: staged.path) else { return }
             do { try FileManager.default.removeItem(at: staged) } catch {
                 throw DesignStoreError.io("could not delete design \(id): \(error.localizedDescription)")
@@ -1425,9 +1428,20 @@ public final class DesignStore: @unchecked Sendable {
             let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
             var removed: [String] = []
             for name in names.sorted() where [Self.stagedPrefix, Self.importPrefix, Self.unzipPrefix].contains(where: name.hasPrefix) {
+                // A deletion that never finished: its repository (beside the designs) goes too.
+                if name.hasPrefix(Self.stagedPrefix) {
+                    DesignGit.removeRepository(of: directory.appendingPathComponent(String(name.dropFirst(Self.stagedPrefix.count))))
+                }
                 if (try? FileManager.default.removeItem(at: directory.appendingPathComponent(name, isDirectory: true))) != nil {
                     removed.append(name)
                 }
+            }
+            // A repository whose design is gone (a crash between the two): nothing uses it.
+            let repositories = directory.appendingPathComponent(DesignGitRunner.repositoriesName, isDirectory: true)
+            for id in (try? FileManager.default.contentsOfDirectory(atPath: repositories.path)) ?? []
+            where !FileManager.default.fileExists(atPath: directory.appendingPathComponent(id).path)
+                && !FileManager.default.fileExists(atPath: directory.appendingPathComponent(Self.stagedPrefix + id).path) {
+                try? FileManager.default.removeItem(at: repositories.appendingPathComponent(id, isDirectory: true))
             }
             return removed
         }

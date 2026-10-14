@@ -3,22 +3,40 @@ import ShepherdCore
 import ShepherdProtocol
 
 // Git sharing for designs (docs/designs.md › Sharing with Git; boards GitDesignPublish … GitDesignMergeReview).
-// A shared design is a Git working tree whose repository lives beside it, in the design's folder:
-// `<design>/.shepherd-git` holds the repository, and only `project/`, `assets/` and
-// `comments.json` are tracked. Shepherd's own files (`revision`, `versions/`, `pins/`,
-// `checkpoints/`, the merge copy) are excluded, and nothing ever writes a `.git` the design agent
-// could find from its working folder. Every call blocks: callers run it off the server's queue.
+// A shared design is a Git working tree whose repository lives outside it, beside the designs:
+// `<designs>/.git/<id>` holds it, so nothing in the design's folder (the design agent's working
+// folder) leads to the repository, its remote or its config. Only `project/`, `assets/` and
+// `comments.json` are tracked; Shepherd's own files (`revision`, `versions/`, `pins/`,
+// `checkpoints/`, the merge copy) are excluded. Every call blocks: callers run it off the
+// server's queue.
 
 /// One git run against a design's private repository, or with no repository (clone, ls-remote).
 struct DesignGitRunner: Sendable {
     let folder: URL
+    /// `<designs>/.git/<id>`: outside the design's folder, where its agent works.
+    let gitDirectory: URL
 
-    static let directoryName = ".shepherd-git"
+    /// The folder beside the designs that holds every shared design's repository, by id.
+    static let repositoriesName = ".git"
+
+    init(folder: URL) {
+        self.init(folder: folder, gitDirectory: Self.repository(of: folder))
+    }
+
+    init(folder: URL, gitDirectory: URL) {
+        self.folder = folder
+        self.gitDirectory = gitDirectory
+    }
+
+    /// The repository of the design whose folder is `folder`.
+    static func repository(of folder: URL) -> URL {
+        folder.deletingLastPathComponent().appendingPathComponent(repositoriesName, isDirectory: true)
+            .appendingPathComponent(folder.lastPathComponent, isDirectory: true)
+    }
     /// A network step (clone, fetch, push) longer than this has stalled.
     static let networkTimeout: TimeInterval = 150
     static let localTimeout: TimeInterval = 60
 
-    var gitDirectory: URL { folder.appendingPathComponent(Self.directoryName, isDirectory: true) }
     var isShared: Bool { FileManager.default.fileExists(atPath: gitDirectory.appendingPathComponent("HEAD").path) }
 
     /// Runs git on this design's repository and working tree.
@@ -36,7 +54,10 @@ struct DesignGitRunner: Sendable {
     /// What every design git run sets: no hooks, no symlinks checked out, bytes as they are, no
     /// file-system monitor, and no transport helpers (`ext::`).
     static let safety = ["-c", "core.hooksPath=/dev/null", "-c", "core.symlinks=false", "-c", "core.autocrlf=false",
-                         "-c", "core.fsmonitor=false", "-c", "protocol.ext.allow=never", "-c", "advice.detachedHead=false"]
+                         "-c", "core.fsmonitor=false", "-c", "protocol.ext.allow=never", "-c", "advice.detachedHead=false",
+                         // No attributes but these, so no filter, diff or merge driver runs a command.
+                         "-c", "core.attributesFile=/dev/null", "-c", "core.ignoreCase=true", "-c", "core.protectHFS=true",
+                         "-c", "core.protectNTFS=true", "-c", "submodule.recurse=false"]
 
     /// Git as Shepherd runs it for designs: never prompting (a repository that needs credentials
     /// it has none for fails), never reading hooks, and never following a symlink in a tree.
@@ -47,7 +68,7 @@ struct DesignGitRunner: Sendable {
             return try SkillsGit.run(safety + arguments, in: directory, input: input,
                                      timeout: network ? networkTimeout : localTimeout, environment: environment)
         } catch let failure as SkillsGit.Failure {
-            throw DesignGitError.git(failure.message)
+            throw DesignGitError.git(DesignGit.redacted(failure.message))
         }
     }
 
@@ -84,6 +105,9 @@ public enum DesignGitError: Error, Equatable, Sendable, CustomStringConvertible 
     case merging
     case noMerge
     case noIdentity
+    /// The design was written while the merge waited (a Tweak, a comment, a turn): taking the
+    /// merge now would lose it.
+    case changedDuringMerge
     case git(String)
 
     public var description: String { message }
@@ -103,6 +127,8 @@ public enum DesignGitError: Error, Equatable, Sendable, CustomStringConvertible 
         case .merging: "A merge is in progress. Finish or stop it first."
         case .noMerge: "There's no merge to commit."
         case .noIdentity: "Git doesn't know who you are. Set user.name and user.email in your Git config, then try again."
+        case .changedDuringMerge: "The design changed after the pull, so the merge would lose those changes. "
+            + "Keep working locally, commit them, then pull again."
         case .git(let message): message
         }
     }
@@ -204,15 +230,19 @@ public struct DesignGitMerge: Equatable, Sendable, Codable {
     public var theirsHash: String
     /// Why the attempt failed, when it did.
     public var reason: String?
+    /// The merge copy's tree when it became ready to review: Commit merge commits exactly this,
+    /// and refuses a copy that changed since.
+    public var reviewedTree: String?
 
     public init(phase: Phase, ours: DesignGitStatus.Commit, theirs: DesignGitStatus.Commit, oursHash: String, theirsHash: String,
-                reason: String? = nil) {
+                reason: String? = nil, reviewedTree: String? = nil) {
         self.phase = phase
         self.ours = ours
         self.theirs = theirs
         self.oursHash = oursHash
         self.theirsHash = theirsHash
         self.reason = reason
+        self.reviewedTree = reviewedTree
     }
 }
 
@@ -240,12 +270,30 @@ enum DesignGit {
         let url = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !url.isEmpty, url.utf8.count <= 2048, !url.hasPrefix("-"),
               !url.contains(where: { $0.isWhitespace || $0.isNewline }), !url.contains("::") else { return false }
-        if url.hasPrefix("https://") || url.hasPrefix("http://") || url.hasPrefix("ssh://") || url.hasPrefix("file://") { return true }
+        // A password or token in the URL would be kept in the repository's config: git's own
+        // credential helper holds those instead.
+        if hasPassword(url) { return false }
+        if url.hasPrefix("https://") || url.hasPrefix("ssh://") || url.hasPrefix("file://") { return true }
         if url.hasPrefix("/") { return true }
         // scp-like: user@host:path
         if let colon = url.firstIndex(of: ":"), let at = url.firstIndex(of: "@"), at < colon,
            url.distance(from: url.startIndex, to: at) > 0, url.index(after: colon) < url.endIndex { return true }
         return false
+    }
+
+    /// `https://user:secret@host/…`: a URL that carries a password.
+    static func hasPassword(_ url: String) -> Bool {
+        guard let scheme = url.range(of: "://") else { return false }
+        let rest = url[scheme.upperBound...]
+        let authority = rest.prefix { $0 != "/" }
+        guard let at = authority.lastIndex(of: "@") else { return false }
+        return authority[..<at].contains(":")
+    }
+
+    /// Git's words with any credentials in a URL taken out (`https://user:token@host` →
+    /// `https://host`), before they reach the UI or a log.
+    static func redacted(_ text: String) -> String {
+        text.replacingOccurrences(of: #"([a-zA-Z][a-zA-Z0-9+.-]*://)[^/@\s]+@"#, with: "$1", options: .regularExpression)
     }
 
     /// "acme/checkout-design" from `git@github.com:acme/checkout-design.git` or its HTTPS form.
@@ -285,8 +333,9 @@ enum DesignGit {
         }
         guard heads.isEmpty else { throw DesignGitError.remoteNotEmpty }
         do {
-            try DesignGitRunner.run(["init", "-q", "-b", "main", "--", folder.path], in: nil,
-                                    environment: ["GIT_DIR": git.gitDirectory.path])
+            try FileManager.default.createDirectory(at: git.gitDirectory.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try DesignGitRunner.run(["init", "-q", "-b", "main", "--bare", "--", git.gitDirectory.path], in: nil)
+            try git.run(["config", "core.bare", "false"])
             try writeExclude(git)
             try git.run(["remote", "add", "origin", url])
             try git.run(["add", "-A", "--"] + tracked.filter { FileManager.default.fileExists(atPath: folder.appendingPathComponent($0).path) })
@@ -302,18 +351,24 @@ enum DesignGit {
         return try status(folder, fetch: false)
     }
 
-    /// Open from Git, first half: clones `url` into `staging` (a folder that doesn't exist yet)
-    /// as a design folder with its repository at `.shepherd-git`, and checks it holds a design:
-    /// `project/canvas.json` that reads as a canvas, every file within the import's rules, no
-    /// links. A failure removes `staging`.
-    static func clone(_ url: String, into staging: URL) throws -> DesignIndex {
+    /// Open from Git: clones `url` as the design `folder` (which doesn't exist yet), checked
+    /// out into `staging` and moved into place only once it holds a design: `project/canvas.json`
+    /// that reads as a canvas, every file within the import's rules, no links. Its repository is
+    /// the design's own (`gitDirectory`), outside both folders. A failure removes everything.
+    static func clone(_ url: String, as folder: URL, staging: URL) throws -> DesignIndex {
         let url = url.trimmingCharacters(in: .whitespacesAndNewlines)
         guard isRemoteURL(url) else { throw DesignGitError.invalidURL }
         let manager = FileManager.default
         try? manager.removeItem(at: staging)
+        let repository = DesignGitRunner.repository(of: folder)
+        guard !manager.fileExists(atPath: folder.path), !manager.fileExists(atPath: repository.path) else {
+            throw DesignGitError.git("A design with that id already exists.")
+        }
         do {
             try manager.createDirectory(at: staging, withIntermediateDirectories: true)
-            let git = DesignGitRunner(folder: staging)
+            try manager.createDirectory(at: repository.deletingLastPathComponent(), withIntermediateDirectories: true)
+            // Checked out into staging; the repository is already where the design will live.
+            let git = DesignGitRunner(folder: staging, gitDirectory: repository)
             // A bare clone is only the repository: nothing is checked out until the tree is checked.
             do {
                 try DesignGitRunner.run(["clone", "-q", "--bare", "--no-tags", "--", url, git.gitDirectory.path], in: nil, network: true)
@@ -339,11 +394,18 @@ enum DesignGit {
             let index: DesignIndex
             do { index = try DesignIndex.decode(data) } catch { throw DesignGitError.notADesign("canvas.json isn't a canvas Shepherd reads") }
             try Data("0\n".utf8).write(to: staging.appendingPathComponent("revision"))
+            try manager.moveItem(at: staging, to: folder)
             return index
         } catch {
             try? manager.removeItem(at: staging)
+            try? manager.removeItem(at: repository)
             throw error
         }
+    }
+
+    /// A design that goes (deleted for good): its repository goes with it.
+    static func removeRepository(of folder: URL) {
+        try? FileManager.default.removeItem(at: DesignGitRunner.repository(of: folder))
     }
 
     /// One entry of `ls-tree -r`.
@@ -372,11 +434,21 @@ enum DesignGit {
         }
         guard entries.count <= DesignImport.maxFiles else { throw DesignGitError.notADesign("it holds more than \(DesignImport.maxFiles) files") }
         var total = 0
+        // APFS is case-insensitive: two paths that differ only by case would write one file.
+        var folded = Set<String>()
         for entry in entries {
             guard entry.type == "blob", entry.mode == "100644" || entry.mode == "100755" else {
                 throw DesignGitError.notADesign("\(entry.path) is a link or a submodule")
             }
             guard isTrackedPath(entry.path) else { throw DesignGitError.notADesign("\(entry.path) isn't part of a design") }
+            // Git reads these from the tree it checks out (filters, hooks' config): never from a design.
+            let name = entry.path.split(separator: "/").last.map(String.init) ?? entry.path
+            guard ![".gitattributes", ".gitmodules", ".gitignore", ".git"].contains(name.lowercased()) else {
+                throw DesignGitError.notADesign("\(entry.path) is a Git file, not part of a design")
+            }
+            guard folded.insert(entry.path.lowercased()).inserted else {
+                throw DesignGitError.notADesign("\(entry.path) differs from another file only by case")
+            }
             guard entry.size <= DesignImport.maxFileBytes else { throw DesignGitError.notADesign("\(entry.path) is too large") }
             total += entry.size
             guard Int64(total) <= DesignImport.maxProjectBytes else { throw DesignGitError.notADesign("it's too large") }
@@ -473,7 +545,6 @@ enum DesignGit {
     static func commit(_ folder: URL, message: String, push: Bool) throws -> (status: DesignGitStatus, pushError: String?) {
         let git = DesignGitRunner(folder: folder)
         guard git.isShared else { throw DesignGitError.notShared }
-        guard !FileManager.default.fileExists(atPath: folder.appendingPathComponent(mergeCopyName).path) else { throw DesignGitError.merging }
         let message = message.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !message.isEmpty else { throw DesignGitError.nothingToCommit }
         guard !(try changes(git)).isEmpty else { throw DesignGitError.nothingToCommit }
@@ -515,16 +586,25 @@ enum DesignGit {
         case needsMerge(DesignGitMerge)
     }
 
-    /// Pull: fetch, then fast-forward a clean working copy. Diverged history is never merged
-    /// here: it answers the two commits for the merge dialog, and the design's files stay as
-    /// they were.
-    static func pull(_ folder: URL) throws -> PullOutcome {
+    /// Pull's network half: fetch the remote. Runs on the Git queue, never under the design
+    /// store's, so a slow remote stalls no canvas or agent.
+    static func fetch(_ folder: URL) throws {
         let git = DesignGitRunner(folder: folder)
         guard git.isShared else { throw DesignGitError.notShared }
         guard try changes(git).isEmpty else { throw DesignGitError.dirty }
         do { try git.run(["fetch", "-q", "--no-tags", "--prune", "origin"], network: true) } catch DesignGitError.git(let why) {
             throw DesignGitError.unavailable(why)
         }
+    }
+
+    /// Pull's local half, after `fetch`: fast-forward a clean working copy to what was fetched.
+    /// Diverged history is never merged here: it answers the two commits for the merge dialog,
+    /// and the design's files stay as they were. Local only, so it may run under the store's queue.
+    static func pull(_ folder: URL) throws -> PullOutcome {
+        let git = DesignGitRunner(folder: folder)
+        guard git.isShared else { throw DesignGitError.notShared }
+        // Checked again here: a write may have landed since the fetch.
+        guard try changes(git).isEmpty else { throw DesignGitError.dirty }
         let branch = (try? git.text(["symbolic-ref", "--short", "-q", "HEAD"])) ?? "main"
         let upstream = "refs/remotes/origin/\(branch)"
         guard let theirs = try? git.text(["rev-parse", "--verify", "-q", upstream]) else { return .updated(changed: false) }
@@ -654,6 +734,9 @@ enum DesignGit {
         guard hasIdentity(git) else { throw DesignGitError.noIdentity }
         let head = try git.text(["rev-parse", "HEAD"])
         guard head == merge.oursHash else { throw DesignGitError.git("The branch moved since the merge started. Pull again.") }
+        // The design must still be what the merge started from: anything written since (a
+        // Tweak, a comment, a turn) would be lost when the design takes the merge.
+        guard try changes(git).isEmpty else { throw DesignGitError.changedDuringMerge }
         let index = folder.appendingPathComponent(".git-merge.index")
         defer { try? FileManager.default.removeItem(at: index) }
         let environment = ["GIT_INDEX_FILE": index.path]
@@ -662,11 +745,39 @@ enum DesignGit {
         try DesignGitRunner.run(copyGit + ["add", "-A", "--", "."], in: folder, environment: environment)
         let tree = try String(decoding: DesignGitRunner.run(copyGit + ["write-tree"], in: folder, environment: environment), as: UTF8.self)
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        // What was reviewed is what is committed: the copy's tree when the merge became ready.
+        if let reviewed = merge.reviewedTree, reviewed != tree {
+            throw DesignGitError.git("The merge changed after you reviewed it. Review it again.")
+        }
+        // The merged tree must be a design (files, sizes, names) before the branch moves.
+        try checkTree(try Self.tree(git, tree))
         let commit = try String(decoding: git.run(["commit-tree", tree, "-p", merge.oursHash, "-p", merge.theirsHash, "-m", message]),
                                 as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         let branch = (try? git.text(["symbolic-ref", "--short", "-q", "HEAD"])) ?? "main"
         try git.run(["update-ref", "-m", "shepherd: merge", "refs/heads/\(branch)", commit, head])
         return commit
+    }
+
+    /// The merge copy's tree as git would commit it, without moving anything: what the review
+    /// shows, kept so Commit merge commits exactly that.
+    static func mergeCopyTree(_ folder: URL) throws -> String {
+        let git = DesignGitRunner(folder: folder)
+        let copy = folder.appendingPathComponent(mergeCopyName, isDirectory: true)
+        let index = folder.appendingPathComponent(".git-merge.review-index")
+        defer { try? FileManager.default.removeItem(at: index) }
+        let environment = ["GIT_INDEX_FILE": index.path]
+        let copyGit = ["--git-dir=" + git.gitDirectory.path, "--work-tree=" + copy.path, "-c", "core.excludesFile=/dev/null"]
+        try DesignGitRunner.run(copyGit + ["read-tree", "--empty"], in: folder, environment: environment)
+        try DesignGitRunner.run(copyGit + ["add", "-A", "--", "."], in: folder, environment: environment)
+        return try String(decoding: DesignGitRunner.run(copyGit + ["write-tree"], in: folder, environment: environment), as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Puts the branch back where it was (a merge commit whose checkout failed).
+    static func restoreBranch(_ folder: URL, to head: String) {
+        let git = DesignGitRunner(folder: folder)
+        let branch = (try? git.text(["symbolic-ref", "--short", "-q", "HEAD"])) ?? "main"
+        _ = try? git.run(["update-ref", "-m", "shepherd: merge undone", "refs/heads/\(branch)", head])
     }
 
     /// The design's tracked files take HEAD's (a merge commit's): changed and new files written,

@@ -149,13 +149,8 @@ extension SessionServer {
         let id = DesignID()
         guard let folder = designs.folder(for: id) else { throw SessionServerError.noSuchDesign(id) }
         let staging = designs.directory.appendingPathComponent(DesignStore.importPrefix + "git-" + id.rawValue, isDirectory: true)
-        let index = try await onGitQueue { try DesignGit.clone(url, into: staging) }
-        do {
-            try FileManager.default.moveItem(at: staging, to: folder)
-        } catch {
-            try? FileManager.default.removeItem(at: staging)
-            throw DesignGitError.git("Couldn't move the design into Designs: \(error.localizedDescription)")
-        }
+        // Cloned, checked, and moved into place whole; a failure leaves nothing behind.
+        let index = try await onGitQueue { try DesignGit.clone(url, as: folder, staging: staging) }
         await designs.forgetOnQueue(id)
         let now = Self.nowMilliseconds()
         let title = index.title?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmptyGit ?? DesignGit.repositoryName(url)
@@ -205,7 +200,9 @@ extension SessionServer {
         let folder = try gitDesignFolder(designID)
         try await refuseWhileDrawing(designID)
         if await enqueueValueForGit({ self.designGitMerges[designID] != nil }) { throw DesignGitError.merging }
-        // The working copy is replaced under the store's queue, so no write lands half way.
+        // The network first, on the Git queue: a slow remote stalls no canvas, agent or design.
+        try await onGitQueue { try DesignGit.fetch(folder) }
+        // Then the local fast-forward under the store's queue, so no write lands half way.
         let outcome = try await designs.replaceFromGit(designID) { try DesignGit.pull(folder) }
         switch outcome {
         case .updated(let changed):
@@ -234,54 +231,84 @@ extension SessionServer {
     /// `DesignGitMergeLimits.turnTimeout`; Stop ends it; nothing commits or pushes.
     public func resolveDesignMergeWithAgent(_ designID: DesignID) async throws {
         let folder = try gitDesignFolder(designID)
-        guard let run = await enqueueValueForGit({ self.designGitMerges[designID] }) else { throw DesignGitError.noMerge }
-        guard run.merge.phase != .running else { return }
-        let merge = run.merge
-        let (copy, conflicts) = try await onGitQueue { try DesignGit.prepareMergeCopy(folder, merge: merge) }
-        let brief = DesignGitMergeBrief.text(copy: copy, conflicts: conflicts, ours: merge.ours, theirs: merge.theirs)
         let operation = UUID()
-        let started: String? = await withCheckedContinuation { continuation in
+        // Claim the run on the server's queue first: a second press, or Try again while another
+        // turn runs, is refused before anything touches the merge copy the agent may be editing.
+        let claimed: Result<(DesignGitMerge, AgentID), DesignGitError> = await enqueueValueForGit {
+            guard var run = self.designGitMerges[designID] else { return .failure(.noMerge) }
+            guard run.merge.phase != .running else { return .failure(.merging) }
+            let design = self.store.state.designs.first { $0.id == designID }
+            guard let agent = self.store.state.agents.first(where: { $0.id == design?.agentID })
+                    ?? self.store.state.agents.first(where: { $0.designID == designID }),
+                  let thread = self.rpcThread(forAgent: agent.id), thread.isServable else {
+                return .failure(.git("The design agent isn't running. Open the design to start it, then try again."))
+            }
+            guard !thread.piBusy else { return .failure(.agentWorking) }
+            // A paused or waiting queue is the user's: the merge never sends it on their behalf.
+            guard thread.items.isEmpty, !thread.paused else {
+                return .failure(.git("Send or clear the messages waiting in the chat first."))
+            }
+            run.merge.phase = .running
+            run.merge.reason = nil
+            run.merge.reviewedTree = nil
+            run.agentID = agent.id
+            run.operationID = operation
+            run.turnStarted = false
+            run.deadline = Date().addingTimeInterval(self.designGitMergeTimeout)
+            self.designGitMerges[designID] = run
+            return .success((run.merge, agent.id))
+        }
+        let merge: DesignGitMerge
+        switch claimed {
+        case .failure(let error): throw error
+        case .success(let value): merge = value.0
+        }
+        designGitChanged(designID)
+        // The limit runs from the claim, whatever pi answers about the prompt.
+        scheduleMergeDeadline(designID, operation: operation)
+        let prepared: (copy: URL, conflicts: [String])
+        do {
+            prepared = try await onGitQueue { try DesignGit.prepareMergeCopy(folder, merge: merge) }
+        } catch {
+            await failMerge(designID, operation: operation, reason: DesignGitError.git("\(error)").message)
+            throw error
+        }
+        let brief = DesignGitMergeBrief.text(copy: prepared.copy, conflicts: prepared.conflicts, ours: merge.ours, theirs: merge.theirs)
+        let failure: String? = await withCheckedContinuation { continuation in
             queue.async {
-                let design = self.store.state.designs.first { $0.id == designID }
-                guard let agent = self.store.state.agents.first(where: { $0.id == design?.agentID })
-                        ?? self.store.state.agents.first(where: { $0.designID == designID }),
-                      let thread = self.rpcThread(forAgent: agent.id), thread.isServable else {
-                    continuation.resume(returning: "The design agent isn't running. Open the design to start it, then try again.")
-                    return
-                }
-                guard !thread.piBusy else {
+                guard self.designGitMerges[designID]?.operationID == operation, let agentID = self.designGitMerges[designID]?.agentID,
+                      let thread = self.rpcThread(forAgent: agentID), !thread.piBusy, thread.items.isEmpty else {
                     continuation.resume(returning: DesignGitError.agentWorking.message)
                     return
                 }
-                var next = run
-                next.merge.phase = .running
-                next.merge.reason = nil
-                next.agentID = agent.id
-                next.operationID = operation
-                next.turnStarted = false
-                next.deadline = Date().addingTimeInterval(DesignGitMergeLimits.turnTimeout)
-                self.designGitMerges[designID] = next
-                self.noteAgentSendForGit(agent.id)
+                self.noteAgentSendForGit(agentID)
                 thread.send(id: operation, text: DesignGitMergeBrief.request, delivery: .followUp, images: [], alone: true,
-                    context: DesignGitFence.fenced(brief)) { result in
-                    if case .failure(_, let message) = result {
-                        self.queue.async {
-                            if self.designGitMerges[designID]?.operationID == operation {
-                                self.designGitMerges[designID]?.merge.phase = .failed
-                                self.designGitMerges[designID]?.merge.reason = message
-                                self.designGitChanged(designID)
-                            }
-                        }
-                        continuation.resume(returning: message)
-                    } else {
-                        continuation.resume(returning: nil)
+                            context: DesignGitFence.fenced(brief)) { result in
+                    switch result {
+                    // pi may still run a prompt whose answer was lost: the merge stays running,
+                    // bounded by its limit, and its settle checks the copy as usual.
+                    case .failure(let code, _) where code == "outcome_unknown": continuation.resume(returning: nil)
+                    case .failure(_, let message): continuation.resume(returning: message)
+                    default: continuation.resume(returning: nil)
                     }
                 }
             }
         }
+        if let failure {
+            await failMerge(designID, operation: operation, reason: failure)
+            throw DesignGitError.git(failure)
+        }
+    }
+
+    /// The attempt `operation` failed before its turn: Couldn't finish the merge, with why.
+    private func failMerge(_ designID: DesignID, operation: UUID, reason: String) async {
+        await enqueueValueForGit {
+            guard self.designGitMerges[designID]?.operationID == operation else { return }
+            self.designGitMerges[designID]?.merge.phase = .failed
+            self.designGitMerges[designID]?.merge.reason = reason
+            self.designGitMerges[designID]?.operationID = nil
+        }
         designGitChanged(designID)
-        if let started { throw DesignGitError.git(started) }
-        scheduleMergeDeadline(designID, operation: operation)
     }
 
     /// Stop on the merge: the agent's turn is stopped and the merge copy kept for another try.
@@ -312,7 +339,13 @@ extension SessionServer {
             let problems = DesignGit.checkMergeCopy(copy)
             guard problems.isEmpty else { throw DesignGitError.git("The merge isn't ready: \(problems.prefix(3).joined(separator: "; ")).") }
             _ = try DesignGit.commitMerge(folder, merge: merge, message: message)
-            try DesignGit.checkoutHead(folder)
+            do {
+                try DesignGit.checkoutHead(folder)
+            } catch {
+                // The branch goes back: nothing half-applied stays.
+                DesignGit.restoreBranch(folder, to: merge.oursHash)
+                throw error
+            }
             DesignGit.finishMerge(folder)
         }
         await enqueueValueForGit { self.designGitMerges[designID] = nil }
@@ -345,9 +378,11 @@ extension SessionServer {
         designGitQueue.async {
             let problems = failed ? ["the agent's turn ended with an error"]
                 : DesignGit.checkMergeCopy(folder.appendingPathComponent(DesignGit.mergeCopyName, isDirectory: true))
+            let reviewed = problems.isEmpty ? try? DesignGit.mergeCopyTree(folder) : nil
             self.queue.async {
                 guard self.designGitMerges[designID]?.agentID == agentID, self.designGitMerges[designID]?.merge.phase == .running else { return }
-                if problems.isEmpty {
+                if problems.isEmpty, let reviewed {
+                    self.designGitMerges[designID]?.merge.reviewedTree = reviewed
                     self.designGitMerges[designID]?.merge.phase = .ready
                 } else {
                     self.designGitMerges[designID]?.merge.phase = .failed
@@ -397,12 +432,13 @@ extension SessionServer {
         Task { await self.stopAgentTurnForGit(agentID) }
     }
 
-    /// Stops the agent's running turn, as its Stop button does.
+    /// Ends the merge's turn: pi's run is aborted, and the user's queue is left as it was (not
+    /// paused), so a message they queued during the merge runs next as it always would.
     private func stopAgentTurnForGit(_ agentID: AgentID) async {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             queue.async {
                 guard let thread = self.rpcThread(forAgent: agentID), thread.piBusy else { continuation.resume(); return }
-                thread.stop { _ in continuation.resume() }
+                thread.abortRunKeepingQueue { continuation.resume() }
             }
         }
     }
@@ -434,7 +470,11 @@ extension SessionServer {
 
     /// A merge copy resolved outside a turn (by the test, as the agent would) is ready to review.
     func markDesignMergeReadyForTests(_ designID: DesignID) async {
-        await enqueueValueForGit { self.designGitMerges[designID]?.merge.phase = .ready }
+        let tree = designs.folder(for: designID).flatMap { try? DesignGit.mergeCopyTree($0) }
+        await enqueueValueForGit {
+            self.designGitMerges[designID]?.merge.phase = .ready
+            self.designGitMerges[designID]?.merge.reviewedTree = tree
+        }
     }
 
     /// Marks an agent as the one drawing `design`, as the app's design start does.

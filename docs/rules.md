@@ -348,10 +348,11 @@ agent and its auxiliary processes while the app runs, and quitting the app termi
     made with `git switch -c`, when on the default branch) and runs `gh pr create`.
   - It holds the checkout in `hostBusyWorktrees` while it runs, like Finalize.
 - **A shared design's own repository** (`DesignGit`, [docs/designs.md](designs.md) › Sharing
-  with Git): only `<design>/.shepherd-git/` in Shepherd's storage, never a user's checkout. Share
-  with Git (an empty remote), Open from Git (a clone into Designs), Commit, Commit & push, Push,
-  Pull (fast-forward only) and Commit merge, each a press; never forced, never on a timer. The
-  merge copy (`.git-merge/`) is the design agent's to edit and is removed at launch.
+  with Git): only `<designs>/.git/<id>/` in Shepherd's storage, never a user's checkout. Share
+  with Git (an empty remote), Open from Git (a clone into Designs), the fetch when the Git panel
+  opens, Commit, Commit & push, Push, Pull (fast-forward only) and Commit merge, each a press;
+  never forced, never on a timer. The merge copy (`.git-merge/`) is the design agent's to edit and
+  is removed at launch.
 - **Working-tree snapshots of the Changes engine** (`ChangesService`, [docs/changes.md](changes.md)):
   deliberate and invisible. To compare the working tree (and to record where an agent's turn
   started and ended) the engine runs `git add -A` and `git write-tree` against an index file of
