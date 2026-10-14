@@ -145,8 +145,9 @@ extension SessionServer {
                 p.tasks.append(.init(operationID: op, spaceID: space, title: title, prompt: prompt, host: host,
                                      model: try self.projectTaskModel(model), thinking: try Self.projectTaskThinking(thinking)))
             case .followUp(let task, let op, let text, let model, let thinking):
-                guard let i = p.tasks.firstIndex(where: { $0.id == task }), p.tasks[i].phase == .settled,
-                      (p.tasks[i].previousOperations?.count ?? 0) < 31 else { throw LogicalProjectsError("conflict", "Follow-up requires settled work; steer active work in its ordinary thread.") }
+                // A finished thread takes a follow-up whether or not it was marked resolved: the follow-up reopens it.
+                guard let i = p.tasks.firstIndex(where: { $0.id == task }), [.settled, .resolved].contains(p.tasks[i].phase),
+                      (p.tasks[i].previousOperations?.count ?? 0) < 31 else { throw LogicalProjectsError("conflict", "Follow-up requires finished work; steer active work in its ordinary thread.") }
                 try self.validateProjectPlacement(p, host: p.tasks[i].destination, spaceID: p.tasks[i].spaceID)
                 p.tasks[i].executionAssignment = nil; p.tasks[i].executionReceipt = nil
                 p.tasks[i].previousOperations = (p.tasks[i].previousOperations ?? []) + [p.tasks[i].operationID]
