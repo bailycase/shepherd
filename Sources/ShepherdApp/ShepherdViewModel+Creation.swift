@@ -81,9 +81,9 @@ extension ShepherdViewModel {
         }
     }
 
-    /// Adds a project (a space) and opens the New thread page in it.
+    /// Adds a project (a space) and opens the New thread page in it (`select: false` leaves the page where it is).
     @discardableResult
-    func addSpace(at url: URL) async -> SpaceID? {
+    func addSpace(at url: URL, select: Bool = true) async -> SpaceID? {
         let path = url.path
         do { try verifyCheckoutAvailable(path) }
         catch { remoteActionError = String(describing: error); return nil }
@@ -103,8 +103,19 @@ extension ShepherdViewModel {
         let canonical = server.state
         sessions.stateDidChange(canonical)
         adopt(canonical)
-        selectSpace(space.id)
+        if select { selectSpace(space.id) }
         return space.id
+    }
+
+    /// The Space a Project links for a folder the person chose: the one already registered at that path, else a new one. Neither opens a
+    /// thread, so New project and Project settings stay where they are.
+    func spaceForProject(at url: URL) async -> SpaceID? {
+        func canonical(_ path: String) -> String {
+            URL(fileURLWithPath: (path as NSString).expandingTildeInPath).resolvingSymlinksInPath().standardized.path
+        }
+        let wanted = canonical(url.path)
+        if let existing = server.state.spaces.first(where: { !$0.hidden && canonical($0.path) == wanted }) { return existing.id }
+        return await addSpace(at: url, select: false)
     }
 
     func selectAppearance(_ mode: AppearanceMode, systemColorScheme: ColorScheme) {

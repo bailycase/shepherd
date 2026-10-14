@@ -68,17 +68,13 @@ extension SessionServer {
                 self.projectAnswersInFlight.remove(task.id)
                 guard let current = self.store.state.projects.first(where: { $0.id == id }),
                       let answer = current.tasks.first(where: { $0.id == task.id })?.pendingAnswer, answer.phase == .delivering else { return }
-                let withinRun = self.projectRunStarts[id].map { Date().timeIntervalSince($0) < self.projectRunSeconds } == true
-                    && (self.projectActivations[id] ?? 0) < self.projectActivationLimit
-                if !self.projectsEnabled || current.paused || !withinRun {
-                    if !current.paused { self.stopProjectRun(id) }
+                if !self.projectsEnabled || current.paused || self.projectRunStarts[id] == nil {
                     self.changeRuntimeProject(id, { p in
                         if let i = p.tasks.firstIndex(where: { $0.id == task.id }) { p.tasks[i].pendingAnswer?.phase = .queued; p.tasks[i].revision += 1 }
                     }); return
                 }
                 if let assignment = task.executionAssignment,
                    let request = try? NDJSON.decode(NativeThreadRequest.self, from: answer.request) {
-                    self.projectActivations[id, default: 0] += 1
                     self.requestProjectPlacement(task, request: .answer(key: assignment.key, request: request))
                     return
                 }
@@ -94,7 +90,6 @@ extension SessionServer {
                         }
                     }); return
                 }
-                self.projectActivations[id, default: 0] += 1
                 thread.handle(request) { result in
                     self.changeRuntimeProject(id, { p in
                         if let i = p.tasks.firstIndex(where: { $0.id == task.id }) {

@@ -18,6 +18,24 @@ extension SessionServer {
         }
     }
 
+    /// A coordinator's per-task model: one this owner lists, or nil for the Project's thread model.
+    func projectTaskModel(_ model: String?) throws -> String? {
+        guard let model = model?.trimmingCharacters(in: .whitespacesAndNewlines), !model.isEmpty else { return nil }
+        guard model.utf8.count <= 512, modelListing().models.contains(model) else {
+            throw LogicalProjectsError("project_model", "Model \(model) is not available on this owner. Omit it to use the Project's thread model.")
+        }
+        return model
+    }
+
+    /// A coordinator's per-task thinking level, or nil for the owner's default.
+    static func projectTaskThinking(_ level: String?) throws -> String? {
+        guard let level = level?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), !level.isEmpty else { return nil }
+        guard ThinkingLevel(rawValue: level) != nil else {
+            throw LogicalProjectsError("invalid_project", "Thinking must be one of " + ThinkingLevel.allCases.map(\.rawValue).joined(separator: ", ") + ".")
+        }
+        return level
+    }
+
     func validateProjectPlacement(_ p: Project, host: ProjectHostReference, spaceID: SpaceID) throws {
         try requireProjectsEnabled()
         guard p.settings.hostPolicy == .anyConnected || p.settings.allowedHosts.contains(host),
@@ -30,7 +48,7 @@ extension SessionServer {
 
     func projectAssignment(_ project: Project, task: ProjectTask, defaultModel: String?) throws -> ProjectExecutionAssignment {
         // A nil executor model would silently pick that host's provider. Pin the owner's model.
-        guard let model = project.settings.threadModel ?? defaultModel else {
+        guard let model = task.model ?? project.settings.threadModel ?? defaultModel else {
             throw LogicalProjectsError("project_model", "Choose an explicit worker model before remote placement; the owner default is unavailable.")
         }
         var assignment = ProjectExecutionAssignment(key: .init(ownerID: project.ownerID, projectID: project.id, operationID: task.operationID),
@@ -38,6 +56,7 @@ extension SessionServer {
             title: NativeRedaction.projectData(task.title), prompt: NativeRedaction.projectData(task.prompt),
             goal: NativeRedaction.projectData(project.goal), instructions: NativeRedaction.projectData(project.settings.instructions),
             memory: NativeRedaction.projectData(project.memory.map(\.text).joined(separator: "\n")), model: model)
+        assignment.thinking = task.thinking
         assignment.publicationsEnabled = true
         try assignment.validate()
         guard assignment.nativePrompt.utf8.count <= RPCThreadState.textLimit else {

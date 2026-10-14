@@ -22,6 +22,8 @@ public struct ProjectExecutionAssignment: Codable, Hashable, Sendable {
     public var instructions: String
     public var memory: String
     public var model: String?
+    /// The coordinator's thinking level for this task (a `ThinkingLevel` raw value); nil takes the executor's default.
+    public var thinking: String?
     /// nil preserves legacy execution calls; true requires publication support at both ends.
     public var publicationsEnabled: Bool?
     public init(key: ProjectExecutionKey, taskID: ProjectTaskID, reservedWorkerID: AgentID,
@@ -36,7 +38,7 @@ public struct ProjectExecutionAssignment: Codable, Hashable, Sendable {
               !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, prompt.utf8.count <= 16_384,
               !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, title.utf8.count <= 800,
               goal.utf8.count <= 4_000, instructions.utf8.count <= 16_000, memory.utf8.count <= 8_000,
-              (model?.utf8.count ?? 0) <= 512 else {
+              (model?.utf8.count ?? 0) <= 512, (thinking?.utf8.count ?? 0) <= 16 else {
             throw ProjectValidationError("Invalid execution identity or bounded assignment (prompt: 1…16 KiB UTF-8).")
         }
     }

@@ -758,7 +758,7 @@ public final class RemoteHostClient: @unchecked Sendable {
                     ? "The thread request is too large for the remote connection. Nothing was sent." : Self.imagesTooLarge)
             }
         }
-        if case .action(_, _, .assign(_, _, _, _, let host)) = request, let host, host != .local,
+        if case .action(_, _, .assign(_, _, _, _, let host, _, _)) = request, let host, host != .local,
            !capabilities.contains(RemoteProtocol.projectPlacementCapability) {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update the Project owner before selecting a remote executor.")
         }

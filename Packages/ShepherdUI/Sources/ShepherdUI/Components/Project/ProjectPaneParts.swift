@@ -139,10 +139,12 @@ public struct NWLeadFooterCard: View {
     let action: String
     let perform: () -> Void
     let enabled: Bool
+    let height: CGFloat
 
     @MainActor
     public init(symbol: String? = nil, symbolTint: Color? = nil, title: String, detail: String? = nil, action: String,
-                enabled: Bool = true, perform: @escaping () -> Void) {
+                enabled: Bool = true, height: CGFloat = NWLeadMetrics.footerHeight, perform: @escaping () -> Void) {
+        self.height = height
         self.symbol = symbol
         self.symbolTint = symbolTint ?? Color.nw.done
         self.title = title
@@ -168,7 +170,7 @@ public struct NWLeadFooterCard: View {
                 .disabled(!enabled)
         }
         .padding(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 8))
-        .frame(minHeight: NWLeadMetrics.footerHeight)
+        .frame(minHeight: height)
         .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.m))
         .nwBorder(Color.nw.lineStrong, radius: NW.Radius.m)
     }
