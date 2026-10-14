@@ -42,6 +42,8 @@ on:
         type: boolean
         default: true
     secrets:
+      SENTRY_AUTH_TOKEN:
+        required: false
       SELFHOSTED_HOSTNAME:
         required: false
       DEVELOPER_ID_P12:
@@ -194,6 +196,8 @@ jobs:
       # Apple silicon only. The Mac target sets ARCHS = arm64, but SwiftPM package
       # targets take no target settings, so the command line sets it for them too.
       - name: Build ${{ env.APP_NAME }}
+        env:
+          SHEPHERD_SENTRY_DSN: ${{ vars.SHEPHERD_SENTRY_DSN }}
         run: |
           xcodebuild \
             -project Shepherd.xcodeproj \
@@ -206,6 +210,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             MARKETING_VERSION="$VERSION" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            SHEPHERD_SENTRY_DSN="$SHEPHERD_SENTRY_DSN" \
             build
 
       # Prebuilt binaries (Sparkle's framework and its helpers) come universal.
@@ -225,6 +230,16 @@ jobs:
         continue-on-error: true
         working-directory: ${{ env.PRODUCTS }}
         run: zip -qr "$GITHUB_WORKSPACE/$DSYMS" ./*.dSYM
+
+      - name: Upload optional Sentry symbols
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          SHEPHERD_SENTRY_DSN: ${{ vars.SHEPHERD_SENTRY_DSN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: python3 scripts/upload-sentry-symbols.py "$PRODUCTS"
 
       # `xcodebuild build` never strips, so the app binary would ship a debug
       # map of runner object-file paths. -S -x drops debug and local symbols
