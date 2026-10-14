@@ -211,7 +211,7 @@ Approved departures: macOS-only hosts, Designs above Activity groups. **No other
 | Element | Value | Token |
 | --- | --- | --- |
 | Column | 760 wide (card outer 456..1216), centered, 24 above, 32 each side, 24 below | `columnWidth` 760, `NW.Space.xxl/xxxl` |
-| Breadcrumb (project name) | Geist 11.5/400, **`textTertiary`** (#5f656e dark, #9a9ea5 light) | `.nw(.caption)` |
+| Breadcrumb (project name) | Geist 11.5/400, **`textTertiary`** (#5f656e dark, #9a9ea5 light). Not on the boards, by the user's request: a `Settings.back` chevron before it, and pressing it opens the Project's page ("Back to <name>", 24pt hit area) | `.nw(.caption)`, `.nwLink` |
 | Title "Project settings" | Geist 15/600 `textPrimary`; 6 under the crumb | `.nw(.title)`, `NW.Space.s` |
 | Header to tabs, tabs to content, block to block | 16 | `NW.Space.xl` |
 | Tab | label Geist 12.5/**400** (not 500, not bold), `textPrimary` selected, `textSecondary` otherwise; 8 each side; label box 32 tall, **2pt `lantern` rule under the selected one** (the tab is 34), 6 between tabs, so General is 60.11 wide | `.nw(.ui, weight: .regular)`, `tabHeight` 32, `tabRule` 2 |
@@ -222,7 +222,7 @@ Approved departures: macOS-only hosts, Designs above Activity groups. **No other
 | Row help | Geist 11.5/400 on 1.45, **`textTertiary`** | `NWCardRowMetrics.settingsDescriptionLineHeight` |
 | Buttons (Pause, Delete, Remove, Forget) | the Controls board size, **not** the Settings 32: 28 tall, radius 6, 10 padding inside a 1pt line (so text + 22 wide), 12.5/500 | `NWButtonStyle` `.m` + 1pt label pad (`buttonBorder`) |
 | Popup | 32 tall in a 40 slot, 1pt `lineStrong`, radius 7, `bgRaised`, Geist 13/400, 12 before the value, **36 after** (chevrons live there), width follows the value | `NWSettingsControlMetrics` `controlHeight`, `radius`, `textSize`, `popupLeading`; `popupTrailing` 36, `popupSlot` 40 |
-| Popup glyph | `chevron.up.chevron.down` (outline pair), `textTertiary`, ink 7 x 9, centered 16 from the right edge and **3.75 above** the control's center | `popupChevron`, `popupChevronLift` |
+| Popup glyph | `chevron.up.chevron.down` (outline pair), `textTertiary`, ink 7 x 9, 16 from the right edge, **vertically centered** on the control (the boards' CSS: `top: 50%; translateY(-50%)`; an earlier lift read the line box and drew them high) | `NWProjectSettingsMetrics.chevron*` |
 | Switch | the `nwSwitch` (30 x 18, 14 knob) in a 24pt slot | existing |
 
 ### General (ProjectLead-SettingsGeneral)
