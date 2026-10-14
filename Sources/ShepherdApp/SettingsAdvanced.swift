@@ -47,9 +47,11 @@ struct AdvancedSettings: View {
                     }
                 }
             }
+            DiagnosticsSettings(settings: vm.settings, configured: ShepherdDiagnostics.shared.configured,
+                                active: ShepherdDiagnostics.shared.isActive)
             SettingsGroup(title: "Reset") {
                 SettingsRow(title: "Reset settings",
-                            subtitle: "Restores appearance, terminal, agent, worktree, extension and keyboard preferences. Spaces, agents, layouts and Remote are untouched.") {
+                            subtitle: "Restores appearance, terminal, agent, worktree, extension, keyboard and diagnostics preferences. Spaces, agents, layouts and Remote are untouched.") {
                     Button("Reset…") { confirmingReset = true }
                         .buttonStyle(.nw(.danger, size: .s))
                 }
@@ -63,6 +65,34 @@ struct AdvancedSettings: View {
                 vm.resetSettings()
             } cancel: {
                 confirmingReset = false
+            }
+        }
+    }
+}
+
+struct DiagnosticsSettings: View {
+    @Bindable var settings: AppSettings
+    let configured: Bool
+    var active = false
+
+    static let disclosure = "Send crash stacks, agent-start errors, app and device details, and recent lifecycle events to a third-party crash-reporting service. No prompts, replies, tool output, file contents or session replay. Crashes upload when you reopen Shepherd; agent-start errors can upload while it runs."
+
+    private var status: String? {
+        guard configured else {
+            return settings.shareDiagnostics ? "Reporting is unavailable. Turn this off to revoke saved consent." : nil
+        }
+        let state = !settings.shareDiagnostics ? "Off. Turning on takes effect after you quit and reopen Shepherd."
+            : active ? "Reporting is active." : "Not active yet. Quit and reopen Shepherd to start reporting."
+        return state + " Turning off stops reporting and discards pending reports, but does not delete reports already sent."
+    }
+
+    var body: some View {
+        SettingsGroup(title: "Diagnostics", footnote: status) {
+            SettingsRow(title: "Share crash diagnostics", subtitle: configured
+                        ? Self.disclosure : "Crash reporting is not configured in this build.") {
+                SettingsSwitch(label: "Share crash diagnostics", isOn: $settings.shareDiagnostics)
+                    .accessibilityHint(configured ? Self.disclosure : "Crash reporting is not configured in this build.")
+                    .disabled(!configured && !settings.shareDiagnostics)
             }
         }
     }
