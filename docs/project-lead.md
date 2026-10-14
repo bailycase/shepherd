@@ -336,7 +336,14 @@ before its first publication; `Space.holdsProjects` is hidden and not an automat
 coordinator directory is excluded from legacy Space configuration/history, including session
 header imports. Legacy remote snapshots omit coordinator agents/layouts. UI integrations must
 use these predicates in ordinary sidebar, palette, pin and notification producers. VM fallback
-selection cannot select a coordinator as an ordinary thread.
+selection cannot select a coordinator as an ordinary thread. The workspace never mounts a
+coordinator's layout (`WorkspaceSelection.mountedTabs`): its thread is drawn only by the Project
+page, and a second, hidden `ThreadView` on the same store would suspend the page's poll, so the
+first reply would show only after leaving the Project and coming back.
+
+The coordinator's pi launches with `--no-builtin-tools` (`PiLaunch.agent(coordinator:)`), never
+`--no-tools`: pi's `--no-tools` empties the tool allowlist, which also drops the `project_*` tools
+its Project extension registers, leaving the coordinator with none.
 
 `Project.tasks` contains `ProjectTask` records: ID, current/prior operation IDs, worker agent,
 owner-local Space, title, prompt, phase, revision, optional error, settled timestamp and question
