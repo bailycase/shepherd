@@ -1,5 +1,7 @@
 import Dispatch
 import Foundation
+import ImageIO
+import UniformTypeIdentifiers
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
@@ -31,7 +33,7 @@ final class RPCThreadState {
     static let widgetAggregateBytes = 32 * 1024
     static let operationTableSize = 256
     static let supportedActions = ["send", "abort", "answer", "setModel", "setThinking", "sendImages", "subagents", "queue", "compact", "designContext",
-                                   "designReferences", "browserElements", "retry", "interrupt", "setServiceTier"]
+                                   "designReferences", "browserElements", "retry", "interrupt", "setServiceTier", "savedImages"]
     /// pi answers `compact` only once the summary is written, which takes as long as a reply.
     static let compactTimeout: TimeInterval = 600
     /// Bytes of a child session file the transcript reader will scan (tail); older is unreachable.
@@ -443,6 +445,8 @@ final class RPCThreadState {
     var originOrder: [String] = []
     /// The send behind each user message this host delivered, by entry id (this run only).
     var operationsByEntry: [String: UUID] = [:]
+    /// Saved-picture reads in flight (`savedPictures`), at most `savedPictureJobLimit`.
+    private var savedPictureJobs = 0
     /// When each open dialog arrived (ms), by its id.
     var askedAt: [String: Double] = [:]
     /// The questions pi asked in this session and how they ended, oldest first (persisted with
@@ -766,6 +770,15 @@ final class RPCThreadState {
                 return
             }
             completion(Self.transcript(runID: runID, file: file, beforeEntryID: beforeEntryID))
+        case .images(let expectedSessionID, let entryID):
+            savedPictures(expectedSessionID, entryID: entryID, index: nil, completion: completion) { pictures in
+                // One entry per picture in block order; one that cannot be previewed is empty, so positions still match.
+                .images(value: pictures.map { Self.preview(mimeType: $0.mimeType, base64: $0.base64) ?? NativeImage(mimeType: $0.mimeType, data: Data()) })
+            }
+        case .imageChunk(let expectedSessionID, let entryID, let index, let offset):
+            savedPictures(expectedSessionID, entryID: entryID, index: index, completion: completion) { pictures in
+                Self.chunk(pictures[0], offset: offset)
+            }
         case .send(let expectedSessionID, let generation, let operationID, _, _, _, _, _, _),
              .abort(let expectedSessionID, let generation, let operationID),
              .answer(let expectedSessionID, let generation, let operationID, _, _),
@@ -1005,9 +1018,121 @@ final class RPCThreadState {
             compact(instructions: instructions, operationID: operationID, completion: completion)
         case .retry(_, _, _, let entryID):
             retryTurn(entryID: entryID, operationID: operationID, completion: completion)
-        case .snapshot, .subagentTranscript:
+        case .snapshot, .subagentTranscript, .images, .imageChunk:
             completion(.failure(code: "invalid", message: "Not an action."))
         }
+    }
+
+    // MARK: - Saved images
+
+    /// Saved pictures served to a client: their previews (`.images`) or one slice of an original (`.imageChunk`).
+    /// pi's `get_messages` holds them (the thread's blocks never carry them); it is asked on demand and nothing is kept here.
+    /// The message's first `maxPerSend` picture blocks (or the one at `index`) are taken *before* anything is decoded. The
+    /// reply from pi arrives on this queue, so the decoding and scaling run on `pictureQueue` (at most
+    /// `savedPictureJobLimit` at a time per thread, "busy" beyond), and the answer is checked against the session and
+    /// generation again when it comes back here, since a new session may have begun meanwhile.
+    private func savedPictures(_ expectedSessionID: String, entryID: String, index: Int?,
+                               completion: @escaping (NativeThreadResult) -> Void,
+                               work: @escaping ([(mimeType: String, base64: String)]) -> NativeThreadResult) {
+        let stale = NativeThreadResult.failure(code: "stale_session", message: "Refresh the thread before acting.")
+        guard expectedSessionID == piSessionID else { completion(stale); return }
+        guard savedPictureJobs < Self.savedPictureJobLimit else {
+            completion(.failure(code: "busy", message: "Still reading other images. Try again."))
+            return
+        }
+        savedPictureJobs += 1
+        let generation = generation
+        session.request(.getMessages, timeout: 30) { [weak self] result in
+            guard let self else { completion(.failure(code: "gone", message: "The thread is gone.")); return }
+            func finish(_ answer: NativeThreadResult) {
+                self.savedPictureJobs -= 1
+                completion(answer)
+            }
+            guard self.generation == generation, self.piSessionID == expectedSessionID else { finish(stale); return }
+            guard case .success(let response) = result, response.success, let messages = response.messages else {
+                finish(.failure(code: "unavailable", message: "pi did not answer."))
+                return
+            }
+            var seen: [String: Int] = [:]
+            for (position, message) in Self.chronological(messages).enumerated() {
+                guard Self.historyEntryID(message, index: position, seen: &seen) == entryID else { continue }
+                var pictures: [(mimeType: String, base64: String)] = message.content.lazy.compactMap { block -> (mimeType: String, base64: String)? in
+                    if case .image(let mime, let data) = block { return (mime, data) }
+                    return nil
+                }.prefix(NativeImage.maxPerSend).map { $0 }
+                if let index {
+                    guard pictures.indices.contains(index) else {
+                        finish(.failure(code: "unknown_image", message: "That image is no longer in the thread."))
+                        return
+                    }
+                    pictures = [pictures[index]]
+                }
+                Self.pictureQueue.async {
+                    let answer = work(pictures)
+                    self.queue.async {
+                        guard self.generation == generation, self.piSessionID == expectedSessionID else { finish(stale); return }
+                        finish(answer)
+                    }
+                }
+                return
+            }
+            finish(.failure(code: "unknown_entry", message: "That message is no longer in the thread."))
+        }
+    }
+
+    static let savedPictureJobLimit = 2
+    private static let pictureQueue = DispatchQueue(label: "shepherd.rpc.pictures", qos: .utility, attributes: .concurrent)
+
+    /// Bytes `offset ..< offset + chunkBytes` of a picture's original, decoding only the base64 that covers them (a slice
+    /// starts on a multiple of 3 bytes, so on a whole 4-character group). An original over `NativeImage.maxBytes` is refused,
+    /// as a send of it would have been.
+    static func chunk(_ picture: (mimeType: String, base64: String), offset: Int) -> NativeThreadResult {
+        let text = Array(picture.base64.utf8)
+        guard picture.mimeType.hasPrefix("image/"), text.count % 4 == 0, !text.isEmpty else {
+            return .failure(code: "unavailable", message: "That image cannot be read.")
+        }
+        let padding = text.suffix(2).filter { $0 == UInt8(ascii: "=") }.count
+        let total = text.count / 4 * 3 - padding
+        guard total <= NativeImage.maxBytes else {
+            return .failure(code: "too_large", message: "That image is over \(NativeImage.maxBytes / 1024 / 1024) MiB.")
+        }
+        guard offset >= 0, offset < total, offset % 3 == 0 else {
+            return .failure(code: "invalid", message: "That slice is outside the image.")
+        }
+        let start = offset / 3 * 4
+        let end = min(text.count, start + NativeImage.chunkBytes / 3 * 4)
+        guard let data = Data(base64Encoded: Data(text[start..<end])) else {
+            return .failure(code: "unavailable", message: "That image cannot be read.")
+        }
+        // The first slice holds the header: an original promising more pixels than the policy is never served (a header that
+        // does not fit the slice is left to the reader, which checks the whole picture).
+        if offset == 0, let size = NativeImage.pixelSize(of: data, partial: true),
+           size.width <= 0 || size.height <= 0 || size.width > NativeImage.maxPixels / size.height {
+            return .failure(code: "too_many_pixels", message: "That image is too large to open.")
+        }
+        return .imageChunk(value: NativeImageChunk(mimeType: picture.mimeType, total: total, offset: offset, data: data))
+    }
+
+    /// The picture as it is when it is small enough, else a JPEG scaled down until it is.
+    static func preview(mimeType: String, base64: String) -> NativeImage? {
+        guard mimeType.hasPrefix("image/"), let data = Data(base64Encoded: base64) else { return nil }
+        // The header decides first: a few compressed bytes can promise gigapixels, small or not.
+        guard NativeImage.withinPixelPolicy(data) else { return nil }
+        if data.count <= NativeImage.previewBytes { return NativeImage(mimeType: mimeType, data: data) }
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        for pixels in [1024, 768, 512, 320, 192] {
+            let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true,
+                                            kCGImageSourceCreateThumbnailWithTransform: true,
+                                            kCGImageSourceThumbnailMaxPixelSize: pixels]
+            guard let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+            let out = NSMutableData()
+            guard let target = CGImageDestinationCreateWithData(out, UTType.jpeg.identifier as CFString, 1, nil) else { return nil }
+            CGImageDestinationAddImage(target, thumbnail, [kCGImageDestinationLossyCompressionQuality: 0.7] as CFDictionary)
+            if CGImageDestinationFinalize(target), out.length <= NativeImage.previewBytes {
+                return NativeImage(mimeType: "image/jpeg", data: out as Data)
+            }
+        }
+        return nil
     }
 
     // MARK: - Subagent transcript

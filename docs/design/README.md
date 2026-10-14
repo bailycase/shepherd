@@ -146,6 +146,10 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | TerminalStates | [terminal](terminal.md) | Terminal panel (tab states, maximized, divider, new terminal menu without Split right; no header toggle, Run in terminal or empty state, ⌘J opens a terminal: departures) | Partial |
 | ThreadError | [thread](thread.md), [components](components.md) | Thread › Errors (the card, folded); Status language | Built |
 | ThreadErrorDetails | [thread](thread.md) | Thread › Errors (Details) | Built |
+| ThreadImagesSent | [thread](thread.md) | Thread › Images in the thread | Built (this client's own sends) |
+| ThreadImagesReceived | [thread](thread.md) | Thread › Images in the thread; Rich content in prose | Built (Made N images only for an image-generation tool; others say Returned N images) |
+| ThreadImagesComposer | [composer](composer.md), [thread](thread.md) | Composer › Images and files | Built |
+| ThreadImageOpen | [thread](thread.md) | Thread › Images in the thread (viewer) | Built |
 
 **iOS**
 

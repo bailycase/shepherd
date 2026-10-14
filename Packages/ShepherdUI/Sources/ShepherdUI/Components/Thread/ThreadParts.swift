@@ -52,6 +52,8 @@ public enum NWThreadMetrics {
     public static let ruleWidth: CGFloat = 2
     public static let attachmentHeight: CGFloat = 26
     public static let attachmentThumbnail: CGFloat = 20
+    /// An attachment chip's remove ×: the 24pt minimum hit area around its 8pt glyph.
+    public static let removeButton: CGFloat = 24
     /// "From the queue"'s glyph.
     public static let queueGlyph: CGFloat = 11
     /// A table column takes its content's width up to this, then wraps; given room, a wrapped
@@ -63,9 +65,19 @@ public enum NWThreadMetrics {
     #endif
     /// The narrowest a table column shrinks to: past it, the table scrolls sideways instead.
     public static let tableColumnMin: CGFloat = 88
-    /// A local image in prose fits within this box.
-    public static let proseImageMaxWidth: CGFloat = 360
+    /// A local image in prose fits within this box (ThreadImagesReceived: 384×240, a caption under it).
+    public static let proseImageMaxWidth: CGFloat = 384
     public static let proseImageMaxHeight: CGFloat = 240
+    /// Each image of a run sits in a slot this wide (the board's 404: the thumbnail's 384 and 20 beside it), so neighbours are
+    /// 28pt apart with the 8pt gap between slots.
+    public static let proseImageSlot: CGFloat = 404
+    /// An image the user sent draws within this box above its bubble (ThreadImagesSent: 83×180 portrait, 240×150 landscape).
+    public static let sentImageMaxWidth: CGFloat = 240
+    public static let sentImageMaxHeight: CGFloat = 180
+    /// Sent thumbnails are decoded at twice their box, for a 2x screen.
+    public static let sentThumbnailPixels: CGFloat = 2 * sentImageMaxWidth
+    /// A message's sent images wrap within this width.
+    public static let sentImagesMaxWidth: CGFloat = 560
     /// The glyph before a diagram or math fence's label.
     public static let codeLabelGlyph: CGFloat = 10
 
@@ -77,6 +89,19 @@ public enum NWThreadMetrics {
         height
         #endif
     }
+}
+
+/// A byte count as the image chips and the viewer read it: "1.4 MB". The unit is binary (1 MB is 1,048,576 bytes), because
+/// the limit those chips enforce is: `NativeImage.maxBytes` is 2 MiB, and the boards call it "2 MB". Counting in the same
+/// unit means a chip reads "over 2 MB" exactly when it is over the limit, and never "2.1 MB" for an image that fits. (A decimal
+/// limit would be a protocol change: the host and remote clients enforce 2 MiB.)
+public enum NWByteText {
+    public static func string(_ bytes: Int) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .memory)
+    }
+
+    /// A limit counted in MiB, named as the boards do: "2 MB".
+    public static func limit(mebibytes: Int) -> String { "\(mebibytes) MB" }
 }
 
 enum NWPasteboard {
@@ -171,15 +196,21 @@ public struct NWAttachmentChip: View {
     let prefix: String?
     let thumbnail: Image?
     let size: Size
+    let detail: String?
+    let problem: Bool
     let remove: (() -> Void)?
 
     /// `thumbnail` shows an image's preview in place of the file glyph; `remove` adds the
-    /// remove button.
-    public init(_ name: String, prefix: String? = nil, thumbnail: Image? = nil, size: Size = .regular, remove: (() -> Void)? = nil) {
+    /// remove button. `detail` is the mono size after the name ("1.4 MB"); with `problem` it reads in `failed`
+    /// and the chip's line does too (ThreadImagesComposer: an image over 2 MB after resizing).
+    public init(_ name: String, prefix: String? = nil, thumbnail: Image? = nil, size: Size = .regular, detail: String? = nil,
+                problem: Bool = false, remove: (() -> Void)? = nil) {
         self.name = name
         self.prefix = prefix
         self.thumbnail = thumbnail
         self.size = size
+        self.detail = detail
+        self.problem = problem
         self.remove = remove
     }
 
@@ -210,10 +241,14 @@ public struct NWAttachmentChip: View {
             .font(.nwSans(compact ? 11 : 12))
             .lineLimit(1)
             .truncationMode(.middle)
+            if let detail {
+                Text(detail).font(.nw(.micro, weight: .regular)).lineLimit(1).fixedSize()
+                    .foregroundStyle(problem ? AgentState.failed.textColor : nw.textTertiary)
+            }
             if let remove {
                 Button(action: remove) {
                     Image(systemName: "xmark").font(.system(size: 8, weight: .semibold)).foregroundStyle(nw.textTertiary)
-                        .frame(width: 14, height: 14)
+                        .frame(width: NWThreadMetrics.removeButton, height: NWThreadMetrics.removeButton)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -221,9 +256,10 @@ public struct NWAttachmentChip: View {
             }
         }
         .padding(.leading, thumbnail == nil ? (compact ? NW.Space.s : NW.Space.m) : 3)
-        .padding(.trailing, compact ? NW.Space.s : remove == nil && thumbnail != nil ? NW.Space.xs : NW.Space.m)
+        // The remove button's 24pt hit area includes the inset the 14pt glyph box used to draw.
+        .padding(.trailing, compact ? NW.Space.s : remove == nil && thumbnail != nil ? NW.Space.xs : remove != nil ? NW.Space.xxs : NW.Space.m)
         .frame(height: compact ? NWQueueMetrics.chipHeight : NWThreadMetrics.attachmentHeight)
-        .nwBorder(nw.lineStrong, radius: compact ? NW.Radius.xs : NW.Radius.s)
+        .nwBorder(problem ? AgentState.failed.color : nw.lineStrong, radius: compact ? NW.Radius.xs : NW.Radius.s)
         .fixedSize(horizontal: compact, vertical: false)
         .accessibilityElement(children: .contain)
     }

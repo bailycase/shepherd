@@ -21,6 +21,11 @@
     agent's service tier (`setServiceTier`, the snapshot's
     `serviceTier` and `serviceTiers`; no Speed control from a host without it) behind
     `native.serviceTier.v1`
+  - previews of the pictures in a saved user message (`NativeThreadRequest.images`, answered by
+    `NativeThreadResult.images`; `savedImages` in `supportedActions`) behind `native.images.v1`: at
+    most 4 previews of at most 160 KiB each, so the reply stays under one 1 MiB frame; no snapshot
+    carries image bytes; `NativeThreadRequest.imageChunk` / `NativeThreadResult.imageChunk` read one original in
+    slices of at most 255 KiB (under the frame cap) for Copy, Add to message and Show in Finder
   - conversation goals behind `native.goal.v1`: optional snapshot `goal`, live-only fleet
     `goalState`, and `NativeThreadRequest.goal` for set, edit, pause, resume, clear and confirm.
     Pause/Resume/Confirm require the displayed goal ID, revision and state in addition to the

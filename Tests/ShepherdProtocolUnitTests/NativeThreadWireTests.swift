@@ -61,6 +61,8 @@ struct NativeThreadWireTests {
         .compact(expectedSessionID: "s", generation: "g", operationID: op, instructions: "Keep the preview findings"),
         .retry(expectedSessionID: "s", generation: "g", operationID: op, entryID: "user:1733234570000"),
         .retry(expectedSessionID: "s", generation: "g", operationID: op, entryID: "user:1733234570000#1"),
+        .images(expectedSessionID: "s", entryID: "user:1733234567890"),
+        .imageChunk(expectedSessionID: "s", entryID: "user:1733234567890", index: 1, offset: 261_120),
         .setServiceTier(expectedSessionID: "s", generation: "g", operationID: op, tier: "fast"),
         .setServiceTier(expectedSessionID: "s", generation: "g", operationID: op, tier: "standard"),
         .send(expectedSessionID: "s", generation: "g", operationID: op, text: "taller", delivery: .followUp,
@@ -144,6 +146,9 @@ struct NativeThreadWireTests {
             commands: [NativeCommand(name: "fix", description: "Fix it", source: "prompt"), NativeCommand(name: "bare")],
             subagents: [ChildRun(runID: "native-1", label: "worker", state: "running", step: ChildStep(index: 1, total: 3))]
         )),
+        .images(value: [NativeImage(mimeType: "image/png", data: Data([1, 2]), name: "shot.png"), NativeImage(mimeType: "image/jpeg", data: Data([3]))]),
+        .images(value: []),
+        .imageChunk(value: NativeImageChunk(mimeType: "image/png", total: 300_000, offset: 261_120, data: Data([1, 2, 3]))),
         .transcript(value: NativeSubagentTranscript(
             runID: "native-1", messages: [NativeThreadMessage(entryID: "c:1", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "task")])],
             olderCursor: "c:1", earlierCount: 72

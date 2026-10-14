@@ -301,8 +301,21 @@ public final class NativeThreadStore {
     @ObservationIgnored private var holding: Set<UUID> = []
     /// Echo id → the pull count when its send was accepted (hosts with a queue).
     @ObservationIgnored private var echoAccepted: [String: Int] = [:]
-    /// Images this client queued, by queued message id: the host keeps only their names.
+    /// Images this client sent, by the send's operation id (the queued message's id when it queued): the host keeps only
+    /// their names, and pi's saved message only that they existed. Newest last, at most `sentImagesKept` sends.
     @ObservationIgnored private var sentImages: [UUID: [NativeImage]] = [:]
+    @ObservationIgnored private var sentImageOrder: [UUID] = []
+    /// Previews the host made of saved messages' pictures (`NativeThreadRequest.images`), by entry id, newest last: what
+    /// shows a message this client did not send, or sent before it restarted. Small (`NativeImage.previewBytes` each) and
+    /// bounded; asked once per message, never repeated in a snapshot. Empty arrays are kept too, so a message the host
+    /// could not answer is not asked again at every redraw.
+    @ObservationIgnored private var savedPreviews: [String: [NativeImage]] = [:]
+    @ObservationIgnored private var savedPreviewOrder: [String] = []
+    @ObservationIgnored private var savedPreviewsAsked: Set<String> = []
+    private static let savedPreviewsKept = 16
+    /// Bumped when a preview lands, so a thread that drew chips draws the pictures.
+    public private(set) var savedPreviewRevision = 0
+    private static let sentImagesKept = 32
     @ObservationIgnored private var presentationCache: [String: (key: PresentationKey, value: NativeTurnPresentation)] = [:]
     /// The machine the agent runs on ("build-01"), named in its errors' Details. Set by the
     /// thread's owner.
@@ -661,10 +674,25 @@ public final class NativeThreadStore {
         if paused != queuePaused { queuePaused = paused }
         let notice = items.isEmpty ? nil : snapshot?.queue?.notice
         if notice != queueNotice { queueNotice = notice }
-        if sentImages.count > 64 {
-            let kept = Set(items.map(\.id))
-            sentImages = sentImages.filter { kept.contains($0.key) }
+        trimSentImages()
+    }
+
+    /// Forgets the oldest sends' bytes past `sentImagesKept`. A send still waiting in the queue keeps its bytes however
+    /// many sends came after it (its row draws them), so the protected set is read here, at every call site, from what
+    /// the queue holds now: the derived rows, the host's snapshot, every pending overlay (their ids are the sends'), and
+    /// `also`, the send being recorded, which has no overlay yet.
+    private func trimSentImages(also latest: UUID? = nil) {
+        var excess = sentImageOrder.count - Self.sentImagesKept
+        guard excess > 0 else { return }
+        var protected = Set(queue.map(\.id))
+        protected.formUnion((snapshot?.queue?.items ?? []).map(\.id))
+        protected.formUnion(overlays.map(\.id))
+        if let latest { protected.insert(latest) }
+        for id in sentImageOrder where excess > 0 && !protected.contains(id) {
+            sentImages[id] = nil
+            excess -= 1
         }
+        sentImageOrder.removeAll { sentImages[$0] == nil }
     }
 
     private func call(_ message: NativeThreadMessage) -> NativeActivityCall {
@@ -872,6 +900,8 @@ public final class NativeThreadStore {
                 noteStartProblem(value.startProblem!)
             case .snapshot(let value):
                 let sameSession = previous?.piSessionID == value.piSessionID && previous?.generation == value.generation
+                // Another session or generation: its saved pictures (entry ids restart) are not this one's.
+                if !sameSession, previous != nil { forgetSavedImages() }
                 if sameSession, let previous, value.revision < previous.revision { return }
                 settlePending(value, sameSession: sameSession, pull: pull)
                 settleRunning(value.running, catchingUp: catchUp == nil)
@@ -1237,8 +1267,79 @@ public final class NativeThreadStore {
 
     // MARK: Queue
 
-    /// The images this client sent with a queued message (the host keeps only their names);
-    /// empty for another client's.
+    /// A saved message's preview of its `index`th picture, once `loadSavedImages` has it; empty bytes mean the host had none.
+    public func savedImage(entryID: String, index: Int) -> NativeImage? {
+        guard let images = savedPreviews[entryID], images.indices.contains(index), !images[index].data.isEmpty else { return nil }
+        return images[index]
+    }
+
+    /// The original of a saved message's `index`th picture, read from the host in `NativeImage.chunkBytes` slices (each under
+    /// one frame), exactly as pi saved it. Nil if the host refuses; the total is over `NativeImage.maxBytes`; a slice is not
+    /// the next one, or a non-final slice is not full size (a host trickling bytes would take millions of requests); more
+    /// than `NativeImage.maxChunks` requests would be needed; the whole picture's header promises more than
+    /// `NativeImage.maxPixels`; the task is cancelled; or the thread's session or generation changes at any point. Nothing is
+    /// kept here; the viewer holds it only while the image is open. Never a lossy copy.
+    public func savedOriginal(entryID: String, index: Int) async -> NativeImage? {
+        guard supportedActions.contains("savedImages"), let request, let first = snapshot else { return nil }
+        let identity = (session: first.piSessionID, generation: first.generation), epoch = epoch
+        func current() -> Bool {
+            !Task.isCancelled && epoch == self.epoch && snapshot?.piSessionID == identity.session && snapshot?.generation == identity.generation
+        }
+        var data = Data(), total = 0, mime = ""
+        for _ in 0..<NativeImage.maxChunks {
+            guard current(),
+                  case .imageChunk(let chunk)? = try? await request(.imageChunk(expectedSessionID: identity.session, entryID: entryID, index: index, offset: data.count)),
+                  current(),
+                  chunk.offset == data.count, chunk.total > 0, chunk.total <= NativeImage.maxBytes, chunk.mimeType.hasPrefix("image/"),
+                  data.isEmpty || chunk.total == total,
+                  chunk.data.count == min(NativeImage.chunkBytes, chunk.total - chunk.offset)
+            else { return nil }
+            if data.isEmpty { total = chunk.total; mime = chunk.mimeType }
+            data.append(chunk.data)
+            if data.count == total {
+                return NativeImage.withinPixelPolicy(data) ? NativeImage(mimeType: mime, data: data) : nil
+            }
+        }
+        return nil
+    }
+
+    private func forgetSavedImages() {
+        guard !savedPreviews.isEmpty || !savedPreviewsAsked.isEmpty else { return }
+        savedPreviews = [:]
+        savedPreviewOrder = []
+        savedPreviewsAsked = []
+        savedPreviewRevision += 1
+    }
+
+    public func hasAskedForSavedImages(_ entryID: String) -> Bool { savedPreviewsAsked.contains(entryID) }
+
+    /// Asks the host (once per message) for the pictures of a saved message this client holds no bytes of. Only a host that
+    /// lists `savedImages` is asked; an older one leaves the chips.
+    public func loadSavedImages(entryID: String) async {
+        guard supportedActions.contains("savedImages"), let request, let current = snapshot,
+              savedPreviewsAsked.insert(entryID).inserted else { return }
+        let epoch = epoch
+        let reply = try? await request(.images(expectedSessionID: current.piSessionID, entryID: entryID))
+        // A reply that crossed a new session or generation (or a stop) belongs to the old one: dropped, and asked again later.
+        guard case .images(let images)? = reply, epoch == self.epoch,
+              snapshot?.piSessionID == current.piSessionID, snapshot?.generation == current.generation else {
+            if epoch == self.epoch, snapshot?.piSessionID == current.piSessionID, snapshot?.generation == current.generation {
+                savedPreviewsAsked.remove(entryID)
+            }
+            return
+        }
+        savedPreviews[entryID] = images.map { $0.data.count <= NativeImage.previewBytes ? $0 : NativeImage(mimeType: $0.mimeType, data: Data()) }
+        savedPreviewOrder.append(entryID)
+        while savedPreviewOrder.count > Self.savedPreviewsKept {
+            let old = savedPreviewOrder.removeFirst()
+            savedPreviews[old] = nil
+            savedPreviewsAsked.remove(old)
+        }
+        savedPreviewRevision += 1
+    }
+
+    /// The images this client sent with a message, queued or already in the thread (the host keeps
+    /// only their names); empty for another client's, and after this client restarts.
     public func queuedImages(_ id: UUID) -> [NativeImage] {
         sentImages[id] ?? []
     }
@@ -1532,6 +1633,11 @@ public final class NativeThreadStore {
             switch result {
             case .accepted(let accepted) where accepted == operation:
                 wasAccepted = true
+                if !images.isEmpty, sentText != nil {
+                    sentImages[operation] = images
+                    sentImageOrder.append(operation)
+                    trimSentImages(also: operation)
+                }
                 if let sentText {
                     forgetSent(sentText, typed: typed, files: files, references: references, elements: elements)
                     lastSendQueued = queued
@@ -1543,7 +1649,6 @@ public final class NativeThreadStore {
                                                        sentAt: Date().timeIntervalSince1970 * 1000,
                                                        state: delivery == .steer ? .steering : .queued,
                                                        elements: elements.map(\.element.withoutHTML))
-                        if !images.isEmpty { sentImages[operation] = images }
                         let interrupts = delivery == .interrupt
                         overlays.append(QueueOverlay(id: operation, accepted: pulls, mode: nil) { items in
                             guard !items.contains(where: { $0.id == item.id }) else { return }
@@ -1556,7 +1661,8 @@ public final class NativeThreadStore {
                     } else {
                         let id = "pending:\(operation.uuidString)"
                         pending.append(NativeThreadMessage(entryID: id, role: "user",
-                                                           blocks: [NativeThreadBlock(kind: .text, text: sentText)],
+                                                           blocks: [NativeThreadBlock(kind: .text, text: sentText)]
+                                                               + images.map { _ in NativeThreadBlock(kind: .unsupportedImage, text: "[Image unavailable in native thread]") },
                                                            status: queued ? "queued" : "pending",
                                                            timestamp: Date().timeIntervalSince1970 * 1000,
                                                            origin: current.running && delivery == .steer ? .steered : nil,

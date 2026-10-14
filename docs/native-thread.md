@@ -699,6 +699,34 @@ queue, with no socket, TCP, or authentication involved. An authenticated remote 
 same `NativeThreadRequest` inside `RemoteRequest.nativeThread` and gets the same result; only the
 transport differs.
 
+- **Sent images in the thread:** `NativeThreadStore` keeps the bytes and names of the last 32 sends that carried
+  images, by operation id (`queuedImages(_:)`, also the queued message's id), and the optimistic echo has one
+  `unsupportedImage` block per image. A send still waiting in the queue is never forgotten however many sends
+  follow it: every trim (after a send is accepted and on each queue derivation) protects the ids of the derived
+  queue, the host's snapshot queue and every pending overlay, and the send being recorded. `NativeUserBubble.operationID`
+  (the saved message's `operationID`, a queued part's id, or the echo's own) finds the bytes, so `UserTurn` draws
+  thumbnails above the bubble. The thumbnails are decoded per thread (`SentImageThumbnails`, owned by `ThreadView`,
+  at most 32 sends) and hold only the small thumbnails: a viewer entry names the send and image index, and the
+  bytes are read from the store when the image is opened. A message this client did not send, or sent before a restart,
+  has no bytes here: the client asks the host once per message with `NativeThreadRequest.images(expectedSessionID:entryID:)`
+  (`native.images.v1`, `savedImages` in `supportedActions`), answered by `NativeThreadResult.images`. pi's session still holds
+  the pictures (its JSONL and `get_messages` keep the base64), so the host reads them from `get_messages` on demand, serves
+  each as it is when it is at most `NativeImage.previewBytes` (160 KiB) and else as a JPEG scaled down until it is, and keeps
+  nothing. At most 4 previews, so a reply stays under one 1 MiB frame; snapshots never carry image bytes. Only the message's
+  first 4 picture blocks are decoded; the work runs off the server queue (utility queue, at most 2 reads in flight per
+  thread, "busy" beyond) and the session and generation are checked again when it comes back (`stale_session`). The
+  original, for Copy, Add to message and Show in Finder, is read when the viewer opens a saved image:
+  `NativeThreadRequest.imageChunk(expectedSessionID:entryID:index:offset:)` answers a raw slice of at most
+  `NativeImage.chunkBytes` (255 KiB, a multiple of 3), so an original of up to `NativeImage.maxBytes` (2 MiB) takes at
+  most 9 requests, each under one frame; the host keeps nothing between them (`too_large` over 2 MiB, `invalid` for a bad
+  offset). The reader takes no more than `NativeImage.maxChunks` (9) slices, and a non-final slice must be full size (a host
+  trickling bytes is refused after the first); it compares the session ID *and* generation after every await and drops a
+  reply that crossed a change (the store also forgets its saved previews when either changes). Pixels are bounded by the
+  header, not the byte count: a picture over `NativeImage.maxPixels` (64 MP, an 8000 × 8000 picture or a 21000 × 3000
+  panorama) is neither previewed nor served (`too_many_pixels`), and the viewer's decode, thumbnails and Copy refuse it
+  before decoding. The viewer cancels the read on step or close and disables those three actions ("Loading the original…",
+  "Couldn’t load the original") until it lands: no export ever uses the lossy preview. The store keeps the
+  previews of the last 16 messages (`savedImage(entryID:index:)`); an older host leaves the "Image" chips.
 - **Size limits:** a request must be under 64 KiB, or 12 MiB when it carries images. Larger
   requests get `native_limit`. Remote requests are also bound by the 1 MiB TCP frame, so
   `RemoteHostClient` rejects larger image sends before sending.

@@ -423,6 +423,8 @@ final class ShepherdViewModel {
     /// Whether the in-window settings surface is visible.
     /// The workspace column's size and window, kept current without redrawing anything.
     @ObservationIgnored let workspaceColumn = LiveResizeColumn()
+    /// The one image viewer, over the workspace column (`ImageViewerLayer`): a thread's images open in it.
+    @ObservationIgnored let imageViewer = ImageViewerModel()
     /// The column's size when the side pane last covered the window: hidden layouts keep it
     /// while it does (`isSidePaneWide`).
     @ObservationIgnored var wideFrozenSize: CGSize?

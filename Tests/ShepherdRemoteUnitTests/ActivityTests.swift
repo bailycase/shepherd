@@ -27,6 +27,67 @@ struct ActivityTests {
         return call("edit", ["path": path, "edits": [["oldText": old, "newText": new]]])
     }
 
+    // MARK: Images
+
+    /// pi's `read` of an image file returns the picture as an attachment (the result has an image block, and the host's
+    /// `.image` content becomes `unsupportedImage`): the line says it looked at images. The result decides, not the name.
+    private func readImage(_ path: String, withImage: Bool = true, error: Bool = false) -> NativeActivityCall {
+        var message = F.tool("read", args: Self.json(["path": path]), output: "Read image file [image/png]", error: error,
+                             id: "e-\(UUID().uuidString)", callID: UUID().uuidString)
+        if withImage { message.blocks.append(NativeThreadBlock(kind: .unsupportedImage, text: "[Image unavailable in native thread]")) }
+        return NativeActivityCall(message)
+    }
+
+    @Test func readingTwoImagesIsOneLineThatNamesBoth() {
+        let bursts = nativeActivityBursts([readImage("shots/checkout-iphone.png"), readImage("/tmp/refunds-dashboard.png")])
+        #expect(bursts.count == 1 && bursts[0].kind == .lookedAtImage)
+        #expect(bursts[0].label == "Looked at 2 images" && bursts[0].meta == "checkout-iphone.png · refunds-dashboard.png")
+        #expect(bursts[0].accessibilityLabel.contains("Looked at 2 images"))
+    }
+
+    @Test func aSingleImageAndTheSameImageReadTwiceCountOnce() {
+        #expect(nativeActivityBursts([readImage("a.png")])[0].label == "Looked at 1 image")
+        #expect(nativeActivityBursts([readImage("a.png"), readImage("a.png")])[0].label == "Looked at 1 image")
+    }
+
+    /// A name that looks like an image proves nothing: a text read of `notes.png` is a read, and an image result is an image
+    /// whatever the file is called.
+    @Test func theResultDecidesNotTheFileName() {
+        let text = call("read", ["path": "notes.png"], output: "plain text\nof a file")
+        #expect(text.kind == .explore && nativeActivityBursts([text])[0].label == "Explored 1 file")
+        let photo = readImage("diagram")
+        #expect(photo.kind == .lookedAtImage)
+    }
+
+    /// "Made N images" is said only of an image-generation tool's identity; any other successful tool whose result carried
+    /// pictures "Returned" them (it inspected or captured what exists). The count is the image blocks, not the calls, and a
+    /// failed or text-only call is neither.
+    @Test func onlyAGenerationToolMadeImagesAndOthersReturnedThem() {
+        func call(_ name: String, _ args: [String: Any] = [:], images: Int, error: Bool = false) -> NativeActivityCall {
+            var message = F.tool(name, args: Self.json(args), output: "ok", error: error, status: "complete", id: "e-\(UUID())", callID: UUID().uuidString)
+            for _ in 0..<images { message.blocks.append(NativeThreadBlock(kind: .unsupportedImage, text: "[Image unavailable in native thread]")) }
+            return NativeActivityCall(message)
+        }
+        let made = nativeActivityBursts([call("image_gen", ["prompt": "a"], images: 2)])
+        #expect(made[0].kind == .madeImage && made[0].label == "Made 2 images", "one call, two images")
+        #expect(nativeActivityBursts([call("imagegen", images: 1), call("imagegen", images: 3)])[0].label == "Made 4 images")
+        #expect(call("mcp__art__image_gen", images: 1).kind == .madeImage, "behind an MCP server's prefix")
+        let shot = nativeActivityBursts([call("design_render", ["path": "refund-rate.png"], images: 1), call("design_render", ["path": "refund-rate.png"], images: 1)])
+        #expect(shot.count == 1 && shot[0].kind == .returnedImage && shot[0].label == "Returned 2 images", "images, not distinct names")
+        #expect(call("screenshot", images: 1).kind == .returnedImage)
+        #expect(call("notes", ["path": "a.png"], images: 0).kind == .other, "a name proves nothing")
+        #expect(call("image_gen", images: 1, error: true).kind == .other)
+        #expect(call("browser_screenshot", images: 1).kind == .browser, "the Browser keeps its own line")
+        #expect(call("read", ["path": "a.png"], images: 1).kind == .lookedAtImage)
+    }
+
+    @Test func imageReadsDoNotMergeWithTextReadsAndFailuresStandAlone() {
+        let bursts = nativeActivityBursts([call("read", ["path": "a.swift"], output: "x"), readImage("b.png"), call("read", ["path": "c.swift"], output: "y")])
+        #expect(bursts.map(\.kind) == [.explore, .lookedAtImage, .explore])
+        let failed = readImage("gone.png", withImage: false, error: true)
+        #expect(failed.kind == .explore && nativeActivityBursts([failed])[0].label == "Read failed")
+    }
+
     // MARK: Commands
 
     @Test(arguments: [

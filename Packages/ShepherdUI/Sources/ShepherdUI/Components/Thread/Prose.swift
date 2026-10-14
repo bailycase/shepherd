@@ -20,6 +20,11 @@ public enum NWProseBlock: Equatable, Sendable {
     case footnotes([NWProseFootnote])
 }
 
+extension NWProseBlock {
+    var isImage: Bool { image != nil }
+    var image: NWProseImage? { if case .image(let image) = self { image } else { nil } }
+}
+
 public struct NWProseListItem: Equatable, Sendable {
     public var text: AttributedString
     /// A task item's box, drawn read-only.
@@ -87,6 +92,14 @@ extension EnvironmentValues {
     /// nil where the agent's files are not on this device (a remote host's agent, the iOS
     /// client): its images show as chips.
     @Entry public var nwProseFileRoot: URL? = nil
+    /// Opens local images in the thread's viewer; nil opens them in the default app.
+    @Entry public var nwImageOpener: NWImageOpener? = nil
+}
+
+/// What a thumbnail calls to open an image in the app's viewer: the readable images of its run and the one pressed.
+public final class NWImageOpener {
+    public let open: ([URL], Int) -> Void
+    public init(open: @escaping ([URL], Int) -> Void) { self.open = open }
 }
 
 /// Agent prose: body 13.5/1.6 in `textPrimary` at the 640pt measure, blocks 12pt apart.
@@ -106,10 +119,13 @@ public struct NWAgentProse<Code: View>: View {
     }
 
     public var body: some View {
+        // The words keep the reading measure, with one exception: a reply that carries images follows
+        // ThreadImagesReceived, whose words and image slots share the whole 820pt column (the board sets 640pt prose
+        // nowhere). Replies without images, and every other prose, are unchanged.
         VStack(alignment: .leading, spacing: NW.Space.l) {
-            NWProseBlocks(blocks: blocks, code: code)
+            NWProseBlocks(blocks: blocks, measure: blocks.contains { $0.isImage } ? nil : maxWidth, code: code)
         }
-        .frame(maxWidth: maxWidth, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -136,6 +152,9 @@ struct NWProseBlocks<Code: View>: View {
     /// How deep in lists these blocks sit: each level draws its own bullet.
     var depth = 0
     var voice = NWProseVoice.reply
+    /// The reading measure the words keep at the top level, while an image run takes the whole width offered; nil leaves the
+    /// blocks to the caller's own frame.
+    var measure: CGFloat?
     let code: (String, String?) -> Code
     @Environment(\.nwProseSize) private var size
     @Environment(\.nwProseHalfLeading) private var halfLeading
@@ -144,7 +163,12 @@ struct NWProseBlocks<Code: View>: View {
     var body: some View {
         let nw = Color.nw
         let tone = voice == .reply ? nw.textPrimary : nw.textSecondary
-        ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+        ForEach(Array(Self.items(blocks).enumerated()), id: \.offset) { _, item in
+            Group {
+            switch item {
+            case .images(let images):
+                NWProseImageGroup(images: images)
+            case .block(let block):
             switch block {
             case .heading(_, let text):
                 heading(text).foregroundStyle(tone).textSelection(.enabled)
@@ -172,13 +196,42 @@ struct NWProseBlocks<Code: View>: View {
             case .table(let table):
                 NWProseTableView(table: table).equatable()
             case .image(let image):
-                NWProseImageView(image: image)
+                NWProseImageGroup(images: [image])
             case .details(let summary, let inner):
                 NWProseDetails(summary: summary, blocks: inner, depth: depth, voice: voice, code: code)
             case .footnotes(let notes):
                 NWProseFootnotes(notes: notes)
             }
+            }
+            }
+            .frame(maxWidth: Self.width(of: item, measure: measure), alignment: .leading)
         }
+    }
+
+    /// A top-level item's width: the reading measure for words, the whole width for a run of images.
+    private static func width(of item: Item, measure: CGFloat?) -> CGFloat? {
+        guard let measure else { return nil }
+        if case .images = item { return .infinity }
+        return measure
+    }
+
+    /// What one row of the prose is: a block, or consecutive images drawn together.
+    enum Item {
+        case block(NWProseBlock)
+        case images([NWProseImage])
+    }
+
+    /// Consecutive images become one wrapping group; every other block stands alone.
+    static func items(_ blocks: [NWProseBlock]) -> [Item] {
+        var items: [Item] = []
+        for block in blocks {
+            if let image = block.image {
+                if case .images(let run)? = items.last { items[items.count - 1] = .images(run + [image]) } else { items.append(.images([image])) }
+            } else {
+                items.append(.block(block))
+            }
+        }
+        return items
     }
 
     private func list(ordered: Bool, start: Int, items: [NWProseListItem], tone: Color) -> some View {

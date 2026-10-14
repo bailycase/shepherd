@@ -1,5 +1,6 @@
 import Foundation
 import ShepherdProtocol
+import ShepherdUI
 import Testing
 @testable import ShepherdApp
 
@@ -97,5 +98,47 @@ struct NewThreadImagesTests {
     ] as [([NativeImage], String?, Bool, String?)])
     func imagesGoWhereTheOpeningPromptCanTakeThem(images: [NativeImage], host: String?, takesImages: Bool, refusal: String?) {
         #expect(NewThreadPlaces.imagesRefusal(images, host: host.map { ($0, takesImages) }) == refusal)
+    }
+
+    /// ThreadImagesComposer: a thread's composer keeps the image that is over 2 MiB after resizing, marked and named, so the
+    /// person sees which one to remove; Send waits (`problem`) until it is gone. The New thread page leaves it out instead.
+    @Test func aThreadKeepsAnImageOverTheLimitAndNamesItUntilItIsRemoved() throws {
+        var attachments = ComposerAttachments(keepsOversized: true)
+        attachments.add([ComposerAttachmentsTests.image("after-mini.png", bytes: 1_400_000), ComposerAttachmentsTests.image("after-promax.png", bytes: NativeImage.maxBytes + 1_000_000)])
+        #expect(attachments.items.map(\.name) == ["after-mini.png", "after-promax.png"] && attachments.error == nil)
+        #expect(attachments.items.map(\.tooLarge) == [false, true])
+        #expect(attachments.items[1].sizeText.hasSuffix("over 2 MB"), "\(attachments.items[1].sizeText)")
+        #expect(attachments.problem == "after-promax.png is over 2 MB after resizing. Remove it or send a smaller one.")
+        attachments.remove(attachments.items[1].id)
+        #expect(attachments.problem == nil && attachments.items.map(\.name) == ["after-mini.png"])
+    }
+
+    /// The chip's size and its limit are counted in one unit: an image of exactly the limit fits and reads "2 MB", one byte over is
+    /// over and reads "over 2 MB", so the chip never shows "2.1 MB" for an image that is allowed.
+    @Test func theChipsSizeAndTheLimitAreCountedInTheSameUnit() {
+        var attachments = ComposerAttachments(keepsOversized: true)
+        attachments.add([ComposerAttachmentsTests.image("fits.png", bytes: NativeImage.maxBytes), ComposerAttachmentsTests.image("over.png", bytes: NativeImage.maxBytes + 1)])
+        #expect(attachments.items.map(\.tooLarge) == [false, true])
+        #expect(attachments.items[0].sizeText == "2 MB", "\(attachments.items[0].sizeText)")
+        #expect(attachments.items[1].sizeText.hasSuffix("over 2 MB"))
+        #expect(NWByteText.limit(mebibytes: NativeImage.maxBytes / 1024 / 1024) == "2 MB")
+    }
+
+    @Test func imagesThatTogetherCannotTravelInOneSendAreAProblemToo() {
+        var attachments = ComposerAttachments(keepsOversized: true)
+        attachments.add((1...3).map { ComposerAttachmentsTests.image("\($0).png", bytes: NativeImage.maxBytes - 100) })
+        #expect(attachments.items.count == 3 && attachments.items.allSatisfy { !$0.tooLarge })
+        #expect(attachments.problem?.hasPrefix("The images come to over 5 MB together.") == true)
+        attachments.remove(attachments.items[0].id)
+        #expect(attachments.problem == nil)
+    }
+
+    @Test func aFileThatIsReadAsAnAttachmentKeepsItsNameForTheThumbnailsAfterTheSend() throws {
+        let folder = try Fixture.scratchDirectory("attach-name")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let url = folder.appendingPathComponent("after-mini.png")
+        try Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==")!.write(to: url)
+        let attachment = try #require(ImageAttachment(url: url))
+        #expect(attachment.image.name == "after-mini.png" && attachment.image.mimeType == "image/png")
     }
 }

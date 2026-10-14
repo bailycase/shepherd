@@ -988,5 +988,62 @@
         }
       }
     }
+  },
+  {
+    "type": "nativeThread",
+    "id": 31,
+    "agentID": "agent",
+    "request": {
+      "images": {
+        "expectedSessionID": "session",
+        "entryID": "user:1733234567890"
+      }
+    }
+  },
+  {
+    "type": "nativeThread",
+    "id": 32,
+    "result": {
+      "images": {
+        "value": [
+          {
+            "mimeType": "image/png",
+            "data": "iVBORw==",
+            "name": "shot.png"
+          },
+          {
+            "mimeType": "image/jpeg",
+            "data": "/9g="
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "nativeThread",
+    "id": 33,
+    "agentID": "agent",
+    "request": {
+      "imageChunk": {
+        "expectedSessionID": "session",
+        "entryID": "user:1733234567890",
+        "index": 1,
+        "offset": 261120
+      }
+    }
+  },
+  {
+    "type": "nativeThread",
+    "id": 34,
+    "result": {
+      "imageChunk": {
+        "value": {
+          "mimeType": "image/png",
+          "total": 300000,
+          "offset": 261120,
+          "data": "iVBORw=="
+        }
+      }
+    }
   }
 ]
