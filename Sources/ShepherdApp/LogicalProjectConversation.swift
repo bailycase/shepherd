@@ -184,7 +184,7 @@ struct ConversationThread: View {
             dock: (presentation.summary != nil || !offers.isEmpty) ? { [vm, ref] in
                 AnyView(VStack(spacing: NWLeadMetrics.dockGap) {
                     ForEach(offers) { proposal in SpaceOffer(vm: vm, ref: ref, proposal: proposal) }
-                    ForEach(questions) { task in TaskQuestion(vm: vm, ref: ref, task: task) }
+                    ForEach(questions) { task in TaskQuestion(vm: vm, ref: ref, task: task, paused: project.paused) }
                     if let summary = presentation.summary { ProjectSummaryStrip(summary: summary) }
                 })
             } : nil,
@@ -226,6 +226,13 @@ struct TaskQuestion: View {
     var vm: ShepherdViewModel
     let ref: LogicalProjectRef
     let task: ProjectTaskRow
+    var paused = false
+
+    /// What happens to a reply, truthfully: the worker is blocked on this question (nothing is guessed), and while the Project is
+    /// paused an answer is held by the owner until Resume.
+    static func footer(title: String, paused: Bool) -> String {
+        paused ? "Or just reply in chat. Your answer waits until you resume." : "Or just reply in chat. \(title) is waiting for your answer."
+    }
 
     var body: some View {
         let store = vm.projectWorkerStore(ref.home, task.workerAgentID)
@@ -245,7 +252,7 @@ struct TaskQuestion: View {
         NWLeadQuestionCard(
                 question: prompt.question,
                 options: prompt.options.map { NWLeadQuestionCard.Option(id: $0.number, title: $0.title, detail: $0.detail, recommended: $0.recommended) },
-                footer: "Or just reply in chat. \(task.title) keeps going on its best guess until you answer.",
+                footer: Self.footer(title: task.title, paused: paused),
                 enabled: store.supports("answer") && prompt.blocked == nil && !vm.logicalProjects.busy.contains(ref.id)) { option in
                     guard let reply = prompt.dialogAnswer(.option(prompt.options.first { $0.number == option.id } ?? prompt.options[0])) else { return }
                     let request = NativeThreadRequest.answer(expectedSessionID: session.piSessionID, generation: session.generation,

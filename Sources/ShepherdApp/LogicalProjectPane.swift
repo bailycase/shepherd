@@ -290,7 +290,8 @@ private struct WorkerThread: View {
                    commandKey: ThreadCommandCenter.key(local: task.workerAgentID), agentName: task.title,
                    allowsLocalFiles: home == .local, retainedInput: vm.threadStores.input(for: task.workerAgentID))
             .environment(\.projectWorkerThread, ProjectWorkerThreadStyle(assignmentOperations: task.assignmentOperations,
-                                                                          composerHidden: task.group == .resolved))
+                                                                          composerHidden: task.group == .resolved,
+                                                                          answerHeld: task.answerHeld))
             .environment(\.nwUserBubbleMetrics, .lead)
             .environment(\.nwProseHalfLeading, true)
             .id(task.workerAgentID.rawValue)

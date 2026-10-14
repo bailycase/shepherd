@@ -141,6 +141,11 @@ struct LogicalProjectConversationTests {
         expectScenarioCompleted(result)
     }
 
+    @Test func aBlockingQuestionSaysTruthfullyWhatAReplyDoesAndAHeldAnswerLeavesNoSecondAnswerButton() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.questionCopy() } }
+        expectScenarioCompleted(result)
+    }
+
     @Test func theCoordinatorAppearsInNoOrdinaryThreadList() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.hidden() } }
         expectScenarioCompleted(result)
@@ -1299,6 +1304,52 @@ private static func chipsAndLinks() async throws {
         try window.press("Reopen")
         try await eventuallyOnMain("reopened on the owner") { r.app.server.state.projects.first?.tasks.first?.phase == .settled }
         try await eventuallyOnMain("the composer is back") { window.layout(); return paneComposers() == 1 }
+    }
+
+    // MARK: A blocking question
+
+    /// A real worker asks (the stub's "ask": a native select dialog the worker waits on). The conversation's question card must say the
+    /// worker waits for the answer (never that it "keeps going on its best guess"), and a paused Project says the answer waits for Resume.
+    /// Once the person answers while paused, the owner holds it: the card is gone and the pane's dock offers no second answer.
+    private static func questionCopy() async throws {
+        let r = try await rig()
+        defer { r.app.stop() }
+        // A native select with named options, as `project_question` leaves: the worker's turn stays open until it is answered.
+        let script: [String: Any] = ["prompts": ["ask-word": [["ask": ["title": "Pick the test word", "options": ["ALPHA", "BETA"]]]]], "socket": r.app.scratch.socketPath]
+        try JSONSerialization.data(withJSONObject: script).write(to: URL(fileURLWithPath: r.space.path).appendingPathComponent("project-script.json"))
+        _ = try await r.vm.projectCoordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
+                                                      request: .assign(operationID: UUID(), spaceID: r.space.id, title: "Library API draft", prompt: "ask-word"))
+        try await eventuallyOnMain("the worker is waiting on its question") { r.vm.state.projects.first?.tasks.first?.phase == .waiting }
+        let task = try #require(r.vm.state.projects.first?.tasks.first)
+        r.vm.openLogicalProject(r.ref)
+        // The conversation draws the card from the worker's own dialog, which its store reads: a coordinator thread makes the column.
+        #expect(await r.vm.logicalProjects.sendMessage(r.ref, text: "hello"))
+        let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
+        defer { window.close() }
+        func footer() -> String? { window.elements().compactMap { $0.value ?? $0.label }.first { $0.hasPrefix("Or just reply in chat.") } }
+        try await eventuallyOnMain("the question card is drawn with its footer") { window.layout(); return footer() != nil }
+        #expect(footer() == "Or just reply in chat. Library API draft is waiting for your answer.", "\(footer() ?? "none")")
+        #expect(!(footer() ?? "").contains("best guess"))
+
+        // Paused: the footer says an answer waits until Resume.
+        #expect(await r.vm.logicalProjects.setPaused(r.ref, true))
+        try await eventuallyOnMain("the paused footer") { window.layout(); return footer() == "Or just reply in chat. Your answer waits until you resume." }
+
+        // Answer while paused through the card's own option button: the owner holds it, and no second active answer remains.
+        try window.press("ALPHA")
+        try await eventuallyOnMain("the owner holds the answer") { r.app.server.state.projects.first?.tasks.first?.pendingAnswer != nil }
+        let held = ProjectPagePresentation(try #require(r.vm.state.projects.first)).rows[0]
+        #expect(held.answerHeld && held.lead == "Answer queued" && held.id == task.id)
+        try await eventuallyOnMain("the card is gone once its answer is held") { window.layout(); return footer() == nil }
+
+        // The pane's own question dock for the same worker: it stays (the worker still waits) but offers no second answer.
+        r.vm.logicalProjectPaneTask = task.id
+        func paneOptions() -> [Control] {
+            let paneLeft = window.window.frame.maxX - NWLeadMetrics.paneWidth
+            return window.controls().filter { ($0.label?.hasPrefix("ALPHA") == true || $0.label?.hasPrefix("BETA") == true) && $0.frame.minX > paneLeft }
+        }
+        try await eventuallyOnMain("the pane's dock is drawn") { window.layout(); return !paneOptions().isEmpty }
+        #expect(paneOptions().allSatisfy { !$0.isEnabled }, "no second answer is offered while the owner holds one: \(paneOptions().map { "\($0.label ?? "") \($0.isEnabled)" })")
     }
 
     // MARK: Hidden coordinator
