@@ -165,6 +165,24 @@ struct ProjectPagePresentationTests {
         #expect(p.rows[1].canReopen && !p.rows[1].canResolve)
     }
 
+    /// A relaunched Project keeps the coordinator's pi off until a message needs it, yet its composer said "Starting…" indefinitely.
+    /// Projects never pause on their own, so a resumed Project with nothing queued is just as offline, and a send still launches it.
+    @Test func aProjectHoldsItsCoordinatorsPiOffUntilAMessageCanBeDelivered() {
+        func message(_ phase: ProjectMessage.Phase, source: ProjectEventSource? = nil) -> ProjectMessage { ProjectMessage(id: UUID(), text: "hi", phase: phase, source: source) }
+        let worker = ProjectEventSource(kind: .settled, taskID: ProjectTaskID(), operationID: UUID(), workerAgentID: AgentID(), sessionID: nil)
+        // Cold, with only history: offline, paused or not. A paused Project holds even a queued message.
+        #expect(ProjectComposerSend.isOffline(paused: true, messages: [message(.delivered)], coordinatorLive: false))
+        #expect(ProjectComposerSend.isOffline(paused: false, messages: [message(.delivered), message(.failed), message(.unknown)], coordinatorLive: false))
+        #expect(ProjectComposerSend.isOffline(paused: true, messages: [message(.queued)], coordinatorLive: false))
+        // A message the owner can deliver now launches the pi, a worker's wake-up included: that start is the ordinary warm-up.
+        #expect(!ProjectComposerSend.isOffline(paused: false, messages: [message(.queued)], coordinatorLive: false))
+        #expect(!ProjectComposerSend.isOffline(paused: false, messages: [message(.queued, source: worker)], coordinatorLive: false))
+        #expect(!ProjectComposerSend.isOffline(paused: false, messages: [message(.delivering)], coordinatorLive: false))
+        // A running coordinator is never offline, whatever the Project holds.
+        #expect(!ProjectComposerSend.isOffline(paused: true, messages: [], coordinatorLive: true))
+        #expect(!ProjectComposerSend.isOffline(paused: false, messages: [message(.delivered)], coordinatorLive: true))
+    }
+
     @Test func theSentenceUnderWelcomeBackReadsTheCounts() {
         #expect(page([]).status == "Nothing running yet.")
         #expect(page([task("A", .running), task("B", .running), task("C", .queued)]).status == "3 threads are working.")

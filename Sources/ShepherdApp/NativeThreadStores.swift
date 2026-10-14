@@ -24,11 +24,14 @@ final class NativeThreadStores<Key: Hashable> {
     var onLiveChange: ((Set<Key>) -> Void)?
     /// Names the machine a thread's agent runs on, for its errors' Details.
     var hostName: ((Key) -> String?)?
+    /// Sets what the owner's state says about a store when it is made (a coordinator held off on purpose starts held off).
+    var configure: ((Key, NativeThreadStore) -> Void)?
 
     func store(for key: Key) -> NativeThreadStore {
         if let store = stores[key] { return store }
         let store = NativeThreadStore()
         store.hostName = hostName?(key)
+        configure?(key, store)
         install(store, for: key)
         return store
     }

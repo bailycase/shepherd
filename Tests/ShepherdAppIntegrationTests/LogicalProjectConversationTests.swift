@@ -126,6 +126,16 @@ struct LogicalProjectConversationTests {
         expectScenarioCompleted(result)
     }
 
+    @Test func theFirstMessagesThreadLeavesStartingEvenWhenItsCoordinatorIsRecordedBeforeItsAgentIsRegistered() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.firstMessageRace() } }
+        expectScenarioCompleted(result)
+    }
+
+    @Test func aSavedCoordinatorsHistoryShowsOnAColdLaunchAndTheNextMessageStartsItsPi() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.coldCoordinator() } }
+        expectScenarioCompleted(result)
+    }
+
     @Test func theCoordinatorAppearsInNoOrdinaryThreadList() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.hidden() } }
         expectScenarioCompleted(result)
@@ -1106,6 +1116,152 @@ private static func chipsAndLinks() async throws {
             r.vm.logicalProjects.failure != nil && r.vm.logicalProjects.operations[r.ref]?.id != kept
         }
         #expect(store.draft == "now with other words" && input.attachments.items.count == 1)
+    }
+
+    // MARK: First message, store stability
+
+    /// The owner records the coordinator's ID on the Project before it registers the agent. The mounted thread already holds the
+    /// store for that ID and polls it, so an adoption in the gap must keep the store (and its poll), and the thread must reach
+    /// ready (or show an error) instead of sitting on "Starting the agent".
+    private static func firstMessageRace() async throws {
+        let r = try await rig()
+        defer { r.app.stop() }
+        r.vm.openLogicalProject(r.ref)
+        let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
+        defer { window.close() }
+        try await eventuallyOnMain("the empty project") { window.layout(); return window.elements().contains { $0.label == "Message the agent" } }
+
+        // The gap, made exact: the Project names a coordinator that is not an agent yet. The page mounts its thread over that ID.
+        let named = AgentID()
+        var gap = r.vm.state
+        gap.projects[0].coordinatorAgentID = named
+        r.vm.adopt(gap)
+        let kept = r.vm.threadStores.store(for: named)
+        try await eventuallyOnMain("the thread polls the named coordinator") { window.layout(); return kept.isLive }
+        r.vm.adopt(gap)
+        #expect(r.vm.threadStores.existing(for: named) === kept && kept.isLive, "an adoption in the gap keeps the mounted thread's store and poll")
+        // Anything else that is not an agent is still pruned: ordinary stores keep their lifetime.
+        let stray = AgentID()
+        _ = r.vm.threadStores.store(for: stray)
+        r.vm.adopt(gap)
+        #expect(r.vm.threadStores.existing(for: stray) == nil)
+        r.vm.adopt(r.app.server.state)
+
+        // The real first message: the coordinator registers, and the thread must still reach ready (or say why not) instead of
+        // sitting on "Starting the agent".
+        #expect(await r.vm.logicalProjects.sendMessage(r.ref, text: "hello"))
+        let real = try #require(r.app.server.state.projects.first?.coordinatorAgentID)
+        try await eventuallyOnMain("the coordinator is a known agent") { r.vm.state.agents.contains { $0.id == real } }
+        try await eventuallyOnMain("the coordinator's thread is ready or failed") {
+            window.layout()
+            let live = r.vm.threadStores.existing(for: real)
+            return live?.ready == true || live?.startProblem != nil
+        }
+        #expect(r.vm.threadStores.existing(for: real)?.isLive == true, "and it keeps polling")
+    }
+
+    // MARK: Cold launch of a saved conversation
+
+    /// A relaunched app with a Project whose coordinator already has a saved pi session (a restart leaves the Project paused and its pi
+    /// off): the page shows the saved history from disk at once and keeps the composer usable, nothing is started until a message is
+    /// sent, and that send starts the coordinator's pi and reaches ready.
+    private static func coldCoordinator() async throws {
+        AccessibilityNode.enable()
+        try StubPi.installAsEngine()
+        // The saved workspace is on disk before the server starts, as a relaunch finds it.
+        let directory = try makeScratchDirectory("srv")
+        let folder = directory.appendingPathComponent("logical-project")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let held = Space(name: "Projects", path: folder.path, hidden: true, holdsProjects: true)
+        var fixture = Fixture.agent("Sample App", in: held)
+        var project = Project(name: "Sample App", goal: "", coordinatorAgentID: fixture.agent.id, paused: true)
+        fixture.agent.coordinatorFor = project.id
+        let session = fixture.agent.effectivePiSessionID
+        project.messages = [ProjectMessage(id: UUID(), text: "Reply with exactly READY", phase: .delivered, source: nil)]
+        var state = Fixture.state(spaces: [held], agents: [fixture])
+        state.projects = [project]
+        try JSONEncoder().encode(state).write(to: directory.appendingPathComponent("state.json"))
+        let app = try AppHarness(directory: directory)
+        defer { app.stop() }
+        app.settings.projectsEnabled = true
+        let sessionsDirectory = PiSessionFile.projectDirectory(forCwd: folder.path, sessionsRoot: app.server.pi.sessionsRoot)
+        try FileManager.default.createDirectory(at: sessionsDirectory, withIntermediateDirectories: true)
+        let lines = [
+            #"{"type":"session","version":3,"id":"\#(session)","timestamp":"2026-09-24T00:00:00.000Z","cwd":"\#(PiSessionFile.realPath(folder.path))"}"#,
+            #"{"type":"message","id":"e0","parentId":null,"timestamp":"2026-09-24T00:00:01.000Z","message":{"role":"user","content":"Reply with exactly READY","timestamp":1733234567890}}"#,
+            #"{"type":"message","id":"e1","parentId":"e0","timestamp":"2026-09-24T00:00:02.000Z","message":{"role":"assistant","content":[{"type":"text","text":"READY"}],"provider":"anthropic","model":"claude-sonnet-4-20250514","stopReason":"stop","timestamp":1733234567891}}"#,
+        ]
+        try Data((lines.joined(separator: "\n") + "\n").utf8).write(to: sessionsDirectory.appendingPathComponent("2026-09-24T00-00-00-000Z_\(session).jsonl"))
+        let vm = try await app.start(restoringAgents: true)
+        #expect(vm.state.projects.first?.coordinatorAgentID == fixture.agent.id, "the saved coordinator was loaded")
+        let ref = LogicalProjectRef(home: .local, id: project.id)
+        vm.openLogicalProject(ref)
+        let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: vm))
+        defer { window.close() }
+        let store = vm.threadStores.store(for: fixture.agent.id)
+        try await eventuallyOnMain("the saved history is on the page") {
+            window.layout(); return store.rows.contains { $0.turn.messages.contains { $0.blocks.contains { $0.text == "READY" } } }
+        }
+        #expect(store.acceptsSend && store.loadError == nil, "the composer stays usable on a cold conversation")
+        #expect(!window.controls().contains { $0.label == "Reconnect" })
+        #expect(app.server.state.projects.first?.paused == true, "showing history starts nothing")
+        // The coordinator stays off on purpose, so the composer must never claim it is starting: watched past the indicator's delay.
+        let startingLabel = "Starting the agent"
+        let watchedUntil = ContinuousClock.now + AppLayout.startingIndicatorDelay + .milliseconds(700)
+        var saidStarting = false
+        try await eventuallyOnMain("the starting indicator's delay passes") {
+            window.layout()
+            if window.elements().contains(where: { $0.label == startingLabel }) { saidStarting = true }
+            return ContinuousClock.now >= watchedUntil
+        }
+        #expect(!saidStarting, "a cold Project's composer says nothing about starting")
+        #expect(store.offline && store.loadError == nil && !store.starting, "the store knows the owner holds the pi off on purpose")
+        #expect(window.elements().contains { ($0.value ?? $0.label ?? "").hasPrefix("Paused.") })
+
+        // Leaving the page and coming back must not lose the owner's "held off on purpose".
+        for _ in 0..<3 {
+            vm.openLogicalProjectSettings(ref)
+            try await eventuallyOnMain("the page unmounts for settings") { window.layout(); return window.element("Message the agent") == nil }
+            vm.openLogicalProject(ref)
+            try await eventuallyOnMain("the page is back") { window.layout(); return window.element("Message the agent") != nil }
+            #expect(store.offline && store.loadError == nil && !store.starting && !store.awaitingPi,
+                    "back on a cold Project the store is still held off: offline=\(store.offline) error=\(String(describing: store.loadError)) starting=\(store.starting)")
+        }
+
+        // A second Project's page replaces this one, and the first comes back: its store is still held off.
+        let second = try await app.server.logicalProjects(.create(projectID: ProjectID(), name: "Other", goal: "", linkedSpaceIDs: []))
+        guard case .project(let other) = second else { throw RigError("no second project") }
+        try await eventuallyOnMain("the second Project arrives") { vm.state.projects.count == 2 }
+        for _ in 0..<3 {
+            vm.openLogicalProject(LogicalProjectRef(home: .local, id: other.id))
+            try await eventuallyOnMain("the other page is shown") { window.layout(); return vm.selectedLogicalProject?.id == other.id }
+            vm.openLogicalProject(ref)
+            try await eventuallyOnMain("the first page is back with its composer") { window.layout(); return vm.selectedLogicalProject == ref && window.element("Message the agent") != nil }
+            #expect(store.offline && store.loadError == nil && !store.starting && !store.awaitingPi,
+                    "after switching Projects and back: offline=\(store.offline) error=\(String(describing: store.loadError)) starting=\(store.starting)")
+        }
+
+        // The owner's state, not a view's lifetime, decides it. A stray clear and a replaced store both fall back to it at once.
+        store.offline = false
+        vm.adopt(app.server.state)
+        #expect(store.offline, "a stray clear is corrected from the owner's state")
+        // A store the registry makes for a cold coordinator starts held off (checked on a spare key, so the page's store keeps serving).
+        let spare = AgentID()
+        var spareState = vm.state
+        spareState.projects[0].coordinatorAgentID = spare
+        vm.state = spareState
+        let replacement = vm.threadStores.store(for: spare)
+        #expect(replacement.offline && replacement.loadError == nil && !replacement.starting && !replacement.awaitingPi,
+                "a store made for a cold Project's coordinator starts held off")
+        vm.adopt(app.server.state)
+
+        // Resume alone launches nothing; the next message starts the saved coordinator's pi and the thread goes ready.
+        #expect(await vm.logicalProjects.setPaused(ref, false))
+        #expect(store.offline, "a resumed Project with nothing to deliver still holds its pi off")
+        #expect(!window.elements().contains { $0.label == startingLabel })
+        #expect(await vm.logicalProjects.sendMessage(ref, text: "Reply with exactly READY2"))
+        try await eventuallyOnMain("the coordinator's pi serves its thread") { window.layout(); return store.ready && !store.offline }
+        try await eventuallyOnMain("the message is delivered") { app.server.state.projects.first?.messages.last?.phase == .delivered }
     }
 
     // MARK: Hidden coordinator

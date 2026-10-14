@@ -33,6 +33,14 @@ struct ProjectComposerSend {
     var columnWidth: CGFloat = NWLeadMetrics.columnWidth
     /// The conversation's main model. The same chip and picker as any thread; see `ProjectConversationModel`.
     var model: ProjectConversationModel? = nil
+
+    /// The coordinator's pi is off and nothing will start it now, so the thread's store is told so (`NativeThreadStore.offline`):
+    /// no pi is running, and no message is queued or in flight that the owner would launch it for (a paused Project holds every
+    /// message; a relaunch, a Resume alone or a pi that exited leave none). The next message the owner can deliver launches the pi,
+    /// and from then the thread's start is the ordinary, timed warm-up.
+    static func isOffline(paused: Bool, messages: [ProjectMessage], coordinatorLive: Bool) -> Bool {
+        !coordinatorLive && (paused || !messages.contains { $0.phase == .queued || $0.phase == .delivering })
+    }
 }
 
 /// The Project's conversation model as the composer's model chip shows and sets it. Before the first message there is no coordinator

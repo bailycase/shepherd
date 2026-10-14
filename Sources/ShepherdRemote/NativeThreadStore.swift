@@ -82,6 +82,21 @@ public final class NativeThreadStore {
     /// composer (`awaitingPi`). A pi that has not started within `startingLimit` becomes a
     /// `loadError`.
     public private(set) var starting = false { didSet { bothVersions() } }
+    /// The host keeps this thread's pi off on purpose (a Project's coordinator with nothing to deliver, as a relaunch leaves it): a
+    /// `native_starting` answer is then the expected state, not a start in progress. The thread shows its history, takes no part in
+    /// the starting watchdog (no "Starting…", no "has not started after a minute" error), and keeps polling. Turning it off (a
+    /// message the host can deliver) makes the next `native_starting` the ordinary warm-up, timed from then.
+    public var offline = false {
+        didSet {
+            guard offline != oldValue else { return }
+            if offline {
+                endStarting()
+                if loadError?.hasPrefix(Self.notStartedPrefix) == true { loadError = nil; derive() }
+            }
+            bothVersions()
+        }
+    }
+    static let notStartedPrefix = "The agent has not started after"
     /// The thread shows history read from pi's session file while pi starts (`preview(_:)`),
     /// not a snapshot pi served: nothing can be done with it yet, and pi's first snapshot
     /// replaces it in place (its entries carry the ids pi's will).
@@ -429,7 +444,7 @@ public final class NativeThreadStore {
     /// The thread is waiting for its pi: starting, shown from disk, or its first pull still on
     /// its way. Not an error, and not a thread kept from before that is refreshing.
     public var awaitingPi: Bool {
-        !ready && loadError == nil && startProblem == nil && (starting || previewing || session == nil)
+        !ready && !offline && loadError == nil && startProblem == nil && (starting || previewing || session == nil)
     }
 
     /// Send is offered: the thread supports it now, or it is not ready yet (pi starting, the
@@ -962,17 +977,19 @@ public final class NativeThreadStore {
     /// error, until it has taken longer than `startingLimit`.
     private func noteStarting() {
         if ready { ready = false }
-        clearStartProblem()
-        let now = ContinuousClock.now
-        let since = startingSince ?? now
-        startingSince = since
-        // A thread cached from before (a host that relaunched) is not running while pi restarts.
+        // The host cannot serve pi, so cached work is no longer running, even when pi stays off on purpose.
         if settledRunning {
             settleTask?.cancel()
             settleTask = nil
             settledRunning = false
             derive()
         }
+        // Held off on purpose: nothing is starting and nothing is timed, so no watchdog ever turns it into an error.
+        if offline { endStarting(); return }
+        clearStartProblem()
+        let now = ContinuousClock.now
+        let since = startingSince ?? now
+        startingSince = since
         guard now - since < startingLimit else {
             if starting {
                 starting = false
@@ -980,7 +997,7 @@ public final class NativeThreadStore {
             }
             resumeStartWaiters(false)
             let limit = startingLimit.formatted(.units(allowed: [.minutes, .seconds], width: .wide))
-            let message = "The agent has not started after \(limit)."
+            let message = "\(Self.notStartedPrefix) \(limit)."
             if loadError != message {
                 loadError = message
                 derive()
