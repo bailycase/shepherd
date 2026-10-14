@@ -113,8 +113,8 @@ pi of yours). Everything here is Shepherd's pi's alone (its home's `auth.json` a
     of its own (`plus` in `running`, "Add an API key" in Geist 13 `running`, then "Groq, Mistral,
     Fireworks, Together and 26 more" in caption `textTertiary`, the providers not listed yet),
     whose menu lists those providers and opens the key sheet for the one picked. Footnote
-    "Pasted keys are saved in Shepherd’s pi, readable only by you. Environment variables and
-    commands are read each time an agent starts."
+    "Pasted keys are saved in Shepherd’s pi, readable only by you. Environment variables
+    are read each time an agent starts. Command values are not supported."
   - **Custom providers**, only when Shepherd's pi has some: its models.json's providers, the
     file's path in mono 11 `textTertiary` trailing the group's label (`~/Library/…/pi/models.json`,
     the file Shepherd's pi reads; the board's `~/.pi/agent/models.json` is where it came from).
@@ -148,10 +148,9 @@ pi of yours). Everything here is Shepherd's pi's alone (its home's `auth.json` a
   key's value is ever drawn, logged or put in a tooltip.
 - **`NWKeySourceLabel`** after a key: "copied from pi" (`textTertiary`; its key is the one
   the import copied), "reads `$NAME`" (the key is a `$NAME` reference, read from the login shell
-  when an agent starts), "runs a command `op read …`" (a `!command`: pi runs it when the key is
-  first needed; a custom provider's command in mono 11 `textSecondary`, truncated in the middle,
-  its whole text the tooltip; one in auth.json says "runs a command" alone, since such a command
-  may carry a secret inline). A key pasted into Shepherd has no label.
+  when an agent starts), "command not supported" for an imported `!command` reference
+  (`textTertiary`, no command text or tooltip, including custom providers). Shepherd never
+  executes command values; replace them with a variable or pasted key. A key pasted into Shepherd has no label.
 - **`NWSharedLoginNote`**: under Anthropic, OpenAI Codex, Kimi and Radius (the providers whose
   refresh tokens rotate), whatever the row's state: an `arrow.triangle.2.circlepath` 11pt and
   "Signing in here and in your terminal pi can sign one of them out." in Geist 11.5
@@ -204,7 +203,8 @@ your terminal. Shepherd keeps its own copy, so nothing here changes your pi."
   Shepherd’s copy with your pi’s; your pi is never written to."):
   - a sub-label in the card, "Logins" (Geist 11/600 caps `textTertiary`, 16pt in, 10 above),
     then one row per provider your pi has a login for: its badge, name, and "Subscription ·
-    Claude Pro or Max" or "API key · sk-••••91c2";
+    Claude Pro or Max" or "API key · sk-••••91c2"; imported command references read
+    "API key · command not supported", without command text;
   - "Settings", then Custom providers ("`models.json` · northwind-gateway, ollama"), Default
     model (`claude-opus`, and "here" in `textTertiary` when Shepherd's differs, with a second line
     "Your pi now uses `gpt-5.3-codex`."), Trusted folders ("4 folders · `~/code/shepherd` and 3
