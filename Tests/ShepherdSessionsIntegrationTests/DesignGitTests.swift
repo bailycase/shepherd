@@ -37,6 +37,28 @@ struct DesignGitTests {
         _ = try? git(["config", "--file", config, "user.email", "\(name.lowercased())@example.com"], in: h.dir)
     }
 
+    /// A restart never resumes a merge: a merge copy a quit or crash left behind is removed at
+    /// launch, the design and its repository are kept, and no merge is waiting.
+    @Test func launchRemovesAMergeCopyLeftBehindAndResumesNoMerge() async throws {
+        let (h, design) = try await authorWithDesign()
+        let remote = try emptyRemote()
+        _ = try await h.server.shareDesignWithGit(design.id, url: remote.path, message: "Add checkout funnel design")
+        let folder = try #require(h.server.designs.folder(for: design.id))
+        let copy = folder.appendingPathComponent(DesignGit.mergeCopyName)
+        try FileManager.default.createDirectory(at: copy.appendingPathComponent("project"), withIntermediateDirectories: true)
+        try Data("<x-dc></x-dc>".utf8).write(to: copy.appendingPathComponent("project/A.dc.html"))
+        let before = try await h.server.designBoard(design.id, path: try DesignPath.validate("A.dc.html")).source
+        h.stop(keepFiles: true)
+
+        let again = try ScratchServer(dir: h.dir)
+        defer { again.stop() }
+        #expect(!FileManager.default.fileExists(atPath: copy.path), "the leftover merge copy is gone")
+        let state = try #require(try await again.server.designGitState(design.id))
+        #expect(state.merge == nil, "no merge resumes")
+        #expect(state.status.isClean)
+        #expect(try await again.server.designBoard(design.id, path: try DesignPath.validate("A.dc.html")).source == before)
+    }
+
     @Test func sharingCommitsTheDesignFilesAndPushesThemToAnEmptyRepository() async throws {
         let (h, design) = try await authorWithDesign()
         defer { h.stop() }
