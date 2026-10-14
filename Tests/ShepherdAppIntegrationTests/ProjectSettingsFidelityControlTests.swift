@@ -233,6 +233,14 @@ struct ProjectSettingsFidelityControlTests {
             #expect(!words.contains { $0.contains("files stay on") }, "the Delete row's help ends at 'untouched.'")
             #expect(words.contains { $0.contains("branches and PRs are untouched.") })
 
+            // The project's name leads back to its page, then settings reopen for the rest.
+            let back = try control(window, "Back to Sample App")
+            #expect(ControlPress.undersized([back], minimum: .desktop).isEmpty, "Back is under 24pt")
+            try await press(window, "Back to Sample App")
+            try await eventuallyOnMain("the project's page") { vm.destination == .project }
+            vm.openLogicalProjectSettings(LogicalProjectRef(home: .local, id: id))
+            try await eventuallyOnMain("settings again") { window.layout(); return window.element("Pause") != nil }
+
             // Pause and Resume send setPaused; the button and its help change with the state.
             try await press(window, "Pause")
             try await eventuallyOnMain("paused") { current().paused }
