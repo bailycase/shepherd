@@ -337,6 +337,7 @@ extension SessionServer {
            }) { result.messages.append(human) }
         for i in result.messages.indices {
             result.messages[i].text = NativeRedaction.projectData(result.messages[i].text)
+            result.messages[i].failureDetail = result.messages[i].failureDetail.map { Self.executionText($0) }
             result.messages[i].images = nil
             result.messages[i].nativeDeliveryID = nil
             result.messages[i].answerReceipts = nil
@@ -706,6 +707,7 @@ extension SessionServer {
         changeRuntimeProject(projectID, { p in
             guard !p.paused, let i = p.messages.firstIndex(where: { $0.id == message.id && $0.phase == .queued }) else { throw LogicalProjectsError("project_paused", "Message paused.") }
             p.messages[i].phase = .delivering
+            p.messages[i].failureDetail = nil
         }, failed: { _ in
             self.projectAdmissionRevoked(agentID: agentID, operationID: message.id)
         }) { p in
@@ -718,12 +720,13 @@ extension SessionServer {
             }
             let completed: (NativeThreadResult) -> Void = { result in
                 // Accepted can mean native-queued; only a matched native user entry marks delivered.
-                guard self.logicalProjectEpoch == epoch, case .failure(let code, _) = result else { return }
+                guard self.logicalProjectEpoch == epoch, case .failure(let code, let detail) = result else { return }
                 if code != "outcome_unknown", self.projectPromptInFlight[agentID] == message.id { self.projectPromptInFlight[agentID] = nil }
                 let nextDelivery = UUID()
                 self.changeRuntimeProject(projectID, { p in
                     if let i = p.messages.firstIndex(where: { $0.id == message.id && $0.phase == .delivering }) {
                         p.messages[i].phase = code == "send_cancelled" ? .queued : (code == "outcome_unknown" ? .unknown : .failed)
+                        p.messages[i].failureDetail = p.messages[i].phase == .failed ? Self.executionText(detail) : nil
                         if code == "send_cancelled" { p.messages[i].nativeDeliveryID = nextDelivery }
                     }
                 }) { p in
@@ -797,7 +800,10 @@ extension SessionServer {
         projectStartedPrompts.insert(agentID)
         if p.coordinatorAgentID == agentID {
             changeRuntimeProject(p.id, { p in
-                if let i = p.messages.firstIndex(where: { $0.id == operation }) { p.messages[i].phase = .delivered }
+                if let i = p.messages.firstIndex(where: { $0.id == operation }) {
+                    p.messages[i].phase = .delivered
+                    p.messages[i].failureDetail = nil
+                }
             }) { p in if !p.paused { self.pumpProject(p.id) } }
         }
     }

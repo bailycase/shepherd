@@ -69,6 +69,8 @@ public struct ProjectMessage: Codable, Hashable, Sendable, Identifiable {
     public var text: String
     public var phase: Phase
     public var source: ProjectEventSource?
+    /// Redacted native refusal detail for a known failed send, never proof of an unknown outcome.
+    public var failureDetail: String?
     /// Only the owner's human `.message` admission sets this; legacy/synthetic messages are ineligible.
     public var humanSubmitted: Bool?
     public var answerReceipts: [ProjectChatAnswerReceipt]?

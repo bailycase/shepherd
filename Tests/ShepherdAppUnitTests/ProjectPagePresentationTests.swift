@@ -70,6 +70,14 @@ struct ProjectPagePresentationTests {
         #expect(running.map(\.text) == ["queued", "sending", "unknown", "failed"], "a delivered message is the transcript's, a worker report is the runtime's")
         #expect(running.map(\.note) == ["Waiting to send", "Sending", "Delivery unconfirmed. Send it again to retry.", "Not delivered. Send it again to retry."])
         #expect(ProjectHeldMessages.held(messages: [queued], paused: true, consumed: []).first?.note == "Sends when the project resumes")
+        // A definite refusal shows the owner's reason; an unknown outcome and a record without one show no invented text.
+        var refused = failed
+        refused.failureDetail = "The agent refused it: No API key found for the model provider"
+        var unknownWithDetail = unknown
+        unknownWithDetail.failureDetail = "must never show"
+        let notes = ProjectHeldMessages.held(messages: [refused, unknownWithDetail], paused: false, consumed: []).map(\.note)
+        #expect(notes == ["Not delivered. The agent refused it: No API key found for the model provider. Send it again to retry.",
+                          "Delivery unconfirmed. Send it again to retry."])
     }
 
     @Test func aMessageLeavesTheHeldListOnlyWhenTheTranscriptHasItsOperationOrItsNativeDelivery() {
