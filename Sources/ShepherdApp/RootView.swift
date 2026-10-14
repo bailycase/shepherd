@@ -118,6 +118,7 @@ struct RootView: View {
         }
         // Export (DZExport) sits over the whole window on its own scrim.
         .overlay { DesignExportOverlay(vm: vm) }
+        .overlay { DesignGitSheetsOverlay(vm: vm) }
         .overlay { ImplementSheetOverlay(vm: vm) }
         // Over a design, the palette's chord jumps to a board instead (JumpInContext).
         .overlay { DesignJumpOverlay(vm: vm) }
@@ -338,7 +339,11 @@ struct WorkspaceHeaderView: View {
                               menu: vm.designMenu(.local(design.id), context: .toolbar),
                               perform: { vm.performDesignMenu($0, on: .local(design.id)) },
                               jump: { vm.designJump == nil ? vm.openDesignJump(design.id) : (vm.designJump = nil) },
-                              jumpOpen: vm.designJump?.design == design.id)
+                              jumpOpen: vm.designJump?.design == design.id,
+                              git: DesignGitPresentation.chip(vm.designGit(design.id).state, drawing: false),
+                              gitOpen: vm.designGit(design.id).panelOpen,
+                              pressGit: { vm.pressDesignGitChip(design.id) },
+                              placeGit: { vm.designGit(design.id).placeChip(trailing: $0) })
                     .equatable()
                     .id(agent.id)
             } else if let agent = vm.selectedAgent, vm.activeTabID == agent.tabID,

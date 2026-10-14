@@ -189,7 +189,7 @@ private struct PadScopePill: View {
         let nw = Color.nw
         ChangesScopeMenu(store: store, pickBase: { store.pickingBase = true }) {
             HStack(spacing: NW.Space.s) {
-                Image(systemName: "arrow.triangle.branch").imageScale(.small).foregroundStyle(nw.textSecondary)
+                Image(systemName: NWGlyph.gitBranch.symbolName).imageScale(.small).foregroundStyle(nw.textSecondary)
                 Text(label).font(.nw(.ui, weight: .semibold)).foregroundStyle(nw.textPrimary).lineLimit(1)
                 Image(systemName: "chevron.down").imageScale(.small).foregroundStyle(nw.textTertiary)
             }

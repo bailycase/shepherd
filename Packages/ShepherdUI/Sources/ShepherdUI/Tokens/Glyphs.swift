@@ -28,6 +28,8 @@ public enum NWGlyph: CaseIterable, Sendable {
     case resolved
     /// A step the worker marked failed. The boards draw none; it is the resolved glyph's outline circle with a cross.
     case failedStep
+    /// Git (GitDesignPublish, GitDesignChanges, DesignGitStatus): the toolbar chip, the share sheet and the panel header. Also the subagent and branch glyphs.
+    case gitBranch
 
     /// The SF Symbol that draws it, fill variant included.
     public var symbolName: String {
@@ -39,6 +41,7 @@ public enum NWGlyph: CaseIterable, Sendable {
         case .document: "doc.text"
         case .resolved: "checkmark.circle"
         case .failedStep: "xmark.circle"
+        case .gitBranch: "arrow.triangle.branch"
         }
     }
 

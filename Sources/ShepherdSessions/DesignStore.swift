@@ -147,6 +147,8 @@ public final class DesignStore: @unchecked Sendable {
     var loaded: [DesignID: Loaded] = [:]
     /// Each design's comments.json as last read or written. Queue-confined.
     private var commentFiles: [DesignID: DesignComments] = [:]
+    /// Each shared design's Git `user.name`, read once (`gitAuthorName`). Queue-confined.
+    private var gitAuthorNames: [DesignID: String?] = [:]
     /// Each served file's hash, while its size and modification time hold. Queue-confined.
     private struct ServedHash {
         var size: Int
@@ -270,6 +272,8 @@ public final class DesignStore: @unchecked Sendable {
         try await run {
             guard let folder = self.folder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
             self.forget(id)
+            // A shared design's repository lives beside the designs (`DesignGit`): it goes too.
+            DesignGit.removeRepository(of: folder)
             guard FileManager.default.fileExists(atPath: folder.path) else { return }
             do { try FileManager.default.removeItem(at: folder) } catch {
                 throw DesignStoreError.io("could not delete design \(id): \(error.localizedDescription)")
@@ -325,6 +329,7 @@ public final class DesignStore: @unchecked Sendable {
         try await run {
             guard let staged = self.stagedFolder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
             self.forget(id)
+            if let folder = self.folder(for: id) { DesignGit.removeRepository(of: folder) }
             guard FileManager.default.fileExists(atPath: staged.path) else { return }
             do { try FileManager.default.removeItem(at: staged) } catch {
                 throw DesignStoreError.io("could not delete design \(id): \(error.localizedDescription)")
@@ -332,8 +337,48 @@ public final class DesignStore: @unchecked Sendable {
         }
     }
 
+    /// Git replaces the design's files (a pull, a merge commit) as one step of the store's queue,
+    /// so no board write lands half way through it. What changed is kept as each board's next
+    /// version, and the revision moves once; the store reads the design again after.
+    func replaceFromGit<T>(_ id: DesignID, _ body: @escaping () throws -> T) async throws -> T {
+        try await run {
+            let before = (try? self.load(id)).map { loaded -> [DesignPath: String] in
+                var design = loaded
+                return (try? self.files(of: id, &design)) ?? [:]
+            } ?? [:]
+            // Keep what each board held, so an unwanted pull can be undone board by board.
+            var kept: [DesignPath: Data] = [:]
+            for path in before.keys { if let data = try? Data(contentsOf: self.fileURL(id, path)) { kept[path] = data } }
+            let value = try body()
+            self.forget(id)
+            var design = try self.load(id)
+            let after = try self.files(of: id, &design)
+            for (path, hash) in before where after[path] != nil && after[path] != hash {
+                if let data = kept[path] { _ = try? self.keepVersionData(id, path, data) }
+            }
+            try self.commit(&design, id)
+            return value
+        }
+    }
+
+    /// `keepVersion` for content already read (the board as it was before git replaced it).
+    private func keepVersionData(_ id: DesignID, _ path: DesignPath, _ data: Data) throws {
+        let folder = try versionsFolder(id, path)
+        let existing = try versionsOnQueue(id, path)
+        let number = (existing.last?.version.number ?? 0) + 1
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try data.write(to: folder.appendingPathComponent("\(number).dc.html"), options: .atomic)
+        for old in existing.dropLast(max(0, DesignBoardVersion.kept - 1)) { try? FileManager.default.removeItem(at: old.url) }
+    }
+
+    /// What the store remembers of a design goes; it reads the folder again on next touch.
+    func forgetOnQueue(_ id: DesignID) async {
+        _ = try? await run { self.forget(id) }
+    }
+
     /// Queue: what the store remembers of a design, dropped when its folder moves or goes.
     func forget(_ id: DesignID) {
+        gitAuthorNames[id] = nil
         loaded[id] = nil
         commentFiles[id] = nil
         servedHashes[id] = nil
@@ -1386,9 +1431,20 @@ public final class DesignStore: @unchecked Sendable {
             let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
             var removed: [String] = []
             for name in names.sorted() where [Self.stagedPrefix, Self.importPrefix, Self.unzipPrefix].contains(where: name.hasPrefix) {
+                // A deletion that never finished: its repository (beside the designs) goes too.
+                if name.hasPrefix(Self.stagedPrefix) {
+                    DesignGit.removeRepository(of: directory.appendingPathComponent(String(name.dropFirst(Self.stagedPrefix.count))))
+                }
                 if (try? FileManager.default.removeItem(at: directory.appendingPathComponent(name, isDirectory: true))) != nil {
                     removed.append(name)
                 }
+            }
+            // A repository whose design is gone (a crash between the two): nothing uses it.
+            let repositories = directory.appendingPathComponent(DesignGitRunner.repositoriesName, isDirectory: true)
+            for id in (try? FileManager.default.contentsOfDirectory(atPath: repositories.path)) ?? []
+            where !FileManager.default.fileExists(atPath: directory.appendingPathComponent(id).path)
+                && !FileManager.default.fileExists(atPath: directory.appendingPathComponent(Self.stagedPrefix + id).path) {
+                try? FileManager.default.removeItem(at: repositories.appendingPathComponent(id, isDirectory: true))
             }
             return removed
         }
@@ -2002,7 +2058,7 @@ public final class DesignStore: @unchecked Sendable {
                                         label: template.labels[draft.tid],
                                         target: draft.target.flatMap(DesignViewRecord.label),
                                         rect: draft.rect.flatMap { $0.isValid ? $0 : nil },
-                                        text: text, author: .user, createdAt: date)
+                                        text: text, author: .user, authorName: self.gitAuthorName(id), createdAt: date)
             file.comments.append(comment)
             try self.saveComments(&file, id)
             return comment
@@ -2057,7 +2113,8 @@ public final class DesignStore: @unchecked Sendable {
                                             label: template.labels[draft.tid],
                                             target: draft.target.flatMap(DesignViewRecord.label),
                                             rect: draft.rect.flatMap { $0.isValid ? $0 : nil },
-                                            text: text, author: .user, createdAt: date, proposal: draft.proposal)
+                                            text: text, author: .user, authorName: self.gitAuthorName(id), createdAt: date,
+                                            proposal: draft.proposal)
                 file.comments.append(comment)
                 result.append(comment)
                 added.insert(comment.id)
@@ -2192,7 +2249,8 @@ public final class DesignStore: @unchecked Sendable {
             guard file.comments[index].replies.count < DesignComment.maxReplies else {
                 throw DesignStoreError.invalidComment("a comment keeps at most \(DesignComment.maxReplies) replies")
             }
-            file.comments[index].replies.append(DesignCommentReply(author: author, text: text, createdAt: date))
+            file.comments[index].replies.append(DesignCommentReply(author: author, authorName: author == .user ? self.gitAuthorName(id) : nil,
+                                                                   text: text, createdAt: date))
             try self.saveComments(&file, id)
             return file.comments[index]
         }
@@ -2219,6 +2277,20 @@ public final class DesignStore: @unchecked Sendable {
             try self.saveComments(&file, id)
             return file.comments[index]
         }
+    }
+
+    /// Queue: the user's Git name on a design shared through Git (its repository's `user.name`,
+    /// as git reads it), so a coworker who pulls the comment sees who wrote it; nil for a design
+    /// that isn't shared. Read once per design.
+    private func gitAuthorName(_ id: DesignID) -> String? {
+        if let known = gitAuthorNames[id] { return known }
+        guard let folder = folder(for: id) else { return nil }
+        let git = DesignGitRunner(folder: folder)
+        guard git.isShared else { return nil }
+        let name = (try? git.text(["config", "user.name"]))?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let kept = name.flatMap { $0.isEmpty ? nil : String($0.prefix(80)) }
+        gitAuthorNames[id] = kept
+        return kept
     }
 
     /// The design's comments.json; an empty one when there is none yet.

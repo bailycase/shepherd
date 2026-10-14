@@ -221,7 +221,7 @@ private struct ChangesBasePicker: View {
                 if let branches = session.branches {
                     list {
                         ForEach(options) { option in
-                            NWChangesMenuRow(option.name, systemImage: "arrow.triangle.branch", titleIsMono: true,
+                            NWChangesMenuRow(option.name, systemImage: NWGlyph.gitBranch.symbolName, titleIsMono: true,
                                              trailing: option.tag.map { .text($0) } ?? .none, checked: option.selected) { choose(option.name) }
                         }
                     }

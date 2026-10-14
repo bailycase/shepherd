@@ -38,13 +38,17 @@ public struct DesignCommentRect: Codable, Hashable, Sendable {
 public struct DesignCommentReply: Codable, Hashable, Sendable, Identifiable {
     public var id: UUID
     public var author: DesignCommentAuthor
+    /// Who wrote it, by name (their Git `user.name`), on a design shared through Git; nil for one
+    /// written before sharing or by the design agent. The viewer's own reads "You".
+    public var authorName: String?
     public var text: String
     /// Milliseconds since 1970.
     public var createdAt: Double
 
-    public init(id: UUID = UUID(), author: DesignCommentAuthor, text: String, createdAt: Double) {
+    public init(id: UUID = UUID(), author: DesignCommentAuthor, authorName: String? = nil, text: String, createdAt: Double) {
         self.id = id
         self.author = author
+        self.authorName = authorName
         self.text = text
         self.createdAt = createdAt
     }
@@ -72,6 +76,9 @@ public struct DesignComment: Codable, Hashable, Sendable, Identifiable {
     public var rect: DesignCommentRect?
     public var text: String
     public var author: DesignCommentAuthor
+    /// Who wrote it, by name (their Git `user.name`), on a design shared through Git; nil
+    /// otherwise. The viewer's own reads "You", a coworker's their name.
+    public var authorName: String?
     public var createdAt: Double
     public var replies: [DesignCommentReply]
     /// When the viewer resolved it; nil while it is open.
@@ -88,8 +95,8 @@ public struct DesignComment: Codable, Hashable, Sendable, Identifiable {
 
     public init(id: UUID = UUID(), number: Int, board: DesignPath, tid: Int, path: [Int], label: String? = nil,
                 target: String? = nil, rect: DesignCommentRect? = nil, text: String, author: DesignCommentAuthor = .user,
-                createdAt: Double, replies: [DesignCommentReply] = [], resolvedAt: Double? = nil, detached: Bool = false,
-                proposal: String? = nil, proposalSettledAt: Double? = nil) {
+                authorName: String? = nil, createdAt: Double, replies: [DesignCommentReply] = [], resolvedAt: Double? = nil,
+                detached: Bool = false, proposal: String? = nil, proposalSettledAt: Double? = nil) {
         self.id = id
         self.number = number
         self.board = board
@@ -100,6 +107,7 @@ public struct DesignComment: Codable, Hashable, Sendable, Identifiable {
         self.rect = rect
         self.text = text
         self.author = author
+        self.authorName = authorName
         self.createdAt = createdAt
         self.replies = replies
         self.resolvedAt = resolvedAt
@@ -109,7 +117,8 @@ public struct DesignComment: Codable, Hashable, Sendable, Identifiable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, number, board, tid, path, label, target, rect, text, author, createdAt, replies, resolvedAt, detached, proposal, proposalSettledAt
+        case id, number, board, tid, path, label, target, rect, text, author, authorName, createdAt, replies, resolvedAt, detached, proposal,
+             proposalSettledAt
     }
 
     public init(from decoder: Decoder) throws {
@@ -124,6 +133,7 @@ public struct DesignComment: Codable, Hashable, Sendable, Identifiable {
         rect = try? c.decodeIfPresent(DesignCommentRect.self, forKey: .rect)
         text = try c.decode(String.self, forKey: .text)
         author = (try? c.decodeIfPresent(DesignCommentAuthor.self, forKey: .author)) ?? .user
+        authorName = (try? c.decodeIfPresent(String.self, forKey: .authorName)).flatMap { $0 }
         createdAt = try c.decodeIfPresent(Double.self, forKey: .createdAt) ?? 0
         replies = (try? c.decodeIfPresent([DesignCommentReply].self, forKey: .replies)) ?? []
         resolvedAt = try c.decodeIfPresent(Double.self, forKey: .resolvedAt)

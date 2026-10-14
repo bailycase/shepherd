@@ -174,6 +174,6 @@ private struct OverviewColumns: View {
 enum RunningGlyph {
     static func of(_ row: FleetThreadRow) -> NWListRow.Leading {
         guard row.status == .working else { return .state(AgentState(row.status)) }
-        return row.subagents > 0 ? .symbol("arrow.triangle.branch", .running) : .glyph(.running)
+        return row.subagents > 0 ? .symbol(NWGlyph.gitBranch.symbolName, .running) : .glyph(.running)
     }
 }
