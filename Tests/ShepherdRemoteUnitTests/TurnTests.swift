@@ -151,14 +151,14 @@ struct TurnTests {
         let turn = nativeTurns([delivered])[0]
         #expect(turn.fromQueue == 2)
         #expect(turn.bubbles == [
-            NativeUserBubble(id: "u/0", text: "one", sentAt: 10, images: 0, pending: false),
-            NativeUserBubble(id: "u/1", text: "two", sentAt: 20, images: 1, pending: false),
+            NativeUserBubble(id: "u/0", text: "one", sentAt: 10, images: 0, entryID: "u", imageOffset: 0, pending: false),
+            NativeUserBubble(id: "u/1", text: "two", sentAt: 20, images: 1, entryID: "u", imageOffset: 0, pending: false),
         ])
         var direct = F.user("hi", id: "d")
         direct.timestamp = 5
         let plain = nativeTurns([direct])[0]
         #expect(plain.fromQueue == nil)
-        #expect(plain.bubbles == [NativeUserBubble(id: "d", text: "hi", sentAt: 5, images: 0, pending: false)])
+        #expect(plain.bubbles == [NativeUserBubble(id: "d", text: "hi", sentAt: 5, images: 0, entryID: "d", pending: false)])
         #expect(nativeTurns([F.user(id: "u0"), F.assistant("r")])[1].bubbles.isEmpty, "a reply has none")
     }
 }

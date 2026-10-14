@@ -84,6 +84,8 @@ struct RootView: View {
             }
             // A deletion's toast, over the bottom of the column (DesignDeleted).
             .overlay { DesignToastLayer(vm: vm) }
+            // An image open at full size covers the toolbar and the thread (ThreadImageOpen).
+            .modifier(ImageViewerLayer(model: vm.imageViewer, leadingInset: docked || isFullScreen ? 0 : AppLayout.trafficLightInset))
             .frame(maxWidth: .infinity)
             .background(Color.nw.bgWindow)
             // Every mounted layout reflows when the column's width changes; relaid out on each

@@ -1,4 +1,5 @@
 import Foundation
+import ImageIO
 
 public enum NativeThreadRequest: Codable, Hashable, Sendable {
     case snapshot(expectedSessionID: String? = nil, beforeEntryID: String? = nil, afterRevision: UInt64? = nil)
@@ -46,6 +47,16 @@ public enum NativeThreadRequest: Codable, Hashable, Sendable {
     case goal(expectedSessionID: String, generation: String, operationID: UUID, action: NativeGoalAction,
               expectedGoalID: String? = nil, expectedGoalRevision: Int? = nil, expectedGoalState: NativeGoalState? = nil)
 
+    /// v5: the pictures of one saved message (`entryID`, a history entry id), as previews the host makes small enough for
+    /// one frame. pi's saved message keeps the pictures but the thread's blocks never carry them, so a client that did not
+    /// send them (another client, or itself after a restart) asks here, in the order of the message's
+    /// `unsupportedImage` blocks. Gated by `native.images.v1`; answered with `.images`.
+    case images(expectedSessionID: String, entryID: String)
+    /// v5: one slice of the original of the `index`th picture of a saved message (`NativeImage.chunkBytes` at most, from byte
+    /// `offset`), so a client reads an original of up to `NativeImage.maxBytes` in at most 9 requests, each under one frame.
+    /// The host keeps nothing between them. Gated by `native.images.v1`; answered with `.imageChunk`.
+    case imageChunk(expectedSessionID: String, entryID: String, index: Int, offset: Int)
+
     public var images: [NativeImage] {
         if case .send(_, _, _, _, _, let images, _, _, _) = self { return images ?? [] }
         return []
@@ -92,6 +103,33 @@ public struct NativeImage: Codable, Hashable, Sendable {
     /// One send's images together: base64-expanded, one prompt line stays under RPCSession's
     /// 8 MiB stdin queue.
     public static let maxBytesPerSend = 5 * 1024 * 1024
+    /// A host's preview of a saved image (`NativeThreadRequest.images`): at most `maxPerSend` of them, base64-expanded,
+    /// stay under the 1 MiB frame (4 × 160 KiB × 4/3 = 853 KiB).
+    public static let previewBytes = 160 * 1024
+    /// One slice of an original (`NativeThreadRequest.imageChunk`): a multiple of 3, so a slice is whole base64 groups;
+    /// base64-expanded it stays under 350 KB, far under the 1 MiB frame.
+    public static let chunkBytes = 87_040 * 3
+    /// Most slices an original takes: `maxBytes` over `chunkBytes`, rounded up. A reader asks for no more.
+    public static let maxChunks = (maxBytes + chunkBytes - 1) / chunkBytes
+    /// The most pixels a picture may hold to be previewed, decoded or copied (a few compressed bytes can promise gigapixels).
+    /// 64 MP is an 8000 × 8000 image or a 21000 × 3000 panorama, far above the 2000 px a send is resized to.
+    public static let maxPixels = 64_000_000
+
+    /// A picture's pixel size from its header (the first bytes are enough), without decoding it; nil when it has none.
+    public static func pixelSize(of data: Data, partial: Bool = false) -> (width: Int, height: Int)? {
+        let source = CGImageSourceCreateIncremental(nil)
+        CGImageSourceUpdateData(source, data as CFData, !partial)
+        guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int, let height = properties[kCGImagePropertyPixelHeight] as? Int
+        else { return nil }
+        return (width, height)
+    }
+
+    /// Whether the header promises no more than `maxPixels`. A picture with no readable header is not within the policy.
+    public static func withinPixelPolicy(_ data: Data, partial: Bool = false) -> Bool {
+        guard let size = pixelSize(of: data, partial: partial) else { return false }
+        return size.width > 0 && size.height > 0 && size.width <= maxPixels / size.height
+    }
 
     /// What one send takes: the count, each image's size and type, and their total.
     public static func fitOneSend(_ images: [NativeImage]) -> Bool {
@@ -108,6 +146,21 @@ public struct NativeImage: Codable, Hashable, Sendable {
         self.mimeType = mimeType
         self.data = data
         self.name = name
+    }
+}
+
+/// One slice of a saved picture's original: `data` is bytes `offset ..< offset + data.count` of `total` bytes.
+public struct NativeImageChunk: Codable, Hashable, Sendable {
+    public var mimeType: String
+    public var total: Int
+    public var offset: Int
+    public var data: Data
+
+    public init(mimeType: String, total: Int, offset: Int, data: Data) {
+        self.mimeType = mimeType
+        self.total = total
+        self.offset = offset
+        self.data = data
     }
 }
 
@@ -447,6 +500,10 @@ public enum NativeThreadResult: Codable, Hashable, Sendable {
     case failure(code: String, message: String)
     /// v2: one transcript page for `.subagentTranscript`. `olderCursor` is the first entry's id.
     case transcript(value: NativeSubagentTranscript)
+    /// v5: the previews `NativeThreadRequest.images` asked for (empty when the message has none).
+    case images(value: [NativeImage])
+    /// v5: the slice `NativeThreadRequest.imageChunk` asked for.
+    case imageChunk(value: NativeImageChunk)
 }
 
 /// Failure codes a thread's availability is reported with, as `NativeThreadResult.failure` or

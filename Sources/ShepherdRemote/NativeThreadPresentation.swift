@@ -262,6 +262,13 @@ public struct NativeUserBubble: Equatable, Identifiable, Sendable {
     /// When it was sent (ms): a queued part's own time, else pi's timestamp.
     public var sentAt: Double?
     public var images: Int
+    /// The send that made it (`NativeThreadMessage.operationID`, or the queued message's id, or the echo's own id): the key to
+    /// the bytes this client kept of its images (`NativeThreadStore.queuedImages`). Nil for a message from another client.
+    public var operationID: UUID? = nil
+    /// The saved message it came from, and how many of that message's images came before this bubble's: where a client that
+    /// did not send them asks the host for them (`NativeThreadRequest.images`). Nil for an echo that is not saved yet.
+    public var entryID: String? = nil
+    public var imageOffset = 0
     /// A send pi has not read yet (the host's pending row, or a client echo).
     public var pending: Bool
     /// The design references the user sent with it here (`NativeThreadMessage.designReferences`):
@@ -272,6 +279,11 @@ public struct NativeUserBubble: Equatable, Identifiable, Sendable {
     /// as a chip on a sent bubble (the user's decision, 2026-09-29), so `text` keeps
     /// `BrowserElementFence.humanLine` in full, as if no client drew a chip for them.
     public var elements: [BrowserElement] = []
+}
+
+/// The operation an optimistic echo ("pending:<id>") stands for.
+private func echoOperation(_ entryID: String) -> UUID? {
+    entryID.hasPrefix("pending:") ? UUID(uuidString: String(entryID.dropFirst("pending:".count))) : nil
 }
 
 public func nativeUserBubbles(_ message: NativeThreadMessage) -> [NativeUserBubble] {
@@ -286,14 +298,17 @@ public func nativeUserBubbles(_ message: NativeThreadMessage) -> [NativeUserBubb
         return parts.enumerated().map { index, part in
             let last = index == parts.count - 1
             return NativeUserBubble(id: "\(message.entryID)/\(index)", text: part.text, sentAt: part.sentAt,
-                                    images: part.images, pending: pending, references: index == carrier ? references : [],
-                                    elements: last ? elements : [])
+                                    images: part.images, operationID: part.id, entryID: message.entryID,
+                                    imageOffset: parts[..<index].reduce(0) { $0 + $1.images }, pending: pending,
+                                    references: index == carrier ? references : [], elements: last ? elements : [])
         }
     }
     let text = message.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n")
     return [NativeUserBubble(id: message.entryID, text: text, sentAt: message.timestamp,
-                             images: message.blocks.count { $0.kind == .unsupportedImage }, pending: pending, references: references,
-                             elements: elements)]
+                             images: message.blocks.count { $0.kind == .unsupportedImage },
+                             operationID: message.operationID ?? echoOperation(message.entryID),
+                             entryID: message.entryID.hasPrefix("pending:") ? nil : message.entryID, pending: pending,
+                             references: references, elements: elements)]
 }
 
 /// Turns keep their identity while pi persists them: a user turn is its first message (or the

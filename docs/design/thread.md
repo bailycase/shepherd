@@ -198,12 +198,80 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   Design references show as chips after them; an element picked in the Browser rides with the
   send but draws no chip on the sent bubble (no board draws one there, the user's decision,
   2026-09-29): only the composer's chip and the queue row's stand for it (Side pane: Browser).
-  - **Not built yet.** A sent bubble's chips show each image's thumbnail and file name, as the
-    board draws `screenshot.png`. Today they read "Image" behind the file glyph, because the
-    thread keeps only how many images a message carried.
+  - **Sent images** are not chips: see **Images in the thread** below. Where this client no longer
+    holds an image's bytes (another client sent it, or Shepherd restarted), the bubble keeps one
+    "Image" chip per image, since the thread stores only how many a message carried.
   - **Partially built.** Local files dropped on a thread attach as removable file chips in the
     composer and ride with the message as paths. Sent file chips and remote file uploads are
     not built; the paperclip still picks images only.
+- **Images in the thread** (boards ThreadImagesSent, ThreadImagesReceived, ThreadImageOpen, and the composer's
+  ThreadImagesComposer in composer.md; [Sent](boards/ThreadImagesSent.png), [Received](boards/ThreadImagesReceived.png),
+  [Open](boards/ThreadImageOpen.png), [Composer](boards/ThreadImagesComposer.png)). Built in
+  `Sources/ShepherdApp/Thread/ThreadImages.swift` and `NWThread/ThreadImages.swift`; the review, checklist and
+  renders are [evidence/thread-images/review.md](evidence/thread-images/review.md).
+  - **Sent.** The message's images lead it, trailing above its bubble, 6pt apart and wrapping within 560pt: each
+    fits 240×180 at its own aspect (never scaled up), radius 8 with a 1px `lineSubtle` line (`lineStrong` on
+    hover), a button labelled "Open <name>, <w> by <h>"; the group is "N images you sent". An
+    images-only message draws no empty bubble. They come from the bytes this client kept when it sent
+    (`NativeThreadStore.queuedImages(operationID)`, the last 32 sends and every one still queued, with their file
+    names), found by the bubble's `operationID`; the thread keeps only their small thumbnails, and the viewer
+    reads the bytes from the store when it opens one; the optimistic echo carries one image block per image so they show at once.
+    No contract changed: another client's message, a restart or a thread loaded from history keeps the
+    "Image" chips, because pi's saved message carries no bytes or name.
+  - **Received.** `![alt](path)` lines in the agent's reply: consecutive local images draw as one group, each in a 404pt
+    slot (`proseImageSlot`: the board's wrapper) holding a thumbnail within 384×240 and its alt text as an 11.5pt
+    `textTertiary` caption, slots 8pt apart (28pt between the images) and wrapping 12pt apart, so two sit side by side at
+    1440 (x310 and x722). A web or missing image is a chip on a row of its own below them. **Measure exception:** a reply
+    that carries an image is set across the whole 820pt column, as the board sets it, instead of the 640pt reading
+    measure; replies without images, and all other prose, keep 640pt.
+    Only a local agent's files are read (`allowsLocalFiles`): a remote host's agent names files on its own machine, so
+    its images are chips even where the same path exists here. A thumbnail is cached by path and revision (modified
+    date and size), so an image overwritten at the same path draws anew. A web image is never fetched: a chip
+    (`photo`, the host and path, "web image · not loaded") that opens it in the browser, tooltip
+    "Shepherd never loads web images. Opens in your browser." A file this device cannot read (a remote
+    agent, a path that is gone) is a chip with its name.
+  - **Looked at.** A `read` whose result carries the picture (pi attaches an image file to the result) is "Looked at 2
+    images" with `photo` and the file names read, in the Explored line's place and style; a failed or stopped read is
+    "Read failed" / "Read stopped". The result decides, never the file's name.
+  - **Viewer.** Pressing a thumbnail opens the image over the whole workspace column, toolbar included
+    (`ImageViewerLayer` in `RootView`, one viewer for the window): the column behind is blurred 4pt under `bgBase` at
+    94%, a 44pt `bgWindow` header with the name (Geist 12.5/600, truncating in the middle), "1170 × 2532 · PNG ·
+    1.4 MB" and "1 of 2" in mono `textTertiary`, then Copy (`doc.on.doc`, "Copied" with `checkmark` for 1.5s), Add to
+    message (`plus`), Show in Finder (`folder`) as ghost buttons and a close ×. The image is fitted between 36pt
+    round previous and next buttons (`chevron.left`, `chevron.right`, `bgRaised` with a `lineSubtle` line, disabled at the ends
+    and then at 40%), centred together with it 16pt apart (the board's row, 24pt of room around), never at the window's edges.
+    The image fits the room that leaves (724pt tall at 1440×900, 335pt wide for the board's phone shot, radius 8, a 1px
+    `lineSubtle` line and the `bgBase` shadow); the close button is a 28pt circle with a `lineStrong` outline; "Sent by you · Esc to
+    close" (or "From the agent") sits at the foot. ← → step, Esc closes. The viewer holds the open image and its
+    neighbours decoded and no more, decodes one at a time and cancels on paging, and releases everything on close.
+    Show in Finder reveals the file; a sent image has none, so it is written under a safe version of its name
+    (its last path component only, never `..` or a separator) in a folder of its own under the drop folder.
+    Add to message attaches the image to the composer through the paste path, so the same limits and refusals
+    apply (disabled with its reason as the tooltip when the agent takes no images or four are attached), then closes
+    the viewer.
+  - **Viewer toolbar (user-requested departure from the board).** The board draws the header edge to edge; in a real window
+    that left the name against the window controls and the buttons in the far corner. The header's band still runs the
+    column's width (44pt, `bgWindow`, hairline), but its content is one centred column at most 820pt wide
+    (`NWImageMetrics.toolbarMaxWidth`) with 24pt of side room, and starts after `AppLayout.trafficLightInset` when the
+    sidebar is not docked (the window controls then sit over the column; `ImageViewerLayer.leadingInset`, set by `RootView`).
+    When the labelled buttons do not fit beside the name (a long name, a narrow column, large text) the three actions
+    become icons (tooltips and VoiceOver keep their names) and the name shortens in the middle; the size, type and "1 of N"
+    never truncate. The image and its previous/next buttons stay centred in the column.
+  - **Units.** Sizes read in binary megabytes ("1.4 MB" is 1.4 × 1,048,576 bytes) because the limit they sit beside,
+    `NativeImage.maxBytes`, is 2 MiB and the boards call it "2 MB". A decimal limit would change what the host and
+    remote clients accept (a protocol change), so it stays 2 MiB, and the chip reads "over 2 MB" exactly when it is over.
+  - **Made N images / Returned N images.** "Made 2 images" (`photo`) is said only of an image-generation tool by identity
+    (`image_gen`, `imagegen`, also behind an MCP server's prefix) whose result carried pictures. Any other tool except
+    `read` and the Browser whose successful result carried image blocks says "Returned 2 images": it inspected or captured
+    what exists and never claims it made one. The count is the image blocks returned (`NativeActivityCall.imageCount`),
+    not the calls or the distinct file names; the meta names the tools or files. This checkout has no generating tool, so
+    "Made" appears only with one that follows those names.
+  - **Thumbnails from the host.** A sent message this client did not send, or sent before it restarted, draws previews the
+    host serves (`native.images.v1`, at most 160 KiB each, scaled down by the host when larger, a message at a time), so the
+    thumbnail is the host's preview, not the original; the viewer opens that preview, and reads the original in 255 KiB slices
+    while it is open. Copy, Add to message and Show in Finder are disabled ("Loading the original…", or "Couldn’t load the
+    original") until it has landed and then act on the original, never the preview; stepping or closing cancels the read. Until they land, or from an older host,
+    the bubble draws "Image" chips.
 - A message sent while pi is idle shows at once, at 70% opacity until pi reads it. One sent
   while pi works never enters the thread early: it waits in the composer's **Up next** (see
   Composer) and joins the thread only when pi reads it, where pi read it.
@@ -653,12 +721,12 @@ text.
   Bullets change by depth (•, ◦, ▪). Quotes hold blocks too, in italic `textSecondary`.
 - **Images:** an image on its own line (`![alt](src)` or `<img>`). A local file that this
   device can read (the agent's working directory, `nwProseFileRoot`, is here) draws as a
-  thumbnail within 360×240 (`proseImageMaxWidth`, `proseImageMaxHeight`), radius 8 with a 1px
+  thumbnail within 384×240 (`proseImageMaxWidth`, `proseImageMaxHeight`) with its alt text as a caption, radius 8 with a 1px
   `lineSubtle` border, decoded off the main actor at the size drawn. Clicking it opens the file.
   Absolute paths and paths relative to the agent's folder both work. A web image is **never
   fetched** (privacy): it is a chip with the attachment chip's anatomy (26pt, 1px
   `lineStrong`, radius 6), the `photo` glyph in `textSecondary`, its alt text in 12pt
-  `textPrimary` and its host in mono 10.5 tertiary. The chip opens the image in the browser.
+  `textPrimary` and "web image · not loaded" in mono 10.5 tertiary. The chip opens the image in the browser.
   A remote host's agent (and every agent on iOS) shows local images as chips too, because
   its files are not on this device. An image inside a sentence reads as its alt text.
 - **Footnotes:** `[^label]` references become superscript numbers in `running` (mono 10.5),

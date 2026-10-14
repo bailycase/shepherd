@@ -165,6 +165,9 @@ struct ActivityLineView: View, Equatable {
         case .drew: burst.isBoardUpdate ? .edit : .drew
         case .checked: .checked
         case .lookedAt: .lookedAtDesign
+        case .lookedAtImage: .lookedAtImage
+        case .madeImage: .madeImage
+        case .returnedImage: .returnedImage
         case .browser: .browser
         case .other: .other
         }

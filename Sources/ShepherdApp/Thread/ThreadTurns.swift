@@ -30,6 +30,13 @@ extension View {
     }
 }
 
+extension UserTurn.Bubble {
+    /// Only images, all drawn as thumbnails: no empty bubble under them.
+    var imagesOnly: Bool {
+        text.isEmpty && references.isEmpty && !sent.isEmpty
+    }
+}
+
 /// The user's turn: one `NWUserBubble` per message, each with its time beneath while the turn
 /// is hovered. Messages the queue delivered together open with "From the queue · N", one bubble
 /// per message with the time it was sent. A send pi has not read yet stands at 70%. No speaker
@@ -39,6 +46,9 @@ struct UserTurn: View, Equatable {
     struct Bubble: Equatable {
         var text: String
         var images: Int
+        /// The images this client sent with it and still holds, drawn as thumbnails above the bubble. Fewer than `images`
+        /// (none, from another client or before a restart) leaves the bubble's "Image" chips.
+        var sent: [SentImage] = []
         /// The time: "2:41 PM", or "10:58" in a child's transcript.
         var caption: String?
         var pending: Bool
@@ -49,6 +59,7 @@ struct UserTurn: View, Equatable {
     }
 
     let bubbles: [Bubble]
+    @Environment(\.threadImageViewer) private var viewer
     /// "From the queue · N" above the bubbles, when the queue delivered them.
     var fromQueue: Int?
     /// Follows the last time and always shows: "from parent" in a child's transcript.
@@ -56,12 +67,20 @@ struct UserTurn: View, Equatable {
     @State private var hover: MessageHover
 
     /// A thread's user turn: each bubble with its own time.
-    init(turn: NativeTurn, hover: MessageHover? = nil) {
+    init(turn: NativeTurn, store: NativeThreadStore? = nil, thumbnails: SentImageThumbnails? = nil, hover: MessageHover? = nil) {
+        let thumbnails = thumbnails ?? SentImageThumbnails()
         self.init(bubbles: turn.bubbles.map { bubble in
             // Its chips stand for the line saying how many references went with it.
             Bubble(text: bubble.references.isEmpty ? bubble.text
                        : DesignReferenceFence.withoutHumanLine(bubble.text, count: bubble.references.count),
-                   images: bubble.images, caption: bubble.sentAt.map { nativeClockText($0) }, pending: bubble.pending,
+                   images: bubble.images,
+                   // This client's own bytes first; else the host's previews of the saved message.
+                   sent: store.map { store in
+                       let own = bubble.operationID.map { thumbnails.images(for: $0, in: store) } ?? []
+                       if own.count == bubble.images { return own }
+                       return bubble.entryID.map { thumbnails.images(entry: $0, offset: bubble.imageOffset, count: bubble.images, in: store) } ?? []
+                   } ?? [],
+                   caption: bubble.sentAt.map { nativeClockText($0) }, pending: bubble.pending,
                    references: bubble.references, elements: bubble.elements)
         }, fromQueue: turn.fromQueue, hover: hover)
     }
@@ -100,12 +119,23 @@ struct UserTurn: View, Equatable {
                     let last = index == bubbles.count - 1
                     // No board draws a sent message's page elements as chips (the user's decision,
                     // 2026-09-29): only the composer's chip and the queue row's stand for them.
-                    NWUserBubble(bubble.text, attachments: Array(repeating: "Image", count: bubble.images),
-                                 timestamp: bubble.caption, note: last ? note : nil, revealed: hover.hovering) {
-                        if !bubble.references.isEmpty { SentReferenceChips(records: bubble.references) }
+                    VStack(alignment: .trailing, spacing: NW.Space.s) {
+                        // The images lead the message, above its bubble, as the board draws them (ThreadImagesSent).
+                        if !bubble.sent.isEmpty {
+                            NWSentImages(bubble.sent.compactMap(\.forView)) { viewer?.open(bubble.sent.map(\.entry), at: $0) }
+                        }
+                        if !bubble.imagesOnly {
+                            NWUserBubble(bubble.text, attachments: Array(repeating: "Image", count: bubble.sent.isEmpty ? bubble.images : 0),
+                                         timestamp: bubble.caption, note: last ? note : nil, revealed: hover.hovering) {
+                                if !bubble.references.isEmpty { SentReferenceChips(records: bubble.references) }
+                            }
+                            .opacity(bubble.pending ? 0.7 : 1)
+                        } else if let caption = bubble.caption {
+                            Text(caption).font(.nw(.micro, weight: .regular)).foregroundStyle(Color.nw.textTertiary)
+                                .opacity(hover.hovering ? 1 : 0).nwAnimation(.hover, value: hover.hovering)
+                        }
                     }
-                        .opacity(bubble.pending ? 0.7 : 1)
-                        .nwAnimation(.hover, value: bubble.pending)
+                    .nwAnimation(.hover, value: bubble.pending)
                 }
             }
         }

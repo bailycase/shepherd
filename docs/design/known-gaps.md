@@ -7,6 +7,11 @@ it. A sentence elsewhere that states a board's value and adds what the app does 
 uses 6pt today"), or a paragraph marked **Not built yet**, is a gap in its own right; the list
 below collects the rest, and the places those sentences point here.
 
+- **Images in the thread:**
+  - A sent image from another client, or after a restart, is the host's preview (at most 160 KiB, scaled down when larger),
+    not the original; a host without `native.images.v1` shows "Image" chips. "Made N images" appears only for an image-generation
+    tool by identity (`image_gen`, `imagegen`; none is built into this checkout); other tools that return pictures say
+    "Returned N images", and a tool that writes an image file and returns text shows its usual line.
 - **Agents and review:**
   - A review from an older host (no `changes.v1`) keeps two scopes (Uncommitted and Pull request)
     and compares the working tree against HEAD, or the PR's merge base, the old way.

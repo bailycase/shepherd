@@ -78,6 +78,9 @@ What follows from them:
   work in progress, links and keyboard focus.
 - **The sidebar is the primary navigation.** The command palette is a second way to jump.
 - **One primary action per surface.** A destructive action is never the ⏎ default.
+- **Images are never fetched.** A web image is a link chip that says "not loaded"; a local one draws only where the
+  agent's files are on this Mac. Sent images are the bytes this client sent, at their own aspect, above the bubble;
+  one viewer covers the toolbar and the thread (docs/design/thread.md › Images in the thread).
 - **Native controls, Night Watch styles.** A control is a Night Watch style on a native
   `Button`, `Toggle`, `Picker` or `TextField`. Context menus are native `.contextMenu`. Shared
   views are `NW`-prefixed.

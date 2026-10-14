@@ -551,6 +551,8 @@ final class ThreadRecorder {
                 case .unchanged: answers.append("unchanged")
                 case .accepted: answers.append("accepted")
                 case .transcript: answers.append("transcript")
+                case .images: answers.append("images")
+                case .imageChunk: answers.append("imageChunk")
                 }
                 return result
             } catch {

@@ -108,6 +108,8 @@ struct RemoteHostClientTests {
         (.send(expectedSessionID: "s", generation: "g", operationID: UUID(), text: "t", delivery: .interrupt), RemoteProtocol.nativeInterruptCapability),
         (.queue(expectedSessionID: "s", generation: "g", operationID: UUID(), action: .interrupt(ids: [UUID()])), RemoteProtocol.nativeInterruptCapability),
         (.setServiceTier(expectedSessionID: "s", generation: "g", operationID: UUID(), tier: "fast"), RemoteProtocol.nativeServiceTierCapability),
+        (.images(expectedSessionID: "s", entryID: "user:1"), RemoteProtocol.nativeImagesCapability),
+        (.imageChunk(expectedSessionID: "s", entryID: "user:1", index: 0, offset: 0), RemoteProtocol.nativeImagesCapability),
     ])
     func newerRequestsNeedTheirCapability(_ request: NativeThreadRequest, capability: String) {
         let all = Set(RemoteProtocol.capabilities)
