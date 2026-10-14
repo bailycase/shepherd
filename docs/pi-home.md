@@ -284,7 +284,7 @@ take lock folders even to read, and never by running pi (`pi auth check` refresh
 pi stays byte-identical: no write, no lock folder. Every write lands in Shepherd's home by temp
 file and rename, under pi's own lock for the file (`auth.json.lock`, …), and auth.json is 0600
 in the 0700 home. No credential's value reaches a log, a report, the UI or pi's context: they
-name a provider and a kind (API key, `$NAME`, "runs a command", subscription), never a value.
+name a provider and a kind (API key, `$NAME`, unsupported command reference, subscription), never a value.
 
 **The user's second decision (2026-09-26):** "everything will be ported over, so things like
 skills, will only be installed under shepherds application support folder". So their
@@ -307,7 +307,7 @@ pi's whole tree along and never load.
 
 | From your pi | At the first launch | Afterwards |
 | --- | --- | --- |
-| Logins (auth.json) | Every entry copied as it is: API keys keep their literal, `$ENV` or `!command` value; OAuth entries are copied whole. A provider Shepherd's pi already has keeps Shepherd's | Re-import, per provider, overwrites Shepherd's |
+| Logins (auth.json) | Every entry copied as it is: API keys keep their literal, `$ENV` or unsupported `!command` reference; OAuth entries are copied whole. A provider Shepherd's pi already has keeps Shepherd's | Re-import, per provider, overwrites Shepherd's |
 | Custom providers (models.json) | Copied as bytes, unless Shepherd's pi already has some | Re-import replaces them; invalid JSON keeps Shepherd's copy and says why |
 | Default model | `defaultProvider`/`defaultModel` copied, unless a sign-in already set one | Re-import |
 | Trusted folders (trust.json) | Every decision copied except a `true` for the home folder or a folder above it | Re-import (theirs over Shepherd's) |

@@ -129,13 +129,26 @@ struct MCPPiConfigTests {
 
     // MARK: Shell forms
 
-    @Test func aShellDefaultMakesTheValueACommandPiRunsWithTheShell() throws {
+    @Test func shellDefaultsInValuesAreRejectedInsteadOfGeneratingCommandResolvers() throws {
         let derived = derive(["s": ["url": .string("https://x.example.com/mcp"), "headers": .object([
-            "X-Plain": .string("${TOKEN}"), "X-Default": .string("Bearer ${TOKEN:-none} $5 \"q\" `x`"),
+            "X-Default": .string("Bearer ${TOKEN:-none}"),
         ])]])
-        let headers = try #require(try entries(derived)["s"]?["headers"])
-        #expect(headers["X-Plain"] == .string("${TOKEN}"))
-        #expect(headers["X-Default"] == .string("!printf '%s' \"Bearer ${TOKEN:-none} \\$5 \\\"q\\\" \\`x\\`\""))
+        #expect(try entries(derived)["s"] == nil)
+        #expect(derived.problems["s"]?.contains("Shell defaults") == true)
+        #expect(!String(decoding: derived.json, as: UTF8.self).contains("!printf"))
+    }
+
+    @Test func commandValuesAreRejectedInEnvironmentHeadersAndOAuthSecrets() throws {
+        for config: [String: JSONValue] in [
+            ["command": .string("server"), "env": .object(["TOKEN": .string("!get-token")])],
+            ["url": .string("https://x.example.com/mcp"), "headers": .object(["Authorization": .string("!get-token")])],
+            ["url": .string("https://x.example.com/mcp"), "shepherd": .object(["oauth": .object(["clientSecret": .string("!get-token")])])],
+        ] {
+            let derived = derive(["s": config])
+            #expect(try entries(derived)["s"] == nil)
+            #expect(derived.problems["s"]?.contains("Command configuration values") == true)
+            #expect(derived.secrets.isEmpty)
+        }
     }
 
     @Test func aReferenceInAnArgumentIsExpandedByTheShellThatStartsTheServer() throws {

@@ -86,6 +86,68 @@
       "before": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "after": "6847c462930774a253e23b32dfbae8b03e1413c624f80561a46e4d0f12ca36c0",
       "source": "skill-watch.js"
+    },
+    {
+      "path": "dist/core/resolve-config-value.js",
+      "before": "01fdb1673990635bb419c7418eefa298b6a1c6fbb3c6193d3b05a4902e51992d",
+      "after": "ef300c9f572753b219e5c9d9c26de6298b569ae452c75d48dd122dd0ef5adce6",
+      "edits": [
+        {
+          "old": "import { execSync, spawnSync } from \"child_process\";\nimport { getShellConfig } from \"../utils/shell.js\";\n// Cache for shell command results (persists for process lifetime)\nconst commandResultCache = new Map();\n",
+          "new": ""
+        },
+        {
+          "old": " * - If starts with \"!\", executes the rest as a shell command and uses stdout (cached)",
+          "new": " * - Shepherd rejects \"!command\" values; configuration never executes commands."
+        },
+        {
+          "old": "return executeCommand(reference.config);",
+          "new": "return undefined;"
+        },
+        {
+          "old": "function executeWithConfiguredShell(command) {\n    try {\n        const { shell, args, commandTransport } = getShellConfig();\n        const commandFromStdin = commandTransport === \"stdin\";\n        const result = spawnSync(shell, commandFromStdin ? args : [...args, command], {\n            encoding: \"utf-8\",\n            input: commandFromStdin ? command : undefined,\n            timeout: 10000,\n            stdio: [commandFromStdin ? \"pipe\" : \"ignore\", \"pipe\", \"ignore\"],\n            shell: false,\n            windowsHide: true,\n        });\n        if (result.error) {\n            const error = result.error;\n            if (error.code === \"ENOENT\") {\n                return { executed: false, value: undefined };\n            }\n            return { executed: true, value: undefined };\n        }\n        if (result.status !== 0) {\n            return { executed: true, value: undefined };\n        }\n        const value = (result.stdout ?? \"\").trim();\n        return { executed: true, value: value || undefined };\n    }\n    catch {\n        return { executed: false, value: undefined };\n    }\n}\nfunction executeWithDefaultShell(command) {\n    try {\n        const output = execSync(command, {\n            encoding: \"utf-8\",\n            timeout: 10000,\n            stdio: [\"ignore\", \"pipe\", \"ignore\"],\n        });\n        return output.trim() || undefined;\n    }\n    catch {\n        return undefined;\n    }\n}\nfunction executeCommandUncached(commandConfig) {\n    const command = commandConfig.slice(1);\n    return process.platform === \"win32\"\n        ? (() => {\n            const configuredResult = executeWithConfiguredShell(command);\n            return configuredResult.executed ? configuredResult.value : executeWithDefaultShell(command);\n        })()\n        : executeWithDefaultShell(command);\n}\nfunction executeCommand(commandConfig) {\n    if (commandResultCache.has(commandConfig)) {\n        return commandResultCache.get(commandConfig);\n    }\n    const result = executeCommandUncached(commandConfig);\n    commandResultCache.set(commandConfig, result);\n    return result;\n}\n",
+          "new": ""
+        },
+        {
+          "old": "return executeCommandUncached(reference.config);",
+          "new": "return undefined;"
+        },
+        {
+          "old": "throw new Error(`Failed to resolve ${description} from shell command: ${reference.config.slice(1)}`);",
+          "new": "throw new Error(`Command configuration values are not supported for ${description}`);"
+        },
+        {
+          "old": "/** Clear the config value command cache. Exported for testing. */\nexport function clearConfigValueCache() {\n    commandResultCache.clear();\n}",
+          "new": "/** Retained SDK entry point; Shepherd has no command result cache. */\nexport function clearConfigValueCache() {}"
+        }
+      ]
+    },
+    {
+      "path": "dist/bundle/chunks/chunk-IBCPYVFK.js",
+      "before": "36657698101aaff1634e513874455f7580874febab92616637e71754d9874361",
+      "after": "f4f181d1d58468b63024fd076556a6198afbe6113a2672fbf9ace51ffb01f3ee",
+      "edits": [
+        {
+          "old": "import{execSync,spawnSync}from\"child_process\";var commandResultCache=new Map,",
+          "new": "var "
+        },
+        {
+          "old": "reference.type===\"command\"?executeCommand(reference.config):",
+          "new": "reference.type===\"command\"?void 0:"
+        },
+        {
+          "old": "function executeWithConfiguredShell(command){try{let{shell,args,commandTransport}=getShellConfig(),commandFromStdin=commandTransport===\"stdin\",result=spawnSync(shell,commandFromStdin?args:[...args,command],{encoding:\"utf-8\",input:commandFromStdin?command:void 0,timeout:1e4,stdio:[commandFromStdin?\"pipe\":\"ignore\",\"pipe\",\"ignore\"],shell:!1,windowsHide:!0});return result.error?result.error.code===\"ENOENT\"?{executed:!1,value:void 0}:{executed:!0,value:void 0}:result.status!==0?{executed:!0,value:void 0}:{executed:!0,value:(result.stdout??\"\").trim()||void 0}}catch{return{executed:!1,value:void 0}}}function executeWithDefaultShell(command){try{return execSync(command,{encoding:\"utf-8\",timeout:1e4,stdio:[\"ignore\",\"pipe\",\"ignore\"]}).trim()||void 0}catch{return}}function executeCommandUncached(commandConfig){let command=commandConfig.slice(1);return process.platform===\"win32\"?(()=>{let configuredResult=executeWithConfiguredShell(command);return configuredResult.executed?configuredResult.value:executeWithDefaultShell(command)})():executeWithDefaultShell(command)}function executeCommand(commandConfig){if(commandResultCache.has(commandConfig))return commandResultCache.get(commandConfig);let result=executeCommandUncached(commandConfig);return commandResultCache.set(commandConfig,result),result}",
+          "new": ""
+        },
+        {
+          "old": "reference.type===\"command\"?executeCommandUncached(reference.config):",
+          "new": "reference.type===\"command\"?void 0:"
+        },
+        {
+          "old": "`Failed to resolve ${description} from shell command: ${reference.config.slice(1)}`",
+          "new": "`Command configuration values are not supported for ${description}`"
+        }
+      ]
     }
   ]
 }

@@ -114,7 +114,8 @@ Settings", revision 1083) is the source of truth for every Settings page.
   explanation line, then groups 28pt apart. A group has a caps label, a flat card (radius 10,
   1px `lineSubtle`), and an optional footnote.
 - **Pi** is Shepherd's pi, then **From pi**: the source, what was brought over, the copies and
-  the imported extensions.
+  the imported extensions. Imported command-backed credentials say "command not supported";
+  neither Sign-in nor From pi displays their command text.
 - **Subagents** lists the definition files, then the native subagent switches and defaults.
 - **Extensions** holds the bundled extension switches. Peer tools have no separate permission row.
 - **Slash commands**: off disables a command entirely, in the menu and when typed.
