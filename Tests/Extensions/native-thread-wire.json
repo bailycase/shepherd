@@ -831,7 +831,7 @@
                   "ref": "shepherd-design-ref://local/d1/A.dc.html#2:0/1@23",
                   "design": "Checkout funnel dashboard",
                   "board": "A.dc.html",
-                  "boardTitle": "A · Funnel first",
+                  "boardTitle": "A \u00b7 Funnel first",
                   "element": "A.dc.html#2:0/1",
                   "elementLabel": "Checkout funnel",
                   "revision": 23,
@@ -994,54 +994,24 @@
     "id": 31,
     "agentID": "agent",
     "request": {
-      "images": {
+      "image": {
         "expectedSessionID": "session",
-        "entryID": "user:1733234567890"
+        "imageID": "user:1733234570000|0|0123456789abcdef",
+        "offset": 262144
       }
     }
   },
   {
     "type": "nativeThread",
-    "id": 32,
-    "result": {
-      "images": {
-        "value": [
-          {
-            "mimeType": "image/png",
-            "data": "iVBORw==",
-            "name": "shot.png"
-          },
-          {
-            "mimeType": "image/jpeg",
-            "data": "/9g="
-          }
-        ]
-      }
-    }
-  },
-  {
-    "type": "nativeThread",
-    "id": 33,
-    "agentID": "agent",
-    "request": {
-      "imageChunk": {
-        "expectedSessionID": "session",
-        "entryID": "user:1733234567890",
-        "index": 1,
-        "offset": 261120
-      }
-    }
-  },
-  {
-    "type": "nativeThread",
-    "id": 34,
+    "id": 31,
     "result": {
       "imageChunk": {
         "value": {
+          "imageID": "user:1733234570000|0|0123456789abcdef",
           "mimeType": "image/png",
-          "total": 300000,
-          "offset": 261120,
-          "data": "iVBORw=="
+          "totalBytes": 300000,
+          "offset": 262144,
+          "data": "iVBORw0KGgo="
         }
       }
     }

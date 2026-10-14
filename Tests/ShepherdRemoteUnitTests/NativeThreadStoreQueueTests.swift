@@ -222,46 +222,6 @@ struct NativeThreadStoreQueueTests {
         #expect(store.queuedImages(UUID()).isEmpty)
     }
 
-    /// More than the 32 sends whose bytes the store keeps, all accepted into the queue of a running host and all still
-    /// waiting: every queued row keeps its images, however many came after it. Once the host has delivered them, the oldest
-    /// are dropped to the bound, and the newest stay.
-    @Test func everyImageStillWaitingInTheQueueKeepsItsBytesPastTheBound() async throws {
-        let (store, host, task) = await started()
-        defer { task.cancel() }
-        // The host queues each accepted send (its id is the queued message's) and lists it from then on.
-        host.action = { [host] request in
-            guard case .send(_, _, let id, let text, _, let images, _, _, _) = request else { return .failure(code: "x", message: "unexpected") }
-            var items = host.snapshot.queue?.items ?? []
-            items.append(NativeQueuedMessage(
-                id: id, text: text, images: (images ?? []).map { NativeQueuedImage(mimeType: $0.mimeType, name: $0.name) },
-                sentAt: Double(items.count)))
-            host.snapshot.queue?.items = items
-            host.snapshot.revision += 1
-            return .accepted(operationID: id)
-        }
-        var ids: [UUID] = []
-        for index in 0..<40 {
-            store.draft = "m\(index)"
-            let png = NativeImage(mimeType: "image/png", data: Data([UInt8(index)]), name: "\(index).png")
-            await store.send(images: [png])
-            ids.append(try #require(store.queue.last?.id))
-        }
-        #expect(store.queue.count == 40, "the host holds them all")
-        #expect(ids.allSatisfy { store.queuedImages($0).first?.name != nil }, "none was evicted while it waits")
-        #expect(store.queuedImages(ids[0]).first?.name == "0.png" && store.queuedImages(ids[39]).first?.name == "39.png")
-
-        // The host delivers the first 36: they leave the queue, and only the bound's worth of the oldest are forgotten.
-        host.snapshot.queue?.items = []
-        host.snapshot.revision += 1
-        await store.refresh(fresh: true)
-        await store.refresh(fresh: true)
-        #expect(store.queue.isEmpty)
-        store.draft = "one more"
-        await store.send(images: [NativeImage(mimeType: "image/png", data: Data([99]), name: "99.png")])
-        #expect(store.queuedImages(ids[0]).isEmpty, "delivered and past the bound")
-        #expect(store.queuedImages(ids[39]).first?.name == "39.png", "the newest stay")
-    }
-
     /// The other half of the reported bug: an idle send's echo waited to find its text on the
     /// newest page, which a long run had already pushed it off, and stayed at the tail for
     /// good. It now leaves at the host's next snapshot, whatever that holds.

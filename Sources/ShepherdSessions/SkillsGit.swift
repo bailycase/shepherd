@@ -156,8 +156,9 @@ struct SkillsGit {
     /// Runs git and answers its output; a non-zero exit throws its last line of stderr. It never
     /// asks for credentials: a repository that needs them and has none fails.
     @discardableResult
-    static func run(_ arguments: [String], in directory: URL?, input: Data? = nil, timeout: TimeInterval = 60) throws -> Data {
-        var environment = ProcessInfo.processInfo.environment
+    static func run(_ arguments: [String], in directory: URL?, input: Data? = nil, timeout: TimeInterval = 60,
+                    environment extra: [String: String] = [:]) throws -> Data {
+        var environment = ProcessInfo.processInfo.environment.merging(extra) { $1 }
         environment["GIT_TERMINAL_PROMPT"] = "0"
         environment["GCM_INTERACTIVE"] = "never"
         environment["GIT_ASKPASS"] = "/usr/bin/true"

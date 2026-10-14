@@ -51,6 +51,17 @@ them still uses ordinary thread navigation. A new operation can explicitly conti
 task's existing worker under the proof/fences below. It does not create worktrees or implement
 a separate follow-up launcher.
 
+## Coordinator startup
+
+The first Project message durably reserves its coordinator ID before directory preparation and
+app launch. Project conversation retrieval reports the existing `native_starting` state during
+that reservation gap; it never treats the reservation as an already persisted ordinary Agent.
+Ordinary native retrieval still refuses nonexistent agents. A coordinator launch failure pauses
+the Project and clears the matching reservation only if no Agent was persisted. Failures after
+Agent persistence retain its identity and history. Both paths retain the queued message and its
+operation ID; explicit Resume retries startup and delivers that original operation once, never
+an automatic retry or replacement message.
+
 ## Durability and evidence
 
 `ShepherdState.projectExecutions` decodes empty for older state files. Each receipt keeps the
@@ -272,8 +283,11 @@ original session/generation/dialog/operation fences and permit only one retained
 `.resume` delivers it to the original dialog; expiration or a changed session never creates a
 replacement question. The existing execution deadline does not abort a parked, paused question
 (no unattended work is occurring); explicit resume installs a fresh bounded deadline. Owner-side
-answer delivery still uses the existing activation count. No separate evaluator or model call
-is added. Reconnect alone never resumes an answer after owner restart.
+answer delivery still uses the existing activation count. The owner keeps its answer queued
+until the executor receipt acknowledges durable Resume (`ownerPaused` is cleared), so answer
+admission cannot race the executor's paused-answer save against Resume. Applying that receipt
+pumps the retained answer without polling or replaying the assignment. No separate evaluator or
+model call is added. Reconnect alone never resumes an answer after owner restart.
 
 Deleting a Project with outstanding remote work first pauses and requests cancellation, returning
 `project_interrupt_pending` rather than erasing its only durable identity. Retry Delete after

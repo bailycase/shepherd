@@ -137,6 +137,8 @@ public final class DesignBoardView: DesignPlatformView {
 
     private let delegate = Delegate()
     private var bootWaiter: CheckedContinuation<CGSize, any Error>?
+    private var bootDeadline: Task<Void, Never>?
+    private var captureWaiters: [UUID: CheckedContinuation<[String], any Error>] = [:]
     private var loadURL: URL?
     private var rulesInstalled = false
     /// The viewport the page was last told (iOS).
@@ -272,7 +274,7 @@ public final class DesignBoardView: DesignPlatformView {
 
     /// Loads the board from its file and waits until it has rendered. Returns what it drew.
     @discardableResult
-    public func load() async throws -> CGSize {
+    public func load(timeout: Duration = .seconds(60)) async throws -> CGSize {
         guard DesignRenderLimits.accepts(boardSize) else {
             throw DesignBoardError.refused("The board exceeds the native rendering size limit; its source and canvas are unchanged.")
         }
@@ -302,6 +304,12 @@ public final class DesignBoardView: DesignPlatformView {
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 bootWaiter = continuation
+                bootDeadline = Task { @MainActor [weak self] in
+                    do { try await Task.sleep(for: timeout) } catch { return }
+                    guard let self, self.bootWaiter != nil else { return }
+                    self.webView.stopLoading()
+                    self.finishBoot(.failure(DesignBoardError.loadFailed("Timed out waiting for the board runtime to boot.")))
+                }
                 webView.load(URLRequest(url: url))
             }
         } onCancel: {
@@ -328,6 +336,39 @@ public final class DesignBoardView: DesignPlatformView {
         let reply = result as? [String: Any]
         guard reply?["ok"] as? Bool == true else {
             throw DesignBoardError.refused(reply?["error"] as? String ?? "the runtime gave no answer")
+        }
+    }
+
+    /// Settles the current renderer and returns bounded runtime, console and layout diagnostics.
+    public func captureStatus(interactions: [DesignInteraction] = [], wait: Bool = true, timeout: Duration = .seconds(60)) async throws -> [String] {
+        guard interactions.isEmpty || contentSize != nil else { throw DesignBoardError.notBooted }
+        let data = try JSONEncoder().encode(interactions)
+        return try await withCheckedThrowingContinuation { continuation in
+            let id = UUID()
+            captureWaiters[id] = continuation
+            let deadline = Task { @MainActor [weak self] in
+                do { try await Task.sleep(for: timeout) } catch { return }
+                guard let waiter = self?.captureWaiters.removeValue(forKey: id) else { return }
+                self?.webView.stopLoading()
+                self?.webView.loadHTMLString("<!doctype html><html></html>", baseURL: nil)
+                waiter.resume(throwing: DesignBoardError.loadFailed("Timed out while inspecting the runtime."))
+            }
+            Task { @MainActor [weak self, weak webView = webView] in
+                defer { deadline.cancel() }
+                do {
+                    guard let webView else { throw DesignBoardError.terminated }
+                    let raw = try await webView.callAsyncJavaScript(
+                        "if (!window.__shepherdDC) throw new Error('no runtime'); return steps === '[]' ? await window.__shepherdDC.captureStatus(wait) : await window.__shepherdDC.interact(JSON.parse(steps));",
+                        arguments: ["steps": String(decoding: data, as: UTF8.self), "wait": wait], in: nil, contentWorld: .page)
+                    guard let waiter = self?.captureWaiters.removeValue(forKey: id) else { return }
+                    guard let object = raw as? [String: Any] else { waiter.resume(throwing: DesignBoardError.noRuntime); return }
+                    let loading = (object["loading"] as? [String] ?? []).prefix(64).map { "Still loading: \($0)" }
+                    let diagnostics = (object["diagnostics"] as? [[String: String]] ?? []).prefix(64).map {
+                        "\($0["kind"] ?? "runtime"): \($0["message"] ?? "")"
+                    }
+                    waiter.resume(returning: Array((loading + diagnostics).prefix(64)))
+                } catch { self?.captureWaiters.removeValue(forKey: id)?.resume(throwing: error) }
+            }
         }
     }
 
@@ -452,6 +493,8 @@ public final class DesignBoardView: DesignPlatformView {
     private func finishBoot(_ result: Result<CGSize, any Error>) {
         guard let waiter = bootWaiter else { return }
         bootWaiter = nil
+        bootDeadline?.cancel()
+        bootDeadline = nil
         waiter.resume(with: result)
     }
 

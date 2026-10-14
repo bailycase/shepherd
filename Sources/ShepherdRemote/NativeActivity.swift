@@ -284,15 +284,6 @@ public struct NativeActivityCall: Equatable, Sendable, Identifiable {
         /// An agent's `browser_*` tools on its thread's Browser page ("Opened localhost:5173 in
         /// Browser", "Clicked “Pay $148.00”"); consecutive calls of one tool merge.
         case browser
-        /// A `read` whose result carried an image (pi sends the file as an attachment): "Looked at 2 images
-        /// checkout-iphone.png · refunds-dashboard.png". Decided by the result, never by the file's name.
-        case lookedAtImage
-        /// An image-generation tool (`image_gen`, `imagegen`, by its identity) whose result carried pictures: "Made 2 images".
-        /// Only that identity says a picture was made; the count is the image blocks the result returned.
-        case madeImage
-        /// Any other tool (not `read`, not the Browser) whose successful result carried pictures: "Returned 2 images". It
-        /// inspected or captured what exists, so it never claims a picture was made. Decided by the result's image blocks.
-        case returnedImage
         /// Any other tool; consecutive calls of the same tool merge.
         case other
     }
@@ -362,11 +353,6 @@ public struct NativeActivityCall: Equatable, Sendable, Identifiable {
     public var truncated: Bool
     /// Raw JSON arguments ("Show Call").
     public var arguments: String?
-    /// The image blocks the result returned (what "Made N images" and "Returned N images" count, not the calls).
-    public var imageCount: Int
-
-    /// The tools that make pictures, by identity (also behind an MCP server's prefix): the only ones "Made" is said of.
-    static let imageGenerators: Set<String> = ["image_gen", "imagegen"]
 
     public static let outputHeadLines = 12
     public static let tailLines = 3
@@ -442,21 +428,14 @@ extension NativeActivityCall {
         self.tail = tail
         self.truncated = message.truncated
         self.arguments = message.argumentsText
-        self.imageCount = message.blocks.count { $0.kind == .unsupportedImage }
 
         switch name {
         case "read":
-            // pi attaches an image file to the result: the call looked at a picture, not at lines of text.
-            if !failed, !running, message.blocks.contains(where: { $0.kind == .unsupportedImage }) {
-                kind = .lookedAtImage
-                explore = nil
-            } else {
-                kind = .explore
-                explore = .read
-            }
+            kind = .explore
+            explore = .read
             detail = string("path") ?? firstLine
             isPath = string("path") != nil
-            if kind == .explore, !failed, !running, lineCount > 0 { stat = nativeCount(lineCount, "line") }
+            if !failed, !running, lineCount > 0 { stat = nativeCount(lineCount, "line") }
         case "grep", "find", "glob":
             kind = .explore
             explore = .search
@@ -688,11 +667,6 @@ extension NativeActivityCall {
             detail = ["command", "path", "query", "url", "pattern"].compactMap(string).first ?? firstLine
             isPath = string("command") == nil && string("path") != nil
         }
-        // A tool that handed back pictures: a generator made them, any other returned them (`read` looks, above).
-        if kind == .other, !failed, !running, !stopped, imageCount > 0 {
-            let tool = (NativeMCPActivity.parts(name)?.tool ?? name).lowercased()
-            kind = Self.imageGenerators.contains(tool) ? .madeImage : .returnedImage
-        }
         detail = String(detail.prefix(240))
         if stopped {
             // What it did before the Stop is unknown: no counts, and no file to review.
@@ -749,7 +723,7 @@ public func nativeActivityBursts(_ calls: [NativeActivityCall]) -> [NativeActivi
         if call.state == .done, !call.stopped, call.projectAction == nil, call.projectPlan == nil,
            let last = groups.last?.last, last.state == .done, !last.stopped,
            last.projectAction == nil, last.projectPlan == nil, last.kind == call.kind,
-           (call.kind != .other && call.kind != .browser && call.kind != .returnedImage) || last.name == call.name, call.kind != .lookedAt || last.designRef == call.designRef {
+           (call.kind != .other && call.kind != .browser) || last.name == call.name, call.kind != .lookedAt || last.designRef == call.designRef {
             groups[groups.count - 1].append(call)
         } else {
             groups.append([call])
@@ -812,9 +786,6 @@ private func progressiveLabel(_ call: NativeActivityCall) -> String {
         case .push: return "Pushing"
         case .other: return "Running"
         }
-    case .lookedAtImage: return "Looking at an image"
-    case .madeImage: return "Making an image"
-    case .returnedImage: return "Running"
     case .subagents: return "Starting a subagent"
     case .drew: return call.name == "canvas_update" ? "Arranging the canvas" : "Drawing"
     case .checked: return "Checking the boards"
@@ -841,9 +812,6 @@ private func failedLabel(_ call: NativeActivityCall) -> String {
         case .push: return "Push failed"
         case .other: return "Ran a command"
         }
-    case .lookedAtImage: return "Read failed"
-    case .madeImage: return "Image generation failed"
-    case .returnedImage: return "Ran a tool"
     case .subagents: return "Subagent failed to start"
     case .drew:
         switch call.name {
@@ -878,9 +846,6 @@ private func stoppedLabel(_ call: NativeActivityCall) -> String {
         case .push: return "Push stopped"
         case .other: return "Ran a command"
         }
-    case .lookedAtImage: return "Read stopped"
-    case .madeImage: return "Image generation stopped"
-    case .returnedImage: return "Ran a tool"
     case .subagents: return "Subagent stopped"
     case .drew: return call.name == "canvas_update" ? "Canvas update stopped" : "Drawing stopped"
     case .checked: return "Check stopped"
@@ -919,17 +884,6 @@ private func doneWords(_ calls: [NativeActivityCall]) -> (String, [String]) {
         return ("Edited " + nativeCount(files, "file"), [nativeDiffText(added: added, removed: removed)])
     case .run:
         return runWords(calls, duration: duration)
-    case .lookedAtImage:
-        // "Looked at 2 images" with the files it read, each name once, in the order read.
-        var seen = Set<String>()
-        let names = calls.map { ($0.detail as NSString).lastPathComponent }.filter { seen.insert($0).inserted }
-        return ("Looked at " + nativeCount(names.count, "image"), [names.joined(separator: " · "), duration].compactMap { $0 })
-    case .madeImage, .returnedImage:
-        // The images the results returned, not the calls; named by the tool or the file its calls name, each once.
-        let count = calls.reduce(0) { $0 + $1.imageCount }
-        var seen = Set<String>()
-        let names = calls.map { $0.isPath ? ($0.detail as NSString).lastPathComponent : $0.label }.filter { seen.insert($0).inserted }
-        return ((first.kind == .madeImage ? "Made " : "Returned ") + nativeCount(count, "image"), [names.joined(separator: " · "), duration].compactMap { $0 })
     case .subagents:
         let names = calls.compactMap(\.subagent)
         return ("Started " + nativeCount(calls.count, "subagent"), [names.joined(separator: " · ")])

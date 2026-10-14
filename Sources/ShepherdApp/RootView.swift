@@ -84,8 +84,6 @@ struct RootView: View {
             }
             // A deletion's toast, over the bottom of the column (DesignDeleted).
             .overlay { DesignToastLayer(vm: vm) }
-            // An image open at full size covers the toolbar and the thread (ThreadImageOpen).
-            .modifier(ImageViewerLayer(model: vm.imageViewer, leadingInset: docked || isFullScreen ? 0 : AppLayout.trafficLightInset))
             .frame(maxWidth: .infinity)
             .background(Color.nw.bgWindow)
             // Every mounted layout reflows when the column's width changes; relaid out on each
@@ -120,9 +118,11 @@ struct RootView: View {
         }
         // Export (DZExport) sits over the whole window on its own scrim.
         .overlay { DesignExportOverlay(vm: vm) }
+        .overlay { DesignGitSheetsOverlay(vm: vm) }
         .overlay { ImplementSheetOverlay(vm: vm) }
         // Over a design, the palette's chord jumps to a board instead (JumpInContext).
         .overlay { DesignJumpOverlay(vm: vm) }
+        .overlay { ImageViewerOverlay(vm: vm, leadingInset: isFullScreen ? 0 : AppLayout.trafficLightInset) }
         // ⌘K floats over everything, 18% down and capped to the window; the scrim dismisses.
         .nwCommandPalette(isPresented: Binding(
             get: { vm.showCommandPalette && !vm.showSettings && !vm.showComponentGallery },
@@ -134,6 +134,7 @@ struct RootView: View {
         .background { MainWindowReader() }
         .nwDensity(appearance.sidebarRowDensity)
         .environment(\.threadCommands, vm.threadCommands)
+        .environment(\.presentImages) { vm.imageViewer = $0 }
         .frame(minWidth: AppLayout.windowMinWidth, minHeight: AppLayout.windowMinHeight)
         // Only the width the shell's layout can tell apart: past the widest window that still
         // narrows the sidebar, a resize changes nothing here, so it reruns none of this.
@@ -338,7 +339,11 @@ struct WorkspaceHeaderView: View {
                               menu: vm.designMenu(.local(design.id), context: .toolbar),
                               perform: { vm.performDesignMenu($0, on: .local(design.id)) },
                               jump: { vm.designJump == nil ? vm.openDesignJump(design.id) : (vm.designJump = nil) },
-                              jumpOpen: vm.designJump?.design == design.id)
+                              jumpOpen: vm.designJump?.design == design.id,
+                              git: DesignGitPresentation.chip(vm.designGit(design.id).state, drawing: false),
+                              gitOpen: vm.designGit(design.id).panelOpen,
+                              pressGit: { vm.pressDesignGitChip(design.id) },
+                              placeGit: { vm.designGit(design.id).placeChip(trailing: $0) })
                     .equatable()
                     .id(agent.id)
             } else if let agent = vm.selectedAgent, vm.activeTabID == agent.tabID,

@@ -192,10 +192,6 @@ empty states) in light and dark to `$SHEPHERD_PREVIEW_DIR/<surface>-<light|dark>
 skipped when the variable is unset. Look at them after a UI change; they exist so an agent can
 see its work.
 
-- `ThreadImagesPreviewTests` renders the ThreadImage boards from the real store (it sends the images through
-  `NativeThreadStore.send`, so the thumbnails come from the bytes the store kept) and real files in the agent's folder;
-  `ThreadImageControlTests` presses the chips' remove buttons, Send with an image over 2 MB, a sent thumbnail and each
-  viewer control (`ThreadImagesTests` covers the viewer model and the store-to-`UserTurn` path).
 - Each domain has its own suite in `Tests/ShepherdPreviewTests` (`ThreadPreviewTests`,
   `NavigationPreviewTests`, `AgentsPreviewTests`, `ReviewPreviewTests`, `SettingsPreviewTests`,
   `DesignPreviewTests`), and `PreviewTests` holds the rest. A capture can't draw a web view, so

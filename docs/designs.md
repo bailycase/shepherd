@@ -219,11 +219,13 @@ that folder.
 | `board_edit(path, edits, baseRevision?, tokens?)` | `designEditBoard` | `designEdited` | `editDesignBoard`: `edits` (`[{find, replace, all?}]`, at most 64) applied in order to the board's text as the design store holds it now, then the same checks and atomic write as `board_write`, as one step of the store's queue (below). The result is `board_write`'s (revision, warnings, report), with how many matches each edit replaced |
 | `boards_edit(paths?, edits?, boards?, atomic?, dry_run?, checkpoint?, tokens?, baseRevision?)` | `designEditBoards` | `designBatchEdited` | The same edits on many boards as one change, each reported (below) |
 | `board_search(text? regex? scope? tag? attribute? value? class? usages? paths? limit?)` | `designSearch` | `designSearchResult` | Text, structure or a piece's usages across the boards, with element ids (below) |
-| `board_render(path, width?, height?, scale?, props?)` | `designRender` | `designRendered` | A picture of a board as the app draws it (below) |
+| `board_render(path, width?, height?, scale?, props?)` | `designRender` | `designRendered` | A picture of the latest revision with loading, runtime and console diagnostics |
+| `board_interact(path, interactions, width?, height?, scale?, props?)` | `designRender` | `designRendered` | Clicks and types on rendered DOM controls, then returns a picture and diagnostics |
+| `design_export(format, paths?)` | `designExport` | `designExported` | HTML, PNG, PDF or ZIP in a new design-owned exports folder |
 | `board_extract(path, element, piece, props?, size?, frame?, copies?, checkpoint?)` | `designExtract` | `designExtracted` | An element lifted into a shared piece (Shared pieces, below) |
 | `checkpoint_create(name)`, `checkpoint_list()`, `checkpoint_restore(name)` | `designCheckpoint` | `designCheckpoints` | Named copies of every board and the canvas (Checkpoints, below) |
-| `canvas_update(changes, baseRevision?)` | `designUpdateIndex` | `designWritten` | `updateDesignIndex` with `changes` as the merge patch |
-| `design_check(path?, snap?)` | `designSystemRead` (`snap`: `designEditBoards` first) | `designSystems` | In the extension: every hex color (in style attributes, style and script blocks, `data-props`, SVG paint) and every px size in spacing, radius and type that the design's installed systems don't hold (their colors and dark values, spacing, radii and type sizes), else that no CSS custom property in its working folder declares, with the board and lines it is on and the nearest token. Its first line is "Checked against <system or project> · N off-system values" |
+| `canvas_update(changes, baseRevision?, dry_run?, allow_delete_pages?, remove_systems?)` | `designUpdateIndex` | `designWritten` | `updateDesignIndex` with `changes` as the merge patch |
+| `design_check(path?, snap?, baseline_revision?)` | `designSystemRead` (`snap`: `designEditBoards` first) | `designSystems` | In the extension: every hex color (in style attributes, style and script blocks, `data-props`, SVG paint) and every px size in spacing, radius and type that the design's installed systems don't hold (their colors and dark values, spacing, radii and type sizes), else that no CSS custom property in its working folder declares, with the board and lines it is on and the nearest token. Its first line is "Checked against <system or project> · N off-system values" |
 | `comment_list(all?)` | `designComments` | `designComments` | The viewer's open comments (all of them with `all`), oldest first: id, number, state and whose turn it is (one the agent answered "waits on the viewer"), element id and name, and each one's words and replies, fenced as data |
 | `comment_reply(id, text)` | `designCommentReply` | `designComment` | An answer under a comment's pin (`replyToDesignComment`, author `agent`). No message resolves a comment: only the viewer does. A second answer in a row, with no reply from the viewer between, is kept but its result says to take anything further to the chat |
 | `markup_propose(proposals)` | `designProposeComments` | `designProposals` | Comments proposed from the viewer's Pencil markup, one per mark: each element checked against its board's source (`invalid_markup` otherwise), named `<call id>#<n>`, its card's name the element's `data-el` name else its words, then kept as comments at once, all or none, sent nowhere. The result lists them for the agent and ends with their JSON between `markup-proposals` markers, all inside the data fence, for the chat (Pencil markup, below) |
@@ -346,9 +348,9 @@ helpers (Helpers, below) except `checkpoint_restore`.
 
 ### Checkpoints
 
-A checkpoint is a named copy of every board and canvas.json, kept in the design's folder
+A checkpoint is a named copy of every board, canvas.json and every installed system copy under `ds/`, kept in the design's folder
 (`checkpoints/<the first 12 bytes of the lower-cased name's SHA-256, in hex>/` with `manifest.json`, `canvas.json`
-and `boards/…`, beside `versions/` and `pins/`), so a sweeping change by an agent can be taken
+and `boards/…` plus `ds/…`, beside `versions/` and `pins/`), so a sweeping change by an agent can be taken
 back whole.
 
 - **Names** are 1 to 60 characters of letters, digits, spaces and `_ - . , ' ( ) # + :`, not case
@@ -359,14 +361,27 @@ back whole.
   is `checkpoint_too_large`.
 - **Restore is ONE change** (`restoreCheckpoint`, one `commit`): boards written since are put
   back, boards deleted since are made again, boards added since are removed, and canvas.json is
-  put back with the design's installed `designSystems` as they are now. It first saves the design
+  put back with the saved installed `designSystems` and their exact files. Older checkpoints without a system-file manifest leave current installed systems alone. It first saves the design
   as "before restore <name>", so a restore can itself be undone by restoring that. Every board
   that changed keeps what it held as a version.
 - **Never touched:** comments (their anchors are found again in the restored boards, or
-  detached, as for any write) and installed design systems (`project/ds/`).
+  detached, as for any write) and the shared design-system registry. Restoring installed copies never overwrites shared systems.
 - **Not exported.** A checkpoint is not part of Export, a ZIP or a duplicate (Duplicate copies the
   design's canvas, boards, systems and uploads, as before); it is the agent's working history, like
   a board's versions.
+
+### Renderer and storage checks
+
+- Renders capture a revision-consistent file set and retry at most three times when the design changes during drawing. One 60-second deadline covers retries. Captures wait up to three seconds for imports, styles, fonts and images, then list anything still loading. Runtime errors and console output are untrusted data, capped at 64 messages of 1,000 characters.
+- `board_interact` accepts 1 to 16 click/type steps, each with a unique CSS selector. Typing replaces an input or textarea value through its native setter and dispatches input/change events. Hidden, covered, disabled and read-only controls are refused. These are DOM interactions in a fresh renderer, not trusted OS input or changes to canvas source.
+- Changed agent-tool board writes return advisory renderer lint. Internal storage and canvas writes keep static validation but do not start a runtime render. It checks unknown DC props, reserved `name` props, unbound event handlers, clipping and sibling overlap. Layout checks inspect at most 256 elements and report truncation. Intentional overlaps can also produce warnings. A render failure does not undo a committed source write. Revision pushes are scheduled at commit, before lint completes, so a subscriber may receive the new revision before the write returns.
+- Canvas deletions, system installation and checkpoint restoration retain displaced files until the revision commits. Failed commits roll back boards, canvas and system copies. Failed rollbacks keep their recovery directory.
+- `canvas_update(dry_run: true)` validates and returns a deletion plan without changing files or revision. Removing existing pages requires `allow_delete_pages: true`. `remove_systems` removes only explicit, safe namespace folders uninstalled in the resulting index. It never deletes shared systems or follows symlinks.
+- A full `design_check()` retains a session-local baseline by revision. `baseline_revision` shows only colors and sizes absent from that board in the earlier check. The cache holds at most 20 revisions and 10,000 values per revision; unavailable baselines fail explicitly. It does not reconstruct historical revisions or survive restart.
+- `design_export` uses the existing exporter and a fresh `exports/<uuid>/` folder under the design. It never overwrites an earlier export or writes into a repository. Agent exports have the same 60-second deadline and a 256 MiB output budget.
+- Systems accept validated `.dc.html` components in their ordinary files map. Boards import them with `name="ds/<namespace>/components/Card"`, rooted at the design even from nested boards. The system page draws DC specimens directly, without nesting their document inside another component.
+- `system_write.files` accepts font objects such as `{"fonts/Face.woff2":{"base64":"..."}}`. WOFF2, WOFF, TrueType and OpenType signatures are checked, using the existing system file and total-size bounds. Installed fonts travel with checkpoints and ZIPs; standalone HTML embeds their local URLs as data URIs. Agent font writes also obey the extension socket's 1 MiB frame limit, including base64 and JSON overhead.
+- Snapshot usage counts every nonhidden regular project file except the device-owned runtime, including installed systems, against the existing 512-file and 1 GB project limits. `design_read()` reports usage. The current canvas has no info panel, so this change adds no new panel or replacement chrome.
 
 ### Helpers
 
@@ -594,11 +609,10 @@ keeps every key it doesn't name, at the top and on each token:
   never installed: its title, revision (moves with each write), when it was made, changed and
   last synced, the design whose agent built it (`ownerDesignID`), the project it was read from
   (`spaceID`) and its stylesheets there (`sources`, relative to the project).
-- **Built in:** Night Watch (`night-watch`), generated by the app from ShepherdUI's tokens
-  (`NightWatchSystem`: every `ThemeColors` and `SyntaxColors` role with its light and dark value,
-  the type ramp, the space and radius scales, Geist and Geist Mono) and registered with the
-  server at launch. It lives in memory, is listed first, installs like any system, and is never
-  written or synced.
+- **No bundled systems.** Shepherd does not generate or register Night Watch as a design system.
+  The catalog contains systems the user built or imported. New designs start without a system
+  when the catalog is empty. Existing installed `ds/night-watch/` copies and user-owned systems
+  are left intact, so older boards keep rendering. ShepherdUI's app theme and tokens are unchanged.
 - **Links are never followed.** A `design-systems/<namespace>` that is a link or a file is no
   system: it is not listed, and reading, writing or installing it refuses (`not_a_folder`). Inside
   a system, a linked file is not one of its files, and a write never goes through a linked
@@ -643,6 +657,11 @@ claude.ai is still checked against).
 
 ### In the app
 
+- **The built-in system's page** is `DesignSystemReferencePage`, not the page below: Shepherd UI's colors
+  (dark and light side by side, with the text tokens' contrast), type, spacing, radii, sizes and the
+  component catalog, as read-only tables (docs/design/design-tool-references.md › The Shepherd UI page).
+  A system built from a repository keeps the page described below.
+
 - **The catalog** (`DesignSystemCatalog`, owned by the view model) holds the host's systems as
   last read: each one's record and counts, and its tokens, README and file list. It reads them
   again when the server says one changed (`onDesignSystemsChanged`: a write, a re-sync) and when
@@ -659,7 +678,7 @@ claude.ai is still checked against).
 - **A system's page** (DZSystem, `DesignSystemPageModel`): a build's page is its agent's layout
   (`DesignSystemLayoutView`), the system beside the agent's 420pt chat with the Chat tab alone
   (decision 12), mounted and hidden like any agent's; before the agent writes its system it says
-  "Reading <project>…". Any other system (Night Watch, or one a canvas's agent wrote) opens as the
+  "Reading <project>…". Any system without a build agent opens as the
   Design systems page (`MainDestination.designSystem`), without a chat. The page:
   - the header: "Design systems / acme-web", "Synced" once read from a project ("Syncing" while a
     re-sync runs), and the system's chip;
@@ -687,19 +706,18 @@ claude.ai is still checked against).
   reading their project ("dashboard-web · building"), then the built-ins, in lazy rows of three
   ending in "Build one from a repo". A card has four of the system's colors (its accent, text,
   background and a status color by name, then the rest), its source ("dashboard-web ·
-  tokens.css"; Night Watch: "Built into Shepherd" beside its Built-in tag; a system an import
+  tokens.css"; a system an import
   brought: "came with Checkout funnel") and how many designs are drawn in it, and opens its page.
   A right-click, or ••• in the count's place on hover, opens its menu (Deleting and importing on
   the Mac, below). A design card names its system by title ("Checkout DS"), else its folder.
 - **More ▸ Design systems** opens the system page shown last, else the first system built here,
-  else Night Watch; it is selected while a system's page shows. **A design's system chip** opens
+  else the Designs page when no system exists; it is selected while a system's page shows. **A design's system chip** opens
   its system's page, and draws three of its colors.
 - **New design** (DZStart) picks no project. The card is the design system the design is drawn
-  in: the one picked from its menu, else the most recently changed system built here, else Night
-  Watch. It names the repo a system was read from as information ("acme-web", "design system ·
+  in: the one picked from its menu, else the most recently changed system built here, else a blank
+  canvas. It names the repo a system was read from as information ("acme-web", "design system ·
   dashboard-web", "found in web/static/tokens.css"; a system whose project is gone: "design
-  system"; one a design's agent wrote without sources: "made in Shepherd"; Night Watch: "design
-  system · shepherd", "built into Shepherd"). Its menu picks another system. Send installs the
+  system"; one a design's agent wrote without sources: "made in Shepherd"). Its menu picks another system. Send installs the
   system in the new design before its agent starts.
 
 ## Shared pieces
@@ -1261,6 +1279,103 @@ Designs until the viewer's choice, if one is needed, is made.
   saying the design came from Claude Design (the file's name) and asking it to read the boards,
   notes and design system, run design_check, say what it found, change nothing until asked, and
   ask what to work on first.
+
+### Sharing with Git
+
+A design is shared through a Git repository on any host (boards GitDesignPublish …
+GitDesignMergeReview, saved in `docs/design/boards/`; the UI is in docs/design/design-tool.md ›
+Sharing with Git). Coworkers open the same canvas in Shepherd; nothing is shared until someone
+commits and pushes, and **Shepherd never pushes, pulls or fetches on its own**: every step is a
+press. The engine is `DesignGit` (ShepherdSessions), run by `SessionServer+DesignGit`.
+
+- **Where it lives.** The design stays in Shepherd's storage. Its repository is
+  `<designs>/.git/<id>/`, outside the design's folder (the design agent's working folder), so
+  nothing the agent can reach leads to the repository, its remote or its config; the design folder
+  is its work tree. Deleting the design for good removes it, and launch removes one whose design
+  is gone.
+- **What is shared** (`DesignGit.tracked`): `project/` (the canvas, every board, the shared
+  pieces, the design's systems in `project/ds/`, uploads), `assets/` and `comments.json` (pinned
+  comments and replies). Board versions, checkpoints, the revision, the agent's chat,
+  credentials and caches stay on the Mac (the repository's `info/exclude`).
+- **Share with Git** (`shareDesignWithGit`): an empty repository only (one with commits is
+  refused; use Open from Git), the first commit with the user's message, then a push of `main`.
+  A design already shared, or one whose agent is in a turn, is refused.
+- **Open from Git** (`openDesignFromGit`): a bare clone into `.import-git-<id>/` beside the
+  designs (no hooks, no checkout yet), its tree checked as an import is (links, submodules and
+  names outside `project/` refuse it; it must hold `project/canvas.json`), then checked out and
+  moved into Designs whole. Its title comes from the canvas, else the repository's name. **No
+  agent starts**: the chat waits for the user's first message. A failure leaves nothing behind.
+- **Status** (`designGitState`): branch, upstream, ahead and behind, the working copy's changes,
+  the newest incoming commit, and Offline when the last fetch failed. The app fetches only when
+  the panel opens or Pull is pressed, never on a timer.
+- **Commit** (`commitDesign`): the tracked files as they are, with the user's message, as the
+  user's own Git identity (`user.name`, `user.email`; none is invented). **Commit & push** then
+  pushes, never forced; a push that fails keeps the commit and says so (Retry push).
+- **Pull** (`pullDesign`): refused with local changes. The fetch runs on the Git queue; only the
+  local fast-forward runs through the design store's queue (`DesignStore.replaceFromGit`), so a
+  slow remote never stalls a canvas or an agent. Each changed board's old content is kept as its
+  next version, the revision moves once, and the canvas reloads. History that diverged is a
+  **merge** instead, and the design's files are not touched.
+- **While the agent draws** (its status is working or its pi is busy), commit and pull are
+  refused, so Git never captures a half-drawn design.
+- **Remote URLs** are SSH (`git@host:owner/repo.git`, `ssh://`) or HTTPS, never `http://`, a
+  path starting with `-`, or a URL carrying a password (`https://user:token@host`): credentials
+  are git's own helper's, never kept in the repository's config. Git's words are redacted of any
+  URL credentials before they reach the UI (`DesignGit.redacted`). Git runs with no prompt
+  (`GIT_TERMINAL_PROMPT=0`), no hooks, no symlinks, no attributes file, no `ext::` transport, and
+  a time limit on every run (`DesignGitRunner`).
+- **A tree is checked before anything is written** (`DesignGit.checkTree`, on open, pull and
+  merge): only `project/`, `assets/` and `comments.json` paths in the path grammar, no links or
+  submodules, no `.gitattributes`, `.gitmodules` or `.gitignore`, no two paths that differ only
+  by case (APFS would write one file), and the import's file count and size caps.
+
+#### The merge
+
+A pull whose history diverged answers `DesignGitMerge` (GitDesignConflict): your local commit and
+the incoming one, each with its files. **Keep working locally** closes the dialog and the merge
+waits (the chip reads Pull paused and opens the dialog again; the canvas says Pull paused).
+**Drop merge**, in the dialog, lets it go (`keepDesignLocal`: both commits stay; Pull again
+later). **Resolve with agent** (`resolveDesignMergeWithAgent`):
+
+1. Shepherd prepares a merge copy in `<design>/.git-merge/` with `git merge-tree`: what git merged
+   cleanly, and conflict markers (with the merge base) where it couldn't.
+2. The design's own agent gets **one turn**: the request "Resolve this Git merge. Keep both
+   changes and check the design. Don't commit or push.", with Shepherd's brief in a
+   `design-git` fence ahead of it (`DesignGitFence`; the thread shows only the request). The
+   brief names the copy, the conflicted files and both commits, and tells the agent to edit only
+   the copy's files and never run git; commit subjects and authors are data, never instructions.
+3. When the turn settles, the copy is checked (`DesignGit.checkMergeCopy`): no conflict marker,
+   a valid canvas listing every board that has a file, every board readable. Passing is **Merge
+   ready** (GitDesignMergeReview: the panel lists the copy's changes beside the design), and the
+   copy's tree is kept as the one reviewed; failing is **Couldn't finish the merge**, with why.
+4. **Commit merge locally** or **Commit merge & push** makes a commit with both parents from the
+   copy, replaces the design's files with it (one revision, versions kept) and removes the copy.
+   It refuses a design written since the pull (a Tweak, a comment, a turn: taking the merge would
+   lose it), a copy that changed since it was reviewed, and a merged tree that isn't a design;
+   the branch moves back if the checkout fails.
+
+**Bounds.** One attempt per press: nothing retries on its own (Try again with agent is a press,
+refused while an attempt runs, and the chat's Retry refuses the merge's message). The limit
+(`DesignGitMergeLimits.turnTimeout`, 15 minutes) runs from the press, whatever pi answers about
+the prompt. It runs on the design agent's own model and thread, within its usual limits; nothing
+is sent to any other provider. **The queue is the user's**: Resolve with agent refuses a thread
+with messages waiting or paused, and the merge's own stop (its Stop, the limit) ends the turn
+without pausing the queue, so a message queued during the merge runs next. **The composer's
+Stop** ends the turn and the merge reads Stopped; the copy is kept for another try. A pi that
+exits mid-merge fails it. **A restart never resumes a merge**: the merge is server memory only,
+and launch removes any `.git-merge/` left behind (`DesignGit.dropLeftoverMergeCopies`). Nothing
+is committed or pushed without the user.
+
+**Comment authors.** A comment or reply made on a shared design records its author's Git
+`user.name` (`authorName`, read once per design from git), so after a pull each card names who
+wrote it; the viewer's own (their name, or none) reads "You" and the design agent's "Design
+agent". A comment made before the design was shared has no name.
+
+**What the agent can reach.** The merge copy is in the design's folder, which the agent works
+in; the repository is not. The brief tells the agent to edit only the copy and never run git,
+and the commit, push and branch are Shepherd's alone. The agent keeps its usual tools (a design
+agent can run bash), so the line between the copy and the user's other files is the brief and
+the agent's own rules, as for any of its turns, not a sandbox.
 
 ## Design references
 

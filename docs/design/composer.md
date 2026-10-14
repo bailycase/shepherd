@@ -239,19 +239,17 @@ window-wide Tab handler; terminal and editing focus keep their normal keyboard b
 Image drafts belong to the thread, so switching remote threads or parking a terminal-bearing
 layout does not discard them. A successful send removes only its submitted image IDs; images
 added while it waits remain for the next message. Images are resized on the
-way in (longest edge 2000px), at most four per message and 2 MB each ([ThreadImagesComposer](boards/ThreadImagesComposer.png)).
-They wait as `NWAttachmentChip`s in a row above the card, with the line that says what is wrong
-under it (not inside the card): 26pt, a `lineStrong` line at radius 6, a 20pt thumbnail (radius 4)
-3pt from the leading edge, 6pt, the file name in Geist 12 `textPrimary` (truncating in the middle),
-its size in mono `micro` `textTertiary` ("1.4 MB"), and a `textTertiary` ✕ with a 24pt hit area
-that removes it ("Remove <name>" to VoiceOver).
-A thread's composer keeps an image over 2 MB after resizing instead of dropping it: its chip's line turns `failed`, its
-size reads "3.1 MB · over 2 MB" in `failed`, and the `failed` line under the row says "<name> is over 2 MB
-after resizing. Remove it or send a smaller one." Send is disabled (Return does nothing) until the chip is removed.
-The line also says, in `failed`, "At most 4 images per message.", "<name> is not an image Shepherd can
-attach.", "This agent does not support image attachments." and "The images come to over 5 MB
-together. Remove one to send." The New thread page leaves an oversized image out with the old
-"<name> is over 2 MB after resizing." line.
+way in (longest edge 2000px), at most four per message and 2 MiB each, and shown as
+`NWAttachmentChip`s (ThreadImagesComposer) in a row **above the card**, 6pt apart, wrapping: 26pt, a
+`lineStrong` line at radius 6, a 20pt thumbnail (radius 4) 3pt from the leading edge, 6pt, the
+file name in Geist 12 `textPrimary` (truncating in the middle), its size in `micro` mono
+`textTertiary` ("1.4 MB"), and a small `textTertiary` ✕ that removes it ("Remove <name>" to
+VoiceOver). The thumbnail opens the image full size ("Open <name>"; [thread-images](thread-images.md)).
+An image over 2 MB after resizing stays: its chip's line and size ("3.1 MB · over 2 MB") turn `failed`,
+the line under the chips says "<name> is over 2 MB after resizing. Remove it or send a smaller
+one.", and Send, ↩ and ⌘↩ are held until it is removed (the New thread and New design pages hold
+the same way, with the same words as their blocker). Other problems show in the same line:
+"At most 4 images per message." and "<name> is not an image Shepherd can attach.".
 
 **The element chip** (`NWElementChip`; PaneBrowser's composer): an element picked in the Browser
 (Side pane: Browser) waits in the same row, after any design references: 26pt, padding 0×8,

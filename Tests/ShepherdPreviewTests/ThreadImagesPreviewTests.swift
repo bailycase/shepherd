@@ -3,326 +3,256 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSessions
 import ShepherdTestSupport
-import ShepherdUI
 import SwiftUI
 import Testing
 @testable import ShepherdApp
 @testable import ShepherdUI
 
-/// The ThreadImage boards (ThreadImageOpen, ThreadImagesComposer, ThreadImagesReceived, ThreadImagesSent), in light and dark and
-/// at text scale 1.3, drawn from the real producers: the store sends the images through the composer's own path and its echo
-/// carries them, the agent's reply is Markdown naming files in its folder, and the composer holds `ImageAttachment`s read the
-/// way a drop reads them.
-///
-///     SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter ThreadImagesPreviewTests
-@Suite("Thread images previews", .mainActorExclusive)
+/// Thread images (ThreadImagesComposer, ThreadImageOpen) drawn from the real producers: the
+/// composer's `ComposerAttachments` through `ComposerImageStrip`, and `ImageViewerState` through
+/// `NWImageViewer`, in both appearances at text scale 1 and 1.3. The pictures are real PNGs the
+/// test draws, so the thumbnails and the size labels come from bytes, not from board strings.
+@Suite("Thread images previews", .mainActorExclusive,
+       .enabled(if: Preview.enabled && !Preview.liveModel, "set SHEPHERD_PREVIEW_DIR (without SHEPHERD_LIVE_MODEL) to render previews"))
 @MainActor
 struct ThreadImagesPreviewTests {
-    static let size = CGSize(width: 1440, height: 900)
+    /// A tall phone-shaped picture, as bytes and as the image the chip decodes.
+    static func attachment(_ name: String, bytes: Int, size: CGSize = CGSize(width: 117, height: 253)) -> ImageAttachment {
+        let image = NSImage(size: size, flipped: false) { rect in
+            NSColor(white: 0.96, alpha: 1).setFill(); rect.fill()
+            NSColor(white: 0.12, alpha: 1).setFill()
+            NSBezierPath(roundedRect: NSRect(x: 12, y: rect.height - 36, width: 56, height: 12), xRadius: 3, yRadius: 3).fill()
+            NSColor.systemBlue.setFill()
+            NSBezierPath(roundedRect: NSRect(x: 10, y: 14, width: rect.width - 20, height: 26), xRadius: 8, yRadius: 8).fill()
+            return true
+        }
+        var data = NSBitmapImageRep(data: image.tiffRepresentation!)!.representation(using: .png, properties: [:])!
+        if data.count < bytes { data.append(Data(count: bytes - data.count)) }
+        return ImageAttachment(name: name, image: NativeImage(mimeType: "image/png", data: data), thumbnail: Image(nsImage: image),
+                               pixels: CGSize(width: 1170, height: 2532))
+    }
 
-    // MARK: Pictures
-
-    /// A phone screenshot as the boards draw one: pale page, two cards, a blue pay button.
-    static func phone(width: Int = 1170, height: Int = 2532) -> Data {
-        picture(width, height) { w, h in
-            fill(NSColor(srgbRed: 0.965, green: 0.965, blue: 0.957, alpha: 1), CGRect(x: 0, y: 0, width: w, height: h))
-            let s = w / 117
-            for (y, tall) in [(30, 60), (100, 44)] {
-                fill(.white, CGRect(x: 8 * s, y: h - (y + tall) * s, width: 101 * s, height: tall * s))
+    @Test(arguments: ["one", "two", "over", "long", "full"])
+    func composerStrip(_ state: String) async throws {
+        var attachments = ComposerAttachments()
+        switch state {
+        case "one": attachments.add([("after-mini.png", Self.attachment("after-mini.png", bytes: 1_400_000))])
+        case "two": attachments.add([("after-mini.png", Self.attachment("after-mini.png", bytes: 1_400_000)),
+                                     ("refunds-dashboard.png", Self.attachment("refunds-dashboard.png", bytes: 880_000))])
+        case "over": attachments.add([("after-mini.png", Self.attachment("after-mini.png", bytes: 1_400_000)),
+                                      ("after-promax.png", Self.attachment("after-promax.png", bytes: 3_100_000))])
+        case "long":
+            let name = "Screenshot 2026-10-13 at 3.02.41 PM — checkout totals card overlapping the pay button on iPhone 15 mini.png"
+            attachments.add([(name, Self.attachment(name, bytes: 1_400_000))])
+        case "full":
+            attachments.add((1...5).map { ("shot-\($0).png", Self.attachment("shot-\($0).png", bytes: 600_000)) })
+        default: break
+        }
+        try await Preview.renderMatrix("thread-images-composer-\(state)", size: CGSize(width: 760, height: 160)) {
+            VStack(alignment: .leading, spacing: 0) {
+                ComposerImageStrip(attachments: attachments, open: { _ in }, remove: { _ in })
+                    .padding(NW.Space.l)
+                Spacer(minLength: 0)
             }
-            fill(NSColor(srgbRed: 0.18, green: 0.435, blue: 0.87, alpha: 1), CGRect(x: 8 * s, y: h - 238 * s, width: 101 * s, height: 22 * s))
+            .frame(width: 760, height: 160, alignment: .topLeading)
+            .background(Color.nw.bgWindow)
         }
     }
 
-    static func dashboard(width: Int = 2880, height: Int = 1800) -> Data {
-        picture(width, height) { w, h in
-            fill(NSColor(srgbRed: 0.965, green: 0.965, blue: 0.957, alpha: 1), CGRect(x: 0, y: 0, width: w, height: h))
-            fill(NSColor(srgbRed: 0.925, green: 0.925, blue: 0.918, alpha: 1), CGRect(x: 0, y: 0, width: w / 5, height: h))
-            for column in 0..<3 {
-                fill(column == 2 ? NSColor(srgbRed: 0.85, green: 0.23, blue: 0.23, alpha: 1) : .white,
-                     CGRect(x: w / 4 + column * w / 4, y: h - h / 3, width: w / 5, height: h / 6))
+    @Test(arguments: ["first", "second", "single", "failed", "loading"])
+    func viewer(_ state: String) async throws {
+        let images = [Self.attachment("checkout-iphone.png", bytes: 1_400_000), Self.attachment("refunds-dashboard.png", bytes: 880_000)]
+            .map(ViewerImage.init)
+        let viewer = ImageViewerState(images: state == "single" ? [images[0]] : images, origin: "Sent by you",
+                                      addToMessage: { _ in })
+        if state == "second" { viewer.next() }
+        let image = try #require(viewer.current)
+        let content: NWImageViewer.Content = switch state {
+        case "failed": .failed("This image can't be shown.")
+        case "loading": .loading
+        default: image.picture.map { .picture(Image(nsImage: $0)) } ?? .failed("This image can't be shown.")
+        }
+        try await Preview.renderMatrix("thread-images-viewer-\(state)", size: CGSize(width: 1000, height: 700)) {
+            NWImageViewer(name: image.name, facts: image.facts, position: viewer.position, content: content,
+                          caption: "\(viewer.origin) · Esc to close",
+                          previous: viewer.hasPrevious ? {} : nil, next: viewer.hasNext ? {} : nil,
+                          copy: {}, addToMessage: {}, showInFinder: {}, close: {})
+                .frame(width: 1000, height: 700)
+        }
+    }
+
+    // MARK: In the thread (ThreadImagesSent, ThreadImagesReceived)
+
+    /// A host holding real pictures by id, as the thread's store fetches them: nothing here is a board's string or a stand-in image.
+    @MainActor final class Host {
+        var images: [String: Data] = [:]
+        var failing = false
+        func answer(_ request: NativeThreadRequest) async throws -> NativeThreadResult {
+            guard case .image(_, let id, let offset) = request else { return .failure(code: "invalid", message: "") }
+            if failing { throw Down() }
+            guard let data = images[id], offset < data.count else { return .failure(code: NativeImageCode.unknown, message: "gone") }
+            let end = min(data.count, offset + NativeImage.chunkBytes)
+            return .imageChunk(value: NativeImageChunk(imageID: id, mimeType: "image/png", totalBytes: data.count, offset: offset, data: data[offset..<end]))
+        }
+        struct Down: Error {}
+    }
+
+    static func picture(_ size: CGSize, tint: NSColor, dark: Bool = false) -> Data {
+        let image = NSImage(size: size, flipped: false) { rect in
+            (dark ? NSColor(white: 0.12, alpha: 1) : NSColor(white: 0.97, alpha: 1)).setFill(); rect.fill()
+            tint.setFill()
+            NSBezierPath(roundedRect: NSRect(x: 14, y: 14, width: rect.width - 28, height: 34), xRadius: 10, yRadius: 10).fill()
+            NSColor.systemRed.withAlphaComponent(dark ? 0.9 : 0.0).setFill()
+            NSBezierPath(rect: NSRect(x: 0, y: rect.height * 0.55, width: rect.width, height: 22)).fill()
+            NSColor(white: dark ? 0.7 : 0.1, alpha: 1).setFill()
+            NSBezierPath(roundedRect: NSRect(x: 14, y: rect.height - 40, width: rect.width * 0.4, height: 14), xRadius: 4, yRadius: 4).fill()
+            return true
+        }
+        return NSBitmapImageRep(data: image.tiffRepresentation!)!.representation(using: .png, properties: [:])!
+    }
+
+    /// One turn the way the thread draws it: a sent message with its thumbnails, then the agent's images where they came, and a web image's chip.
+    struct Turn: View {
+        let sent: [NativeImageRef]
+        let made: [NativeImageRef]
+        let images: NativeThreadImages
+        var body: some View {
+            VStack(alignment: .leading, spacing: 18) {
+                // The real user turn: its thumbnails, its bubble and the neutral count under it (ThreadImagesSent).
+                UserTurn(bubbles: [UserTurn.Bubble(text: "The pay button jumps when the keyboard opens, and the totals card overlaps on small phones.",
+                                                   images: sent.count, caption: "3:02 PM", pending: false, imageRefs: sent)], hover: MessageHover(hovering: true))
+                if !made.isEmpty {
+                    Text("Refunds doubled on Tuesday because the retry job re-sent 412 webhooks after a deploy.").font(.nw(.body))
+                    // What the agent turn draws for an `images` item: the neutral count, then the pictures (ThreadImagesReceived).
+                    VStack(alignment: .leading, spacing: NW.Space.m) {
+                        NWActivityLine(kind: .images, label: nativeCount(made.count, "image"), meta: "")
+                        ReceivedImages(refs: made)
+                    }
+                }
             }
-            fill(.white, CGRect(x: w / 4, y: h / 10, width: w * 7 / 10, height: h / 2))
+            .environment(\.threadImages, images)
+            .frame(width: 820, alignment: .leading)
+            .padding(24)
+            .background(Color.nw.bgWindow)
         }
     }
 
-    static func chart(width: Int = 1600, height: Int = 1000) -> Data {
-        picture(width, height) { w, h in
-            fill(.white, CGRect(x: 0, y: 0, width: w, height: h))
-            let line = NSBezierPath()
-            line.lineWidth = CGFloat(h) / 70
-            line.move(to: CGPoint(x: w / 12, y: h / 3))
-            for step in 1...8 { line.line(to: CGPoint(x: w / 12 + step * w * 10 / 12 / 8, y: h / 3 + step * h / 14)) }
-            NSColor(srgbRed: 0.18, green: 0.435, blue: 0.87, alpha: 1).setStroke()
-            line.stroke()
+    @Test(arguments: ["sent", "received", "both", "failed", "loading", "many", "gone"])
+    func transcript(_ state: String) async throws {
+        let host = Host()
+        host.images = ["s0": Self.picture(CGSize(width: 117, height: 253), tint: .systemBlue), "s1": Self.picture(CGSize(width: 240, height: 150), tint: .systemGray),
+                       "r0": Self.picture(CGSize(width: 384, height: 240), tint: .systemBlue), "r1": Self.picture(CGSize(width: 384, height: 240), tint: .systemRed, dark: true)]
+        // Each ref says what its bytes are (type, pixels, byte count), as the host's snapshot would: the client checks them against the pieces.
+        func ref(_ id: String) -> NativeImageRef {
+            let data = host.images[id] ?? Data()
+            let rep = NSBitmapImageRep(data: data)
+            return NativeImageRef(id: id, mimeType: "image/png", width: rep?.pixelsWide ?? 1, height: rep?.pixelsHigh ?? 1, byteCount: max(1, data.count))
+        }
+        let refs = ["s0", "s1", "r0", "r1"].map(ref)
+        if state == "gone" { host.images["r1"] = nil }
+        if state == "failed" { host.failing = true }
+        let images = NativeThreadImages()
+        images.configure(sessionID: "s", fetch: state == "loading" ? { _ in try await Task.sleep(for: .seconds(60)); return .failure(code: "x", message: "") }
+                                                                  : { try await host.answer($0) })
+        let sent = state == "received" ? [] : (state == "many" ? Array(refs[0..<2]) + [refs[0], refs[1]] : Array(refs[0..<2]))
+        let made = state == "sent" ? [] : Array(refs[2..<4])
+        // Each thumbnail asks for its picture as it comes on screen; the render waits for the asking to settle (or not, for loading).
+        try await Preview.renderMatrix("thread-images-transcript-\(state)", size: CGSize(width: 880, height: 640), ready: {
+            state == "loading" || state == "failed" ? true : images.heldBytes > 0 || state == "gone"
+        }) {
+            Turn(sent: sent.enumerated().map { NativeImageRef(id: "\($0.element.id)", mimeType: $0.element.mimeType, width: $0.element.width,
+                                                               height: $0.element.height, byteCount: $0.element.byteCount) }, made: made, images: images)
+                .frame(width: 880, height: 640, alignment: .topLeading)
         }
     }
 
-    static func log(width: Int = 1440, height: Int = 900) -> Data {
-        picture(width, height) { w, h in
-            fill(NSColor(srgbRed: 0.11, green: 0.115, blue: 0.13, alpha: 1), CGRect(x: 0, y: 0, width: w, height: h))
-            fill(NSColor(srgbRed: 0.28, green: 0.12, blue: 0.13, alpha: 1), CGRect(x: 0, y: h / 2, width: w, height: h / 14))
-        }
-    }
+    // MARK: The viewer over the real thread (ThreadImageOpen)
 
-    private static func fill(_ color: NSColor, _ rect: CGRect) {
-        color.setFill()
-        rect.fill()
-    }
-
-    static func picture(_ width: Int, _ height: Int, _ draw: (Int, Int) -> Void) -> Data {
-        let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height, bitsPerSample: 8, samplesPerPixel: 4,
-                                   hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+    /// A real PNG of `width` × `height` pixels shaped like a phone screen or a dashboard, small on disk.
+    static func screen(_ width: Int, _ height: Int, accent: NSColor) -> Data {
+        let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                                   isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-        draw(width, height)
+        NSColor(white: 0.965, alpha: 1).setFill(); NSBezierPath(rect: NSRect(x: 0, y: 0, width: width, height: height)).fill()
+        let w = CGFloat(width), h = CGFloat(height)
+        NSColor(white: 0.12, alpha: 1).setFill()
+        NSBezierPath(roundedRect: NSRect(x: w * 0.07, y: h * 0.9, width: w * 0.35, height: h * 0.03), xRadius: 8, yRadius: 8).fill()
+        NSColor.white.setFill(); NSColor(white: 0.88, alpha: 1).setStroke()
+        for box in [NSRect(x: w * 0.07, y: h * 0.62, width: w * 0.86, height: h * 0.2), NSRect(x: w * 0.07, y: h * 0.38, width: w * 0.86, height: h * 0.16)] {
+            let path = NSBezierPath(roundedRect: box, xRadius: 24, yRadius: 24); path.fill(); path.lineWidth = 3; path.stroke()
+        }
+        accent.setFill()
+        NSBezierPath(roundedRect: NSRect(x: w * 0.07, y: h * 0.06, width: w * 0.86, height: h * 0.07), xRadius: 40, yRadius: 40).fill()
         NSGraphicsContext.restoreGraphicsState()
         return rep.representation(using: .png, properties: [:])!
     }
 
-    // MARK: Harness
-
-    /// A thread on a store that sends the way the app does, and a host that takes images. Everything the thread draws about a
-    /// send comes from `store.send(images:)`.
-    @MainActor final class Harness {
-        let store = NativeThreadStore()
-        let input = ThreadInput()
-        let viewer = ImageViewerModel()
-        let thumbnails = SentImageThumbnails()
-        /// True: a local agent, whose files are on this Mac; false draws a remote agent's.
-        var local = true
-        let commands = ThreadCommandCenter()
-        var snapshot: NativeThreadSnapshot
-        let folder: URL
-        let title: String
-        private var running: Task<Void, Never>?
-
-        init(_ snapshot: NativeThreadSnapshot, folder: URL, title: String) {
-            self.snapshot = snapshot
-            self.snapshot.supportedActions.append("sendImages")
-            self.folder = folder
-            self.title = title
-        }
-
-        deinit { running?.cancel() }
-
-        var request: NativeThreadStore.Request {
-            { [weak self] value in
-                guard let self else { return .failure(code: "gone", message: "released") }
-                if case .send(_, _, let operation, _, _, _, _, _, _) = value { return .accepted(operationID: operation) }
-                return .snapshot(value: self.snapshot)
-            }
-        }
-
-        func thread() -> some View {
-            VStack(spacing: 0) {
-                ThreadHeader(store: store, project: "payments", title: title)
-                ThreadView(store: store, active: true, isFocused: false, request: request, commandKey: "preview", agentName: "Fix checkout",
-                           workingDirectory: folder.path, review: { _ in }, allowsLocalFiles: local, retainedInput: input, retainedViewer: viewer)
-            }
-            .environment(\.threadCommands, commands)
-            // The window's layer, over the header and the thread together, as RootView puts it over the workspace column.
-            .modifier(ImageViewerLayer(model: viewer))
-        }
-
-        /// Runs the store against the host, as the app's thread does; the preview's thread needs it running too.
-        func start() {
-            guard running == nil else { return }
-            running = Task { [store, request] in await store.run(request: request) }
-        }
-
-        /// Sends as the composer does and waits until the thread has the echo.
-        func send(_ text: String, images: [NativeImage]) async throws {
-            start()
-            try await eventuallyOnMain("the thread to load") { self.store.ready }
-            store.draft = text
-            #expect(await store.send(images: images, delivery: .followUp))
-        }
-    }
-
-    static func harness(messages: [NativeThreadMessage] = [], title: String? = nil) throws -> Harness {
-        let folder = try makeScratchDirectory("images")
-        return Harness(ActivityThreads.snapshot(messages), folder: folder, title: title ?? "Fix the checkout layout on iPhone")
-    }
-
-    static func sentImages() -> [NativeImage] {
-        [NativeImage(mimeType: "image/png", data: phone(), name: "checkout-iphone.png"),
-         NativeImage(mimeType: "image/png", data: dashboard(), name: "refunds-dashboard.png")]
-    }
-
-    private static let t0 = ActivityThreads.now - 3 * 60_000
-
-    // MARK: Boards
-
-    /// ThreadImagesSent: two screenshots above the bubble that carries their words, a reply under it.
-    @Test func imagesSent() async throws {
-        let h = try Self.harness(messages: [
-            ActivityThreads.assistant("a0", "Which screenshots do you have?", at: Self.t0),
-        ])
-        try await h.send("The pay button jumps when the keyboard opens, and the totals card overlaps on small phones. Both screenshots are from an iPhone 15 mini.",
-                         images: Self.sentImages())
-        try await Preview.renderMatrix("thread-images-sent", size: Self.size, ready: { h.store.ready && !h.store.rows.isEmpty }) { h.thread() }
-    }
-
-    /// Four images, one with a long name, sent without words: the group wraps within 560pt and there is no empty bubble.
-    @Test func imagesSentFourWithoutWords() async throws {
-        let h = try Self.harness()
-        let name = "screenshot-of-the-checkout-after-the-keyboard-inset-fix-on-a-real-device-iphone-15-mini-portrait.png"
-        let images = [NativeImage(mimeType: "image/png", data: Self.phone(), name: name),
-                      NativeImage(mimeType: "image/png", data: Self.dashboard(), name: "refunds-dashboard.png"),
-                      NativeImage(mimeType: "image/png", data: Self.phone(width: 600, height: 600), name: "square.png"),
-                      NativeImage(mimeType: "image/png", data: Self.dashboard(width: 60, height: 30), name: "tiny.png")]
-        try await h.send("", images: images)
-        try await Preview.renderMatrix("thread-images-sent-four", size: Self.size, ready: { h.store.ready && !h.store.rows.isEmpty }) { h.thread() }
-    }
-
-    /// ThreadImagesReceived: the agent's reply names two files in its folder with captions and a web image.
-    @Test func imagesReceived() async throws {
-        let h = try Self.harness(title: "Why did refunds spike on Tuesday?")
-        h.start()
-        try Self.chart().write(to: h.folder.appendingPathComponent("refund-rate.png"))
-        try Self.log().write(to: h.folder.appendingPathComponent("console-error.png"))
-        let reply = """
-        Refunds doubled on Tuesday because the retry job re-sent 412 webhooks after a deploy. Here is the daily rate against last month, and the error the job logged.
-
-        ![Daily refund rate, this month (blue) against last month.](refund-rate.png)
-        ![The retry job's error at 09:14, from the server log.](console-error.png)
-        ![grafana.internal/d/refunds.png](https://grafana.internal/d/refunds.png)
-
-        The chart and the log are in the thread's files. The Grafana image is a web link, so Shepherd shows it as a link and never loads it.
-        """
-        h.snapshot = ActivityThreads.snapshot([
-            ActivityThreads.user("u1", "Why did refunds spike on Tuesday? Show me what you find.", at: Self.t0),
-            ActivityThreads.assistant("a1", reply, at: Self.t0 + 20_000),
-        ])
-        let chart = h.folder.appendingPathComponent("refund-rate.png"), log = h.folder.appendingPathComponent("console-error.png")
-        try await Preview.renderMatrix("thread-images-received", size: Self.size,
-                                       ready: { h.store.ready && !h.store.rows.isEmpty && NWProseThumbnails.cached(chart) != nil && NWProseThumbnails.cached(log) != nil }) {
-            h.thread()
-        }
-    }
-
-    /// A remote host's agent names an image at a path that exists here too (a scratch file with the same name): Shepherd must
-    /// not draw this Mac's file. It is a chip, like every image of an agent whose files are not on this device.
-    @Test func imagesReceivedRemoteAgentNeverReadsThisMacsFile() async throws {
-        let h = try Self.harness(title: "Why did refunds spike on Tuesday?")
-        h.local = false
-        h.start()
-        let url = h.folder.appendingPathComponent("refund-rate.png")
-        try Self.chart().write(to: url)
-        h.snapshot = ActivityThreads.snapshot([
-            ActivityThreads.user("u1", "Show me.", at: Self.t0),
-            ActivityThreads.assistant("a1", "Here it is.\n\n![Daily refund rate](refund-rate.png)\n![Same, absolute](\(url.path))", at: Self.t0 + 20_000),
-        ])
-        try await Preview.render("thread-images-received-remote", size: CGSize(width: 1180, height: 600),
-                                 ready: { h.store.ready && !h.store.rows.isEmpty }) { h.thread() }
-        #expect(NWProseThumbnails.cached(url) == nil, "this Mac's file was never decoded for a remote agent")
-    }
-
-    /// ThreadImagesSent's reply: "Looked at 2 images" above "Explored 4 files", from `read` results that carry the picture (what
-    /// pi sends for an image file), under the message that sent them.
-    @Test func imagesLookedAt() async throws {
-        func read(_ id: String, _ path: String, image: Bool, at: Double) -> NativeThreadMessage {
-            var message = ActivityThreads.tool(id, "read", ["path": path], output: image ? "Read image file [image/png]" : "1 line", start: at, end: at + 200)
-            if image { message.blocks.append(NativeThreadBlock(kind: .unsupportedImage, text: "[Image unavailable in native thread]")) }
-            return message
-        }
-        let h = try Self.harness(messages: [
-            ActivityThreads.user("u1", "The pay button jumps when the keyboard opens, and the totals card overlaps on small phones. Both screenshots are from an iPhone 15 mini.", at: Self.t0),
-            read("r1", "checkout-iphone.png", image: true, at: Self.t0 + 1_000),
-            read("r2", "refunds-dashboard.png", image: true, at: Self.t0 + 2_000),
-            read("r3", "CheckoutView.swift", image: false, at: Self.t0 + 3_000),
-            read("r4", "TotalsCard.swift", image: false, at: Self.t0 + 4_000),
-            ActivityThreads.assistant("a1", "I can see it in the first screenshot: the totals card is pinned with a fixed height of 180, so on the mini it runs under the pay button. The second one shows the refunds table cut off at the right edge.", at: Self.t0 + 20_000),
-        ])
-        h.start()
-        try await Preview.renderMatrix("thread-images-looked-at", size: CGSize(width: 1180, height: 700), ready: { h.store.ready && !h.store.rows.isEmpty }) { h.thread() }
-    }
-
-    /// ThreadImageOpen in the whole app (RootView, sidebar, window controls), not a thread alone: the viewer's toolbar sits in a
-    /// bounded column under the title bar, clear of the window controls, at a wide landscape window (2000×844, where the
-    /// controls once stuck to the corners), the board's 1440×900, and a narrow window whose sidebar is hidden (the controls
-    /// then sit over the column). Opened from files the way the thread's thumbnails open them.
-    @Test(arguments: [("wide", CGSize(width: 2000, height: 844)), ("board", CGSize(width: 1440, height: 900)), ("narrow", CGSize(width: 760, height: 700))])
-    func imageViewerInTheWholeWindow(_ name: String, _ size: CGSize) async throws {
+    /// A live thread (the stub pi, its history seeded from a file) whose first message carries two images, in a real window; the viewer opens over it.
+    /// `fetch` replaces the host's answers for the loading and failed states.
+    @MainActor
+    func viewerOverThread(_ name: String, open index: Int, images count: Int = 2, size: CGSize = CGSize(width: 1440, height: 900),
+                          fetch: ((@MainActor (NativeThreadRequest) async throws -> NativeThreadResult))? = nil) async throws {
         let workspace = try PreviewWorkspace()
         defer { workspace.stop() }
-        let vm = workspace.vm
+        let first = Self.screen(1170, 2532, accent: .systemBlue), second = Self.screen(2880, 1800, accent: .systemRed)
+        let history = workspace.dir.appendingPathComponent("history.json")
+        let message: [String: Any] = ["role": "user", "timestamp": 1_733_234_567_890, "content":
+            [["type": "text", "text": "The pay button jumps when the keyboard opens, and the totals card overlaps on small phones. Both screenshots are from an iPhone 15 mini."]]
+            + [first, second].prefix(count).map { ["type": "image", "data": $0.base64EncodedString(), "mimeType": "image/png"] as [String: Any] }]
+        let reply: [String: Any] = ["role": "assistant", "timestamp": 1_733_234_567_891, "stopReason": "stop",
+                                    "content": [["type": "text", "text": "I can see it in the first screenshot: the totals card is pinned with a fixed height of 180, so on the mini it runs under the pay button."]]]
+        try JSONSerialization.data(withJSONObject: [message, reply]).write(to: history)
         let space = Space(name: "payments", path: workspace.dir.path)
-        let (agent, tab) = try await workspace.agent("Review attached images", in: space, order: 0, live: true, cwd: workspace.dir.path)
+        let session = try await workspace.server.createSession(params: CreateSessionParams(
+            cwd: workspace.dir.path, command: StubPi.command, env: ["STUB_PI_MESSAGES_FILE": history.path], runtime: .rpc))
+        let id = AgentID()
+        let pane = LeafPane(sessionID: session.id, cwd: space.path, agentID: id)
+        let tab = ShepherdCore.Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
+        let agent = Agent(id: id, name: "Fix the checkout layout on iPhone", spaceID: space.id, tabID: tab.id, paneID: pane.id, status: .done, nameIsFinal: true)
         try await workspace.seed(ShepherdState(spaces: [space], tabs: [tab], agents: [agent]))
-        vm.selectAgent(agent.id)
-        let store = vm.threadStores.store(for: agent.id)
-        let files = [("checkout-iphone-with-a-rather-long-name-for-the-toolbar.png", Self.phone(width: 585, height: 1266)),
-                     ("refunds-dashboard.png", Self.dashboard())].map { name, data -> URL in
-            let url = workspace.dir.appendingPathComponent(name)
-            try? data.write(to: url)
-            return url
-        }
-        vm.imageViewer.open(files: files, at: 0)
-        try await Preview.renderMatrix("thread-image-viewer-window-\(name)", size: size, ready: { store.ready && vm.imageViewer.pictures.count == 2 }) { RootView(vm: vm) }
-        vm.imageViewer.close()
-    }
-
-    /// An image the agent names that is not on this Mac: a chip, never a hole.
-    @Test func imagesReceivedMissingFile() async throws {
-        let h = try Self.harness(title: "Why did refunds spike on Tuesday?")
-        h.start()
-        h.snapshot = ActivityThreads.snapshot([
-            ActivityThreads.user("u1", "Show me.", at: Self.t0),
-            ActivityThreads.assistant("a1", "Here it is.\n\n![Gone](missing/after-the-deploy.png)", at: Self.t0 + 20_000),
-        ])
-        try await Preview.render("thread-images-received-missing", size: CGSize(width: 1180, height: 600), ready: { h.store.ready && !h.store.rows.isEmpty }) { h.thread() }
-    }
-
-    /// ThreadImagesComposer: one image fine, one over 2 MB after resizing, the line that says how to fix it. The images are
-    /// `ImageAttachment`s as a drop makes them, so the sizes on the chips come from the bytes.
-    @Test func imagesComposer() async throws {
-        let h = try Self.harness(messages: [
-            ActivityThreads.user("u1", "The pay button jumps when the keyboard opens.", at: Self.t0),
-            ActivityThreads.assistant("a1", "The jump comes from the keyboard inset being applied twice. Can you send the screen after the fix on a real device?", at: Self.t0 + 20_000),
-        ])
-        let mini = NativeImage(mimeType: "image/png", data: Self.padded(Self.phone(width: 585, height: 1266), to: 1_468_006), name: "after-mini.png")
-        let promax = NativeImage(mimeType: "image/png", data: Self.padded(Self.phone(width: 585, height: 1266), to: 3_250_586), name: "after-promax.png")
-        h.input.attachments.add([("after-mini.png", ImageAttachment(name: "after-mini.png", image: mini, thumbnail: Self.thumbnail(mini.data))),
-                                 ("after-promax.png", ImageAttachment(name: "after-promax.png", image: promax, thumbnail: Self.thumbnail(promax.data)))])
-        try await Preview.renderMatrix("thread-images-composer", size: Self.size,
-                                       ready: { h.store.ready && !h.store.rows.isEmpty && { h.store.draft = "Here it is on the mini and the Pro Max."; return true }() }) {
-            h.thread()
-        }
-    }
-
-    /// ThreadImageOpen: the sent images open at full size over the thread, the first of two.
-    @Test func imageOpen() async throws {
-        let h = try Self.harness(messages: [ActivityThreads.assistant("a0", "Which screenshots do you have?", at: Self.t0)])
-        try await h.send("The pay button jumps when the keyboard opens, and the totals card overlaps on small phones. Both screenshots are from an iPhone 15 mini.",
-                         images: Self.sentImages())
+        let vm = workspace.vm
+        vm.selectAgent(id)
+        let store = vm.threadStores.store(for: id)
+        // `Preview.renderMatrix` mounts the real window; its `ready` hook waits for the thread to name its images, and the viewer opens then.
         var opened = false
-        try await Preview.renderMatrix("thread-image-open", size: Self.size, ready: {
-            guard h.store.ready, !h.store.rows.isEmpty else { return false }
-            if !opened, let bubble = h.store.turns.last(where: \.isUser)?.bubbles.last, let id = bubble.operationID {
-                let images = h.thumbnails.images(for: id, in: h.store)
-                guard images.count == 2 else { return false }
+        try await Preview.renderMatrix(name, size: size, ready: {
+            guard store.ready, let row = store.messages.first(where: { $0.blocks.contains { $0.image != nil } }) else { return false }
+            if !opened {
                 opened = true
-                // Through the launcher a thumbnail uses, so the viewer reads the bytes from the store as it does in the app.
-                h.viewer.open(images.map(\.entry), at: 0, context: .init(sentBytes: { [store = h.store] operation, index in
-                    let kept = store.queuedImages(operation)
-                    return kept.indices.contains(index) ? kept[index] : nil
-                }))
+                let refs = row.blocks.compactMap(\.image)
+                if let fetch { store.images.configure(sessionID: store.snapshot?.piSessionID, fetch: fetch) }
+                let set = ThreadImageSet(refs: refs, names: refs.indices.map { "Image \($0 + 1)" }, origin: "Sent by you")
+                vm.imageViewer = ImageViewerState(set: set, index: index, images: store.images, addToMessage: { _ in })
             }
-            return opened && h.viewer.pictures[h.viewer.current?.id ?? ""] != nil
-        }) { h.thread() }
+            if fetch != nil { return true }
+            return vm.imageViewer?.current != nil
+        }) {
+            RootView(vm: vm)
+        }
+        let row = try #require(store.messages.first { $0.blocks.contains { $0.image != nil } })
+        #expect(row.blocks.compactMap(\.image).count == count, "the thread named the images it was seeded with")
     }
 
-    // MARK: Helpers
+    @Test func viewerOverTheThreadFirst() async throws { try await viewerOverThread("thread-images-open-first", open: 0) }
+    @Test func viewerOverTheThreadSecond() async throws { try await viewerOverThread("thread-images-open-second", open: 1) }
+    @Test func viewerOverTheThreadOneImage() async throws { try await viewerOverThread("thread-images-open-single", open: 0, images: 1) }
 
-    /// A PNG padded (in a trailing ancillary chunk's worth of bytes) to `count`, so a chip can read a realistic size.
-    static func padded(_ png: Data, to count: Int) -> Data {
-        var data = png
-        if data.count < count { data.append(Data(count: count - data.count)) }
-        return data
+    /// The bar's content is one centred column after the window controls, not the window's corners: a wide landscape window
+    /// (2000 × 844), and a narrow one (760 × 700) whose sidebar is hidden, so the window controls sit over the bar and the labelled
+    /// buttons give way to icons, in light and dark and at 1.3.
+    @Test func viewerBarInAWideAndANarrowWindow() async throws {
+        try await viewerOverThread("thread-images-open-wide", open: 0, size: CGSize(width: 2000, height: 844))
+        try await viewerOverThread("thread-images-open-narrow", open: 0, size: CGSize(width: 760, height: 700))
     }
 
-    static func thumbnail(_ data: Data) -> Image? { NSImage(data: data).map { Image(nsImage: $0) } }
+    struct HostDown: Error {}
+    @Test func viewerOverTheThreadWhileLoading() async throws {
+        try await viewerOverThread("thread-images-open-loading", open: 0) { _ in try await Task.sleep(for: .seconds(120)); return .failure(code: "x", message: "") }
+    }
+    @Test func viewerOverTheThreadWhenItCouldNotLoad() async throws {
+        try await viewerOverThread("thread-images-open-failed", open: 0) { _ in throw HostDown() }
+    }
 }

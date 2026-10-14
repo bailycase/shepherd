@@ -375,6 +375,7 @@ final class NewThreadState {
         } else if loadingDefaults { return "Loading models…" }
         // A design piece alone starts a thread, as it sends from a thread's composer.
         if prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, references.isEmpty { return "Describe the task first." }
+        if let big = attachments.oversize { return ComposerAttachments.oversizeMessage(big.name) }
         return referencesRefusal() ?? imagesRefusal(vm)
     }
 

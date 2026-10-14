@@ -166,7 +166,9 @@ struct RemoteBrowserDrivePolicyTests {
         try await s.showTab()
         let agent = try s.extensionConnection()
         let refused = try await agent.failure(.open(url: s.url("/go-private"), note: nil))
-        #expect(refused.code == "refused_url" && refused.message.contains(refusedWords), "\(refused)")
+        // The final-page guard can replace the navigation refusal while WebKit exposes the redirect URL.
+        #expect(refused.code == "refused_url" &&
+                (refused.message == BrowserViewerRefusal.privateNetwork.message || refused.message == BrowserHostGuard.pageMessage), "\(refused)")
         #expect(s.session.url == nil && !s.session.hasPage, "the page never went there, and the address bar says so")
         #expect(s.session.console.lines.contains { $0.text.contains("Blocked a navigation") })
     }

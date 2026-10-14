@@ -108,8 +108,7 @@ struct RemoteHostClientTests {
         (.send(expectedSessionID: "s", generation: "g", operationID: UUID(), text: "t", delivery: .interrupt), RemoteProtocol.nativeInterruptCapability),
         (.queue(expectedSessionID: "s", generation: "g", operationID: UUID(), action: .interrupt(ids: [UUID()])), RemoteProtocol.nativeInterruptCapability),
         (.setServiceTier(expectedSessionID: "s", generation: "g", operationID: UUID(), tier: "fast"), RemoteProtocol.nativeServiceTierCapability),
-        (.images(expectedSessionID: "s", entryID: "user:1"), RemoteProtocol.nativeImagesCapability),
-        (.imageChunk(expectedSessionID: "s", entryID: "user:1", index: 0, offset: 0), RemoteProtocol.nativeImagesCapability),
+        (.image(expectedSessionID: "s", imageID: "user:1|0|0123456789abcdef", offset: 0), RemoteProtocol.nativeImagesCapability),
     ])
     func newerRequestsNeedTheirCapability(_ request: NativeThreadRequest, capability: String) {
         let all = Set(RemoteProtocol.capabilities)
@@ -144,6 +143,21 @@ struct RemoteHostClientTests {
         #expect(RemoteHostClient.incoming(.snapshot(value: snapshot), capabilities: older).actions == ["send", "retry"])
         #expect(RemoteHostClient.missingCapability(.setServiceTier(expectedSessionID: "s", generation: "g", operationID: UUID(), tier: "fast"),
                                                    capabilities: older) != nil)
+    }
+
+    /// A host without `native.images.v1` never offers images, whatever its snapshot lists: the thread keeps its "Image"
+    /// chips there, and no image request is sent.
+    @Test func imagesAreOfferedOnlyByAHostThatServesThem() {
+        let snapshot = NativeThreadSnapshot(piSessionID: "s", generation: "g", revision: 1, running: false,
+                                            supportedActions: ["send", "images", "retry"], dialogsSupported: true, dialogs: [],
+                                            messages: [], provisional: [], clipped: false)
+        let all = Set(RemoteProtocol.capabilities)
+        #expect(RemoteHostClient.incoming(.snapshot(value: snapshot), capabilities: all).actions == ["send", "images", "retry"])
+        let older = all.subtracting([RemoteProtocol.nativeImagesCapability])
+        #expect(RemoteHostClient.incoming(.snapshot(value: snapshot), capabilities: older).actions == ["send", "retry"])
+        #expect(RemoteHostClient.missingCapability(.image(expectedSessionID: "s", imageID: "x|0|0123456789abcdef", offset: 0), capabilities: older)
+                == "Update Shepherd on the host to see this thread's images.")
+        #expect(RemoteHostClient.missingCapability(.image(expectedSessionID: "s", imageID: "x|0|0123456789abcdef", offset: 0), capabilities: all) == nil)
     }
 
     /// A host without `native.interrupt.v1` never offers Steer now as an interrupt, whatever its

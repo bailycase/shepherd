@@ -20,6 +20,16 @@ struct DesignSystemDestination: View {
         let _ = NWRenderProbe.tick("page.designSystem")
         let namespace = vm.designSystemShown
         let model = namespace.map { vm.designSystemPage(.system($0)) } ?? DesignSystemPageModel()
+        if let reference = model.reference {
+            // The built-in system's own page (DesignSystemPage); every other system keeps the page below.
+            DesignSystemReferencePage(vm: vm, model: model, reference: reference, chrome: chrome)
+                .task { await vm.loadDesignSystems() }
+        } else {
+            pageBody(vm: vm, namespace: namespace, model: model)
+        }
+    }
+
+    private func pageBody(vm: ShepherdViewModel, namespace: String?, model: DesignSystemPageModel) -> some View {
         VStack(spacing: 0) {
             DesignSystemHeader(model: model, toolbar: false, leadingInset: chrome.leadingInset, showSidebar: chrome.showSidebar,
                                designs: { vm.openDestination(.designs) },

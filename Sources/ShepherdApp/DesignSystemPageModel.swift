@@ -78,6 +78,7 @@ struct DesignSystemPageModel: Equatable {
         let name: String
         /// "4 boards".
         let detail: String
+        let count: Int
     }
 
     /// The system's folder name; nil while a build has written none.
@@ -102,7 +103,10 @@ struct DesignSystemPageModel: Equatable {
     var boards: [BoardsRow] = []
     /// Moves when the system's files change: its specimens are drawn again then.
     var revision = ""
+    /// The built-in system's reference page (DesignSystemPage); nil for every other system.
+    var reference: DesignSystemReference?
 
+    @MainActor
     static func make(summary: DesignSystemSummary?, read: DesignSystemRead?, build: Design?, spaces: [Space],
                      designs: [Design], syncing: Bool, now: Date) -> DesignSystemPageModel {
         var model = DesignSystemPageModel()
@@ -155,7 +159,11 @@ struct DesignSystemPageModel: Equatable {
         }
         let using = designs.filter { !$0.buildsSystem && $0.systemNamespace == info.namespace }
             .sorted { $0.lastActiveAt > $1.lastActiveAt }
-        model.boards = using.map { BoardsRow(id: $0.id, name: $0.name, detail: DesignsPageModel.boardsText($0.boardCount ?? 0)) }
+        model.boards = using.map { BoardsRow(id: $0.id, name: $0.name, detail: DesignsPageModel.boardsText($0.boardCount ?? 0), count: $0.boardCount ?? 0) }
+        if summary.builtIn, let tokens {
+            model.reference = DesignSystemReference.make(tokens: tokens, namespace: info.namespace,
+                                                         designs: model.boards, components: NWComponentCatalog.entries.count)
+        }
         let counts = tokens?.counts ?? summary.counts
         model.sections = [
             .init(id: Section.colors.rawValue, title: Section.colors.title, count: counts.colors),
@@ -258,6 +266,8 @@ enum DesignSpecimenBoard {
     }
 
     static func source(specimen: String, title: String, stylesheet: Bool, background: String?, stylesheetPath: String = "tokens.css") -> String {
+        // A DC specimen already owns its template, props and logic. Never nest it inside another x-dc.
+        if DesignTemplate(board: specimen) != nil { return specimen }
         let fill = background.flatMap(DesignSystemPresentation.hex).map { "background: \($0); " } ?? ""
         let document = DesignSpecimenDocument(specimen)
         return """

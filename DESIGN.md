@@ -32,6 +32,9 @@ Every decision has to pass one test: does this help one person supervise ten wor
 - An agent has a short task title it gave itself (`Fix plan mode`), a workplace, and a
   lifecycle: working, needs you, done, failed, idle. It renders only as a native thread.
 - Terminals are tabs under a thread, one terminal per tab. No splits, no global shells.
+- Browser pages are tabs within the thread's Browser pane, capped at eight. The agent's target
+  is independent of the user's selected tab. User boards BrowserTabsAgent through BrowserTabsTwo
+  are the spec ([Browser](docs/design/side-pane-browser.md)); tabs never restore after a restart.
 - **Spaces and Projects.** A Space is the folder a thread runs in (what the app used to call a "Project").
   A Project is the new feature above Spaces and owns the word. Copy never calls a folder a project. The
   [ProjectLead boards](docs/design/boards/SpacesTerminology.md) are the spec for Projects; the user's only
@@ -51,6 +54,8 @@ Every decision has to pass one test: does this help one person supervise ten wor
 ## Principles, in priority order
 
 1. **Readable measure.** The thread column is at most 820pt wide and agent prose 640pt.
+   The [image viewer](docs/design/thread-images.md) toolbar also stays within 820pt, clear of
+   the window controls. Paging arrows sit beside the fitted image, not at the window edges.
 2. **Shape, not labels.** No speaker labels or avatars. A user turn is a trailing bubble; agent
    output is unboxed prose.
 3. **One quiet line per burst.** Consecutive calls of one kind merge into one activity line.
@@ -78,9 +83,6 @@ What follows from them:
   work in progress, links and keyboard focus.
 - **The sidebar is the primary navigation.** The command palette is a second way to jump.
 - **One primary action per surface.** A destructive action is never the ⏎ default.
-- **Images are never fetched.** A web image is a link chip that says "not loaded"; a local one draws only where the
-  agent's files are on this Mac. Sent images are the bytes this client sent, at their own aspect, above the bubble;
-  one viewer covers the toolbar and the thread (docs/design/thread.md › Images in the thread).
 - **Native controls, Night Watch styles.** A control is a Night Watch style on a native
   `Button`, `Toggle`, `Picker` or `TextField`. Context menus are native `.contextMenu`. Shared
   views are `NW`-prefixed.

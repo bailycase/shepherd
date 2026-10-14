@@ -65,6 +65,9 @@ struct ThreadView: View {
     @Environment(\.projectComposerSend) private var projectSend
     @Environment(\.projectActionCards) private var projectActionCards
     @Environment(\.projectWorkerThread) private var workerStyle
+    /// A design's Git merge, in its chat (GitDesignMerge): the card after the last turn, and the
+    /// intro in an empty chat of a design opened from Git.
+    @Environment(\.designGitChat) private var designGitChat
     /// A Project conversation or one of its worker threads: the boards space the column at 16pt, not an ordinary thread's 28 and 14.
     private var leadColumn: Bool { projectSend != nil || workerStyle != nil }
     private var userOrigins: ProjectUserOrigins {
@@ -73,57 +76,15 @@ struct ThreadView: View {
     /// Only this Mac's agents may receive paths from this Mac.
     var allowsLocalFiles = false
     var retainedInput: ThreadInput? = nil
-    /// The viewer a test holds to read and stub; the thread makes its own otherwise.
-    var retainedViewer: ImageViewerModel? = nil
     /// What watches the thread for a stranded scroll position; a test holds its own to read.
     var retainedTailGuard: ThreadTailGuard? = nil
     /// Whether the scroll view keeps the tail itself (`ThreadTailAnchor.isNative`); a test drives either.
     var nativeTail = ThreadTailAnchor.isNative
+    @Environment(\.presentImages) private var presentImages
     @State private var fallbackInput = ThreadInput()
     private var input: ThreadInput { retainedInput ?? fallbackInput }
     @State private var fallbackTailGuard = ThreadTailGuard()
     @State private var transcriptRevision = 0
-    /// Opens the agent's local images in the viewer. One object per view, so the transcript is not redrawn for it.
-    private var imageOpener: NWImageOpener {
-        NWImageOpener { [viewer, context = viewerContext] files, index in viewer.open(files.map(ViewerEntry.file), at: index, context: context) }
-    }
-
-    /// What the window's viewer asks this thread when it opens one of its images.
-    private var viewerContext: ImageViewerModel.Context {
-        ImageViewerModel.Context(
-            sentBytes: { [store] operation, index in let images = store.queuedImages(operation); return images.indices.contains(index) ? images[index] : nil },
-            savedBytes: { [store] entry, index in store.savedImage(entryID: entry, index: index) },
-            savedOriginal: { [store] entry, index in await store.savedOriginal(entryID: entry, index: index) },
-            addBlocker: { addImageBlocker },
-            add: { addToMessage($0) })
-    }
-
-    /// Why "Add to message" cannot take the open image, or nil: it joins the composer's images as a pasted one would.
-    private var addImageBlocker: String? {
-        guard projectSend?.carriesImages ?? store.supportedActions.contains("sendImages") else { return "This agent does not support image attachments." }
-        return input.attachments.isFull ? "At most \(NativeImage.maxPerSend) images per message." : nil
-    }
-
-    private func addToMessage(_ entry: ViewerEntry) {
-        switch viewer.exportable(entry) {
-        case nil, .sent?, .saved?: input.attachments.reject("\(entry.name) is no longer available to attach.")
-        case .bytes(let image)?:
-            input.attachments.add([(entry.name, ImageAttachment(name: entry.name, image: image, thumbnail: NSImage(data: image.data).map { Image(nsImage: $0) }))])
-        case .file(let url)?:
-            input.attach([NSItemProvider(contentsOf: url) ?? NSItemProvider()], store: store, localFiles: false,
-                         imagesSupported: projectSend?.carriesImages)
-        }
-        input.focus()
-    }
-
-    /// The folder the agent's local images resolve against: only where its files are on this Mac (`allowsLocalFiles`, a local
-    /// agent). A remote host's agent has a working directory too, but a path in its reply names a file on that machine, and
-    /// reading the same path here would draw (or probe) an unrelated local file: it shows as a chip instead.
-    static func proseFileRoot(_ workingDirectory: String?, local: Bool) -> URL? {
-        guard local, let workingDirectory else { return nil }
-        return URL(fileURLWithPath: (workingDirectory as NSString).expandingTildeInPath, isDirectory: true)
-    }
-
     private var tailGuard: ThreadTailGuard { retainedTailGuard ?? fallbackTailGuard }
     @State private var follower = NativeScrollFollower()
     @State private var historyPaging = NativeHistoryPaging()
@@ -131,12 +92,6 @@ struct ThreadView: View {
     /// What the context details ask the thread to find (Largest, Show summary). A stable object,
     /// not a closure, so the composer is not redrawn with every render of the thread.
     @State private var finder = ThreadFinder()
-    /// The image open over the thread, and the images it pages through.
-    @State private var fallbackViewer = ImageViewerModel()
-    @Environment(\.imageViewerModel) private var windowViewer
-    /// This thread's sent-image thumbnails; they go with the thread.
-    @State private var sentThumbnails = SentImageThumbnails()
-    private var viewer: ImageViewerModel { retainedViewer ?? windowViewer ?? fallbackViewer }
     /// Narrow windows drop to 16pt gutters so the column keeps its width, not its margins.
     @State private var gutter = AppLayout.gutter
     @State private var hovering = false
@@ -176,7 +131,11 @@ struct ThreadView: View {
                     // every streamed chunk): turns that arrive make their own entrance.
                     LazyVStack(alignment: .leading, spacing: leadColumn ? NWLeadMetrics.turnGap : AppLayout.turnSpacing) {
                         notices
-                        if rows.isEmpty { if let project = projectSend?.emptyState { project() } else { emptyState } }
+                        if rows.isEmpty {
+                            if let project = projectSend?.emptyState { project() }
+                            else if designGitChat?.opened == true { NWGitDesignIntro() }
+                            else { emptyState }
+                        }
                         if projectSend != nil || workerStyle != nil, let at = rows.first?.turn.messages.first?.timestamp ?? rows.first?.startedAt { NWLeadDaySeparator(word: FleetFinishedDay.dayTitle(Date(timeIntervalSince1970: at / 1000), now: Date())) }
                         ForEach(rows) { row in
                             let _ = NWRenderProbe.tick("thread.rowBuilder")
@@ -213,6 +172,11 @@ struct ThreadView: View {
                             ThreadAuthNoticeView(notice: authNotice, actions: authActions)
                                 .id(ThreadAuthNotice.rowID)
                         }
+                        if let git = designGitChat, let phase = git.phase {
+                            NWGitMergeCard(phase: phase, review: git.review, retry: git.retry)
+                                .equatable()
+                                .id(DesignGitChat.rowID)
+                        }
                         Color.clear.frame(height: 1).id(Self.bottomID)
                     }
                     .scrollTargetLayout()
@@ -232,9 +196,9 @@ struct ThreadView: View {
                     .environment(\.compactionExpansion, store.compactions)
                     .environment(\.turnErrorExpansion, store.errors)
                     // A local agent's images draw from its folder; a remote agent's files are not here.
-                    .environment(\.nwProseFileRoot, Self.proseFileRoot(workingDirectory, local: allowsLocalFiles))
-                    .environment(\.nwImageOpener, imageOpener)
-                    .environment(\.threadImageViewer, ImageViewerLauncher(model: viewer, context: viewerContext))
+                    .environment(\.nwProseFileRoot, workingDirectory.map {
+                        URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath, isDirectory: true)
+                    })
                 }
                 .id(transcriptRevision)
                 // The composer floats over the scroll view; inset by its real height so "the
@@ -339,7 +303,6 @@ struct ThreadView: View {
         // The composer's menus float over the thread and fit the room above the card in it.
         .coordinateSpace(.named(Composer.threadSpace))
         .modifier(ThreadInputDrop(input: input, store: store, localFiles: allowsLocalFiles, imagesSupported: projectSend?.carriesImages))
-
         // Switching back to an agent is a visibility flip: the pull that catches its thread up
         // runs none of the thread's view-attached motion (the composer gates its own).
         // Keyed on what the render drew, so only the update carrying it is touched: a hover or a
@@ -350,6 +313,18 @@ struct ThreadView: View {
         // The tray's controls: it changes only when the thread is switched to or away from (and
         // when the host's support does), and redraws the tray's rows.
         .environment(\.threadActionsEnabled, active && store.supports("subagents"))
+        // The images the host names, fetched on demand; pressing one opens the viewer (set once per window).
+        .environment(\.threadImages, store.supportedActions.contains("images") ? store.images : nil)
+        .transformEnvironment(\.viewImages) { opener in
+            let present = presentImages
+            let images = store.supportedActions.contains("images") ? store.images : nil
+            let add: ((ViewerImage) -> Void)? = { [input] image in
+                input.add(images: [image], store: store)
+            }
+            opener = ThreadImageOpener { set, index in
+                present(ImageViewerState(set: set, index: index, images: images, addToMessage: add))
+            }
+        }
         .foregroundStyle(Color.nw.textPrimary)
         .tint(Color.nw.running)
         .background { ThreadInputBackground(input: input) }
@@ -370,13 +345,6 @@ struct ThreadView: View {
             guard active else { historyAnchor.cancel(); tailGuard.stop(); store.suspend(); return }
             await store.run(request: request, preview: preview)
         }
-        // Pictures this client did not send (another client's, or its own before a restart) come from the host, a message at a time.
-        .task(id: store.turns.count) {
-            for bubble in store.turns.suffix(8).filter(\.isUser).flatMap(\.bubbles) {
-                guard bubble.images > 0, let entry = bubble.entryID, store.queuedImages(bubble.operationID ?? UUID()).count != bubble.images else { continue }
-                await store.loadSavedImages(entryID: entry)
-            }
-        }
     }
 
     /// A sent message rises into the thread; a reply's parts make their own entrances.
@@ -385,7 +353,6 @@ struct ThreadView: View {
     @ViewBuilder private func turn(_ row: NativeThreadRow, running: Bool, thinking: Bool, arriving: Bool, settled: Bool) -> some View {
         let card = row.designComment.flatMap { commentCards?.cards[$0] }
         if row.isUser {
-            let _ = store.savedPreviewRevision
             let segments = userOrigins.segments(row.turn)
             if let card {
                 NWCommentCard(number: card.number, target: card.target, meta: card.meta, text: card.text,
@@ -393,7 +360,7 @@ struct ThreadView: View {
                     .equatable()
                     .nwArrival(arriving, .list, edge: .bottom)
             } else if segments.count == 1, case .person(let person) = segments[0] {
-                UserTurn(turn: person, store: store, thumbnails: sentThumbnails)
+                UserTurn(turn: person)
                     .equatable()
                     .nwArrival(arriving, .list, edge: .bottom)
             } else {

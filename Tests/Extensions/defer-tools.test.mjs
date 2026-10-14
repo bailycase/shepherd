@@ -16,7 +16,8 @@ const pkg = process.env.PI_PACKAGE_DIR;
 if (!pkg) throw Error("Set PI_PACKAGE_DIR to the installed Pi package");
 
 const BROWSER = ["browser_open", "browser_read", "browser_click", "browser_type", "browser_press", "browser_scroll", "browser_wait",
-  "browser_screenshot", "browser_console", "browser_eval", "browser_back", "browser_forward", "browser_reload"];
+  "browser_screenshot", "browser_console", "browser_eval", "browser_back", "browser_forward", "browser_reload",
+  "browser_tabs", "browser_new_tab", "browser_select_tab", "browser_close_tab"];
 const PEERS = ["agent_list", "agent_send", "agent_read", "agent_steer", "agent_interrupt", "agent_wait", "agent_delete", "agent_spawn"];
 const AUTOMATIONS = ["automation_create", "automation_list", "automation_update", "automation_delete", "automation_start", "automation_stop"];
 const DEFERRED = [...BROWSER, ...PEERS, ...AUTOMATIONS, "review_diff"];
