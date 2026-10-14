@@ -50,9 +50,10 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   stack placed. Nothing is realized there and nothing moves it, so the thread draws nothing, in
   a window of any height, and a view that keeps following lets the reader scroll no way out of
   it. The guard notices that no current content row is in view, even when the invisible bottom
-  marker or a cached target from a replaced live reply is still reported visible. Completion can
-  replace that reply's ID when its prompt falls outside the saved history page. Neither the marker
-  nor a removed row may end recovery. Current-row IDs can be cached too: the Mac thread now
+  marker or a cached target from a replaced live reply is still reported visible. A history
+  replacement can still remove the live reply's ID (a new session, or a turn longer than the 20
+  pages the store loads to join it; a finished turn whose prompt falls outside the newest page
+  keeps its rows, docs/native-thread.md). Neither the marker nor a removed row may end recovery. Current-row IDs can be cached too: the Mac thread now
   requires a live, nonhidden native row marker intersecting its own clip view before treating a
   reported row as content. Each lazy row has one passive, accessibility-hidden background probe;
   the registry holds it weakly and drops obsolete IDs. Missing or dead probes prove nothing.
