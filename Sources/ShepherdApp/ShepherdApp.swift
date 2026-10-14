@@ -54,6 +54,7 @@ public struct ShepherdMacApp: App {
             NSLog("Shepherd: failed to start session server: \(error)")
             exit(EXIT_FAILURE)
         }
+        ShepherdDiagnostics.shared.start(settings: .shared)
         keys = KeybindingsStore.shared
         themes = ThemeManager.shared
         // Geist and Geist Mono ship in the ShepherdUI bundle; register them before any view draws.

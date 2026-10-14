@@ -10,10 +10,13 @@ public struct ProjectRuntimeLaunch: Sendable {
     public var cwd: String
     public var name: String
     public var model: String?
+    /// A `ThinkingLevel` raw value; nil takes the owner's default.
+    public var thinking: String?
     public var coordinator: Bool
-    public init(projectID: ProjectID, agentID: AgentID, spaceID: SpaceID, cwd: String, name: String, model: String?, coordinator: Bool) {
+    public init(projectID: ProjectID, agentID: AgentID, spaceID: SpaceID, cwd: String, name: String, model: String?,
+                thinking: String? = nil, coordinator: Bool) {
         self.projectID = projectID; self.agentID = agentID; self.spaceID = spaceID
-        self.cwd = cwd; self.name = name; self.model = model; self.coordinator = coordinator
+        self.cwd = cwd; self.name = name; self.model = model; self.thinking = thinking; self.coordinator = coordinator
     }
 }
 
@@ -27,8 +30,10 @@ public enum ProjectRuntimeRequest: Codable, Hashable, Sendable {
     case decideSpace(proposalID: UUID, expectedProposalRevision: UInt64, accept: Bool)
     case remember(operationID: UUID, text: String, taskID: ProjectTaskID)
     case message(operationID: UUID, text: String, images: [NativeImage]? = nil)
-    case assign(operationID: UUID, spaceID: SpaceID, title: String, prompt: String, host: ProjectHostReference? = nil)
-    case followUp(taskID: ProjectTaskID, operationID: UUID, text: String)
+    /// `model` and `thinking` are the coordinator's choice for this one task; nil takes the Project's defaults.
+    case assign(operationID: UUID, spaceID: SpaceID, title: String, prompt: String, host: ProjectHostReference? = nil,
+                model: String? = nil, thinking: String? = nil)
+    case followUp(taskID: ProjectTaskID, operationID: UUID, text: String, model: String? = nil, thinking: String? = nil)
     case resolve(taskID: ProjectTaskID, operationID: UUID? = nil)
     case reopen(taskID: ProjectTaskID)
     case pause

@@ -28,6 +28,8 @@
 	<string>Shepherd serves its sessions to remote Shepherd clients over your network.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>ShepherdSentryDSN</key>
+	<string>$(SHEPHERD_SENTRY_DSN)</string>
 	<key>SUEnableInstallerLauncherService</key>
 	<true/>
 	<key>SUFeedURL</key>

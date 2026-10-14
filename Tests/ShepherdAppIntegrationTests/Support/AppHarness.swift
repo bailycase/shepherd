@@ -25,8 +25,9 @@ final class AppHarness {
     var dir: URL { scratch.dir }
 
     /// Each harness gets its own pi home; pass `.app` explicitly to share process history.
-    init(pi: PiSetup? = nil, modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels }) throws {
-        let directory = try makeScratchDirectory("srv")
+    /// `directory` is a scratch directory the test already filled (a saved `state.json` for a cold launch).
+    init(directory existing: URL? = nil, pi: PiSetup? = nil, modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels }) throws {
+        let directory = try existing ?? makeScratchDirectory("srv")
         let setup = pi ?? PiSetup(engine: PiSetup.app.engine, home: directory.appendingPathComponent("pi"),
                                   yourPi: PiSetup.app.yourPi, userHome: PiSetup.app.userHome)
         scratch = try ScratchServer(dir: directory, modelCatalog: modelCatalog, pi: setup)

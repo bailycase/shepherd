@@ -49,7 +49,7 @@ struct ProjectRuntimeWireTests {
         #expect(try JSONDecoder().decode(ProjectRuntimeRequest.self, from: old) == .message(operationID: Self.operation, text: "hello"))
         let stored = Data("{\"id\":\"\(Self.operation)\",\"text\":\"hello\",\"phase\":\"queued\"}".utf8)
         let legacy = try JSONDecoder().decode(ProjectMessage.self, from: stored)
-        #expect(legacy.images == nil && legacy.humanSubmitted == nil && legacy.answerReceipts == nil)
+        #expect(legacy.images == nil && legacy.humanSubmitted == nil && legacy.answerReceipts == nil && legacy.failureDetail == nil)
         var human = legacy
         human.humanSubmitted = true
         human.answerReceipts = [.init(taskID: Self.task, questionEventID: Self.operation,
@@ -67,6 +67,16 @@ struct ProjectRuntimeWireTests {
         let request = RemoteRequest.logicalProjectRuntime(id: 7, request: .action(projectID: ProjectID(), expectedRevision: 1,
             request: .message(operationID: Self.operation, text: "", images: [.init(mimeType: "image/png", data: Data([1, 2, 3]))])))
         #expect(try Wire.roundTrip(request) == request)
+    }
+
+    @Test func failedMessageDetailSurvivesStateAndOwnerReplyRoundTrips() throws {
+        var project = Project(name: "Project")
+        var message = ProjectMessage(id: Self.operation, text: "hello", phase: .failed)
+        message.failureDetail = "The agent refused it: No API key found for test-provider."
+        project.messages = [message]
+        #expect(try Wire.roundTrip(ShepherdState(projects: [project])).projects.first?.messages == [message])
+        let reply = RemoteReply.logicalProjectRuntime(id: 1, result: .project(project))
+        #expect(try Wire.roundTrip(reply) == reply)
     }
 
     @Test func chatAnswerReceiptsAreBoundedAndLegacyQuestionEventsHaveNoGenerationProof() throws {

@@ -33,6 +33,14 @@ struct ProjectComposerSend {
     var columnWidth: CGFloat = NWLeadMetrics.columnWidth
     /// The conversation's main model. The same chip and picker as any thread; see `ProjectConversationModel`.
     var model: ProjectConversationModel? = nil
+
+    /// The coordinator's pi is off and nothing will start it now, so the thread's store is told so (`NativeThreadStore.offline`):
+    /// no pi is running, and no message is queued or in flight that the owner would launch it for (a paused Project holds every
+    /// message; a relaunch, a Resume alone or a pi that exited leave none). The next message the owner can deliver launches the pi,
+    /// and from then the thread's start is the ordinary, timed warm-up.
+    static func isOffline(paused: Bool, messages: [ProjectMessage], coordinatorLive: Bool) -> Bool {
+        !coordinatorLive && (paused || !messages.contains { $0.phase == .queued || $0.phase == .delivering })
+    }
 }
 
 /// The Project's conversation model as the composer's model chip shows and sets it. Before the first message there is no coordinator
@@ -131,6 +139,12 @@ struct ProjectWorkerThreadStyle: Equatable {
     /// (ProjectLead-ThreadRunning: prose x 1137...1584, card 1137...1568 in a pane 1121...1600).
     var gutter: CGFloat = NWLeadMetrics.paneThreadGutter
     var composerTrailing: CGFloat = NWLeadMetrics.paneComposerTrailing
+    /// A resolved task takes no more messages: its thread draws no composer at all (the footer card with Reopen stands in), and the
+    /// transcript reaches the bottom of the pane.
+    var composerHidden = false
+    /// The owner already holds an answer to this worker's question (queued for Resume, or on its way): the thread's own question dock
+    /// stays visible but offers no second answer, so two active buttons never compete.
+    var answerHeld = false
 }
 
 /// How a Project's conversation draws a Project tool's typed result inline (ProjectLead-Started / -AddsSpace): a task card or the
@@ -211,7 +225,11 @@ enum ProjectHeldMessages {
             case .queued: note = paused ? "Sends when the project resumes" : "Waiting to send"
             case .delivering: note = "Sending"
             case .unknown: note = "Delivery unconfirmed. Send it again to retry."
-            case .failed: note = "Not delivered. Send it again to retry."
+            case .failed:
+                // The owner's own redacted words for a definite refusal; an older record has none, and an unknown outcome never gets one.
+                let reason = message.failureDetail?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let sentence = reason.last.map { ".!?".contains($0) } == false ? reason + "." : reason
+                note = reason.isEmpty ? "Not delivered. Send it again to retry." : "Not delivered. \(sentence) Send it again to retry."
             case .delivered: return nil
             }
             return ProjectHeldMessage(id: message.id, text: message.text, note: note)
