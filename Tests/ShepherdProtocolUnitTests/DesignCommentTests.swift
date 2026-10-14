@@ -191,4 +191,17 @@ struct DesignCommentTests {
     func aCommentsTextIsTrimmedAndBounded(_ raw: String, _ kept: String?) {
         #expect(DesignComment.text(raw) == kept)
     }
+    @Test func aCommentWrittenBeforeAuthorNamesDecodesWithNone() throws {
+        // A comments.json from before Git sharing: no authorName on the comment or its replies.
+        let json = #"{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","number":1,"board":"A.dc.html","tid":3,"path":[1],"#
+            + #""text":"Show counts","author":"user","createdAt":1000,"replies":[{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FE","#
+            + #""author":"agent","text":"Done","createdAt":2000}]}"#
+        let comment = try JSONDecoder().decode(DesignComment.self, from: Data(json.utf8))
+        #expect(comment.authorName == nil && comment.replies.first?.authorName == nil)
+        // A name, once written, round-trips.
+        var named = comment
+        named.authorName = "Sam Nguyen"
+        let again = try JSONDecoder().decode(DesignComment.self, from: JSONEncoder().encode(named))
+        #expect(again.authorName == "Sam Nguyen")
+    }
 }

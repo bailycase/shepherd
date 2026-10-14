@@ -72,7 +72,7 @@ public struct NWActivityLine: View {
         case .explore: "magnifyingglass"
         case .edit: "pencil"
         case .run: "terminal"
-        case .subagents: "arrow.triangle.branch"
+        case .subagents: NWGlyph.gitBranch.symbolName
         case .drew, .lookedAtDesign: "pencil.tip"
         case .checked: "checkmark.shield"
         case .browser: "globe"

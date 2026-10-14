@@ -28,7 +28,7 @@ struct ReviewSummaryCard: View {
                 }
                 if !large { Spacer(minLength: NW.Space.s) }
                 if let branch {
-                    Label(branch, systemImage: "arrow.triangle.branch")
+                    Label(branch, systemImage: NWGlyph.gitBranch.symbolName)
                         .font(.nw(.mono))
                         .foregroundStyle(nw.textSecondary)
                         .lineLimit(large ? 2 : 1)

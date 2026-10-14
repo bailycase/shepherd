@@ -522,7 +522,7 @@ struct AddSkillsSheet: View {
     private var field: some View {
         let nw = Color.nw
         return HStack(spacing: NW.Space.m + NW.Space.xxs) {
-            Image(systemName: folder == nil ? "arrow.triangle.branch" : "folder")
+            Image(systemName: folder == nil ? NWGlyph.gitBranch.symbolName : "folder")
                 .font(.nwSans(AppLayout.skillsSummarySize))
                 .foregroundStyle(nw.textTertiary)
                 .accessibilityHidden(true)
