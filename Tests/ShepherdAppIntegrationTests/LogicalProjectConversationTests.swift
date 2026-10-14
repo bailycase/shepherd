@@ -1177,8 +1177,8 @@ private static func chipsAndLinks() async throws {
 
     // MARK: Cold launch of a saved conversation
 
-    /// A relaunched app with a Project whose coordinator already has a saved pi session (a restart leaves the Project paused and its pi
-    /// off): the page shows the saved history from disk at once and keeps the composer usable, nothing is started until a message is
+    /// A relaunched app with a Project whose coordinator already has a saved pi session, paused by the person (a
+    /// relaunch leaves its pi off either way): the page shows the saved history from disk at once and keeps the composer usable, nothing is started until a message is
     /// sent, and that send starts the coordinator's pi and reaches ready.
     private static func coldCoordinator() async throws {
         AccessibilityNode.enable()
