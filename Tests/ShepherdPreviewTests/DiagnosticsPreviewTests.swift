@@ -5,7 +5,8 @@ import SwiftUI
 import Testing
 @testable import ShepherdApp
 
-@Suite("Diagnostics previews", .mainActorExclusive)
+@Suite("Diagnostics previews", .mainActorExclusive,
+       .enabled(if: Preview.enabled && !Preview.liveModel, "set SHEPHERD_PREVIEW_DIR (without SHEPHERD_LIVE_MODEL) to render previews"))
 @MainActor
 struct DiagnosticsPreviewTests {
     @Test(arguments: ["off", "pending", "active", "unconfigured"])

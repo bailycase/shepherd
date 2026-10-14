@@ -105,6 +105,9 @@ Sentry only; crash/error reporting first; no confirmation sheet beyond the expli
 switch; 50 reports/day; symbol upload is nonfatal like existing release symbol archives.
 Design checklist: [Diagnostics](design/boards/Diagnostics.md). Departures: none.
 
+The preview suite skips when `SHEPHERD_PREVIEW_DIR` is unset, like the other visual suites;
+set it explicitly to exercise all four consent states in both appearances and text sizes.
+
 Local validation used `swift test --build-system native` because this Xcode beta's default
 SwiftPM test runner could not load Sparkle. The focused diagnostics, settings/reset and design
 checks passed, including the real SDK fake-transport regression. The Dev `xcodebuild` passed;
