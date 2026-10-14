@@ -377,7 +377,13 @@ A definite pre-send cancellation retains the message/assignment and records a ne
 of occupying an unknown slot. Text admission matches native trimmed-nonempty, 16 KiB UTF-8 limits;
 the Instructions editor's independent character counter does not change.
 
-### Pause, bounds, restart and deletion
+### Pause, restart and deletion
+
+A Project never pauses on its own. Only the person pauses it (Project settings > Pause project, or the pane), and only Resume or
+their next message after Resume starts work again. There is no run-time or activation limit; the bounds are Threads at once
+(how many threads run together) and the owner's plan limits, as in Claude's Projects. Stop on the coordinator ends its current
+turn only. A coordinator pi that exits marks an in-flight delivery `unknown` (never resent) and the next message relaunches it.
+A failed launch of the coordinator still pauses (there is nothing to talk to) and says why.
 
 Pause closes admissions, retains new messages and queued assignments, and issues native aborts
 for active project work. `interruptPending` distinguishes the request from acknowledged idle
@@ -391,21 +397,33 @@ not display or log the envelope. Resume revalidates the original live dialog and
 answer once; expired/replaced dialogs fail honestly, never become synthetic replacement dialogs.
 Restart marks retained answers unknown and never sends them. An ordinary worker Stop can explicitly
 cancel its dialog. Resume is refused until pending interruptions are acknowledged.
-Native Stop on the coordinator also pauses its project. Ordinary
-worker manual sends remain available after project Pause or a limit stop. Restart pauses, marks
-in-flight assignments/deliveries unknown, clears ephemeral run admission, and sends no prompts.
-Restoring an existing coordinator is idle. Unknown assignments conservatively retain slots;
-there is no automatic recovery/replay policy yet.
 
-One explicit active run admits at most **12 activations over 10 minutes**, including finite
-result/question wakeups and resumed queued answers. Host counters/timer, not prompts, enforce this;
-it is not a strict spend ceiling. No polling model, invented backlog or automatic task retry is
-used. First-class child/workflow/peer/automation spawn/send bypasses are gated for active assigned
-workers; ordinary coding tools stay available and settled workers retain ordinary manual use.
+A relaunch of Shepherd resumes no work and never pauses a Project the person left running. A local
+thread whose pi died with the app settles as "Interrupted when Shepherd quit" (its slot frees and a
+follow-up continues it); another host's thread stays `unknown` until its receipt reconciles it.
+Deliveries in flight become `unknown` and are never resent. No polling model, invented backlog or
+automatic task retry is used. First-class child/workflow/peer/automation spawn/send bypasses are
+gated for active assigned workers; ordinary coding tools stay available.
 Record limits remain 64 task links, 32 activations and 32 resolution receipts per task, 64 message
 receipts, 32 Space proposals and 128 memory-operation receipts within the encoded project budget.
 A full event receipt queue pauses and records an inspectable error; the native result remains in
-the worker conversation. These are bounded interim resource safeguards, not billing policy.
+the worker conversation. These are storage safeguards, not run limits.
+
+### Per-task model and thinking
+
+`project_assign` and `project_follow_up` take an optional `model` (one of `availableModels` in the
+coordinator's `project_read`) and `thinking` (off…max). The owner validates both, stores them on the
+task, launches the thread with them, and before a follow-up's prompt sets the thread's model and
+thinking when they changed. Omitted, a task uses the Project's Thread model and the owner's default
+thinking level (Settings > Agents), never a hardcoded level. A follow-up keeps the task's earlier
+choice unless it names a new one, and reaches a resolved task too, reopening it.
+
+### Asking the person
+
+A worker asks with `project_question` (a native select or free-text dialog; not registered for
+helper children). The task shows Waiting on you in the pane, the sidebar and the conversation's
+question dock; an answer from any of them, or the person's reply relayed by the coordinator's
+`project_answer`, reaches the same dialog once.
 
 Delete removes the project and only a reciprocally marked coordinator's agent/layout metadata,
 related coordinator automation records, and running coordinator process. Ordinary workers and
