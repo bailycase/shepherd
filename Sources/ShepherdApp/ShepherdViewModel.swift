@@ -1163,10 +1163,11 @@ final class ShepherdViewModel {
         // agent shown before it comes back, else the most recently active on this Mac; with no
         // agents at all, the New thread page shows. A page the user opened stays.
         if selectedAgent == nil, destination == nil, selectedRemoteAgent == nil {
+            // A Project's threads live under the Project: none is shown in its place unless the person opened it before.
             let live = Set(state.agents.filter { $0.coordinatorFor == nil }.map(\.id))
             if let next = selectionHistory.last(where: live.contains) ?? launchAgentID,
                let agent = state.agents.first(where: { $0.id == next && $0.coordinatorFor == nil }),
-               !state.projectExecutions.contains(where: { $0.assignment?.reservedWorkerID == next }) || selectionHistory.contains(next) {
+               !state.isProjectWorker(next) || selectionHistory.contains(next) {
                 willOpenSidebarThread(design(drawnBy: agent).map { .design($0.id) } ?? .local(agent.id))
                 selectedAgentID = agent.id
                 selectedSpaceID = agent.spaceID

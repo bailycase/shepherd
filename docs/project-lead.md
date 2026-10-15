@@ -641,7 +641,7 @@ not kept; the cause and fix are in `docs/project-execution.md`, Coordinator star
   is not answered twice.
 - **Coordinators are not threads:** every ordinary-thread producer (sidebar in both modes, completions, palette, pins, notifications, remote
   inspection, peer lists) now asks `isOrdinaryThread`, covered by `ProjectCoordinatorHiddenTests`.
-- **Settled is not done:** the strip counts only what the person resolved ("1 of 3 done"); a settled turn is finished work awaiting a decision.
+- **Finished is done:** the strip counts settled and resolved tasks as done ("2 of 3 done"), as Claude's Projects counts a thread that finished. Settled still means finished but unconfirmed: it keeps Mark resolved in the pane and moves to Resolved only when the person or the coordinator resolves it.
 - **Remote Projects:** an owner-remote Project's runtime actions are refused in words; they are never sent to this Mac's runtime.
 
 Verified with `ProjectPagePresentationTests`, `ProjectCoordinatorHiddenTests` (unit), `LogicalProjectConversationTests` (real scratch

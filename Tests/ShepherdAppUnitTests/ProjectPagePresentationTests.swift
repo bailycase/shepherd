@@ -165,10 +165,13 @@ struct ProjectPagePresentationTests {
         #expect(ProjectRunStatus.text(startingThreads: starting, worker: worker, startedAt: startedAt, now: now) == words)
     }
 
-    @Test func settledIsNotDoneAndNotWorkingUntilThePersonResolvesIt() {
+    /// A finished thread counts as done in the strip whether or not anyone has pressed Mark resolved yet (the user's report: three
+    /// scouts all reported back and the strip still said "0 of 3 done"). It is never "in progress", and only Resolved moves its group.
+    @Test func aFinishedThreadCountsAsDoneBeforeAnyoneResolvesIt() {
         let p = page([task("A", .settled), task("B", .resolved), task("C", .running)])
         #expect(p.settled == 1 && p.working == 1 && p.resolved == 1)
-        #expect(p.summary == "1 of 3 done · 1 in progress", "a settled turn is not proof of success, so it is not counted done")
+        #expect(p.summary == "2 of 3 done · 1 in progress")
+        #expect(page([task("A", .settled), task("B", .settled), task("C", .settled)]).summary == "3 of 3 done")
         #expect(p.rows[0].canResolve && !p.rows[0].canReopen)
         #expect(p.rows[1].canReopen && !p.rows[1].canResolve)
     }

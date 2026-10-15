@@ -69,8 +69,9 @@ struct ProjectPagePresentation: Equatable {
     /// "2 of 3 done · 1 needs you", or "0 of 3 done · 3 in progress": counted from the tasks. nil without tasks.
     var summary: String? {
         guard total > 0 else { return nil }
-        // "Done" is what the person resolved. A settled turn is not proof the task succeeded (docs/project-lead.md).
-        var parts = ["\(resolved) of \(total) done"]
+        // "Done" is a thread that finished its work, as in Claude's Projects: settled (finished, not yet confirmed) or resolved.
+        // Resolution stays the person's or the coordinator's confirmation in the pane; the strip only counts what finished.
+        var parts = ["\(resolved + settled) of \(total) done"]
         if waiting > 0 { parts.append("\(waiting) needs you") }
         else if working > 0 { parts.append("\(working) in progress") }
         return parts.joined(separator: " · ")
