@@ -268,3 +268,9 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   compile-time half of `ENABLE_ENHANCED_SECURITY` (stack zero-init, typed allocators, libc++
   hardening) reaches only `App/ShepherdLauncher.swift`: SwiftPM package targets do not inherit
   target settings. So ShepherdPTYSpawn's C and the tree-sitter parsers build without it.
+  `App/Shepherd.entitlements` leaves out `platform-restrictions-string` (at 1 or 2): it makes
+  the OS kill any process that calls `task_set_exception_ports` without an `*_IDENTITY_PROTECTED`
+  behavior (`EXC_GUARD`, `SET_EXCEPTION_BEHAVIOR`), and Sentry's crash handler does exactly that,
+  so every launch with diagnostics on crashed. `Tests/Release/test_app_entitlements.py` signs a
+  probe with these entitlements and makes that call. Re-add the key only once Sentry registers an
+  identity-protected behavior.
