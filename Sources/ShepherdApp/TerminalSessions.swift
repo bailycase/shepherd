@@ -903,7 +903,10 @@ final class TerminalSessionStore {
                 try await server.projects.prepareProjectConfiguration(for: cwd)
                 // Respawn after relaunch: an agent that was never prompted has
                 // no session file yet, so seed one before pi looks for it.
-                let (fresh, problem) = await Self.prepareLaunch(for: agent, cwd: cwd, pi: server.pi)
+                let missing = ShepherdViewModel.folderExists(pane.cwd) ? nil
+                    : PiHomeProblem("this thread's folder is missing (\(pane.cwd)). Locate the space's folder or remove the space.")
+                var (fresh, problem) = (false, missing)
+                if missing == nil { (fresh, problem) = await Self.prepareLaunch(for: agent, cwd: cwd, pi: server.pi) }
                 let parent = await server.projects.parentProject(of: cwd, state: serverState ?? ShepherdState())
                 command = try problem.map(Self.refusedCommand)
                     ?? Self.rpcAgentCommand(for: agent, cwd: cwd, pi: server.pi, sessionIsFresh: fresh,

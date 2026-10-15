@@ -4848,9 +4848,17 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// `path` moved from under `old` to under `new`; nil when it is not inside `old`.
+    public nonisolated static func relocated(_ path: String, from old: String, to new: String) -> String? {
+        let standard = (path as NSString).standardizingPath, old = (old as NSString).standardizingPath
+        if standard == old { return new }
+        return standard.hasPrefix(old + "/") ? new + standard.dropFirst(old.count) : nil
+    }
+
     /// Points a space whose folder moved at `path`, an existing directory no other space holds.
-    /// Spaces registered inside its old folder move with it. Refused while any of them has
-    /// threads: their pi conversations are tied to the old folder. Never touches files.
+    /// Everything recorded inside its old folder follows: spaces registered there, its threads'
+    /// and terminals' folders, worktree paths and automations. Never touches files; the caller
+    /// stops the threads first and moves their conversations.
     public func relocateSpace(_ spaceID: SpaceID, to path: String) async throws -> Space {
         let canonical = URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL.resolvingSymlinksInPath().path
         var isDirectory: ObjCBool = false
@@ -4861,23 +4869,27 @@ public final class SessionServer: @unchecked Sendable {
             guard let space = self.store.state.spaces.first(where: { $0.id == spaceID && !$0.hidden }) else {
                 throw SessionServerError.noSuchSpace(spaceID)
             }
-            let old = (space.path as NSString).standardizingPath
-            func moved(_ path: String) -> String? {
-                let standard = (path as NSString).standardizingPath
-                if standard == old { return canonical }
-                return standard.hasPrefix(old + "/") ? canonical + standard.dropFirst(old.count) : nil
-            }
+            let old = space.path
+            func moved(_ path: String) -> String? { Self.relocated(path, from: old, to: canonical) }
             let affected = Set(self.store.state.spaces.filter { !$0.hidden && moved($0.path) != nil }.map(\.id))
-            let threads = self.store.state.agents.filter { affected.contains($0.spaceID) }.count
-            guard threads == 0 else {
-                throw ProjectFileError("space_in_use", "\(space.name) has \(threads) thread\(threads == 1 ? "" : "s") tied to its old folder. Remove the space instead, or move the folder back.")
-            }
             guard !self.store.state.spaces.contains(where: { !affected.contains($0.id) && ($0.path as NSString).standardizingPath == canonical }) else {
                 throw ProjectFileError("destination_registered", "Another space already uses that folder.")
             }
             try self.mutateState { state in
                 for index in state.spaces.indices where affected.contains(state.spaces[index].id) {
                     state.spaces[index].path = moved(state.spaces[index].path)!
+                }
+                for index in state.tabs.indices {
+                    for leaf in state.tabs[index].layout.leaves {
+                        guard let cwd = moved(leaf.cwd) else { continue }
+                        state.tabs[index].layout = state.tabs[index].layout.updatingLeaf(leaf.id) { $0.cwd = cwd }
+                    }
+                }
+                for index in state.agents.indices {
+                    if let path = state.agents[index].worktreePath.flatMap(moved) { state.agents[index].worktreePath = path }
+                }
+                for index in state.automations.indices {
+                    if let cwd = moved(state.automations[index].cwd) { state.automations[index].cwd = cwd }
                 }
             }
             return self.store.state.spaces.first { $0.id == spaceID }!

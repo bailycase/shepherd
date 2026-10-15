@@ -1,6 +1,7 @@
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdSessions
 
 /// Space lifecycle from the sidebar's context menu.
 @MainActor
@@ -125,16 +126,42 @@ extension ShepherdViewModel {
         spacePickerTarget = .relocate(id)
     }
 
-    /// Points the space (and the spaces registered inside it) at `path`. A refusal shows why.
+    /// Points the space at `path`, and everything recorded inside its old folder with it: child
+    /// spaces, threads and terminals. Its threads stop, their conversations move to the new
+    /// folder, and they start again there. A refusal shows why.
     func relocateSpace(_ id: SpaceID, to path: String) async {
+        guard let old = state.spaces.first(where: { $0.id == id })?.path else { return }
+        let target = URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL.resolvingSymlinksInPath().path
+        let moving = state.agents.compactMap { agent -> (agent: Agent, from: String, to: String, session: SessionID?)? in
+            guard let pane = state.tabs.first(where: { $0.id == agent.tabID })?.layout.leaf(withID: agent.paneID ?? PaneID()),
+                  let to = SessionServer.relocated(pane.cwd, from: old, to: target) else { return nil }
+            return (agent, pane.cwd, to, pane.sessionID)
+        }
         do {
+            // Stop the threads first: a pi still running would write to the conversation being moved.
+            let deadline = ContinuousClock.now + .seconds(10)
+            for thread in moving {
+                guard let session = thread.session, await server.sessionInfo(sessionID: session)?.isAlive == true else { continue }
+                await server.stopKeepingAgent(sessionID: session)
+                while await server.sessionInfo(sessionID: session)?.isAlive == true {
+                    guard ContinuousClock.now < deadline else { throw AgentStartFailure(message: "\(thread.agent.name) did not stop. Nothing was moved.") }
+                    try await Task.sleep(for: .milliseconds(50))
+                }
+            }
             _ = try await server.relocateSpace(id, to: path)
         } catch {
             remoteActionError = String(describing: error)
+            for thread in moving { retryAgentStart(thread.agent.id) }
             return
         }
+        let root = server.pi.sessionsRoot
+        let files = moving.map { ($0.agent.effectivePiSessionID, $0.from, $0.to) }
+        await Task.detached(priority: .userInitiated) {
+            for (session, from, to) in files { PiSessionFile.relocate(sessionID: session, from: from, to: to, sessionsRoot: root) }
+        }.value
         let canonical = server.state
         sessions.stateDidChange(canonical)
         adopt(canonical)
+        for thread in moving { retryAgentStart(thread.agent.id) }
     }
 }
