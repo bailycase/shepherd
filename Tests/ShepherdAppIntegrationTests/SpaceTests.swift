@@ -93,4 +93,55 @@ struct SpaceTests {
         #expect(app.server.state.spaces.map(\.id) == [designs])
         #expect(vm.selectedSpaceID == nil && vm.selectedAgentID == nil)
     }
+
+    // MARK: Missing folders
+
+    /// A space whose folder moves away is marked within the watch's interval, takes no thread,
+    /// and Locate Folder… points it (and a child space inside it) at the folder's new place.
+    @Test func aSpaceWhoseFolderMovesIsMarkedRefusesThreadsAndCanBeLocated() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let fm = FileManager.default
+        let folder = app.dir.appendingPathComponent("monitor", isDirectory: true)
+        let child = folder.appendingPathComponent("web", isDirectory: true)
+        try fm.createDirectory(at: child, withIntermediateDirectories: true)
+        let parent = Fixture.space("monitor", path: canonical(folder))
+        let nested = Fixture.space("web", path: canonical(child))
+        let vm = try await app.start(with: Fixture.state(spaces: [parent, nested], agents: []))
+        vm.installMissingSpaceWatch()
+        try await eventuallyOnMain("both folders present") { vm.missingSpaces.isEmpty }
+
+        let moved = app.dir.appendingPathComponent("archive/monitor", isDirectory: true)
+        try fm.createDirectory(at: moved.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try fm.moveItem(at: folder, to: moved)
+        try await eventuallyOnMain("the move to be seen", timeout: .seconds(5)) { vm.missingSpaces == [parent.id, nested.id] }
+
+        let row = try #require(vm.sidebarTree.projects.first { $0.space == parent.id })
+        #expect(row.missing && row.newThreadPlace(connected: []) == nil)
+        await #expect(throws: AgentStartFailure.self) {
+            try await vm.startAgent(NewAgentConfig(spaceID: parent.id, workingDirectory: parent.path, model: nil, thinking: .medium, initialPrompt: nil),
+                                    selectAfter: false)
+        }
+        #expect(app.server.state.agents.isEmpty)
+
+        await vm.relocateSpace(parent.id, to: moved.path)
+
+        let spaces = Dictionary(uniqueKeysWithValues: app.server.state.spaces.map { ($0.id, $0.path) })
+        #expect(spaces[parent.id] == canonical(moved) && spaces[nested.id] == canonical(moved) + "/web")
+        try await eventuallyOnMain("the space to be found again") { vm.missingSpaces.isEmpty }
+    }
+
+    /// Locating is refused while the space still has threads: their conversations belong to the old folder.
+    @Test func locatingASpaceWithThreadsIsRefused() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space("gone", path: app.dir.appendingPathComponent("gone").path)
+        let agent = Fixture.agent("old", in: space)
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
+
+        await vm.relocateSpace(space.id, to: app.dir.path)
+
+        #expect(app.server.state.spaces.first?.path == space.path)
+        #expect(vm.remoteActionError?.contains("1 thread") == true)
+    }
 }

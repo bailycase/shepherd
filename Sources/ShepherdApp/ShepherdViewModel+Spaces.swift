@@ -68,3 +68,73 @@ extension ShepherdViewModel {
         enqueuePersistence("space deletion") { try await $0.deleteSpace(id) }
     }
 }
+
+// MARK: Missing folders
+
+@MainActor
+extension ShepherdViewModel {
+    /// How often This Mac's space folders are read again while the app runs.
+    /// ponytail: a poll (one stat per space), not an FSEvents stream; switch if spaces number in the hundreds.
+    static let missingSpaceInterval: Duration = .seconds(2)
+
+    nonisolated static func folderExists(_ path: String) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: (path as NSString).expandingTildeInPath, isDirectory: &isDirectory) && isDirectory.boolValue
+    }
+
+    /// This Mac's visible spaces whose folder is gone.
+    nonisolated static func missingSpaces(in spaces: [Space]) -> Set<SpaceID> {
+        Set(spaces.filter { !$0.hidden && !folderExists($0.path) }.map(\.id))
+    }
+
+    /// Marks a space whose folder moved, was renamed or deleted within `missingSpaceInterval`,
+    /// and clears it as soon as the folder is back.
+    func installMissingSpaceWatch() {
+        missingSpaceWatch?.cancel()
+        missingSpaceWatch = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                self?.checkMissingSpaces()
+                try? await Task.sleep(for: Self.missingSpaceInterval)
+            }
+        }
+    }
+
+    /// Reads every space's folder off the main thread (after a state change, the app coming to
+    /// the front, and on the watch), writing `missingSpaces` only when it changes. A request
+    /// during a pass runs one more pass after it, so the newest spaces are always read.
+    func checkMissingSpaces() {
+        guard !missingSpaceCheck.running else { missingSpaceCheck.again = true; return }
+        missingSpaceCheck.running = true
+        let spaces = state.spaces
+        Task { @MainActor [weak self] in
+            let missing = await Task.detached(priority: .utility) { Self.missingSpaces(in: spaces) }.value
+            guard let self else { return }
+            // Spaces removed while the pass ran are gone, not missing.
+            let current = missing.intersection(self.state.spaces.map(\.id))
+            if current != self.missingSpaces { self.missingSpaces = current }
+            self.missingSpaceCheck.running = false
+            if self.missingSpaceCheck.again {
+                self.missingSpaceCheck.again = false
+                self.checkMissingSpaces()
+            }
+        }
+    }
+
+    /// Locate Folder… on a missing space: choose where its folder is now.
+    func locateSpaceFromPanel(_ id: SpaceID) {
+        spacePickerTarget = .relocate(id)
+    }
+
+    /// Points the space (and the spaces registered inside it) at `path`. A refusal shows why.
+    func relocateSpace(_ id: SpaceID, to path: String) async {
+        do {
+            _ = try await server.relocateSpace(id, to: path)
+        } catch {
+            remoteActionError = String(describing: error)
+            return
+        }
+        let canonical = server.state
+        sessions.stateDidChange(canonical)
+        adopt(canonical)
+    }
+}
