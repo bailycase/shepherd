@@ -122,6 +122,14 @@ public extension ShepherdState {
     func isProjectCoordinator(_ agent: Agent) -> Bool { agent.coordinatorFor != nil }
     func isProjectCoordinator(_ id: AgentID) -> Bool { agents.contains { $0.id == id && $0.coordinatorFor != nil } }
     func isOrdinaryThread(_ agent: Agent) -> Bool { !isDesignAgent(agent) && !isProjectCoordinator(agent) }
+    /// A thread a Project started for one of its tasks (owned here, or run here for another host's Project). It lives under its
+    /// Project, never in the sidebar's own lists; it still asks, notifies and opens like any thread.
+    func isProjectWorker(_ id: AgentID) -> Bool {
+        projects.contains { $0.tasks.contains { $0.workerAgentID == id } }
+            || projectExecutions.contains { $0.assignment?.reservedWorkerID == id }
+    }
+    /// What the sidebar lists as a thread of its own: an ordinary thread no Project started.
+    func isSidebarThread(_ agent: Agent) -> Bool { isOrdinaryThread(agent) && !isProjectWorker(agent.id) }
     var withoutProjectCoordinators: ShepherdState {
         var copy = self
         let ids = Set(agents.filter { $0.coordinatorFor != nil }.map(\.id))

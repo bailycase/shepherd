@@ -1,4 +1,4 @@
-# Design system page checklist (built-in system)
+# Design system page checklist
 
 Boards: [DesignSystemPage](DesignSystemPage.png) (dark overview), [DesignSystemLight](DesignSystemLight.png),
 [DesignSystemMenu](DesignSystemMenu.png), [DesignSystemColors](DesignSystemColors.png),
@@ -7,8 +7,10 @@ Boards: [DesignSystemPage](DesignSystemPage.png) (dark overview), [DesignSystemL
 [DesignSystemComponents](DesignSystemComponents.png). Saved as given (2880x1800).
 
 User decisions (2026-10-13): read-only, no new write contract. Appearance toggle switches the page and keeps both
-color columns. "New design" uses the existing flow. Principles and Voice are static authored copy for the built-in
-system only. Counts come from the data. The layout applies to the built-in system only.
+color columns. "New design" uses the existing flow. Counts come from the data.
+User decision (2026-10-14): the layout applies to every system. Principles, Voice, the tagline, the summary, the
+provenance note and the sizes are the system's own copy, in `tokens.json` › `page`; a part it has nothing for is left
+out.
 
 ## Elements, top to bottom
 
@@ -42,8 +44,9 @@ the component), `chevron.up.chevron.down` (popup, in the component). No `square.
 
 The name, every token name and value, type sizes and weights, spacing and radii, size values (control, field and
 segment from `NWSettingsControlMetrics`, row from `NW.Height.row`, rail from `AppLayout.settingsNavWidth`, thread and
-prose from `AppLayout`), every count, the "Used by" designs, the component names and groups. Static authored copy:
-the tagline, lead, provenance note, Principles, Voice, group hints and the "used for" notes.
+prose from `AppLayout`), every count, the "Used by" designs, the component names and groups. The system's own copy
+(`tokens.json` › `page`): the tagline, summary, provenance note, Principles, Voice and sizes; a radius's `use`. The
+app's copy: the group hints.
 
 ## States
 
