@@ -68,8 +68,7 @@ configuration, sessions, or a running Shepherd.
 - Don't add abstractions or validation without a current need.
 - Add focused tests for the behavior you changed, in the right tier.
 - When you change a protocol message, update every consumer and its round-trip test.
-- Edit an `Extensions/` source and its embedded Swift literal together
-  (`scripts/sync-embedded-extension.py`); a test enforces byte identity.
+- `Extensions/` is the one copy of each pi extension; the app ships it as a resource bundle.
 - Use ShepherdUI (`Color.nw`, `Font.nw`, `NW.Space`/`Radius`/`Height`) and its shared
   components, never hardcoded colors, fonts, or sizes. A screen's own dimensions go in its
   domain's `AppLayout+<Domain>.swift`. A new color role must pass the contrast tests in both

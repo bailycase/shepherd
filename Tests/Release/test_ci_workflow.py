@@ -263,10 +263,13 @@ class PlanTests(unittest.TestCase):
     def test_docs_templates_and_the_files_other_jobs_cover_run_no_swift(self):
         self.assertFalse(ci_plan.affects_swift([
             "docs/testing.md", "README.md", "AGENTS.md", ".github/pull_request_template.md",
-            ".github/workflows/release.yml", ".github/CODEOWNERS", "Extensions/shepherd.ts",
+            ".github/workflows/release.yml", ".github/CODEOWNERS",
             "Tests/Extensions/foo.test.mjs", "Tests/Release/test_release.py", "scripts/release.py",
             "App/iOS/App.swift", "App/Info.plist"]))
         self.assertFalse(ci_plan.affects_swift([]))
+        # An extension ships in the Swift resource bundle, so its unit check runs (with the node tests).
+        filters = ci_plan.filters_for(["Extensions/shepherd-panes.ts"])
+        self.assertTrue(filters and all("UnitTests" in f or "Startup" in f or "Identity" in f or "NativeThread" in f for f in filters), filters)
 
     def test_anything_swift_reads_runs_the_swift_job(self):
         for path in ("Sources/ShepherdApp/Thread.swift", "Tests/ShepherdAppUnitTests/X.swift", "Package.swift",

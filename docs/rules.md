@@ -14,39 +14,18 @@ the same change.
 - A new `SessionServer` mutation needs an integration test.
 - New persisted fields decode with defaults, so older `state.json` files keep loading.
 
-**Embedded extensions have one canonical copy.** The twenty-one files in `Extensions/` are canonical,
-and so is the design skill in `Extensions/design-skill/`.
-pi loads the copies that the thirteen `Sources/ShepherdApp/*Extension.swift` files write to the
-support directory from embedded string literals. `installedPath()` rewrites an installed copy
-whenever its content differs, so drift ships bugs. `ChildrenExtension.swift` carries children,
-children-config, children-ui, workflow, and missions, and installs `InspectExtension`'s
-`shepherd-inspect.mjs`. `DesignExtension.swift` also writes the design skill's `SKILL.md` and
-`format.md` to the support directory's `design-skill/`. `MCPProjectExtension.swift` carries
-`shepherd-mcp-project.ts` (a repo's `.mcp.json` on pi's MCP; docs/mcp.md). `BrowserExtension.swift`
-carries `shepherd-browser.ts` (docs/browser.md). The sign-in bridge,
-`shepherd-sign-in.mjs`, isn't an extension: `PiSignInScript` (ShepherdSessions' `PiSignIn.swift`)
-carries it and installs it beside them, and the app runs it on the engine's node.
-`CLIProxyAPIExtension` in ShepherdSessions embeds `shepherd-cliproxyapi.ts`; `PiHome.install`
-writes it directly in the pi home and the launcher explicitly loads it, including for isolated
-children and drafts. It is inert until Settings ▸ Pi ▸ Sign-in connects a server. Its atomic,
-private connection file is `shepherd-cliproxyapi.json`, named by `SHEPHERD_CLIPROXYAPI_CONFIG`.
-The managed provider is `cliproxyapi`, separate from imported `cpa` providers. No proxy process
-is installed or managed, and credentials never leave the host. See docs/pi-home.md.
-`GoalExtension` (ShepherdSessions) embeds `shepherd-goal.ts`, installed in the private pi home
-and enabled by `SHEPHERD_EXT_GOAL=1`. It runs after the native child controller so settlement
-checks cannot accept completion before child reports arrive. Goals persist in session entries,
-not fleet state. `NativeGoal` is their widget projection, and `native.goal.v1` gates remote
-controls. See [goals](goals.md) for evaluation, limits, queue yielding, and explicit resume on restore.
+**Embedded extensions have one copy.** `Extensions/` holds every pi extension and node script
+Shepherd ships, and the design skill in `Extensions/design-skill/`. `Sources/ShepherdSessions/Extensions`
+is a symlink to it, declared as a resource, so the files ride in `Shepherd_ShepherdSessions.bundle`
+and `EmbeddedExtensions.source(name)` reads them. Each `*Extension.swift` installs its file into
+the support directory (or the private pi home: `CLIProxyAPIExtension`, `GoalExtension`,
+`ServiceTierExtension`, written by `PiHome.install`) and rewrites it whenever the content differs.
+`shepherd-sign-in.mjs` and `shepherd-project-mcp-sign-in.mjs` are not extensions: the app runs them
+on the engine's node. A unit test checks every file in the bundle against the repository's copy.
+Where each one is loaded and what gates it: docs/pi-home.md, docs/goals.md, docs/service-tier.md,
+docs/browser.md, docs/mcp.md.
 
-`ServiceTierExtension` (ShepherdSessions) embeds `shepherd-service-tier.ts`, the Speed control's
-half in pi: `PiHome.install` writes it, and an agent's own pi (only) loads it with
-`SHEPHERD_EXT_SERVICE_TIER` naming the agent's tier file under the pi home's `service-tier/`,
-which the host keeps current and pi reads on every provider request (docs/service-tier.md). Its
-support table is `ServiceTierSupport`'s, and the two are tested against one JSON table.
-
-- Edit a `.ts`/`.mjs` file (or a design skill file) and its literal in the same change, with
-  `scripts/sync-embedded-extension.py`. A unit test enforces byte identity for all twenty-one pairs
-  and the skill's two files.
+- Editing a `.ts`/`.mjs` file is the whole change; nothing is synced.
 - Extensions stay dependency-free and inert without their environment variables.
 - They must never throw into pi or keep the process alive (unref'd sockets and timers).
 - The panes extension speaks the request/reply half of `ExtensionMessage`/`ExtensionReply`.

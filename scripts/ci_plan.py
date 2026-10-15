@@ -32,9 +32,9 @@ NO_SWIFT = (
     ".github/CODEOWNERS",
     "App/iOS/*", "Tests/ShepherdIOSChecks/*", "App/Info.plist", "App/*.icon/*", "App/*.entitlements",
     "App/ShepherdLauncher.swift",
-    "Extensions/*", "Tests/Extensions/*.mjs", "Tests/Extensions/fixtures/*", "Tests/Release/*",
+    "Tests/Extensions/*.mjs", "Tests/Extensions/fixtures/*", "Tests/Release/*",
     "scripts/release*.py", "scripts/sign-*.sh", "scripts/design_section.py", "scripts/docsplit.py",
-    "scripts/context-budget.json", "scripts/sync-embedded-extension.py", "scripts/test-browser-persistence.py",
+    "scripts/context-budget.json", "scripts/test-browser-persistence.py",
     "scripts/upload-sentry-symbols.py", "scripts/context_budget.py",
     # The Xcode project and its own resolved packages: the Mac app's build, which `swift test`
     # does not read. The root Package.resolved stays: it pins what `swift build` fetches.
@@ -225,7 +225,7 @@ def filters_for(paths: list[str], full: bool = False, *, root: Path = ROOT) -> l
     for path in paths:
         if not affects_swift([path]):
             continue
-        if fnmatch.fnmatchcase(path, "Sources/ShepherdApp/*Extension.swift"):
+        if fnmatch.fnmatchcase(path, "Sources/ShepherdApp/*Extension.swift") or fnmatch.fnmatchcase(path, "Extensions/*"):
             filters.extend((SES + "NativeThreadTests", APP + "ExtensionIdentityFlowTests"))
             continue
         if path == "Tests/Extensions/service-tier-support.json":
