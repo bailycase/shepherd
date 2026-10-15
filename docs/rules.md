@@ -451,5 +451,4 @@ The first such feature, Goal (PR #189), hit these traps, so the next one need no
 - **Nothing is sent to a cheaper or other provider silently.** A feature that moves a transcript to
   another model to save cost asks first, in the UI.
 
-Before opening the PR, run the `risk-reviewer` helper (skill `risk-review`) when installed;
-otherwise review the change against this list yourself. Fix what it finds or report it.
+Before opening the PR, review the change against this list. Fix what you find or report it.

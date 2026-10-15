@@ -360,7 +360,6 @@ scripts/               release.py (the release workflow's rules), sign-app.sh (r
                        first request carries, and its ceilings in context-budget.json),
                        ci_plan.py (Swift path selection and native test-filter validation),
                        pi_engine.py + pi-engine-pin.json (stage and verify the pi engine),
-                       sign-engine.sh (node, with the engine's entitlements), check_pr_body.py
-                       (the pr-body workflow: what a UI or autonomous-feature PR body must say)
+                       sign-engine.sh (node, with the engine's entitlements)
 Vendor/libghostty-spm/ GhosttyTerminal (prebuilt libghostty)
 ```

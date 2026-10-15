@@ -98,11 +98,8 @@ Use `feat!:` for a breaking change. Don't add AI or tool attribution lines.
 Fill in the [pull request template](.github/pull_request_template.md). It asks for:
 
 - what changed and why
-- the test tiers you ran and what they showed
-- light and dark previews for any visible change
-- for UI work, the design you built from, every departure from it, what you rendered and the
-  controls you used ([docs/design-workflow.md](docs/design-workflow.md)); the `pr-body` check fails
-  a UI change that leaves those empty
+- the tests you ran and what they showed
+- for UI work, the design you built from, every departure from it, and light and dark previews
 - for a feature that acts on its own, its bounds, where its data goes, what a restart and Stop do
   to it, and the decisions you made unasked ([docs/rules.md](docs/rules.md))
 

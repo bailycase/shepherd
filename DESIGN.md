@@ -3,7 +3,7 @@
 Every UI change on the Mac, iPhone and iPad follows these rules. Each surface's spec, and every
 board with how much of it is built, lives in [docs/design/](docs/design/README.md). Print only the
 part you need with `python3 scripts/design_section.py "<board or heading>"` (find a board with
-`--boards | grep -i <word>`). [AGENTS.md](AGENTS.md) has the step-by-step procedure.
+`--boards | grep -i <word>`).
 
 ## Precedence
 
@@ -16,7 +16,7 @@ The first of these that speaks wins:
 4. The rules in this file.
 
 - This file and the specs never override a design the user just gave. If they disagree, build
-  the design and update the spec in the same commit.
+  the design and fix the spec.
 - A departure from a design is the user's call, never yours. Name each one in your final
   message with the reason. Departures the user accepted live in
   [docs/design/departures.md](docs/design/departures.md).
@@ -240,19 +240,11 @@ each rule. Add a budget with any new long list.
 
 ## Verifying visuals
 
-1. Render the surface: `SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter <suite>`
-   (`ThreadPreviewTests`, `NavigationPreviewTests`, `AgentsPreviewTests`, `ReviewPreviewTests`,
-   `SettingsPreviewTests`, `DesignPreviewTests`, `PreviewTests`). It writes
-   `<surface>-<light|dark>.png`. Drive it from the real producer, and cover each state, empty,
-   long text and text scale 1.3 (`Preview.renderMatrix`).
-2. Open the PNGs beside the design, both appearances, element by element. Fix every difference
-   you can name.
-3. Press each control the design draws with `ControlPress` (docs/testing.md › Pressing a
-   control). Assert the request it sent, the state it left and its hit area.
-4. Motion: record frames with `MotionProbe` and compare the start and end states.
-5. Run the `Shepherd (Dev)` scheme and check the change in both appearances.
-
-More: [docs/design/verifying.md](docs/design/verifying.md).
+Render the surface with `SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter <suite>`
+(`ThreadPreviewTests`, `NavigationPreviewTests`, `AgentsPreviewTests`, `ReviewPreviewTests`,
+`SettingsPreviewTests`, `DesignPreviewTests`). It writes `<surface>-<light|dark>.png`; drive it
+from real data, and look at the PNGs beside the design. A control a test needs to press goes through
+`ControlPress` (docs/testing.md › Pressing a control). Detail: [docs/design/verifying.md](docs/design/verifying.md).
 
 ## Where the detail is
 

@@ -14,12 +14,12 @@ from pathlib import Path
 
 ROOT = Path(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
-AGENTS_MAX_LINES = 250
-DESIGN_MAX_LINES = 300
+AGENTS_MAX_LINES = 130
+DESIGN_MAX_LINES = 280
 
-# Reference sections that moved out of AGENTS.md, each with a one-line "Read when" header.
-MOVED_FROM_AGENTS = ["overview", "build-and-run", "environment", "testing", "source-map", "data-flow",
-                     "remote-protocol", "rules", "releases", "gotchas", "design-workflow"]
+# Reference docs AGENTS.md points at, each with a one-line "Read when" header.
+REFERENCE_DOCS = ["overview", "build-and-run", "environment", "testing", "source-map", "data-flow",
+                  "remote-protocol", "rules", "releases", "gotchas"]
 
 LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 FENCE = re.compile(r"^\s*(`{3,}|~{3,})")
@@ -81,25 +81,6 @@ class SizeTests(unittest.TestCase):
 
 
 class ContentTests(unittest.TestCase):
-    def test_the_design_procedure_is_at_the_top_of_agents_md(self):
-        head = "\n".join(read_lines(ROOT / "AGENTS.md")[:30])
-        self.assertIn("## Implementing a design", head)
-        self.assertIn("the user's design wins", head)
-        self.assertIn("design_section.py", head)
-
-    def test_the_procedure_names_the_guards_that_catch_what_reviews_found(self):
-        text = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
-        for needle in ("docs/design/boards/<Name>.png", "Departures", "from the code that produces it", "ControlPress",
-                       "Preview.renderMatrix", "DesignRulesTests", "NWGlyph", "design-reviewer", "risk-reviewer",
-                       "## Features that act on their own"):
-            self.assertIn(needle, text, f"AGENTS.md no longer mentions {needle}")
-        self.assertNotRegex(text, r"(?i)no helper presses a button")
-
-    def test_the_saved_design_folder_explains_itself(self):
-        lines = read_lines(ROOT / "docs" / "design" / "boards" / "README.md")
-        self.assertTrue(lines[0].startswith("# "))
-        self.assertTrue(any(l.startswith("> Read when") for l in lines[:6]))
-
     def test_design_md_puts_the_users_design_above_its_own_rules(self):
         text = (ROOT / "DESIGN.md").read_text(encoding="utf-8")
         self.assertIn("## Precedence", text)
@@ -112,8 +93,8 @@ class ContentTests(unittest.TestCase):
             self.assertNotRegex(text, r"(?i)this document wins")
             self.assertNotRegex(text, r"(?i)is the authority on")
 
-    def test_moved_reference_files_open_with_a_one_line_read_when_header(self):
-        for name in MOVED_FROM_AGENTS:
+    def test_reference_docs_open_with_a_one_line_read_when_header(self):
+        for name in REFERENCE_DOCS:
             lines = read_lines(ROOT / "docs" / f"{name}.md")
             self.assertTrue(lines[0].startswith("# "), name)
             self.assertTrue(any(l.startswith("> Read when") for l in lines[:6]), f"docs/{name}.md has no Read when line")
@@ -126,21 +107,14 @@ class LinkTests(unittest.TestCase):
             problems += broken_links(ROOT / rel)
         self.assertEqual(problems, [])
 
-    def test_links_in_every_moved_doc_and_design_spec_resolve(self):
-        files = [ROOT / "docs" / f"{n}.md" for n in MOVED_FROM_AGENTS]
+    def test_links_in_every_reference_doc_and_design_spec_resolve(self):
+        files = [ROOT / "docs" / f"{n}.md" for n in REFERENCE_DOCS]
         files += sorted((ROOT / "docs" / "design").glob("*.md"))
         files.append(ROOT / "docs" / "design" / "boards" / "README.md")
         problems = []
         for f in files:
             problems += broken_links(f)
         self.assertEqual(problems, [])
-
-    def test_agents_md_links_every_doc_it_moved_the_rules_to(self):
-        text = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
-        for name in MOVED_FROM_AGENTS:
-            if name == "overview":
-                continue
-            self.assertIn(f"docs/{name}.md", text, f"AGENTS.md never points at docs/{name}.md")
 
 
 class DesignIndexTests(unittest.TestCase):

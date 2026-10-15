@@ -18,12 +18,12 @@ import sys
 NO_SWIFT = (
     "docs/*", "*.md", "LICENSE",
     ".github/ISSUE_TEMPLATE/*", ".github/pull_request_template.md",
-    ".github/workflows/release.yml", ".github/workflows/release-build.yml", ".github/workflows/pr-body.yml",
+    ".github/workflows/release.yml", ".github/workflows/release-build.yml",
     ".github/CODEOWNERS",
     "App/iOS/*", "Tests/ShepherdIOSChecks/*", "App/Info.plist", "App/*.icon/*", "App/*.entitlements",
     "App/ShepherdLauncher.swift",
     "Extensions/*", "Tests/Extensions/*.mjs", "Tests/Extensions/fixtures/*", "Tests/Release/*",
-    "scripts/release*.py", "scripts/sign-*.sh", "scripts/check_pr_body.py", "scripts/design_section.py",
+    "scripts/release*.py", "scripts/sign-*.sh", "scripts/design_section.py",
     "scripts/context-budget.json", "scripts/sync-embedded-extension.py", "scripts/test-browser-persistence.py",
 )
 
