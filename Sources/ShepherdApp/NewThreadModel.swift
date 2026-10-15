@@ -372,6 +372,8 @@ final class NewThreadState {
                 return "That host is offline."
             }
             if loadingDefaults { return "Loading \(connection.config.name)'s defaults…" }
+        } else if vm.missingSpaces.contains(place.space) {
+            return "This space's folder is missing. Locate it or remove the space from the sidebar."
         } else if loadingDefaults { return "Loading models…" }
         // A design piece alone starts a thread, as it sends from a thread's composer.
         if prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, references.isEmpty { return "Describe the task first." }

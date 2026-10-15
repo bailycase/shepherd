@@ -317,6 +317,16 @@ SidebarTree, SidebarProjects and SidebarProjectsHosts. Mac only: the iPad and iP
   native destructive role. The confirmation names the space and its own agent count, says
   the folder/files and saved conversations remain, and preserves child registrations. It
   removes the registration and stops only its own sessions; it never deletes local folders.
+- **Missing folder:** a local space whose folder was moved, renamed or deleted is found within
+  2 seconds (a poll of each space's folder off the main thread, also on every state change and
+  when the app comes to the front), and cleared as soon as the folder is back. Its row draws
+  `NWGlyph.failedStep` in `failed` in place of the folder, the name in `textTertiary`, and
+  "missing" in mono 10 `failed` before the count; the tooltip says "Folder not found: <path>".
+  It takes no + and no New Thread, the New thread page refuses to send in it, and
+  `startAgent` refuses it. Its menu leads with **Locate Folder…** (the directory picker; points
+  the space and spaces registered inside it at the chosen folder, refused while any of them has
+  threads, since their conversations belong to the old folder) and **Remove Space…**; Reveal in
+  Finder and Open in Terminal are left out. Child spaces inside it are marked the same way.
 - **Keys:** a click on a space opens or closes it and gives the tree the keyboard: ← closes
   that space and → opens it (plain arrows, only while the tree has focus, so never a chord for
   `KeybindingsStore` or Ghostty's list). ⌥-click opens or closes every space. ⌘1–9 and ⌘↑/↓

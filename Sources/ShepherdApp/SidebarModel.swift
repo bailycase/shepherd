@@ -155,6 +155,8 @@ struct SidebarSource: Equatable {
     /// Settings ▸ Experiments ▸ Design tool: This Mac's designs have their own group. Their agents
     /// never are: a design's chat is its agent's thread.
     var designs = false
+    /// This Mac's spaces whose folder is gone (moved, renamed or deleted): no new threads.
+    var missingSpaces: Set<SpaceID> = []
 
     /// Child work affects sidebar presentation, never the parent's actual turn status.
     static func presentationState(_ state: ShepherdState, children: [AgentID: [ChildRun]]) -> ShepherdState {
