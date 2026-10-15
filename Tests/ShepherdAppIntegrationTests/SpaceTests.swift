@@ -131,17 +131,40 @@ struct SpaceTests {
         try await eventuallyOnMain("the space to be found again") { vm.missingSpaces.isEmpty }
     }
 
-    /// Locating is refused while the space still has threads: their conversations belong to the old folder.
-    @Test func locatingASpaceWithThreadsIsRefused() async throws {
+    /// Locating a space with a thread moves the thread with it: its pane's folder, and its
+    /// conversation to the new folder's session folder with the header's cwd rewritten.
+    @Test func locatingASpaceMovesItsThreadsAndTheirConversations() async throws {
         let app = try AppHarness()
         defer { app.stop() }
-        let space = Fixture.space("gone", path: app.dir.appendingPathComponent("gone").path)
-        let agent = Fixture.agent("old", in: space)
-        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
+        let fm = FileManager.default
+        let folder = app.dir.appendingPathComponent("monitor", isDirectory: true)
+        try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        let space = Fixture.space("monitor", path: canonical(folder))
+        let thread = Fixture.agent("old", in: space)
+        let root = app.server.pi.sessionsRoot
+        let sessionID = thread.agent.effectivePiSessionID
+        let oldDirectory = PiSessionFile.projectDirectory(forCwd: space.path, sessionsRoot: root)
+        try fm.createDirectory(at: oldDirectory, withIntermediateDirectories: true)
+        let header = #"{"cwd":"\#(space.path)","id":"\#(sessionID)","type":"session","version":3}"#
+        try Data((header + "\n" + #"{"type":"message","message":{"role":"user","content":"hi"}}"# + "\n").utf8)
+            .write(to: oldDirectory.appendingPathComponent("2026_\(sessionID).jsonl"))
+        let moved = app.dir.appendingPathComponent("archive/monitor", isDirectory: true)
+        try fm.createDirectory(at: moved.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try fm.moveItem(at: folder, to: moved)
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [thread]))
 
-        await vm.relocateSpace(space.id, to: app.dir.path)
+        await vm.relocateSpace(space.id, to: moved.path)
 
-        #expect(app.server.state.spaces.first?.path == space.path)
-        #expect(vm.remoteActionError?.contains("1 thread") == true)
+        #expect(vm.remoteActionError == nil)
+        #expect(app.server.state.spaces.first?.path == canonical(moved))
+        let pane = app.server.state.tabs.first?.layout.leaf(withID: thread.piPane.id)
+        #expect(pane?.cwd == canonical(moved))
+        #expect(app.server.state.agents.map(\.id) == [thread.agent.id])
+        let file = try #require(PiSessionFile.file(sessionID: sessionID, cwd: canonical(moved), sessionsRoot: root))
+        let text = try String(contentsOf: file, encoding: .utf8)
+        let first = try #require(text.split(separator: "\n").first)
+        let parsed = try #require(try JSONSerialization.jsonObject(with: Data(first.utf8)) as? [String: Any])
+        #expect(parsed["cwd"] as? String == PiSessionFile.realPath(moved.path) && text.contains("hi"))
+        #expect(PiSessionFile.file(sessionID: sessionID, cwd: space.path, sessionsRoot: root) == nil)
     }
 }
