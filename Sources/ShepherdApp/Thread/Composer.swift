@@ -291,11 +291,17 @@ struct Composer: View {
                             }
                             .buttonStyle(.nw(.ghost, size: .s))
                         }
-                        Button("Retry") {
-                            store.restarting()
-                            restartPi(false)
+                        if problem.kind == .folderMissing {
+                            // Retry opens Locate Folder… while the folder is still gone (`retryAgentStart`).
+                            Button("Locate Folder…") { restartPi(false) }
+                                .buttonStyle(.nw(.secondary, size: .s))
+                        } else {
+                            Button("Retry") {
+                                store.restarting()
+                                restartPi(false)
+                            }
+                            .buttonStyle(.nw(.secondary, size: .s))
                         }
-                        .buttonStyle(.nw(.secondary, size: .s))
                     }
                 }
                 .nwTransition(.list, edge: .bottom)

@@ -151,7 +151,10 @@ extension ShepherdViewModel {
             _ = try await server.relocateSpace(id, to: path)
         } catch {
             remoteActionError = String(describing: error)
-            for thread in moving { retryAgentStart(thread.agent.id) }
+            for thread in moving {
+            threadStores.store(for: thread.agent.id).restarting()
+            sessions.retryStart(thread.agent.id)
+        }
             return
         }
         let root = server.pi.sessionsRoot
@@ -162,6 +165,9 @@ extension ShepherdViewModel {
         let canonical = server.state
         sessions.stateDidChange(canonical)
         adopt(canonical)
-        for thread in moving { retryAgentStart(thread.agent.id) }
+        for thread in moving {
+            threadStores.store(for: thread.agent.id).restarting()
+            sessions.retryStart(thread.agent.id)
+        }
     }
 }
