@@ -118,11 +118,9 @@ class AffectedTestsTests(unittest.TestCase):
                 self.assertTrue(filters, "a mapped feature must stay selective")
                 self.assertTrue(selected(filters, test_id))
 
-    def test_shared_boundaries_and_unknown_source_cannot_silently_narrow_coverage(self):
+    def test_shared_boundaries_cannot_silently_narrow_coverage(self):
         for path in ("Sources/ShepherdCore/Models.swift", "Sources/ShepherdProtocol/RemoteMessage.swift",
-                     "Sources/ShepherdSessions/RPCThreadState.swift", "Sources/ShepherdSessions/RPCSession.swift",
-                     "Sources/ShepherdSessions/SessionServer+Threads.swift", "Sources/shepherd-cli/Main.swift",
-                     "Tests/Extensions/native-thread-wire.json", "Sources/ShepherdApp/NewUnknownView.swift",
+                     "Sources/shepherd-cli/Main.swift", "Tests/Extensions/native-thread-wire.json",
                      "Tests/ShepherdTestSupport/ScratchServer.swift", "scripts/ci_plan.py",
                      ".github/workflows/ci.yml", "Package.swift", "scripts/pi-engine-pin.json"):
             with self.subTest(path=path):

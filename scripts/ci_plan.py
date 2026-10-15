@@ -1,8 +1,18 @@
 #!/usr/bin/env python3
-"""Select native Swift test filters for ordinary nightly PRs; shared/unknown paths run all.
+"""Select native Swift test filters for ordinary nightly PRs.
+
+A pull request runs the unit suites, the startup and identity smoke tests, and the integration
+suites of the areas its paths touch. A path no area claims runs its module's suites (every
+`ShepherdApp` source runs `ShepherdAppIntegrationTests` and the previews; every `ShepherdSessions`
+source runs `ShepherdSessionsIntegrationTests` too), never everything. Shared contracts
+(`ShepherdCore`, `ShepherdProtocol`, the test support, the package manifest, the engine pin, this
+script) run all. The pixel-scanning suites in DEEP (the completion matrix, tail flow, scroll and
+design performance: about twelve minutes) run on the daily `master` run, a `full-ci` label and the
+manual UI diagnostics, never on an ordinary pull request.
 
 ci_plan.py changed.txt [--full | --ui-diagnostics] prints swift, filters and lanes outputs.
-ci_plan.py --validate test-list.txt '<filters JSON>' checks native matches and prints a regex.
+ci_plan.py --validate test-list.txt '<filters JSON>' checks native matches and prints a regex;
+`--validate-deep` does the same and keeps the DEEP suites (the manual UI diagnostics).
 ci_plan.py --lane test-list.txt <lane> validates full coverage and prints the lane's regex.
 Both validation modes record selected IDs beside the inventory as swift-selected-tests.txt.
 """
@@ -23,8 +33,12 @@ NO_SWIFT = (
     "App/iOS/*", "Tests/ShepherdIOSChecks/*", "App/Info.plist", "App/*.icon/*", "App/*.entitlements",
     "App/ShepherdLauncher.swift",
     "Extensions/*", "Tests/Extensions/*.mjs", "Tests/Extensions/fixtures/*", "Tests/Release/*",
-    "scripts/release*.py", "scripts/sign-*.sh", "scripts/design_section.py",
+    "scripts/release*.py", "scripts/sign-*.sh", "scripts/design_section.py", "scripts/docsplit.py",
     "scripts/context-budget.json", "scripts/sync-embedded-extension.py", "scripts/test-browser-persistence.py",
+    "scripts/upload-sentry-symbols.py", "scripts/context_budget.py",
+    # The Xcode project and its own resolved packages: the Mac app's build, which `swift test`
+    # does not read. The root Package.resolved stays: it pins what `swift build` fetches.
+    "Shepherd.xcodeproj/*",
 )
 
 # Manual diagnostics report a different check name and cannot satisfy the required CI gate.
@@ -33,6 +47,18 @@ UI_DIAGNOSTICS = [r"^ShepherdAppIntegrationTests\." + name + r"/" for name in (
     "ThreadCompletionMatrixTests", "ThreadCompletionReproductionTests", "RemoteBrowserDriveTests", "ThreadJumpPressTests",
     "ThreadTailGuardTests",
 )]
+
+# Pixel-scanning and performance suites that take minutes each: the daily run, `full-ci` and the
+# manual diagnostics run them; an ordinary pull request does not.
+DEEP = (
+    "ShepherdAppIntegrationTests.ThreadCompletionReproductionTests",
+    "ShepherdAppIntegrationTests.ThreadCompletionMatrixTests",
+    "ShepherdAppIntegrationTests.ThreadTailFlowTests",
+    "ShepherdAppIntegrationTests.ThreadSendScrollTests",
+    "ShepherdAppIntegrationTests.ThreadBlankScreenTests",
+    "ShepherdAppIntegrationTests.DesignPerformanceTests",
+)
+DEEP_PATTERN = r"^(?:" + "|".join(re.escape(name) for name in DEEP) + r")[./]"
 
 # Cheap startup and identity checks stay mandatory; feature integrations follow their callers.
 SMOKE = (
@@ -108,6 +134,17 @@ AREAS = (
 )
 TEST_MODULES = ("ShepherdAppIntegrationTests", "ShepherdSessionsIntegrationTests", "ShepherdRemoteIntegrationTests",
                 "DesignSurfaceKitIntegrationTests", "ShepherdPreviewTests")
+
+# A source path no area claims runs the integration suites of its module and of the modules built
+# on it, not the whole suite. Shared contracts are absent on purpose: they run all.
+MODULES = (
+    ("Sources/ShepherdApp/*", (APP, PREVIEW)),
+    ("Packages/ShepherdUI/*", (APP, PREVIEW)),
+    ("Sources/ShepherdRemote/*", (APP, SES, PREVIEW)),
+    ("Sources/ShepherdSessions/*", (APP, SES, PREVIEW)),
+    ("Sources/TerminalSurfaceKit/*", (APP + r"(?:Terminal|Pane|Shell|ThreadInput)",)),
+    ("Sources/DesignSurfaceKit/*", (APP + "Design", r"^DesignSurfaceKitIntegrationTests\.", PREVIEW + "DesignPreviewTests")),
+)
 
 
 def affects_swift(paths: list[str]) -> bool:
@@ -195,8 +232,11 @@ def filters_for(paths: list[str], full: bool = False, *, root: Path = ROOT) -> l
             filters.extend((APP + "ServiceTier", SES + "ServiceTier"))
             continue
         matching = [suites for patterns, suites in AREAS if any(fnmatch.fnmatchcase(path, p) for p in patterns)]
+        module = [suites for pattern, suites in MODULES if fnmatch.fnmatchcase(path, pattern)]
         if matching:
             filters.extend(suite for suites in matching for suite in suites)
+        elif module:
+            filters.extend(suite for suites in module for suite in suites)
         elif path.startswith("Tests/") and len(path.split("/")) > 2:
             module = path.split("/")[1]
             if module in TEST_MODULES:
@@ -208,13 +248,16 @@ def filters_for(paths: list[str], full: bool = False, *, root: Path = ROOT) -> l
     return list(dict.fromkeys(filters))
 
 
-def validated_filter(test_ids: list[str], filters: list[str]) -> str:
+def validated_filter(test_ids: list[str], filters: list[str], *, deep: bool = False) -> str:
+    """The regex a selected run passes to `swift test --filter`. An ordinary pull request leaves
+    the DEEP suites out even when an area matched them; `deep` keeps them (the UI diagnostics)."""
     if not filters:
         raise ValueError("filtered runs require at least one suite pattern")
     for pattern in filters:
         if not any(re.search(pattern, test_id) for test_id in test_ids):
             raise ValueError(f"no native tests matched {pattern!r}")
-    return "|".join(f"(?:{pattern})" for pattern in filters)
+    joined = "|".join(f"(?:{pattern})" for pattern in filters)
+    return joined if deep else f"(?!{DEEP_PATTERN})(?:{joined})"
 
 
 def validated_lane(test_ids: list[str], lane: str) -> str:
@@ -235,11 +278,11 @@ def validated_lane(test_ids: list[str], lane: str) -> str:
 
 def main(argv: list[str]) -> int:
     try:
-        if len(argv) == 4 and argv[1] in ("--lane", "--validate"):
+        if len(argv) == 4 and argv[1] in ("--lane", "--validate", "--validate-deep"):
             inventory = Path(argv[2])
             test_ids = inventory.read_text().splitlines()
             pattern = (validated_lane(test_ids, argv[3]) if argv[1] == "--lane"
-                       else validated_filter(test_ids, json.loads(argv[3])))
+                       else validated_filter(test_ids, json.loads(argv[3]), deep=argv[1] == "--validate-deep"))
             selected = [name for name in test_ids if re.search(pattern, name)]
             inventory.with_name("swift-selected-tests.txt").write_text("\n".join(selected) + "\n")
             print(f"Native selection: {len(selected)} of {len(test_ids)} IDs", file=sys.stderr)

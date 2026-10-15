@@ -92,6 +92,11 @@ one process.
 skipped when `CI=true` unless `SHEPHERD_TIMING_TESTS=1`. Never mark a test timing-sensitive to
 hide a short wait; give it a condition to wait on.
 
+**Flaky tests** (`.flaky("why")`) have failed on CI without a code change. They run locally and on
+the full lanes (`SHEPHERD_FLAKY_TESTS=1`: the daily run, `master`, a `full-ci` label) and a pull
+request's selected lane skips them, so a red pull request means the pull request broke something.
+Fix the flake and drop the trait.
+
 **Opt-in runs.** `SHEPHERD_LIVE_MODEL` runs the use-case suite against a real model.
 `SHEPHERD_ENGINE_SMOKE` runs `EngineSmokeTests` and `EngineThreadTests` against the shipped engine
 (run both and the extension tests on every pin bump). `SHEPHERD_PERF_REPORT=1 … --filter
@@ -129,8 +134,14 @@ early with status 0 also passes. `ModelSettingsPopoverTests` is the worked examp
 
 ## CI
 
-`scripts/ci_plan.py` picks what runs from the changed paths: docs and templates run no Swift;
-a feature PR runs unit suites, the startup and identity smoke tests and the suites related to its
-paths; shared contracts, server core, CI changes, `master` and the daily run run everything across
-four hosted lanes. `nightly` ships without rerunning tests. Failed Swift runs keep the log and
-the completion captures as a seven-day artifact.
+`scripts/ci_plan.py` picks what runs from the changed paths: docs, templates and the Xcode
+project run no Swift; a pull request runs the unit suites, the startup and identity smoke tests
+and the integration suites of the areas its paths touch, and a path no area claims runs its
+module's suites (`ShepherdApp` runs the app integration suites and the previews; `ShepherdSessions`
+those and the sessions suites). Shared contracts (`ShepherdCore`, `ShepherdProtocol`, the test
+support, `Package.swift`, the engine pin, the script itself), `master`, the daily run and a
+`full-ci` label run everything across four hosted lanes. The pixel-scanning suites in
+`ci_plan.DEEP` (the completion matrix and reproduction, tail flow, send scrolling, blank screen,
+design performance: about twelve minutes) run only there and on the manual UI diagnostics
+dispatch. `nightly` ships without rerunning tests. Failed Swift runs keep the log and the
+completion captures as a seven-day artifact.
