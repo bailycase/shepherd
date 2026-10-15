@@ -223,7 +223,12 @@ panes extension, from its live pi context. The status Shepherd saved is never us
    agent (every message names its sender, and only that agent's own pi may say it), that the
    caller registered as that agent (`helloAgent`), that the target exists, and that the caller is
    not the target (only a read may address itself). Anything else, a process the agent started
-   included, is answered `wrong_process`.
+   included, is answered `wrong_process`. The access policy and these preflight checks run
+   synchronously on the server queue (`agentActionAllowed`), never through escaping closures: at
+   -O, Swift 6.3.3 placed the weak captures of the old `perform` closure over the live
+   `state.spaces` buffer, and the next workspace adoption on the main thread read past the end of
+   the spaces array (SHEPHERD-MACOS-2 and -3, every `agent_read` of a sibling thread in Nightly
+   290). `NativePeerEngineTests` drives the shipped pi through spawn, read and send to keep it so.
 3. It relays `agentRequest` to the target's registered connection under a token of its own, and
    accepts `agentResponse` for that token only from that connection, under the target's
    identity.
