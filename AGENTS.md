@@ -17,7 +17,8 @@ swift test --filter IntegrationTests          # real server, stub pi, git, off-s
 SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter PreviewTests   # PNG of every surface
 PI_PACKAGE_DIR="$(npm root -g)/@earendil-works/pi-coding-agent" node --test Tests/Extensions/*.test.mjs
 python3 -m unittest discover -s Tests/Release # release rules, docs size and link guards
-python3 scripts/design_section.py "<board or heading>"   # one spec from docs/design/
+python3 scripts/design_section.py "<board or heading>"   # one section of a design spec
+python3 scripts/design_section.py --docs docs "<heading>"  # one section of any doc in docs/
 ```
 
 Run the Mac app from `Shepherd.xcodeproj` (scheme `Shepherd (Dev)`, My Mac); there is no `swift run`.
@@ -115,5 +116,5 @@ The full rule is in [docs/rules.md](docs/rules.md) under the name in parentheses
 | Branching, committing, releasing, signing | [docs/releases.md](docs/releases.md) |
 | Setting or debugging an env var | [docs/environment.md](docs/environment.md) |
 | Adding a tool or prompt line (each costs tokens in every thread) | [docs/context-budget.md](docs/context-budget.md) |
-| A feature area (threads, subagents, changes, worktrees, browser, skills, designs, MCP, projects, goals) | the file of that name in `docs/`; read the section you need |
+| A feature area (threads, subagents, changes, worktrees, browser, skills, designs, MCP, projects, goals) | the file of that name in `docs/`, one section at a time: `design_section.py --docs docs "<heading>"` (the big ones run to 40k tokens) |
 | The iPhone or iPad client | [docs/ios/README.md](docs/ios/README.md) |
