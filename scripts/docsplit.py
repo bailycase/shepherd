@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
-"""Shared parts of split_design_md.py, split_agents_md.py, rewrite_doc_refs.py and
-design_section.py: reading Markdown headings (never inside a code fence), resolving a
-section name such as "Composer, questions, and menus › The control row" against them, and
-the line-conservation check that proves a split moved every line.
+"""The Markdown reader behind design_section.py: headings (never inside a code fence) and
+resolving a section name such as "Composer, questions, and menus › The control row" against them.
 
 Standard library only.
 """
 from __future__ import annotations
 
 import re
-from collections import Counter
 from dataclasses import dataclass
 from typing import Iterable, Sequence
 
@@ -233,68 +230,3 @@ def lead_in_blocks(lines: Sequence[str], start: int, end: int,
 
 
 # ---------------------------------------------------------------------------------------
-# The check that a split lost nothing.
-
-REF = re.compile(r"(?:docs/design/[\w-]+\.md|DESIGN\.md|AGENTS\.md|docs/[\w-]+\.md) ›")
-
-
-def canon_refs(line: str) -> str:
-    """A line with every `<file> › Section` reference reduced to `<REF> ›`, so a split's
-    verbatim lines and the same lines after references were pointed at their new files
-    compare equal."""
-    return REF.sub("<REF> ›", line)
-
-
-def body_counter(lines: Iterable[str], skip: Iterable[str] = ()) -> Counter:
-    """Multiset of the non-blank, non-heading lines (outside fences headings do not count
-    inside fences either way: a `# comment` in a code block is a body line)."""
-    skipped = set(skip)
-    out: Counter = Counter()
-    fence: str | None = None
-    for line in lines:
-        m = FENCE.match(line)
-        if m:
-            marker = m.group(1)[0]
-            if fence is None:
-                fence = marker
-            elif fence == marker:
-                fence = None
-            out[canon_refs(line.rstrip())] += 1
-            continue
-        if not fence and HEADING.match(line):
-            continue
-        s = line.rstrip()
-        if not s.strip() or s in skipped:
-            continue
-        out[canon_refs(s)] += 1
-    return out
-
-
-def heading_counter(lines: Iterable[str]) -> Counter:
-    return Counter(canon_refs(h.title) for h in headings(list(lines)))
-
-
-def counter_diff(old: Counter, new: Counter) -> tuple[Counter, Counter]:
-    """(lines only in old, lines only in new)."""
-    return old - new, new - old
-
-
-def rebase_links(text: str, from_dir: str, to_dir: str) -> str:
-    """Re-point relative Markdown links `](path)` written for a file in `from_dir` so they
-    resolve from `to_dir` (both repo-relative, "." for the root)."""
-    import posixpath
-
-    def fix(m: re.Match) -> str:
-        target = m.group(1)
-        if re.match(r"^(?:[a-z][a-z0-9+.-]*:|#|/)", target, re.I):
-            return m.group(0)
-        path, sep, frag = target.partition("#")
-        if not path or not (re.search(r"\.[A-Za-z0-9]+$", path) or path.endswith("/")):
-            return m.group(0)
-        abs_path = posixpath.normpath(posixpath.join(from_dir, path))
-        if abs_path.startswith(".."):
-            return m.group(0)
-        new = posixpath.relpath(abs_path, to_dir)
-        return "](" + new + (sep + frag if sep else "") + ")"
-
-    return re.sub(r"\]\(([^)\s]+)\)", fix, text)

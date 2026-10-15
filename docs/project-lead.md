@@ -25,7 +25,7 @@ creation, paused, question, resolved, started, running, empty, host placement an
 The original boards contain private example data and remain outside the published repository.
 Public preview fixtures use a fictional reading-list project, Sample App, and the fictional
 user Alex. They preserve the designed controls and state transitions, not the private copy.
-Rendered public evidence lives in `docs/design/evidence/project-lead/`.
+Renders of them go in the pull request.
 
 The project's main view is one ongoing conversation. Its sidebar entry and Overview collect
 ordinary task threads, which can be opened beside that conversation. A Project is not a Space,
