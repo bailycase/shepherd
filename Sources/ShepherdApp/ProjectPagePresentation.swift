@@ -44,6 +44,8 @@ struct ProjectTaskRow: Identifiable, Equatable {
     /// The operations that delivered the coordinator's assignment to the worker: its first user message carries one, which is how
     /// the worker thread tells the assignment from a person's own steering message.
     let assignmentOperations: Set<UUID>
+    /// The owner already holds the person's answer to this task's question (any phase of it but delivered).
+    var answerHeld = false
 }
 
 /// A Project's page state: its counts and rows, never computed in a view body.
@@ -67,8 +69,9 @@ struct ProjectPagePresentation: Equatable {
     /// "2 of 3 done · 1 needs you", or "0 of 3 done · 3 in progress": counted from the tasks. nil without tasks.
     var summary: String? {
         guard total > 0 else { return nil }
-        // "Done" is what the person resolved. A settled turn is not proof the task succeeded (docs/project-lead.md).
-        var parts = ["\(resolved) of \(total) done"]
+        // "Done" is a thread that finished its work, as in Claude's Projects: settled (finished, not yet confirmed) or resolved.
+        // Resolution stays the person's or the coordinator's confirmation in the pane; the strip only counts what finished.
+        var parts = ["\(resolved + settled) of \(total) done"]
         if waiting > 0 { parts.append("\(waiting) needs you") }
         else if working > 0 { parts.append("\(working) in progress") }
         return parts.joined(separator: " · ")
@@ -153,6 +156,7 @@ struct ProjectPagePresentation: Equatable {
         return ProjectTaskRow(id: task.id, title: task.title, group: group, phase: task.phase, detail: detail, lead: lead,
                               workerAgentID: task.workerAgentID, spaceID: task.spaceID, revision: task.revision,
                               canResolve: task.phase == .settled, canReopen: task.phase == .resolved, settledAt: task.settledAt, files: files,
-                              assignmentOperations: Set([task.operationID] + [task.nativeDeliveryID].compactMap { $0 }))
+                              assignmentOperations: Set([task.operationID] + [task.nativeDeliveryID].compactMap { $0 }),
+                              answerHeld: task.pendingAnswer != nil)
     }
 }

@@ -191,6 +191,7 @@ extension ShepherdViewModel {
         remoteInspectionRequest = UUID()
         remoteInspectingAgent = nil
         guard let agent = state.agents.first(where: { $0.id == id }) else { return }
+        ShepherdDiagnostics.shared.record(.threadSelected)
         willOpenSidebarThread(design(drawnBy: agent).map { .design($0.id) } ?? .local(id))
         selectedRemoteAgent = nil
         if destination != nil { destination = nil }

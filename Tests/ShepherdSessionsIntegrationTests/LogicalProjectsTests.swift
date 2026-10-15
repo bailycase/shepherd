@@ -121,7 +121,7 @@ struct LogicalProjectsTests {
         #expect(await remote.server.listSessions().isEmpty)
     }
 
-    @Test func restartPausesWithoutLaunchingAndClearsOnlyStaleCoordinatorReferences() async throws {
+    @Test func restartLaunchesNothingNeverPausesAndClearsOnlyStaleCoordinatorReferences() async throws {
         let host = try ScratchServer()
         host.server.setProjectsEnabled(true)
         let id = ProjectID()
@@ -134,7 +134,7 @@ struct LogicalProjectsTests {
         let restarted = try ScratchServer(dir: host.dir)
         defer { restarted.stop() }
         let project = try #require(restarted.server.state.projects.first)
-        #expect(project.paused)
+        #expect(!project.paused, "A restart never pauses a Project; it only launches nothing")
         #expect(project.revision == resumed.revision + 1)
         #expect(project.coordinatorAgentID == nil)
         #expect(await restarted.server.listSessions().isEmpty)

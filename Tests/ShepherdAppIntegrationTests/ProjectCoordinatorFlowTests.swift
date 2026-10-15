@@ -72,7 +72,9 @@ struct ProjectCoordinatorFlowTests {
             StubPi.launches().contains { $0.argv.contains(coordinator.rawValue) }
         }
         let launch = try #require(StubPi.launches().last { $0.argv.contains(coordinator.rawValue) })
-        #expect(launch.argv.contains("--no-tools") && launch.argv.contains("--no-extensions"))
+        // `--no-tools` hides extension tools too, leaving the coordinator with no Project tools.
+        #expect(launch.argv.contains("--no-builtin-tools") && !launch.argv.contains("--no-tools"))
+        #expect(launch.argv.contains("--no-extensions"))
         #expect(launch.argv.contains("--no-skills") && launch.argv.contains("--no-context-files"))
         #expect(launch.argv.contains("anthropic/claude-opus-4-5"))
         #expect(!launch.argv.contains { $0.hasSuffix("shepherd-panes.ts") || $0.hasSuffix("shepherd-browser.ts") || $0.hasSuffix("shepherd-children.ts") })

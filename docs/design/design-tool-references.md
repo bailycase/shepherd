@@ -179,50 +179,47 @@ Undo is still saving waits for it.
   10pt swatch (radius 3) and the token's name in mono 11.5. Selected: a 1px `running` line on
   `runningTint`; otherwise a 1px `lineSubtle` line.
 
-## The Shepherd UI page (DesignSystemPage and its eight sibling boards)
+## A design system's page (DesignSystemPage and its eight sibling boards)
 
-**Removed from the shipped catalog.** Shepherd no longer bundles or registers Night Watch.
-This reference page remains covered by a synthetic system in tests and previews, not a system
-users can install. User-built and imported systems keep the normal Design systems page below.
+**Built on the Mac for every system** (`DesignSystemReferencePage`, `DesignSystemReference`; checklist
+[DesignSystem-checklist](boards/DesignSystem-checklist.md); boards `DesignSystemPage`, `Light`, `Menu`, `Colors`,
+`ColorsLight`, `Type`, `Spacing`, `Sizes`, `Components` in `docs/design/boards/`). A system built from a project, one
+imported, one a design's agent wrote: each opens on this page once its files are read. Everything on it comes from
+the system's own `tokens.json`; a part the system has nothing for is left out. The page is read-only: the boards'
+Edit icon per token, editable values and "+ Add" per card are not drawn (the user's decision, 2026-10-13: read-only,
+no new write contract). The other differences from the boards are open, in known-gaps.md.
 
-**Historical implementation** for the built-in system only (`DesignSystemReferencePage`, `DesignSystemReference`;
-checklist [DesignSystem-checklist](boards/DesignSystem-checklist.md); boards `DesignSystemPage`, `Light`, `Menu`,
-`Colors`, `ColorsLight`, `Type`, `Spacing`, `Sizes`, `Components` in `docs/design/boards/`). Every other system
-keeps the Design systems page below. The page is read-only: the boards' Edit icon per token, editable values, "+ Add"
-per card are not drawn (the user's decision, 2026-10-13: read-only, no new write contract). The other differences from the
-boards are open, in known-gaps.md.
-
-- **Header**: the breadcrumb (nib, "Design systems" back to the Designs page, "/", the system's name), then Dark |
-  Light (`NWSegmentedPicker`), **New design** (primary, `vm.openNewDesign(system:)` with the system the page shows, so the draft draws in it and not in
-  the default, which is a system built from a project when there is one) and the More menu. Dark | Light sets the
-  page's own appearance (view state, not persisted, never the app's theme); both color columns stay drawn.
+- **Header**: the breadcrumb (nib, "Design systems" back to the Designs page, "/", the system's name, and "Synced" or
+  "Syncing" for a system read from a project), then Dark | Light (`NWSegmentedPicker`), **Re-sync** for a system read
+  from a project (`arrow.clockwise`, secondary; reads its stylesheets again), **New design** (primary,
+  `vm.openNewDesign(system:)` with the system the page shows) and the More menu. Dark | Light sets the page's own
+  appearance (view state, not persisted, never the app's theme).
 - **Contents** (`list.bullet`, a bordered 28pt button 16pt from the corner): a 224pt `nwPopover` with the system's
-  name as a section label, then Overview, Principles, Voice, Colors, Typography, Spacing, Corner radius, Size and
-  Components with their counts, then a hairline and **Used by**, the designs drawn in the system with their board
-  counts. A part scrolls to its card; a design opens.
-- **Column** 960 wide, 24 between parts: the hero (256pt, `bgBase`, radius 12, the name at 64 bold, six tiles of the
-  lantern, running, done, raised, lantern tint and failed roles), the lead and a provenance note, Principles, Voice,
-  then a card each for Colors (groups Surfaces, Lines, Text, Brand and state, Syntax; Name | Dark | Light), Typography
-  (Display, Text, Mono; a tag "Geist · 28 / 600"), Spacing, Corner radius, Size and Components.
-- **Values** are read-only chips (28pt, `bgSunken`, `lineStrong`, radius 6; a 16pt swatch for a color; mono). A
-  light value sits on a light chip on the dark page. The three text tokens carry their contrast against
-  `--bg-window` of the same variant: a check at 4.5:1 or more in `done`, a warning triangle below it in `lanternText`.
-- **Components** lists `NWComponentCatalog.entries`: live ShepherdUI views, drawn as pictures (no press, one
-  accessibility element named "<Name> specimen"), with an All groups popup that filters by group. The count is the
-  catalog's; adding a component is one entry.
-- **Where each number comes from**: test-only tokens from `ShepherdTestSupport.NightWatchSystem.tokens()`; sizes from `NWSettingsControlMetrics`,
-  `NW.Height.row`, `AppLayout.settingsNavWidth`, `threadMaxWidth` and `proseMaxWidth`; the component count from the
-  catalog; Used by from the designs whose `systemNamespace` is the system. Authored copy (tagline, lead, Principles,
-  Voice, group hints, radius uses) is `DesignSystemCopy`. The provenance note says only what the server enforces: generated from Night Watch tokens in test fixtures, read-only, never synced from a project. The board's "Made in Shepherd chat UI"
-  is not shown.
-- **Kept from the app, not drawn**: the ••• menu (Open, Duplicate as a New System, Delete Design System… off).
-- **Name**: the page says "Shepherd UI" (`DesignSystemCopy.name`). The system's registered title, "Night Watch", is stored in
-  designs that install it and is not changed.
-- **Catalog coverage**: one entry per component the Component Gallery draws from literals (buttons, status, fields,
-  selection, containers, the palette card, the design system chip). The other `NW*` views are drawn by a domain's own
-  `#Preview` from that domain's data and are not listed. The boards say 193; the page says the catalog's own count.
-- **Contents menu**: as tall as its content up to the room under its button, then it scrolls, so the last of many designs
-  stays reachable in a short window.
+  name as a section label, then the parts the system has with their counts (Overview, Principles, Voice, Colors,
+  Typography, Spacing, Corner radius, Size, Components), then a hairline and **Used by**, the designs drawn in the
+  system with their board counts. A part scrolls to its card; a design opens. As tall as its content up to the room
+  under its button, then it scrolls.
+- **Column** 960 wide, 24 between parts: the hero (256pt, `bgBase`, radius 12, the name at 64 bold, the tagline, six
+  tiles picked by role: the brand color, a running or info color, a success color, the raised surface, a tint and a
+  danger color, each by Shepherd UI's name or a word in the token's name), the summary and the provenance note,
+  Principles, Voice, then a card each for Colors, Typography, Spacing, Corner radius, Size and Components.
+- **Colors**: grouped as the boards group them when the names match (Surfaces, Lines, Text, Brand and state, Syntax),
+  the rest under "Other". Name | Dark | Light when the system has dark values, else Name | Value. A text color
+  (`--text…`, or a token named text, ink or foreground) carries its contrast against the window background of the
+  same variant: a check at 4.5:1 or more in `done`, a warning triangle below it in `lanternText`.
+- **Typography**: Display, Text and Mono by the style's face and size; a tag "Geist · 28 / 600" from the style's own
+  family, size and weight.
+- **Spacing**, **Corner radius**: the steps with a shape; a radius's "use" note from its token's `use` field.
+- **Size**: the system's `page.sizes`. **Components**: the components with a `specimen`, drawn live by the board
+  renderer as pictures (no press, one accessibility element named "<Name> specimen"), filtered by an All groups popup
+  when components carry a `group`; under them "Showing 5 of 193, the ones with a specimen." when some have none.
+- **Authored copy** lives in the system, not the app: `tokens.json` › `page` carries `tagline`, `summary`, `source`
+  (the provenance note), `principles` (`lead` and `text`), `voice` (`lead`, `examples` of `say` and `avoid`, `rules`)
+  and `sizes` (`name`, `value`, `use`). A design's agent writes it with `system_write` (the design skill says how).
+  Without it the hero shows the name alone and the provenance note says where the system was read from.
+- **Kept from the app, not drawn**: the ••• menu (Open, Duplicate as a New System, Delete Design System…).
+- **While a build's agent writes its system**, before there is anything to read, the build's layout keeps the
+  "Reading <project>…" page below.
 
 ## Design systems (DZSystem)
 

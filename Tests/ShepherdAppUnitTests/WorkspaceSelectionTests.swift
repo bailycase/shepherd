@@ -48,6 +48,33 @@ struct WorkspaceSelectionTests {
         #expect(orders.allSatisfy { $0 == w.stableOrder })
     }
 
+    /// A Project coordinator's thread belongs to its Project page alone. A hidden second host on the same store suspended the
+    /// page's poll, so the first reply showed only after leaving the project and coming back.
+    @Test func aProjectCoordinatorsLayoutIsNeverMounted() {
+        let w = Workspace()
+        var coordinator = w.b.agent
+        coordinator.coordinatorFor = ProjectID()
+        let state = ShepherdState(spaces: [w.home, w.other], tabs: [w.c.tab, w.b.tab, w.a.tab], agents: [w.a.agent, coordinator, w.c.agent])
+        var selection = WorkspaceSelection(state: state, selectedSpaceID: w.home.id, selectedAgentID: nil)
+        selection.destination = .project
+        #expect(selection.mountedTabs.map(\.id) == [w.a.tab.id, w.c.tab.id])
+    }
+
+    /// A Project's worker is drawn by the Project pane; a hidden layout of it would suspend the pane's poll (the steps card and
+    /// replies never arrived). Only when the person opens that thread itself does its layout mount.
+    @Test func aProjectWorkersLayoutMountsOnlyWhenOpened() {
+        let w = Workspace()
+        var project = Project(name: "P")
+        project.tasks = [ProjectTask(operationID: UUID(), workerAgentID: w.b.agent.id, spaceID: w.home.id, title: "T", prompt: "p")]
+        let state = ShepherdState(spaces: [w.home, w.other], tabs: [w.c.tab, w.b.tab, w.a.tab], agents: [w.a.agent, w.b.agent, w.c.agent],
+                                  projects: [project])
+        var selection = WorkspaceSelection(state: state, selectedSpaceID: w.home.id, selectedAgentID: nil)
+        selection.destination = .project
+        #expect(selection.mountedTabs.map(\.id) == [w.a.tab.id, w.c.tab.id])
+        let opened = WorkspaceSelection(state: state, selectedSpaceID: w.home.id, selectedAgentID: w.b.agent.id)
+        #expect(opened.mountedTabs.map(\.id).contains(w.b.tab.id))
+    }
+
     /// A page (New thread, Automations, Hosts) hides every layout and keeps every one mounted,
     /// in the same order: leaving it is a flip back, never a remount.
     @Test(arguments: MainDestination.allCases)

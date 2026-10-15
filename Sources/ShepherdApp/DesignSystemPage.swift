@@ -21,10 +21,14 @@ struct DesignSystemDestination: View {
         let namespace = vm.designSystemShown
         let model = namespace.map { vm.designSystemPage(.system($0)) } ?? DesignSystemPageModel()
         if let reference = model.reference {
-            // The built-in system's own page (DesignSystemPage); every other system keeps the page below.
+            // A system's page (DesignSystemPage), its specimens drawn by the board renderer.
             DesignSystemReferencePage(vm: vm, model: model, reference: reference, chrome: chrome)
                 .task { await vm.loadDesignSystems() }
+                .task(id: "\(namespace ?? "")/\(model.revision)") {
+                    if let namespace { await vm.loadDesignSpecimens(namespace) }
+                }
         } else {
+            // Before the system's files are read, and a system whose files are gone: the plain page.
             pageBody(vm: vm, namespace: namespace, model: model)
         }
     }

@@ -368,7 +368,15 @@ automated step of the worktree flows can be turned off here.
   as Shepherd." Last, "Version 0.1.0 (1)" (the short version and the build) with Check for updates.
   Debug builds have no updater: the group holds only the version row, with no button, and Sparkle's
   rows disclose once it reports it can update.
-- **Reset:** Reset settings, "Restores appearance, terminal, agent, worktree, extension and keyboard
+- **Diagnostics:** Share crash diagnostics, off by default. A labelled switch opts in to sending
+  crash stacks, app/device details and fixed lifecycle events to a third-party crash-reporting service. The adjacent disclosure
+  excludes prompts, replies, tool output, file contents and session replay. The footnote distinguishes
+  off, pending relaunch and active reporting. Turning it off stops reporting and discards pending
+  reports; it does not delete reports already sent.
+  Unconfigured builds show a disabled off switch and "Crash reporting is not configured in this
+  build." A saved on preference can still be revoked. Full copy, states and component checklist:
+  [Diagnostics](boards/Diagnostics.md). Behavior and setup: [diagnostics](../diagnostics.md).
+- **Reset:** Reset settings, "Restores appearance, terminal, agent, worktree, extension, keyboard and diagnostics
   preferences. Spaces, agents, layouts and Remote are untouched." (the board: "Restores appearance,
   font, agent and keyboard preferences. Spaces, agents and layouts are untouched."; see the
   departures): Reset… (danger) opens `ResetSettingsDialog` ("Reset settings to defaults?", "Your

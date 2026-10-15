@@ -336,7 +336,25 @@ before its first publication; `Space.holdsProjects` is hidden and not an automat
 coordinator directory is excluded from legacy Space configuration/history, including session
 header imports. Legacy remote snapshots omit coordinator agents/layouts. UI integrations must
 use these predicates in ordinary sidebar, palette, pin and notification producers. VM fallback
-selection cannot select a coordinator as an ordinary thread.
+selection cannot select a coordinator as an ordinary thread. The workspace never mounts a
+coordinator's layout (`WorkspaceSelection.mountedTabs`): its thread is drawn only by the Project
+page, and a second, hidden `ThreadView` on the same store would suspend the page's poll, so the
+first reply would show only after leaving the Project and coming back.
+
+The owner records `coordinatorAgentID` before it registers the agent, so `threadStores.prune` keeps the
+store for that ID too. A relaunch leaves the coordinator's pi off, and the owner starts it only for a
+message it can deliver: the page reads the saved history from pi's session file
+(`PiSessionFile.previewLoader`, as an ordinary thread does) and the composer stays usable. While no
+coordinator pi runs and no message is queued or in flight (or the Project is paused), the store is
+`offline` (`ProjectComposerSend.isOffline`, restated by the view model on every adoption and when a
+store is made): `native_starting` is then the expected answer, so the composer never says "Starting
+the agent" and no "has not started after a minute" error appears. Resume alone launches nothing; the
+next message does, and its start is the ordinary, timed warm-up. A remote owner's page sets
+`offline` from the Project it pushed; a served snapshot is ready whatever `offline` says.
+
+The coordinator's pi launches with `--no-builtin-tools` (`PiLaunch.agent(coordinator:)`), never
+`--no-tools`: pi's `--no-tools` empties the tool allowlist, which also drops the `project_*` tools
+its Project extension registers, leaving the coordinator with none.
 
 `Project.tasks` contains `ProjectTask` records: ID, current/prior operation IDs, worker agent,
 owner-local Space, title, prompt, phase, revision, optional error, settled timestamp and question
@@ -367,10 +385,23 @@ outcome stays unknown rather than replaying on reconnect or restart. Native `.ac
 NOT mean delivered: a message advances only when its exact native prompt starts/gets consumed.
 A definite pre-send cancellation retains the message/assignment and records a new native
 `nativeDeliveryID`; its public operation identity stays unchanged. Definite refusal fails instead
-of occupying an unknown slot. Text admission matches native trimmed-nonempty, 16 KiB UTF-8 limits;
+of occupying an unknown slot (and never pauses the Project). Failed message receipts retain optional
+`failureDetail` from the actual native refusal, redacted with `NativeRedaction.projectData`, made
+printable and bounded to 4 KiB before persistence (`executionText`, again in model-facing reads). Legacy
+receipts decode without a detail. Cancelled/unknown deliveries carry no refusal detail; dispatch and
+confirmed consumption clear it. A human resend uses a new message identity, with no stale detail,
+while the historical failed receipt stays inspectable. Neither a refusal nor an unknown outcome
+authorizes automatic replay. The held message's note adds the detail after "Not delivered." (a
+record without one keeps the generic line; an unknown outcome never shows detail). Text admission matches native trimmed-nonempty, 16 KiB UTF-8 limits;
 the Instructions editor's independent character counter does not change.
 
-### Pause, bounds, restart and deletion
+### Pause, restart and deletion
+
+A Project never pauses on its own. Only the person pauses it (Project settings > Pause project, or the pane), and only Resume or
+their next message after Resume starts work again. There is no run-time or activation limit; the bounds are Threads at once
+(how many threads run together) and the owner's plan limits, as in Claude's Projects. Stop on the coordinator ends its current
+turn only. A coordinator pi that exits marks an in-flight delivery `unknown` (never resent) and the next message relaunches it.
+A failed launch of the coordinator still pauses (there is nothing to talk to) and says why.
 
 Pause closes admissions, retains new messages and queued assignments, and issues native aborts
 for active project work. `interruptPending` distinguishes the request from acknowledged idle
@@ -384,21 +415,33 @@ not display or log the envelope. Resume revalidates the original live dialog and
 answer once; expired/replaced dialogs fail honestly, never become synthetic replacement dialogs.
 Restart marks retained answers unknown and never sends them. An ordinary worker Stop can explicitly
 cancel its dialog. Resume is refused until pending interruptions are acknowledged.
-Native Stop on the coordinator also pauses its project. Ordinary
-worker manual sends remain available after project Pause or a limit stop. Restart pauses, marks
-in-flight assignments/deliveries unknown, clears ephemeral run admission, and sends no prompts.
-Restoring an existing coordinator is idle. Unknown assignments conservatively retain slots;
-there is no automatic recovery/replay policy yet.
 
-One explicit active run admits at most **12 activations over 10 minutes**, including finite
-result/question wakeups and resumed queued answers. Host counters/timer, not prompts, enforce this;
-it is not a strict spend ceiling. No polling model, invented backlog or automatic task retry is
-used. First-class child/workflow/peer/automation spawn/send bypasses are gated for active assigned
-workers; ordinary coding tools stay available and settled workers retain ordinary manual use.
+A relaunch of Shepherd resumes no work and never pauses a Project the person left running. A local
+thread whose pi died with the app settles as "Interrupted when Shepherd quit" (its slot frees and a
+follow-up continues it); another host's thread stays `unknown` until its receipt reconciles it.
+Deliveries in flight become `unknown` and are never resent. No polling model, invented backlog or
+automatic task retry is used. First-class child/workflow/peer/automation spawn/send bypasses are
+gated for active assigned workers; ordinary coding tools stay available.
 Record limits remain 64 task links, 32 activations and 32 resolution receipts per task, 64 message
 receipts, 32 Space proposals and 128 memory-operation receipts within the encoded project budget.
 A full event receipt queue pauses and records an inspectable error; the native result remains in
-the worker conversation. These are bounded interim resource safeguards, not billing policy.
+the worker conversation. These are storage safeguards, not run limits.
+
+### Per-task model and thinking
+
+`project_assign` and `project_follow_up` take an optional `model` (one of `availableModels` in the
+coordinator's `project_read`) and `thinking` (off…max). The owner validates both, stores them on the
+task, launches the thread with them, and before a follow-up's prompt sets the thread's model and
+thinking when they changed. Omitted, a task uses the Project's Thread model and the owner's default
+thinking level (Settings > Agents), never a hardcoded level. A follow-up keeps the task's earlier
+choice unless it names a new one, and reaches a resolved task too, reopening it.
+
+### Asking the person
+
+A worker asks with `project_question` (a native select or free-text dialog; not registered for
+helper children). The task shows Waiting on you in the pane, the sidebar and the conversation's
+question dock; an answer from any of them, or the person's reply relayed by the coordinator's
+`project_answer`, reaches the same dialog once.
 
 Delete removes the project and only a reciprocally marked coordinator's agent/layout metadata,
 related coordinator automation records, and running coordinator process. Ordinary workers and
@@ -540,9 +583,28 @@ creates no thread, session or process and fakes no conversation, task or send.
   **Project settings** tabs. They are not the global Settings > Spaces table.
 - **General:** Goal, Conversation and Thread model (the owner's real catalog; "Default" clears the choice), Threads
   at once 1...6 (default 3), Pause or Resume, Delete. **Spaces:** the linked Spaces (owner-relative), Add a space,
-  Remove, and "The project can add spaces" (`canRequestSpaceLinks`). **Memory:** the instructions with a counter read
+  Remove, and "The project can add spaces" (`canRequestSpaceLinks`). Add a space… (here and in New project) always ends
+  with "Choose folder…", so a fresh profile with no Spaces is never a dead end: the owner's directory picker ("Add to
+  project") registers the folder as a Space on the OWNER without opening a thread, or reuses the Space already at that
+  path (`spaceForProject(at:)`), and links it. A remote owner's folders are listed on that host ("Choose folder on
+  <host>…"), never this Mac's; a disconnected owner's item is disabled (`ProjectFolderRoute`). **Memory:** the instructions with a counter read
   from the text and `Project.maximumInstructionsLength` (16,000), and Forget. **Automations:** an honest empty
   state, because an `Automation` has no project link yet.
+- **A resolved task's thread** in the pane draws no composer at all (`ProjectWorkerThreadStyle.composerHidden`), not a
+  disabled one: the footer card ("This thread is resolved.", Reopen) stands in and the transcript reaches the pane's
+  bottom. Reopen brings the steering composer back.
+- **A worker's question card** above the conversation's composer is truthful: the worker is blocked on a native question, so its
+  footer says "<thread> is waiting for your answer." (never that it "keeps going on its best guess"), and while the Project is
+  paused "Your answer waits until you resume." Once the owner holds an answer (queued for Resume, or on its way) the card goes,
+  the row says "Answer queued", and the pane's own question dock stays visible but offers no second answer
+  (`ProjectTaskRow.answerHeld`).
+- **Project tool calls** read as words in a thread's activity lines, from the call's typed arguments and the tool's own result
+  (`NativeProjectToolActivity`), never its JSON: "Published verification.txt", "Staged report.md · waiting for the owner" (a
+  result that is not `ready`), "Read the project · 2 threads", "Inspected a thread · <title>", "Started thread <title> · <model> ·
+  <thinking>" and "Sent a follow-up to <title> · <thinking>" (the coordinator's own choice, absent when it chose none),
+  "Waiting for your answer · <question>" then "Asked a question · <question> · <answer>" or "Question cancelled", and a
+  refusal's own `message`. A result that does not parse says only what the tool was; the raw arguments and output stay in the
+  expanded details (Show Call, Copy Output).
 - **Revisions:** every action carries the revision it was shown. A `stale_project`, `workspace_changed` or
   `no_such_project` refusal re-reads the owner, shows its message and never replays the edit. An older answer
   never replaces a newer record; the owner's pushed state wins at the same revision.
@@ -579,7 +641,7 @@ not kept; the cause and fix are in `docs/project-execution.md`, Coordinator star
   is not answered twice.
 - **Coordinators are not threads:** every ordinary-thread producer (sidebar in both modes, completions, palette, pins, notifications, remote
   inspection, peer lists) now asks `isOrdinaryThread`, covered by `ProjectCoordinatorHiddenTests`.
-- **Settled is not done:** the strip counts only what the person resolved ("1 of 3 done"); a settled turn is finished work awaiting a decision.
+- **Finished is done:** the strip counts settled and resolved tasks as done ("2 of 3 done"), as Claude's Projects counts a thread that finished. Settled still means finished but unconfirmed: it keeps Mark resolved in the pane and moves to Resolved only when the person or the coordinator resolves it.
 - **Remote Projects:** an owner-remote Project's runtime actions are refused in words; they are never sent to this Mac's runtime.
 
 Verified with `ProjectPagePresentationTests`, `ProjectCoordinatorHiddenTests` (unit), `LogicalProjectConversationTests` (real scratch

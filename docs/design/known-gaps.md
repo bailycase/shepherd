@@ -7,19 +7,15 @@ it. A sentence elsewhere that states a board's value and adds what the app does 
 uses 6pt today"), or a paragraph marked **Not built yet**, is a gap in its own right; the list
 below collects the rest, and the places those sentences point here.
 
-- **The Shepherd UI page (DesignSystemPage and its eight sibling boards), open, waiting on the user's call** (not decided
-  departures; the user approved only the read-only omission of Edit, editable values and Add, in departures.md):
+- **A design system's page (DesignSystemPage and its eight sibling boards), open, waiting on the user's call** (not
+  decided departures; the user approved the read-only omission of Edit, editable values and Add, in departures.md):
   - The boards' per-component open icon is not drawn: a component has no destination to open.
-  - The boards say 193 components; the page lists `NWComponentCatalog`'s entries, one per component the Component Gallery draws
-    from literals. The rest of the `NW*` views are drawn by a domain's own `#Preview` from that domain's data, and have no
-    specimen here.
-  - The built-in system is registered as "Night Watch" (`NightWatchSystem.title`, stored in designs that install it); this
-    page names it "Shepherd UI" as the boards do, while the Designs page, New design's card and the system's menu still say
-    "Night Watch".
-  - The boards' provenance note ("Made in Shepherd chat UI… nothing to re-sync") is replaced by what the server enforces: the
-    system is built in from the app's Night Watch tokens at launch, read-only and never synced from a project.
-  - The header also keeps the ••• menu (Open, Duplicate as a New System, Delete Design System… off) the boards do not draw,
-    for functional access.
+  - The boards draw a specimen for every component; the page draws the ones whose system gives a `specimen` file and says
+    how many it shows ("Showing 5 of 193, the ones with a specimen.").
+  - Principles, Voice, the tagline, the summary, the provenance note and the sizes appear only when the system carries
+    them in `tokens.json` › `page`; a system without them shows its name, its source and its tables.
+  - The header also keeps the ••• menu (Open, Duplicate as a New System, Delete Design System…) the boards do not draw,
+    for functional access, and adds Re-sync for a system read from a project.
   - The Dark | Light switch changes this page's own appearance only, and both color columns are always drawn.
 - **Agents and review:**
   - A review from an older host (no `changes.v1`) keeps two scopes (Uncommitted and Pull request)

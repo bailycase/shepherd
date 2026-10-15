@@ -131,6 +131,9 @@ Settings", revision 1083) is the source of truth for every Settings page.
   Space… confirms registration/session removal while preserving local folders and child spaces.
   Rename Space… changes only the display name. Tool-driven parent edits change both space
   trees without changing folders or configuration inheritance; moving/copying data is explicit.
+- Advanced includes opt-in [crash diagnostics](docs/design/boards/Diagnostics.md), with adjacent
+  reporting disclosure, an unavailable state for unconfigured builds and immediate opt-out. Reset
+  turns diagnostics off. No prompt, tool-output or screen recording collection.
 - Sliders show the bare number the board draws ("100", "232", "12.5"). VoiceOver reads the unit.
 
 Detail: [settings.md](docs/design/settings.md) and its `settings-*` files.

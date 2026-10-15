@@ -597,6 +597,76 @@ struct NativeThreadStoreTests {
         #expect(store.ready && store.loadError == nil)
     }
 
+    /// A Project's coordinator with nothing to deliver is held off on purpose, so the host answers `native_starting` for as long as it
+    /// stays off. That is the expected state: no "Starting…", and above all no "has not started after a minute" error with Reconnect.
+    @Test func aThreadHeldOffOnPurposeNeverStartsTheWatchdogOrShowsAnError() async {
+        let store = manualStore(startingLimit: .zero)
+        store.offline = true
+        let (store2, _, task) = await startedWhileStarting(store)
+        defer { task.cancel() }
+        #expect(store2 === store)
+        #expect(!store.starting && !store.awaitingPi && store.loadError == nil && !store.ready, "nothing is starting, nothing failed")
+        #expect(store.acceptsSend, "a message can still be sent, and the owner launches the pi for it")
+        await store.refresh()
+        await store.refresh()
+        #expect(store.loadError == nil && !store.starting, "a limit of zero would already have raised the error if it were timed")
+        #expect(store.pollInterval == .seconds(2), "not polled as a start in progress")
+    }
+
+    @Test(arguments: [
+        Result<NativeThreadResult, Error>.success(.failure(code: NativeThreadCode.starting, message: "pi is starting.")),
+        .failure(RemoteHostClientError.rejected(code: NativeThreadCode.starting, message: "pi is starting.")),
+    ])
+    func anOfflineOwnerWhosePiStoppedClearsCachedRunningWithoutLosingHistory(_ answer: Result<NativeThreadResult, Error>) async {
+        let store = manualStore(startingLimit: .zero)
+        let messages = [F.user("go", id: "u")]
+        let host = FakeHost(F.snapshot(running: true, messages: messages))
+        let task = await start(store, host)
+        defer { task.cancel() }
+        #expect(store.ready && store.running && store.settledRunning && store.showsThinking)
+
+        store.offline = true
+        #expect(store.ready && store.running && store.settledRunning, "the offline hint alone does not stop a live coordinator")
+        host.next = [answer]
+        await store.refresh()
+
+        #expect(!store.ready && !store.running && !store.settledRunning && !store.showsThinking)
+        #expect(!store.starting && !store.awaitingPi && store.loadError == nil)
+        #expect(store.messages == messages && store.acceptsSend)
+
+        await store.refresh()
+        #expect(store.ready && store.running && store.messages == messages, "a served running snapshot still wins over the offline hint")
+    }
+
+    @Test func goingOfflineClearsAStartErrorAndComingBackIsTheOrdinaryWarmUp() async {
+        let (store, host, task) = await startedWhileStarting(manualStore(startingLimit: .zero))
+        defer { task.cancel() }
+        #expect(store.loadError?.hasPrefix("The agent has not started after") == true, "not held off: the watchdog applies")
+        store.offline = true
+        #expect(store.loadError == nil && !store.starting, "the owner now says the pi is intentionally off")
+        // A message the host can deliver launches the pi: from then on a slow start is timed again.
+        store.offline = false
+        await store.refresh()
+        #expect(store.loadError?.hasPrefix("The agent has not started after") == true, "the ordinary watchdog is back")
+        host.starting = false
+        await store.refresh()
+        #expect(store.ready && store.loadError == nil)
+    }
+
+    @Test func aThreadHeldOffStillShowsHistoryAndAServedSnapshotIsReady() async {
+        let store = manualStore()
+        store.offline = true
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        host.starting = true
+        let task = await start(store, host)
+        defer { task.cancel() }
+        store.preview(F.snapshot(messages: [hi]))
+        #expect(store.messages == [hi] && store.loadError == nil)
+        host.starting = false
+        await store.refresh()
+        #expect(store.ready && store.messages == [hi] && store.loadError == nil)
+    }
+
     @Test func aServingThreadWhosePiGoesAwayIsALostConnection() async {
         let (store, host, task) = await started()
         defer { task.cancel() }

@@ -164,6 +164,10 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
     rejects ad-hoc frameworks, which have no Team ID.
   - Shipped binaries are stripped (`strip -S -x`). Their dSYMs go on each release as
     `Shepherd-dSYMs.zip` or `Shepherd-Nightly-dSYMs.zip`.
+  - Optional Sentry crash reporting embeds public `SHEPHERD_SENTRY_DSN` from repository variables.
+    `SENTRY_ORG`, `SENTRY_PROJECT` and secret `SENTRY_AUTH_TOKEN` enable bounded, checksum-pinned
+    CLI symbol upload before stripping. Missing configuration skips it; failure warns without
+    blocking publication. Setup, privacy and removal: [diagnostics](diagnostics.md).
 - **Appcasts** are reconciled by the serialized publication job against all completed eligible
   releases in its snapshot, keeping the four newest completed nightlies. Every candidate's
   eligibility metadata is checked even when its feed is unchanged; the triggering tag never
@@ -264,3 +268,9 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   compile-time half of `ENABLE_ENHANCED_SECURITY` (stack zero-init, typed allocators, libc++
   hardening) reaches only `App/ShepherdLauncher.swift`: SwiftPM package targets do not inherit
   target settings. So ShepherdPTYSpawn's C and the tree-sitter parsers build without it.
+  `App/Shepherd.entitlements` leaves out `platform-restrictions-string` (at 1 or 2): it makes
+  the OS kill any process that calls `task_set_exception_ports` without an `*_IDENTITY_PROTECTED`
+  behavior (`EXC_GUARD`, `SET_EXCEPTION_BEHAVIOR`), and Sentry's crash handler does exactly that,
+  so every launch with diagnostics on crashed. `Tests/Release/test_app_entitlements.py` signs a
+  probe with these entitlements and makes that call. Re-add the key only once Sentry registers an
+  identity-protected behavior.

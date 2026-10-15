@@ -103,7 +103,8 @@ struct DesignSystemPageModel: Equatable {
     var boards: [BoardsRow] = []
     /// Moves when the system's files change: its specimens are drawn again then.
     var revision = ""
-    /// The built-in system's reference page (DesignSystemPage); nil for every other system.
+    /// The system's page (DesignSystemPage and its sibling boards), once its files are read; nil while a build's
+    /// agent hasn't written one, or before the read lands.
     var reference: DesignSystemReference?
 
     @MainActor
@@ -160,9 +161,9 @@ struct DesignSystemPageModel: Equatable {
         let using = designs.filter { !$0.buildsSystem && $0.systemNamespace == info.namespace }
             .sorted { $0.lastActiveAt > $1.lastActiveAt }
         model.boards = using.map { BoardsRow(id: $0.id, name: $0.name, detail: DesignsPageModel.boardsText($0.boardCount ?? 0), count: $0.boardCount ?? 0) }
-        if summary.builtIn, let tokens {
-            model.reference = DesignSystemReference.make(tokens: tokens, namespace: info.namespace,
-                                                         designs: model.boards, components: NWComponentCatalog.entries.count)
+        if let read {
+            model.reference = DesignSystemReference.make(title: info.title, namespace: info.namespace, tokens: read.tokens,
+                                                         designs: model.boards)
         }
         let counts = tokens?.counts ?? summary.counts
         model.sections = [

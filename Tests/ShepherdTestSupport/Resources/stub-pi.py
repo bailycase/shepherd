@@ -62,7 +62,8 @@
   "newsession" switches sessionId, then agent_start/agent_end
   "select-newsession" asks a select, then switches sessionId (as "newsession") with the
            question still open
-  "refuse" answers the prompt with success: false (pi refusing it)
+  "refuse" answers the prompt with success: false (pi refusing it).
+  The cwd file `prompt-error` refuses ordinary prompts with its text until removed.
   "provider-error" a turn whose reply fails ("529 overloaded"), once the file `fail-turn`
            appears in the cwd
   "flaky"  a turn like pi's (stamped user message_start/_end, persisted at its end) whose reply
@@ -1453,8 +1454,11 @@ for raw in sys.stdin.buffer:
             sys.stderr.write("stub-pi: dying\n")
             sys.stderr.flush()
             sys.exit(3)
-        if "refuse" in message:
-            respond(cmd, t, success=False, error="refused by the stub")
+        if "refuse" in message or os.path.exists("prompt-error"):
+            error = "refused by the stub"
+            if os.path.exists("prompt-error"):
+                with open("prompt-error") as f: error = f.read()
+            respond(cmd, t, success=False, error=error)
             continue
         if COMPACTING.is_set() and not message.startswith("/"):
             respond(cmd, t, success=False,
