@@ -41,10 +41,11 @@ struct RemoteTerminalActivityTests {
         #expect(client.capabilities.contains(RemoteProtocol.terminalActivityCapability))
 
         var terminals: [RemoteTerminalActivity] = []
-        try await eventually("the busy shell to report its command") {
+        // The command line and the foreground process are read separately and can land a tick apart.
+        try await eventually("the busy shell to report its command and foreground process") {
             guard case .terminals(let rows) = try await client.agentQuery(agentID: seeded.agent, query: .terminals) else { return false }
             terminals = rows
-            return rows.count == 2 && rows[1].command?.contains("sleep 30") == true
+            return rows.count == 2 && rows[1].command?.contains("sleep 30") == true && rows[1].process == "sleep"
         }
         // The thread's pane is never a terminal; the rest come in layout order.
         #expect(terminals.map(\.paneID) == seeded.panes)
