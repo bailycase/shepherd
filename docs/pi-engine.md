@@ -69,7 +69,7 @@ Then stage, build, and run the smoke test.
 A new Pi can need modules the old one didn't. Update the locked SDK dependency tree as well as
 bundle runtime files (`MODULE_KEEP`, `MODULE_REQUIRED`). Run the SDK check against the staged
 engine, not an npm install, then the extension tests, `EngineSmokeTests` and `EngineThreadTests`
-(docs/testing.md › Engine smoke). Compare the real engine's RPC replies and events with the last pin's.
+(docs/testing.md › Rules, Opt-in runs). Compare the real engine's RPC replies and events with the last pin's.
 
 ## Extension SDK
 

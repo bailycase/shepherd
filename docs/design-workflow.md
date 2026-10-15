@@ -36,7 +36,7 @@ Render the surface from real data in both appearances and open the PNGs beside t
 SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter ThreadPreviewTests
 ```
 
-Previews live in `Tests/ShepherdPreviewTests` (docs/testing.md › Previews). Cover the states the
+Previews live in `Tests/ShepherdPreviewTests` (docs/testing.md › Helpers). Cover the states the
 design draws plus empty and long text; `Preview.renderMatrix` draws light and dark at each text
 scale. Fix every difference you can name, then run the `Shepherd (Dev)` scheme and use the change.
 A control a test needs to press goes through `ControlPress` (docs/testing.md › Pressing a control).

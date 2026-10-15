@@ -31,25 +31,15 @@ Every decision has to pass one test: does this help one person supervise ten wor
 
 - An agent has a short task title it gave itself (`Fix plan mode`), a workplace, and a
   lifecycle: working, needs you, done, failed, idle. It renders only as a native thread.
-- Terminals are tabs under a thread, one terminal per tab. No splits, no global shells.
-- Browser pages are tabs within the thread's Browser pane, capped at eight. The agent's target
-  is independent of the user's selected tab. User boards BrowserTabsAgent through BrowserTabsTwo
-  are the spec ([Browser](docs/design/side-pane-browser.md)); tabs never restore after a restart.
-- **Spaces and Projects.** A Space is the folder a thread runs in (what the app used to call a "Project").
-  A Project is the new feature above Spaces and owns the word. Copy never calls a folder a project. The
-  [ProjectLead boards](docs/design/boards/SpacesTerminology.md) are the spec for Projects; the user's only
-  approved changes to them are macOS-only hosts (no Linux) and the Activity sidebar's Designs group first,
-  above Needs you. Activity then reads Designs, Needs you, Working, Done, Projects, Recents.
+- Terminals are tabs under a thread, one terminal per tab. No splits, no global shells. Browser
+  pages are tabs in the thread's Browser pane ([browser](docs/browser.md)).
+- A Space is the folder a thread runs in. A Project is the feature above Spaces and owns the
+  word; copy never calls a folder a project ([projects](docs/project-lead.md)).
 - Copy says "the agent", never "pi". The exception is where the user's own pi is the subject
   (Settings ▸ Pi, Sign-in).
+- Experiments (Projects, Goals) are off by default and turning one off never discards its data;
+  turning it back on never resumes work by itself. The feature's doc in `docs/` has the detail.
 - Missions and the Artifacts and Files tabs are not built. Nothing shows or links to them.
-- Projects are an experiment, off by default (Settings ▸ Experiments ▸ Projects). Off removes the Projects group
-  (header, New project chip, rows) from both sidebars, and every way to open New project or a Project page. Spaces and
-  ordinary threads are untouched. Off closes only Project navigation and keeps the projects, their files and drafts; on
-  shows them again and reopens or resumes nothing.
-- Goals are an experiment, off by default (Settings ▸ Experiments). They have no time or token
-  budgets. Turning them off pauses active goals and never clears them. Turning them back on
-  never resumes work by itself.
 
 ## Principles, in priority order
 
@@ -113,28 +103,11 @@ Settings", revision 1083) is the source of truth for every Settings page.
 - **Pages** fill the width with 40pt side gutters. Each page has a Geist 22/600 title, one
   explanation line, then groups 28pt apart. A group has a caps label, a flat card (radius 10,
   1px `lineSubtle`), and an optional footnote.
-- **Pi** is Shepherd's pi, then **From pi**: the source, what was brought over, the copies and
-  the imported extensions.
-- **Subagents** lists the definition files, then the native subagent switches and defaults.
-- **Extensions** holds the bundled extension switches. Peer tools have no separate permission row.
-- **Slash commands**: off disables a command entirely, in the menu and when typed.
-- **Spaces** (the old folder-based "Projects"; the name now belongs to the new Projects feature) reuses the shared MCP server cards, forms and OAuth sheet. Authentication runs on
-  the selected host and opens the viewer's browser. Native MCP shows Pi's space approval apart
-  from saved credentials, and asks for explicit confirmation of executable space resources
-  before approving them on that host ([Space MCP](docs/design/project-mcp.md)).
-- Local spaces offer [Add child space](docs/design/child-projects.md) from Settings' existing
-  Add subspace action and the sidebar space menu. The shared dialog creates an empty folder
-  or registers an existing descendant. Child spaces nest under their main space in the
-  sidebar, with their threads indented again; parent collapse hides the whole group. Remove
-  Space… confirms registration/session removal while preserving local folders and child spaces.
-  Rename Space… changes only the display name. Tool-driven parent edits change both space
-  trees without changing folders or configuration inheritance; moving/copying data is explicit.
-- Advanced includes opt-in [crash diagnostics](docs/design/boards/Diagnostics.md), with adjacent
-  reporting disclosure, an unavailable state for unconfigured builds and immediate opt-out. Reset
-  turns diagnostics off. No prompt, tool-output or screen recording collection.
+- Every row is wired: a row exists only if changing it changes the app, and a change applies at
+  once with no Save, except Instructions and Spaces, which edit files with an explicit Save.
 - Sliders show the bare number the board draws ("100", "232", "12.5"). VoiceOver reads the unit.
 
-Detail: [settings.md](docs/design/settings.md) and its `settings-*` files.
+Each page's contents: [settings.md](docs/design/settings.md) and its `settings-*` files.
 
 ## Night Watch
 

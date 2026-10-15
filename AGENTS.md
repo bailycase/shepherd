@@ -40,7 +40,7 @@ Nightly PRs run unit, smoke and affected suites; docs alone run no Swift
 | `Extensions/` | canonical pi extensions (TypeScript), embedded in the app as literals |
 | `Tests/` | `*UnitTests`, `*IntegrationTests`, `ShepherdPreviewTests`, `Release` (Python) |
 
-Every file: [docs/source-map.md](docs/source-map.md). How it fits: [ARCHITECTURE.md](ARCHITECTURE.md).
+How it fits together: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Working here
 

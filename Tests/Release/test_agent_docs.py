@@ -18,7 +18,7 @@ AGENTS_MAX_LINES = 130
 DESIGN_MAX_LINES = 280
 
 # Reference docs AGENTS.md points at, each with a one-line "Read when" header.
-REFERENCE_DOCS = ["overview", "build-and-run", "environment", "testing", "source-map", "data-flow",
+REFERENCE_DOCS = ["overview", "build-and-run", "environment", "testing", "data-flow",
                   "remote-protocol", "rules", "releases", "gotchas"]
 
 LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
