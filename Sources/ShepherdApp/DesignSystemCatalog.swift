@@ -48,10 +48,13 @@ final class DesignSystemCatalog {
                 self?.again = false
                 await self?.loadOnce(read)
             } while self?.again == true
+            // Cleared here, in the task, on the main actor with no await between the last check of
+            // `again` and the clear: a load asked for after that check starts a fresh task instead of
+            // waiting on this finished one (its read would miss a re-sync that just landed).
+            self?.loading = nil
         }
         loading = task
         await task.value
-        loading = nil
     }
 
     private func loadOnce(_ read: DesignSystemReader) async {

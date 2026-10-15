@@ -211,7 +211,7 @@ enum SidebarDerivation {
         let designs = Set(source.local.designs.map(\.id))
         for (index, agent) in source.local.agents.enumerated() {
             // A Project's coordinator is its conversation, never an ordinary thread row.
-            guard source.local.isOrdinaryThread(agent) || agent.designID != nil else { continue }
+            guard source.local.isSidebarThread(agent) || agent.designID != nil else { continue }
             if let design = agent.designID, designs.contains(design) { continue }
             let automation = localRuns[agent.id]
             let notSignedIn = source.notSignedIn.contains(agent.id)
@@ -236,7 +236,7 @@ enum SidebarDerivation {
         for (hostIndex, host) in source.hosts.enumerated() {
             let runs = Set(host.state.automations.compactMap(\.agentID))
             // A host sends no design's agent (`withoutDesigns`); one from before that is no thread either.
-            for (index, agent) in host.state.agents.enumerated() where host.state.isOrdinaryThread(agent) {
+            for (index, agent) in host.state.agents.enumerated() where host.state.isSidebarThread(agent) {
                 // Nothing on an offline host can be answered, so none of it waits on you here.
                 let needsYou = !host.offline && agent.status == .blocked
                 let row = remoteRow(agent, host: host, automation: runs.contains(agent.id), needsYou: needsYou)

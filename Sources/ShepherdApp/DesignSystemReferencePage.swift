@@ -4,12 +4,12 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
 
-// The built-in design system's page (DesignSystemPage and its eight sibling boards): a hero, the
-// system's principles and voice, then Colors, Typography, Spacing, Corner radius, Size and
-// Components as cards of read-only tables. A contents button opens a menu of the parts and the
-// designs using the system. Dark | Light switches the page's own appearance; each color's dark
-// and light values always sit side by side. Not drawn, on purpose: Edit, Add and a component's
-// open icon (docs/design/boards/DesignSystem-checklist.md).
+// A design system's page (DesignSystemPage and its eight sibling boards), for every system: a hero, the
+// system's principles and voice when it has them, then Colors, Typography, Spacing, Corner radius, Size and
+// Components as cards of read-only tables. A part the system has nothing for is left out. A contents button
+// opens a menu of the parts and the designs using the system. Dark | Light switches the page's own
+// appearance; each color's dark and light values sit side by side. Not drawn, on purpose: Edit, Add and a
+// component's open icon (docs/design/boards/DesignSystem-checklist.md).
 
 struct DesignSystemReferencePage: View {
     var vm: ShepherdViewModel
@@ -32,7 +32,8 @@ struct DesignSystemReferencePage: View {
     @State private var menuOpen: Bool
     /// The part the contents menu last went to; the page starts at the overview.
     @State private var current = DesignSystemReference.Part.overview
-    @State private var group = NWComponentCatalog.allGroups
+    /// The component group shown; nil for all of them.
+    @State private var group: String?
 
     /// Column widths, nil where the column takes what is left: the boards' name column is fixed.
     private static let nameAndRest: [CGFloat?] = [AppLayout.referenceNameColumn + NW.Space.xxl * 2, nil]
@@ -75,11 +76,17 @@ struct DesignSystemReferencePage: View {
     // MARK: Header
 
     private var header: some View {
-        NWDesignHeader(reference.title, style: .page, section: "Design systems", leadingInset: chrome.leadingInset,
+        NWDesignHeader(reference.title, style: .page, section: "Design systems", status: model.status, leadingInset: chrome.leadingInset,
                        sidebar: chrome.showSidebar, sidebarShortcut: KeybindingsStore.shared.display(.toggleSidebar),
                        designs: { vm.openDestination(.designs) }) {
             NWSegmentedPicker("Appearance", selection: Binding(get: { scheme }, set: { appearance = $0 }),
                               options: [(ColorScheme.dark, "Dark"), (ColorScheme.light, "Light")])
+            if model.canResync, let namespace = model.namespace {
+                Button("Re-sync", systemImage: "arrow.clockwise") { vm.resyncDesignSystem(namespace) }
+                    .buttonStyle(.nw(.secondary))
+                    .disabled(model.syncing)
+                    .help("Read \(namespace)'s stylesheets again from its project")
+            }
             Button("New design") { vm.openNewDesign(system: model.namespace) }
                 .buttonStyle(.nw(.primary))
             if let namespace = model.namespace {
@@ -104,7 +111,7 @@ struct DesignSystemReferencePage: View {
                 ScrollView(.vertical) {
                     VStack(alignment: .leading, spacing: NW.Space.xxs) {
                         Text(reference.title).nwSectionLabel().padding(.horizontal, NW.Space.m).padding(.vertical, NW.Space.s)
-                        ForEach(DesignSystemReference.Part.allCases) { part in
+                        ForEach(reference.parts) { part in
                             menuRow(part.title, count: reference.count(part), selected: part == current) {
                                 current = part
                                 select(part)
@@ -151,23 +158,23 @@ struct DesignSystemReferencePage: View {
 
     // MARK: Content
 
+    /// One lazy column, one element per part, and each card's rows a lazy stack of their own: a system with
+    /// hundreds of colors or components builds only the rows on screen.
     private var content: some View {
-        VStack(alignment: .leading, spacing: AppLayout.referencePartSpacing) {
+        let parts = Set(reference.parts)
+        return LazyVStack(alignment: .leading, spacing: AppLayout.referencePartSpacing) {
             hero.id(DesignSystemReference.Part.overview.id)
-            VStack(alignment: .leading, spacing: NW.Space.s) {
-                Text(DesignSystemCopy.lead(components: reference.components, namespace: reference.namespace))
-                    .nwText(.body).foregroundStyle(Color.nw.textSecondary)
-                Text(DesignSystemCopy.provenance).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+            lead
+            if parts.contains(.principles) { principles.id(DesignSystemReference.Part.principles.id) }
+            if parts.contains(.voice) { voice.id(DesignSystemReference.Part.voice.id) }
+            if parts.contains(.colors) { card("Colors", sub: reference.colorsSub, part: .colors) { colors } }
+            if parts.contains(.typography) { card("Typography", sub: reference.typographySub, part: .typography) { typography } }
+            if parts.contains(.spacing) { card("Spacing", sub: reference.spacingSub, part: .spacing) { spacing } }
+            if parts.contains(.radius) { card("Corner radius", sub: reference.radiusSub, part: .radius) { radii } }
+            if parts.contains(.size) { card("Size", sub: reference.sizeSub, part: .size) { sizes } }
+            if parts.contains(.components) {
+                card("Components", sub: reference.componentsSub, part: .components, accessory: { groups }) { components }
             }
-            principles.id(DesignSystemReference.Part.principles.id)
-            voice.id(DesignSystemReference.Part.voice.id)
-            card("Colors", sub: "\(reference.colorCount) tokens · light and dark", part: .colors) { colors }
-            card("Typography", sub: "Geist and Geist Mono · \(reference.typeCount) styles", part: .typography) { typography }
-            card("Spacing", sub: "a 2 and 4-point grid", part: .spacing) { spacing }
-            card("Corner radius", sub: "from pills to sheets", part: .radius) { radii }
-            card("Size", sub: "controls and columns, from the app", part: .size) { sizes }
-            card("Components", sub: "\(reference.components) in \(reference.title), drawn live", part: .components,
-                 accessory: { groups }) { components }
         }
     }
 
@@ -184,33 +191,34 @@ struct DesignSystemReferencePage: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
                     .accessibilityAddTraits(.isHeader)
-                Text(DesignSystemCopy.tagline).font(.nw(.body)).foregroundStyle(nw.textSecondary)
+                if let tagline = reference.tagline {
+                    Text(tagline).font(.nw(.body)).foregroundStyle(nw.textSecondary)
+                }
             }
             // Clear of the art, which the name and tagline never run under at any text size.
-            .padding(.trailing, tile * 4 + NW.Space.m * 3 + NW.Space.xxxl)
+            .padding(.trailing, reference.tiles.isEmpty ? 0 : tile * 4 + NW.Space.m * 3 + NW.Space.xxxl)
             .frame(maxWidth: .infinity, alignment: .bottomLeading)
-            HStack(alignment: .top, spacing: NW.Space.m) {
-                VStack(spacing: NW.Space.m) {
-                    RoundedRectangle(cornerRadius: NW.Radius.m).fill(nw.lantern)
-                        .frame(width: tile * 2 + NW.Space.m, height: rowHeight * 2 + NW.Space.m)
-                    HStack(spacing: NW.Space.m) {
-                        RoundedRectangle(cornerRadius: NW.Radius.m).fill(nw.lanternTint).frame(width: tile, height: rowHeight)
-                        RoundedRectangle(cornerRadius: NW.Radius.m).fill(nw.failed).frame(width: tile, height: rowHeight)
+            if !reference.tiles.isEmpty {
+                HStack(alignment: .top, spacing: NW.Space.m) {
+                    VStack(spacing: NW.Space.m) {
+                        heroTile(0).frame(width: tile * 2 + NW.Space.m, height: rowHeight * 2 + NW.Space.m)
+                        HStack(spacing: NW.Space.m) {
+                            heroTile(4).frame(width: tile, height: rowHeight)
+                            heroTile(5).frame(width: tile, height: rowHeight)
+                        }
+                    }
+                    VStack(spacing: 0) {
+                        Spacer().frame(height: rowHeight + NW.Space.m)
+                        heroTile(1).frame(width: tile, height: rowHeight * 2 + NW.Space.m)
+                    }
+                    VStack(spacing: NW.Space.m) {
+                        heroTile(2).frame(width: tile, height: rowHeight)
+                        heroTile(3, bordered: true).frame(width: tile, height: rowHeight * 2 + NW.Space.m)
                     }
                 }
-                VStack(spacing: 0) {
-                    Spacer().frame(height: rowHeight + NW.Space.m)
-                    RoundedRectangle(cornerRadius: NW.Radius.m).fill(nw.running).frame(width: tile, height: rowHeight * 2 + NW.Space.m)
-                }
-                VStack(spacing: NW.Space.m) {
-                    RoundedRectangle(cornerRadius: NW.Radius.m).fill(nw.done).frame(width: tile, height: rowHeight)
-                    RoundedRectangle(cornerRadius: NW.Radius.m).fill(nw.bgRaised)
-                        .overlay { RoundedRectangle(cornerRadius: NW.Radius.m).strokeBorder(nw.lineStrong) }
-                        .frame(width: tile, height: rowHeight * 2 + NW.Space.m)
-                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .accessibilityHidden(true)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-            .accessibilityHidden(true)
         }
         .padding(NW.Space.xxxl)
         .frame(height: AppLayout.referenceHeroHeight)
@@ -218,36 +226,69 @@ struct DesignSystemReferencePage: View {
         .overlay { RoundedRectangle(cornerRadius: NW.Radius.l).strokeBorder(nw.lineSubtle) }
     }
 
+    /// One of the hero's tiles, in the system's own color for the page's appearance; empty when it has none.
+    @ViewBuilder
+    private func heroTile(_ index: Int, bordered: Bool = false) -> some View {
+        let shape = RoundedRectangle(cornerRadius: NW.Radius.m)
+        if reference.tiles.indices.contains(index), let tile = reference.tiles[index] {
+            shape.fill(Color(light: tile.light, dark: tile.dark))
+                .overlay { if bordered { shape.strokeBorder(Color.nw.lineStrong) } }
+        } else {
+            Color.clear
+        }
+    }
+
+    /// The system's summary, then where it came from: its own words when it says, else what Shepherd knows.
+    private var lead: some View {
+        VStack(alignment: .leading, spacing: NW.Space.s) {
+            if let summary = reference.summary {
+                Text(summary).nwText(.body).foregroundStyle(Color.nw.textSecondary)
+            }
+            Group {
+                if let source = reference.source {
+                    Text(source)
+                } else {
+                    DesignSystemContent.sourceLine(model.source)
+                }
+            }
+            .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+        }
+    }
+
     private var principles: some View {
         VStack(alignment: .leading, spacing: NW.Space.m) {
             Text("Principles").font(.nw(.title)).foregroundStyle(Color.nw.textPrimary).accessibilityAddTraits(.isHeader)
-            bullets(DesignSystemCopy.principles.map { Text("\(Text($0.lead).fontWeight(.semibold).foregroundStyle(Color.nw.textPrimary)) \($0.text)") })
+            bullets(reference.principles.map { Text("\(Text($0.lead).fontWeight(.semibold).foregroundStyle(Color.nw.textPrimary)) \($0.text)") })
         }
     }
 
     private var voice: some View {
         VStack(alignment: .leading, spacing: NW.Space.m) {
             Text("Voice").font(.nw(.title)).foregroundStyle(Color.nw.textPrimary).accessibilityAddTraits(.isHeader)
-            Text(DesignSystemCopy.voiceLead).nwText(.body).foregroundStyle(Color.nw.textSecondary)
-            VStack(spacing: 0) {
-                HStack(spacing: 0) { sayCell("Say", header: true); sayCell("Avoid", header: true, leading: true) }
-                ForEach(Array(zip(DesignSystemCopy.say, DesignSystemCopy.avoid).enumerated()), id: \.offset) { _, pair in
-                    HStack(spacing: 0) { sayCell(pair.0); sayCell(pair.1, leading: true) }
-                }
+            if let lead = reference.voiceLead {
+                Text(lead).nwText(.body).foregroundStyle(Color.nw.textSecondary)
             }
-            .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
-            .overlay { RoundedRectangle(cornerRadius: NW.Radius.m).strokeBorder(Color.nw.lineSubtle) }
-            .accessibilityElement(children: .contain)
-            bullets(DesignSystemCopy.voiceNotes.map { Text(verbatim: $0) })
+            if !reference.examples.isEmpty {
+                VStack(spacing: 0) {
+                    HStack(spacing: 0) { sayCell("Say", header: true); sayCell("Avoid", header: true, leading: true) }
+                    ForEach(Array(reference.examples.enumerated()), id: \.offset) { _, example in
+                        HStack(spacing: 0) { sayCell("“\(example.say)”"); sayCell("“\(example.avoid)”", leading: true) }
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
+                .overlay { RoundedRectangle(cornerRadius: NW.Radius.m).strokeBorder(Color.nw.lineSubtle) }
+                .accessibilityElement(children: .contain)
+            }
+            bullets(reference.voiceRules.map { Text(verbatim: $0) })
         }
     }
 
     private func sayCell(_ text: String, header: Bool = false, leading: Bool = false) -> some View {
-        Text(text)
+        Text(verbatim: text)
             .font(.nw(.body, weight: header ? .medium : nil))
             .foregroundStyle(header ? Color.nw.textSecondary : Color.nw.textPrimary)
             .padding(.horizontal, NW.Space.l).padding(.vertical, NW.Space.m)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .background(header ? Color.nw.bgSunken : .clear)
             .overlay(alignment: .top) { NWHairline() }
             .overlay(alignment: .leading) { if leading { NWHairline(.vertical) } }
@@ -300,7 +341,7 @@ struct DesignSystemReferencePage: View {
     }
 
     private func row(_ cells: [AnyView], widths: [CGFloat?] = []) -> some View {
-        HStack(alignment: .top, spacing: 0) {
+        HStack(spacing: 0) {
             ForEach(Array(cells.enumerated()), id: \.offset) { index, cell in
                 cell
                     .padding(.horizontal, NW.Space.xxl).padding(.vertical, NW.Space.m)
@@ -331,15 +372,15 @@ struct DesignSystemReferencePage: View {
 
     // MARK: Colors
 
+    /// Name | Dark | Light, or Name | Value for a system with no dark values.
     private var colors: some View {
-        VStack(spacing: 0) {
+        let paired = reference.colors.contains { $0.rows.contains { $0.dark != $0.light } }
+        return LazyVStack(spacing: 0) {
             ForEach(reference.colors) { group in
-                groupHeader(group.title, count: group.rows.count, hint: group.hint)
-                header(["Name", "Dark", "Light"])
+                if !group.title.isEmpty { groupHeader(group.title, count: group.rows.count, hint: group.hint) }
+                header(paired ? ["Name", "Dark", "Light"] : ["Name", "Value"])
                 ForEach(group.rows) { color in
-                    row([name(color.name),
-                         AnyView(ValueChip(value: color.dark, scheme: .dark, ratio: color.darkRatio)),
-                         AnyView(ValueChip(value: color.light, scheme: .light, ratio: color.lightRatio))])
+                    ReferenceColorRow(color: color, paired: paired)
                 }
             }
         }
@@ -348,7 +389,7 @@ struct DesignSystemReferencePage: View {
     // MARK: Typography
 
     private var typography: some View {
-        VStack(spacing: 0) {
+        LazyVStack(spacing: 0) {
             ForEach(reference.type) { group in
                 groupHeader(group.title, count: group.rows.count)
                 header(["Name", "Preview"], widths: Self.nameAndRest)
@@ -360,12 +401,9 @@ struct DesignSystemReferencePage: View {
     }
 
     private func typeSample(_ style: DesignSystemReference.TypeRow) -> some View {
-        let mono = style.family.contains("Mono")
-        let weight = DesignSystemContent.weight(style.weight)
-        let text = style.uppercase ? DesignSystemCopy.microSample.uppercased() : DesignSystemCopy.sample
-        return VStack(alignment: .leading, spacing: NW.Space.s) {
-            Text(text)
-                .font(mono ? .nwMono(CGFloat(style.size), weight) : .nwSans(CGFloat(style.size), weight))
+        VStack(alignment: .leading, spacing: NW.Space.s) {
+            Text(style.sample)
+                .font(Self.font(style))
                 .tracking(style.uppercase ? CGFloat(style.size) * 0.04 : 0)
                 .foregroundStyle(Color.nw.textPrimary)
                 .lineLimit(1)
@@ -376,30 +414,43 @@ struct DesignSystemReferencePage: View {
         .accessibilityElement(children: .combine)
     }
 
+    /// A style's sample in its own face at its size and weight (Shepherd's Geist faces by their tokens), at
+    /// most the page's largest specimen size.
+    static func font(_ style: DesignSystemReference.TypeRow) -> Font {
+        let size = CGFloat(min(max(style.size, 1), AppLayout.designSystemSpecimenMaxSize))
+        let weight = DesignSystemContent.weight(style.weight)
+        switch style.family {
+        case NWFonts.sansFamily?: return .nwSans(size, weight)
+        case NWFonts.monoFamily?: return .nwMono(size, weight)
+        case let family?: return Font.custom(family, size: size).weight(weight)
+        case nil: return .nwSans(size, weight)
+        }
+    }
+
     // MARK: Spacing, radius, size
 
     private var spacing: some View {
-        VStack(spacing: 0) {
+        LazyVStack(spacing: 0) {
             header(["Name", "Value", "Shape"], widths: Self.valueShape)
             ForEach(reference.spacing) { step in
                 row([name(step.name), AnyView(ValueChip(value: DesignSystemReference.number(step.px), unit: "px")
                         .frame(width: AppLayout.referenceValueChipWidth)),
                      AnyView(RoundedRectangle(cornerRadius: NW.Radius.xs).fill(Color.nw.running)
-                        .frame(width: step.px * AppLayout.referenceBarScale, height: NW.Space.m)
+                        .frame(width: min(step.px * AppLayout.referenceBarScale, AppLayout.referenceShapeColumn), height: NW.Space.m)
                         .frame(minHeight: NW.Height.controlM).accessibilityHidden(true))], widths: Self.valueShape)
             }
         }
     }
 
     private var radii: some View {
-        VStack(spacing: 0) {
+        LazyVStack(spacing: 0) {
             header(["Name", "Value", "Shape"], widths: Self.valueShape)
             ForEach(reference.radii) { step in
                 row([name(step.name),
                      AnyView(HStack(spacing: NW.Space.m) {
                          ValueChip(value: DesignSystemReference.number(step.px), unit: "px")
                              .frame(width: AppLayout.referenceValueChipWidth)
-                         Text(step.use).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                         if !step.use.isEmpty { Text(step.use).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary) }
                      }),
                      AnyView(RoundedRectangle(cornerRadius: step.px).fill(Color.nw.bgSunken)
                         .overlay { RoundedRectangle(cornerRadius: step.px).strokeBorder(Color.nw.lineStrong) }
@@ -410,10 +461,10 @@ struct DesignSystemReferencePage: View {
     }
 
     private var sizes: some View {
-        VStack(spacing: 0) {
+        LazyVStack(spacing: 0) {
             header(["Name", "Value", "Used for"], widths: Self.valueNote)
             ForEach(reference.sizes) { size in
-                row([name(size.name), AnyView(ValueChip(value: "\(DesignSystemReference.number(size.px))px")),
+                row([name(size.name), AnyView(ValueChip(value: size.value)),
                      AnyView(Text(size.use).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
                         .frame(minHeight: NW.Height.controlM, alignment: .leading))], widths: Self.valueNote)
             }
@@ -422,31 +473,99 @@ struct DesignSystemReferencePage: View {
 
     // MARK: Components
 
+    /// The group popup, when the system groups its components (`group` on each): a popup of one group filters nothing.
+    @ViewBuilder
     private var groups: some View {
-        NWPopupMenu(group) {
-            ForEach([NWComponentCatalog.allGroups] + NWComponentCatalog.groups, id: \.self) { name in
-                Button(name) { group = name }
+        if reference.componentGroups.count > 1 {
+            NWPopupMenu(group ?? Self.allGroups) {
+                Button(Self.allGroups) { group = nil }
+                ForEach(reference.componentGroups, id: \.self) { name in
+                    Button(name) { group = name }
+                }
             }
+            .help("Component group")
         }
-        .help("Component group")
     }
 
+    static let allGroups = "All groups"
+
     private var components: some View {
-        let entries = NWComponentCatalog.entries.filter { group == NWComponentCatalog.allGroups || $0.group == group }
-        return VStack(spacing: 0) {
+        let shown = reference.components.filter { group == nil || $0.group == group }
+        return LazyVStack(spacing: 0) {
             header(["Name", "Preview"], widths: Self.componentName)
-            ForEach(entries) { entry in
+            ForEach(shown) { component in
                 row([AnyView(VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                    Text(entry.id).font(.nw(.ui, weight: .semibold)).foregroundStyle(Color.nw.textPrimary)
-                    Text(entry.group).font(.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
-                }), AnyView(entry.specimen()
+                    Text(component.name).font(.nw(.ui, weight: .semibold)).foregroundStyle(Color.nw.textPrimary)
+                    if let export = component.export {
+                        Text(export).font(.nw(.mono)).foregroundStyle(Color.nw.textTertiary).lineLimit(2)
+                    }
+                }), AnyView(ReferenceSpecimen(namespace: reference.namespace, component: component.id,
+                                              specimens: vm.designRendering.specimens)
                     // A specimen is a picture of the component: it takes no press and is one element to VoiceOver.
-                    .allowsHitTesting(false)
                     .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("\(entry.id) specimen")
+                    .accessibilityLabel("\(component.name) specimen")
                     .padding(.vertical, NW.Space.m))], widths: Self.componentName)
             }
+            if let note = reference.componentsShown {
+                Text(note).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, NW.Space.xxl).padding(.vertical, NW.Space.l)
+                    // Its own element: the list's last row is read as itself, not folded into the card.
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(note)
+            }
         }
+    }
+}
+
+/// A color's row: its name and each value as a chip, a text color with its contrast.
+private struct ReferenceColorRow: View {
+    let color: DesignSystemReference.ColorRow
+    let paired: Bool
+
+    var body: some View {
+        let _ = NWRenderProbe.tick("design.referenceColor")
+        HStack(spacing: 0) {
+            Text(color.name).font(.nw(.mono)).foregroundStyle(Color.nw.textPrimary).lineLimit(1).truncationMode(.middle)
+                .frame(minHeight: NW.Height.controlM)
+                .padding(.horizontal, NW.Space.xxl).padding(.vertical, NW.Space.m)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if paired {
+                cell(ValueChip(value: color.dark, scheme: .dark, ratio: color.darkRatio))
+                cell(ValueChip(value: color.light, scheme: .light, ratio: color.lightRatio))
+            } else {
+                cell(ValueChip(value: color.light, ratio: color.lightRatio))
+            }
+        }
+        .overlay(alignment: .bottom) { NWHairline() }
+    }
+
+    private func cell(_ chip: ValueChip) -> some View {
+        chip
+            .padding(.horizontal, NW.Space.xxl).padding(.vertical, NW.Space.m)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(alignment: .leading) { NWHairline(.vertical) }
+    }
+}
+
+/// A component's specimen as the board renderer drew it from the system's own file, once its image lands.
+private struct ReferenceSpecimen: View {
+    let namespace: String
+    let component: Int
+    let specimens: DesignSpecimens
+
+    var body: some View {
+        let _ = specimens.version
+        let size = DesignSpecimenBoard.size
+        ZStack {
+            if let image = specimens.image(namespace, component) {
+                Image(decorative: image, scale: 1).resizable().interpolation(.high).aspectRatio(contentMode: .fit)
+            }
+        }
+        .frame(width: size.width, height: size.height)
+        .background(Color.nw.bgSunken)
+        .clipShape(RoundedRectangle(cornerRadius: NW.Radius.s))
+        .overlay { RoundedRectangle(cornerRadius: NW.Radius.s).strokeBorder(Color.nw.lineSubtle) }
     }
 }
 
