@@ -17,7 +17,6 @@ swift test --filter IntegrationTests          # real server, stub pi, git, off-s
 SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter PreviewTests   # PNG of every surface
 PI_PACKAGE_DIR="$(npm root -g)/@earendil-works/pi-coding-agent" node --test Tests/Extensions/*.test.mjs
 python3 -m unittest discover -s Tests/Release # release rules, docs size and link guards
-python3 scripts/sync-embedded-extension.py <swift-file> <static-name> <Extensions/file>
 python3 scripts/design_section.py "<board or heading>"   # one spec from docs/design/
 ```
 
@@ -81,8 +80,8 @@ The full rule is in [docs/rules.md](docs/rules.md) under the name in parentheses
 - A new extension or remote message needs its enum case, `Kind`, `CodingKeys`, both codec arms, a
   round-trip row, and `speaksFor`/`replyID`; a new `SessionServer` mutation needs an integration
   test; new persisted fields decode with defaults. (Contracts)
-- Edit `Extensions/*` and its Swift literal together with the sync script; extensions stay
-  dependency-free, inert without their env vars, and never throw into pi. (Embedded extensions)
+- `Extensions/*` is the one copy of each pi extension, shipped in ShepherdSessions' resource bundle;
+  extensions stay dependency-free, inert without their env vars, and never throw into pi. (Embedded extensions)
 - One serial queue owns server state: never `.sync` between server queues, never wait on it from
   the main thread. Callbacks hop to main. (Server concurrency)
 - State is `@Observable`, never `ObservableObject`. Views take plain `Equatable` values and don't

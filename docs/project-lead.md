@@ -471,7 +471,7 @@ including the existing genuine persistence-failure regression.
 
 ### Typed tools, live context, Space approval and hosts
 
-The one canonical `shepherd-project-context.ts` plus its synced embedded literal registers only
+`shepherd-project-context.ts` registers only
 `project_read`, `project_inspect`, `project_answer`, `project_assign`, `project_follow_up`, `project_resolve`,
 `project_propose_space` and `project_remember` for coordinators. Ordinary workers get no coordinator
 tools. Kernel extension-peer identity, reciprocal coordinator ownership, revision, operation,
