@@ -203,7 +203,8 @@ struct ThreadView: View {
                 .id(transcriptRevision)
                 // The composer floats over the scroll view; inset by its real height so "the
                 // bottom" is the last turn, not the space under the card.
-                .modifier(ComposerInsetPadding(inset: composerInset, gap: leadColumn ? 0 : AppLayout.composerTranscriptGap))
+                .modifier(ComposerInsetPadding(inset: composerInset, gap: leadColumn ? 0 : AppLayout.composerTranscriptGap,
+                                               present: workerStyle?.composerHidden != true))
                 // A margin rather than padding so scrollTo(.top) keeps the 28pt above a turn.
                 .contentMargins(.top, workerStyle != nil ? NWLeadMetrics.paneThreadTop : leadColumn ? NWLeadMetrics.columnTopPadding : AppLayout.threadTop, for: .scrollContent)
                 // Target IDs are only candidates: `ThreadTailGuard` also checks native row placement
@@ -282,22 +283,25 @@ struct ThreadView: View {
                 }
                 // The composer draws "Jump to latest" over the fade it lays on the thread and under
                 // its card and menus, so the pill reads clearly and never covers an open menu.
-                Composer(store: store, input: input, allowsLocalFiles: allowsLocalFiles, active: active, isFocused: isFocused, agentName: agentName, hasTurns: !rows.isEmpty,
-                         gutter: gutter, listModels: listModels, branch: branch, directory: allowsLocalFiles ? workingDirectory : nil,
-                         showChanges: showChanges, modelSettingsOpen: modelSettingsOpen, commandKey: commandKey,
-                         jumpToLatest: follower.showsJump(running: running) ? {
-                             historyAnchor.cancel()
-                             follower.jumpToLatest()
-                             proxy.scrollTo(Self.bottomID, anchor: .bottom)
-                             tailGuard.asked()
-                         } : nil, finder: finder, queueState: queueState, contextDetailsOpen: contextDetailsOpen,
-                         inspectSubagent: inspectSubagent, steerSubagent: steerSubagent, inspectedRunID: inspectedRunID,
-                         designChat: designChat, restartPi: restartPi,
-                         hidesNotSignedIn: { if case .notSignedIn? = authNotice { true } else { false } }(),
-                         slashLogin: slashLogin)
-                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { [composerInset] in
-                        if composerInset.height != $0 { composerInset.height = $0 }
-                    }
+                // A resolved Project thread takes no message: no composer at all, not a disabled one.
+                if workerStyle?.composerHidden != true {
+                    Composer(store: store, input: input, allowsLocalFiles: allowsLocalFiles, active: active, isFocused: isFocused, agentName: agentName, hasTurns: !rows.isEmpty,
+                             gutter: gutter, listModels: listModels, branch: branch, directory: allowsLocalFiles ? workingDirectory : nil,
+                             showChanges: showChanges, modelSettingsOpen: modelSettingsOpen, commandKey: commandKey,
+                             jumpToLatest: follower.showsJump(running: running) ? {
+                                 historyAnchor.cancel()
+                                 follower.jumpToLatest()
+                                 proxy.scrollTo(Self.bottomID, anchor: .bottom)
+                                 tailGuard.asked()
+                             } : nil, finder: finder, queueState: queueState, contextDetailsOpen: contextDetailsOpen,
+                             inspectSubagent: inspectSubagent, steerSubagent: steerSubagent, inspectedRunID: inspectedRunID,
+                             designChat: designChat, restartPi: restartPi,
+                             hidesNotSignedIn: { if case .notSignedIn? = authNotice { true } else { false } }(),
+                             slashLogin: slashLogin)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { [composerInset] in
+                            if composerInset.height != $0 { composerInset.height = $0 }
+                        }
+                }
             }
         }
         // The composer's menus float over the thread and fit the room above the card in it.
@@ -703,9 +707,11 @@ struct ComposerInsetPadding: ViewModifier {
     /// The space between the last turn and the composer's card: 24pt. A Project's threads add none: the column's own 16pt spacing already
     /// separates the last turn from the 1pt anchor row after it, which is the board's 16pt gap to the card.
     var gap = AppLayout.composerTranscriptGap
+    /// False while the thread draws no composer: nothing floats over the transcript, so nothing is reserved for it.
+    var present = true
 
     func body(content: Content) -> some View {
-        content.safeAreaPadding(.bottom, inset.height + gap)
+        content.safeAreaPadding(.bottom, present ? inset.height + gap : 0)
     }
 }
 

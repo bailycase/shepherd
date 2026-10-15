@@ -496,8 +496,6 @@ struct ListPerformanceTests {
 
     /// A system card's height (its 12pt padding and two lines) with the gap under it.
     private static let systemRowHeight: CGFloat = 2 * NWDesignMetrics.cardPaddingVertical + 32 + NWPageMetrics.columnGap
-    /// A row of swatches: the 56pt swatch, its two lines and the gap under it.
-    private static let swatchRowHeight: CGFloat = NWDesignMetrics.tokenSwatchHeight + 2 * NW.Space.s + 28 + AppLayout.designSystemColorGap
 
     /// `count` systems in the server's store, as folders it lists (the store's cap is 100), each
     /// with `colors` colors.
@@ -540,7 +538,7 @@ struct ListPerformanceTests {
         #expect(counts["design.systemCard", default: 0] < DesignSystemStore.maxSystems)
     }
 
-    /// A system's page over 300 colors: only the rows of swatches on screen are built.
+    /// A system's page over 300 colors: only the color rows on screen are built.
     @Test func openingASystemsPageBuildsOnlyTheSwatchesOnScreen() async throws {
         let app = try AppHarness()
         defer { app.stop() }
@@ -557,11 +555,12 @@ struct ListPerformanceTests {
             ListPerf.settle(window)
         }
         defer { window.close() }
-        let onScreen = (Int((Self.designsSize.height - NWPageMetrics.headerHeight) / Self.swatchRowHeight) + 1)
-            * AppLayout.designSystemColorColumns
-        #expect(counts["design.swatch", default: 0] > 0)
-        #expect(counts["design.swatch", default: 0] <= 2 * (onScreen + AppLayout.designSystemColorColumns), "\(counts)")
-        #expect(counts["design.swatch", default: 0] < 300)
+        // A color is a row of its table (DesignSystemColors): at least a control's height, so no more than
+        // the window's height over that are on screen at once.
+        let onScreen = Int(Self.designsSize.height / NW.Height.controlM) + 1
+        #expect(counts["design.referenceColor", default: 0] > 0)
+        #expect(counts["design.referenceColor", default: 0] <= 2 * onScreen, "\(counts)")
+        #expect(counts["design.referenceColor", default: 0] < 300)
     }
 
     // MARK: A design's comments

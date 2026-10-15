@@ -84,7 +84,6 @@ extension SessionServer {
               projectPersistenceFailed.insert(id).inserted else { return }
         ShepherdLog.error("Project runtime stopped: \(error)")
         projectRunStarts[id] = nil
-        projectActivations[id] = nil
         projectAnswersInFlight.subtract(store.state.projects.first(where: { $0.id == id })?.tasks.map(\.id) ?? [])
         interruptProject(id)
         let epoch = logicalProjectEpoch

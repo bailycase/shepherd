@@ -167,6 +167,7 @@ struct Composer: View {
     /// ProjectLead-Started/-ThreadRunning draw the conversation's empty composer as the disabled arrow while the coordinator works: Stop
     /// there would also pause the Project (Esc included). Worker and ordinary threads keep Stop.
     private var projectConversation: Bool { projectSend != nil }
+    private var fadeHeight: CGFloat { projectSend != nil || workerStyle != nil ? NWLeadMetrics.turnGap : AppLayout.composerFade }
     /// The model the chip names. A Project's conversation has no thread to ask before its first message, so it names the Project's own.
     private var modelName: String? {
         store.model ?? projectSend?.model.map { $0.current ?? ProjectConversationModel.defaultName }
@@ -345,7 +346,7 @@ struct Composer: View {
             Group {
                 if let dialog = dialogs.first, let session = store.session, let questionKey {
                     QuestionDock(prompt: NativeQuestionPrompt(dialog: dialog), count: dialogs.count,
-                                 enabled: active && store.supports("answer"), hidden: questionHiding.isHidden(questionKey),
+                                 enabled: active && store.supports("answer") && workerStyle?.answerHeld != true, hidden: questionHiding.isHidden(questionKey),
                                  focused: active && isFocused) { answer in
                         guard let reply = NativeQuestionPrompt(dialog: dialog).dialogAnswer(answer) else { return }
                         Task {
@@ -450,9 +451,10 @@ struct Composer: View {
         .frame(maxWidth: .infinity)
         .background(alignment: .top) {
             ZStack(alignment: .top) {
-                // The thread fades under the composer.
+                // The thread fades under the composer. A Project's column rests its last turn one 16pt turn gap above the
+                // composer (the boards), so its fade is no taller than that gap: a resting last line is never under it.
                 LinearGradient(colors: [Color.nw.bgWindow.opacity(0), Color.nw.bgWindow], startPoint: .top, endPoint: .bottom)
-                    .frame(height: AppLayout.composerFade).offset(y: -AppLayout.composerFade).allowsHitTesting(false)
+                    .frame(height: fadeHeight).offset(y: -fadeHeight).allowsHitTesting(false)
                 // Over the fade, under the card and its menus.
                 NWJumpToLatest(action: jumpToLatest)
                     .offset(y: -(NW.Height.controlM + NW.Space.m))

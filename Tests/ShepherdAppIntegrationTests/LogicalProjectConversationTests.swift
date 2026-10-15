@@ -126,6 +126,31 @@ struct LogicalProjectConversationTests {
         expectScenarioCompleted(result)
     }
 
+    @Test func theFirstMessagesThreadLeavesStartingEvenWhenItsCoordinatorIsRecordedBeforeItsAgentIsRegistered() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.firstMessageRace() } }
+        expectScenarioCompleted(result)
+    }
+
+    @Test func aSavedCoordinatorsHistoryShowsOnAColdLaunchAndTheNextMessageStartsItsPi() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.coldCoordinator() } }
+        expectScenarioCompleted(result)
+    }
+
+    @Test func aResolvedWorkersThreadDrawsNoComposerUntilItIsReopened() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.resolvedHasNoComposer() } }
+        expectScenarioCompleted(result)
+    }
+
+    @Test func aBlockingQuestionSaysTruthfullyWhatAReplyDoesAndAHeldAnswerLeavesNoSecondAnswerButton() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.questionCopy() } }
+        expectScenarioCompleted(result)
+    }
+
+    @Test func thePausedFooterMatchesItsSourceGeometryAndTheResolvedFooterKeepsItsOwn() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.footerGeometry() } }
+        expectScenarioCompleted(result)
+    }
+
     @Test func theCoordinatorAppearsInNoOrdinaryThreadList() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.hidden() } }
         expectScenarioCompleted(result)
@@ -1106,6 +1131,272 @@ private static func chipsAndLinks() async throws {
             r.vm.logicalProjects.failure != nil && r.vm.logicalProjects.operations[r.ref]?.id != kept
         }
         #expect(store.draft == "now with other words" && input.attachments.items.count == 1)
+    }
+
+    // MARK: First message, store stability
+
+    /// The owner records the coordinator's ID on the Project before it registers the agent. The mounted thread already holds the
+    /// store for that ID and polls it, so an adoption in the gap must keep the store (and its poll), and the thread must reach
+    /// ready (or show an error) instead of sitting on "Starting the agent".
+    private static func firstMessageRace() async throws {
+        let r = try await rig()
+        defer { r.app.stop() }
+        r.vm.openLogicalProject(r.ref)
+        let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
+        defer { window.close() }
+        try await eventuallyOnMain("the empty project") { window.layout(); return window.elements().contains { $0.label == "Message the agent" } }
+
+        // The gap, made exact: the Project names a coordinator that is not an agent yet. The page mounts its thread over that ID.
+        let named = AgentID()
+        var gap = r.vm.state
+        gap.projects[0].coordinatorAgentID = named
+        r.vm.adopt(gap)
+        let kept = r.vm.threadStores.store(for: named)
+        try await eventuallyOnMain("the thread polls the named coordinator") { window.layout(); return kept.isLive }
+        r.vm.adopt(gap)
+        #expect(r.vm.threadStores.existing(for: named) === kept && kept.isLive, "an adoption in the gap keeps the mounted thread's store and poll")
+        // Anything else that is not an agent is still pruned: ordinary stores keep their lifetime.
+        let stray = AgentID()
+        _ = r.vm.threadStores.store(for: stray)
+        r.vm.adopt(gap)
+        #expect(r.vm.threadStores.existing(for: stray) == nil)
+        r.vm.adopt(r.app.server.state)
+
+        // The real first message: the coordinator registers, and the thread must still reach ready (or say why not) instead of
+        // sitting on "Starting the agent".
+        #expect(await r.vm.logicalProjects.sendMessage(r.ref, text: "hello"))
+        let real = try #require(r.app.server.state.projects.first?.coordinatorAgentID)
+        try await eventuallyOnMain("the coordinator is a known agent") { r.vm.state.agents.contains { $0.id == real } }
+        try await eventuallyOnMain("the coordinator's thread is ready or failed") {
+            window.layout()
+            let live = r.vm.threadStores.existing(for: real)
+            return live?.ready == true || live?.startProblem != nil
+        }
+        #expect(r.vm.threadStores.existing(for: real)?.isLive == true, "and it keeps polling")
+    }
+
+    // MARK: Cold launch of a saved conversation
+
+    /// A relaunched app with a Project whose coordinator already has a saved pi session, paused by the person (a
+    /// relaunch leaves its pi off either way): the page shows the saved history from disk at once and keeps the composer usable, nothing is started until a message is
+    /// sent, and that send starts the coordinator's pi and reaches ready.
+    private static func coldCoordinator() async throws {
+        AccessibilityNode.enable()
+        try StubPi.installAsEngine()
+        // The saved workspace is on disk before the server starts, as a relaunch finds it.
+        let directory = try makeScratchDirectory("srv")
+        let folder = directory.appendingPathComponent("logical-project")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let held = Space(name: "Projects", path: folder.path, hidden: true, holdsProjects: true)
+        var fixture = Fixture.agent("Sample App", in: held)
+        var project = Project(name: "Sample App", goal: "", coordinatorAgentID: fixture.agent.id, paused: true)
+        fixture.agent.coordinatorFor = project.id
+        let session = fixture.agent.effectivePiSessionID
+        project.messages = [ProjectMessage(id: UUID(), text: "Reply with exactly READY", phase: .delivered, source: nil)]
+        var state = Fixture.state(spaces: [held], agents: [fixture])
+        state.projects = [project]
+        try JSONEncoder().encode(state).write(to: directory.appendingPathComponent("state.json"))
+        let app = try AppHarness(directory: directory)
+        defer { app.stop() }
+        app.settings.projectsEnabled = true
+        let sessionsDirectory = PiSessionFile.projectDirectory(forCwd: folder.path, sessionsRoot: app.server.pi.sessionsRoot)
+        try FileManager.default.createDirectory(at: sessionsDirectory, withIntermediateDirectories: true)
+        let lines = [
+            #"{"type":"session","version":3,"id":"\#(session)","timestamp":"2026-09-24T00:00:00.000Z","cwd":"\#(PiSessionFile.realPath(folder.path))"}"#,
+            #"{"type":"message","id":"e0","parentId":null,"timestamp":"2026-09-24T00:00:01.000Z","message":{"role":"user","content":"Reply with exactly READY","timestamp":1733234567890}}"#,
+            #"{"type":"message","id":"e1","parentId":"e0","timestamp":"2026-09-24T00:00:02.000Z","message":{"role":"assistant","content":[{"type":"text","text":"READY"}],"provider":"anthropic","model":"claude-sonnet-4-20250514","stopReason":"stop","timestamp":1733234567891}}"#,
+        ]
+        try Data((lines.joined(separator: "\n") + "\n").utf8).write(to: sessionsDirectory.appendingPathComponent("2026-09-24T00-00-00-000Z_\(session).jsonl"))
+        let vm = try await app.start(restoringAgents: true)
+        #expect(vm.state.projects.first?.coordinatorAgentID == fixture.agent.id, "the saved coordinator was loaded")
+        let ref = LogicalProjectRef(home: .local, id: project.id)
+        vm.openLogicalProject(ref)
+        let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: vm))
+        defer { window.close() }
+        let store = vm.threadStores.store(for: fixture.agent.id)
+        try await eventuallyOnMain("the saved history is on the page") {
+            window.layout(); return store.rows.contains { $0.turn.messages.contains { $0.blocks.contains { $0.text == "READY" } } }
+        }
+        #expect(store.acceptsSend && store.loadError == nil, "the composer stays usable on a cold conversation")
+        #expect(!window.controls().contains { $0.label == "Reconnect" })
+        #expect(app.server.state.projects.first?.paused == true, "showing history starts nothing")
+        // The coordinator stays off on purpose, so the composer must never claim it is starting: watched past the indicator's delay.
+        let startingLabel = "Starting the agent"
+        let watchedUntil = ContinuousClock.now + AppLayout.startingIndicatorDelay + .milliseconds(700)
+        var saidStarting = false
+        try await eventuallyOnMain("the starting indicator's delay passes") {
+            window.layout()
+            if window.elements().contains(where: { $0.label == startingLabel }) { saidStarting = true }
+            return ContinuousClock.now >= watchedUntil
+        }
+        #expect(!saidStarting, "a cold Project's composer says nothing about starting")
+        #expect(store.offline && store.loadError == nil && !store.starting, "the store knows the owner holds the pi off on purpose")
+        #expect(window.elements().contains { ($0.value ?? $0.label ?? "").hasPrefix("Paused.") })
+
+        // Leaving the page and coming back must not lose the owner's "held off on purpose".
+        for _ in 0..<3 {
+            vm.openLogicalProjectSettings(ref)
+            try await eventuallyOnMain("the page unmounts for settings") { window.layout(); return window.element("Message the agent") == nil }
+            vm.openLogicalProject(ref)
+            try await eventuallyOnMain("the page is back") { window.layout(); return window.element("Message the agent") != nil }
+            #expect(store.offline && store.loadError == nil && !store.starting && !store.awaitingPi,
+                    "back on a cold Project the store is still held off: offline=\(store.offline) error=\(String(describing: store.loadError)) starting=\(store.starting)")
+        }
+
+        // A second Project's page replaces this one, and the first comes back: its store is still held off.
+        let second = try await app.server.logicalProjects(.create(projectID: ProjectID(), name: "Other", goal: "", linkedSpaceIDs: []))
+        guard case .project(let other) = second else { throw RigError("no second project") }
+        try await eventuallyOnMain("the second Project arrives") { vm.state.projects.count == 2 }
+        for _ in 0..<3 {
+            vm.openLogicalProject(LogicalProjectRef(home: .local, id: other.id))
+            try await eventuallyOnMain("the other page is shown") { window.layout(); return vm.selectedLogicalProject?.id == other.id }
+            vm.openLogicalProject(ref)
+            try await eventuallyOnMain("the first page is back with its composer") { window.layout(); return vm.selectedLogicalProject == ref && window.element("Message the agent") != nil }
+            #expect(store.offline && store.loadError == nil && !store.starting && !store.awaitingPi,
+                    "after switching Projects and back: offline=\(store.offline) error=\(String(describing: store.loadError)) starting=\(store.starting)")
+        }
+
+        // The owner's state, not a view's lifetime, decides it. A stray clear and a replaced store both fall back to it at once.
+        store.offline = false
+        vm.adopt(app.server.state)
+        #expect(store.offline, "a stray clear is corrected from the owner's state")
+        // A store the registry makes for a cold coordinator starts held off (checked on a spare key, so the page's store keeps serving).
+        let spare = AgentID()
+        var spareState = vm.state
+        spareState.projects[0].coordinatorAgentID = spare
+        vm.state = spareState
+        let replacement = vm.threadStores.store(for: spare)
+        #expect(replacement.offline && replacement.loadError == nil && !replacement.starting && !replacement.awaitingPi,
+                "a store made for a cold Project's coordinator starts held off")
+        vm.adopt(app.server.state)
+
+        // Resume alone launches nothing; the next message starts the saved coordinator's pi and the thread goes ready.
+        #expect(await vm.logicalProjects.setPaused(ref, false))
+        #expect(store.offline, "a resumed Project with nothing to deliver still holds its pi off")
+        #expect(!window.elements().contains { $0.label == startingLabel })
+        #expect(await vm.logicalProjects.sendMessage(ref, text: "Reply with exactly READY2"))
+        try await eventuallyOnMain("the coordinator's pi serves its thread") { window.layout(); return store.ready && !store.offline }
+        try await eventuallyOnMain("the message is delivered") { app.server.state.projects.first?.messages.last?.phase == .delivered }
+    }
+
+    // MARK: A resolved worker
+
+    /// A real worker settles; its thread in the pane shows the steering composer. Marking it resolved removes the composer entirely
+    /// (the footer card and Reopen stand in): absent, not disabled. Reopen brings it back.
+    private static func resolvedHasNoComposer() async throws {
+        let r = try await rig()
+        defer { r.app.stop() }
+        _ = try await r.vm.projectCoordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
+                                                      request: .assign(operationID: UUID(), spaceID: r.space.id, title: "Publish file", prompt: "hello"))
+        try await eventuallyOnMain("the worker's turn ends") { r.app.server.state.projects.first?.tasks.first?.phase == .settled }
+        let task = try #require(r.app.server.state.projects.first?.tasks.first)
+        r.vm.openLogicalProject(r.ref)
+        r.vm.logicalProjectPaneTask = task.id
+        let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
+        defer { window.close() }
+        // The conversation's composer is in the left column; the worker's is in the pane on the right.
+        func paneComposers() -> Int {
+            let paneLeft = window.window.frame.maxX - NWLeadMetrics.paneWidth
+            return window.elements().filter { $0.label == "Message the agent" && $0.frame.minX > paneLeft }.count
+        }
+        try await eventuallyOnMain("the settled worker's thread shows its steering composer") {
+            window.layout(); return window.element("Mark resolved") != nil && paneComposers() == 1
+        }
+        try window.press("Mark resolved")
+        try await eventuallyOnMain("resolved on the owner") { r.app.server.state.projects.first?.tasks.first?.phase == .resolved }
+        try await eventuallyOnMain("the resolved footer is drawn") { window.layout(); return window.controls().contains { $0.label == "Reopen" } }
+        #expect(paneComposers() == 0, "the resolved worker draws no composer: absent, not disabled")
+        try window.press("Reopen")
+        try await eventuallyOnMain("reopened on the owner") { r.app.server.state.projects.first?.tasks.first?.phase == .settled }
+        try await eventuallyOnMain("the composer is back") { window.layout(); return paneComposers() == 1 }
+    }
+
+    // MARK: A blocking question
+
+    /// A real worker asks (the stub's "ask": a native select dialog the worker waits on). The conversation's question card must say the
+    /// worker waits for the answer (never that it "keeps going on its best guess"), and a paused Project says the answer waits for Resume.
+    /// Once the person answers while paused, the owner holds it: the card is gone and the pane's dock offers no second answer.
+    private static func questionCopy() async throws {
+        let r = try await rig()
+        defer { r.app.stop() }
+        // A native select with named options, as `project_question` leaves: the worker's turn stays open until it is answered.
+        let script: [String: Any] = ["prompts": ["ask-word": [["ask": ["title": "Pick the test word", "options": ["ALPHA", "BETA"]]]]], "socket": r.app.scratch.socketPath]
+        try JSONSerialization.data(withJSONObject: script).write(to: URL(fileURLWithPath: r.space.path).appendingPathComponent("project-script.json"))
+        _ = try await r.vm.projectCoordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
+                                                      request: .assign(operationID: UUID(), spaceID: r.space.id, title: "Library API draft", prompt: "ask-word"))
+        try await eventuallyOnMain("the worker is waiting on its question") { r.vm.state.projects.first?.tasks.first?.phase == .waiting }
+        let task = try #require(r.vm.state.projects.first?.tasks.first)
+        r.vm.openLogicalProject(r.ref)
+        // The conversation draws the card from the worker's own dialog, which its store reads: a coordinator thread makes the column.
+        #expect(await r.vm.logicalProjects.sendMessage(r.ref, text: "hello"))
+        let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
+        defer { window.close() }
+        func footer() -> String? { window.elements().compactMap { $0.value ?? $0.label }.first { $0.hasPrefix("Or just reply in chat.") } }
+        try await eventuallyOnMain("the question card is drawn with its footer") { window.layout(); return footer() != nil }
+        #expect(footer() == "Or just reply in chat. Library API draft is waiting for your answer.", "\(footer() ?? "none")")
+        #expect(!(footer() ?? "").contains("best guess"))
+
+        // Paused: the footer says an answer waits until Resume.
+        #expect(await r.vm.logicalProjects.setPaused(r.ref, true))
+        try await eventuallyOnMain("the paused footer") { window.layout(); return footer() == "Or just reply in chat. Your answer waits until you resume." }
+
+        // Answer while paused through the card's own option button: the owner holds it, and no second active answer remains.
+        try window.press("ALPHA")
+        try await eventuallyOnMain("the owner holds the answer") { r.app.server.state.projects.first?.tasks.first?.pendingAnswer != nil }
+        // The view model's copy of the Project lags the owner's; read the row only once it has the held answer too.
+        try await eventuallyOnMain("the app sees the held answer") { r.vm.state.projects.first?.tasks.first?.pendingAnswer != nil }
+        let held = ProjectPagePresentation(try #require(r.vm.state.projects.first)).rows[0]
+        #expect(held.answerHeld && held.lead == "Answer queued" && held.id == task.id)
+        try await eventuallyOnMain("the card is gone once its answer is held") { window.layout(); return footer() == nil }
+
+        // The pane's own question dock for the same worker: it stays (the worker still waits) but offers no second answer.
+        r.vm.logicalProjectPaneTask = task.id
+        func paneOptions() -> [Control] {
+            let paneLeft = window.window.frame.maxX - NWLeadMetrics.paneWidth
+            return window.controls().filter { ($0.label?.hasPrefix("ALPHA") == true || $0.label?.hasPrefix("BETA") == true) && $0.frame.minX > paneLeft }
+        }
+        try await eventuallyOnMain("the pane's dock is drawn") { window.layout(); return !paneOptions().isEmpty }
+        #expect(paneOptions().allSatisfy { !$0.isEnabled }, "no second answer is offered while the owner holds one: \(paneOptions().map { "\($0.label ?? "") \($0.isEnabled)" })")
+    }
+
+    // MARK: Footer geometry
+
+    /// ProjectLead-PausedV2's footer: 8pt from the pane's sides and bottom (margin 0 / 8 / 8) around a 46pt card (padding 8, a 28pt
+    /// button, a 1pt line). The resolved footer is its own wrapper (12 / 16 / 16) and keeps its 50pt card.
+    private static func footerGeometry() async throws {
+        let r = try await rig()
+        defer { r.app.stop() }
+        _ = try await r.vm.projectCoordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
+                                                      request: .assign(operationID: UUID(), spaceID: r.space.id, title: "Publish file", prompt: "hello"))
+        try await eventuallyOnMain("the worker settles") { r.app.server.state.projects.first?.tasks.first?.phase == .settled }
+        let task = try #require(r.app.server.state.projects.first?.tasks.first)
+        let paused = try #require(r.app.server.state.projects.first)
+        _ = try await r.vm.projectCoordinator.perform(projectID: paused.id, expectedRevision: paused.revision, request: .pause)
+        try await eventuallyOnMain("paused and acknowledged") { r.app.server.state.projects.first?.paused == true && r.app.server.state.projects.first?.interruptPending == false }
+        r.vm.openLogicalProject(r.ref)
+        let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
+        defer { window.close() }
+        try await eventuallyOnMain("the paused footer is drawn in the pane") {
+            window.layout(); return window.elements().contains { ($0.value ?? $0.label ?? "") == "The project is paused." }
+        }
+        let paneRight = window.window.frame.maxX, paneBottom = window.window.frame.minY
+        let resume = try #require(window.controls().filter { $0.label == "Resume" }.max { $0.frame.minX < $1.frame.minX }?.frame)
+        // The button sits 8pt in from the card's right edge, and the card 8pt in from the pane's edge: 16 from the window's right.
+        #expect(abs(paneRight - resume.maxX - (NWLeadMetrics.pausedFooterMargin + NW.Space.m)) <= 1.5, "Resume ends \(paneRight - resume.maxX) from the pane's edge")
+        // The card is 46 tall around the 28pt button (8 above and below), 8 from the bottom: the button's bottom is 16 from the window's.
+        #expect(abs(resume.minY - paneBottom - (NWLeadMetrics.pausedFooterMargin + NW.Space.m)) <= 1.5, "Resume sits \(resume.minY - paneBottom) above the bottom")
+        #expect(NWLeadMetrics.pausedFooterHeight == 46 && NWLeadMetrics.pausedFooterHeight < NWLeadMetrics.footerHeight)
+
+        // The resolved footer is unchanged: its own 16pt inset and 50pt card.
+        _ = try await r.vm.projectCoordinator.perform(projectID: paused.id, expectedRevision: try #require(r.app.server.state.projects.first).revision, request: .resume)
+        r.vm.logicalProjectPaneTask = task.id
+        try await eventuallyOnMain("resumed") { r.app.server.state.projects.first?.paused == false }
+        try await eventuallyOnMain("the worker detail opens") { window.layout(); return window.element("Mark resolved") != nil }
+        try window.press("Mark resolved")
+        try await eventuallyOnMain("the resolved footer is drawn") { window.layout(); return window.elements().contains { ($0.value ?? $0.label ?? "") == "This thread is resolved." } }
+        let reopen = try #require(window.controls().first { $0.label == "Reopen" }?.frame)
+        #expect(abs(paneRight - reopen.maxX - (NWLeadMetrics.footerInset + NW.Space.m)) <= 1.5, "Reopen ends \(paneRight - reopen.maxX) from the pane's edge")
+        #expect(abs(reopen.minY - paneBottom - (NWLeadMetrics.footerInset + (NWLeadMetrics.footerHeight - 28) / 2)) <= 2, "Reopen sits \(reopen.minY - paneBottom) above the bottom")
     }
 
     // MARK: Hidden coordinator

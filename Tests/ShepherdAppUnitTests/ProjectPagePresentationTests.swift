@@ -70,6 +70,14 @@ struct ProjectPagePresentationTests {
         #expect(running.map(\.text) == ["queued", "sending", "unknown", "failed"], "a delivered message is the transcript's, a worker report is the runtime's")
         #expect(running.map(\.note) == ["Waiting to send", "Sending", "Delivery unconfirmed. Send it again to retry.", "Not delivered. Send it again to retry."])
         #expect(ProjectHeldMessages.held(messages: [queued], paused: true, consumed: []).first?.note == "Sends when the project resumes")
+        // A definite refusal shows the owner's reason; an unknown outcome and a record without one show no invented text.
+        var refused = failed
+        refused.failureDetail = "The agent refused it: No API key found for the model provider"
+        var unknownWithDetail = unknown
+        unknownWithDetail.failureDetail = "must never show"
+        let notes = ProjectHeldMessages.held(messages: [refused, unknownWithDetail], paused: false, consumed: []).map(\.note)
+        #expect(notes == ["Not delivered. The agent refused it: No API key found for the model provider. Send it again to retry.",
+                          "Delivery unconfirmed. Send it again to retry."])
     }
 
     @Test func aMessageLeavesTheHeldListOnlyWhenTheTranscriptHasItsOperationOrItsNativeDelivery() {
@@ -157,12 +165,49 @@ struct ProjectPagePresentationTests {
         #expect(ProjectRunStatus.text(startingThreads: starting, worker: worker, startedAt: startedAt, now: now) == words)
     }
 
-    @Test func settledIsNotDoneAndNotWorkingUntilThePersonResolvesIt() {
+    /// A finished thread counts as done in the strip whether or not anyone has pressed Mark resolved yet (the user's report: three
+    /// scouts all reported back and the strip still said "0 of 3 done"). It is never "in progress", and only Resolved moves its group.
+    @Test func aFinishedThreadCountsAsDoneBeforeAnyoneResolvesIt() {
         let p = page([task("A", .settled), task("B", .resolved), task("C", .running)])
         #expect(p.settled == 1 && p.working == 1 && p.resolved == 1)
-        #expect(p.summary == "1 of 3 done · 1 in progress", "a settled turn is not proof of success, so it is not counted done")
+        #expect(p.summary == "2 of 3 done · 1 in progress")
+        #expect(page([task("A", .settled), task("B", .settled), task("C", .settled)]).summary == "3 of 3 done")
         #expect(p.rows[0].canResolve && !p.rows[0].canReopen)
         #expect(p.rows[1].canReopen && !p.rows[1].canResolve)
+    }
+
+    /// A relaunched Project keeps the coordinator's pi off until a message needs it, yet its composer said "Starting…" indefinitely.
+    /// Projects never pause on their own, so a resumed Project with nothing queued is just as offline, and a send still launches it.
+    @Test func aProjectHoldsItsCoordinatorsPiOffUntilAMessageCanBeDelivered() {
+        func message(_ phase: ProjectMessage.Phase, source: ProjectEventSource? = nil) -> ProjectMessage { ProjectMessage(id: UUID(), text: "hi", phase: phase, source: source) }
+        let worker = ProjectEventSource(kind: .settled, taskID: ProjectTaskID(), operationID: UUID(), workerAgentID: AgentID(), sessionID: nil)
+        // Cold, with only history: offline, paused or not. A paused Project holds even a queued message.
+        #expect(ProjectComposerSend.isOffline(paused: true, messages: [message(.delivered)], coordinatorLive: false))
+        #expect(ProjectComposerSend.isOffline(paused: false, messages: [message(.delivered), message(.failed), message(.unknown)], coordinatorLive: false))
+        #expect(ProjectComposerSend.isOffline(paused: true, messages: [message(.queued)], coordinatorLive: false))
+        // A message the owner can deliver now launches the pi, a worker's wake-up included: that start is the ordinary warm-up.
+        #expect(!ProjectComposerSend.isOffline(paused: false, messages: [message(.queued)], coordinatorLive: false))
+        #expect(!ProjectComposerSend.isOffline(paused: false, messages: [message(.queued, source: worker)], coordinatorLive: false))
+        #expect(!ProjectComposerSend.isOffline(paused: false, messages: [message(.delivering)], coordinatorLive: false))
+        // A running coordinator is never offline, whatever the Project holds.
+        #expect(!ProjectComposerSend.isOffline(paused: true, messages: [], coordinatorLive: true))
+        #expect(!ProjectComposerSend.isOffline(paused: false, messages: [message(.delivered)], coordinatorLive: true))
+    }
+
+    /// The question card told people the worker "keeps going on its best guess", which is false for a blocking native question and
+    /// for a paused project (the owner holds the answer until Resume).
+    @Test func theQuestionFootersCopyIsTruthfulWhileRunningAndWhilePaused() {
+        #expect(TaskQuestion.footer(title: "Question check", paused: false) == "Or just reply in chat. Question check is waiting for your answer.")
+        #expect(TaskQuestion.footer(title: "Question check", paused: true) == "Or just reply in chat. Your answer waits until you resume.")
+        for paused in [false, true] { #expect(!TaskQuestion.footer(title: "X", paused: paused).contains("best guess")) }
+    }
+
+    @Test func aTaskWithAHeldAnswerSaysSoAndIsMarkedSoItsDockOffersNoSecondAnswer() {
+        var asking = task("Asking", .waiting, question: "Pick")
+        #expect(page([asking]).rows[0].answerHeld == false)
+        asking.pendingAnswer = ProjectQuestionAnswer(operationID: UUID(), sessionID: "s", generation: "g", dialogID: "d", request: Data("x".utf8), phase: .queued)
+        let row = page([asking], paused: true).rows[0]
+        #expect(row.answerHeld && row.lead == "Answer queued" && row.detail == "Sends when the project resumes.")
     }
 
     @Test func theSentenceUnderWelcomeBackReadsTheCounts() {

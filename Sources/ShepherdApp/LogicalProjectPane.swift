@@ -187,10 +187,12 @@ struct LogicalProjectPane: View {
 
     private var pausedFooter: some View {
         NWLeadFooterCard(title: "The project is paused.", action: "Resume",
-                         enabled: !vm.logicalProjects.busy.contains(ref.id) && !project.interruptPending) {
+                         enabled: !vm.logicalProjects.busy.contains(ref.id) && !project.interruptPending,
+                         height: NWLeadMetrics.pausedFooterHeight) {
             Task { _ = await vm.logicalProjects.setPaused(ref, false) }
         }
-        .padding(NWLeadMetrics.footerInset)
+        .padding(.horizontal, NWLeadMetrics.pausedFooterMargin)
+        .padding(.bottom, NWLeadMetrics.pausedFooterMargin)
     }
 
     /// "29m", "2h", "3d": minutes, hours or days since the task settled.
@@ -289,7 +291,9 @@ private struct WorkerThread: View {
                    request: vm.projectWorkerRequest(LogicalProjectRef(home: home, id: projectID), task: task.id),
                    commandKey: ThreadCommandCenter.key(local: task.workerAgentID), agentName: task.title,
                    allowsLocalFiles: home == .local, retainedInput: vm.threadStores.input(for: task.workerAgentID))
-            .environment(\.projectWorkerThread, ProjectWorkerThreadStyle(assignmentOperations: task.assignmentOperations))
+            .environment(\.projectWorkerThread, ProjectWorkerThreadStyle(assignmentOperations: task.assignmentOperations,
+                                                                          composerHidden: task.group == .resolved,
+                                                                          answerHeld: task.answerHeld))
             .environment(\.nwUserBubbleMetrics, .lead)
             .environment(\.nwProseHalfLeading, true)
             .id(task.workerAgentID.rawValue)

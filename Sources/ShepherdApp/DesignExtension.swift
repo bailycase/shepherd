@@ -2161,6 +2161,15 @@ enum DesignExtension {
              utility CSS, CSS Modules or application providers run in the specimen renderer. Say when
              a static specimen approximates the component instead of presenting it as the real runtime.
              Add `install: true` to draw in it at once.
+          - **Its page.** Designs › Design systems draws every system from its tokens.json: the hero, the
+            color groups (`--bg-*` surfaces, `--line-*`, `--text-primary|secondary|tertiary`, brand and
+            state, `--syn-*`, then the rest), each text color's contrast, the type styles, the steps (a
+            `use` on a step says what it is for), and the components that have a `specimen` (a `group` on
+            a component fills the page's group filter). Words the page can't derive go in a `page` object
+            of tokens.json, all optional: `tagline`, `summary`, `source` (where it came from),
+            `principles` (`[{lead, text}]`), `voice` (`{lead, examples: [{say, avoid}], rules}`) and
+            `sizes` (`[{name, value, use}]`, values as written: "32px"). Write only what the project or
+            the user says; leave out what you would invent.
           3. Say what you built in a line ("11 colors, 4 type styles, 7 spacing and radius steps, 9
              components") and what doesn't match: values the templates or pages hard-code instead of a
              token ("three templates hard-code #4338ca for buttons instead of --accent"). Boards always

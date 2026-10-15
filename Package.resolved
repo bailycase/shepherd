@@ -1,5 +1,5 @@
 {
-  "originHash" : "2b6bfec8e47469270b424b544d8f07888c48e83c3eef848b67664cba6d7ebf4b",
+  "originHash" : "c461d88ed0fca27e345440cafc7ed790d524f932a27e6e05b80e8b6d872aedc4",
   "pins" : [
     {
       "identity" : "msdisplaylink",
@@ -8,6 +8,15 @@
       "state" : {
         "revision" : "87eb0af130744c8cbe2e31b6e1a5bcd659f1c220",
         "version" : "2.2.0"
+      }
+    },
+    {
+      "identity" : "sentry-cocoa",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/getsentry/sentry-cocoa",
+      "state" : {
+        "revision" : "4f135c52afeeb1d6937eb93824c7ec1cddcaa372",
+        "version" : "9.30.1"
       }
     },
     {

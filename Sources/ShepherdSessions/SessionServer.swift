@@ -475,9 +475,6 @@ public final class SessionServer: @unchecked Sendable {
     var projectPumps: Set<ProjectID> = []
     var projectPumpAgain: Set<ProjectID> = []
     var projectRunStarts: [ProjectID: Date] = [:]
-    var projectActivations: [ProjectID: Int] = [:]
-    var projectRunSeconds: TimeInterval = 600
-    var projectActivationLimit = 12
     public var onProjectExecutionLaunch: (@Sendable (ProjectExecutionAssignment, @escaping @Sendable (Result<AgentID, Error>) -> Void) -> Void)?
     var executionPending: Set<ProjectExecutionKey> = []
     var executionWorkers: Set<AgentID> = []
@@ -1195,16 +1192,26 @@ public final class SessionServer: @unchecked Sendable {
                         let staleCoordinator = state.projects[i].coordinatorAgentID.map { id in
                             !state.agents.contains { $0.id == id }
                         } ?? false
-                        if !state.projects[i].paused || staleCoordinator || state.projects[i].interruptPending
+                        // A restart resumes no work, and never pauses a Project either: nothing runs until the person's next
+                        // message starts it again. A Project the person paused stays paused.
+                        if staleCoordinator || state.projects[i].interruptPending
                             || state.projects[i].tasks.contains(where: { $0.phase.occupiesSlot || $0.pendingAnswer?.phase == .queued || $0.pendingAnswer?.phase == .delivering })
                             || state.projects[i].messages.contains(where: { $0.phase == .delivering }) {
-                            state.projects[i].paused = true
                             if staleCoordinator { state.projects[i].coordinatorAgentID = nil }
                             state.projects[i].revision += 1
                         }
                         state.projects[i].interruptPending = false
                         for t in state.projects[i].tasks.indices where state.projects[i].tasks[t].phase.occupiesSlot {
-                            state.projects[i].tasks[t].phase = .unknown
+                            // A local thread's pi died with the app, so it is not running: it settles as interrupted, frees its
+                            // slot, and can be followed up. Another host's thread may still run there; its receipt reconciles it.
+                            if state.projects[i].tasks[t].executionAssignment == nil {
+                                state.projects[i].tasks[t].phase = .settled
+                                state.projects[i].tasks[t].settledAt = Date().timeIntervalSince1970 * 1000
+                                state.projects[i].tasks[t].question = nil
+                                state.projects[i].tasks[t].error = "Interrupted when Shepherd quit. Its conversation is as it was; follow up to continue."
+                            } else {
+                                state.projects[i].tasks[t].phase = .unknown
+                            }
                             state.projects[i].tasks[t].revision += 1
                         }
                         for t in state.projects[i].tasks.indices where state.projects[i].tasks[t].pendingAnswer?.phase == .queued || state.projects[i].tasks[t].pendingAnswer?.phase == .delivering {
@@ -1321,7 +1328,6 @@ public final class SessionServer: @unchecked Sendable {
         projectStartedPrompts.removeAll()
         currentProjectChildScope.removeAll(); projectChildAdmitted.removeAll(); projectChildClosed.removeAll()
         projectChildDrained.removeAll(); projectChildDraining.removeAll(); projectChildStopped.removeAll(); projectChildTakenOver.removeAll()
-        projectActivations.removeAll()
         pendingDesignDeletions.removeAll()
         for session in sessions.values {
             session.shutdown()
@@ -1472,13 +1478,12 @@ public final class SessionServer: @unchecked Sendable {
         }
         if queuePausedExecutionAnswer(agentID: agentID, request: request, completion: { completion(.result($0)) }) { return }
         if queuePausedProjectAnswer(agentID: agentID, request: request, completion: { completion(.result($0)) }) { return }
-        if let projectID = agent.coordinatorFor {
+        // Stop on the coordinator ends its current turn only; the Project keeps running (only Pause pauses it).
+        if agent.coordinatorFor != nil {
             switch request {
             case .send, .retry, .compact, .subagentCommand, .goal, .queue:
                 completion(.failure(code: "project_control", message: "Use the revision-checked Project controls for coordinated messages."))
                 return
-            case .abort(let expected, let generation, _):
-                if let thread = rpcThread(forAgent: agentID), thread.piSessionID == expected, thread.generation == generation { stopProjectRun(projectID) }
             default: break
             }
         }
@@ -1559,10 +1564,7 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Membership outlives a task's active turn, including manual takeover and settlement.
     /// Executor receipts retain the assignment even when the owning host is disconnected.
-    private func isProjectWorker(_ agentID: AgentID) -> Bool {
-        store.state.projects.contains { $0.tasks.contains { $0.workerAgentID == agentID } }
-            || store.state.projectExecutions.contains { $0.assignment?.reservedWorkerID == agentID }
-    }
+    private func isProjectWorker(_ agentID: AgentID) -> Bool { store.state.isProjectWorker(agentID) }
 
     /// Server queue. Writes a childCommand to the agent's children-extension connection and
     /// answers with the extension's error text (nil on success). A resume can take a few
@@ -3066,7 +3068,9 @@ public final class SessionServer: @unchecked Sendable {
                     switch result {
                     case .success(let project):
                         let spaces = self.store.state.spaces.filter { space in !space.hidden && project.linkedSpaces.contains { $0.spaceID == space.id && $0.destination == .local } }
-                        self.reply(.projectRuntime(id: id, project: project, spaces: spaces), to: client)
+                        // Only the coordinator chooses a task's model, so only its replies carry the owner's model list.
+                        let models = project.coordinatorAgentID == agentID ? self.modelListing().models : []
+                        self.reply(.projectRuntime(id: id, project: project, spaces: spaces, models: models), to: client)
                     case .failure(let error): self.reply(.error(id: id, code: (error as? LogicalProjectsError)?.code ?? "project_failed", message: String(describing: error)), to: client)
                     }
                 }
@@ -3180,42 +3184,19 @@ public final class SessionServer: @unchecked Sendable {
                 return
             }
             guard !refusesDesignPeer(id: id, sender: agentID, target: targetAgentID, client: client) else { return }
-            gateAgentAction(
-                senderID: agentID, requestID: id, client: client,
-                action: .send(targetAgentID: targetAgentID, text: text, delivery: delivery),
-                preflight: { self.sendProblem(sender: agentID, target: targetAgentID).map { .error(id: id, code: $0.code, message: $0.message) } },
-                fail: { [weak self, weak client] code, message in
-                    guard let self, let client else { return }
-                    reply(.error(id: id, code: code, message: message), to: client)
-                },
-                perform: { [weak self, weak client] in
-                    guard let self, let client else { return }
-                    routeAgentPeerRequest(
-                        .send(agentID: agentID, targetAgentID: targetAgentID, text: text, delivery: delivery),
-                        requestID: id,
-                        client: client
-                    )
-                }
-            )
+            guard agentActionAllowed(senderID: agentID, requestID: id, client: client,
+                                     problem: sendProblem(sender: agentID, target: targetAgentID)) else { return }
+            routeAgentPeerRequest(.send(agentID: agentID, targetAgentID: targetAgentID, text: text, delivery: delivery),
+                                  requestID: id, client: client)
         case .spawnAgent(let id, let agentID, let cwd, let prompt):
             guard !cwd.isEmpty, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 reply(.error(id: id, code: "invalid", message: "cwd and prompt are required"), to: client)
                 return
             }
             guard !refusesDesignPeer(id: id, sender: agentID, client: client) else { return }
-            gateAgentAction(
-                senderID: agentID, requestID: id, client: client,
-                action: .spawn(cwd: cwd, prompt: prompt),
-                preflight: { self.spawnProblem(sender: agentID, cwd: cwd).map { .error(id: id, code: $0.code, message: $0.message) } },
-                fail: { [weak self, weak client] code, message in
-                    guard let self, let client else { return }
-                    reply(.error(id: id, code: code, message: message), to: client)
-                },
-                perform: { [weak self, weak client] in
-                    guard let self, let client else { return }
-                    routeAgentPeerRequest(.spawn(agentID: agentID, cwd: cwd, prompt: prompt), requestID: id, client: client)
-                }
-            )
+            guard agentActionAllowed(senderID: agentID, requestID: id, client: client,
+                                     problem: spawnProblem(sender: agentID, cwd: cwd)) else { return }
+            routeAgentPeerRequest(.spawn(agentID: agentID, cwd: cwd, prompt: prompt), requestID: id, client: client)
         case .createAutomation(let id, let name, let prompt, let cwd, let enabled, let start):
             let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
             let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -3658,37 +3639,18 @@ public final class SessionServer: @unchecked Sendable {
             }
             forwarded.text = AgentMessageFraming.framed(from: sender.name, text)
         }
-        let failed: (String, String) -> Void = { [weak self, weak client] code, message in
-            guard let self, let client else { return }
-            reply(.agentResult(id: id, result: .init(text: message, code: code)), to: client)
-        }
-        let serve: () -> Void = { [weak self, weak client] in
-            guard let self, let client else { return }
-            relayCoordination(id: id, agentID: agentID, targetAgentID: targetAgentID, request: request,
-                              forwarded: forwarded, client: client)
-        }
-        let action: AgentGatedAction?
+        let gated: Bool
         switch request.operation {
-        case .read where agentID != targetAgentID: action = .read(targetAgentID: targetAgentID)
-        case .steer: action = .steer(targetAgentID: targetAgentID, text: request.text ?? "")
-        case .interrupt: action = .interrupt(targetAgentID: targetAgentID)
-        default: action = nil
+        case .read where agentID != targetAgentID, .steer, .interrupt, .delete: gated = true
+        default: gated = false
         }
-        if let action {
-            gateAgentAction(senderID: agentID, requestID: id, client: client, action: action,
-                            preflight: { self.coordinationProblem(targetAgentID: targetAgentID).map { .error(id: id, code: $0.code, message: $0.message) } },
-                            fail: failed, perform: serve)
-            return
+        if gated {
+            // A refused coordination answers as a result, not an error (the tool reads `result.code`).
+            let problem = request.operation == .delete ? nil : coordinationProblem(targetAgentID: targetAgentID)
+            guard agentActionAllowed(senderID: agentID, requestID: id, client: client, problem: problem, refusalAsResult: true) else { return }
         }
-        // Deletion checks the same access policy before reaching the app.
-        if request.operation == .delete {
-            switch AgentMessageGate.deleteVerdict(policy: agentMessagePolicy,
-                                                  senderIsAutomation: Self.automationRunAgentIDs(in: store.state).contains(agentID)) {
-            case .refuse(let code, let message): failed(code, message); return
-            case .perform, .ask: break
-            }
-        }
-        serve()
+        relayCoordination(id: id, agentID: agentID, targetAgentID: targetAgentID, request: request,
+                          forwarded: forwarded, client: client)
     }
 
     /// Server queue: relays a live request to the target's own connection under a token of its
@@ -3744,23 +3706,31 @@ public final class SessionServer: @unchecked Sendable {
 
     // MARK: - Agent access policy
 
-    /// Enforce access on the server before forwarding an agent's call. No UI approval is needed.
-    private func gateAgentAction(senderID: AgentID, requestID: Int, client: ExtensionConnection, action: AgentGatedAction,
-                                 preflight: () -> ExtensionReply?,
-                                 fail: @escaping (_ code: String, _ message: String) -> Void,
-                                 perform: @escaping () -> Void) {
+    /// Server queue: enforce the access policy before an agent's call is served, and answer the
+    /// caller when it is not. True when the caller may go on. `problem` is the call's own
+    /// preflight (a missing target, a bad folder), answered as an error after the policy allows it.
+    /// A synchronous verdict on purpose: this used to take escaping `perform`/`fail` closures, and
+    /// Swift 6.3.3 at -O mislaid their weak captures onto the live `state.spaces` buffer, which
+    /// corrupted the array's count on every agent_read (SHEPHERD-MACOS-2, SHEPHERD-MACOS-3).
+    private func agentActionAllowed(senderID: AgentID, requestID: Int, client: ExtensionConnection,
+                                    problem: (code: String, message: String)?, refusalAsResult: Bool = false) -> Bool {
         switch AgentMessageGate.verdict(
             policy: agentMessagePolicy,
             senderIsAutomation: Self.automationRunAgentIDs(in: store.state).contains(senderID),
             hasThreadGrant: false) {
-        case .perform, .ask:
-            if let problem = preflight() {
-                reply(problem, to: client)
-                return
-            }
-            perform()
         case .refuse(let code, let message):
-            fail(code, message)
+            if refusalAsResult {
+                reply(.agentResult(id: requestID, result: .init(text: message, code: code)), to: client)
+            } else {
+                reply(.error(id: requestID, code: code, message: message), to: client)
+            }
+            return false
+        case .perform, .ask:
+            if let problem {
+                reply(.error(id: requestID, code: problem.code, message: problem.message), to: client)
+                return false
+            }
+            return true
         }
     }
 
@@ -4202,7 +4172,7 @@ public final class SessionServer: @unchecked Sendable {
     private func replyID(_ message: ExtensionReply) -> Int {
         switch message {
         case .parentInput: return 0
-        case .projectPublish(let id, _), .childScope(let id, _, _), .projectChildren(let id, _, _), .projectRuntime(let id, _, _), .childCommand(let id, _, _, _, _), .ok(let id), .projectResult(let id, _, _),
+        case .projectPublish(let id, _), .childScope(let id, _, _), .projectChildren(let id, _, _), .projectRuntime(let id, _, _, _), .childCommand(let id, _, _, _, _), .ok(let id), .projectResult(let id, _, _),
              .error(let id, _, _),
              .panes(let id, _),
              .paneOpened(let id, _),
@@ -4468,7 +4438,6 @@ public final class SessionServer: @unchecked Sendable {
         }
         for old in before.projects where !state.projects.contains(where: { $0.id == old.id }) {
             projectRunStarts[old.id] = nil
-            projectActivations[old.id] = nil
             for agent in old.tasks.map(\.workerAgentID) + [old.coordinatorAgentID].compactMap({ $0 }) {
                 projectPromptInFlight[agent] = nil
                 projectStartedPrompts.remove(agent)
