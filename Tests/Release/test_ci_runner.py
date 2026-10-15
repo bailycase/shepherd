@@ -88,7 +88,7 @@ class CIRunnerTests(unittest.TestCase):
 
     def test_full_lanes_never_select_the_shared_mac_even_for_opted_in_maintainers(self):
         expression = runner_expression(JOBS["tests"])
-        for lane in ("completion-browser", "thread", "app-features", "other"):
+        for lane in ("thread", "features", "app", "other"):
             data = metadata()
             data["matrix.lane"] = lane
             self.assertEqual(select(expression, data), "macos-26")

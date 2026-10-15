@@ -71,15 +71,18 @@ SES = r"^ShepherdSessionsIntegrationTests\."
 PREVIEW = r"^ShepherdPreviewTests\."
 ROOT = Path(__file__).resolve().parents[1]
 
-# Fixed groups from successful full-run timings. Unknown suites go to other, never disappear.
-# ponytail: group costs can drift; rebalance from completed logs, not an adaptive scheduler.
-# Keep the entire Sessions target together: its process-lifetime regressions depend on ordering.
+# Fixed groups balanced from a full run's suite times (October 2026: thread 771 s, features 716 s,
+# app 684 s, other 580 s). Unknown app suites go to app, everything outside the app target to
+# other, so a new suite never disappears. Keep the entire Sessions target together: its
+# process-lifetime regressions depend on ordering. Rebalance from completed logs, never adaptively.
+_FEATURES = r"(?:Composer|Design|Review|GitDiff|GitWorktree|FinalizeWorktree|RemoteWorktree|Worktree|NewThread|ListPerformance|Browser|RemoteBrowser|MCPCallback)"
+_THREAD = r"Thread(?!CompletionReproduction)"
 FULL_LANES = {
-    "completion-browser": APP + r"(?:ThreadCompletion|Browser|RemoteBrowser)",
-    "thread": APP + r"Thread(?!Completion)",
-    "app-features": APP + r"(?:Composer|Design|Review|GitDiff|GitWorktree|FinalizeWorktree|RemoteWorktree|Worktree|NewThread|ListPerformance)",
+    "thread": APP + _THREAD,
+    "features": APP + _FEATURES,
+    "app": APP + r"(?!" + _THREAD + "|" + _FEATURES + ")",
+    "other": r"^(?!ShepherdAppIntegrationTests\.)",
 }
-FULL_LANES["other"] = r"^(?!(?:" + "|".join(FULL_LANES.values()) + "))"
 
 # Short, conservative feature rules. A path not claimed here or by a module below runs all.
 AREAS = (

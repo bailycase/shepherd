@@ -446,9 +446,9 @@ class PlanTests(unittest.TestCase):
     def test_full_workflow_lanes_record_complete_unique_coverage_and_preserve_native_failures(self):
         script = run_script(JOBS["tests"].split("- name: Run tests", 1)[1])
         expected = {
-            "completion-browser": ["ShepherdAppIntegrationTests.ThreadCompletionMatrixTests/run()"],
             "thread": ["ShepherdAppIntegrationTests.ThreadTailFlowTests/run()"],
-            "app-features": ["ShepherdAppIntegrationTests.ComposerMenuTests/run()"],
+            "features": ["ShepherdAppIntegrationTests.ComposerMenuTests/run()"],
+            "app": ["ShepherdAppIntegrationTests.ThreadCompletionReproductionTests/run()"],
             "other": ["NewTarget.Suite/run()", "ShepherdSessionsIntegrationTests.RPCSessionTests/run()"],
         }
         ids = [name for names in expected.values() for name in names]
