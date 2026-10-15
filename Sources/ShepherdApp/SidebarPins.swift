@@ -1,5 +1,6 @@
 import Foundation
 import ShepherdCore
+import ShepherdUI
 
 // The Activity sidebar's Pinned section (Sidebar › Pinned): which threads the user pinned, as
 // view state of this Mac. Plain values, so the order, persistence and pruning are testable
@@ -126,7 +127,41 @@ extension SidebarPins {
 enum PinWords {
     /// The row menu's and the thread options menu's item.
     static func menuTitle(pinned: Bool) -> String { pinned ? "Unpin" : "Pin" }
-    static func symbol(pinned: Bool) -> String { pinned ? "pin.slash" : "pin" }
+    static func symbol(pinned: Bool) -> String { pinned ? "pin.slash" : NWGlyph.pin.symbolName }
     /// The palette's command, named for what it does now.
     static func paletteTitle(pinned: Bool) -> String { pinned ? "Unpin thread" : "Pin thread" }
+}
+
+/// This Mac's spaces pinned to the top of the Spaces tree, oldest pin first. View state of this
+/// Mac beside the thread pins: not in state.json, never sent to another device.
+struct SpacePins: Equatable {
+    private(set) var spaces: [SpaceID] = []
+    static let defaultsKey = "shepherd.sidebar.pinnedSpaces"
+
+    init(_ spaces: [SpaceID] = []) {
+        var seen = Set<SpaceID>()
+        self.spaces = spaces.filter { seen.insert($0).inserted }
+    }
+
+    init(defaults: UserDefaults) {
+        self.init((defaults.stringArray(forKey: Self.defaultsKey) ?? []).map { SpaceID(rawValue: $0) })
+    }
+
+    func save(to defaults: UserDefaults) {
+        defaults.set(spaces.map(\.rawValue), forKey: Self.defaultsKey)
+    }
+
+    func contains(_ space: SpaceID) -> Bool { spaces.contains(space) }
+
+    /// Pins one that isn't (after the others), unpins one that is.
+    mutating func toggle(_ space: SpaceID) {
+        if let index = spaces.firstIndex(of: space) { spaces.remove(at: index) } else { spaces.append(space) }
+    }
+
+    /// Drops pins of spaces that are gone; true when any went.
+    @discardableResult mutating func prune(keeping live: Set<SpaceID>) -> Bool {
+        let before = spaces.count
+        spaces.removeAll { !live.contains($0) }
+        return spaces.count != before
+    }
 }

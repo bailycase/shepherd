@@ -96,6 +96,7 @@ public struct NWProjectRow<MenuContent: View>: View, Equatable {
     let expanded: Bool
     let rollup: Rollup
     let dimmed: Bool
+    let pinned: Bool
     let hovered: Bool
     let toggle: () -> Void
     let newThread: (() -> Void)?
@@ -106,13 +107,16 @@ public struct NWProjectRow<MenuContent: View>: View, Equatable {
     /// `newThread` nil leaves the + out (a host that can't take one); `dimmed` is a project on
     /// a host that is not connected. `hovered` draws it hovered whatever the pointer does (the
     /// board's hover sample).
-    public init(_ name: String, count: Int, expanded: Bool, rollup: Rollup = .quiet, dimmed: Bool = false, hovered: Bool = false,
+    /// `pinned` draws the outline pin after the name.
+    public init(_ name: String, count: Int, expanded: Bool, rollup: Rollup = .quiet, dimmed: Bool = false, pinned: Bool = false,
+                hovered: Bool = false,
                 toggle: @escaping () -> Void, newThread: (() -> Void)?, @ViewBuilder menu: @escaping () -> MenuContent) {
         self.name = name
         self.count = count
         self.expanded = expanded
         self.rollup = rollup
         self.dimmed = dimmed
+        self.pinned = pinned
         self.hovered = hovered
         self.toggle = toggle
         self.newThread = newThread
@@ -121,7 +125,7 @@ public struct NWProjectRow<MenuContent: View>: View, Equatable {
 
     public nonisolated static func == (a: NWProjectRow, b: NWProjectRow) -> Bool {
         a.name == b.name && a.count == b.count && a.expanded == b.expanded && a.rollup == b.rollup && a.dimmed == b.dimmed
-            && a.hovered == b.hovered && (a.newThread == nil) == (b.newThread == nil)
+            && a.pinned == b.pinned && a.hovered == b.hovered && (a.newThread == nil) == (b.newThread == nil)
     }
 
     public var body: some View {
@@ -144,6 +148,12 @@ public struct NWProjectRow<MenuContent: View>: View, Equatable {
                 .foregroundStyle(nw.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.tail)
+            if pinned {
+                NWGlyph.pin.image
+                    .font(.system(size: NWProjectMetrics.chevron, weight: .medium))
+                    .foregroundStyle(nw.textTertiary)
+                    .accessibilityHidden(true)
+            }
             Spacer(minLength: NW.Space.xs)
             ZStack(alignment: .trailing) {
                 if hovering, !dimmed {
@@ -172,6 +182,7 @@ public struct NWProjectRow<MenuContent: View>: View, Equatable {
 
     private var accessibilityLabel: String {
         var parts = [name, count == 1 ? "1 thread" : "\(count) threads"]
+        if pinned { parts.append("pinned") }
         if !expanded {
             switch rollup {
             case .waiting: parts.append("needs you")
