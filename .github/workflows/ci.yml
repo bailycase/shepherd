@@ -170,8 +170,13 @@ jobs:
       - name: Run tests
         env:
           CI: "true"
+          # Tests marked `.flaky` run on the full lanes (the daily run, master, full-ci), never on
+          # an ordinary pull request's selected lane.
+          SHEPHERD_FLAKY_TESTS: ${{ matrix.lane != 'selected' && '1' || '0' }}
           SWIFT_FILTERS: ${{ needs.plan.outputs.filters }}
           SWIFT_LANE: ${{ matrix.lane }}
+          # The manual UI diagnostics keep the deep suites; an ordinary pull request leaves them out.
+          VALIDATE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.diagnostics == 'ui' && '--validate-deep' || '--validate' }}
         run: |
           set -o pipefail
           swift test list --skip-build $SWIFTPM_FLAGS > "$RUNNER_TEMP/swift-tests.txt"
@@ -180,7 +185,7 @@ jobs:
             [ "$SWIFT_FILTERS" = '[]' ]
             filter=$(python3 scripts/ci_plan.py --lane "$RUNNER_TEMP/swift-tests.txt" "$SWIFT_LANE")
           else
-            filter=$(python3 scripts/ci_plan.py --validate "$RUNNER_TEMP/swift-tests.txt" "$SWIFT_FILTERS")
+            filter=$(python3 scripts/ci_plan.py "$VALIDATE" "$RUNNER_TEMP/swift-tests.txt" "$SWIFT_FILTERS")
           fi
           printf 'Swift test flags: --no-parallel --skip-build %s; selection: %s\n' "$SWIFTPM_FLAGS" "$filter"
           swift test --no-parallel --skip-build $SWIFTPM_FLAGS --filter "$filter" 2>&1 | tee "$RUNNER_TEMP/swift-test.log"

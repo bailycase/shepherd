@@ -272,19 +272,51 @@ class PlanTests(unittest.TestCase):
         for path in ("Sources/ShepherdApp/Thread.swift", "Tests/ShepherdAppUnitTests/X.swift", "Package.swift",
                      "Package.resolved", ".github/workflows/ci.yml", ".github/actions/swift-build/action.yml",
                      "scripts/pi-engine-pin.json", "scripts/pi_engine.py", "scripts/ci_plan.py",
-                     "Tests/Extensions/native-thread-wire.json", "Vendor/x", "Shepherd.xcodeproj/project.pbxproj"):
+                     "Tests/Extensions/native-thread-wire.json", "Vendor/x"):
             with self.subTest(path=path):
                 self.assertTrue(ci_plan.affects_swift(["docs/x.md", path]))
+        self.assertFalse(ci_plan.affects_swift(["Shepherd.xcodeproj/project.pbxproj", "scripts/upload-sentry-symbols.py"]))
 
-    def test_shared_unknown_and_ci_changes_run_all_tests(self):
+    def test_shared_contracts_and_ci_changes_run_all_tests(self):
         for path in ("Sources/ShepherdCore/Agent.swift", "Sources/ShepherdProtocol/Remote.swift",
-                     "Sources/ShepherdSessions/SessionServer.swift", "Sources/ShepherdRemote/Thread.swift",
                      "Tests/ShepherdTestSupport/X.swift", "Package.swift", "Package.resolved",
                      ".github/workflows/ci.yml", ".github/actions/swift-build/action.yml",
                      "scripts/ci_plan.py", "unknown/path"):
             with self.subTest(path=path):
                 self.assertEqual(ci_plan.filters_for([path]), [])
         self.assertEqual(ci_plan.filters_for(["Sources/ShepherdApp/Browser.swift"], full=True), [])
+
+    def test_a_source_no_area_claims_runs_its_module_and_the_modules_built_on_it(self):
+        cases = (("Sources/ShepherdApp/AgentLayoutDeck.swift", (ci_plan.APP, ci_plan.PREVIEW), (ci_plan.SES,)),
+                 ("Packages/ShepherdUI/Sources/ShepherdUI/Tokens.swift", (ci_plan.APP, ci_plan.PREVIEW), (ci_plan.SES,)),
+                 ("Sources/ShepherdSessions/SessionServer.swift", (ci_plan.APP, ci_plan.SES, ci_plan.PREVIEW), ()),
+                 ("Sources/ShepherdRemote/Thread.swift", (ci_plan.APP, ci_plan.SES, ci_plan.PREVIEW), ()))
+        for path, expected, absent in cases:
+            with self.subTest(path=path):
+                filters = ci_plan.filters_for([path])
+                self.assertTrue(filters, "a module path stays selective")
+                for pattern in expected:
+                    self.assertIn(pattern, filters)
+                for pattern in absent:
+                    self.assertNotIn(pattern, filters)
+
+    def test_a_selected_run_never_includes_the_deep_suites(self):
+        ids = ["ShepherdAppIntegrationTests.ThreadCompletionMatrixTests/a()",
+               "ShepherdAppIntegrationTests.ThreadTailFlowTests/b()",
+               "ShepherdAppIntegrationTests.DesignPerformanceTests/c()",
+               "ShepherdAppIntegrationTests.ThreadTailGuardTests/d()",
+               "ShepherdAppIntegrationTests.ThreadScrollingTests/e()",
+               "ShepherdAppUnitTests.X/f()",
+               "ShepherdPreviewTests.ThreadPreviewTests/g()"] + [f"{name}/h()" for name in ci_plan.SMOKE]
+        filters = ci_plan.filters_for(["Sources/ShepherdApp/Thread/ThreadView.swift"])
+        pattern = ci_plan.validated_filter(ids, filters)
+        self.assertEqual([i for i in ids[:7] if re.search(pattern, i)], ids[3:7])
+        self.assertEqual([i for i in ids[:7] if re.search(ci_plan.validated_filter(ids, filters, deep=True), i)], ids[:2] + ids[3:7])
+        # The full lanes and the manual diagnostics still cover them.
+        covered = {i for lane in ci_plan.FULL_LANES for i in ids if re.search(ci_plan.FULL_LANES[lane], i)}
+        self.assertEqual(covered, set(ids))
+        diagnostics = "|".join(f"(?:{f})" for f in ci_plan.UI_DIAGNOSTICS)
+        self.assertTrue(re.search(diagnostics, ids[0]))
 
     def test_feature_runs_keep_units_and_cheap_startup_and_identity_checks(self):
         filters = ci_plan.filters_for(["Sources/ShepherdApp/BrowserHost.swift"])
@@ -300,24 +332,20 @@ class PlanTests(unittest.TestCase):
 
     def test_mixed_features_union_filters_and_include_hidden_layout_regressions(self):
         filters = ci_plan.filters_for(["Sources/ShepherdApp/Thread/ThreadView.swift", "Sources/ShepherdApp/DesignTools.swift"])
-        for test_id in ("ShepherdAppIntegrationTests.ThreadCompletionReproductionTests/realWorkspaceCompletionKeepsPainting(size:)",
-                        "ShepherdAppIntegrationTests.ThreadScrollingTests/reachingTheTopLoadsOnePageWithoutMovingOrRetrying(fails:)",
+        for test_id in ("ShepherdAppIntegrationTests.ThreadScrollingTests/reachingTheTopLoadsOnePageWithoutMovingOrRetrying(fails:)",
                         "ShepherdAppIntegrationTests.IdleCostTests/hiddenLayoutsDrawNoClockFrames()",
-                        "ShepherdAppIntegrationTests.DesignPerformanceTests/oneBoardChangingRedrawsThatBoardAlone()"):
+                        "ShepherdAppIntegrationTests.ThreadTailGuardTests/a()"):
             self.assertTrue(any(re.search(pattern, test_id) for pattern in filters), test_id)
         self.assertEqual(ci_plan.filters_for(["Sources/ShepherdApp/Browser.swift", "unmapped"]), [])
 
-    def test_module_test_helpers_stay_broad_and_unclassified_source_runs_all(self):
+    def test_module_test_helpers_stay_broad(self):
         self.assertIn(ci_plan.APP, ci_plan.filters_for([
             "Tests/ShepherdAppIntegrationTests/Support/ComposerThread.swift"]))
-        for path in ("Sources/ShepherdApp/AgentLayoutDeck.swift",
-                     "Packages/ShepherdUI/Sources/ShepherdUI/Tokens.swift"):
-            with self.subTest(path=path):
-                self.assertEqual(ci_plan.filters_for([path]), [])
 
     def test_every_selected_pattern_must_match_native_test_ids(self):
         ids = ["Module.Suite/a()", "Other.OtherSuite/b()"]
-        self.assertEqual(ci_plan.validated_filter(ids, [r"^Module\.", r"^Other\."]), r"(?:^Module\.)|(?:^Other\.)")
+        self.assertEqual(ci_plan.validated_filter(ids, [r"^Module\.", r"^Other\."], deep=True), r"(?:^Module\.)|(?:^Other\.)")
+        self.assertEqual(ci_plan.validated_filter(ids, [r"^Module\."]), f"(?!{ci_plan.DEEP_PATTERN})(?:(?:^Module\.))")
         for patterns in ([], ["never_matches"], ["^Module", "renamed_suite"], ["("]):
             with self.subTest(patterns=patterns), self.assertRaises((ValueError, re.error)):
                 ci_plan.validated_filter(ids, patterns)
@@ -362,7 +390,7 @@ class PlanTests(unittest.TestCase):
                   "IdleCostTests", "ThreadCompletionMatrixTests", "ThreadCompletionReproductionTests",
                   "RemoteBrowserDriveTests", "ThreadJumpPressTests", "ThreadTailGuardTests")
         ids = [f"ShepherdAppIntegrationTests.{name}/case()" for name in suites]
-        pattern = ci_plan.validated_filter(ids, ci_plan.UI_DIAGNOSTICS)
+        pattern = ci_plan.validated_filter(ids, ci_plan.UI_DIAGNOSTICS, deep=True)
         self.assertEqual(len(ci_plan.UI_DIAGNOSTICS), len(suites))
         self.assertTrue(all(re.search(pattern, test_id) for test_id in ids))
         self.assertIsNone(re.search(pattern, "ShepherdAppIntegrationTests.UnrelatedTests/case()"))
@@ -397,7 +425,7 @@ class PlanTests(unittest.TestCase):
                 result = subprocess.run(["bash", "-e", "-c", fixture + script], cwd=ROOT,
                                         env={**os.environ, "RUNNER_TEMP": directory, "SWIFTPM_FLAGS": "",
                                              "STATUS": str(status), "SWIFT_FILTERS": '["^Module\\\\."]',
-                                             "SWIFT_LANE": "selected"},
+                                             "SWIFT_LANE": "selected", "VALIDATE": "--validate"},
                                         capture_output=True, text=True, timeout=5)
                 self.assertEqual(result.returncode, status, result.stderr)
                 self.assertIn("native filtered run", result.stdout)
@@ -406,7 +434,7 @@ class PlanTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             result = subprocess.run(["bash", "-e", "-c", fixture + script], cwd=ROOT,
                                     env={**os.environ, "RUNNER_TEMP": directory, "SWIFTPM_FLAGS": "",
-                                         "STATUS": "0", "SWIFT_FILTERS": '["missing"]', "SWIFT_LANE": "selected"},
+                                         "STATUS": "0", "SWIFT_FILTERS": '["missing"]', "SWIFT_LANE": "selected", "VALIDATE": "--validate"},
                                     capture_output=True, text=True, timeout=5)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("no native tests matched", result.stderr)
@@ -482,13 +510,13 @@ class PlanTests(unittest.TestCase):
                 result = subprocess.run(["bash", "-e", "-c", fixture + script], cwd=ROOT,
                                         env={**os.environ, "RUNNER_TEMP": directory,
                                              "SWIFTPM_FLAGS": "", "STATUS": str(status),
-                                             "SWIFT_FILTERS": '["^Module\\\\."]', "SWIFT_LANE": "selected"},
+                                             "SWIFT_FILTERS": '["^Module\\\\."]', "SWIFT_LANE": "selected", "VALIDATE": "--validate"},
                                         capture_output=True, text=True, timeout=5)
                 self.assertEqual(result.returncode, status, result.stderr)
                 self.assertIn("Test run with 5 tests failed", result.stdout)
                 self.assertIn("fixture stderr", result.stdout)
                 self.assertIn("Native test IDs listed (before filtering): 1", result.stdout)
-                self.assertIn(r"selection: (?:^Module\.)", result.stdout)
+                self.assertIn(r"(?:^Module\.)", result.stdout)
                 self.assertEqual((Path(directory) / "swift-test.log").read_text(),
                                  "Test run with 5 tests failed after 1 second with 1 issue.\nfixture stderr\n")
 
@@ -498,7 +526,7 @@ class PlanTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             result = subprocess.run(["bash", "-e", "-c", fixture + script], cwd=ROOT,
                                     env={**os.environ, "RUNNER_TEMP": directory,
-                                         "SWIFTPM_FLAGS": "", "SWIFT_FILTERS": '["^Module\\\\."]', "SWIFT_LANE": "selected"},
+                                         "SWIFTPM_FLAGS": "", "SWIFT_FILTERS": '["^Module\\\\."]', "SWIFT_LANE": "selected", "VALIDATE": "--validate"},
                                     capture_output=True, text=True, timeout=5)
             self.assertEqual(result.returncode, 7, result.stderr)
             self.assertEqual((Path(directory) / "swift-test.log").read_text(), "Module.Suite/a()\n")

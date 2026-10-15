@@ -27,6 +27,14 @@ extension Trait where Self == ConditionTrait {
     public static var timingSensitive: Self {
         .enabled(if: TimingTests.enabled, "depends on the machine's speed: skipped on CI unless SHEPHERD_TIMING_TESTS=1")
     }
+
+    /// A test that has failed on CI without a code change. It still runs locally, on the daily
+    /// run and on a `full-ci` run (`SHEPHERD_FLAKY_TESTS=1`), and a pull request skips it, so a
+    /// red pull request means the pull request broke something. Fix the flake and drop the trait.
+    public static func flaky(_ issue: String) -> Self {
+        .enabled(if: TimingTests.enabled || ProcessInfo.processInfo.environment["SHEPHERD_FLAKY_TESTS"] == "1",
+                 "flaky on a pull request: \(issue). Runs locally, daily and on full-ci.")
+    }
 }
 
 extension Trait where Self == TimeLimitTrait {
