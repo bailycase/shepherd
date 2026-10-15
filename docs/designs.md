@@ -657,15 +657,17 @@ claude.ai is still checked against).
 
 ### In the app
 
-- **The built-in system's page** is `DesignSystemReferencePage`, not the page below: Shepherd UI's colors
-  (dark and light side by side, with the text tokens' contrast), type, spacing, radii, sizes and the
-  component catalog, as read-only tables (docs/design/design-tool-references.md › The Shepherd UI page).
-  A system built from a repository keeps the page described below.
+- **Every system's page** is `DesignSystemReferencePage` (docs/design/design-tool-references.md › A design
+  system's page): its colors (dark and light side by side when it has both, with the text tokens' contrast), type,
+  spacing, radii, sizes and its components' specimens, as read-only tables, with the copy the system carries in
+  `tokens.json` › `page`. A build whose agent hasn't written its system yet keeps the "Reading…" page below.
 
 - **The catalog** (`DesignSystemCatalog`, owned by the view model) holds the host's systems as
   last read: each one's record and counts, and its tokens, README and file list. It reads them
   again when the server says one changed (`onDesignSystemsChanged`: a write, a re-sync) and when
-  a page that shows them opens; a system whose revision didn't move keeps what was read.
+  a page that shows them opens; a system whose revision didn't move keeps what was read. A load
+  asked for while one runs goes once more after it; one asked for as the last one ends starts a
+  new read, so Re-sync's result always lands.
 - **"Build one from a repo"** (NavDesigns' dashed tile, a menu of projects when there are
   several) makes a design that builds a system (`Design.buildsSystem`, persisted, false in older
   files) from the project (`sourceSpaceID`: the system keeps its source repo, for Re-sync),
