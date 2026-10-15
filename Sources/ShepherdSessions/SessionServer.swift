@@ -1564,10 +1564,7 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Membership outlives a task's active turn, including manual takeover and settlement.
     /// Executor receipts retain the assignment even when the owning host is disconnected.
-    private func isProjectWorker(_ agentID: AgentID) -> Bool {
-        store.state.projects.contains { $0.tasks.contains { $0.workerAgentID == agentID } }
-            || store.state.projectExecutions.contains { $0.assignment?.reservedWorkerID == agentID }
-    }
+    private func isProjectWorker(_ agentID: AgentID) -> Bool { store.state.isProjectWorker(agentID) }
 
     /// Server queue. Writes a childCommand to the agent's children-extension connection and
     /// answers with the extension's error text (nil on success). A resume can take a few
