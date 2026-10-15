@@ -537,7 +537,29 @@ def verify_app(path: str, key: str, version: str | None = None) -> list[str]:
         problems.append(f"CFBundleExecutable {executable!r} is not in Contents/MacOS")
     problems += architecture_problems(path)
     problems += [f"pi engine: {problem}" for problem in pi_engine.verify(path)]
+    problems += extension_problems(path)
     return problems
+
+
+# Every pi extension and node script the app installs ships in ShepherdSessions' resource bundle
+# (Sources/ShepherdSessions/Extensions, a symlink to Extensions/). An app without one is an app
+# whose agents start without their tools.
+EXTENSIONS_BUNDLE = os.path.join("Contents", "Resources", "Shepherd_ShepherdSessions.bundle", "Contents", "Resources", "Extensions")
+
+
+def extension_problems(app: str) -> list[str]:
+    """The extensions the repository ships that the app's resource bundle lacks."""
+    source = os.path.join(pi_engine.ROOT, "Extensions")
+    bundled = os.path.join(app, EXTENSIONS_BUNDLE)
+    if not os.path.isdir(bundled):
+        return [f"extensions: {EXTENSIONS_BUNDLE} is missing"]
+    problems = []
+    for directory, _dirs, files in os.walk(source):
+        for name in files:
+            relative = os.path.relpath(os.path.join(directory, name), source)
+            if not os.path.isfile(os.path.join(bundled, relative)):
+                problems.append(f"extensions: {relative} is not in the bundle")
+    return sorted(problems)
 
 
 def mach_o_files(app: str) -> list[tuple[str, list[str]]]:
