@@ -82,6 +82,52 @@ struct LogicalProjectPreviewTests {
         return (world, ref)
     }
 
+    @Test func taskSummaryCollapsedAndExpanded() async throws {
+        let (world, ref) = try await running([("Reading list research", "tools:0 finish"),
+                                             ("Library API implementation", "slow"),
+                                             ("Reading widget decision", "ask")])
+        defer { world.stop() }
+        try await eventuallyOnMain("finished and waiting tasks reach the summary") {
+            let tasks = world.vm.state.projects.first?.tasks ?? []
+            return tasks.contains { $0.phase == .settled } && tasks.contains { $0.phase == .waiting }
+        }
+        for expanded in [false, true] {
+            try await Preview.renderMatrix("lead-task-summary-\(expanded ? "expanded" : "collapsed")",
+                                           size: CGSize(width: 700, height: 350), scales: [1, 1.3]) {
+                VStack {
+                    if let project = world.vm.state.projects.first(where: { $0.id == ref.id }) {
+                        let presentation = ProjectPagePresentation(project)
+                        if let summary = presentation.summary {
+                            ProjectSummaryStrip(vm: world.vm, ref: ref, summary: summary, rows: presentation.rows, expanded: expanded)
+                        }
+                    }
+                }
+                .padding(NW.Space.l)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                .background(Color.nw.bgWindow)
+            }
+        }
+    }
+
+    /// Five tasks past the four-row cap, at text scale 1.3: the list stays bounded and the rest scroll.
+    @Test func taskSummaryCapsFiveTasks() async throws {
+        let (world, projects) = try await world(projects: [("Sample App", "")])
+        defer { world.stop() }
+        var project = projects[0]
+        project.tasks = ["Research", "API draft", "Widget mockup", "Docs", "Release notes"].map {
+            ProjectTask(operationID: UUID(), spaceID: SpaceID(), title: $0, prompt: "p", phase: .queued)
+        }
+        let ref = LogicalProjectRef(home: .local, id: project.id)
+        let presentation = ProjectPagePresentation(project)
+        let summary = try #require(presentation.summary)
+        try await Preview.renderMatrix("lead-task-summary-five", size: CGSize(width: 700, height: 400), scales: [1, 1.3]) {
+            ProjectSummaryStrip(vm: world.vm, ref: ref, summary: summary, rows: presentation.rows, expanded: true)
+                .padding(NW.Space.l)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                .background(Color.nw.bgWindow)
+        }
+    }
+
     @Test func startedWithThreeWorkingThreads() async throws {
         let (world, _) = try await running([("Reading list research", "slow"), ("Library API draft", "slow"), ("Reading widget mockup", "slow")])
         defer { world.stop() }
@@ -141,6 +187,30 @@ struct LogicalProjectPreviewTests {
             }
         }
         _ = ref
+    }
+
+    /// A paused Project holding a message with an image, beside one the engine refused: the queued one in the composer's shared Up next
+    /// (read-only, Paused, the image by name), the refused one in the transcript with the owner's reason. All from the real runtime.
+    @Test func pausedQueueWithAnImageAndARefusedMessage() async throws {
+        let (world, ref) = try await running([])
+        defer { world.stop() }
+        let vm = world.vm
+        // The stub engine refuses a prompt with "refuse" in it: a definite refusal, recorded with its reason.
+        #expect(await vm.logicalProjects.sendMessage(ref, text: "Please refuse this one so its note shows."))
+        try await eventuallyOnMain("the refusal is recorded") { vm.state.projects.first?.messages.contains { $0.phase == .failed } == true }
+        #expect(await vm.logicalProjects.setPaused(ref, true))
+        try await eventuallyOnMain("paused and acknowledged") { vm.state.projects.first.map { $0.paused && !$0.interruptPending } == true }
+        let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==")!
+        #expect(await vm.logicalProjects.sendMessage(ref, text: "Use this sketch for the reading-list layout when you continue.",
+                                                      images: [NativeImage(mimeType: "image/png", data: png, name: "reading-list-sketch.png")]))
+        try await eventuallyOnMain("the owner holds it") { vm.state.projects.first?.messages.last?.phase == .queued }
+        vm.logicalProjectPaneOpen = false
+        let ready: @MainActor () -> Bool = {
+            vm.state.projects.first.flatMap { $0.coordinatorAgentID }.flatMap { vm.projectCoordinator.conversationStore(agentID: $0) }?.rows.isEmpty == false
+        }
+        try await Preview.renderMatrix("lead-paused-queue", size: CGSize(width: 1136, height: 700), scales: [1, 1.3], ready: ready) {
+            LogicalProjectDestination(vm: vm).frame(width: 1136).background(Color.nw.bgWindow)
+        }
     }
 
     // MARK: Full window (1600 x 900, the boards' own frame): the sidebar and the Project page side by side

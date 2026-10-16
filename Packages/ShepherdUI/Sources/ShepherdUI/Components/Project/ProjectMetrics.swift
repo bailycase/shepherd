@@ -151,6 +151,8 @@ public enum NWLeadMetrics {
     public static let summaryRowHeight: CGFloat = 19
     public static let summaryChevron: CGFloat = 10
     public static let summaryPadding: CGFloat = 8
+    /// At most four task rows above the composer; further tasks scroll inside the disclosure.
+    public static let summaryListMaxHeight: CGFloat = threadRowHeight * 4
 
     // MARK: Question card (ProjectLead-Question)
 
