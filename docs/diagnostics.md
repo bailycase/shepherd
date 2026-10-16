@@ -57,7 +57,10 @@ cannot be recalled. The random installation UUID remains stable across opt-out/i
 - Stop, steering, compaction and queues do not change consent or generate model calls. Crashing
   child agents remain distinct from the app's own crash; their numeric exits become breadcrumbs.
 
-The SDK cache lives under `<support>/diagnostics/<consent UUID>`. Its native crash recorder can
+The SDK cache lives under `<support>/diagnostics/<consent UUID>`. Startup retires other consent
+UUIDs by directory name, not full URL equality: Foundation can enumerate `/tmp` as `/private/tmp`
+or resolve a symlinked support directory. The active cache must survive those aliases so the
+next launch can upload its pending crashes. Its native crash recorder can
 write raw stack bytes and exception details locally before the upload filter runs, even with
 memory introspection disabled. These are not uploaded. Disabling reporting removes that
 directory tree; a late SDK write is retired and cleaned up on the next launch. Tests use scratch
@@ -98,7 +101,9 @@ private-field removal while retaining symbolication inputs, the settings switch 
 through real accessibility actions, light/dark/large-text renders, and optional symbol upload with
 mocked network/process boundaries. Runtime tests start the real SDK with a URLProtocol transport
 that intercepts every request, inspect the compressed upload, cancel an in-flight request on
-revocation, and verify off/on cannot restart the SDK within the same launch.
+revocation, and verify off/on cannot restart the SDK within the same launch. The runtime scenario
+also reuses a persisted consent UUID through a symlinked support path, verifies its pending report
+bytes survive startup, and confirms retired consent caches are still removed.
 
 Decisions: off by default; visible disabled row when unconfigured; reset revokes consent; hosted
 Sentry only; crash/error reporting first; no confirmation sheet beyond the explicit labelled
@@ -108,8 +113,14 @@ Design checklist: [Diagnostics](design/boards/Diagnostics.md). Departures: none.
 The preview suite skips when `SHEPHERD_PREVIEW_DIR` is unset, like the other visual suites;
 set it explicitly to exercise all four consent states in both appearances and text sizes.
 
-Local validation used `swift test --build-system native` because this Xcode beta's default
-SwiftPM test runner could not load Sparkle. The focused diagnostics, settings/reset and design
-checks passed, including the real SDK fake-transport regression. The Dev `xcodebuild` passed;
-no working app instance was launched or crashed. Live Sentry delivery and server-side
-symbolication still require the configured-project check above.
+Local validation used `swift test --build-system native --filter 'Diagnostics|SettingsReset'`
+because this Xcode beta's default SwiftPM test runner could not load Sparkle. Fifteen tests
+passed; the preview test skipped because `SHEPHERD_PREVIEW_DIR` was unset. Restoring the old URL
+comparison makes the pending-cache assertion fail.
+The Release `xcodebuild` passed. A configured disposable copy, with a unique preferences domain,
+scratch support and pi homes, and no agents, completed two native crash/relaunch cycles through
+an aliased `/tmp` support path without a debugger or injected library. Its executable and dSYM
+UUIDs matched, symbol upload succeeded, and Sentry received both events with the expected release
+and symbolicated `ShepherdLauncher.swift:11` frames. Relaunching opted out removed the SDK cache
+and consent cache ID. Both stored test events had no `user.ip` field, but Sentry added geographic
+metadata. That event-level check does not verify the project's IP-storage setting.
