@@ -24,7 +24,7 @@ struct Prose: View, Equatable {
 
     var body: some View {
         let writing = writingFence ? Self.lastCode(blocks) : nil
-        NWAgentProse(Self.proseBlocks(blocks), maxWidth: maxWidth) { code, language in
+        NWAgentProse(Self.proseBlocks(blocks), maxWidth: maxWidth, writingFence: writingFence) { code, language in
             HighlightedCodeBlock(code: code, language: language, writing: code == writing)
         }
     }

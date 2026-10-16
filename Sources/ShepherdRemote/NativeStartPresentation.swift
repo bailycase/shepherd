@@ -10,6 +10,7 @@ extension NativeStartProblem {
         case .engineMissing: "Shepherd can't find its pi."
         case .homeUnsafe: "Shepherd won't start pi here."
         case .resumedAsNew: "pi couldn't find this conversation."
+        case .folderMissing: "This thread's folder is missing."
         case .exited: "pi exited while starting (\(exitCode.map { "code \($0)" } ?? "signal"))."
         }
     }
@@ -26,6 +27,9 @@ extension NativeStartProblem {
         case .resumedAsNew:
             "It would have started a new, empty one, so Shepherd stopped it. The conversation's file is untouched."
                 + (host.map { " Retry on \($0)." } ?? "")
+        case .folderMissing:
+            "It was moved, renamed or deleted. Locate Folder… moves this thread and its conversation to where it is now"
+                + (host.map { ", on \($0)." } ?? ".")
         case .exited: host.map { "Retry on \($0) to start it again." } ?? "Retry to start it again."
         }
     }

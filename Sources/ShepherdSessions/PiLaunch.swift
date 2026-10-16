@@ -88,6 +88,8 @@ public enum PiLaunch {
     /// How a refused start begins its one line, and exits.
     public static let refusalPrefix = "Shepherd won't start pi: "
     public static let refusedExitCode: Int32 = 78
+    /// How a refusal for a missing folder begins (`NativeStartProblem.Kind.folderMissing`).
+    public static let folderMissingPrefix = refusalPrefix + "folder missing: "
 
     /// Shell words that unset every `PI_*`, `JITI_*`, `NODE_*` and `OPENSSL_CONF` but
     /// `NODE_EXTRA_CA_CERTS`, for a line that runs Shepherd's own node after a login shell: keeps
