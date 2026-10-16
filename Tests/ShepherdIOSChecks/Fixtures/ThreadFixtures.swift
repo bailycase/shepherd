@@ -39,6 +39,8 @@ extension FixtureCatalog {
                           routes: [.thread(preview)]),
             // MobileApproval: a running command's live output, Stop, "Queue a follow-up…".
             FixtureScreen(name: "running", hosts: ThreadFixtures.hosts(), routes: [.thread(running)]),
+            // MobileGoal: the goal card above the composer while the agent works toward it.
+            FixtureScreen(name: "goal", hosts: ThreadFixtures.hosts(running: ThreadFixtures.goalWorking()), routes: [.thread(running)]),
             // MobileQuestion, iPadQuestion: numbered answers, Recommended, one chosen on iPad.
             FixtureScreen(name: "question", hosts: ThreadFixtures.hosts(), routes: [.thread(dock)]),
             FixtureScreen(name: "question-confirm", hosts: ThreadFixtures.hosts(dock: ThreadFixtures.confirm()), routes: [.thread(dock)]),
@@ -289,6 +291,15 @@ enum ThreadFixtures {
                    at: started + 282_000),
         ], running: true))
         snapshot.queue = queue
+        return snapshot
+    }
+
+    /// MobileGoal: working toward a goal, six minutes forty in.
+    static func goalWorking() -> NativeThreadSnapshot {
+        var snapshot = refunds(NativeQueue(items: []))
+        snapshot.supportedActions.append("goal")
+        snapshot.goal = NativeGoal(id: "00000000-0000-0000-0000-000000000042", text: "Ledger tests pass and go vet is clean, without changing the consumer package.",
+                                   state: .working, elapsedSeconds: 400, tokensUsed: 71_000)
         return snapshot
     }
 
