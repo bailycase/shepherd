@@ -47,11 +47,12 @@ struct PiSignInCatalogTests {
         #expect(PiKeyDisplay.of(key) == display)
     }
 
-    /// A command in auth.json may carry a secret inline, so only a custom provider's (models.json,
-    /// configuration) shows its text.
-    @Test func onlyACustomProvidersCommandIsShown() {
-        #expect(PiKeyDisplay.of("!echo sk-secret-inline").command == nil)
-        #expect(PiKeyDisplay.of("!op read op://Dev/x", showingCommand: true) == PiKeyDisplay(command: "op read op://Dev/x"))
+    @Test func unsupportedCommandKeysNeverExposeTextFromAuthOrCustomProviders() {
+        for showingCommand in [false, true] {
+            let display = PiKeyDisplay.of("!echo sk-secret-inline", showingCommand: showingCommand)
+            #expect(display == PiKeyDisplay(runsCommand: true))
+            #expect(!String(describing: display).contains("sk-secret-inline"))
+        }
     }
 
     @Test func customProvidersReadTheirKeyAndAddress() throws {
@@ -60,7 +61,7 @@ struct PiSignInCatalogTests {
                            "northwind-gateway": {"apiKey": "!op read op://Dev/northwind/api-key", "baseUrl": "https://gw"}}}
             """#.utf8)
         #expect(try PiCustomProvider.parse(data) == [
-            PiCustomProvider(id: "northwind-gateway", key: PiKeyDisplay(command: "op read op://Dev/northwind/api-key"), baseURL: "https://gw"),
+            PiCustomProvider(id: "northwind-gateway", key: PiKeyDisplay(runsCommand: true), baseURL: "https://gw"),
             PiCustomProvider(id: "ollama", baseURL: "http://localhost:11434"),
         ])
     }
