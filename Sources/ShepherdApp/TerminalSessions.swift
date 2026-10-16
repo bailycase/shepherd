@@ -904,7 +904,10 @@ final class TerminalSessionStore {
                 try await server.projects.prepareProjectConfiguration(for: cwd)
                 // Respawn after relaunch: an agent that was never prompted has
                 // no session file yet, so seed one before pi looks for it.
-                let (fresh, problem) = await Self.prepareLaunch(for: agent, cwd: cwd, pi: server.pi)
+                let missing = ShepherdViewModel.folderExists(pane.cwd) ? nil
+                    : PiHomeProblem("folder missing: \(pane.cwd)")
+                var (fresh, problem) = (false, missing)
+                if missing == nil { (fresh, problem) = await Self.prepareLaunch(for: agent, cwd: cwd, pi: server.pi) }
                 let state = serverState ?? ShepherdState()
                 let parent = await server.projects.parentProject(of: cwd, state: state)
                 let verifiedWorktree = await Self.ownedWorktreeWithoutMetadata(agent: agent, cwd: cwd, state: state)
