@@ -477,7 +477,8 @@ record lines, a list, and a screen per run.
   "3 subagents" at 13/600, the cells and tally, Collapse as a 34pt circle); 44pt rows (14pt
   leading, 10pt apart): the state in a 14pt slot, the name in mono 13.5/600 in a 68pt column,
   what it is doing at 14 (the subject in mono 13), its time in mono 11, and a chevron in a 34pt
-  slot; the diff stat drops. A run that asked its parent says "asked the parent: …" quietly, with no
+  slot; the diff stat drops. The name is the agent's ("worker", the run's role), never the task the
+  run was given (the iPad and Mac lead with the task); a run with no role keeps its label. A run that asked its parent says "asked the parent: …" quietly, with no
   Answer. Tapping a row pushes its run's screen; touch and hold for Open and the run's controls. Past
   four runs, "Show N more"; open, the rows scroll inside, never more than a share of the
   composer's room. The tray's rules (when it shows, the order, what each state says) are the
@@ -501,7 +502,7 @@ record lines, a list, and a screen per run.
   - "Earlier in this thread" with "kept after they finish" heads the finished runs as one card of
     56pt rows: a `done` check, the name (mono 15/500) over "summary · 1h ago" (12.5 `textTertiary`),
     the stat, a chevron.
-- **One run** (MobileSubagent; `SubagentRunScreen`): the name over "Running · 37m", and ••• (Pause
+- **One run** (MobileSubagent; `SubagentRunScreen`): the agent's name ("worker"; the task is the goal below, and the steer field says "Steer worker…") over "Running · 37m" in plain `textTertiary`, and ••• (Pause
   or Continue, Stop, Re-run, Copy Transcript) trailing. On `bgWindow`, 16pt padding, 12pt apart:
   - The goal (`NWRunGoal`): `bgSunken`, 1px `lineSubtle`, 12pt corners, 12×14 padding: "GOAL · FROM
     THE PARENT" (`.nwSectionLabel()`), then the goal at 14/1.45. The app adds "step 1 of 3 · 34%".

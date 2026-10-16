@@ -34,9 +34,13 @@ enum SubagentValues {
         milliseconds.map { Date(timeIntervalSince1970: $0 / 1000) }
     }
 
-    static func card(_ summary: NativeRunSummary) -> NWRunCardValue {
-        NWRunCardValue(
-            id: summary.id, name: summary.name, tags: summary.tags, state: AgentState(summary.phase),
+    /// On iPhone (MobileSteer, MobileSubagents) the agent's name leads, "worker", and the task it
+    /// was given shows in the run's own screen; the iPad keeps the task-led name.
+    static func card(_ summary: NativeRunSummary, byAgent: Bool = false) -> NWRunCardValue {
+        let agent = byAgent ? summary.role : nil
+        let tags = agent == nil ? summary.tags : summary.tags.map { $0.components(separatedBy: " · ").dropFirst().joined(separator: " · ") }
+        return NWRunCardValue(
+            id: summary.id, name: agent ?? summary.name, tags: tags?.isEmpty == true ? nil : tags, state: AgentState(summary.phase),
             stateLabel: [.paused, .asked].contains(summary.phase) ? nativeRunPhaseLabel(summary.phase) : nil, detail: summary.detail,
             step: summary.step, progress: summary.progress, progressLabel: summary.progress == nil ? nil : "Context window used",
             tokens: summary.tokens, question: summary.question, options: summary.options,
@@ -45,13 +49,13 @@ enum SubagentValues {
     }
 
     /// The store's tray as the tray's header and rows draw it.
-    static func tray(_ tray: NativeSubagentTray) -> (summary: NWSubagentTraySummary, rows: [NWSubagentTrayRun]) {
+    static func tray(_ tray: NativeSubagentTray, byAgent: Bool = false) -> (summary: NWSubagentTraySummary, rows: [NWSubagentTrayRun]) {
         let summary = NWSubagentTraySummary(title: tray.title, cells: tray.cells.map(AgentState.init),
                                             tally: tray.tally.map { NWSubagentTraySummary.Part($0.text, state: $0.phase.map(AgentState.init)) })
-        return (summary, tray.rows.map(trayRow))
+        return (summary, tray.rows.map { trayRow($0, byAgent: byAgent) })
     }
 
-    static func trayRow(_ row: NativeTrayRow) -> NWSubagentTrayRun {
+    static func trayRow(_ row: NativeTrayRow, byAgent: Bool = false) -> NWSubagentTrayRun {
         let line: NWSubagentTrayRun.Line = switch row.line {
         case .working(let verb, let subject, let live): .working(verb: verb, subject: subject, live: live)
         case .waiting(let text): .waiting(text)
@@ -59,7 +63,7 @@ enum SubagentValues {
         case .result(let text): .result(text)
         case .failed(let reason): .failed(reason)
         }
-        return NWSubagentTrayRun(id: row.id, name: row.name, role: row.role, state: AgentState(row.phase), line: line, added: row.added,
+        return NWSubagentTrayRun(id: row.id, name: byAgent ? row.role ?? row.name : row.name, role: byAgent ? nil : row.role, state: AgentState(row.phase), line: line, added: row.added,
                                  removed: row.removed, since: date(row.since), until: date(row.until),
                                  accessibilityLabel: row.accessibilityLabel)
     }
