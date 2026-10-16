@@ -36,6 +36,25 @@ struct MCPLaunch: Equatable {
         return MCPLaunch(extensions: extensions, environment: environment)
     }
 
+    /// Worktree MCP follows the registered owning space, not folder ancestry. This only
+    /// names an MCP source; it never approves the checkout's executable project resources.
+    func sharingProject(_ parent: String?, agent: Agent, cwd: String, state: ShepherdState, verifiedWorktree: Bool = false,
+                        install: () throws -> String = MCPParentExtension.installedPath) rethrows -> MCPLaunch {
+        guard agent.worktreeBranch != nil || agent.worktreePath != nil || verifiedWorktree,
+              let space = state.spaces.first(where: { $0.id == agent.spaceID }),
+              !PiLaunch.isHomeFolder(space.path, userHome: NSHomeDirectory()),
+              !PiLaunch.isHomeFolder(cwd, userHome: NSHomeDirectory()),
+              PiHome.canonical(space.path) != PiHome.canonical(cwd),
+              agent.worktreePath.map({ PiHome.canonical($0) == PiHome.canonical(cwd) }) ?? true else {
+            return try sharingParent(parent, install: install)
+        }
+        var launch = self
+        launch.extensions.append(try install())
+        launch.environment["SHEPHERD_MCP_OWNING_SPACE"] = PiHome.canonical(space.path)
+        launch.environment["SHEPHERD_MCP_WORKTREE_CWD"] = PiHome.canonical(cwd)
+        return launch
+    }
+
     /// This launch for an agent in a subproject of `parent` (Settings ▸ Projects, parents and
     /// subprojects): the extension that registers the parent's `.shepherd/mcp.json` servers, and the
     /// folder it reads them from. Unchanged for a top-level project.

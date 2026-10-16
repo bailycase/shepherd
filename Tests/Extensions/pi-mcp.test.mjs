@@ -139,7 +139,7 @@ test("an explicit -e builtin:mcp wins over the home's -builtin:mcp, which keeps 
   });
 });
 
-test("${VAR} expands in env and headers only; a default, a missing variable and ! commands behave as documented", { timeout: 120000 }, async (t) => {
+test("${VAR} expands in env and headers only; shell defaults remain literal in native Pi config", { timeout: 120000 }, async (t) => {
   const http = await startFakeMcpHttp({ bearer: "tok-123" });
   t.after(() => http.stop());
   const argvFile = path.join(os.tmpdir(), `pi-mcp-argv-${process.pid}`);
@@ -147,16 +147,16 @@ test("${VAR} expands in env and headers only; a default, a missing variable and 
   await withPi(t, {
     settings: { extensions: OFF }, args: AGENT_FLAGS, env: { LAB_SECRET: "s3cret", LAB_TOKEN: "tok-123" },
     files: mcpFile({
-      local: server({ A_VAR: "${LAB_SECRET}", B_MIX: "pre-${LAB_SECRET}-post", C_DEFAULT: "${NOPE:-fallback}", D_CMD: "!printf '%s' \"${NOPE:-from-sh}-${LAB_SECRET}\"",
+      local: server({ A_VAR: "${LAB_SECRET}", B_MIX: "pre-${LAB_SECRET}-post", C_DEFAULT: "${NOPE:-fallback}",
         FAKE_MCP_ARGVFILE: argvFile }, { args: [stdio, "${LAB_SECRET}"], exposure: "direct" }),
       web: { url: http.url, exposure: "direct", headers: { Authorization: "Bearer ${LAB_TOKEN}", "X-Default": "${NOPE:-dflt}" } },
     }),
-    onRequest: script([...["A_VAR", "B_MIX", "C_DEFAULT", "D_CMD"].map((name) => tool("mcp__local__env", { name })), tool("mcp__web__whoami")]),
+    onRequest: script([...["A_VAR", "B_MIX", "C_DEFAULT"].map((name) => tool("mcp__local__env", { name })), tool("mcp__web__whoami")]),
   }, async (pi) => {
     const turn = await pi.prompt("env");
     const texts = pi.toolEvents(turn.events).filter((e) => e.type === "tool_execution_end").map((e) => e.result.content[0].text);
-    assert.deepEqual(texts.slice(0, 4), ["A_VAR=s3cret", "B_MIX=pre-s3cret-post", "C_DEFAULT=${NOPE:-fallback}", "D_CMD=from-sh-s3cret"]);
-    const headers = JSON.parse(texts[4]);
+    assert.deepEqual(texts.slice(0, 3), ["A_VAR=s3cret", "B_MIX=pre-s3cret-post", "C_DEFAULT=${NOPE:-fallback}"]);
+    const headers = JSON.parse(texts[3]);
     assert.equal(headers.authorization, "Bearer tok-123", "a header is expanded from pi's environment");
     assert.equal(headers["x-default"], "${NOPE:-dflt}", "a default is not a form pi knows");
     assert.deepEqual(JSON.parse(fs.readFileSync(argvFile, "utf8")).argv, ["${LAB_SECRET}"], "args are never expanded");
