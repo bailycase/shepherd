@@ -80,6 +80,7 @@ final class PreviewWorkspace {
 final class ThreadFixture {
     let store = NativeThreadStore()
     let commands = ThreadCommandCenter()
+    let modelDefaults = ScratchDefaults()
     var snapshot: NativeThreadSnapshot
     var transcripts: [String: NativeSubagentTranscript] = [:]
     /// True: the agent's pi is still starting, and every snapshot request says so.
@@ -114,6 +115,7 @@ final class ThreadFixture {
                        contextDetailsOpen: contextDetailsOpen)
         }
         .environment(\.threadCommands, commands)
+        .environment(\.composerModelDefaults, modelDefaults)
     }
 }
 
