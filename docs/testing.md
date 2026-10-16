@@ -92,10 +92,6 @@ one process.
 skipped when `CI=true` unless `SHEPHERD_TIMING_TESTS=1`. Never mark a test timing-sensitive to
 hide a short wait; give it a condition to wait on.
 
-**Quarantined rendering tests** use `.flaky("why")`. They run locally, in full runs, manual
-diagnostics and PRs editing tests. `SHEPHERD_FLAKY_TESTS=1` enables them explicitly. Do not use
-this trait for repository-safety checks. Investigate failures and remove the trait after a fix.
-
 **Opt-in runs.** `SHEPHERD_LIVE_MODEL` runs the use-case suite against a real model.
 `SHEPHERD_ENGINE_SMOKE` runs `EngineSmokeTests` and `EngineThreadTests` against the shipped engine
 (run both and the extension tests on every pin bump). `SHEPHERD_PERF_REPORT=1 … --filter
@@ -144,3 +140,8 @@ support, `Package.swift`, the engine pin, the script itself), `master`, the dail
 design performance) normally run only there and on the manual UI diagnostics dispatch. A changed
 test file still runs its own tests, including slow diagnostics. `nightly` ships without rerunning tests. Failed Swift runs keep the log and the
 completion captures as a seven-day artifact.
+
+Hosted builds restore timestamps only for tracked files whose bytes match the cached input
+manifest, so a fresh checkout does not re-emit unchanged modules or recopy resources. Changed
+files keep their checkout timestamps; missing metadata uses normal invalidation. Swift file
+hashing and dependency checks stay enabled. Only one lane saves the shared build cache.
