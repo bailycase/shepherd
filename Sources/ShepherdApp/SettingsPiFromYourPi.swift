@@ -213,7 +213,7 @@ struct FromYourPiSettings: View {
             if let display = survey.yourKeys[login.provider] {
                 if let masked = display.masked { [.init("API key ·"), .init(masked, mono: true)] }
                 else if let name = display.variables.first { [.init("API key · reads"), .init("$" + name, mono: true)] }
-                else { [.init("API key · runs a command")] }
+                else { [.init("API key · command not supported")] }
             } else {
                 [.init("API key")]
             }

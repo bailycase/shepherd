@@ -26,7 +26,7 @@ struct SidebarActivityTests {
             let lists = SidebarDerivation.lists(SidebarSource(
                 local: ShepherdState(spaces: [space], agents: [pin, idle, asking, working, done], designs: [design]), designs: true),
                 pins: SidebarPins([.local(pin.id)]))
-            #expect(lists.sections.map(\.section) == [.designs, .needsYou, .working, .done, .pinned, .automations, .recents])
+            #expect(lists.sections.map(\.section) == [.automations, .designs, .needsYou, .working, .done, .pinned, .recents])
             #expect(lists.all.map(\.title) == ["Dashboard", "asking", "working", "done", "pinned", "idle"], "Designs, Needs you, Working, Done, Pinned, Recents")
             #expect(lists.items(collapsed: []).first == .header(.designs, count: 1, collapsed: false))
             #expect(Set(lists.all.map(\.id)).count == 6)

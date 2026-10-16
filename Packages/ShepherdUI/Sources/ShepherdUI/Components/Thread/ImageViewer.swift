@@ -24,13 +24,21 @@ public struct NWImageViewer: View {
     let showInFinder: (() -> Void)?
     let retry: (() -> Void)?
     let close: () -> Void
+    /// How far the window's own controls reach into the bar from the leading edge (the traffic lights, 70pt, unless the window is
+    /// full screen): the bar's content starts after them.
+    let leadingInset: CGFloat
+    /// The picture's size in pixels, when known: the picture is then drawn at exactly its fitted size, so the arrows sit beside
+    /// the photo, not at the window's edges (a resizable image takes the whole width it is offered, whatever its shape).
+    let pixels: CGSize?
 
     /// `facts` is the mono line after the name ("1170 × 2532 · PNG · 1.4 MB"); `position` is "1 of 2"
     /// (nil for one image); `caption` is the line along the bottom.
     public init(name: String, facts: String, position: String? = nil, content: Content, caption: String,
                 previous: (() -> Void)? = nil, next: (() -> Void)? = nil, copy: (() -> Void)? = nil,
                 addToMessage: (() -> Void)? = nil, showInFinder: (() -> Void)? = nil, retry: (() -> Void)? = nil,
-                close: @escaping () -> Void) {
+                leadingInset: CGFloat = 0, pixels: CGSize? = nil, close: @escaping () -> Void) {
+        self.leadingInset = leadingInset
+        self.pixels = pixels
         self.name = name
         self.facts = facts
         self.position = position
@@ -53,13 +61,14 @@ public struct NWImageViewer: View {
             NWHairline()
             // The picture and, when there is more than one image, a round ‹ › 16pt either side of it, the three centred together (the board
             // does not pin the arrows to the window's edges). The arrow with nowhere to go is drawn disabled, as the board's first image has it.
-            HStack(spacing: NW.Space.xl) {
-                if position != nil { arrow("chevron.left", label: "Previous image", action: previous) }
-                picture
-                if position != nil { arrow("chevron.right", label: "Next image", action: next) }
+            GeometryReader { room in
+                HStack(spacing: NW.Space.xl) {
+                    if position != nil { arrow("chevron.left", label: "Previous image", action: previous) }
+                    picture(fitting: room.size)
+                    if position != nil { arrow("chevron.right", label: "Next image", action: next) }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .padding(.horizontal, NW.Space.xxl)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
             // The board's 36pt footer, its line centred.
             Text(caption)
                 .font(.nw(.mono))
@@ -78,6 +87,24 @@ public struct NWImageViewer: View {
     /// semibold, its facts and "1 of 2" in `mono` `textTertiary`, then Copy, Add to message and Show in Finder as 28pt ghost buttons with 14pt
     /// glyphs, and the 28pt close circle on `lineStrong`.
     private var bar: some View {
+        // The band runs the window's width; its content is one centred column (`barMaxWidth`) after the window controls, so a wide
+        // window does not throw the name into one corner and the buttons into the other. When the labelled buttons do not fit
+        // beside the name (a narrow window, large text) they become icons; their names stay for VoiceOver and the tooltip.
+        HStack(spacing: 0) {
+            Color.clear.frame(width: leadingInset, height: 1)
+            ViewThatFits(in: .horizontal) {
+                barContent(labels: true)
+                barContent(labels: false)
+            }
+            .frame(maxWidth: NWImageViewerMetrics.barMaxWidth)
+            .padding(.horizontal, NW.Space.xxl)
+            .frame(maxWidth: .infinity)
+        }
+        .frame(height: NWImageViewerMetrics.bar)
+        .background(Color.nw.bgWindow)
+    }
+
+    private func barContent(labels: Bool) -> some View {
         let nw = Color.nw
         return HStack(spacing: NW.Space.m) {
             Text(name).font(.nw(.ui, weight: .semibold)).foregroundStyle(nw.textPrimary).lineLimit(1).truncationMode(.middle)
@@ -86,9 +113,9 @@ public struct NWImageViewer: View {
             Text(facts).font(.nw(.mono)).foregroundStyle(nw.textTertiary).lineLimit(1).fixedSize()
             if let position { Text(position).font(.nw(.mono)).foregroundStyle(nw.textTertiary).lineLimit(1).fixedSize() }
             Spacer(minLength: NW.Space.l)
-            if let copy { action("Copy", "doc.on.doc", copy) }
-            if let addToMessage { action("Add to message", "plus", addToMessage) }
-            if let showInFinder { action("Show in Finder", "folder", showInFinder) }
+            if let copy { action("Copy", "doc.on.doc", labels, copy) }
+            if let addToMessage { action("Add to message", "plus", labels, addToMessage) }
+            if let showInFinder { action("Show in Finder", "folder", labels, showInFinder) }
             Button(action: close) {
                 Image(systemName: "xmark")
                     .font(.system(size: NWImageViewerMetrics.closeGlyph, weight: .medium))
@@ -101,19 +128,18 @@ public struct NWImageViewer: View {
             .nwFocusRingCircle()
             .accessibilityLabel("Close")
         }
-        .padding(.horizontal, NW.Space.l)
-        .frame(height: NWImageViewerMetrics.bar)
-        .background(nw.bgWindow)
     }
 
-    private func action(_ title: String, _ symbol: String, _ run: @escaping () -> Void) -> some View {
+    private func action(_ title: String, _ symbol: String, _ labels: Bool, _ run: @escaping () -> Void) -> some View {
         Button(action: run) {
             HStack(spacing: NW.Space.s) {
                 Image(systemName: symbol).font(.system(size: NWImageViewerMetrics.glyph, weight: .medium))
-                Text(title)
+                if labels { Text(title).lineLimit(1).fixedSize() }
             }
         }
         .buttonStyle(.nw(.ghost, size: .m))
+        .accessibilityLabel(title)
+        .nwHelp(title)
     }
 
     /// The round ‹ › beside the picture: 36pt, `bgRaised` with a `lineSubtle` ring, a 14pt chevron.
@@ -135,18 +161,31 @@ public struct NWImageViewer: View {
         .accessibilityLabel(label)
     }
 
-    @ViewBuilder private var picture: some View {
+    /// The room the picture may take: what is left of the body after the arrows and their gaps, the 24pt at each side, and the
+    /// 48pt above and below (the board's 1170 × 2532 picture is 724pt tall in a 900pt window).
+    private func fitted(in body: CGSize) -> CGSize? {
+        guard let pixels, pixels.width > 0, pixels.height > 0 else { return nil }
+        let arrows = position != nil ? 2 * (NWImageViewerMetrics.arrow + NW.Space.xl) : 0
+        let room = CGSize(width: max(1, body.width - arrows - 2 * NW.Space.xxl),
+                          height: max(1, body.height - 2 * NWImageViewerMetrics.pictureInset))
+        let scale = min(room.width / pixels.width, room.height / pixels.height)
+        return CGSize(width: (pixels.width * scale).rounded(.down), height: (pixels.height * scale).rounded(.down))
+    }
+
+    @ViewBuilder private func picture(fitting body: CGSize) -> some View {
         let nw = Color.nw
         switch content {
         case .picture(let image):
+            let size = fitted(in: body)
             image.resizable().aspectRatio(contentMode: .fit)
+                .frame(width: size?.width, height: size?.height)
                 .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
                 .nwBorder(nw.lineSubtle, radius: NW.Radius.m)
                 // The board's shadow: 0 12 32, `bgBase` at 60%.
                 .shadow(color: nw.bgBase.opacity(NWImageViewerMetrics.shadowOpacity), radius: NWImageViewerMetrics.shadowBlur / 2,
                         y: NWImageViewerMetrics.shadowOffset)
-                // The board's picture leaves 48pt above and below it (a 1170 × 2532 screen is 724pt tall in a 900pt window).
-                .padding(.vertical, NWImageViewerMetrics.pictureInset)
+                // The board's picture leaves 48pt above and below it; without its pixel size it is offered that much less height.
+                .padding(.vertical, size == nil ? NWImageViewerMetrics.pictureInset : 0)
                 .accessibilityLabel(name)
                 .accessibilityAddTraits(.isImage)
         case .loading:
@@ -171,6 +210,8 @@ public enum NWImageViewerMetrics {
     /// The bar and the footer (ThreadImageOpen): 44 and 36.
     public static let bar: CGFloat = 44
     public static let footer: CGFloat = 36
+    /// The bar's content stays in a column this wide (the thread's 820pt measure), centred, with 24pt of side room.
+    public static let barMaxWidth: CGFloat = 820
     /// The close circle and the round ‹ › buttons: 28 and 36. Glyphs in the bar and beside the picture are 14; the close ✕ is 12.
     public static let close: CGFloat = 28
     public static let arrow: CGFloat = 36

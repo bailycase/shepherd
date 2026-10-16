@@ -193,7 +193,8 @@ struct ThreadImagesPreviewTests {
     /// A live thread (the stub pi, its history seeded from a file) whose first message carries two images, in a real window; the viewer opens over it.
     /// `fetch` replaces the host's answers for the loading and failed states.
     @MainActor
-    func viewerOverThread(_ name: String, open index: Int, images count: Int = 2, fetch: ((@MainActor (NativeThreadRequest) async throws -> NativeThreadResult))? = nil) async throws {
+    func viewerOverThread(_ name: String, open index: Int, images count: Int = 2, size: CGSize = CGSize(width: 1440, height: 900),
+                          fetch: ((@MainActor (NativeThreadRequest) async throws -> NativeThreadResult))? = nil) async throws {
         let workspace = try PreviewWorkspace()
         defer { workspace.stop() }
         let first = Self.screen(1170, 2532, accent: .systemBlue), second = Self.screen(2880, 1800, accent: .systemRed)
@@ -217,7 +218,7 @@ struct ThreadImagesPreviewTests {
         let store = vm.threadStores.store(for: id)
         // `Preview.renderMatrix` mounts the real window; its `ready` hook waits for the thread to name its images, and the viewer opens then.
         var opened = false
-        try await Preview.renderMatrix(name, size: CGSize(width: 1440, height: 900), ready: {
+        try await Preview.renderMatrix(name, size: size, ready: {
             guard store.ready, let row = store.messages.first(where: { $0.blocks.contains { $0.image != nil } }) else { return false }
             if !opened {
                 opened = true
@@ -238,6 +239,14 @@ struct ThreadImagesPreviewTests {
     @Test func viewerOverTheThreadFirst() async throws { try await viewerOverThread("thread-images-open-first", open: 0) }
     @Test func viewerOverTheThreadSecond() async throws { try await viewerOverThread("thread-images-open-second", open: 1) }
     @Test func viewerOverTheThreadOneImage() async throws { try await viewerOverThread("thread-images-open-single", open: 0, images: 1) }
+
+    /// The bar's content is one centred column after the window controls, not the window's corners: a wide landscape window
+    /// (2000 × 844), and a narrow one (760 × 700) whose sidebar is hidden, so the window controls sit over the bar and the labelled
+    /// buttons give way to icons, in light and dark and at 1.3.
+    @Test func viewerBarInAWideAndANarrowWindow() async throws {
+        try await viewerOverThread("thread-images-open-wide", open: 0, size: CGSize(width: 2000, height: 844))
+        try await viewerOverThread("thread-images-open-narrow", open: 0, size: CGSize(width: 760, height: 700))
+    }
 
     struct HostDown: Error {}
     @Test func viewerOverTheThreadWhileLoading() async throws {

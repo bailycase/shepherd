@@ -6,8 +6,8 @@
 `Components/Navigation/Sidebar.swift`): the sidebar every Mac board draws (NWNavigation, and the
 sidebars of Main, Running, NavNewThread, NavAutomations and NavHosts). 232pt on `bgBase` by
 default, and it keeps its width when the side pane opens. Top to bottom: the top bar, the
-destinations, Designs, Projects, Needs you, Working, Done, Pinned, Recents, and the footer. Pinned, which the board
-does not draw, follows Done and never displaces a drawn group. The user moved the Designs group to the top
+destinations, Automations, Designs, Projects, Needs you, Working, Done, Pinned, Recents, and the footer. Pinned, which the board
+does not draw, follows Done and never displaces a drawn group. The user moved the Designs group to the top, then Automations above it
 (an override of ProjectLead-Activity, which draws it last). Projects are the new feature
 ([project-lead.md](../project-lead.md)); the Projects group always shows, with a "New project" chip, and
 each row is a logical Project, never a thread. In the folder mode (Spaces) Projects sit above the Spaces, with a
