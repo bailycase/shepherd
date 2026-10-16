@@ -45,11 +45,11 @@ struct AutomationsScreen: View {
         .navigationBarTitleDisplayMode(sizeClass == .regular ? .inline : .large)
         .toolbar {
             if !store.editableHosts.isEmpty {
-                ToolbarItem(placement: .primaryAction) {
-                    Button { AutomationsHooks.create(navigator: navigator) } label: {
-                        Image(systemName: "plus")
-                    }
-                    .accessibilityLabel("New automation")
+                ToolbarItem(placement: .topBarTrailing) {
+                    // New automation is the lantern circle (MobileAutomations).
+                    Button("New automation", systemImage: "plus") { AutomationsHooks.create(navigator: navigator) }
+                        .buttonStyle(.glassProminent)
+                        .tint(Color.nw.lantern)
                 }
             }
         }
