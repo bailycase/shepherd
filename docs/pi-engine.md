@@ -86,11 +86,12 @@ This check imports the host peers and creates/disposes a session. CI runs it aft
 release runs it against the signed app before notarization. An old bundle-only engine fails
 with `ERR_MODULE_NOT_FOUND`.
 
-## Skills-only runtime patch
+## Pinned runtime patches
 
 `scripts/pi-engine-patches/skills.json` is a narrowly scoped, tracked patch to pi 1.0.0's readable
 modular resource loader, package discovery, agent session and RPC mode, plus the small native
-watcher source `skill-watch.js`. Its hash is recorded in the engine pin.
+watcher source `skill-watch.js`. It also removes command-based configuration value resolution
+from the modular runtime and SDK bundle. Its hash is recorded in the engine pin.
 Staging verifies the pi version, full original file hashes, unique replacement anchors and final
 file hashes; verification also checks the shipped patched files. A source, patch or pin mismatch
 fails closed. Update the patch hash in the pin and restage whenever the patch changes, so Xcode's
@@ -105,6 +106,13 @@ bounds, discovery scope and busy behavior. All launches still go through `PiLaun
 launches all use the patched modular runtime. No dependency was added; the modular SDK and its
 locked dependencies already ship. No production CLI launch executes the unpatched bundle;
 existing SDK-only sign-in and definition-discovery imports still use `bundle/index.js`.
+
+Configuration values beginning with `!` never execute a command. MCP env, headers, OAuth
+client secrets and model credentials must use literal values or environment-variable references;
+Shepherd's own MCP translation also supports Keychain references. Explicit MCP stdio commands
+remain available. `config-command-values.test.mjs` verifies the pinned resolver patch against
+both upstream and staged Pi; `mcp-parent.test.mjs` checks real bundled MCP startup rejects
+command values in global, trusted-project and inherited config.
 
 `EngineSmokeTests` runs trust, busy preflight, Stop and prompt/history/extension-preservation
 checks from `Tests/Extensions/engine-live-skills.mjs`, including CLI, loaded local-package and

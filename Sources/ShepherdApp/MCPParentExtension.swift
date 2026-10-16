@@ -2,9 +2,8 @@ import Foundation
 import ShepherdSessions
 import ShepherdProtocol
 
-/// A subproject's share of its parent's MCP servers (Settings ▸ Projects, parents and subprojects;
-/// docs/mcp.md): registers the parent's `.shepherd/mcp.json` servers with pi's own MCP, in a project pi
-/// trusts. Loaded only for an agent whose project sits inside another project's folder.
+/// Registers MCP servers from the host-authorized owning space or a trusted parent project.
+/// The canonical extension enforces the checkout binding and project-trust rules (docs/mcp.md).
 enum MCPParentExtension {
     static func installedPath() throws -> String {
         let directory = ShepherdPaths.supportDirectory()
