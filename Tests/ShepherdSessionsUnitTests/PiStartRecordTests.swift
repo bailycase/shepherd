@@ -40,6 +40,9 @@ struct PiStartRecordTests {
         Case(name: "Shepherd refused to start pi in a home that overlaps your pi",
              stderr: [PiLaunch.refusalPrefix + "Shepherd's pi home (/s/pi) and your pi (/s) overlap"], exitCode: PiLaunch.refusedExitCode,
              kind: .homeUnsafe),
+        Case(name: "Shepherd refused to start pi in a folder that is gone",
+             stderr: [PiLaunch.folderMissingPrefix + "/code/moved"], exitCode: PiLaunch.refusedExitCode,
+             kind: .folderMissing),
         Case(name: "anything else", stderr: ["TypeError: cannot read properties of undefined"], exitCode: 1, kind: .exited),
         Case(name: "a signal", stderr: [], exitCode: nil, kind: .exited),
     ]

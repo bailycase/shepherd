@@ -142,6 +142,18 @@ struct AppDialogs: ViewModifier {
                 },
                 cancel: { vm.spacePickerTarget = nil }
             )
+        case .relocate(let spaceID):
+            RemoteDirectoryPicker(
+                title: "Locate \(vm.state.spaces.first { $0.id == spaceID }?.name ?? "space")'s folder",
+                actionTitle: "Use Folder",
+                hostName: "this Mac",
+                list: { path in try await LocalDirectoryLister.load(path: path) },
+                choose: { path in
+                    vm.spacePickerTarget = nil
+                    Task { await vm.relocateSpace(spaceID, to: path) }
+                },
+                cancel: { vm.spacePickerTarget = nil }
+            )
         case .importWorktree(let target):
             RemoteDirectoryPicker(
                 title: "Import existing worktree",

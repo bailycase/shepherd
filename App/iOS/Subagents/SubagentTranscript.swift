@@ -187,7 +187,7 @@ struct SubagentTurnView: View, Equatable {
         if let presentation = turn.presentation {
             VStack(alignment: .leading, spacing: MobileLayout.turnItemSpacing) {
                 ForEach(presentation.items) { item in
-                    SubagentTurnItem(item: item)
+                    SubagentTurnItem(item: item, live: turn.live)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -205,6 +205,7 @@ struct SubagentTurnView: View, Equatable {
 /// One item of a transcript turn.
 private struct SubagentTurnItem: View {
     let item: NativeTurnPresentation.Item
+    let live: Bool
     @State private var openThinking = false
 
     var body: some View {
@@ -212,8 +213,8 @@ private struct SubagentTurnItem: View {
         case .thinking(_, _, let blocks, let seconds, let live, _):
             ThinkingRow(seconds: seconds, blocks: blocks, live: live, isExpanded: openThinking) { openThinking.toggle() }
                 .equatable()
-        case .prose(_, _, let blocks, _):
-            NWAgentProse(ProseView.proseBlocks(blocks))
+        case .prose(_, _, let blocks, let openFence):
+            NWAgentProse(ProseView.proseBlocks(blocks), writingFence: live && openFence)
         case .activity(_, let bursts):
             VStack(alignment: .leading, spacing: MobileLayout.activitySpacing) {
                 ForEach(bursts) { burst in
