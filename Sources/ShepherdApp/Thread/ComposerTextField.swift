@@ -81,7 +81,6 @@ struct ComposerTextField: NSViewRepresentable {
             coordinator?.readText(field)
         }
         field.editor.changedFocus = { [weak field, weak coordinator = context.coordinator] focused in
-            field?.traceUpdate?("native focus=\(focused), updating=\(field?.updating == true)")
             guard let field, !field.updating, let coordinator else { return }
             // Native focus is not a new request: do not replay it on the next SwiftUI update.
             field.wantsFocus = focused
@@ -97,34 +96,28 @@ struct ComposerTextField: NSViewRepresentable {
     func updateNSView(_ field: Field, context: Context) {
         context.coordinator.parent = self
         field.updating = true
-        field.traceUpdate?("update begin, requestedFocus=\(focus.wrappedValue)")
-        defer { field.updating = false; field.traceUpdate?("update end") }
+        defer { field.updating = false }
+        // NSControl's getter validates pending editor text into the cell. Do this before
+        // style setters can refresh the editor from a stale cell value (macOS 26).
+        let replaced = field.stringValue != text
         let _ = appearance
         NWFonts.register()
         field.font = NSFont(name: "\(NWFonts.sansFamily)-Regular", size: NWTextStyle.body.size * ThemeStore.shared.textScale)
             ?? .systemFont(ofSize: NWTextStyle.body.size * ThemeStore.shared.textScale)
-        field.traceUpdate?("after font")
         field.textColor = NSColor(Color.nw.textPrimary)
-        field.traceUpdate?("after text color")
         field.placeholderAttributedString = NSAttributedString(string: placeholder, attributes: [
             .font: field.font!, .foregroundColor: NSColor(Color.nw.textTertiary)
         ])
-        field.traceUpdate?("after placeholder")
         field.isEnabled = enabled
-        field.traceUpdate?("after enabled")
         field.setAccessibilityLabel(label)
         field.editor.insertionPointColor = NSColor(Color.nw.lantern)
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = lineSpacing
         field.editor.defaultParagraphStyle = paragraph
-        field.traceUpdate?("after editor style")
         field.editor.attach = attach
         field.editor.keys = keys
-        let replaced = field.stringValue != text
         if replaced {
-            field.traceUpdate?("before stringValue replacement")
             field.stringValue = text
-            field.traceUpdate?("after stringValue replacement")
             field.invalidateIntrinsicContentSize()
             if field.currentEditor() != nil {
                 field.editor.setSelectedRange(NSRange(location: (text as NSString).length, length: 0))
@@ -169,8 +162,6 @@ struct ComposerTextField: NSViewRepresentable {
         let editor = Editor()
         var updating = false
         var wantsFocus = false
-        /// Temporary, test-installed tracing for the macOS 26 field-editor lifecycle regression.
-        var traceUpdate: ((String) -> Void)?
         override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); applyFocus() }
         func applyFocus() {
             guard let window else { return }

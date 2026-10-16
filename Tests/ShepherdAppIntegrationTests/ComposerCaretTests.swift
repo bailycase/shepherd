@@ -13,6 +13,46 @@ import Testing
 @Suite("Composer caret", .mainActorExclusive)
 @MainActor
 struct ComposerCaretTests {
+    @Test(arguments: [false, true])
+    func stylingKeepsTheActiveSelectionAndRefreshesInactiveCellValues(active: Bool) async throws {
+        let thread = ComposerThread(focused: true)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        let text = "Keep this draft"
+        thread.type(text)
+        try await thread.settle()
+        let editor = try #require(thread.focusedEditor as? ComposerTextField.Editor)
+        func composer(in view: NSView) -> ComposerTextField.Field? {
+            if let field = view as? ComposerTextField.Field { return field }
+            return view.subviews.lazy.compactMap { composer(in: $0) }.first
+        }
+        let field = try #require(composer(in: thread.window.host))
+        let cell = try #require(field.cell)
+        let selection = NSRange(location: 5, length: 4)
+        if active {
+            editor.setSelectedRange(selection)
+        } else {
+            #expect(thread.window.window.makeFirstResponder(nil))
+            try await thread.settle()
+            cell.stringValue = "stale cell"
+            try #require(cell.stringValue == "stale cell")
+        }
+        // Do not read the active control's stringValue before the update: its validation
+        // side effect would hide the pending-editor synchronization this exercises.
+        await thread.setRunning(true)
+        try await thread.settle()
+        #expect(thread.store.draft == text)
+        #expect(cell.stringValue == text)
+        if active {
+            #expect(thread.focusedEditor === editor)
+            #expect(editor.string == text)
+            #expect(editor.selectedRange() == selection)
+        } else {
+            #expect(field.currentEditor() == nil)
+            #expect(thread.focusedEditor == nil, "an inactive field update never reclaims focus")
+        }
+    }
+
     /// ⇧↩ and ⌥↩ reach the field through `NWReturnKey.insertLineBreak(in:)`, the call the composer's
     /// key handler makes with the field editor holding the keyboard. Nothing here posts a key event.
     /// A SwiftUI field editor answers ↩ and ⇧↩ (`insertNewline:`) with no line at all, so the
