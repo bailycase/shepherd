@@ -182,6 +182,11 @@ status color, a raw color, or a raw glyph name.
 - A rebound chord must include ⌘ and avoid ⌘1–9, ⌘, and the plain system chords. A chord the
   app chrome uses goes in `appOwnedChords`, so a focused Ghostty surface can't eat it.
 - Keycaps (`NWKeycap`) put modifiers in Apple's order, ⌃⌥⇧⌘, one cap per key.
+- The Mac's image-capable composers handle native Paste (⌘V, Edit and the text menu) in their
+  own field editor, reusing dropped-image resizing and attachment chips. Text paste, selection,
+  undo and input-method composition stay native; other fields and terminals are unchanged.
+- Opening Choose Model gives Search models the keyboard after the previous menu releases it;
+  a simultaneous pane-focus claim never takes that keyboard back.
 - In a sheet, ⏎ confirms and ⎋ cancels. Esc closes a menu, then the command list, then stops pi
   while it works. It never stops pi while a question waits.
 - Status events are banners inside the pane they concern, never a modal alert.
