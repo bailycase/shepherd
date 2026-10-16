@@ -529,8 +529,10 @@ one prompt at a time.
 
 ## Retry
 
-Retry (a turn's footer, its error card, a Turn failed banner) retries the latest turn in place
-(`NativeThreadRequest.retry`, `retry` in `supportedActions`, remotely `native.retry.v1`). pi's
+Retry (a turn's footer, its error card, a Turn failed banner) retries the latest turn
+(`NativeThreadRequest.retry`, `retry` in `supportedActions`, remotely `native.retry.v1`). A failed
+turn with tool work or extension messages continues with its history intact; other turns retry
+in place. pi's
 session is a tree, but RPC has no command to move in it, and `fork` would start a new session
 (clearing the agent's final name). So the status extension, which every agent loads, registers
 `/shepherd-retry <ms>`, and the host sends it as a prompt (`RPCThreadState+Retry.swift`).
@@ -541,6 +543,11 @@ session is a tree, but RPC has no command to move in it, and `fork` would start 
   text and images (`pi.sendUserMessage`). The failed turn stays in the session file, off the
   active branch; the model sees the prompt once. Anything else is a `notify` and no change. It
   never throws into pi, and the host leaves it out of the composer's commands.
+  If the turn ends in a provider error after returning tool results or receiving extension
+  messages (including child results and questions), the command does not rewind. It appends a
+  visible continuation request instead, preserving the original messages,
+  tool results and child references. The parent can retrieve completed children and keep using
+  running ones without starting replacements. Retrying cannot undo tool side effects.
 - **The host** takes it only while pi is idle (`busy` otherwise; never queued or steered) and
   only for the latest turn's message: `entryID` in history with no later user message but ones
   steered into its turn (`not_latest`). One sent just as pi settled waits for the Changes
@@ -554,14 +561,16 @@ session is a tree, but RPC has no command to move in it, and `fork` would start 
   and the reply streams in the old one's place. The session and generation stay, so clients
   keep the thread (no remount), and the refresh is the ordinary one (`historyVersion`, one
   revision), so the data-path budgets hold. If pi refused the command, the same refresh brings
-  the turn back.
+  the turn back. For a continuation, the refresh restores the failed turn's history and the
+  new continuation request starts a turn after it.
 - **Clients:** `NativeThreadRow.retryEntryID` is set on the latest reply only, once it has
   finished (`offersRetry`); `NativeThreadStore.retry` sends `retry`, or, from a host without it
   (a snapshot without `retry`; `RemoteHostClient` strips it from a host without
   `native.retry.v1`), sends the prompt again as before.
 - **Tests:** `RetryTests` and `RetryStoreTests` (the stub answers `/shepherd-retry` as pi does,
   and its `flaky` turn fails once), and `Tests/Extensions/retry.test.mjs` against pi's real
-  runtime.
+  runtime, including a failed parent with one completed child result and one still-running child,
+  and a consumed child notice followed by a failed continuation that ran no tools.
 
 ## Service tier
 
