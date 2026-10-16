@@ -189,7 +189,7 @@ private struct SidebarTreeItemView: View, Equatable {
     private func projectRow(_ project: SidebarProjectRow) -> some View {
         let id = project.id
         return NWProjectRow(project.name, count: project.count, expanded: project.expanded, rollup: project.rollup,
-                            dimmed: project.dimmed, missing: project.missing,
+                            dimmed: project.dimmed, missing: project.missing, pinned: project.pinned,
                             toggle: {
                                 focus(id)
                                 vm.toggleProject(id, all: NSEvent.modifierFlags.contains(.option))
@@ -255,6 +255,7 @@ struct SidebarProjectMenu: View {
         Divider()
         Button("Collapse All", systemImage: "arrow.down.and.line.horizontal.and.arrow.up") { vm.setAllProjects(expanded: false) }
         if let space = project.space {
+            Button(PinWords.menuTitle(pinned: project.pinned), systemImage: PinWords.symbol(pinned: project.pinned)) { vm.togglePinSpace(space) }
             Button("Hide from Sidebar", systemImage: "eye.slash") { vm.setProjectHiddenFromSidebar(space, true) }
             Divider()
             Button("Remove Space…", role: .destructive) { vm.spaceDeleteTarget = space }

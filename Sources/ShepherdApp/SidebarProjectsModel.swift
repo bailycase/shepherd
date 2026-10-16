@@ -42,6 +42,7 @@ struct SidebarProject: Identifiable, Equatable {
     var dimmed = false
     /// This Mac's folder for it is gone: it takes no new thread here until located or removed.
     var missing = false
+    var pinned = false
     var rollup: NWProjectRollup = .quiet
     var parentID: SidebarProjectID?
     var childThreadCount = 0
@@ -94,7 +95,7 @@ struct SidebarTreeSection: Identifiable, Equatable {
 
     /// Settings groups descendants under their outermost project. Do the same within a host,
     /// preserving the saved root and sibling ordering without changing persisted spaces.
-    mutating func nestProjects() {
+    mutating func nestProjects(pinned: [SpaceID] = []) {
         func scope(_ project: SidebarProject) -> String {
             switch project.id {
             case .local: "local"
@@ -130,17 +131,25 @@ struct SidebarTreeSection: Identifiable, Equatable {
                 cursor = parents[next]
             }
         }
+        let rank = Dictionary(pinned.enumerated().map { (SidebarProjectID.local($1), $0) }, uniquingKeysWith: { first, _ in first })
+        for index in projects.indices { projects[index].pinned = rank[projects[index].id] != nil }
         let children = Dictionary(grouping: projects.filter { $0.parentID != nil }, by: { $0.parentID! })
-        func branch(_ project: SidebarProject, ancestors: [SidebarProjectID]) -> [SidebarProject] {
+        // Pinned spaces lead their siblings in pin order; the rest keep the saved order.
+        func pinnedFirst(_ peers: [SidebarProject]) -> [SidebarProject] {
+            let (pins, rest) = (peers.filter { rank[$0.id] != nil }, peers.filter { rank[$0.id] == nil })
+            return pins.sorted { rank[$0.id]! < rank[$1.id]! } + rest
+        }
+        let siblings = children.mapValues(pinnedFirst)
+        func ordered(_ project: SidebarProject, ancestors: [SidebarProjectID]) -> [SidebarProject] {
             var parent = project
             parent.ancestorIDs = ancestors
-            let nested = (children[parent.id] ?? []).flatMap { branch($0, ancestors: ancestors + [parent.id]) }
+            let nested = (siblings[parent.id] ?? []).flatMap { ordered($0, ancestors: ancestors + [parent.id]) }
             parent.childThreadCount = nested.reduce(0) { $0 + $1.rows.count }
             let rollups = [parent.rollup] + nested.map(\.rollup)
             parent.rollup = rollups.contains(.waiting) ? .waiting : rollups.contains(.running) ? .running : .quiet
             return [parent] + nested
         }
-        projects = projects.filter { $0.parentID == nil }.flatMap { branch($0, ancestors: []) }
+        projects = pinnedFirst(projects.filter { $0.parentID == nil }).flatMap { ordered($0, ancestors: []) }
     }
 }
 
@@ -187,7 +196,7 @@ struct SidebarTree: Equatable {
                     id: project.id, name: project.name, path: project.path, count: project.rows.count + project.childThreadCount, expanded: expanded,
                     rollup: project.rollup, dimmed: project.dimmed, newThreadHost: place?.host, newThreadSpace: place?.space,
                     movable: sectionIndex == 0 && project.space != nil, parentID: project.parentID, depth: project.ancestorIDs.count,
-                    missing: project.missing)))
+                    missing: project.missing, pinned: project.pinned)))
                 guard expanded else { continue }
                 for var row in project.rows {
                     row.projectDepth = project.ancestorIDs.count
@@ -221,6 +230,7 @@ struct SidebarProjectRow: Equatable {
     var parentID: SidebarProjectID? = nil
     var depth = 0
     var missing = false
+    var pinned = false
 
     var space: SpaceID? {
         if case .local(let id) = id { return id }
@@ -258,6 +268,8 @@ struct SidebarTreeOptions: Equatable {
     /// Idle and finished threads last active before this (ms since 1970) leave the tree; nil
     /// keeps them all.
     var idleCutoff: Double?
+    /// This Mac's pinned spaces, oldest pin first: they lead their siblings.
+    var pinnedSpaces: [SpaceID] = []
 
     /// Keep idle threads' cutoff for `days` before `now`, to the hour so the tree derives again
     /// at most hourly for it; nil for Forever (0).
@@ -472,7 +484,7 @@ private struct TreeBuilder {
         } else {
             tree.sections = [SidebarTreeSection(header: .projects, projects: shown.compactMap { built[$0] })]
         }
-        for index in tree.sections.indices { tree.sections[index].nestProjects() }
+        for index in tree.sections.indices { tree.sections[index].nestProjects(pinned: options.pinnedSpaces) }
         return tree
     }
 }

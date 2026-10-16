@@ -239,6 +239,10 @@ final class ShepherdViewModel {
     var sidebarPins = SidebarPins() {
         didSet { sidebarPins.save(to: sidebarDefaults) }
     }
+    /// This Mac's spaces pinned to the top of the Spaces tree (`togglePinSpace`).
+    var spacePins = SpacePins() {
+        didSet { spacePins.save(to: sidebarDefaults) }
+    }
     /// The window is too narrow to dock the sidebar (`ShellLayout.sidebar`), so ⇧⌘S overlays
     /// it instead. Written by the window as it resizes; ephemeral.
     var sidebarAutoHidden = false
@@ -625,6 +629,7 @@ final class ShepherdViewModel {
         collapsedActivitySections = Set((sidebarDefaults.stringArray(forKey: Self.collapsedActivitySectionsKey) ?? [])
             .compactMap(SidebarActivitySection.init(rawValue:)))
         sidebarPins = SidebarPins(defaults: sidebarDefaults)
+        spacePins = SpacePins(defaults: sidebarDefaults)
 
         sessions.onStateChanged = { [weak self] serverState in
             self?.adopt(serverState)

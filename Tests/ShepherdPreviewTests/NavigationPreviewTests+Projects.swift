@@ -118,6 +118,7 @@ extension PreviewTests {
                     NWProjectRow("dashboard-web", count: 2, expanded: false, rollup: .waiting, toggle: {}, newThread: {}) { EmptyView() }
                     NWProjectRow("shepherd-daemon", count: 3, expanded: false, rollup: .running, toggle: {}, newThread: {}) { EmptyView() }
                     NWProjectRow("dotfiles", count: 1, expanded: false, toggle: {}, newThread: {}) { EmptyView() }
+                    NWProjectRow("case-battles-release-monitor", count: 4, expanded: false, pinned: true, toggle: {}, newThread: {}) { EmptyView() }
                 }
                 .frame(width: AppLayout.sidebarDefaultWidth)
                 VStack(alignment: .leading, spacing: AppLayout.sidebarRowSpacing) {
