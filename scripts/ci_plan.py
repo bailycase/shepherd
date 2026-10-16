@@ -1,9 +1,18 @@
 #!/usr/bin/env python3
-"""Select native Swift test filters for ordinary nightly PRs; shared/unknown paths run all.
+"""Select native Swift test filters for ordinary nightly PRs.
 
-ci_plan.py changed.txt [--full | --ui-diagnostics] prints swift, filters and lanes outputs.
+A pull request runs the unit suites, the startup and identity smoke tests, and the integration
+suites of the areas its paths touch. A path no area claims runs its module's suites (every
+`ShepherdApp` source runs `ShepherdAppIntegrationTests` and the previews; every `ShepherdSessions`
+source runs `ShepherdSessionsIntegrationTests` too), never everything. Shared contracts
+(`ShepherdCore`, `ShepherdProtocol`, the test support, the package manifest, the engine pin, this
+script) run all. The pixel-scanning suites in DEEP (the completion matrix, tail flow, scroll and
+design performance: about twelve minutes) run on the daily `master` run, a `full-ci` label and the
+manual UI diagnostics. Editing one of those tests still runs it on a pull request.
+
+ci_plan.py changed.txt [--full | --ui-diagnostics] prints swift, filters, lanes and flaky outputs.
 ci_plan.py --validate test-list.txt '<filters JSON>' checks native matches and prints a regex.
-ci_plan.py --lane test-list.txt <lane> validates full coverage and prints the lane's regex.
+ci_plan.py --lane test-list.txt <lane> ['<filters JSON>'] prints the lane's optional selection.
 Both validation modes record selected IDs beside the inventory as swift-selected-tests.txt.
 """
 from __future__ import annotations
@@ -18,13 +27,17 @@ import sys
 NO_SWIFT = (
     "docs/*", "*.md", "LICENSE",
     ".github/ISSUE_TEMPLATE/*", ".github/pull_request_template.md",
-    ".github/workflows/release.yml", ".github/workflows/release-build.yml", ".github/workflows/pr-body.yml",
+    ".github/workflows/release.yml", ".github/workflows/release-build.yml",
     ".github/CODEOWNERS",
     "App/iOS/*", "Tests/ShepherdIOSChecks/*", "App/Info.plist", "App/*.icon/*", "App/*.entitlements",
     "App/ShepherdLauncher.swift",
-    "Extensions/*", "Tests/Extensions/*.mjs", "Tests/Extensions/fixtures/*", "Tests/Release/*",
-    "scripts/release*.py", "scripts/sign-*.sh", "scripts/check_pr_body.py", "scripts/design_section.py",
-    "scripts/context-budget.json", "scripts/sync-embedded-extension.py", "scripts/test-browser-persistence.py",
+    "Tests/Extensions/*.mjs", "Tests/Extensions/fixtures/*", "Tests/Release/*",
+    "scripts/release*.py", "scripts/sign-*.sh", "scripts/design_section.py", "scripts/docsplit.py",
+    "scripts/context-budget.json", "scripts/test-browser-persistence.py",
+    "scripts/upload-sentry-symbols.py", "scripts/context_budget.py",
+    # The Xcode project and its own resolved packages: the Mac app's build, which `swift test`
+    # does not read. The root Package.resolved stays: it pins what `swift build` fetches.
+    "Shepherd.xcodeproj/*",
 )
 
 # Manual diagnostics report a different check name and cannot satisfy the required CI gate.
@@ -33,6 +46,21 @@ UI_DIAGNOSTICS = [r"^ShepherdAppIntegrationTests\." + name + r"/" for name in (
     "ThreadCompletionMatrixTests", "ThreadCompletionReproductionTests", "RemoteBrowserDriveTests", "ThreadJumpPressTests",
     "ThreadTailGuardTests",
 )]
+
+# Pixel-scanning and performance suites that take minutes each: the daily run, `full-ci` and the
+# manual diagnostics run them; ordinary PRs run them only when their test code changes.
+DEEP = (
+    "ShepherdAppIntegrationTests.ThreadCompletionReproductionTests",
+    "ShepherdAppIntegrationTests.ThreadCompletionMatrixTests",
+    "ShepherdAppIntegrationTests.ThreadTailFlowTests",
+    "ShepherdAppIntegrationTests.ThreadSendScrollTests",
+    "ShepherdAppIntegrationTests.ThreadBlankScreenTests",
+    "ShepherdAppIntegrationTests.DesignPerformanceTests",
+)
+DEEP_PATTERN = r"^(?:" + "|".join(re.escape(name) for name in DEEP) + r")[./]"
+FAST_ONLY = f"(?!{DEEP_PATTERN})"
+UI_DIAGNOSTICS += ["^" + re.escape(name) + r"[./]" for name in DEEP
+                   if not any(re.search(pattern, name + "/") for pattern in UI_DIAGNOSTICS)]
 
 # Cheap startup and identity checks stay mandatory; feature integrations follow their callers.
 SMOKE = (
@@ -45,15 +73,18 @@ SES = r"^ShepherdSessionsIntegrationTests\."
 PREVIEW = r"^ShepherdPreviewTests\."
 ROOT = Path(__file__).resolve().parents[1]
 
-# Fixed groups from successful full-run timings. Unknown suites go to other, never disappear.
-# ponytail: group costs can drift; rebalance from completed logs, not an adaptive scheduler.
-# Keep the entire Sessions target together: its process-lifetime regressions depend on ordering.
+# Fixed groups balanced from a full run's suite times (October 2026: thread 771 s, features 716 s,
+# app 684 s, other 580 s). Unknown app suites go to app, everything outside the app target to
+# other, so a new suite never disappears. Keep the entire Sessions target together: its
+# process-lifetime regressions depend on ordering. Rebalance from completed logs, never adaptively.
+_FEATURES = r"(?:Composer|Design|Review|GitDiff|GitWorktree|FinalizeWorktree|RemoteWorktree|Worktree|NewThread|ListPerformance|Browser|RemoteBrowser|MCPCallback)"
+_THREAD = r"Thread(?!CompletionReproduction)"
 FULL_LANES = {
-    "completion-browser": APP + r"(?:ThreadCompletion|Browser|RemoteBrowser)",
-    "thread": APP + r"Thread(?!Completion)",
-    "app-features": APP + r"(?:Composer|Design|Review|GitDiff|GitWorktree|FinalizeWorktree|RemoteWorktree|Worktree|NewThread|ListPerformance)",
+    "thread": APP + _THREAD,
+    "features": APP + _FEATURES,
+    "app": APP + r"(?!" + _THREAD + "|" + _FEATURES + ")",
+    "other": r"^(?!ShepherdAppIntegrationTests\.)",
 }
-FULL_LANES["other"] = r"^(?!(?:" + "|".join(FULL_LANES.values()) + "))"
 
 # Short, conservative feature rules. A path not claimed here or by a module below runs all.
 AREAS = (
@@ -106,12 +137,24 @@ AREAS = (
      (APP + r"(Automations|LocalAutomation|RemoteAutomations|RemoteHost|RemotePaneStream|RemoteThreadMount|Sidebar|Workspace)",
       SES + r"(Automation|RemoteAutomation|RemoteListener|RemoteSession|RemoteControl)")),
 )
-TEST_MODULES = ("ShepherdAppIntegrationTests", "ShepherdSessionsIntegrationTests", "ShepherdRemoteIntegrationTests",
+TEST_MODULES = ("ShepherdAppIntegrationTests", "ShepherdSessionsIntegrationTests",
                 "DesignSurfaceKitIntegrationTests", "ShepherdPreviewTests")
+
+# A source path no area claims runs the integration suites of its module and of the modules built
+# on it, not the whole suite. Shared contracts are absent on purpose: they run all.
+MODULES = (
+    ("Sources/ShepherdApp/*", (APP, PREVIEW)),
+    ("Packages/ShepherdUI/*", (APP, PREVIEW, r"^DesignSurfaceKitIntegrationTests\.")),
+    ("Sources/ShepherdRemote/*", (APP, SES, PREVIEW)),
+    ("Sources/ShepherdSessions/*", (APP, SES, PREVIEW)),
+    ("Sources/TerminalSurfaceKit/*", (APP + r"(?:Terminal|Pane|Shell|ThreadInput)",)),
+    ("Sources/DesignSurfaceKit/*", (APP + "Design", r"^DesignSurfaceKitIntegrationTests\.", PREVIEW + "DesignPreviewTests")),
+)
 
 
 def affects_swift(paths: list[str]) -> bool:
-    return any(not any(fnmatch.fnmatchcase(path, p) for p in NO_SWIFT) for path in paths)
+    return any(path.startswith("Extensions/") or not any(fnmatch.fnmatchcase(path, p) for p in NO_SWIFT)
+               for path in paths)
 
 
 def test_filter(path: str, root: Path) -> str:
@@ -185,30 +228,36 @@ def filters_for(paths: list[str], full: bool = False, *, root: Path = ROOT) -> l
     if full:
         return []
     filters = [r"^[^.]*UnitTests\."] + ["^" + re.escape(name) + r"[./]" for name in SMOKE]
+    changed_tests = []
     for path in paths:
         if not affects_swift([path]):
             continue
-        if fnmatch.fnmatchcase(path, "Sources/ShepherdApp/*Extension.swift"):
+        if fnmatch.fnmatchcase(path, "Sources/ShepherdApp/*Extension.swift") or fnmatch.fnmatchcase(path, "Extensions/*"):
             filters.extend((SES + "NativeThreadTests", APP + "ExtensionIdentityFlowTests"))
             continue
         if path == "Tests/Extensions/service-tier-support.json":
             filters.extend((APP + "ServiceTier", SES + "ServiceTier"))
             continue
         matching = [suites for patterns, suites in AREAS if any(fnmatch.fnmatchcase(path, p) for p in patterns)]
+        module = [suites for pattern, suites in MODULES if fnmatch.fnmatchcase(path, pattern)]
         if matching:
             filters.extend(suite for suites in matching for suite in suites)
+        elif module:
+            filters.extend(suite for suites in module for suite in suites)
         elif path.startswith("Tests/") and len(path.split("/")) > 2:
             module = path.split("/")[1]
             if module in TEST_MODULES:
-                filters.append(test_filter(path, root))
+                changed_tests.append(test_filter(path, root))
             elif not module.endswith("UnitTests"):
                 return []
         else:
             return []
-    return list(dict.fromkeys(filters))
+    # Leave slow diagnostics out of broad feature rules, never out of changed test files.
+    return list(dict.fromkeys([FAST_ONLY + pattern for pattern in filters] + changed_tests))
 
 
 def validated_filter(test_ids: list[str], filters: list[str]) -> str:
+    """Validate the planner's selection against the runner's actual native test inventory."""
     if not filters:
         raise ValueError("filtered runs require at least one suite pattern")
     for pattern in filters:
@@ -217,7 +266,7 @@ def validated_filter(test_ids: list[str], filters: list[str]) -> str:
     return "|".join(f"(?:{pattern})" for pattern in filters)
 
 
-def validated_lane(test_ids: list[str], lane: str) -> str:
+def validated_lane(test_ids: list[str], lane: str, filters: list[str] | None = None) -> str:
     if lane not in FULL_LANES:
         raise ValueError(f"unknown full-test lane {lane!r}")
     if not test_ids or len(set(test_ids)) != len(test_ids) or any("/" not in name for name in test_ids):
@@ -230,16 +279,19 @@ def validated_lane(test_ids: list[str], lane: str) -> str:
         counts[matches[0]] += 1
     if not all(counts.values()):
         raise ValueError(f"full-test lane matched no native tests: {counts}")
+    if filters:
+        selection = validated_filter(test_ids, filters)
+        return f"(?={FULL_LANES[lane]})(?:{selection})"
     return FULL_LANES[lane]
 
 
 def main(argv: list[str]) -> int:
     try:
-        if len(argv) == 4 and argv[1] in ("--lane", "--validate"):
+        if (len(argv) in (4, 5) and argv[1] == "--lane") or (len(argv) == 4 and argv[1] == "--validate"):
             inventory = Path(argv[2])
             test_ids = inventory.read_text().splitlines()
-            pattern = (validated_lane(test_ids, argv[3]) if argv[1] == "--lane"
-                       else validated_filter(test_ids, json.loads(argv[3])))
+            pattern = (validated_lane(test_ids, argv[3], json.loads(argv[4]) if len(argv) == 5 else [])
+                       if argv[1] == "--lane" else validated_filter(test_ids, json.loads(argv[3])))
             selected = [name for name in test_ids if re.search(pattern, name)]
             inventory.with_name("swift-selected-tests.txt").write_text("\n".join(selected) + "\n")
             print(f"Native selection: {len(selected)} of {len(test_ids)} IDs", file=sys.stderr)
@@ -252,7 +304,12 @@ def main(argv: list[str]) -> int:
         print("swift=" + str(affects_swift(paths)).lower())
         filters = UI_DIAGNOSTICS if argv[-1] == "--ui-diagnostics" else filters_for(paths, full=len(argv) == 3)
         print("filters=" + json.dumps(filters if affects_swift(paths) else [], separators=(",", ":")))
-        print("lanes=" + json.dumps(list(FULL_LANES) if affects_swift(paths) and not filters else ["selected"],
+        # Editing tests must exercise them even if their normal PR run is quarantined.
+        flaky = not filters or len(argv) == 3 or any(
+            path.startswith("Tests/") and path.endswith(".swift") for path in paths)
+        print("flaky=" + str(flaky).lower())
+        broad = not filters or any(pattern in (APP, FAST_ONLY + APP) for pattern in filters)
+        print("lanes=" + json.dumps(list(FULL_LANES) if affects_swift(paths) and broad else ["selected"],
                                     separators=(",", ":")))
         return 0
     except (OSError, ValueError, re.error) as error:

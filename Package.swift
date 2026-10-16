@@ -51,6 +51,9 @@ let package = Package(
                 "ShepherdCore", "ShepherdProtocol", "ShepherdRemote", "ShepherdPTYSpawn",
                 .product(name: "SwiftTerm", package: "SwiftTerm"),
             ],
+            // Process the files, not the directory symlink: Swift 6.3 copies that link verbatim.
+            // SwiftPM flattens these resources; duplicate filenames fail the build.
+            resources: [.process("Extensions")],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .target(

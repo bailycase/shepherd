@@ -32,6 +32,78 @@ struct AgentStartupTests {
         return Task { try await vm.startAgent(config, selectAfter: false) }
     }
 
+    @Test(arguments: [(false, true), (true, true), (false, false), (true, false)])
+    func worktreeCreationAndRestoreUseHostMCPSettingsAndOwningSpace(restoring: Bool, mcpEnabled: Bool) async throws {
+        try StubPi.installAsEngine()
+        let app = try AppHarness()
+        defer { app.stop() }
+        app.settings.piMCPExtension = mcpEnabled
+        app.settings.mcpProjectConfig = false
+        let owner = app.dir.appendingPathComponent("owner")
+        let checkout = app.dir.appendingPathComponent("owner-worktree")
+        for folder in [owner, checkout] {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        }
+        let space = Fixture.space(path: owner.path)
+        let vm: ShepherdViewModel
+        if restoring {
+            var fixture = Fixture.agent(in: space, cwd: checkout.path)
+            fixture.agent.worktreeBranch = "fix/task"
+            fixture.agent.worktreePath = checkout.path
+            vm = try await app.start(with: ShepherdState(spaces: [space], tabs: [fixture.tab], agents: [fixture.agent]),
+                                     restoringAgents: true)
+        } else {
+            vm = try await app.start(with: ShepherdState(spaces: [space]))
+            var config = ShepherdViewModel.quickAgentConfig(for: space)
+            config.workingDirectory = checkout.path
+            config.worktreeBranch = "fix/task"
+            config.worktreePath = checkout.path
+            _ = try await vm.startAgent(config, selectAfter: false, focusWindow: false)
+        }
+        try await eventuallyOnMain("the owned checkout to launch") {
+            StubPi.launches().contains { PiHome.canonical($0.cwd) == PiHome.canonical(checkout.path) }
+        }
+        let launch = try #require(StubPi.launches().last { PiHome.canonical($0.cwd) == PiHome.canonical(checkout.path) })
+        #expect(launch.env["SHEPHERD_MCP_OWNING_SPACE"] == (mcpEnabled ? PiHome.canonical(owner.path) : nil))
+        #expect(launch.env["SHEPHERD_MCP_WORKTREE_CWD"] == (mcpEnabled ? PiHome.canonical(checkout.path) : nil))
+        #expect(!launch.argv.contains("--approve"))
+        #expect(launch.env["SHEPHERD_EXT_MCP_PROJECT"] == nil, "Shared .mcp.json keeps its independent opt-in")
+        #expect(vm.state.agents.first?.spaceID == space.id)
+    }
+
+    @Test(arguments: [false, true])
+    func threadsWithoutWorktreeMetadataInheritOnlyFromTheirOwnersRegisteredGitCheckout(unrelated: Bool) async throws {
+        try StubPi.installAsEngine()
+        let sandbox = try WorktreeSandbox()
+        defer { sandbox.remove() }
+        let registered = try GitWorktree.add(repo: sandbox.repo.path, branch: "agent/registered")
+        let checkout: String
+        if unrelated {
+            let folder = sandbox.root.appendingPathComponent("unrelated")
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            // A forged pointer to the same Git common directory is not ownership.
+            let pointer = try Data(contentsOf: URL(fileURLWithPath: registered).appendingPathComponent(".git"))
+            try pointer.write(to: folder.appendingPathComponent(".git"))
+            checkout = folder.path
+        } else {
+            checkout = registered
+        }
+        let app = try AppHarness()
+        defer { app.stop() }
+        app.settings.piMCPExtension = true
+        let space = Fixture.space(path: sandbox.repo.path)
+        let vm = try await app.start(with: ShepherdState(spaces: [space]))
+        var config = ShepherdViewModel.quickAgentConfig(for: space)
+        config.workingDirectory = checkout
+        _ = try await vm.startAgent(config, selectAfter: false, focusWindow: false)
+        try await eventuallyOnMain("the checkout to launch") {
+            StubPi.launches().contains { PiHome.canonical($0.cwd) == PiHome.canonical(checkout) }
+        }
+        let launch = try #require(StubPi.launches().last { PiHome.canonical($0.cwd) == PiHome.canonical(checkout) })
+        #expect(launch.env["SHEPHERD_MCP_OWNING_SPACE"] == (unrelated ? nil : PiHome.canonical(sandbox.repo.path)))
+        #expect(vm.state.agents.first?.worktreePath == nil, "MCP inheritance does not grant worktree-management metadata")
+    }
+
     @Test func aNewAgentsThreadShowsStartingWithoutAnErrorAndSendsOnceReady() async throws {
         try StubPi.installAsEngine()
         let app = try AppHarness()

@@ -41,7 +41,7 @@ stand-in), never a `pi` looked up on PATH ([pi-home.md](pi-home.md)).
   an agent whose conversation Shepherd's home lacks copies it in from the user's own pi
   (`PiSessionFile.adopt`; [pi-home.md](pi-home.md) › Adoption).
   `--model`/`--thinking` are passed only while that file has no conversation (a fresh session).
-- **Extensions** are installed into the support directory from embedded literals and loaded
+- **Extensions** are installed into the support directory from the resource bundle and loaded
   with `-e`. Nothing is installed into a pi home. The status extension is always loaded, and so
   is the namer (it names only agents whose name is not final, with Settings ▸ Agents ▸ Session
   naming model tried first). The rest follow Settings ▸ Extensions and Pi: "Terminals and agent

@@ -27,6 +27,13 @@ extension Trait where Self == ConditionTrait {
     public static var timingSensitive: Self {
         .enabled(if: TimingTests.enabled, "depends on the machine's speed: skipped on CI unless SHEPHERD_TIMING_TESTS=1")
     }
+
+    /// Known hosted-runner failures stay enabled locally, in full runs, manual diagnostics
+    /// and PRs editing tests (`SHEPHERD_FLAKY_TESTS=1`). Fix the flake and drop the trait.
+    public static func flaky(_ issue: String) -> Self {
+        .enabled(if: TimingTests.enabled || ProcessInfo.processInfo.environment["SHEPHERD_FLAKY_TESTS"] == "1",
+                 "quarantined on this PR: \(issue). Enable with SHEPHERD_FLAKY_TESTS=1.")
+    }
 }
 
 extension Trait where Self == TimeLimitTrait {

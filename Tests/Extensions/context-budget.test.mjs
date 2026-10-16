@@ -57,7 +57,7 @@ for (const [scenario, context, { designRefs }] of LAUNCHES) {
       if (!row) {
         // A tool of pi's that no launch activates (grep, find, ls) is not Shepherd's, and is in neither request nor registry.
         if (!tools.has(name) && !captured.toolSources[name]?.endsWith(".ts")) continue;
-        assert.fail(`${name} is registered in ${scenario} (by ${captured.toolSources[name] || "pi"}) but has no row in Tests/Extensions/context-tools.json: give it a verdict, and say in docs/context-budget.md what it costs`);
+        assert.fail(`${name} is registered in ${scenario} (by ${captured.toolSources[name] || "pi"}) but has no row in Tests/Extensions/context-tools.json: give it a verdict and reason in that registry`);
       }
       const verdict = row.verdicts[context];
       assert.ok(verdict, `${name} is registered in ${scenario}, which the registry says it never is: ${JSON.stringify(row.verdicts)}`);
@@ -73,7 +73,7 @@ for (const [scenario, context, { designRefs }] of LAUNCHES) {
       if (verdict !== "keep" && verdict !== "defer") continue;
       if (CONDITIONAL.has(name) && !(designRefs && name.startsWith("design_"))) continue;
       if (context === "child" || (name === "shepherd_parent_message")) continue;
-      assert.ok(all.has(name), `${name} should be registered in ${scenario} (${verdict}) and is not: renamed or removed? Update Tests/Extensions/context-tools.json and docs/context-budget.md`);
+      assert.ok(all.has(name), `${name} should be registered in ${scenario} (${verdict}) and is not: renamed or removed? Update Tests/Extensions/context-tools.json`);
       if (verdict === "keep") assert.ok(tools.has(name), `${name} should be sent in ${scenario} (keep) and is not`);
       else assert.ok(!tools.has(name), `${name} is deferred in ${scenario} and is sent`);
     }

@@ -68,8 +68,7 @@ configuration, sessions, or a running Shepherd.
 - Don't add abstractions or validation without a current need.
 - Add focused tests for the behavior you changed, in the right tier.
 - When you change a protocol message, update every consumer and its round-trip test.
-- Edit an `Extensions/` source and its embedded Swift literal together
-  (`scripts/sync-embedded-extension.py`); a test enforces byte identity.
+- `Extensions/` is the one copy of each pi extension; the app ships it as a resource bundle.
 - Use ShepherdUI (`Color.nw`, `Font.nw`, `NW.Space`/`Radius`/`Height`) and its shared
   components, never hardcoded colors, fonts, or sizes. A screen's own dimensions go in its
   domain's `AppLayout+<Domain>.swift`. A new color role must pass the contrast tests in both
@@ -98,11 +97,8 @@ Use `feat!:` for a breaking change. Don't add AI or tool attribution lines.
 Fill in the [pull request template](.github/pull_request_template.md). It asks for:
 
 - what changed and why
-- the test tiers you ran and what they showed
-- light and dark previews for any visible change
-- for UI work, the design you built from, every departure from it, what you rendered and the
-  controls you used ([docs/design-workflow.md](docs/design-workflow.md)); the `pr-body` check fails
-  a UI change that leaves those empty
+- the tests you ran and what they showed
+- for UI work, the design you built from, every departure from it, and light and dark previews
 - for a feature that acts on its own, its bounds, where its data goes, what a restart and Stop do
   to it, and the decisions you made unasked ([docs/rules.md](docs/rules.md))
 

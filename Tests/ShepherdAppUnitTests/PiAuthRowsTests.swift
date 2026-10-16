@@ -1,5 +1,6 @@
 import Foundation
 import ShepherdSessions
+import ShepherdUI
 import Testing
 @testable import ShepherdApp
 
@@ -53,6 +54,15 @@ struct PiAuthRowsTests {
     func eachProviderRowTakesItsState(row: State) throws {
         let page = PiSignInPage.make(survey: Self.survey, signingIn: "github-copilot", expired: ["openai-codex"])
         #expect(try #require(Self.row(page, row.provider)).auth == row.auth)
+    }
+
+    @Test func commandBackedKeysShowUnsupportedWithoutExposingTheirCommandText() {
+        #expect(NWKeySource.command("op read secret-token-inline").parts.map(\.text) == ["command not supported"])
+        for display in [PiKeyDisplay(runsCommand: true), PiKeyDisplay(command: "op read secret-token-inline")] {
+            let parts = PiSignInWords.keyParts(display, copied: true)
+            #expect(parts.map(\.text) == ["command not supported"])
+            #expect(parts.allSatisfy { !$0.middle }, "No command tooltip or truncated command text")
+        }
     }
 
     @Test func theGroupsHoldWhatTheBoardsDraw() {

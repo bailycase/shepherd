@@ -313,7 +313,9 @@ struct ComposerMenuTests {
         let dialog = NativeThreadDialog(id: "d1", kind: .input, title: "Describe the release",
                                         message: Array(repeating: "A long message that takes the question panel to its full height.", count: 12)
                                             .joined(separator: "\n"))
-        let thread = ComposerThread(size: CGSize(width: 720, height: 460), dialogs: [dialog])
+        // Measure the picker, not deferred transcript draws between captures. Long-thread
+        // overlay behavior is covered by openingAMenuLeavesTheThreadAndTheComposerWhereTheyWere.
+        let thread = ComposerThread(messages: 0, size: CGSize(width: 720, height: 460), dialogs: [dialog])
         defer { thread.close() }
         try await thread.waitUntilReady()
         let room = thread.cardTop - AppLayout.menuGap - AppLayout.menuMargin
@@ -327,6 +329,7 @@ struct ComposerMenuTests {
         let after = FrameTimer.capture(thread.window, whole)
         let band = Int(thread.cardTop - NWComposerMetrics.focusRing - 1)
         let solid = try #require(Pixels.bounds(differing: before, after, rows: 0..<band, by: Self.edge))
+        #expect(abs(solid.width - Menu.models.width) <= 2, "the changed pixels belong to the picker: \(solid)")
         #expect(solid.minY >= AppLayout.menuMargin - 1, "the picker stays inside the thread: \(solid)")
         #expect(solid.minY <= AppLayout.menuMargin + NWComposerMetrics.modelRowHeight, "and takes the room it has: \(solid)")
         let list = try #require(thread.menuScroll?.documentView)
