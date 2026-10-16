@@ -263,6 +263,34 @@ struct ImageViewerOverlay: View {
     }
 }
 
+/// A Mermaid diagram open over the window, in the image viewer's frame; Esc or the bar's close button closes it.
+struct DiagramViewerOverlay: View {
+    var vm: ShepherdViewModel
+    var leadingInset: CGFloat = 0
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        ZStack {
+            if let source = vm.diagramViewer {
+                NWMermaidViewer(source, leadingInset: leadingInset) { vm.diagramViewer = nil }
+                    .id(source)
+                    .background {
+                        Color.clear
+                            .focusable()
+                            .focusEffectDisabled()
+                            .focused($focused)
+                            .onAppear { focused = true }
+                            .onKeyPress(.escape) { vm.diagramViewer = nil; return .handled }
+                            .accessibilityHidden(true)
+                    }
+                    .nwTransition(.overlay)
+            }
+        }
+        .allowsHitTesting(vm.diagramViewer != nil)
+        .nwAnimation(.overlay, value: vm.diagramViewer != nil)
+    }
+}
+
 /// The composer's images, above its card (ThreadImagesComposer): a chip each with its thumbnail,
 /// name, size and remove, then the failed line while an image cannot go.
 struct ComposerImageStrip: View {

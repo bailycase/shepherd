@@ -72,6 +72,48 @@ struct MermaidRenderingTests {
         try await eventuallyOnMain("oversized diagram source rejected") { status == .failed }
     }
 
+    /// Inline, a plain scroll over an unzoomed chart is the thread's; ⌘-scroll zooms toward the pointer, then a scroll pans until
+    /// the chart's edge and passes through there. The viewer keeps every scroll.
+    @Test func zoomAndPan() async throws {
+        for viewer in [false, true] {
+            let renderer = MermaidRenderer()
+            let window = OffscreenWindow(size: CGSize(width: 640, height: 480))
+            window.window.contentView = renderer.webView
+            renderer.webView.frame = CGRect(x: 0, y: 0, width: 640, height: 480)
+            defer { renderer.stop(); window.close() }
+            var status = NWMermaidStatus.loading
+            renderer.onStatus = { status = $0; _ = $1 }
+            renderer.render(source: "flowchart LR\nA[Request] --> B[Review] --> C[Approved]",
+                            colors: ThemeDefinition.nightWatch.light.colors, fontSize: NWTextStyle.body.size, viewer: viewer)
+            try await eventuallyOnMain("chart rendered") { status == .ready }
+            func wheel(_ dx: Double, _ dy: Double, meta: Bool = false) async throws -> Bool {
+                let script = """
+                const event = new WheelEvent('wheel', {deltaX: \(dx), deltaY: \(dy), metaKey: \(meta), clientX: 40, clientY: 20, cancelable: true, bubbles: true});
+                document.getElementById('chart').dispatchEvent(event);
+                return event.defaultPrevented;
+                """
+                return try await renderer.webView.callAsyncJavaScript(script, arguments: [:], in: nil, contentWorld: .page) as? Bool == true
+            }
+            func zoom() async throws -> [String: Double] {
+                try #require(try await renderer.webView.evaluateJavaScript("window.nwZoom.state()") as? [String: Double])
+            }
+            #expect(try await wheel(0, 40) == viewer, "an unzoomed scroll passes to the thread only inline")
+            #expect(try await zoom()["s"] == 1)
+            #expect(try await wheel(0, -200, meta: true))
+            let zoomed = try await zoom()
+            #expect(zoomed["s"]! > 2)
+            #expect(try await wheel(30, 0), "a zoomed chart pans")
+            #expect(try await zoom()["x"]! < zoomed["x"]!)
+            _ = try await wheel(-100_000, 0)
+            #expect(try await zoom()["x"] == 0, "panning stops at the chart's edge")
+            #expect(try await wheel(-40, 0) == viewer, "at the edge, a scroll passes through only inline")
+            #expect(try await wheel(0, 100_000, meta: true))
+            #expect(try await zoom()["s"] == 1, "zooming out stops at the fitted size")
+            #expect(try await wheel(0, -100_000, meta: true))
+            #expect(try await zoom()["s"] == Double(NWMermaidMetrics.maximumZoom))
+        }
+    }
+
     @Test func markdownRoutesFinishedFencesOnly() async throws {
         let open = nativeMarkdownParse("```mermaid\nflowchart LR\nA-->B\n", streaming: true)
         let closed = nativeMarkdownParse("```mermaid\nflowchart LR\nA-->B\n```\n", streaming: true)
@@ -123,6 +165,7 @@ struct MermaidPreviewTests {
                 Prose(blocks: blocks).padding()
                     .frame(width: 680, height: 620, alignment: .topLeading)
                     .background(Color.nw.bgWindow)
+                    .environment(\.nwPresentDiagram) { _ in }
                     .environment(\.colorScheme, dark ? .dark : .light))
             defer { window.close() }
 
@@ -155,6 +198,48 @@ struct MermaidPreviewTests {
             let tiff = try #require(image.tiffRepresentation)
             let output = try #require(NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]))
             try output.write(to: directory.appendingPathComponent("thread-mermaid-\(dark ? "dark" : "light").png"))
+        }
+    }
+
+    /// The viewer over a window: the bar, the chart fitted to the room, and the hint line.
+    @Test func fullScreenViewer() async throws {
+        let path = try #require(ProcessInfo.processInfo.environment["SHEPHERD_PREVIEW_DIR"])
+        let directory = URL(fileURLWithPath: path, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let source = "flowchart TD\n  Request --> Agent\n  Agent --> Review\n  Review -->|changes| Agent\n  Review --> Approved"
+        for dark in [false, true] {
+            let size = CGSize(width: 900, height: 640)
+            let window = OffscreenWindow(size: size, dark: dark,
+                NWMermaidViewer(source) {}
+                    .frame(width: size.width, height: size.height)
+                    .background(Color.nw.bgWindow)
+                    .environment(\.colorScheme, dark ? .dark : .light))
+            defer { window.close() }
+            var chart: WKWebView?
+            try await eventuallyOnMain("viewer web view") {
+                window.layout()
+                chart = mermaidWebViews(in: window.host).first
+                return chart != nil
+            }
+            let web = try #require(chart)
+            try await eventually("viewer SVG") { @Sendable @MainActor in
+                window.layout()
+                return (try? await web.evaluateJavaScript("document.body.classList.contains('viewer') && document.querySelector('#chart svg').getBoundingClientRect().height > 0")) as? Bool == true
+            }
+            // The chart fills the room it is given, not its inline height.
+            #expect(web.frame.height > size.height / 2)
+            let snapshot = try await web.takeSnapshot(configuration: nil)
+            let bitmap = try #require(window.host.bitmapImageRepForCachingDisplay(in: window.host.bounds))
+            window.host.cacheDisplay(in: window.host.bounds, to: bitmap)
+            let image = NSImage(size: window.host.bounds.size)
+            image.lockFocus()
+            bitmap.draw(in: CGRect(origin: .zero, size: image.size))
+            let frame = web.convert(web.bounds, to: window.host)
+            snapshot.draw(in: CGRect(x: frame.minX, y: image.size.height - frame.maxY, width: frame.width, height: frame.height))
+            image.unlockFocus()
+            let tiff = try #require(image.tiffRepresentation)
+            let output = try #require(NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]))
+            try output.write(to: directory.appendingPathComponent("thread-mermaid-viewer-\(dark ? "dark" : "light").png"))
         }
     }
 }
