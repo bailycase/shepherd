@@ -8,7 +8,7 @@ import { createCodemodeExtension, type ExtensionAPI, type ExtensionCommandContex
 type Status = "working" | "blocked" | "idle" | "done";
 
 // Shepherd's Retry runs `/shepherd-retry <ms>`: the user message pi stamped at that
-// millisecond goes again in place of the turn it opened (see retryTurn).
+// millisecond goes again, or a failed turn with completed work continues without rewinding.
 export const RETRY_COMMAND = "shepherd-retry";
 
 // Tools that wait on the user (e.g. ask_user from the human extension,
@@ -284,14 +284,24 @@ export default function shepherdStatus(pi: ExtensionAPI) {
     const notify = (text: string) => ctx.ui.notify(text, "warning");
     if (!ctx.isIdle() || ctx.hasPendingMessages()) return notify("Retry once the agent has stopped.");
     const at = Number(args.trim());
+    const branch = ctx.sessionManager.getBranch();
     let target: Extract<SessionEntry, { type: "message" }> | undefined;
     if (args.trim() !== "" && Number.isFinite(at)) {
-      for (const entry of ctx.sessionManager.getBranch()) {
+      for (const entry of branch) {
         if (entry.type !== "message" || entry.message.role !== "user") continue;
         if (Math.trunc(Number(entry.message.timestamp)) === at) target = entry;
       }
     }
     if (!target || target.message.role !== "user") return notify("That message is no longer in this conversation.");
+    const turn = branch.slice(branch.indexOf(target) + 1);
+    const last = turn.flatMap((entry) => entry.type === "message" ? [entry.message] : []).at(-1);
+    // Rewinding cannot undo tools or redeliver consumed child notices. Keep completed work
+    // and child references in context, including notices delivered without a tool call.
+    const hasWork = turn.some((entry) => entry.type === "custom_message" || entry.type === "message" && entry.message.role === "toolResult");
+    if (last?.role === "assistant" && last.stopReason === "error" && hasWork) {
+      pi.sendUserMessage("Continue the interrupted turn from where it failed. Preserve completed tool work and reuse existing subagents instead of starting them again.");
+      return;
+    }
     const { content } = target.message;
     const resend = typeof content === "string"
       ? content
