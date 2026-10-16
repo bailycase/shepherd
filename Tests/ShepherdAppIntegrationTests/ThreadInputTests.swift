@@ -51,29 +51,6 @@ struct ThreadInputTests {
         // A copied image may also offer text: attach the image, never insert that fallback.
         pasteboard.setString("image fallback text", forType: .string)
         let editor = try #require(thread.focusedEditor as? ComposerTextField.Editor)
-        func composer(in view: NSView) -> ComposerTextField.Field? {
-            if let field = view as? ComposerTextField.Field { return field }
-            return view.subviews.lazy.compactMap { composer(in: $0) }.first
-        }
-        func identity(_ object: AnyObject?) -> String {
-            object.map { "\(type(of: $0)):\(ObjectIdentifier($0))" } ?? "nil"
-        }
-        func nativeState() -> String {
-            // Read only the live cell, never NSControl.stringValue (which validates editing).
-            // Do not retain a field across snapshots: a remount must remain observable.
-            let field = composer(in: thread.window.host)
-            return "retained=\(identity(editor)), field=\(identity(field)), owned=\(identity(field?.editor)), current=\(identity(field?.currentEditor())), responder=\(identity(thread.window.window.firstResponder)), cellValue=\(String(reflecting: field?.cell?.stringValue)), wantsFocus=\(String(describing: field?.wantsFocus)), editorWindow=\(identity(editor.window)), editorText=\(String(reflecting: editor.string)), draft=\(String(reflecting: thread.store.draft))"
-        }
-        var lifecycle = ["Initial: \(nativeState())"]
-        var firstPasteTrace = [String]()
-        var tracingFirstPaste = false
-        if let field = composer(in: thread.window.host) {
-            editor.trace = { [weak field, weak editor, weak thread] phase in
-                guard tracingFirstPaste, firstPasteTrace.count < 400 else { return }
-                firstPasteTrace.append("\(phase): field=\(identity(field)), current=\(identity(field?.currentEditor())), responder=\(identity(thread?.window.window.firstResponder)), cell=\(String(reflecting: field?.cell?.stringValue)), editor=\(String(reflecting: editor?.string)), draft=\(String(reflecting: thread?.store.draft)), updating=\(String(describing: field?.updating))")
-            }
-        }
-        defer { editor.trace = nil }
         editor.pasteboard = { pasteboard }
         let menu = NSMenu(title: "Edit")
         let paste = menu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
@@ -115,9 +92,7 @@ struct ThreadInputTests {
         #expect(attachment.image.mimeType == "image/png")
         #expect(attachment.source?.path.hasPrefix(AppImageDrop.directory.path) == true)
         try await eventuallyOnMain("the image chip to draw") { thread.window.element("Remove \(attachment.name)") != nil }
-        lifecycle.append("Before Remove: \(nativeState())")
         let remove = try thread.window.press("Remove \(attachment.name)")
-        lifecycle.append("After Remove: \(nativeState())")
         #expect(ControlPress.undersized([remove], minimum: .desktop).isEmpty)
         #expect(thread.input.attachments.isEmpty)
 
@@ -134,15 +109,10 @@ struct ThreadInputTests {
             // Plain text still goes through AppKit at the selection, with its ordinary undo.
             pasteboard.clearContents()
             pasteboard.setString("hello", forType: .string)
-            lifecycle.append("Before first text paste: \(nativeState())")
-            tracingFirstPaste = true
             try pasteUsingRoute()
-            lifecycle.append("After first text paste: \(nativeState())")
             try await eventuallyOnMain("text paste to update the draft") { thread.store.draft == "hello" }
             // The replacement is a separate user event, after the first paste has rendered.
             try await thread.settle()
-            lifecycle.append("After first text settle: \(nativeState())")
-            tracingFirstPaste = false
             replacement.append("Before selection: \(textState())")
             editor.setSelectedRange(NSRange(location: 1, length: 3))
             replacement.append("After selection: \(textState())")
@@ -158,7 +128,7 @@ struct ThreadInputTests {
             undo.undo()
             try await eventuallyOnMain("undo to restore the selected text") { thread.store.draft == "hello" }
         } catch {
-            FileHandle.standardError.write(Data("Native Paste (\(route)) before undo: \(beforeUndo)\n\(lifecycle.joined(separator: "\n"))\n\(replacement.joined(separator: "\n"))\nFirst paste native trace (first 400):\n\(firstPasteTrace.joined(separator: "\n"))\nAt failure: \(textState()); \(nativeState())\n".utf8))
+            FileHandle.standardError.write(Data("Native Paste (\(route)) before undo: \(beforeUndo)\n\(replacement.joined(separator: "\n"))\nAt failure: \(textState())\n".utf8))
             throw error
         }
         pasteboard.clearContents()
