@@ -92,6 +92,70 @@ test("AGENTS.md sits after pi's root file and before the repo's; APPEND_SYSTEM.m
   }
 });
 
+test("reimported copies of Settings instructions reach the prompt only once", () => {
+  const rules = "- Keep user work intact.";
+  const append = "Return the result.\n\nReport what was verified.";
+  const agent = launch({ "AGENTS.md": rules, "APPEND_SYSTEM.md": append });
+  try {
+    for (const name of ["AGENTS.md", "AGENTS.override.md"]) {
+      // Import and Re-import can put the same instructions back in pi's home.
+      fs.writeFileSync(path.join(agent.agentDir, name), `\n${rules}\n`);
+      fs.writeFileSync(path.join(agent.agentDir, "APPEND_SYSTEM.md"), `${append}\n`);
+      agent.start();
+      const options = agent.run({
+        cwd: "/work/repo",
+        contextFiles: [
+          { path: path.join(agent.agentDir, name), content: fs.readFileSync(path.join(agent.agentDir, name), "utf8") },
+          { path: "/work/repo/AGENTS.md", content: "Repo-specific rules." },
+        ],
+        appendSystemPrompt: fs.readFileSync(path.join(agent.agentDir, "APPEND_SYSTEM.md"), "utf8"),
+      });
+      assert.deepEqual(options.contextFiles.map((file) => file.path), [
+        path.join(agent.agentDir, name), "/work/repo/AGENTS.md",
+      ]);
+      const prompt = buildSystemPrompt(options);
+      assert.equal(prompt.split(rules).length - 1, 1);
+      assert.equal(prompt.split(append).length - 1, 1);
+      assert.equal(fs.readFileSync(path.join(agent.agentDir, name), "utf8"), `\n${rules}\n`, "imports are not rewritten");
+    }
+  } finally {
+    agent.restore();
+  }
+});
+
+test("partially overlapping instructions are not discarded", () => {
+  const shared = "Keep user work intact.";
+  const imported = `Imported rule.\n\n${shared}`;
+  const agent = launch({ "AGENTS.md": shared, "APPEND_SYSTEM.md": shared });
+  try {
+    agent.start();
+    const options = agent.run({
+      cwd: "/work/repo",
+      contextFiles: [{ path: path.join(agent.agentDir, "AGENTS.md"), content: imported }],
+      appendSystemPrompt: imported,
+    });
+    assert.deepEqual(options.contextFiles.map((file) => file.content), [imported, shared]);
+    assert.equal(options.appendSystemPrompt, `${imported}\n\n${shared}`);
+  } finally {
+    agent.restore();
+  }
+});
+
+test("identical repo instructions do not suppress the global instruction file", () => {
+  const agent = launch({ "AGENTS.md": "Shared rules." });
+  try {
+    agent.start();
+    const options = agent.run({
+      cwd: "/work/repo", contextFiles: [{ path: "/work/repo/AGENTS.md", content: "Shared rules." }],
+    });
+    assert.deepEqual(options.contextFiles.map((file) => file.path), [
+      path.join(agent.instructions, "AGENTS.md"), "/work/repo/AGENTS.md",
+    ]);
+  } finally {
+    agent.restore();
+  }
+});
+
 test("without pi's own root file, Shepherd's comes first", () => {
   const agent = launch({ "AGENTS.md": "shepherd rules" });
   try {
