@@ -57,25 +57,34 @@ struct ThreadInputTests {
         paste.keyEquivalentModifierMask = .command
         paste.target = editor
         #expect(editor.validateUserInterfaceItem(paste))
-        switch route {
-        case "menu": menu.performActionForItem(at: 0)
-        case "context":
-            let event = try #require(NSEvent.mouseEvent(with: .rightMouseDown, location: .zero, modifierFlags: [],
-                timestamp: 0, windowNumber: thread.window.window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
-            let context = try #require(editor.menu(for: event))
-            let index = try #require(context.items.firstIndex { $0.action == #selector(NSText.paste(_:)) })
-            let item = context.items[index]
-            #expect(editor.validateUserInterfaceItem(item))
-            // The offscreen window is never key: route its native menu to its actual editor.
-            item.target = editor
-            context.performActionForItem(at: index)
-        case "shortcut":
-            let event = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command,
-                timestamp: 0, windowNumber: thread.window.window.windowNumber, context: nil,
-                characters: "v", charactersIgnoringModifiers: "v", isARepeat: false, keyCode: 9))
-            #expect(menu.performKeyEquivalent(with: event))
-        default: editor.paste(nil)
+        var contextMenu: NSMenu?
+        func pasteUsingRoute() throws {
+            switch route {
+            case "menu": menu.performActionForItem(at: 0)
+            case "context":
+                if contextMenu == nil {
+                    let event = try #require(NSEvent.mouseEvent(with: .rightMouseDown, location: .zero, modifierFlags: [],
+                        timestamp: 0, windowNumber: thread.window.window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+                    contextMenu = editor.menu(for: event)
+                }
+                // Reuse the actual native menu: generating it again with a synthetic click
+                // at .zero selects the clicked word instead of preserving our text selection.
+                let context = try #require(contextMenu)
+                let index = try #require(context.items.firstIndex { $0.action == #selector(NSText.paste(_:)) })
+                let item = context.items[index]
+                #expect(editor.validateUserInterfaceItem(item))
+                // The offscreen window is never key: route its native menu to its actual editor.
+                item.target = editor
+                context.performActionForItem(at: index)
+            case "shortcut":
+                let event = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command,
+                    timestamp: 0, windowNumber: thread.window.window.windowNumber, context: nil,
+                    characters: "v", charactersIgnoringModifiers: "v", isARepeat: false, keyCode: 9))
+                #expect(menu.performKeyEquivalent(with: event))
+            default: editor.paste(nil)
+            }
         }
+        try pasteUsingRoute()
         try await eventuallyOnMain("the pasted image to attach") { !thread.input.attachments.isEmpty }
         #expect(thread.store.draft.isEmpty)
         let attachment = try #require(thread.input.attachments.items.first)
@@ -95,25 +104,31 @@ struct ThreadInputTests {
             "draft=\(String(reflecting: thread.store.draft)), editor=\(String(reflecting: editor.string)), selection=\(editor.selectedRange()), groupingLevel=\(undo.groupingLevel)"
         }
         var beforeUndo = "not reached"
+        var replacement = [String]()
         do {
             // Plain text still goes through AppKit at the selection, with its ordinary undo.
             pasteboard.clearContents()
             pasteboard.setString("hello", forType: .string)
-            editor.paste(nil)
+            try pasteUsingRoute()
             try await eventuallyOnMain("text paste to update the draft") { thread.store.draft == "hello" }
             // The replacement is a separate user event, after the first paste has rendered.
             try await thread.settle()
+            replacement.append("Before selection: \(textState())")
             editor.setSelectedRange(NSRange(location: 1, length: 3))
+            replacement.append("After selection: \(textState())")
             pasteboard.clearContents()
             pasteboard.setString("i", forType: .string)
-            menu.performActionForItem(at: 0)
+            replacement.append("Before Paste: \(textState())")
+            try #require(editor.selectedRange() == NSRange(location: 1, length: 3))
+            try pasteUsingRoute()
+            replacement.append("After Paste: \(textState())")
             try await eventuallyOnMain("text paste to replace the selection") { thread.store.draft == "hio" }
             beforeUndo = textState()
             try #require(undo.canUndo)
             undo.undo()
             try await eventuallyOnMain("undo to restore the selected text") { thread.store.draft == "hello" }
         } catch {
-            FileHandle.standardError.write(Data("Native Paste (\(route)) before undo: \(beforeUndo)\nAt failure: \(textState())\n".utf8))
+            FileHandle.standardError.write(Data("Native Paste (\(route)) before undo: \(beforeUndo)\n\(replacement.joined(separator: "\n"))\nAt failure: \(textState())\n".utf8))
             throw error
         }
         pasteboard.clearContents()
