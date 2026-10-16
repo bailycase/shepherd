@@ -64,6 +64,9 @@ final class ShepherdViewModel {
     var state: ShepherdState
     @ObservationIgnored lazy var projectCoordinator = ProjectCoordinatorController(vm: self)
     var selectedSpaceID: SpaceID?
+    /// This Mac's spaces whose folder is gone (`checkMissingSpaces`): the sidebar marks them and
+    /// no thread starts in them. Live state, never persisted.
+    var missingSpaces: Set<SpaceID> = []
     var selectedAgentID: AgentID?
     /// The page the main column shows in place of a thread (New thread, Automations, Hosts);
     /// nil while a thread shows. Picking a row clears it. Ephemeral, like all selection state.
@@ -236,6 +239,10 @@ final class ShepherdViewModel {
     var sidebarPins = SidebarPins() {
         didSet { sidebarPins.save(to: sidebarDefaults) }
     }
+    /// This Mac's spaces pinned to the top of the Spaces tree (`togglePinSpace`).
+    var spacePins = SpacePins() {
+        didSet { spacePins.save(to: sidebarDefaults) }
+    }
     /// The window is too narrow to dock the sidebar (`ShellLayout.sidebar`), so ⇧⌘S overlays
     /// it instead. Written by the window as it resizes; ephemeral.
     var sidebarAutoHidden = false
@@ -332,11 +339,14 @@ final class ShepherdViewModel {
         case local
         case importWorktree(WorktreeImportTarget)
         case host(UUID)
+        /// Locate Folder… for a space whose folder is gone.
+        case relocate(SpaceID)
         var id: String {
             switch self {
             case .local: return "local"
             case .importWorktree(let target): return target.id.uuidString
             case .host(let id): return id.uuidString
+            case .relocate(let id): return "relocate.\(id.rawValue)"
             }
         }
     }
@@ -514,6 +524,8 @@ final class ShepherdViewModel {
     @ObservationIgnored private var keyDownMonitor: Any?
     @ObservationIgnored private var resignActiveObserver: NSObjectProtocol?
     @ObservationIgnored private var becomeActiveObserver: NSObjectProtocol?
+    @ObservationIgnored var missingSpaceWatch: Task<Void, Never>?
+    @ObservationIgnored var missingSpaceCheck = (running: false, again: false)
     /// Reads each local agent's branch and changed files for the header (`CheckoutMonitor`);
     /// nil when the harness turned it off.
     @ObservationIgnored private(set) var checkouts: CheckoutMonitor?
@@ -617,6 +629,7 @@ final class ShepherdViewModel {
         collapsedActivitySections = Set((sidebarDefaults.stringArray(forKey: Self.collapsedActivitySectionsKey) ?? [])
             .compactMap(SidebarActivitySection.init(rawValue:)))
         sidebarPins = SidebarPins(defaults: sidebarDefaults)
+        spacePins = SpacePins(defaults: sidebarDefaults)
 
         sessions.onStateChanged = { [weak self] serverState in
             self?.adopt(serverState)
@@ -925,10 +938,13 @@ final class ShepherdViewModel {
             forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, self.selectedRemoteAgent == nil, let id = self.selectedAgentID else { return }
+                guard let self else { return }
+                self.checkMissingSpaces()
+                guard self.selectedRemoteAgent == nil, let id = self.selectedAgentID else { return }
                 self.checkouts?.refresh(id)
             }
         }
+        installMissingSpaceWatch()
         installProjectRuntime()
         installProjectExecution()
         // The first launch of a build with Shepherd's own pi: restored agents (and automations)
@@ -1036,6 +1052,7 @@ final class ShepherdViewModel {
         if let becomeActiveObserver {
             NotificationCenter.default.removeObserver(becomeActiveObserver)
         }
+        missingSpaceWatch?.cancel()
     }
 
     /// Chord→intent classification for the navigation fast path. Pure and
@@ -1116,6 +1133,7 @@ final class ShepherdViewModel {
             sidebarOpeningTurns.subtract(serverState.agents.filter { $0.status != .idle }.map(\.id))
         }
         state = serverState
+        checkMissingSpaces()
         let runs = server.openAutomationRuns
         if runs != openAutomationRuns { openAutomationRuns = runs }
         reconcileSidebarCompletions()

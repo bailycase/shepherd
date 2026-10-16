@@ -37,6 +37,7 @@ struct NestedProjectsFlowTests {
         defer { app.stop() }
         let parent = Fixture.space("Platform", path: app.dir.path)
         let child = Fixture.space("Hub", path: app.dir.appendingPathComponent("hub").path)
+        try FileManager.default.createDirectory(atPath: child.path, withIntermediateDirectories: true)
         let fixture = Fixture.agent("Child work", in: child, order: 0)
         let vm = try await app.start(with: Fixture.state(spaces: [child, parent], agents: [fixture]))
         vm.settings.sidebarStyle = .projects

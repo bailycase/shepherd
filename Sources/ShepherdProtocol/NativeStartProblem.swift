@@ -16,6 +16,8 @@ public struct NativeStartProblem: Codable, Hashable, Sendable {
         /// pi didn't find the conversation it was resuming and would have started a new one under
         /// its id, so Shepherd stopped it before it wrote anything.
         case resumedAsNew
+        /// The thread's folder is gone (moved, renamed or deleted), so Shepherd starts no pi.
+        case folderMissing
         /// Anything else: pi's own words say why.
         case exited
 

@@ -49,6 +49,13 @@ extension ShepherdViewModel {
         if next.unpin(thread) { sidebarPins = next }
     }
 
+    /// Pin or Unpin in a space's menu: a pinned space leads its siblings in the Spaces tree.
+    func togglePinSpace(_ space: SpaceID) {
+        var next = spacePins
+        next.toggle(space)
+        spacePins = next
+    }
+
     func togglePin(_ row: SidebarRowID) {
         if isPinned(row) { unpinThread(row) } else { pinThread(row) }
     }
@@ -57,6 +64,10 @@ extension ShepherdViewModel {
     /// host no longer configured. Nothing is forgotten before the workspace has been adopted, or
     /// of a host that has sent its threads.
     func pruneSidebarPins() {
+        if didAdopt {
+            var spaces = spacePins
+            if spaces.prune(keeping: Set(state.spaces.filter { !$0.hidden }.map(\.id))) { spacePins = spaces }
+        }
         guard didAdopt, !sidebarPins.isEmpty else { return }
         var hostAgents: [UUID: Set<AgentID>] = [:]
         for connection in remoteHosts.connections where connection.phase == .connected {

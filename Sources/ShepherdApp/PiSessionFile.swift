@@ -187,6 +187,49 @@ enum PiSessionFile {
         }
     }
 
+    // MARK: Relocation
+
+    /// A thread's folder moved from `from` to `to` (Locate Folder…): its conversation moves to the
+    /// session folder for `to`, its header's cwd rewritten, since pi refuses a session whose cwd
+    /// is gone. Looks in `from`'s session folder first, then every folder (a pi started while the
+    /// folder was missing seeded one elsewhere), preferring a file with a conversation. File work:
+    /// call it off the main actor. False when nothing could be moved.
+    @discardableResult
+    static func relocate(sessionID: String, from: String, to: String, sessionsRoot: URL) -> Bool {
+        let fm = FileManager.default
+        let suffix = "_\(sessionID).jsonl"
+        func files(in directory: URL) -> [URL] {
+            ((try? fm.contentsOfDirectory(atPath: directory.path)) ?? []).filter { $0.hasSuffix(suffix) }.map { directory.appendingPathComponent($0) }
+        }
+        let target = projectDirectory(forCwd: to, sessionsRoot: sessionsRoot)
+        // ponytail: scans every session folder when the old one has none; fine for hundreds of folders.
+        var candidates = files(in: projectDirectory(forCwd: from, sessionsRoot: sessionsRoot))
+        if candidates.isEmpty {
+            let folders = (try? fm.contentsOfDirectory(at: sessionsRoot, includingPropertiesForKeys: nil)) ?? []
+            candidates = folders.filter { $0.standardizedFileURL != target.standardizedFileURL }.flatMap(files(in:))
+        }
+        guard let source = candidates.first(where: { isOwnFile($0) && hasRuntimeState(at: $0) }) ?? candidates.first(where: isOwnFile),
+              let directory = writableProjectDirectory(forCwd: to, sessionsRoot: sessionsRoot),
+              var data = fm.contents(atPath: source.path),
+              let newline = data.firstIndex(of: UInt8(ascii: "\n")),
+              var header = try? JSONSerialization.jsonObject(with: data[..<newline]) as? [String: Any],
+              header["type"] as? String == "session",
+              let headerData = try? JSONSerialization.data(withJSONObject: { header["cwd"] = realPath(to); return header }(), options: [.sortedKeys]) else { return false }
+        data = headerData + data[newline...]
+        let destination = directory.appendingPathComponent(source.lastPathComponent)
+        do {
+            try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+            // A header Shepherd seeded there already would be a second file for the id.
+            for stale in files(in: directory) where stale != destination { try? fm.removeItem(at: stale) }
+            try data.write(to: destination, options: .atomic)
+            if source.standardizedFileURL != destination.standardizedFileURL { try fm.removeItem(at: source) }
+            return true
+        } catch {
+            ShepherdLog.info("couldn't move session \(sessionID) to \(directory.path): \(error)")
+            return false
+        }
+    }
+
     // MARK: Adoption
 
     /// What adoption did for one agent.
