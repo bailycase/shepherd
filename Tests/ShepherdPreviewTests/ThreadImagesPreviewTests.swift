@@ -261,13 +261,16 @@ struct ThreadImagesPreviewTests {
     }
 
     @Test func viewerOverTheThreadFirst() async throws { try await viewerOverThread("thread-images-open-first", open: 0) }
+
+    /// A tall picture in a small window, so the picture, its arrows and the pill all have to fit.
+    @Test func viewerOverTheThreadInASmallWindow() async throws {
+        try await viewerOverThread("thread-images-open-small", open: 0, size: CGSize(width: 1000, height: 680))
+    }
     @Test func viewerOverTheThreadSecond() async throws { try await viewerOverThread("thread-images-open-second", open: 1) }
     @Test func viewerOverTheThreadOneImage() async throws { try await viewerOverThread("thread-images-open-single", open: 0, images: 1) }
 
-    /// The bar's content is one centred column after the window controls, not the window's corners: a wide landscape window
-    /// (2000 × 844), and a narrow one (760 × 700) whose sidebar is hidden, so the window controls sit over the bar and the labelled
-    /// buttons give way to icons, in light and dark and at 1.3.
-    @Test func viewerBarInAWideAndANarrowWindow() async throws {
+    /// A wide landscape window (2000 × 844), and a narrow one (760 × 700) whose sidebar is hidden, in light and dark and at 1.3.
+    @Test func viewerInAWideAndANarrowWindow() async throws {
         try await viewerOverThread("thread-images-open-wide", open: 0, size: CGSize(width: 2000, height: 844))
         try await viewerOverThread("thread-images-open-narrow", open: 0, size: CGSize(width: 760, height: 700))
     }
