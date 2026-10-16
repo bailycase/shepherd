@@ -3,7 +3,7 @@
 The old folder-based "project" is a **Space** in every visible string. The new **Project** (a
 conversation plus goal, memory, spaces and automations) owns the name. Boards:
 14 private source boards, retained outside this repository. The boards win over this file and
-old UI. Public evidence uses fictional fixture data in `../evidence/project-lead/`.
+old UI. Public previews use fictional fixture data.
 
 Status: checklist only. Nothing below is built or verified yet.
 

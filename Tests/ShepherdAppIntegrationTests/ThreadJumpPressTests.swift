@@ -6,7 +6,8 @@ import Testing
 
 @Suite("Jump to latest control", .integrationTimeLimit)
 struct ThreadJumpPressTests {
-    @Test func jumpingReattachesTheDetachedReaderInEachState() async {
+    @Test(.flaky("the opening paint times out on hosted runners (0 px drawn) without a code change"))
+    func jumpingReattachesTheDetachedReaderInEachState() async {
         await #expect(processExitsWith: .success) {
             await recordingErrors {
                 for native in [false, true] {
