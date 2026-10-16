@@ -123,6 +123,7 @@ struct RootView: View {
         // Over a design, the palette's chord jumps to a board instead (JumpInContext).
         .overlay { DesignJumpOverlay(vm: vm) }
         .overlay { ImageViewerOverlay(vm: vm, leadingInset: isFullScreen ? 0 : AppLayout.trafficLightInset) }
+        .overlay { DiagramViewerOverlay(vm: vm, leadingInset: isFullScreen ? 0 : AppLayout.trafficLightInset) }
         // ⌘K floats over everything, 18% down and capped to the window; the scrim dismisses.
         .nwCommandPalette(isPresented: Binding(
             get: { vm.showCommandPalette && !vm.showSettings && !vm.showComponentGallery },
@@ -135,6 +136,7 @@ struct RootView: View {
         .nwDensity(appearance.sidebarRowDensity)
         .environment(\.threadCommands, vm.threadCommands)
         .environment(\.presentImages) { vm.imageViewer = $0 }
+        .environment(\.nwPresentDiagram) { vm.diagramViewer = $0 }
         .frame(minWidth: AppLayout.windowMinWidth, minHeight: AppLayout.windowMinHeight)
         // Only the width the shell's layout can tell apart: past the widest window that still
         // narrows the sidebar, a resize changes nothing here, so it reruns none of this.

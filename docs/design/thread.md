@@ -680,6 +680,11 @@ text.
 - **Mermaid diagrams** render locally once their fence is finished, using bundled Mermaid in a
   restricted web view. Source remains available and copyable; invalid or unsupported diagrams
   show an error with their source. Diagram configuration cannot override app-owned security or styling.
+  A chart zooms in place (pinch, or ⌘/ctrl-scroll toward the pointer, 1× to 8×) and pans by drag or scroll
+  once zoomed; an unzoomed scroll, or one past the chart's edge, keeps scrolling the thread. Double-click
+  zooms in or back to fit. The corner button opens it full screen in the image viewer's frame
+  (ThreadImageOpen: bar with Copy for the source and close, the chart filling the room, a hint line);
+  there every scroll pans, and Esc closes it on the Mac. iOS presents it as a full-screen cover.
   Other **diagrams and math** stay code. Source fences (`mermaid`, `plantuml`, `dot`, `graphviz`,
   `d2`) say, for example, "mermaid · diagram source" after a
   `point.3.connected.trianglepath.dotted` glyph, and a `math`, `latex`, `tex` or `katex` fence
