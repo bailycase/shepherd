@@ -77,12 +77,15 @@ struct SidebarTreeSection: Identifiable, Equatable {
     enum Header: Equatable {
         /// "Projects", with its + (add a project, or bring back a hidden one).
         case projects
+        /// This Mac's pinned spaces, above the ordinary space tree.
+        case pinnedSpaces
         /// A host's name; nil `id` is This Mac.
         case host(name: String, id: UUID?, unreachable: Bool)
 
         var id: String {
             switch self {
             case .projects: "header.projects"
+            case .pinnedSpaces: "header.pinnedSpaces"
             case .host(_, let id, _): "header.host.\(id?.uuidString ?? "local")"
             }
         }
@@ -132,9 +135,13 @@ struct SidebarTreeSection: Identifiable, Equatable {
             }
         }
         let rank = Dictionary(pinned.enumerated().map { (SidebarProjectID.local($1), $0) }, uniquingKeysWith: { first, _ in first })
-        for index in projects.indices { projects[index].pinned = rank[projects[index].id] != nil }
+        for index in projects.indices {
+            projects[index].pinned = rank[projects[index].id] != nil
+            // Lift pins before deriving ancestry and rollups. Stored parent relationships stay intact.
+            if projects[index].pinned { projects[index].parentID = nil }
+        }
         let children = Dictionary(grouping: projects.filter { $0.parentID != nil }, by: { $0.parentID! })
-        // Pinned spaces lead their siblings in pin order; the rest keep the saved order.
+        // Pins are roots in pin order; the rest keep the saved order.
         func pinnedFirst(_ peers: [SidebarProject]) -> [SidebarProject] {
             let (pins, rest) = (peers.filter { rank[$0.id] != nil }, peers.filter { rank[$0.id] == nil })
             return pins.sorted { rank[$0.id]! < rank[$1.id]! } + rest
@@ -186,7 +193,7 @@ struct SidebarTree: Equatable {
     func items(collapsed: Set<String>, selected: SidebarRowID?, shortcuts: Bool, connected: Set<UUID>) -> [SidebarTreeItem] {
         var items: [SidebarTreeItem] = []
         var digit = 0
-        for (sectionIndex, section) in sections.enumerated() {
+        for section in sections {
             items.append(.header(section.header))
             for project in section.projects {
                 if project.ancestorIDs.contains(where: { collapsed.contains($0.key) }) { continue }
@@ -195,7 +202,7 @@ struct SidebarTree: Equatable {
                 items.append(.project(SidebarProjectRow(
                     id: project.id, name: project.name, path: project.path, count: project.rows.count + project.childThreadCount, expanded: expanded,
                     rollup: project.rollup, dimmed: project.dimmed, newThreadHost: place?.host, newThreadSpace: place?.space,
-                    movable: sectionIndex == 0 && project.space != nil, parentID: project.parentID, depth: project.ancestorIDs.count,
+                    movable: !project.pinned && project.space != nil, parentID: project.parentID, depth: project.ancestorIDs.count,
                     missing: project.missing, pinned: project.pinned)))
                 guard expanded else { continue }
                 for var row in project.rows {
@@ -225,7 +232,7 @@ struct SidebarProjectRow: Equatable {
     /// Where + and New thread in <project> start one; nil space: nowhere reachable.
     let newThreadHost: UUID?
     let newThreadSpace: SpaceID?
-    /// This Mac's project in the first section: it can be dragged.
+    /// An unpinned space on This Mac: it can be dragged among its siblings.
     let movable: Bool
     var parentID: SidebarProjectID? = nil
     var depth = 0
@@ -268,7 +275,7 @@ struct SidebarTreeOptions: Equatable {
     /// Idle and finished threads last active before this (ms since 1970) leave the tree; nil
     /// keeps them all.
     var idleCutoff: Double?
-    /// This Mac's pinned spaces, oldest pin first: they lead their siblings.
+    /// This Mac's pinned spaces, oldest pin first in their own section.
     var pinnedSpaces: [SpaceID] = []
 
     /// Keep idle threads' cutoff for `days` before `now`, to the hour so the tree derives again
@@ -484,7 +491,17 @@ private struct TreeBuilder {
         } else {
             tree.sections = [SidebarTreeSection(header: .projects, projects: shown.compactMap { built[$0] })]
         }
-        for index in tree.sections.indices { tree.sections[index].nestProjects(pinned: options.pinnedSpaces) }
+        var pinned: [SidebarProject] = []
+        for index in tree.sections.indices {
+            tree.sections[index].nestProjects(pinned: options.pinnedSpaces)
+            let roots = Set(tree.sections[index].projects.filter(\.pinned).map(\.id))
+            tree.sections[index].projects.removeAll { project in
+                guard project.pinned || project.ancestorIDs.first.map(roots.contains) == true else { return false }
+                pinned.append(project)
+                return true
+            }
+        }
+        if !pinned.isEmpty { tree.sections.insert(SidebarTreeSection(header: .pinnedSpaces, projects: pinned), at: 0) }
         return tree
     }
 }

@@ -158,6 +158,8 @@ private struct SidebarTreeItemView: View, Equatable {
                 LogicalProjectSidebarRow(vm: vm, project: project, spaces: true)
             case .leadTask(let ref, let task):
                 LogicalProjectTaskRow(vm: vm, ref: ref, task: task)
+            case .header(.pinnedSpaces):
+                NWProjectsHeader("Pinned", hasMenu: false) { EmptyView() }
             case .header(.projects):
                 // The folder tree is Spaces. The board draws no + here; adding a Space lives in
                 // Settings ▸ Spaces and the project menus, and hidden ones come back from the menu.
