@@ -8,7 +8,7 @@ public enum PiKeySource: Equatable, Sendable {
     case literal
     /// `$NAME` or `${NAME}`: pi reads these variables when it needs the key.
     case environment([String])
-    /// `!command`: pi runs it, in a shell, when it needs the key.
+    /// Upstream `!command` syntax. Imported unchanged, but unsupported by Shepherd's runtime.
     case command
 }
 
