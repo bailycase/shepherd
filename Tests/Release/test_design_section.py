@@ -1,6 +1,5 @@
 """Tests for scripts/design_section.py, which prints one board's or one heading's spec from
-docs/design/, and for scripts/docsplit.py, the heading reader and the line-conservation check the
-two split scripts share.
+docs/design/, and for scripts/docsplit.py, its heading reader.
 
 Run: python3 -m unittest discover -s Tests/Release -v
 
@@ -273,33 +272,6 @@ class DocsplitTests(unittest.TestCase):
         hs = docsplit.headings(lines)
         self.assertEqual(docsplit.section_end(hs, 1, len(lines)), 5)
         self.assertEqual(docsplit.section_end(hs, 2, len(lines)), 5)
-
-    def test_relative_links_are_re_pointed_for_the_folder_a_file_moved_to(self):
-        text = "[a](docs/ios/README.md) [b](docs/x.md#frag) [c](https://x.org/a.md) [d](#top) `![alt](src)`"
-        out = docsplit.rebase_links(text, ".", "docs/design")
-        self.assertIn("(../ios/README.md)", out)
-        self.assertIn("(../x.md#frag)", out)
-        self.assertIn("(https://x.org/a.md)", out)
-        self.assertIn("(#top)", out)
-        self.assertIn("(src)", out)
-
-    def test_section_references_compare_equal_before_and_after_they_are_re_pointed(self):
-        before = "see DESIGN.md › Thread › Can't start"
-        after = "see docs/design/thread.md › Thread › Can't start"
-        self.assertEqual(docsplit.canon_refs(before), docsplit.canon_refs(after))
-        self.assertNotEqual(docsplit.canon_refs(before), "see Thread")
-
-    def test_the_conservation_check_sees_a_lost_and_a_duplicated_line(self):
-        old = docsplit.body_counter(["# T", "a", "b", "", "b"])
-        lost, extra = docsplit.counter_diff(old, docsplit.body_counter(["# T", "a", "b"]))
-        self.assertEqual(dict(lost), {"b": 1})
-        self.assertEqual(dict(extra), {})
-        lost, extra = docsplit.counter_diff(old, docsplit.body_counter(["a", "b", "b", "a"]))
-        self.assertEqual((dict(lost), dict(extra)), ({}, {"a": 1}))
-
-    def test_fenced_hash_lines_count_as_body_lines(self):
-        counter = docsplit.body_counter(["```sh", "# comment", "```"])
-        self.assertEqual(counter["# comment"], 1)
 
     def test_resolve_entry_fans_out_over_comma_separated_alternatives(self):
         lines = ["# File", "## Parent", "### One", "x", "### Two", "y", "### Three", "z"]

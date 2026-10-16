@@ -123,7 +123,6 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | SkillsStates | [settings-skills](settings-skills.md) | Settings › Skills; Browse skills.sh and Add from repo | Built |
 | SettingsExperiments | [settings-mcp-experiments](settings-mcp-experiments.md) | Settings › Experiments | Built |
 | NavNewThread | [sidebar](sidebar.md), [pages](pages.md) | Sidebar; New thread page | Built |
-| NavMissions | [pages](pages.md), [missions](missions.md) | Missions page; Missions | Not built yet |
 | NavDesigns | [pages](pages.md), [design-tool](design-tool.md) | Designs page; Design tool › Designs | Built (Mac, behind the Design tool experiment; systems as names only) |
 | NavAutomations | [pages](pages.md), [sidebar](sidebar.md) | Automations page; Sidebar (no When, Next or tabs: departures) | Built |
 | NavHosts | [pages](pages.md), [sidebar](sidebar.md), [settings](settings.md) | Hosts page; Sidebar; Settings › Remote (no daemon, Load or disk use: departures) | Built |
@@ -165,9 +164,6 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | MobileThreadError | [ios-iphone](ios-iphone.md), [thread](thread.md) | iPhone: Thread (Header); Thread › Errors (touch sizes) | Built |
 | MobileLock | [notifications](notifications.md) | Notifications and Live Activities › Live Activities | Not built yet |
 | MobileAnswer | [notifications](notifications.md) | Notifications and Live Activities › Actions and answering | Not built yet |
-| MobileMission | [missions-screens](missions-screens.md) | Missions › Missions: iPhone and iPad | Not built yet |
-| MobilePatch | [missions-screens](missions-screens.md) | Missions › Missions: iPhone and iPad | Not built yet |
-| MobileMerge | [missions-screens](missions-screens.md) | Missions › Missions: iPhone and iPad | Not built yet |
 | MobileLiveLock | [notifications](notifications.md) | Notifications and Live Activities › Live Activities | Not built yet |
 | MobileIsland | [notifications](notifications.md) | Notifications and Live Activities › Dynamic Island | Not built yet |
 | MobileNewThread | [ios-iphone](ios-iphone.md) | iPhone: New thread and Where it runs | Partial |
@@ -183,7 +179,6 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | MobileCommit | [ios-iphone](ios-iphone.md) | iPhone: Review; iOS (Commit from review) | Built |
 | MobileInbox | [ios-iphone-pages](ios-iphone-pages.md) | iPhone: Needs you | Partial |
 | MobileSearch | [ios-iphone-pages](ios-iphone-pages.md) | iPhone: Search | Partial |
-| MobileMissions | [missions-screens](missions-screens.md) | Missions › Missions: iPhone and iPad | Not built yet |
 | MobileDesigns | [design-tool](design-tool.md) | Design tool › Designs | Built |
 | MobileDesignBoard | [design-tool-references](design-tool-references.md) | Design tool › On iPhone | Partial |
 | MobileAutomations | [ios-ipad-pages](ios-ipad-pages.md) | iOS: Automations | Partial |
@@ -213,9 +208,6 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | iPadCommit | [ios-ipad](ios-ipad.md), [ios-ipad-pages](ios-ipad-pages.md) | iOS: iPad › Commit; Side pane › Changes (Commit… sheet) | Built |
 | iPadQueue | [ios-ipad](ios-ipad.md) | iOS: iPad › Up next and steering | Built |
 | iPadQuestion | [ios-ipad](ios-ipad.md) | iOS: iPad › Questions | Built |
-| iPadMissions | [missions-screens](missions-screens.md) | Missions › Missions: iPhone and iPad | Not built yet |
-| iPadMissionMap | [missions-screens](missions-screens.md) | Missions › Missions: iPhone and iPad | Not built yet |
-| iPadMissionReview | [missions-screens](missions-screens.md) | Missions › Missions: iPhone and iPad | Not built yet |
 | iPadInbox | [ios-ipad-pages](ios-ipad-pages.md) | iOS: iPad › Needs you | Partial |
 | iPadAutomations | [ios-ipad-pages](ios-ipad-pages.md) | iOS: Automations | Partial |
 | iPadHosts | [ios-ipad-pages](ios-ipad-pages.md) | iOS: iPad › Hosts and More | Partial |
@@ -244,30 +236,6 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | NotifiPadCenter | [notifications](notifications.md) | Notifications and Live Activities › iPad | Not built yet |
 | NotifMac | [notifications](notifications.md) | Notifications and Live Activities › On the Mac today, Mac | Partial |
 
-**Missions**
-
-| Board | Files | Specified in | Status |
-| --- | --- | --- | --- |
-| MXNav | [missions](missions.md) | Missions › Missions: getting there | Not built yet |
-| MXFlow | [missions](missions.md) | Missions › Missions: how a mission runs | Not built yet |
-| MXStart | [missions](missions.md) | Missions › Missions: intake | Not built yet |
-| MXGoal | [missions](missions.md) | Missions › Missions: intake | Not built yet |
-| MXMap | [missions](missions.md) | Missions › Missions: the map; map, patches and the run | Not built yet |
-| MXPatch | [missions-screens](missions-screens.md) | Missions › Missions: map, patches and the run | Not built yet |
-| MXRun | [missions-screens](missions-screens.md) | Missions › Missions: map, patches and the run | Not built yet |
-| MXOffMap | [missions-screens](missions-screens.md) | Missions › Missions: map, patches and the run | Not built yet |
-| MXDone | [missions-screens](missions-screens.md) | Missions › Missions: map, patches and the run | Not built yet |
-| MXInputs | [missions](missions.md) | Missions › Missions: how a mission runs | Not built yet |
-| MXReview | [missions-screens](missions-screens.md) | Missions › Missions: review, evidence and the merge train | Not built yet |
-| MXEvidence | [missions-screens](missions-screens.md) | Missions › Missions: review, evidence and the merge train | Not built yet |
-| MXTrain | [missions-screens](missions-screens.md) | Missions › Missions: review, evidence and the merge train | Not built yet |
-| MXStuck | [missions-screens](missions-screens.md) | Missions › Missions: when things go wrong | Not built yet |
-| MXBudget | [missions-screens](missions-screens.md) | Missions › Missions: when things go wrong | Not built yet |
-| MXLocks | [missions-screens](missions-screens.md) | Missions › Missions: when things go wrong | Not built yet |
-| MXCancel | [missions-screens](missions-screens.md) | Missions › Missions: when things go wrong | Not built yet |
-| MXTemplateSave | [missions-screens](missions-screens.md) | Missions › Missions: templates | Not built yet |
-| MXTemplates | [missions-screens](missions-screens.md) | Missions › Missions: templates | Not built yet |
-| MXTemplateStart | [missions-screens](missions-screens.md) | Missions › Missions: templates | Not built yet |
 
 **Design tool**
 
@@ -298,13 +266,11 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | NWComposer, NWComposerLight | [composer](composer.md), [dialogs-and-palette](dialogs-and-palette.md) | Composer, questions, and menus; Command palette | Built |
 | ContextIdeas | [composer](composer.md), [thread](thread.md) | Composer, questions, and menus › Context meter; Thread › Compactions | Built |
 | NWNavigation, NWNavigationLight | [window-and-toolbar](window-and-toolbar.md), [sidebar](sidebar.md) | Window and adaptive layout; Sidebar; Toolbar | Partial |
-| NWAgents, NWAgentsLight | [subagents](subagents.md), [ios-ipad-pages](ios-ipad-pages.md), [missions](missions.md) | Subagents; Side pane › Subagent inspector; Mission components | Built |
+| NWAgents, NWAgentsLight | [subagents](subagents.md), [ios-ipad-pages](ios-ipad-pages.md) | Subagents; Side pane › Subagent inspector; Mission components | Built |
 | ChangesStates | [ios-ipad-pages](ios-ipad-pages.md), [thread](thread.md), [settings](settings.md) | Side pane › Changes; Thread › Changes card; Keyboard | Partial |
 | SubagentTray | [subagents](subagents.md), [ios-iphone](ios-iphone.md), [ios-ipad](ios-ipad.md) | Subagents; iPhone: Subagents; iOS: iPad › Subagents | Partial |
 | SubagentList | [subagents](subagents.md) | Subagents › The Subagents tab | Built (Mac: the side pane's third tab, current and earlier runs, each opening the inspector; the tab's dot is the run status the user chose (blue working, green done); not iPad, whose side pane has no tabs) |
 | NWSwift, NWSwiftLight | [theme](theme.md) | Theme model › Building on ShepherdUI | Partial |
-| MXVocab, MXVocabLight | [missions](missions.md) | Missions › Missions: the map | Not built yet |
-| NWMissions, NWMissionsLight | [missions](missions.md) | Missions (Missions: shared parts and the screens that use them) | Not built yet |
 | NWDesignTool, NWDesignToolLight | [design-tool-references](design-tool-references.md) | Design tool › Design components | Partly built: the canvas, board frame, toolbar, system chip and chat composer |
 
 ## Files
@@ -325,11 +291,9 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | [ios-iphone](ios-iphone.md) | Read when you change the iPhone client's shell, home, thread, new thread, queue, subagents or review. |
 | [keyboard-and-accessibility](keyboard-and-accessibility.md) | Read when you add a shortcut, a focus behavior, a VoiceOver label, or a Reduce Motion path. |
 | [known-gaps](known-gaps.md) | Read when you finish a change that leaves the app short of its design: list the place here until it is fixed. |
-| [missions-screens](missions-screens.md) | Not built yet. Read only when asked to build Missions: the run, review, failure states, templates, iOS and motion. |
-| [missions](missions.md) | Not built yet. Read only when asked to build Missions: the model, getting there, the map and its parts. |
 | [motion](motion.md) | Read when something animates, appears, or must not move. |
 | [notifications](notifications.md) | Read when you send a notification or build a Live Activity, on the Mac or iOS. |
-| [pages](pages.md) | Read when you change New thread, Automations, Hosts, Designs or the Missions page. |
+| [pages](pages.md) | Read when you change New thread, Automations, Hosts or Designs. |
 | [performance](performance.md) | Read when you build or change a list, a row, a scroll view, or anything that redraws often. |
 | [principles](principles.md) | Read when you weigh a UI decision: what the app is for, and the principles in priority order. |
 | [queue](queue.md) | Read when you change the queue above the composer, steering, or Send now. |

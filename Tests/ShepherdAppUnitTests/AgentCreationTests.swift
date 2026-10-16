@@ -551,6 +551,37 @@ struct AgentLaunchCommandTests {
         #expect(shared.environment["SHEPHERD_MCP_SECRETS"] == "", "the user's own MCP launch is kept")
     }
 
+    @Test func ownedWorktreesShareOnlyTheirRegisteredSpacesMCPWithoutApprovingTheCheckout() throws {
+        let space = Space(name: "Owner", path: "/code/owner")
+        let state = ShepherdState(spaces: [space])
+        var agent = Agent(name: "Worker", spaceID: space.id, tabID: TabID(), worktreeBranch: "fix/task")
+        let base = MCPLaunch(extensions: MCPLaunch.builtIns, environment: [:])
+        let install = { "/tmp/support/shepherd-mcp-parent.ts" }
+        let cwd = "/code/owner-agent"
+        let launch = base.sharingProject("/code", agent: agent, cwd: cwd, state: state, install: install)
+        #expect(launch.extensions == MCPLaunch.builtIns + [install()])
+        #expect(launch.environment == ["SHEPHERD_MCP_OWNING_SPACE": PiHome.canonical(space.path),
+                                       "SHEPHERD_MCP_WORKTREE_CWD": PiHome.canonical(cwd)])
+        let command = try StatusExtension.command(home: Self.home, cwd: cwd, agentID: agent.id,
+            piSessionID: agent.effectivePiSessionID, socketPath: "/s", extensionPath: "/e",
+            panesExtensionPath: nil, reviewExtensionPath: nil, subagentsExtensionPath: nil,
+            mcp: launch, model: nil, thinking: nil)
+        #expect(!command.argv.joined().contains("--approve"), "MCP inheritance grants no project trust")
+        agent.spaceID = SpaceID()
+        #expect(base.sharingProject(nil, agent: agent, cwd: cwd, state: state, install: install) == base)
+        agent.spaceID = space.id
+        agent.worktreeBranch = nil
+        #expect(base.sharingProject(nil, agent: agent, cwd: cwd, state: state, install: install) == base,
+                "An unrelated sibling thread does not inherit from its sidebar space")
+        agent.worktreePath = cwd
+        #expect(base.sharingProject(nil, agent: agent, cwd: cwd, state: state, install: install) == launch,
+                "An imported worktree has the same ownership")
+        #expect(base.sharingProject(nil, agent: agent, cwd: "/code/unrelated", state: state, install: install) == base,
+                "A recorded checkout does not authorize another folder")
+        #expect(base.sharingProject("/code", agent: agent, cwd: space.path, state: state, install: install)
+                == base.sharingParent("/code", install: install))
+    }
+
     /// Watchers must never create watchers.
     @Test func automationAgentsAreMarked() {
         #expect(command(isAutomation: true).env["SHEPHERD_AUTOMATION"] == "1")

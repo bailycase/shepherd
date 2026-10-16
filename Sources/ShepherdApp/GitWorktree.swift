@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+import ShepherdSessions
 
 /// The New Agent sheet's "worktree" option and the space context menu's
 /// "New Worktree…": create a git worktree beside the checkout and start an
@@ -74,6 +75,15 @@ enum GitWorktree {
             return URL(fileURLWithPath: linked).deletingLastPathComponent().path
         }
         return URL(fileURLWithPath: canonicalRepo).deletingLastPathComponent().path
+    }
+
+    /// Exact registered checkout membership, not a caller-controlled `.git` pointer or folder name.
+    static func containsCheckout(repo: String, checkout: String) throws -> Bool {
+        let wanted = PiHome.canonical(checkout)
+        let output = try run(["-C", PiHome.canonical(repo), "worktree", "list", "--porcelain", "-z"])
+        return output.components(separatedBy: "\0").contains { field in
+            field.hasPrefix("worktree ") && PiHome.canonical(String(field.dropFirst("worktree ".count))) == wanted
+        }
     }
 
     /// Canonical primary checkout for any checkout in a repository. Git's

@@ -589,7 +589,7 @@ class VerifyAppTests(unittest.TestCase):
         patched.start()
         self.addCleanup(patched.stop)
 
-    def make_app(self, root, product, engine=True, **info):
+    def make_app(self, root, product, engine=True, extensions=True, **info):
         path = os.path.join(root, product)
         os.makedirs(os.path.join(path, "Contents", "MacOS"))
         executable = info.get("CFBundleExecutable")
@@ -599,7 +599,19 @@ class VerifyAppTests(unittest.TestCase):
             plistlib.dump(info, f)
         if engine:
             make_engine(os.path.join(path, "Contents"))
+        if extensions:
+            self.make_extensions(path)
         return path
+
+    @staticmethod
+    def make_extensions(path):
+        """The resource bundle with a copy of every file under the repository's Extensions/."""
+        source = os.path.join(release.pi_engine.ROOT, "Extensions")
+        bundled = os.path.join(path, release.EXTENSIONS_BUNDLE)
+        os.makedirs(bundled, exist_ok=True)
+        for directory, _dirs, files in os.walk(source):
+            for name in files:
+                shutil.copyfile(os.path.join(directory, name), os.path.join(bundled, name))
 
     def info(self, key, **overrides):
         app = release.APPS[key]
@@ -620,6 +632,32 @@ class VerifyAppTests(unittest.TestCase):
             with self.subTest(app=key), tempfile.TemporaryDirectory() as root:
                 path = self.make_app(root, release.APPS[key].product, **self.info(key))
                 self.assertEqual(release.verify_app(path, key, "1.0.0"), [])
+
+    def test_an_app_without_every_shipped_extension_is_refused(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = self.make_app(root, "Shepherd.app", extensions=False, **self.info("main"))
+            self.assertEqual(release.verify_app(path, "main", "1.0.0"),
+                             [f"extensions: {release.EXTENSIONS_BUNDLE} is missing"])
+        with tempfile.TemporaryDirectory() as root:
+            path = self.make_app(root, "Shepherd.app", **self.info("main"))
+            os.remove(os.path.join(path, release.EXTENSIONS_BUNDLE, "shepherd-panes.ts"))
+            os.remove(os.path.join(path, release.EXTENSIONS_BUNDLE, "SKILL.md"))
+            self.assertEqual(release.verify_app(path, "main", "1.0.0"),
+                             ["extensions: design-skill/SKILL.md is not a bundled file",
+                              "extensions: shepherd-panes.ts is not a bundled file"])
+
+    def test_linked_or_stale_extensions_are_refused(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = self.make_app(root, "Shepherd.app", **self.info("main"))
+            bundled = os.path.join(path, release.EXTENSIONS_BUNDLE)
+            linked = os.path.join(bundled, "shepherd-panes.ts")
+            os.remove(linked)
+            os.symlink(os.path.join(release.pi_engine.ROOT, "Extensions", "shepherd-panes.ts"), linked)
+            with open(os.path.join(bundled, "format.md"), "w") as file:
+                file.write("stale skill")
+            self.assertEqual(release.extension_problems(path),
+                             ["extensions: design-skill/format.md differs from the source",
+                              "extensions: shepherd-panes.ts is not a bundled file"])
 
     def test_an_app_without_the_pinned_engine_is_refused(self):
         for key in release.APPS:

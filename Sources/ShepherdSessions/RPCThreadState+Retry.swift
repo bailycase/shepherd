@@ -1,12 +1,12 @@
 import Foundation
 import ShepherdProtocol
 
-/// Retry (`NativeThreadRequest.retry`): the latest turn again, in place. The status extension's
+/// Retry (`NativeThreadRequest.retry`): restart or continue the latest turn. The status extension's
 /// `/shepherd-retry <ms>` moves pi's session back to before the user message pi stamped at that
 /// millisecond (its tree keeps the failed turn off the active branch) and sends the message
-/// again, text and images. RPC has no event for the move, so the host takes the turn out of the
-/// thread when it sends the command and reads pi's history again once pi has run it: the thread
-/// shows the active branch, and the retried turn streams in the old one's place.
+/// again, text and images. A failed turn with tool results or extension messages continues
+/// without rewinding, keeping completed work and child references. The host reads pi's
+/// history again once the command runs: either the replacement branch or the retained history.
 extension RPCThreadState {
     static let retryCommand = "shepherd-retry"
 
@@ -20,7 +20,7 @@ extension RPCThreadState {
             }
             return
         }
-        // Never queued or steered: a retry replaces the turn pi just finished.
+        // Never queued or steered: retry only once pi has finished the turn.
         guard !piBusy, compactingRun == nil, dialogs.isEmpty else {
             completion(.failure(code: "busy", message: "Retry once the agent has stopped."))
             return
@@ -65,8 +65,8 @@ extension RPCThreadState {
                 } else {
                     self.confirmRetry(operationID)
                 }
-                // pi's branch now: without the retried turn once the command ran, as it was if
-                // the command refused.
+                // pi's branch now: a replacement, a continuation retaining completed work,
+                // or the unchanged history if the command refused.
                 self.refreshMessages()
                 self.commit()
                 completion(failure ?? .accepted(operationID: operationID))
