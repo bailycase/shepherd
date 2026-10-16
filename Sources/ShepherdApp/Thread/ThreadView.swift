@@ -105,12 +105,15 @@ struct ThreadView: View {
     @State private var jumpedTurn: String?
     @State private var arrivals = ThreadArrivals()
     @Environment(\.designCommentCards) private var commentCards
+    @Environment(\.nwUserBubbleMetrics) private var bubbleMetrics
 
     var body: some View {
         let _ = NWRenderProbe.tick("thread.view")
         // A turn made only of the owner's wake-ups has no row. A mixed turn keeps its row (and identity); `turn` draws it per message.
         let origins = userOrigins
         let rows: [NativeThreadRow] = origins.runtime.isEmpty ? store.rows : store.rows.filter { !($0.isUser && origins.hides($0.turn)) }
+        // A Project's accepted messages the transcript has not taken in: waiting ones go to the composer's Up next, outcomes stay here.
+        let held = projectSend?.held() ?? []
         let running = store.running
         let liveRow = rows.last(where: \.live)
         // Only one thing moves (LiveText): a running call's own line, thinking, or the reply as it
@@ -161,11 +164,13 @@ struct ThreadView: View {
                             }
                         }
                         // A Project's accepted messages the transcript has not taken in: held, in flight, or not delivered.
-                        if let held = projectSend?.held() {
-                            ForEach(held) { message in
-                                UserTurn(bubbles: [.init(text: message.text, images: 0, caption: nil, pending: true)], note: message.note)
-                                    .equatable()
-                            }
+                        // Not delivered (unknown, failed): the person's words with what became of them. Never retried for them.
+                        // Its note always shows, so it takes its own room below the bubble: an overlaid caption that wraps (a refusal's
+                        // reason, a larger text size) would grow up into the words.
+                        ForEach(held.filter { !$0.waiting }) { message in
+                            UserTurn(bubbles: [.init(text: message.text, images: message.images.count, caption: nil, pending: true)], note: message.note)
+                                .equatable()
+                                .environment(\.nwUserBubbleMetrics, { var metrics = bubbleMetrics; metrics.overlaysCaption = false; return metrics }())
                         }
                         if thinking, liveRow == nil { (projectActionCards != nil || workerStyle != nil ? AnyView(ProjectLiveLine(startedAt: nil)) : AnyView(NWThinking.live())).nwArrival(settled) }
                         if let authNotice {
@@ -297,7 +302,7 @@ struct ThreadView: View {
                              inspectSubagent: inspectSubagent, steerSubagent: steerSubagent, inspectedRunID: inspectedRunID,
                              designChat: designChat, restartPi: restartPi,
                              hidesNotSignedIn: { if case .notSignedIn? = authNotice { true } else { false } }(),
-                             slashLogin: slashLogin)
+                             slashLogin: slashLogin, projectUpNext: projectSend.map { _ in ProjectHeldMessages.upNext(held) })
                         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { [composerInset] in
                             if composerInset.height != $0 { composerInset.height = $0 }
                         }

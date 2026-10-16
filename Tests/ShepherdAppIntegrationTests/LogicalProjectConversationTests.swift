@@ -3,7 +3,7 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
-import ShepherdSessions
+@testable import ShepherdSessions
 import ShepherdTestSupport
 import ShepherdUI
 import SwiftUI
@@ -63,6 +63,11 @@ struct LogicalProjectConversationTests {
 
     @Test func aPausedMessageStaysVisibleUntilResumeAndAnUnconfirmedOneIsNeverLostOrRetriedForThePerson() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.heldMessages() } }
+        expectScenarioCompleted(result)
+    }
+
+    @Test func aQueuedMessageStaysInUpNextThroughAPausedRelaunchAndASlowStartAndOnlyTheHandoffMovesIt() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.upNextUntilHandoff() } }
         expectScenarioCompleted(result)
     }
 
@@ -827,7 +832,8 @@ private static func chipsAndLinks() async throws {
     }
 
     /// ControlPress: pause, send while paused, resume. The message the owner accepted is represented in the conversation the whole
-    /// time (held, then in the transcript once its native operation is consumed), and is never drawn twice.
+    /// time: in the composer's shared Up next (read-only, Paused) while the owner holds it, then in the transcript once its native
+    /// operation is there. Never a sent-looking bubble while it waits, and never drawn twice.
     private static func heldMessages() async throws {
         let r = try await rig()
         defer { r.app.stop() }
@@ -851,12 +857,14 @@ private static func chipsAndLinks() async throws {
             let consumed = Set((store.messages + store.pending + store.rows.flatMap(\.turn.messages)).compactMap { $0.operationID })
             return ProjectHeldMessages.held(messages: project?.messages ?? [], paused: project?.paused ?? false, consumed: consumed)
         }
-        func noteCount(_ note: String) -> Int {
-            window.layout()
-            // macOS 26 combines the words and state into one label; 27 exposes the state alone.
-            // Match either complete label, not a substring that could count unrelated prose.
-            let labels = [note, "send me later, \(note)"]
-            return window.elements().filter { labels.contains($0.label ?? $0.value ?? "") }.count
+        // The shared Up next row's own label, and the transcript's bubble for the same words (with or without a note).
+        let row = "Queued 1 of 1: send me later"
+        func upNextRows() -> Int { window.elements().filter { $0.label == row }.count }
+        func bubbles() -> Int {
+            window.elements().filter { node in
+                let label = node.label ?? node.value ?? ""
+                return label == "send me later" || label.hasPrefix("send me later, ")
+            }.count
         }
         // Pause through the real control, then send through the real composer: the owner accepts and holds it.
         try window.press("Project settings")
@@ -872,25 +880,144 @@ private static func chipsAndLinks() async throws {
             r.app.server.state.projects.first?.messages.first { $0.text == "send me later" }?.phase == .queued
         }
         try await eventuallyOnMain("the draft cleared, so the person knows it was accepted") { store.draft.isEmpty }
-        // It is still represented: the person's own words are in the conversation, with the state said once, in the thread's own style.
-        try await window.diagnosing(stores: [store], needles: ["Sends when the project resumes", "send me later"], extra: {
-            ["held=\(heldNow().map { "\($0.text) | \($0.note)" }) projectMessages=\((r.vm.logicalProjects.project(r.ref)?.messages ?? []).map { "\($0.text) \($0.phase)" })"]
+        // It is still represented, as a normal thread's queued message: the shared Up next row, its header Paused, and no bubble.
+        try await window.diagnosing(stores: [store], needles: [row, "send me later"], extra: {
+            ["held=\(heldNow().map { "\($0.text) | \($0.phase)" }) projectMessages=\((r.vm.logicalProjects.project(r.ref)?.messages ?? []).map { "\($0.text) \($0.phase)" })"]
         }) {
-            try await eventuallyOnMain("the held message is drawn with its state") { noteCount("Sends when the project resumes") == 1 }
+            try await eventuallyOnMain("the held message waits in Up next") { upNextRows() == 1 }
         }
         #expect(heldNow().map(\.text) == ["send me later"], "its own words are what is held")
-        #expect(noteCount("Sends when the project resumes") == 1, "it is drawn once")
-        // Resume: the owner delivers it once; the held row gives way to the transcript's own bubble. Never two.
+        #expect(window.element("Up next, 1 message") != nil, "the shared stack's header counts it")
+        #expect(window.elements().contains { $0.label == "Paused" || $0.value == "Paused" }, "the header says the Project holds it")
+        #expect(bubbles() == 0, "never a sent-looking transcript bubble while the owner holds it")
+        // The owner offers no queue controls: none of the native stack's are drawn, and no empty options menu.
+        let unsupported: Set = ["Queue options", "Steer now", "Send now", "Edit", "Delete", "Back to the queue", "Steer all now", "Send all now"]
+        #expect(!window.controls().contains { unsupported.contains($0.label ?? "") }, "\(window.controls().compactMap(\.label))")
+        // Resume: the owner hands it to pi only now. Until the native transcript holds its operation it stays in Up next; then it is the
+        // transcript's alone. Each observation is one place or (for a frame while the two pushes cross) none, never two.
         try window.press("Resume", nth: 0)
+        var sawTwo = false
         try await eventuallyOnMain("resumed and delivered") {
-            r.app.server.state.projects.first?.messages.first { $0.text == "send me later" }?.phase == .delivered
+            if upNextRows() > 0 && bubbles() > 0 { sawTwo = true }
+            return r.app.server.state.projects.first?.messages.first { $0.text == "send me later" }?.phase == .delivered
         }
-        // The thread's own bubble takes over once its native operation is consumed: nothing held, no note, never two.
-        try await eventuallyOnMain("the held row gave way to the transcript") {
+        // The thread's own bubble takes over once its native operation is consumed: nothing held, no row, never two.
+        try await eventuallyOnMain("the Up next row gave way to the transcript") {
+            heldNow().isEmpty && upNextRows() == 0 && window.element("Up next, 1 message") == nil
+                && store.rows.flatMap(\.turn.messages).count { $0.role == "user" && $0.blocks.contains { $0.text == "send me later" } } == 1
+        }
+        #expect(!sawTwo, "never drawn in both places")
+    }
+
+    /// A relaunch with the Project paused: the owner holds a queued message (with an image), one whose delivery was refused and one
+    /// that was in flight when the app quit. The queued one is in Up next with its image's name, the refused and lost ones stay in the
+    /// transcript with their own notes. Resume starts the coordinator's pi, which takes a while: the message stays pending in Up next
+    /// all that time. Only the real handoff (the owner's native send, whose pending row the transcript then holds) moves it, and it is
+    /// `.delivering` there until pi starts it. Nothing undelivered is resent.
+    private static func upNextUntilHandoff() async throws {
+        AccessibilityNode.enable()
+        try StubPi.installAsEngine()
+        let directory = try makeScratchDirectory("upn")
+        let stateURL = directory.appendingPathComponent("state.json")
+        let folder = directory.appendingPathComponent("logical-project")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        // The coordinator's pi waits for `release-pi` before it serves (a slow start).
+        try JSONSerialization.data(withJSONObject: ["gate": "release-pi"]).write(to: folder.appendingPathComponent("stub-pi-startup.json"))
+        let space = Space(name: "Projects", path: folder.path, hidden: true, holdsProjects: true)
+        var fixture = Fixture.agent("Sample App", in: space)
+        var project = Project(name: "Sample App", goal: "", coordinatorAgentID: fixture.agent.id, paused: true)
+        fixture.agent.coordinatorFor = project.id
+        var refused = ProjectMessage(id: UUID(), text: "this one was refused", phase: .failed)
+        refused.failureDetail = "The agent refused it: no API key"
+        let lost = ProjectMessage(id: UUID(), text: "this one was in flight", phase: .delivering)
+        // `preflight-compact` makes the stub hold the prompt (preflight-go, then preflight-reply) before it starts the user message.
+        var waiting = ProjectMessage(id: UUID(), text: "preflight-compact the reading list", phase: .queued)
+        waiting.humanSubmitted = true
+        // The owner's own private input, stored where the delivery reads it, so the image really goes with the message.
+        try LogicalProjectDirectory.create(id: project.id, beside: stateURL)
+        let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==")!
+        waiting.images = try LogicalProjectDirectory.storeInputs(id: project.id, operation: waiting.id,
+                                                                 images: [NativeImage(mimeType: "image/png", data: png, name: "sketch.png")], beside: stateURL)
+        project.messages = [ProjectMessage(id: UUID(), text: "hello", phase: .delivered), refused, lost, waiting]
+        var state = Fixture.state(spaces: [space], agents: [fixture])
+        state.projects = [project]
+        try JSONEncoder().encode(state).write(to: stateURL)
+        let app = try AppHarness(directory: directory)
+        defer { app.stop() }
+        app.settings.projectsEnabled = true
+        // The owner's launch is the only start path here: with agents restored at launch, the app's own restored start can still be in
+        // flight when Resume asks the owner to launch the coordinator, and that launch is refused (`paneUnavailable`), which pauses the
+        // Project again. That race is the owner lifecycle's, reported separately; this test is about what the conversation draws.
+        let vm = try await app.start()
+        func message(_ id: UUID) -> ProjectMessage? { app.server.state.projects.first?.messages.first { $0.id == id } }
+        // The relaunch never claims an in-flight delivery happened, and never resends it: it is unknown.
+        #expect(message(lost.id)?.phase == .unknown, "in flight at quit is unknown after a relaunch: \(String(describing: message(lost.id)?.phase))")
+        let ref = LogicalProjectRef(home: .local, id: project.id)
+        vm.openLogicalProject(ref)
+        let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: vm))
+        defer { window.close() }
+        let store = vm.threadStores.store(for: fixture.agent.id)
+        let row = "Queued 1 of 1: preflight-compact the reading list"
+        func held() -> [ProjectHeldMessage] {
+            let shown = vm.logicalProjects.project(ref)
+            let consumed = Set((store.messages + store.pending + store.rows.flatMap(\.turn.messages)).compactMap { $0.operationID })
+            return ProjectHeldMessages.held(messages: shown?.messages ?? [], paused: shown?.paused ?? false, consumed: consumed)
+        }
+        func labelled(_ text: String, note: String? = nil) -> Int {
+            let labels = note.map { [$0, "\(text), \($0)"] } ?? [text]
+            return window.elements().filter { labels.contains($0.label ?? $0.value ?? "") }.count
+        }
+        func echoes() -> Int {
+            store.rows.flatMap(\.turn.messages).count { $0.role == "user" && $0.blocks.contains { $0.text == waiting.text } }
+        }
+        try await window.diagnosing(stores: [store], needles: [row], extra: { ["held=\(held().map { "\($0.text) \($0.phase)" })"] }) {
+            try await eventuallyOnMain("the queued message waits in Up next") { window.layout(); return labelled(row) == 1 }
+        }
+        #expect(window.elements().contains { $0.label == "Paused" || $0.value == "Paused" } && window.element("Up next, 1 message") != nil)
+        #expect(labelled(waiting.text) == 0 && echoes() == 0, "no transcript bubble while the owner holds it")
+        // The image goes by the name the owner holds; this Mac draws no bytes for it.
+        #expect(ProjectHeldMessages.upNext(held()).queue.map { $0.images.map(\.name) } == [["sketch.png"]])
+        // Undelivered outcomes stay in the transcript, each with its own note: a refusal's reason, an unknown's none.
+        #expect(labelled("this one was refused", note: "Not delivered. The agent refused it: no API key. Send it again to retry.") == 1)
+        #expect(labelled("this one was in flight", note: "Delivery unconfirmed. Send it again to retry.") == 1)
+
+        // The relaunch holds the coordinator off on purpose (nothing can be delivered while paused), as a cold Project does.
+        try await eventuallyOnMain("the restored coordinator is held off") { store.offline && !store.starting && store.loadError == nil }
+        // Resume: the owner starts the coordinator's pi, which is still booting. Resume alone sends nothing, so nothing looks sent.
+        #expect(await vm.logicalProjects.setPaused(ref, false))
+        let watchedUntil = ContinuousClock.now + .milliseconds(900)
+        var moved = false
+        try await eventuallyOnMain("the start is watched") {
             window.layout()
-            return heldNow().isEmpty && noteCount("Sends when the project resumes") == 0
-                && store.rows.flatMap(\.turn.messages).contains { $0.role == "user" && $0.blocks.contains { $0.text == "send me later" } }
+            if message(waiting.id)?.phase != .queued || labelled(row) != 1 || echoes() != 0 || labelled(waiting.text) != 0 { moved = true }
+            return ContinuousClock.now >= watchedUntil
         }
+        #expect(!moved, "while pi starts, the message stays queued and in Up next only: \(String(describing: message(waiting.id)?.phase))")
+        #expect(!window.elements().contains { $0.label == "Paused" || $0.value == "Paused" }, "resumed: the header no longer says Paused")
+
+        // pi serves: the owner hands the message over. Once the transcript holds the delivery's pending row it is there alone, still
+        // `.delivering`: pi has neither accepted nor started it.
+        try Data().write(to: folder.appendingPathComponent("release-pi"))
+        let delivery = { message(waiting.id).map { $0.nativeDeliveryID ?? $0.id } }
+        try await window.diagnosing(stores: [store], needles: [waiting.text], extra: { ["phase=\(String(describing: message(waiting.id)?.phase)) paused=\(String(describing: app.server.state.projects.first?.paused)) loadError=\(String(describing: store.loadError))"] }) {
+            try await eventuallyOnMain("the handoff's native pending row is in the transcript", timeout: .seconds(30)) {
+                window.layout()
+                return message(waiting.id)?.phase == .delivering
+                    && store.rows.flatMap(\.turn.messages).contains { $0.operationID != nil && $0.operationID == delivery() }
+            }
+        }
+        try await eventuallyOnMain("Up next gave way to the transcript's echo") { window.layout(); return labelled(row) == 0 && echoes() == 1 }
+        #expect(message(waiting.id)?.phase == .delivering, "a handoff is not a delivery")
+        #expect(window.element("Up next, 1 message") == nil)
+
+        // pi starts it: only native consumption marks it delivered, and it is still drawn once.
+        try Data().write(to: folder.appendingPathComponent("preflight-go"))
+        try Data().write(to: folder.appendingPathComponent("preflight-reply"))
+        try await eventuallyOnMain("delivered once pi starts it", timeout: .seconds(30)) { message(waiting.id)?.phase == .delivered }
+        try await eventuallyOnMain("drawn once, in the transcript") { window.layout(); return labelled(row) == 0 && echoes() == 1 }
+        // Nothing undelivered was resent on its own.
+        #expect(message(refused.id)?.phase == .failed && message(lost.id)?.phase == .unknown)
+        #expect(app.server.state.projects.first?.messages.count == 4, "no new message was made for a retry")
     }
 
     /// F9: before the first message there is no coordinator, so its native snapshot (empty `supportedActions`) says nothing. The

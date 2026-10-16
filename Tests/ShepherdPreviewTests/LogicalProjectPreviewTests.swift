@@ -189,6 +189,30 @@ struct LogicalProjectPreviewTests {
         _ = ref
     }
 
+    /// A paused Project holding a message with an image, beside one the engine refused: the queued one in the composer's shared Up next
+    /// (read-only, Paused, the image by name), the refused one in the transcript with the owner's reason. All from the real runtime.
+    @Test func pausedQueueWithAnImageAndARefusedMessage() async throws {
+        let (world, ref) = try await running([])
+        defer { world.stop() }
+        let vm = world.vm
+        // The stub engine refuses a prompt with "refuse" in it: a definite refusal, recorded with its reason.
+        #expect(await vm.logicalProjects.sendMessage(ref, text: "Please refuse this one so its note shows."))
+        try await eventuallyOnMain("the refusal is recorded") { vm.state.projects.first?.messages.contains { $0.phase == .failed } == true }
+        #expect(await vm.logicalProjects.setPaused(ref, true))
+        try await eventuallyOnMain("paused and acknowledged") { vm.state.projects.first.map { $0.paused && !$0.interruptPending } == true }
+        let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==")!
+        #expect(await vm.logicalProjects.sendMessage(ref, text: "Use this sketch for the reading-list layout when you continue.",
+                                                      images: [NativeImage(mimeType: "image/png", data: png, name: "reading-list-sketch.png")]))
+        try await eventuallyOnMain("the owner holds it") { vm.state.projects.first?.messages.last?.phase == .queued }
+        vm.logicalProjectPaneOpen = false
+        let ready: @MainActor () -> Bool = {
+            vm.state.projects.first.flatMap { $0.coordinatorAgentID }.flatMap { vm.projectCoordinator.conversationStore(agentID: $0) }?.rows.isEmpty == false
+        }
+        try await Preview.renderMatrix("lead-paused-queue", size: CGSize(width: 1136, height: 700), scales: [1, 1.3], ready: ready) {
+            LogicalProjectDestination(vm: vm).frame(width: 1136).background(Color.nw.bgWindow)
+        }
+    }
+
     // MARK: Full window (1600 x 900, the boards' own frame): the sidebar and the Project page side by side
 
     func window(_ vm: ShepherdViewModel, style: NWSidebarStyle) -> some View {
