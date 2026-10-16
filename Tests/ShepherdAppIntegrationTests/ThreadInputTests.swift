@@ -27,7 +27,7 @@ struct ThreadInputTests {
         // An unexpected termination returns nil, discarding observed stderr. The parent owns
         // this file, so even an AppKit exception/abort leaves its diagnostics available.
         let stderr = String(decoding: try Data(contentsOf: diagnostics), as: UTF8.self)
-        print("Native Paste (\(route)) subprocess stderr:\n\(stderr)")
+        if !stderr.isEmpty { print("Native Paste (\(route)) subprocess stderr:\n\(stderr)") }
         expectScenarioCompleted(result)
     }
 
@@ -38,11 +38,6 @@ struct ThreadInputTests {
     }
 
     static func pastingImage(_ route: String) async throws {
-        // Exit tests otherwise hide AppKit exceptions. Write immediately, not through buffered stdout.
-        func trace(_ stage: String) {
-            FileHandle.standardError.write(Data("Native Paste (\(route)): \(stage)\n".utf8))
-        }
-        trace("starting")
         AccessibilityNode.enable()
         let thread = ComposerThread(focused: true, images: true)
         defer { thread.close() }
@@ -62,7 +57,6 @@ struct ThreadInputTests {
         paste.keyEquivalentModifierMask = .command
         paste.target = editor
         #expect(editor.validateUserInterfaceItem(paste))
-        trace("pasting image")
         switch route {
         case "menu": menu.performActionForItem(at: 0)
         case "context":
@@ -93,30 +87,25 @@ struct ThreadInputTests {
         #expect(ControlPress.undersized([remove], minimum: .desktop).isEmpty)
         #expect(thread.input.attachments.isEmpty)
 
-        // Give each invoked action its own event group; no application event loop runs here.
+        // AppKit owns the event groups. A manual group spanning an await can already be
+        // closed by the editor when we resume (macOS 26), so never end it a second time.
         let undo = try #require(editor.undoManager)
-        trace("image removed; configuring undo, groupingLevel=\(undo.groupingLevel)")
-        undo.groupsByEvent = false
-        undo.beginUndoGrouping()
+        #expect(undo.groupsByEvent)
         // Plain text still goes through AppKit at the selection, with its ordinary undo.
         pasteboard.clearContents()
         pasteboard.setString("hello", forType: .string)
-        trace("pasting text, groupingLevel=\(undo.groupingLevel)")
         editor.paste(nil)
-        try await eventuallyOnMain("text paste to update the draft") { thread.store.draft == "hello" }
-        trace("ending first group, groupingLevel=\(undo.groupingLevel)")
-        undo.endUndoGrouping()
-        undo.beginUndoGrouping()
+        try await eventuallyOnMain("text paste to update the draft and close its native undo group") {
+            thread.store.draft == "hello" && undo.groupingLevel == 0
+        }
         editor.setSelectedRange(NSRange(location: 1, length: 3))
         pasteboard.clearContents()
         pasteboard.setString("i", forType: .string)
-        trace("replacing selection, groupingLevel=\(undo.groupingLevel)")
         menu.performActionForItem(at: 0)
-        try await eventuallyOnMain("text paste to replace the selection") { thread.store.draft == "hio" }
-        trace("ending replacement group, groupingLevel=\(undo.groupingLevel)")
-        undo.endUndoGrouping()
+        try await eventuallyOnMain("text paste to replace the selection and close its native undo group") {
+            thread.store.draft == "hio" && undo.groupingLevel == 0
+        }
         #expect(undo.canUndo)
-        trace("undoing, groupingLevel=\(undo.groupingLevel)")
         undo.undo()
         try await eventuallyOnMain("undo to restore the selected text") { thread.store.draft == "hello" }
         pasteboard.clearContents()
@@ -125,13 +114,11 @@ struct ThreadInputTests {
         try await eventuallyOnMain("the image to be ready to send") { thread.input.attachments.items.count == 1 }
         let bytes = thread.input.attachments.images
         try await thread.settle()
-        trace("sending, groupingLevel=\(undo.groupingLevel)")
         try thread.window.press("Send")
         try await eventuallyOnMain("the pasted bytes to reach the host") {
             thread.requests.contains { if case .send(_, _, _, let text, _, let images, _, _, _) = $0 { text == "hello" && images == bytes } else { false } }
         }
         try await eventuallyOnMain("the acknowledged image to leave the draft") { thread.input.attachments.isEmpty }
-        trace("completed")
     }
 
     @Test func nativeComposerKeysKeepNewlinesCompletionAndSendingSeparate() async throws {
