@@ -1,4 +1,7 @@
 """Protect selective PR coverage without treating filenames as Swift suite names."""
+import contextlib
+import io
+import json
 import re
 import sys
 import tempfile
@@ -16,6 +19,42 @@ def selected(filters, test_id):
 
 
 class AffectedTestsTests(unittest.TestCase):
+    def test_extension_markdown_runs_packaging_tests_but_regular_docs_do_not(self):
+        for path in ("Extensions/design-skill/SKILL.md", "Extensions/design-skill/format.md"):
+            with self.subTest(path=path):
+                self.assertTrue(ci_plan.affects_swift([path]))
+                filters = ci_plan.filters_for([path])
+                self.assertTrue(selected(filters, "ShepherdAppUnitTests.EmbeddedExtensionTests/bundled()"))
+                self.assertTrue(selected(filters, "ShepherdAppIntegrationTests.ExtensionIdentityFlowTests/launch()"))
+        self.assertFalse(ci_plan.affects_swift(["docs/design-workflow.md"]))
+
+    def test_quarantine_is_disabled_for_explicit_test_edits_and_diagnostics(self):
+        cases = [("Sources/ShepherdApp/Browser.swift", [], "false"),
+                 ("Tests/ShepherdAppIntegrationTests/ThreadJumpPressTests.swift", [], "true"),
+                 ("Package.swift", [], "true"),
+                 ("Package.swift", ["--ui-diagnostics"], "true")]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "changed.txt"
+            for changed, options, expected in cases:
+                with self.subTest(changed=changed, options=options):
+                    path.write_text(changed)
+                    output = io.StringIO()
+                    with contextlib.redirect_stdout(output):
+                        self.assertEqual(ci_plan.main(["ci_plan.py", str(path), *options]), 0)
+                    plan = dict(line.split("=", 1) for line in output.getvalue().splitlines())
+                    self.assertEqual(plan["flaky"], expected)
+
+    def test_a_changed_deep_test_runs_even_in_a_selective_feature_change(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = "Tests/ShepherdAppIntegrationTests/Reproduction.swift"
+            file = root / path
+            file.parent.mkdir(parents=True)
+            file.write_text("struct ThreadCompletionMatrixTests {\n    @Test func reproduces() {}\n}\n")
+            filters = ci_plan.filters_for(["Sources/ShepherdApp/Thread/ThreadView.swift", path], root=root)
+            self.assertTrue(selected(filters, "ShepherdAppIntegrationTests.ThreadCompletionMatrixTests/reproduces()"))
+            self.assertFalse(selected(filters, "ShepherdAppIntegrationTests.ThreadTailFlowTests/run()"))
+
     def test_adding_a_feature_regression_does_not_select_unrelated_app_tests(self):
         paths = ["Sources/ShepherdApp/BrowserHost.swift",
                  "Tests/ShepherdAppIntegrationTests/BrowserWebViewTests.swift"]
@@ -140,6 +179,37 @@ class AffectedTestsTests(unittest.TestCase):
 
 
 class FullLaneTests(unittest.TestCase):
+    def test_a_broad_module_selection_uses_four_disjoint_filtered_lanes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            paths = Path(directory) / "changed.txt"
+            paths.write_text("Sources/ShepherdSessions/NewFeature.swift\n")
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                self.assertEqual(ci_plan.main(["ci_plan.py", str(paths)]), 0)
+            plan = dict(line.split("=", 1) for line in output.getvalue().splitlines())
+        self.assertEqual(json.loads(plan["lanes"]), ["thread", "features", "app", "other"])
+        filters = json.loads(plan["filters"])
+        ids = ["ShepherdAppIntegrationTests.ThreadScrollingTests/scroll()",
+               "ShepherdAppIntegrationTests.BrowserWebViewTests/browse()",
+               "ShepherdAppIntegrationTests.AgentLifecycleTests/start()",
+               "ShepherdAppIntegrationTests.ThreadCompletionMatrixTests/reproduce()",
+               "ShepherdCoreUnitTests.AgentTests/id()",
+               "ShepherdPreviewTests.ThreadPreviewTests/render()",
+               "ShepherdRemoteUnitTests.ClientTests/identity()",
+               "DesignSurfaceKitIntegrationTests.DesignBoardViewTests/render()"]
+        ids += [f"{suite}/smoke()" for suite in ci_plan.SMOKE]
+        covered = []
+        for lane in json.loads(plan["lanes"]):
+            pattern = ci_plan.validated_lane(ids, lane, filters)
+            matches = [name for name in ids if re.search(pattern, name)]
+            self.assertTrue(matches, lane)
+            covered.extend(matches)
+        expected = [name for name in ids if selected(filters, name)]
+        self.assertCountEqual(covered, expected)
+        self.assertNotIn(ids[3], covered)
+        self.assertIn(ids[6], covered)
+        self.assertNotIn(ids[7], covered)
+
     def test_full_lanes_cover_each_native_id_once_and_keep_suites_and_sessions_together(self):
         expected = {
             "thread": ["ShepherdAppIntegrationTests.ThreadCompletionMatrixTests/run()",

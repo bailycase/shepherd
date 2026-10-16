@@ -28,12 +28,11 @@ extension Trait where Self == ConditionTrait {
         .enabled(if: TimingTests.enabled, "depends on the machine's speed: skipped on CI unless SHEPHERD_TIMING_TESTS=1")
     }
 
-    /// A test that has failed on CI without a code change. It still runs locally, on the daily
-    /// run and on a `full-ci` run (`SHEPHERD_FLAKY_TESTS=1`), and a pull request skips it, so a
-    /// red pull request means the pull request broke something. Fix the flake and drop the trait.
+    /// Known hosted-runner failures stay enabled locally, in full runs, manual diagnostics
+    /// and PRs editing tests (`SHEPHERD_FLAKY_TESTS=1`). Fix the flake and drop the trait.
     public static func flaky(_ issue: String) -> Self {
         .enabled(if: TimingTests.enabled || ProcessInfo.processInfo.environment["SHEPHERD_FLAKY_TESTS"] == "1",
-                 "flaky on a pull request: \(issue). Runs locally, daily and on full-ci.")
+                 "quarantined on this PR: \(issue). Enable with SHEPHERD_FLAKY_TESTS=1.")
     }
 }
 

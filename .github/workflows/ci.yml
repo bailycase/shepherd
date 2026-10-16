@@ -51,6 +51,7 @@ jobs:
       swift: ${{ steps.plan.outputs.swift }}
       filters: ${{ steps.plan.outputs.filters }}
       lanes: ${{ steps.plan.outputs.lanes }}
+      flaky: ${{ steps.plan.outputs.flaky }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -74,8 +75,7 @@ jobs:
           if [ "$EVENT" = workflow_dispatch ] && [ "$DIAGNOSTICS" = ui ]; then args=(--ui-diagnostics); fi
           python3 scripts/ci_plan.py changed.txt "${args[@]}" | tee -a "$GITHUB_OUTPUT"
 
-  # The release workflow's rules (scripts/release.py), the CI helper's own tests, the embedded
-  # extension copies and the docs' size and link guards. Stdlib only; it costs no macOS runner.
+  # Release packaging, CI planning and docs guards. Stdlib only; no macOS runner needed.
   release-rules:
     name: release rules
     needs: plan
@@ -170,22 +170,18 @@ jobs:
       - name: Run tests
         env:
           CI: "true"
-          # Tests marked `.flaky` run on the full lanes (the daily run, master, full-ci), never on
-          # an ordinary pull request's selected lane.
-          SHEPHERD_FLAKY_TESTS: ${{ matrix.lane != 'selected' && '1' || '0' }}
+          # Full runs, manual diagnostics and test edits include quarantined rendering tests.
+          SHEPHERD_FLAKY_TESTS: ${{ needs.plan.outputs.flaky == 'true' && '1' || '0' }}
           SWIFT_FILTERS: ${{ needs.plan.outputs.filters }}
           SWIFT_LANE: ${{ matrix.lane }}
-          # The manual UI diagnostics keep the deep suites; an ordinary pull request leaves them out.
-          VALIDATE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.diagnostics == 'ui' && '--validate-deep' || '--validate' }}
         run: |
           set -o pipefail
           swift test list --skip-build $SWIFTPM_FLAGS > "$RUNNER_TEMP/swift-tests.txt"
           printf 'Native test IDs listed (before filtering): %s\n' "$(wc -l < "$RUNNER_TEMP/swift-tests.txt")"
           if [ "$SWIFT_LANE" != selected ]; then
-            [ "$SWIFT_FILTERS" = '[]' ]
-            filter=$(python3 scripts/ci_plan.py --lane "$RUNNER_TEMP/swift-tests.txt" "$SWIFT_LANE")
+            filter=$(python3 scripts/ci_plan.py --lane "$RUNNER_TEMP/swift-tests.txt" "$SWIFT_LANE" "$SWIFT_FILTERS")
           else
-            filter=$(python3 scripts/ci_plan.py "$VALIDATE" "$RUNNER_TEMP/swift-tests.txt" "$SWIFT_FILTERS")
+            filter=$(python3 scripts/ci_plan.py --validate "$RUNNER_TEMP/swift-tests.txt" "$SWIFT_FILTERS")
           fi
           printf 'Swift test flags: --no-parallel --skip-build %s; selection: %s\n' "$SWIFTPM_FLAGS" "$filter"
           swift test --no-parallel --skip-build $SWIFTPM_FLAGS --filter "$filter" 2>&1 | tee "$RUNNER_TEMP/swift-test.log"

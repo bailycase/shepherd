@@ -299,9 +299,9 @@ class PlanTests(unittest.TestCase):
                 filters = ci_plan.filters_for([path])
                 self.assertTrue(filters, "a module path stays selective")
                 for pattern in expected:
-                    self.assertIn(pattern, filters)
+                    self.assertIn(ci_plan.FAST_ONLY + pattern, filters)
                 for pattern in absent:
-                    self.assertNotIn(pattern, filters)
+                    self.assertNotIn(ci_plan.FAST_ONLY + pattern, filters)
 
     def test_a_selected_run_never_includes_the_deep_suites(self):
         ids = ["ShepherdAppIntegrationTests.ThreadCompletionMatrixTests/a()",
@@ -314,7 +314,6 @@ class PlanTests(unittest.TestCase):
         filters = ci_plan.filters_for(["Sources/ShepherdApp/Thread/ThreadView.swift"])
         pattern = ci_plan.validated_filter(ids, filters)
         self.assertEqual([i for i in ids[:7] if re.search(pattern, i)], ids[3:7])
-        self.assertEqual([i for i in ids[:7] if re.search(ci_plan.validated_filter(ids, filters, deep=True), i)], ids[:2] + ids[3:7])
         # The full lanes and the manual diagnostics still cover them.
         covered = {i for lane in ci_plan.FULL_LANES for i in ids if re.search(ci_plan.FULL_LANES[lane], i)}
         self.assertEqual(covered, set(ids))
@@ -347,8 +346,8 @@ class PlanTests(unittest.TestCase):
 
     def test_every_selected_pattern_must_match_native_test_ids(self):
         ids = ["Module.Suite/a()", "Other.OtherSuite/b()"]
-        self.assertEqual(ci_plan.validated_filter(ids, [r"^Module\.", r"^Other\."], deep=True), r"(?:^Module\.)|(?:^Other\.)")
-        self.assertEqual(ci_plan.validated_filter(ids, [r"^Module\."]), f"(?!{ci_plan.DEEP_PATTERN})(?:(?:^Module\.))")
+        self.assertEqual(ci_plan.validated_filter(ids, [r"^Module\.", r"^Other\."]), r"(?:^Module\.)|(?:^Other\.)")
+        self.assertEqual(ci_plan.validated_filter(ids, [r"^Module\."]), r"(?:^Module\.)")
         for patterns in ([], ["never_matches"], ["^Module", "renamed_suite"], ["("]):
             with self.subTest(patterns=patterns), self.assertRaises((ValueError, re.error)):
                 ci_plan.validated_filter(ids, patterns)
@@ -391,9 +390,10 @@ class PlanTests(unittest.TestCase):
                 self.assertEqual(actual, "UI diagnostics" if event == "workflow_dispatch" and diagnostic == "ui" else "CI")
         suites = ("ComposerMenuTests", "ThreadCodeBlockTests", "PaneControlTests", "ThreadScrollingTests",
                   "IdleCostTests", "ThreadCompletionMatrixTests", "ThreadCompletionReproductionTests",
-                  "RemoteBrowserDriveTests", "ThreadJumpPressTests", "ThreadTailGuardTests")
+                  "RemoteBrowserDriveTests", "ThreadJumpPressTests", "ThreadTailGuardTests",
+                  "ThreadTailFlowTests", "ThreadSendScrollTests", "ThreadBlankScreenTests", "DesignPerformanceTests")
         ids = [f"ShepherdAppIntegrationTests.{name}/case()" for name in suites]
-        pattern = ci_plan.validated_filter(ids, ci_plan.UI_DIAGNOSTICS, deep=True)
+        pattern = ci_plan.validated_filter(ids, ci_plan.UI_DIAGNOSTICS)
         self.assertEqual(len(ci_plan.UI_DIAGNOSTICS), len(suites))
         self.assertTrue(all(re.search(pattern, test_id) for test_id in ids))
         self.assertIsNone(re.search(pattern, "ShepherdAppIntegrationTests.UnrelatedTests/case()"))
@@ -459,19 +459,21 @@ class PlanTests(unittest.TestCase):
         }
         '''
         for lane, selected in expected.items():
-            for status in (0, 1, 23, 134):
-                with self.subTest(lane=lane, status=status), tempfile.TemporaryDirectory() as directory:
+            for status, filters in ((status, filters) for status in (0, 1, 23, 134)
+                                    for filters in ([], [r"^(?!NewTarget\.)"])):
+                matches = [name for name in selected if not filters or re.search(filters[0], name)]
+                with self.subTest(lane=lane, status=status, filters=filters), tempfile.TemporaryDirectory() as directory:
                     result = subprocess.run(["bash", "-eu", "-c", fixture + script], cwd=ROOT,
                                             env={**os.environ, "RUNNER_TEMP": directory, "SWIFTPM_FLAGS": "",
-                                                 "TEST_IDS": "\n".join(ids), "SWIFT_FILTERS": "[]",
+                                                 "TEST_IDS": "\n".join(ids), "SWIFT_FILTERS": json.dumps(filters),
                                                  "SWIFT_LANE": lane, "STATUS": str(status)},
                                             capture_output=True, text=True, timeout=5)
                     self.assertEqual(result.returncode, status, result.stderr)
                     root = Path(directory)
-                    self.assertEqual((root / "swift-selected-tests.txt").read_text().splitlines(), selected)
+                    self.assertEqual((root / "swift-selected-tests.txt").read_text().splitlines(), matches)
                     args = (root / "args").read_text().splitlines()
                     pattern = args[args.index("--filter") + 1]
-                    self.assertEqual([name for name in ids if re.search(pattern, name)], selected)
+                    self.assertEqual([name for name in ids if re.search(pattern, name)], matches)
                     self.assertEqual((root / "swift-test.log").read_text(), "native lane run\n")
 
     def test_missing_gui_session_fails_before_compiling_or_testing_on_the_mini(self):
