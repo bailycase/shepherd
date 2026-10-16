@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import GhosttyTerminal
 import ShepherdRemote
 import ShepherdTestSupport
@@ -12,14 +13,28 @@ import UniformTypeIdentifiers
 @MainActor
 struct ThreadInputTests {
     @Test(arguments: ["direct", "menu", "shortcut", "context"])
-    func clipboardImageUsesNativePaste(_ route: String) async {
-        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent, \.standardErrorContent]) { [route = route as String] in
+    func clipboardImageUsesNativePaste(_ route: String) async throws {
+        let diagnostics = try makeScratchDirectory("paste-diagnostics").appendingPathComponent("stderr.log")
+        try #require(FileManager.default.createFile(atPath: diagnostics.path, contents: nil))
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { [route = route as String, diagnosticsPath = diagnostics.path as String] in
+            let stderr = dup(STDERR_FILENO)
+            try #require(stderr >= 0)
+            // Restore Testing's stream before its subprocess completion protocol runs.
+            defer { dup2(stderr, STDERR_FILENO); close(stderr) }
+            try Self.capturePasteDiagnostics(at: diagnosticsPath)
             await completingScenario { try await Self.pastingImage(route) }
         }
-        if let result, !result.standardErrorContent.isEmpty {
-            print("Native Paste (\(route)) subprocess stderr:\n\(String(decoding: result.standardErrorContent, as: UTF8.self))")
-        }
+        // An unexpected termination returns nil, discarding observed stderr. The parent owns
+        // this file, so even an AppKit exception/abort leaves its diagnostics available.
+        let stderr = String(decoding: try Data(contentsOf: diagnostics), as: UTF8.self)
+        print("Native Paste (\(route)) subprocess stderr:\n\(stderr)")
         expectScenarioCompleted(result)
+    }
+
+    nonisolated private static func capturePasteDiagnostics(at path: String) throws {
+        let file = try FileHandle(forWritingTo: URL(fileURLWithPath: path))
+        defer { try? file.close() }
+        try #require(dup2(file.fileDescriptor, STDERR_FILENO) == STDERR_FILENO)
     }
 
     static func pastingImage(_ route: String) async throws {
