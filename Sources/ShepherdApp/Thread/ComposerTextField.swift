@@ -225,8 +225,16 @@ struct ComposerTextField: NSViewRepresentable {
         }
         override func paste(_ sender: Any?) {
             guard isEditable else { return }
+            let board = pasteboard()
+            let providers = AppImageDrop.providers(from: board)
+            if !providers.isEmpty, let attach { attach(providers); return }
+            guard let type = preferredPasteboardType(from: board.types ?? [], restrictedToTypesFrom: nil) else {
+                NSSound.beep()
+                return
+            }
             breakUndoCoalescing()
-            if !readSelection(from: pasteboard()) { NSSound.beep() }
+            // The untyped reader is the Services entry point, not the selected-text paste path.
+            if !super.readSelection(from: board, type: type) { NSSound.beep() }
             breakUndoCoalescing()
         }
         override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
@@ -234,11 +242,6 @@ struct ComposerTextField: NSViewRepresentable {
                 return isEditable && pasteboard().availableType(from: readablePasteboardTypes) != nil
             }
             return super.validateUserInterfaceItem(item)
-        }
-        override func readSelection(from pasteboard: NSPasteboard) -> Bool {
-            let providers = AppImageDrop.providers(from: pasteboard)
-            if !providers.isEmpty, let attach { attach(providers); return true }
-            return super.readSelection(from: pasteboard)
         }
         override var readablePasteboardTypes: [NSPasteboard.PasteboardType] {
             super.readablePasteboardTypes + NSImage.imageTypes.map { NSPasteboard.PasteboardType($0) } + [.fileURL]
