@@ -56,8 +56,7 @@ public enum MarkdownFixtures {
         """
     }
 
-    /// A wide table (more columns than the thread holds), a keycap, and fences Shepherd shows as
-    /// source: mermaid and math.
+    /// A wide table (more columns than the thread holds), a keycap, a Mermaid chart and math source.
     public static let wideReply = """
     Benchmarks across the fixtures (press <kbd>⌘</kbd><kbd>C</kbd> on a table to copy it as Markdown):
 
