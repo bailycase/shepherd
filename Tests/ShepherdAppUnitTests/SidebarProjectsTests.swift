@@ -323,18 +323,53 @@ struct SidebarProjectsTests {
         #expect(row?.missing == true && row?.newThreadSpace == nil)
     }
 
-    /// Pinned spaces lead their siblings in pin order: a pinned root moves with its children, a
-    /// pinned child leads its parent's children, and the rest keep the saved order.
-    @Test func pinnedSpacesLeadTheirSiblingsInPinOrder() {
+    /// A pin lifts a child out of its parent, with its own descendants, without changing storage.
+    @Test(arguments: [false, true])
+    func pinnedSpacesLeaveTheirParentsForASeparateSection(grouped: Bool) {
         let dotfiles = Fixture.space("dotfiles", path: "/code/dotfiles")
         let hub = Fixture.space("hub", path: shepherd.path + "/hub")
         let admin = Fixture.space("admin", path: shepherd.path + "/admin")
-        let state = ShepherdState(spaces: [dashboard, shepherd, admin, hub, dotfiles])
+        let leaf = Space(name: "leaf", path: hub.path + "/leaf", parentID: hub.id, parentIsExplicit: true)
+        let state = ShepherdState(spaces: [dashboard, shepherd, admin, hub, dotfiles, leaf],
+                                  agents: [agent("hub work", in: hub, at: 1), agent("leaf work", in: leaf, status: .blocked, at: 2)])
         let pinned = SidebarDerivation.tree(SidebarSource(local: state),
-                                            options: SidebarTreeOptions(pinnedSpaces: [dotfiles.id, shepherd.id, hub.id]))
-        #expect(pinned.projects.map(\.name) == ["dotfiles", "shepherd", "hub", "admin", "dashboard-web"])
-        #expect(pinned.projects.filter(\.pinned).map(\.name) == ["dotfiles", "shepherd", "hub"])
-        #expect(tree(state).projects.map(\.name) == ["dashboard-web", "shepherd", "admin", "hub", "dotfiles"])
+                                            options: SidebarTreeOptions(groupByHost: grouped, pinnedSpaces: [hub.id, dotfiles.id]))
+        #expect(pinned.sections.count == 2)
+        #expect(pinned.sections.first?.id == "header.pinnedSpaces")
+        #expect(pinned.sections.first?.projects.map(\.name) == ["hub", "leaf", "dotfiles"])
+        #expect(pinned.sections.last?.projects.map(\.name) == ["dashboard-web", "shepherd", "admin"])
+        #expect(pinned.projects.first?.parentID == nil)
+        #expect(pinned.projects.first?.ancestorIDs == [])
+        #expect(pinned.projects.first?.childThreadCount == 1)
+        #expect(pinned.projects.first?.rollup == .waiting)
+        #expect(pinned.projects.first { $0.space == shepherd.id }?.childThreadCount == 0)
+        #expect(pinned.projects.first { $0.space == shepherd.id }?.rollup == .quiet)
+        #expect(pinned.projects.first { $0.space == leaf.id }?.ancestorIDs == [.local(hub.id)])
+        let collapsed: Set<String> = [SidebarProjectID.local(shepherd.id).key]
+        #expect(pinned.visibleRows(collapsed: collapsed).map(\.title) == ["hub work", "leaf work"])
+        let items = pinned.items(collapsed: collapsed, selected: nil, shortcuts: true, connected: [])
+        let rows = items.compactMap { item -> SidebarProjectRow? in
+            if case .project(let row) = item { return row }; return nil
+        }
+        #expect(rows.first?.depth == 0 && rows.first?.pinned == true && rows.first?.movable == false)
+        #expect(rows.first { $0.space == dashboard.id }?.movable == true)
+        #expect(Set(items.map(\.id)).count == items.count)
+        #expect(tree(state).sections.count == 1)
+        #expect(tree(state).projects.map(\.name) == ["dashboard-web", "shepherd", "admin", "hub", "leaf", "dotfiles"])
+        let both = SidebarDerivation.tree(SidebarSource(local: state),
+                                          options: SidebarTreeOptions(pinnedSpaces: [hub.id, shepherd.id]))
+        #expect(both.sections.first?.projects.map(\.name) == ["hub", "leaf", "shepherd", "admin"])
+        #expect(both.projects.filter(\.pinned).allSatisfy { $0.ancestorIDs.isEmpty })
+    }
+
+    @Test func hiddenOrStalePinsDoNotCreateAnEmptyPinnedSection() {
+        var hidden = shepherd
+        hidden.sidebarHidden = true
+        let tree = SidebarDerivation.tree(SidebarSource(local: ShepherdState(spaces: [hidden, dashboard])),
+                                          options: SidebarTreeOptions(pinnedSpaces: [shepherd.id, SpaceID()]))
+        #expect(tree.sections.map(\.header) == [.projects])
+        #expect(tree.projects.map(\.name) == ["dashboard-web"])
+        #expect(tree.hiddenProjects.map(\.id) == [shepherd.id])
     }
 
     @Test func pinsToggleAndForgetSpacesThatAreGone() {
