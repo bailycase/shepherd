@@ -8,13 +8,19 @@ sizes are `NWQueueMetrics`): a card directly above the composer card, in the sam
 `AppLayout.menuGap` (8pt) above it, under any widgets and banners. The host holds the queue
 ([native-thread.md](../native-thread.md) › The queue; its rules are `NativeQueueRules`, shared by
 the host and every client), so every Mac viewing the agent sees and edits the same one. Nothing in
-it has reached pi, except a Steering row. Each message can be steered now, edited, reordered, or
-deleted. Waiting is what Return does: the message goes when pi finishes this turn. **Steer now**
+it has reached pi, except a Steering row. Each message can be steered now, run in a subagent,
+edited, reordered, or deleted. Waiting is what Return does: the message goes when pi finishes this turn. **Steer now**
 stops pi and sends it at once. Nothing steers at pi's next step any more (the user's call,
 2026-09-30), so a message sent while pi works is a queued row from the start, numbered in the order
 it goes. A Steering row (below) only shows where Steer now falls back to a steer: a host that
 cannot stop pi, a compaction, or an older client's send.
 
+- **Run in subagent:** a hover/focus action on Mac, a long-press menu action on iPhone/iPad, and
+  a VoiceOver action. Its slot adds one icon width and gap without moving buttons on hover. It
+  forks the thread through its last complete tool batch and starts the message independently,
+  without stopping the parent. The row stays until startup succeeds; a failure retains it and
+  pauses delivery. An unknown outcome requires retrying this action or checking the tray before
+  deleting the message. Projects and messages carrying design-reference grants are refused.
 - **Placement:** it shows while it has a row to show: a message, or an Undo row (a lone Undo row
   reads "Up next 0"). The card never moves: the stack grows upward, and the thread's inset follows
   the composer's measured height, so the thread keeps its last turn in view
@@ -37,10 +43,12 @@ cannot stop pi, a compaction, or an older client's send.
   closed while dragging), its number (`NWQueueNumber`: `.nwMono(10.5)` `textSecondary` in an 18pt
   `lineStrong` ring: the order it goes, not a count, never counting Steering or Deleted rows; it
   rolls when the order changes), the text in `.nwSans(13)` `textPrimary` on one line, truncated at
-  the tail (a click edits it; tooltip "Edit"), its attachments (below), and an 82pt slot
-  (`NWQueueMetrics.actionsWidth`) that always keeps room for its actions, so hovering never
+  the tail (a click edits it; tooltip "Edit"), its attachments (below), and an 82pt base slot
+  (`NWQueueMetrics.actionsWidth`), plus an icon and gap for Run in subagent when supported.
+  The slot always keeps room for its actions, so hovering never
   re-truncates the text. The actions are built only while the row is hovered or focused: Steer now
-  (`arrow.turn.down.right`; **Send now** while pi is idle), Edit (`pencil`), and Delete (`trash`),
+  (`arrow.turn.down.right`; **Send now** while pi is idle), Run in subagent (`NWGlyph.gitBranch`,
+  on capable hosts), Edit (`pencil`), and Delete (`trash`),
   26pt circular icon buttons (`.nwIcon`: 14pt glyphs in `textSecondary`; under the pointer
   `textPrimary` on `bgHover`, and `bgSelected` while pressed) 2pt apart, with system tooltips
   saying what they do and naming their keys ("Stop the agent and send this now  ⌘↩", "Delete  ⌫").
