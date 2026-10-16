@@ -35,12 +35,12 @@ import SwiftUI
 #Preview("Capsule composer") {
     NWPreviewBoth {
         VStack(spacing: NW.Space.xl) {
-            NWCapsuleComposer(isFocused: false) {
+            NWCapsuleComposer {
                 Text("Follow up…").font(.nw(.body)).foregroundStyle(.nw.textTertiary).frame(maxWidth: .infinity, alignment: .leading)
             } action: {
                 NWComposerActionButton(.send, enabled: false) {}
             }
-            NWCapsuleComposer(isFocused: true) {
+            NWCapsuleComposer {
                 Text("Keep the PR title short").font(.nw(.body)).frame(maxWidth: .infinity, alignment: .leading)
             } action: {
                 NWComposerActionButton(.send) {}
