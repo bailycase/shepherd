@@ -53,9 +53,10 @@ final class ShepherdDiagnostics {
         let cacheID = defaults.string(forKey: "shepherd.diagnostics.cacheID").flatMap(UUID.init(uuidString:)) ?? UUID()
         defaults.set(cacheID.uuidString, forKey: "shepherd.diagnostics.cacheID")
         let directory = root.appendingPathComponent(cacheID.uuidString, isDirectory: true)
+        // Enumeration can resolve support-path aliases; identify the active cache by its name.
         // Only our own diagnostics directories, never session or configuration files.
         if let retired = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) {
-            for url in retired where url != directory { try? FileManager.default.removeItem(at: url) }
+            for url in retired where url.lastPathComponent != cacheID.uuidString { try? FileManager.default.removeItem(at: url) }
         }
         configuration.timeoutIntervalForRequest = 15
         configuration.timeoutIntervalForResource = 30

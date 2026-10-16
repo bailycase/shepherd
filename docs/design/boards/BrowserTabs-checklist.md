@@ -102,7 +102,7 @@ Not drawn by any board and built anyway: a long title (truncates, tooltip has th
 - Strings the model has not produced here: remote notices on a real remote host, the claim, the agent's real tool
   notes. The pane's strings for tabs, notes and the list come from the app's own code and are asserted in the tests.
 - Page content: a capture draws a web view blank, so the page area is white in the real renders.
-- The running app (`Shepherd (Dev)`), and a `design-reviewer` run.
+- The running app (`Shepherd (Dev)`).
 - At 9 or more tabs (the model caps at 8).
 
 ## Departures (the user decides)

@@ -1,4 +1,0 @@
-NSApplication.isRunning: true
-Fonts available: true
-Off-screen windows, no posted events or focus.
-Live SessionServer, project-file IO, authenticated loopback peer and WebKit cookie store.
