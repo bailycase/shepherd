@@ -15,7 +15,7 @@ swift build                                   # every package target
 swift test --filter UnitTests                 # fast tier: seconds
 swift test --filter IntegrationTests          # real server, stub pi, git, off-screen windows
 SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter PreviewTests   # PNG of every surface
-PI_PACKAGE_DIR="$(npm root -g)/@earendil-works/pi-coding-agent" node --test Tests/Extensions/*.test.mjs
+PI_PACKAGE_DIR=/path/to/pinned/pi/package node --test Tests/Extensions/*.test.mjs
 python3 -m unittest discover -s Tests/Release # release rules, docs size and link guards
 python3 scripts/design_section.py "<board or heading>"   # one section of a design spec
 python3 scripts/design_section.py --docs docs "<heading>"  # one section of any doc in docs/
@@ -37,7 +37,7 @@ Nightly PRs run unit, smoke and affected suites; docs alone run no Swift
 | `Sources/TerminalSurfaceKit`, `DesignSurfaceKit` | Ghostty and design-board web view adapters |
 | `Packages/ShepherdUI` | Night Watch tokens and `NW*` components; imports no Shepherd module |
 | `App/`, `App/iOS` | Mac launcher shim, entitlements, Info.plist; the iPhone and iPad client |
-| `Extensions/` | canonical pi extensions (TypeScript), embedded in the app as literals |
+| `Extensions/` | canonical pi extensions and scripts, shipped as bundle resources |
 | `Tests/` | `*UnitTests`, `*IntegrationTests`, `ShepherdPreviewTests`, `Release` (Python) |
 
 How it fits together: [ARCHITECTURE.md](ARCHITECTURE.md).
@@ -50,6 +50,8 @@ How it fits together: [ARCHITECTURE.md](ARCHITECTURE.md).
   process, git or a window is an integration test; a visible change gets a preview in both
   appearances. Swift Testing only. Unit tests use no processes, sockets, windows, git or sleeps.
   Integration tests use `Tests/ShepherdTestSupport` and wait with `eventually`, never a fixed sleep.
+- Start with the affected code and the smallest relevant check. Full suites are for shared changes
+  or investigating a wider regression, not every edit.
 - Fix a doc the change makes wrong. Don't write new docs for a feature unless asked.
 - Keep tool output small (`| head`, `--stat`, a file by range). Hand a broad search or a long log
   to a helper (`shepherd_child_start`).

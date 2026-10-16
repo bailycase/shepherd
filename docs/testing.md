@@ -11,7 +11,7 @@ Tests come in tiers, and the switch is `--filter` on target names.
 | Integration | `ShepherdSessionsIntegrationTests`, `ShepherdAppIntegrationTests`, `DesignSurfaceKitIntegrationTests` | A real `SessionServer`, the stub pi, git, off-screen windows, web views. |
 | Previews | `ShepherdPreviewTests` | Off-screen renders of every surface, light and dark, as PNGs. Skipped unless `SHEPHERD_PREVIEW_DIR` is set. |
 | Extensions | `Tests/Extensions/*.test.mjs` | The bundled pi extensions against the staged engine and a local fake provider (`PI_PACKAGE_DIR`). |
-| Release | `Tests/Release` (Python `unittest`) | `scripts/release.py`, `pi_engine.py`, `ci_plan.py`, the embedded-extension byte identity, the docs guards. |
+| Release | `Tests/Release` (Python `unittest`) | `scripts/release.py`, `pi_engine.py`, `ci_plan.py`, packaging checks and the docs guards. |
 
 Which tier: a model, parser, projection or presentation change gets a unit test; a server
 mutation, process lifecycle, socket, remote-protocol or git flow gets an integration test; a
@@ -23,7 +23,7 @@ part in `withKnownIssue`.
 swift test --filter UnitTests
 swift test --filter IntegrationTests
 SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter ThreadPreviewTests
-PI_PACKAGE_DIR="$(npm root -g)/@earendil-works/pi-coding-agent" node --test Tests/Extensions/*.test.mjs
+PI_PACKAGE_DIR=/path/to/pinned/pi/package node --test Tests/Extensions/*.test.mjs
 python3 -m unittest discover -s Tests/Release
 CI=true swift test            # what CI runs: timing-sensitive tests skipped
 ```
@@ -92,10 +92,9 @@ one process.
 skipped when `CI=true` unless `SHEPHERD_TIMING_TESTS=1`. Never mark a test timing-sensitive to
 hide a short wait; give it a condition to wait on.
 
-**Flaky tests** (`.flaky("why")`) have failed on CI without a code change. They run locally and on
-the full lanes (`SHEPHERD_FLAKY_TESTS=1`: the daily run, `master`, a `full-ci` label) and a pull
-request's selected lane skips them, so a red pull request means the pull request broke something.
-Fix the flake and drop the trait.
+**Quarantined rendering tests** use `.flaky("why")`. They run locally, in full runs, manual
+diagnostics and PRs editing tests. `SHEPHERD_FLAKY_TESTS=1` enables them explicitly. Do not use
+this trait for repository-safety checks. Investigate failures and remove the trait after a fix.
 
 **Opt-in runs.** `SHEPHERD_LIVE_MODEL` runs the use-case suite against a real model.
 `SHEPHERD_ENGINE_SMOKE` runs `EngineSmokeTests` and `EngineThreadTests` against the shipped engine
@@ -137,11 +136,11 @@ early with status 0 also passes. `ModelSettingsPopoverTests` is the worked examp
 `scripts/ci_plan.py` picks what runs from the changed paths: docs, templates and the Xcode
 project run no Swift; a pull request runs the unit suites, the startup and identity smoke tests
 and the integration suites of the areas its paths touch, and a path no area claims runs its
-module's suites (`ShepherdApp` runs the app integration suites and the previews; `ShepherdSessions`
-those and the sessions suites). Shared contracts (`ShepherdCore`, `ShepherdProtocol`, the test
+module's suites. Broad app, sessions and remote selections use four filtered lanes, not one serial
+runner. Remote-client unit tests remain in every Swift run. Shared contracts (`ShepherdCore`, `ShepherdProtocol`, the test
 support, `Package.swift`, the engine pin, the script itself), `master`, the daily run and a
 `full-ci` label run everything across four hosted lanes. The pixel-scanning suites in
 `ci_plan.DEEP` (the completion matrix and reproduction, tail flow, send scrolling, blank screen,
-design performance: about twelve minutes) run only there and on the manual UI diagnostics
-dispatch. `nightly` ships without rerunning tests. Failed Swift runs keep the log and the
+design performance) normally run only there and on the manual UI diagnostics dispatch. A changed
+test file still runs its own tests, including slow diagnostics. `nightly` ships without rerunning tests. Failed Swift runs keep the log and the
 completion captures as a seven-day artifact.
