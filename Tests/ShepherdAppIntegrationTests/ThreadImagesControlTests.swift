@@ -311,14 +311,11 @@ struct ThreadImagesControlTests {
         try await eventuallyOnMain("the second image") { state.current?.name == "refunds-dashboard.png" }
         try await eventuallyOnMain("the arrows swap") { window.controls().first { $0.label == "Next image" }?.isEnabled == false }
         #expect(window.controls().first { $0.label == "Previous image" }?.isEnabled == true)
-        // A click on the scrim, outside the picture and its pill, closes the viewer.
-        window.window.contentView?.layoutSubtreeIfNeeded()
-        let corner = NSPoint(x: NWImageViewerMetrics.margin / 2, y: window.window.frame.height - NWImageViewerMetrics.margin / 2)
-        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
-            let event = try #require(NSEvent.mouseEvent(with: type, location: corner, modifierFlags: [], timestamp: 0,
-                                                        windowNumber: window.window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
-            window.window.sendEvent(event)
-        }
+        // The scrim, outside the picture and its pill, is a control of its own that closes the viewer. It is pressed as VoiceOver presses it:
+        // a synthetic click into this never-key window is not delivered to SwiftUI's gesture on a headless runner.
+        let scrim = try control("Close viewer")
+        #expect(scrim.frame.width >= frame.width - 1 && scrim.frame.height >= frame.height - 1, "the scrim takes the whole window: \(scrim.frame)")
+        try window.press("Close viewer")
         try await eventuallyOnMain("a click on the scrim closes the viewer") { vm.imageViewer == nil }
     }
 }
