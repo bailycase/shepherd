@@ -212,7 +212,7 @@ private struct SkillListRow: View, Equatable {
                 HStack(spacing: NW.Space.m + NW.Space.xxs) {
                     VStack(alignment: .leading, spacing: MobileLayout.skillLineSpacing) {
                         Text(skill.name)
-                            .font(.nwMono(MobileLayout.skillNameSize, .semibold))
+                            .font(.nwSans(MobileLayout.skillNameSize, .bold))
                             .foregroundStyle(skill.isOn ? nw.textPrimary : nw.textSecondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -233,6 +233,11 @@ private struct SkillListRow: View, Equatable {
                     Color.clear
                         .frame(width: MobileLayout.skillSwitchSlot, height: 1)
                         .accessibilityHidden(true)
+                    Image(systemName: "chevron.right")
+                        .font(.nw(.caption, weight: .semibold))
+                        .foregroundStyle(nw.textTertiary)
+                        .frame(width: MobileLayout.skillChevronSlot)
+                        .accessibilityHidden(true)
                 }
                 .padding(.vertical, NW.Space.m)
                 .padding(.horizontal, NW.Space.l + NW.Space.xxs)
@@ -245,7 +250,7 @@ private struct SkillListRow: View, Equatable {
             Toggle(skill.name, isOn: Binding(get: { skill.isOn }, set: toggle))
                 .toggleStyle(.nwSwitch)
                 .labelsHidden()
-                .padding(.trailing, NW.Space.l + NW.Space.xxs)
+                .padding(.trailing, NW.Space.l + NW.Space.xxs + MobileLayout.skillChevronSlot + NW.Space.m + NW.Space.xxs)
         }
         .overlay(alignment: .top) { if !first { NWHairline() } }
     }
