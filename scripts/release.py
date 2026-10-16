@@ -544,11 +544,11 @@ def verify_app(path: str, key: str, version: str | None = None) -> list[str]:
 # Every pi extension and node script the app installs ships in ShepherdSessions' resource bundle
 # (Sources/ShepherdSessions/Extensions, a symlink to Extensions/). An app without one is an app
 # whose agents start without their tools.
-EXTENSIONS_BUNDLE = os.path.join("Contents", "Resources", "Shepherd_ShepherdSessions.bundle", "Contents", "Resources", "Extensions")
+EXTENSIONS_BUNDLE = os.path.join("Contents", "Resources", "Shepherd_ShepherdSessions.bundle", "Contents", "Resources")
 
 
 def extension_problems(app: str) -> list[str]:
-    """The extensions the repository ships that the app's resource bundle lacks."""
+    """Missing, linked or stale extensions in the app's flattened resource bundle."""
     source = os.path.join(pi_engine.ROOT, "Extensions")
     bundled = os.path.join(app, EXTENSIONS_BUNDLE)
     if not os.path.isdir(bundled):
@@ -557,8 +557,13 @@ def extension_problems(app: str) -> list[str]:
     for directory, _dirs, files in os.walk(source):
         for name in files:
             relative = os.path.relpath(os.path.join(directory, name), source)
-            if not os.path.isfile(os.path.join(bundled, relative)):
-                problems.append(f"extensions: {relative} is not in the bundle")
+            target = os.path.join(bundled, name)
+            if os.path.islink(target) or not os.path.isfile(target):
+                problems.append(f"extensions: {relative} is not a bundled file")
+                continue
+            with open(os.path.join(directory, name), "rb") as original, open(target, "rb") as installed:
+                if original.read() != installed.read():
+                    problems.append(f"extensions: {relative} differs from the source")
     return sorted(problems)
 
 

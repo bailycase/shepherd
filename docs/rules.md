@@ -23,8 +23,8 @@ change.
 
 `Extensions/` holds every pi extension and node script Shepherd ships, and the design skill in
 `Extensions/design-skill/`. `Sources/ShepherdSessions/Extensions` is a symlink to it, declared as a
-resource, so the files ride in `Shepherd_ShepherdSessions.bundle` and `EmbeddedExtensions.source(name)`
-reads them. Each `*Extension.swift` installs its file into the support directory (or the private pi
+processed resource. SwiftPM flattens the filenames into `Shepherd_ShepherdSessions.bundle`;
+`EmbeddedExtensions.source(name)` resolves logical paths by basename. Each `*Extension.swift` installs its file into the support directory (or the private pi
 home, for `CLIProxyAPIExtension`, `GoalExtension` and `ServiceTierExtension`) and rewrites it when
 the content differs. Editing a `.ts` file is the whole change.
 

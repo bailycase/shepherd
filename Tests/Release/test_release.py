@@ -608,11 +608,10 @@ class VerifyAppTests(unittest.TestCase):
         """The resource bundle with a copy of every file under the repository's Extensions/."""
         source = os.path.join(release.pi_engine.ROOT, "Extensions")
         bundled = os.path.join(path, release.EXTENSIONS_BUNDLE)
+        os.makedirs(bundled, exist_ok=True)
         for directory, _dirs, files in os.walk(source):
             for name in files:
-                relative = os.path.relpath(os.path.join(directory, name), source)
-                os.makedirs(os.path.dirname(os.path.join(bundled, relative)), exist_ok=True)
-                open(os.path.join(bundled, relative), "w").close()
+                shutil.copyfile(os.path.join(directory, name), os.path.join(bundled, name))
 
     def info(self, key, **overrides):
         app = release.APPS[key]
@@ -642,10 +641,23 @@ class VerifyAppTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             path = self.make_app(root, "Shepherd.app", **self.info("main"))
             os.remove(os.path.join(path, release.EXTENSIONS_BUNDLE, "shepherd-panes.ts"))
-            os.remove(os.path.join(path, release.EXTENSIONS_BUNDLE, "design-skill", "SKILL.md"))
+            os.remove(os.path.join(path, release.EXTENSIONS_BUNDLE, "SKILL.md"))
             self.assertEqual(release.verify_app(path, "main", "1.0.0"),
-                             ["extensions: design-skill/SKILL.md is not in the bundle",
-                              "extensions: shepherd-panes.ts is not in the bundle"])
+                             ["extensions: design-skill/SKILL.md is not a bundled file",
+                              "extensions: shepherd-panes.ts is not a bundled file"])
+
+    def test_linked_or_stale_extensions_are_refused(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = self.make_app(root, "Shepherd.app", **self.info("main"))
+            bundled = os.path.join(path, release.EXTENSIONS_BUNDLE)
+            linked = os.path.join(bundled, "shepherd-panes.ts")
+            os.remove(linked)
+            os.symlink(os.path.join(release.pi_engine.ROOT, "Extensions", "shepherd-panes.ts"), linked)
+            with open(os.path.join(bundled, "format.md"), "w") as file:
+                file.write("stale skill")
+            self.assertEqual(release.extension_problems(path),
+                             ["extensions: design-skill/format.md differs from the source",
+                              "extensions: shepherd-panes.ts is not a bundled file"])
 
     def test_an_app_without_the_pinned_engine_is_refused(self):
         for key in release.APPS:

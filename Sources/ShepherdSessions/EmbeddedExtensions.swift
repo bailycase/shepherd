@@ -8,7 +8,8 @@ import Foundation
 public enum EmbeddedExtensions {
     /// The bytes of `Extensions/<name>` (`design-skill/SKILL.md` for a file in a folder).
     public static func data(_ name: String) -> Data {
-        guard let url = Bundle.module.resourceURL?.appendingPathComponent("Extensions").appendingPathComponent(name),
+        // `.process` flattens resource paths, including design-skill/SKILL.md and format.md.
+        guard let url = Bundle.module.url(forResource: (name as NSString).lastPathComponent, withExtension: nil),
               let data = try? Data(contentsOf: url) else {
             preconditionFailure("Shepherd's resource bundle has no Extensions/\(name)")
         }
