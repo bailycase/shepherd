@@ -40,11 +40,11 @@ enum SidebarActivityItem: Identifiable, Equatable {
 }
 
 extension SidebarLists {
-    /// The user's order: Designs, Projects, Needs you, Working, Done, Pinned, Automations, Recents.
+    /// The user's order: Automations, Designs, Projects, Needs you, Working, Done, Pinned, Recents.
     /// Pinned is opt-in and follows Done. Projects are not thread rows; `items(collapsed:projects:)`
     /// places their group right after Designs, so thread status, attention and pins never move it.
     var sections: [(section: SidebarActivitySection, rows: [SidebarListRow])] {
-        [(.designs, designs), (.needsYou, needsYou), (.working, working), (.done, done), (.pinned, pinned), (.automations, automations), (.recents, recents)]
+        [(.automations, automations), (.designs, designs), (.needsYou, needsYou), (.working, working), (.done, done), (.pinned, pinned), (.recents, recents)]
     }
 
     func visibleRows(collapsed: Set<SidebarActivitySection>) -> [SidebarListRow] {

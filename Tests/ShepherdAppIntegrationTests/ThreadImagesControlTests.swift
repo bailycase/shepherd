@@ -28,6 +28,13 @@ struct ThreadImagesControlTests {
         expectScenarioCompleted(result)
     }
 
+    @Test func aNarrowViewerBarKeepsItsControlsAsIconsAndPressable() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
+            await completingScenario { try await Self.barInANarrowWindow() }
+        }
+        expectScenarioCompleted(result)
+    }
+
     @Test func aThreadThumbnailOpensTheViewerOnItsMessageAndStepsThroughStoredImages() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
             await completingScenario { try await Self.thumbnails() }
@@ -91,6 +98,32 @@ struct ThreadImagesControlTests {
         // Every control is at least the Mac's 24pt hit area.
         let small = ControlPress.undersized(window.controls(), minimum: .desktop)
         #expect(small.isEmpty, "undersized: \(small)")
+    }
+
+    /// A bar too narrow for the labelled buttons shows icons, named for VoiceOver, and each still presses; the window controls' room
+    /// (`leadingInset`) is taken from the bar, so a narrower column makes the same choice.
+    @MainActor
+    static func barInANarrowWindow() async throws {
+        AccessibilityNode.enable()
+        let app = try AppHarness()
+        defer { app.stop() }
+        let vm = try await app.start()
+        var added: [String] = [], revealed: [URL] = [], copied = 0
+        vm.imageViewerActions = ImageViewerActions(reveal: { revealed.append($0) }, copy: { _ in copied += 1 })
+        let shown = [attachment("a-rather-long-name-for-the-bar-checkout-iphone.png", bytes: 1_400_000, source: URL(fileURLWithPath: "/tmp/a.png"))]
+        vm.imageViewer = ImageViewerState(images: shown.map(ViewerImage.init), origin: "Sent by you", addToMessage: { added.append($0.name) })
+        let window = OffscreenWindow(size: CGSize(width: 520, height: 400), dark: false, ImageViewerOverlay(vm: vm, leadingInset: AppLayout.trafficLightInset))
+        defer { window.close() }
+        let controls = window.controls()
+        for label in ["Copy", "Add to message", "Show in Finder", "Close"] {
+            let control = try #require(controls.first { $0.label == label }, "\(label) is drawn as an icon: \(controls.compactMap(\.label))")
+            _ = control
+        }
+        try window.press("Copy")
+        try window.press("Show in Finder")
+        try window.press("Add to message")
+        #expect(copied == 1 && revealed == [URL(fileURLWithPath: "/tmp/a.png")])
+        #expect(added == ["a-rather-long-name-for-the-bar-checkout-iphone.png"])
     }
 
     @MainActor
@@ -266,12 +299,19 @@ struct ThreadImagesControlTests {
         let barTop = frame.maxY
         #expect(abs((barTop - close.frame.midY) - 44 / 2) < 1, "the close circle is centred in a 44pt bar: \(close.frame) in \(frame)")
         #expect(abs((barTop - copy.frame.midY) - 44 / 2) < 1, "Copy is centred in the same bar")
-        #expect(close.frame.maxX <= frame.maxX - NW.Space.l + 1 && close.frame.maxX >= frame.maxX - NW.Space.l - 1, "12pt from the window's edge")
+        // The user's correction to the board: the bar's content is a centred column of at most 820pt (+24pt each side), not the
+        // window's corners, so the close circle sits at that column's edge, 24pt inside a 868pt band centred in the window.
+        let column = min(frame.width, NWImageViewerMetrics.barMaxWidth + 2 * NW.Space.xxl)
+        #expect(abs(close.frame.maxX - (frame.midX + column / 2 - NW.Space.xxl)) < 1, "the close circle ends the centred column: \(close.frame) in \(frame)")
+        #expect(close.frame.maxX < frame.maxX - NW.Space.xxl, "not in the window's corner")
         // ‹ › are 36pt discs, centred in the window's height between the bar and the footer; ‹ is disabled on the first image.
         let next = try control("Next image")
         #expect(abs(next.frame.width - 36) < 1 && abs(next.frame.height - 36) < 1, "\(next.frame)")
         let previous = try control("Previous image")
         #expect(!previous.isEnabled && next.isEnabled, "the first image's ‹ is drawn and disabled")
+        // The arrows sit beside the picture, 16pt from it, not at the window's edges: the pair is centred about the window's middle.
+        #expect(abs((previous.frame.midX + next.frame.midX) / 2 - frame.midX) < 1, "centred: \(previous.frame) \(next.frame)")
+        #expect(next.frame.minX - previous.frame.maxX < frame.width / 2, "close to the picture, not at the edges: \(previous.frame) \(next.frame)")
         // Every control is at least the Mac's 24pt, and each does what it says.
         let small = ControlPress.undersized(controls.filter { $0.isEnabled }, minimum: .desktop)
         #expect(small.isEmpty, "undersized: \(small)")

@@ -66,7 +66,7 @@ folder-based UI becomes Spaces before the new Projects UI uses that name.
   Host names, capacities, connection states and platform labels come from actual host data,
   never from the board's examples.
 - The user moved Designs to the top of Activity content, below fixed navigation. The order is
-  Designs, Projects, Needs you, Working, Done, Pinned, Recents.
+  Automations, Designs, Projects, Needs you, Working, Done, Pinned, Recents.
 - Project coordinators and workers delegate only through Project threads, not subagents. The
   subagent-count controls shown in the boards are omitted.
 - Settings > Experiments > Projects gates the feature and defaults off. Disabling it preserves
