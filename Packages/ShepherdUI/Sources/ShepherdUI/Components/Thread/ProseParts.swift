@@ -173,6 +173,7 @@ enum NWProseThumbnails {
 struct NWProseDetails<Code: View>: View {
     let summary: AttributedString
     let blocks: [NWProseBlock]
+    let path: [Int]
     let depth: Int
     let voice: NWProseVoice
     let code: (String, String?) -> Code
@@ -181,10 +182,11 @@ struct NWProseDetails<Code: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// `open` starts it open (previews).
-    init(summary: AttributedString, blocks: [NWProseBlock], depth: Int, voice: NWProseVoice = .reply, open: Bool = false,
+    init(summary: AttributedString, blocks: [NWProseBlock], path: [Int] = [], depth: Int, voice: NWProseVoice = .reply, open: Bool = false,
          code: @escaping (String, String?) -> Code) {
         self.summary = summary
         self.blocks = blocks
+        self.path = path
         self.depth = depth
         self.voice = voice
         self.code = code
@@ -208,7 +210,7 @@ struct NWProseDetails<Code: View>: View {
             }
             if open, !blocks.isEmpty {
                 VStack(alignment: .leading, spacing: voice == .thinking ? NW.Space.m : NW.Space.l) {
-                    NWProseBlocks(blocks: blocks, nested: true, depth: depth, voice: voice, code: code)
+                    NWProseBlocks(blocks: blocks, path: path, nested: true, depth: depth, voice: voice, code: code)
                 }
                 .padding(.leading, NW.Space.l)
                 .overlay(alignment: .leading) { nw.lineStrong.frame(width: NWThreadMetrics.ruleWidth) }

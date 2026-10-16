@@ -87,6 +87,7 @@ extension EnvironmentValues {
     /// nil where the agent's files are not on this device (a remote host's agent, the iOS
     /// client): its images show as chips.
     @Entry public var nwProseFileRoot: URL? = nil
+    @Entry var nwWritingFence: [Int]? = nil
 }
 
 /// Agent prose: body 13.5/1.6 in `textPrimary` at the 640pt measure, blocks 12pt apart.
@@ -97,12 +98,14 @@ public struct NWAgentProse<Code: View>: View {
     let blocks: [NWProseBlock]
     let maxWidth: CGFloat
     let code: (String, String?) -> Code
+    let writingFence: Bool
 
     public init(_ blocks: [NWProseBlock], maxWidth: CGFloat = NWThreadMetrics.proseMeasure,
-                @ViewBuilder code: @escaping (String, String?) -> Code) {
+                writingFence: Bool = false, @ViewBuilder code: @escaping (String, String?) -> Code) {
         self.blocks = blocks
         self.maxWidth = maxWidth
         self.code = code
+        self.writingFence = writingFence
     }
 
     public var body: some View {
@@ -110,12 +113,13 @@ public struct NWAgentProse<Code: View>: View {
             NWProseBlocks(blocks: blocks, code: code)
         }
         .frame(maxWidth: maxWidth, alignment: .leading)
+        .environment(\.nwWritingFence, writingFence ? NWProseBlock.lastCodePath(blocks) : nil)
     }
 }
 
 extension NWAgentProse where Code == NWCodeBlock {
-    public init(_ blocks: [NWProseBlock], maxWidth: CGFloat = NWThreadMetrics.proseMeasure) {
-        self.init(blocks, maxWidth: maxWidth) { NWCodeBlock($0, language: $1) }
+    public init(_ blocks: [NWProseBlock], maxWidth: CGFloat = NWThreadMetrics.proseMeasure, writingFence: Bool = false) {
+        self.init(blocks, maxWidth: maxWidth, writingFence: writingFence) { NWCodeBlock($0, language: $1) }
     }
 }
 
@@ -132,11 +136,13 @@ enum NWProseVoice: Equatable {
 /// Blocks at one level: the reply's own, or those inside a list item, a quote or a disclosure.
 struct NWProseBlocks<Code: View>: View {
     let blocks: [NWProseBlock]
+    var path: [Int] = []
     var nested = false
     /// How deep in lists these blocks sit: each level draws its own bullet.
     var depth = 0
     var voice = NWProseVoice.reply
     let code: (String, String?) -> Code
+    @Environment(\.nwWritingFence) private var writingFence
     @Environment(\.nwProseSize) private var size
     @Environment(\.nwProseHalfLeading) private var halfLeading
     @Environment(\.nwProseTaskLinks) private var taskLinks
@@ -144,7 +150,8 @@ struct NWProseBlocks<Code: View>: View {
     var body: some View {
         let nw = Color.nw
         let tone = voice == .reply ? nw.textPrimary : nw.textSecondary
-        ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+        ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
+            let blockPath = path + [index]
             switch block {
             case .heading(_, let text):
                 heading(text).foregroundStyle(tone).textSelection(.enabled)
@@ -159,29 +166,33 @@ struct NWProseBlocks<Code: View>: View {
                     .padding(.vertical, halfLeading && voice == .reply ? Self.halfLeadingPad : 0)
             case .quote(let inner):
                 VStack(alignment: .leading, spacing: NW.Space.m) {
-                    NWProseBlocks(blocks: inner, nested: true, depth: depth, voice: voice == .thinking ? .thinking : .quoted, code: code)
+                    NWProseBlocks(blocks: inner, path: blockPath, nested: true, depth: depth, voice: voice == .thinking ? .thinking : .quoted, code: code)
                 }
                 .padding(.leading, NW.Space.l)
                 .overlay(alignment: .leading) { nw.lineStrong.frame(width: NWThreadMetrics.ruleWidth) }
             case .code(let text, let language):
-                code(text, language)
+                if NWMermaidBlock.renders(language: language, writing: blockPath == writingFence) {
+                    NWMermaidBlock(text)
+                } else {
+                    code(text, language)
+                }
             case .rule:
                 NWHairline().padding(.vertical, NW.Space.xs)
             case .list(let ordered, let start, let items):
-                list(ordered: ordered, start: start, items: items, tone: tone)
+                list(ordered: ordered, start: start, items: items, tone: tone, path: blockPath)
             case .table(let table):
                 NWProseTableView(table: table).equatable()
             case .image(let image):
                 NWProseImageView(image: image)
             case .details(let summary, let inner):
-                NWProseDetails(summary: summary, blocks: inner, depth: depth, voice: voice, code: code)
+                NWProseDetails(summary: summary, blocks: inner, path: blockPath, depth: depth, voice: voice, code: code)
             case .footnotes(let notes):
                 NWProseFootnotes(notes: notes)
             }
         }
     }
 
-    private func list(ordered: Bool, start: Int, items: [NWProseListItem], tone: Color) -> some View {
+    private func list(ordered: Bool, start: Int, items: [NWProseListItem], tone: Color, path: [Int]) -> some View {
         VStack(alignment: .leading, spacing: NW.Space.xs) {
             ForEach(Array(items.enumerated()), id: \.offset) { index, item in
                 HStack(alignment: .firstTextBaseline, spacing: 0) {
@@ -194,7 +205,7 @@ struct NWProseBlocks<Code: View>: View {
                             words(item.text).foregroundStyle(tone).textSelection(.enabled)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
-                        NWProseBlocks(blocks: item.children, nested: true, depth: depth + 1, voice: voice, code: code)
+                        NWProseBlocks(blocks: item.children, path: path + [index], nested: true, depth: depth + 1, voice: voice, code: code)
                     }
                 }
                 .accessibilityElement(children: .combine)
@@ -259,4 +270,23 @@ struct NWProseBlocks<Code: View>: View {
 extension EnvironmentValues {
     /// A paragraph's leading is split above and below each line, as CSS does (the Project conversation and its worker threads).
     @Entry public var nwProseHalfLeading = false
+}
+
+// The open fence runs to the end, including inside quotes, lists and disclosures.
+extension NWProseBlock {
+    static func lastCodePath(_ blocks: [NWProseBlock]) -> [Int]? {
+        for (index, block) in blocks.enumerated().reversed() {
+            switch block {
+            case .code: return [index]
+            case .quote(let inner), .details(_, let inner):
+                if let path = lastCodePath(inner) { return [index] + path }
+            case .list(_, _, let items):
+                for (itemIndex, item) in items.enumerated().reversed() {
+                    if let path = lastCodePath(item.children) { return [index, itemIndex] + path }
+                }
+            default: break
+            }
+        }
+        return nil
+    }
 }
