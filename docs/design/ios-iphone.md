@@ -532,9 +532,8 @@ follows the Commit from review rule above.
   Finalize worktree…. A card's Review opens on that turn; a review opens on the host's default
   (Branch for a worktree agent, else Uncommitted), and after Send on Last turn. On `bgBase`, 14pt
   padding, 10pt apart:
-  - The summary card (14pt padding): "3 files" (17/600) and the stat (mono 11), then the branch
-    trailing (a branch glyph and "agent/pay-button-jump", mono 12 `textSecondary`); under it a
-    4pt bar (`done` fill on `lineSubtle`) and "1 of 3 viewed" (12.5 `textTertiary`). The app adds
+  - The summary card (14pt padding): "3 files" (17/600) and the stat (mono 11), then, under it, the branch
+    ("agent/pay-button-jump", mono 12 `textSecondary`) and "1 of 3 viewed" (12 `textTertiary`); the board draws no bar. The app adds
     Finalize worktree ("commit · push · PR") to the card for a worktree agent.
   - "Files" with "tap to read the diff", then one card of 58pt rows (`NWReviewFileRow`): the viewed
     mark (a `done` check, or a 14pt ring in `lineStrong`), the status letter (mono 12: M `lantern`,
@@ -542,8 +541,8 @@ follows the Commit from review rule above.
     (a bubble glyph and "1", 12 `running`), the stat, a chevron. A row pushes its diff. The list
     comes from the host first; a file's lines come when it is read.
   - "Your comments" with the count, then a card per comment: an 18pt circle with the author's
-    initial (10/600), "FleetView.swift · line 33" (mono 12 `textTertiary`), the time, and the
-    text at 14/1.45. The app labels the author "You" and adds Edit and Delete. There is no overall
+    initial (10/600), "FleetView.swift · line 33" (mono 12 `textTertiary`), the text, then Edit
+    and Delete (15) under it; no avatar or author. There is no overall
     comment: anything else is said in the thread.
   - The bottom bar: Send 1 comment (secondary; "Send 3 comments", off with none) and Commit…
     (primary), 48pt each, sharing the width.
