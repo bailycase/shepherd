@@ -18,39 +18,44 @@ public enum NWTouchComposerMetrics {
     public static let commandNameWidth: CGFloat = 180
 }
 
-/// The phone's field (MobileThread board): a capsule on `bgRaised` with a `lineStrong` line
-/// (`textTertiary` while focused), the field growing to a few lines, and the action (Send or
-/// Stop) inside its trailing end. Attachments and chips sit above it, in the app.
-public struct NWCapsuleComposer<Field: View, Action: View>: View {
-    let isFocused: Bool
+/// The phone's field (MobileThread, MobileSteer boards): one glass capsule (the system material)
+/// with the paperclip at its leading edge, the field growing to a few lines, and the context
+/// ring and action (Send or Stop) at its trailing end. Chips sit above it, in the app.
+public struct NWCapsuleComposer<Leading: View, Field: View, Action: View>: View {
+    let leading: Leading?
     let field: Field
     let action: Action
 
-    public init(isFocused: Bool, @ViewBuilder field: () -> Field, @ViewBuilder action: () -> Action) {
-        self.isFocused = isFocused
+    public init(@ViewBuilder leading: () -> Leading, @ViewBuilder field: () -> Field, @ViewBuilder action: () -> Action) {
+        self.leading = leading()
         self.field = field()
         self.action = action()
     }
 
     public var body: some View {
-        let nw = Color.nw
         let shape = RoundedRectangle(cornerRadius: NWTouchComposerMetrics.capsuleHeight / 2)
-        HStack(alignment: .bottom, spacing: NW.Space.s) {
+        HStack(alignment: .bottom, spacing: 0) {
+            if let leading {
+                leading.frame(minHeight: NWTouchComposerMetrics.capsuleHeight)
+            }
             field
                 .padding(.vertical, NW.Space.m)
+                .padding(.leading, leading == nil ? NW.Space.xl : 0)
                 .frame(minHeight: NWTouchComposerMetrics.capsuleHeight, alignment: .leading)
             action
                 .frame(minHeight: NWTouchComposerMetrics.capsuleHeight)
         }
-        .padding(.leading, NW.Space.xl)
-        .padding(.trailing, NW.Space.s)
-        .background(nw.bgRaised, in: shape)
-        .overlay {
-            Color.clear
-                .nwBorder(isFocused ? nw.textTertiary : nw.lineStrong, in: shape)
-                .nwAnimation(.hover, value: isFocused)
-                .allowsHitTesting(false)
-        }
+        .padding(.horizontal, NW.Space.xxs)
+        .glassEffect(.regular, in: shape)
+    }
+}
+
+extension NWCapsuleComposer where Leading == EmptyView {
+    /// A capsule with no paperclip (the host takes no images).
+    public init(@ViewBuilder field: () -> Field, @ViewBuilder action: () -> Action) {
+        self.leading = nil
+        self.field = field()
+        self.action = action()
     }
 }
 
