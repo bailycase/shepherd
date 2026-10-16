@@ -82,6 +82,52 @@ struct LogicalProjectPreviewTests {
         return (world, ref)
     }
 
+    @Test func taskSummaryCollapsedAndExpanded() async throws {
+        let (world, ref) = try await running([("Reading list research", "tools:0 finish"),
+                                             ("Library API implementation", "slow"),
+                                             ("Reading widget decision", "ask")])
+        defer { world.stop() }
+        try await eventuallyOnMain("finished and waiting tasks reach the summary") {
+            let tasks = world.vm.state.projects.first?.tasks ?? []
+            return tasks.contains { $0.phase == .settled } && tasks.contains { $0.phase == .waiting }
+        }
+        for expanded in [false, true] {
+            try await Preview.renderMatrix("lead-task-summary-\(expanded ? "expanded" : "collapsed")",
+                                           size: CGSize(width: 700, height: 350), scales: [1, 1.3]) {
+                VStack {
+                    if let project = world.vm.state.projects.first(where: { $0.id == ref.id }) {
+                        let presentation = ProjectPagePresentation(project)
+                        if let summary = presentation.summary {
+                            ProjectSummaryStrip(vm: world.vm, ref: ref, summary: summary, rows: presentation.rows, expanded: expanded)
+                        }
+                    }
+                }
+                .padding(NW.Space.l)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                .background(Color.nw.bgWindow)
+            }
+        }
+    }
+
+    /// Five tasks past the four-row cap, at text scale 1.3: the list stays bounded and the rest scroll.
+    @Test func taskSummaryCapsFiveTasks() async throws {
+        let (world, projects) = try await world(projects: [("Sample App", "")])
+        defer { world.stop() }
+        var project = projects[0]
+        project.tasks = ["Research", "API draft", "Widget mockup", "Docs", "Release notes"].map {
+            ProjectTask(operationID: UUID(), spaceID: SpaceID(), title: $0, prompt: "p", phase: .queued)
+        }
+        let ref = LogicalProjectRef(home: .local, id: project.id)
+        let presentation = ProjectPagePresentation(project)
+        let summary = try #require(presentation.summary)
+        try await Preview.renderMatrix("lead-task-summary-five", size: CGSize(width: 700, height: 400), scales: [1, 1.3]) {
+            ProjectSummaryStrip(vm: world.vm, ref: ref, summary: summary, rows: presentation.rows, expanded: true)
+                .padding(NW.Space.l)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                .background(Color.nw.bgWindow)
+        }
+    }
+
     @Test func startedWithThreeWorkingThreads() async throws {
         let (world, _) = try await running([("Reading list research", "slow"), ("Library API draft", "slow"), ("Reading widget mockup", "slow")])
         defer { world.stop() }

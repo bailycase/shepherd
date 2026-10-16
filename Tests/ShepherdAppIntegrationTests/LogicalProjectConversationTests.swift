@@ -156,6 +156,94 @@ struct LogicalProjectConversationTests {
         expectScenarioCompleted(result)
     }
 
+    @Test func theSummaryDisclosesCurrentTasksOpensThemAndResetsForAnotherProject() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.summaryDisclosure() } }
+        expectScenarioCompleted(result)
+    }
+
+    private static func summaryDisclosure() async throws {
+        let r = try await rig()
+        defer { r.app.stop() }
+        _ = try await r.vm.projectCoordinator.perform(projectID: r.project.id, expectedRevision: r.project.revision,
+            request: .assign(operationID: UUID(), spaceID: r.space.id, title: "Finished research", prompt: "tools:0 finish"))
+        try await eventuallyOnMain("the first task settles") { r.vm.state.projects.first?.tasks.first?.phase == .settled }
+        let current = try #require(r.vm.state.projects.first)
+        let finished = try #require(current.tasks.first)
+        _ = try await r.vm.projectCoordinator.perform(projectID: r.project.id, expectedRevision: current.revision,
+            request: .assign(operationID: UUID(), spaceID: r.space.id, title: "Ongoing implementation", prompt: "slow"))
+        try await eventuallyOnMain("the second task runs") { r.vm.state.projects.first?.tasks.last?.phase == .running }
+        guard case .project(let other) = try await r.app.server.logicalProjects(
+            .create(projectID: ProjectID(), name: "Other project", goal: "", linkedSpaceIDs: [r.space.id])) else { throw RigError("no other project") }
+        _ = try await r.vm.projectCoordinator.perform(projectID: other.id, expectedRevision: other.revision,
+            request: .assign(operationID: UUID(), spaceID: r.space.id, title: "Other work", prompt: "slow"))
+        try await eventuallyOnMain("the other project has its task") { r.vm.state.projects.first { $0.id == other.id }?.tasks.last?.phase == .running }
+        r.vm.openLogicalProject(r.ref)
+        r.vm.logicalProjectPaneOpen = false
+        let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
+        defer { window.close() }
+        try await eventuallyOnMain("the collapsed summary") { window.layout(); return window.element("Show project tasks") != nil }
+        #expect(window.controls().first { $0.label == "Show project tasks" }?.value == "Collapsed, 1 of 2 done · 1 in progress")
+        #expect(!window.controls().contains { $0.label?.hasPrefix(finished.title) == true })
+        try window.press("Show project tasks")
+        try await eventuallyOnMain("the expanded tasks") {
+            window.layout()
+            return window.element("Hide project tasks") != nil && window.controls().contains { $0.label?.hasPrefix(finished.title) == true }
+        }
+        let header = try #require(window.controls().first { $0.label == "Hide project tasks" })
+        #expect(header.value == "Expanded, 1 of 2 done · 1 in progress")
+        // A worker's cached activity (refreshed only by the pane) never reaches the strip: the running row is its title alone.
+        let ongoing = try #require(current.tasks.count == 1 ? r.vm.state.projects.first?.tasks.last : nil)
+        let worker = r.vm.projectWorkerStore(.local, ongoing.workerAgentID)
+        let polling = Task { await worker.run(request: r.vm.projectWorkerRequest(r.ref, task: ongoing.id)) }
+        try await eventuallyOnMain("the worker has cached activity") { r.vm.workerActivity(ongoing.workerAgentID) != nil }
+        polling.cancel()
+        window.layout()
+        #expect(window.controls().contains { $0.label == "Ongoing implementation" })
+        #expect(ControlPress.undersized([header], minimum: .desktop).isEmpty)
+        let row = try #require(window.controls().first { $0.label?.hasPrefix(finished.title) == true })
+        r.vm.logicalProjectPaneOpen = false
+        r.vm.logicalProjectPaneTab = .files
+        try window.press(try #require(row.label))
+        #expect(r.vm.logicalProjectPaneOpen && r.vm.logicalProjectPaneTab == .threads && r.vm.logicalProjectPaneTask == finished.id)
+        try await eventuallyOnMain("the selected worker opens in the pane") { window.layout(); return window.element("Open as a thread") != nil }
+        r.vm.logicalProjectPaneOpen = false
+
+        // The open list follows the owner, without closing or changing what "done" counts.
+        let latest = try #require(r.app.server.state.projects.first { $0.id == r.project.id })
+        _ = try await r.vm.projectCoordinator.perform(projectID: r.project.id, expectedRevision: latest.revision,
+            request: .resolve(taskID: finished.id, operationID: UUID()))
+        try await eventuallyOnMain("the resolved task reaches the open list") {
+            r.vm.state.projects.first { $0.id == r.project.id }?.tasks.first?.phase == .resolved
+        }
+        window.layout()
+        #expect(window.element("Hide project tasks") != nil)
+        #expect(window.controls().first { $0.label == "Hide project tasks" }?.value == header.value)
+        let running = try #require(latest.tasks.last)
+        guard case .snapshot(let snapshot) = try await r.app.server.nativeThread(agentID: running.workerAgentID, request: .snapshot()) else {
+            throw RigError("no worker snapshot")
+        }
+        _ = try await r.app.server.nativeThread(agentID: running.workerAgentID,
+            request: .abort(expectedSessionID: snapshot.piSessionID, generation: snapshot.generation, operationID: UUID()))
+        try await eventuallyOnMain("completion updates the expanded summary") {
+            window.layout(); return window.controls().first { $0.label == "Hide project tasks" }?.value == "Expanded, 2 of 2 done"
+        }
+        try window.press("Hide project tasks")
+        try await eventuallyOnMain("collapse removes the rows") {
+            window.layout(); return !window.controls().contains { $0.label?.hasPrefix(finished.title) == true }
+        }
+        try window.press("Show project tasks")
+        r.vm.openLogicalProject(LogicalProjectRef(home: .local, id: other.id))
+        try await eventuallyOnMain("another project starts collapsed") {
+            window.layout(); return window.controls().first { $0.label == "Show project tasks" }?.value == "Collapsed, 0 of 1 done · 1 in progress"
+        }
+        #expect(!window.controls().contains { $0.label?.hasPrefix("Other work") == true })
+        try window.press("Show project tasks")
+        try await eventuallyOnMain("the second project's own task") {
+            window.layout(); return window.controls().contains { $0.label?.hasPrefix("Other work") == true }
+        }
+        #expect(!window.controls().contains { $0.label?.hasPrefix(finished.title) == true })
+    }
+
     // MARK: Rig
 
     private struct Rig {

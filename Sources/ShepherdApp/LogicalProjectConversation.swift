@@ -185,7 +185,9 @@ struct ConversationThread: View {
                 AnyView(VStack(spacing: NWLeadMetrics.dockGap) {
                     ForEach(offers) { proposal in SpaceOffer(vm: vm, ref: ref, proposal: proposal) }
                     ForEach(questions) { task in TaskQuestion(vm: vm, ref: ref, task: task, paused: project.paused) }
-                    if let summary = presentation.summary { ProjectSummaryStrip(summary: summary) }
+                    if let summary = presentation.summary {
+                        ProjectSummaryStrip(vm: vm, ref: ref, summary: summary, rows: presentation.rows)
+                    }
                 })
             } : nil,
             held: { [store, project] in
@@ -203,20 +205,58 @@ struct ConversationThread: View {
 
 /// "2 of 3 done · 1 needs you": the strip over the composer. Counted from the tasks, never typed in.
 struct ProjectSummaryStrip: View {
+    var vm: ShepherdViewModel
+    let ref: LogicalProjectRef
     let summary: String
+    let rows: [ProjectTaskRow]
+    @State var expanded = false
 
     var body: some View {
-        HStack(spacing: NW.Space.s) {
-            Image(systemName: "chevron.right").font(.system(size: NWLeadMetrics.summaryChevron, weight: .medium))
-                .foregroundStyle(Color.nw.textTertiary).accessibilityHidden(true)
-            Text(summary).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
-            Spacer(minLength: 0)
+        VStack(spacing: 0) {
+            Button { withNWAnimation(.disclosure) { expanded.toggle() } } label: {
+                HStack(spacing: NW.Space.s) {
+                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: NWLeadMetrics.summaryChevron, weight: .medium))
+                        .accessibilityHidden(true)
+                    Text(summary).font(.nw(.caption))
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(Color.nw.textTertiary)
+                .padding(NWLeadMetrics.summaryPadding)
+                .frame(height: NWLeadMetrics.summaryHeight)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .nwFocusRing(radius: NWLeadMetrics.summaryRadius)
+            .accessibilityLabel(expanded ? "Hide project tasks" : "Show project tasks")
+            .accessibilityValue("\(expanded ? "Expanded" : "Collapsed"), \(summary)")
+
+            if expanded {
+                NWHairline()
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(rows) { row in
+                            NWLeadThreadRow(title: row.title, lead: row.lead, detail: Self.detail(row),
+                                            tone: row.group == .resolved ? .resolved : row.group == .waiting ? .attention : .running,
+                                            age: row.settledAt.map(LogicalProjectPane.age)) {
+                                vm.openProjectTask(row.id)
+                            }
+                        }
+                    }
+                }
+                .frame(height: min(CGFloat(rows.count) * NWLeadMetrics.threadRowHeight, NWLeadMetrics.summaryListMaxHeight))
+                .scrollBounceBehavior(.basedOnSize)
+                .padding(NWLeadMetrics.summaryPadding)
+            }
         }
-        .padding(NWLeadMetrics.summaryPadding)
-        .frame(height: NWLeadMetrics.summaryHeight)
         .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NWLeadMetrics.summaryRadius))
         .nwBorder(Color.nw.lineStrong, radius: NWLeadMetrics.summaryRadius)
-        .accessibilityLabel(summary)
+        .onChange(of: ref) { _, _ in expanded = false }
+    }
+
+    /// Only the owner's question or failure: worker activity is refreshed by the pane, not here, so it could be stale.
+    nonisolated static func detail(_ row: ProjectTaskRow) -> String? {
+        row.group == .resolved ? nil : row.detail
     }
 }
 
@@ -310,9 +350,7 @@ struct ProjectTaskCard: View {
     }
 
     private func open() {
-        vm.logicalProjectPaneOpen = true
-        vm.logicalProjectPaneTab = .threads
-        vm.logicalProjectPaneTask = row.id
+        vm.openProjectTask(row.id)
     }
 }
 
@@ -359,9 +397,7 @@ enum ProjectTaskLinks {
     @MainActor static func open(_ url: URL, in vm: ShepherdViewModel, project: ProjectID, presentation: ProjectPagePresentation) -> Bool {
         guard url.scheme == NWProseTaskLinks.scheme else { return false }
         if let task = task(in: url, project: project, presentation: presentation) {
-            vm.logicalProjectPaneOpen = true
-            vm.logicalProjectPaneTab = .threads
-            vm.logicalProjectPaneTask = task
+            vm.openProjectTask(task)
         }
         return true
     }
