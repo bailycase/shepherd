@@ -220,11 +220,13 @@ each rule. Add a budget with any new long list.
 
 ## Verifying visuals
 
-Render the surface with `SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter <suite>`
-(`ThreadPreviewTests`, `NavigationPreviewTests`, `AgentsPreviewTests`, `ReviewPreviewTests`,
-`SettingsPreviewTests`, `DesignPreviewTests`). It writes `<surface>-<light|dark>.png`; drive it
-from real data, and look at the PNGs beside the design. A control a test needs to press goes through
-`ControlPress` (docs/testing.md › Pressing a control). Detail: [docs/design/verifying.md](docs/design/verifying.md).
+Render affected surfaces and states with
+`SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter '<preview suite or test>'`.
+Use real data and inspect the light and dark PNGs beside the design; unrelated previews need not run.
+Appearance-only changes do not also require launching the app. For interactions, focus, menus or
+app lifecycle, use integration tests; add a manual Dev-app check only where the isolated harness
+cannot establish the behavior. Tests use `ControlPress`, never posted input or the installed app.
+Detail: [docs/design/verifying.md](docs/design/verifying.md).
 
 ## Where the detail is
 
