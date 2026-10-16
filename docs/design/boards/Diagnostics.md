@@ -29,8 +29,6 @@ No image was supplied. This checklist extends SettingsAdvanced using its existin
 - Press the switch in both directions, check persistence and callback, verify the disabled state,
   accessibility disclosure and a 24pt hit area. No test may contact Sentry.
 
-Rendered evidence: [light](../evidence/diagnostics/diagnostics-active-light.png),
-[dark](../evidence/diagnostics/diagnostics-active-dark.png), and the full
-[state/text-size matrix](../evidence/diagnostics/).
+Rendered in light and dark across the state and text-size matrix (`DiagnosticsPreviewTests`).
 
 Departures from the user's requirements: none.

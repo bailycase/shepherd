@@ -408,13 +408,11 @@ user's workflow decisions; neither is built.
 
 ## Draft PR screenshot audit
 
-A fresh run of the integrated code passed 25 preview tests and produced 202 images. The draft
-keeps 32 unchanged light/dark PNGs with hashes in `../evidence/project-lead/`. These are scratch
-runtime previews, not live-provider or interactive Dev screenshots. Review exposed two additional
+A fresh run of the integrated code passed 25 preview tests and produced 202 images (scratch
+runtime previews, not live-provider or interactive Dev screenshots). Review exposed two additional
 open issues: the resolved preview still draws a worker composer above Reopen, and the narrow
 long-title preview puts a Working row beneath "Nothing is running." Neither is accepted as a
-design match. The [evidence index](../evidence/project-lead/README.md) lists all retained images,
-the reproduction command, and pending workflow decisions.
+design match.
 
 ## Projects experiment (user-authorized gating, not a board change)
 
