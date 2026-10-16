@@ -41,7 +41,7 @@ stand-in), never a `pi` looked up on PATH ([pi-home.md](pi-home.md)).
   an agent whose conversation Shepherd's home lacks copies it in from the user's own pi
   (`PiSessionFile.adopt`; [pi-home.md](pi-home.md) › Adoption).
   `--model`/`--thinking` are passed only while that file has no conversation (a fresh session).
-- **Extensions** are installed into the support directory from embedded literals and loaded
+- **Extensions** are installed into the support directory from the resource bundle and loaded
   with `-e`. Nothing is installed into a pi home. The status extension is always loaded, and so
   is the namer (it names only agents whose name is not final, with Settings ▸ Agents ▸ Session
   naming model tried first). The rest follow Settings ▸ Extensions and Pi: "Terminals and agent
@@ -532,8 +532,7 @@ one prompt at a time.
 Retry (a turn's footer, its error card, a Turn failed banner) retries the latest turn
 (`NativeThreadRequest.retry`, `retry` in `supportedActions`, remotely `native.retry.v1`). A failed
 turn with tool work or extension messages continues with its history intact; other turns retry
-in place. pi's
-session is a tree, but RPC has no command to move in it, and `fork` would start a new session
+in place. pi's session is a tree, but RPC has no command to move in it, and `fork` would start a new session
 (clearing the agent's final name). So the status extension, which every agent loads, registers
 `/shepherd-retry <ms>`, and the host sends it as a prompt (`RPCThreadState+Retry.swift`).
 
@@ -545,8 +544,8 @@ session is a tree, but RPC has no command to move in it, and `fork` would start 
   never throws into pi, and the host leaves it out of the composer's commands.
   If the turn ends in a provider error after returning tool results or receiving extension
   messages (including child results and questions), the command does not rewind. It appends a
-  visible continuation request instead, preserving the original messages,
-  tool results and child references. The parent can retrieve completed children and keep using
+  visible continuation request instead, preserving the original messages, tool results and
+  child references. The parent can retrieve completed children and keep using
   running ones without starting replacements. Retrying cannot undo tool side effects.
 - **The host** takes it only while pi is idle (`busy` otherwise; never queued or steered) and
   only for the latest turn's message: `entryID` in history with no later user message but ones

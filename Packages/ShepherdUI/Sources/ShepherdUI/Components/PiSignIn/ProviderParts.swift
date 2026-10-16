@@ -176,8 +176,7 @@ public enum NWKeySource: Equatable, Sendable {
         case .copiedFromYourPi: [.init("copied from pi", tone: .tertiary, separated: false)]
         case .variable(let name): [.init("reads", tone: .tertiary, separated: false),
                                    .init("$" + name, mono: true, small: true, separated: false)]
-        case .command(let command): [.init("runs a command", tone: .tertiary, separated: false),
-                                     .init(command, mono: true, small: true, separated: false, middle: true)]
+        case .command: [.init("command not supported", tone: .tertiary, separated: false)]
         }
     }
 }
@@ -242,7 +241,7 @@ public struct NWProviderStatusLine: View {
     }
 }
 
-/// A key's source after its mask: "copied from your pi", "reads `$NAME`", "runs a command `…`".
+/// A key's source after its mask: "copied from your pi", "reads `$NAME`", "command not supported".
 public struct NWKeySourceLabel: View {
     let source: NWKeySource
 

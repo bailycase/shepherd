@@ -410,7 +410,6 @@ engine is docs/designs.md › Sharing with Git. Not built: iPhone and iPad.
 ## Comments (DZCanvas, DZTweak, NWDesignTool)
 
 User reference for the list actions: [DesignComments.png](boards/DesignComments.png).
-[Checklist, control validation, and renders](evidence/design-comment-actions/README.md).
 
 **Built on the Mac** (`NWCommentPin`, `NWCommentThread`, `NWCommentCard`; docs/designs.md ›
 Comments), as below, with these choices the boards leave open:
