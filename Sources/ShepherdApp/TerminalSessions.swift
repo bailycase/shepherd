@@ -650,13 +650,14 @@ final class TerminalSessionStore {
             let (fresh, problem) = await Self.prepareLaunch(for: agent, cwd: cwd, pi: server.pi, requiredHistoryEntryID: requiredHistoryEntryID)
             if requiredHistoryEntryID != nil, let problem { throw AgentStartFailure(message: problem.description) }
             let parent = await server.projects.parentProject(of: cwd, state: state)
+            let verifiedWorktree = await Self.ownedWorktreeWithoutMetadata(agent: agent, cwd: cwd, state: state)
             // RPC mode ignores a positional prompt; the opening prompt goes to the server below.
             let command = try problem.map(Self.refusedCommand)
                 ?? Self.rpcAgentCommand(for: agent, cwd: cwd, pi: server.pi, sessionIsFresh: fresh, isAutomation: isAutomation,
                                         project: state.projectContext(for: agent.id),
                                         suggestFiles: suggestionFiles(isAutomation: isAutomation),
                                         modelOverride: modelOverrides.removeValue(forKey: agent.id),
-                                        mcp: { [mcpLaunch] in try mcpLaunch()?.sharingParent(parent) })
+                                        mcp: { [mcpLaunch] in try mcpLaunch()?.sharingProject(parent, agent: agent, cwd: cwd, state: state, verifiedWorktree: verifiedWorktree) })
             // A forked transcript resumes: pi not finding it is a start problem, never a new session.
             let resuming = fresh ? nil : agent.effectivePiSessionID
             guard ownsPane(session, pane: pane, tabID: tab.id, expectedAgentID: agent.id),
@@ -907,13 +908,15 @@ final class TerminalSessionStore {
                     : PiHomeProblem("folder missing: \(pane.cwd)")
                 var (fresh, problem) = (false, missing)
                 if missing == nil { (fresh, problem) = await Self.prepareLaunch(for: agent, cwd: cwd, pi: server.pi) }
-                let parent = await server.projects.parentProject(of: cwd, state: serverState ?? ShepherdState())
+                let state = serverState ?? ShepherdState()
+                let parent = await server.projects.parentProject(of: cwd, state: state)
+                let verifiedWorktree = await Self.ownedWorktreeWithoutMetadata(agent: agent, cwd: cwd, state: state)
                 command = try problem.map(Self.refusedCommand)
                     ?? Self.rpcAgentCommand(for: agent, cwd: cwd, pi: server.pi, sessionIsFresh: fresh,
                                             project: serverState?.projectContext(for: agent.id),
                                             suggestFiles: suggestionFiles(isAutomation: false),
                                             modelOverride: modelOverrides.removeValue(forKey: agent.id),
-                                            mcp: { [mcpLaunch] in try mcpLaunch()?.sharingParent(parent) })
+                                            mcp: { [mcpLaunch] in try mcpLaunch()?.sharingProject(parent, agent: agent, cwd: cwd, state: state, verifiedWorktree: verifiedWorktree) })
                 if checksResume, !fresh { resuming = agent.effectivePiSessionID }
             } else {
                 command = ShellIntegration.command(shell: AppSettings.shared.shellCommand)
@@ -1087,6 +1090,21 @@ final class TerminalSessionStore {
     /// Suggested instructions); none while the experiment is off for its kind of agent.
     private func suggestionFiles(isAutomation: Bool) -> [InstructionFile] {
         server.suggestions.snapshot().settings.files(for: isAutomation ? .automation : .thread)
+    }
+
+    /// Forked threads retain space ownership and cwd but not worktree-management metadata.
+    /// Verify Git's actual relationship off the main actor, never infer ownership from sibling names.
+    private static func ownedWorktreeWithoutMetadata(agent: Agent, cwd: String, state: ShepherdState) async -> Bool {
+        guard agent.worktreeBranch == nil, agent.worktreePath == nil,
+              let space = state.spaces.first(where: { $0.id == agent.spaceID }),
+              PiHome.canonical(space.path) != PiHome.canonical(cwd) else { return false }
+        let owner = PiHome.canonical(space.path)
+        return await Task.detached(priority: .userInitiated) {
+            var directory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: URL(fileURLWithPath: cwd).appendingPathComponent(".git").path,
+                                                 isDirectory: &directory), !directory.boolValue else { return false }
+            return (try? GitWorktree.containsCheckout(repo: owner, checkout: cwd)) == true
+        }.value
     }
 
     /// `pi --mode rpc` for an agent, with Shepherd's socket, status, panes, review, subagents,

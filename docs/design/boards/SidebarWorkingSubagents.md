@@ -18,7 +18,7 @@ A thread with working subagents stays in Working instead of appearing Done, even
 
 ## Validation
 
-See the [render matrix and validation record](../evidence/sidebar-working-subagents/README.md). The parent stays `.done` in the real data source while its derived sidebar row says running. Both local extension publication and connected-host child refresh drive Working and completion transitions.
+The parent stays `.done` in the real data source while its derived sidebar row says running. Both local extension publication and connected-host child refresh drive Working and completion transitions.
 
 ## Departures
 

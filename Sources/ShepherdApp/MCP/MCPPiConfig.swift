@@ -105,13 +105,6 @@ enum MCPPiConfig {
 
     // MARK: One value
 
-    /// A value of `env` or `headers`, as pi will read it.
-    private struct MappedValue {
-        var text: String
-        /// Whether it needs a shell: it holds a `${NAME:-default}`, which pi does not expand.
-        var usesShell: Bool
-    }
-
     /// One `${…}` in a value.
     private enum Reference {
         /// `${NAME}`: pi's own form.
@@ -168,36 +161,16 @@ enum MCPPiConfig {
         return .shell(body)
     }
 
-    /// `value` for an `env` or `header` entry: Keychain references become pi variables; a shell
-    /// default makes the whole value a command, `!printf '%s' "…"`, which pi runs with `/bin/sh`.
-    private static func mapValue(_ value: String, table: inout SecretTable) -> MappedValue {
-        var usesShell = false
-        var pieces: [(literal: String?, raw: String?)] = []
-        for part in parts(of: value) {
+    /// Keychain references become pi variables. Config values never execute shell commands.
+    private static func mapValue(_ value: String, table: inout SecretTable) -> String {
+        parts(of: value).map { part in
             switch part {
-            case .literal(let text): pieces.append((text, nil))
-            case .reference(.variable(let name)): pieces.append((nil, "${\(name)}"))
-            case .reference(.keychain(let server, let name)): pieces.append((nil, "${\(table.variable(server: server, name: name))}"))
-            case .reference(.shell(let body)):
-                usesShell = true
-                pieces.append((nil, "${\(body)}"))
+            case .literal(let text): return text
+            case .reference(.variable(let name)): return "${\(name)}"
+            case .reference(.keychain(let server, let name)): return "${\(table.variable(server: server, name: name))}"
+            case .reference(.shell(let body)): return "${\(body)}"
             }
-        }
-        guard usesShell else {
-            return MappedValue(text: pieces.map { $0.literal ?? $0.raw ?? "" }.joined(), usesShell: false)
-        }
-        let quoted = pieces.map { piece in piece.raw ?? doubleQuoted(piece.literal ?? "") }.joined()
-        return MappedValue(text: "!printf '%s' \"" + quoted + "\"", usesShell: true)
-    }
-
-    /// Text inside a shell's double quotes: only `$`, `` ` ``, `"` and `\` need a backslash.
-    private static func doubleQuoted(_ text: String) -> String {
-        var out = ""
-        for c in text {
-            if "$`\"\\".contains(c) { out.append("\\") }
-            out.append(c)
-        }
-        return out
+        }.joined()
     }
 
     // MARK: One server
@@ -241,6 +214,13 @@ enum MCPPiConfig {
 
     private static func translate(_ entry: MCPServerEntry, table: inout SecretTable) -> Result<Translation, Problem> {
         let settings = entry.settings
+        let values = Array(entry.env.values) + Array(entry.headers.values) + [settings.oauth.clientSecret].compactMap { $0 }
+        if values.contains(where: { $0.hasPrefix("!") }) {
+            return .failure(Problem(message: "Command configuration values are not supported. Use an environment variable or Keychain reference."))
+        }
+        if values.contains(where: { parts(of: $0).contains { if case .reference(.shell) = $0 { return true }; return false } }) {
+            return .failure(Problem(message: "Shell defaults in configuration values are not supported. Set the environment variable explicitly."))
+        }
         var common: [String: JSONValue] = [:]
         if !settings.enabled { common["enabled"] = .bool(false) }
         // Always written: pi's own default, `codemode`, is unreachable while its codemode is off.
@@ -266,7 +246,7 @@ enum MCPPiConfig {
                     : "The URL must be an http or https address."))
             }
             var headers: [String: String] = [:]
-            for (key, value) in entry.headers { headers[key] = mapValue(value, table: &table).text }
+            for (key, value) in entry.headers { headers[key] = mapValue(value, table: &table) }
             let signsInByHeader = entry.headers.keys.contains { $0.caseInsensitiveCompare("Authorization") == .orderedSame }
             return .success(Translation(common: common, kind: .http(url: url, headers: headers,
                                                                     oauth: signsInByHeader ? nil : oauth(settings.oauth, table: &table))))
@@ -278,7 +258,7 @@ enum MCPPiConfig {
                 return .failure(Problem(message: "pi’s MCP doesn’t expand variables in a working folder."))
             }
             var env: [String: String] = [:]
-            for (key, value) in entry.env { env[key] = mapValue(value, table: &table).text }
+            for (key, value) in entry.env { env[key] = mapValue(value, table: &table) }
             // `${…}` in the command line is expanded by the shell that starts the server.
             var needsShell = false
             func word(_ text: String) -> String {
@@ -305,7 +285,7 @@ enum MCPPiConfig {
     private static func oauth(_ settings: MCPOAuthSettings, table: inout SecretTable) -> JSONValue {
         var oauth: [String: JSONValue] = ["clientName": .string("Shepherd")]
         if let id = settings.clientID, !id.isEmpty { oauth["clientId"] = .string(id) }
-        if let secret = settings.clientSecret, !secret.isEmpty { oauth["clientSecret"] = .string(mapValue(secret, table: &table).text) }
+        if let secret = settings.clientSecret, !secret.isEmpty { oauth["clientSecret"] = .string(mapValue(secret, table: &table)) }
         if !settings.scopes.isEmpty { oauth["scope"] = .string(settings.scopes.joined(separator: " ")) }
         return .object(oauth)
     }

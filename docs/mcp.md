@@ -54,8 +54,8 @@ supported"): the old Shepherd client spoke it; a user with such a server must us
 shell's, since Shepherd starts pi from one). Not in `command`, `args`, `cwd` or `url` (a `${…}` in a URL
 makes the entry fail to connect). `${VAR:-default}` is not a form: it reaches the server literally. A
 variable that is not set fails the server ("Failed to resolve … from environment variable: NAME"). A
-value that is entirely `!command` runs the command in `/bin/sh` (10 s, result cached for the process)
-and uses its output; that is how a default or a quoted expansion can be had.
+value beginning with `!` is rejected by Shepherd's bundled runtime; configuration values never
+execute commands. Set variables explicitly instead of using shell defaults.
 
 **Stdio servers inherit pi's whole environment.** pi starts a stdio server with its own environment plus the
 entry's `env` (observed: a variable set only on pi was visible to the server, `NODE_OPTIONS` and
@@ -110,7 +110,7 @@ prints the authorization URL on stdout (`Sign in to MCP server "x" in your brows
 it with `open`, waits for the redirect on a loopback port (300 s, `--timeout`), and stores the tokens in
 `<home>/mcp-auth.json` (0600), keyed by server name and URL. It runs with no terminal. A server that needs
 it reports `needs-auth`; `pi mcp logout` deletes the entry. `oauth` also takes `clientId`, `clientSecret`
-(a `${VAR}` or `!command` works), `callbackPort`, `scope` and `authServerMetadataUrl`. Only HTTP servers
+(`${VAR}` works; `!command` is rejected), `callbackPort`, `scope` and `authServerMetadataUrl`. Only HTTP servers
 with no `Authorization` header use it.
 
 Settings > Spaces > MCP servers also offers Sign in and Sign out for both space file
@@ -156,6 +156,35 @@ Remote hosts advertise `projects.trust.v1`. Approval goes to that host over the 
 authenticated connection; older hosts show an update-required reason. Failure never turns
 into approval, and a confirmation for another host or folder cannot apply to a new selection.
 The shared `.mcp.json` file keeps its separate "Also use a repo's .mcp.json" opt-in.
+
+Owned worktree threads also inherit the registered owning space's `.shepherd/mcp.json`,
+including sibling checkouts outside that space's folder. The host resolves the thread's
+`spaceID` and worktree metadata at creation and restart, then binds the MCP source to that
+exact canonical checkout. Threads without worktree-management metadata, including forks,
+must appear in that space's actual Git worktree listing. A sibling name, a forged `.git`
+pointer, or placing an unrelated thread under the same sidebar space grants nothing. Subprojects keep their existing
+physical-parent inheritance.
+
+The inherited file still requires the owning space's current Pi trust decision. MCP must
+be enabled in the host's settings. Revoking the space's approval blocks inheritance on the
+next thread start. This MCP-only grant does not save a checkout trust decision, pass
+`--approve`, load checkout extensions or settings, or install checkout packages. A separately
+trusted worktree's local MCP file wins over inherited same-named entries; an untrusted local
+file cannot override them. A checkout denial blocks its own resources, not the approved
+owning space's MCP. Native children and drafts retain their existing isolated launch policy
+and receive no owning-space grant.
+
+Inherited stdio servers use the owning space as their default working directory. Relative
+configured working directories also resolve against that space; explicit absolute directories
+remain unchanged. A relative server script therefore does not execute the branch's copy.
+Existing descendant subprojects keep their current working-directory behavior.
+
+All servers use the existing host Pi home and OAuth credentials. No credentials or MCP
+configuration are copied into worktrees. `mcp-parent.test.mjs` exercises real Pi RPC with
+scratch homes, a local provider and fake MCP servers, covering sibling discovery and calls,
+trusted and untrusted overrides, unrelated siblings, disabled MCP, revoked owner approval,
+and blocked executable checkout resources. `AgentCreationTests` covers ownership-based
+launch construction without adding project approval.
 
 `ProjectMCPTrustTests` uses the bundled Pi RPC startup and a local scripted provider and MCP
 server. It verifies that undecided resources stay blocked, approval registers a deferred tool
@@ -206,9 +235,17 @@ rename, so a half-written file is never read):
 | `shepherd.oauth` (client ID, secret, scopes) | `oauth.clientId`, `oauth.clientSecret`, `oauth.scope`, and `oauth.clientName: "Shepherd"` on a server that signs in |
 | `shepherd.start`, `shepherd.idleMinutes` | dropped: pi connects every enabled server when a session starts and keeps it |
 | `${keychain:<server>/<NAME>}` in `env` or a header | `${SHEPHERD_MCP_SECRET_<SERVER>_<NAME>}` |
-| `${VAR:-default}` in `env` or a header | the whole value as `!printf '%s' "…"`, which `/bin/sh` expands |
+| `!command` in `env`, headers or an OAuth client secret | rejected; configuration values never execute commands |
+| `${VAR:-default}` and other shell expansions in `env`, headers or an OAuth client secret | rejected; set the environment variable explicitly |
 | `${…}` in `command` or `args` | the server is started through `zsh -f -c` that expands them first (below) |
 | `${…}` in `url`, or in `cwd`; `type: "sse"`; a name pi rejects | not written; the page shows why on that server's row |
+
+Shepherd's bundled Pi rejects `!command` values everywhere, including native global and
+trusted-project MCP configs, inherited configs and model credentials. Both modular launches
+and the SDK bundle carry the pinned runtime patch. Existing files are not rewritten: replace
+command values with environment-variable or Keychain references. Explicit stdio server
+commands still work. Native Pi config treats shell defaults as literal text; Shepherd's
+Settings translation rejects them instead of generating an executable resolver.
 
 **Secrets** stay in the Keychain (`MCPSecretStore`, unchanged: same service, same account names, so every
 saved secret still works). At an agent launch the app reads the Keychain values the derived file refers to

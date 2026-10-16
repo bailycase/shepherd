@@ -48,7 +48,7 @@ States not drawn: a remote host's base chooser, Stop on the New thread page (no 
 
 ## Evidence
 
-Renders from the real producers (`ThreadControlsPreviewTests`), in `docs/design/evidence/thread-controls/`:
+Renders from the real producers (`ThreadControlsPreviewTests`):
 Stop (`controls-working-empty-*`), Send alone while working with words (`controls-working-typed-*`), idle
 (`controls-idle-light`), a long draft at text 1.3 (`controls-working-long-x1.3-dark`), the workplace
 menu with a long picked branch (`worktree-place-picked-*`), the branch picker

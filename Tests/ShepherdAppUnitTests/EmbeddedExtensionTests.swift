@@ -1,69 +1,44 @@
 import Foundation
+import ShepherdTestKit
 import Testing
 @testable import ShepherdApp
 @testable import ShepherdSessions
 
-/// pi loads the copies the app writes from embedded Swift literals, and `installedPath()`
-/// rewrites the installed file whenever content differs — so a literal that drifts from its
-/// canonical `Extensions/*` source ships a bug.
+/// pi loads the copies the app installs from `Extensions/`, which ships in ShepherdSessions'
+/// resource bundle through a symlink. These tests fail when a file is missing from the bundle,
+/// when it is not the repository's copy, or when an installer stops writing it.
 @Suite("Embedded extensions")
 struct EmbeddedExtensionTests {
     private static let extensionsDirectory = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         .appendingPathComponent("Extensions", isDirectory: true)
 
-    /// Every embedded literal paired with its canonical file.
-    private static let embedded: [String: String] = [
-        "shepherd-cliproxyapi.ts": CLIProxyAPIExtension.source,
-        "shepherd-service-tier.ts": ServiceTierExtension.extensionSource,
-        "shepherd-goal.ts": GoalExtension.extensionSource,
-        "shepherd-status.ts": StatusExtension.extensionSource,
-        "shepherd-namer.ts": NamerExtension.extensionSource,
-        "shepherd-panes.ts": PanesExtension.extensionSource,
-        "shepherd-review.ts": ReviewExtension.extensionSource,
-        "shepherd-subagents.ts": SubagentsExtension.extensionSource,
-        "shepherd-children.ts": ChildrenExtension.extensionSource,
-        "shepherd-children-config.ts": ChildrenExtension.configSource,
-        "shepherd-children-ui.ts": ChildrenExtension.uiSource,
-        "shepherd-workflow.ts": ChildrenExtension.workflowSource,
-        "shepherd-missions.ts": ChildrenExtension.missionsSource,
-        "shepherd-inspect.mjs": InspectExtension.extensionSource,
-        "shepherd-instructions.ts": InstructionsExtension.extensionSource,
-        "shepherd-design.ts": DesignExtension.extensionSource,
-        "shepherd-design-refs.ts": DesignReferencesExtension.extensionSource,
-        "shepherd-mcp-project.ts": MCPProjectExtension.extensionSource,
-        "shepherd-mcp-parent.ts": MCPParentExtension.extensionSource,
-        "shepherd-browser.ts": BrowserExtension.extensionSource,
-        "shepherd-context.ts": ContextExtension.extensionSource,
-        "shepherd-project-context.ts": ProjectContextExtension.extensionSource,
-        // Not an extension: Settings ▸ Pi ▸ Sign-in runs it with node to sign Shepherd's pi in.
-        "shepherd-sign-in.mjs": PiSignInScript.source,
-        "shepherd-project-mcp-sign-in.mjs": ProjectMCPScript.source,
-        // Not an extension: Settings ▸ Skills runs it with node to ask pi for its skills.
-    ]
-
-    /// The design skill the design extension hands pi: its canonical copy lives beside the
-    /// extensions, and the app writes these literals to `<support>/design-skill/`.
-    private static let designSkill: [String: String] = [
-        "SKILL.md": DesignExtension.skillSource,
-        "format.md": DesignExtension.formatSource,
-    ]
-
-    @Test(arguments: embedded.keys.sorted())
-    func theEmbeddedCopyIsByteIdenticalToTheCanonicalSource(filename: String) throws {
-        let canonical = try Data(contentsOf: Self.extensionsDirectory.appendingPathComponent(filename))
-        let literal = try #require(Self.embedded[filename])
-        #expect(Data(literal.utf8) == canonical, "embedded copy drifted from Extensions/\(filename)")
+    /// Every file under Extensions/, as the installers name it.
+    private static var canonical: [String] {
+        let files = (try? FileManager.default.contentsOfDirectory(atPath: extensionsDirectory.path)) ?? []
+        return files.filter { $0.hasSuffix(".ts") || $0.hasSuffix(".mjs") }.sorted()
+            + ["design-skill/SKILL.md", "design-skill/format.md"]
     }
 
-    @Test(arguments: designSkill.keys.sorted())
-    func theEmbeddedDesignSkillIsByteIdenticalToItsCanonicalSource(filename: String) throws {
-        let folder = Self.extensionsDirectory.appendingPathComponent("design-skill", isDirectory: true)
-        let canonical = try Data(contentsOf: folder.appendingPathComponent(filename))
-        let literal = try #require(Self.designSkill[filename])
-        #expect(Data(literal.utf8) == canonical, "embedded copy drifted from Extensions/design-skill/\(filename)")
-        let files = try FileManager.default.contentsOfDirectory(atPath: folder.path)
-        #expect(Set(files) == Set(Self.designSkill.keys))
+    @Test(arguments: canonical)
+    func theBundledCopyIsByteIdenticalToTheRepositorysFile(name: String) throws {
+        let repository = try Data(contentsOf: Self.extensionsDirectory.appendingPathComponent(name))
+        #expect(EmbeddedExtensions.data(name) == repository, "the bundle's Extensions/\(name) is not the repository's")
+    }
+
+    @Test func installingWritesTheFileOnceAndRewritesItWhenItDiffers() throws {
+        let directory = try makeScratchDirectory()
+        let url = directory.appendingPathComponent("shepherd-panes.ts")
+        try EmbeddedExtensions.install("shepherd-panes.ts", at: url)
+        let installed = try Data(contentsOf: url)
+        #expect(installed == EmbeddedExtensions.data("shepherd-panes.ts"))
+        let before = try FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date
+        try EmbeddedExtensions.install("shepherd-panes.ts", at: url)
+        let unchanged = try FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date
+        #expect(before == unchanged, "an identical file is not rewritten")
+        try Data("stale".utf8).write(to: url)
+        try EmbeddedExtensions.install("shepherd-panes.ts", at: url)
+        #expect(try Data(contentsOf: url) == installed, "a drifted file is put back")
     }
 
     /// Terminals are tabs: the tools an agent drives them with are `terminal_*`, and the old
@@ -78,12 +53,5 @@ struct EmbeddedExtensionTests {
         #expect(!registered.contains { $0.hasPrefix("pane_") }, "no pane_* tool, and no alias for one")
         #expect(!source.contains("pane_"), "no text names a pane_* tool")
         #expect(!source.contains("relativeTo") && !source.contains("axis"), "terminal_open names no place to split")
-    }
-
-    /// A new file under Extensions/ must get an embedded copy (and a row above).
-    @Test func everyCanonicalExtensionHasAnEmbeddedCopy() throws {
-        let files = try FileManager.default.contentsOfDirectory(atPath: Self.extensionsDirectory.path)
-            .filter { $0.hasSuffix(".ts") || $0.hasSuffix(".mjs") }
-        #expect(Set(files) == Set(Self.embedded.keys))
     }
 }

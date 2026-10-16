@@ -647,7 +647,28 @@ struct SettingsPreviewTests {
         workspace.vm.piAuth.noteTurnError("OAuth refresh failed for openai-codex: invalid_grant")
         workspace.vm.piAuth.needed = ["openai-codex"]
         workspace.vm.settingsSection = .piSignIn
-        try await Preview.render("settings-pi-sign-in", size: CGSize(width: 1280, height: 1500)) {
+        try await Preview.renderMatrix("settings-pi-sign-in", size: CGSize(width: 1280, height: 2000)) {
+            SettingsView(vm: workspace.vm)
+        }
+    }
+
+    @Test(arguments: ["copied", "empty", "long"], [SettingsSection.pi, .piSignIn])
+    func settingsCommandCredentials(state: String, section: SettingsSection) async throws {
+        var survey = state == "empty" ? YourPiSurvey() : PreviewYourPi.imported
+        if state != "empty" {
+            let provider = state == "long" ? "northwind-gateway-" + String(repeating: "long-provider-name-", count: 8) : "northwind-gateway"
+            let command = "!op read " + (state == "long" ? String(repeating: "secret-command-text-", count: 30) : "fake-command-reference")
+            survey.customProviderDetails = try PiCustomProvider.parse(JSONSerialization.data(withJSONObject: [
+                "providers": [provider: ["apiKey": command]]
+            ]))
+            survey.logins.append(.init(provider: provider, shepherd: .apiKey(.command), yours: .apiKey(.command)))
+            survey.keys[provider] = PiKeyDisplay.of(command)
+            survey.yourKeys[provider] = PiKeyDisplay.of(command)
+        }
+        let workspace = try PreviewWorkspace(yourPi: survey)
+        defer { workspace.stop() }
+        workspace.vm.settingsSection = section
+        try await Preview.renderMatrix("settings-command-\(section.rawValue)-\(state)", size: CGSize(width: 1280, height: 2000)) {
             SettingsView(vm: workspace.vm)
         }
     }

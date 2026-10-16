@@ -122,7 +122,7 @@ struct RootView: View {
         .overlay { ImplementSheetOverlay(vm: vm) }
         // Over a design, the palette's chord jumps to a board instead (JumpInContext).
         .overlay { DesignJumpOverlay(vm: vm) }
-        .overlay { ImageViewerOverlay(vm: vm) }
+        .overlay { ImageViewerOverlay(vm: vm, leadingInset: isFullScreen ? 0 : AppLayout.trafficLightInset) }
         // ⌘K floats over everything, 18% down and capped to the window; the scrim dismisses.
         .nwCommandPalette(isPresented: Binding(
             get: { vm.showCommandPalette && !vm.showSettings && !vm.showComponentGallery },
