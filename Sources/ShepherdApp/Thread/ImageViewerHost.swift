@@ -212,6 +212,8 @@ struct ImageViewerActions {
 /// button and Esc do); ← and → step through the images.
 struct ImageViewerOverlay: View {
     var vm: ShepherdViewModel
+    /// How far the window controls reach into the bar (`AppLayout.trafficLightInset`; none in full screen).
+    var leadingInset: CGFloat = 0
     @FocusState private var focused: Bool
 
     private func content(_ slot: ViewerSlot) -> NWImageViewer.Content {
@@ -237,6 +239,7 @@ struct ImageViewerOverlay: View {
                     addToMessage: image.flatMap { shown in state.addToMessage.map { add in { add(shown); vm.closeImageViewer() } } },
                     showInFinder: image?.source.map { url in { actions.reveal(url) } },
                     retry: { if case .failed = slot { return { state.retry() } } else { return nil } }(),
+                    leadingInset: leadingInset, pixels: image?.pixels ?? image?.picture?.size,
                     close: { vm.closeImageViewer() })
                 .id("\(slot.name)/\(state.index)")
                 // Esc and the arrows go to a hidden focus target of their own: focusing the whole viewer would hand every control in it an

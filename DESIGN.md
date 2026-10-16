@@ -3,7 +3,7 @@
 Every UI change on the Mac, iPhone and iPad follows these rules. Each surface's spec, and every
 board with how much of it is built, lives in [docs/design/](docs/design/README.md). Print only the
 part you need with `python3 scripts/design_section.py "<board or heading>"` (find a board with
-`--boards | grep -i <word>`). [AGENTS.md](AGENTS.md) has the step-by-step procedure.
+`--boards | grep -i <word>`).
 
 ## Precedence
 
@@ -16,7 +16,7 @@ The first of these that speaks wins:
 4. The rules in this file.
 
 - This file and the specs never override a design the user just gave. If they disagree, build
-  the design and update the spec in the same commit.
+  the design and fix the spec.
 - A departure from a design is the user's call, never yours. Name each one in your final
   message with the reason. Departures the user accepted live in
   [docs/design/departures.md](docs/design/departures.md).
@@ -31,29 +31,21 @@ Every decision has to pass one test: does this help one person supervise ten wor
 
 - An agent has a short task title it gave itself (`Fix plan mode`), a workplace, and a
   lifecycle: working, needs you, done, failed, idle. It renders only as a native thread.
-- Terminals are tabs under a thread, one terminal per tab. No splits, no global shells.
-- Browser pages are tabs within the thread's Browser pane, capped at eight. The agent's target
-  is independent of the user's selected tab. User boards BrowserTabsAgent through BrowserTabsTwo
-  are the spec ([Browser](docs/design/side-pane-browser.md)); tabs never restore after a restart.
-- **Spaces and Projects.** A Space is the folder a thread runs in (what the app used to call a "Project").
-  A Project is the new feature above Spaces and owns the word. Copy never calls a folder a project. The
-  [ProjectLead boards](docs/design/boards/SpacesTerminology.md) are the spec for Projects; the user's only
-  approved changes to them are macOS-only hosts (no Linux) and the Activity sidebar's Designs group first,
-  above Needs you. Activity then reads Designs, Needs you, Working, Done, Projects, Recents.
+- Terminals are tabs under a thread, one terminal per tab. No splits, no global shells. Browser
+  pages are tabs in the thread's Browser pane ([browser](docs/browser.md)).
+- A Space is the folder a thread runs in. A Project is the feature above Spaces and owns the
+  word; copy never calls a folder a project ([projects](docs/project-lead.md)).
 - Copy says "the agent", never "pi". The exception is where the user's own pi is the subject
   (Settings ▸ Pi, Sign-in).
+- Experiments (Projects, Goals) are off by default and turning one off never discards its data;
+  turning it back on never resumes work by itself. The feature's doc in `docs/` has the detail.
 - Missions and the Artifacts and Files tabs are not built. Nothing shows or links to them.
-- Projects are an experiment, off by default (Settings ▸ Experiments ▸ Projects). Off removes the Projects group
-  (header, New project chip, rows) from both sidebars, and every way to open New project or a Project page. Spaces and
-  ordinary threads are untouched. Off closes only Project navigation and keeps the projects, their files and drafts; on
-  shows them again and reopens or resumes nothing.
-- Goals are an experiment, off by default (Settings ▸ Experiments). They have no time or token
-  budgets. Turning them off pauses active goals and never clears them. Turning them back on
-  never resumes work by itself.
 
 ## Principles, in priority order
 
 1. **Readable measure.** The thread column is at most 820pt wide and agent prose 640pt.
+   The [image viewer](docs/design/thread-images.md) toolbar also stays within 820pt, clear of
+   the window controls. Paging arrows sit beside the fitted image, not at the window edges.
 2. **Shape, not labels.** No speaker labels or avatars. A user turn is a trailing bubble; agent
    output is unboxed prose.
 3. **One quiet line per burst.** Consecutive calls of one kind merge into one activity line.
@@ -113,28 +105,11 @@ Settings", revision 1083) is the source of truth for every Settings page.
 - **Pages** fill the width with 40pt side gutters. Each page has a Geist 22/600 title, one
   explanation line, then groups 28pt apart. A group has a caps label, a flat card (radius 10,
   1px `lineSubtle`), and an optional footnote.
-- **Pi** is Shepherd's pi, then **From pi**: the source, what was brought over, the copies and
-  the imported extensions.
-- **Subagents** lists the definition files, then the native subagent switches and defaults.
-- **Extensions** holds the bundled extension switches. Peer tools have no separate permission row.
-- **Slash commands**: off disables a command entirely, in the menu and when typed.
-- **Spaces** (the old folder-based "Projects"; the name now belongs to the new Projects feature) reuses the shared MCP server cards, forms and OAuth sheet. Authentication runs on
-  the selected host and opens the viewer's browser. Native MCP shows Pi's space approval apart
-  from saved credentials, and asks for explicit confirmation of executable space resources
-  before approving them on that host ([Space MCP](docs/design/project-mcp.md)).
-- Local spaces offer [Add child space](docs/design/child-projects.md) from Settings' existing
-  Add subspace action and the sidebar space menu. The shared dialog creates an empty folder
-  or registers an existing descendant. Child spaces nest under their main space in the
-  sidebar, with their threads indented again; parent collapse hides the whole group. Remove
-  Space… confirms registration/session removal while preserving local folders and child spaces.
-  Rename Space… changes only the display name. Tool-driven parent edits change both space
-  trees without changing folders or configuration inheritance; moving/copying data is explicit.
-- Advanced includes opt-in [crash diagnostics](docs/design/boards/Diagnostics.md), with adjacent
-  reporting disclosure, an unavailable state for unconfigured builds and immediate opt-out. Reset
-  turns diagnostics off. No prompt, tool-output or screen recording collection.
+- Every row is wired: a row exists only if changing it changes the app, and a change applies at
+  once with no Save, except Instructions and Spaces, which edit files with an explicit Save.
 - Sliders show the bare number the board draws ("100", "232", "12.5"). VoiceOver reads the unit.
 
-Detail: [settings.md](docs/design/settings.md) and its `settings-*` files.
+Each page's contents: [settings.md](docs/design/settings.md) and its `settings-*` files.
 
 ## Night Watch
 
@@ -245,19 +220,11 @@ each rule. Add a budget with any new long list.
 
 ## Verifying visuals
 
-1. Render the surface: `SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter <suite>`
-   (`ThreadPreviewTests`, `NavigationPreviewTests`, `AgentsPreviewTests`, `ReviewPreviewTests`,
-   `SettingsPreviewTests`, `DesignPreviewTests`, `PreviewTests`). It writes
-   `<surface>-<light|dark>.png`. Drive it from the real producer, and cover each state, empty,
-   long text and text scale 1.3 (`Preview.renderMatrix`).
-2. Open the PNGs beside the design, both appearances, element by element. Fix every difference
-   you can name.
-3. Press each control the design draws with `ControlPress` (docs/testing.md › Pressing a
-   control). Assert the request it sent, the state it left and its hit area.
-4. Motion: record frames with `MotionProbe` and compare the start and end states.
-5. Run the `Shepherd (Dev)` scheme and check the change in both appearances.
-
-More: [docs/design/verifying.md](docs/design/verifying.md).
+Render the surface with `SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter <suite>`
+(`ThreadPreviewTests`, `NavigationPreviewTests`, `AgentsPreviewTests`, `ReviewPreviewTests`,
+`SettingsPreviewTests`, `DesignPreviewTests`). It writes `<surface>-<light|dark>.png`; drive it
+from real data, and look at the PNGs beside the design. A control a test needs to press goes through
+`ControlPress` (docs/testing.md › Pressing a control). Detail: [docs/design/verifying.md](docs/design/verifying.md).
 
 ## Where the detail is
 

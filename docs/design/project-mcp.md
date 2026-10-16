@@ -3,9 +3,7 @@
 > Read when changing space MCP cards, forms or the Pi settings navigation.
 
 The user's reference is Settings > MCP servers, not the old space JSON editor. Reuse its
-server rows, expandable details and Add/Edit sheet. The existing reference render is
-[evidence/settings-full-width/app/app-mcp-light.png](evidence/settings-full-width/app/app-mcp-light.png).
-The same request keeps Pi's Sign-in, From your pi and Slash commands links visible on every
+server rows, expandable details and Add/Edit sheet. The same request keeps Pi's Sign-in, From your pi and Slash commands links visible on every
 Settings page when search is empty.
 
 ## Implementation checklist
@@ -35,8 +33,7 @@ Settings page when search is empty.
   connection. Native space files show a separate approval card, with the block reason and
   "Trust this space…" confirmation. Approval covers all Pi protected project resources, not
   only MCP, and is saved on the selected host. The checklist and all required states are in
-  [ProjectMCPTrust](boards/ProjectMCPTrust.md). Native screenshots in `evidence/project-mcp-trust/`
-  cover 22 cases in light and dark at text scales 1.0 and 1.3. The sign-in requirement and control checklist
+  [ProjectMCPTrust](boards/ProjectMCPTrust.md). The sign-in requirement and control checklist
   are in [ProjectMCPSignIn](boards/ProjectMCPSignIn.md).
 - Structured edits preserve unknown JSON keys and the existing space's format. Native
   `.shepherd/mcp.json` (or `.pi/mcp.json` inventoried by an older remote host) uses `enabled`,

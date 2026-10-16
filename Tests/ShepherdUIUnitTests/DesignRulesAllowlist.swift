@@ -35,7 +35,6 @@ enum DesignRuleAllowlist {
         .init(.rawColor, "App/iOS/Designs/DesignHost.swift", 1, "Builds a UIColor from a pixel sampled from a board's snapshot: content, not chrome."),
         .init(.rawColor, "App/iOS/Terminal/TerminalSurface.swift", 1, "Converts the terminal theme's palette into SwiftTerm's own color type: the palette is the theme's."),
         .init(.rawColor, "Packages/ShepherdUI/Sources/ShepherdUI/Components/DesignTool/DesignCanvas.swift", 1, "An AppKit menu item's destructive title takes an NSColor: use NSColor(Color.nw.failed) when the file is next changed."),
-        .init(.rawColor, "Sources/ShepherdApp/DesignExtension.swift", 1, "An example in a tool description inside the embedded extension's TypeScript string: not UI."),
         .init(.rawColor, "Sources/ShepherdApp/DesignSystemPageModel.swift", 1, "A design system that names no background draws on white, as its boards do: the design's content, not chrome."),
         .init(.rawColor, "Sources/ShepherdApp/ShepherdApp.swift", 2, "The Debug build's DEV badge, drawn into the Dock icon at runtime: not shipped UI."),
         // Status colors tinted by an alpha.
