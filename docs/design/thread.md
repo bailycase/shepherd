@@ -677,8 +677,11 @@ text.
   Anything that only looks like a tag (`Array<Int>`) stays text.
 - **Strikethrough and links:** `~~text~~` is struck through; links, `<autolinks>` and bare
   URLs are `running` and open in the browser.
-- **Diagrams and math** stay code: Shepherd renders neither. A fence labelled `mermaid` (or
-  `plantuml`, `dot`, `graphviz`, `d2`) says "mermaid · diagram source" after a
+- **Mermaid diagrams** render locally once their fence is finished, using bundled Mermaid in a
+  restricted web view. Source remains available and copyable; invalid or unsupported diagrams
+  show an error with their source. Diagram configuration cannot override app-owned security or styling.
+  Other **diagrams and math** stay code. Source fences (`mermaid`, `plantuml`, `dot`, `graphviz`,
+  `d2`) say, for example, "mermaid · diagram source" after a
   `point.3.connected.trianglepath.dotted` glyph, and a `math`, `latex`, `tex` or `katex` fence
   (and a `$$` block) says "math · math source" after `function`, both 10pt tertiary in the header.
 - **Streaming** (`nativeMarkdownParse(_:streaming:)`): only the text a reply is still writing

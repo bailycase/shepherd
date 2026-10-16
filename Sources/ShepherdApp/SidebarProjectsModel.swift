@@ -40,6 +40,8 @@ struct SidebarProject: Identifiable, Equatable {
     var rows: [SidebarListRow] = []
     /// Every host it lives on is offline (a remote project).
     var dimmed = false
+    /// This Mac's folder for it is gone: it takes no new thread here until located or removed.
+    var missing = false
     var pinned = false
     var rollup: NWProjectRollup = .quiet
     var parentID: SidebarProjectID?
@@ -194,7 +196,7 @@ struct SidebarTree: Equatable {
                     id: project.id, name: project.name, path: project.path, count: project.rows.count + project.childThreadCount, expanded: expanded,
                     rollup: project.rollup, dimmed: project.dimmed, newThreadHost: place?.host, newThreadSpace: place?.space,
                     movable: sectionIndex == 0 && project.space != nil, parentID: project.parentID, depth: project.ancestorIDs.count,
-                    pinned: project.pinned)))
+                    missing: project.missing, pinned: project.pinned)))
                 guard expanded else { continue }
                 for var row in project.rows {
                     row.projectDepth = project.ancestorIDs.count
@@ -227,6 +229,7 @@ struct SidebarProjectRow: Equatable {
     let movable: Bool
     var parentID: SidebarProjectID? = nil
     var depth = 0
+    var missing = false
     var pinned = false
 
     var space: SpaceID? {
@@ -364,6 +367,10 @@ private struct TreeBuilder {
             declare(.local(space.id), name: space.name, path: space.path, host: nil, space: space.id)
             projects[.local(space.id)]?.parentIsExplicit = space.parentIsExplicit
             projects[.local(space.id)]?.requestedParentID = space.parentID.map { .local($0) }
+            if source.missingSpaces.contains(space.id) {
+                projects[.local(space.id)]?.missing = true
+                projects[.local(space.id)]?.places[nil] = nil
+            }
         }
         let visible = Set(projectSpaces.map(\.id))
         let runs = Dictionary(state.automations.compactMap { automation in automation.agentID.map { ($0, automation) } },

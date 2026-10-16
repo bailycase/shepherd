@@ -317,6 +317,20 @@ SidebarTree, SidebarProjects and SidebarProjectsHosts. Mac only: the iPad and iP
   native destructive role. The confirmation names the space and its own agent count, says
   the folder/files and saved conversations remain, and preserves child registrations. It
   removes the registration and stops only its own sessions; it never deletes local folders.
+- **Missing folder:** a local space whose folder was moved, renamed or deleted is found within
+  2 seconds (a poll of each space's folder off the main thread, also on every state change and
+  when the app comes to the front), and cleared as soon as the folder is back. Its row draws
+  `NWGlyph.failedStep` in `failed` in place of the folder, the name in `textTertiary`, and
+  "missing" in mono 10 `failed` before the count; the tooltip says "Folder not found: <path>".
+  It takes no + and no New Thread, the New thread page refuses to send in it, and
+  `startAgent` refuses it. Its menu leads with **Locate Folder…** (the directory picker; points
+  the space at the chosen folder; spaces registered inside it, its threads' and terminals'
+  folders, worktree paths and automations follow. Its threads stop, their pi conversations move to
+  the new folder's session folder with the header's cwd rewritten, and they start again there) and **Remove Space…**; Reveal in
+  Finder and Open in Terminal are left out. Child spaces inside it are marked the same way. A
+  thread whose folder is missing never starts pi elsewhere: its Can't start banner says "This
+  thread's folder is missing." (`NativeStartProblem.Kind.folderMissing`) with Locate Folder… in
+  place of Retry.
 - **Pin / Unpin** (the user's request, 2026-10-16; no board) sits after Collapse All in a local
   space's menu (`pin` / `pin.slash`). A pinned space leads its siblings, oldest pin first: a pinned
   root moves to the top with its children, a pinned child leads its parent's children, and the

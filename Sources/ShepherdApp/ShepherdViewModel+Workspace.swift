@@ -257,6 +257,13 @@ extension ShepherdViewModel {
     /// Retry in an agent's Can't start banner: starts its pi again (`newConversation`: without
     /// looking for the conversation it was resuming).
     func retryAgentStart(_ agentID: AgentID, newConversation: Bool = false) {
+        // A thread whose folder is still gone: choose where it went (Locate Folder…) instead.
+        if let agent = state.agents.first(where: { $0.id == agentID }),
+           let cwd = state.tabs.first(where: { $0.id == agent.tabID })?.layout.leaf(withID: agent.paneID ?? PaneID())?.cwd,
+           !Self.folderExists(cwd) {
+            locateSpaceFromPanel(agent.spaceID)
+            return
+        }
         threadStores.store(for: agentID).restarting()
         sessions.retryStart(agentID, newConversation: newConversation)
     }

@@ -96,6 +96,7 @@ public struct NWProjectRow<MenuContent: View>: View, Equatable {
     let expanded: Bool
     let rollup: Rollup
     let dimmed: Bool
+    let missing: Bool
     let pinned: Bool
     let hovered: Bool
     let toggle: () -> Void
@@ -106,9 +107,10 @@ public struct NWProjectRow<MenuContent: View>: View, Equatable {
 
     /// `newThread` nil leaves the + out (a host that can't take one); `dimmed` is a project on
     /// a host that is not connected. `hovered` draws it hovered whatever the pointer does (the
-    /// board's hover sample).
-    /// `pinned` draws the outline pin after the name.
-    public init(_ name: String, count: Int, expanded: Bool, rollup: Rollup = .quiet, dimmed: Bool = false, pinned: Bool = false,
+    /// board's hover sample). `missing` is a space whose folder is gone: a `failed` cross in place
+    /// of the folder and "missing" in place of the count. `pinned` draws the outline pin after the name.
+    public init(_ name: String, count: Int, expanded: Bool, rollup: Rollup = .quiet, dimmed: Bool = false, missing: Bool = false,
+                pinned: Bool = false,
                 hovered: Bool = false,
                 toggle: @escaping () -> Void, newThread: (() -> Void)?, @ViewBuilder menu: @escaping () -> MenuContent) {
         self.name = name
@@ -116,6 +118,7 @@ public struct NWProjectRow<MenuContent: View>: View, Equatable {
         self.expanded = expanded
         self.rollup = rollup
         self.dimmed = dimmed
+        self.missing = missing
         self.pinned = pinned
         self.hovered = hovered
         self.toggle = toggle
@@ -125,7 +128,7 @@ public struct NWProjectRow<MenuContent: View>: View, Equatable {
 
     public nonisolated static func == (a: NWProjectRow, b: NWProjectRow) -> Bool {
         a.name == b.name && a.count == b.count && a.expanded == b.expanded && a.rollup == b.rollup && a.dimmed == b.dimmed
-            && a.pinned == b.pinned && a.hovered == b.hovered && (a.newThread == nil) == (b.newThread == nil)
+            && a.missing == b.missing && a.pinned == b.pinned && a.hovered == b.hovered && (a.newThread == nil) == (b.newThread == nil)
     }
 
     public var body: some View {
@@ -139,13 +142,13 @@ public struct NWProjectRow<MenuContent: View>: View, Equatable {
                 .rotationEffect(.degrees(expanded ? 90 : 0))
                 .nwAnimation(.disclosure, value: expanded)
                 .frame(width: NWProjectMetrics.chevronSlot)
-            Image(systemName: "folder")
+            (missing ? NWGlyph.failedStep.image : Image(systemName: "folder"))
                 .font(.system(size: NWProjectMetrics.folder, weight: .regular))
-                .foregroundStyle(nw.textSecondary)
+                .foregroundStyle(missing ? nw.failed : nw.textSecondary)
                 .frame(width: NWSidebarMetrics.rowSlot)
             Text(name)
                 .font(density.rowTitleFont(weight: .medium))
-                .foregroundStyle(nw.textPrimary)
+                .foregroundStyle(missing ? nw.textTertiary : nw.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.tail)
             if pinned {
@@ -182,6 +185,7 @@ public struct NWProjectRow<MenuContent: View>: View, Equatable {
 
     private var accessibilityLabel: String {
         var parts = [name, count == 1 ? "1 thread" : "\(count) threads"]
+        if missing { parts.append("folder missing") }
         if pinned { parts.append("pinned") }
         if !expanded {
             switch rollup {
@@ -196,6 +200,9 @@ public struct NWProjectRow<MenuContent: View>: View, Equatable {
     /// The count, rolled up while collapsed.
     @ViewBuilder private var summary: some View {
         HStack(spacing: NWProjectMetrics.rollupGap) {
+            if missing {
+                Text("missing").font(.nwMono(10)).foregroundStyle(Color.nw.failed).lineLimit(1).fixedSize()
+            }
             // The boards draw a Space row as its count alone (ProjectLead-AddsSpace): the rollup is said to VoiceOver in the row's
             // label ("needs you", "running") but draws no dot.
             if count > 0 {

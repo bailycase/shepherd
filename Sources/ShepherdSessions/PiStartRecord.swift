@@ -78,6 +78,8 @@ struct PiStartRecord {
         let kind: NativeStartProblem.Kind
         if resumedAsNew {
             kind = .resumedAsNew
+        } else if lines.contains(where: { $0.hasPrefix(PiLaunch.folderMissingPrefix) }) {
+            kind = .folderMissing
         } else if lines.contains(where: { $0.hasPrefix(PiLaunch.refusalPrefix) }) {
             // Shepherd's own refusal (`PiLaunch.refused`): its pi home and "your pi" overlap.
             kind = .homeUnsafe

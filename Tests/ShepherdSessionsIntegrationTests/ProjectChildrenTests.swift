@@ -141,7 +141,12 @@ struct ProjectChildrenTests {
         try await eventually("worker settled") { rig.host.server.state.projects.first?.tasks.first?.phase == .settled }
         let pi = try #require(rig.agents.current.values.first)
         try await expectDelegationRefused(pi)
-        let paused = try await rig.perform(project.id, .pause)
+        _ = try await rig.perform(project.id, .pause)
+        try await eventually("Project interruption finished before deletion") {
+            guard let current = rig.host.server.state.projects.first(where: { $0.id == project.id }) else { return false }
+            return current.paused && !current.interruptPending
+        }
+        let paused = try #require(rig.host.server.state.projects.first { $0.id == project.id })
         _ = try await rig.host.server.logicalProjects(.delete(projectID: project.id, expectedRevision: paused.revision))
         #expect(rig.host.server.state.projectContext(for: pi.agent.id) == nil, "A fresh ordinary launch has no Project marker")
         let snapshot = try await pi.ready(), client = try ExtensionClient(path: rig.host.socketPath)
