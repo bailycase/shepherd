@@ -92,6 +92,29 @@ async function harness({ onFrame = () => {}, automation = false, defer = false }
 
 const output = (result) => result.content.map((block) => block.text).join("\n");
 
+test("agent_move sends the authenticated move request and reports host refusal", async () => {
+  let refuse = false;
+  const h = await harness({ defer: true, onFrame(frame, write) {
+    if (frame.type === "moveAgent") write(refuse
+      ? { type: "error", id: frame.id, code: "thread_active", message: "Finish the active turn first." }
+      : { type: "ok", id: frame.id });
+  } });
+  try {
+    const tool = h.tools.get("agent_move");
+    assert.match(tool.description, /^Only when the user explicitly asks/);
+    assert.match(output(await tool.execute("move", { agentID: "target", spaceID: "child" })), /conversation kept/);
+    const frame = h.frames.find(f => f.type === "moveAgent");
+    assert.equal(frame.agentID, "agent-1");
+    assert.equal(frame.targetAgentID, "target");
+    assert.equal(frame.spaceID, "child");
+    refuse = true;
+    await assert.rejects(tool.execute("busy", { agentID: "target", spaceID: "child" }), /Finish the active turn first/);
+  } finally { await h.close(); }
+  const automation = await harness({ automation: true });
+  try { assert.equal(automation.tools.has("agent_move"), false); }
+  finally { await automation.close(); }
+});
+
 test("every tool that touches another thread leads with the rule and gives a wrong and a right use", async () => {
   const h = await harness();
   try {
@@ -239,7 +262,7 @@ test("stopping a pending send tells the host", async () => {
   } finally { await h.close(); }
 });
 
-const PEER = ["agent_list", "agent_send", "agent_read", "agent_steer", "agent_interrupt", "agent_wait", "agent_delete", "agent_spawn"];
+const PEER = ["agent_list", "agent_send", "agent_read", "agent_steer", "agent_interrupt", "agent_wait", "agent_delete", "agent_spawn", "agent_move"];
 const AUTOMATION = ["automation_create", "automation_list", "automation_update", "automation_delete", "automation_start", "automation_stop"];
 
 test("with deferral on, the tools that touch other threads and the automation tools are deferred and keep every word, and the terminal tools and notify stay direct", async () => {

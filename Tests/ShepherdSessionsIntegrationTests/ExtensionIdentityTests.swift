@@ -194,6 +194,7 @@ struct ExtensionIdentityTests {
             .listAgents(id: 9, agentID: victim),
             .sendToAgent(id: 10, agentID: victim, targetAgentID: a.agent.id, text: "do it"),
             .spawnAgent(id: 11, agentID: victim, cwd: "/tmp", prompt: "do it"),
+            .moveAgent(id: 118, agentID: victim, targetAgentID: a.agent.id, spaceID: a.agent.spaceID),
             .coordinateAgent(id: 12, agentID: victim, targetAgentID: a.agent.id, request: AgentCoordinationRequest(operation: .steer, text: "stop")),
             .coordinateAgent(id: 13, agentID: victim, targetAgentID: a.agent.id, request: AgentCoordinationRequest(operation: .delete)),
             .designRead(id: 14, agentID: victim, designID: design, path: nil),
@@ -224,7 +225,7 @@ struct ExtensionIdentityTests {
         }
         #expect((quiet + requests).allSatisfy { $0.speaksFor == victim })
         #expect(requests.allSatisfy { $0.replyID != nil } && quiet.allSatisfy { $0.replyID == nil })
-        #expect(Set(try (quiet + requests).map(kind)).count == 48)
+        #expect(Set(try (quiet + requests).map(kind)).count == 49)
 
         let client = try ExtensionClient(path: h.socketPath)
         for message in quiet + requests { try client.send(message) }

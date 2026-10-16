@@ -1476,6 +1476,10 @@ public final class SessionServer: @unchecked Sendable {
             unavailable("The agent no longer exists.")
             return
         }
+        guard !movingThreads.contains(agentID) else {
+            completion(.failure(code: "thread_moving", message: "This thread is moving to another space. Try again when it finishes."))
+            return
+        }
         if queuePausedExecutionAnswer(agentID: agentID, request: request, completion: { completion(.result($0)) }) { return }
         if queuePausedProjectAnswer(agentID: agentID, request: request, completion: { completion(.result($0)) }) { return }
         // Stop on the coordinator ends its current turn only; the Project keeps running (only Pause pauses it).
@@ -3027,7 +3031,7 @@ public final class SessionServer: @unchecked Sendable {
         }
         if assignedWorker {
             switch message {
-            case .childScope, .spawnAgent, .sendToAgent, .coordinateAgent, .createAutomation, .updateAutomation, .startAutomation:
+            case .childScope, .spawnAgent, .moveAgent, .sendToAgent, .coordinateAgent, .createAutomation, .updateAutomation, .startAutomation:
                 if let id = message.replyID { reply(.error(id: id, code: "project_scope", message: "Use Project threads through the coordinator; subagents and workflows are unavailable in Projects. Peer and automation admission is also unavailable."), to: client) }
                 return
             default: break
@@ -3188,6 +3192,18 @@ public final class SessionServer: @unchecked Sendable {
                                      problem: sendProblem(sender: agentID, target: targetAgentID)) else { return }
             routeAgentPeerRequest(.send(agentID: agentID, targetAgentID: targetAgentID, text: text, delivery: delivery),
                                   requestID: id, client: client)
+        case .moveAgent(let id, let agentID, let targetAgentID, let spaceID):
+            guard agentID != targetAgentID else {
+                reply(.error(id: id, code: "self_control", message: "An active agent cannot move itself. Ask another thread or move it manually after it finishes."), to: client)
+                return
+            }
+            guard !refusesDesignPeer(id: id, sender: agentID, target: targetAgentID, client: client),
+                  agentActionAllowed(senderID: agentID, requestID: id, client: client, problem: nil) else { return }
+            guard !Self.automationRunAgentIDs(in: store.state).contains(agentID) else {
+                reply(.error(id: id, code: "not_a_thread", message: "Automation runs cannot move threads."), to: client)
+                return
+            }
+            routeAgentPeerRequest(.move(agentID: agentID, targetAgentID: targetAgentID, spaceID: spaceID), requestID: id, client: client)
         case .spawnAgent(let id, let agentID, let cwd, let prompt):
             guard !cwd.isEmpty, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 reply(.error(id: id, code: "invalid", message: "cwd and prompt are required"), to: client)
@@ -3614,6 +3630,10 @@ public final class SessionServer: @unchecked Sendable {
 
     private func coordinateAgent(id: Int, agentID: AgentID, targetAgentID: AgentID,
                                  request: AgentCoordinationRequest, client: ExtensionConnection) {
+        guard !movingThreads.contains(targetAgentID) else {
+            reply(.error(id: id, code: "thread_moving", message: "The target thread is moving to another space."), to: client)
+            return
+        }
         guard client.agentID == agentID,
               let sender = store.state.agents.first(where: { $0.id == agentID }),
               store.state.agents.contains(where: { $0.id == targetAgentID }) else {
@@ -3803,7 +3823,7 @@ public final class SessionServer: @unchecked Sendable {
     /// Success means queued on the socket, not accepted or consumed by pi.
     public func pushMessage(toAgent agentID: AgentID, text: String, delivery: AgentMessageDelivery = .task) -> Bool {
         queue.sync {
-            guard let client = clients.values.first(where: { $0.agentID == agentID }),
+            guard !movingThreads.contains(agentID), let client = clients.values.first(where: { $0.agentID == agentID }),
                   let payload = try? NDJSON.encode(ExtensionReply.message(id: 0, text: text, delivery: delivery)),
                   payload.count - 1 <= NDJSON.maxPayloadBytes else { return false }
             enqueuePayload(payload, to: client)
@@ -4576,6 +4596,13 @@ public final class SessionServer: @unchecked Sendable {
             }
             guard self.store.state.tabs[index].layout.contains(paneID) else {
                 throw SessionServerError.noSuchPane(paneID)
+            }
+            if self.store.state.agents.contains(where: { $0.tabID == tabID && $0.paneID == paneID && self.movingThreads.contains($0.id) }) {
+                if let sessionID, case .rpc(let rpc, _)? = self.sessions[sessionID] {
+                    self.startRecords[sessionID]?.requestStop()
+                    rpc.kill()
+                }
+                throw ProjectFileError("thread_moving", "This thread is moving to another space.")
             }
             let previous = self.store.state.tabs[index].layout.leaf(withID: paneID)?.sessionID
             try self.mutateState {
@@ -6144,8 +6171,126 @@ public final class SessionServer: @unchecked Sendable {
         await enqueueValue { self.keptStarts[sessionID]?.retrying = true }
     }
 
-    /// Stops an agent's pi without retiring its agent: its exit keeps the agent, with no problem
-    /// to report (`SessionExit.keepsAgent`).
+    /// Held across process shutdown, conversation copy and the atomic workspace update.
+    private var movingThreads: Set<AgentID> = []
+
+    @discardableResult public func moveThread(_ agentID: AgentID, to spaceID: SpaceID) async throws -> Bool {
+        let plan = try await enqueue { () -> (Agent, LeafPane, Space)? in
+            guard let agent = self.store.state.agents.first(where: { $0.id == agentID }),
+                  let tab = self.store.state.tabs.first(where: { $0.id == agent.tabID }),
+                  let paneID = agent.paneID, let pane = tab.layout.leaf(withID: paneID) else {
+                throw ProjectFileError("no_such_agent", "The thread no longer exists.")
+            }
+            guard self.store.state.isOrdinaryThread(agent), !self.store.state.isProjectWorker(agentID),
+                  !self.store.state.isProjectCoordinator(agentID),
+                  !self.store.state.automations.contains(where: { $0.agentID == agentID }) else {
+                throw ProjectFileError("not_a_thread", "Only ordinary threads can move between spaces.")
+            }
+            guard agent.worktreePath == nil && agent.worktreeBranch == nil else {
+                throw ProjectFileError("worktree_thread", "Worktree threads cannot move between spaces.")
+            }
+            guard let destination = self.store.state.spaces.first(where: { $0.id == spaceID && !$0.hidden }) else {
+                throw ProjectFileError("no_such_space", "Choose an existing, non-reserved space on this host.")
+            }
+            guard !self.movingThreads.contains(agentID), agent.status != .working, agent.status != .blocked,
+                  agent.waitingOn == nil else {
+                throw ProjectFileError("thread_active", "Wait until the thread is inactive before moving it.")
+            }
+            if let session = pane.sessionID.flatMap({ self.sessions[$0] }), session.isAlive {
+                guard session.thread?.canMoveSpace == true else {
+                    throw ProjectFileError("thread_active", "Finish the turn, questions, queued messages and child work before moving this thread.")
+                }
+                guard session.thread?.piSessionID == agent.effectivePiSessionID else {
+                    throw ProjectFileError("thread_active", "The conversation identity is still updating. Try again when it settles.")
+                }
+            }
+            guard !self.sessions.values.contains(where: {
+                if case .rpc(let rpc, _) = $0 { return rpc.isAlive && rpc.launchAgentID == agentID && rpc.id != pane.sessionID }
+                return false
+            }), !self.agentRequests.values.contains(where: { $0.targetAgentID == agentID }) else {
+                throw ProjectFileError("thread_active", "The thread is starting or handling another request. Try again when it is inactive.")
+            }
+            if agent.spaceID == spaceID { return nil }
+            self.movingThreads.insert(agentID)
+            return (agent, pane, destination)
+        }
+        guard let (agent, pane, destination) = plan else { return false }
+        var copy: ThreadSessionMove?
+        do {
+            var directory: ObjCBool = false
+            let cwd = PiSessionFolder.realPath(destination.path)
+            guard FileManager.default.fileExists(atPath: cwd, isDirectory: &directory), directory.boolValue else {
+                throw ProjectFileError("no_such_directory", "The destination space's folder is missing.")
+            }
+            let root = pi.sessionsRoot
+            let allowMissing = pane.sessionID == nil && agent.piSessionID == nil && agent.lastActiveAt == nil
+            _ = try await Task.detached(priority: .userInitiated) {
+                try ThreadSessionMove.preflight(sessionID: agent.effectivePiSessionID, from: pane.cwd, to: cwd, root: root, allowMissing: allowMissing)
+            }.value
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                queue.async {
+                    guard let sessionID = pane.sessionID, case .rpc(let rpc, let thread)? = self.sessions[sessionID], rpc.isAlive else {
+                        continuation.resume(); return
+                    }
+                    // Ask pi too: its own queue can contain work not yet reported to the host.
+                    rpc.request(.getState, timeout: 5) { result in
+                        guard thread.canMoveSpace, case .success(let response) = result, response.success,
+                              response.data?["isStreaming"]?.boolValue == false,
+                              response.data?["isCompacting"]?.boolValue == false,
+                              response.data?["pendingMessageCount"]?.doubleValue == 0 else {
+                            continuation.resume(throwing: ProjectFileError("thread_active", "The thread is active or its idle state could not be verified. Nothing was moved."))
+                            return
+                        }
+                        self.startRecords[sessionID]?.requestStop()
+                        rpc.kill()
+                        continuation.resume()
+                    }
+                }
+            }
+            if let sessionID = pane.sessionID {
+                let deadline = ContinuousClock.now + .seconds(10)
+                while await sessionInfo(sessionID: sessionID)?.isAlive == true {
+                    guard ContinuousClock.now < deadline else { throw ProjectFileError("move_timeout", "The thread did not stop. Nothing was moved.") }
+                    try await Task.sleep(for: .milliseconds(40))
+                }
+            }
+            copy = try await Task.detached(priority: .userInitiated) {
+                try ThreadSessionMove.prepare(sessionID: agent.effectivePiSessionID, from: pane.cwd, to: cwd, root: root, allowMissing: allowMissing)
+            }.value
+            try await enqueue {
+                guard let index = self.store.state.agents.firstIndex(where: { $0.id == agentID }),
+                      self.store.state.agents[index].spaceID == agent.spaceID,
+                      self.store.state.agents[index].effectivePiSessionID == agent.effectivePiSessionID,
+                      self.store.state.agents[index].worktreePath == nil,
+                      self.store.state.agents[index].worktreeBranch == nil,
+                      self.store.state.spaces.contains(where: { $0 == destination }),
+                      let tab = self.store.state.tabs.firstIndex(where: { $0.id == agent.tabID }),
+                      self.store.state.tabs[tab].layout.leaf(withID: pane.id)?.cwd == pane.cwd else {
+                    throw ProjectFileError("workspace_changed", "The thread or destination changed. Nothing was moved.")
+                }
+                try self.mutateState {
+                    $0.agents[index].spaceID = spaceID
+                    $0.tabs[tab].spaceID = spaceID
+                    $0.tabs[tab].layout = $0.tabs[tab].layout.updatingLeaf(pane.id) { $0.cwd = cwd }
+                }
+            }
+        } catch {
+            if let copy {
+                do { try await Task.detached { try copy.rollback() }.value }
+                catch { ShepherdLog.warning("Thread move rollback left a conversation copy: \(error)") }
+            }
+            await enqueueValue { _ = self.movingThreads.remove(agentID) }
+            throw error
+        }
+        if let copy {
+            do { try await Task.detached { try copy.finish() }.value }
+            catch { ShepherdLog.warning("Thread moved; old conversation backup retained: \(error)") }
+        }
+        await enqueueValue { _ = self.movingThreads.remove(agentID) }
+        return true
+    }
+
+    /// Stops an agent's pi without retiring its agent (`SessionExit.keepsAgent`).
     public func stopKeepingAgent(sessionID: SessionID) async {
         await enqueueValue {
             guard case .rpc(let session, _)? = self.sessions[sessionID], session.isAlive else { return }
@@ -6163,6 +6308,7 @@ public final class SessionServer: @unchecked Sendable {
         if params.runtime == .rpc {
             if let raw = params.env?["SHEPHERD_AGENT_ID"] {
                 let agent = AgentID(rawValue: raw)
+                guard !movingThreads.contains(agent) else { throw ProjectFileError("thread_moving", "This thread is moving to another space.") }
                 if store.state.isProjectCoordinator(agent) || projectLaunches.contains(agent) || executionWorkers.contains(agent) {
                     try requireProjectsEnabled()
                     if store.state.isProjectCoordinator(agent) || projectLaunches.contains(agent) {

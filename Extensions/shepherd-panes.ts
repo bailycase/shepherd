@@ -683,6 +683,18 @@ export default function shepherdPanes(pi: ExtensionAPI) {
   });
 
   if (!isAutomationAgent) pi.registerTool({
+    name: "agent_move",
+    label: "Move Thread to Space",
+    description: "Only when the user explicitly asks to move a thread. Moves an inactive ordinary thread to a registered space on this host, preserving its conversation and reloading destination project instructions. Refuses active turns, questions, queued messages, active children, and worktrees. Cannot move yourself. Never stops active work or moves project files. spaceID comes from the space registration tools. A timeout is an unknown outcome: inspect the thread before retrying.",
+    ...later(deferPeers, PEERS),
+    parameters: Type.Object({ agentID: Type.String(), spaceID: Type.String() }),
+    async execute(_id, params, signal) {
+      await request({ type: "moveAgent", targetAgentID: params.agentID, spaceID: params.spaceID }, signal, 60_000);
+      return text(`moved thread ${params.agentID} to space ${params.spaceID}; conversation kept`);
+    },
+  });
+
+  if (!isAutomationAgent) pi.registerTool({
     name: "agent_spawn",
     label: "Spawn Agent Thread",
     description:

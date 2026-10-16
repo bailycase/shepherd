@@ -111,6 +111,21 @@ just the extension into an older app: that host cannot serve the new requests.
 ## The tools
 
 - **`agent_list`**: every top-level thread, with its status and directory.
+- **`agent_move`**: only on the user's explicit request, moves another inactive ordinary thread
+  to a registered space on the same host. Arguments are `agentID` and `spaceID`, the latter
+  from the space registration tools. Parent and child spaces are both valid. Conversation and
+  thread identity stay; the idle process restarts in the destination folder and reloads its
+  instructions. Active turns, questions, queued messages, unfinished children, worktrees and
+  managed automation/Project/design threads are refused. It cannot move itself. Existing
+  terminal tabs keep their directories; no repository files or worktrees move.
+  This deferred tool shares the Mac sidebar's drag-and-drop and Move to Space operation.
+  `moveAgent` checks the caller's process identity before routing to the app. The server fences
+  sends and launches during the move, verifies pi's idle state, and stops only the idle runtime.
+  Shutdown is bounded to 10 seconds, the idle query to 5 seconds, and history copying to
+  30 seconds. History is copied with its header cwd updated before workspace persistence;
+  failure rolls back the copy and keeps the original. Existing destination history is never
+  overwritten. A crash leaves the original or committed destination intact. Timeout or
+  disconnect means the outcome may be unknown: inspect the thread before retrying.
 - **`agent_send`**: a message under a `[from: <sender name>, an agent, not the user. …]` header
   ([What the other thread reads](#what-the-other-thread-reads)), with optional `delivery`:
   - `task` (default, including older callers): a user follow-up (`deliverAs: "followUp"`).
