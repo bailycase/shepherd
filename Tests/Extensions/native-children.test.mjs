@@ -43,6 +43,16 @@ test("LF framing preserves fragmented UTF-8 and Unicode separators; malformed/ov
   assert.match(errors.at(-1), /exceeds/);
 });
 
+test("queued helpers stop at time, turn and token bounds without limiting ordinary children", () => {
+  const run = { queueRequestID: "q", state: "running", startedAt: 0, turns: 255, tokens: 999_999 };
+  assert.equal(mod.queuedChildLimit(run, 1_799_999), undefined);
+  assert.match(mod.queuedChildLimit(run, 1_800_000), /30-minute/);
+  assert.match(mod.queuedChildLimit({ ...run, turns: 256 }, 0), /256-turn/);
+  assert.match(mod.queuedChildLimit({ ...run, tokens: 1_000_000 }, 0), /token/);
+  assert.equal(mod.queuedChildLimit({ ...run, queueRequestID: undefined }, 1_800_000), undefined);
+  assert.equal(mod.queuedChildLimit({ ...run, state: "complete" }, 1_800_000), undefined);
+});
+
 test("fork extracts selected branch, omits incomplete tool batch, preserves parent identity and bytes", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-fork-"));
   try {
@@ -122,10 +132,10 @@ function fixtureServer() {
 
 // The extension's control tick, observed: which intervals it holds right now.
 function intervalSpy() {
-  const active = new Set();
-  return { active, timers: {
-    setInterval(fn, ms) { const handle = setInterval(fn, ms); active.add(handle); return handle; },
-    clearInterval(handle) { active.delete(handle); clearInterval(handle); },
+  const active = new Set(), callbacks = new Map();
+  return { active, tick: () => { for (const fn of callbacks.values()) fn(); }, timers: {
+    setInterval(fn, ms) { const handle = setInterval(fn, ms); active.add(handle); callbacks.set(handle, fn); return handle; },
+    clearInterval(handle) { active.delete(handle); callbacks.delete(handle); clearInterval(handle); },
   } };
 }
 
@@ -669,6 +679,42 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, async reporting, r
     assert.match((await childCommand({ runID: "native-missing", action: "cancel" })).error, /Unknown child id/);
     assert.match((await childCommand({ runID: ask.id, action: "message", text: "   " })).error, /Invalid child message/);
     assert.match((await childCommand({ runID: ask.id, action: "unsupported" })).error, /Unsupported/);
+    // Native queued starts fork without prompting or waking the parent. Duplicate clicks and
+    // lost acknowledgements reuse the same run, even with a new controller correlation id.
+    const queuedID = "00000000-0000-0000-0000-000000000123";
+    const beforeQueued = h.entries.filter((entry) => entry.customType === "shepherd-child").length;
+    h.events.get("agent_start")();
+    const parentMessages = h.messages.length;
+    const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+    const queued = { type: "childStart", requestID: queuedID, text: "queued task", images: [{ mimeType: "image/png", data: png }] };
+    const receipts = await Promise.all([childCommand(queued), childCommand(queued)]);
+    assert(receipts.every((receipt) => receipt.error === undefined));
+    const queuedEntries = h.entries.filter((entry) => entry.customType === "shepherd-child");
+    assert.equal(queuedEntries.length, beforeQueued + 1);
+    const queuedRun = queuedEntries.at(-1).data;
+    assert.equal(queuedRun.context, "fork");
+    assert.equal(queuedRun.delivery, "report");
+    assert.equal(queuedRun.queueRequestID, queuedID);
+    await h.settled(queuedRun.id);
+    assert.equal(h.messages.length, parentMessages, "starting and completing the child never prompts the busy parent");
+    const queuedUser = SessionManager.open(queuedRun.sessionFile).getBranch().filter((entry) => entry.message?.role === "user").at(-1);
+    assert(queuedUser.message.content.some((part) => part.type === "image" && part.mimeType.startsWith("image/")), "the queued image reaches the child's transcript");
+    h.events.get("agent_settled")();
+    assert.equal((await childCommand(queued)).error, undefined);
+    assert.equal(h.entries.filter((entry) => entry.customType === "shepherd-child").length, beforeQueued + 1);
+    assert.match((await childCommand({ ...queued, requestID: "bad" })).error, /Invalid queued/);
+    assert.match((await childCommand({ ...queued, images: [{ data: "AA==", mimeType: "text/plain" }] })).error, /Invalid queued image/);
+    const bounded = { ...queued, requestID: "00000000-0000-0000-0000-000000000124", text: "SHELL:sleep 30", images: [] };
+    assert.equal((await childCommand(bounded)).error, undefined);
+    const boundedRun = h.entries.filter((entry) => entry.customType === "shepherd-child").at(-1).data;
+    const realNow = Date.now;
+    try {
+      Date.now = () => realNow() + 31 * 60_000;
+      ticks.tick();
+    } finally { Date.now = realNow; }
+    const stoppedAtLimit = await h.settled(boundedRun.id);
+    assert.equal(stoppedAtLimit.state, "stopped");
+    assert.match(stoppedAtLimit.error, /30-minute limit/);
     let fleet;
     const fleetContext = { ...h.ctx, mode: "tui", hasUI: true, ui: { custom: async (factory) => {
       fleet = factory({ terminal: { rows: 36 }, requestRender() {} }, { fg: (_c, text) => text }, { matches: () => false, getKeys: () => ["esc"] }, () => {});

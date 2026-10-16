@@ -333,6 +333,7 @@ public struct NWQueueAttachment: Identifiable, Equatable {
 public struct NWQueueRowActions {
     /// Steer now (Send now while pi is idle).
     public var steer: (() -> Void)?
+    public var subagent: (() -> Void)?
     public var steerLabel: String
     public var steerShortcut: String?
     /// What the action does, for its tooltip and VoiceOver ("Stop the agent and send this now").
@@ -349,8 +350,9 @@ public struct NWQueueRowActions {
 
     public init(steer: (() -> Void)? = nil, steerLabel: String = "Steer now", steerShortcut: String? = nil, steerHelp: String? = nil,
                 steerLabelled: Bool = false, edit: (() -> Void)? = nil, delete: (() -> Void)? = nil, deleteShortcut: String? = nil,
-                back: (() -> Void)? = nil) {
+                back: (() -> Void)? = nil, subagent: (() -> Void)? = nil) {
         self.steer = steer
+        self.subagent = subagent
         self.steerLabel = steerLabel
         self.steerShortcut = steerShortcut
         self.steerHelp = steerHelp
@@ -465,11 +467,12 @@ public struct NWQueueRow: View {
                     HStack(spacing: NW.Space.xxs) {
                         HStack(spacing: NW.Space.xxs) {
                             if active && !lifted {
+                                if let subagent = actions.subagent { iconButton(NWGlyph.gitBranch.symbolName, "Run in subagent", action: subagent) }
                                 if let edit = actions.edit { iconButton("pencil", "Edit", action: edit) }
                                 if let delete = actions.delete { iconButton("trash", "Delete", shortcut: actions.deleteShortcut, action: delete) }
                             }
                         }
-                        .frame(width: NWQueueMetrics.editDeleteWidth, alignment: .trailing)
+                        .frame(width: NWQueueMetrics.editDeleteWidth + subagentWidth, alignment: .trailing)
                         labelledSteer(steer)
                             .opacity(lifted ? 0 : 1)
                             .allowsHitTesting(!lifted)
@@ -483,11 +486,12 @@ public struct NWQueueRow: View {
                             if let steer = actions.steer {
                                 iconButton("arrow.turn.down.right", actions.steerLabel, help: actions.steerHelp, shortcut: actions.steerShortcut, action: steer)
                             }
+                            if let subagent = actions.subagent { iconButton(NWGlyph.gitBranch.symbolName, "Run in subagent", action: subagent) }
                             if let edit = actions.edit { iconButton("pencil", "Edit", action: edit) }
                             if let delete = actions.delete { iconButton("trash", "Delete", shortcut: actions.deleteShortcut, action: delete) }
                         }
                     }
-                    .frame(width: NWQueueMetrics.actionsWidth, alignment: .trailing)
+                    .frame(width: NWQueueMetrics.actionsWidth + subagentWidth, alignment: .trailing)
                     .nwTransition(.content)
                 }
             }
@@ -528,6 +532,8 @@ public struct NWQueueRow: View {
                 .nwAnimation(.hover, value: hovering)
         }
     }
+
+    private var subagentWidth: CGFloat { actions.subagent == nil ? 0 : NWQueueMetrics.actionSize + NW.Space.xxs }
 
     private func grip(shown: Bool) -> some View {
         NWGripGlyph()
