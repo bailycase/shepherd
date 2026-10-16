@@ -57,10 +57,11 @@ public struct NWImageViewer: View {
             let room = CGSize(width: max(1, window.size.width - 2 * M.margin - arrowsWidth),
                               height: max(1, window.size.height - 2 * M.margin - M.pill - NW.Space.l))
             ZStack {
-                Color.nw.sheetScrim
-                    .contentShape(Rectangle())
-                    .onTapGesture(perform: close)
-                    .accessibilityHidden(true)
+                // A real button, so a click and VoiceOver's press both close it; Esc and the pill's close stay the keyboard's way.
+                Button(action: close) { Color.nw.sheetScrim.contentShape(Rectangle()) }
+                    .buttonStyle(.plain)
+                    .focusable(false)
+                    .accessibilityLabel("Close viewer")
                 VStack(spacing: NW.Space.l) {
                     HStack(spacing: NW.Space.xl) {
                         if position != nil { arrow("chevron.left", label: "Previous image", action: previous) }
