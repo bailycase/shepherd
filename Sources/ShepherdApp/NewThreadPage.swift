@@ -14,7 +14,7 @@ import ShepherdUI
 struct NewThreadPage: View {
     var vm: ShepherdViewModel
     let chrome: PageHeaderChrome
-    @FocusState private var composing: Bool
+    @State private var composing = false
     @State private var menu: Menu?
     @State private var picker: ModelPickerState?
     @State private var dropTargeted = false
@@ -122,23 +122,11 @@ struct NewThreadPage: View {
                 .nwTransition(.list, edge: .leading)
             }
         } field: {
-            TextField(text: Binding(get: { draft.prompt }, set: { draft.prompt = $0 }), selection: caretBinding,
-                      prompt: Text("Describe the task…").foregroundStyle(Color.nw.textTertiary),
-                      axis: .vertical) {
-                Text("What should the agent work on?")
-            }
-            .lineLimit(1...NWComposerMetrics.fieldMaxLines)
-            .textFieldStyle(.plain)
-            .font(Font.nw(.body))
-            .foregroundStyle(Color.nw.textPrimary)
-            .autocorrectionDisabled()
-            .tint(Color.nw.lantern)
-            .focused($composing)
-            .modifier(CycleThinkingShortcut(focused: composing && !draft.starting && !draft.loadingDefaults,
-                                          current: draft.thinkingLevel(vm).rawValue, levels: draft.thinkingLevels(vm).map(\.rawValue),
-                                          choose: { id in if let level = ThinkingLevel(rawValue: id) { draft.setThinking(level) } }))
-            .onKeyPress(.return, phases: .down) { press in
-                if let result = NWReturnKey.lineBreak(for: press) { return result }
+            ComposerTextField(text: Binding(get: { draft.prompt }, set: { draft.prompt = $0 }),
+                              selection: caretBinding, placeholder: "Describe the task…",
+                              label: "What should the agent work on?", focus: $composing, attach: draft.attach)
+            .onComposerKey(.return) { press in
+                if let result = press.lineBreak() { return result }
                 // ↩ over the @ picker chooses its row, and never starts the thread.
                 if mentionShown {
                     if let row = mentions.highlightedRow { chooseMention(row) }
@@ -147,33 +135,33 @@ struct NewThreadPage: View {
                 draft.send(vm)
                 return .handled
             }
-            .onKeyPress(.tab) {
+            .onComposerKey(.tab) {
                 guard mentionShown else { return .ignored }
                 if let row = mentions.highlightedRow { chooseMention(row) }
                 return .handled
             }
-            .onKeyPress(.upArrow) {
+            .onComposerKey(.upArrow) {
                 guard mentionShown else { return .ignored }
                 mentions.move(-1)
                 return .handled
             }
-            .onKeyPress(.downArrow) {
+            .onComposerKey(.downArrow) {
                 guard mentionShown else { return .ignored }
                 mentions.move(1)
                 return .handled
             }
             // → drills into a design or a board; ← and ⌫ with nothing typed after the breadcrumb go back a level.
-            .onKeyPress(.rightArrow) {
+            .onComposerKey(.rightArrow) {
                 guard mentionShown, let row = mentions.highlightedRow, row.trailing == .drill else { return .ignored }
                 chooseMention(row)
                 return .handled
             }
-            .onKeyPress(.leftArrow) {
+            .onComposerKey(.leftArrow) {
                 guard mentionShown, mentions.filterIsEmpty, mentions.scope != .designs else { return .ignored }
                 mentionBack()
                 return .handled
             }
-            .onKeyPress(.delete) {
+            .onComposerKey(.delete) {
                 if mentionShown, mentions.filterIsEmpty, mentions.scope != .designs {
                     mentionBack()
                     return .handled
@@ -184,7 +172,7 @@ struct NewThreadPage: View {
                 draft.detach(reference: last.id)
                 return .handled
             }
-            .onKeyPress(.escape) {
+            .onComposerKey(.escape) {
                 if mentionShown {
                     dismissMention()
                     return .handled
@@ -193,7 +181,9 @@ struct NewThreadPage: View {
                 menu = nil
                 return .handled
             }
-            .onPasteCommand(of: [.image, .fileURL]) { draft.attach($0) }
+            .modifier(CycleThinkingShortcut(focused: composing && !draft.starting && !draft.loadingDefaults,
+                                          current: draft.thinkingLevel(vm).rawValue, levels: draft.thinkingLevels(vm).map(\.rawValue),
+                                          choose: { id in if let level = ThinkingLevel(rawValue: id) { draft.setThinking(level) } }))
             .accessibilityLabel("What should the agent work on?")
         } controls: {
             controls

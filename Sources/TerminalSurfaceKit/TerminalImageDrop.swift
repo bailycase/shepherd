@@ -43,7 +43,7 @@ public enum TerminalImageDrop {
     /// Item providers for a drag pasteboard, for `resolve`. File URLs win;
     /// otherwise the raw image data (screenshot drags) is wrapped so
     /// `materializeImage` can write it out.
-    static func providers(from pasteboard: NSPasteboard) -> [NSItemProvider] {
+    public static func providers(from pasteboard: NSPasteboard) -> [NSItemProvider] {
         if let urls = pasteboard.readObjects(
             forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]
         ) as? [URL], !urls.isEmpty {
