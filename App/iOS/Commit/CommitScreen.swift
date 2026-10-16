@@ -73,7 +73,7 @@ struct CommitScreen: View {
                     .buttonStyle(.nwReviewBar(.primary))
                     .disabled(!store.canCommit)
                 Button("Ask agent to commit") { askAgent() }
-                    .buttonStyle(.nwLink(font: .nw(.ui)))
+                    .buttonStyle(.nwLink(color: Color.nw.textPrimary, font: .nw(.ui)))
                     .nwTouchTarget(height: NW.Height.controlS)
                     .accessibilityHint("Sends the agent a turn asking it to commit these changes instead")
             case .operation:

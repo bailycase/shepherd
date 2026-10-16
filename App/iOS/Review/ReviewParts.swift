@@ -20,34 +20,22 @@ struct ReviewSummaryCard: View {
         // At accessibility sizes the branch and Finalize's note get lines of their own.
         let large = typeSize.isAccessibilitySize
         VStack(alignment: .leading, spacing: NW.Space.m) {
-            let header = large ? AnyLayout(VStackLayout(alignment: .leading, spacing: NW.Space.xs)) : AnyLayout(HStackLayout(spacing: NW.Space.m))
-            header {
-                HStack(spacing: NW.Space.m) {
-                    Text(totals.filesText).font(.nw(.headline)).foregroundStyle(nw.textPrimary)
-                    NWDiffStat(added: totals.added, removed: totals.removed, font: .nw(.micro, weight: .regular))
-                }
-                if !large { Spacer(minLength: NW.Space.s) }
-                if let branch {
-                    Label(branch, systemImage: NWGlyph.gitBranch.symbolName)
-                        .font(.nw(.mono))
-                        .foregroundStyle(nw.textSecondary)
-                        .lineLimit(large ? 2 : 1)
-                        .truncationMode(.middle)
-                        .accessibilityLabel("Branch \(branch)")
-                }
-            }
+            // MobileChanges: the count and stat, the branch under them, then how much is viewed.
             HStack(spacing: NW.Space.m) {
-                ProgressView(value: totals.progress)
-                    .progressViewStyle(.nwBar(tint: nw.done))
-                    .accessibilityLabel("Viewed")
-                    .accessibilityValue(totals.viewedText)
-                if !large {
-                    Text(totals.viewedText).font(.nw(.caption)).foregroundStyle(nw.textTertiary).fixedSize()
-                }
+                Text(totals.filesText).font(.nw(.headline)).foregroundStyle(nw.textPrimary)
+                NWDiffStat(added: totals.added, removed: totals.removed, font: .nw(.micro, weight: .regular))
             }
-            if large {
-                Text(totals.viewedText).font(.nw(.caption)).foregroundStyle(nw.textTertiary)
+            if let branch {
+                Text(branch)
+                    .font(.nw(.mono))
+                    .foregroundStyle(nw.textSecondary)
+                    .lineLimit(large ? 2 : 1)
+                    .truncationMode(.middle)
+                    .accessibilityLabel("Branch \(branch)")
             }
+            Text(totals.viewedText).font(.nw(.caption)).foregroundStyle(nw.textTertiary)
+                .accessibilityLabel("Viewed")
+                .accessibilityValue(totals.viewedText)
             if let onFinalize {
                 NWHairline()
                 Button(action: onFinalize) {
@@ -69,6 +57,7 @@ struct ReviewSummaryCard: View {
             }
         }
         .padding(NW.Space.l + NW.Space.xxs)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .nwCard(radius: MobileLayout.cardRadius)
     }
 }
@@ -116,8 +105,30 @@ struct ReviewCommentCard: View {
         // In the changes list the file names the line; under its line, when it was written does.
         let meta = showsFile ? "\(reviewPathParts(comment.filePath).name) · line \(comment.lineNumber)"
             : "line \(comment.lineNumber) · \(reviewCommentAge(comment.createdAt))"
+        if showsFile {
+            // MobileChanges: the file and line, the text, then Edit and Delete under it.
+            let nw = Color.nw
+            VStack(alignment: .leading, spacing: NW.Space.s) {
+                Text(meta).font(.nw(.mono)).foregroundStyle(nw.textTertiary).lineLimit(1)
+                Text(comment.text).font(.nw(.body)).foregroundStyle(nw.textPrimary).fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: NW.Space.m) {
+                    if let onEdit { Button("Edit", action: onEdit).buttonStyle(.nwLink(color: nw.textSecondary, font: .nw(.body))) }
+                    if let onDelete { Button("Delete", action: onDelete).buttonStyle(.nwLink(color: nw.failed, font: .nw(.body))) }
+                }
+            }
+            .padding(.horizontal, NW.Space.l + NW.Space.xxs)
+            .padding(.vertical, NW.Space.m)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .nwCard(radius: MobileLayout.cardRadius)
+            .accessibilityElement(children: .combine)
+            .accessibilityActions {
+                if let onEdit { Button("Edit", action: onEdit) }
+                if let onDelete { Button("Delete", action: onDelete) }
+            }
+        } else {
         NWInlineComment(initial: ReviewAuthor.initial, author: ReviewAuthor.name, meta: meta, text: comment.text,
                         onEdit: onEdit, onDelete: onDelete)
+        }
     }
 }
 
