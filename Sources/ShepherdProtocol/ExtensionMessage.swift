@@ -76,6 +76,8 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     case spawnAgent(id: Int, agentID: AgentID, cwd: String, prompt: String)
     /// Move an inactive ordinary thread to a registered space on this host.
     case moveAgent(id: Int, agentID: AgentID, targetAgentID: AgentID, spaceID: SpaceID)
+    /// Receipt of a tokenized peer task; the host transfers it into its tracked native queue.
+    case peerMessageReceived(agentID: AgentID, deliveryID: Int)
 
     /// Read, steer, interrupt, or poll another live agent (relayed to the target's panes
     /// extension as `ExtensionReply.agentRequest`, never inferred from saved status), or ask
@@ -199,7 +201,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case type, id, agentID, status, name, piSessionID, sessionID, children
         case paneID, axis, cwd, relativeTo, command, text, submit, reference
         case title, body
-        case prompt, enabled, start, automationID, targetAgentID, request, requestID, result, delivery, spaceID
+        case prompt, enabled, start, automationID, targetAgentID, request, requestID, result, delivery, spaceID, deliveryID
         case error
         case line, reason, file
         case designID, path, source, baseRevision, changes, commentID, edits, tokens, query, options
@@ -216,7 +218,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case listPanes, openPane, closePane, focusPane, sendPaneInput, readPane, requestReview
         case createAutomation, listAutomations, updateAutomation, deleteAutomation
         case startAutomation, stopAutomation
-        case listAgents, sendToAgent, spawnAgent, moveAgent, coordinateAgent, agentResponse, cancelAgentRequest
+        case listAgents, sendToAgent, spawnAgent, moveAgent, peerMessageReceived, coordinateAgent, agentResponse, cancelAgentRequest
         case suggestInstruction
         case designRead, designWriteBoard, designEditBoard, designUpdateIndex, designComments, designCommentReply
         case designEditBoards, designSearch, designCheckpoint, designRender, designExport, designExtract
@@ -364,6 +366,8 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
                 text: try c.decode(String.self, forKey: .text),
                 delivery: try c.decodeIfPresent(AgentMessageDelivery.self, forKey: .delivery) ?? .task
             )
+        case .peerMessageReceived:
+            self = .peerMessageReceived(agentID: try c.decode(AgentID.self, forKey: .agentID), deliveryID: try c.decode(Int.self, forKey: .deliveryID))
         case .moveAgent:
             self = .moveAgent(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID),
                              targetAgentID: try c.decode(AgentID.self, forKey: .targetAgentID), spaceID: try c.decode(SpaceID.self, forKey: .spaceID))
@@ -704,6 +708,10 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(agentID, forKey: .agentID)
             try c.encode(targetAgentID, forKey: .targetAgentID)
             try c.encode(text, forKey: .text)
+        case .peerMessageReceived(let agentID, let deliveryID):
+            try c.encode(Kind.peerMessageReceived, forKey: .type)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(deliveryID, forKey: .deliveryID)
         case .moveAgent(let id, let agentID, let targetAgentID, let spaceID):
             try c.encode(Kind.moveAgent, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -1216,7 +1224,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     /// The fleet, for agent_list / agent_spawn replies.
     case agents(id: Int, agents: [AgentPeerInfo])
     /// Unsolicited push on a helloAgent-registered connection: a peer-thread
-    /// message for this agent. `id` is always 0 (no request to correlate).
+    /// message for this agent. Positive IDs track delivery; 0 is the legacy untracked form.
     case message(id: Int, text: String, delivery: AgentMessageDelivery = .task)
     /// What became of a `suggestInstruction` line.
     case suggestion(id: Int, outcome: SuggestionOutcome)

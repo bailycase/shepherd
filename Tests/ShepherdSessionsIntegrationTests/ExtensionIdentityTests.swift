@@ -148,7 +148,7 @@ struct ExtensionIdentityTests {
         let after: After = try await file("speak-run-after.json", in: dirA)
         #expect(after.children == "open")
         #expect(try after.push.map { try NDJSON.decode(ExtensionReply.self, from: Data($0.trimmingCharacters(in: .newlines).utf8)) }
-                    == .message(id: 0, text: "ping", delivery: .task))
+                    == .message(id: 1, text: "ping", delivery: .task))
     }
 
     /// This process claiming an agent whose pi is another process: every message that names the
@@ -165,6 +165,7 @@ struct ExtensionIdentityTests {
         let design = DesignID()
 
         let quiet: [ExtensionMessage] = [
+            .peerMessageReceived(agentID: victim, deliveryID: 1),
             .helloAgent(agentID: victim), .helloChildren(agentID: victim), .helloBrowser(agentID: victim),
             .setAgentStatus(agentID: victim, status: .blocked),
             .setAgentName(agentID: victim, name: "Hijacked", sessionID: nil),
@@ -225,7 +226,7 @@ struct ExtensionIdentityTests {
         }
         #expect((quiet + requests).allSatisfy { $0.speaksFor == victim })
         #expect(requests.allSatisfy { $0.replyID != nil } && quiet.allSatisfy { $0.replyID == nil })
-        #expect(Set(try (quiet + requests).map(kind)).count == 49)
+        #expect(Set(try (quiet + requests).map(kind)).count == 50)
 
         let client = try ExtensionClient(path: h.socketPath)
         for message in quiet + requests { try client.send(message) }

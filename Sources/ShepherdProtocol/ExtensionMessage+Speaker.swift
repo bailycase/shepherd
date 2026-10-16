@@ -13,7 +13,7 @@ extension ExtensionMessage {
     /// Exhaustive on purpose: a new message has to say whose voice it is.
     public var speaksFor: AgentID? {
         switch self {
-        case .setAgentStatus(let agentID, _), .setAgentName(let agentID, _, _), .setAgentSession(let agentID, _),
+        case .peerMessageReceived(let agentID, _), .setAgentStatus(let agentID, _), .setAgentName(let agentID, _, _), .setAgentSession(let agentID, _),
              .setAgentChildren(let agentID, _), .notify(let agentID, _, _), .helloAgent(let agentID),
              .helloChildren(let agentID, _), .childScope(_, let agentID, _, _), .prepareProjectConfiguration(_, let agentID, _),
              .listPanes(_, let agentID), .openPane(_, let agentID, _, _, _, _), .closePane(_, let agentID, _),
@@ -65,7 +65,7 @@ extension ExtensionMessage {
              .registerProject(let id, _, _, _), .refreshProjects(let id, _),
              .projectPublish(let id, _, _), .projectRuntime(let id, _, _, _, _), .browser(let id, _, _):
             return id
-        case .setAgentStatus, .setAgentName, .setAgentSession, .setAgentChildren, .notify, .helloAgent, .helloChildren,
+        case .peerMessageReceived, .setAgentStatus, .setAgentName, .setAgentSession, .setAgentChildren, .notify, .helloAgent, .helloChildren,
              .childCommandResult, .agentResponse, .cancelAgentRequest, .helloBrowser:
             return nil
         }

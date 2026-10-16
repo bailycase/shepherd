@@ -262,10 +262,10 @@ struct ExtensionSocketTests {
         let client = try ExtensionClient(path: h.socketPath)
         try client.send(.helloAgent(agentID: target))
         try await eventually("the registration") { h.server.pushMessage(toAgent: target, text: "[from: tester] ping", delivery: delivery) }
-        #expect(try await client.reply() == .message(id: 0, text: "[from: tester] ping", delivery: delivery))
+        #expect(try await client.reply() == .message(id: 1, text: "[from: tester] ping", delivery: delivery))
         #expect(!h.server.pushMessage(toAgent: target, text: String(repeating: "x", count: NDJSON.maxPayloadBytes), delivery: delivery))
         #expect(h.server.pushMessage(toAgent: target, text: "still connected", delivery: delivery))
-        #expect(try await client.reply() == .message(id: 0, text: "still connected", delivery: delivery))
+        #expect(try await client.reply() == .message(id: 3, text: "still connected", delivery: delivery))
 
         client.closeConnection()
         try await eventually("the registration to lapse") { !h.server.pushMessage(toAgent: target, text: "gone?", delivery: delivery) }

@@ -164,6 +164,17 @@ that the target accepted or acted on it. A missing connection, oversized message
 socket dispatch is a failure, not a delivery claim. Pi's extension `sendMessage` API is
 fire-and-forget: a report's dispatch is not an acknowledgment that pi stored or read it.
 
+### Delivery fence for thread moves
+
+Peer pushes carry positive delivery IDs. Task receipt is bound to the exact extension connection,
+then the host transfers the message into its tracked native queue before releasing the receipt.
+Reports carry the ID in custom-message details; only pi's RPC `message_end` after the history
+append releases their receipt. Unacknowledged delivery blocks a move even when RPC reports idle.
+Disconnect and timeouts do not release that fence. The owning process exiting or the agent being
+removed clears it. Admission is bounded to 64 outstanding pushes per agent, 4,096 overall, and
+2 MiB of retained text. Legacy ID-0 pushes still work on older hosts; an older extension on a new
+host cannot prove receipt, so moving stays refused until its process exits.
+
 ## What the model is told
 
 Agents used to message, steer or start unrelated threads on their own. What reached the model

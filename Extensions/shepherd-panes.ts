@@ -85,7 +85,7 @@ export default function shepherdPanes(pi: ExtensionAPI) {
         clearTimeout(timer);
         socket = s;
         // Register for pushes: Shepherd may now deliver unsolicited
-        // peer-thread message frames (id 0) on this connection.
+        // peer-thread message frames on this connection (positive receipt ID, or legacy 0).
         try {
           s.write(JSON.stringify({ type: "helloAgent", agentID }) + "\n");
         } catch {}
@@ -164,10 +164,13 @@ export default function shepherdPanes(pi: ExtensionAPI) {
                 try {
                   if (reply.delivery === "report") {
                     // Pi defers this safely past in-flight tool results, without another turn.
-                    pi.sendMessage({ customType: "shepherd-peer-report", content: reply.text, display: false },
-                      { triggerTurn: false });
+                    pi.sendMessage({ customType: "shepherd-peer-report", content: reply.text, display: false,
+                      ...(reply.id > 0 ? { details: { shepherdPeerDeliveryID: reply.id } } : {}) }, { triggerTurn: false });
                   } else if (reply.delivery === undefined || reply.delivery === "task") {
-                    pi.sendUserMessage(reply.text, { deliverAs: "followUp" });
+                    if (reply.id > 0) {
+                      // The host transfers this receipt into its tracked native queue atomically.
+                      s.write(JSON.stringify({ type: "peerMessageReceived", agentID, deliveryID: reply.id }) + "\n");
+                    } else { pi.sendUserMessage(reply.text, { deliverAs: "followUp" }); }
                   }
                 } catch {
                   // Never let delivery break the session.

@@ -83,6 +83,84 @@ struct ThreadMoveTests {
         #expect(await h.server.sessionInfo(sessionID: pi.sessionID)?.isAlive == true, "A held message blocks moving even after the turn is idle")
     }
 
+    @Test func aBufferedPeerTaskPreventsMovingUntilItIsTrackedAndSettled() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        _ = try await ready(pi)
+        let space = try await destination(h)
+        let agent = try #require(h.server.state.agents.first)
+        _ = try seed(h, agent: agent, cwd: h.dir.path)
+        let receiver = try ExtensionClient(path: h.socketPath)
+        defer { receiver.closeConnection() }
+        try receiver.send(.helloAgent(agentID: agent.id))
+        try await eventually("peer connection registration") { h.server.pushMessage(toAgent: agent.id, text: "slow") }
+        // Leave delivery unread on the separate socket. RPC reports idle but the message is not lost.
+        #expect(try await pi.snapshot().running == false)
+        do {
+            try await h.server.moveThread(agent.id, to: space.id)
+            Issue.record("Moved past a buffered peer task")
+        } catch let error as ProjectFileError { #expect(error.code == "thread_active") }
+        #expect(await h.server.sessionInfo(sessionID: pi.sessionID)?.isAlive == true)
+        guard case .message(let deliveryID, "slow", .task) = try receiver.readReply() else { Issue.record("Peer task lost"); return }
+        let forged = try ExtensionClient(path: h.socketPath)
+        defer { forged.closeConnection() }
+        // Even the test's permissive process identity does not bypass exact connection ownership.
+        try forged.send(.peerMessageReceived(agentID: agent.id, deliveryID: deliveryID))
+        try forged.send(.listAgents(id: 999, agentID: agent.id))
+        _ = try forged.readReply()
+        #expect(pi.stdin("prompt").isEmpty)
+        await #expect(throws: ProjectFileError.self) { try await h.server.moveThread(agent.id, to: space.id) }
+        try receiver.send(.peerMessageReceived(agentID: agent.id, deliveryID: deliveryID))
+        _ = try await pi.snapshot { $0.running }
+        try receiver.send(.peerMessageReceived(agentID: agent.id, deliveryID: deliveryID)) // duplicate is inert
+        await #expect(throws: ProjectFileError.self) { try await h.server.moveThread(agent.id, to: space.id) }
+        #expect(pi.stdin("prompt").count == 1)
+        pi.release(1); pi.release(2)
+        _ = try await pi.snapshot { !$0.running && $0.queue?.items.isEmpty != false }
+        try await eventually("the delivered peer turn and its capture to settle") {
+            do { return try await h.server.moveThread(agent.id, to: space.id) }
+            catch let error as ProjectFileError where error.code == "thread_active" { return false }
+        }
+    }
+
+    @Test func aPendingReportStaysFencedAcrossDisconnectionUntilItsProcessExits() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        _ = try await ready(pi)
+        let space = try await destination(h)
+        let receiver = try ExtensionClient(path: h.socketPath)
+        try receiver.send(.helloAgent(agentID: pi.agent.id))
+        try await eventually("peer report connection") { h.server.pushMessage(toAgent: pi.agent.id, text: "report", delivery: .report) }
+        guard case .message(let deliveryID, _, .report) = try receiver.readReply() else { Issue.record("Report lost"); return }
+        receiver.closeConnection()
+        let replacement = try ExtensionClient(path: h.socketPath)
+        defer { replacement.closeConnection() }
+        try replacement.send(.helloAgent(agentID: pi.agent.id))
+        try replacement.send(.peerMessageReceived(agentID: pi.agent.id, deliveryID: deliveryID))
+        try replacement.send(.listAgents(id: 1000, agentID: pi.agent.id))
+        _ = try replacement.readReply()
+        await #expect(throws: ProjectFileError.self) { try await h.server.moveThread(pi.agent.id, to: space.id) }
+        #expect(await h.server.sessionInfo(sessionID: pi.sessionID)?.isAlive == true)
+    }
+
+    @Test func peerDeliveryAdmissionIsBoundedAndNeverExpiresIntoPermissionToMove() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        _ = try await ready(pi)
+        let destination = try await destination(h)
+        let receiver = try ExtensionClient(path: h.socketPath)
+        defer { receiver.closeConnection() }
+        try receiver.send(.helloAgent(agentID: pi.agent.id))
+        try await eventually("peer registration") { h.server.pushMessage(toAgent: pi.agent.id, text: "report", delivery: .report) }
+        for _ in 1..<64 { #expect(h.server.pushMessage(toAgent: pi.agent.id, text: "report", delivery: .report)) }
+        #expect(!h.server.pushMessage(toAgent: pi.agent.id, text: "overflow", delivery: .report))
+        await #expect(throws: ProjectFileError.self) { try await h.server.moveThread(pi.agent.id, to: destination.id) }
+        #expect(await h.server.sessionInfo(sessionID: pi.sessionID)?.isAlive == true)
+    }
+
     @Test func missingFoldersAndWorktreesAreRefusedWithoutStoppingPi() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
