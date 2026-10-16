@@ -81,10 +81,12 @@ extension MobileLayout {
 
     // MARK: Skills
 
-    /// A skill's row (MobileSkills): its name in mono 14/600 over its description at 12.5, 3pt
+    /// A skill's row (MobileSkills): its name in sans 15 bold over its description at 12.5, 3pt
     /// apart, at least 58pt.
     static let skillRowHeight: CGFloat = 58
-    static let skillNameSize: CGFloat = 14
+    static let skillNameSize: CGFloat = 15
+    /// The chevron's column at a skill row's end (the row opens the skill).
+    static let skillChevronSlot: CGFloat = NW.Space.l
     static let skillSummarySize: CGFloat = 12.5
     static let skillLineSpacing: CGFloat = 3
     /// The switch at a row's end (`NWSwitch` is 30pt wide), kept clear of the row's text.
