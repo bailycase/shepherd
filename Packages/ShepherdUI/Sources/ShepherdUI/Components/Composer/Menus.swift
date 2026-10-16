@@ -552,7 +552,13 @@ public struct NWModelPicker: View {
         }
         .fixedSize(horizontal: false, vertical: true)
         .modifier(NWMenuSurface(width: NWComposerMetrics.modelPickerWidth, padding: 0))
-        .onAppear { searching = true }
+        .task {
+            // All models replaces a focused settings menu. Let its AppKit focus release
+            // finish before claiming the search field, rather than losing this claim to it.
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            searching = true
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Choose a model")
     }

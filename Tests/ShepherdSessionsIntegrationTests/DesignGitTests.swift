@@ -423,7 +423,7 @@ struct DesignGitTests {
         defer { h.stop() }
         await h.server.setDesignMergeTimeoutForTests(0.5)
         try await h.server.resolveDesignMergeWithAgent(design.id)
-        #expect(try await h.server.designGitState(design.id)?.merge?.phase == .running)
+        // Startup and a Git status read can outlast this short limit; assert its stopped outcome below.
         let brief = try await agent.waitForStdin("prompt")
         let message = try #require(brief["message"] as? String)
         // pi reads Shepherd's brief in its fence, then the request; the thread shows only the request.

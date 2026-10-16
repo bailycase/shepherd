@@ -13,6 +13,55 @@ import Testing
 @Suite("Composer caret", .mainActorExclusive)
 @MainActor
 struct ComposerCaretTests {
+    @Test func aReentrantBindingRenderCannotOverwriteTheNativeEditBeingPublished() async throws {
+        final class Draft {
+            var text = ""
+            var renders = 0
+            var reenter = false
+            var valueDuringRender: String?
+            var editorDuringRender: String?
+        }
+        let draft = Draft()
+        let window = OffscreenWindow(size: CGSize(width: 500, height: 200))
+        defer { window.close() }
+        func render() {
+            draft.renders += 1
+            window.show(ComposerTextField(text: Binding(get: { draft.text }, set: { value in
+                if draft.reenter {
+                    // Observation notifies during willSet, while its getter still returns
+                    // the old value. Force that render synchronously on every supported OS.
+                    render()
+                    draft.valueDuringRender = draft.text
+                    draft.editorDuringRender = (window.window.firstResponder as? NSTextView)?.string
+                }
+                draft.text = value
+            }), placeholder: "Render \(draft.renders)", label: "Message", focus: .constant(true), attach: { _ in }))
+        }
+        render()
+        try await eventuallyOnMain("the native composer editor to focus") {
+            window.window.firstResponder is ComposerTextField.Editor
+        }
+        let editor = try #require(window.window.firstResponder as? ComposerTextField.Editor)
+        let clipboard = NSPasteboard.withUniqueName()
+        defer { clipboard.releaseGlobally() }
+        clipboard.setString("hello", forType: .string)
+        editor.pasteboard = { clipboard }
+        draft.reenter = true
+        editor.paste(nil)
+        #expect(draft.valueDuringRender == "", "the reentrant render really saw the pre-publication value")
+        #expect(draft.editorDuringRender == "hello")
+        #expect(editor.string == "hello")
+        #expect(draft.text == "hello")
+        #expect(window.window.firstResponder === editor)
+
+        // A genuine replacement after native publication is still applied normally.
+        draft.reenter = false
+        draft.text = "External replacement"
+        render()
+        try await eventuallyOnMain("the external draft to replace native text") { editor.string == draft.text }
+        #expect(editor.selectedRange() == NSRange(location: draft.text.utf16.count, length: 0))
+    }
+
     /// ⇧↩ and ⌥↩ reach the field through `NWReturnKey.insertLineBreak(in:)`, the call the composer's
     /// key handler makes with the field editor holding the keyboard. Nothing here posts a key event.
     /// A SwiftUI field editor answers ↩ and ⇧↩ (`insertNewline:`) with no line at all, so the

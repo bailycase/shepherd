@@ -226,7 +226,12 @@ corner nearest Send. Nothing about the choice is written under the composer.
   `lanternTint` ring (`hover`). The Send tooltip reads "Queue (↩) · Steer now (⌘↩)".
 
 **Images and files.** Images attach by dropping anywhere in the thread (history, blank space,
-or composer), pasting, or the paperclip (an image importer). Readable regular files dropped
+or composer), pasting, or the paperclip (an image importer). Native Paste (⌘V, Edit ▸ Paste,
+and the editor's context menu) accepts clipboard image bytes without a source file. The Mac's
+thread, New thread and New design composers share `ComposerTextField`: its owned AppKit field
+editor routes images through `AppImageDrop`, and keeps ordinary text paste, selected-text
+replacement, undo, marked text and multiline editing native. An image with a text fallback
+attaches only the image. Readable regular files dropped
 on a local thread attach as removable chips and send their absolute paths under the message.
 Remote threads accept image bytes, but reject ordinary files with an inline explanation:
 client-local paths are never sent to the host. A question occupying the composer disables
@@ -474,7 +479,10 @@ a docked pane it narrows to the card. They share one anatomy (NWComposer › Men
   its registry, so those rows have no hint.
 - **Model picker** (`ModelPicker` on `NWModelPicker`, 380pt, its list at most 360pt tall;
   ModelPicker): from the model chip or ⇧⌘M, either of which also closes it (without `setModel` it
-  beeps). A 30pt search row takes focus: a 12pt `magnifyingglass` in `textTertiary`, "Search
+  beeps). Agent ▸ Choose Model uses the same route, including a rebound chord while a terminal
+  has focus. When All models replaces the settings menu, the search claim waits one main-actor
+  turn for that menu's focus release; a simultaneous pane-focus claim yields to the open picker.
+  A 30pt search row takes focus: a 12pt `magnifyingglass` in `textTertiary`, "Search
   models" in Geist 13, the picker's chord trailing in mono 11 `textTertiary` ("⇧⌘M", from
   `KeybindingsStore`), and a hairline under it. The list sits 4pt in from the top and bottom and 6pt
   from the sides: **Recent** (the last four models picked in any thread, newest first;
