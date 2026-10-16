@@ -430,7 +430,7 @@ the worker conversation. These are storage safeguards, not run limits.
 ### Per-task model and thinking
 
 `project_assign` and `project_follow_up` take an optional `model` (one of `availableModels` in the
-coordinator's `project_read`) and `thinking` (off…max). The owner validates both, stores them on the
+coordinator's `project_read({includeModels: true})`) and `thinking` (off…max). The owner validates both, stores them on the
 task, launches the thread with them, and before a follow-up's prompt sets the thread's model and
 thinking when they changed. Omitted, a task uses the Project's Thread model and the owner's default
 thinking level (Settings > Agents), never a hardcoded level. A follow-up keeps the task's earlier
@@ -479,6 +479,17 @@ linked Space and host permission checks run independently on the host. These pri
 not available in unrelated threads. Launch still disables generic tools/discovery/skills/context
 files; the extension allows only this explicit project toolset. Peer listing excludes private
 coordinators and their working directories.
+
+AI-facing results omit the model catalogue unless `project_read({includeModels: true})` requests it.
+Reads omit task prompts and result bodies; mutations acknowledge only the affected task or proposal.
+`project_inspect({taskID})` returns task state and native receipt identities without replaying settled
+result prose. Add `includeResults: true` to retrieve retained prompt/result bodies, not a full native
+transcript. Remote receipt text is capped at 4,096 bytes; oversized local events omit content.
+Inspect the source worker conversation when receipts are clipped or omitted; an index or preview
+is not proof of result inspection or success. Questions, options and eligible human reply proof
+remain intact. App snapshots, native receipts and existing transcripts are unchanged; these
+projections apply only to new coordinator tool results. Lost mutation replies report an unknown
+outcome, never a refusal or verified success.
 
 Native settled assistant content and native question data create durable, source-identified,
 quoted event receipts. Duplicate native callbacks cannot wake twice. A remembered claim must name
