@@ -558,7 +558,7 @@ public struct RPCMessage: Codable, Hashable, Sendable {
         timestamp = try c.decodeIfPresent(Double.self, forKey: .timestamp)
         customType = try c.decodeIfPresent(String.self, forKey: .customType)
         display = try c.decodeIfPresent(Bool.self, forKey: .display)
-        if role == "custom", customType == "shepherd.goal.check" {
+        if role == "custom", customType == "shepherd.goal.check" || customType == "shepherd-peer-report" {
             details = try? c.decodeIfPresent(JSONValue.self, forKey: .details)
         }
         // Only the roles that carry them: a long history's decode stays as it was.

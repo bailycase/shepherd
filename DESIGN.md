@@ -175,6 +175,8 @@ status color, a raw color, or a raw glyph name.
 
 ## Interaction and keyboard
 
+- In Spaces, dragging an inactive thread onto a space moves its conversation and working directory
+  there. The thread menu offers Move to Space as the keyboard-accessible alternative.
 - The keyboard is first-class, and the fast path never needs a dialog. The workplace menu's ↑↓
   navigation includes its visible Base row, and Return opens the branch picker. Every action is a
   menu-bar item. A chord lives in `KeybindingsStore` and nowhere else. A hint is never shown
