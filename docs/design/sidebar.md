@@ -332,12 +332,15 @@ SidebarTree, SidebarProjects and SidebarProjectsHosts. Mac only: the iPad and iP
   thread's folder is missing." (`NativeStartProblem.Kind.folderMissing`) with Locate Folder… in
   place of Retry.
 - **Pin / Unpin** (the user's request, 2026-10-16; no board) sits after Collapse All in a local
-  space's menu (`pin` / `pin.slash`). A pinned space leads its siblings, oldest pin first: a pinned
-  root moves to the top with its children, a pinned child leads its parent's children, and the
-  rest keep the saved order. Its row draws `NWGlyph.pin` (9pt medium `textTertiary`) after the
+  space's menu (`pin` / `pin.slash`). Pinned spaces move into a **Pinned** section below Projects
+  and above Spaces (above the host sections when grouped). The header reuses `NWProjectsHeader`
+  without an add button and disappears when no visible pins remain. Pins are top-level rows in
+  pin order, oldest first, even when their former parent is collapsed. Unpinned descendants move
+  with them; independently pinned descendants become separate roots. Each space appears once.
+  Unpin restores its normal nesting and saved order without changing its stored parent. Its row draws `NWGlyph.pin` (9pt medium `textTertiary`) after the
   name, and VoiceOver adds "pinned". Pins are view state of this Mac (`SpacePins`,
   `shepherd.sidebar.pinnedSpaces`): not in state.json, never sent to another device, forgotten
-  when the space is removed. Dragging still reorders among siblings; pinned ones stay first.
+  when the space is removed. Pinned roots do not drag; unpinned spaces still reorder among siblings.
 - **Keys:** a click on a space opens or closes it and gives the tree the keyboard: ← closes
   that space and → opens it (plain arrows, only while the tree has focus, so never a chord for
   `KeybindingsStore` or Ghostty's list). ⌥-click opens or closes every space. ⌘1–9 and ⌘↑/↓
