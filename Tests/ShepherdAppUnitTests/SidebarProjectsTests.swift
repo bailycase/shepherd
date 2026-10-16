@@ -322,4 +322,28 @@ struct SidebarProjectsTests {
         }.first
         #expect(row?.missing == true && row?.newThreadSpace == nil)
     }
+
+    /// Pinned spaces lead their siblings in pin order: a pinned root moves with its children, a
+    /// pinned child leads its parent's children, and the rest keep the saved order.
+    @Test func pinnedSpacesLeadTheirSiblingsInPinOrder() {
+        let dotfiles = Fixture.space("dotfiles", path: "/code/dotfiles")
+        let hub = Fixture.space("hub", path: shepherd.path + "/hub")
+        let admin = Fixture.space("admin", path: shepherd.path + "/admin")
+        let state = ShepherdState(spaces: [dashboard, shepherd, admin, hub, dotfiles])
+        let pinned = SidebarDerivation.tree(SidebarSource(local: state),
+                                            options: SidebarTreeOptions(pinnedSpaces: [dotfiles.id, shepherd.id, hub.id]))
+        #expect(pinned.projects.map(\.name) == ["dotfiles", "shepherd", "hub", "admin", "dashboard-web"])
+        #expect(pinned.projects.filter(\.pinned).map(\.name) == ["dotfiles", "shepherd", "hub"])
+        #expect(tree(state).projects.map(\.name) == ["dashboard-web", "shepherd", "admin", "hub", "dotfiles"])
+    }
+
+    @Test func pinsToggleAndForgetSpacesThatAreGone() {
+        var pins = SpacePins()
+        pins.toggle(shepherd.id)
+        pins.toggle(dashboard.id)
+        #expect(pins.spaces == [shepherd.id, dashboard.id])
+        pins.toggle(shepherd.id)
+        #expect(pins.spaces == [dashboard.id])
+        #expect(pins.prune(keeping: [shepherd.id]) && pins.spaces.isEmpty)
+    }
 }

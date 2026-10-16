@@ -331,6 +331,13 @@ SidebarTree, SidebarProjects and SidebarProjectsHosts. Mac only: the iPad and iP
   thread whose folder is missing never starts pi elsewhere: its Can't start banner says "This
   thread's folder is missing." (`NativeStartProblem.Kind.folderMissing`) with Locate Folder… in
   place of Retry.
+- **Pin / Unpin** (the user's request, 2026-10-16; no board) sits after Collapse All in a local
+  space's menu (`pin` / `pin.slash`). A pinned space leads its siblings, oldest pin first: a pinned
+  root moves to the top with its children, a pinned child leads its parent's children, and the
+  rest keep the saved order. Its row draws `NWGlyph.pin` (9pt medium `textTertiary`) after the
+  name, and VoiceOver adds "pinned". Pins are view state of this Mac (`SpacePins`,
+  `shepherd.sidebar.pinnedSpaces`): not in state.json, never sent to another device, forgotten
+  when the space is removed. Dragging still reorders among siblings; pinned ones stay first.
 - **Keys:** a click on a space opens or closes it and gives the tree the keyboard: ← closes
   that space and → opens it (plain arrows, only while the tree has focus, so never a chord for
   `KeybindingsStore` or Ghostty's list). ⌥-click opens or closes every space. ⌘1–9 and ⌘↑/↓
