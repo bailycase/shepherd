@@ -147,7 +147,9 @@ struct ComposerTextField: NSViewRepresentable {
         var parent: ComposerTextField
         init(_ parent: ComposerTextField) { self.parent = parent }
         func readText(_ field: Field) {
-            // Undo changes the field editor before NSTextField's cell catches up.
+            // Commit pending editor text to the cell before publishing or invalidating layout:
+            // native measurement can run before updateNSView and otherwise use the old cell.
+            field.validateEditing()
             parent.text = field.editor.string
             field.invalidateIntrinsicContentSize()
             readSelection(field)
