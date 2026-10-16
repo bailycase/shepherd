@@ -87,27 +87,35 @@ struct ThreadInputTests {
         #expect(ControlPress.undersized([remove], minimum: .desktop).isEmpty)
         #expect(thread.input.attachments.isEmpty)
 
-        // AppKit owns the event groups. A manual group spanning an await can already be
-        // closed by the editor when we resume (macOS 26), so never end it a second time.
+        // AppKit owns the event groups; undo() closes the top-level group if still open.
+        // Assert the text the user sees, not when an offscreen run loop closes that group.
         let undo = try #require(editor.undoManager)
         #expect(undo.groupsByEvent)
-        // Plain text still goes through AppKit at the selection, with its ordinary undo.
-        pasteboard.clearContents()
-        pasteboard.setString("hello", forType: .string)
-        editor.paste(nil)
-        try await eventuallyOnMain("text paste to update the draft and close its native undo group") {
-            thread.store.draft == "hello" && undo.groupingLevel == 0
+        func textState() -> String {
+            "draft=\(String(reflecting: thread.store.draft)), editor=\(String(reflecting: editor.string)), selection=\(editor.selectedRange()), groupingLevel=\(undo.groupingLevel)"
         }
-        editor.setSelectedRange(NSRange(location: 1, length: 3))
-        pasteboard.clearContents()
-        pasteboard.setString("i", forType: .string)
-        menu.performActionForItem(at: 0)
-        try await eventuallyOnMain("text paste to replace the selection and close its native undo group") {
-            thread.store.draft == "hio" && undo.groupingLevel == 0
+        var beforeUndo = "not reached"
+        do {
+            // Plain text still goes through AppKit at the selection, with its ordinary undo.
+            pasteboard.clearContents()
+            pasteboard.setString("hello", forType: .string)
+            editor.paste(nil)
+            try await eventuallyOnMain("text paste to update the draft") { thread.store.draft == "hello" }
+            // The replacement is a separate user event, after the first paste has rendered.
+            try await thread.settle()
+            editor.setSelectedRange(NSRange(location: 1, length: 3))
+            pasteboard.clearContents()
+            pasteboard.setString("i", forType: .string)
+            menu.performActionForItem(at: 0)
+            try await eventuallyOnMain("text paste to replace the selection") { thread.store.draft == "hio" }
+            beforeUndo = textState()
+            try #require(undo.canUndo)
+            undo.undo()
+            try await eventuallyOnMain("undo to restore the selected text") { thread.store.draft == "hello" }
+        } catch {
+            FileHandle.standardError.write(Data("Native Paste (\(route)) before undo: \(beforeUndo)\nAt failure: \(textState())\n".utf8))
+            throw error
         }
-        #expect(undo.canUndo)
-        undo.undo()
-        try await eventuallyOnMain("undo to restore the selected text") { thread.store.draft == "hello" }
         pasteboard.clearContents()
         pasteboard.setData(try #require(image.tiffRepresentation), forType: .tiff)
         editor.paste(nil)
