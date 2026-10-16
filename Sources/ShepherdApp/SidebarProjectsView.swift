@@ -199,7 +199,6 @@ private struct SidebarTreeItemView: View, Equatable {
                             newThread: project.newThreadSpace == nil ? nil : { vm.startThread(in: project) }) {
             SidebarProjectMenu(vm: vm, project: project)
         }
-        .padding(.leading, CGFloat(project.depth) * (NWProjectMetrics.chevronSlot + NWProjectMetrics.gap))
         .help(project.missing ? "Folder not found: \(project.path)" : project.path)
         .contextMenu { SidebarProjectMenu(vm: vm, project: project) }
         .opacity(dragging ? NWProjectMetrics.draggedOpacity : 1)
@@ -211,6 +210,7 @@ private struct SidebarTreeItemView: View, Equatable {
             .onChanged { dragChanged(id, $0.translation.height) }
             .onEnded { dragEnded(id, $0.translation.height) },
                  isEnabled: project.movable)
+        .padding(.leading, CGFloat(project.depth) * (NWProjectMetrics.chevronSlot + NWProjectMetrics.gap))
     }
 }
 
