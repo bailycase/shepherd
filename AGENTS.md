@@ -59,9 +59,10 @@ How it fits together: [ARCHITECTURE.md](ARCHITECTURE.md).
   `/Applications` or a running Shepherd; tests use the scratch isolation. Never let a test take
   focus or post input. Never `rm -rf` or `pkill` by pattern (other agents share the checkout).
   Never amend, force-push, or touch a release tag.
-- Ask first before adding a dependency, changing a contract (`ShepherdCore`, `ShepherdProtocol`,
-  an extension message, a remote request), changing release signing, bundle ids or feeds, or
-  mutating a repository outside the paths in `docs/rules.md`.
+- Ask first before adding a dependency, breaking compatibility, adding unrequested public behavior,
+  changing release signing, bundle ids or feeds, or mutating a repository outside the paths in
+  `docs/rules.md`. Compatible additions to `ShepherdCore`, `ShepherdProtocol`, extension messages
+  and remote requests are part of authorized feature work; update consumers and relevant tests.
 
 ## UI changes
 

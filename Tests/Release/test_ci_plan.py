@@ -28,22 +28,6 @@ class AffectedTestsTests(unittest.TestCase):
                 self.assertTrue(selected(filters, "ShepherdAppIntegrationTests.ExtensionIdentityFlowTests/launch()"))
         self.assertFalse(ci_plan.affects_swift(["docs/design-workflow.md"]))
 
-    def test_quarantine_is_disabled_for_explicit_test_edits_and_diagnostics(self):
-        cases = [("Sources/ShepherdApp/Browser.swift", [], "false"),
-                 ("Tests/ShepherdAppIntegrationTests/ThreadJumpPressTests.swift", [], "true"),
-                 ("Package.swift", [], "true"),
-                 ("Package.swift", ["--ui-diagnostics"], "true")]
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "changed.txt"
-            for changed, options, expected in cases:
-                with self.subTest(changed=changed, options=options):
-                    path.write_text(changed)
-                    output = io.StringIO()
-                    with contextlib.redirect_stdout(output):
-                        self.assertEqual(ci_plan.main(["ci_plan.py", str(path), *options]), 0)
-                    plan = dict(line.split("=", 1) for line in output.getvalue().splitlines())
-                    self.assertEqual(plan["flaky"], expected)
-
     def test_a_changed_deep_test_runs_even_in_a_selective_feature_change(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

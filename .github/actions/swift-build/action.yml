@@ -10,6 +10,9 @@ inputs:
   clean:
     description: "'true' builds from scratch."
     default: "false"
+  save-cache:
+    description: "Only one parallel lane needs to save the shared build."
+    default: "true"
 
 runs:
   using: composite
@@ -70,6 +73,11 @@ runs:
         mkdir -p .build
         echo "$VERSION" > "$marker"
 
+    - name: Restore unchanged checkout input timestamps
+      if: runner.environment == 'github-hosted'
+      shell: bash
+      run: python3 scripts/ci_mtimes.py restore
+
     # SwiftPM's native build system gives each Swift target's compile command only its direct
     # dependencies' modules as inputs, so a target using a transitive module can be left stale
     # when only that module changed. Removing the swift-version file makes every target run its
@@ -87,6 +95,11 @@ runs:
           mkdir -p "$d/PackageFrameworks"
           ln -sfn "$PWD/$d/Sparkle.framework" "$d/PackageFrameworks/Sparkle.framework"
         done
+
+    - name: Record checkout input timestamps for the next build
+      if: runner.environment == 'github-hosted' && inputs.save-cache == 'true'
+      shell: bash
+      run: python3 scripts/ci_mtimes.py save
 
     # This checks generated Git metadata, not every byte in the build archive.
     - name: Guard hosted cache Git metadata
@@ -155,7 +168,7 @@ runs:
 
     - name: Save the hosted build
       if: >-
-        runner.environment == 'github-hosted' && steps.cache.outputs.cache-hit != 'true' &&
+        inputs.save-cache == 'true' && runner.environment == 'github-hosted' && steps.cache.outputs.cache-hit != 'true' &&
         ((github.event_name == 'pull_request' && github.ref == format('refs/pull/{0}/merge', github.event.pull_request.number)) ||
          ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref_type == 'branch'))
       uses: actions/cache/save@v4
