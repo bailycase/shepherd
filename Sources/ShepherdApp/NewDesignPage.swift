@@ -18,7 +18,7 @@ import ShepherdUI
 struct NewDesignPage: View {
     var vm: ShepherdViewModel
     let chrome: PageHeaderChrome
-    @FocusState private var composing: Bool
+    @State private var composing = false
     @State private var dropTargeted = false
     @State private var picking = false
     @State private var menu: ChipMenu?
@@ -99,33 +99,24 @@ struct NewDesignPage: View {
                 .nwTransition(.list, edge: .leading)
             }
         } field: {
-            TextField(text: Binding(get: { draft.brief }, set: { draft.brief = $0 }),
-                      prompt: Text("A checkout funnel dashboard for the product team…").foregroundStyle(Color.nw.textTertiary),
-                      axis: .vertical) {
-                Text("What do you want to design?")
+            ComposerTextField(text: Binding(get: { draft.brief }, set: { draft.brief = $0 }),
+                              placeholder: "A checkout funnel dashboard for the product team…",
+                              label: "What do you want to design?", focus: $composing, attach: draft.attach)
+            .onComposerKey(.return) { press in
+                if let result = press.lineBreak() { return result }
+                draft.send(vm)
+                return .handled
             }
-            .lineLimit(1...NWComposerMetrics.fieldMaxLines)
-            .textFieldStyle(.plain)
-            .font(Font.nw(.body))
-            .foregroundStyle(Color.nw.textPrimary)
-            .tint(Color.nw.lantern)
-            .focused($composing)
+            .onComposerKey(.escape) {
+                guard menu != nil else { return .ignored }
+                menu = nil
+                return .handled
+            }
             .modifier(CycleThinkingShortcut(focused: composing && !draft.starting,
                                           current: draft.thinking.clamped(to: draft.thinkingLevels()).rawValue,
                                           levels: draft.thinkingLevels().map(\.rawValue),
                                           choose: { id in if let level = ThinkingLevel(rawValue: id) { draft.setThinking(level) } }))
             .frame(minHeight: AppLayout.newDesignFieldMinHeight, alignment: .topLeading)
-            .onKeyPress(.return, phases: .down) { press in
-                if let result = NWReturnKey.lineBreak(for: press) { return result }
-                draft.send(vm)
-                return .handled
-            }
-            .onKeyPress(.escape) {
-                guard menu != nil else { return .ignored }
-                menu = nil
-                return .handled
-            }
-            .onPasteCommand(of: [.image, .fileURL]) { draft.attach($0) }
             .accessibilityLabel("What do you want to design?")
         } controls: {
             Button { picking = true } label: { Image(systemName: "paperclip") }

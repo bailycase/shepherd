@@ -11,6 +11,192 @@ import UniformTypeIdentifiers
 @Suite("Thread input", .mainActorExclusive)
 @MainActor
 struct ThreadInputTests {
+    @Test(arguments: ["direct", "menu", "shortcut", "context"])
+    func clipboardImageUsesNativePaste(_ route: String) async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { [route = route as String] in
+            await completingScenario { try await Self.pastingImage(route) }
+        }
+        expectScenarioCompleted(result)
+    }
+
+    static func pastingImage(_ route: String) async throws {
+        AccessibilityNode.enable()
+        let thread = ComposerThread(focused: true, images: true)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let image = NSImage(size: NSSize(width: 2400, height: 1200), flipped: false) { rect in
+            NSColor.red.setFill(); rect.fill(); return true
+        }
+        pasteboard.setData(try #require(image.tiffRepresentation), forType: .tiff)
+        // A copied image may also offer text: attach the image, never insert that fallback.
+        pasteboard.setString("image fallback text", forType: .string)
+        let editor = try #require(thread.focusedEditor as? ComposerTextField.Editor)
+        editor.pasteboard = { pasteboard }
+        let menu = NSMenu(title: "Edit")
+        let paste = menu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        paste.keyEquivalentModifierMask = .command
+        paste.target = editor
+        #expect(editor.validateUserInterfaceItem(paste))
+        switch route {
+        case "menu": menu.performActionForItem(at: 0)
+        case "context":
+            let event = try #require(NSEvent.mouseEvent(with: .rightMouseDown, location: .zero, modifierFlags: [],
+                timestamp: 0, windowNumber: thread.window.window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+            let context = try #require(editor.menu(for: event))
+            let index = try #require(context.items.firstIndex { $0.action == #selector(NSText.paste(_:)) })
+            let item = context.items[index]
+            #expect(editor.validateUserInterfaceItem(item))
+            // The offscreen window is never key: route its native menu to its actual editor.
+            item.target = editor
+            context.performActionForItem(at: index)
+        case "shortcut":
+            let event = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command,
+                timestamp: 0, windowNumber: thread.window.window.windowNumber, context: nil,
+                characters: "v", charactersIgnoringModifiers: "v", isARepeat: false, keyCode: 9))
+            #expect(menu.performKeyEquivalent(with: event))
+        default: editor.paste(nil)
+        }
+        try await eventuallyOnMain("the pasted image to attach") { !thread.input.attachments.isEmpty }
+        #expect(thread.store.draft.isEmpty)
+        let attachment = try #require(thread.input.attachments.items.first)
+        #expect(attachment.pixels == CGSize(width: 2000, height: 1000))
+        #expect(attachment.image.mimeType == "image/png")
+        #expect(attachment.source?.path.hasPrefix(AppImageDrop.directory.path) == true)
+        try await eventuallyOnMain("the image chip to draw") { thread.window.element("Remove \(attachment.name)") != nil }
+        let remove = try thread.window.press("Remove \(attachment.name)")
+        #expect(ControlPress.undersized([remove], minimum: .desktop).isEmpty)
+        #expect(thread.input.attachments.isEmpty)
+
+        // Give each invoked action its own event group; no application event loop runs here.
+        let undo = try #require(editor.undoManager)
+        undo.groupsByEvent = false
+        undo.beginUndoGrouping()
+        // Plain text still goes through AppKit at the selection, with its ordinary undo.
+        pasteboard.clearContents()
+        pasteboard.setString("hello", forType: .string)
+        editor.paste(nil)
+        try await eventuallyOnMain("text paste to update the draft") { thread.store.draft == "hello" }
+        undo.endUndoGrouping()
+        undo.beginUndoGrouping()
+        editor.setSelectedRange(NSRange(location: 1, length: 3))
+        pasteboard.clearContents()
+        pasteboard.setString("i", forType: .string)
+        menu.performActionForItem(at: 0)
+        try await eventuallyOnMain("text paste to replace the selection") { thread.store.draft == "hio" }
+        undo.endUndoGrouping()
+        #expect(undo.canUndo)
+        undo.undo()
+        try await eventuallyOnMain("undo to restore the selected text") { thread.store.draft == "hello" }
+        pasteboard.clearContents()
+        pasteboard.setData(try #require(image.tiffRepresentation), forType: .tiff)
+        editor.paste(nil)
+        try await eventuallyOnMain("the image to be ready to send") { thread.input.attachments.items.count == 1 }
+        let bytes = thread.input.attachments.images
+        try await thread.settle()
+        try thread.window.press("Send")
+        try await eventuallyOnMain("the pasted bytes to reach the host") {
+            thread.requests.contains { if case .send(_, _, _, let text, _, let images, _, _, _) = $0 { text == "hello" && images == bytes } else { false } }
+        }
+        try await eventuallyOnMain("the acknowledged image to leave the draft") { thread.input.attachments.isEmpty }
+    }
+
+    @Test func nativeComposerKeysKeepNewlinesCompletionAndSendingSeparate() async throws {
+        let thread = ComposerThread(focused: true)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        let editor = try #require(thread.focusedEditor as? ComposerTextField.Editor)
+        func key(_ code: UInt16, _ characters: String, modifiers: NSEvent.ModifierFlags = []) throws {
+            let event = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers,
+                timestamp: 0, windowNumber: thread.window.window.windowNumber, context: nil,
+                characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code))
+            editor.keyDown(with: event)
+        }
+        thread.type("before")
+        try await thread.settle()
+        try key(36, "\r", modifiers: .shift)
+        try await eventuallyOnMain("Shift Return to add a line") { thread.store.draft == "before\n" }
+        try key(36, "\r", modifiers: .option)
+        try await eventuallyOnMain("Option Return to add a line") { thread.store.draft == "before\n\n" }
+        #expect(!thread.requests.contains { if case .send = $0 { true } else { false } })
+        thread.store.draft = "/"
+        try await thread.settle()
+        try key(125, "\u{f701}")
+        try key(48, "\t")
+        try await eventuallyOnMain("Tab to complete a slash command") { thread.store.draft != "/" }
+        #expect(thread.store.draft.hasPrefix("/") && thread.store.draft.hasSuffix(" "))
+        thread.store.draft = ""
+        try await thread.settle()
+        editor.setMarkedText("ni", selectedRange: NSRange(location: 2, length: 0), replacementRange: NSRange(location: NSNotFound, length: 0))
+        try await thread.settle()
+        #expect(editor.hasMarkedText(), "a render does not commit an input method's composition")
+        try key(36, "\r")
+        #expect(thread.store.sentCount == 0, "Return belongs to the input method until its marked text is committed")
+        editor.unmarkText()
+        thread.store.draft = "Send these words"
+        thread.input.focus()
+        try await thread.settle()
+        try key(36, "\r")
+        try await eventuallyOnMain("Return to send") { thread.store.sentCount == 1 }
+        #expect(thread.store.draft.isEmpty)
+    }
+
+    @Test func aMultilineDraftGrowsToEightLinesWithoutLosingItsText() async throws {
+        let thread = ComposerThread(focused: true)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        let short = thread.composerInset
+        thread.store.draft = Array(repeating: "A line of the draft.", count: 8).joined(separator: "\n")
+        try await thread.settle()
+        let eight = thread.composerInset
+        #expect(eight > short)
+        thread.store.draft = Array(repeating: "A line of the draft.", count: 30).joined(separator: "\n")
+        try await thread.settle()
+        #expect(thread.composerInset == eight, "the editor scrolls rather than growing beyond its eight-line ceiling")
+        let editor = try #require(thread.focusedEditor)
+        #expect(editor.string == thread.store.draft)
+        #expect(editor.selectedRange().location == (thread.store.draft as NSString).length)
+        editor.scrollRangeToVisible(editor.selectedRange())
+        thread.window.layout()
+        let caret = editor.firstRect(forCharacterRange: editor.selectedRange(), actualRange: nil)
+        let visible = thread.window.window.convertToScreen(editor.convert(editor.visibleRect, to: nil))
+        #expect(visible.intersects(caret), "the end of a long draft remains reachable inside the scrolling field")
+    }
+
+    @Test(arguments: [false, true])
+    func creationComposersUseTheSameNativeImagePaste(design: Bool) async throws {
+        try StubPi.installAsEngine()
+        let app = try AppHarness()
+        defer { app.stop() }
+        let vm = try await app.start()
+        let window = OffscreenWindow(size: CGSize(width: 1000, height: 760))
+        defer { window.close() }
+        if design {
+            vm.openNewDesign()
+            window.show(NewDesignPage(vm: vm, chrome: PageHeaderChrome()))
+        } else {
+            vm.openNewThread()
+            window.show(NewThreadPage(vm: vm, chrome: PageHeaderChrome()))
+        }
+        try await eventuallyOnMain("the creation composer to focus") {
+            window.layout()
+            return window.window.firstResponder is ComposerTextField.Editor
+        }
+        let editor = try #require(window.window.firstResponder as? ComposerTextField.Editor)
+        let clipboard = NSPasteboard.withUniqueName()
+        defer { clipboard.releaseGlobally() }
+        let image = ThreadImagesControlTests.attachment("clipboard.png", bytes: 0)
+        clipboard.setData(image.image.data, forType: .png)
+        editor.pasteboard = { clipboard }
+        editor.paste(nil)
+        try await eventuallyOnMain("the new draft to receive the image") {
+            design ? !vm.newDesign.attachments.isEmpty : !vm.newThread.attachments.isEmpty
+        }
+        #expect(design ? vm.newDesign.brief.isEmpty : vm.newThread.prompt.isEmpty)
+        #expect(!vm.newDesign.starting && !vm.newThread.starting)
+    }
+
     @Test func filesAttachOnlyWhenTheThreadExplicitlyAcceptsLocalPaths() throws {
         let directory = try makeScratchDirectory("thread-input")
         let file = directory.appendingPathComponent("notes.txt")

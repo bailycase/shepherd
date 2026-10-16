@@ -7,6 +7,11 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
 
+extension EnvironmentValues {
+    /// The app's recent models; offscreen fixtures use their own scratch preferences.
+    @Entry var composerModelDefaults: UserDefaults = .standard
+}
+
 /// The composer (NWComposer board): pinned under the thread in the same 820pt column, a fade
 /// above it, the `NWComposer` card with the field (or a pending question) and one row of
 /// controls: attach · model settings · worktree · Send or Stop. Menus float over the thread
@@ -70,6 +75,7 @@ struct Composer: View {
     /// A Project's conversation: a send goes through the Project's revision-checked runtime (the host refuses a raw
     /// native send to a coordinator), and nothing else changes. nil for every ordinary thread.
     @Environment(\.projectComposerSend) private var projectSend
+    @Environment(\.composerModelDefaults) private var modelDefaults
     @Environment(\.projectWorkerThread) private var workerStyle
     /// The thread's design references (the @ picker, a pasted reference, the chips); nil where
     /// none reach: a design's chat, another host's thread, the Design tool off.
@@ -103,7 +109,7 @@ struct Composer: View {
     @State private var meterInset: CGFloat = 0
     @State private var dismissal = ComposerMenuDismissal()
     /// Owned here, not by the thread: claiming the keyboard redraws the composer alone.
-    @FocusState private var composing: Bool
+    @State private var composing = false
     /// "Up next": what the stack shows of the store's queue, and its own view state.
     @State private var ownQueueStack = QueueStackState()
     private var queueStack: QueueStackState { queueState ?? ownQueueStack }
@@ -430,9 +436,11 @@ struct Composer: View {
         // question gives the card back).
         .task(id: FieldClaim(focused: active && isFocused, question: questionKey != nil)) {
             composing = false
-            guard active && isFocused, questionKey == nil else { return }
+            guard active && isFocused, questionKey == nil, menu == nil else { return }
             await Task.yield()
-            guard !Task.isCancelled else { return }
+            // A chip can focus its pane and open a menu in the same click. The menu already
+            // claimed its search field; a deferred pane claim must not take it back.
+            guard !Task.isCancelled, menu == nil else { return }
             composing = true
         }
         // A normal start is over before the delay: only a slow pi is ever said to be starting.
@@ -561,7 +569,7 @@ struct Composer: View {
                 ModelPicker(state: picker, maxHeight: room) { model in
                     menu = nil
                     composing = true
-                    RecentModels.record(model, thread: agentName)
+                    RecentModels.record(model, thread: agentName, defaults: modelDefaults)
                     pickModel(model)
                 } close: { menu = nil; composing = true }
                 .equatable()
@@ -575,7 +583,7 @@ struct Composer: View {
                                 chooseModel: { model in
                                     menu = nil
                                     composing = true
-                                    RecentModels.record(model.id, thread: agentName)
+                                    RecentModels.record(model.id, thread: agentName, defaults: modelDefaults)
                                     pickModel(model.id)
                                 }, chooseThinking: { level in Task { await store.setThinking(level) } },
                                 chooseSpeed: { id in
@@ -680,30 +688,18 @@ struct Composer: View {
     }
 
     private var field: some View {
-        TextField(text: $store.draft, selection: caretBinding, prompt: Text(placeholder).foregroundStyle(Color.nw.textTertiary),
-                  axis: .vertical) {
-            Text("Message the agent")
-        }
-            .lineLimit(1...NWComposerMetrics.fieldMaxLines)
-            .textFieldStyle(.plain)
-            .font(Font.nw(.body))
-            .lineSpacing(max(0, NWTextStyle.body.lineSpacing - 1))
-            .foregroundStyle(Color.nw.textPrimary)
-            .autocorrectionDisabled()
-            .tint(Color.nw.lantern)
-            .focused($composing)
-            .modifier(CycleThinkingShortcut(focused: composing && active && thinkingAvailable && store.supports("setThinking") && dialogs.isEmpty,
-                                          current: store.thinking, levels: store.thinkingLevels.map(\.id),
-                                          choose: { level in Task { await store.setThinking(level) } }))
-            .onKeyPress(.return, phases: .down) { press in
+        ComposerTextField(text: $store.draft, selection: caretBinding, placeholder: placeholder,
+                          label: "Message the agent", focus: $composing, attach: attach,
+                          lineSpacing: max(0, NWTextStyle.body.lineSpacing - 1))
+            .onComposerKey(.return) { press in
                 // ⌘↩ reaches here when a key press brings it; the key monitor usually takes it first.
                 switch ComposerReturnKey.action(modifiers: press.modifiers, alternate: KeybindingsStore.shared.chord(for: .alternateSend),
                                                 menuOpen: loginQuery != nil || commandQuery != nil || mentionShown,
-                                                composing: NWReturnKey.isComposing) {
+                                                composing: press.composing) {
                 case .system:
                     return .ignored
                 case .lineBreak:
-                    return NWReturnKey.insertLineBreak() ? .handled : .ignored
+                    return NWReturnKey.insertLineBreak(in: press.editor) ? .handled : .ignored
                 case .choose:
                     if let login = loginQuery {
                         let matches = loginMatches
@@ -722,7 +718,7 @@ struct Composer: View {
                     return .handled
                 }
             }
-            .onKeyPress(.tab) {
+            .onComposerKey(.tab) {
                 if let login = loginQuery {
                     let matches = loginMatches
                     guard matches.indices.contains(commandIndex) else { return .handled }
@@ -738,7 +734,7 @@ struct Composer: View {
                 complete(matches[commandIndex])
                 return .handled
             }
-            .onKeyPress(.upArrow) {
+            .onComposerKey(.upArrow) {
                 if mentionShown {
                     mentions.move(-1)
                     return .handled
@@ -751,7 +747,7 @@ struct Composer: View {
                 guard store.draft.isEmpty, menu == nil, queueStack.editLast(store: store) else { return .ignored }
                 return .handled
             }
-            .onKeyPress(.downArrow) {
+            .onComposerKey(.downArrow) {
                 if mentionShown {
                     mentions.move(1)
                     return .handled
@@ -766,17 +762,17 @@ struct Composer: View {
             }
             // → drills into a design or a board; ← and ⌫ with nothing typed after the breadcrumb go
             // back a level (MentionPicker · inside a board).
-            .onKeyPress(.rightArrow) {
+            .onComposerKey(.rightArrow) {
                 guard mentionShown, let row = mentions.highlightedRow, row.trailing == .drill else { return .ignored }
                 chooseMention(row)
                 return .handled
             }
-            .onKeyPress(.leftArrow) {
+            .onComposerKey(.leftArrow) {
                 guard mentionShown, mentions.filterIsEmpty, mentions.scope != .designs else { return .ignored }
                 mentionBack()
                 return .handled
             }
-            .onKeyPress(.delete) {
+            .onComposerKey(.delete) {
                 if mentionShown, mentions.filterIsEmpty, mentions.scope != .designs {
                     mentionBack()
                     return .handled
@@ -787,7 +783,7 @@ struct Composer: View {
                 store.detachReference(last.id)
                 return .handled
             }
-            .onKeyPress(.escape) {
+            .onComposerKey(.escape) {
                 switch ComposerEscape(menuOpen: menu != nil, commandsOpen: commandQuery != nil || loginQuery != nil || mentionShown,
                                       canStop: running && dialogs.isEmpty && active && store.supports("abort")
                                           && !(projectConversation && !store.hasDraft && input.attachments.isEmpty)) {
@@ -801,10 +797,9 @@ struct Composer: View {
                 }
                 return .handled
             }
-            .onPasteCommand(of: [.image, .fileURL]) { providers in
-                guard canAttach else { return }
-                attach(providers)
-            }
+            .modifier(CycleThinkingShortcut(focused: composing && active && thinkingAvailable && store.supports("setThinking") && dialogs.isEmpty,
+                                          current: store.thinking, levels: store.thinkingLevels.map(\.id),
+                                          choose: { level in Task { await store.setThinking(level) } }))
             .accessibilityLabel("Message the agent")
     }
 
@@ -886,7 +881,7 @@ struct Composer: View {
     private func openModels() {
         guard modelSettable else { NSSound.beep(); return }
         guard menu != .models else { menu = nil; return }
-        picker = ModelPickerState(catalog: catalog, recent: RecentModels.load().map(\.id), current: store.model ?? projectSend?.model?.current,
+        picker = ModelPickerState(catalog: catalog, recent: RecentModels.load(modelDefaults).map(\.id), current: store.model ?? projectSend?.model?.current,
                                   currentLevels: store.snapshot?.thinkingLevels)
         dismissCommands()
         menu = .models
@@ -914,7 +909,7 @@ struct Composer: View {
 
     /// Current model first, then one recent model. Never offer a stale unavailable model.
     private var settingsModels: [NWModelOption] {
-        ModelCatalog.settingsModels(catalog: catalog, current: store.model ?? projectSend?.model?.current, recent: RecentModels.load().map(\.id),
+        ModelCatalog.settingsModels(catalog: catalog, current: store.model ?? projectSend?.model?.current, recent: RecentModels.load(modelDefaults).map(\.id),
                                     currentOffersFast: store.offersServiceTier)
     }
 

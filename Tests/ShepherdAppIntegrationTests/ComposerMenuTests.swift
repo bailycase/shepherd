@@ -1,5 +1,7 @@
 import AppKit
 import Foundation
+import ShepherdCore
+import ShepherdSessions
 import ShepherdProtocol
 import ShepherdRemote
 import ShepherdTestSupport
@@ -158,6 +160,133 @@ struct ComposerMenuTests {
         thread.visibility.focused = true
         try await thread.show(true)
         try await eventuallyOnMain("the composer to take the keyboard again") { typing() }
+    }
+
+    @Test(arguments: [false, true], [false, true])
+    func modelShortcutRoutesToTheVisibleThread(terminal: Bool, rebound: Bool) async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
+            [terminal = terminal as Bool, rebound = rebound as Bool] in
+            await completingScenario { try await Self.shortcut(terminal: terminal, rebound: rebound) }
+        }
+        expectScenarioCompleted(result)
+    }
+
+    @MainActor final class ModelCommandTarget: NSObject {
+        let vm: ShepherdViewModel
+        init(_ vm: ShepherdViewModel) { self.vm = vm }
+        @objc func chooseModel() { vm.sendThreadCommand(.modelPicker) }
+    }
+
+    static func shortcut(terminal: Bool, rebound: Bool) async throws {
+        try StubPi.installAsEngine()
+        let app = try AppHarness()
+        let keys = app.keybindings
+        if rebound { #expect(keys.assign(KeyChord(key: "m", command: true, option: true), to: .modelPicker) == nil) }
+        defer { app.stop() }
+        let space = Fixture.space(path: app.dir.path)
+        let info = try await app.server.createSession(params: CreateSessionParams(cwd: space.path, command: StubPi.command, runtime: .rpc))
+        let agent = Fixture.agent("visible", in: space, piSession: info.id)
+        let hidden = Fixture.agent("hidden", in: space)
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent, hidden]))
+        vm.selectAgent(agent.agent.id)
+        let window = OffscreenWindow(size: CGSize(width: 1000, height: 800), WorkspaceView(vm: vm)
+            .environment(\.threadCommands, vm.threadCommands))
+        defer { window.close() }
+        let store = vm.threadStores.store(for: agent.agent.id)
+        try await eventuallyOnMain("the visible composer to load and focus") { store.ready && window.window.firstResponder is NSTextView }
+        if terminal {
+            vm.newTerminalTab()
+            try await eventuallyOnMain("the terminal to take focus") {
+                window.layout()
+                return window.window.firstResponder.map { String(describing: type(of: $0)).contains("AppTerminalView") } == true
+            }
+        }
+        let chord = keys.chord(for: .modelPicker)
+        #expect(chord == (rebound ? KeyChord(key: "m", command: true, option: true) : ShortcutAction.modelPicker.defaultChord))
+        let event = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: chord.modifierFlags,
+            timestamp: 1, windowNumber: window.window.windowNumber, context: nil, characters: "m",
+            charactersIgnoringModifiers: "m", isARepeat: false, keyCode: 46))
+        if terminal {
+            let surface = try #require(window.window.firstResponder as? NSView)
+            #expect(!surface.performKeyEquivalent(with: event), "Ghostty leaves the default/rebound app chord alone")
+        }
+        let menu = NSMenu(title: "Agent"), target = ModelCommandTarget(vm)
+        let item = menu.addItem(withTitle: "Choose Model…", action: #selector(ModelCommandTarget.chooseModel), keyEquivalent: chord.key)
+        item.keyEquivalentModifierMask = chord.modifierFlags
+        item.target = target
+        item.isEnabled = MenuState.Snapshot(vm).hasVisibleThread
+        #expect(item.isEnabled)
+        #expect(menu.performKeyEquivalent(with: event))
+        try await eventuallyOnMain("the shortcut to focus Search models") {
+            window.layout()
+            return (window.window.firstResponder as? NSTextView)?.isFieldEditor == true
+                && !(window.window.firstResponder is ComposerTextField.Editor)
+        }
+        #expect(vm.threadCommands.request?.thread == ThreadCommandCenter.key(local: agent.agent.id))
+        #expect(!window.window.isKeyWindow)
+    }
+
+    @Test func modelsTakeFocusInTheMountedWorkspace() async throws {
+        try StubPi.installAsEngine()
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space(path: app.dir.path)
+        let info = try await app.server.createSession(params: CreateSessionParams(cwd: space.path, command: StubPi.command, runtime: .rpc))
+        let agent = Fixture.agent("agent", in: space, piSession: info.id)
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
+        vm.selectAgent(agent.agent.id)
+        let window = OffscreenWindow(size: CGSize(width: 1000, height: 800), WorkspaceView(vm: vm)
+            .environment(\.threadCommands, vm.threadCommands))
+        defer { window.close() }
+        let store = vm.threadStores.store(for: agent.agent.id)
+        try await eventuallyOnMain("the workspace thread to load") { store.ready }
+        store.draft = "Keep workspace draft"
+        try await eventuallyOnMain("the workspace composer to own the field editor") {
+            window.layout()
+            return (window.window.firstResponder as? NSTextView)?.string == store.draft
+        }
+        vm.sendThreadCommand(.modelPicker)
+        try await eventuallyOnMain("Search models to take focus", timeout: .seconds(3)) {
+            window.layout()
+            guard let editor = window.window.firstResponder as? NSTextView else { return false }
+            return editor.string.isEmpty
+        }
+        let editor = try #require(window.window.firstResponder as? NSTextView)
+        editor.insertText("sonnet", replacementRange: NSRange(location: 0, length: 0))
+        #expect(store.draft == "Keep workspace draft")
+    }
+
+    @Test func aModelChipThatAlsoFocusesItsPaneKeepsSearchFocused() async throws {
+        let thread = FakeThread(ComposerThread.snapshot(messages: 2, commands: []))
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        thread.store.draft = "Preserved draft"
+        // The pane's simultaneous tap gesture focuses the pane as its chip opens the picker.
+        thread.commands.send(.modelPicker, to: "fake")
+        thread.visibility.focused = true
+        try await eventuallyOnMain("the picker to take focus", timeout: .seconds(2)) {
+            thread.window.layout()
+            return (thread.window.window.firstResponder as? NSTextView)?.string == ""
+        }
+        let editor = try #require(thread.window.window.firstResponder as? NSTextView)
+        editor.insertText("sonnet", replacementRange: NSRange(location: 0, length: 0))
+        #expect(thread.store.draft == "Preserved draft")
+    }
+
+    @Test(arguments: [false, true])
+    func openingModelsMovesTypingFromTheComposerToSearch(focused: Bool) async throws {
+        let thread = ComposerThread(focused: focused)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        thread.store.draft = "Keep this draft"
+        thread.openModelPicker()
+        try await thread.settle()
+        let editor = try #require(thread.focusedEditor)
+        #expect(editor.string.isEmpty, "Search models, not the draft, owns the field editor")
+        thread.type("sonnet")
+        try await thread.settle()
+        #expect(thread.store.draft == "Keep this draft")
+        #expect(thread.focusedEditor?.string == "sonnet")
     }
 
     /// The menu is the topmost thing where it floats: a point in it hits the menu, never the
@@ -348,7 +477,7 @@ extension ComposerThread {
     /// Use the composer's producer and fixture catalog: another test's model pick can add a recent row.
     var settingsModelRows: Int {
         ModelCatalog.settingsModels(catalog: ModelCatalog(ModelCatalogFixture.entries), current: store.model,
-                                    recent: RecentModels.load().map(\.id)).count + 1 // All models…
+                                    recent: RecentModels.load(modelDefaults).map(\.id)).count + 1 // All models…
     }
 
     /// The deepest view under `point` (from the window's top-left), as AppKit hit-tests it.

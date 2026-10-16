@@ -15,6 +15,7 @@ final class ComposerThread {
 
     let store = NativeThreadStore()
     let commands = ThreadCommandCenter()
+    let modelDefaults = ScratchDefaults()
     let window: OffscreenWindow
     /// The composer's images, held here so a test can attach one.
     let input = ThreadInput()
@@ -32,9 +33,10 @@ final class ComposerThread {
     init(messages: Int = 40, size: CGSize = CGSize(width: 900, height: 600), models: [PiModelCatalog.Entry] = ModelCatalogFixture.entries,
          commands: [NativeCommand] = ModelCatalogFixture.commands, dialogs: [NativeThreadDialog] = [], dark: Bool = false,
          focused: Bool = false, animated: Bool = true, speed: Bool = false, fast: Bool = false, model: String = "anthropic/claude-opus-4-5",
-         thinkingLevels: [String]? = nil, designReferences: DesignReferenceChips? = nil, running: Bool = false) {
+         thinkingLevels: [String]? = nil, designReferences: DesignReferenceChips? = nil, running: Bool = false, images: Bool = false) {
         self.size = size
         snapshot = Self.snapshot(messages: messages, commands: commands, dialogs: dialogs, model: speed ? "openai/gpt-6-luna" : model, speed: speed)
+        if images { snapshot.supportedActions.append("sendImages") }
         if fast { snapshot.serviceTier = "fast" }
         if running { snapshot.running = true }
         if let thinkingLevels { snapshot.thinkingLevels = thinkingLevels }
@@ -62,9 +64,10 @@ final class ComposerThread {
             default: return .snapshot(value: self.snapshot)
             }
         }
-        hosted = { [store, input = self.input, commands = self.commands] in
+        hosted = { [store, input = self.input, commands = self.commands, modelDefaults] in
             AnyView(ThreadView(store: store, active: true, isFocused: focused, request: request, commandKey: Self.key, listModels: { ModelCatalog(models) }, retainedInput: input)
                 .environment(\.threadCommands, commands)
+                .environment(\.composerModelDefaults, modelDefaults)
                 .environment(\.designReferences, designReferences)
                 // Without motion, a change's first frame is all of its work.
                 .transaction { if !animated { $0.disablesAnimations = true } })

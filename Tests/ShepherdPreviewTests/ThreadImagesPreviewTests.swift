@@ -34,6 +34,30 @@ struct ThreadImagesPreviewTests {
                                pixels: CGSize(width: 1170, height: 2532))
     }
 
+    @Test(arguments: ["image", "empty", "long"])
+    func pastedComposer(_ state: String) async throws {
+        let fixture = ThreadFixture(Threads.idle)
+        fixture.snapshot.messages = []
+        fixture.snapshot.supportedActions.append("sendImages")
+        defer { fixture.store.stop() }
+        let input = ThreadInput()
+        if state != "empty" {
+            let clipboard = NSPasteboard.withUniqueName()
+            defer { clipboard.releaseGlobally() }
+            let image = Self.attachment("clipboard.png", bytes: 0)
+            clipboard.setData(image.image.data, forType: .png)
+            let urls = await AppImageDrop.resolve(AppImageDrop.providers(from: clipboard))
+            input.attachments.add(urls: urls)
+            #expect(input.attachments.items.count == 1)
+        }
+        fixture.store.draft = state == "long" ? String(repeating: "Please compare this screenshot with the current checkout and explain the overlapping labels. ", count: 18)
+            : state == "image" ? "Please fix the overlapping controls in this screenshot." : ""
+        try await Preview.renderMatrix("composer-pasted-\(state)", size: CGSize(width: 760, height: 420), ready: { fixture.store.ready }) {
+            ThreadView(store: fixture.store, active: true, isFocused: false, request: fixture.request,
+                       listModels: { .empty }, retainedInput: input)
+        }
+    }
+
     @Test(arguments: ["one", "two", "over", "long", "full"])
     func composerStrip(_ state: String) async throws {
         var attachments = ComposerAttachments()
