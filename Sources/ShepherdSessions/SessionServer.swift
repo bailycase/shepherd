@@ -4814,6 +4814,54 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// `path` moved from under `old` to under `new`; nil when it is not inside `old`.
+    public nonisolated static func relocated(_ path: String, from old: String, to new: String) -> String? {
+        let standard = (path as NSString).standardizingPath, old = (old as NSString).standardizingPath
+        if standard == old { return new }
+        return standard.hasPrefix(old + "/") ? new + standard.dropFirst(old.count) : nil
+    }
+
+    /// Points a space whose folder moved at `path`, an existing directory no other space holds.
+    /// Everything recorded inside its old folder follows: spaces registered there, its threads'
+    /// and terminals' folders, worktree paths and automations. Never touches files; the caller
+    /// stops the threads first and moves their conversations.
+    public func relocateSpace(_ spaceID: SpaceID, to path: String) async throws -> Space {
+        let canonical = URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL.resolvingSymlinksInPath().path
+        var isDirectory: ObjCBool = false
+        guard canonical.hasPrefix("/"), FileManager.default.fileExists(atPath: canonical, isDirectory: &isDirectory), isDirectory.boolValue else {
+            throw ProjectFileError("invalid_path", "Choose an existing folder.")
+        }
+        return try await enqueue {
+            guard let space = self.store.state.spaces.first(where: { $0.id == spaceID && !$0.hidden }) else {
+                throw SessionServerError.noSuchSpace(spaceID)
+            }
+            let old = space.path
+            func moved(_ path: String) -> String? { Self.relocated(path, from: old, to: canonical) }
+            let affected = Set(self.store.state.spaces.filter { !$0.hidden && moved($0.path) != nil }.map(\.id))
+            guard !self.store.state.spaces.contains(where: { !affected.contains($0.id) && ($0.path as NSString).standardizingPath == canonical }) else {
+                throw ProjectFileError("destination_registered", "Another space already uses that folder.")
+            }
+            try self.mutateState { state in
+                for index in state.spaces.indices where affected.contains(state.spaces[index].id) {
+                    state.spaces[index].path = moved(state.spaces[index].path)!
+                }
+                for index in state.tabs.indices {
+                    for leaf in state.tabs[index].layout.leaves {
+                        guard let cwd = moved(leaf.cwd) else { continue }
+                        state.tabs[index].layout = state.tabs[index].layout.updatingLeaf(leaf.id) { $0.cwd = cwd }
+                    }
+                }
+                for index in state.agents.indices {
+                    if let path = state.agents[index].worktreePath.flatMap(moved) { state.agents[index].worktreePath = path }
+                }
+                for index in state.automations.indices {
+                    if let cwd = moved(state.automations[index].cwd) { state.automations[index].cwd = cwd }
+                }
+            }
+            return self.store.state.spaces.first { $0.id == spaceID }!
+        }
+    }
+
     public func updateSpace(_ space: Space) async throws {
         try await enqueue {
             guard let index = self.store.state.spaces.firstIndex(where: { $0.id == space.id }) else {

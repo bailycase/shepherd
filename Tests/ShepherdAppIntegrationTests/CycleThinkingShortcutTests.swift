@@ -16,6 +16,13 @@ struct CycleThinkingShortcutIntegrationTests {
         }
     }
 
+    @Test(arguments: [false, true])
+    func returningToAnUnchangedDraftRestoresItsShortcuts(edited: Bool) async {
+        await #expect(processExitsWith: .success) { [edited = edited as Bool] in
+            await recordingErrors { try await Self.refocusingUnchangedDraft(edited: edited) }
+        }
+    }
+
     @Test func aReboundThinkingShortcutReplacesShiftTabAndResetRestoresIt() async {
         await #expect(processExitsWith: .success) {
             await recordingErrors { try await Self.rebinding() }
@@ -45,10 +52,10 @@ struct CycleThinkingShortcutIntegrationTests {
     }
 
     @MainActor
-    private static func monitor(in view: NSView) -> ComposerKeyMonitor? {
+    private static func monitor(in view: NSView, action: ShortcutAction = .cycleThinkingLevel) -> ComposerKeyMonitor? {
         if let reader = view as? ComposerWindowReader.Reader,
-           reader.monitor?.chord() == KeybindingsStore.shared.chord(for: .cycleThinkingLevel) { return reader.monitor }
-        return view.subviews.lazy.compactMap { monitor(in: $0) }.first
+           reader.monitor?.chord() == KeybindingsStore.shared.chord(for: action) { return reader.monitor }
+        return view.subviews.lazy.compactMap { monitor(in: $0, action: action) }.first
     }
 
     @MainActor
@@ -108,6 +115,61 @@ struct CycleThinkingShortcutIntegrationTests {
         thread.openModelPicker()
         try await eventuallyOnMain("the model search field to release the composer shortcut") { !monitor.accepts() }
         #expect(!monitor.handle(try key(in: thread.window)))
+    }
+
+    @MainActor
+    private static func refocusingUnchangedDraft(edited: Bool) async throws {
+        let thread = ComposerThread(messages: 0, focused: true, thinkingLevels: ["low", "medium", "high"], running: true)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        let text = "Keep this unchanged draft."
+        if edited { thread.type(text) } else { thread.store.draft = text }
+        let thinking = try await readyMonitor(in: thread.window)
+        let editor = try #require(thread.focusedEditor as? ComposerTextField.Editor)
+        func composer(in view: NSView) -> ComposerTextField.Field? {
+            if let field = view as? ComposerTextField.Field { return field }
+            return view.subviews.lazy.compactMap { composer(in: $0) }.first
+        }
+        let field = try #require(composer(in: thread.window.host))
+        let other = NSTextField(frame: NSRect(x: 0, y: 0, width: 100, height: 24))
+        thread.window.host.addSubview(other)
+        defer { other.removeFromSuperview() }
+        #expect(thread.window.window.makeFirstResponder(other))
+        try await thread.settle()
+        #expect(!thinking.accepts(), "leaving without an edit must also release the shortcut")
+        #expect(!thinking.handle(try key(in: thread.window)))
+        #expect(thread.window.window.firstResponder !== editor, "rendering must not reclaim focus")
+
+        #expect(thread.window.window.makeFirstResponder(field))
+        try await thread.settle()
+        #expect(thread.window.window.firstResponder === editor)
+        #expect(thread.store.draft == text)
+        #expect(thinking.accepts(), "merely re-entering the unchanged draft restores its shortcuts")
+        let thinkingPresses = thinking.presses
+        NSApp.sendEvent(try key(in: thread.window))
+        #expect(thinking.presses == thinkingPresses + 1, "the thinking local monitor was restored")
+        try await eventuallyOnMain("Shift-Tab to choose High without typing first") { thread.store.thinking == "high" && !thread.store.busy }
+        let send = try #require(monitor(in: thread.window.host, action: .alternateSend))
+        let chord = KeybindingsStore.shared.chord(for: .alternateSend)
+        let event = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: chord.modifierFlags,
+            timestamp: 0, windowNumber: thread.window.window.windowNumber, context: nil,
+            characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+        let presses = send.presses
+        #expect(thread.window.window.makeFirstResponder(other))
+        try await thread.settle()
+        // Dispatch only inside this offscreen test process; nothing is posted to the system.
+        NSApp.sendEvent(event)
+        #expect(send.presses == presses, "resigning removes the alternate-send local monitor")
+        #expect(thread.store.sentCount == 0)
+        #expect(thread.window.window.makeFirstResponder(field))
+        try await thread.settle()
+        #expect(thread.store.draft == text)
+        NSApp.sendEvent(event)
+        #expect(send.presses == presses + 1, "the alternate-send local monitor was restored without another edit")
+        try await eventuallyOnMain("alternate send to steer the unchanged draft") { thread.store.sentCount == 1 }
+        #expect(thread.requests.contains { if case .send(_, _, _, let draft, let delivery, _, _, _, _) = $0 {
+            draft == text && delivery == .steer
+        } else { false } })
     }
 
     @MainActor

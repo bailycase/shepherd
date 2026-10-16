@@ -3,6 +3,7 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSessions
 import ShepherdTestSupport
 import ShepherdUI
 import Testing
@@ -42,6 +43,60 @@ struct ModelSettingsPopoverTests {
         await #expect(processExitsWith: .success) {
             await recordingErrors { try await Self.switchingSpeedOnTheNewThreadPage() }
         }
+    }
+
+    @Test func modelSearchTakesTheKeyboardFromTheChipAndChoosesWithArrowAndReturn() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) {
+            await completingScenario { try await Self.searchingModels() }
+        }
+        expectScenarioCompleted(result)
+    }
+
+    @MainActor
+    static func searchingModels() async throws {
+        AccessibilityNode.enable()
+        let models = ["fixture/one", "fixture/two"].map { PiModelCatalog.Entry(id: $0, context: "200K", reasoning: false) }
+        let thread = ComposerThread(models: models, focused: true)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        thread.store.draft = "Preserve my words"
+        let chip = try thread.window.press("Model settings: anthropic/claude-opus-4-5")
+        try await thread.settle()
+        let all = try thread.window.press("All models…")
+        #expect(ControlPress.undersized([chip, all], minimum: .desktop).isEmpty)
+        try await thread.settle()
+        let search = try #require(thread.focusedEditor)
+        #expect(search.string.isEmpty)
+        thread.type("fixture/")
+        try await thread.settle()
+        #expect(thread.store.draft == "Preserve my words")
+        func key(_ code: UInt16, _ characters: String) throws {
+            let event = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+                windowNumber: thread.window.window.windowNumber, context: nil, characters: characters,
+                charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code))
+            // Local offscreen dispatch reaches SwiftUI's key handlers; nothing is posted.
+            thread.window.window.sendEvent(event)
+            #expect(!thread.window.window.isKeyWindow)
+        }
+        let options = ModelCatalog(models).list(query: "fixture/", recent: RecentModels.load(thread.modelDefaults).map(\.id), current: thread.store.model).options
+        let expected = try #require(options.dropFirst().first).id
+        try key(125, "\u{f701}")
+        try await thread.settle()
+        try key(126, "\u{f700}")
+        try await thread.settle()
+        try key(125, "\u{f701}")
+        try await thread.settle()
+        try key(36, "\r")
+        try await eventuallyOnMain("the highlighted model to reach the host") {
+            thread.requests.contains { if case .setModel(_, _, _, let id) = $0 { id == expected } else { false } }
+        }
+        try await eventuallyOnMain("the composer to regain its keyboard") { thread.focusedEditor?.string == "Preserve my words" }
+        let chosen = thread.store.model
+        thread.openModelPicker()
+        try await thread.settle()
+        try key(53, "\u{1b}")
+        try await eventuallyOnMain("Escape to return to the draft") { thread.focusedEditor?.string == "Preserve my words" }
+        #expect(thread.store.model == chosen)
     }
 
     // MARK: Scenarios

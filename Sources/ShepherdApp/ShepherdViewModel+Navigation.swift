@@ -75,7 +75,7 @@ extension ShepherdViewModel {
             hosts: remoteHosts.connections.map {
                 SidebarSource.Host(id: $0.id, name: $0.config.name,
                     state: SidebarSource.presentationState($0.state, children: $0.children), offline: $0.phase != .connected)
-            }, designs: designToolEnabled)
+            }, designs: designToolEnabled, missingSpaces: missingSpaces)
     }
 
     /// Activity groups, derived again only when their inputs change.

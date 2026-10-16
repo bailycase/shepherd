@@ -115,6 +115,10 @@ final class AppTerminalModel {
 /// Image drops outside a terminal (the native composer) go through the same resize
 /// rules as terminal drops: longest edge 2000px, JPEG stays JPEG, else PNG.
 enum AppImageDrop {
+    static func providers(from pasteboard: NSPasteboard) -> [NSItemProvider] {
+        TerminalImageDrop.providers(from: pasteboard)
+    }
+
     static func resolve(_ providers: [NSItemProvider]) async -> [URL] {
         await TerminalImageDrop.resolve(providers)
     }

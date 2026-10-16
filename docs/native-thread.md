@@ -585,6 +585,14 @@ is the client's rule for drawing the control: the action and more than one tier.
 
 ## Images
 
+The Mac composer accepts native Paste from the clipboard without a source path. Its owned
+AppKit field editor handles ⌘V, Edit ▸ Paste and the text context menu; ordinary text paste
+keeps selection and undo. Clipboard images use the same `AppImageDrop` / `TerminalImageDrop`
+normalization and scratch-copy storage as drops, then the same attachment chips and send
+limits. New thread and New design share this field. Pasting only prepares the draft; it never
+sends automatically. An image with a text representation attaches the image instead of its
+fallback text.
+
 pi saves every image in its own session: a user message's and a tool result's `image` blocks are written
 whole to the session file, and `get_messages` returns them (checked against the staged engine's
 `SessionManager`, user and tool-result images, byte for byte). So **the host stores nothing**: it names an

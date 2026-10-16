@@ -256,8 +256,8 @@ public struct NWCodeBlock: View {
     }
 }
 
-/// What a fence's header says. Diagram and math fences are drawn as their source (Shepherd
-/// renders neither), so their header names what the source is, after a glyph: "mermaid ·
+/// What a source fence's header says (including the source beneath a rendered Mermaid chart).
+/// Diagram and math source headers name the source after a glyph: "mermaid ·
 /// diagram source", "latex · math source".
 struct NWFenceKind: Equatable {
     let label: String

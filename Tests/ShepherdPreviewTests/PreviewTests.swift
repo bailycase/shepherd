@@ -95,7 +95,7 @@ struct PreviewTests {
         let levels = ["anthropic/claude-opus-4-5": ["off", "minimal", "low", "medium", "high", "xhigh", "max"]]
         final class Opened { var at: Date? }
         let opened = Opened()
-        try await Preview.render("composer-model-picker", size: CGSize(width: 1000, height: 820), ready: {
+        try await Preview.renderMatrix("composer-model-picker", size: CGSize(width: 1000, height: 820), ready: {
             guard fixture.store.ready else { return false }
             // The picker grows from its chip: open it, then capture it at rest.
             if opened.at == nil {
@@ -107,6 +107,22 @@ struct PreviewTests {
             // Each appearance renders in a new window: open the picker in each.
             let _ = opened.at = nil
             fixture.thread(listModels: { ModelCatalog(entries, levels: levels) })
+        }
+    }
+
+    @Test(arguments: ["loading", "no-results", "long"])
+    func modelPickerSearchStates(_ name: String) async throws {
+        let id = "provider/" + String(repeating: "long-model-name-", count: 12) + "latest"
+        let catalog = ModelCatalog([PiModelCatalog.Entry(id: id, context: "1M", reasoning: true)])
+        let picker = ModelPickerState(catalog: name == "loading" ? nil : catalog, recent: [], current: id)
+        if name == "no-results" { picker.query = "not in the catalog" }
+        try await Preview.renderMatrix("model-picker-\(name)", size: CGSize(width: 440, height: 460)) {
+            VStack(alignment: .leading) {
+                ModelPicker(state: picker, choose: { _ in }, close: {})
+                Spacer(minLength: 0)
+            }
+            .padding(NW.Space.l)
+            .background(Color.nw.bgWindow)
         }
     }
 

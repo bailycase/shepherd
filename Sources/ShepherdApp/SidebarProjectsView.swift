@@ -189,7 +189,7 @@ private struct SidebarTreeItemView: View, Equatable {
     private func projectRow(_ project: SidebarProjectRow) -> some View {
         let id = project.id
         return NWProjectRow(project.name, count: project.count, expanded: project.expanded, rollup: project.rollup,
-                            dimmed: project.dimmed,
+                            dimmed: project.dimmed, missing: project.missing, pinned: project.pinned,
                             toggle: {
                                 focus(id)
                                 vm.toggleProject(id, all: NSEvent.modifierFlags.contains(.option))
@@ -198,7 +198,7 @@ private struct SidebarTreeItemView: View, Equatable {
             SidebarProjectMenu(vm: vm, project: project)
         }
         .padding(.leading, CGFloat(project.depth) * (NWProjectMetrics.chevronSlot + NWProjectMetrics.gap))
-        .help(project.path)
+        .help(project.missing ? "Folder not found: \(project.path)" : project.path)
         .contextMenu { SidebarProjectMenu(vm: vm, project: project) }
         .opacity(dragging ? NWProjectMetrics.draggedOpacity : 1)
         .gesture(DragGesture(minimumDistance: NW.Space.xs)
@@ -237,8 +237,13 @@ struct SidebarProjectMenu: View {
             Button("New Thread in \(project.name)", systemImage: "plus") { vm.startThread(in: project) }
             Divider()
         }
+        if project.missing, let space = project.space {
+            Button("Locate Folder…", systemImage: "folder") { vm.locateSpaceFromPanel(space) }
+            Button("Remove Space…", role: .destructive) { vm.spaceDeleteTarget = space }
+            Divider()
+        }
         // Finder and Terminal reach This Mac's folders only.
-        if project.space != nil {
+        if project.space != nil, !project.missing {
             Button("Rename Space…") { vm.spaceRenameTarget = project.space }
             Button("Add Child Space…") {
                 vm.addingChildProject = vm.childProjectModel(path: project.path, name: project.name)
@@ -250,6 +255,7 @@ struct SidebarProjectMenu: View {
         Divider()
         Button("Collapse All", systemImage: "arrow.down.and.line.horizontal.and.arrow.up") { vm.setAllProjects(expanded: false) }
         if let space = project.space {
+            Button(PinWords.menuTitle(pinned: project.pinned), systemImage: PinWords.symbol(pinned: project.pinned)) { vm.togglePinSpace(space) }
             Button("Hide from Sidebar", systemImage: "eye.slash") { vm.setProjectHiddenFromSidebar(space, true) }
             Divider()
             Button("Remove Space…", role: .destructive) { vm.spaceDeleteTarget = space }

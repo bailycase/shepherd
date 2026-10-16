@@ -234,6 +234,10 @@ extension ShepherdViewModel {
         guard let space = state.spaces.first(where: { $0.id == config.spaceID }) else {
             throw AgentStartFailure(message: "space no longer exists")
         }
+        guard !missingSpaces.contains(space.id), Self.folderExists(config.workingDirectory) else {
+            checkMissingSpaces()
+            throw AgentStartFailure(message: "\(space.name)'s folder is missing. Locate it or remove the space.")
+        }
         try verifyCheckoutAvailable(config.workingDirectory)
         let reservation = UUID()
         startingCheckoutUsers[reservation] = config.workingDirectory
