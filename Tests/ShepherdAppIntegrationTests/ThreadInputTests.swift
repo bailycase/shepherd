@@ -13,13 +13,21 @@ import UniformTypeIdentifiers
 struct ThreadInputTests {
     @Test(arguments: ["direct", "menu", "shortcut", "context"])
     func clipboardImageUsesNativePaste(_ route: String) async {
-        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { [route = route as String] in
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent, \.standardErrorContent]) { [route = route as String] in
             await completingScenario { try await Self.pastingImage(route) }
+        }
+        if let result, !result.standardErrorContent.isEmpty {
+            print("Native Paste (\(route)) subprocess stderr:\n\(String(decoding: result.standardErrorContent, as: UTF8.self))")
         }
         expectScenarioCompleted(result)
     }
 
     static func pastingImage(_ route: String) async throws {
+        // Exit tests otherwise hide AppKit exceptions. Write immediately, not through buffered stdout.
+        func trace(_ stage: String) {
+            FileHandle.standardError.write(Data("Native Paste (\(route)): \(stage)\n".utf8))
+        }
+        trace("starting")
         AccessibilityNode.enable()
         let thread = ComposerThread(focused: true, images: true)
         defer { thread.close() }
@@ -39,6 +47,7 @@ struct ThreadInputTests {
         paste.keyEquivalentModifierMask = .command
         paste.target = editor
         #expect(editor.validateUserInterfaceItem(paste))
+        trace("pasting image")
         switch route {
         case "menu": menu.performActionForItem(at: 0)
         case "context":
@@ -71,22 +80,28 @@ struct ThreadInputTests {
 
         // Give each invoked action its own event group; no application event loop runs here.
         let undo = try #require(editor.undoManager)
+        trace("image removed; configuring undo, groupingLevel=\(undo.groupingLevel)")
         undo.groupsByEvent = false
         undo.beginUndoGrouping()
         // Plain text still goes through AppKit at the selection, with its ordinary undo.
         pasteboard.clearContents()
         pasteboard.setString("hello", forType: .string)
+        trace("pasting text, groupingLevel=\(undo.groupingLevel)")
         editor.paste(nil)
         try await eventuallyOnMain("text paste to update the draft") { thread.store.draft == "hello" }
+        trace("ending first group, groupingLevel=\(undo.groupingLevel)")
         undo.endUndoGrouping()
         undo.beginUndoGrouping()
         editor.setSelectedRange(NSRange(location: 1, length: 3))
         pasteboard.clearContents()
         pasteboard.setString("i", forType: .string)
+        trace("replacing selection, groupingLevel=\(undo.groupingLevel)")
         menu.performActionForItem(at: 0)
         try await eventuallyOnMain("text paste to replace the selection") { thread.store.draft == "hio" }
+        trace("ending replacement group, groupingLevel=\(undo.groupingLevel)")
         undo.endUndoGrouping()
         #expect(undo.canUndo)
+        trace("undoing, groupingLevel=\(undo.groupingLevel)")
         undo.undo()
         try await eventuallyOnMain("undo to restore the selected text") { thread.store.draft == "hello" }
         pasteboard.clearContents()
@@ -95,11 +110,13 @@ struct ThreadInputTests {
         try await eventuallyOnMain("the image to be ready to send") { thread.input.attachments.items.count == 1 }
         let bytes = thread.input.attachments.images
         try await thread.settle()
+        trace("sending, groupingLevel=\(undo.groupingLevel)")
         try thread.window.press("Send")
         try await eventuallyOnMain("the pasted bytes to reach the host") {
             thread.requests.contains { if case .send(_, _, _, let text, _, let images, _, _, _) = $0 { text == "hello" && images == bytes } else { false } }
         }
         try await eventuallyOnMain("the acknowledged image to leave the draft") { thread.input.attachments.isEmpty }
+        trace("completed")
     }
 
     @Test func nativeComposerKeysKeepNewlinesCompletionAndSendingSeparate() async throws {
