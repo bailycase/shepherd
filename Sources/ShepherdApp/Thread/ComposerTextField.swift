@@ -94,51 +94,32 @@ struct ComposerTextField: NSViewRepresentable {
     }
 
     func updateNSView(_ field: Field, context: Context) {
+        // Observation can render synchronously from willSet, before the binding holds the
+        // native edit. Do not write that old snapshot back into the editor publishing it.
+        guard !field.publishingEdit else { return }
         context.coordinator.parent = self
         field.updating = true
-        field.editor.trace?("update begin incomingText=\(String(reflecting: text)), focus=\(focus.wrappedValue)")
-        defer { field.updating = false; field.editor.trace?("update end") }
-        // NSControl's getter validates pending editor text into the cell. Do this before
-        // style setters can refresh the editor from a stale cell value (macOS 26).
-        field.editor.trace?("update before existing stringValue read")
-        let replaced = field.stringValue != text
-        field.editor.trace?("update after existing stringValue read, replaced=\(replaced)")
+        defer { field.updating = false }
         let _ = appearance
         NWFonts.register()
-        field.editor.trace?("update before font")
         field.font = NSFont(name: "\(NWFonts.sansFamily)-Regular", size: NWTextStyle.body.size * ThemeStore.shared.textScale)
             ?? .systemFont(ofSize: NWTextStyle.body.size * ThemeStore.shared.textScale)
-        field.editor.trace?("update after font")
-        field.editor.trace?("update before text color")
         field.textColor = NSColor(Color.nw.textPrimary)
-        field.editor.trace?("update after text color")
-        field.editor.trace?("update before placeholder")
         field.placeholderAttributedString = NSAttributedString(string: placeholder, attributes: [
             .font: field.font!, .foregroundColor: NSColor(Color.nw.textTertiary)
         ])
-        field.editor.trace?("update after placeholder")
-        field.editor.trace?("update before enabled")
         field.isEnabled = enabled
-        field.editor.trace?("update after enabled")
-        field.editor.trace?("update before accessibility label")
         field.setAccessibilityLabel(label)
-        field.editor.trace?("update after accessibility label")
-        field.editor.trace?("update before caret color")
         field.editor.insertionPointColor = NSColor(Color.nw.lantern)
-        field.editor.trace?("update after caret color")
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = lineSpacing
-        field.editor.trace?("update before paragraph")
         field.editor.defaultParagraphStyle = paragraph
-        field.editor.trace?("update after paragraph")
         field.editor.attach = attach
         field.editor.keys = keys
+        let replaced = field.stringValue != text
         if replaced {
-            field.editor.trace?("update before stringValue assignment")
             field.stringValue = text
-            field.editor.trace?("update after stringValue assignment")
             field.invalidateIntrinsicContentSize()
-            field.editor.trace?("update after invalidation")
             if field.currentEditor() != nil {
                 field.editor.setSelectedRange(NSRange(location: (text as NSString).length, length: 0))
                 context.coordinator.readSelection(field)
@@ -157,12 +138,9 @@ struct ComposerTextField: NSViewRepresentable {
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView field: Field, context: Context) -> CGSize? {
         guard let width = proposal.width, width > 0 else { return nil }
-        field.editor.trace?("measure before width")
         field.preferredMaxLayoutWidth = width
-        field.editor.trace?("measure after width")
         let bounds = CGRect(x: 0, y: 0, width: width, height: .greatestFiniteMagnitude)
         let height = field.cell?.cellSize(forBounds: bounds).height ?? field.intrinsicContentSize.height
-        field.editor.trace?("measure after cellSize")
         return CGSize(width: width, height: height)
     }
 
@@ -170,17 +148,11 @@ struct ComposerTextField: NSViewRepresentable {
         var parent: ComposerTextField
         init(_ parent: ComposerTextField) { self.parent = parent }
         func readText(_ field: Field) {
-            // Commit pending editor text to the cell before publishing or invalidating layout:
-            // native measurement can run before updateNSView and otherwise use the old cell.
-            field.editor.trace?("readText before validation")
-            field.validateEditing()
-            field.editor.trace?("readText after validation")
+            field.publishingEdit = true
+            defer { field.publishingEdit = false }
             parent.text = field.editor.string
-            field.editor.trace?("readText after binding publication")
             field.invalidateIntrinsicContentSize()
-            field.editor.trace?("readText after invalidation")
             readSelection(field)
-            field.editor.trace?("readText after selection")
         }
         func readSelection(_ field: Field) {
             guard let range = Range(field.editor.selectedRange(), in: parent.text) else { return }
@@ -191,6 +163,7 @@ struct ComposerTextField: NSViewRepresentable {
     final class Field: NSTextField {
         let editor = Editor()
         var updating = false
+        var publishingEdit = false
         var wantsFocus = false
         override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); applyFocus() }
         func applyFocus() {
@@ -214,8 +187,6 @@ struct ComposerTextField: NSViewRepresentable {
         }
         @objc private func undoChanged() { didChangeText() }
         deinit { NotificationCenter.default.removeObserver(self) }
-        /// Temporary test-installed, passive lifecycle tracing; nil outside the regression test.
-        var trace: ((String) -> Void)?
         var attach: (([NSItemProvider]) -> Void)?
         /// Tests supply a named pasteboard; native Paste otherwise uses the system clipboard.
         var pasteboard: () -> NSPasteboard = { .general }
@@ -234,11 +205,8 @@ struct ComposerTextField: NSViewRepresentable {
             return accepted
         }
         override func didChangeText() {
-            trace?("didChangeText before super")
             super.didChangeText()
-            trace?("didChangeText after super, before callback")
             changedText?()
-            trace?("didChangeText after callback")
         }
         override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
             super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
@@ -261,7 +229,6 @@ struct ComposerTextField: NSViewRepresentable {
             super.keyDown(with: event)
         }
         override func paste(_ sender: Any?) {
-            trace?("paste entry")
             guard isEditable else { return }
             let board = pasteboard()
             let providers = AppImageDrop.providers(from: board)
@@ -270,15 +237,10 @@ struct ComposerTextField: NSViewRepresentable {
                 NSSound.beep()
                 return
             }
-            trace?("paste before first breakUndoCoalescing")
             breakUndoCoalescing()
-            trace?("paste after first breakUndoCoalescing, before typed reader")
             // The untyped reader is the Services entry point, not the selected-text paste path.
-            let accepted = super.readSelection(from: board, type: type)
-            trace?("paste after typed reader accepted=\(accepted), before final breakUndoCoalescing")
-            if !accepted { NSSound.beep() }
+            if !super.readSelection(from: board, type: type) { NSSound.beep() }
             breakUndoCoalescing()
-            trace?("paste after final breakUndoCoalescing")
         }
         override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
             if item.action == #selector(paste(_:)) {

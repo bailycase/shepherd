@@ -13,44 +13,53 @@ import Testing
 @Suite("Composer caret", .mainActorExclusive)
 @MainActor
 struct ComposerCaretTests {
-    @Test(arguments: [false, true])
-    func stylingKeepsTheActiveSelectionAndRefreshesInactiveCellValues(active: Bool) async throws {
-        let thread = ComposerThread(focused: true)
-        defer { thread.close() }
-        try await thread.waitUntilReady()
-        let text = "Keep this draft"
-        thread.type(text)
-        try await thread.settle()
-        let editor = try #require(thread.focusedEditor as? ComposerTextField.Editor)
-        func composer(in view: NSView) -> ComposerTextField.Field? {
-            if let field = view as? ComposerTextField.Field { return field }
-            return view.subviews.lazy.compactMap { composer(in: $0) }.first
+    @Test func aReentrantBindingRenderCannotOverwriteTheNativeEditBeingPublished() async throws {
+        final class Draft {
+            var text = ""
+            var renders = 0
+            var reenter = false
+            var valueDuringRender: String?
+            var editorDuringRender: String?
         }
-        let field = try #require(composer(in: thread.window.host))
-        let cell = try #require(field.cell)
-        let selection = NSRange(location: 5, length: 4)
-        if active {
-            editor.setSelectedRange(selection)
-        } else {
-            #expect(thread.window.window.makeFirstResponder(nil))
-            try await thread.settle()
-            cell.stringValue = "stale cell"
-            try #require(cell.stringValue == "stale cell")
+        let draft = Draft()
+        let window = OffscreenWindow(size: CGSize(width: 500, height: 200))
+        defer { window.close() }
+        func render() {
+            draft.renders += 1
+            window.show(ComposerTextField(text: Binding(get: { draft.text }, set: { value in
+                if draft.reenter {
+                    // Observation notifies during willSet, while its getter still returns
+                    // the old value. Force that render synchronously on every supported OS.
+                    render()
+                    draft.valueDuringRender = draft.text
+                    draft.editorDuringRender = (window.window.firstResponder as? NSTextView)?.string
+                }
+                draft.text = value
+            }), placeholder: "Render \(draft.renders)", label: "Message", focus: .constant(true), attach: { _ in }))
         }
-        // Do not read the active control's stringValue before the update: its validation
-        // side effect would hide the pending-editor synchronization this exercises.
-        await thread.setRunning(true)
-        try await thread.settle()
-        #expect(thread.store.draft == text)
-        #expect(cell.stringValue == text)
-        if active {
-            #expect(thread.focusedEditor === editor)
-            #expect(editor.string == text)
-            #expect(editor.selectedRange() == selection)
-        } else {
-            #expect(field.currentEditor() == nil)
-            #expect(thread.focusedEditor == nil, "an inactive field update never reclaims focus")
+        render()
+        try await eventuallyOnMain("the native composer editor to focus") {
+            window.window.firstResponder is ComposerTextField.Editor
         }
+        let editor = try #require(window.window.firstResponder as? ComposerTextField.Editor)
+        let clipboard = NSPasteboard.withUniqueName()
+        defer { clipboard.releaseGlobally() }
+        clipboard.setString("hello", forType: .string)
+        editor.pasteboard = { clipboard }
+        draft.reenter = true
+        editor.paste(nil)
+        #expect(draft.valueDuringRender == "", "the reentrant render really saw the pre-publication value")
+        #expect(draft.editorDuringRender == "hello")
+        #expect(editor.string == "hello")
+        #expect(draft.text == "hello")
+        #expect(window.window.firstResponder === editor)
+
+        // A genuine replacement after native publication is still applied normally.
+        draft.reenter = false
+        draft.text = "External replacement"
+        render()
+        try await eventuallyOnMain("the external draft to replace native text") { editor.string == draft.text }
+        #expect(editor.selectedRange() == NSRange(location: draft.text.utf16.count, length: 0))
     }
 
     /// ⇧↩ and ⌥↩ reach the field through `NWReturnKey.insertLineBreak(in:)`, the call the composer's
