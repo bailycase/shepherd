@@ -335,7 +335,9 @@ and password in its URL wherever it is shown or logged.
 **Instructions.** pi reads a global context file only from its own agent folder, which is
 Shepherd's: the copy there is read by every agent and every child that keeps project context
 (never one run with `--no-context-files`), as pi reads its own. Shepherd's own root instructions
-(Settings ▸ Instructions) follow it.
+(Settings ▸ Instructions) follow it. The instructions extension omits an identical global
+context file or addendum already in pi's prompt, so Re-import cannot double identical content.
+Distinct and partially overlapping instructions keep their order; no instruction files are rewritten.
 
 **Your extensions, opt-in and fail-closed** (the plan's phase 6). Switching one on runs the
 user's code with full access, which Settings ▸ Pi says on the row. Before every launch

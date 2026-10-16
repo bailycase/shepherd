@@ -304,10 +304,6 @@ def main(argv: list[str]) -> int:
         print("swift=" + str(affects_swift(paths)).lower())
         filters = UI_DIAGNOSTICS if argv[-1] == "--ui-diagnostics" else filters_for(paths, full=len(argv) == 3)
         print("filters=" + json.dumps(filters if affects_swift(paths) else [], separators=(",", ":")))
-        # Editing tests must exercise them even if their normal PR run is quarantined.
-        flaky = not filters or len(argv) == 3 or any(
-            path.startswith("Tests/") and path.endswith(".swift") for path in paths)
-        print("flaky=" + str(flaky).lower())
         broad = not filters or any(pattern in (APP, FAST_ONLY + APP) for pattern in filters)
         print("lanes=" + json.dumps(list(FULL_LANES) if affects_swift(paths) and broad else ["selected"],
                                     separators=(",", ":")))

@@ -24,6 +24,7 @@ def metadata(event="pull_request", actor="19316389", author=19316389):
     return {
         "vars.SHEPHERD_SELFHOSTED_ENABLED": "true",
         "matrix.lane": "selected",
+        "inputs.save-cache": "true",
         "github.event_name": event,
         "github.actor_id": actor,
         "github.actor": "maintainer",
@@ -75,6 +76,18 @@ class CIRunnerTests(unittest.TestCase):
         data.update({"runner.environment": "github-hosted", "steps.cache.outputs.cache-hit": "false",
                      "github.event.pull_request.head.repo.full_name": "fork/Shepherd", "github.actor_id": "999"})
         self.assertTrue(select(expression, data))
+
+    def test_only_one_parallel_lane_saves_the_shared_build(self):
+        expression = re.search(r"save-cache: \$\{\{(.*?)\}\}", JOBS["tests"]).group(1)
+        for lanes in (("selected",), ("thread", "features", "app", "other")):
+            writers = [lane for lane in lanes if select(expression, {"matrix.lane": lane})]
+            self.assertEqual(len(writers), 1)
+        save = ACTION.split("- name: Save the hosted build", 1)[1]
+        fence = save.split("if: >-\n", 1)[1].split("uses:", 1)[0].strip()
+        data = metadata()
+        data.update({"runner.environment": "github-hosted", "steps.cache.outputs.cache-hit": "false",
+                     "inputs.save-cache": "false"})
+        self.assertFalse(select(fence, data))
 
     def test_disabled_or_unset_selfhosted_builds_stay_hosted_including_diagnostics(self):
         expression = runner_expression(JOBS["tests"])

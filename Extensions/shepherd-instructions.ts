@@ -3,7 +3,8 @@
 // directory (Settings ▸ Instructions), so the user's own ~/.pi/agent is never written.
 // AGENTS.md joins pi's context files right after pi's own root AGENTS.md, before the parent
 // folders' and the repo's, so the more specific files still win; APPEND_SYSTEM.md is added to
-// pi's system prompt after pi's own. Both are read when a session starts: a running session
+// pi's system prompt after pi's own. Identical imported root content is not added twice;
+// distinct or partially overlapping instructions are preserved. Both are read when a session starts: a running session
 // keeps the version it started with. Inert without SHEPHERD_INSTRUCTIONS_DIR; every failure is
 // swallowed so instructions can never break a turn.
 //
@@ -142,9 +143,12 @@ export default function shepherdInstructions(pi: ExtensionAPI) {
       if (agents && Array.isArray(files) && !files.some((file) => file?.path === agentsPath)) {
         const root = piAgentDirectory();
         const piRoot = files.findIndex((file) => typeof file?.path === "string" && path.dirname(file.path) === root);
-        files.splice(piRoot + 1, 0, { path: agentsPath, content: agents });
+        const imported = piRoot >= 0 ? files[piRoot].content : undefined;
+        if (typeof imported !== "string" || imported.trim() !== agents) {
+          files.splice(piRoot + 1, 0, { path: agentsPath, content: agents });
+        }
       }
-      if (append) {
+      if (append && options.appendSystemPrompt?.trim() !== append) {
         options.appendSystemPrompt = options.appendSystemPrompt ? `${options.appendSystemPrompt}\n\n${append}` : append;
       }
     } catch {
