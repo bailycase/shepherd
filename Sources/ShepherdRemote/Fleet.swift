@@ -307,11 +307,11 @@ public struct FleetAttention: Identifiable, Equatable, Sendable {
 
     public var id: String { "\(ref.host.uuidString)/\(ref.agent.rawValue)/\(dialogID ?? "blocked")" }
 
-    /// The card's kind line: "Thread", "Automation · Nightly".
+    /// The card's kind line (MobileInbox): "A thread", "A run of the automation Nightly".
     public var originLabel: String {
         switch origin {
-        case .thread: "Thread"
-        case .automation(let name): "Automation · \(name)"
+        case .thread: "A thread"
+        case .automation(let name): "A run of the automation \(name)"
         }
     }
 

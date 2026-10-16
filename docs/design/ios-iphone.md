@@ -319,18 +319,15 @@ follows the Mac's rules (Thread) with the phone's measures below.
 - **Turn footer** (`NWTurnFooter`): at rest, mono 11 `textTertiary`: "2:44 PM · 3m 12s"; the app
   adds the tool-call count, Copy and Retry (the latest turn only; Thread › Retry), and "n subagents"
   when the turn spawned runs.
-- **Composer:** a 1px `lineSubtle` rule, `bgWindow`, 10pt above, 12pt sides, 30pt below. A 44pt
-  paperclip (Attach, `textSecondary`; shown only when the host takes images) beside the capsule
-  (`NWCapsuleComposer`): at least 44pt, fully rounded, `bgRaised`, 1px `lineStrong` (`textTertiary`
-  while focused), 16pt leading and 6pt trailing padding, the field at 16 (`.body`) growing to a few
-  lines, and Send inside it: a 32pt `lantern` circle with a `textOnLantern` up arrow, at 35% while
-  there is nothing to send. The placeholder is "Follow up…", and "Queue a follow-up…" while pi
-  works (MobileApproval), which the app follows, since Send queues while pi works. The later
-  queue boards (MobileSteer, MobileQueueMenu) keep "Follow up…" while pi works and draw the
-  capsule the composer's full width with no paperclip, and 34pt under it; settle which rules
-  before changing either. Holding Send while pi works offers Queue and Steer now. The context
-  ring sits inside the capsule just before Send (Composer › Context meter › iPad and iPhone); a
-  tap opens its details as a sheet. The app adds,
+- **Composer:** no top rule, `bgWindow`, 8pt above and below, 16pt sides. One glass capsule
+  (`NWCapsuleComposer`, the system glass material, fully rounded, at least 44pt, 2pt side padding)
+  holds the 44pt paperclip at its leading edge (Attach, `textSecondary`; shown only when the host
+  takes images), the field at 16 (`.body`) growing to a few lines, then the context ring and Send
+  (a 32pt `lantern` circle with a `textOnLantern` up arrow, at 35% while there is nothing to send;
+  Stop while pi works with nothing typed). The placeholder is "Follow up…", and the app says
+  "Queue a follow-up…" while pi works, since Send queues then. Holding Send while pi works offers
+  Queue and Steer now. The ring's tap opens its details as a sheet (Composer › Context meter ›
+  iPad and iPhone). The app adds,
   while the field is in use, a row of "/ commands", model and thinking chips above it (ghost,
   28pt), and the speed chip after them where the host offers one (a menu of Standard and Fast,
   each with its line; no phone board draws any of it).
@@ -480,7 +477,8 @@ record lines, a list, and a screen per run.
   "3 subagents" at 13/600, the cells and tally, Collapse as a 34pt circle); 44pt rows (14pt
   leading, 10pt apart): the state in a 14pt slot, the name in mono 13.5/600 in a 68pt column,
   what it is doing at 14 (the subject in mono 13), its time in mono 11, and a chevron in a 34pt
-  slot; the diff stat drops. A run that asked its parent says "asked the parent: …" quietly, with no
+  slot; the diff stat drops. The name is the agent's ("worker", the run's role), never the task the
+  run was given (the iPad and Mac lead with the task); a run with no role keeps its label. A run that asked its parent says "asked the parent: …" quietly, with no
   Answer. Tapping a row pushes its run's screen; touch and hold for Open and the run's controls. Past
   four runs, "Show N more"; open, the rows scroll inside, never more than a share of the
   composer's room. The tray's rules (when it shows, the order, what each state says) are the
@@ -504,7 +502,7 @@ record lines, a list, and a screen per run.
   - "Earlier in this thread" with "kept after they finish" heads the finished runs as one card of
     56pt rows: a `done` check, the name (mono 15/500) over "summary · 1h ago" (12.5 `textTertiary`),
     the stat, a chevron.
-- **One run** (MobileSubagent; `SubagentRunScreen`): the name over "Running · 37m", and ••• (Pause
+- **One run** (MobileSubagent; `SubagentRunScreen`): the agent's name ("worker"; the task is the goal below, and the steer field says "Steer worker…") over "Running · 37m" in plain `textTertiary`, and ••• (Pause
   or Continue, Stop, Re-run, Copy Transcript) trailing. On `bgWindow`, 16pt padding, 12pt apart:
   - The goal (`NWRunGoal`): `bgSunken`, 1px `lineSubtle`, 12pt corners, 12×14 padding: "GOAL · FROM
     THE PARENT" (`.nwSectionLabel()`), then the goal at 14/1.45. The app adds "step 1 of 3 · 34%".
@@ -535,9 +533,8 @@ follows the Commit from review rule above.
   Finalize worktree…. A card's Review opens on that turn; a review opens on the host's default
   (Branch for a worktree agent, else Uncommitted), and after Send on Last turn. On `bgBase`, 14pt
   padding, 10pt apart:
-  - The summary card (14pt padding): "3 files" (17/600) and the stat (mono 11), then the branch
-    trailing (a branch glyph and "agent/pay-button-jump", mono 12 `textSecondary`); under it a
-    4pt bar (`done` fill on `lineSubtle`) and "1 of 3 viewed" (12.5 `textTertiary`). The app adds
+  - The summary card (14pt padding): "3 files" (17/600) and the stat (mono 11), then, under it, the branch
+    ("agent/pay-button-jump", mono 12 `textSecondary`) and "1 of 3 viewed" (12 `textTertiary`); the board draws no bar. The app adds
     Finalize worktree ("commit · push · PR") to the card for a worktree agent.
   - "Files" with "tap to read the diff", then one card of 58pt rows (`NWReviewFileRow`): the viewed
     mark (a `done` check, or a 14pt ring in `lineStrong`), the status letter (mono 12: M `lantern`,
@@ -545,8 +542,8 @@ follows the Commit from review rule above.
     (a bubble glyph and "1", 12 `running`), the stat, a chevron. A row pushes its diff. The list
     comes from the host first; a file's lines come when it is read.
   - "Your comments" with the count, then a card per comment: an 18pt circle with the author's
-    initial (10/600), "FleetView.swift · line 33" (mono 12 `textTertiary`), the time, and the
-    text at 14/1.45. The app labels the author "You" and adds Edit and Delete. There is no overall
+    initial (10/600), "FleetView.swift · line 33" (mono 12 `textTertiary`), the text, then Edit
+    and Delete (15) under it; no avatar or author. There is no overall
     comment: anything else is said in the thread.
   - The bottom bar: Send 1 comment (secondary; "Send 3 comments", off with none) and Commit…
     (primary), 48pt each, sharing the width.
