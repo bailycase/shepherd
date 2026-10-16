@@ -14,7 +14,7 @@ let package = Package(
     targets: [
         .target(
             name: "ShepherdUI",
-            resources: [.copy("Resources/Fonts"), .copy("Resources/Glyphs")],
+            resources: [.copy("Resources/Fonts"), .copy("Resources/Glyphs"), .copy("Resources/Mermaid")],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
     ]

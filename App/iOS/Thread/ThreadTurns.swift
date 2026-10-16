@@ -119,8 +119,8 @@ struct AgentTurnView<Proposals: View>: View, Equatable {
                 if openThinking.remove(id) == nil { openThinking.insert(id) }
             }
             .equatable()
-        case .prose(_, _, let blocks, _):
-            ProseView(blocks: blocks).equatable()
+        case .prose(_, _, let blocks, let openFence):
+            ProseView(blocks: blocks, writingFence: live && openFence).equatable()
         case .activity(_, let bursts):
             // The proposals card stands for its call.
             let shown = proposals == nil ? bursts : bursts.filter { !$0.calls.allSatisfy { $0.name == "markup_propose" } }
@@ -216,9 +216,10 @@ struct QuestionRecordView: View {
 /// (`NWProseInline`). A host's files are not on this device, so its images show as chips.
 struct ProseView: View, Equatable {
     let blocks: [NativeMarkdownBlock]
+    var writingFence = false
 
     var body: some View {
-        NWAgentProse(Self.proseBlocks(blocks))
+        NWAgentProse(Self.proseBlocks(blocks), writingFence: writingFence)
     }
 
     static func proseBlocks(_ blocks: [NativeMarkdownBlock]) -> [NWProseBlock] {
