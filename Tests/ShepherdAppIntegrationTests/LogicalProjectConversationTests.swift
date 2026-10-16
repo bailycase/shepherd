@@ -16,14 +16,12 @@ import Testing
 @Suite("Project conversation and tasks", .mainActorExclusive)
 @MainActor
 struct LogicalProjectConversationTests {
-    @Test(.flaky("failed 20 times on hosted runners in October without a code change"))
-    func theFirstMessageStartsTheConversationAndPausedMessagesWaitForResume() async {
+    @Test func theFirstMessageStartsTheConversationAndPausedMessagesWaitForResume() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.conversation() } }
         expectScenarioCompleted(result)
     }
 
-    @Test(.flaky("failed 10 times on hosted runners in October without a code change"))
-    func aTaskThatAsksIsWaitingOnYouAndSettledWorkResolvesAndReopens() async {
+    @Test func aTaskThatAsksIsWaitingOnYouAndSettledWorkResolvesAndReopens() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.tasks() } }
         expectScenarioCompleted(result)
     }

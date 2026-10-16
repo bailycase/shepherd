@@ -51,7 +51,6 @@ jobs:
       swift: ${{ steps.plan.outputs.swift }}
       filters: ${{ steps.plan.outputs.filters }}
       lanes: ${{ steps.plan.outputs.lanes }}
-      flaky: ${{ steps.plan.outputs.flaky }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -161,6 +160,7 @@ jobs:
       - uses: ./.github/actions/swift-build
         with:
           clean: ${{ inputs.clean == true }}
+          save-cache: ${{ matrix.lane == 'selected' || matrix.lane == 'other' }}
       - name: Stage bundled pi and expose its pinned Node to test fixtures
         run: |
           python3 scripts/pi_engine.py stage
@@ -170,8 +170,6 @@ jobs:
       - name: Run tests
         env:
           CI: "true"
-          # Full runs, manual diagnostics and test edits include quarantined rendering tests.
-          SHEPHERD_FLAKY_TESTS: ${{ needs.plan.outputs.flaky == 'true' && '1' || '0' }}
           SWIFT_FILTERS: ${{ needs.plan.outputs.filters }}
           SWIFT_LANE: ${{ matrix.lane }}
         run: |
