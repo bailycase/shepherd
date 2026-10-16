@@ -46,7 +46,19 @@ struct DiagnosticsRuntimeTests {
         let defaults = ScratchDefaults()
         let settings = AppSettings(store: defaults)
         settings.shareDiagnostics = true
-        let root = try makeScratchDirectory().appendingPathComponent("diagnostics")
+        let scratch = try makeScratchDirectory()
+        let backing = scratch.appendingPathComponent("backing", isDirectory: true)
+        try FileManager.default.createDirectory(at: backing, withIntermediateDirectories: true)
+        let support = scratch.appendingPathComponent("aliased-support", isDirectory: true)
+        try FileManager.default.createSymbolicLink(at: support, withDestinationURL: backing)
+        let root = support.appendingPathComponent("diagnostics", isDirectory: true)
+        let cacheID = UUID()
+        defaults.set(cacheID.uuidString, forKey: "shepherd.diagnostics.cacheID")
+        let active = root.appendingPathComponent(cacheID.uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: active, withIntermediateDirectories: true)
+        let pending = active.appendingPathComponent("pending-report")
+        let previousReport = Data("cached private report".utf8)
+        try previousReport.write(to: pending)
         let retired = root.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: retired, withIntermediateDirectories: true)
         try Data("retired private report".utf8).write(to: retired.appendingPathComponent("report"))
@@ -58,7 +70,9 @@ struct DiagnosticsRuntimeTests {
         defer { settings.shareDiagnostics = false }
         #expect(diagnostics.isActive && SentrySDK.isEnabled)
         #expect(!FileManager.default.fileExists(atPath: retired.path))
-        #expect(defaults.string(forKey: "shepherd.diagnostics.cacheID") != nil)
+        #expect(defaults.string(forKey: "shepherd.diagnostics.cacheID") == cacheID.uuidString)
+        #expect(FileManager.default.contents(atPath: pending.path) == previousReport,
+                "launching through a symlink must preserve the pending crash cache")
         SentrySDK.configureScope { scope in
             scope.setExtra(value: "PRIVATE_PROMPT_SENTINEL", key: "prompt")
             scope.setTag(value: "PRIVATE_PROMPT_SENTINEL", key: "project")
@@ -79,6 +93,7 @@ struct DiagnosticsRuntimeTests {
         settings.shareDiagnostics = false
         #expect(!diagnostics.isActive && !SentrySDK.isEnabled)
         #expect(defaults.string(forKey: "shepherd.diagnostics.cacheID") == nil)
+        #expect(!FileManager.default.fileExists(atPath: backing.appendingPathComponent("diagnostics").path))
         try await eventuallyOnMain("the pending URLSession task to cancel") { DiagnosticsTransport.state.stopped > stoppedBefore }
         settings.shareDiagnostics = true
         diagnostics.start(settings: settings)
