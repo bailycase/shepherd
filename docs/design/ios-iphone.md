@@ -319,18 +319,15 @@ follows the Mac's rules (Thread) with the phone's measures below.
 - **Turn footer** (`NWTurnFooter`): at rest, mono 11 `textTertiary`: "2:44 PM · 3m 12s"; the app
   adds the tool-call count, Copy and Retry (the latest turn only; Thread › Retry), and "n subagents"
   when the turn spawned runs.
-- **Composer:** a 1px `lineSubtle` rule, `bgWindow`, 10pt above, 12pt sides, 30pt below. A 44pt
-  paperclip (Attach, `textSecondary`; shown only when the host takes images) beside the capsule
-  (`NWCapsuleComposer`): at least 44pt, fully rounded, `bgRaised`, 1px `lineStrong` (`textTertiary`
-  while focused), 16pt leading and 6pt trailing padding, the field at 16 (`.body`) growing to a few
-  lines, and Send inside it: a 32pt `lantern` circle with a `textOnLantern` up arrow, at 35% while
-  there is nothing to send. The placeholder is "Follow up…", and "Queue a follow-up…" while pi
-  works (MobileApproval), which the app follows, since Send queues while pi works. The later
-  queue boards (MobileSteer, MobileQueueMenu) keep "Follow up…" while pi works and draw the
-  capsule the composer's full width with no paperclip, and 34pt under it; settle which rules
-  before changing either. Holding Send while pi works offers Queue and Steer now. The context
-  ring sits inside the capsule just before Send (Composer › Context meter › iPad and iPhone); a
-  tap opens its details as a sheet. The app adds,
+- **Composer:** no top rule, `bgWindow`, 8pt above and below, 16pt sides. One glass capsule
+  (`NWCapsuleComposer`, the system glass material, fully rounded, at least 44pt, 2pt side padding)
+  holds the 44pt paperclip at its leading edge (Attach, `textSecondary`; shown only when the host
+  takes images), the field at 16 (`.body`) growing to a few lines, then the context ring and Send
+  (a 32pt `lantern` circle with a `textOnLantern` up arrow, at 35% while there is nothing to send;
+  Stop while pi works with nothing typed). The placeholder is "Follow up…", and the app says
+  "Queue a follow-up…" while pi works, since Send queues then. Holding Send while pi works offers
+  Queue and Steer now. The ring's tap opens its details as a sheet (Composer › Context meter ›
+  iPad and iPhone). The app adds,
   while the field is in use, a row of "/ commands", model and thinking chips above it (ghost,
   28pt), and the speed chip after them where the host offers one (a menu of Standard and Fast,
   each with its line; no phone board draws any of it).
