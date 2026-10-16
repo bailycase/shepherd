@@ -290,6 +290,7 @@ private struct WorkerThread: View {
         ThreadView(store: vm.projectWorkerStore(home, task.workerAgentID), active: true, isFocused: false,
                    request: vm.projectWorkerRequest(LogicalProjectRef(home: home, id: projectID), task: task.id),
                    commandKey: ThreadCommandCenter.key(local: task.workerAgentID), agentName: task.title,
+                   workingDirectory: home == .local ? vm.state.agents.first(where: { $0.id == task.workerAgentID }).map { vm.agentCwd($0) } : nil,
                    allowsLocalFiles: home == .local, retainedInput: vm.threadStores.input(for: task.workerAgentID))
             .environment(\.projectWorkerThread, ProjectWorkerThreadStyle(assignmentOperations: task.assignmentOperations,
                                                                           composerHidden: task.group == .resolved,

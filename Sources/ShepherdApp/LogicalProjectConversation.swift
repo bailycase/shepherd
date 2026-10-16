@@ -76,6 +76,7 @@ struct ConversationThread: View {
 
     var body: some View {
         ThreadView(store: store, active: true, isFocused: true, request: request, preview: preview, commandKey: nil, agentName: project.name,
+                   workingDirectory: ref.home == .local ? vm.state.agents.first(where: { $0.id == agent }).map { vm.agentCwd($0) } : nil,
                    listModels: ownerModels, allowsLocalFiles: ref.home == .local,
                    retainedInput: agent.map { vm.threadStores.input(for: $0) } ?? vm.emptyProjectInput)
             .environment(\.projectComposerSend, composerSend)

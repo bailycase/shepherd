@@ -176,6 +176,27 @@ struct ProseComponentTests {
         #expect(NWTableLayout.widths(for: available, ideal: [300, 300], words: words, fitting: true, minimum: 100, maximum: 300) == widths)
     }
 
+    @Test(arguments: [
+        ("temporal/PLAN.md", "/work" as String?, "file:///work/temporal/PLAN.md" as String?),
+        ("./temporal/PLAN.md", "/work", "file:///work/temporal/PLAN.md"),
+        ("../PLAN.md", "/work/tree", "file:///work/PLAN.md"),
+        ("docs/my%20plan.md#notes", "/work", "file:///work/docs/my%20plan.md"),
+        ("/tmp/PLAN.md", "/work", "file:///tmp/PLAN.md"),
+        ("file:///tmp/PLAN.md", "/work", "file:///tmp/PLAN.md"),
+        ("temporal/PLAN.md", nil, nil),
+        ("/tmp/PLAN.md", nil, nil),
+        ("file:///tmp/PLAN.md", nil, nil),
+        ("#notes", "/work", nil),
+        ("https://example.com/plan#notes", nil, "https://example.com/plan#notes"),
+        ("shepherd-project-task://project/task", "/work", "shepherd-project-task://project/task"),
+    ])
+    func proseLinksResolveAgainstTheAgentsDirectory(source: String, root: String?, expected: String?) throws {
+        let markdown = NWProseInline.styled("[plan](\(source))")
+        let link = try #require(markdown.runs.first?.link)
+        let destination = NWProseLink.destination(link, root: root.map { URL(fileURLWithPath: $0, isDirectory: true) })
+        #expect(destination?.absoluteString == expected)
+    }
+
     // MARK: Images
 
     @Test(arguments: [

@@ -1,6 +1,19 @@
 import SwiftUI
 import ImageIO
 
+/// Markdown paths have no scheme; Launch Services needs an absolute file URL, not a relative URL.
+enum NWProseLink {
+    static func destination(_ url: URL, root: URL?) -> URL? {
+        guard url.scheme == nil || url.isFileURL else { return url }
+        // A remote agent's path must never open a same-named file on this device.
+        guard let root else { return nil }
+        if url.isFileURL { return url }
+        guard url.host == nil, !url.path.isEmpty else { return nil }
+        let path = (url.path as NSString).expandingTildeInPath
+        return URL(fileURLWithPath: path, relativeTo: root).standardizedFileURL.absoluteURL
+    }
+}
+
 // MARK: Images
 
 /// An image in prose. A local file this device can read (`nwProseFileRoot` set: the agent's
