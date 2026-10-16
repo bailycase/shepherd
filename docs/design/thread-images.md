@@ -20,6 +20,12 @@ beneath, dimmed by the `imageScrim` role (`bgBase` at 94%, both appearances), no
   truncates in the middle first), then mono `textTertiary` "1170 × 2532 · PNG · 1.4 MB" and "1 of 2"; trailing **Copy**
   (`doc.on.doc`), **Add to message** (`plus`), **Show in Finder** (`folder`) as 28pt ghost buttons with 14pt glyphs, and the 28pt
   round **Close** (`xmark` 12pt, `lineStrong` ring, `textSecondary`).
+- **Departure from the board, the user's correction.** The board's bar runs edge to edge; in a real window that left the name against
+  the window controls and the buttons in the far corner, with ‹ › at the window's edges. Now the bar's band still spans the window
+  (44pt, `bgWindow`), but its content is one centred column of at most 820pt (`NWImageViewerMetrics.barMaxWidth`) with 24pt at each
+  side, starting after the window controls (`leadingInset`, `AppLayout.trafficLightInset`; none in full screen). When the labelled
+  buttons do not fit beside the name (a narrow window, large text) they become icons, still named for VoiceOver and the tooltip.
+  The picture is drawn at its exact fitted size (`pixels`), so ‹ › sit 16pt beside the photo, not at the edges.
 - **Picture** fitted between 48pt above and below, radius 8, a `lineSubtle` line and the board's shadow (0 12 32, `bgBase` at 60%).
   With more than one image, **‹ ›** are 36pt `bgRaised` discs with a `lineSubtle` ring and a 14pt chevron, 16pt either side of the
   picture; the one with nowhere to go is drawn disabled (the board's first image).

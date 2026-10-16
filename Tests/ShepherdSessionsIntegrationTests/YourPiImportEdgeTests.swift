@@ -127,10 +127,9 @@ struct YourPiImportEdgeTests {
         YourPiImportTests.expectNoSecret(in: Self.texts(setup, [report]))
     }
 
-    /// A key that runs a command is copied as its reference (the command runs in Shepherd's pi,
-    /// never at the copy) and shown as "runs a command": the command, which may name a secret,
-    /// never appears.
-    @Test func aKeyThatRunsACommandIsCopiedAsItIsAndNeverShown() throws {
+    /// An upstream command key is copied unchanged but never executed by Shepherd.
+    /// Settings marks it unsupported without exposing the command or an inline secret.
+    @Test func anUnsupportedCommandKeyIsCopiedAsItIsAndNeverShown() throws {
         let setup = try Setup()
         defer { setup.remove() }
         let marker = setup.dir.appendingPathComponent("command-ran")

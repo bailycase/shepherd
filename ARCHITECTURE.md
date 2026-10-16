@@ -473,8 +473,9 @@ sockets are close-on-exec, and the bash tool's children get only their standard 
 nonblocking replies. A framing or size violation disconnects the client; a frame that fails to
 decode is logged and ignored.
 
-**Installation.** Each extension's canonical source is in `Extensions/`, and pi loads a copy that
-the matching `*Extension.swift` writes to the support directory from an embedded string literal.
+**Installation.** Each extension's source is in `Extensions/`, shipped in ShepherdSessions' resource
+bundle; pi loads the copy the matching `*Extension.swift` writes to the support directory
+(`EmbeddedExtensions.install`).
 
 **Adding an extension message:**
 
@@ -485,8 +486,7 @@ the matching `*Extension.swift` writes to the support directory from an embedded
    speaks for**.
 3. Handle it in `SessionServer.handleLine` and the app handler it routes to.
 4. Add a round-trip row and a server behavior test.
-5. Update the canonical extension and its embedded literal together
-   (`scripts/sync-embedded-extension.py`).
+5. Update the extension in `Extensions/`.
 
 ## Remote
 
