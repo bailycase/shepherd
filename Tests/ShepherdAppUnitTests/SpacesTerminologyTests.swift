@@ -45,9 +45,9 @@ struct SpacesTerminologyTests {
         #expect(RemoteProtocol.projectDetailsCapability == "projects.details.v1")
     }
 
-    /// The user's amendment to ProjectLead-Activity: Designs leads the Activity groups.
-    @Test func activityGroupsPutDesignsFirst() {
+    /// The user's sidebar amendment: automation runs precede Designs.
+    @Test func activityGroupsPutAutomationsAboveDesigns() {
         let order = SidebarLists().sections.map(\.section)
-        #expect(order == [.designs, .needsYou, .working, .done, .pinned, .automations, .recents])
+        #expect(order == [.automations, .designs, .needsYou, .working, .done, .pinned, .recents])
     }
 }

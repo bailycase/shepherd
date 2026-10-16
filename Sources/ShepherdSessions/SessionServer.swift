@@ -3184,42 +3184,19 @@ public final class SessionServer: @unchecked Sendable {
                 return
             }
             guard !refusesDesignPeer(id: id, sender: agentID, target: targetAgentID, client: client) else { return }
-            gateAgentAction(
-                senderID: agentID, requestID: id, client: client,
-                action: .send(targetAgentID: targetAgentID, text: text, delivery: delivery),
-                preflight: { self.sendProblem(sender: agentID, target: targetAgentID).map { .error(id: id, code: $0.code, message: $0.message) } },
-                fail: { [weak self, weak client] code, message in
-                    guard let self, let client else { return }
-                    reply(.error(id: id, code: code, message: message), to: client)
-                },
-                perform: { [weak self, weak client] in
-                    guard let self, let client else { return }
-                    routeAgentPeerRequest(
-                        .send(agentID: agentID, targetAgentID: targetAgentID, text: text, delivery: delivery),
-                        requestID: id,
-                        client: client
-                    )
-                }
-            )
+            guard agentActionAllowed(senderID: agentID, requestID: id, client: client,
+                                     problem: sendProblem(sender: agentID, target: targetAgentID)) else { return }
+            routeAgentPeerRequest(.send(agentID: agentID, targetAgentID: targetAgentID, text: text, delivery: delivery),
+                                  requestID: id, client: client)
         case .spawnAgent(let id, let agentID, let cwd, let prompt):
             guard !cwd.isEmpty, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 reply(.error(id: id, code: "invalid", message: "cwd and prompt are required"), to: client)
                 return
             }
             guard !refusesDesignPeer(id: id, sender: agentID, client: client) else { return }
-            gateAgentAction(
-                senderID: agentID, requestID: id, client: client,
-                action: .spawn(cwd: cwd, prompt: prompt),
-                preflight: { self.spawnProblem(sender: agentID, cwd: cwd).map { .error(id: id, code: $0.code, message: $0.message) } },
-                fail: { [weak self, weak client] code, message in
-                    guard let self, let client else { return }
-                    reply(.error(id: id, code: code, message: message), to: client)
-                },
-                perform: { [weak self, weak client] in
-                    guard let self, let client else { return }
-                    routeAgentPeerRequest(.spawn(agentID: agentID, cwd: cwd, prompt: prompt), requestID: id, client: client)
-                }
-            )
+            guard agentActionAllowed(senderID: agentID, requestID: id, client: client,
+                                     problem: spawnProblem(sender: agentID, cwd: cwd)) else { return }
+            routeAgentPeerRequest(.spawn(agentID: agentID, cwd: cwd, prompt: prompt), requestID: id, client: client)
         case .createAutomation(let id, let name, let prompt, let cwd, let enabled, let start):
             let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
             let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -3662,37 +3639,18 @@ public final class SessionServer: @unchecked Sendable {
             }
             forwarded.text = AgentMessageFraming.framed(from: sender.name, text)
         }
-        let failed: (String, String) -> Void = { [weak self, weak client] code, message in
-            guard let self, let client else { return }
-            reply(.agentResult(id: id, result: .init(text: message, code: code)), to: client)
-        }
-        let serve: () -> Void = { [weak self, weak client] in
-            guard let self, let client else { return }
-            relayCoordination(id: id, agentID: agentID, targetAgentID: targetAgentID, request: request,
-                              forwarded: forwarded, client: client)
-        }
-        let action: AgentGatedAction?
+        let gated: Bool
         switch request.operation {
-        case .read where agentID != targetAgentID: action = .read(targetAgentID: targetAgentID)
-        case .steer: action = .steer(targetAgentID: targetAgentID, text: request.text ?? "")
-        case .interrupt: action = .interrupt(targetAgentID: targetAgentID)
-        default: action = nil
+        case .read where agentID != targetAgentID, .steer, .interrupt, .delete: gated = true
+        default: gated = false
         }
-        if let action {
-            gateAgentAction(senderID: agentID, requestID: id, client: client, action: action,
-                            preflight: { self.coordinationProblem(targetAgentID: targetAgentID).map { .error(id: id, code: $0.code, message: $0.message) } },
-                            fail: failed, perform: serve)
-            return
+        if gated {
+            // A refused coordination answers as a result, not an error (the tool reads `result.code`).
+            let problem = request.operation == .delete ? nil : coordinationProblem(targetAgentID: targetAgentID)
+            guard agentActionAllowed(senderID: agentID, requestID: id, client: client, problem: problem, refusalAsResult: true) else { return }
         }
-        // Deletion checks the same access policy before reaching the app.
-        if request.operation == .delete {
-            switch AgentMessageGate.deleteVerdict(policy: agentMessagePolicy,
-                                                  senderIsAutomation: Self.automationRunAgentIDs(in: store.state).contains(agentID)) {
-            case .refuse(let code, let message): failed(code, message); return
-            case .perform, .ask: break
-            }
-        }
-        serve()
+        relayCoordination(id: id, agentID: agentID, targetAgentID: targetAgentID, request: request,
+                          forwarded: forwarded, client: client)
     }
 
     /// Server queue: relays a live request to the target's own connection under a token of its
@@ -3748,23 +3706,31 @@ public final class SessionServer: @unchecked Sendable {
 
     // MARK: - Agent access policy
 
-    /// Enforce access on the server before forwarding an agent's call. No UI approval is needed.
-    private func gateAgentAction(senderID: AgentID, requestID: Int, client: ExtensionConnection, action: AgentGatedAction,
-                                 preflight: () -> ExtensionReply?,
-                                 fail: @escaping (_ code: String, _ message: String) -> Void,
-                                 perform: @escaping () -> Void) {
+    /// Server queue: enforce the access policy before an agent's call is served, and answer the
+    /// caller when it is not. True when the caller may go on. `problem` is the call's own
+    /// preflight (a missing target, a bad folder), answered as an error after the policy allows it.
+    /// A synchronous verdict on purpose: this used to take escaping `perform`/`fail` closures, and
+    /// Swift 6.3.3 at -O mislaid their weak captures onto the live `state.spaces` buffer, which
+    /// corrupted the array's count on every agent_read (SHEPHERD-MACOS-2, SHEPHERD-MACOS-3).
+    private func agentActionAllowed(senderID: AgentID, requestID: Int, client: ExtensionConnection,
+                                    problem: (code: String, message: String)?, refusalAsResult: Bool = false) -> Bool {
         switch AgentMessageGate.verdict(
             policy: agentMessagePolicy,
             senderIsAutomation: Self.automationRunAgentIDs(in: store.state).contains(senderID),
             hasThreadGrant: false) {
-        case .perform, .ask:
-            if let problem = preflight() {
-                reply(problem, to: client)
-                return
-            }
-            perform()
         case .refuse(let code, let message):
-            fail(code, message)
+            if refusalAsResult {
+                reply(.agentResult(id: requestID, result: .init(text: message, code: code)), to: client)
+            } else {
+                reply(.error(id: requestID, code: code, message: message), to: client)
+            }
+            return false
+        case .perform, .ask:
+            if let problem {
+                reply(.error(id: requestID, code: problem.code, message: problem.message), to: client)
+                return false
+            }
+            return true
         }
     }
 

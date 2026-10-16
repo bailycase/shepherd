@@ -103,14 +103,14 @@ public enum PiKeyMask {
 }
 
 /// What Settings shows of a key in Shepherd's pi: a literal's mask, the variables a `$NAME`
-/// reads, or that it runs a command. Never a value.
+/// reads, or an unsupported upstream command reference. Never a value.
 public struct PiKeyDisplay: Equatable, Sendable {
     public var masked: String?
     public var variables: [String]
-    /// A `!command`: pi runs it when the key is first needed.
+    /// Legacy name for detecting an unsupported `!command` reference; Shepherd never executes it.
     public var runsCommand: Bool
-    /// The command, for a custom provider's key in models.json (configuration, as SettingsPiSignIn
-    /// draws it); never for one in auth.json, whose command may carry a secret inline.
+    /// Legacy metadata for a custom provider's key in models.json, never displayed or executed.
+    /// Never collected from auth.json, whose command may carry a secret inline.
     public var command: String?
 
     public init(masked: String? = nil, variables: [String] = [], runsCommand: Bool = false, command: String? = nil) {
@@ -120,11 +120,12 @@ public struct PiKeyDisplay: Equatable, Sendable {
         self.command = command
     }
 
-    /// auth.json's `key` (or, with `showingCommand`, models.json's `apiKey`), as Settings shows it.
+    /// auth.json's `key` or models.json's `apiKey`, without command text.
+    /// `showingCommand` remains for source compatibility but never exposes unsupported commands.
     public static func of(_ key: String, showingCommand: Bool = false) -> PiKeyDisplay {
         switch YourPiFiles.keySource(key) {
         case .command:
-            PiKeyDisplay(runsCommand: true, command: showingCommand ? String(key.dropFirst()).trimmingCharacters(in: .whitespaces) : nil)
+            PiKeyDisplay(runsCommand: true)
         case .environment(let names): PiKeyDisplay(variables: names)
         case .literal: PiKeyDisplay(masked: PiKeyMask.mask(key.replacingOccurrences(of: "$$", with: "$")))
         }

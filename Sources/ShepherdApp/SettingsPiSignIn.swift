@@ -27,7 +27,7 @@ struct PiSignInSettings: View {
                     }
                 }
                 SettingsGroup(title: "API keys",
-                              footnote: "Pasted keys are saved in Shepherd’s pi, readable only by you. Environment variables and commands are read each time an agent starts.") {
+                              footnote: "Pasted keys are saved in Shepherd’s pi, readable only by you. Environment variables are read each time an agent starts. Command values are not supported.") {
                     ForEach(page.apiKeys) { row in
                         providerRow(row).id(row.id)
                     }
@@ -190,12 +190,9 @@ enum PiSignInWords {
     }
 
     /// A key's mask and source: "sk-proj-••••3kQz copied from your pi", "sk-••••91c2 reads
-    /// $DEEPSEEK_API_KEY", "runs a command op read …".
+    /// $DEEPSEEK_API_KEY", or "command not supported". Command text is never shown.
     static func keyParts(_ display: PiKeyDisplay, copied: Bool) -> [NWProviderStatus.Part] {
-        if let command = display.command {
-            return [.init("runs a command", tone: .tertiary), .init(command, mono: true, small: true, separated: false, middle: true)]
-        }
-        if display.runsCommand { return [.init("runs a command", tone: .tertiary)] }
+        if display.runsCommand { return [.init("command not supported", tone: .tertiary)] }
         if let name = display.variables.first {
             return NWKeySource.variable(name).parts.enumerated().map { index, part in
                 var part = part

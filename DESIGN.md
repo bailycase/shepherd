@@ -38,8 +38,8 @@ Every decision has to pass one test: does this help one person supervise ten wor
 - **Spaces and Projects.** A Space is the folder a thread runs in (what the app used to call a "Project").
   A Project is the new feature above Spaces and owns the word. Copy never calls a folder a project. The
   [ProjectLead boards](docs/design/boards/SpacesTerminology.md) are the spec for Projects; the user's only
-  approved changes to them are macOS-only hosts (no Linux) and the Activity sidebar's Designs group first,
-  above Needs you. Activity then reads Designs, Needs you, Working, Done, Projects, Recents.
+  approved changes to them are macOS-only hosts (no Linux) and the Activity sidebar order:
+  Automations, Designs, Projects, Needs you, Working, Done, Pinned, Recents.
 - Copy says "the agent", never "pi". The exception is where the user's own pi is the subject
   (Settings ▸ Pi, Sign-in).
 - Missions and the Artifacts and Files tabs are not built. Nothing shows or links to them.
@@ -54,6 +54,8 @@ Every decision has to pass one test: does this help one person supervise ten wor
 ## Principles, in priority order
 
 1. **Readable measure.** The thread column is at most 820pt wide and agent prose 640pt.
+   The [image viewer](docs/design/thread-images.md) toolbar also stays within 820pt, clear of
+   the window controls. Paging arrows sit beside the fitted image, not at the window edges.
 2. **Shape, not labels.** No speaker labels or avatars. A user turn is a trailing bubble; agent
    output is unboxed prose.
 3. **One quiet line per burst.** Consecutive calls of one kind merge into one activity line.
@@ -114,7 +116,8 @@ Settings", revision 1083) is the source of truth for every Settings page.
   explanation line, then groups 28pt apart. A group has a caps label, a flat card (radius 10,
   1px `lineSubtle`), and an optional footnote.
 - **Pi** is Shepherd's pi, then **From pi**: the source, what was brought over, the copies and
-  the imported extensions.
+  the imported extensions. Imported command-backed credentials say "command not supported";
+  neither Sign-in nor From pi displays their command text.
 - **Subagents** lists the definition files, then the native subagent switches and defaults.
 - **Extensions** holds the bundled extension switches. Peer tools have no separate permission row.
 - **Slash commands**: off disables a command entirely, in the menu and when typed.
