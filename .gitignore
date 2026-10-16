@@ -8,3 +8,5 @@ dist/
 .build-xcode/
 # Bytecode from running the release script's tests.
 __pycache__/
+# Generated review captures belong in PR attachments, not source control.
+docs/design/evidence/
