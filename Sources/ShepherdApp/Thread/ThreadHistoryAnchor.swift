@@ -10,6 +10,7 @@ final class ThreadHistoryAnchor {
     @ObservationIgnored private var savedTop: CGFloat?
     @ObservationIgnored private var restoring = false
     @ObservationIgnored private var waiting = false
+    @ObservationIgnored private var pendingMaterialization: ((String) -> Void)?
     @ObservationIgnored private var session: String?
     @ObservationIgnored private var generation = 0
 
@@ -28,6 +29,7 @@ final class ThreadHistoryAnchor {
         savedTop = nil
         restoring = false
         waiting = false
+        pendingMaterialization = nil
         rowID = nil
     }
 
@@ -38,15 +40,22 @@ final class ThreadHistoryAnchor {
             cancel()
             return
         }
-        // loadOlder commits and returns on the main actor, before SwiftUI lays out the new
-        // rows. A turn-jump animation may have finished while the reply was pending.
-        if marker?.rowID == rowID, let top = marker?.viewportTop { savedTop = top }
+        // SwiftUI can observe the prepend before this awaiting task resumes. Do not replace
+        // the saved offset with a position already shifted by the new rows in that ordering.
+        let pending = pendingMaterialization
+        pendingMaterialization = nil
+        if pending == nil, marker?.rowID == rowID, let top = marker?.viewportTop { savedTop = top }
         waiting = false
+        if let pending { prepended(firstID: firstID, session: session, active: true, materialize: pending) }
     }
 
     func prepended(firstID: String?, session: String?, active: Bool, materialize: @escaping (String) -> Void) {
         guard active, session == self.session else { cancel(); return }
-        guard !waiting, !restoring, let rowID, savedTop != nil, firstID != rowID else { return }
+        guard !restoring, let rowID, savedTop != nil, firstID != rowID else { return }
+        if waiting {
+            pendingMaterialization = materialize
+            return
+        }
         restoring = true
         let token = generation
         // The first-ID change arrives before the lazy stack commits its new scroll targets.
@@ -84,7 +93,7 @@ final class ThreadHistoryAnchor {
     /// Keep correcting only this anchor through lazy remeasurement, until the reader moves,
     /// sends, switches session or hides the thread. Geometry bookkeeping never invalidates rows.
     func moved() {
-        if waiting, marker?.rowID == rowID { savedTop = marker?.viewportTop }
+        if waiting, pendingMaterialization == nil, marker?.rowID == rowID { savedTop = marker?.viewportTop }
         scheduleCorrection()
     }
 

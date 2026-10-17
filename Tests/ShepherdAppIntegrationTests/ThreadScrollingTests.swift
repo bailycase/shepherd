@@ -657,8 +657,8 @@ struct ThreadScrollingTests {
 
     /// A real clip view provides exact partial-row geometry without SwiftUI's outstanding
     /// programmatic turn jump undoing the test's scroll before the page can arrive.
-    @Test(arguments: [false, true])
-    func aPartialHistoryAnchorRestoresItsOffsetUnlessNavigationCancelledIt(cancelled: Bool) async throws {
+    @Test(arguments: [false, true], [false, true])
+    func aPartialHistoryAnchorRestoresItsOffsetUnlessNavigationCancelledIt(cancelled: Bool, notificationFirst: Bool) async throws {
         final class Document: NSView {
             override var isFlipped: Bool { true }
         }
@@ -683,21 +683,32 @@ struct ThreadScrollingTests {
         let before = try #require(marker.viewportTop)
         #expect(abs(before + 8) < 0.25, "the retained row really is partially clipped: \(before)")
         let token = anchor.begin("boundary", session: "s")
+        var materializations = 0
+        func notifyPrepend() {
+            anchor.prepended(firstID: "older", session: "s", active: true) { id in
+                #expect(id == "boundary")
+                materializations += 1
+                move(to: marker.frame.minY)
+            }
+        }
+        // SwiftUI may observe and lay out the committed rows before the load task resumes.
+        if notificationFirst {
+            notifyPrepend()
+            document.frame.size.height += 700
+            marker.frame.origin.y += 700
+            anchor.moved()
+        }
         if cancelled {
             anchor.cancel()
             move(to: 600)
         }
-        // Exactly the production ordering: model commit finishes, then new row layout arrives.
         anchor.finished(token, firstID: "older")
-        document.frame.size.height += 700
-        marker.frame.origin.y += 700
-        let navigationOffset = clip.bounds.origin.y
-        var materializations = 0
-        anchor.prepended(firstID: "older", session: "s", active: true) { id in
-            #expect(id == "boundary")
-            materializations += 1
-            move(to: marker.frame.minY)
+        if !notificationFirst {
+            document.frame.size.height += 700
+            marker.frame.origin.y += 700
         }
+        let navigationOffset = clip.bounds.origin.y
+        if !notificationFirst { notifyPrepend() }
         anchor.moved()
         // Drain queued correction callbacks before asserting the cancellation branch too.
         await withCheckedContinuation { continuation in
