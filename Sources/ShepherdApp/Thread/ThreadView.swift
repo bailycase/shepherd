@@ -203,6 +203,7 @@ struct ThreadView: View {
                     })
                 }
                 .id(transcriptRevision)
+                .scrollPosition($historyAnchor.position)
                 // The composer floats over the scroll view; inset by its real height so "the
                 // bottom" is the last turn, not the space under the card.
                 .modifier(ComposerInsetPadding(inset: composerInset, gap: leadColumn ? 0 : AppLayout.composerTranscriptGap,
@@ -213,8 +214,8 @@ struct ThreadView: View {
                 // before accepting cached visibility as proof that the transcript contains content.
                 .onScrollTargetVisibilityChange(idType: String.self, threshold: 0) { tailGuard.targets($0) }
                 .onChange(of: rows.first?.id) { _, first in
-                    historyAnchor.prepended(firstID: first, session: store.sessionKey, active: active) { id in
-                        proxy.scrollTo(id, anchor: .top)
+                    historyAnchor.prepended(firstID: first, session: store.sessionKey, active: active) { [weak historyAnchor] id in
+                        historyAnchor?.position.scrollTo(id: id, anchor: .top)
                     }
                 }
                 .onChange(of: historyEnabled) { _, _ in loadVisibleHistory() }
@@ -242,6 +243,7 @@ struct ThreadView: View {
                 .onScrollPhaseChange { old, phase, context in
                     // Only a live finger/wheel counts. Momentum and programmatic phases are not
                     // intent; a gesture that ends near the bottom re-sticks from where it lands.
+                    historyAnchor.animating = phase == .animating
                     follower.userScrolling = phase == .interacting
                     if phase == .interacting {
                         historyAnchor.cancel()
@@ -251,6 +253,7 @@ struct ThreadView: View {
                     if phase == .idle, old == .interacting || old == .decelerating {
                         follower.observe(distanceFromBottom: Self.distanceFromBottom(context.geometry), userIntent: true)
                     }
+                    if phase == .idle { loadVisibleHistory() }
                 }
                 .onChange(of: store.sentCount) { _, _ in
                     // A send that goes in now re-attaches to the tail: the echoed turn is the last
@@ -348,7 +351,7 @@ struct ThreadView: View {
         // Hidden, the thread stops polling and keeps what it shows; shown again, it polls from
         // there (`NativeThreadStore.suspend`).
         .task(id: active) {
-            guard active else { historyAnchor.cancel(); tailGuard.stop(); store.suspend(); return }
+            guard active else { historyAnchor.cancel(); historyAnchor.animating = false; tailGuard.stop(); store.suspend(); return }
             await store.run(request: request, preview: preview)
         }
     }
@@ -414,7 +417,8 @@ struct ThreadView: View {
         tailGuard.rowIDs = Set(store.rows.map(\.id))
     }
 
-    private var historyEnabled: Bool { active && store.ready && !store.loadingOlder && !follower.sticky }
+    // Starting history during an animated jump can discard its restoration scroll request.
+    private var historyEnabled: Bool { active && store.ready && !store.loadingOlder && !follower.sticky && !historyAnchor.animating }
 
     private func loadVisibleHistory() {
         guard historyPaging.takeRequest(session: store.sessionKey, cursor: store.olderCursor, enabled: historyEnabled) else { return }

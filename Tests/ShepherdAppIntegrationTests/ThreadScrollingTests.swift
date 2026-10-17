@@ -21,6 +21,7 @@ private final class ThreadHarness {
     let window: OffscreenWindow
     private let pillSize = NSHostingView(rootView: NWJumpToLatest(action: {})).fittingSize
     var olderRequests = 0
+    var olderRequestPhases: [ScrollPhase] = []
     private var scrollPhase = ScrollPhase.idle
     var olderReply: CheckedContinuation<NativeThreadResult, Never>?
 
@@ -38,6 +39,7 @@ private final class ThreadHarness {
             if case .send(_, _, let operation, _, _, _, _, _, _) = value { return .accepted(operationID: operation) }
             if case .snapshot(_, let before, _) = value, before != nil {
                 self.olderRequests += 1
+                self.olderRequestPhases.append(self.scrollPhase)
                 return await withCheckedContinuation { self.olderReply = $0 }
             }
             return .snapshot(value: self.snapshot)
@@ -626,6 +628,31 @@ struct ThreadScrollingTests {
         #expect(abs(after - before) < 2, "prepending moved the visible turn from \(before) to \(after)")
     }
 
+    @Test func historyScrollRequestsReachTheViewWithoutAnotherTranscriptUpdate() async throws {
+        let thread = ThreadHarness(messages: 50, paragraphs: 9)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        func visibleMarker(in view: NSView) -> ThreadHistoryAnchor.Marker? {
+            if let marker = view as? ThreadHistoryAnchor.Marker,
+               let top = marker.viewportTop, top >= 0, top < thread.scrollView.contentView.bounds.height { return marker }
+            return view.subviews.lazy.compactMap(visibleMarker).first
+        }
+        for _ in 0..<26 {
+            if visibleMarker(in: thread.window.host) != nil { break }
+            thread.command(.previousTurn)
+            try await thread.settle()
+        }
+        let marker = try #require(visibleMarker(in: thread.window.host))
+        let anchor = try #require(marker.anchor)
+        let clip = thread.scrollView.contentView
+        let before = clip.bounds.minY
+        anchor.position.scrollTo(id: ThreadView.bottomID, anchor: .bottom)
+        // Do not refresh the store or force layout: the binding must deliver this request.
+        try await eventuallyOnMain("the history scroll request to reach SwiftUI") {
+            clip.bounds.minY > before + clip.bounds.height
+        }
+    }
+
     @Test func largePrependsKeepTheRenderedHistoryBoundaryAfterDrawing() async throws {
         let thread = ThreadHarness(messages: 50, paragraphs: 9, olderCursor: "m0")
         thread.snapshot.messages[0].blocks = [.init(kind: .text, text: "Retained boundary prompt")]
@@ -656,7 +683,79 @@ struct ThreadScrollingTests {
                 try await thread.settle()
             }
             #expect(thread.olderRequests == batch)
+            #expect(thread.olderRequestPhases.allSatisfy { $0 != .animating },
+                    "prepending while the previous-turn jump animates can discard history restoration")
             #expect(thread.store.messages.count == 50 * (batch + 1))
+        }
+    }
+
+    @Test(arguments: [false, true])
+    func historyMaterializationWaitsForPendingLayoutAndRechecksCancellation(cancelDuringLayout: Bool) async throws {
+        final class Document: NSView {
+            var commit: (() -> Void)?
+            override var isFlipped: Bool { true }
+            override func layout() {
+                super.layout()
+                let pending = commit
+                commit = nil
+                pending?()
+            }
+        }
+        let window = OffscreenWindow(size: CGSize(width: 500, height: 300))
+        defer { window.close() }
+        let scroll = NSScrollView(frame: window.host.bounds)
+        let document = Document(frame: CGRect(x: 0, y: 0, width: 500, height: 2000))
+        scroll.documentView = document
+        window.host.addSubview(scroll)
+        let marker = ThreadHistoryAnchor.Marker(frame: CGRect(x: 0, y: 100, width: 500, height: 60))
+        document.addSubview(marker)
+        let anchor = ThreadHistoryAnchor()
+        marker.attach(to: anchor, rowID: "boundary")
+        window.layout()
+        func move(to y: CGFloat) {
+            let clip = scroll.contentView
+            clip.scroll(to: clip.constrainBoundsRect(CGRect(origin: CGPoint(x: 0, y: y), size: clip.bounds.size)).origin)
+            scroll.reflectScrolledClipView(clip)
+        }
+        move(to: 108)
+        let before = try #require(marker.viewportTop)
+        let token = anchor.begin("boundary", session: "s")
+        anchor.finished(token, firstID: "older")
+        marker.removeFromSuperview()
+        var committed = false
+        var materializations = 0
+        // The prepend reaches native layout just before the queued scroll request.
+        DispatchQueue.main.async {
+            document.commit = {
+                document.frame.size.height += 700
+                marker.frame.origin.y += 700
+                document.addSubview(marker)
+                committed = true
+                if cancelDuringLayout {
+                    anchor.cancel()
+                    move(to: 600)
+                }
+            }
+            document.needsLayout = true
+        }
+        anchor.prepended(firstID: "older", session: "s", active: true) { id in
+            #expect(committed, "materialization needs the committed scroll targets, not just another queue turn")
+            #expect(id == "boundary")
+            materializations += 1
+            move(to: marker.frame.minY)
+        }
+        for _ in 0..<2 {
+            await withCheckedContinuation { continuation in
+                DispatchQueue.main.async { continuation.resume() }
+            }
+        }
+        #expect(committed)
+        #expect(materializations == (cancelDuringLayout ? 0 : 1))
+        if cancelDuringLayout {
+            #expect(anchor.rowID == nil)
+            #expect(abs(scroll.contentView.bounds.minY - 600) < 0.25)
+        } else {
+            #expect(abs(try #require(marker.viewportTop) - before) < 2)
         }
     }
 
@@ -764,6 +863,11 @@ struct ThreadScrollingTests {
                 DispatchQueue.main.async { continuation.resume() }
             }
             #expect(abs(try #require(marker.viewportTop) - before) < 2)
+            anchor.position.scrollTo(id: "boundary", anchor: .top)
+            #expect(anchor.position.viewID(type: String.self) == "boundary")
+            anchor.cancel()
+            #expect(anchor.position.viewID(type: String.self) == nil,
+                    "navigation must release the pending SwiftUI target as well as offset correction")
         }
     }
 

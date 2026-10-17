@@ -6,7 +6,11 @@ import SwiftUI
 @MainActor @Observable
 final class ThreadHistoryAnchor {
     private(set) var rowID: String?
+    @ObservationIgnored var animating = false
+    // Keep the target through lazy row replacement; a one-shot proxy request can be dropped.
+    var position = ScrollPosition(idType: String.self)
     @ObservationIgnored private weak var marker: Marker?
+    @ObservationIgnored private weak var scroll: NSScrollView?
     @ObservationIgnored private var savedTop: CGFloat?
     @ObservationIgnored private var restoring = false
     @ObservationIgnored private var waiting = false
@@ -18,6 +22,7 @@ final class ThreadHistoryAnchor {
         cancel()
         guard let id else { return generation }
         self.session = session
+        scroll = marker?.enclosingScrollView
         waiting = true
         rowID = id
         if marker?.rowID == id { savedTop = marker?.viewportTop }
@@ -25,8 +30,10 @@ final class ThreadHistoryAnchor {
     }
 
     func cancel() {
+        if rowID != nil { position = ScrollPosition(idType: String.self) }
         generation &+= 1
         savedTop = nil
+        scroll = nil
         restoring = false
         waiting = false
         pendingMaterialization = nil
@@ -62,6 +69,9 @@ final class ThreadHistoryAnchor {
         // Materializing in that callback can target the removed view instead of the new row.
         DispatchQueue.main.async { [weak self] in
             guard let self, self.generation == token, self.restoring, self.rowID == rowID else { return }
+            // A queue turn alone need not commit the new targets; the old marker can be detached.
+            self.scroll?.window?.contentView?.layoutSubtreeIfNeeded()
+            guard self.generation == token, self.restoring, self.rowID == rowID else { return }
             var transaction = Transaction()
             transaction.disablesAnimations = true
             withTransaction(transaction) { materialize(rowID) }
@@ -79,7 +89,8 @@ final class ThreadHistoryAnchor {
             // SwiftUI can materialize the row before its final AppKit layout is committed.
             // Measuring then would apply a correction to a stale marker position.
             scroll.window?.contentView?.layoutSubtreeIfNeeded()
-            guard let top = marker.viewportTop else { return }
+            guard self.generation == token, self.restoring, self.marker === marker,
+                  let top = marker.viewportTop else { return }
             let delta = top - savedTop
             guard abs(delta) > 0.25 else { return }
             let clip = scroll.contentView
