@@ -69,16 +69,14 @@ public struct NWMermaidBlock: View {
     }
 }
 
-/// A diagram open full screen, in the image viewer's frame: the chart fills the window, pinch or ⌘-scroll zooms,
+/// A diagram open over the thread, in the image viewer: the chart fills the room, pinch or ⌘-scroll zooms,
 /// scroll or drag pans, double-click zooms in or back to fit. Copy takes the source.
 public struct NWMermaidViewer: View {
     let source: String
-    let leadingInset: CGFloat
     let close: () -> Void
 
-    public init(_ source: String, leadingInset: CGFloat = 0, close: @escaping () -> Void) {
+    public init(_ source: String, close: @escaping () -> Void) {
         self.source = source
-        self.leadingInset = leadingInset
         self.close = close
     }
 
@@ -87,7 +85,7 @@ public struct NWMermaidViewer: View {
         NWImageViewer(name: "Mermaid diagram", facts: lines == 1 ? "1 line" : "\(lines) lines",
                       content: .diagram(AnyView(MermaidCanvas(source: source))),
                       caption: Self.caption,
-                      copy: { NWPasteboard.copy(source) }, leadingInset: leadingInset, close: close)
+                      copy: { NWPasteboard.copy(source) }, close: close)
     }
 }
 

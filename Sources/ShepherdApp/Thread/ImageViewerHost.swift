@@ -208,12 +208,9 @@ struct ImageViewerActions {
     }
 }
 
-/// The viewer over the window: a click outside the picture does not close it (the bar's close
-/// button and Esc do); ← and → step through the images.
+/// The viewer over the window: a click on the scrim, the pill's close button or Esc closes it; ← and → step through the images.
 struct ImageViewerOverlay: View {
     var vm: ShepherdViewModel
-    /// How far the window controls reach into the bar (`AppLayout.trafficLightInset`; none in full screen).
-    var leadingInset: CGFloat = 0
     @FocusState private var focused: Bool
 
     private func content(_ slot: ViewerSlot) -> NWImageViewer.Content {
@@ -239,7 +236,7 @@ struct ImageViewerOverlay: View {
                     addToMessage: image.flatMap { shown in state.addToMessage.map { add in { add(shown); vm.closeImageViewer() } } },
                     showInFinder: image?.source.map { url in { actions.reveal(url) } },
                     retry: { if case .failed = slot { return { state.retry() } } else { return nil } }(),
-                    leadingInset: leadingInset, pixels: image?.pixels ?? image?.picture?.size,
+                    pixels: image?.pixels ?? image?.picture?.size,
                     close: { vm.closeImageViewer() })
                 .id("\(slot.name)/\(state.index)")
                 // Esc and the arrows go to a hidden focus target of their own: focusing the whole viewer would hand every control in it an
@@ -263,16 +260,15 @@ struct ImageViewerOverlay: View {
     }
 }
 
-/// A Mermaid diagram open over the window, in the image viewer's frame; Esc or the bar's close button closes it.
+/// A Mermaid diagram open over the window, in the image viewer; a click on the scrim, the close button or Esc closes it.
 struct DiagramViewerOverlay: View {
     var vm: ShepherdViewModel
-    var leadingInset: CGFloat = 0
     @FocusState private var focused: Bool
 
     var body: some View {
         ZStack {
             if let source = vm.diagramViewer {
-                NWMermaidViewer(source, leadingInset: leadingInset) { vm.diagramViewer = nil }
+                NWMermaidViewer(source) { vm.diagramViewer = nil }
                     .id(source)
                     .background {
                         Color.clear
