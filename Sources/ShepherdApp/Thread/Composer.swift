@@ -36,6 +36,7 @@ struct Composer: View {
     let agentName: String?
     let hasTurns: Bool
     let gutter: CGFloat
+    var measuredInset: ComposerInset? = nil
     /// Another host's catalog; nil for this Mac's (`ModelCatalog.loadLocal`).
     var listModels: (() async -> ModelCatalog)?
     var branch: AgentBranchLabel? = nil
@@ -459,8 +460,8 @@ struct Composer: View {
             if !Task.isCancelled { startingShown = true }
         }
         .frame(maxWidth: projectSend?.columnWidth ?? AppLayout.threadMaxWidth)
-        .padding(.leading, workerStyle?.gutter ?? gutter)
-        .padding(.trailing, (workerStyle?.gutter ?? gutter) + (workerStyle?.composerTrailing ?? 0))
+        .padding(.leading, workerStyle?.gutter ?? measuredInset?.gutter ?? gutter)
+        .padding(.trailing, (workerStyle?.gutter ?? measuredInset?.gutter ?? gutter) + (workerStyle?.composerTrailing ?? 0))
         .padding(.bottom, AppLayout.composerBottom)
         .frame(maxWidth: .infinity)
         .background(alignment: .top) {

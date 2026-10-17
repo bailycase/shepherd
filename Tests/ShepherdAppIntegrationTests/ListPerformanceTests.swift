@@ -937,6 +937,36 @@ struct ListPerformanceTests {
         #expect(changed["queue.row", default: 0] >= 1, "\(changed)")
     }
 
+    @Test(arguments: [false, true])
+    func changingThreadGuttersDoesNotRebuildTheTranscript(dark: Bool) async throws {
+        let threshold = AppLayout.threadMaxWidth + 2 * AppLayout.gutter
+        let thread = FakeThread(ThreadFixture.snapshot(ThreadFixture.history(120)),
+                                size: CGSize(width: threshold + 60, height: 800), dark: dark)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        let scroll = try #require(thread.scrollView)
+        let widths = [threshold - 40, threshold + 40]
+        #expect(AppLayout.threadGutter(width: widths[0]) != AppLayout.threadGutter(width: widths[1]))
+
+        let rows = try await counting(thread.window) {
+            for step in 0..<6 {
+                let width = widths[step % widths.count]
+                thread.window.window.setContentSize(CGSize(width: width, height: 800))
+                try await eventuallyOnMain("resized thread viewport") {
+                    ListPerf.settle(thread.window)
+                    return abs(thread.window.host.bounds.width - width) < 1
+                }
+                await withCheckedContinuation { continuation in
+                    DispatchQueue.main.async { continuation.resume() }
+                }
+                ListPerf.settle(thread.window)
+                #expect(thread.scrollView === scroll, "gutter changes keep the mounted scroll view")
+            }
+        }
+        #expect(rows["composer.body", default: 0] > 0, "the composer receives the changing gutters: \(rows)")
+        #expect(rows["thread.view", default: 0] <= 1, "six gutter changes must not rebuild the transcript: \(rows)")
+    }
+
     /// Resizing redraws the composer only when the Send menu changes sides, not for each
     /// width or height a live resize passes while the menu remains on the same side.
     @Test(arguments: [false, true])

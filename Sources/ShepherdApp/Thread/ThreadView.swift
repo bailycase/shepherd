@@ -92,14 +92,10 @@ struct ThreadView: View {
     /// What the context details ask the thread to find (Largest, Show summary). A stable object,
     /// not a closure, so the composer is not redrawn with every render of the thread.
     @State private var finder = ThreadFinder()
-    /// Narrow windows drop to 16pt gutters so the column keeps its width, not its margins.
-    @State private var gutter = AppLayout.gutter
     @State private var hovering = false
     @State private var wheelMonitor: Any?
-    /// Measured height of the floating composer: the scroll view insets by exactly this, so the
-    /// thread neither hides under the card nor scrolls into blank space below the last turn.
-    /// Read only by the inset's own modifier, so the composer changing height (a question taking
-    /// its place, Up next growing) never reruns the thread's body or its rows.
+    /// Composer height and responsive gutters are observed by their consumers, not the
+    /// transcript builder. Resizing or a growing composer must not rebuild every row.
     @State private var composerInset = ComposerInset()
     /// The user turn the last ⌥⌘↑/↓ landed on.
     @State private var jumpedTurn: String?
@@ -191,7 +187,7 @@ struct ThreadView: View {
                             .accessibilityHidden(true)
                     }
                     .frame(maxWidth: projectSend?.columnWidth ?? AppLayout.threadMaxWidth)
-                    .padding(.horizontal, workerStyle?.gutter ?? gutter)
+                    .modifier(ThreadGutterPadding(inset: composerInset, fixedGutter: workerStyle?.gutter))
                     .frame(maxWidth: .infinity)
                     .background { ThreadInputBackground(input: input) }
                     .background { ThreadScrollViewFinder(guardian: tailGuard) }
@@ -291,7 +287,7 @@ struct ThreadView: View {
                 // A resolved Project thread takes no message: no composer at all, not a disabled one.
                 if workerStyle?.composerHidden != true {
                     Composer(store: store, input: input, allowsLocalFiles: allowsLocalFiles, active: active, isFocused: isFocused, agentName: agentName, hasTurns: !rows.isEmpty,
-                             gutter: gutter, listModels: listModels, branch: branch, directory: allowsLocalFiles ? workingDirectory : nil,
+                             gutter: AppLayout.gutter, measuredInset: composerInset, listModels: listModels, branch: branch, directory: allowsLocalFiles ? workingDirectory : nil,
                              showChanges: showChanges, modelSettingsOpen: modelSettingsOpen, commandKey: commandKey,
                              jumpToLatest: follower.showsJump(running: running) ? {
                                  historyAnchor.cancel()
@@ -338,7 +334,7 @@ struct ThreadView: View {
         .tint(Color.nw.running)
         .background { ThreadInputBackground(input: input) }
         .background(Color.nw.bgWindow)
-        .onGeometryChange(for: CGFloat.self) { AppLayout.threadGutter(width: $0.size.width) } action: { gutter = $0 }
+        .onGeometryChange(for: CGFloat.self) { AppLayout.threadGutter(width: $0.size.width) } action: { [composerInset] in composerInset.gutter = $0 }
         .onHover { hovering = $0 }
         .onAppear { installWheelMonitor() }
         .onDisappear {
@@ -700,11 +696,21 @@ struct ThreadTailAnchor: ViewModifier {
     }
 }
 
-/// The floating composer's measured height, observed only by `ComposerInsetPadding`.
+/// Measured insets, read by the composer and padding rather than the transcript builder.
 @MainActor
 @Observable
 final class ComposerInset {
     var height: CGFloat = 120
+    var gutter = AppLayout.gutter
+}
+
+private struct ThreadGutterPadding: ViewModifier {
+    let inset: ComposerInset
+    let fixedGutter: CGFloat?
+
+    func body(content: Content) -> some View {
+        content.padding(.horizontal, fixedGutter ?? inset.gutter)
+    }
 }
 
 /// Reserves the floating composer and the transcript's breathing room above it.

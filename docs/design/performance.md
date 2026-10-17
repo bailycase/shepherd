@@ -93,11 +93,11 @@ runs, 2,000 folders).
   over the thread, and the picker and the thinking menu compare their own inputs, so a composer
   redraw for something else leaves their rows alone. `ComposerMenuPerformanceTests` pins each
   as a count.
-- **The composer changing height never reruns the thread.** Its measured height lives in its own
-  observed value (`ComposerInset`), read only by the scroll view's inset modifier, so a question
-  taking the card's place or giving it back (or Up next growing) redraws the composer, never the
-  thread's body or its toolbar; the lazy stack only lays the rows on screen out again for the
-  new inset (`ListPerformanceTests`).
+- **Composer height and responsive gutters never rerun the thread.** Both live in the observed
+  `ComposerInset`, read by the inset/padding modifiers and composer, not the transcript builder.
+  A question taking the card's place, Up next growing, or crossing the narrow-gutter breakpoint
+  updates those consumers; the lazy stack only lays the visible rows out again
+  (`ListPerformanceTests`).
 - **Motion never scales with the list.** A list's motion watches a small key (a layout count, the
   rows' ids), never the rows themselves, and rows scrolled back into a lazy stack are simply
   there: an entrance plays only for what arrives while the list is on screen (`nwArrival`,
