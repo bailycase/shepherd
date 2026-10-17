@@ -1,0 +1,33 @@
+name: Auto-merge nightly PRs
+
+# Read PR metadata only. Never check out or execute code from the PR with this token.
+on:
+  pull_request_target:
+    branches: [nightly]
+    types: [opened, reopened, ready_for_review, synchronize, edited]
+
+permissions: {}
+
+jobs:
+  enable-auto-merge:
+    if: >-
+      github.event.pull_request.state == 'open' &&
+      !github.event.pull_request.draft &&
+      (github.event.pull_request.user.id == 19316389 ||
+       github.event.pull_request.user.id == 3370624)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Enable squash auto-merge after required checks
+        env:
+          # A dedicated token preserves push-triggered release and cache workflows.
+          GH_TOKEN: ${{ secrets.AUTO_MERGE_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::Set AUTO_MERGE_TOKEN with Contents and Pull requests read/write permissions for this repository."
+            exit 1
+          fi
+          gh pr merge "$PR_NUMBER" --repo "$GH_REPO" --auto --squash --match-head-commit "$HEAD_SHA"
