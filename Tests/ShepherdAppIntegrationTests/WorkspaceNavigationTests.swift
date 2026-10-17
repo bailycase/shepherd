@@ -514,11 +514,14 @@ struct WorkspaceNavigationTests {
         #expect(frames() == [narrow, start, start])
         vm.selectAgent(agents[1].agent.id)
         ListPerf.settle(window)
-        #expect(frames() == [start, narrow, start], "the shown layout follows the column at once")
+        #expect(frames() == [narrow, narrow, start], "the revealed layout catches up; the outgoing layout keeps its last size")
 
         NotificationCenter.default.post(name: NSWindow.didEndLiveResizeNotification, object: window.window)
         ListPerf.settle(window)
-        #expect(frames() == Array(repeating: narrow, count: agents.count))
+        #expect(frames() == [narrow, narrow, start], "ending resize must not reflow layouts that stayed hidden")
+        vm.selectAgent(agents[2].agent.id)
+        ListPerf.settle(window)
+        #expect(frames() == Array(repeating: narrow, count: agents.count), "a hidden layout catches up synchronously when revealed")
     }
 
     /// A hidden layout is built when it mounts, its terminal surface included, and still takes

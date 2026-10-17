@@ -34,6 +34,13 @@ runs, 2,000 folders).
   for a selection: the sidebar's lists derive once per change of what they read
   (`sidebarLists`), and a selection or a scroll derives nothing. At 1,500 agents in 200 spaces a
   status report took 59 ms and a selection 57 ms until the old tree's were.
+- **Code paints only the viewport.** Ordinary ASCII code retains TextKit's glyph layout to draw
+  the requested slice, rather than laying out and painting a whole long fence on each scroll step.
+  Linked and non-ASCII content keeps native drawing to preserve link styling and fallback-font
+  baselines. The same native field still owns selection, copying and accessibility, and its native
+  editor draws an active selection. Content or syntax changes update the retained text storage.
+  `CodeViewportDrawingTests` forces real clipped drawing alongside a native-field reference;
+  a layout-only off-screen scroll benchmark does not prove painting is cheap.
 - **Rows are cheap to build**, since scrolling builds them. Platform-backed modifiers cost most: a
   list row is a tap view rather than a `Button` (each brings an AppKit focus-ring view), and a
   control that shows only on hover (a diff line's `+`) is built only while hovered, in a slot that
@@ -60,7 +67,10 @@ runs, 2,000 folders).
   now 1.6 M). What still grows (a keystroke, 25 M alone and 35 M beside 30) is AppKit's
   display-cycle walks and SwiftUI's window-wide focus, which no public API reaches.
   `ListPerformanceTests` pins it by counts; `SHEPHERD_PERF_REPORT=1 swift test --filter
-  HiddenAgentsReport` prints the instructions.
+  HiddenAgentsReport` prints the instructions. Hidden hosts keep their last displayed bounds
+  through both window and sidebar resizing, including the end of a live resize. Only revealing
+  a host synchronously brings it to the current column size; no hidden graph reflows just to
+  catch up. `AgentDeckResizeTests` checks bounds, layout counts, identity and accessibility.
 - **The overlaid sidebar casts its shadow from its fill**, as the floating right pane does
   (`nwFloatBackground`): on the sidebar itself, Core Animation redrew the shadow from its
   scrolling list every step.
