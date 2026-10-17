@@ -70,8 +70,10 @@ runs, 2,000 folders).
   HiddenAgentsReport` prints the instructions. Hidden thread-only hosts keep their last displayed
   bounds through window and sidebar resizing, then catch up on reveal. Hidden terminal layouts
   freeze during a live resize and take the final grid once afterward, preserving the process's
-  size without a SIGWINCH per drag step. `AgentDeckResizeTests` checks bounds, layout counts,
-  identity and accessibility; `TerminalMotionTests` verifies the hidden terminal's final grid.
+  size without a SIGWINCH per drag step. Native layout callbacks still run to finish hidden
+  content transitions; skipping them retains removed controls. `AgentDeckResizeTests` checks
+  bounds, identity and accessibility and reports CPU/layout counts; `IdleCostTests` pins hidden
+  animation work, and `TerminalMotionTests` verifies the hidden terminal's final grid.
 - **The overlaid sidebar casts its shadow from its fill**, as the floating right pane does
   (`nwFloatBackground`): on the sidebar itself, Core Animation redrew the shadow from its
   scrolling list every step.

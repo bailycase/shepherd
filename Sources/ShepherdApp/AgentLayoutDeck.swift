@@ -55,8 +55,6 @@ struct AgentLayoutDeck: View, Equatable {
     /// A layout's hosting view. It sizes nothing around it, and has no safe area of its own:
     /// the workspace's column decides both, as it did for the layouts in its own graph.
     final class Host: NSHostingView<PageRoot> {
-        private var laidOutSize: CGSize?
-
         required init(rootView: PageRoot) {
             super.init(rootView: rootView)
             sizingOptions = []
@@ -67,13 +65,10 @@ struct AgentLayoutDeck: View, Equatable {
         required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
         override func layout() {
-            // AppKit visits hidden hosts even at unchanged bounds. Only mount or resize their
-            // graph when needed; terminal layouts still take their final grid after a drag.
-            guard !isHidden || laidOutSize != bounds.size else { return }
             NWRenderProbe.tick(isHidden ? "deck.hiddenLayout" : "deck.layout")
+            // Even at fixed hidden bounds, AppKit needs this pass to remove transitioned views.
+            // Avoid resize work by retaining host frames, never by skipping lifecycle callbacks.
             super.layout()
-            // A pre-window or zero-sized pass cannot mount the hidden layout's real surfaces.
-            if window != nil && !bounds.isEmpty { laidOutSize = bounds.size }
         }
     }
 
