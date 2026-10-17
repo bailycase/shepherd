@@ -110,7 +110,7 @@ public struct NWDesignTile<Thumbnail: View>: View {
 }
 
 /// A design system as the phone lists it (MobileDesigns): three of its colors as 7×14 swatches,
-/// its name in mono 15 medium over its source in 12.5 `textTertiary`, and a chevron. At least
+/// its name in sans 15 bold over its source in 12.5 `textTertiary`, and a chevron. At least
 /// 52pt, in a list card.
 public struct NWDesignSystemRow: View, Equatable {
     let name: String
@@ -143,7 +143,7 @@ public struct NWDesignSystemRow: View, Equatable {
             .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: NW.Space.xxs) {
                 Text(name)
-                    .font(.nwMono(NWPhoneDesignMetrics.systemNameSize, .medium))
+                    .font(.nwSans(NWPhoneDesignMetrics.systemNameSize, .bold))
                     .foregroundStyle(nw.textPrimary)
                     .lineLimit(1)
                 if let source {

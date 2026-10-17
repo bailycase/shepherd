@@ -9,6 +9,8 @@ public struct NWImageViewer: View {
     public enum Content {
         case loading
         case picture(Image)
+        /// A live view that takes the whole room and pans and zooms itself (a Mermaid diagram).
+        case diagram(AnyView)
         case failed(String)
     }
 
@@ -188,6 +190,14 @@ public struct NWImageViewer: View {
                 .padding(.vertical, size == nil ? NWImageViewerMetrics.pictureInset : 0)
                 .accessibilityLabel(name)
                 .accessibilityAddTraits(.isImage)
+        case .diagram(let view):
+            view
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(nw.bgSunken)
+                .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
+                .nwBorder(nw.lineSubtle, radius: NW.Radius.m)
+                .padding(.horizontal, NW.Space.xxl)
+                .padding(.vertical, NW.Space.xxl)
         case .loading:
             RoundedRectangle(cornerRadius: NW.Radius.m).fill(nw.bgSunken)
                 .frame(width: NWImageViewerMetrics.placeholderWidth, height: NWImageViewerMetrics.placeholderHeight)

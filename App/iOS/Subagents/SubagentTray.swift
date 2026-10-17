@@ -21,7 +21,7 @@ struct SubagentTraySection: View {
     @Environment(\.composerMaxHeight) private var composerMaxHeight
 
     var body: some View {
-        let values = SubagentValues.tray(tray)
+        let values = SubagentValues.tray(tray, byAgent: size == .phone)
         let shown = NativeSubagentTray.shownRows
         let long = values.rows.count > shown
         let rows = long && !state.trayExpanded ? Array(values.rows.prefix(shown)) : values.rows
