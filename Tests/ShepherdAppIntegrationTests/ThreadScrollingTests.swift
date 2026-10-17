@@ -657,8 +657,11 @@ struct ThreadScrollingTests {
 
     /// A real clip view provides exact partial-row geometry without SwiftUI's outstanding
     /// programmatic turn jump undoing the test's scroll before the page can arrive.
-    @Test(arguments: [false, true], [false, true])
-    func aPartialHistoryAnchorRestoresItsOffsetUnlessNavigationCancelledIt(cancelled: Bool, notificationFirst: Bool) async throws {
+    @Test(arguments: [false, true], [(false, false), (true, false), (false, true), (true, true)])
+    func aPartialHistoryAnchorRestoresItsOffsetUnlessNavigationCancelledIt(
+        cancelled: Bool, order: (notificationFirst: Bool, detached: Bool)
+    ) async throws {
+        let (notificationFirst, detached) = order
         final class Document: NSView {
             override var isFlipped: Bool { true }
         }
@@ -683,6 +686,11 @@ struct ThreadScrollingTests {
         let before = try #require(marker.viewportTop)
         #expect(abs(before + 8) < 0.25, "the retained row really is partially clipped: \(before)")
         let token = anchor.begin("boundary", session: "s")
+        if detached {
+            marker.removeFromSuperview()
+            #expect(marker.viewportTop == nil)
+            anchor.moved()
+        }
         var materializations = 0
         func notifyPrepend() {
             anchor.prepended(firstID: "older", session: "s", active: true) { id in
@@ -709,6 +717,7 @@ struct ThreadScrollingTests {
         }
         let navigationOffset = clip.bounds.origin.y
         if !notificationFirst { notifyPrepend() }
+        if detached { document.addSubview(marker) }
         anchor.moved()
         // Drain queued correction callbacks before asserting the cancellation branch too.
         await withCheckedContinuation { continuation in

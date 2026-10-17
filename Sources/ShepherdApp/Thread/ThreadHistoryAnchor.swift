@@ -93,7 +93,10 @@ final class ThreadHistoryAnchor {
     /// Keep correcting only this anchor through lazy remeasurement, until the reader moves,
     /// sends, switches session or hides the thread. Geometry bookkeeping never invalidates rows.
     func moved() {
-        if waiting, pendingMaterialization == nil, marker?.rowID == rowID { savedTop = marker?.viewportTop }
+        // Lazy row replacement can temporarily detach the marker. Keep the last real offset.
+        if waiting, pendingMaterialization == nil, marker?.rowID == rowID, let top = marker?.viewportTop {
+            savedTop = top
+        }
         scheduleCorrection()
     }
 
