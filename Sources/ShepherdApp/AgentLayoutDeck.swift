@@ -16,7 +16,7 @@ struct AgentLayoutDeck: View, Equatable {
     var vm: ShepherdViewModel
     /// Every mounted layout's values, in mount order.
     let models: [AgentLayoutModel]
-    /// Initial size for a hidden layout mounted during a live resize or a wide side pane.
+    /// Hidden terminal layouts keep this size until a live resize or wide side pane ends.
     let frozenSize: CGSize?
 
     static func == (a: AgentLayoutDeck, b: AgentLayoutDeck) -> Bool {
@@ -55,7 +55,7 @@ struct AgentLayoutDeck: View, Equatable {
     /// A layout's hosting view. It sizes nothing around it, and has no safe area of its own:
     /// the workspace's column decides both, as it did for the layouts in its own graph.
     final class Host: NSHostingView<PageRoot> {
-        private var hasLaidOut = false
+        private var laidOutSize: CGSize?
 
         required init(rootView: PageRoot) {
             super.init(rootView: rootView)
@@ -67,27 +67,38 @@ struct AgentLayoutDeck: View, Equatable {
         required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
         override func layout() {
-            // AppKit still visits hidden hosts when the enclosing workspace resizes. Mount
-            // once, then defer their SwiftUI layout until reveal instead of walking N graphs.
-            guard !isHidden || !hasLaidOut else { return }
+            // AppKit visits hidden hosts even at unchanged bounds. Only mount or resize their
+            // graph when needed; terminal layouts still take their final grid after a drag.
+            guard !isHidden || laidOutSize != bounds.size else { return }
             NWRenderProbe.tick(isHidden ? "deck.hiddenLayout" : "deck.layout")
             super.layout()
-            hasLaidOut = true
+            // A pre-window or zero-sized pass cannot mount the hidden layout's real surfaces.
+            if window != nil && !bounds.isEmpty { laidOutSize = bounds.size }
         }
     }
 
-    /// Holds every host. Only the visible layout follows the column; hidden layouts keep
-    /// their last displayed size until revealed. Transparent where no layout is shown.
+    /// Hidden thread-only layouts retain their size until reveal. Hidden terminal layouts
+    /// take the final column size after a resize so their PTY grid stays correct.
     final class Container: NSView {
         var pages: [TabID: (page: Page, host: Host)] = [:]
+        var frozenSize: CGSize? {
+            didSet { if frozenSize != oldValue { needsLayout = true } }
+        }
         override var isFlipped: Bool { true }
 
         override func layout() {
             super.layout()
-            for (_, entry) in pages where entry.page.model.isVisible || entry.host.frame.isEmpty {
-                // A restored hidden host may have mounted before this container had bounds.
-                // Give it a usable initial size once, then leave it alone until revealed.
-                if entry.host.frame != bounds { entry.host.frame = bounds }
+            for (_, entry) in pages {
+                let model = entry.page.model
+                if model.isVisible || entry.host.frame.isEmpty {
+                    if entry.host.frame != bounds { entry.host.frame = bounds }
+                } else if model.tab.layout.leaves.contains(where: { $0.isReview != true && $0.id != model.thread?.paneID }) {
+                    let frame = CGRect(origin: .zero, size: frozenSize ?? bounds.size)
+                    if entry.host.frame != frame {
+                        entry.host.frame = frame
+                        entry.host.needsLayout = true
+                    }
+                }
             }
         }
 
@@ -156,6 +167,7 @@ struct AgentLayoutDeck: View, Equatable {
                 entry.host.removeFromSuperview()
                 container.pages[id] = nil
             }
+            container.frozenSize = frozenSize
         }
 
         func sizeThatFits(_ proposal: ProposedViewSize, nsView: Container, context: Context) -> CGSize? {

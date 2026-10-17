@@ -78,6 +78,39 @@ struct AgentDeckResizeTests {
         #expect(entries[0].host.frame == initial[0] && entries[2].host.frame == initial[2])
     }
 
+    @Test func aWindowlessZeroSizedPassDoesNotConsumeTheHiddenThreadsInitialLayout() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, agents) = try await MountedWorkspace.start(1, in: app)
+        let page = AgentLayoutDeck.Page(vm: vm, model: AgentLayoutModel.Resolver(vm: vm, visibleTabID: nil)
+            .model(for: agents[0].tab))
+        let host = AgentLayoutDeck.Host(rootView: AgentLayoutDeck.PageRoot(page: page))
+        host.isHidden = true
+        host.frame = .zero
+        #expect(host.window == nil && host.bounds.isEmpty)
+        host.layout()
+
+        let window = OffscreenWindow(size: CGSize(width: 900, height: 700), dark: true)
+        defer { window.close() }
+        window.host.addSubview(host)
+        host.frame = window.host.bounds
+        let counts = ListPerf.counting {
+            host.needsLayout = true
+            host.layoutSubtreeIfNeeded()
+            ListPerf.settle(window)
+        }
+        #expect(counts["deck.hiddenLayout", default: 0] > 0,
+                "the first usable in-window pass must reach SwiftUI, even after an early zero-size pass")
+        func scrollViews(_ view: NSView) -> [NSScrollView] {
+            ((view as? NSScrollView).map { [$0] } ?? []) + view.subviews.flatMap(scrollViews)
+        }
+        try await eventuallyOnMain("the hidden real thread's native surfaces to mount") {
+            ListPerf.settle(window)
+            return scrollViews(host).contains { !$0.bounds.isEmpty }
+        }
+        #expect(host.isHidden, "mounting hidden surfaces must not reveal or focus the agent")
+    }
+
     @Test(arguments: [0, 16])
     func hiddenHostsKeepTheirBoundsAcrossWindowAndSidebarResizes(hidden: Int) async throws {
         let app = try AppHarness()

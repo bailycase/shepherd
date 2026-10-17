@@ -71,7 +71,8 @@ struct NWNativeCodeText: NSViewRepresentable {
         var measuredSize: CGSize?
 
         func setCode(_ value: NSAttributedString) {
-            guard attributedStringValue != value else { return }
+            // Setting field.font can update its attributes before this call, but not the renderer.
+            guard attributedStringValue != value || renderer?.textStorage?.isEqual(to: value) == false else { return }
             attributedStringValue = value
             // Fallback fonts use different line metrics in TextKit and the field's typesetter.
             // Keep native drawing for non-ASCII text rather than shifting its baselines.

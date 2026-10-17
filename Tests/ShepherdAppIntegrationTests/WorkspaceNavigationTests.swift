@@ -358,6 +358,44 @@ struct WorkspaceNavigationTests {
         #expect(scrollViews() == views, "no layout was rebuilt")
     }
 
+    @Test func hiddenContentCatchesUpAfterResizingBackToTheSameSize() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, window, agents) = try await MountedWorkspace.open(2, in: app)
+        defer { window.close() }
+        let deck = try Self.deck(in: window)
+        let first = try #require(deck.pages[agents[0].tab.id]?.host)
+        let initialSize = window.host.bounds.size
+        func scrolls(_ view: NSView) -> [NSScrollView] {
+            ((view as? NSScrollView).map { [$0] } ?? []) + view.subviews.flatMap(scrolls)
+        }
+        func containsDraft(_ view: NSView, text: String) -> Bool {
+            (view as? NSTextView)?.string == text || view.subviews.contains { containsDraft($0, text: text) }
+        }
+        let existing = Set(scrolls(first).map(ObjectIdentifier.init))
+        #expect(!existing.isEmpty)
+        vm.selectAgent(agents[1].agent.id)
+        let store = vm.threadStores.store(for: agents[0].agent.id)
+        try await eventuallyOnMain("the outgoing real thread to suspend") {
+            ListPerf.settle(window)
+            return first.isHidden && !store.isLive
+        }
+        let draft = "Updated while hidden, including e\u{301} and 🐑"
+        store.draft = draft
+        window.window.setContentSize(CGSize(width: initialSize.width - 160, height: initialSize.height - 80))
+        ListPerf.settle(window)
+        window.window.setContentSize(initialSize)
+        ListPerf.settle(window)
+        vm.selectAgent(agents[0].agent.id)
+        try await eventuallyOnMain("the same host to catch up without a new frame size") {
+            ListPerf.settle(window)
+            return !first.isHidden && store.isLive && containsDraft(first, text: draft)
+        }
+        #expect(deck.pages[agents[0].tab.id]?.host === first)
+        #expect(Set(scrolls(first).map(ObjectIdentifier.init)) == existing,
+                "the real composer/thread must catch up without replacing scroll views")
+    }
+
     /// Each mounted layout has a hosting view of its own, and only the visible agent's is
     /// shown: a hidden one takes no clicks and is out of VoiceOver's reach, before and after a
     /// switch.

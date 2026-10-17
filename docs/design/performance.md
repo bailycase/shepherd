@@ -67,10 +67,11 @@ runs, 2,000 folders).
   now 1.6 M). What still grows (a keystroke, 25 M alone and 35 M beside 30) is AppKit's
   display-cycle walks and SwiftUI's window-wide focus, which no public API reaches.
   `ListPerformanceTests` pins it by counts; `SHEPHERD_PERF_REPORT=1 swift test --filter
-  HiddenAgentsReport` prints the instructions. Hidden hosts keep their last displayed bounds
-  through both window and sidebar resizing, including the end of a live resize. Only revealing
-  a host synchronously brings it to the current column size; no hidden graph reflows just to
-  catch up. `AgentDeckResizeTests` checks bounds, layout counts, identity and accessibility.
+  HiddenAgentsReport` prints the instructions. Hidden thread-only hosts keep their last displayed
+  bounds through window and sidebar resizing, then catch up on reveal. Hidden terminal layouts
+  freeze during a live resize and take the final grid once afterward, preserving the process's
+  size without a SIGWINCH per drag step. `AgentDeckResizeTests` checks bounds, layout counts,
+  identity and accessibility; `TerminalMotionTests` verifies the hidden terminal's final grid.
 - **The overlaid sidebar casts its shadow from its fill**, as the floating right pane does
   (`nwFloatBackground`): on the sidebar itself, Core Animation redrew the shadow from its
   scrolling list every step.

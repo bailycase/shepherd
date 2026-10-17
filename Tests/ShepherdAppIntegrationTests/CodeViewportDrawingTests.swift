@@ -51,6 +51,39 @@ struct CodeViewportDrawingTests {
         #expect(try render(field, scroll: scroll, fraction: 0.5) != edited)
     }
 
+    @Test(arguments: [false, true], [false, true])
+    func assigningTheFontBeforeCodeUpdatesRetainedGlyphs(dark: Bool, nativeAssignment: Bool) throws {
+        let window = OffscreenWindow(size: CGSize(width: 520, height: 320), dark: dark)
+        defer { window.close() }
+        let field = NWNativeCodeText.Field(labelWithString: "")
+        let scroll = mount(field, in: window)
+        let code = (0..<50).map { "let value\($0) = \($0)" }.joined(separator: "\n")
+        let originalFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        field.font = originalFont
+        field.setCode(NWNativeCodeText.attributedCode(code, highlighted: nil, font: originalFont, lineSpacing: 4))
+        size(field, in: scroll)
+        _ = try render(field, scroll: scroll, fraction: 0.5) // Instantiate retained glyph layout.
+
+        for points in [18.0, 12.0] {
+            let font = NSFont.monospacedSystemFont(ofSize: points, weight: .regular)
+            let value = NWNativeCodeText.attributedCode(code, highlighted: nil, font: font, lineSpacing: 4)
+            field.font = font // Match updateNSView's order without assuming AppKit mutates attributes.
+            if nativeAssignment { field.attributedStringValue = value }
+            field.setCode(value)
+            size(field, in: scroll)
+            let referenceWindow = OffscreenWindow(size: CGSize(width: 520, height: 320), dark: dark)
+            defer { referenceWindow.close() }
+            let reference = NSTextField(labelWithString: "")
+            let referenceScroll = mount(reference, in: referenceWindow)
+            reference.font = font
+            reference.attributedStringValue = value
+            size(reference, in: referenceScroll)
+            #expect(try render(field, scroll: scroll, fraction: 0.5)
+                    == render(reference, scroll: referenceScroll, fraction: 0.5),
+                    "field and retained renderer must use the same font after increasing or decreasing text scale")
+        }
+    }
+
     @Test func drawsPreparedContentOutsideTheCurrentViewport() throws {
         let field = NWNativeCodeText.Field(labelWithString: "")
         let window = OffscreenWindow(size: CGSize(width: 520, height: 320), dark: false)
