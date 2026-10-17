@@ -44,8 +44,8 @@ Every decision has to pass one test: does this help one person supervise ten wor
 ## Principles, in priority order
 
 1. **Readable measure.** The thread column is at most 820pt wide and agent prose 640pt.
-   The [image viewer](docs/design/thread-images.md) toolbar also stays within 820pt, clear of
-   the window controls. Paging arrows sit beside the fitted image, not at the window edges.
+   The [image viewer](docs/design/thread-images.md) floats over the thread, its actions in a pill
+   under the picture. Paging arrows sit beside the fitted image, not at the window edges.
 2. **Shape, not labels.** No speaker labels or avatars. A user turn is a trailing bubble; agent
    output is unboxed prose.
 3. **One quiet line per burst.** Consecutive calls of one kind merge into one activity line.
@@ -71,7 +71,9 @@ What follows from them:
   never the only signal.
 - **Lantern means you.** Amber marks the primary action and what needs you. Running blue marks
   work in progress, links and keyboard focus.
-- **The sidebar is the primary navigation.** The command palette is a second way to jump.
+- **The sidebar is the primary navigation.** The command palette is a second way to jump. In the
+  Spaces layout, pinned spaces appear once in Pinned, below Projects and above Spaces, regardless
+  of their stored parent. Unpin restores their ordinary nesting.
 - **One primary action per surface.** A destructive action is never the ⏎ default.
 - **Native controls, Night Watch styles.** A control is a Night Watch style on a native
   `Button`, `Toggle`, `Picker` or `TextField`. Context menus are native `.contextMenu`. Shared

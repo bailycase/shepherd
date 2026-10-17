@@ -158,7 +158,7 @@ and a system's screen (its counts, colors, type and steps as rows).
   `textTertiary`. A design the agent is still drawing reads "drawing · 2 of 4".
 - **Design systems**: under the same header, a list card (`NWListCard`, radius 12) of rows at
   least 52pt tall (8×14 padding, 12pt gaps, hairlines between): three 7×14 swatches (radius 2,
-  2pt apart) in a 20pt column, the name in mono 15 medium over "dashboard-web · tokens.css" in
+  2pt apart) in a 20pt column, the name in sans 15 bold over "dashboard-web · tokens.css" in
   12.5 `textTertiary`, and a chevron. Night Watch is the second row.
 
 ## New design (DZStart)
