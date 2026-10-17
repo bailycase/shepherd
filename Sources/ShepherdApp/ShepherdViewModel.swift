@@ -486,8 +486,13 @@ final class ShepherdViewModel {
     var showCommandPalette = false
     /// An image open full size (ThreadImageOpen); nil when none is.
     var imageViewer: ImageViewerState?
+    /// Stable identity in the window environment, independent of shell geometry.
+    let diagramPresentation = NWDiagramPresentation()
     /// A Mermaid diagram open full screen (its source); nil when none is.
-    var diagramViewer: String?
+    var diagramViewer: String? {
+        get { diagramPresentation.source }
+        set { diagramPresentation.source = newValue }
+    }
     /// Reveal in Finder and Copy for the viewer; a test replaces them.
     @ObservationIgnored var imageViewerActions = ImageViewerActions()
 

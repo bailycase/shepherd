@@ -73,9 +73,12 @@ runs, 2,000 folders).
   size without a SIGWINCH per drag step. Native layout callbacks still run to finish hidden
   content transitions; skipping them retains removed controls. `AgentDeckResizeTests` checks
   bounds, identity and accessibility and reports CPU/layout counts; `IdleCostTests` pins hidden
-  animation work, and `TerminalMotionTests` verifies the hidden terminal's final grid. The image
-  viewer environment carries stable window identity instead of a captured closure: otherwise a
-  shell resize invalidates every thread even when hidden host bounds remain fixed.
+  animation work, and `TerminalMotionTests` verifies the hidden terminal's final grid. Image and
+  diagram viewer environments carry stable window-owned identity instead of newly captured
+  callbacks: otherwise a shell resize invalidates retained view graphs even when hidden host
+  bounds remain fixed. `MermaidRenderingTests` opens and closes the window's diagram viewer
+  from a real retained thread before and after switching agents; explicit callback overrides
+  remain supported.
 - **The overlaid sidebar casts its shadow from its fill**, as the floating right pane does
   (`nwFloatBackground`): on the sidebar itself, Core Animation redrew the shadow from its
   scrolling list every step.
