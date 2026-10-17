@@ -1133,6 +1133,36 @@ struct ListPerformanceTests {
         }
     }
 
+    /// Narrowing a window changes the shell's sidebar geometry. Its image-viewer action must
+    /// keep a stable identity so all fixed-size hidden threads are not invalidated with it.
+    @Test func aShellResizeDoesNotInvalidateEveryMountedThread() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, agents) = try await MountedWorkspace.start(6, in: app)
+        let window = OffscreenWindow(size: CGSize(width: 1200, height: 800), dark: true, RootView(vm: vm))
+        defer { window.close() }
+        try await eventuallyOnMain("the mounted workspace to settle") {
+            ListPerf.settle(window)
+            return vm.mountedTabs.count == agents.count
+                && vm.threadStores.store(for: agents[0].agent.id).ready
+                && IdleCostTests.spinners(in: window.host).all == 0
+        }
+        let deck = try WorkspaceNavigationTests.deck(in: window)
+        let hidden = deck.pages.values.filter { $0.host.isHidden }.map(\.host)
+        let bounds = hidden.map(\.bounds)
+        let frames = 12
+        let counts = ListPerf.counting {
+            for step in 1...frames {
+                window.window.setContentSize(CGSize(width: 1200 - CGFloat(step) * 12, height: 800))
+                ListPerf.settle(window)
+            }
+        }
+        #expect(counts["shell.root", default: 0] > 0, "the shell really changed during resizing")
+        #expect(hidden.count == agents.count - 1 && hidden.map(\.bounds) == bounds)
+        #expect(counts["thread.view", default: 0] <= frames,
+                "a changing shell must not invalidate every fixed-size hidden thread: \(counts)")
+    }
+
     /// A hidden agent reporting its status redraws no mounted layout: the workspace resolves
     /// each layout's values, and only a layout whose values changed runs again.
     @Test func aStatusReportRedrawsNoMountedLayout() async throws {

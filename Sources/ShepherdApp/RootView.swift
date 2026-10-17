@@ -135,7 +135,7 @@ struct RootView: View {
         .background { MainWindowReader() }
         .nwDensity(appearance.sidebarRowDensity)
         .environment(\.threadCommands, vm.threadCommands)
-        .environment(\.presentImages) { vm.imageViewer = $0 }
+        .environment(\.presentImages, ImageViewerPresenter(model: vm))
         .environment(\.nwPresentDiagram) { vm.diagramViewer = $0 }
         .frame(minWidth: AppLayout.windowMinWidth, minHeight: AppLayout.windowMinHeight)
         // Only the width the shell's layout can tell apart: past the widest window that still
