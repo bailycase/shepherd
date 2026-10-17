@@ -44,14 +44,20 @@ final class ThreadHistoryAnchor {
         waiting = false
     }
 
-    func prepended(firstID: String?, session: String?, active: Bool, materialize: (String) -> Void) {
+    func prepended(firstID: String?, session: String?, active: Bool, materialize: @escaping (String) -> Void) {
         guard active, session == self.session else { cancel(); return }
         guard !waiting, !restoring, let rowID, savedTop != nil, firstID != rowID else { return }
         restoring = true
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) { materialize(rowID) }
-        scheduleCorrection()
+        let token = generation
+        // The first-ID change arrives before the lazy stack commits its new scroll targets.
+        // Materializing in that callback can target the removed view instead of the new row.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.generation == token, self.restoring, self.rowID == rowID else { return }
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { materialize(rowID) }
+            self.scheduleCorrection()
+        }
     }
 
     private func scheduleCorrection() {

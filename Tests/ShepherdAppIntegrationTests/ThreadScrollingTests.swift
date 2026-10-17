@@ -626,6 +626,35 @@ struct ThreadScrollingTests {
         #expect(abs(after - before) < 2, "prepending moved the visible turn from \(before) to \(after)")
     }
 
+    @Test func aLargePrependKeepsTheRenderedHistoryBoundaryAfterDrawing() async throws {
+        let thread = ThreadHarness(messages: 50, paragraphs: 9, olderCursor: "m0")
+        thread.snapshot.messages[0].blocks = [.init(kind: .text, text: "Retained boundary prompt")]
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        for _ in 0..<26 {
+            if thread.olderReply != nil { break }
+            thread.command(.previousTurn)
+            try await thread.settle()
+        }
+        try await eventuallyOnMain("history request at the first loaded turn") { thread.olderReply != nil }
+        let before = try #require(try thread.position(of: "Retained boundary prompt", diagnoseMissing: true))
+        var page = ThreadHarness.snapshot(count: 50, running: false, prefix: "older", paragraphs: 9)
+        for index in page.messages.indices where page.messages[index].role == "user" {
+            page.messages[index].blocks = [NativeThreadBlock(kind: .text, text: "Older question \(index)")]
+        }
+        thread.olderReply?.resume(returning: .snapshot(value: page))
+        thread.olderReply = nil
+        try await eventuallyOnMain("the large prepend to finish") { !thread.store.loadingOlder }
+        try await thread.settle()
+        for _ in 0..<3 {
+            let after = try #require(try thread.position(of: "Retained boundary prompt", diagnoseMissing: true))
+            #expect(abs(after - before) < 2, "viewport drawing moved the original history boundary")
+            try await thread.settle()
+        }
+        #expect(thread.olderRequests == 1)
+        #expect(thread.store.messages.count == 100)
+    }
+
     /// A real clip view provides exact partial-row geometry without SwiftUI's outstanding
     /// programmatic turn jump undoing the test's scroll before the page can arrive.
     @Test(arguments: [false, true])
