@@ -626,40 +626,47 @@ struct ThreadScrollingTests {
         #expect(abs(after - before) < 2, "prepending moved the visible turn from \(before) to \(after)")
     }
 
-    @Test func aLargePrependKeepsTheRenderedHistoryBoundaryAfterDrawing() async throws {
+    @Test func largePrependsKeepTheRenderedHistoryBoundaryAfterDrawing() async throws {
         let thread = ThreadHarness(messages: 50, paragraphs: 9, olderCursor: "m0")
         thread.snapshot.messages[0].blocks = [.init(kind: .text, text: "Retained boundary prompt")]
         defer { thread.close() }
         try await thread.waitUntilReady()
-        for _ in 0..<26 {
-            if thread.olderReply != nil { break }
-            thread.command(.previousTurn)
+        for (batch, boundary, nextBoundary) in [(1, "Retained boundary prompt", "Previous boundary prompt"),
+                                                (2, "Previous boundary prompt", "Oldest boundary prompt")] {
+            for _ in 0..<26 {
+                if thread.olderReply != nil { break }
+                thread.command(.previousTurn)
+                try await thread.settle()
+            }
+            try await eventuallyOnMain("history request at the first loaded turn, page \(batch)") { thread.olderReply != nil }
+            let before = try #require(try thread.position(of: boundary, diagnoseMissing: true))
+            var page = ThreadHarness.snapshot(count: 50, running: false, prefix: "older\(batch)-", paragraphs: 9)
+            for index in page.messages.indices where page.messages[index].role == "user" {
+                page.messages[index].blocks = [.init(kind: .text, text: "Older page \(batch) question \(index)")]
+            }
+            page.messages[0].blocks = [.init(kind: .text, text: nextBoundary)]
+            page.olderCursor = batch == 1 ? page.messages[0].entryID : nil
+            thread.olderReply?.resume(returning: .snapshot(value: page))
+            thread.olderReply = nil
+            try await eventuallyOnMain("the large prepend to finish, page \(batch)") { !thread.store.loadingOlder }
             try await thread.settle()
+            for _ in 0..<3 {
+                let after = try #require(try thread.position(of: boundary, diagnoseMissing: true))
+                #expect(abs(after - before) < 2, "viewport drawing moved history boundary \(batch)")
+                try await thread.settle()
+            }
+            #expect(thread.olderRequests == batch)
+            #expect(thread.store.messages.count == 50 * (batch + 1))
         }
-        try await eventuallyOnMain("history request at the first loaded turn") { thread.olderReply != nil }
-        let before = try #require(try thread.position(of: "Retained boundary prompt", diagnoseMissing: true))
-        var page = ThreadHarness.snapshot(count: 50, running: false, prefix: "older", paragraphs: 9)
-        for index in page.messages.indices where page.messages[index].role == "user" {
-            page.messages[index].blocks = [NativeThreadBlock(kind: .text, text: "Older question \(index)")]
-        }
-        thread.olderReply?.resume(returning: .snapshot(value: page))
-        thread.olderReply = nil
-        try await eventuallyOnMain("the large prepend to finish") { !thread.store.loadingOlder }
-        try await thread.settle()
-        for _ in 0..<3 {
-            let after = try #require(try thread.position(of: "Retained boundary prompt", diagnoseMissing: true))
-            #expect(abs(after - before) < 2, "viewport drawing moved the original history boundary")
-            try await thread.settle()
-        }
-        #expect(thread.olderRequests == 1)
-        #expect(thread.store.messages.count == 100)
     }
+
+    enum HistoryNavigation: CaseIterable { case none, whileLoading, afterPrepend, replacementSession }
 
     /// A real clip view provides exact partial-row geometry without SwiftUI's outstanding
     /// programmatic turn jump undoing the test's scroll before the page can arrive.
-    @Test(arguments: [false, true], [(false, false), (true, false), (false, true), (true, true)])
+    @Test(arguments: HistoryNavigation.allCases, [(false, false), (true, false), (false, true), (true, true)])
     func aPartialHistoryAnchorRestoresItsOffsetUnlessNavigationCancelledIt(
-        cancelled: Bool, order: (notificationFirst: Bool, detached: Bool)
+        navigation: HistoryNavigation, order: (notificationFirst: Bool, detached: Bool)
     ) async throws {
         let (notificationFirst, detached) = order
         final class Document: NSView {
@@ -706,7 +713,7 @@ struct ThreadScrollingTests {
             marker.frame.origin.y += 700
             anchor.moved()
         }
-        if cancelled {
+        if navigation == .whileLoading {
             anchor.cancel()
             move(to: 600)
         }
@@ -715,16 +722,36 @@ struct ThreadScrollingTests {
             document.frame.size.height += 700
             marker.frame.origin.y += 700
         }
-        let navigationOffset = clip.bounds.origin.y
         if !notificationFirst { notifyPrepend() }
         if detached { document.addSubview(marker) }
         anchor.moved()
-        // Drain queued correction callbacks before asserting the cancellation branch too.
-        await withCheckedContinuation { continuation in
-            DispatchQueue.main.async { continuation.resume() }
+        #expect(materializations == 0, "wait for committed scroll targets before materializing")
+        var replacementMaterializations = 0
+        if navigation == .afterPrepend {
+            anchor.cancel()
+            move(to: 600)
+        } else if navigation == .replacementSession {
+            move(to: 600)
+            // The replacement deliberately reuses the row ID: only its generation may restore it.
+            let replacement = anchor.begin("boundary", session: "replacement")
+            anchor.finished(replacement, firstID: "replacement-older")
+            anchor.prepended(firstID: "replacement-older", session: "replacement", active: true) { id in
+                #expect(id == "boundary")
+                replacementMaterializations += 1
+                move(to: marker.frame.minY)
+            }
         }
-        if cancelled {
+        let navigationOffset = clip.bounds.origin.y
+        // Drain both queued materialization and its subsequently queued correction.
+        for _ in 0..<2 {
+            await withCheckedContinuation { continuation in
+                DispatchQueue.main.async { continuation.resume() }
+            }
+        }
+        if navigation != .none {
             #expect(materializations == 0)
+            #expect(replacementMaterializations == (navigation == .replacementSession ? 1 : 0))
+            #expect(anchor.rowID == (navigation == .replacementSession ? "boundary" : nil))
             #expect(abs(clip.bounds.origin.y - navigationOffset) < 0.25)
         } else {
             #expect(materializations == 1)
