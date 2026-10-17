@@ -66,6 +66,102 @@ struct DiffDrawingTests {
                 "the trailing source must be reachable, not just present in a tooltip")
     }
 
+    @Test(arguments: [false, true])
+    func fileAndChangeNavigationKeepsTheLeadingCodeVisible(dark: Bool) async throws {
+        let short = (0..<40).map { "+let value\($0) = \($0)" }.joined(separator: "\n")
+        let long = "+" + String(repeating: "long_identifier_", count: 35)
+        let files = DiffFile.parse([("a.swift", short, 40), ("b.swift", short, 40), ("long.swift", long, 1)].map { path, lines, count in
+            "diff --git a/\(path) b/\(path)\n--- /dev/null\n+++ b/\(path)\n@@ -0,0 +1,\(count) @@\n\(lines)\n"
+        }.joined())
+        let model = ListFixtures.reviewModel(files)
+        model.session.layoutChoice = .unified
+        model.session.focusFile = "a.swift"
+        let window = OffscreenWindow(size: CGSize(width: 600, height: 400), dark: dark,
+                                     ReviewPaneContent(model: model))
+        defer { window.close() }
+        try await eventuallyOnMain("the pending file focus and long-line extent") {
+            window.layout()
+            guard let scroll = ListPerf.scrollView(in: window) else { return false }
+            return model.session.focusFile == nil
+                && (scroll.documentView?.bounds.width ?? 0) > scroll.contentView.bounds.width + 1000
+        }
+        let scroll = try #require(ListPerf.scrollView(in: window))
+        _ = await MotionProbe.record(window, timeout: 1) {}
+        #expect(abs(scroll.contentView.bounds.minX) < 1, "opening a short file must not center it in the widest line")
+        #expect(model.currentFile == "a.swift")
+        for action in 0..<3 {
+            let clip = scroll.contentView
+            clip.scroll(to: CGPoint(x: 1000, y: clip.bounds.minY))
+            scroll.reflectScrolledClipView(clip)
+            #expect(clip.bounds.minX > 900)
+            _ = await MotionProbe.record(window) {
+                switch action {
+                case 0: model.select("b.swift")
+                case 1: #expect(model.handleKey("k"))
+                default: #expect(model.handleKey("n"))
+                }
+            }
+            #expect(abs(clip.bounds.minX) < 1, "file and hunk navigation must reveal code, not empty horizontal space")
+            #expect(model.currentFile == (action == 0 ? "b.swift" : "a.swift"))
+        }
+        #expect(model.currentChange != nil)
+    }
+
+    @Test(arguments: [(false, false), (true, false), (false, true), (true, true)], [false, true])
+    func commentControlsFitThePaneBesideLongCode(placement: (split: Bool, maximized: Bool), fileComment: Bool) async {
+        await #expect(processExitsWith: .success) { [split = placement.split as Bool, maximized = placement.maximized as Bool, fileComment = fileComment as Bool] in
+            await recordingErrors { try await Self.checkCommentControls(split: split, maximized: maximized, fileComment: fileComment) }
+        }
+    }
+
+    private static func checkCommentControls(split: Bool, maximized: Bool, fileComment: Bool) async throws {
+        AccessibilityNode.enable()
+        let long = String(repeating: "long_identifier_", count: 35)
+        let files = DiffFile.parse([("short.swift", "let short = true"), ("long.swift", long)].map { path, text in
+            "diff --git a/\(path) b/\(path)\n--- /dev/null\n+++ b/\(path)\n@@ -0,0 +1 @@\n+\(text)\n"
+        }.joined())
+        let model = ListFixtures.reviewModel(files)
+        model.session.layoutChoice = split ? .split : .unified
+        let widths: [CGFloat] = maximized ? [960, 780] : [600, 440]
+        let window = OffscreenWindow(size: CGSize(width: widths[0], height: 500), dark: split,
+                                     ReviewPaneContent(model: model, maximized: maximized))
+        defer { window.close() }
+        let file = try #require(files.first)
+        let line = try #require(file.hunks.first?.lines.first)
+        if fileComment { model.startFileComment(file.id) }
+        else { model.startComment(fileID: file.id, lineID: line.id) }
+        for width in widths {
+            window.window.setContentSize(CGSize(width: width, height: 500))
+            try await eventuallyOnMain("comment controls after pane resizing") {
+                window.layout()
+                return abs(model.width - width) < 1
+                    && ControlPress.controls(in: window.host).filter { ["Cancel", "Add comment"].contains($0.label ?? "") }.count == 2
+            }
+            let scroll = try #require(ListPerf.scrollView(in: window, trailing: true))
+            let viewport = window.window.convertToScreen(scroll.contentView.convert(scroll.contentView.bounds, to: nil))
+            let controls = ControlPress.controls(in: window.host).filter { ["Cancel", "Add comment"].contains($0.label ?? "") }
+            for control in controls {
+                #expect(control.frame.width > 0 && control.frame.minX >= viewport.minX && control.frame.maxX <= viewport.maxX + 1,
+                        "comment controls must stay inside the pane, not the widest code line")
+                #expect(control.frame.intersects(viewport))
+            }
+        }
+        try ControlPress.press("Cancel", under: window.host)
+        try await eventuallyOnMain("comment cancellation") { model.editing == nil }
+        #expect(model.session.comments.isEmpty)
+        let comment = "Check the long code line before saving."
+        model.saveComment(comment, fileID: file.id, lineID: fileComment ? ReviewSession.fileLineID : line.id)
+        try await eventuallyOnMain("saved comment body is accessible") {
+            window.layout()
+            return AccessibilityNode.all(under: window.host).contains { $0.label?.contains(comment) == true }
+        }
+        let node = try #require(AccessibilityNode.all(under: window.host).first { $0.label?.contains(comment) == true })
+        #expect(node.label?.contains("You") == true)
+        #expect(Set(node.actionNames) == ["Edit", "Delete"])
+        #expect(node.perform(action: "Edit"))
+        try await eventuallyOnMain("saved comment still editable") { model.editing != nil }
+    }
+
     @Test func splitColumnsScrollIndependentlyWithoutMovingTheirBoundaries() async throws {
         let source = String(repeating: "long_identifier_", count: 35)
         let files = DiffFile.parse("diff --git a/sample.txt b/sample.txt\n--- a/sample.txt\n+++ b/sample.txt\n@@ -1 +1 @@\n-\(source)OLD_END\n+\(source)NEW_END\n")

@@ -64,7 +64,63 @@ struct NWNativeCodeText: NSViewRepresentable {
     }
 
     final class Field: NSTextField {
+        // NSTextField redraws/layouts the entire string, including offscreen lines. Keep its
+        // native editor/accessibility, but let TextKit retain glyph layout for viewport drawing.
+        private var renderer: NSTextView?
+        private var requiresNativeDrawing = false
         var measuredSize: CGSize?
+
+        func setCode(_ value: NSAttributedString) {
+            // Setting field.font can update its attributes before this call, but not the renderer.
+            guard attributedStringValue != value || renderer?.textStorage?.isEqual(to: value) == false else { return }
+            attributedStringValue = value
+            // Fallback fonts use different line metrics in TextKit and the field's typesetter.
+            // Keep native drawing for non-ASCII text rather than shifting its baselines.
+            requiresNativeDrawing = !value.string.utf8.allSatisfy { $0 < 128 }
+            value.enumerateAttribute(.link, in: NSRange(location: 0, length: value.length)) { link, _, stop in
+                if link != nil {
+                    requiresNativeDrawing = true
+                    stop.pointee = true
+                }
+            }
+            renderer?.textStorage?.setAttributedString(value)
+            needsDisplay = true
+        }
+
+        override func draw(_ dirtyRect: NSRect) {
+            guard currentEditor() == nil, !requiresNativeDrawing else { super.draw(dirtyRect); return }
+            let text: NSTextView
+            if let renderer { text = renderer }
+            else {
+                text = NSTextView(frame: bounds)
+                text.isEditable = false
+                text.isSelectable = false
+                text.drawsBackground = false
+                text.isHorizontallyResizable = true
+                text.isVerticallyResizable = true
+                text.textContainerInset = NSSize(width: alignmentRectInsets.left, height: alignmentRectInsets.top)
+                text.textContainer?.lineFragmentPadding = 0
+                text.textContainer?.widthTracksTextView = false
+                text.textContainer?.heightTracksTextView = false
+                text.textContainer?.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+                text.textStorage?.setAttributedString(attributedStringValue)
+                renderer = text
+            }
+            if text.frame != bounds { text.frame = bounds }
+            if text.appearance != appearance { text.appearance = appearance }
+            // NSTextView must prepare its retained glyph layout before direct drawing; an
+            // unattached renderer does not receive AppKit's normal layout pass.
+            if let container = text.textContainer { text.layoutManager?.ensureLayout(for: container) }
+            // Match the native cell's horizontal clipping, including the last glyph.
+            // Do not clip to visibleRect: prepared scroll content and PDF draws may extend past it.
+            NSGraphicsContext.saveGraphicsState()
+            defer { NSGraphicsContext.restoreGraphicsState() }
+            NSGraphicsContext.current?.cgContext.clip(to: NSRect(
+                x: alignmentRectInsets.left, y: bounds.minY,
+                width: max(0, bounds.width - alignmentRectInsets.left - alignmentRectInsets.right),
+                height: bounds.height))
+            text.draw(dirtyRect)
+        }
         override var intrinsicContentSize: CGSize {
             if let measuredSize { return measuredSize }
             if !stringValue.isEmpty { NWRenderProbe.tick("layout.codeMeasured") }
@@ -75,6 +131,8 @@ struct NWNativeCodeText: NSViewRepresentable {
     func makeNSView(context: Context) -> Field {
         let field = Field(labelWithString: "")
         field.isSelectable = true
+        // Preserve syntax/font/paragraph attributes when the shared field editor ends selection.
+        field.allowsEditingTextAttributes = true
         field.maximumNumberOfLines = 0
         field.lineBreakMode = .byClipping
         field.cell?.wraps = false
@@ -97,7 +155,7 @@ struct NWNativeCodeText: NSViewRepresentable {
         let appearance = NSAppearance(named: colorScheme == .dark ? .darkAqua : .aqua)
         if field.appearance != appearance { field.appearance = appearance }
         if field.font != font { field.font = font }
-        if field.attributedStringValue != value { field.attributedStringValue = value }
+        field.setCode(value)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: Field, context: Context) -> CGSize? {

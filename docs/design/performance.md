@@ -34,6 +34,13 @@ runs, 2,000 folders).
   for a selection: the sidebar's lists derive once per change of what they read
   (`sidebarLists`), and a selection or a scroll derives nothing. At 1,500 agents in 200 spaces a
   status report took 59 ms and a selection 57 ms until the old tree's were.
+- **Code paints only the viewport.** Ordinary ASCII code retains TextKit's glyph layout to draw
+  the requested slice, rather than laying out and painting a whole long fence on each scroll step.
+  Linked and non-ASCII content keeps native drawing to preserve link styling and fallback-font
+  baselines. The same native field still owns selection, copying and accessibility, and its native
+  editor draws an active selection. Content or syntax changes update the retained text storage.
+  `CodeViewportDrawingTests` forces real clipped drawing alongside a native-field reference;
+  a layout-only off-screen scroll benchmark does not prove painting is cheap.
 - **Rows are cheap to build**, since scrolling builds them. Platform-backed modifiers cost most: a
   list row is a tap view rather than a `Button` (each brings an AppKit focus-ring view), and a
   control that shows only on hover (a diff line's `+`) is built only while hovered, in a slot that
@@ -60,7 +67,15 @@ runs, 2,000 folders).
   now 1.6 M). What still grows (a keystroke, 25 M alone and 35 M beside 30) is AppKit's
   display-cycle walks and SwiftUI's window-wide focus, which no public API reaches.
   `ListPerformanceTests` pins it by counts; `SHEPHERD_PERF_REPORT=1 swift test --filter
-  HiddenAgentsReport` prints the instructions.
+  HiddenAgentsReport` prints the instructions. Hidden thread-only hosts keep their last displayed
+  bounds through window and sidebar resizing, then catch up on reveal. Hidden terminal layouts
+  freeze during a live resize and take the final grid once afterward, preserving the process's
+  size without a SIGWINCH per drag step. Native layout callbacks still run to finish hidden
+  content transitions; skipping them retains removed controls. `AgentDeckResizeTests` checks
+  bounds, identity and accessibility and reports CPU/layout counts; `IdleCostTests` pins hidden
+  animation work, and `TerminalMotionTests` verifies the hidden terminal's final grid. The image
+  viewer environment carries stable window identity instead of a captured closure: otherwise a
+  shell resize invalidates every thread even when hidden host bounds remain fixed.
 - **The overlaid sidebar casts its shadow from its fill**, as the floating right pane does
   (`nwFloatBackground`): on the sidebar itself, Core Animation redrew the shadow from its
   scrolling list every step.
@@ -78,11 +93,11 @@ runs, 2,000 folders).
   over the thread, and the picker and the thinking menu compare their own inputs, so a composer
   redraw for something else leaves their rows alone. `ComposerMenuPerformanceTests` pins each
   as a count.
-- **The composer changing height never reruns the thread.** Its measured height lives in its own
-  observed value (`ComposerInset`), read only by the scroll view's inset modifier, so a question
-  taking the card's place or giving it back (or Up next growing) redraws the composer, never the
-  thread's body or its toolbar; the lazy stack only lays the rows on screen out again for the
-  new inset (`ListPerformanceTests`).
+- **Composer height and responsive gutters never rerun the thread.** Both live in the observed
+  `ComposerInset`, read by the inset/padding modifiers and composer, not the transcript builder.
+  A question taking the card's place, Up next growing, or crossing the narrow-gutter breakpoint
+  updates those consumers; the lazy stack only lays the visible rows out again
+  (`ListPerformanceTests`).
 - **Motion never scales with the list.** A list's motion watches a small key (a layout count, the
   rows' ids), never the rows themselves, and rows scrolled back into a lazy stack are simply
   there: an entrance plays only for what arrives while the list is on screen (`nwArrival`,

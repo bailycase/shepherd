@@ -6,10 +6,15 @@ import SwiftUI
 @MainActor @Observable
 final class ThreadHistoryAnchor {
     private(set) var rowID: String?
+    @ObservationIgnored var animating = false
+    // Keep the target through lazy row replacement; a one-shot proxy request can be dropped.
+    var position = ScrollPosition(idType: String.self)
     @ObservationIgnored private weak var marker: Marker?
+    @ObservationIgnored private weak var scroll: NSScrollView?
     @ObservationIgnored private var savedTop: CGFloat?
     @ObservationIgnored private var restoring = false
     @ObservationIgnored private var waiting = false
+    @ObservationIgnored private var pendingMaterialization: ((String) -> Void)?
     @ObservationIgnored private var session: String?
     @ObservationIgnored private var generation = 0
 
@@ -17,6 +22,7 @@ final class ThreadHistoryAnchor {
         cancel()
         guard let id else { return generation }
         self.session = session
+        scroll = marker?.enclosingScrollView
         waiting = true
         rowID = id
         if marker?.rowID == id { savedTop = marker?.viewportTop }
@@ -24,10 +30,13 @@ final class ThreadHistoryAnchor {
     }
 
     func cancel() {
+        if rowID != nil { position = ScrollPosition(idType: String.self) }
         generation &+= 1
         savedTop = nil
+        scroll = nil
         restoring = false
         waiting = false
+        pendingMaterialization = nil
         rowID = nil
     }
 
@@ -38,20 +47,36 @@ final class ThreadHistoryAnchor {
             cancel()
             return
         }
-        // loadOlder commits and returns on the main actor, before SwiftUI lays out the new
-        // rows. A turn-jump animation may have finished while the reply was pending.
-        if marker?.rowID == rowID, let top = marker?.viewportTop { savedTop = top }
+        // SwiftUI can observe the prepend before this awaiting task resumes. Do not replace
+        // the saved offset with a position already shifted by the new rows in that ordering.
+        let pending = pendingMaterialization
+        pendingMaterialization = nil
+        if pending == nil, marker?.rowID == rowID, let top = marker?.viewportTop { savedTop = top }
         waiting = false
+        if let pending { prepended(firstID: firstID, session: session, active: true, materialize: pending) }
     }
 
-    func prepended(firstID: String?, session: String?, active: Bool, materialize: (String) -> Void) {
+    func prepended(firstID: String?, session: String?, active: Bool, materialize: @escaping (String) -> Void) {
         guard active, session == self.session else { cancel(); return }
-        guard !waiting, !restoring, let rowID, savedTop != nil, firstID != rowID else { return }
+        guard !restoring, let rowID, savedTop != nil, firstID != rowID else { return }
+        if waiting {
+            pendingMaterialization = materialize
+            return
+        }
         restoring = true
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) { materialize(rowID) }
-        scheduleCorrection()
+        let token = generation
+        // The first-ID change arrives before the lazy stack commits its new scroll targets.
+        // Materializing in that callback can target the removed view instead of the new row.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.generation == token, self.restoring, self.rowID == rowID else { return }
+            // A queue turn alone need not commit the new targets; the old marker can be detached.
+            self.scroll?.window?.contentView?.layoutSubtreeIfNeeded()
+            guard self.generation == token, self.restoring, self.rowID == rowID else { return }
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { materialize(rowID) }
+            self.scheduleCorrection()
+        }
     }
 
     private func scheduleCorrection() {
@@ -64,7 +89,8 @@ final class ThreadHistoryAnchor {
             // SwiftUI can materialize the row before its final AppKit layout is committed.
             // Measuring then would apply a correction to a stale marker position.
             scroll.window?.contentView?.layoutSubtreeIfNeeded()
-            guard let top = marker.viewportTop else { return }
+            guard self.generation == token, self.restoring, self.marker === marker,
+                  let top = marker.viewportTop else { return }
             let delta = top - savedTop
             guard abs(delta) > 0.25 else { return }
             let clip = scroll.contentView
@@ -78,7 +104,10 @@ final class ThreadHistoryAnchor {
     /// Keep correcting only this anchor through lazy remeasurement, until the reader moves,
     /// sends, switches session or hides the thread. Geometry bookkeeping never invalidates rows.
     func moved() {
-        if waiting, marker?.rowID == rowID { savedTop = marker?.viewportTop }
+        // Lazy row replacement can temporarily detach the marker. Keep the last real offset.
+        if waiting, pendingMaterialization == nil, marker?.rowID == rowID, let top = marker?.viewportTop {
+            savedTop = top
+        }
         scheduleCorrection()
     }
 
