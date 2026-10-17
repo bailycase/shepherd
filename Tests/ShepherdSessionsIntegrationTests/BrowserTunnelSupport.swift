@@ -147,7 +147,7 @@ extension TunnelPeer {
 
 /// A port on the loopback nothing listens on.
 func unusedLoopbackPort() throws -> UInt16 {
-    let server = try LoopbackServer { close($0) }
+    let server = try LoopbackServer { _ in }
     let port = server.port
     server.stop()
     return port
