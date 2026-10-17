@@ -76,6 +76,7 @@ struct ConversationThread: View {
 
     var body: some View {
         ThreadView(store: store, active: true, isFocused: true, request: request, preview: preview, commandKey: nil, agentName: project.name,
+                   workingDirectory: workingDirectory,
                    listModels: ownerModels, allowsLocalFiles: ref.home == .local,
                    retainedInput: agent.map { vm.threadStores.input(for: $0) } ?? vm.emptyProjectInput)
             .environment(\.projectComposerSend, composerSend)
@@ -94,6 +95,14 @@ struct ConversationThread: View {
                       initial: true) { _, offline in
                 if ref.home != .local { store.offline = offline }
             }
+    }
+
+    private var workingDirectory: String? {
+        // Like preview, read the owner's snapshot without observing agent removal and re-picking the thread's store.
+        let owner = vm.server.state
+        guard let agent, case .local = ref.home, let record = owner.agents.first(where: { $0.id == agent }),
+              let paneID = record.paneID else { return nil }
+        return owner.tabs.first(where: { $0.id == record.tabID })?.layout.leaf(withID: paneID)?.cwd
     }
 
     /// A local coordinator's saved history, read from pi's session file while its pi is not running (a relaunched Project's coordinator

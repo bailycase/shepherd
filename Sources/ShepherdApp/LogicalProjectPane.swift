@@ -290,6 +290,7 @@ private struct WorkerThread: View {
         ThreadView(store: vm.projectWorkerStore(home, task.workerAgentID), active: true, isFocused: false,
                    request: vm.projectWorkerRequest(LogicalProjectRef(home: home, id: projectID), task: task.id),
                    commandKey: ThreadCommandCenter.key(local: task.workerAgentID), agentName: task.title,
+                   workingDirectory: workingDirectory,
                    allowsLocalFiles: home == .local, retainedInput: vm.threadStores.input(for: task.workerAgentID))
             .environment(\.projectWorkerThread, ProjectWorkerThreadStyle(assignmentOperations: task.assignmentOperations,
                                                                           composerHidden: task.group == .resolved,
@@ -297,5 +298,13 @@ private struct WorkerThread: View {
             .environment(\.nwUserBubbleMetrics, .lead)
             .environment(\.nwProseHalfLeading, true)
             .id(task.workerAgentID.rawValue)
+    }
+
+    private var workingDirectory: String? {
+        // Do not observe agent removal here: a mounted thread must keep its store and draft.
+        let owner = vm.server.state
+        guard case .local = home, let record = owner.agents.first(where: { $0.id == task.workerAgentID }),
+              let paneID = record.paneID else { return nil }
+        return owner.tabs.first(where: { $0.id == record.tabID })?.layout.leaf(withID: paneID)?.cwd
     }
 }
