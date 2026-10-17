@@ -86,10 +86,8 @@ public final class NWPalette: Sendable {
     public let popoverShadow: Color
     /// Behind the command palette: black at 30% in both appearances (Composer board).
     public let scrim: Color
-    /// Behind the Export sheet: black at 55% in both appearances (DZExport).
+    /// Behind the Export sheet and an open image: black at 55% in both appearances (DZExport).
     public let sheetScrim: Color
-    /// Over the thread behind a full-size image (ThreadImageOpen): `bgBase` at 94%, so the thread shows dimmed beneath, in either appearance.
-    public let imageScrim: Color
     /// Labels on a `failed` fill (the dangerFill button, the failed count badge).
     public let textOnFailed: Color
     /// The design canvas's selection handles: white squares on a `running` line (NWDesignTool).
@@ -216,8 +214,6 @@ public final class NWPalette: Sendable {
         scrim = Color(light: scrimBlack, dark: scrimBlack)
         let sheetBlack = HexColor(red: 0, green: 0, blue: 0, alpha: 0.55)
         sheetScrim = Color(light: sheetBlack, dark: sheetBlack)
-        imageScrim = Color(light: HexColor(red: shadeLight.red, green: shadeLight.green, blue: shadeLight.blue, alpha: 0.94),
-                           dark: HexColor(red: shadeDark.red, green: shadeDark.green, blue: shadeDark.blue, alpha: 0.94))
         textOnFailed = Color(light: "#ffffff", dark: "#ffffff")
         selectionHandle = Color(light: "#ffffff", dark: "#ffffff")
         lanternHover = Color(light: NWButtonFills.lanternHover.light, dark: NWButtonFills.lanternHover.dark)
