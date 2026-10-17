@@ -120,8 +120,11 @@ struct AttentionCard: View {
     @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
-        NWAttentionCard(symbol: item.symbol, origin: item.originLabel, title: item.title, question: item.question,
-                        message: answers ? item.message : nil, since: item.since.map(Date.init(milliseconds:)), host: item.hostTag,
+        // An automation's card is titled by its question over the asker's context (MobileInbox).
+        let asked = answers && item.symbol != nil && item.message != nil
+        NWAttentionCard(symbol: item.symbol, origin: item.originLabel, title: asked ? item.question : item.title,
+                        question: asked ? (item.message ?? item.question) : item.question,
+                        message: answers && !asked ? item.message : nil, since: item.since.map(Date.init(milliseconds:)), host: item.hostTag,
                         selected: selected, style: answers ? .card : .item) {
             if answers {
                 AttentionReplies(item: item, busy: busy)
