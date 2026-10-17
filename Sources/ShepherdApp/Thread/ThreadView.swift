@@ -111,6 +111,8 @@ struct ThreadView: View {
         // A turn made only of the owner's wake-ups has no row. A mixed turn keeps its row (and identity); `turn` draws it per message.
         let origins = userOrigins
         let rows: [NativeThreadRow] = origins.runtime.isEmpty ? store.rows : store.rows.filter { !($0.isUser && origins.hides($0.turn)) }
+        // A row's background needs only the boundary ID, not a captured copy of the transcript.
+        let historyRowID = historyAnchor.rowID ?? rows.first?.id
         let running = store.running
         let liveRow = rows.last(where: \.live)
         // Only one thing moves (LiveText): a running call's own line, thinking, or the reply as it
@@ -152,7 +154,7 @@ struct ThreadView: View {
                                     .accessibilityHidden(true)
                             }
                             .background {
-                                if row.id == (historyAnchor.rowID ?? rows.first?.id) {
+                                if row.id == historyRowID {
                                     ThreadHistoryAnchor.Probe(anchor: historyAnchor, rowID: row.id)
                                         .onGeometryChange(for: CGFloat.self) { $0.frame(in: .scrollView).minY } action: { _ in
                                             historyAnchor.moved()
