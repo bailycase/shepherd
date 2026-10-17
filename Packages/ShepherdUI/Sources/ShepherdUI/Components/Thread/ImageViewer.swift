@@ -1,10 +1,9 @@
 import SwiftUI
 
-/// An image open full size (ThreadImageOpen): a bar across the top with the name, its facts and
-/// "1 of 2", then Copy, Add to message, Show in Finder and close; the picture centered under a
-/// scrim, ‹ › at its sides when there is more than one, and "Sent by you · Esc to close" along
-/// the bottom. A control the caller does not supply is not drawn. While the bytes load the
-/// picture's place is a `bgSunken` field; if they cannot be read it says so in place of the picture.
+/// An image open over the thread: the picture centred on `sheetScrim`, ‹ › beside it when there is more than one, and one popover
+/// pill under it holding "1 of 2", then Copy, Add to message, Show in Finder and close as icons. A click on the scrim closes it.
+/// A control the caller does not supply is not drawn. While the bytes load the picture's place is a `bgSunken` field; if they
+/// cannot be read it says so in place of the picture. The name and its facts are not drawn; VoiceOver reads them.
 public struct NWImageViewer: View {
     public enum Content {
         case loading
@@ -26,20 +25,16 @@ public struct NWImageViewer: View {
     let showInFinder: (() -> Void)?
     let retry: (() -> Void)?
     let close: () -> Void
-    /// How far the window's own controls reach into the bar from the leading edge (the traffic lights, 70pt, unless the window is
-    /// full screen): the bar's content starts after them.
-    let leadingInset: CGFloat
-    /// The picture's size in pixels, when known: the picture is then drawn at exactly its fitted size, so the arrows sit beside
-    /// the photo, not at the window's edges (a resizable image takes the whole width it is offered, whatever its shape).
+    /// The picture's size in pixels, when known: it is then drawn at exactly its fitted size, so the arrows and the pill sit
+    /// against the photo, not at the window's edges.
     let pixels: CGSize?
 
-    /// `facts` is the mono line after the name ("1170 × 2532 · PNG · 1.4 MB"); `position` is "1 of 2"
-    /// (nil for one image); `caption` is the line along the bottom.
+    /// `facts` ("1170 × 2532 · PNG · 1.4 MB") and `caption` ("Sent by you · Esc to close") are spoken, not drawn; `position` is
+    /// "1 of 2" (nil for one image).
     public init(name: String, facts: String, position: String? = nil, content: Content, caption: String,
                 previous: (() -> Void)? = nil, next: (() -> Void)? = nil, copy: (() -> Void)? = nil,
                 addToMessage: (() -> Void)? = nil, showInFinder: (() -> Void)? = nil, retry: (() -> Void)? = nil,
-                leadingInset: CGFloat = 0, pixels: CGSize? = nil, close: @escaping () -> Void) {
-        self.leadingInset = leadingInset
+                pixels: CGSize? = nil, close: @escaping () -> Void) {
         self.pixels = pixels
         self.name = name
         self.facts = facts
@@ -56,73 +51,51 @@ public struct NWImageViewer: View {
     }
 
     public var body: some View {
-        let nw = Color.nw
-        VStack(spacing: 0) {
-            // 44pt, then its 1px `lineSubtle` rule below it (the board's header is 44pt with its border outside).
-            bar
-            NWHairline()
-            // The picture and, when there is more than one image, a round ‹ › 16pt either side of it, the three centred together (the board
-            // does not pin the arrows to the window's edges). The arrow with nowhere to go is drawn disabled, as the board's first image has it.
-            GeometryReader { room in
-                HStack(spacing: NW.Space.xl) {
-                    if position != nil { arrow("chevron.left", label: "Previous image", action: previous) }
-                    picture(fitting: room.size)
-                    if position != nil { arrow("chevron.right", label: "Next image", action: next) }
+        let M = NWImageViewerMetrics.self
+        GeometryReader { window in
+            // The picture may take the window less `margin` all round, the arrows beside it, and the pill and its gap below it.
+            let room = CGSize(width: max(1, window.size.width - 2 * M.margin - arrowsWidth),
+                              height: max(1, window.size.height - 2 * M.margin - M.pill - NW.Space.l))
+            ZStack {
+                // A real button, so a click and VoiceOver's press both close it; Esc and the pill's close stay the keyboard's way.
+                Button(action: close) { Color.nw.sheetScrim.contentShape(Rectangle()) }
+                    .buttonStyle(.plain)
+                    .focusable(false)
+                    .accessibilityLabel("Close viewer")
+                VStack(spacing: NW.Space.l) {
+                    HStack(spacing: NW.Space.xl) {
+                        if position != nil { arrow("chevron.left", label: "Previous image", action: previous) }
+                        picture(size: shownSize(in: room))
+                        if position != nil { arrow("chevron.right", label: "Next image", action: next) }
+                    }
+                    pill
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            // The board's 36pt footer, its line centred.
-            Text(caption)
-                .font(.nw(.mono))
-                .foregroundStyle(nw.textTertiary)
-                .frame(maxWidth: .infinity)
-                .frame(height: NWImageViewerMetrics.footer)
+            .frame(width: window.size.width, height: window.size.height)
         }
-        // The thread stays visible beneath, dimmed by `imageScrim` (`bgBase` at 94%), not blacked out.
-        .background(nw.imageScrim)
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isModal)
         .accessibilityLabel("Image viewer, \(name)")
+        .accessibilityHint(caption)
     }
 
-    /// The bar (ThreadImageOpen): 44pt on `bgWindow` over a `lineSubtle` hairline, 12pt at each side and between its parts; the name in `ui`
-    /// semibold, its facts and "1 of 2" in `mono` `textTertiary`, then Copy, Add to message and Show in Finder as 28pt ghost buttons with 14pt
-    /// glyphs, and the 28pt close circle on `lineStrong`.
-    private var bar: some View {
-        // The band runs the window's width; its content is one centred column (`barMaxWidth`) after the window controls, so a wide
-        // window does not throw the name into one corner and the buttons into the other. When the labelled buttons do not fit
-        // beside the name (a narrow window, large text) they become icons; their names stay for VoiceOver and the tooltip.
-        HStack(spacing: 0) {
-            Color.clear.frame(width: leadingInset, height: 1)
-            ViewThatFits(in: .horizontal) {
-                barContent(labels: true)
-                barContent(labels: false)
-            }
-            .frame(maxWidth: NWImageViewerMetrics.barMaxWidth)
-            .padding(.horizontal, NW.Space.xxl)
-            .frame(maxWidth: .infinity)
-        }
-        .frame(height: NWImageViewerMetrics.bar)
-        .background(Color.nw.bgWindow)
-    }
+    private var arrowsWidth: CGFloat { position != nil ? 2 * (NWImageViewerMetrics.arrow + NW.Space.xl) : 0 }
 
-    private func barContent(labels: Bool) -> some View {
+    /// The popover pill: "1 of 2" in `mono` `textTertiary`, the actions as 28pt ghost icons, and the 28pt close circle, which
+    /// sits 8pt inside the pill's round end.
+    private var pill: some View {
         let nw = Color.nw
+        let M = NWImageViewerMetrics.self
         return HStack(spacing: NW.Space.m) {
-            Text(name).font(.nw(.ui, weight: .semibold)).foregroundStyle(nw.textPrimary).lineLimit(1).truncationMode(.middle)
-                // The name gives way first: the facts and "1 of 2" are what the bar is for.
-                .layoutPriority(-1)
-            Text(facts).font(.nw(.mono)).foregroundStyle(nw.textTertiary).lineLimit(1).fixedSize()
             if let position { Text(position).font(.nw(.mono)).foregroundStyle(nw.textTertiary).lineLimit(1).fixedSize() }
-            Spacer(minLength: NW.Space.l)
-            if let copy { action("Copy", "doc.on.doc", labels, copy) }
-            if let addToMessage { action("Add to message", "plus", labels, addToMessage) }
-            if let showInFinder { action("Show in Finder", "folder", labels, showInFinder) }
+            if let copy { action("Copy", "doc.on.doc", copy) }
+            if let addToMessage { action("Add to message", "plus", addToMessage) }
+            if let showInFinder { action("Show in Finder", "folder", showInFinder) }
             Button(action: close) {
                 Image(systemName: "xmark")
-                    .font(.system(size: NWImageViewerMetrics.closeGlyph, weight: .medium))
+                    .font(.system(size: M.closeGlyph, weight: .medium))
                     .foregroundStyle(nw.textSecondary)
-                    .frame(width: NWImageViewerMetrics.close, height: NWImageViewerMetrics.close)
+                    .frame(width: M.close, height: M.close)
                     .nwBorder(nw.lineStrong, in: Circle())
                     .contentShape(Circle())
             }
@@ -130,14 +103,16 @@ public struct NWImageViewer: View {
             .nwFocusRingCircle()
             .accessibilityLabel("Close")
         }
+        .padding(.leading, position == nil ? NW.Space.m : NW.Space.l)
+        .padding(.trailing, NW.Space.m)
+        .frame(height: M.pill)
+        .fixedSize()
+        .nwPopover(radius: M.pill / 2)
     }
 
-    private func action(_ title: String, _ symbol: String, _ labels: Bool, _ run: @escaping () -> Void) -> some View {
+    private func action(_ title: String, _ symbol: String, _ run: @escaping () -> Void) -> some View {
         Button(action: run) {
-            HStack(spacing: NW.Space.s) {
-                Image(systemName: symbol).font(.system(size: NWImageViewerMetrics.glyph, weight: .medium))
-                if labels { Text(title).lineLimit(1).fixedSize() }
-            }
+            Image(systemName: symbol).font(.system(size: NWImageViewerMetrics.glyph, weight: .medium))
         }
         .buttonStyle(.nw(.ghost, size: .m))
         .accessibilityLabel(title)
@@ -163,41 +138,35 @@ public struct NWImageViewer: View {
         .accessibilityLabel(label)
     }
 
-    /// The room the picture may take: what is left of the body after the arrows and their gaps, the 24pt at each side, and the
-    /// 48pt above and below (the board's 1170 × 2532 picture is 724pt tall in a 900pt window).
-    private func fitted(in body: CGSize) -> CGSize? {
-        guard let pixels, pixels.width > 0, pixels.height > 0 else { return nil }
-        let arrows = position != nil ? 2 * (NWImageViewerMetrics.arrow + NW.Space.xl) : 0
-        let room = CGSize(width: max(1, body.width - arrows - 2 * NW.Space.xxl),
-                          height: max(1, body.height - 2 * NWImageViewerMetrics.pictureInset))
-        let scale = min(room.width / pixels.width, room.height / pixels.height)
+    /// The picture's size in `room`: its fitted size (never enlarged), all of `room` for a diagram, or the placeholder's.
+    private func shownSize(in room: CGSize) -> CGSize {
+        if case .diagram = content { return room }
+        guard let pixels, pixels.width > 0, pixels.height > 0 else {
+            return CGSize(width: NWImageViewerMetrics.placeholderWidth, height: NWImageViewerMetrics.placeholderHeight)
+        }
+        let scale = min(1, room.width / pixels.width, room.height / pixels.height)
         return CGSize(width: (pixels.width * scale).rounded(.down), height: (pixels.height * scale).rounded(.down))
     }
 
-    @ViewBuilder private func picture(fitting body: CGSize) -> some View {
+    @ViewBuilder private func picture(size: CGSize) -> some View {
         let nw = Color.nw
         switch content {
         case .picture(let image):
-            let size = fitted(in: body)
             image.resizable().aspectRatio(contentMode: .fit)
-                .frame(width: size?.width, height: size?.height)
+                .frame(width: size.width, height: size.height)
                 .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
                 .nwBorder(nw.lineSubtle, radius: NW.Radius.m)
-                // The board's shadow: 0 12 32, `bgBase` at 60%.
-                .shadow(color: nw.bgBase.opacity(NWImageViewerMetrics.shadowOpacity), radius: NWImageViewerMetrics.shadowBlur / 2,
-                        y: NWImageViewerMetrics.shadowOffset)
-                // The board's picture leaves 48pt above and below it; without its pixel size it is offered that much less height.
-                .padding(.vertical, size == nil ? NWImageViewerMetrics.pictureInset : 0)
+                .nwFloatShadow()
                 .accessibilityLabel(name)
+                .accessibilityValue(facts)
                 .accessibilityAddTraits(.isImage)
         case .diagram(let view):
             view
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(width: size.width, height: size.height)
                 .background(nw.bgSunken)
                 .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
                 .nwBorder(nw.lineSubtle, radius: NW.Radius.m)
-                .padding(.horizontal, NW.Space.xxl)
-                .padding(.vertical, NW.Space.xxl)
+                .nwFloatShadow()
         case .loading:
             RoundedRectangle(cornerRadius: NW.Radius.m).fill(nw.bgSunken)
                 .frame(width: NWImageViewerMetrics.placeholderWidth, height: NWImageViewerMetrics.placeholderHeight)
@@ -217,22 +186,15 @@ public struct NWImageViewer: View {
 }
 
 public enum NWImageViewerMetrics {
-    /// The bar and the footer (ThreadImageOpen): 44 and 36.
-    public static let bar: CGFloat = 44
-    public static let footer: CGFloat = 36
-    /// The bar's content stays in a column this wide (the thread's 820pt measure), centred, with 24pt of side room.
-    public static let barMaxWidth: CGFloat = 820
-    /// The close circle and the round ‹ › buttons: 28 and 36. Glyphs in the bar and beside the picture are 14; the close ✕ is 12.
+    /// The thread left showing round the picture and its pill.
+    public static let margin: CGFloat = 64
+    /// The pill under the picture.
+    public static let pill: CGFloat = 44
+    /// The close circle and the round ‹ › buttons: 28 and 36. Glyphs in the pill and beside the picture are 14; the close ✕ is 12.
     public static let close: CGFloat = 28
     public static let arrow: CGFloat = 36
     public static let glyph: CGFloat = 14
-    /// The room above and below the picture, measured on the board.
-    public static let pictureInset: CGFloat = 48
     public static let closeGlyph: CGFloat = 12
-    /// The picture's shadow: offset 12, blur 32, `bgBase` at 60%.
-    public static let shadowOffset: CGFloat = 12
-    public static let shadowBlur: CGFloat = 32
-    public static let shadowOpacity: Double = 0.6
     /// The field standing in for a picture while its bytes load.
     public static let placeholderWidth: CGFloat = 240
     public static let placeholderHeight: CGFloat = 320
