@@ -659,7 +659,14 @@ struct ListPerformanceTests {
             window.close()
         }
         try await eventuallyOnMain("the thread to load") { store.ready }
-        ListPerf.settle(window)
+        // Data readiness precedes SwiftUI's first scroll-to-tail. Count streaming work, not a
+        // still-pending initial layout (which otherwise flakes on both baseline and optimized code).
+        try await eventuallyOnMain("the initial thread layout to reach its tail") {
+            ListPerf.settle(window)
+            guard let scroll = ListPerf.scrollView(in: window), let document = scroll.documentView else { return false }
+            return document.bounds.height > scroll.contentView.bounds.height
+                && abs(document.bounds.height - scroll.contentView.bounds.maxY + scroll.contentInsets.bottom) < 2
+        }
 
         NWRenderProbe.start()
         for index in 0..<5 {
@@ -699,6 +706,7 @@ struct ListPerformanceTests {
         }
         #expect(rows["thread.agentTurn", default: 0] > 20, "the thread scrolled: \(rows)")
         #expect(rows["arrival.animates", default: 0] == 0, "\(rows)")
+        #expect(rows["thread.view", default: 0] <= 2, "scrolling must not repeatedly rebuild the transcript: \(rows)")
     }
 
     // MARK: Thread chrome
@@ -929,9 +937,10 @@ struct ListPerformanceTests {
         #expect(changed["queue.row", default: 0] >= 1, "\(changed)")
     }
 
-    /// Widening or narrowing the thread redraws its composer only when the Send menu would
-    /// change sides (beside the card, or above it), never for each width a live resize passes.
-    @Test func aWidthThatKeepsTheSendMenusSideRedrawsNoComposer() async throws {
+    /// Resizing redraws the composer only when the Send menu changes sides, not for each
+    /// width or height a live resize passes while the menu remains on the same side.
+    @Test(arguments: [false, true])
+    func aResizeThatKeepsTheSendMenusSideRedrawsNoComposer(heightOnly: Bool) async throws {
         let thread = FakeThread(ThreadFixture.snapshot(ThreadFixture.history(4)), size: CGSize(width: 1800, height: 800))
         defer { thread.close() }
         try await thread.waitUntilReady()
@@ -941,7 +950,8 @@ struct ListPerformanceTests {
         let frames = 10
         let rows = try await counting(thread.window) {
             for step in 1...frames {
-                thread.window.window.setContentSize(NSSize(width: 1800 - CGFloat(step) * 8, height: 800))
+                thread.window.window.setContentSize(NSSize(width: heightOnly ? 1800 : 1800 - CGFloat(step) * 8,
+                                                           height: heightOnly ? 800 - CGFloat(step) * 8 : 800))
                 ListPerf.settle(thread.window)
             }
         }

@@ -143,6 +143,51 @@ struct RenderCostReport {
         report.add("thread writing a Swift fence (15 chunks, 100 ms apart)", "tree-sitter renders", "\(renders)")
     }
 
+    /// Real thread rows containing prose and code, rather than the short replies used by the
+    /// mounted-workspace resize report. No input events are sent to the off-screen window.
+    @Test(arguments: [12, 500])
+    func scrollingAndResizingRichThreads(codeLines: Int) async throws {
+        let label = "rich thread (60 turns, \(codeLines)-line code fences)"
+        let reply = ThreadFixture.answer + "\n\n" + ListPerformanceTests.codeReply(codeLines)
+        let key = try #require(nativeMarkdownBlocks(reply).compactMap { block -> CodeHighlightCache.Key? in
+            guard case .code(let code, let language) = block else { return nil }
+            return CodeHighlightCache.Key(fence: code, language: language)
+        }.first)
+        let messages = (0..<60).flatMap { index in
+            [ThreadFixture.user("u\(index)", "Review implementation \(index)"), ThreadFixture.assistant("a\(index)", reply)]
+        }
+        let thread = FakeThread(ThreadFixture.snapshot(messages), header: true)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        try await eventuallyOnMain("syntax coloring to finish before measuring rich scrolling") {
+            CodeHighlightCache.cached(key) != nil
+        }
+        #expect(CodeHighlightCache.cached(key)?.runs.contains { run in
+            let color: Color? = run.foregroundColor
+            return color != nil
+        } == true,
+                "the measured thread must contain syntax colors, not a plain-text fallback")
+        try await Task.sleep(for: Self.atRest)
+        let scroll = try #require(ListPerf.scrollView(in: thread.window))
+        #expect(scroll.frame.height <= thread.window.host.bounds.height, "measure the thread, not a nested code scroller")
+        let up = ListPerf.scroll(thread.window, scroll, step: -200, steps: 60)
+        let down = ListPerf.scroll(thread.window, scroll, step: 200, steps: 60)
+        report.add("\(label) ↑", scroll: up)
+        report.add("\(label) ↓", scroll: down)
+        var costs: [Double] = []
+        let counts = ListPerf.counting {
+            for step in Array(0..<50) + Array((0..<50).reversed()) {
+                let start = ListPerf.threadCPU()
+                thread.window.window.setContentSize(CGSize(width: 900 - CGFloat(step) * 8, height: 600))
+                ListPerf.settle(thread.window)
+                costs.append(ListPerf.threadCPU() - start)
+            }
+        }
+        report.add(label, "resize: main-thread CPU per 8 pt frame (median)", ms: MainThreadCPU.median(costs))
+        report.add(label, "resize: work", counts: counts)
+        #expect(thread.store.rows.count == messages.count)
+    }
+
     /// A host whose revision moves every 20 ms for 4 s, prose streaming into a thread of 50 or
     /// 540 messages, pulled by the poll alone or pushed as a local pi's are: the changes that
     /// reach the screen, the median gap between them, and main-thread CPU per second of
