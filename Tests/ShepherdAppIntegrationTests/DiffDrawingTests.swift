@@ -109,9 +109,11 @@ struct DiffDrawingTests {
 
     @Test(arguments: [(false, false), (true, false), (false, true), (true, true)], [false, true])
     func commentControlsFitThePaneBesideLongCode(placement: (split: Bool, maximized: Bool), fileComment: Bool) async {
-        await #expect(processExitsWith: .success) { [split = placement.split as Bool, maximized = placement.maximized as Bool, fileComment = fileComment as Bool] in
-            await recordingErrors { try await Self.checkCommentControls(split: split, maximized: maximized, fileComment: fileComment) }
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { [split = placement.split as Bool, maximized = placement.maximized as Bool, fileComment = fileComment as Bool] in
+            await completingScenario { try await Self.checkCommentControls(split: split, maximized: maximized, fileComment: fileComment) }
         }
+        if let result { print(String(decoding: result.standardOutputContent, as: UTF8.self)) }
+        expectScenarioCompleted(result)
     }
 
     private static func checkCommentControls(split: Bool, maximized: Bool, fileComment: Bool) async throws {
@@ -157,7 +159,8 @@ struct DiffDrawingTests {
         }
         let node = try #require(AccessibilityNode.all(under: window.host).first { $0.label?.contains(comment) == true })
         #expect(node.label?.contains("You") == true)
-        #expect(Set(node.actionNames) == ["Edit", "Delete"])
+        print("DIFF_COMMENT_ACTIONS \(node.actionNames)")
+        #expect(Set(node.actionNames) == ["Edit", "Delete"], "Custom actions: \(node.actionNames)")
         #expect(node.perform(action: "Edit"))
         try await eventuallyOnMain("saved comment still editable") { model.editing != nil }
     }
