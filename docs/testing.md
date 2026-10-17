@@ -3,7 +3,7 @@
 > Read when you write or change a test, pick a test tier, or touch CI.
 
 Swift Testing only (`import Testing`, `@Suite`, `@Test`, `#expect`, `#require`), never XCTest.
-Tests come in tiers, and the switch is `--filter` on target names.
+Tests come in tiers. Use `--filter` to select the affected suite or test, or a target for broader coverage.
 
 | Tier | Targets | What belongs there |
 | --- | --- | --- |
@@ -13,20 +13,38 @@ Tests come in tiers, and the switch is `--filter` on target names.
 | Extensions | `Tests/Extensions/*.test.mjs` | The bundled pi extensions against the staged engine and a local fake provider (`PI_PACKAGE_DIR`). |
 | Release | `Tests/Release` (Python `unittest`) | `scripts/release.py`, `pi_engine.py`, `ci_plan.py`, packaging checks and the docs guards. |
 
-Which tier: a model, parser, projection or presentation change gets a unit test; a server
-mutation, process lifecycle, socket, remote-protocol or git flow gets an integration test; a
-visible change gets a preview render in both appearances. Name a test as a sentence of the
-behavior (`deletingASpaceKeepsNestedSpaces`). A test that finds a real bug stays, with the failing
-part in `withKnownIssue`.
+Reuse coverage that protects the affected behavior. Add or extend tests for new behavior or
+an unprotected regression; behavior-preserving refactors need no new tests just because code moved.
+Pure logic belongs in unit tests; server mutations, process lifecycles, sockets, remote protocols
+and git flows belong in integration tests. New `SessionServer` mutations need integration tests;
+protocol changes keep consumer and round-trip coverage. Visible changes get affected previews in
+both appearances. Name a test as a sentence of the behavior (`deletingASpaceKeepsNestedSpaces`).
+A test that finds a real bug stays, with the failing part in `withKnownIssue`.
+
+## Local validation
+
+Run the smallest selection that protects the affected behavior. These are independent examples,
+not a checklist; replace the suite, test or file with the one relevant to the change:
 
 ```bash
-swift test --filter UnitTests
-swift test --filter IntegrationTests
-SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter ThreadPreviewTests
-PI_PACKAGE_DIR=/path/to/pinned/pi/package node --test Tests/Extensions/*.test.mjs
-python3 -m unittest discover -s Tests/Release
-CI=true swift test            # what CI runs: timing-sensitive tests skipped
+swift test --filter PaneNodeTests
+SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter ThreadPreviewTests/threadActivityIdle
+PI_PACKAGE_DIR=/path/to/pinned/pi/package node --test Tests/Extensions/instructions.test.mjs
+python3 -m unittest discover -s Tests/Release -p 'test_agent_docs.py'
 ```
+
+`swift test` builds before running; a separate `swift build` is unnecessary. Keep build flags and
+configuration consistent across runs. Use `--skip-build` only after a successful build with the
+same inputs and configuration, never after edits. Check that the intended tests actually ran.
+Filtering narrows execution, not the package build graph; a cold build can still be expensive.
+Use [Xcode](build-and-run.md) when the change needs app-level validation, not as a test prerequisite.
+Docs-only changes need the applicable docs guards, not Swift builds or tests.
+
+Expand to a whole tier (`--filter UnitTests` or `--filter IntegrationTests`) or `swift test` for
+shared changes or wider regressions. `CI=true swift test` is an unfiltered run with timing-sensitive
+tests skipped; opt-in suites, including previews, remain gated. It is not ordinary PR selection.
+The existing [CI planner](#ci) provides required broader coverage before merge; no duplicate full
+local run is needed solely to reproduce CI.
 
 ## Helpers
 

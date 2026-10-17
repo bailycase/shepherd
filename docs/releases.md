@@ -255,7 +255,7 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
     enough. Absent dispatch support, selection fails closed rather than bypassing its fence.
     Review requests are manual. The repository has no `CODEOWNERS` file, so workflow,
     release/signing and engine changes do not automatically request Baily or Josh to review.
-    Nightly still requires `CI` and `PR body`, with no required approvals or code-owner review.
+    Require `CI`, not the optional `UI diagnostics` check. There is no separate PR-body workflow.
   - **Decisions:** the default bounds above, fail-closed uncertain state, hosted-only publication,
     ephemeral keychain handling are deliberate. Tests use
     fake GitHub states, scratch packages/keychains and the existing fake publication shell;
