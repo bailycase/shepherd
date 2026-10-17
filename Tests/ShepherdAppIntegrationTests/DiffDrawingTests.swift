@@ -159,8 +159,8 @@ struct DiffDrawingTests {
         }
         let node = try #require(AccessibilityNode.all(under: window.host).first { $0.label?.contains(comment) == true })
         #expect(node.label?.contains("You") == true)
-        print("DIFF_COMMENT_ACTIONS \(node.actionNames)")
-        #expect(Set(node.actionNames) == ["Edit", "Delete"], "Custom actions: \(node.actionNames)")
+        // Selectable text can also contribute AppKit's native “show menu” action.
+        #expect(Set(["Edit", "Delete"]).isSubset(of: Set(node.actionNames)), "Custom actions: \(node.actionNames)")
         #expect(node.perform(action: "Edit"))
         try await eventuallyOnMain("saved comment still editable") { model.editing != nil }
     }
