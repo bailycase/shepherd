@@ -159,7 +159,7 @@ struct FleetTests {
         #expect(item.reply == .open)
         #expect(item.question == "Waiting on you")
         #expect(item.title == "Dock")
-        #expect(item.originLabel == "Thread")
+        #expect(item.originLabel == "A thread")
     }
 
     /// A subagent asks its parent, never the user: whatever it asks, its thread is not in Needs you, and nothing
@@ -241,7 +241,7 @@ struct FleetTests {
                                                  automations: [automation])], digests: [:])
         #expect(model.recents.isEmpty)
         #expect(model.needsYou.map(\.origin) == [.automation("Nightly")])
-        #expect(model.needsYou.first?.originLabel == "Automation · Nightly")
+        #expect(model.needsYou.first?.originLabel == "A run of the automation Nightly")
         #expect(model.hosts.first?.summary == "No threads yet")
     }
 

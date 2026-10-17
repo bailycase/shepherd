@@ -17,7 +17,7 @@ struct SubagentRunScreen: View {
         let run = store.subagents.first { $0.runID == runID }
         SubagentRunView(ref: ref, store: store, runID: runID, compact: true)
             .background(Color.nw.bgWindow)
-            .navigationTitle(run.map { nativeRunNames($0).name } ?? "Subagent")
+            .navigationTitle(run.map { $0.role ?? nativeRunNames($0).name } ?? "Subagent")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .tabBar)
             .toolbar {
@@ -28,26 +28,24 @@ struct SubagentRunScreen: View {
     }
 }
 
-/// "worker" over "● Running · 37m".
+/// "worker" over "Running · 37m" (MobileSubagent: plain `textTertiary`, no dot; the agent's name,
+/// the task is the goal below).
 struct SubagentRunTitle: View {
     let run: NativeSubagent?
 
     var body: some View {
         let phase = run.map(nativeRunPhase)
-        let state = phase.map { AgentState($0) } ?? .idle
         VStack(spacing: NW.Space.xxs) {
-            Text(run.map { nativeRunNames($0).name } ?? "Subagent").font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary)
+            Text(run.map { $0.role ?? nativeRunNames($0).name } ?? "Subagent").font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary)
                 .lineLimit(1)
             HStack(spacing: NW.Space.s) {
-                NWStatusDot(state)
-                Text(phase.map(nativeRunPhaseLabel) ?? "No longer listed").foregroundStyle(state.textColor)
+                Text(phase.map(nativeRunPhaseLabel) ?? "No longer listed")
                 if let started = run?.startedAt {
-                    Text("·").foregroundStyle(Color.nw.textTertiary)
+                    Text("·")
                     NWElapsedText(since: SubagentValues.date(started)!, until: SubagentValues.date(run?.isTerminal == true ? run?.endedAt : nil))
-                        .font(.nw(.mono)).foregroundStyle(Color.nw.textTertiary)
                 }
             }
-            .font(.nw(.caption, weight: .medium))
+            .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
             .lineLimit(1)
         }
         .accessibilityElement(children: .combine)
@@ -174,9 +172,11 @@ struct SubagentRunView: View {
             if let run, let summary, nativeRunAcceptsSteer(run) {
                 // The same Steer command, called Reply while the run waits on its parent's answer.
                 let words = nativeRunSteerWords(run)
-                NWSteerField(text: $draft, prompt: "\(words.label(summary.name))…",
-                             caption: words.caption(summary.name),
-                             isEnabled: commands.enabled, focus: $steering, accessibilityLabel: words.label(summary.name),
+                // MobileSubagent: "Steer worker…", the agent, not the task (the iPad's names it by task).
+                let agent = compact ? summary.role ?? summary.name : summary.name
+                NWSteerField(text: $draft, prompt: "\(words.label(agent))…",
+                             caption: words.caption(agent),
+                             isEnabled: commands.enabled, focus: $steering, accessibilityLabel: words.label(agent),
                              sendLabel: words.verb) {
                     steer(commands)
                 }
