@@ -175,6 +175,9 @@ public struct NWCodeBlock: View {
     let code: String
     let language: String?
     let highlighted: AttributedString?
+    #if os(macOS)
+    @State private var nativeCode = NWNativeCodeText.Cache()
+    #endif
     @State private var hovering = false
     @State private var copied = false
     /// Copies so far: each one pops the check.
@@ -241,7 +244,7 @@ public struct NWCodeBlock: View {
         Group {
             #if os(macOS)
             NWNativeCodeText(code: code, highlighted: highlighted, scale: ThemeStore.shared.textScale,
-                             lineSpacing: NWTextStyle.code.lineSpacing + 0.6)
+                             lineSpacing: NWTextStyle.code.lineSpacing + 0.6, cache: nativeCode)
             #else
             if let highlighted { Text(highlighted) } else { Text(code) }
             #endif
