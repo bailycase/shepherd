@@ -44,8 +44,8 @@ Every decision has to pass one test: does this help one person supervise ten wor
 ## Principles, in priority order
 
 1. **Readable measure.** The thread column is at most 820pt wide and agent prose 640pt.
-   The [image viewer](docs/design/thread-images.md) toolbar also stays within 820pt, clear of
-   the window controls. Paging arrows sit beside the fitted image, not at the window edges.
+   The [image viewer](docs/design/thread-images.md) floats over the thread, its actions in a pill
+   under the picture. Paging arrows sit beside the fitted image, not at the window edges.
 2. **Shape, not labels.** No speaker labels or avatars. A user turn is a trailing bubble; agent
    output is unboxed prose.
 3. **One quiet line per burst.** Consecutive calls of one kind merge into one activity line.
@@ -222,11 +222,13 @@ each rule. Add a budget with any new long list.
 
 ## Verifying visuals
 
-Render the surface with `SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter <suite>`
-(`ThreadPreviewTests`, `NavigationPreviewTests`, `AgentsPreviewTests`, `ReviewPreviewTests`,
-`SettingsPreviewTests`, `DesignPreviewTests`). It writes `<surface>-<light|dark>.png`; drive it
-from real data, and look at the PNGs beside the design. A control a test needs to press goes through
-`ControlPress` (docs/testing.md › Pressing a control). Detail: [docs/design/verifying.md](docs/design/verifying.md).
+Render affected surfaces and states with
+`SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter '<preview suite or test>'`.
+Use real data and inspect the light and dark PNGs beside the design; unrelated previews need not run.
+Appearance-only changes do not also require launching the app. For interactions, focus, menus or
+app lifecycle, use integration tests; add a manual Dev-app check only where the isolated harness
+cannot establish the behavior. Tests use `ControlPress`, never posted input or the installed app.
+Detail: [docs/design/verifying.md](docs/design/verifying.md).
 
 ## Where the detail is
 

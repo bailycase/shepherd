@@ -169,18 +169,15 @@ struct ThreadComposer: View {
         if !state.attachments.isEmpty {
             attachments(state)
         }
-        HStack(alignment: .bottom, spacing: NW.Space.s) {
-            if acceptsImages(store) {
-                AttachButton(state: state, enabled: live)
-            }
-            NWCapsuleComposer(isFocused: focused) {
-                field(store: store, placeholder: store.running ? "Queue a follow-up…" : "Follow up…")
-            } action: {
-                HStack(spacing: 0) {
-                    contextMeter(store: store, state: state)
-                    sendButton(store: store, state: state, live: live)
-                }
-            }
+        let capsuleField = field(store: store, placeholder: store.running ? "Queue a follow-up…" : "Follow up…")
+        let capsuleAction = HStack(spacing: 0) {
+            contextMeter(store: store, state: state)
+            sendButton(store: store, state: state, live: live)
+        }
+        if acceptsImages(store) {
+            NWCapsuleComposer { AttachButton(state: state, enabled: live) } field: { capsuleField } action: { capsuleAction }
+        } else {
+            NWCapsuleComposer { capsuleField } action: { capsuleAction }
         }
     }
 

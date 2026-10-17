@@ -13,7 +13,7 @@ connected hosts, newest first.
   apart inside:
   - The origin line: a 14pt `lanternText` glyph (a bolt for an automation run, a folded map for a
     mission; a glowing 8pt `lantern` dot for a thread) and
-    "Thread", "Automation · Triage new Sentry issues" (12
+    "A thread", "A run of the automation Triage new Sentry issues" (12
     `textTertiary`), with the time since trailing ("now", "2m", "14m", "1h"). The app adds the
     host's badge when there are several hosts (`NWAttentionCard`).
   - The title (15/600): the thread's name. An automation's card is
@@ -200,7 +200,7 @@ SettingsSkills): every host's agent skills, the same on every host, over `skills
   skills. Tap one for how it’s used, its files and hosts." (13.5/1.5 `textSecondary`), a 40pt search
   field on a filled track at radius 10 ("Search skills.sh", 15), then "Installed · 8" (13/600
   `textSecondary`) with "Update 2" (13.5/500 `running`) trailing, over a card of rows at least 58pt
-  (8pt × 14pt padding, 10pt gaps): the name in mono 14/600 over its description at 12.5
+  (8pt × 14pt padding, 10pt gaps): the name in sans 15 bold over its description at 12.5
   `textTertiary` ("/skill only · House style for table-driven Go tests." for one only /skill
   loads), the Update pill (22pt, 12/600) while a newer commit waits, and its switch (off: the
   track in `lineStrong`). Under the card: "horizon is offline. It gets changes when it’s back."

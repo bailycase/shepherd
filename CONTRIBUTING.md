@@ -1,17 +1,16 @@
 # Contributing to Shepherd
 
 Shepherd is an opinionated macOS app for supervising coding agents: native agent threads, with
-real terminals only as tabs under a thread. Changes should keep it focused on that. For a large
-feature or behavior change, open an issue before writing the implementation.
+real terminals only as tabs under a thread. Keep changes focused on that. Discuss substantial
+unsolicited changes before implementing them. An accepted issue or explicit maintainer request
+is enough to start; no separate issue or plan is required.
 
 ## Read first
 
-- [AGENTS.md](AGENTS.md): the short rule sheet and exact commands, with links to the build, testing,
-  source map and [rules](docs/rules.md) (protocol contracts, embedded extensions, concurrency,
-  tokens, keybindings, repository mutations).
-- [ARCHITECTURE.md](ARCHITECTURE.md): module boundaries, ownership, and data flow.
-- [DESIGN.md](DESIGN.md): the rules for UI changes, with the spec of each surface in
-  [docs/design/](docs/design/README.md). Night Watch, the design system, is in `Packages/ShepherdUI`.
+Start with [AGENTS.md](AGENTS.md), the affected code and only the relevant reference sections.
+Read [ARCHITECTURE.md](ARCHITECTURE.md) when changing ownership or data flow. For UI, follow
+[DESIGN.md](DESIGN.md) and the affected surface's spec, fetched with
+`python3 scripts/design_section.py "<board or heading>"`. No repository-wide reading pass is needed.
 
 ## Branches
 
@@ -20,43 +19,38 @@ Branch from `nightly` and target `nightly` with your pull request. Use `feat/…
 
 ## Build and run
 
-Stage the bundled engine before the first Mac build, and again after its pin changes
-([docs/pi-engine.md](docs/pi-engine.md)).
+For package code, `swift test --filter '<affected suite or test>'` builds before running;
+no separate `swift build` or Xcode build is a prerequisite. Filtered execution can still require
+a broad package compilation, especially on a cold build.
 
-```sh
-python3 scripts/pi_engine.py stage
-swift build
-xcodebuild -project Shepherd.xcodeproj -scheme 'Shepherd (Dev)' -destination 'platform=macOS' \
-  -onlyUsePackageVersionsFromResolvedFile build
-```
-
-Keep `-onlyUsePackageVersionsFromResolvedFile`: without it, a build from a fresh DerivedData can
-rewrite the Xcode project's `Package.resolved` with newer package versions.
-
-Run the app through the `Shepherd (Dev)` scheme in Xcode; there is no `swift run` path for the
-GUI. The Dev scheme keeps its state in `~/Library/Application Support/Shepherd-dev`, so it never
-disturbs an installed copy. The `Shepherd (Nightly)` scheme builds Shepherd Nightly, the separate
-app every push to `nightly` ships.
+Build the app when the change needs app-level validation, such as launcher, resources or Xcode
+configuration changes. Use the isolated `Shepherd (Dev)` scheme, never an installed copy.
+[Build instructions](docs/build-and-run.md) cover engine staging and the pinned-package Xcode
+command. There is no `swift run` path for the GUI.
 
 ## Tests
 
-Tests use Swift Testing and come in tiers. Run the smallest one that covers your change first,
-then everything.
+Use Swift Testing. Run the smallest suite or test selection that protects the affected behavior.
+Existing coverage counts; add or extend tests for new behavior or an unprotected regression.
+A behavior-preserving refactor does not need new tests just because code moved. Expand validation
+for shared changes or a wider regression, not by default; required PR CI still runs before merge.
 
 | Tier | Command | Scope |
 | --- | --- | --- |
-| Unit | `swift test --filter UnitTests` | Pure logic: no processes, sockets, windows, git, or sleeps. Seconds for the whole tier. |
-| Integration | `swift test --filter IntegrationTests` | A real `SessionServer` (`ScratchServer`), the scripted stub pi (`StubPi.command`), git scratch repos, off-screen windows. Waits are named `eventually(...)` polls, never fixed sleeps. |
-| Previews | `SHEPHERD_PREVIEW_DIR=/tmp/previews swift test --filter PreviewTests` | Offscreen renders of every surface, in light and dark, written as PNGs. Skipped without the variable. |
-| Everything | `swift test` | All of the above, in parallel. CI runs one serial process: unit, smoke and affected suites for ordinary `nightly` PRs, all suites for shared changes and `master` ([docs/testing.md](docs/testing.md)). |
-| Extensions | `PI_PACKAGE_DIR=<installed pi package> node --test Tests/Extensions/*.test.mjs` | The bundled pi extensions, against a local fake provider. |
-| Release rules | `python3 -m unittest discover -s Tests/Release` | `scripts/release.py`: what each tag or push builds, which feeds each release lands in, and its agreement with the Xcode project and the apps. CI runs it too. |
+| Unit | `swift test --filter '<affected unit suite>'` | Pure logic: no processes, sockets, windows, git, or sleeps. |
+| Integration | `swift test --filter '<affected integration suite>'` | A real `SessionServer` (`ScratchServer`), stub pi, scratch git repos and off-screen windows. Wait with `eventually(...)`, never fixed sleeps. |
+| Previews | `SHEPHERD_PREVIEW_DIR=/tmp/previews swift test --filter '<affected preview>'` | Render affected surfaces and states in light and dark, then inspect the PNGs. Skipped without the variable. |
+| Extensions | `PI_PACKAGE_DIR=/path/to/pinned/pi/package node --test 'Tests/Extensions/<affected>.test.mjs'` | Bundled extensions against a local fake provider. |
+| Release/docs rules | `python3 -m unittest discover -s Tests/Release -p '<affected test file>'` | Packaging, CI and docs guards; `test_agent_docs.py` covers instruction sizes and doc links. |
+
+Replace placeholders with the affected suites or files. Full runs (`swift test`, previews enabled
+separately) are for shared changes or broader investigations. See [testing](docs/testing.md#local-validation)
+for a focused local recipe; docs-only changes need no Swift build or tests.
 
 An opt-in run against a real model is gated on `SHEPHERD_LIVE_MODEL` (for example
 `cpa/~anthropic/claude-haiku-latest`). Shared helpers live in `Tests/ShepherdTestKit` (any tier) and
 `Tests/ShepherdTestSupport` (integration and previews).
-[docs/testing.md](docs/testing.md) says which tier a change needs and which coverage must never be
-dropped.
+[docs/testing.md](docs/testing.md) describes the tiers, isolation and CI selection.
 
 **Tests must never take your focus or drive your mouse or keyboard.** Test windows are
 off-screen, borderless, and ordered back. Tests never post synthetic input and never touch your pi
@@ -66,15 +60,17 @@ configuration, sessions, or a running Shepherd.
 
 - Keep changes small, and put code in the narrowest existing owner.
 - Don't add abstractions or validation without a current need.
-- Add focused tests for the behavior you changed, in the right tier.
+- Protect changed behavior at the smallest useful test boundary; don't duplicate existing coverage.
+- Update only docs the change makes inaccurate. Don't create new feature docs unless requested.
 - When you change a protocol message, update every consumer and its round-trip test.
 - `Extensions/` is the one copy of each pi extension; the app ships it as a resource bundle.
 - Use ShepherdUI (`Color.nw`, `Font.nw`, `NW.Space`/`Radius`/`Height`) and its shared
   components, never hardcoded colors, fonts, or sizes. A screen's own dimensions go in its
   domain's `AppLayout+<Domain>.swift`. A new color role must pass the contrast tests in both
   variants.
-- Check visible changes in both light and dark appearance, with previews and in the running app.
-  Debug builds have a Component Gallery in the View menu.
+- Render and inspect affected UI in light and dark from real data. Add integration or manual
+  Dev-app checks for behavior previews cannot establish, such as focus, menus or app lifecycle;
+  do not repeat a visual check in the app when the preview already covers it.
 - Don't commit credentials, tokens, sessions, logs, caches, or local runtime state.
 
 ## Commits
@@ -102,20 +98,10 @@ Fill in the [pull request template](.github/pull_request_template.md). It asks f
 - for a feature that acts on its own, its bounds, where its data goes, what a restart and Stop do
   to it, and the decisions you made unasked ([docs/rules.md](docs/rules.md))
 
-CI runs unit suites, three startup/identity checks and feature-related suites for ordinary
-`nightly` PRs. A suite-local regression selects its declared suite instead of its whole test
-module; shared fixtures and unknown source paths stay broad. Shared contracts, server core,
-CI changes, `master`, daily runs and `full-ci` run all suites across four separate hosted Macs,
-serial within each lane. All session integration suites stay together; unknown suites enter the
-remainder lane. Affected suites and UI diagnostics retain one lane. No tests are removed.
-Full lanes always use GitHub's macOS runners. For selected maintainer PRs and Nightly releases,
-`SHEPHERD_SELFHOSTED_ENABLED=true` can explicitly enable an isolated self-hosted Mac. The shared Mac stays offline to protect other apps. Docs alone run no Swift. A test that fails is red:
-there is no retry, so a flaky test is a bug to fix in the test. A push to `nightly` builds and
-ships without tests. Require `CI`, not the manual `UI diagnostics` check. With self-hosted
-builds disabled, a trusted Nightly dispatch with `diagnostics=ui` can seed the hosted cache
-without changing PR coverage or Nightly push behavior. PR cache saves serve only that same
-PR, not its base or siblings; reseed Nightly when the toolchain or resolved lock changes.
-Cache reuse does not establish the unmet warm five-minute test goal ([docs/testing.md](docs/testing.md)).
+[CI](docs/testing.md#ci) selects unit, smoke and affected suites for ordinary `nightly` PRs;
+shared changes run broader coverage. Docs alone run no Swift. Require `CI`, not the manual
+`UI diagnostics` check. A push to `nightly` builds and ships without rerunning tests.
+Investigate failures, including flaky tests; do not weaken assertions to get a green run.
 
 Don't claim checks passed unless you ran them and saw the result.
 
