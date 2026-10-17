@@ -4,6 +4,7 @@ import { readFile, mkdtemp, rm } from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { withPi, script } from './fixtures/pi-rpc-harness.mjs';
 
 // Load the canonical extension and schema with the pinned SDK, not a hand-written Type stub.
 const pkg = process.env.PI_PACKAGE_DIR;
@@ -107,6 +108,8 @@ test('real extension tools use correlated owner requests and refresh memory each
     provideReceipts = false;
     const unmatched = await tools.get('project_assign').execute('unmatched-call', parameters);
     assert.deepEqual(unmatched.details, { projectID: 'project', revision: 8 }, 'no receipt means no invented action identity');
+    assert.equal(JSON.parse(unmatched.content[0].text).receiptMatched, false);
+    assert.deepEqual(JSON.parse(unmatched.content[0].text).tasks, [], 'no inferred task from an uncorrelated reply');
     const assigns = calls.filter(call => call.request.assign);
     assert.equal(assigns.length, 4, 'call-123 twice, effort-call, unmatched-call');
     assert.equal(assigns[0].request.assign.operationID, assigns[1].request.assign.operationID);
@@ -130,6 +133,214 @@ test('real extension tools use correlated owner requests and refresh memory each
         assert.equal(await hooks.get('tool_call')({ toolName }), undefined, 'direct coding remains available');
       }
     }
+  } finally {
+    for (const key of ['SHEPHERD_PROJECT_CONTEXT', 'SHEPHERD_PROJECT_COORDINATOR', 'SHEPHERD_AGENT_ID', 'SHEPHERD_SOCKET']) {
+      if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key];
+    }
+    await new Promise(resolve => server.close(resolve)); await rm(dir, { recursive: true });
+  }
+});
+
+test('coordinator results scope snapshots without losing native evidence, human proof or discovery', { timeout: 60000 }, async t => {
+  const dir = await mkdtemp('/tmp/pcb-'), saved = { ...process.env }, tools = new Map(), replies = [], disconnectedOperations = [];
+  const remote = { remote: { hostID: 'owner-host-id', bindingID: 'owner-immutable-binding' } };
+  const nativeText = 'Native evidence, not verified success. '.repeat(110);
+  const source = (kind, operationID) => ({ kind, taskID: 'task-0', operationID, workerAgentID: 'worker-0', sessionID: 'session-0', generation: 'native-generation', dialogID: 'native-dialog' });
+  const human = { id: 'actual-human-reply', text: 'Choose Staging for this question.', phase: 'delivered', humanSubmitted: true };
+  const question = { id: 'question-event', text: JSON.stringify({ id: 'native-dialog', kind: 'select', title: 'Deploy where?', options: ['Staging', 'Production'] }), phase: 'delivered', source: source('question', 'operation-0') };
+  const phases = ['waiting', 'settled', 'resolved', 'unknown', 'failed', 'running', 'queued', 'reserved'];
+  const project = { id: 'project', ownerID: 'owner', coordinatorAgentID: 'coordinator', revision: 48, paused: false, interruptPending: false,
+    goal: 'Bounded work', settings: { instructions: 'Keep native authority', maxConcurrentWorkers: 3, threadModel: 'provider/model-0', allowedHosts: [remote] },
+    memory: [{ id: 'fact', text: 'A sourced fact', source: 'Task task-1' }],
+    linkedSpaces: [{ spaceID: 'space', host: remote, provenance: 'project' }, { spaceID: 'local-space', provenance: 'project' }],
+    tasks: phases.map((phase, i) => ({ id: `task-${i}`, operationID: `operation-${i}`, previousOperations: [`prior-${i}`], resolutionOperations: [`resolution-${i}`],
+      workerAgentID: `worker-${i}`, workerSessionID: `session-${i}`, nativeDeliveryID: `delivery-${i}`, revision: i + 1, spaceID: 'space', host: remote,
+      title: `Work ${i}`, prompt: 'Bounded assignment. '.repeat(400), model: 'provider/model-0', thinking: 'high', phase,
+      executionReceipt: { key: { ownerID: 'owner', projectID: 'project', operationID: `operation-${i}` }, revision: 3, phase: ({ resolved: 'settled', running: 'sent', queued: 'reserved' })[phase] ?? phase, sessionID: `session-${i}`,
+        generation: 'native-generation', resultEntryID: `native-result-${i}`, resultText: nativeText, outcome: 'Not a verification claim',
+        ...(i === 0 ? { questionID: 'native-dialog', questionKind: 'select', questionOptions: ['Staging', 'Production'], questionMessage: question.text,
+          pendingAnswer: { operationID: 'native-answer', sessionID: 'session-0', generation: 'native-generation', dialogID: 'native-dialog', phase: 'unknown', request: '' } } : {}) } })),
+    artifacts: [{ id: 'file', taskID: 'task-0', state: 'staged' }], spaceProposals: [], messages: [] };
+  const events = [{ id: 'previous-result', text: nativeText, phase: 'delivered', source: source('settled', 'prior-0') },
+    { id: 'current-result', text: nativeText, phase: 'delivered', source: source('settled', 'operation-0') }, question];
+  const models = Array.from({ length: 1200 }, (_, i) => `provider-${i % 20}/model-${i}-long-valid-catalogue-identifier`);
+  const spaces = [{ id: 'local-space', name: 'Owner Space', path: '/owner/path/not-executor-path' }];
+  const stored = JSON.stringify(project);
+  let failure, ownerRevision = 48, evidenceMode;
+  const server = net.createServer(socket => {
+    let buffer = '';
+    socket.on('data', bytes => {
+      buffer += bytes;
+      if (!buffer.includes('\n')) return;
+      const request = JSON.parse(buffer.split('\n')[0]);
+      if (failure === 'disconnect') { disconnectedOperations.push(Object.values(request.request)[0].operationID); socket.end(); return; }
+      if (failure) {
+        socket.end(JSON.stringify({ type: 'error', id: request.id, ...failure }) + '\n'); return;
+      }
+      const copy = structuredClone(project), action = request.request;
+      copy.revision = ownerRevision;
+      copy.messages = action.inspect ? structuredClone([...events, human]) : [human];
+      if (evidenceMode === 'clipped') {
+        copy.tasks[0].executionReceipt.resultText = 'Clipped native preview...';
+        copy.messages[0].text = '{"omitted":"Content exceeds event budget; inspect the source worker conversation."}';
+      }
+      if (evidenceMode === 'local') delete copy.tasks[0].executionReceipt;
+      if (action.inspect) copy.tasks = copy.tasks.filter(task => task.id === action.inspect.taskID);
+      if (action.assign || action.followUp) {
+        copy.tasks[0].operationID = (action.assign ?? action.followUp).operationID;
+        copy.tasks[0].phase = 'queued';
+      }
+      if (action.resolve) { copy.tasks[0].resolutionOperations.push(action.resolve.operationID); copy.tasks[0].phase = 'resolved'; }
+      if (action.proposeSpace) copy.spaceProposals = [{ id: 'native-proposal', operationID: action.proposeSpace.operationID, phase: 'pending', spaceID: 'space', revision: 1 }];
+      if (action.remember) copy.memory.push({ id: action.remember.operationID, text: 'New sourced fact', source: 'Task task-0' });
+      replies.push({ ...copy, linkedSpaceDetails: spaces, availableModels: models });
+      socket.end(JSON.stringify({ type: 'projectRuntime', id: request.id, project: copy, spaces, models }) + '\n');
+    });
+  });
+  await new Promise(resolve => server.listen(dir + '/s', resolve));
+  try {
+    Object.assign(process.env, { SHEPHERD_PROJECT_CONTEXT: '{"projectID":"project"}', SHEPHERD_PROJECT_COORDINATOR: '1', SHEPHERD_AGENT_ID: 'coordinator', SHEPHERD_SOCKET: dir + '/s' });
+    install({ on() {}, registerTool: tool => tools.set(tool.name, tool) });
+    const measurements = [];
+    const run = async (name, parameters = {}) => {
+      const result = await tools.get(name).execute(`call-${replies.length}`, parameters);
+      assert.equal(result.isError, undefined);
+      const before = JSON.stringify(replies.at(-1)), after = result.content[0].text;
+      measurements.push({ tool: name, includeModels: parameters.includeModels === true, includeResults: parameters.includeResults === true,
+        bytesBefore: Buffer.byteLength(before), bytesAfter: Buffer.byteLength(after),
+        estimatedTokensBefore: Math.ceil(before.length / 4), estimatedTokensAfter: Math.ceil(after.length / 4) });
+      return { data: JSON.parse(after), details: result.details };
+    };
+    const { data: read } = await run('project_read');
+    assert.equal(read.availableModels, undefined);
+    assert.equal(read.revision, 48);
+    assert.deepEqual(read.linkedSpaces, project.linkedSpaces);
+    assert.deepEqual(read.linkedSpaceDetails, spaces);
+    assert.deepEqual(read.settings, project.settings);
+    assert.deepEqual(read.memory, project.memory);
+    assert.deepEqual(read.tasks.map(task => task.phase), phases, 'settled, resolved, failed and unknown are not conflated');
+    assert.deepEqual(read.messages, [human], 'only native human proof, no invented worker summary');
+    for (const [i, task] of read.tasks.entries()) {
+      const { prompt, executionReceipt, ...identity } = project.tasks[i];
+      const { resultText, ...receipt } = executionReceipt;
+      assert.deepEqual(task, { ...identity, executionReceipt: receipt }, 'all operation/worker/session/question identities and outcomes survive');
+    }
+    const { data: inspect } = await run('project_inspect', { taskID: 'task-0' });
+    assert.equal(inspect.tasks.length, 1);
+    assert.equal(inspect.resultScope, 'receipt_index');
+    assert.equal(inspect.nativeTranscriptIncluded, false);
+    assert.equal(inspect.goal, undefined);
+    assert.equal(inspect.availableModels, undefined);
+    assert.deepEqual(inspect.linkedSpaces, [project.linkedSpaces[0]]);
+    assert.deepEqual(inspect.linkedSpaceDetails, [], 'an owner-local path is never mapped to a remote task');
+    assert.deepEqual(inspect.messages.find(message => message.id === human.id), human);
+    assert.deepEqual(inspect.messages.find(message => message.id === question.id), question);
+    assert.deepEqual(inspect.tasks[0].executionReceipt.questionOptions, ['Staging', 'Production']);
+    assert.equal(inspect.tasks[0].executionReceipt.pendingAnswer.phase, 'unknown');
+    for (const event of events.slice(0, 2)) {
+      const { text, ...identity } = event;
+      assert.deepEqual(inspect.messages.find(message => message.id === event.id), { ...identity, contentOmitted: true });
+    }
+    const { data: full } = await run('project_inspect', { taskID: 'task-0', includeResults: true });
+    assert.deepEqual(full.tasks, [project.tasks[0]]);
+    assert.deepEqual(full.messages, [...events, human], 'explicit inspection retrieves retained bodies, not synthesized summaries');
+    assert.equal(full.resultScope, 'retained_receipts');
+    assert.equal(full.nativeTranscriptIncluded, false);
+    const { data: discovery } = await run('project_read', { includeModels: true });
+    assert.deepEqual(discovery.availableModels, models, 'exact provider/id discovery remains available');
+    for (const [name, parameters, expectedPhase] of [
+      ['project_assign', { spaceID: 'space', title: 'Task', prompt: 'Work', host: remote, model: models[1199] }, 'queued'],
+      ['project_follow_up', { taskID: 'task-0', text: 'Continue' }, 'queued'],
+      ['project_resolve', { taskID: 'task-0' }, 'resolved'],
+      ['project_answer', { taskID: 'task-0', questionEventID: question.id, humanReplyID: human.id, answer: { select: { value: 'Staging' } } }, 'waiting'],
+      ['project_remember', { taskID: 'task-0', text: 'New sourced fact' }, 'waiting'],
+      ['project_propose_space', { spaceID: 'space' }, undefined],
+    ]) {
+      const { data, details } = await run(name, { expectedRevision: 48, ...parameters });
+      assert.equal(data.revision, 48);
+      assert.equal(data.ownerID, 'owner');
+      assert.equal(data.availableModels, undefined);
+      assert.equal(data.settings, undefined);
+      assert.equal(data.goal, undefined);
+      assert.equal(data.tasks.length, expectedPhase ? 1 : 0);
+      assert.equal(data.tasks[0]?.phase, expectedPhase);
+      assert.ok(data.operationID, 'mutation request identity is explicit, not a synthesized success claim');
+      assert.deepEqual(data.messages, [human]);
+      if (['project_assign', 'project_follow_up', 'project_resolve'].includes(name)) {
+        assert.equal(details.taskID, 'task-0');
+        assert.equal(data.operationID, details.operationID);
+        assert.equal(data.receiptMatched, true);
+      }
+      if (name === 'project_remember') assert.deepEqual(data.memory, [{ id: data.operationID, text: 'New sourced fact', source: 'Task task-0' }]);
+      if (name === 'project_propose_space') assert.deepEqual(data.spaceProposals, [{ id: 'native-proposal', operationID: data.operationID, phase: 'pending', spaceID: 'space', revision: 1 }]);
+    }
+    const readDescription = tools.get('project_read').description, inspectDescription = tools.get('project_inspect').description;
+    assert.ok(readDescription.includes('Default omits') && readDescription.includes('includeModels') && readDescription.includes('project_inspect(includeResults: true)'));
+    assert.ok(inspectDescription.includes('Default omits') && inspectDescription.includes('possibly clipped/omitted') && inspectDescription.includes('source worker conversation'));
+    assert.ok(tools.get('project_resolve').description.includes('not a receipt index or clipped preview'));
+    assert.equal(tools.get('project_read').parameters.properties.includeModels.type, 'boolean');
+    assert.equal(tools.get('project_inspect').parameters.properties.includeResults.type, 'boolean');
+    ownerRevision = 49;
+    for (const [name, parameters] of [['project_read', {}], ['project_inspect', { taskID: 'task-0' }],
+      ['project_assign', { expectedRevision: 47, spaceID: 'space', title: 'Task', prompt: 'Work' }]]) {
+      const result = await tools.get(name).execute('fresh-revision-call', parameters);
+      assert.equal(JSON.parse(result.content[0].text).revision, 49, 'owner revision, not cached state or caller revision');
+      assert.equal(result.details.revision, 49);
+    }
+    ownerRevision = 48;
+    for (const code of ['stale_project', 'project_scope', 'suggestion_only', 'answer_outcome_unknown', 'question_answer_pending']) {
+      failure = { code, message: `Native refusal or uncertainty: ${code}` };
+      const result = await tools.get('project_answer').execute('refused-call', { expectedRevision: 48, taskID: 'task-0' });
+      assert.equal(result.isError, true);
+      assert.deepEqual(JSON.parse(result.content[0].text), { error: failure.code, message: failure.message });
+    }
+    failure = 'disconnect';
+    for (const name of ['project_assign', 'project_answer']) {
+      const result = await tools.get(name).execute(`possibly-accepted-${name}`, { expectedRevision: 48, taskID: 'task-0', spaceID: 'space', title: 'Task', prompt: 'Work' });
+      assert.equal(result.isError, true);
+      assert.deepEqual(JSON.parse(result.content[0].text), { error: 'owner_unavailable', message: 'Project owner disconnected', outcome: 'unknown', operationID: disconnectedOperations.at(-1) });
+      assert.deepEqual(result.details, {}, 'lost reply cannot prove acceptance or refusal');
+    }
+    failure = undefined;
+    for (evidenceMode of ['clipped', 'local']) {
+      const result = await tools.get('project_inspect').execute('retained-evidence-call', { taskID: 'task-0', includeResults: evidenceMode === 'clipped' });
+      const output = JSON.parse(result.content[0].text);
+      assert.equal(output.nativeTranscriptIncluded, false, 'retained receipts never promise an untruncated native transcript');
+      assert.deepEqual(output.messages.find(message => message.id === question.id), question, 'native question event, type/options and provenance survive even without an execution receipt');
+      assert.deepEqual(output.messages.find(message => message.id === human.id), human);
+      if (evidenceMode === 'clipped') {
+        assert.equal(output.tasks[0].executionReceipt.resultText, 'Clipped native preview...');
+        assert.equal(output.tasks[0].executionReceipt.resultEntryID, 'native-result-0');
+        assert.equal(output.messages[0].text, '{"omitted":"Content exceeds event budget; inspect the source worker conversation."}');
+      }
+    }
+    evidenceMode = undefined;
+    const calls = [
+      { name: 'project_read', arguments: {} },
+      { name: 'project_inspect', arguments: { taskID: 'task-0' } },
+      { name: 'project_inspect', arguments: { taskID: 'task-0', includeResults: true } },
+      { name: 'project_read', arguments: { includeModels: true } },
+    ];
+    await withPi(t, {
+      args: ['--no-extensions', '--no-skills', '--no-prompt-templates', '--no-themes', '--no-approve', '-e', path.resolve('Extensions/shepherd-project-context.ts')],
+      env: { SHEPHERD_PROJECT_CONTEXT: '{"projectID":"project"}', SHEPHERD_PROJECT_COORDINATOR: '1', SHEPHERD_AGENT_ID: 'coordinator', SHEPHERD_SOCKET: dir + '/s' },
+      settings: { compaction: { enabled: false } }, onRequest: script(calls.map(tool => ({ tool }))),
+    }, async pi => {
+      const turn = await pi.prompt('Inspect the assigned work.');
+      assert.equal(turn.requests.length, calls.length + 1, pi.stderr);
+      const outputs = turn.requests.at(-1).messages.filter(message => message.role === 'tool').map(message => JSON.parse(message.content));
+      assert.equal(outputs.length, calls.length);
+      assert.deepEqual(outputs, [read, inspect, full, discovery], 'the real pinned model sees exactly the projected results');
+      assert.ok(!turn.requests[0].system.includes(models[1199]), 'live context injects goal/memory, not a catalogue');
+      const declarations = turn.requests[0].body.tools.map(tool => tool.function);
+      for (const name of ['project_read', 'project_inspect', 'project_resolve']) assert.equal(declarations.find(tool => tool.name === name).description, tools.get(name).description, 'the real model gets the exact omission/retrieval warning');
+      const savedResults = (await pi.request({ type: 'get_messages' })).data.messages.filter(message => message.role === 'toolResult');
+      assert.deepEqual(savedResults.map(message => JSON.parse(message.content[0].text)), outputs, 'new tool results persist without rewriting native receipts');
+    });
+    assert.equal(JSON.stringify(project), stored, 'presentation never rewrites stored snapshots or receipts');
+    // ASCII fixture: token estimates are ceil(characters / 4), not tokenizer counts.
+    console.log('Project payload measurements (1200 models, 8 tasks, ~4 KiB native receipts): ' + JSON.stringify(measurements));
+    for (const row of measurements.filter(row => !row.includeModels && !row.includeResults)) assert.ok(row.bytesAfter < row.bytesBefore / 10);
   } finally {
     for (const key of ['SHEPHERD_PROJECT_CONTEXT', 'SHEPHERD_PROJECT_COORDINATOR', 'SHEPHERD_AGENT_ID', 'SHEPHERD_SOCKET']) {
       if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key];
