@@ -51,6 +51,8 @@ struct FixtureHostData {
     var capabilities: [String]? = nil
     /// The designs the host serves (`designs.v1`, its Design tool on); nil: the tool is off.
     var designs: FixtureDesigns? = nil
+    /// The files the thread's `write` calls made, by the path the call gave (`NativeThreadRequest.artifact`).
+    var artifacts: [String: Data] = [:]
 
     /// Everything this build knows, `designs.v1` only while the host has designs to serve.
     var defaultCapabilities: [String] {
@@ -188,7 +190,7 @@ enum FixtureData {
 enum FixtureCatalog {
     static var all: [FixtureScreen] {
         home + thread + context + newThread + subagents + review + changes + commit + search + settings + automations + windows + terminal + clientState
-            + designs + designPad + designPadMarkup
+            + designs + designPad + designPadMarkup + artifacts
     }
 
     static func screen(named name: String) -> FixtureScreen? {

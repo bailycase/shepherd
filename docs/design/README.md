@@ -133,10 +133,10 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | BrowserTabsOpened | [side-pane-browser](side-pane-browser.md) | Side pane: Browser | Built; site initials and 24pt close targets approved |
 | BrowserTabsPopup | [side-pane-browser](side-pane-browser.md) | Side pane: Browser | Built; site initials and 24pt close targets approved |
 | BrowserTabsTwo | [side-pane-browser](side-pane-browser.md) | Side pane: Browser | Built; site initials and 24pt close targets approved |
-| PaneArtifacts | [ios-ipad-pages](ios-ipad-pages.md) | Side pane (Artifacts) | Not built yet |
-| PaneArtifactEdit | [side-pane-artifacts](side-pane-artifacts.md) | Side pane (Artifacts › Editing in place) | Not built yet |
+| PaneArtifacts | [side-pane-artifacts](side-pane-artifacts.md) | Side pane: Artifacts | Built, without versions, Edit and Open in a window (departures.md) |
+| PaneArtifactEdit | [side-pane-artifacts](side-pane-artifacts.md) | Side pane (Artifacts › Editing in place) | Not built (the user's decision: no editing in place) |
 | PaneFiles | [ios-ipad-pages](ios-ipad-pages.md) | Side pane (Files) | Not built yet |
-| PaneStates | [ios-ipad-pages](ios-ipad-pages.md), [side-pane-browser](side-pane-browser.md), [side-pane-artifacts](side-pane-artifacts.md) | Side pane (tabs, dot, narrow, ⋯, button); Side pane: Browser; Side pane: Artifacts, Files | Partial (Browser: nothing open, viewport, the agent using it and the tab's tip built, on a remote thread too) |
+| PaneStates | [ios-ipad-pages](ios-ipad-pages.md), [side-pane-browser](side-pane-browser.md), [side-pane-artifacts](side-pane-artifacts.md) | Side pane (tabs, dot, narrow, ⋯, button); Side pane: Browser; Side pane: Artifacts, Files | Partial (Browser: nothing open, viewport, the agent using it and the tab's tip built, on a remote thread too; Artifacts and its ⌃3 built) |
 | ContextDetails | [composer](composer.md) | Composer, questions, and menus › Context meter | Built |
 | ContextFull | [composer](composer.md) | Composer, questions, and menus › Context meter | Built |
 | ContextCompacted | [composer](composer.md), [thread](thread.md) | Composer, questions, and menus › Context meter; Thread › Compactions | Built |
@@ -216,7 +216,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | iPadSplitView | [ios-iphone](ios-iphone.md), [ios-ipad-pages](ios-ipad-pages.md), [design-tool-references](design-tool-references.md) | iOS (Windows); iOS: iPad › Split View; Design tool › On iPad | Partial |
 | iPadSettingsInstructions | [settings](settings.md) | iOS: iPad › Settings | Partial |
 | iPadPaneBrowser | [ios-ipad-pages](ios-ipad-pages.md) | iOS: iPad › Side pane | Not built yet |
-| iPadPaneArtifacts | [ios-ipad-pages](ios-ipad-pages.md) | iOS: iPad › Side pane | Not built yet |
+| iPadPaneArtifacts | [ios-ipad-pages](ios-ipad-pages.md) | iOS: iPad › Side pane | Built, without versions, Edit and Open in a window (departures.md) |
 | iPadPaneFiles | [ios-ipad-pages](ios-ipad-pages.md) | iOS: iPad › Side pane | Not built yet |
 | iPadTerminal | [ios-iphone](ios-iphone.md), [terminal](terminal.md) | iOS (Terminal); Terminal (tabs only, no Split right; the options menu shows it and opens a terminal when there is none: departures) | Partial |
 

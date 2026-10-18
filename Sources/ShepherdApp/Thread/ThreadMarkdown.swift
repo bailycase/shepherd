@@ -1,6 +1,21 @@
 import SwiftUI
+import AppKit
 import ShepherdUI
 import ShepherdRemote
+import ShepherdSessions
+
+/// A local file link in prose opens in the editor chosen in Settings ▸ Advanced; its menu offers the others.
+extension NWProseFileLinks {
+    @MainActor static let app = NWProseFileLinks(
+        editorName: { url in EditorOpener.application(for: url, editor: AppSettings.shared.editor).map(EditorOpener.name(of:)) ?? "Editor" },
+        editors: {
+            EditorOpener.installedEditors().compactMap { app in
+                Bundle(url: app)?.bundleIdentifier.map { NWFileEditor(id: $0, name: EditorOpener.name(of: app)) }
+            }
+        },
+        open: { url, editor in ShepherdViewModel.openInEditor(url, editor: editor ?? AppSettings.shared.editor) },
+        reveal: { NSWorkspace.shared.activateFileViewerSelecting([$0]) })
+}
 
 /// Agent prose: the turn's parsed Markdown drawn by `NWAgentProse`, with fenced code
 /// highlighted. Blocks are parsed once per turn (`NativeTurnPresentation`); inline runs are

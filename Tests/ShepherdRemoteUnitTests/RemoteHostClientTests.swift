@@ -110,6 +110,7 @@ struct RemoteHostClientTests {
         (.queue(expectedSessionID: "s", generation: "g", operationID: UUID(), action: .subagent(id: UUID())), RemoteProtocol.nativeQueueSubagentCapability),
         (.setServiceTier(expectedSessionID: "s", generation: "g", operationID: UUID(), tier: "fast"), RemoteProtocol.nativeServiceTierCapability),
         (.image(expectedSessionID: "s", imageID: "user:1|0|0123456789abcdef", offset: 0), RemoteProtocol.nativeImagesCapability),
+        (.artifact(expectedSessionID: "s", path: "plan.md", offset: 0), RemoteProtocol.nativeArtifactsCapability),
     ])
     func newerRequestsNeedTheirCapability(_ request: NativeThreadRequest, capability: String) {
         let all = Set(RemoteProtocol.capabilities)
@@ -159,6 +160,19 @@ struct RemoteHostClientTests {
         #expect(RemoteHostClient.missingCapability(.image(expectedSessionID: "s", imageID: "x|0|0123456789abcdef", offset: 0), capabilities: older)
                 == "Update Shepherd on the host to see this thread's images.")
         #expect(RemoteHostClient.missingCapability(.image(expectedSessionID: "s", imageID: "x|0|0123456789abcdef", offset: 0), capabilities: all) == nil)
+    }
+
+    /// A host without `native.artifacts.v1` never offers artifact files, whatever its snapshot lists.
+    @Test func artifactFilesAreOfferedOnlyByAHostThatServesThem() {
+        let snapshot = NativeThreadSnapshot(piSessionID: "s", generation: "g", revision: 1, running: false,
+                                            supportedActions: ["send", "artifacts", "retry"], dialogsSupported: true, dialogs: [],
+                                            messages: [], provisional: [], clipped: false)
+        let all = Set(RemoteProtocol.capabilities)
+        #expect(RemoteHostClient.incoming(.snapshot(value: snapshot), capabilities: all).actions == ["send", "artifacts", "retry"])
+        let older = all.subtracting([RemoteProtocol.nativeArtifactsCapability])
+        #expect(RemoteHostClient.incoming(.snapshot(value: snapshot), capabilities: older).actions == ["send", "retry"])
+        #expect(RemoteHostClient.missingCapability(.artifact(expectedSessionID: "s", path: "a.md", offset: 0), capabilities: older)
+                == "Update Shepherd on the host to open this thread's files.")
     }
 
     /// A host without `native.interrupt.v1` never offers Steer now as an interrupt, whatever its

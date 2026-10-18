@@ -198,10 +198,11 @@ struct ThreadView: View {
                     .background { ThreadScrollViewFinder(guardian: tailGuard) }
                     .environment(\.compactionExpansion, store.compactions)
                     .environment(\.turnErrorExpansion, store.errors)
-                    // A local agent's images draw from its folder; a remote agent's files are not here.
+                    // A local agent's images and file links resolve in its folder; a remote agent's files are not here.
                     .environment(\.nwProseFileRoot, workingDirectory.map {
                         URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath, isDirectory: true)
                     })
+                    .environment(\.nwProseFileLinks, .app)
                 }
                 .id(transcriptRevision)
                 .scrollPosition($historyAnchor.position)

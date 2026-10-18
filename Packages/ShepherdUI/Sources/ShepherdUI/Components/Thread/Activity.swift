@@ -16,7 +16,7 @@ public struct NWActivityLine: View {
     /// was sent ("Looked at Checkout funnel dashboard › A · Funnel first"): the nib too. `browser`
     /// is an agent using its thread's Browser ("Opened localhost:5173/checkout in Browser"): the globe. `images` is the neutral count of the
     /// images a message or a tool result carries ("2 images", ThreadImagesSent and ThreadImagesReceived): the `photo` glyph.
-    public enum Kind: Sendable { case explore, edit, run, subagents, drew, checked, lookedAtDesign, browser, images, other }
+    public enum Kind: Sendable { case explore, edit, run, subagents, drew, checked, lookedAtDesign, browser, images, artifact, other }
 
     public enum Status: Equatable, Sendable {
         case done
@@ -77,6 +77,7 @@ public struct NWActivityLine: View {
         case .checked: "checkmark.shield"
         case .browser: "globe"
         case .images: "photo"
+        case .artifact: NWGlyph.artifact.symbolName
         case .other: "wrench.adjustable"
         }
     }

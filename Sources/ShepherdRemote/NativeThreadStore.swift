@@ -156,6 +156,8 @@ public final class NativeThreadStore {
     /// Each reply's subagents, where their spawn calls were (keyed by turn id).
     public private(set) var placements: [String: NativeSubagentPlacement] = [:] { didSet { threadVersion &+= 1 } }
     public private(set) var subagents: [NativeSubagent] = [] { didSet { chromeVersion &+= 1 } }
+    /// The files the agent made in this thread (`nativeArtifacts`), newest first. Derived once per change, never in a view.
+    public private(set) var artifacts: [NativeArtifact] = []
     /// The subagent tray above the composer, while it shows (`nativeTrayRuns`).
     public private(set) var tray: NativeSubagentTray? { didSet { chromeVersion &+= 1 } }
     /// When the prompt that opened the current turn was sent (ms). A queued follow-up has not
@@ -321,6 +323,8 @@ public final class NativeThreadStore {
     /// The images pi saved in this thread, fetched on demand from the host (`NativeThreadImages`). Not observed: a view
     /// that wants one asks, and holds what it got.
     @ObservationIgnored public let images = NativeThreadImages()
+    /// The files the agent made, fetched on demand from the host (`NativeThreadArtifacts`).
+    @ObservationIgnored public let artifactFiles = NativeThreadArtifacts()
     @ObservationIgnored private var presentationCache: [String: (key: PresentationKey, value: NativeTurnPresentation)] = [:]
     /// The machine the agent runs on ("build-01"), named in its errors' Details. Set by the
     /// thread's owner.
@@ -494,6 +498,8 @@ public final class NativeThreadStore {
         if turns != self.turns { self.turns = turns }
         let runs = snapshot?.subagents ?? []
         if runs != subagents { subagents = runs }
+        let made = nativeArtifacts(displayed.filter { $0.toolName == "write" }.map(call))
+        if made != artifacts { artifacts = made }
         let placements = nativeSubagentPlacements(runs, turns: turns)
         if placements != self.placements { self.placements = placements }
         let currentTurns = turns.suffix(from: turns.lastIndex(where: \.isUser) ?? turns.startIndex)
@@ -752,6 +758,7 @@ public final class NativeThreadStore {
         let run = epoch
         self.request = request
         images.configure(sessionID: snapshot?.piSessionID, fetch: request)
+        artifactFiles.configure(sessionID: snapshot?.piSessionID, fetch: request)
         if let preview, snapshot == nil {
             Task { [weak self] in
                 guard let value = await preview(), let self, self.epoch == run else { return }
@@ -963,6 +970,7 @@ public final class NativeThreadStore {
                 }
                 if value != snapshot { snapshot = value }
                 images.configure(sessionID: value.piSessionID, fetch: request)
+                artifactFiles.configure(sessionID: value.piSessionID, fetch: request)
                 if previewing { previewing = false }
                 if !ready { ready = true }
                 endStarting()

@@ -18,7 +18,9 @@ public final class ProjectSettingsStore: @unchecked Sendable {
     private let sessions: URL
     private let systems: URL?
     private let globalDirectories: @Sendable () -> [URL]
-    private let openEditor: @MainActor @Sendable (URL) async throws -> Void
+    private let openEditor: (@MainActor @Sendable (URL) async throws -> Void)?
+    /// The editor's bundle identifier (Settings ▸ Advanced; nil or empty: the file's default app), read when a file opens.
+    @MainActor public var editor: @MainActor () -> String? = { nil }
     private var history: [Entry] = []
     private var loaded = false
     private var importedSessions = false
@@ -104,7 +106,7 @@ public final class ProjectSettingsStore: @unchecked Sendable {
                 globalDirectories: @escaping @Sendable () -> [URL] = { [] },
                 openEditor: (@MainActor @Sendable (URL) async throws -> Void)? = nil, pi: PiSetup? = nil) {
         self.mcp = pi.map { ProjectMCPService(pi: $0) }
-        self.openEditor = openEditor ?? ProjectSettingsStore.openEditor
+        self.openEditor = openEditor
         self.historyURL = historyURL; self.home = home; self.sessions = sessions; self.systems = systems
         self.globalDirectories = globalDirectories
     }
@@ -146,7 +148,7 @@ public final class ProjectSettingsStore: @unchecked Sendable {
             let reference: URL = try await withCheckedThrowingContinuation { continuation in
                 queue.async { [self] in continuation.resume(with: Result { try editorReference(root: root(directory), file: file) }) }
             }
-            try await openEditor(reference)
+            if let openEditor { try await openEditor(reference) } else { try await Self.openEditor(reference, store: self) }
             return .opened
         }
         return try await withCheckedThrowingContinuation { continuation in
@@ -402,12 +404,11 @@ public final class ProjectSettingsStore: @unchecked Sendable {
         }
     }
 
-    @MainActor private static func openEditor(_ url: URL) async throws {
-        let workspace = NSWorkspace.shared
-        if let editor = workspace.urlForApplication(withBundleIdentifier: "com.apple.dt.Xcode")
-            ?? workspace.urlForApplication(withBundleIdentifier: "com.apple.TextEdit") {
-            _ = try await workspace.open([url], withApplicationAt: editor, configuration: NSWorkspace.OpenConfiguration())
-        } else { throw ProjectFileError("editor", "No text editor is available on this host.") }
+    @MainActor private static func openEditor(_ url: URL, store: ProjectSettingsStore) async throws {
+        guard EditorOpener.application(for: url, editor: store.editor()) != nil else {
+            throw ProjectFileError("editor", "No text editor is available on this host.")
+        }
+        try await EditorOpener.open(url, editor: store.editor())
     }
 
     private func modified(root: URL, file: String) -> Double? {

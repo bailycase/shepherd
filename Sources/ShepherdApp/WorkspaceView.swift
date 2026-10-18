@@ -568,6 +568,7 @@ struct PaneLeafView: View, Equatable {
                 )
                 // Design references reach an ordinary thread only (docs/designs.md › Isolation).
                 .environment(\.designReferences, vm.designReferenceChips(for: agentID))
+                .environment(\.openArtifact, { [vm] path in vm.selectAgent(agentID); vm.showArtifact(.local(agentID), path: path) })
             } else {
                 LiveTerminalPane(
                     session: vm.sessions.session(for: pane, in: tab),
@@ -1019,6 +1020,7 @@ struct RemoteAgentThreadPane: View {
             },
             designChat: designChat, retainedInput: vm.remoteThreadStores.input(for: ref)
         )
+        .environment(\.openArtifact, designChat ? nil : { path in vm.showArtifact(.remote(ref), path: path) })
     }
 }
 

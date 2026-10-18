@@ -222,11 +222,14 @@ Instructions, SettingsInstructions; `Settings/InstructionsScreens.swift`):
 
 ## Side pane (iPadPaneBrowser, iPadPaneArtifacts, iPadPaneFiles)
 
-Built: the Changes pane (see Review) is the only thing beside a thread; its head carries the
-Changes tab alone, and the header's side-pane button shows and hides it (Thread › Header
-buttons).
+Built: the side pane beside a thread (`PadReviewScreen`), its head the segmented control of the tabs
+Shepherd has, Changes (the docked review) and Artifacts (iPadPaneArtifacts, once the thread has made a file); the header's
+side-pane button shows and hides it (Thread › Header buttons). Artifacts: the list ("This thread · N"), and the open
+artifact under a 52pt bar (All artifacts, the kind tile, the name, Preview | Source, Save a copy), Markdown in Night Watch colors,
+HTML and SVG in a locked-down web view on their own background, 18pt in; "Made an artifact" opens it here (on iPhone, in a
+sheet over the thread). **Not built: Browser, Files**, the board's version chip, Edit and Open in a window (departures.md).
 
-**Not built yet: the side pane.** Show side pane (a 40pt circle in the thread's header; Hide side
+**Not built yet: the rest of the side pane.** Show side pane (a 40pt circle in the thread's header; Hide side
 pane, on `bgSelected`, while it shows) opens a pane on the thread's trailing side, with a 1px
 `lineStrong` leading edge on `bgWindow`: 620pt for Browser, 640pt for Artifacts, 720pt for
 Files. The sidebar hides while it is open (Show sidebar in the header). Its tabs are the review
@@ -257,12 +260,10 @@ and three more, so the docked review becomes its Changes tab.
     "Console" at 12/600, "Network" at 12 `textSecondary` with its count in mono 10.5
     `textTertiary`, "1 warning" at 11.5 `lanternText` with a triangle, and Hide console (24pt).
   - The thread's line for it: "Opened the checkout · localhost:5173".
-- **Artifacts** (iPadPaneArtifacts): the thread's line "Made an artifact · Load test report ·
-  v2" opens it here.
+- **Artifacts** (iPadPaneArtifacts): the thread's line "Made an artifact · Load test report" opens it here.
   - A 52pt bar: All artifacts (36pt), a 22pt `bgSelected` tile at radius 6, the name at 13/600,
-    the version as a menu chip (22pt, radius 6, a 1px `lineSubtle` line, a clock glyph, "v2 · 6m
-    ago" in mono 11 `textSecondary`, a chevron), Preview | Source (20pt segments), Edit, and Open
-    in a window (36pt).
+    Preview | Source (20pt segments), and Save a copy (36pt). (The board's version chip, Edit and Open in a window are
+    not built: departures.md.)
   - The artifact renders in its own colors on a padded surface (18pt).
 - **Files** (iPadPaneFiles), the repo while pi works in it:
   - A 210pt tree on `bgBase` (a 1px `lineSubtle` trailing edge). Its head (10×12 inset, a

@@ -141,7 +141,7 @@ parent's answer all draw as `queued`; a subagent never draws `attention`, which 
   continuation at the settlement boundary. Questions expose attempt-specific IDs for stale-answer
   refusal; delivery remains best-effort, not a durable exactly-once mailbox.
 - **The Subagents tab** (SubagentList; design saved as `docs/design/boards/SubagentList.png`): the side pane's
-  third tab (`arrow.triangle.branch`, ⌃3, after Changes and the Browser), the whole thread's runs where the
+  fourth tab (`arrow.triangle.branch`, ⌃4, after Changes, the Browser and Artifacts), the whole thread's runs where the
   tray holds only the current turn's. A remote thread has it too, from its own store; a host with no subagent
   control still lists the runs. `SubagentListPresentation` derives the list once per change of the runs
   (`SubagentListTab`: a lazy stack with one view per head and per row; the budget is `NWRenderProbe`
@@ -175,7 +175,7 @@ parent's answer all draw as `queued`; a subagent never draws `attention`, which 
     as the state does. No runs, no tab and no dot. VoiceOver reads it with the count ("5, Running"). Failed and stopped drawing
     red is the agent's reading of "green means done", not the user's words; it follows the existing `AgentState` rule that only
     `done` is green.
-  - **Decided by the agent, not drawn by the board, not approved by the user:** the tab appears only once the thread has a run (⌃3
+  - **Decided by the agent, not drawn by the board, not approved by the user:** the tab appears only once the thread has a run (⌃4
     and View › Subagents beep before that); an open tab with no runs says "No subagents" (or "Loading the thread…" before the thread
     has loaded), centered in `textSecondary` at `ui` size with 32pt around it: the board's CSS has an empty-state rule
     (`.sl-empty`) but draws no such state, so the layout follows that rule and the words are the app's; the earlier section reads

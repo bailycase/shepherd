@@ -40,6 +40,8 @@ final class ReviewStores {
 @Observable
 final class ReviewStore {
     enum PadLayout: Hashable { case docked, full }
+    /// The docked pane's tab (iPadPaneArtifacts: the review is its Changes tab).
+    enum PadTab: Hashable { case changes, artifacts }
     enum DiffStyle: Hashable { case unified, split }
 
     struct LineKey: Hashable {
@@ -121,6 +123,9 @@ final class ReviewStore {
     /// iPad: beside the thread or full screen, and the file shown. `diffStyle` is the reviewer's
     /// choice; nil draws split where the diff is wide enough and unified where it is not.
     var padLayout: PadLayout = .docked
+    /// The tab the docked pane shows, and the artifact open on its Artifacts tab (its path; nil is the list).
+    var padTab: PadTab = .changes
+    var artifact: String?
     var diffStyle: DiffStyle?
     var currentFile: String?
     /// The base picker is open (the phone's sheet, the iPad's popover).

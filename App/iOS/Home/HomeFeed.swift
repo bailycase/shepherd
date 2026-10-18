@@ -164,7 +164,7 @@ final class HomeFeed {
                         if digest?.matches(piSessionID: piSessionID, generation: generation, revision: revision) != true {
                             readIn[ref] = nil
                         }
-                    case .failure, .accepted, .transcript, .imageChunk:
+                    case .failure, .accepted, .transcript, .imageChunk, .artifactChunk:
                         // A thread still starting, or one that has none: try again next connection.
                         readIn[ref] = session
                     }

@@ -361,6 +361,9 @@ automated step of the worktree flows can be turned off here.
   socket, "Where each agent process reports status and terminal requests.": `PathRow`s, the file's name in
   mono `textSecondary` (`state.json`, `shepherd.sock`; the full path as its tooltip) and Reveal,
   which selects it in Finder.
+- **Editor:** Open files in, "File links in replies, reviewed files and project files. System
+  default uses each file's own app.": a popup of System default, the installed apps that open
+  plain text or source code, and Choose… (an app picker). Stored as the app's bundle identifier.
 - **Updates:** Check for updates automatically, a switch; Update channel, "Stable: tagged releases.
   Beta: pre-releases, plus newer stable builds. Nightly builds are a separate app, Shepherd
   Nightly.": Stable · Beta. Shepherd Nightly names its one channel instead ("Nightly", in

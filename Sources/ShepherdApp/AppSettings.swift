@@ -77,6 +77,7 @@ final class AppSettings {
         static let childThinking = "shepherd.pi.children.thinking"
         static let childContext = "shepherd.pi.children.context"
         static let shellPath = "shepherd.pane.shell"
+        static let editor = "shepherd.files.editor"
         static let uiDensity = "shepherd.ui.density"
         static let uiTextScale = "shepherd.ui.textScale"
         static let sidebarWidth = "shepherd.ui.sidebarWidth"
@@ -101,7 +102,7 @@ final class AppSettings {
 
         static let all = [
             terminalFontFamily, terminalFontSize, defaultModel,
-            defaultThinking, defaultServiceTier, goalCrossProviderEvaluation, namingModel, queueDelivery, trimToolOutput, deferTools, codemode, compactAtPercent, shellPath,
+            defaultThinking, defaultServiceTier, goalCrossProviderEvaluation, namingModel, queueDelivery, trimToolOutput, deferTools, codemode, compactAtPercent, shellPath, editor,
             piPanesExtension, piReviewExtension, subagentDisplay, piNativeSubagents,
             piMCPExtension, piBrowserExtension, piDesignReferences,
             childConcurrency, childModel, childThinking, childContext,
@@ -332,6 +333,12 @@ final class AppSettings {
         didSet { store.set(shellPath, forKey: Key.shellPath) }
     }
 
+    /// The bundle identifier of the app local files open in (prose file links, review, project
+    /// files); nil opens each file in its system default app.
+    var editor: String? {
+        didSet { if let editor { store.set(editor, forKey: Key.editor) } else { store.removeObject(forKey: Key.editor) } }
+    }
+
     /// Row-height multiplier for app chrome (sidebar rows, headers). 1.0 is
     /// the designed density; smaller packs more agents on screen.
     var uiDensity: Double {
@@ -528,6 +535,7 @@ final class AppSettings {
         let context = store.string(forKey: Key.childContext) ?? "fresh"
         childContext = ["fresh", "fork"].contains(context) ? context : "fresh"
         shellPath = store.string(forKey: Key.shellPath) ?? Defaults.shellPath
+        editor = store.string(forKey: Key.editor).flatMap { $0.isEmpty ? nil : $0 }
         let density = store.double(forKey: Key.uiDensity)
         uiDensity = min(max(density == 0 ? 1 : density, Self.uiDensityRange.lowerBound), Self.uiDensityRange.upperBound)
         let textScale = store.double(forKey: Key.uiTextScale)
@@ -631,6 +639,7 @@ final class AppSettings {
         childThinking = ""
         childContext = "fresh"
         shellPath = Defaults.shellPath
+        editor = nil
         worktreeBaseMode = .fresh
         worktreeFetchBeforeCreate = true
         worktreeAutoCommit = true

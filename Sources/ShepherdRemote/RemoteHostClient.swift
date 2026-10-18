@@ -451,6 +451,8 @@ public final class RemoteHostClient: @unchecked Sendable {
             capabilities.contains(RemoteProtocol.nativeGoalCapability) ? nil : "Update Shepherd on the host to control goals."
         case .image:
             capabilities.contains(RemoteProtocol.nativeImagesCapability) ? nil : "Update Shepherd on the host to see this thread's images."
+        case .artifact:
+            capabilities.contains(RemoteProtocol.nativeArtifactsCapability) ? nil : "Update Shepherd on the host to open this thread's files."
         case .setServiceTier:
             capabilities.contains(RemoteProtocol.nativeServiceTierCapability) ? nil : "Update Shepherd on the host to change its speed."
         case .send where !request.images.isEmpty:
@@ -476,7 +478,8 @@ public final class RemoteHostClient: @unchecked Sendable {
         let before = value.supportedActions
         for (capability, action) in [(RemoteProtocol.nativeRetryCapability, "retry"), (RemoteProtocol.nativeInterruptCapability, "interrupt"),
                                      (RemoteProtocol.nativeServiceTierCapability, "setServiceTier"), (RemoteProtocol.nativeGoalCapability, "goal"),
-                                     (RemoteProtocol.nativeImagesCapability, "images"), (RemoteProtocol.nativeQueueSubagentCapability, "queueSubagent")]
+                                     (RemoteProtocol.nativeImagesCapability, "images"), (RemoteProtocol.nativeQueueSubagentCapability, "queueSubagent"),
+                                     (RemoteProtocol.nativeArtifactsCapability, "artifacts")]
         where !capabilities.contains(capability) {
             value.supportedActions.removeAll { $0 == action }
         }

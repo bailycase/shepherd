@@ -166,17 +166,20 @@ extension ShepherdViewModel {
         }
     }
 
-    /// Open a reviewed file in Xcode (the system default editor when Xcode is absent).
+    /// Open a reviewed file in the editor chosen in Settings (the file's default app when none is).
     func openReviewFile(_ session: ReviewSession, file: DiffFile) {
         let cwd = session.cwd
         Task {
             let root = await Task.detached { GitDiff.repositoryRoot(cwd: cwd) }.value
-            let url = URL(fileURLWithPath: root).appendingPathComponent(file.displayPath)
-            if let xcode = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.dt.Xcode") {
-                _ = try? await NSWorkspace.shared.open([url], withApplicationAt: xcode, configuration: NSWorkspace.OpenConfiguration())
-            } else {
-                NSWorkspace.shared.open(url)
-            }
+            Self.openInEditor(URL(fileURLWithPath: root).appendingPathComponent(file.displayPath), editor: settings.editor)
+        }
+    }
+
+    /// Open a local file in `editor` (a bundle identifier), else its default app; a failure is logged.
+    static func openInEditor(_ url: URL, editor: String?) {
+        Task {
+            do { try await EditorOpener.open(url, editor: editor) }
+            catch { ShepherdLog.warning("Could not open \(url.path) in an editor: \(error)") }
         }
     }
 

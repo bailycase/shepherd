@@ -1,7 +1,9 @@
 import SwiftUI
 import ShepherdUI
 import AppKit
+import UniformTypeIdentifiers
 import ShepherdProtocol
+import ShepherdSessions
 
 // MARK: Advanced
 
@@ -25,6 +27,7 @@ struct AdvancedSettings: View {
                 PathRow(title: "Extension socket", subtitle: "Where each agent process reports status and terminal requests.",
                         url: ShepherdPaths.socketURL())
             }
+            EditorSettings(settings: vm.settings)
             SettingsGroup(title: "Updates") {
                 if updater.available {
                     SettingsRow(title: "Check for updates automatically") {
@@ -67,6 +70,43 @@ struct AdvancedSettings: View {
                 confirmingReset = false
             }
         }
+    }
+}
+
+/// Settings ▸ Advanced ▸ Editor: the app local files open in (file links in replies, review, project files).
+struct EditorSettings: View {
+    @Bindable var settings: AppSettings
+    @State private var editors: [URL] = []
+
+    private var title: String {
+        guard let id = settings.editor else { return "System default" }
+        return NSWorkspace.shared.urlForApplication(withBundleIdentifier: id).map(EditorOpener.name(of:)) ?? id
+    }
+
+    var body: some View {
+        SettingsGroup(title: "Editor") {
+            SettingsRow(title: "Open files in", subtitle: "File links in replies, reviewed files and project files. System default uses each file's own app.") {
+                NWPopupMenu(title, minWidth: AppLayout.settingsPopupWidth) {
+                    Button("System default") { settings.editor = nil }
+                    Divider()
+                    ForEach(editors, id: \.self) { app in
+                        Button(EditorOpener.name(of: app)) { settings.editor = Bundle(url: app)?.bundleIdentifier }
+                    }
+                    Divider()
+                    Button("Choose…") { choose() }
+                }
+                .accessibilityLabel("Open files in")
+            }
+        }
+        .task { editors = EditorOpener.installedEditors() }
+    }
+
+    private func choose() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.application]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
+        guard panel.runModal() == .OK, let app = panel.url, let id = Bundle(url: app)?.bundleIdentifier else { return }
+        settings.editor = id
     }
 }
 
