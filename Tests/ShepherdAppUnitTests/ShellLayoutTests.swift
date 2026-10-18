@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import ShepherdCore
+import ShepherdTestKit
 import ShepherdUI
 import Testing
 @testable import ShepherdApp
@@ -89,6 +90,25 @@ struct ShellLayoutTests {
     @Test(arguments: [(1440.0, 720.0), (1000.0, 500.0), (781.0, 380.0), (700.0, 699.0)])
     func theWidestPaneIsHalfTheColumn(column: Double, width: Double) {
         #expect(ShellLayout.widestRightPane(containerWidth: column) == CGFloat(width))
+    }
+
+    /// A Project page's Threads pane is the same split with its own key and its board's 479 (480 with the divider) default: its
+    /// width persists like a thread's pane, a narrower-than-minimum save restores the default, and the two never share a width.
+    @Test func theProjectPaneKeepsItsOwnWidthBesideTheThreadPane() {
+        let defaults = ScratchDefaults()
+        let thread = RightPaneState(defaults: defaults)
+        let project = RightPaneState(widthKey: ShepherdViewModel.logicalProjectPaneWidthKey, defaultWidth: 479, defaults: defaults)
+        #expect(thread.width == 0 && project.width == 0, "both start at their defaults")
+        #expect(ShellLayout.rightPane(containerWidth: 1368, preferredWidth: project.width, defaultWidth: project.defaultWidth).width == 479)
+        #expect(ShellLayout.rightPane(containerWidth: 1368, preferredWidth: thread.width, defaultWidth: thread.defaultWidth).width == 600)
+        project.width = 620
+        #expect(thread.width == 0, "dragging the Project pane leaves a thread's pane alone")
+        #expect(RightPaneState(widthKey: ShepherdViewModel.logicalProjectPaneWidthKey, defaultWidth: 479, defaults: defaults).width == 620,
+                "the width comes back on the next launch")
+        #expect(RightPaneState(defaults: defaults).width == 0)
+        defaults.set(100.0, forKey: ShepherdViewModel.logicalProjectPaneWidthKey)
+        #expect(RightPaneState(widthKey: ShepherdViewModel.logicalProjectPaneWidthKey, defaultWidth: 479, defaults: defaults).width == 0,
+                "a width under the minimum restores the default")
     }
 
     @Test(arguments: Array(stride(from: 0.0, through: 2400, by: 37)))

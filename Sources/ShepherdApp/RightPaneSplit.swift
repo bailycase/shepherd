@@ -7,7 +7,7 @@ import ShepherdUI
 /// Device-local view state: the width persists, the rest does not.
 @MainActor @Observable
 final class RightPaneState {
-    static let widthKey = "shepherd.rightPaneWidth"
+    nonisolated static let widthKey = "shepherd.rightPaneWidth"
     var runByAgent: [AgentID: String] = [:]
     var remoteRuns: [RemoteAgentRef: String] = [:]
     /// Threads whose pane shows its tabs (an inspected run may cover them).
@@ -21,13 +21,21 @@ final class RightPaneState {
     /// A run whose Steer field takes focus when its inspector shows it (the tray's Steer),
     /// until it does.
     var steerRun: String?
-    /// Zero until the user resizes: the pane then takes the 600pt default.
+    /// Zero until the user resizes: the pane then takes `defaultWidth`.
     var width: CGFloat {
-        didSet { UserDefaults.standard.set(Double(width), forKey: Self.widthKey) }
+        didSet { defaults.set(Double(width), forKey: widthKey) }
     }
+    /// The width before the user resizes (a thread's 600; a Project page's 480 box less its divider).
+    let defaultWidth: CGFloat
+    @ObservationIgnored private let widthKey: String
+    @ObservationIgnored private let defaults: UserDefaults
 
-    init() {
-        let saved = UserDefaults.standard.double(forKey: Self.widthKey)
+    init(widthKey: String = RightPaneState.widthKey, defaultWidth: CGFloat = AppLayout.paneDefaultWidth,
+         defaults: UserDefaults = .standard) {
+        self.widthKey = widthKey
+        self.defaultWidth = defaultWidth
+        self.defaults = defaults
+        let saved = defaults.double(forKey: widthKey)
         width = saved >= AppLayout.paneMinWidth ? CGFloat(saved) : 0
     }
 
@@ -86,7 +94,8 @@ struct RightPaneSplit<Content: View, Pane: View>: View {
     var body: some View {
         GeometryReader { geo in
             let total = geo.size.width
-            let layout = ShellLayout.rightPane(containerWidth: total, preferredWidth: liveWidth ?? state.width)
+            let layout = ShellLayout.rightPane(containerWidth: total, preferredWidth: liveWidth ?? state.width,
+                                               defaultWidth: state.defaultWidth)
             let docked = layout.mode == .docked
             let covers = showPane && maximized
             let paneWidth = covers ? total : layout.width
@@ -135,7 +144,8 @@ struct RightPaneSplit<Content: View, Pane: View>: View {
                         .onChanged { liveWidth = total - $0.location.x }
                         .onEnded { _ in
                             if let liveWidth {
-                                state.width = ShellLayout.rightPane(containerWidth: total, preferredWidth: liveWidth).width
+                                state.width = ShellLayout.rightPane(containerWidth: total, preferredWidth: liveWidth,
+                                                                    defaultWidth: state.defaultWidth).width
                             }
                             liveWidth = nil
                         })
@@ -148,7 +158,8 @@ struct RightPaneSplit<Content: View, Pane: View>: View {
             .accessibilityValue("\(Int(width)) points")
             .accessibilityAdjustableAction { direction in
                 let step: CGFloat = direction == .increment ? AppLayout.paneAdjustStep : direction == .decrement ? -AppLayout.paneAdjustStep : 0
-                state.width = ShellLayout.rightPane(containerWidth: total, preferredWidth: width + step).width
+                state.width = ShellLayout.rightPane(containerWidth: total, preferredWidth: width + step,
+                                                    defaultWidth: state.defaultWidth).width
             }
     }
 }

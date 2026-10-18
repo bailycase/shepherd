@@ -31,6 +31,11 @@ struct LogicalProjectConversationTests {
         expectScenarioCompleted(result)
     }
 
+    @Test func theThreadsPaneResizesAtItsDividerLikeAThreadsSidePane() async {
+        let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.paneResize() } }
+        expectScenarioCompleted(result)
+    }
+
     @Test func aChosenFilterOffersShowAllAndChoosingItClearsTheFilter() async {
         let result = await #expect(processExitsWith: .success, observing: [\.standardOutputContent]) { await completingScenario { try await Self.filterReset() } }
         expectScenarioCompleted(result)
@@ -382,6 +387,107 @@ struct LogicalProjectConversationTests {
         }
         try window.press("Close")
         try await eventuallyOnMain("the pane returns to Threads") { r.vm.logicalProjectPaneTask == nil }
+    }
+
+    /// The Threads pane's leading edge is `RightPaneSplit`'s divider, as a thread's side pane is: a column-resize handle you drag, or
+    /// adjust with VoiceOver, that keeps the conversation 400pt while it docks, persists one width for every Project, and survives
+    /// Close, Expand, a narrower window and larger text. The drag is real mouse events sent to the off-screen window (never posted).
+    private static func paneResize() async throws {
+        let r = try await rig()
+        defer { r.app.stop() }
+        guard case .project(let other) = try await r.app.server.logicalProjects(
+            .create(projectID: ProjectID(), name: "Other project", goal: "", linkedSpaceIDs: [r.space.id])) else { throw RigError("no other project") }
+        try await eventuallyOnMain("both projects") { r.vm.state.projects.count == 2 }
+        r.vm.openLogicalProject(r.ref)
+        let window = OffscreenWindow(size: CGSize(width: 1600, height: 900), dark: true, RootView(vm: r.vm))
+        defer { window.close() }
+        func handle() -> AccessibilityNode? { window.elements().first { $0.label == "Pane width" } }
+        /// The drawn pane's width: the window's trailing edge less the 1pt divider, which the 9pt handle centres on.
+        func paneWidth() -> String? { handle().map { "\(Int((window.window.frame.maxX - $0.frame.midX - AppLayout.dividerWidth / 2).rounded())) points" } }
+        func control(_ label: String) throws -> Control { try #require(window.controls().first { $0.label == label }, "\(label) on screen") }
+        /// The pane's header stays inside the window and the conversation's composer stays left of the divider.
+        func expectReachable(_ when: String) throws {
+            let edge = try #require(handle()).frame
+            let close = try control("Close")
+            let field = try #require(window.elements().first { $0.label == "Message the agent" }).frame
+            #expect(close.frame.maxX <= window.window.frame.maxX + 0.5 && close.frame.minX > edge.maxX, "Close is reachable \(when): \(close.frame) beside \(edge)")
+            #expect(field.maxX <= edge.minX, "the composer \(field) stays left of the divider \(edge) \(when)")
+        }
+        try await eventuallyOnMain("the divider") { paneWidth() == "479 points" }
+        // The default is the board's: a 1pt divider and the 479 pane, so the conversation keeps its 888.
+        let edge = try #require(handle()).frame
+        #expect(edge.width == AppLayout.resizeHandleWidth, "the shared 9pt handle: \(edge)")
+        #expect(abs(window.window.frame.maxX - (edge.midX - AppLayout.dividerWidth / 2) - NWLeadMetrics.paneWidth) < 0.5, "the divider and pane are the board's 480: \(edge)")
+        try expectReachable("by default")
+
+        // VoiceOver's increment widens it by the shared step, and the width is saved where a thread's pane keeps its own.
+        let increment = NSSelectorFromString("accessibilityPerformIncrement")
+        _ = try #require(handle()).object.perform(increment)
+        try await eventuallyOnMain("incremented") { paneWidth() == "\(479 + Int(AppLayout.paneAdjustStep)) points" }
+        let saved = r.app.defaults.double(forKey: ShepherdViewModel.logicalProjectPaneWidthKey)
+        #expect(saved == Double(479 + AppLayout.paneAdjustStep), "saved \(saved), the state holds \(r.vm.logicalProjectPane.width)")
+        #expect(r.app.defaults.object(forKey: RightPaneState.widthKey) == nil, "a thread's pane width is untouched")
+
+        // A drag: down on the divider, 100pt to the left, up. The pane widens by the drag, the conversation narrows.
+        let start = try #require(handle()).frame
+        func mouse(_ type: NSEvent.EventType, x: CGFloat) throws {
+            let point = window.window.convertPoint(fromScreen: CGPoint(x: x, y: start.midY))
+            window.window.sendEvent(try #require(NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: 0,
+                                                                    windowNumber: window.window.windowNumber, context: nil,
+                                                                    eventNumber: 0, clickCount: 1, pressure: 1)))
+        }
+        // Grab at the line's trailing edge (the handle centres on the 1pt line), so the pane's new width is a whole 619.
+        let grab = start.midX + AppLayout.dividerWidth / 2
+        try mouse(.leftMouseDown, x: grab)
+        for step in 1...5 { try mouse(.leftMouseDragged, x: grab - CGFloat(step) * 20) }
+        try mouse(.leftMouseUp, x: grab - 100)
+        try await eventuallyOnMain("dragged") { window.layout(); return r.vm.logicalProjectPane.width == 619 }
+        #expect(!window.window.isKeyWindow, "local mouse dispatch never takes the user's focus")
+        try await eventuallyOnMain("the drawn width follows") { paneWidth() == "619 points" }
+        try expectReachable("after the drag")
+
+        // Another Project: one width for every Project, as one width serves every thread.
+        r.vm.openLogicalProject(LogicalProjectRef(home: .local, id: other.id))
+        try await eventuallyOnMain("the other project") { window.layout(); return window.elements().contains { $0.label == "Other project" } }
+        #expect(paneWidth() == "619 points")
+        r.vm.openLogicalProject(r.ref)
+
+        // A narrower window: the pane gives way so the conversation keeps 400 (1200 less the 232 sidebar and its edge is 967, half
+        // of which is 483); narrower still, it overlays the conversation as a thread's does. The saved width is kept for later.
+        window.window.setContentSize(CGSize(width: 1200, height: 900))
+        try await eventuallyOnMain("clamped") { paneWidth() == "483 points" }
+        try expectReachable("in a 1200 window")
+        #expect(r.vm.logicalProjectPane.width == 619)
+        window.window.setContentSize(CGSize(width: 960, height: 900))
+        try await eventuallyOnMain("overlaid") { window.layout(); return (try? control("Close").frame.maxX).map { $0 <= window.window.frame.maxX + 0.5 } == true }
+        window.window.setContentSize(CGSize(width: 1600, height: 900))
+        try await eventuallyOnMain("back to its width") { paneWidth() == "619 points" }
+
+        // Larger text: the header's controls stay inside the pane, in both appearances.
+        let original = ThemeStore.shared.textScale
+        defer { ThemeStore.shared.textScale = original }
+        for dark in [true, false] {
+            window.window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            window.host.appearance = window.window.appearance
+            ThemeStore.shared.textScale = 1.3
+            window.layout()
+            try expectReachable("at 1.3x in \(dark ? "dark" : "light")")
+        }
+        ThemeStore.shared.textScale = original
+
+        // Close hides the divider with the pane, Overview brings both back at the same width.
+        try window.press("Close")
+        try await eventuallyOnMain("closed") { !r.vm.logicalProjectPaneOpen && handle() == nil }
+        try window.press("Overview")
+        try await eventuallyOnMain("reopened") { paneWidth() == "619 points" }
+        // Expand covers the page with the pane and drops the divider; Collapse restores both.
+        try window.press("Expand")
+        try await eventuallyOnMain("expanded") { r.vm.logicalProjectPaneExpanded && handle() == nil }
+        try window.press("Collapse")
+        try await eventuallyOnMain("collapsed") { paneWidth() == "619 points" }
+
+        // The next launch reads the saved width (ShellLayoutTests covers an unsaved or too-narrow one restoring 479).
+        #expect(RightPaneState(widthKey: ShepherdViewModel.logicalProjectPaneWidthKey, defaultWidth: 479, defaults: r.app.defaults).width == 619)
     }
 
     private static func paneHeader() async throws {

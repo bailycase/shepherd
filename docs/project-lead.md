@@ -668,6 +668,9 @@ The pane header draws every control the Started board draws, and each acts.
   operation id per sheet, so a retry never starts a second thread. It is disabled with a reason when the Project has no linked Space.
 - **Search threads** and **Filter** narrow the task list locally over the real `ProjectTask` rows (title, subtitle, group).
 - **Expand** gives the pane the whole page; the same button (named Collapse) restores the conversation.
+- **The pane's leading edge** is a thread's side-pane divider (`RightPaneSplit`): drag it, adjust it with VoiceOver, or double-click
+  for half the page. It starts at the board's 480 (479 and the 1pt line), stays 380 to half the page while the conversation keeps 400,
+  overlays the conversation in a narrower page, and keeps one width for every Project across launches (`shepherd.projectPaneWidth`).
 - A task row's subtitle is its worker's own native activity line, and its age is the worker's last user message (else its last status
   change). Nothing is typed in. The branch pill reads the worker Agent's own worktree branch and is absent without one.
 - The conversation and a worker's thread draw a day separator from the first turn's real timestamp.
