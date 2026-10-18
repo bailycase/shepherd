@@ -42,6 +42,7 @@ public actor SessionResourceSampler {
             values[category + ".count"] = 0
             values[category + ".rss_bytes"] = 0
             values[category + ".cpu_seconds"] = 0
+            values[category + ".max_rss_bytes"] = 0
         }
         values["process_scan.unreadable"] = 0
         let identities = Dictionary(uniqueKeysWithValues: rows.map { ($0.pid, $0) })
@@ -63,7 +64,10 @@ public actor SessionResourceSampler {
             guard let expected = identities[pid],
                   proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &identity, identitySize) == identitySize,
                   expected.seconds == identity.pbi_start_tvsec, expected.micros == identity.pbi_start_tvusec else { continue }
-            if category != "app" { values[category + ".count", default: 0] += 1 }
+            if category != "app" {
+                values[category + ".count", default: 0] += 1
+                values[category + ".max_rss_bytes"] = max(values[category + ".max_rss_bytes", default: 0], Double(info.pti_resident_size))
+            }
             values[category + ".rss_bytes", default: 0] += Double(info.pti_resident_size)
             values[category + ".cpu_seconds", default: 0] += Double(info.pti_total_user + info.pti_total_system) / 1_000_000_000
         }
@@ -101,11 +105,19 @@ struct ResourceOwnership {
         var pending = roots.sorted().compactMap { pid in
             current[pid].map { (process: $0, owner: $0, reportsOrphans: (orphanRoots ?? roots).contains(pid)) }
         }
-        pending.append(contentsOf: known.values)
+        let previous = Array(known.values)
         var visited = Set<Int32>()
         var index = 0
+        var addedPrevious = false
         truncated = false
-        while index < pending.count {
+        while index < pending.count || !addedPrevious {
+            // Current ancestry wins. A Pi created between the server snapshot and the census
+            // may have been classified as a generic app descendant in the previous sample.
+            if index == pending.count {
+                pending.append(contentsOf: previous)
+                addedPrevious = true
+            }
+            guard index < pending.count else { break }
             let entry = pending[index]
             index += 1
             guard visited.insert(entry.process.pid).inserted else { continue }

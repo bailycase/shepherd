@@ -19,6 +19,17 @@ struct ResourceOwnershipTests {
         #expect(tracker.update([process(11, parent: 1, born: 2), unrelated], roots: []).isEmpty)
     }
 
+    @Test func newlyRegisteredPiReclaimsItsPreviouslyObservedDescendants() {
+        var tracker = ResourceOwnership()
+        let app = process(100, parent: 1)
+        let pi = process(10, parent: 100)
+        let mcp = process(11, parent: 10)
+        _ = tracker.update([app, pi, mcp], roots: [100], orphanRoots: [])
+        _ = tracker.update([app, pi, mcp], roots: [100, 10], orphanRoots: [10])
+        let afterExit = tracker.update([app, process(11, parent: 1)], roots: [100], orphanRoots: [])
+        #expect(afterExit[11] == true)
+    }
+
     @Test func rootPIDReuseDoesNotAdoptOldSurvivors() {
         var tracker = ResourceOwnership()
         _ = tracker.update([process(10, parent: 1), process(11, parent: 10)], roots: [10])

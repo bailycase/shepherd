@@ -75,7 +75,7 @@ struct DiagnosticsSettings: View {
     let configured: Bool
     var active = false
 
-    static let disclosure = "Send crash stacks, agent-start errors, app and device details, and recent lifecycle events to a third-party crash-reporting service. No prompts, replies, tool output, file contents or session replay. Crashes upload when you reopen Shepherd; agent-start errors can upload while it runs."
+    static let disclosure = "Send crash and hang stacks, errors, app and device details, process and memory counts, and operation timings to a third-party diagnostics service. No prompts, replies, tool output, file contents, command lines or session replay. Performance reports upload while Shepherd runs; crashes upload when you reopen it."
 
     private var status: String? {
         guard configured else {
@@ -88,10 +88,10 @@ struct DiagnosticsSettings: View {
 
     var body: some View {
         SettingsGroup(title: "Diagnostics", footnote: status) {
-            SettingsRow(title: "Share crash diagnostics", subtitle: configured
-                        ? Self.disclosure : "Crash reporting is not configured in this build.") {
-                SettingsSwitch(label: "Share crash diagnostics", isOn: $settings.shareDiagnostics)
-                    .accessibilityHint(configured ? Self.disclosure : "Crash reporting is not configured in this build.")
+            SettingsRow(title: "Share diagnostics", subtitle: configured
+                        ? Self.disclosure : "Diagnostics reporting is not configured in this build.") {
+                SettingsSwitch(label: "Share diagnostics", isOn: $settings.shareDiagnostics)
+                    .accessibilityHint(configured ? Self.disclosure : "Diagnostics reporting is not configured in this build.")
                     .disabled(!configured && !settings.shareDiagnostics)
             }
         }
