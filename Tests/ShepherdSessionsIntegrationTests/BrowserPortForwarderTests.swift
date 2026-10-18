@@ -115,7 +115,7 @@ struct BrowserPortForwarderTests {
 
     /// A program listening on every address takes loopback connections, so it holds the port too.
     @Test func aPortAProgramListensOnEverywhereIsRefused() async throws {
-        let wildcard = try LoopbackServer(address: "0.0.0.0") { close($0) }
+        let wildcard = try LoopbackServer(address: "0.0.0.0") { _ in }
         defer { wildcard.stop() }
         let forwarder = BrowserPortForwarder()
         #expect(forwarder.claim(port: Int(wildcard.port), owner: owner, slot: BrowserTunnelHubSlot(), agent: AgentID()) == .inUse(port: Int(wildcard.port)))

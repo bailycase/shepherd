@@ -287,6 +287,15 @@ SidebarTree, SidebarProjects and SidebarProjectsHosts. Mac only: the iPad and iP
 - **Drag** a space by its row (no drop targets): the offset picks the space it lands before,
   a 2pt `running` line (`NWDropIndicator`, 4pt in from the sides) marks where between the rows,
   and the dragged row dims to 55%. Only This Mac's spaces move, among themselves.
+- **Move a thread:** drag its row onto a space row, including parents and children. The target
+  uses `bgSelected` with `NW.Radius.m`; no new glyph or size is introduced. The thread context
+  menu also offers **Move to Space**, with registered space names and paths as tooltips.
+  Moves stay on the thread's host; cross-host drops are refused. A capable connected host
+  offers the same menu, while an older or offline host does not. Worktree menus omit it.
+  Both controls use the same server operation: an inactive ordinary thread keeps its identity
+  and conversation and reloads the destination folder's instructions. Active turns, questions,
+  queued messages, unfinished children and worktree threads are refused in the existing action
+  error dialog. No project files move. Existing terminal tabs keep their original directories.
 - **Keep idle threads** (Settings, 7 days by default): an idle or finished thread quiet for
   longer leaves the tree; running threads, anything waiting on you, and threads no host has
   timed stay. The palette still finds them. The cutoff is kept to the hour, so the tree derives

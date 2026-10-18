@@ -39,7 +39,7 @@ function shownText(tool) {
 
 /// The extension installed against a local Shepherd socket. `onFrame(frame, write)` sees every
 /// request; `write(object)` answers on the connection.
-async function harness({ onFrame = () => {}, automation = false, defer = false } = {}) {
+async function harness({ onFrame = () => {}, onMessage = () => {}, onUserMessage = () => {}, automation = false, defer = false } = {}) {
   const dir = await mkdtemp(`${tmpdir()}/sh-words-`);
   process.env.SHEPHERD_SOCKET = `${dir}/s`;
   process.env.SHEPHERD_AGENT_ID = "agent-1";
@@ -66,7 +66,7 @@ async function harness({ onFrame = () => {}, automation = false, defer = false }
   const tools = new Map();
   const events = new Map();
   install({ registerTool: (tool) => tools.set(tool.name, tool), on: (event, cb) => events.set(event, cb),
-    sendUserMessage() {}, sendMessage() {} });
+    sendUserMessage: onUserMessage, sendMessage: onMessage });
   return {
     tools,
     events,
@@ -91,6 +91,48 @@ async function harness({ onFrame = () => {}, automation = false, defer = false }
 }
 
 const output = (result) => result.content.map((block) => block.text).join("\n");
+
+test("tokenized tasks acknowledge receipt and reports carry persistence receipts", async () => {
+  const users = [], reports = [];
+  const h = await harness({ onUserMessage: text => users.push(text), onMessage: message => reports.push(message) });
+  try {
+    await h.events.get("session_start")({}, {});
+    await h.waitFor(() => h.frames.some(f => f.type === "helloAgent"));
+    h.write({ type: "message", id: 42, delivery: "task", text: "tracked task" });
+    await h.waitFor(() => h.frames.some(f => f.type === "peerMessageReceived" && f.deliveryID === 42));
+    assert.deepEqual(users, [], "the host native queue, not an untracked sendUserMessage, starts tasks");
+    h.write({ type: "message", id: 43, delivery: "report", text: "tracked report" });
+    await h.waitFor(() => reports.length === 1);
+    assert.equal(reports[0].details.shepherdPeerDeliveryID, 43);
+    assert.ok(!h.frames.some(f => f.type === "peerMessageReceived" && f.deliveryID === 43), "receipt waits for the host's persisted custom message event");
+    h.write({ type: "message", id: 0, delivery: "task", text: "old host" });
+    await h.waitFor(() => users.length === 1);
+    assert.deepEqual(users, ["old host"]);
+  } finally { await h.close(); }
+});
+
+test("agent_move sends the authenticated move request and reports host refusal", async () => {
+  let refuse = false;
+  const h = await harness({ defer: true, onFrame(frame, write) {
+    if (frame.type === "moveAgent") write(refuse
+      ? { type: "error", id: frame.id, code: "thread_active", message: "Finish the active turn first." }
+      : { type: "ok", id: frame.id });
+  } });
+  try {
+    const tool = h.tools.get("agent_move");
+    assert.match(tool.description, /^Only when the user explicitly asks/);
+    assert.match(output(await tool.execute("move", { agentID: "target", spaceID: "child" })), /conversation kept/);
+    const frame = h.frames.find(f => f.type === "moveAgent");
+    assert.equal(frame.agentID, "agent-1");
+    assert.equal(frame.targetAgentID, "target");
+    assert.equal(frame.spaceID, "child");
+    refuse = true;
+    await assert.rejects(tool.execute("busy", { agentID: "target", spaceID: "child" }), /Finish the active turn first/);
+  } finally { await h.close(); }
+  const automation = await harness({ automation: true });
+  try { assert.equal(automation.tools.has("agent_move"), false); }
+  finally { await automation.close(); }
+});
 
 test("every tool that touches another thread leads with the rule and gives a wrong and a right use", async () => {
   const h = await harness();
@@ -239,7 +281,7 @@ test("stopping a pending send tells the host", async () => {
   } finally { await h.close(); }
 });
 
-const PEER = ["agent_list", "agent_send", "agent_read", "agent_steer", "agent_interrupt", "agent_wait", "agent_delete", "agent_spawn"];
+const PEER = ["agent_list", "agent_send", "agent_read", "agent_steer", "agent_interrupt", "agent_wait", "agent_delete", "agent_spawn", "agent_move"];
 const AUTOMATION = ["automation_create", "automation_list", "automation_update", "automation_delete", "automation_start", "automation_stop"];
 
 test("with deferral on, the tools that touch other threads and the automation tools are deferred and keep every word, and the terminal tools and notify stay direct", async () => {
