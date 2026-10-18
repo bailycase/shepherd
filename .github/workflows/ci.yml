@@ -109,6 +109,8 @@ jobs:
         run: |
           package=$(python3 -c 'import json; p=json.load(open("scripts/pi-engine-pin.json"))["pi"]; print(p["name"]+"@"+p["version"])')
           npm install --prefix "$RUNNER_TEMP/pi-tests" --ignore-scripts --no-audit --no-fund "$package"
+      - name: Apply and verify shipping engine patches
+        run: python3 scripts/pi_engine.py patch-package "$RUNNER_TEMP/pi-tests/node_modules/@earendil-works/pi-coding-agent"
       - name: Test extensions with isolated fake providers
         env:
           PI_PACKAGE_DIR: ${{ runner.temp }}/pi-tests/node_modules/@earendil-works/pi-coding-agent

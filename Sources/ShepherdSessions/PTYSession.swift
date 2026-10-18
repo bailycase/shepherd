@@ -34,6 +34,7 @@ final class PTYSession: @unchecked Sendable {
     private let queue: DispatchQueue
     private let masterFD: Int32
     private let childPID: pid_t
+    var processIdentifier: pid_t { childPID }
     private let terminalDevice: UInt32?
     /// Retained across TERM/HUP so a shell exiting first doesn't hide its job-control groups.
     private var terminalJobs: [pid_t: proc_bsdinfo] = [:]

@@ -7,6 +7,32 @@ import ShepherdProtocol
 /// how streamed deltas rebuild an assistant message, and how the command list is bounded.
 @Suite("Thread projection")
 struct ThreadProjectionTests {
+    @Test func operationFingerprintsKeepReplayEqualityWithoutRetainingPayloads() throws {
+        let operation = UUID()
+        func send(_ text: String = "look", images: [NativeImage]? = nil,
+                  references: [DesignReferenceRecord]? = nil) -> NativeThreadRequest {
+            .send(expectedSessionID: "session", generation: "generation", operationID: operation,
+                  text: text, delivery: .followUp, images: images, designReferences: references)
+        }
+        let image = NativeImage(mimeType: "image/png", data: Data(repeating: 17, count: NativeImage.maxBytes), name: "image.png")
+        let request = send(images: [image])
+        let fingerprint = try RPCThreadState.operationFingerprint(request)
+        #expect(Array(fingerprint).count == 32)
+        #expect(fingerprint == (try RPCThreadState.operationFingerprint(request)))
+        var changed = image
+        changed.data[changed.data.startIndex] = 18
+        #expect(fingerprint != (try RPCThreadState.operationFingerprint(send(images: [changed]))))
+        changed = image
+        changed.name = "different.png"
+        #expect(fingerprint != (try RPCThreadState.operationFingerprint(send(images: [changed]))))
+        #expect(fingerprint != (try RPCThreadState.operationFingerprint(send("changed", images: [image]))))
+        #expect(try RPCThreadState.operationFingerprint(send()) != RPCThreadState.operationFingerprint(send(images: [])))
+        let composed = send("caf\u{00e9}", references: [.init(ref: "board", width: 0)])
+        let decomposed = send("cafe\u{0301}", references: [.init(ref: "board", width: -0.0)])
+        #expect(composed == decomposed)
+        #expect(try RPCThreadState.operationFingerprint(composed) == RPCThreadState.operationFingerprint(decomposed))
+    }
+
     // MARK: - project(entryID:message:args:)
 
     @Test func textAndThinkingBlocksBecomeRowBlocksInOrder() throws {

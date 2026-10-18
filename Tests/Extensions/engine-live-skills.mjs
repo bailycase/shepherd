@@ -370,12 +370,18 @@ test("ignored symlinks stay out of observation until an ignore-file edit allows 
     const control = fs.watch(path.join(target, "example"), () => { control.close(); resolve(); });
     t.after(() => control.close());
   });
+  // macOS can install the native watches after this turn; flush startup notifications
+  // with an observed source event before checking that an ignored edit stays silent.
+  await new Promise(resolve => setImmediate(resolve));
+  write(path.join(root, "ready"), "watch registration barrier");
+  await until("the source watch to be ready", () => changes > 0, 3000);
+  const beforeIgnoredEdit = changes;
   write(path.join(target, "example/SKILL.md"), skill("still-ignored"));
   await delivered;
   await new Promise(resolve => setImmediate(resolve));
-  assert.equal(changes, 0);
+  assert.equal(changes, beforeIgnoredEdit);
   write(path.join(root, ".gitignore"), "");
-  await until("ignore-rule edit to reconcile sources", () => changes > 0, 3000);
+  await until("ignore-rule edit to reconcile sources", () => changes > beforeIgnoredEdit, 3000);
   const mark = changes;
   write(path.join(target, "example/SKILL.md"), skill("now-observed"));
   await until("the newly allowed target edit", () => changes > mark, 3000);

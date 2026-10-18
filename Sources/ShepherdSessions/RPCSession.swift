@@ -68,7 +68,7 @@ final class RPCSession: @unchecked Sendable {
     /// stderr is diagnostics only; a runaway line is cut here.
     static let maxStderrLineBytes = 64 * 1024
     /// `kill()` waits this long for SIGTERM before SIGKILL.
-    static let killGrace: DispatchTimeInterval = .seconds(2)
+    static let killGrace: DispatchTimeInterval = .seconds(3)
     /// Records at least this long (a long history's `get_messages`) decode off the session queue,
     /// which targets the server queue: decoding one held every other session, terminal, and
     /// request behind it for hundreds of milliseconds.
@@ -87,6 +87,8 @@ final class RPCSession: @unchecked Sendable {
 
     private let queue: DispatchQueue
     private let childPID: pid_t
+    private let ownedProcesses: OwnedProcessTree
+    private var sourcesStarted = false
     private let stdinFD: Int32
     private let stdoutFD: Int32
     private let stderrFD: Int32
@@ -230,6 +232,7 @@ final class RPCSession: @unchecked Sendable {
         }
 
         childPID = pid
+        ownedProcesses = OwnedProcessTree(root: pid)
         stdinFD = stdinPipe[1]
         stdoutFD = stdoutPipe[0]
         stderrFD = stderrPipe[0]
@@ -344,6 +347,11 @@ final class RPCSession: @unchecked Sendable {
         lateResponses.removeAll()
         for (_, completion) in outstanding { completion(.failure(.notAlive)) }
         closeStdin()
+        // shutdown can beat startSources' queued registration; no cancel handler owns these yet.
+        if !sourcesStarted {
+            close(stdoutFD)
+            close(stderrFD)
+        }
         stdoutClosed = true
         cancelStdoutSource()
         stderrClosed = true
@@ -372,6 +380,9 @@ final class RPCSession: @unchecked Sendable {
     /// POSIX_SPAWN_SETPGROUP). Must run under the session's queue hierarchy.
     func signalProcessGroup(_ sig: Int32) {
         guard childPID > 0 else { return }
+        if sig == SIGTERM || sig == SIGHUP || sig == SIGKILL {
+            ownedProcesses.signalDescendants(sig)
+        }
         if Darwin.kill(-childPID, 0) != 0 {
             guard isAlive else { return }
             if Darwin.kill(childPID, sig) != 0, errno != ESRCH, errno != EPERM {
@@ -388,6 +399,7 @@ final class RPCSession: @unchecked Sendable {
 
     private func startSources() {
         guard !stdoutClosed else { return }
+        sourcesStarted = true
         let outFD = stdoutFD
         let out = DispatchSource.makeReadSource(fileDescriptor: outFD, queue: queue)
         out.setEventHandler { [weak self] in self?.drainStdout() }

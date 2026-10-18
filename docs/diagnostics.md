@@ -1,7 +1,8 @@
-# Crash diagnostics
+# Crash and performance diagnostics
 
-Shepherd's macOS app can send opt-in crash diagnostics to Sentry. Settings > Advanced >
-Diagnostics > Share crash diagnostics is off by default. A build without a valid hosted Sentry
+Shepherd's macOS app can send opt-in crash and performance diagnostics to Sentry. Settings > Advanced >
+Diagnostics > Share diagnostics is off by default. The existing `shareDiagnostics` preference covers both;
+there is no second switch, and existing opt-ins remain opted in. A build without a valid hosted Sentry
 DSN cannot enable reporting. iOS does not initialize the SDK.
 
 ## What is sent
@@ -20,11 +21,30 @@ it. The pre-send filter reconstructs the event and drops exception messages, unk
 names, user information, requests, extra fields, thread names, registers, source lines and
 absolute binary paths. It retains symbols and image metadata needed for symbolication.
 
-There is no prompt, reply, tool output, terminal content, file-content collection or session
-replay. Automatic breadcrumbs, HTTP failure capture, tracing, metrics, logs, sessions,
-MetricKit and hang tracking are disabled. This is a crash-reporting foundation, not a continuous
-CPU/memory dashboard or a recorder of child-process stacks. Breadcrumbs appear with reports,
-not as an independently uploaded event stream.
+Performance reporting adds explicit, fixed-name transactions for agent start/stop/turns, model responses,
+history refresh, compaction and tool categories (`read`, `bash`, `write`, `edit`, `mcp`, `other`). These
+record completed durations with reconstructed start timestamps, not prompts, tool names or arguments.
+Resource transactions carry numeric measurements, and the latest ten numeric samples accompany errors
+and crashes through the sanitized scope. Memory-pressure notifications and observed orphan processes
+produce fixed, rate-limited anomaly reports. App hangs lasting at least five seconds use the same sanitized
+stack filter and error budget; macOS hang detection cannot distinguish fully blocked from partially blocked
+UI and can produce false positives. These are native stacks, not child-process or JavaScript heap profiles.
+
+The census records app RSS and physical footprint separately; Pi, terminal, generic descendant and observed
+orphan counts/RSS; cumulative CPU seconds; active/idle/total sessions; RPC buffer bytes; transcript row counts;
+physical memory, memory pressure and scan-quality counters. Summed RSS may double-count shared pages and
+is not physical footprint. CPU seconds are cumulative, not CPU percent. Descendants are not presumed MCP
+servers. An orphan means an owned descendant observed before its owner disappeared; a 60-second census can
+miss short-lived owners/launchers and does not establish that a process is safe to kill. Native process scanning
+reads no names, paths, argv or environment and caps the census at 8192 OS processes and 4096 tracked identities.
+Failed, truncated and unreadable scans are reported numerically rather than passed off as complete.
+
+There is no prompt, reply, tool output, terminal content, file-content collection, command-line collection or
+session replay. Automatic breadcrumbs, HTTP failure capture, automatic/network/file/Core Data tracing,
+standalone metrics, logs, sessions, MetricKit and continuous profiling remain disabled. Resource measurements
+travel on explicitly budgeted transactions rather than an unrestricted metrics stream. Unregistered transactions
+are dropped. Registered transaction roots and scope data are scrubbed; automatic child spans are discarded.
+Breadcrumbs appear with reports, not as an independently uploaded event stream.
 
 Sentry receives the connection's IP address. Enable **Prevent Storing of IP Addresses** in the
 Sentry project's Security & Privacy settings. `sendDefaultPii = false` is not a substitute for
@@ -45,15 +65,24 @@ A URLProtocol installed only on this session rejects those late requests without
 from the retired SDK is never uploaded under renewed consent. Data already received by Sentry
 cannot be recalled. The random installation UUID remains stable across opt-out/in.
 
-- At most 50 newly accepted reports per UTC day, persisted across restarts and consent changes.
+- Separate persisted UTC-day budgets: 50 error/crash/hang reports, 24 resource anomaly reports,
+  144 resource transactions, 256 duration transactions and 1440 local resource samples. Duration traffic
+  also has a persisted cap of ten transactions per UTC hour and two per operation per hour, so startup
+  and frequent refreshes cannot exhaust the day immediately. Resource traffic cannot exhaust the
+  crash/error budget. Each anomaly category has a ten-minute local cooldown.
 - At most 10 cached SDK envelopes and 32 fixed breadcrumbs. Crash payloads cap exception, thread,
   frame and image counts before sending. The pinned SDK separately retains up to five native
   crash reports; those files can contain raw stack bytes before sanitization.
 - Each request has a 15-second timeout and a 30-second resource timeout; one connection per host.
   The SDK may retry cached envelopes when later events or launches trigger delivery. Shepherd
-  adds no retry loop or background polling task.
-- Tracing, logs and metrics spend are off. Set Sentry's account quota/spending policy before
-  rollout; the client cap is not an organization-wide billing cap.
+  adds no upload retry loop. The consent-owned sampler runs immediately and then every 60 seconds,
+  with at most one sample in flight, for at most 1440 iterations and less than 24 hours per launch.
+  It uploads the first sample and then every tenth sample. No persisted sampling job resumes; each
+  launch checks consent again. Opt-out cancels the sampler and pressure observer before closing the SDK,
+  and a late sample cannot capture a report. At most 32 pending owned span handles are retained;
+  handles older than 30 seconds cannot send and are cleared at the next registration or opt-out.
+- Set Sentry's account quota/spending policy before rollout; client caps are not an organization-wide
+  billing cap. Traces carry all explicitly budgeted operations, not automatic app/network instrumentation.
 - Stop, steering, compaction and queues do not change consent or generate model calls. Crashing
   child agents remain distinct from the app's own crash; their numeric exits become breadcrumbs.
 
@@ -103,11 +132,16 @@ mocked network/process boundaries. Runtime tests start the real SDK with a URLPr
 that intercepts every request, inspect the compressed upload, cancel an in-flight request on
 revocation, and verify off/on cannot restart the SDK within the same launch. The runtime scenario
 also reuses a persisted consent UUID through a symlinked support path, verifies its pending report
-bytes survive startup, and confirms retired consent caches are still removed.
+bytes survive startup, and confirms retired consent caches are still removed. Performance tests cover
+separate persistent budgets, finite sampling lifetime, finite nonnegative numeric allowlists, ten-sample
+retention, trace duration timestamps and rejection of unknown transaction names. Wire tests inject a
+private sentinel into scope and resource input, verify it never uploads, and ensure resource/duration
+capture remains inert after revocation.
 
 Decisions: off by default; visible disabled row when unconfigured; reset revokes consent; hosted
-Sentry only; crash/error reporting first; no confirmation sheet beyond the explicit labelled
-switch; 50 reports/day; symbol upload is nonfatal like existing release symbol archives.
+Sentry only; the one existing consent controls crash and bounded performance reporting; no confirmation
+sheet beyond the explicit labelled switch; separate daily report budgets; symbol upload is nonfatal like
+existing release symbol archives.
 Design checklist: [Diagnostics](design/boards/Diagnostics.md). Departures: none.
 
 The preview suite skips when `SHEPHERD_PREVIEW_DIR` is unset, like the other visual suites;

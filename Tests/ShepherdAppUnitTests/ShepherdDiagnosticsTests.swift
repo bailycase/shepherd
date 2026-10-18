@@ -46,7 +46,7 @@ struct ShepherdDiagnosticsTests {
         }
     }
 
-    @Test func theSDKOnlyCollectsBoundedCrashDiagnostics() {
+    @Test func theSDKOnlyCollectsExplicitPerformanceAndCrashDiagnostics() {
         let session = URLSession(configuration: .ephemeral)
         defer { session.invalidateAndCancel() }
         let options = ShepherdDiagnostics.makeOptions(dsn: "https://key@o1.ingest.sentry.io/1",
@@ -56,9 +56,82 @@ struct ShepherdDiagnosticsTests {
         #expect(!options.enableAutoBreadcrumbTracking && !options.enableNetworkBreadcrumbs)
         #expect(!options.enableAutoSessionTracking && !options.enableCaptureFailedRequests)
         #expect(!options.enableMetricKit && !options.enableLogs && !options.enableMetrics)
-        #expect(!options.enableAutoPerformanceTracing && options.tracesSampleRate == 0)
+        #expect(!options.enableAutoPerformanceTracing && options.tracesSampleRate == 1)
+        #expect(!options.enableNetworkTracking && !options.enableFileIOTracing && !options.enableCoreDataTracing)
+        #expect(options.enableAppHangTracking && options.appHangTimeoutInterval == 5)
         #expect(options.enableCrashHandler && options.enableUncaughtNSExceptionReporting)
         #expect(options.urlSession === session)
+    }
+
+    @Test func performanceBudgetsAreSeparatePersistedAndRevoked() {
+        let defaults = ScratchDefaults()
+        let gate = DiagnosticsGate(store: defaults)
+        let now = Date(timeIntervalSince1970: 100 * 86_400)
+        gate.setEnabled(true)
+        for kind in DiagnosticsGate.Kind.allCases where kind != .duration {
+            for _ in 0..<kind.limit { #expect(gate.accept(kind: kind, now: now)) }
+            #expect(!gate.accept(kind: kind, now: now))
+        }
+        let restarted = DiagnosticsGate(store: defaults)
+        restarted.setEnabled(true)
+        for kind in DiagnosticsGate.Kind.allCases where kind != .duration {
+            #expect(!restarted.accept(kind: kind, now: now))
+            #expect(restarted.accept(kind: kind, now: now.addingTimeInterval(86_400)))
+        }
+        restarted.setEnabled(false)
+        #expect(!restarted.isEnabled)
+        for kind in DiagnosticsGate.Kind.allCases { #expect(!restarted.accept(kind: kind, now: now.addingTimeInterval(86_400))) }
+    }
+
+    @Test func durationBudgetsSpreadAcrossHoursOperationsAndRestarts() {
+        let defaults = ScratchDefaults()
+        let gate = DiagnosticsGate(store: defaults)
+        gate.setEnabled(true)
+        let now = Date(timeIntervalSince1970: 100 * 86_400)
+        let operations = Array(ShepherdDiagnostics.operations.sorted().prefix(5))
+        for operation in operations {
+            #expect(gate.accept(kind: .duration, now: now, operation: operation))
+            #expect(gate.accept(kind: .duration, now: now, operation: operation))
+            #expect(!gate.accept(kind: .duration, now: now, operation: operation))
+        }
+        #expect(!gate.accept(kind: .duration, now: now, operation: "tool.other"))
+        let restarted = DiagnosticsGate(store: defaults)
+        restarted.setEnabled(true)
+        #expect(!restarted.accept(kind: .duration, now: now, operation: operations[0]))
+        #expect(restarted.accept(kind: .duration, now: now.addingTimeInterval(3600), operation: operations[0]))
+        #expect(!restarted.accept(kind: .duration, now: now.addingTimeInterval(3600), operation: "PRIVATE_SENTINEL"))
+        defaults.set(DiagnosticsGate.Kind.duration.limit, forKey: "shepherd.diagnostics.duration.count")
+        #expect(!restarted.accept(kind: .duration, now: now.addingTimeInterval(7200), operation: operations[0]))
+        #expect(restarted.accept(kind: .duration, now: now.addingTimeInterval(86_400), operation: operations[0]))
+    }
+
+    @Test func samplingStopsAtBothItsCountAndElapsedTimeBounds() {
+        var budget = DiagnosticsSamplingBudget(startedAt: 100)
+        for _ in 0..<DiagnosticsSamplingBudget.limit {
+            let accepted = budget.take(at: 100)
+            #expect(accepted)
+        }
+        let overCount = budget.take(at: 100)
+        #expect(!overCount)
+        var expired = DiagnosticsSamplingBudget(startedAt: 100)
+        for (uptime, expected) in [(99.0, false), (.infinity, false), (86_499, true), (86_500, false)] {
+            let accepted = expired.take(at: uptime)
+            #expect(accepted == expected)
+        }
+    }
+
+    @Test func resourcesOnlyRetainBoundedNumericAllowlistedSamples() throws {
+        let source = Event(level: .error)
+        source.context = ["shepherd.resources": ["samples": (0..<20).map { index in
+            ["app.rss_bytes": Double(index), "PRIVATE_SENTINEL": 12, "pi.count": -1, "pi.rss_bytes": Double.infinity]
+        }]]
+        let clean = ShepherdDiagnostics.sanitized(source)
+        let samples = try #require(clean.context?["shepherd.resources"]?["samples"] as? [[String: Double]])
+        #expect(samples.count == 10)
+        #expect(samples.first == ["app.rss_bytes": 10])
+        #expect(samples.last == ["app.rss_bytes": 19])
+        let encoded = try JSONSerialization.data(withJSONObject: clean.serialize())
+        #expect(!String(decoding: encoded, as: UTF8.self).contains("PRIVATE_SENTINEL"))
     }
 
     @Test func deepStacksKeepTheCrashingFramesAndCrashingThreads() {
