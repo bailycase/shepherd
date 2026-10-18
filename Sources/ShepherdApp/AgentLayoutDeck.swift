@@ -16,7 +16,7 @@ struct AgentLayoutDeck: View, Equatable {
     var vm: ShepherdViewModel
     /// Every mounted layout's values, in mount order.
     let models: [AgentLayoutModel]
-    /// The column's size when a live resize began: hidden layouts keep it until the drag ends.
+    /// Hidden terminal layouts keep this size until a live resize or wide side pane ends.
     let frozenSize: CGSize?
 
     static func == (a: AgentLayoutDeck, b: AgentLayoutDeck) -> Bool {
@@ -66,25 +66,34 @@ struct AgentLayoutDeck: View, Equatable {
 
         override func layout() {
             NWRenderProbe.tick(isHidden ? "deck.hiddenLayout" : "deck.layout")
+            // Even at fixed hidden bounds, AppKit needs this pass to remove transitioned views.
+            // Avoid resize work by retaining host frames, never by skipping lifecycle callbacks.
             super.layout()
         }
     }
 
-    /// Holds every host, the visible one sized to the column and the hidden ones to the frozen
-    /// size while a live resize lasts. Transparent where no layout is shown.
+    /// Hidden thread-only layouts retain their size until reveal. Hidden terminal layouts
+    /// take the final column size after a resize so their PTY grid stays correct.
     final class Container: NSView {
         var pages: [TabID: (page: Page, host: Host)] = [:]
         var frozenSize: CGSize? {
             didSet { if frozenSize != oldValue { needsLayout = true } }
         }
-
         override var isFlipped: Bool { true }
 
         override func layout() {
             super.layout()
             for (_, entry) in pages {
-                let frame = entry.page.model.isVisible ? bounds : CGRect(origin: .zero, size: frozenSize ?? bounds.size)
-                if entry.host.frame != frame { entry.host.frame = frame }
+                let model = entry.page.model
+                if model.isVisible || entry.host.frame.isEmpty {
+                    if entry.host.frame != bounds { entry.host.frame = bounds }
+                } else if model.tab.layout.leaves.contains(where: { $0.isReview != true && $0.id != model.thread?.paneID }) {
+                    let frame = CGRect(origin: .zero, size: frozenSize ?? bounds.size)
+                    if entry.host.frame != frame {
+                        entry.host.frame = frame
+                        entry.host.needsLayout = true
+                    }
+                }
             }
         }
 
@@ -128,6 +137,9 @@ struct AgentLayoutDeck: View, Equatable {
                         withTransaction(context.transaction) { entry.page.model = model }
                     }
                     if model.isVisible, entry.host.isHidden {
+                        // Catch up before showing, without resizing any other hidden layout.
+                        if entry.host.frame != container.bounds { entry.host.frame = container.bounds }
+                        entry.host.needsLayout = true
                         entry.host.isHidden = false
                         container.needsLayout = true
                     } else if !model.isVisible, !entry.host.isHidden {

@@ -516,11 +516,12 @@ public func nativeSubagentSiblings(of runID: String, in subagents: [ChildRun], t
 /// "11:09 AM" from milliseconds since epoch; `meridiem: false` gives the board's bare "11:09"
 /// (inspector header, from-parent captions).
 public func nativeClockText(_ milliseconds: Double, meridiem: Bool = true, timeZone: TimeZone = .current) -> String {
-    let formatter = DateFormatter()
-    formatter.locale = Locale(identifier: "en_US_POSIX")
-    formatter.timeZone = timeZone
-    formatter.dateFormat = meridiem ? "h:mm a" : "h:mm"
-    return formatter.string(from: Date(timeIntervalSince1970: milliseconds / 1000))
+    // Foundation reuses the format style's ICU formatter across rows and threads.
+    let format: Date.FormatString = meridiem
+        ? "\(hour: .defaultDigits(clock: .twelveHour, hourCycle: .oneBased)):\(minute: .twoDigits) \(dayPeriod: .standard(.abbreviated))"
+        : "\(hour: .defaultDigits(clock: .twelveHour, hourCycle: .oneBased)):\(minute: .twoDigits)"
+    return Date(timeIntervalSince1970: milliseconds / 1000).formatted(.verbatim(
+        format, locale: Locale(identifier: "en_US_POSIX"), timeZone: timeZone, calendar: Calendar(identifier: .gregorian)))
 }
 
 /// Turn footer time slot: "11:09 AM · 45m 12s" from the user message that opened the turn

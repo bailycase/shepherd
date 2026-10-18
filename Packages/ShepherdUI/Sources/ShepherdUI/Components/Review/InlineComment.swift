@@ -56,6 +56,8 @@ public struct NWInlineComment: View {
         .onHover { hovering = $0 }
         .nwAnimation(.hover, value: hovering)
         .accessibilityElement(children: .combine)
+        // Selectable Text is not consistently included in the combined label.
+        .accessibilityLabel("\(author), \(meta), \(text)")
         .accessibilityActions {
             if let onEdit { Button("Edit", action: onEdit) }
             if let onDelete { Button("Delete", action: onDelete) }

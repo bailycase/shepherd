@@ -58,6 +58,23 @@ struct ThreadImagesControlTests {
         expectScenarioCompleted(result)
     }
 
+    @Test @MainActor func thePresenterKeepsItsWindowIdentityAndRoutesImagesOnlyToThatWindow() async throws {
+        let firstApp = try AppHarness(), secondApp = try AppHarness()
+        defer { firstApp.stop(); secondApp.stop() }
+        let first = try await firstApp.start(), second = try await secondApp.start()
+        let presenter = ImageViewerPresenter(model: first)
+        #expect(presenter == ImageViewerPresenter(model: first))
+        #expect(presenter != ImageViewerPresenter(model: second))
+        let viewer = ImageViewerState(images: [], origin: "Window-local image")
+        presenter(viewer)
+        #expect(first.imageViewer === viewer)
+        #expect(second.imageViewer == nil)
+        ImageViewerPresenter()(viewer)
+        #expect(second.imageViewer == nil, "the default presenter has no window to change")
+        first.closeImageViewer()
+        #expect(first.imageViewer == nil)
+    }
+
     // MARK: Fixtures
 
     @MainActor

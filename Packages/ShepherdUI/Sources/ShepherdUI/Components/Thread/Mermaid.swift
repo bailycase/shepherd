@@ -1,8 +1,16 @@
 import SwiftUI
 import WebKit
 
+/// Window-owned presentation state; environment updates compare its stable identity.
+@MainActor @Observable public final class NWDiagramPresentation {
+    public var source: String?
+    public init() {}
+}
+
 extension EnvironmentValues {
-    /// Opens a diagram full screen over the window (the Mac's window overlay). iOS presents its own cover, so it needs none.
+    /// Opens a diagram in the owning window without replacing a callback on every layout.
+    @Entry public var nwDiagramPresentation: NWDiagramPresentation? = nil
+    /// An explicit callback takes precedence over window-owned presentation; retained for existing clients.
     @Entry public var nwPresentDiagram: ((String) -> Void)? = nil
 }
 
@@ -13,6 +21,7 @@ public struct NWMermaidBlock: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.nwProseSize) private var proseSize
     @Environment(\.nwPresentDiagram) private var presentDiagram
+    @Environment(\.nwDiagramPresentation) private var diagramPresentation
     @ScaledMetric(relativeTo: .body) private var dynamicTypeScale: CGFloat = 1
     @State private var height = NWMermaidMetrics.initialHeight
     @State private var status = NWMermaidStatus.loading
@@ -37,7 +46,11 @@ public struct NWMermaidBlock: View {
                     // On the source line, not over the chart, so it never hides part of the diagram.
                     .overlay(alignment: .topTrailing) {
                         if canExpand {
-                            Button { if let presentDiagram { presentDiagram(source) } else { expanded = true } } label: {
+                            Button {
+                                if let presentDiagram { presentDiagram(source) }
+                                else if let diagramPresentation { diagramPresentation.source = source }
+                                else { expanded = true }
+                            } label: {
                                 Label("Full screen", systemImage: "arrow.up.left.and.arrow.down.right")
                             }
                             .buttonStyle(.nw(.ghost, size: .s))
@@ -64,7 +77,7 @@ public struct NWMermaidBlock: View {
         #if os(iOS)
         true
         #else
-        presentDiagram != nil
+        presentDiagram != nil || diagramPresentation != nil
         #endif
     }
 }
