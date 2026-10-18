@@ -727,6 +727,12 @@ struct TurnPresentationTests {
         #expect(presentation.items.first?.id == "subagents:started")
     }
 
+    @Test func theStartedLineNamesRunsByTheirAgent() {
+        let runs = [ChildRun(runID: "a", label: "worker: Restyle the thread", state: "running", startedAt: 0, role: "worker"),
+                    ChildRun(runID: "b", label: "spec-audit", state: "running", startedAt: 1)]
+        #expect(NativeSubagentRecord(runs)?.started.meta == "worker · spec-audit")
+    }
+
     @Test func aCardLayoutRecordsItsRunsOnceTheyAllFinish() {
         let live = (0..<2).map { F.run("r\($0)", startedAt: Double($0), toolCallID: "s\($0)") }
         let layout = NativeCardLayout(NativeSubagentPlacement(byToolCall: ["s0": [live[0]], "s1": [live[1]]]))

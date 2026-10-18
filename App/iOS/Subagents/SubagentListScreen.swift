@@ -106,7 +106,7 @@ struct SubagentListContent: View {
 
     private func card(_ summary: NativeRunSummary, selected: Bool, commands: SubagentCommands) -> some View {
         let run = store.subagents.first { $0.id == summary.id }
-        return NWRunCard(SubagentValues.card(summary, byAgent: select == nil), isSelected: selected, isEnabled: commands.enabled,
+        return NWRunCard(SubagentValues.card(summary), isSelected: selected, isEnabled: commands.enabled,
                          open: { open(summary.runID) },
                          rerun: summary.phase == .failed ? { commands.control(summary.runID, .rerun) } : nil)
             .equatable()

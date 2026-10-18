@@ -17,7 +17,7 @@ struct SubagentRunScreen: View {
         let run = store.subagents.first { $0.runID == runID }
         SubagentRunView(ref: ref, store: store, runID: runID, compact: true)
             .background(Color.nw.bgWindow)
-            .navigationTitle(run.map { $0.role ?? nativeRunNames($0).name } ?? "Subagent")
+            .navigationTitle(run.map(nativeRunAgentName) ?? "Subagent")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .tabBar)
             .toolbar {
@@ -36,7 +36,7 @@ struct SubagentRunTitle: View {
     var body: some View {
         let phase = run.map(nativeRunPhase)
         VStack(spacing: NW.Space.xxs) {
-            Text(run.map { $0.role ?? nativeRunNames($0).name } ?? "Subagent").font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary)
+            Text(run.map(nativeRunAgentName) ?? "Subagent").font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary)
                 .lineLimit(1)
             HStack(spacing: NW.Space.s) {
                 Text(phase.map(nativeRunPhaseLabel) ?? "No longer listed")
@@ -172,8 +172,8 @@ struct SubagentRunView: View {
             if let run, let summary, nativeRunAcceptsSteer(run) {
                 // The same Steer command, called Reply while the run waits on its parent's answer.
                 let words = nativeRunSteerWords(run)
-                // MobileSubagent: "Steer worker…", the agent, not the task (the iPad's names it by task).
-                let agent = compact ? summary.role ?? summary.name : summary.name
+                // "Steer worker…", the agent, not the task (MobileSubagent, iPadSteer).
+                let agent = summary.role ?? summary.name
                 NWSteerField(text: $draft, prompt: "\(words.label(agent))…",
                              caption: words.caption(agent),
                              isEnabled: commands.enabled, focus: $steering, accessibilityLabel: words.label(agent),

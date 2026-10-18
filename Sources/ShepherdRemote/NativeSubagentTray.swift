@@ -276,7 +276,7 @@ public struct NativeSubagentRecord: Hashable, Sendable {
     public init?(_ runs: [ChildRun]) {
         guard !runs.isEmpty else { return nil }
         let ordered = runs.sorted { ($0.startedAt ?? 0, $0.id) < ($1.startedAt ?? 0, $1.id) }
-        let names = ordered.map { nativeRunNames($0).name }
+        let names = ordered.map(nativeRunAgentName)
         var named = Array(names.prefix(Self.namedRuns))
         if names.count > Self.namedRuns { named.append("+\(names.count - Self.namedRuns) more") }
         started = NativeSubagentRecordLine(title: "Started " + nativeCount(ordered.count, "subagent"), meta: named.joined(separator: " · "))

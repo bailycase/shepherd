@@ -100,7 +100,7 @@ private struct PadRunHeader: View {
         if !dynamicType.isAccessibilitySize, siblings.count > 1, siblings.count <= MobileLayout.subagentTabsMax, siblings.contains(where: { nativeRunPhase($0).isLive }) {
             HStack(spacing: NW.Space.m) {
                 NWRunTabs(selection: Binding(get: { runID }, set: { inspection.show(ref, runID: $0) }),
-                          tabs: siblings.map { (id: $0.runID, title: nativeRunNames($0).name) })
+                          tabs: siblings.map { (id: $0.runID, title: nativeRunAgentName($0)) })
                 if let run { controls(run) }
                 allRuns
                 closeButton
@@ -111,8 +111,8 @@ private struct PadRunHeader: View {
             .background(Color.nw.bgWindow)
             .overlay(alignment: .bottom) { NWHairline() }
         } else {
-            let meta = run.map { nativeRunInspectorMeta($0) }
-            NWRunHeader(run.map { nativeRunNames($0).name } ?? "Subagent",
+            let meta = run.map { nativeRunInspectorMeta($0, withRole: false) }
+            NWRunHeader(run.map(nativeRunAgentName) ?? "Subagent",
                         position: position.flatMap { siblings.count > 1 ? "\($0 + 1) of \(siblings.count)" : nil },
                         state: run.map { AgentState(nativeRunPhase($0)) } ?? .idle, meta: meta?.meta ?? "no longer listed",
                         accent: meta?.accent) {
