@@ -256,34 +256,34 @@ struct NativeThreadStoreQueueTests {
     @Test func pendingBatchRetainsImagesThroughRefusalAndReleasesEveryConfirmedPart() async throws {
         let (store, host, task) = await started()
         defer { task.cancel() }
-        host.acceptAll()
-        host.starting = true
         let image = NativeImage(mimeType: "image/png", data: Data([1, 2]), name: "test.png")
+        var items: [NativeQueuedMessage] = []
+        host.action = { [self] request in
+            guard case .send(_, _, let id, let text, _, _, _, _, _) = request else {
+                return .failure(code: "unexpected", message: "expected a send")
+            }
+            items.append(NativeQueuedMessage(id: id, text: text, images: [.init(mimeType: image.mimeType, name: image.name)], sentAt: 1))
+            host.snapshot = snapshot(revision: UInt64(items.count + 1), items: items)
+            return .accepted(operationID: id)
+        }
         for text in ["first", "second"] {
             store.draft = text
             await store.send(images: [image])
         }
-        let ids = host.actions.compactMap { request -> UUID? in
-            if case .send(_, _, let id, _, _, _, _, _, _) = request { return id }
-            return nil
-        }
+        let ids = items.map(\.id)
         try #require(ids.count == 2)
-        let items = ids.map { NativeQueuedMessage(id: $0, text: "queued", images: [.init(mimeType: image.mimeType, name: image.name)], sentAt: 1) }
-        host.starting = false
-        host.snapshot = snapshot(revision: 2, items: items)
-        await store.refresh()
         var batch = F.user("first\nsecond", id: "batch")
         batch.operationID = ids[0]
         batch.origin = .queue(parts: ids.map { NativeQueuePart(id: $0, text: "queued", sentAt: 1, images: 1) })
         batch.status = "pending"
-        host.snapshot = snapshot(revision: 3, provisional: [batch])
+        host.snapshot = snapshot(revision: 4, provisional: [batch])
         await store.refresh()
         #expect(ids.allSatisfy { store.queuedImages($0) == [image] })
-        host.snapshot = snapshot(revision: 4, items: items)
+        host.snapshot = snapshot(revision: 5, items: items)
         await store.refresh()
         #expect(ids.allSatisfy { store.queuedImages($0) == [image] }, "a refused batch returns with its local images")
         batch.status = nil
-        host.snapshot = snapshot(revision: 5, provisional: [batch])
+        host.snapshot = snapshot(revision: 6, provisional: [batch])
         await store.refresh()
         #expect(ids.allSatisfy { store.queuedImages($0).isEmpty }, "all confirmed batch parts release their image bytes")
     }
