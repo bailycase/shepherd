@@ -107,6 +107,12 @@ final class DiagnosticsEnvelopeProtocol: URLProtocol, @unchecked Sendable {
             lock.withLock {
                 if stopped { task.cancel() } else { child = task; task.resume() }
             }
+        } catch DiagnosticsEnvelopeFilter.Failure.empty {
+            // A discarded attachment-only envelope is consumed, not retried from the SDK cache.
+            guard !lock.withLock({ stopped }), let url = request.url,
+                  let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil) else { return }
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocolDidFinishLoading(self)
         } catch {
             if !lock.withLock({ stopped }) { client?.urlProtocol(self, didFailWithError: error) }
         }
@@ -126,7 +132,7 @@ enum DiagnosticsEnvelopeFilter {
     static let maximumProfileBytes = 8 * 1024 * 1024
     static let maximumItems = 256
     static let maximumEntries = 100_000
-    enum Failure: Error { case invalid }
+    enum Failure: Error { case invalid, empty }
 
     static func sanitized(_ request: URLRequest, release: String? = nil, environment: String? = nil, allowProfiles: Bool = true) throws -> URLRequest {
         var body = request.httpBody ?? Data()
@@ -168,11 +174,13 @@ enum DiagnosticsEnvelopeFilter {
             defer { cursor = newline + 1 }
             return data.subdata(in: cursor..<newline)
         }
-        _ = try object(line())
-        // HTTP authentication routes the envelope; ambient trace/scope headers must not escape with profiles.
-        var output = Data("{}\n".utf8)
+        let envelopeHeader = try line()
+        _ = try object(envelopeHeader)
+        var output = Data()
         var changed = false
+        var scrubHeader = false
         var items = 0
+        var kept = 0
         while cursor < data.count {
             items += 1
             guard items <= maximumItems else { throw Failure.invalid }
@@ -182,7 +190,12 @@ enum DiagnosticsEnvelopeFilter {
                   let length = integer(header["length"]), length <= data.count - cursor else { throw Failure.invalid }
             let payload = data.subdata(in: cursor..<(cursor + length))
             cursor += length
-            if type == "profile_chunk" {
+            if type != "attachment", kept > 0 { output.append(10) }
+            if type == "attachment" {
+                // Scope attachments bypass beforeSend and can contain arbitrary files and filenames.
+                changed = true
+            } else if type == "profile_chunk" {
+                scrubHeader = true
                 // Also blocks SDK cache replay from a build where profiling had been approved.
                 guard allowProfiles else { throw Failure.invalid }
                 let clean = try profile(payload, release: release, environment: environment)
@@ -197,15 +210,20 @@ enum DiagnosticsEnvelopeFilter {
                 output.append(10)
                 output.append(payload)
             }
+            if type != "attachment" { kept += 1 }
             if cursor < data.count {
                 guard data[cursor] == 10 else { throw Failure.invalid }
-                output.append(10)
                 cursor += 1
             }
             guard output.count <= maximumExpandedBytes else { throw Failure.invalid }
         }
         guard items > 0 else { throw Failure.invalid }
-        return changed ? output : nil
+        guard kept > 0 else { throw Failure.empty }
+        guard changed else { return nil }
+        // Profiles cannot inherit ambient trace/scope headers; ordinary reports keep their routing metadata.
+        let header = scrubHeader ? Data("{}".utf8) : envelopeHeader
+        guard output.count <= maximumExpandedBytes - header.count - 1 else { throw Failure.invalid }
+        return header + Data([10]) + output
     }
 
     private static func inflateBody(_ input: Data) throws -> Data {

@@ -89,6 +89,13 @@ struct DiagnosticsEnvelopeTransportTests {
         _ = try await defaultSession.data(for: nonProfile)
         #expect(EnvelopeRecordingTransport.requests.withValue { $0.count } == beforeUnapproved + 1)
 
+        var attachmentOnly = request
+        attachmentOnly.httpBody = Data("{}\n{\"type\":\"attachment\",\"length\":7,\"filename\":\"PRIVATE_FILE\"}\nPRIVATE".utf8)
+        let beforeAttachment = EnvelopeRecordingTransport.requests.withValue { $0.count }
+        let (_, discarded) = try await defaultSession.data(for: attachmentOnly)
+        #expect((discarded as? HTTPURLResponse)?.statusCode == 200, "discarded data is consumed rather than retried")
+        #expect(EnvelopeRecordingTransport.requests.withValue { $0.count } == beforeAttachment)
+
         let beforeMalformed = EnvelopeRecordingTransport.requests.withValue { $0.count }
         request.httpBody = Data("malformed profile".utf8)
         do { _ = try await otherSession.data(for: request); Issue.record("Malformed content escaped filtering") } catch {}

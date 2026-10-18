@@ -64,6 +64,10 @@ flush can be delayed by a hang. App launch does not start or resume a profile. T
 restarts. Opt-out immediately revokes the forwarding transport and discards pending uploads; the SDK's
 local sampler may finish its current chunk after revocation.
 
+SDK scope attachments bypass event callbacks too. The transport discards all attachment payloads and
+filename headers, preserves permitted sibling events, and consumes attachment-only envelopes locally
+without upload or retry. A real-SDK test attaches private sentinels to scope and checks the wire.
+
 Profile chunks bypass Sentry's event callbacks, so `DiagnosticsEnvelopeTransport.swift` filters their actual
 byte-framed envelopes before forwarding. It retains sampled addresses, numeric stacks, image UUIDs,
 numeric thread IDs/priorities and the fixed `main` thread label, but removes other thread/queue names,

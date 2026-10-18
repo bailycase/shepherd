@@ -28,7 +28,9 @@ struct DiagnosticsEnvelopeTests {
     }
 
     private func item(_ payload: Data, type: String = "profile_chunk") throws -> Data {
-        var data = try JSONSerialization.data(withJSONObject: ["type": type, "length": payload.count], options: [.sortedKeys])
+        var header: [String: Any] = ["type": type, "length": payload.count]
+        if type == "attachment" { header["filename"] = secret }
+        var data = try JSONSerialization.data(withJSONObject: header, options: [.sortedKeys])
         data.append(10)
         data.append(payload)
         return data
@@ -70,15 +72,24 @@ struct DiagnosticsEnvelopeTests {
         #expect(images.first?["code_file"] as? String == "Shepherd")
     }
 
-    @Test func binaryItemLengthsAreRespectedAndNonProfileEnvelopesStayByteIdentical() throws {
+    @Test func binaryAttachmentsAreDiscardedWithoutCorruptingSiblingItems() throws {
         let binary = Data([0, 255, 10]) + Data("{\"type\":\"profile_chunk\"}\nprivate bytes".utf8)
         let attachment = try item(binary, type: "attachment")
         let event = try item(Data("{\"message\":\"already sanitized\"}".utf8), type: "event")
-        let unchanged = Data("{}\n".utf8) + attachment + Data([10]) + event
+        let unchanged = Data("{}\n".utf8) + event
         #expect(try DiagnosticsEnvelopeFilter.sanitized(unchanged) == nil)
-        let mixed = unchanged + Data([10]) + (try item(JSONSerialization.data(withJSONObject: chunk())))
+        for parts in [[attachment, event], [event, attachment], [attachment, event, attachment]] {
+            let input = Data("{}\n".utf8) + parts.dropFirst().reduce(parts[0]) { $0 + Data([10]) + $1 }
+            #expect(try DiagnosticsEnvelopeFilter.sanitized(input) == unchanged)
+            #expect(try DiagnosticsEnvelopeFilter.sanitized(gzip(input), gzip: true, allowProfiles: false) == unchanged)
+        }
+        let onlyAttachment = Data("{}\n".utf8) + attachment
+        #expect(throws: DiagnosticsEnvelopeFilter.Failure.self) { try DiagnosticsEnvelopeFilter.sanitized(onlyAttachment) }
+        let mixed = onlyAttachment + Data([10]) + event + Data([10]) + (try item(JSONSerialization.data(withJSONObject: chunk())))
         let clean = try #require(try DiagnosticsEnvelopeFilter.sanitized(mixed))
         #expect(clean.starts(with: unchanged + Data([10])))
+        #expect(!String(decoding: clean, as: UTF8.self).contains(secret))
+        #expect(!String(decoding: clean, as: UTF8.self).contains("private bytes"))
         #expect(!String(decoding: clean, as: UTF8.self).contains(secret))
     }
 

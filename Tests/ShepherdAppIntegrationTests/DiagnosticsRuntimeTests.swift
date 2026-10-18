@@ -134,6 +134,7 @@ struct DiagnosticsRuntimeTests {
         #expect(FileManager.default.contents(atPath: pending.path) == previousReport,
                 "launching through a symlink must preserve the pending crash cache")
         SentrySDK.configureScope { scope in
+            scope.addAttachment(Attachment(data: Data("PRIVATE_ATTACHMENT_SENTINEL".utf8), filename: "PRIVATE_FILENAME_SENTINEL.txt"))
             scope.setExtra(value: "PRIVATE_PROMPT_SENTINEL", key: "prompt")
             scope.setTag(value: "PRIVATE_PROMPT_SENTINEL", key: "project")
             scope.setAttribute(value: "PRIVATE_PROMPT_SENTINEL", key: "prompt")
@@ -151,6 +152,8 @@ struct DiagnosticsRuntimeTests {
         #expect(envelope.contains("agent.start_failed") && envelope.contains("thread.selected"))
         #expect(envelope.contains("shepherd.installation") && envelope.contains("shepherd.run"))
         #expect(!envelope.contains("PRIVATE_PROMPT_SENTINEL"))
+        #expect(try items(ofType: "attachment").isEmpty)
+        #expect(!envelope.contains("PRIVATE_ATTACHMENT_SENTINEL") && !envelope.contains("PRIVATE_FILENAME_SENTINEL"))
 
         diagnostics.recordResources(["app.rss_bytes": 1234, "sessions.total": 2, "PRIVATE_PROMPT_SENTINEL": 123,
                                      "pi.rss_bytes": .infinity, "pi.count": -1])
@@ -231,7 +234,11 @@ struct DiagnosticsRuntimeTests {
             #expect(attrs["environment"] as? String == ShepherdEdition.current.rawValue)
             #expect(Set(session.keys).isSubset(of: ["sid", "did", "init", "started", "timestamp", "duration", "status", "errors", "seq", "attrs", "abnormal_mechanism"]))
         }
-        #expect(try DiagnosticsTransport.state.bodies.map(uncompressed).allSatisfy { !$0.contains("PRIVATE_PROMPT_SENTINEL") && !$0.contains("shepherd.private_emission") })
+        #expect(try items(ofType: "attachment").isEmpty)
+        #expect(try DiagnosticsTransport.state.bodies.map(uncompressed).allSatisfy {
+            !$0.contains("PRIVATE_PROMPT_SENTINEL") && !$0.contains("shepherd.private_emission")
+                && !$0.contains("PRIVATE_ATTACHMENT_SENTINEL") && !$0.contains("PRIVATE_FILENAME_SENTINEL")
+        })
 
         // The unit tests consume full budgets; the real SDK checks the last allowed emission.
         defaults.set(DiagnosticsGate.Kind.log.limit - 1, forKey: "shepherd.diagnostics.log.count")
