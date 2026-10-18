@@ -18,6 +18,63 @@ import ShepherdTestSupport
 @Suite("The bundled pi engine, through the thread", .integrationTimeLimit,
        .enabled(if: EngineSmoke.engine != nil, "set SHEPHERD_ENGINE_SMOKE to a built Shepherd.app or a staged engine"))
 struct EngineThreadTests {
+    @Test @MainActor func aStartupQuestionCanBeAnsweredBeforeReadinessEvenWithASendWaiting() async throws {
+        let fixtures = try makeScratchDirectory("startup-question")
+        defer { try? FileManager.default.removeItem(at: fixtures) }
+        let extensionFile = fixtures.appendingPathComponent("question.ts")
+        try """
+        export default function(pi) {
+          pi.on("session_start", async (_, ctx) => {
+            const answer = await ctx.ui.confirm("Startup permission", "Continue?", { timeout: 15000 });
+            if (!answer) throw new Error("Startup permission was not answered");
+          });
+        }
+        """.write(to: extensionFile, atomically: true, encoding: .utf8)
+        let pi = try await RealPi.launch(engine: #require(EngineSmoke.engine), extensions: [extensionFile.path])
+        defer { pi.stop() }
+        let opening = try #require(OpeningPrompt("hello", agentID: pi.agent.agent.id))
+        await pi.host.server.sendOpeningPrompt(opening, sessionID: pi.agent.sessionID)
+        let store = NativeThreadStore()
+        defer { store.stop() }
+        store.preview(opening.preview())
+        let request: NativeThreadStore.Request = { try await pi.request($0) }
+        let shown = Task { await store.run(request: request) }
+        try await eventuallyOnMain("the live startup question", timeout: .seconds(10)) { !store.dialogs.isEmpty }
+        #expect(!store.ready && store.supports("answer") && !store.supports("send"))
+        #expect(store.displayedMessages.filter { $0.operationID == opening.operationID }.count == 1)
+        shown.cancel()
+        await shown.value
+        let resumed = Task { await store.run(request: request) }
+        defer { resumed.cancel() }
+        try await eventuallyOnMain("the startup question after showing the thread") { store.supports("answer") }
+        let current = try #require(store.snapshot)
+        let dialog = try #require(current.dialogs.first)
+        let refused = try await pi.request(.send(expectedSessionID: current.piSessionID, generation: current.generation,
+                                             operationID: UUID(), text: "must not run", delivery: .followUp))
+        #expect(refused.failureCode == NativeThreadCode.starting)
+        let stale = try await pi.request(.answer(expectedSessionID: current.piSessionID, generation: "wrong", operationID: UUID(),
+                                              dialogID: dialog.id, answer: .confirm(value: true)))
+        #expect(stale.failureCode == "stale_session")
+        store.draft = "later"
+        let waiting = Task { await store.send() }
+        defer { waiting.cancel() }
+        try await eventuallyOnMain("Send to wait without disabling the startup answer") { store.busy && store.supports("answer") }
+        await store.answer(dialogID: dialog.id, sessionID: current.piSessionID, generation: current.generation, answer: .confirm(value: true))
+        await waiting.value
+        try await eventuallyOnMain("both messages and the recorded startup answer", timeout: .seconds(15)) {
+            store.ready && store.messages.filter { $0.role == "user" }.count == 2
+                && store.messages.filter { $0.role == "assistant" }.count == 2
+                && store.messages.contains { $0.question?.confirmed == true }
+        }
+        #expect(store.loadError == nil && store.notice == nil)
+        #expect(store.messages.filter { $0.role == "user" && $0.operationID == opening.operationID }.count == 1)
+        #expect(store.messages.filter { $0.role == "user" }.map { $0.blocks.first?.text } == ["hello", "later"])
+        let records = try String(contentsOf: pi.sessionFile, encoding: .utf8).split(separator: "\n").compactMap {
+            try JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any]
+        }
+        #expect(records.filter { ($0["message"] as? [String: Any])?["role"] as? String == "user" }.count == 2)
+    }
+
     /// Real CLI startup awaits session_start before reading RPC stdin. A slow extension can
     /// therefore leave a live, sleeping pi with only the three seed records and no conversation.
     @Test @MainActor func aLiveEngineBlockedInSessionStartFailsWithinTheBoundAndRecoversItsOpeningMessageOnce() async throws {

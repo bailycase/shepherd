@@ -87,6 +87,9 @@ final class RPCThreadState {
     private(set) var piSessionID: String?
     /// A readiness failure, independent of whether any client is watching this thread.
     private var bootstrapFailure: String?
+    private var bootstrapTimeout: TimeInterval?
+    private var bootstrapWaitingForHuman: Bool?
+    private var bootstrapDeadline = UUID()
     /// The bootstrap's `get_messages` has not answered. pi answers it after `get_state`, and a
     /// long history takes a moment to arrive: served meanwhile, a resumed thread would show
     /// as a new, empty one.
@@ -96,7 +99,7 @@ final class RPCThreadState {
     var onServable: (() -> Void)?
     private var announcedServable = false
     /// A new agent's opening prompt, held until the thread serves (`sendOpeningPrompt`).
-    typealias OpeningPrompt = (text: String, images: [NativeImage], id: UUID)
+    typealias OpeningPrompt = (text: String, images: [NativeImage], id: UUID, at: Double)
     private var openingPrompt: OpeningPrompt?
     /// The opening prompt pi never read (it stopped before the thread served).
     var unreadOpeningPrompt: OpeningPrompt? { openingPrompt }
@@ -241,6 +244,7 @@ final class RPCThreadState {
                 askedQuestion = question
                 onQuestionChanged?(question)
             }
+            updateBootstrapDeadline()
         }
     }
     /// Called on the session queue when the question the thread asks first changes (nil once
@@ -491,9 +495,25 @@ final class RPCThreadState {
         refreshMessages(timeout: timeout, bootstrap: true)
         refreshStats(timeout: timeout, acceptLateResponse: true)
         refreshCommands(timeout: timeout, acceptLateResponse: true)
+        bootstrapTimeout = timeout
+        bootstrapWaitingForHuman = nil
+        updateBootstrapDeadline()
+    }
+
+    /// Human response time is not startup work. Bound the machine's wait again after an answer.
+    private func updateBootstrapDeadline() {
+        guard let timeout = bootstrapTimeout, !isServable else { return }
+        let waitingForHuman = dialogs.contains(where: { $0.unavailable == nil })
+        guard bootstrapWaitingForHuman != waitingForHuman else { return }
+        bootstrapWaitingForHuman = waitingForHuman
+        bootstrapDeadline = UUID()
+        bootstrapFailure = nil
+        guard !waitingForHuman else { return }
+        let deadline = bootstrapDeadline
         let generation = generation
         queue.asyncAfter(deadline: .now() + timeout) { [weak self] in
-            guard let self, self.generation == generation, !self.isServable, self.session.isAlive else { return }
+            guard let self, self.bootstrapDeadline == deadline, self.generation == generation,
+                  !self.isServable, self.session.isAlive else { return }
             let waiting = [self.piSessionID == nil ? "get_state" : nil, self.historyPending ? "get_messages" : nil].compactMap { $0 }.joined(separator: ", ")
             self.bootstrapFailure = "The agent is running but was not ready within \(timeout.formatted()) seconds (waiting for \(waiting)). Your first message is kept. Check Settings > Pi; Reconnect checks readiness again."
             ShepherdLog.warning("rpc session \(self.session.id) readiness deadline: waiting for \(waiting)")
@@ -750,13 +770,24 @@ final class RPCThreadState {
     /// `olderClient`: the request came from a remote client that does not read the host's queue
     /// (its `hello` listed no `native.queue.v1`); its queued sends go to pi alone.
     /// `isolateSend`: host-managed operation identity must survive even an all-at-once queue.
-    func handle(_ request: NativeThreadRequest, olderClient: Bool = false, isolateSend: Bool = false,
+    func handle(_ request: NativeThreadRequest, olderClient: Bool = false, isolateSend: Bool = false, startupDialogs: Bool = true,
                 completion: @escaping (NativeThreadResult) -> Void) {
-        guard let piSessionID, !historyPending else {
-            completion(.failure(code: bootstrapFailure == nil ? NativeThreadCode.starting : NativeThreadCode.unavailable,
-                                message: bootstrapFailure ?? "The agent is starting."))
-            return
+        if !isServable {
+            if !startupDialogs, dialogs.contains(where: { $0.unavailable == nil }) {
+                completion(.failure(code: NativeThreadCode.unavailable,
+                                    message: "Update Shepherd on this device to answer the agent's startup question."))
+                return
+            }
+            switch request {
+            case .snapshot(_, nil, _) where startupDialogs && bootstrapFailure == nil && (!dialogs.isEmpty || !questions.isEmpty), .answer:
+                break
+            default:
+                completion(.failure(code: bootstrapFailure == nil ? NativeThreadCode.starting : NativeThreadCode.unavailable,
+                                    message: bootstrapFailure ?? "The agent is starting."))
+                return
+            }
         }
+        let piSessionID = isServable ? (self.piSessionID ?? "") : ""
         commit()
         switch request {
         case .snapshot(let expectedSessionID, let beforeEntryID, let afterRevision):
@@ -1231,6 +1262,7 @@ final class RPCThreadState {
         guard isServable, !announcedServable else { return }
         announcedServable = true
         bootstrapFailure = nil
+        bootstrapTimeout = nil
         if let opening = openingPrompt {
             openingPrompt = nil
             deliverOpeningPrompt(opening.text, images: opening.images, id: opening.id)
@@ -1243,7 +1275,8 @@ final class RPCThreadState {
     /// it (pending until pi starts it) and none shows the thread without it.
     func sendOpeningPrompt(_ text: String, images: [NativeImage] = [], id: UUID) {
         guard isServable else {
-            openingPrompt = (text, images, id)
+            openingPrompt = (text, images, id, Date().timeIntervalSince1970 * 1000)
+            commit()
             return
         }
         deliverOpeningPrompt(text, images: images, id: id)
@@ -1574,7 +1607,11 @@ final class RPCThreadState {
         let loaded = originStore.load(sessionID: sessionID)
         origins = Dictionary(loaded.map { ($0.id, $0.record) }, uniquingKeysWith: { $1 })
         originOrder = loaded.map(\.id)
-        questions = originStore.loadQuestions(sessionID: sessionID)
+        let startupQuestions = questions
+        let loadedQuestions = originStore.loadQuestions(sessionID: sessionID)
+        let startupIDs = Set(startupQuestions.map(\.id))
+        questions = Array((loadedQuestions.filter { !startupIDs.contains($0.id) } + startupQuestions).suffix(ThreadOriginStore.questionLimit))
+        if !startupQuestions.isEmpty { saveOrigins() }
     }
 
     func recordOrigin(_ origin: NativeMessageOrigin, entryID: String) {
@@ -1941,6 +1978,7 @@ final class RPCThreadState {
         hasher.combine(serviceTier)
         hasher.combine(serviceTiers)
         hasher.combine(piSessionID)
+        hasher.combine(openingPrompt?.id)
         hasher.combine(stats)
         hasher.combine(context)
         hasher.combine(commandsHash)
@@ -2007,23 +2045,30 @@ final class RPCThreadState {
         // What this snapshot shortens or could not read: older history is not one of them (it is
         // `olderCursor`'s), and a too large question says so itself in the dock.
         let clips = NativeThreadClips(history: historyUnread, live: liveLeftOut)
+        let initializing = !isServable
         var base = NativeThreadSnapshot(
-            piSessionID: piSessionID ?? "", generation: generation, revision: revision, running: running,
-            model: model, thinking: thinking, thinkingLevels: thinkingLevels, supportedActions: Self.supportedActions + (goalsAvailable ? ["goal"] : []), dialogsSupported: true,
+            piSessionID: initializing ? "" : (piSessionID ?? ""), generation: generation, revision: revision, running: running,
+            model: model, thinking: thinking, thinkingLevels: thinkingLevels,
+            supportedActions: initializing ? ["answer"] : Self.supportedActions + (goalsAvailable ? ["goal"] : []), dialogsSupported: true,
             dialogs: [], widgets: snapshotWidgets, messages: [], provisional: [],
             clipped: !clips.isEmpty,
             runtime: "rpc", stats: stats, commands: commands, subagents: snapshotSubagents, context: context,
             turnChanges: snapshotTurnChanges, retry: retry,
             serviceTier: serviceTier.rawValue, serviceTiers: serviceTiers.map(\.rawValue), goal: goal,
-            clips: clips.isEmpty ? nil : clips
+            clips: clips.isEmpty ? nil : clips, initializing: initializing ? true : nil
         )
         // The rest encodes without the queue, which adds `,"queue":` and its cached size.
         let queue = queueValue
         let baseBytes = measured(base) + Self.queueFieldBytes + queueBytes(queue)
         base.queue = queue
         let sizedDialogs = zip(dialogs, dialogSizes()).map { Sized(value: $0, bytes: $1) }
+        var active = activeEntries()
+        if initializing, let opening = openingPrompt {
+            let row = NativeThreadMessage.pendingSend(operationID: opening.id, text: opening.text, images: opening.images.count, timestamp: opening.at)
+            active.insert(Sized(value: row, bytes: Self.bytes(row)), at: 0)
+        }
         let budgeted = Self.budget(
-            base, baseBytes: baseBytes, active: activeEntries(), dialogs: sizedDialogs,
+            base, baseBytes: baseBytes, active: active, dialogs: sizedDialogs,
             historyEnd: end, history: { self.historyEntry($0) }
         )
         #if DEBUG

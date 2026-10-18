@@ -91,7 +91,9 @@ with `ERR_MODULE_NOT_FOUND`.
 `scripts/pi-engine-patches/skills.json` is a narrowly scoped, tracked patch to pi 1.0.0's readable
 modular resource loader, package discovery, agent session and RPC mode, plus the small native
 watcher source `skill-watch.js`. It also removes command-based configuration value resolution
-from the modular runtime and SDK bundle. Its hash is recorded in the engine pin.
+from the modular runtime and SDK bundle. RPC input starts before extension initialization
+finishes so startup UI answers can get through; all other commands wait for initialization.
+Its hash is recorded in the engine pin.
 Staging verifies the pi version, full original file hashes, unique replacement anchors and final
 file hashes; verification also checks the shipped patched files. A source, patch or pin mismatch
 fails closed. Update the patch hash in the pin and restage whenever the patch changes, so Xcode's

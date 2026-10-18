@@ -149,10 +149,16 @@ events come out on stdout, one record per LF.
   client. The thread keeps everything pi listed (`allCommands`): typing a hidden command still
   runs it, and the server's `slashCommandCatalog` lists every command any thread's pi reported, so
   the page can switch a hidden one back on). Until `get_state` and
-  `get_messages` have answered, requests fail with `native_starting` ("The agent is starting."): pi
-  answers `get_state` first, and a thread served before a long history arrives would show a
-  resumed agent as a new, empty one. Bootstrap sends its readiness requests once and bounds readiness
-  at 60 seconds, independently of clients and visibility. A live process that has not answered
+  `get_messages` have answered, ordinary requests fail with `native_starting` ("The agent is
+  starting."): a thread served before history arrives would show a resumed agent as a new,
+  empty one. A startup question is the exception: snapshots carry `initializing: true`, an empty
+  session id, the real generation and only the `answer` action. Clients keep their preview and
+  history, allow the answer, and do not release waiting sends until full readiness. Older hosts
+  omit `initializing`. Remote clients opt in with `native.startup-dialogs.v1`; older clients
+  get an update-required error for an answerable startup question, never an empty history page.
+  Bootstrap sends its readiness requests once and bounds machine readiness
+  at 60 seconds, independently of clients and visibility. Answerable startup questions pause
+  that deadline while the person decides; answering starts a fresh machine deadline. A live process that has not answered
   returns `native_unavailable`, naming the missing readiness replies and keeping its opening
   prompt. Late state and history replies still use the normal projection and can make the
   thread usable, delivering that prompt once. A bootstrap history timeout never serves an

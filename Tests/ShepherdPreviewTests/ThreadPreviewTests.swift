@@ -219,6 +219,44 @@ struct ThreadPreviewTests {
         }
     }
 
+    @Test func threadStartupQuestion() async throws {
+        let dir = try makeScratchDirectory("startup-question-preview")
+        let queue = DispatchQueue(label: "preview.startup-question")
+        let session = try RPCSession(params: CreateSessionParams(cwd: dir.path, command: StubPi.command,
+            env: ["STUB_PI_STARTUP_GATE": "release-pi"], runtime: .rpc), queue: queue)
+        let thread = RPCThreadState(session: session, queue: queue)
+        session.onEvent = { [weak thread] in thread?.handle($0) }
+        session.start()
+        let opening = try #require(OpeningPrompt("Fix the login redirect", agentID: AgentID()))
+        let question = try JSONDecoder().decode(RPCEvent.self, from: Data(#"{"type":"extension_ui_request","id":"startup","method":"confirm","title":"Startup permission","message":"Allow the extension to initialize?"}"#.utf8))
+        queue.async {
+            thread.sendOpeningPrompt(opening.text, id: opening.operationID)
+            thread.bootstrap(timeout: 0.1)
+            thread.handle(question)
+        }
+        let store = NativeThreadStore()
+        defer {
+            store.stop()
+            queue.sync { session.shutdown() }
+            try? FileManager.default.removeItem(at: dir)
+        }
+        store.preview(opening.preview())
+        let request: NativeThreadStore.Request = { value in
+            await withCheckedContinuation { continuation in
+                queue.async { thread.handle(value) { continuation.resume(returning: $0) } }
+            }
+        }
+        try await Preview.render("thread-startup-question", size: CGSize(width: 1180, height: 700), ready: {
+            store.supports("answer") && !store.ready && !store.rows.isEmpty
+        }) {
+            VStack(spacing: 0) {
+                ThreadHeader(store: store, project: "Shepherd", title: opening.text)
+                ThreadView(store: store, active: true, isFocused: false, request: request)
+            }
+            .frame(width: 1180, height: 700)
+        }
+    }
+
     /// The real readiness deadline, with a live gated pi and the opening message still visible.
     @Test func threadStartupTimeout() async throws {
         let dir = try makeScratchDirectory("startup-preview")

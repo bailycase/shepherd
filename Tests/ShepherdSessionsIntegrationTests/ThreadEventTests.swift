@@ -292,6 +292,56 @@ struct ThreadEventTests {
         }
     }
 
+    @Test @MainActor func startupQuestionsPauseHumanTimeButBoundTheMachineAfterAnAnswer() async throws {
+        let t = try Thread(bootstrap: false, env: ["STUB_PI_STARTUP_GATE": "release-pi"])
+        defer { t.stop() }
+        t.queue.async { t.state.bootstrap(timeout: 0.1) }
+        try await t.feed(#"{"type":"extension_ui_request","id":"startup","method":"confirm","title":"Startup permission","message":"Continue?"}"#)
+        let store = NativeThreadStore(startingLimit: .milliseconds(100))
+        defer { store.stop() }
+        let shown = Task { await store.run(request: { await t.request($0) }) }
+        defer { shown.cancel() }
+        try await eventuallyOnMain("the startup question") { store.supports("answer") }
+        let legacy = await withCheckedContinuation { continuation in
+            t.queue.async {
+                t.state.handle(.snapshot(), startupDialogs: false) { continuation.resume(returning: $0) }
+            }
+        }
+        if case .failure(let code, let message) = legacy {
+            #expect(code == NativeThreadCode.unavailable && message.contains("Update Shepherd"))
+        } else { Issue.record("an older client must not mistake a startup question for empty history") }
+        let before = try #require(store.snapshot)
+        let opening = try #require(OpeningPrompt("held", agentID: AgentID()))
+        await withCheckedContinuation { continuation in
+            t.queue.async {
+                t.state.sendOpeningPrompt(opening.text, id: opening.operationID)
+                continuation.resume()
+            }
+        }
+        let after = try #require(await t.request(.snapshot(afterRevision: before.revision)).snapshotValue)
+        #expect(after.revision > before.revision && after.provisional.contains { $0.operationID == opening.operationID })
+        var disk = opening.preview()
+        disk.messages = [NativeThreadMessage(entryID: "old", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "saved history")])]
+        disk.olderCursor = "older"
+        store.preview(disk)
+        let waitingAt = ContinuousClock.now
+        try await eventuallyOnMain("human time beyond both startup deadlines") { ContinuousClock.now - waitingAt > .milliseconds(250) }
+        await store.refresh()
+        #expect(store.loadError == nil && !store.ready && store.supports("answer"))
+        #expect(store.messages == disk.messages && store.olderCursor == "older")
+        #expect(store.displayedMessages.contains { $0.blocks.first?.text == "held" })
+        let current = try #require(store.snapshot)
+        await store.answer(dialogID: "startup", sessionID: current.piSessionID, generation: current.generation, answer: .confirm(value: true))
+        try await eventually("the post-answer machine deadline") { @Sendable in
+            await t.request(.snapshot()).failureCode == NativeThreadCode.unavailable
+        }
+        try await eventuallyOnMain("the host's post-answer diagnostic to reach the store") {
+            store.loadError?.contains("get_state") == true
+        }
+        FileManager.default.createFile(atPath: t.dir.appendingPathComponent("release-pi").path, contents: nil)
+        try await eventuallyOnMain("late readiness after answering") { store.ready && store.loadError == nil }
+    }
+
     @Test @MainActor func hidingAStartingThreadDoesNotRestartItsPresentationDeadline() async throws {
         let t = try Thread(env: ["STUB_PI_STARTUP_GATE": "release-pi"])
         defer { t.stop() }
