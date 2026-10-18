@@ -248,11 +248,12 @@ final class ShepherdDiagnostics {
         options.enableNetworkTracking = false
         options.enableFileIOTracing = false
         options.enableAutoPerformanceTracing = false
-        options.enableAutoSessionTracking = false
+        options.enableAutoSessionTracking = true
         options.enableWatchdogTerminationTracking = false
         options.enableAppHangTracking = true
         options.appHangTimeoutInterval = 5
-        options.enableMetricKit = false
+        options.enableMetricKit = true
+        options.enableMetricKitRawPayload = false
         options.enableLogs = false
         options.enableMetrics = false
         options.beforeSendLog = { _ in nil }
@@ -301,13 +302,16 @@ final class ShepherdDiagnostics {
                               "EXC_CRASH", "EXC_RESOURCE", "SIGABRT", "SIGTRAP", "SIGSEGV", "SIGBUS", "SIGILL",
                               "NSInvalidArgumentException", "NSRangeException", "NSInternalInconsistencyException",
                               "App Hanging", "App Hang Fully Blocked", "App Hang Non Fully Blocked",
-                              "Fatal App Hang Fully Blocked", "Fatal App Hang Non Fully Blocked"]
+                              "Fatal App Hang Fully Blocked", "Fatal App Hang Non Fully Blocked",
+                              "MXCrashDiagnostic", "MXDiskWriteException", "MXCPUException", "MXHangDiagnostic"]
             let type = original.type.flatMap { knownTypes.contains($0) ? $0 : nil } ?? "Native crash"
             let exception = Exception(value: nil, type: type)
             exception.threadId = original.threadId
             exception.stacktrace = clean(original.stacktrace)
             if let original = original.mechanism {
-                let type = ["mach", "signal", "nsexception", "cpp_exception", "AppHang"].contains(original.type) ? original.type : "generic"
+                let knownMechanisms = ["mach", "signal", "nsexception", "cpp_exception", "AppHang",
+                                       "MXCrashDiagnostic", "mx_disk_write_exception", "mx_cpu_exception", "mx_hang_diagnostic"]
+                let type = knownMechanisms.contains(original.type) ? original.type : "generic"
                 let mechanism = Mechanism(type: type)
                 mechanism.handled = original.handled
                 exception.mechanism = mechanism

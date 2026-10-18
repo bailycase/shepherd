@@ -46,6 +46,19 @@ struct ShepherdDiagnosticsTests {
         }
     }
 
+    @Test(arguments: [("MXCPUException", "mx_cpu_exception"), ("MXDiskWriteException", "mx_disk_write_exception"),
+                      ("MXHangDiagnostic", "mx_hang_diagnostic")])
+    func systemPerformanceDiagnosticsRetainTheirKindButNotRawPayload(_ type: String, _ mechanism: String) {
+        let event = Event(level: .error)
+        let exception = Exception(value: "PRIVATE_DIAGNOSTIC_SENTINEL", type: type)
+        exception.mechanism = Mechanism(type: mechanism)
+        event.exceptions = [exception]
+        let clean = ShepherdDiagnostics.sanitized(event)
+        #expect(clean.exceptions?.first?.type == type)
+        #expect(clean.exceptions?.first?.mechanism?.type == mechanism)
+        #expect(clean.exceptions?.first?.value == nil)
+    }
+
     @Test func theSDKOnlyCollectsExplicitPerformanceAndCrashDiagnostics() {
         let session = URLSession(configuration: .ephemeral)
         defer { session.invalidateAndCancel() }
@@ -54,8 +67,9 @@ struct ShepherdDiagnosticsTests {
         #expect(options.maxCacheItems == 10 && options.maxBreadcrumbs == 32)
         #expect(!options.sendDefaultPii && !options.enableMemoryIntrospection)
         #expect(!options.enableAutoBreadcrumbTracking && !options.enableNetworkBreadcrumbs)
-        #expect(!options.enableAutoSessionTracking && !options.enableCaptureFailedRequests)
-        #expect(!options.enableMetricKit && !options.enableLogs && !options.enableMetrics)
+        #expect(options.enableAutoSessionTracking && !options.enableCaptureFailedRequests)
+        #expect(options.enableMetricKit && !options.enableMetricKitRawPayload)
+        #expect(!options.enableLogs && !options.enableMetrics)
         #expect(!options.enableAutoPerformanceTracing && options.tracesSampleRate == 1)
         #expect(!options.enableNetworkTracking && !options.enableFileIOTracing && !options.enableCoreDataTracing)
         #expect(options.enableAppHangTracking && options.appHangTimeoutInterval == 5)
