@@ -24,6 +24,12 @@ struct SidebarLogicalProject: Identifiable, Equatable {
 }
 
 extension ShepherdViewModel {
+    func openProjectTask(_ task: ProjectTaskID) {
+        logicalProjectPaneOpen = true
+        logicalProjectPaneTab = .threads
+        logicalProjectPaneTask = task
+    }
+
     // MARK: Model
 
     /// The hosts the Project's OWNER knows: its own runtime answers for this Mac, and a remote owner answers for itself.
