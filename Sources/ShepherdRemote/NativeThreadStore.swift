@@ -328,9 +328,11 @@ public final class NativeThreadStore {
         didSet { if hostName != oldValue { derive() } }
     }
     /// Calls parse their JSON and output once; a finished call never changes.
-    @ObservationIgnored private var callCache: [CallKey: NativeActivityCall] = [:]
+    @ObservationIgnored private var callCache: [String: (key: CallKey, value: NativeActivityCall)] = [:]
+    var cachedCallCount: Int { callCache.count }
     /// Finished thinking is parsed once: a reply streaming under it rebuilds its turn, not it.
-    @ObservationIgnored private var thinkingCache: [String: [NativeMarkdownBlock]] = [:]
+    @ObservationIgnored private var thinkingCache: [ProseKey: (text: String, blocks: [NativeMarkdownBlock])] = [:]
+    var cachedThinkingCount: Int { thinkingCache.count }
     /// How many times thinking was parsed (tests).
     @ObservationIgnored private(set) var thinkingParses = 0
     /// Only the latest text and mode per prose item: streaming prefixes never accumulate.
@@ -378,6 +380,7 @@ public final class NativeThreadStore {
             echoAccepted = [:]
             overlays = []
             holding = []
+            sentImages = [:]
             return
         }
         // Everything this client changed before the host answered the pull that brought this
@@ -521,8 +524,12 @@ public final class NativeThreadStore {
             if let cached = presentationCache[turn.id], cached.key == key {
                 presentation = cached.value
             } else {
+                var thinkingIndex = 0
                 presentation = nativeTurnPresentation(turn.messages, live: isLive, cards: key.cards, errors: errors, call: call,
-                                                      thinking: thinkingBlocks, prose: { id, text, streaming in
+                                                      thinking: { text in
+                    defer { thinkingIndex += 1 }
+                    return self.thinkingBlocks(turn: turn.id, index: thinkingIndex, text: text)
+                }, prose: { id, text, streaming in
                     self.proseBlocks(turn: turn.id, item: id, text: text, streaming: streaming)
                 })
                 presentationCache[turn.id] = (key, presentation)
@@ -680,10 +687,18 @@ public final class NativeThreadStore {
         if paused != queuePaused { queuePaused = paused }
         let notice = items.isEmpty ? nil : snapshot?.queue?.notice
         if notice != queueNotice { queueNotice = notice }
-        if sentImages.count > 64 {
-            let kept = Set(items.map(\.id))
-            sentImages = sentImages.filter { kept.contains($0.key) }
+        guard !sentImages.isEmpty else { return }
+        // A pending row precedes Pi's acceptance and can still return to the queue on refusal.
+        // Absence alone is not delivery either: another client may have deleted it for Undo.
+        var delivered = Set<UUID>()
+        for row in (snapshot?.messages ?? []) + (snapshot?.provisional ?? [])
+            where row.role == "user" && (row.status == nil || row.status == "complete") {
+            if let id = row.operationID { delivered.insert(id) }
+            delivered.formUnion(row.origin?.parts?.compactMap(\.id) ?? [])
         }
+        let kept = Set(items.map(\.id)).union(snapshot?.queue?.items.map(\.id) ?? []).union(holding)
+        let overLimit = sentImages.count > 64
+        sentImages = sentImages.filter { kept.contains($0.key) || (!overLimit && !delivered.contains($0.key)) }
     }
 
     private func call(_ message: NativeThreadMessage) -> NativeActivityCall {
@@ -692,19 +707,20 @@ public final class NativeThreadStore {
                           outputSize: message.blocks.reduce(0) { $0 + $1.text.utf8.count },
                           argumentsSize: message.argumentsText?.utf8.count,
                           liveTail: running ? message.blocks.last.map { String(decoding: $0.text.utf8.suffix(1024), as: UTF8.self) } : nil)
-        if let cached = callCache[key] { return cached }
+        if let cached = callCache[message.entryID], cached.key == key { return cached.value }
         let value = NativeActivityCall(message)
-        if callCache.count > 4096 { callCache.removeAll(keepingCapacity: true) }
-        callCache[key] = value
+        if callCache[message.entryID] == nil, callCache.count >= 4096 { callCache.removeAll(keepingCapacity: true) }
+        callCache[message.entryID] = (key, value)
         return value
     }
 
-    private func thinkingBlocks(_ text: String) -> [NativeMarkdownBlock] {
-        if let cached = thinkingCache[text] { return cached }
+    private func thinkingBlocks(turn: String, index: Int, text: String) -> [NativeMarkdownBlock] {
+        let key = ProseKey(turn: turn, item: String(index))
+        if let cached = thinkingCache[key], cached.text == text { return cached.blocks }
         thinkingParses += 1
         let value = nativeThinkingBlocks(text)
-        if thinkingCache.count > 1024 { thinkingCache.removeAll(keepingCapacity: true) }
-        thinkingCache[text] = value
+        if thinkingCache[key] == nil, thinkingCache.count >= 1024 { thinkingCache.removeAll(keepingCapacity: true) }
+        thinkingCache[key] = (text, value)
         return value
     }
 
@@ -1295,6 +1311,12 @@ public final class NativeThreadStore {
     /// empty for another client's.
     public func queuedImages(_ id: UUID) -> [NativeImage] {
         sentImages[id] ?? []
+    }
+
+    /// The client's Undo affordance expired; only queue/overlay/editor owners may keep its images.
+    public func releaseQueueUndoImages(_ ids: [UUID]) {
+        let kept = Set(queue.map(\.id)).union(snapshot?.queue?.items.map(\.id) ?? []).union(holding)
+        for id in ids where !kept.contains(id) { sentImages[id] = nil }
     }
 
     /// Saves an edit to a queued message; it keeps its place. Also releases the item's hold.
