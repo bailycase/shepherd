@@ -19,6 +19,8 @@ public enum RemoteProtocol {
     /// The host holds messages sent while pi works (`NativeThreadSnapshot.queue`) and serves
     /// `NativeThreadRequest.queue`. Older hosts send every message straight to pi.
     public static let nativeQueueCapability = "native.queue.v1"
+    /// Partial startup snapshots expose questions without replacing history or releasing sends.
+    public static let nativeStartupDialogsCapability = "native.startup-dialogs.v1"
     /// What this client tells a host in `hello`: it reads the host's queue and where each
     /// delivered message came from (`nativeQueueCapability`). An older client, which lists
     /// nothing, finds its own sends in the thread by their text, so a host delivers its queued
@@ -31,7 +33,7 @@ public enum RemoteProtocol {
     /// And it runs an agent's browser tools on its own page when the host asks
     /// (`browserDriveCapability`), which a host asks only of a client that lists it.
     /// Space editing understands both legacy .pi and current .shepherd inventories (`projectsV2Capability`).
-    public static let clientCapabilities = [browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectPlacementCapability, logicalProjectRuntimeCapability, projectExecutionCapability, nativeQueueCapability, thinkingLevelsCapability, designsCapability, browserTunnelCapability, browserDriveCapability, projectsV2Capability]
+    public static let clientCapabilities = [browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectPlacementCapability, logicalProjectRuntimeCapability, projectExecutionCapability, nativeQueueCapability, nativeStartupDialogsCapability, thinkingLevelsCapability, designsCapability, browserTunnelCapability, browserDriveCapability, projectsV2Capability]
     public static let version = 1
     /// A host's final reply to a `hello` whose token it refused; it closes the connection after.
     public static let unauthorizedCode = "unauthorized"
@@ -134,7 +136,7 @@ public enum RemoteProtocol {
     public static let browserTabsCapability = "browser.tabs.v1"
 
     public static let moveThreadCapability = "agent.move.v1"
-    public static let capabilities = [moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectTrustCapability, skillsCapability, piSkillsCapability, createAgentImagesCapability, terminalControlCapability, designContextCapability, designsCapability, designMarkupCapability, designDeleteCapability, nativeRetryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, nativeArtifactsCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability]
+    public static let capabilities = [moveThreadCapability, nativeQueueSubagentCapability, browserTabsCapability, projectPublicationsCapability, projectWorkerCapability, projectMessageImagesCapability, logicalProjectFilesCapability, projectPlacementCapability, projectExecutionCapability, logicalProjectRuntimeCapability, logicalProjectAutomationsCapability, logicalProjectsCapability, nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, nativeStartupDialogsCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, projectsV2Capability, projectDetailsCapability, projectMCPCapability, projectTrustCapability, skillsCapability, piSkillsCapability, createAgentImagesCapability, terminalControlCapability, designContextCapability, designsCapability, designMarkupCapability, designDeleteCapability, nativeRetryCapability, nativeInterruptCapability, browserTunnelCapability, browserDriveCapability, nativeServiceTierCapability, nativeImagesCapability, nativeArtifactsCapability, createAgentServiceTierCapability, nativeGoalCapability, goalExperimentCapability, projectsExperimentCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)

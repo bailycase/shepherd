@@ -30,7 +30,7 @@
     {
       "path": "dist/modes/rpc/rpc-mode.js",
       "before": "631697cd35928fc827f4a423538c43ff227b8cbf63c2a2f11060616f55eba6db",
-      "after": "6b364eaf366cf321c24ec8b481cf2cd4306927560cd73bc9c8abf8110327b5a7",
+      "after": "f5384700bb0a08f3411e54478312e4a64cb44c3ac61b4d266f9e8e7b6cf50b94",
       "edits": [
         {
           "old": "    // Handle a single command",
@@ -63,6 +63,22 @@
         {
           "old": "        await runtimeHost.dispose();",
           "new": "        stopSkillWatch?.();\n        await runtimeHost.dispose();"
+        },
+        {
+          "old": "    await rebindSession();\n    registerSignalHandlers();\n",
+          "new": ""
+        },
+        {
+          "old": "    const handleInputLine = async (line) => {",
+          "new": "    // Startup dialogs need stdin before session_start completes. Other commands stay gated.\n    const startup = rebindSession();\n    registerSignalHandlers();\n    const handleInputLine = async (line) => {"
+        },
+        {
+          "old": "        try {\n            const response = await handleCommand(command);",
+          "new": "        try {\n            await startup;\n            const response = await handleCommand(command);"
+        },
+        {
+          "old": "    // Keep process alive forever",
+          "new": "    await startup;\n    // Keep process alive forever"
         }
       ]
     },

@@ -13,6 +13,9 @@
   or trusted network is the transport boundary. Never describe the listener as internet-safe.
 - **Protocol** (NDJSON, `RemoteMessage.swift`):
   - state fetch and pushed `stateChanged`
+  - `native.startup-dialogs.v1` is advertised by both peers. Opted-in clients can answer
+    startup questions without replacing history or releasing sends; older clients get an
+    update-required error rather than a partial snapshot they would mistake for empty history.
   - native thread requests, with the context and Compact now behind `native.context.v1`, Retry
     in place behind `native.retry.v1`, and Steer now (a message that stops pi and goes at once,
     `interrupt` in `supportedActions`, sent as a steer to a host without it) behind

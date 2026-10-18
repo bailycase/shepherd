@@ -797,7 +797,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.logicalProjectRuntimeCapability, RemoteProtocol.projectExecutionCapability,
             RemoteProtocol.projectPlacementCapability, RemoteProtocol.logicalProjectFilesCapability, RemoteProtocol.projectWorkerCapability, RemoteProtocol.projectMessageImagesCapability, RemoteProtocol.projectPublicationsCapability,
             RemoteProtocol.nativeThreadCapability, RemoteProtocol.nativeThreadV2Capability,
-            RemoteProtocol.nativeThreadStartingCapability, RemoteProtocol.nativeQueueCapability,
+            RemoteProtocol.nativeThreadStartingCapability, RemoteProtocol.nativeQueueCapability, RemoteProtocol.nativeStartupDialogsCapability,
             RemoteProtocol.pasteCapability, RemoteProtocol.paneControlCapability,
             RemoteProtocol.agentActionsCapability, RemoteProtocol.agentInspectionCapability,
             RemoteProtocol.worktreeActionsCapability, RemoteProtocol.worktreeSetupCapability,
@@ -841,6 +841,8 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.changesCapability == "changes.v1")
         #expect(RemoteProtocol.nativeThreadStartingCapability == "native.thread.starting.v1")
         #expect(RemoteProtocol.nativeQueueCapability == "native.queue.v1")
+        #expect(RemoteProtocol.nativeStartupDialogsCapability == "native.startup-dialogs.v1")
+        #expect(RemoteProtocol.clientCapabilities.contains(RemoteProtocol.nativeStartupDialogsCapability))
         #expect(RemoteProtocol.pasteCapability == "session.paste.v1")
         #expect(RemoteProtocol.paneControlCapability == "pane.control.v1")
         #expect(RemoteProtocol.uploadCapability == "session.upload.v1")

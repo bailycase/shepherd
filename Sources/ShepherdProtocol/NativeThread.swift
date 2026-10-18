@@ -618,6 +618,10 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
     /// Absent from older hosts. The extension, not a turn's lifecycle status, owns completion.
     public var goal: NativeGoal?
 
+    /// Startup has asked a question before history is ready. Only answering is available;
+    /// messages are not an authoritative history page yet. Absent from older hosts.
+    public var initializing: Bool?
+
     public var isRPC: Bool { runtime == "rpc" }
 
     public init(
@@ -628,7 +632,7 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
         commands: [NativeCommand]? = nil, subagents: [NativeSubagent]? = nil, queue: NativeQueue? = nil,
         context: NativeThreadContext? = nil, turnChanges: [ChangesTurn]? = nil, retry: NativeThreadRetry? = nil,
         startProblem: NativeStartProblem? = nil, serviceTier: String? = nil, serviceTiers: [String]? = nil, goal: NativeGoal? = nil,
-        clips: NativeThreadClips? = nil
+        clips: NativeThreadClips? = nil, initializing: Bool? = nil
     ) {
         self.piSessionID = piSessionID
         self.generation = generation
@@ -658,6 +662,7 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
         self.serviceTiers = serviceTiers
         self.goal = goal
         self.clips = clips
+        self.initializing = initializing
     }
 }
 

@@ -302,7 +302,7 @@ public final class NativeThreadStore {
     /// Actions (their operation ids) the host has not answered yet, and those of them a suspension
     /// reported as "outcome unknown" meanwhile: the host's answer, when it comes, settles that
     /// notice (`perform`).
-    @ObservationIgnored private var inFlight: Set<UUID> = []
+    private var inFlight: Set<UUID> = []
     @ObservationIgnored private var reportedUnknown: Set<UUID> = []
     private static let outcomeUnknown = "Action outcome unknown. Refresh and check the thread before trying again. Nothing will be resent automatically."
     @ObservationIgnored private var recentRequest = UUID()
@@ -433,7 +433,11 @@ public final class NativeThreadStore {
     }
 
     public func supports(_ action: String) -> Bool {
-        ready && !busy && supportedActions.contains(action)
+        if action == "answer", snapshot?.initializing == true {
+            return request != nil && loadError == nil && supportedActions.contains(action)
+                && inFlight.isEmpty && (!busy || !startWaiters.isEmpty)
+        }
+        return ready && !busy && supportedActions.contains(action)
     }
 
     /// The host stops pi for a message (`interrupt` in `supportedActions`, remotely
@@ -790,9 +794,21 @@ public final class NativeThreadStore {
     }
 
     /// Shows `value`, history read from pi's session file (or a new agent's empty thread), until
-    /// pi answers. Ignored once pi has served this thread anything: disk never overwrites pi.
+    /// pi answers with history. A startup question alone does not replace the disk preview.
     public func preview(_ value: NativeThreadSnapshot) {
-        guard !ready, snapshot == nil || previewing else { return }
+        guard !ready, snapshot == nil || previewing || snapshot?.initializing == true else { return }
+        var value = value
+        if let current = snapshot, current.initializing == true {
+            value.piSessionID = current.piSessionID
+            value.generation = current.generation
+            value.revision = current.revision
+            value.initializing = true
+            value.dialogs = current.dialogs
+            value.dialogsSupported = current.dialogsSupported
+            value.supportedActions = current.supportedActions
+            let ids = Set(current.provisional.map(\.entryID))
+            value.provisional = value.provisional.filter { !ids.contains($0.entryID) } + current.provisional
+        }
         if value != snapshot { snapshot = value }
         if value.messages != messages { messages = value.messages }
         if olderCursor != value.olderCursor { olderCursor = value.olderCursor }
@@ -856,8 +872,7 @@ public final class NativeThreadStore {
         // Pieces still being asked for stop; the ones held stay for the next poll.
         images.cancelAll()
         catchUp = nil
-        // The starting limit counts from the next answer.
-        startingSince = nil
+        // Visibility does not restart pi or its readiness deadline.
         if busy { busy = false }
         if loadingOlder { loadingOlder = false }
     }
@@ -915,6 +930,23 @@ public final class NativeThreadStore {
             switch result {
             case .snapshot(let value) where value.startProblem != nil:
                 noteStartProblem(value.startProblem!)
+            case .snapshot(var value) where value.initializing == true:
+                // Startup questions are live, but this is not a replacement history page.
+                value.messages = messages
+                value.olderCursor = olderCursor
+                snapshot = value
+                ready = false
+                if loadError != nil { loadError = nil }
+                if value.dialogs.contains(where: { $0.unavailable == nil }) {
+                    endStarting()
+                    starting = true
+                } else {
+                    noteStarting()
+                }
+                clearStartProblem()
+                settleRunning(false, catchingUp: true)
+                deriveQueue()
+                derive()
             case .snapshot(var value):
                 let sameSession = previous?.piSessionID == value.piSessionID && previous?.generation == value.generation
                 if sameSession, let previous, value.revision < previous.revision { return }
@@ -947,7 +979,7 @@ public final class NativeThreadStore {
                 deriveQueue()
                 derive()
                 caughtUp()
-                resumeStartWaiters(true)
+                if inFlight.isEmpty { resumeStartWaiters(true) }
             case .unchanged(let session, let generation, _):
                 if previous?.piSessionID != session || previous?.generation != generation || fresh {
                     ready = false
@@ -966,7 +998,7 @@ public final class NativeThreadStore {
                         derive()
                     }
                     caughtUp()
-                    resumeStartWaiters(true)
+                    if inFlight.isEmpty { resumeStartWaiters(true) }
                 }
             case .failure(let code, _) where code == NativeThreadCode.starting:
                 noteStarting()
@@ -1098,7 +1130,7 @@ public final class NativeThreadStore {
         let started = await withCheckedContinuation { startWaiters.append($0) }
         // stop() already reset everything for a thread that went away meanwhile.
         guard epoch == run else { return false }
-        busy = false
+        busy = !inFlight.isEmpty
         return started && ready
     }
 
@@ -1597,6 +1629,9 @@ public final class NativeThreadStore {
             return false
         }
         let run = epoch
+        let answeringStartup: Bool
+        if case .answer = action { answeringStartup = current.initializing == true }
+        else { answeringStartup = false }
         var wasAccepted = false
         // A follow-up sent while a turn runs waits in the queue until the turn ends.
         let queued = current.running && delivery == .followUp
@@ -1607,6 +1642,10 @@ public final class NativeThreadStore {
         defer {
             inFlight.remove(operation)
             reportedUnknown.remove(operation)
+            if epoch == run {
+                if ready && inFlight.isEmpty { resumeStartWaiters(true) }
+                busy = !startWaiters.isEmpty || !inFlight.isEmpty
+            }
         }
         do {
             let result = try await request(action)
@@ -1614,8 +1653,10 @@ public final class NativeThreadStore {
                 return settledAfterRestart(result, operation: operation, sentText: sentText, typed: typed, files: files,
                                            references: references, elements: elements)
             }
-            guard snapshot?.piSessionID == current.piSessionID, snapshot?.generation == current.generation else {
-                busy = false
+            let startupFinished = answeringStartup && current.piSessionID.isEmpty
+                && snapshot?.initializing != true && snapshot?.piSessionID.isEmpty == false
+            guard snapshot?.generation == current.generation,
+                  snapshot?.piSessionID == current.piSessionID || startupFinished else {
                 notice = "The session changed while the action was pending. Check the thread before trying again."
                 return false
             }
@@ -1670,7 +1711,7 @@ public final class NativeThreadStore {
             } else { notice = String(describing: error) }
         }
         guard epoch == run else { return wasAccepted }
-        busy = false
+        busy = !startWaiters.isEmpty || inFlight.contains { $0 != operation }
         ready = false
         await refresh(fresh: true)
         return wasAccepted
