@@ -105,6 +105,70 @@ struct NativeThreadStoreTests {
         return (store, host, task)
     }
 
+    @Test func aStartupAnswerCanFinishAfterReadinessWithoutDroppingAWaitingSend() async {
+        var partial = F.snapshot(session: "", actions: ["answer"], dialogs: [NativeThreadDialog(id: "startup", kind: .confirm, title: "Continue?")])
+        partial.initializing = true
+        let host = FakeHost(partial)
+        let store = manualStore()
+        let answerGate = FirstPullGate(), sendGate = FirstPullGate()
+        let request: NativeThreadStore.Request = { request in
+            switch request {
+            case .answer(_, _, let id, _, _):
+                answerGate.asked = true
+                await until { !answerGate.held }
+                return .accepted(operationID: id)
+            case .send(_, _, let id, _, _, _, _, _, _):
+                sendGate.asked = true
+                await until { !sendGate.held }
+                return .accepted(operationID: id)
+            default:
+                return try host.handle(request)
+            }
+        }
+        let shown = Task { await store.run(request: request) }
+        defer { shown.cancel(); store.stop() }
+        await until { store.supports("answer") }
+        store.draft = "next"
+        let sending = Task { await store.send(); sendGate.held = false }
+        await until { store.busy && store.supports("answer") }
+        let answering = Task { await store.answer(dialogID: "startup", sessionID: "", generation: "g", answer: .confirm(value: true)) }
+        await until { answerGate.asked }
+        host.snapshot = F.snapshot(session: "ready")
+        await store.refresh()
+        #expect(store.busy && !sendGate.asked && sendGate.held, "Send waits for the pending startup answer to finish")
+        answerGate.held = false
+        await answering.value
+        await until { sendGate.asked || !sendGate.held }
+        #expect(sendGate.asked && store.busy && store.notice == nil, "the expected readiness transition must neither fail the answer nor drop Send")
+        sendGate.held = false
+        await sending.value
+        #expect(!store.busy && store.notice == nil)
+    }
+
+    @Test func startupSnapshotsReplaceHostProvisionalRowsIncludingAcrossGenerations() async {
+        let old = F.assistant("old output", id: "old")
+        let new = F.assistant("new output", id: "new")
+        var partial = F.snapshot(session: "", actions: ["answer"], provisional: [old])
+        partial.initializing = true
+        let (store, host, task) = await started(partial)
+        defer { task.cancel(); store.stop() }
+        #expect(store.snapshot?.provisional == [old])
+        host.snapshot.provisional = []
+        host.snapshot.revision += 1
+        await store.refresh()
+        #expect(store.snapshot?.provisional.isEmpty == true, "do not resurrect a row the host clipped or removed")
+        host.snapshot.provisional = [old]
+        host.snapshot.revision += 1
+        await store.refresh()
+        host.snapshot.generation = "replacement"
+        host.snapshot.provisional = [new]
+        await store.refresh()
+        #expect(store.snapshot?.provisional == [new])
+        host.next = [.success(.failure(code: NativeThreadCode.unavailable, message: "offline"))]
+        await store.refresh()
+        #expect(store.loadError == "offline" && !store.supports("answer"))
+    }
+
     // MARK: Recorded turns
 
     /// A reply carries the turn its host recorded for the message that opened it (its

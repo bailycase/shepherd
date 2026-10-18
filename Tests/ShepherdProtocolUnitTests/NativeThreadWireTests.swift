@@ -115,6 +115,9 @@ struct NativeThreadWireTests {
 
     static let results: [NativeThreadResult] = [
         .snapshot(value: NativeThreadSnapshot(
+            piSessionID: "", generation: "startup", revision: 1, running: false, supportedActions: ["answer"],
+            dialogsSupported: true, dialogs: [], messages: [], provisional: [], clipped: false, runtime: "rpc", initializing: true)),
+        .snapshot(value: NativeThreadSnapshot(
             piSessionID: "s", generation: "g", revision: 11, running: true, supportedActions: ["send", "queue", "browserElements"],
             dialogsSupported: true, dialogs: [],
             messages: [NativeThreadMessage(entryID: "user:9", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "wider")],
@@ -237,6 +240,13 @@ struct NativeThreadWireTests {
 
     /// An older host sends no tier: the client draws no Speed control. A host that does sends the
     /// agent's tier and what its model offers; none offered is an empty list, not an absent one.
+    @Test func startupProgressIsOptionalForOlderHosts() throws {
+        let older = try Wire.decode(NativeThreadSnapshot.self, Self.v1Snapshot)
+        #expect(older.initializing == nil)
+        #expect(try Wire.object(older)["initializing"] == nil)
+        #expect(try Self.snapshot(adding: ["initializing": true]).initializing == true)
+    }
+
     @Test func anOlderSnapshotHasNoServiceTierAndAnEmptyOfferStaysOnTheWire() throws {
         let older = try Wire.decode(NativeThreadSnapshot.self, Self.v1Snapshot)
         #expect(older.serviceTier == nil && older.serviceTiers == nil)

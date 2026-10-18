@@ -1474,6 +1474,7 @@ public final class SessionServer: @unchecked Sendable {
         request: NativeThreadRequest,
         requestBytes: Int,
         olderClient: Bool = false,
+        startupDialogs: Bool = true,
         completion: @escaping (NativeOutcome) -> Void
     ) {
         let unavailable = { (message: String) in completion(.failure(code: NativeThreadCode.unavailable, message: message)) }
@@ -1549,7 +1550,7 @@ public final class SessionServer: @unchecked Sendable {
         // The user's send hands a browser they took over back once the thread accepts it (a stale
         // or refused send changes nothing).
         let isSend: Bool = { if case .send = request { return true } else { return false } }()
-        thread.handle(request, olderClient: olderClient) { [weak self] result in
+        thread.handle(request, olderClient: olderClient, startupDialogs: startupDialogs) { [weak self] result in
             if isSend, case .accepted = result {
                 self?.hopToMain { [weak self] in self?.onUserMessage?(agentID) }
                 self?.pushToBrowserOwner(agentID, .handBack(agentID: agentID))
@@ -1843,7 +1844,8 @@ public final class SessionServer: @unchecked Sendable {
                 return
             }
             let olderClient = !client.clientCapabilities.contains(RemoteProtocol.nativeQueueCapability)
-            dispatchNativeThread(agentID: agentID, request: request, requestBytes: line.count, olderClient: olderClient) { [weak self, weak client] outcome in
+            dispatchNativeThread(agentID: agentID, request: request, requestBytes: line.count, olderClient: olderClient,
+                                 startupDialogs: client.clientCapabilities.contains(RemoteProtocol.nativeStartupDialogsCapability)) { [weak self, weak client] outcome in
                 guard let self, let client else { return }
                 switch outcome {
                 case .result(let result): self.send(.nativeThread(id: id, result: result), to: client)
