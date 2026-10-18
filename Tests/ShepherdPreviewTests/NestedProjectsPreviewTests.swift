@@ -9,15 +9,19 @@ import ShepherdTestSupport
 @Suite("Nested sidebar previews", .serialized, .mainActorExclusive, .enabled(if: Preview.enabled))
 @MainActor
 struct NestedProjectsPreviewTests {
-    @Test(arguments: ["open", "parent-closed", "child-closed", "empty", "long", "attention", "explicit-parent"])
+    @Test(arguments: ["open", "parent-closed", "child-closed", "empty", "long", "attention", "explicit-parent",
+                      "pinned", "pinned-empty", "pinned-long", "pinned-closed", "pinned-hosts"])
     func sidebar(state: String) async throws {
         let world = try PreviewWorkspace()
         defer { world.stop() }
-        let parent = Space(name: state == "long" ? "Platform with a very long project name that must truncate" : "Platform", path: world.dir.path)
-        let hub = Space(name: state == "long" ? "Hub with a very long child project name that must truncate" : "Hub", path: world.dir.appendingPathComponent("hub").path)
+        let parent = Space(name: state.contains("long") ? "Platform with a very long project name that must truncate" : "Platform", path: world.dir.path)
+        let hub = Space(name: state.contains("long") ? "Hub with a very long child project name that must truncate" : "Hub", path: world.dir.appendingPathComponent("hub").path)
         let infra = Space(name: "Infrastructure", path: world.dir.appendingPathComponent("infra").path)
+        for space in [hub, infra] {
+            try FileManager.default.createDirectory(atPath: space.path, withIntermediateDirectories: true)
+        }
         var agents: [Agent] = [], tabs: [ShepherdCore.Tab] = []
-        if state != "empty" {
+        if !state.contains("empty") {
             for (index, space) in [parent, hub, infra].enumerated() {
                 let row = try await world.agent(index == 0 ? "Platform work" : "Child work \(index)", in: space, order: index,
                                                 status: state == "attention" && index == 1 ? .blocked : .working)
@@ -27,6 +31,13 @@ struct NestedProjectsPreviewTests {
         try await world.seed(ShepherdState(spaces: [hub, infra, parent], tabs: tabs, agents: agents))
         let vm = world.vm
         vm.settings.sidebarStyle = .projects
+        if state.hasPrefix("pinned") {
+            vm.settings.projectsEnabled = true
+            vm.togglePinSpace(hub.id)
+            vm.setProject(.local(parent.id), expanded: false)
+            if state == "pinned-closed" { vm.setProject(.local(hub.id), expanded: false) }
+            vm.settings.sidebarGroupByHost = state == "pinned-hosts"
+        }
         if state == "explicit-parent" {
             _ = try await vm.handleProjectRequest(.edit(projectID: hub.id, request: .init(parentProjectID: infra.id.rawValue)))
         }

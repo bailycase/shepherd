@@ -114,6 +114,8 @@ struct ThreadView: View {
         let rows: [NativeThreadRow] = origins.runtime.isEmpty ? store.rows : store.rows.filter { !($0.isUser && origins.hides($0.turn)) }
         // A Project's accepted messages the transcript has not taken in: waiting ones go to the composer's Up next, outcomes stay here.
         let held = projectSend?.held() ?? []
+        // A row's background needs only the boundary ID, not a captured copy of the transcript.
+        let historyRowID = historyAnchor.rowID ?? rows.first?.id
         let running = store.running
         let liveRow = rows.last(where: \.live)
         // Only one thing moves (LiveText): a running call's own line, thinking, or the reply as it
@@ -155,7 +157,7 @@ struct ThreadView: View {
                                     .accessibilityHidden(true)
                             }
                             .background {
-                                if row.id == (historyAnchor.rowID ?? rows.first?.id) {
+                                if row.id == historyRowID {
                                     ThreadHistoryAnchor.Probe(anchor: historyAnchor, rowID: row.id)
                                         .onGeometryChange(for: CGFloat.self) { $0.frame(in: .scrollView).minY } action: { _ in
                                             historyAnchor.moved()
