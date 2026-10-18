@@ -19,6 +19,11 @@ extension MobileLayout {
     static let reviewToolbarHeight: CGFloat = 54
     /// The compare row (38pt) and a file's head (44pt).
     static let reviewCompareHeight: CGFloat = 38
+    /// The send bar (iPadReview: at least 56pt) and a full-screen file row (56pt).
+    static let reviewSendBarHeight: CGFloat = 56
+    static let reviewFileRowHeight: CGFloat = 56
+    /// A viewed file in the full-screen list.
+    static let reviewViewedOpacity: Double = 0.6
     /// The base picker's popover.
     static let reviewBasePickerSize = CGSize(width: 380, height: 520)
     /// Between the cards of the changes screen.

@@ -55,7 +55,15 @@ struct PadHostsScreen: View {
         .task { await feed.watch() }
         .navigationTitle("Hosts")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(removing: .title)
         .toolbar {
+            // iPadHosts: "Hosts" leads the bar, over the list.
+            ToolbarItem(placement: .topBarLeading) {
+                Text("Hosts").font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary)
+                    .fixedSize()
+                    .accessibilityAddTraits(.isHeader)
+            }
+            .sharedBackgroundVisibility(.hidden)
             ToolbarItem(placement: .primaryAction) {
                 Button("Add host", systemImage: "plus") { navigator.present(.settings(.host(nil))) }
             }

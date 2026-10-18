@@ -56,10 +56,10 @@ The sidebar's Needs you head opens the list beside the chosen item's detail, one
 its full context.
 
 - **List:** 380pt wide on the board (the app 360), a 1px `lineSubtle` trailing edge. Its header:
-  "Needs you" (17/600) with "5 waiting" at 12.5 `textTertiary` (the app puts "3 things are
-  waiting on you" at the list's top). Items (10pt inset, 2pt apart; `NWAttentionCard(style:
+  "Needs you" (17/600) with "5 waiting" at 12.5 `textTertiary`, leading the bar. Items (10pt inset, 2pt apart; `NWAttentionCard(style:
   .item)`: no line, the app's radius 8): 12pt inset at radius 10, the chosen one on `bgSelected`: the origin line (a 14pt `lanternText` glyph or a glowing 8pt dot,
-  "Thread" at 12 `textTertiary`, the age trailing), the title at 15/600
+  "Thread" or "Automation" at 12 `textTertiary`, the age trailing; the iPhone's cards say "A
+  thread" and "A run of the automation …"), the title at 15/600
   (the thread's name), the question at 13/1.4 `textSecondary`.
 - **Detail header:** the title (17/600) and the pill with its age ("Needs you · 2m"); **not built
   yet:** a ••• menu (40pt) trailing (the board does not show its items).
@@ -343,7 +343,8 @@ or the iPad sidebar's.
   apart (radius 3 on top; `done`, `failed`, `lantern` for a run that asked, at 75%, the latest at
   100%) over a hairline, and under them the first date, the counts ("failed: 1 · asked: 1") and the
   last run's time in mono 10.5 `textTertiary`. The last run is a card: its glyph, "Today 02:00 ·
-  passed in 43s" at 14.5/600, and Open thread (13, `running`). The foot (a hairline above, 12×20
+  finished in 43s" at 15/600, and Open thread (`running`) while its thread is there; the runs list
+  follows it. The column's header leads the bar ("Automations", 17/600). The foot (a hairline above, 12×20
   inset, 26 under) holds Edit (secondary) and Run now (primary, with its glyph), 36pt.
 - **Form:** Name, Prompt, Where it runs (Host when adding and more than one can take it, then
   Folder from the host's spaces), and Starts with Shepherd. Save waits for the host. A new
