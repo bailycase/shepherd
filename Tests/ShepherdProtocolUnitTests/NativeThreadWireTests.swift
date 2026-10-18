@@ -94,6 +94,7 @@ struct NativeThreadWireTests {
         .setMode(mode: nil),
         .sendNow(ids: [op]),
         .interrupt(ids: [op]),
+        .subagent(id: op),
         .interrupt(ids: [op, UUID(uuidString: "00000000-0000-0000-0000-000000000002")!]),
     ]
 

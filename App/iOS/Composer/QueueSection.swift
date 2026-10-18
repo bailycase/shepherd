@@ -83,7 +83,8 @@ struct QueueSection: View {
             undo: { rowID in
                 guard let undo = state.takeUndo(rowID) else { return }
                 Task { await store.restoreQueued(undo.messages, at: undo.index) }
-            })
+            },
+            subagent: store.supportsQueueSubagent ? { id in Task { await store.runQueuedInSubagent(id) } } : nil)
     }
 
     @ViewBuilder private func options(running: Bool) -> some View {
@@ -126,6 +127,7 @@ struct QueueRowActions {
     var moveToTop: (UUID) -> Void
     var delete: (UUID) -> Void
     var undo: (String) -> Void
+    var subagent: ((UUID) -> Void)? = nil
 }
 
 /// One row: a queued message with its swipe actions and long-press menu, a steering one with
@@ -142,6 +144,7 @@ private struct QueueRowView: View, Equatable {
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.row == rhs.row && lhs.first == rhs.first && lhs.steerLabel == rhs.steerLabel && lhs.running == rhs.running
             && lhs.enabled == rhs.enabled && lhs.wide == rhs.wide
+            && (lhs.actions.subagent == nil) == (rhs.actions.subagent == nil)
     }
 
     var body: some View {
@@ -179,6 +182,9 @@ private struct QueuedRowActions: ViewModifier {
                 }
                 .contextMenu {
                     Button(steerLabel, systemImage: "arrow.turn.down.right") { actions.steer(id) }
+                    if let subagent = actions.subagent {
+                        Button("Run in subagent", systemImage: NWGlyph.gitBranch.symbolName) { subagent(id) }
+                    }
                     Button("Edit", systemImage: "pencil") { actions.edit(id) }
                     if row.canMoveToTop {
                         Button("Move to top", systemImage: "arrow.up.to.line") { actions.moveToTop(id) }
@@ -189,6 +195,9 @@ private struct QueuedRowActions: ViewModifier {
                 .accessibilityAction(named: steerLabel) { actions.steer(id) }
                 .accessibilityAction(named: "Edit") { actions.edit(id) }
                 .accessibilityAction(named: "Delete") { actions.delete(id) }
+                .accessibilityActions {
+                    if let subagent = actions.subagent { Button("Run in subagent") { subagent(id) } }
+                }
         } else {
             content
         }

@@ -18,6 +18,13 @@ const EVENT = "shepherd:children:v1";
 const MAX_RUNS = 64;
 const MAX_TEXT = 16 * 1024;
 const MAX_FRAME = 8 * 1024 * 1024;
+// User-started queued helpers use the existing tick and Stop path, without a new scheduler.
+export function queuedChildLimit(run, now = Date.now()) {
+  if (!run.queueRequestID || !["running", "queued"].includes(run.state)) return;
+  if (now - run.startedAt >= 30 * 60 * 1000) return "Queued subagent reached its 30-minute limit";
+  if (run.turns >= 256) return "Queued subagent reached its 256-turn limit";
+  if (run.tokens >= 1_000_000) return "Queued subagent reached its 1,000,000-token limit";
+}
 const clip = (text, limit = MAX_TEXT) => {
   const value = String(text ?? "");
   return Buffer.byteLength(value) <= limit ? value : Buffer.from(value).subarray(0, limit).toString("utf8").replace(/\uFFFD$/, "");
@@ -639,7 +646,13 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
   function syncTick() {
     const live = active && [...runs.values()].some((run) => run.state === "running" || run.state === "queued");
     if (live && !timer) {
-      timer = timers.setInterval(() => { for (const run of runs.values()) void controls(run); publish(); }, 1000);
+      timer = timers.setInterval(() => {
+        for (const run of runs.values()) {
+          const limit = queuedChildLimit(run);
+          if (limit) void stop(run, limit); else void controls(run);
+        }
+        publish();
+      }, 1000);
       timer.unref?.();
     } else if (!live && timer) {
       timers.clearInterval(timer); timer = undefined;
@@ -891,7 +904,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       run.drainTimer.unref();
     }
   }
-  async function launch(run, message, signal) {
+  async function launch(run, message, signal, images) {
     run.cancelled = false; run.preparing = true;
     await prepareProjectConfiguration(run.cwd);
     signal?.throwIfAborted();
@@ -968,7 +981,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
         throw new Error(`Model ${run.model} is unavailable in isolated Pi. ${modelNotFound(run.model, catalog?.models ?? [], { where: "the helper's Pi" })} Check the model id and enabled Pi user extensions; project or CLI-only providers require an explicit profile extension.`);
       }
       if (!current(run) || signal?.aborted) throw new Error("Parent session ended or dispatch cancelled");
-      await command(run, "prompt", { message });
+      await command(run, "prompt", { message, ...(images?.length ? { images } : {}) });
     } catch (error) {
       const hint = missingProviderHint(run.model, error.message);
       if (hint) error = new Error(error.message.trimEnd() + hint);
@@ -1037,6 +1050,35 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
   // childCommand frames, this replies childCommandResult, calling the same functions the tools use.
   // The parent model is never involved. Failures reconnect; nothing here can throw into pi.
   let control, controlRetry;
+  const queueStarts = new Map();
+  async function childStart(frame) {
+    if (projectWorker) throw Error("Subagents are unavailable in Projects.");
+    if (typeof frame.requestID !== "string" || !/^[0-9a-f-]{36}$/i.test(frame.requestID)
+      || typeof frame.text !== "string" || Buffer.byteLength(frame.text) > 64 * 1024
+      || !Array.isArray(frame.images) || frame.images.length > 4) throw Error("Invalid queued subagent request");
+    let bytes = 0;
+    const images = frame.images.map((image) => {
+      if (typeof image?.data !== "string" || typeof image?.mimeType !== "string" || !image.mimeType.startsWith("image/")) throw Error("Invalid queued image");
+      const size = Buffer.from(image.data, "base64").length;
+      if (size > 2 * 1024 * 1024) throw Error("Queued image exceeds 2 MiB");
+      bytes += size;
+      return { type: "image", mimeType: image.mimeType, data: image.data };
+    });
+    if (bytes > 5 * 1024 * 1024 || (!frame.text.trim() && !images.length)) throw Error("Invalid queued message");
+    // Reconnects and a lost acknowledgement must not launch the same message twice.
+    const existing = [...runs.values()].find((run) => run.queueRequestID === frame.requestID && run.owner === owner);
+    if (existing) {
+      if (existing.starting) await existing.starting;
+      else if (existing.state === "failed" || existing.state === "stopped") throw Error(existing.error || "Previous queued launch stopped; inspect its subagent before retrying.");
+      return;
+    }
+    if (queueStarts.has(frame.requestID)) return await queueStarts.get(frame.requestID);
+    const input = { text: frame.text, images, requestID: frame.requestID };
+    const pending = start({ task: frame.text.slice(0, MAX_TEXT) || "Inspect the attached images.", context: "fork", delivery: "report", model: "inherit" },
+      AbortSignal.timeout(45_000), sessionContext, undefined, undefined, undefined, input);
+    queueStarts.set(frame.requestID, pending);
+    try { await pending; } finally { queueStarts.delete(frame.requestID); }
+  }
   async function childCommand(frame) {
     const run = get(String(frame.runID ?? ""));
     const text = typeof frame.text === "string" ? frame.text : "";
@@ -1079,8 +1121,8 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
           request.resolve(frame.scope);
           return;
         }
-        if (!["childCommand", "projectChildren"].includes(frame?.type) || !Number.isSafeInteger(frame.id)) return;
-        (frame.type === "projectChildren" ? projectChildren(frame) : childCommand(frame)).then(() => undefined, (error) => clip(error.message, 500)).then((error) => {
+        if (!["childCommand", "childStart", "projectChildren"].includes(frame?.type) || !Number.isSafeInteger(frame.id)) return;
+        (frame.type === "projectChildren" ? projectChildren(frame) : frame.type === "childStart" ? childStart(frame) : childCommand(frame)).then(() => undefined, (error) => clip(error.message, 500)).then((error) => {
           if (control === s) { try { s.write(JSON.stringify({ type: "childCommandResult", id: frame.id, error }) + "\n"); } catch {} }
         });
       }, () => s.destroy()));
@@ -1189,7 +1231,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     }
     return resolved;
   }
-  async function start(params, signal, ctx, workflowId, toolCallID, stepIndex) {
+  async function start(params, signal, ctx, workflowId, toolCallID, stepIndex, queueInput) {
       const projectScope = workflowId ? workflows.get(workflowId)?.projectScope : projectWorker ? await authorizeScope() : undefined;
       checkScope(projectScope);
       params = checked(startSchema, params);
@@ -1234,6 +1276,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
         requiresProjectTrust: profile.requiresProjectTrust || (targetContext.isProjectTrusted() && (profile.inheritSkills || profile.skills?.length)), profileSource: profile.source, systemPromptMode: profile.systemPromptMode, inheritProjectContext: profile.inheritProjectContext,
         extensions: profile.extensions ?? [], skills: childSkills(profile, targetContext), workflowId, ...missionFor(params, params.task),
         tools: requestedTools.filter((name) => pi.getActiveTools().includes(name)), state: "queued", startedAt: Date.now(), sessionFile: path.join(dir, "session.jsonl"), output: "",
+        queueRequestID: queueInput?.requestID,
         toolCallID: typeof toolCallID === "string" ? toolCallID : undefined, stepIndex, turns: 0, toolCalls: 0, tokens: 0, added: 0, removed: 0, files: new Map() };
       runs.set(id, run);
       try {
@@ -1245,7 +1288,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
         fs.writeFileSync(path.join(dir, "prompt.md"), `You are a Shepherd child, not the parent. ${profile.prompt}\nWork only on the delegated task. No nested helpers, workflows, schedules, or worktree management. Routine progress stays in your child record; do not send a separate completion message, your final answer is delivered automatically.\n${CHILD_ASK_RULE}\n`, { mode: 0o600 });
         const { dir: _dir, output: _output, files: _files, ...descriptor } = run;
         pi.appendEntry("shepherd-child", descriptor);
-        run.starting = launch(run, params.task, signal);
+        run.starting = launch(run, queueInput?.text ?? params.task, signal, queueInput?.images);
         return await run.starting;
       } catch (error) { if (!run.proc) { run.state = "failed"; run.endedAt = Date.now(); run.error = clip(error.message); save(run); } throw error; }
   }

@@ -24,6 +24,132 @@ struct QueueTests {
         pi.stdin("prompt").compactMap { $0["message"] as? String }
     }
 
+    private func childStartReply(_ children: ExtensionClient) async throws -> ExtensionReply {
+        let reply = try await children.reply()
+        if case .parentInput = reply { return try await children.reply() }
+        return reply
+    }
+
+    @Test func queuedSubagentStartsWithoutInterruptingTheParentAndKeepsImages() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        let running = try await startRun(pi)
+        let children = try ExtensionClient(path: h.socketPath)
+        try children.send(.helloChildren(agentID: pi.agent.id))
+        // The projection fences registration of the controller before the request.
+        try children.send(.setAgentChildren(agentID: pi.agent.id, children: [ChildRun(runID: "ready", label: "Ready", state: "complete")]))
+        _ = try await pi.snapshot { $0.subagents?.count == 1 }
+        let queuedID = UUID(), operation = UUID()
+        let image = NativeImage(mimeType: "image/png", data: Data(repeating: 1, count: 900_000), name: "screen.png")
+        let element = BrowserElement(page: "http://localhost:5173", selector: "button.pay", label: "Pay", width: 100, height: 40, html: "<button>Pay</button>")
+        _ = try await pi.request(.send(expectedSessionID: running.piSessionID, generation: running.generation,
+                                      operationID: queuedID, text: "Review this screen", delivery: .followUp, images: [image], browserElements: [element]))
+        let request = NativeThreadRequest.queue(expectedSessionID: running.piSessionID, generation: running.generation,
+                                                operationID: operation, action: .subagent(id: queuedID))
+        do {
+            async let result = pi.request(request)
+            guard case .childStart(let id, let requestID, let text, let images) = try await childStartReply(children) else {
+                Issue.record("expected childStart"); return
+            }
+            let context = try #require(BrowserElementFence.parse(text))
+            #expect(requestID == queuedID.uuidString && context.text == "Review this screen" && images == [image])
+            #expect(context.elements == [element.clamped])
+            let pending = try await pi.snapshot { $0.queue?.items.count == 1 }
+            #expect(pending.running && prompts(pi) == ["tools:1 build"] && pi.stdin("abort").isEmpty)
+            #expect(try await pi.queue(.delete(id: queuedID), from: running).failureCode == "queue_busy")
+            try children.send(.childCommandResult(id: id, error: nil))
+            #expect(try await result == .accepted(operationID: operation))
+        }
+        #expect(try await pi.request(request) == .accepted(operationID: operation))
+        let launched = try await pi.snapshot { $0.queue?.items.isEmpty == true }
+        #expect(launched.running && prompts(pi) == ["tools:1 build"] && pi.stdin("abort").isEmpty)
+        #expect(try await pi.queue(.subagent(id: queuedID), from: running).failureCode == "queue_item_unavailable")
+    }
+
+    @Test func failedSubagentStartupRetainsTheQueuedMessageAndDoesNotDrainDuringAdmission() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        let running = try await startRun(pi)
+        let children = try ExtensionClient(path: h.socketPath)
+        try children.send(.helloChildren(agentID: pi.agent.id))
+        try children.send(.setAgentChildren(agentID: pi.agent.id, children: [ChildRun(runID: "ready", label: "Ready", state: "complete")]))
+        _ = try await pi.snapshot { $0.subagents?.count == 1 }
+        let queuedID = UUID()
+        _ = try await pi.send("tools:0 review", operationID: queuedID, from: running)
+        do {
+            async let result = pi.queue(.subagent(id: queuedID), from: running)
+            guard case .childStart(let id, _, _, _) = try await childStartReply(children) else { Issue.record("expected childStart"); return }
+            pi.finishTool(1)
+            _ = try await pi.snapshot { !$0.running }
+            #expect(prompts(pi) == ["tools:1 build"])
+            try children.send(.childCommandResult(id: id, error: "Four children are already active"))
+            #expect(try await result.failureCode == "child_start_failed")
+        }
+        let kept = try await pi.snapshot { $0.queue?.paused == true }
+        #expect(kept.queue?.items.map(\.id) == [queuedID])
+        #expect(prompts(pi) == ["tools:1 build"])
+        #expect(try await pi.queue(.sendNow(ids: [queuedID]), from: kept).failureCode == nil)
+        _ = try await pi.snapshot { $0.messages.contains { $0.operationID == queuedID } }
+    }
+
+    @Test func aLostStartupAcknowledgementKeepsTheMessageOutOfTheParentUntilReconciled() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        let running = try await startRun(pi)
+        let children = try ExtensionClient(path: h.socketPath)
+        try children.send(.helloChildren(agentID: pi.agent.id))
+        try children.send(.setAgentChildren(agentID: pi.agent.id, children: [ChildRun(runID: "ready", label: "Ready", state: "complete")]))
+        _ = try await pi.snapshot { $0.subagents?.count == 1 }
+        let queuedID = UUID()
+        _ = try await pi.send("tools:0 delegated", operationID: queuedID, from: running)
+        do {
+            async let result = pi.queue(.subagent(id: queuedID), from: running)
+            guard case .childStart = try await childStartReply(children) else { Issue.record("expected childStart"); return }
+            children.closeConnection()
+            #expect(try await result.failureCode == "child_start_failed")
+        }
+        #expect(try await pi.queue(.sendNow(ids: [queuedID]), from: running).failureCode == "outcome_unknown")
+        // Delete/Undo cannot accidentally turn an uncertain launch into another parent prompt.
+        #expect(try await pi.queue(.delete(id: queuedID), from: running).failureCode == nil)
+        #expect(try await pi.queue(.restore(ids: [queuedID], index: 0), from: running).failureCode == nil)
+        _ = try await pi.send("tools:0 new message", from: running)
+        pi.finishTool(1)
+        _ = try await pi.snapshot { !$0.running }
+        #expect(prompts(pi) == ["tools:1 build"])
+        let reconnected = try ExtensionClient(path: h.socketPath)
+        try reconnected.send(.helloChildren(agentID: pi.agent.id))
+        try reconnected.send(.setAgentChildren(agentID: pi.agent.id, children: [ChildRun(runID: "reconnected", label: "Ready", state: "complete")]))
+        _ = try await pi.snapshot { $0.subagents?.first?.runID == "reconnected" }
+        do {
+            async let result = pi.queue(.subagent(id: queuedID), from: running)
+            guard case .childStart(let id, let requestID, _, _) = try await reconnected.reply() else { Issue.record("expected retry"); return }
+            #expect(requestID == queuedID.uuidString, "the extension reconciles the same launch")
+            try reconnected.send(.childCommandResult(id: id, error: nil))
+            #expect(try await result.failureCode == nil)
+        }
+        #expect(!prompts(pi).contains("tools:0 delegated"))
+    }
+
+    @Test func queuedSubagentRejectsHeldSteeringAndStaleMessages() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        let running = try await startRun(pi)
+        let id = UUID()
+        _ = try await pi.send("tools:0 queued", operationID: id, from: running)
+        #expect(try await pi.queue(.hold(id: id, held: true), from: running).failureCode == nil)
+        #expect(try await pi.queue(.subagent(id: id), from: running).failureCode == "queue_item_unavailable")
+        _ = try await pi.queue(.hold(id: id, held: false), from: running)
+        #expect(try await pi.queue(.subagent(id: id), from: running).failureCode == "child_start_failed", "no controller connected")
+        _ = try await pi.queue(.steer(ids: [id]), from: running)
+        #expect(try await pi.queue(.subagent(id: id), from: running).failureCode == "queue_item_unavailable")
+        #expect(try await pi.request(.queue(expectedSessionID: running.piSessionID, generation: "stale", operationID: UUID(),
+                                           action: .subagent(id: id))).failureCode == "stale_session")
+    }
+
     // MARK: - Delivery
 
     /// An element picked in the Browser rides the queue: the queue shows it without its markup,
@@ -767,6 +893,49 @@ struct QueueTests {
 @Suite("Queue and steer in the store", .mainActorExclusive)
 @MainActor
 struct QueueStoreTests {
+    private nonisolated func remoteSnapshot(_ pi: PiAgent, children: Bool = false) async throws {
+        _ = try await pi.snapshot { children ? $0.subagents?.count == 1 : $0.running }
+    }
+
+    @Test(arguments: [true, false])
+    func remoteQueuedSubagentsAreCapabilityGatedAndWaitForHostAcceptance(supported: Bool) async throws {
+        let remote = try RemoteHost()
+        defer { remote.stop() }
+        if !supported {
+            remote.server.advertisedCapabilities = RemoteProtocol.capabilities.filter { $0 != RemoteProtocol.nativeQueueSubagentCapability }
+        }
+        let pi = try await PiAgent.launch(on: remote.host)
+        let ready = try await pi.ready()
+        _ = try await pi.send("tools:1 build", from: ready)
+        try await remoteSnapshot(pi)
+        let client = try await remote.typed()
+        defer { client.disconnect() }
+        let store = NativeThreadStore()
+        let task = Task { await store.run { try await client.nativeThread(agentID: pi.agent.id, request: $0) } }
+        defer { task.cancel() }
+        try await eventuallyOnMain("the running remote thread") { store.ready && store.running }
+        #expect(store.supportsQueueSubagent == supported)
+        store.draft = "tools:0 review"
+        await store.send()
+        let queued = try #require(store.queue.first?.id)
+        guard supported else {
+            await store.runQueuedInSubagent(queued)
+            #expect(store.queue.count == 1)
+            return
+        }
+        let children = try ExtensionClient(path: remote.host.socketPath)
+        try children.send(.helloChildren(agentID: pi.agent.id))
+        try children.send(.setAgentChildren(agentID: pi.agent.id, children: [ChildRun(runID: "ready", label: "Ready", state: "complete")]))
+        try await remoteSnapshot(pi, children: true)
+        let launch = Task { await store.runQueuedInSubagent(queued) }
+        guard case .childStart(let id, let requestID, _, _) = try await children.reply() else { Issue.record("expected remote childStart"); return }
+        #expect(requestID == queued.uuidString && store.queue.map(\.id) == [queued])
+        try children.send(.childCommandResult(id: id, error: nil))
+        await launch.value
+        #expect(store.queue.isEmpty && store.running)
+        #expect(pi.stdin("prompt").count == 1 && pi.stdin("abort").isEmpty)
+    }
+
     @Test func aMessageAnsweredBeyondAPageIsNeverLeftAtTheTail() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }

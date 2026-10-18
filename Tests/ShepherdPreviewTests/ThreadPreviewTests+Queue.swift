@@ -347,7 +347,7 @@ enum QueueThreads {
 
     static func snapshot(_ messages: [NativeThreadMessage], provisional: [NativeThreadMessage] = [], running: Bool) -> NativeThreadSnapshot {
         var snapshot = ActivityThreads.snapshot(messages, provisional: provisional, running: running)
-        snapshot.supportedActions.append("queue")
+        snapshot.supportedActions.append(contentsOf: ["queue", "queueSubagent"])
         snapshot.queue = NativeQueue(mode: .all)
         return snapshot
     }

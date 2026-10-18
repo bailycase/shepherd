@@ -1206,6 +1206,8 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     /// Sent on a `helloChildren` connection; answered by `ExtensionMessage.childCommandResult`.
     /// `mode` (steer/followUp) applies to `message`.
     case childCommand(id: Int, runID: String, action: ChildCommandAction, text: String?, mode: NativeThreadDelivery?)
+    /// Starts a queued message independently; acknowledged with childCommandResult.
+    case childStart(id: Int, requestID: String, text: String, images: [NativeImage])
     case childScope(id: Int, scope: ProjectChildScope?, deadline: Double? = nil)
     /// Uses the existing childCommandResult acknowledgement, bound to this connection.
     case projectChildren(id: Int, scope: ProjectChildScope, action: ProjectChildAction)
@@ -1291,11 +1293,11 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case listing, system
         case proposals
         case answer, note, project, spaces, models
-        case image
+        case image, images
     }
 
     private enum Kind: String, Codable {
-        case parentInput, childCommand, childScope, projectChildren, agentRequest, agentResult
+        case parentInput, childCommand, childStart, childScope, projectChildren, agentRequest, agentResult
         case projectResult
         case ok, error, panes, paneOpened, paneContent, reviewResult, automations, agents, message
         case suggestion
@@ -1315,6 +1317,9 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
             self = .projectChildren(id: try c.decode(Int.self, forKey: .id), scope: try c.decode(ProjectChildScope.self, forKey: .scope), action: try c.decode(ProjectChildAction.self, forKey: .action))
         case .parentInput:
             self = .parentInput
+        case .childStart:
+            self = .childStart(id: try c.decode(Int.self, forKey: .id), requestID: try c.decode(String.self, forKey: .requestID),
+                               text: try c.decode(String.self, forKey: .text), images: try c.decode([NativeImage].self, forKey: .images))
         case .childCommand:
             self = .childCommand(
                 id: try c.decode(Int.self, forKey: .id),
@@ -1506,6 +1511,12 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
         case .projectChildren(let id, let scope, let action):
             try c.encode(Kind.projectChildren, forKey: .type); try c.encode(id, forKey: .id)
             try c.encode(scope, forKey: .scope); try c.encode(action, forKey: .action)
+        case .childStart(let id, let requestID, let text, let images):
+            try c.encode(Kind.childStart, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(requestID, forKey: .requestID)
+            try c.encode(text, forKey: .text)
+            try c.encode(images, forKey: .images)
         case .childCommand(let id, let runID, let action, let text, let mode):
             try c.encode(Kind.childCommand, forKey: .type)
             try c.encode(id, forKey: .id)

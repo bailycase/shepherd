@@ -1603,6 +1603,26 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// Starts through the parent's authenticated child connection, without a parent RPC prompt.
+    private func startQueueChild(agentID: AgentID, requestID: UUID, text: String, images: [NativeImage],
+                                 completion: @escaping (String?) -> Void) {
+        guard !isProjectWorker(agentID), !store.state.isProjectCoordinator(agentID) else {
+            completion("Subagents are unavailable in Projects.")
+            return
+        }
+        guard let client = clients.values.first(where: { $0.childrenAgentID == agentID }) else {
+            completion("Native subagents are unavailable for this agent (children extension not connected).")
+            return
+        }
+        nextChildCommandID += 1
+        let id = nextChildCommandID
+        childCommandPending[id] = (client, completion)
+        reply(.childStart(id: id, requestID: requestID.uuidString, text: text, images: images), to: client)
+        queue.asyncAfter(deadline: .now() + 60) { [weak self] in
+            self?.childCommandPending.removeValue(forKey: id)?.completion("Subagent startup timed out; outcome is unknown. Retry Run in subagent to check the same launch, or inspect the tray before deleting the message.")
+        }
+    }
+
     /// One authenticated controller connection per parent; no helper opens a new host channel.
     func commandProjectChildren(_ scope: ProjectChildScope, action: ProjectChildAction, completion: @escaping (String?) -> Void) {
         if action == .stop { projectChildClosed.insert(scope) }
@@ -4179,10 +4199,13 @@ public final class SessionServer: @unchecked Sendable {
     private func reply(_ message: ExtensionReply, to client: ExtensionConnection) {
         guard clients[client.fd] === client else { return }
 
+        // Queued image payloads go only to the authenticated child controller, with pi's
+        // 8 MiB RPC bound. Other extension replies retain their 1 MiB bound.
+        let limit: Int = if case .childStart = message { 8 * 1024 * 1024 } else { NDJSON.maxPayloadBytes }
         let payload: Data
         do {
             let encoded = try NDJSON.encode(message)
-            if encoded.count - 1 <= NDJSON.maxPayloadBytes {
+            if encoded.count - 1 <= limit {
                 payload = encoded
             } else {
                 ShepherdLog.warning(
@@ -4200,20 +4223,20 @@ public final class SessionServer: @unchecked Sendable {
             return
         }
 
-        guard payload.count - 1 <= NDJSON.maxPayloadBytes else {
+        guard payload.count - 1 <= limit else {
             ShepherdLog.error("reply_too_large fallback exceeded the payload limit")
             disconnect(client)
             return
         }
-        enqueuePayload(payload, to: client)
+        enqueuePayload(payload, to: client, limit: max(Self.maxQueuedReplyBytes, limit + 1))
     }
 
     /// Queue an encoded NDJSON payload on a connection's write queue, bounded
     /// by `maxQueuedReplyBytes`. Shared by extension replies and remote
     /// replies/broadcasts.
-    private func enqueuePayload(_ payload: Data, to client: ExtensionConnection) {
+    private func enqueuePayload(_ payload: Data, to client: ExtensionConnection, limit: Int = SessionServer.maxQueuedReplyBytes) {
         guard clients[client.fd] === client else { return }
-        guard client.queuedReplyBytes + payload.count <= Self.maxQueuedReplyBytes else {
+        guard client.queuedReplyBytes + payload.count <= limit else {
             ShepherdLog.warning("reply queue overflow on fd \(client.fd)")
             disconnect(client)
             return
@@ -4226,7 +4249,7 @@ public final class SessionServer: @unchecked Sendable {
     private func replyID(_ message: ExtensionReply) -> Int {
         switch message {
         case .parentInput: return 0
-        case .projectPublish(let id, _), .childScope(let id, _, _), .projectChildren(let id, _, _), .projectRuntime(let id, _, _, _), .childCommand(let id, _, _, _, _), .ok(let id), .projectResult(let id, _, _),
+        case .projectPublish(let id, _), .childScope(let id, _, _), .projectChildren(let id, _, _), .projectRuntime(let id, _, _, _), .childStart(let id, _, _, _), .childCommand(let id, _, _, _, _), .ok(let id), .projectResult(let id, _, _),
              .error(let id, _, _),
              .panes(let id, _),
              .paneOpened(let id, _),
@@ -6435,6 +6458,10 @@ public final class SessionServer: @unchecked Sendable {
                     if error == nil { server.projectChildDrained.insert(scope) }
                     done(error)
                 }
+            }
+            thread.dispatchQueueChild = { [weak serverWeak] requestID, text, images, done in
+                guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { done("Agent is gone."); return }
+                server.startQueueChild(agentID: agentID, requestID: requestID, text: text, images: images, completion: done)
             }
             thread.dispatchSubagentCommand = { [weak serverWeak] runID, action, text, mode, done in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { done("Agent is gone."); return }
