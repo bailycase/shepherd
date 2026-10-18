@@ -121,7 +121,8 @@ events come out on stdout, one record per LF.
   whole history as a single record, far beyond the 1 MiB NDJSON cap that still applies to the
   extension socket and TCP frames. A larger record is logged and skipped.
 - **Stdin:** queued up to 8 MiB. A command beyond that is dropped.
-- **Requests:** each has a 10 s deadline and fails cleanly on timeout or when the process exits.
+- **Requests:** default to a 10 s deadline (60 s during bootstrap) and fail cleanly on timeout
+  or when the process exits. Bootstrap retains late readiness answers without retrying.
 - **stderr:** used for diagnostics only, logged line by line. A line is cut at 64 KiB.
 - **Shutdown:** `kill()` sends SIGTERM to the process group, then SIGKILL after 2 s.
 - **Queueing:** like `PTYSession`, all mutable state is confined to a queue that targets the
@@ -150,12 +151,13 @@ events come out on stdout, one record per LF.
   the page can switch a hidden one back on). Until `get_state` and
   `get_messages` have answered, requests fail with `native_starting` ("The agent is starting."): pi
   answers `get_state` first, and a thread served before a long history arrives would show a
-  resumed agent as a new, empty one. pi reads stdin only once it has started, so a pi slower
-  than the 10 s request deadline answers requests already given up on; when `get_state` times
-  out, the bootstrap asks again, and only the retry's `get_messages` ends the wait (the earlier
-  attempt's timeout declares nothing, or the thread would be served with an empty history
-  while the retry's is on its way). A failed history fetch is `clips.history` (Clipped, below)
-  until the next one lands whole.
+  resumed agent as a new, empty one. Bootstrap sends its readiness requests once and bounds readiness
+  at 60 seconds, independently of clients and visibility. A live process that has not answered
+  returns `native_unavailable`, naming the missing readiness replies and keeping its opening
+  prompt. Late state and history replies still use the normal projection and can make the
+  thread usable, delivering that prompt once. A bootstrap history timeout never serves an
+  empty conversation. Other failed history fetches are `clips.history` (Clipped, below) until
+  the next one lands whole.
 - **Events** update the projection in place. The run pi is streaming is one ordered list of
   live rows (`provisional`), in the order pi produced them:
   - `message_start`, `message_update`, and `message_end` stream the current assistant message
@@ -809,8 +811,9 @@ transport differs.
     every other request is `native_unavailable`. `retryStart` makes it `native_starting` until
     the new pi is bound, and that pi takes the opening prompt the stopped one never read. An
     older client ignores the field and draws an empty thread it cannot send to.
-  - `native_unavailable`, with the reason: the agent no longer exists, its thread runs no pi, or
-    its pi exited after it served (with the exit code, also after the app retired the session).
+  - `native_unavailable`, with the reason: the agent no longer exists, its thread runs no pi,
+    its live pi missed the bootstrap readiness deadline, or its pi exited after it served
+    (with the exit code, also after the app retired the session).
   - Hosts advertise `native.thread.starting.v1`. `RemoteHostClient` reads `native_unavailable`
     from an older host as starting: such a host said that while pi started, and it retires an
     agent whose pi exits.
@@ -891,6 +894,7 @@ output grows.
   opening prompt's pending row) before the agent is selected, so its thread draws complete at
   once, with what the user asked for. A pi still
   starting after `startingLimit` (a minute) becomes a `loadError`, cleared if it answers later.
+  Suspending polling does not reset that elapsed time; showing the thread checks it again.
 - **Can't start:** a snapshot carrying `startProblem` sets `startProblem` and nothing else: the
   store keeps what it drew (a preview stays a preview), is neither `ready` nor `starting`, offers
   no send, and a send waiting for pi gives up with its draft kept. `restarting()` (Retry) clears

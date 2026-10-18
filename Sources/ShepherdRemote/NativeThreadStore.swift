@@ -833,8 +833,7 @@ public final class NativeThreadStore {
         // Pieces still being asked for stop; the ones held stay for the next poll.
         images.cancelAll()
         catchUp = nil
-        // The starting limit counts from the next answer.
-        startingSince = nil
+        // Visibility does not restart pi or its readiness deadline.
         if busy { busy = false }
         if loadingOlder { loadingOlder = false }
     }

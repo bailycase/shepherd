@@ -85,8 +85,8 @@ final class RPCThreadState {
     let session: RPCSession
     let queue: DispatchQueue
     private(set) var piSessionID: String?
-    /// How many times the bootstrap has asked pi for its state (more than once: a slow start).
-    private(set) var bootstrapAttempts = 0
+    /// A readiness failure, independent of whether any client is watching this thread.
+    private var bootstrapFailure: String?
     /// The bootstrap's `get_messages` has not answered. pi answers it after `get_state`, and a
     /// long history takes a moment to arrive: served meanwhile, a resumed thread would show
     /// as a new, empty one.
@@ -483,29 +483,22 @@ final class RPCThreadState {
         self.originStore = originStore
     }
 
-    /// Populate from a freshly spawned (or resumed) pi. Until `get_state` and `get_messages`
-    /// answer, requests are answered `native_starting`. pi reads its stdin only once it has
-    /// started, so a pi slower than `timeout` answers requests that already timed out (and are
-    /// dropped): ask again.
-    func bootstrap(timeout: TimeInterval = 10) {
+    /// pi may not read stdin until startup finishes. Bound readiness, not its lifetime: keep
+    /// late answers so a slow pi can still serve and take its opening prompt, without retries.
+    func bootstrap(timeout: TimeInterval = 60) {
         if session.hasGoalController { setGoalsEnabled(goalsEnabled) }
-        bootstrapAttempts += 1
-        let attempt = bootstrapAttempts
+        refreshState(timeout: timeout, acceptLateResponse: true)
+        refreshMessages(timeout: timeout, bootstrap: true)
+        refreshStats(timeout: timeout, acceptLateResponse: true)
+        refreshCommands(timeout: timeout, acceptLateResponse: true)
         let generation = generation
-        refreshState(timeout: timeout) { [weak self] result in
-            guard let self, self.piSessionID == nil, case .failure(.timeout) = result, self.session.isAlive else { return }
-            ShepherdLog.info("rpc session \(self.session.id) has not started within \(timeout)s; asking again")
-            self.bootstrap(timeout: timeout)
+        queue.asyncAfter(deadline: .now() + timeout) { [weak self] in
+            guard let self, self.generation == generation, !self.isServable, self.session.isAlive else { return }
+            let waiting = [self.piSessionID == nil ? "get_state" : nil, self.historyPending ? "get_messages" : nil].compactMap { $0 }.joined(separator: ", ")
+            self.bootstrapFailure = "The agent is running but was not ready within \(timeout.formatted()) seconds (waiting for \(waiting)). Your first message is kept. Check Settings > Pi; Reconnect checks readiness again."
+            ShepherdLog.warning("rpc session \(self.session.id) readiness deadline: waiting for \(waiting)")
+            self.onRevision?()
         }
-        refreshMessages(timeout: timeout, bootstrapAttempt: attempt) { [weak self] _ in
-            // Loaded or not (a history over the record cap never arrives), the thread serves now;
-            // an attempt the bootstrap has since repeated waits for the repeat.
-            guard let self, attempt == self.bootstrapAttempts, generation == self.generation else { return }
-            self.historyPending = false
-            self.announceIfServable()
-        }
-        refreshStats(timeout: timeout)
-        refreshCommands(timeout: timeout)
     }
 
     /// Moving changes the working directory and reloads instructions, so no pending work may survive it.
@@ -550,12 +543,13 @@ final class RPCThreadState {
         }
     }
 
-    private func refreshCommands(timeout: TimeInterval = 10, attempt: Int = 0) {
-        session.request(.getCommands, timeout: timeout) { [weak self] result in
-            guard let self else { return }
+    private func refreshCommands(timeout: TimeInterval = 10, attempt: Int = 0, acceptLateResponse: Bool = false) {
+        let generation = generation
+        let receive: (Result<RPCResponse, RPCError>) -> Void = { [weak self] result in
+            guard let self, !acceptLateResponse || self.generation == generation else { return }
             guard case .success(let response) = result, response.success else {
                 if self.skillCommandsPending, self.session.isAlive, attempt < 2 {
-                    self.refreshCommands(timeout: timeout, attempt: attempt + 1)
+                    self.refreshCommands(timeout: timeout, attempt: attempt + 1, acceptLateResponse: acceptLateResponse)
                 }
                 return
             }
@@ -568,6 +562,8 @@ final class RPCThreadState {
             self.onCommandsListed?(commands)
             self.readArgumentHints(Self.promptTemplateFiles(listed))
         }
+        session.request(.getCommands, timeout: timeout,
+                        onLateResponse: acceptLateResponse ? { receive(.success($0)) } : nil, completion: receive)
     }
 
     // MARK: - Events (session queue)
@@ -757,7 +753,8 @@ final class RPCThreadState {
     func handle(_ request: NativeThreadRequest, olderClient: Bool = false, isolateSend: Bool = false,
                 completion: @escaping (NativeThreadResult) -> Void) {
         guard let piSessionID, !historyPending else {
-            completion(.failure(code: NativeThreadCode.starting, message: "The agent is starting."))
+            completion(.failure(code: bootstrapFailure == nil ? NativeThreadCode.starting : NativeThreadCode.unavailable,
+                                message: bootstrapFailure ?? "The agent is starting."))
             return
         }
         commit()
@@ -1173,17 +1170,23 @@ final class RPCThreadState {
 
     // MARK: - Refresh
 
-    func refreshState(timeout: TimeInterval = 10, done: ((Result<RPCResponse, RPCError>) -> Void)? = nil) {
+    func refreshState(timeout: TimeInterval = 10, acceptLateResponse: Bool = false,
+                      done: ((Result<RPCResponse, RPCError>) -> Void)? = nil) {
         // The levels follow the model, so they are asked with the state. pi answers stdin in
         // order, so they land just before it and ride its commit: no revision of their own.
-        session.request(.getAvailableThinkingLevels, timeout: timeout) { [weak self] result in
-            guard let self, case .success(let response) = result, let levels = response.thinkingLevels,
+        let generation = generation
+        let receiveLevels: (Result<RPCResponse, RPCError>) -> Void = { [weak self] result in
+            guard let self, (!acceptLateResponse || self.generation == generation),
+                  case .success(let response) = result, let levels = response.thinkingLevels,
                   levels != self.thinkingLevels else { return }
             self.thinkingLevels = levels
         }
-        session.request(.getState, timeout: timeout) { [weak self] result in
+        session.request(.getAvailableThinkingLevels, timeout: timeout,
+                        onLateResponse: acceptLateResponse ? { receiveLevels(.success($0)) } : nil, completion: receiveLevels)
+        let receive: (Result<RPCResponse, RPCError>) -> Void = { [weak self] result in
             defer { done?(result); self?.refreshSkillsIfIdle() }
-            guard let self, case .success(let response) = result, response.success, let data = response.data else { return }
+            guard let self, (!acceptLateResponse || self.generation == generation),
+                  case .success(let response) = result, response.success, let data = response.data else { return }
             if let id = data["sessionId"]?.stringValue, id != self.piSessionID {
                 let switched = self.piSessionID != nil
                 let goalController = self.goalsAvailable
@@ -1220,11 +1223,14 @@ final class RPCThreadState {
             self.commit()
             self.announceIfServable()
         }
+        session.request(.getState, timeout: timeout,
+                        onLateResponse: acceptLateResponse ? { receive(.success($0)) } : nil, completion: receive)
     }
 
     private func announceIfServable() {
         guard isServable, !announcedServable else { return }
         announcedServable = true
+        bootstrapFailure = nil
         if let opening = openingPrompt {
             openingPrompt = nil
             deliverOpeningPrompt(opening.text, images: opening.images, id: opening.id)
@@ -1259,14 +1265,11 @@ final class RPCThreadState {
         }
     }
 
-    /// `bootstrapAttempt` is the bootstrap's attempt this fetch belongs to. A pi slower than the
-    /// request deadline answers an earlier attempt's fetch only after the deadline gave up on it:
-    /// that one declares nothing, because the retry's history is still on its way, and serving the
-    /// thread before it lands shows a long history as an empty one.
-    func refreshMessages(timeout: TimeInterval = 10, bootstrapAttempt: Int? = nil,
+    /// Bootstrap keeps late history answers and never serves a timed-out fetch as empty history.
+    func refreshMessages(timeout: TimeInterval = 10, bootstrap: Bool = false,
                          done: ((Result<RPCResponse, RPCError>) -> Void)? = nil) {
         let generation = generation
-        session.request(.getMessages, timeout: timeout) { [weak self] result in
+        let receive: (Result<RPCResponse, RPCError>) -> Void = { [weak self] result in
             // A history with images costs a header read and a SHA-256 each. That work is done here, off the thread's queue, into a
             // table built from exactly these messages; the projection on the thread's queue only looks entries up. A history with
             // no images goes straight on.
@@ -1275,33 +1278,35 @@ final class RPCThreadState {
                 DispatchQueue.global(qos: .utility).async { [weak self] in
                     let table = ThreadImages.table(for: messages)
                     self?.queue.async { [weak self] in
-                        self?.finishRefresh(result, generation: generation, bootstrapAttempt: bootstrapAttempt, images: table, done: done)
+                        self?.finishRefresh(result, generation: generation, bootstrap: bootstrap, images: table, done: done)
                     }
                 }
                 return
             }
-            self?.finishRefresh(result, generation: generation, bootstrapAttempt: bootstrapAttempt, images: [:], done: done)
+            self?.finishRefresh(result, generation: generation, bootstrap: bootstrap, images: [:], done: done)
         }
+        session.request(.getMessages, timeout: timeout,
+                        onLateResponse: bootstrap ? { receive(.success($0)) } : nil, completion: receive)
     }
 
-    private func finishRefresh(_ result: Result<RPCResponse, RPCError>, generation: String, bootstrapAttempt: Int?,
+    private func finishRefresh(_ result: Result<RPCResponse, RPCError>, generation: String, bootstrap: Bool,
                                images: [String: ThreadImages.Meta], done: ((Result<RPCResponse, RPCError>) -> Void)?) {
         do {
             defer { done?(result) }
             guard generation == self.generation else { return }
-            let superseded = bootstrapAttempt.map { $0 != self.bootstrapAttempts } ?? false
-            // A failed history fetch must not lock out snapshots, Send, or Stop forever.
-            // Reset already discarded the old session; serve the new one as incomplete, as
-            // bootstrap does, and let a later refresh recover its history.
+            // During bootstrap a timeout is not an empty history. The readiness deadline
+            // surfaces the failure; a late answer can still recover the full conversation.
+            if bootstrap, case .failure(.timeout) = result { return }
+            // Other failed history fetches serve as incomplete until a later refresh succeeds.
             defer {
-                if !superseded { self.historyPending = false }
+                self.historyPending = false
                 self.commit()
                 self.announceIfServable()
                 self.drainIfReady()
             }
             guard case .success(let response) = result, response.success,
                   let messages = response.messages else {
-                if !superseded { self.historyUnread = true }
+                self.historyUnread = true
                 return
             }
             // The whole history is here again: what it could not read, and the live rows `trimLive`
@@ -1368,13 +1373,17 @@ final class RPCThreadState {
         }
     }
 
-    func refreshStats(timeout: TimeInterval = 10) {
-        session.request(.getSessionStats, timeout: timeout) { [weak self] result in
-            guard let self, case .success(let response) = result, response.success, let data = response.data else { return }
+    func refreshStats(timeout: TimeInterval = 10, acceptLateResponse: Bool = false) {
+        let generation = generation
+        let receive: (Result<RPCResponse, RPCError>) -> Void = { [weak self] result in
+            guard let self, (!acceptLateResponse || self.generation == generation),
+                  case .success(let response) = result, response.success, let data = response.data else { return }
             self.stats = Self.projectStats(data)
             self.updateContext()
             self.commit()
         }
+        session.request(.getSessionStats, timeout: timeout,
+                        onLateResponse: acceptLateResponse ? { receive(.success($0)) } : nil, completion: receive)
     }
 
     /// get_session_stats → stats. pi estimates the context from the thread's messages, so a

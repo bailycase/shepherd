@@ -4,7 +4,7 @@ import ShepherdUI
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
-import ShepherdSessions
+@testable import ShepherdSessions
 import SwiftUI
 import ShepherdTestSupport
 import Testing
@@ -216,6 +216,43 @@ struct ThreadPreviewTests {
             fixture.store.starting
         }) {
             fixture.thread(title: "New agent").environment(\.threadStartingDelay, .zero)
+        }
+    }
+
+    /// The real readiness deadline, with a live gated pi and the opening message still visible.
+    @Test func threadStartupTimeout() async throws {
+        let dir = try makeScratchDirectory("startup-preview")
+        let queue = DispatchQueue(label: "preview.startup")
+        let session = try RPCSession(params: CreateSessionParams(cwd: dir.path, command: StubPi.command,
+            env: ["STUB_PI_STARTUP_GATE": "release-pi"], runtime: .rpc), queue: queue)
+        let thread = RPCThreadState(session: session, queue: queue)
+        session.onEvent = { [weak thread] in thread?.handle($0) }
+        session.start()
+        let opening = try #require(OpeningPrompt("Fix the login redirect", agentID: AgentID()))
+        queue.async {
+            thread.sendOpeningPrompt(opening.text, id: opening.operationID)
+            thread.bootstrap(timeout: 0.1)
+        }
+        let store = NativeThreadStore()
+        defer {
+            store.stop()
+            queue.sync { session.shutdown() }
+            try? FileManager.default.removeItem(at: dir)
+        }
+        store.preview(opening.preview(PiSessionPreview.empty(sessionID: "fixture", model: "anthropic/claude-opus-4-5", thinking: "high")))
+        let request: NativeThreadStore.Request = { value in
+            await withCheckedContinuation { continuation in
+                queue.async { thread.handle(value) { continuation.resume(returning: $0) } }
+            }
+        }
+        try await Preview.render("thread-startup-timeout", size: CGSize(width: 1180, height: 700), ready: {
+            store.loadError != nil && !store.starting && !store.rows.isEmpty
+        }) {
+            VStack(spacing: 0) {
+                ThreadHeader(store: store, project: "Shepherd", title: opening.text)
+                ThreadView(store: store, active: true, isFocused: false, request: request)
+            }
+            .frame(width: 1180, height: 700)
         }
     }
 

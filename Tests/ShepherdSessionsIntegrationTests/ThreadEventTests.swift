@@ -2,6 +2,7 @@ import Foundation
 import Testing
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 @testable import ShepherdSessions
 import ShepherdTestSupport
 
@@ -211,20 +212,113 @@ struct ThreadEventTests {
         #expect(await t.request(.snapshot()) == .failure(code: NativeThreadCode.starting, message: "The agent is starting."))
     }
 
-    /// pi reads stdin only once it has started, so a pi slower than the request deadline
-    /// answers requests already given up on. The bootstrap asks again until one lands.
-    @Test func aPiSlowerThanTheRequestDeadlineIsAskedAgainUntilItAnswers() async throws {
-        let t = try Thread(bootstrap: false, env: ["STUB_PI_STARTUP_GATE": "release-pi"])
+    /// A live pi blocked before reading stdin must fail within the readiness bound, even
+    /// off screen, without losing the opening prompt or duplicating it on a late answer.
+    @Test(arguments: ["STUB_PI_STARTUP_GATE", "STUB_PI_HISTORY_GATE"])
+    @MainActor func aLivePiHasABoundedStartAndCanStillDeliverItsOpeningPromptOnce(_ gate: String) async throws {
+        let t = try Thread(bootstrap: false, env: [gate: "release-pi", "STUB_PI_LOG": "stdin.jsonl"])
         defer { t.stop() }
-        t.queue.async { t.state.bootstrap(timeout: 0.2) }
-        try await eventually("the bootstrap to ask again") {
-            await withCheckedContinuation { continuation in t.queue.async { continuation.resume(returning: t.state.bootstrapAttempts >= 2) } }
+        if gate == "STUB_PI_HISTORY_GATE" {
+            // Establish the state-only-ready case before starting the short deadline, even
+            // when a loaded runner takes longer than that deadline to schedule the stub.
+            let sessionID = await withCheckedContinuation { continuation in
+                t.queue.async {
+                    t.state.refreshState(timeout: 30) { _ in continuation.resume(returning: t.state.piSessionID) }
+                }
+            }
+            #expect(sessionID == "stub-session")
         }
-        #expect(await t.request(.snapshot()).failureCode == NativeThreadCode.starting)
+        let openingID = UUID()
+        t.queue.async {
+            t.state.sendOpeningPrompt("tools:0 first message", id: openingID)
+            t.state.bootstrap(timeout: 0.5)
+        }
+        let store = NativeThreadStore(startingLimit: .seconds(3600))
+        let request: NativeThreadStore.Request = { await t.request($0) }
+        let polling = Task { await store.run(request: request) }
+        defer { polling.cancel(); store.stop() }
+        try await eventuallyOnMain("the store to see startup") { store.starting }
+        store.suspend()
+        polling.cancel()
+
+        try await eventually("the live pi to fail readiness while hidden", timeout: .seconds(2)) { @Sendable in
+            await t.request(.snapshot()).failureCode == NativeThreadCode.unavailable
+        }
+        let unread = await withCheckedContinuation { continuation in
+            t.queue.async { continuation.resume(returning: t.session.isAlive && t.state.unreadOpeningPrompt?.id == openingID) }
+        }
+        #expect(unread, "the live process has not received the first message")
+        let resumed = Task { await store.run(request: request) }
+        defer { resumed.cancel() }
+        try await eventuallyOnMain("the startup failure to reach the store") { store.loadError != nil }
+        #expect(!store.starting && !store.ready)
+        #expect(store.loadError?.contains("get_state") == (gate == "STUB_PI_STARTUP_GATE"))
+        #expect(store.loadError?.contains("get_messages") == true)
 
         FileManager.default.createFile(atPath: t.dir.appendingPathComponent("release-pi").path, contents: nil)
-        let s = try await t.ready()
-        #expect(s.piSessionID == "stub-session")
+        try await eventuallyOnMain("late readiness and the opening turn to reach the store") {
+            store.ready && !store.running && store.stats != nil && store.snapshot?.commands != nil
+                && store.messages.contains { $0.role == "assistant" && $0.blocks.contains { $0.text == "Reply to tools:0 first message" } }
+        }
+        #expect(store.loadError == nil && store.snapshot?.thinkingLevels != nil)
+        #expect(store.messages.filter { $0.role == "user" && $0.operationID == openingID }.count == 1)
+        let input = try String(contentsOf: t.dir.appendingPathComponent("stdin.jsonl"), encoding: .utf8)
+            .split(separator: "\n").map { try JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any] }
+        #expect(input.filter { $0?["type"] as? String == "prompt" }.count == 1)
+        let beforePrompt = input.prefix { $0?["type"] as? String != "prompt" }
+        #expect(beforePrompt.filter { $0?["type"] as? String == "get_state" }.count == (gate == "STUB_PI_STARTUP_GATE" ? 1 : 2), "one bootstrap state request, plus the history-only case's setup")
+    }
+
+    @Test func bootstrapMetadataCanArriveAfterTheDeadlineEvenWhenReadinessDidNotFail() async throws {
+        let t = try Thread(bootstrap: false, env: ["STUB_PI_METADATA_GATE": "release-metadata"])
+        defer { t.stop() }
+        await withCheckedContinuation { continuation in
+            t.queue.async { t.state.refreshState(timeout: 30) { _ in continuation.resume() } }
+        }
+        let startedAt = ContinuousClock.now
+        t.queue.async { t.state.bootstrap(timeout: 1) }
+        try await eventually("state and history to serve before metadata") {
+            await t.request(.snapshot()).snapshotValue != nil
+        }
+        let ready = try await t.snapshot()
+        #expect(ready.stats == nil && ready.commands == nil)
+        try await eventually("the initial requests to expire") { ContinuousClock.now - startedAt > .milliseconds(1200) }
+        let waiting = try await t.snapshot()
+        #expect(waiting.stats == nil && waiting.commands == nil, "state and history already serve without a readiness failure")
+        FileManager.default.createFile(atPath: t.dir.appendingPathComponent("release-metadata").path, contents: nil)
+        try await eventually("late bootstrap metadata to fill the ready thread") {
+            let snapshot = await t.request(.snapshot()).snapshotValue
+            return snapshot?.stats != nil && snapshot?.commands != nil
+        }
+    }
+
+    @Test @MainActor func hidingAStartingThreadDoesNotRestartItsPresentationDeadline() async throws {
+        let t = try Thread(env: ["STUB_PI_STARTUP_GATE": "release-pi"])
+        defer { t.stop() }
+        let store = NativeThreadStore(startingLimit: .milliseconds(150))
+        var pulls = 0
+        let request: NativeThreadStore.Request = {
+            let result = await t.request($0)
+            pulls += 1
+            return result
+        }
+        let polling = Task { await store.run(request: request) }
+        defer { polling.cancel(); store.stop() }
+        try await eventuallyOnMain("startup to begin") { store.starting }
+        let hiddenAt = ContinuousClock.now
+        store.suspend()
+        polling.cancel()
+        try await eventuallyOnMain("the presentation deadline to pass off screen") { ContinuousClock.now - hiddenAt > .milliseconds(200) }
+        #expect(await t.request(.snapshot()).failureCode == NativeThreadCode.starting, "the host deadline has not expired")
+
+        let previousPulls = pulls
+        let resumed = Task { await store.run(request: request) }
+        defer { resumed.cancel() }
+        try await eventuallyOnMain("the first pull after showing the thread") { pulls > previousPulls }
+        #expect(store.loadError?.hasPrefix("The agent has not started after") == true)
+        #expect(!store.starting)
+        FileManager.default.createFile(atPath: t.dir.appendingPathComponent("release-pi").path, contents: nil)
+        try await eventuallyOnMain("late readiness to clear the presentation error") { store.ready && store.loadError == nil }
     }
 
     @Test func anUnchangedThreadAnswersUnchangedAndAChangeBumpsTheRevision() async throws {
